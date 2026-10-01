@@ -28,7 +28,8 @@ static bool accepts_blank(const markdown_core_element_instance *self, markdown_c
         return true;
     }
     markdown_core_block_lookahead lookahead;
-    if (!markdown_core_parser_lookahead_begin(parser, body->parent, MARKDOWN_CORE_NODE_PARAGRAPH, &lookahead)) {
+    if (!markdown_core_parser_lookahead_begin(parser, markdown_core_parser_open_parent(parser, body),
+                                              MARKDOWN_CORE_NODE_PARAGRAPH, &lookahead)) {
         return false;
     }
     markdown_core_chunk next;
@@ -70,9 +71,12 @@ static bool markdown_core_block_definition_marker(markdown_core_chunk *input, in
  * admitted any line with ': ' in it. Every answer of false is a line the
  * transaction would refuse too. */
 static bool definition_next_lines_admit(markdown_core_parser *parser) {
-    const unsigned char *cursor = parser->lookahead_cursor, *end = parser->lookahead_end;
-    for (int line = 0; line < 2 && cursor && cursor < end; line++) {
-        const unsigned char *at = cursor;
+    for (int number = parser->line_number + 1; number <= parser->line_number + 2; number++) {
+        markdown_core_input_line *line = markdown_core_parser_source_line(parser, number);
+        if (!line) {
+            break;
+        }
+        const unsigned char *at = markdown_core_parser_line_bytes(parser, line), *end = at + (line->end - line->start);
         while (at < end && parser->dialect->container_prefix[*at]) {
             /* A declared prefix byte that is also a marker byte -- a
              * container whose continuation strips ':' or '~' -- cannot be
@@ -85,17 +89,10 @@ static bool definition_next_lines_admit(markdown_core_parser *parser) {
             }
             at++;
         }
-        if (at < end && !markdown_core_is_line_end(*at)) {
+        if (at < end) {
             return (*at == ':' || *at == '~') && (at + 1 == end || markdown_core_is_whitespace(at[1]));
         }
         /* Blank once stripped: the transaction skips one such line. */
-        cursor = at;
-        if (cursor < end && *cursor == '\r') {
-            cursor++;
-        }
-        if (cursor < end && *cursor == '\n') {
-            cursor++;
-        }
     }
     return false;
 }
@@ -155,6 +152,7 @@ static markdown_core_node *markdown_core_block_open_definition(markdown_core_def
     /* A new term requires the separating blank run. If the preceding body's
      * prefix declined it, append at the existing list's definition boundary. */
     if (parent->kind == MARKDOWN_CORE_NODE_DEFINITION) {
+        markdown_core_parser_finalize_to(parser, parent);
         parent = markdown_core_block_finalize(parser, parent);
     }
     if (parent->kind != MARKDOWN_CORE_NODE_DEFINITION_LIST) {
@@ -291,7 +289,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
 };
 
 void markdown_core_definition_list_close_body(markdown_core_node *node) {
-    if (!node->last_child) {
+    if (!node->children) {
         node->where.place.end = (uint32_t)node->internal_offset;
     }
 }
@@ -299,7 +297,7 @@ void markdown_core_definition_list_close_body(markdown_core_node *node) {
 void markdown_core_definition_list_complete(markdown_core_node *node) {
     if ((node->kind == MARKDOWN_CORE_NODE_DEFINITION_LIST || node->kind == MARKDOWN_CORE_NODE_DEFINITION ||
          node->kind == MARKDOWN_CORE_NODE_DEFINITION_BODY) &&
-        node->last_child) {
-        node->where.place.end = node->last_child->where.place.end;
+        node->children) {
+        node->where.place.end = markdown_core_node_last_child(node)->where.place.end;
     }
 }

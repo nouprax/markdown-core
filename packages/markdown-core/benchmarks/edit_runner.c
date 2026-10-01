@@ -217,7 +217,7 @@ int main(int argc, char **argv) {
         }
     }
     printf("edit-runner subject=%s steps=%zu windows=%zu bytes=%zu root_children=%zu\n", subject_name, count, windows,
-           final_length, markdown_core_node_child_count(markdown_core_document_root(current)));
+           final_length, markdown_core_nodes_count(markdown_core_node_children(markdown_core_document_root(current))));
     status = 0;
 close:
     measured->subject->close(handle);

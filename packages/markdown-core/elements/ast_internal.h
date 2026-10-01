@@ -39,21 +39,30 @@ bool markdown_core_tree_scope(const markdown_core_node *root, const markdown_cor
                               size_t length, markdown_core_text_unit unit, markdown_core_scope *scope);
 
 /* ONE RELATION of a node: a node-valued field of the canonical AST, in the
- * canonical field order. `first` is its first node and the rest follow by
- * `next` up to `end`, the node after its last (NULL at a chain's end; a
- * table's row groups share one chain). `group` names the list when the
- * canonical dump draws it as a group line (`Title`, `CitationPrefix`, a
- * table's row groups, a definition's term and bodies), and is NULL when its
- * nodes are drawn directly under the owner. A node's extent is relative to
+ * canonical field order. Its nodes are the one node `field` holds, or the
+ * children [start, end) of `holder`, which is NULL when there are none (a
+ * table's row groups are ranges of the table's children); a relation of one
+ * field node runs from 0 to 1. `group` names the list when the canonical
+ * dump draws it as a group line (`Title`, `CitationPrefix`, a table's row
+ * groups, a definition's term and bodies), and is NULL when its nodes are
+ * drawn directly under the owner. A node's extent is relative to the end of
  * the previous node of its relation, or to the owner's start. */
 typedef struct markdown_core_relation {
     const char *group;
-    const markdown_core_node *first;
-    const markdown_core_node *end;
+    markdown_core_node **field;
+    markdown_core_node *holder;
+    size_t start, end;
 } markdown_core_relation;
 
 /* How many nodes `relation` holds. */
-size_t markdown_core_relation_count(const markdown_core_relation *relation);
+static inline size_t markdown_core_relation_count(const markdown_core_relation *relation) {
+    return relation->end - relation->start;
+}
+
+/* The node of `relation` at `at`, in [start, end). */
+static inline markdown_core_node *markdown_core_relation_node(const markdown_core_relation *relation, size_t at) {
+    return relation->field ? *relation->field : markdown_core_children_at(relation->holder->children, at);
+}
 
 /* The relations of one node, one at a time. This is the one place that knows
  * which fields each kind owns and in what order: publishing, scope queries
@@ -63,7 +72,8 @@ typedef struct markdown_core_relation_cursor {
     /* The owner kind's shape of relations (ast.c), read once. */
     uint8_t shape;
     int step;
-    const markdown_core_node *next;
+    /* The next of the owner's children a later relation starts at. */
+    size_t at;
 } markdown_core_relation_cursor;
 
 void markdown_core_relations_begin(markdown_core_relation_cursor *cursor, const markdown_core_node *owner);
@@ -86,9 +96,9 @@ typedef struct markdown_core_walk_item {
 typedef struct markdown_core_walk_frame {
     size_t level;
     markdown_core_relation_cursor cursor;
+    /* The relation in hand: `start` is its next node. */
     markdown_core_relation relation;
     bool active, group_pending;
-    const markdown_core_node *next;
     uint32_t owner_start, anchor;
 } markdown_core_walk_frame;
 

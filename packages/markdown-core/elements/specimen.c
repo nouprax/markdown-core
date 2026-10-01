@@ -96,7 +96,10 @@ static bool markdown_core_specimen_open(const markdown_core_element_instance *se
         markdown_core_optional_chunk_free(&specimen.label);
         return false;
     }
-    if ((*container)->prev && (*container)->prev->kind == MARKDOWN_CORE_NODE_SPECIMEN) {
+    /* The new specimen is the last child of its open parent. */
+    markdown_core_node *parent = markdown_core_parser_open_parent(parser, *container);
+    size_t count = markdown_core_node_children_count(parent);
+    if (count > 1 && markdown_core_node_child(parent, count - 2)->kind == MARKDOWN_CORE_NODE_SPECIMEN) {
         specimen.has_start = false;
         specimen.start = 0;
     }

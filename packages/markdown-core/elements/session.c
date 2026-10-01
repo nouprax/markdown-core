@@ -24,11 +24,15 @@ struct markdown_core_session {
     size_t node_count;
 };
 
-/* The one parse of a session's text. A (NULL, 0) source is the empty
- * buffer. */
-static markdown_core_status session_parse(markdown_core_session *session, const uint8_t *source, size_t size,
+/* The session's text as the parser reads it, a piece at a time. */
+static const unsigned char *session_text_read(const markdown_core_text *text, size_t offset, size_t *start,
+                                              size_t *end) {
+    return markdown_core_text_tree_read(text->bytes, offset, start, end);
+}
+
+/* The one parse of a session's text. */
+static markdown_core_status session_parse(markdown_core_session *session, const markdown_core_text *text,
                                           const markdown_core_byte_edit *edits, size_t count) {
-    static const uint8_t empty[1] = {0};
     markdown_core_revision revision = {
         .pool = &session->pool,
         .previous = session->document.root,
@@ -37,8 +41,7 @@ static markdown_core_status session_parse(markdown_core_session *session, const 
         .last_id = session->last_id,
         .node_count = session->node_count,
     };
-    markdown_core_node *root =
-        markdown_core_parser_parse(session->parser, (const char *)(size ? source : empty), size, &revision);
+    markdown_core_node *root = markdown_core_parser_parse(session->parser, text, &revision);
     if (!root) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
@@ -58,8 +61,8 @@ static void session_close(markdown_core_session *session) {
     markdown_core_parser_destroy(session->parser);
 }
 
-/* Opens a zeroed session in place: makes its parser, parses the source,
- * then takes it as the text. This is where a source enters the library, so
+/* Opens a zeroed session in place: makes its parser, parses the source as
+ * one piece, then takes it as the text. This is where a source enters the library, so
  * the capacity is checked here and at each edit, and nowhere below: offsets
  * are int32 and every buffer derived from the source stays under half of
  * that. */
@@ -70,7 +73,8 @@ static markdown_core_status session_open(markdown_core_session *session, const u
     }
     session->document.unit = unit;
     session->parser = markdown_core_core_parser(NULL, NULL);
-    if (!session->parser || session_parse(session, source, size, NULL, 0) != MARKDOWN_CORE_OK ||
+    markdown_core_text text = markdown_core_text_buffer(source, size);
+    if (!session->parser || session_parse(session, &text, NULL, 0) != MARKDOWN_CORE_OK ||
         !markdown_core_text_tree_init(&session->text, source, size)) {
         session_close(session);
         return MARKDOWN_CORE_ALLOCATION_FAILED;
@@ -154,7 +158,6 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
      * the revision describes, and the bytes each writes. */
     markdown_core_byte_edit *revision = NULL;
     const uint8_t **texts = NULL;
-    uint8_t *source = NULL;
     if (status == MARKDOWN_CORE_OK) {
         revision = markdown_core_alloc(count + 1, sizeof(*revision));
         texts = markdown_core_alloc(count + 1, sizeof(*texts));
@@ -183,19 +186,15 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
             after += revision[i].size;
         }
     }
-    if (status == MARKDOWN_CORE_OK) {
-        source = markdown_core_alloc(after + 1, 1);
-        if (!source || !markdown_core_text_tree_replace(&session->text, revision, texts, count)) {
-            status = MARKDOWN_CORE_ALLOCATION_FAILED;
-        }
+    if (status == MARKDOWN_CORE_OK && !markdown_core_text_tree_replace(&session->text, revision, texts, count)) {
+        status = MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     if (status == MARKDOWN_CORE_OK) {
-        markdown_core_text_tree_copy(&session->text, source);
-        status = session_parse(session, source, after, revision, count);
+        markdown_core_text text = {session_text_read, &session->text, after};
+        status = session_parse(session, &text, revision, count);
     }
     markdown_core_free(texts);
     markdown_core_free(revision);
-    markdown_core_free(source);
     markdown_core_free(sorted);
     if (status == MARKDOWN_CORE_OK) {
         *document = &session->document;

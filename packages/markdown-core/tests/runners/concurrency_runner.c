@@ -146,12 +146,9 @@ static markdown_core_status parse_document(const char *input, markdown_core_docu
     return markdown_core_document_parse((const uint8_t *)input, strlen(input), document);
 }
 
-// Depth-first traversal touching kind, id, extent, child count, and per-kind
-// accessors; returns the node count so results can be sanity-compared, or 0
-// when an accessor refuses a node of the kind it reads.
-static size_t traverse(const markdown_core_node *node) {
-    size_t visited = 1;
-
+// Touches one node's kind, id, extent, and per-kind accessors; returns 0 when
+// an accessor refuses a node of the kind it reads.
+static int inspect(const markdown_core_node *node) {
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     markdown_core_extent extent = markdown_core_node_extent(node);
     const char *name;
@@ -182,23 +179,75 @@ static size_t traverse(const markdown_core_node *node) {
     default:
         break;
     }
-    if (status != MARKDOWN_CORE_OK) {
-        return 0;
-    }
+    return status == MARKDOWN_CORE_OK;
+}
 
-    size_t children = 0;
-    const markdown_core_node *child = markdown_core_node_get_first_child(node);
-    for (; child; child = markdown_core_node_get_next_sibling(child)) {
-        size_t below = traverse(child);
-        if (!below) {
-            return 0;
+// Reads one node's children sequence and requires it to refuse the index
+// just past its count.
+static int sequence_bounded(const markdown_core_node *node, const markdown_core_nodes **out, size_t *count) {
+    const markdown_core_node *beyond = NULL;
+    *out = markdown_core_node_children(node);
+    *count = markdown_core_nodes_count(*out);
+    return markdown_core_nodes_at(*out, *count, &beyond) == MARKDOWN_CORE_OUT_OF_BOUNDS && beyond == NULL;
+}
+
+typedef struct frame {
+    const markdown_core_nodes *nodes;
+    size_t count;
+    size_t index;
+} frame;
+
+// Depth-first traversal over an explicit stack, inspecting every node and
+// reading every child through the public sequence accessors; returns the node
+// count so results can be sanity-compared, or 0 on any contract violation.
+static size_t traverse(const markdown_core_node *root) {
+    frame *stack = NULL;
+    size_t depth = 0;
+    size_t capacity = 0;
+    size_t visited = 0;
+    const markdown_core_node *node = root;
+    for (;;) {
+        if (node) {
+            if (!inspect(node)) {
+                visited = 0;
+                break;
+            }
+            visited += 1;
+            if (depth == capacity) {
+                size_t larger = capacity ? capacity * 2 : 32;
+                frame *resized = realloc(stack, larger * sizeof(*stack));
+                if (!resized) {
+                    visited = 0;
+                    break;
+                }
+                stack = resized;
+                capacity = larger;
+            }
+            frame *top = &stack[depth];
+            if (!sequence_bounded(node, &top->nodes, &top->count)) {
+                visited = 0;
+                break;
+            }
+            top->index = 0;
+            depth += 1;
+            node = NULL;
+            continue;
         }
-        visited += below;
-        children += 1;
+        if (!depth) {
+            break;
+        }
+        frame *top = &stack[depth - 1];
+        if (top->index == top->count) {
+            depth -= 1;
+            continue;
+        }
+        if (markdown_core_nodes_at(top->nodes, top->index, &node) != MARKDOWN_CORE_OK || !node) {
+            visited = 0;
+            break;
+        }
+        top->index += 1;
     }
-    if (children != markdown_core_node_child_count(node)) {
-        return 0;
-    }
+    free(stack);
     return visited;
 }
 

@@ -66,6 +66,11 @@ typedef struct markdown_core_byte_edit {
 bool markdown_core_text_tree_replace(markdown_core_text_tree *text, const markdown_core_byte_edit *edits,
                                      const uint8_t *const *texts, size_t count);
 
+/* The piece that holds byte `offset`, which is below the text's size: its
+ * first byte, and the offsets where it begins and ends. */
+const uint8_t *markdown_core_text_tree_read(const markdown_core_text_tree *text, size_t offset, size_t *start,
+                                            size_t *end);
+
 /* Copies the whole text into `bytes`, which holds its size. */
 void markdown_core_text_tree_copy(const markdown_core_text_tree *text, uint8_t *bytes);
 

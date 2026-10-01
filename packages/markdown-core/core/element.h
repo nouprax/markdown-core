@@ -136,8 +136,7 @@ struct markdown_core_element {
     void (*init_document)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*dispose_parser)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*dispose_document)(const markdown_core_element_instance *, markdown_core_parser *);
-    size_t (*read_document_prefix)(const markdown_core_element_instance *, markdown_core_parser *,
-                                   const unsigned char *, size_t);
+    size_t (*read_document_prefix)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*prepare_document)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*finish_document)(const markdown_core_element_instance *, markdown_core_parser *);
     /* The last step of the parse: the tree is final, and the owner publishes
@@ -321,7 +320,7 @@ struct markdown_core_element {
  * the node's `element`, which the walk tests beside the flag. */
 static inline bool markdown_core_kind_owns_fields(markdown_core_node_type kind) {
     return kind == MARKDOWN_CORE_NODE_DEFINITION || kind == MARKDOWN_CORE_NODE_CALLOUT ||
-           kind == MARKDOWN_CORE_NODE_CITE;
+           kind == MARKDOWN_CORE_NODE_CITATION;
 }
 
 static inline int markdown_core_visit_inline_subtrees(markdown_core_node *node,
@@ -335,13 +334,11 @@ static inline int markdown_core_visit_inline_subtrees(markdown_core_node *node,
             !visitor(&node->as.callout->title, context)) {
             return 0;
         }
-        if (node->kind == MARKDOWN_CORE_NODE_CITE) {
-            for (markdown_core_node *item = node->as.cite->citations; item; item = item->next) {
-                if ((item->as.citation->note && !visitor(&item->as.citation->note, context)) ||
-                    (item->as.citation->prefix && !visitor(&item->as.citation->prefix, context)) ||
-                    (item->as.citation->suffix && !visitor(&item->as.citation->suffix, context))) {
-                    return 0;
-                }
+        if (node->kind == MARKDOWN_CORE_NODE_CITATION) {
+            markdown_core_citation_item *item = node->as.citation;
+            if ((item->note && !visitor(&item->note, context)) || (item->prefix && !visitor(&item->prefix, context)) ||
+                (item->suffix && !visitor(&item->suffix, context))) {
+                return 0;
             }
         }
     }

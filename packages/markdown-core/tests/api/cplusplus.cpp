@@ -12,20 +12,20 @@
 void test_cplusplus(test_batch_runner *runner) {
     static const char md[] = "paragraph\n";
     markdown_core_node *doc = markdown_core_parse_document(md, sizeof(md) - 1);
-    markdown_core_node *first = doc->first_child;
+    markdown_core_node *first = markdown_core_node_first_child(doc);
     INT_EQ(runner, first->kind, MARKDOWN_CORE_NODE_PARAGRAPH, "libmarkdown_core works with C++");
     markdown_core_string literal{};
     OK(runner,
-       markdown_core_node_literal(first->first_child, &literal) == MARKDOWN_CORE_OK && literal.length == 9 &&
-           memcmp(literal.data, "paragraph", 9) == 0,
+       markdown_core_node_literal(markdown_core_node_first_child(first), &literal) == MARKDOWN_CORE_OK &&
+           literal.length == 9 && memcmp(literal.data, "paragraph", 9) == 0,
        "parsed literals are readable from C++");
     markdown_core_node_free(doc);
 
     static const char directive_markdown[] = ":cpp{title=\"My Video\" id=ordinary muted=true}\n";
     markdown_core_node *document =
         markdown_core_parse_document_with_setup(directive_markdown, sizeof(directive_markdown) - 1, NULL, NULL);
-    markdown_core_node *paragraph = document->first_child;
-    markdown_core_node *directive = paragraph->first_child;
+    markdown_core_node *paragraph = markdown_core_node_first_child(document);
+    markdown_core_node *directive = markdown_core_node_first_child(paragraph);
     {
         /* Reaches the attribute sequence from C++ -- what this case is for is
          * that the headers compile and link there, not the grammar. */

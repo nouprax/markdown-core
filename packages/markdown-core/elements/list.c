@@ -158,11 +158,11 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *
             return 0;
         }
         if (!committed || !markdown_core_block_list_facts_match(committed, data)) {
-            for (markdown_core_node *ancestor = container; ancestor; ancestor = ancestor->parent) {
-                if ((ancestor->kind == MARKDOWN_CORE_NODE_LIST_ITEM || ancestor->kind == MARKDOWN_CORE_NODE_SPECIMEN) &&
-                    data->start != 1) {
-                    return 0;
-                }
+            if (data->start != 1 &&
+                markdown_core_parser_open_within(parser, container,
+                                                 markdown_core_node_block_kind_bit(MARKDOWN_CORE_NODE_LIST_ITEM) |
+                                                     markdown_core_node_block_kind_bit(MARKDOWN_CORE_NODE_SPECIMEN))) {
+                return 0;
             }
         }
         if (end == begin + 1 && c >= 'A' && c <= 'Z' && delim == '.') {
@@ -199,13 +199,22 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *
 
 void markdown_core_block_finalize_list(const markdown_core_parser *parser, markdown_core_node *list) {
     list->as.list->tight = true;
-    for (markdown_core_node *item = list->first_child; item; item = item->next) {
-        if (markdown_core_block_last_line_blank(item) && item->next) {
+    size_t items = markdown_core_node_children_count(list);
+    markdown_core_children_cursor at;
+    markdown_core_children_seek(&at, list->children, 0);
+    for (size_t i = 0; i < items; i++) {
+        markdown_core_node *item = markdown_core_children_next(&at);
+        bool last_item = i + 1 == items;
+        if (markdown_core_block_last_line_blank(item) && !last_item) {
             list->as.list->tight = false;
             return;
         }
-        for (markdown_core_node *child = item->first_child; child; child = child->next) {
-            if ((item->next || child->next) && markdown_core_block_ends_with_blank_line(parser, child)) {
+        size_t children = markdown_core_node_children_count(item);
+        markdown_core_children_cursor child_at;
+        markdown_core_children_seek(&child_at, item->children, 0);
+        for (size_t j = 0; j < children; j++) {
+            markdown_core_node *child = markdown_core_children_next(&child_at);
+            if ((!last_item || j + 1 < children) && markdown_core_block_ends_with_blank_line(parser, child)) {
                 list->as.list->tight = false;
                 return;
             }
@@ -271,7 +280,7 @@ bool markdown_core_list_continue(markdown_core_parser *parser, markdown_core_nod
     if (container->kind == MARKDOWN_CORE_NODE_LIST_ITEM) {
         return markdown_core_block_continue_indented(parser, input,
                                                      container->as.list->marker_offset + container->as.list->padding,
-                                                     container->first_child != NULL || joining == container);
+                                                     container->children != NULL || joining == container);
     }
     if (parser->blank) {
         if ((container->flags & MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK) && parser->indent == 0) {
@@ -310,7 +319,7 @@ static const markdown_core_node_type LIST_EXIT_KINDS[] = {MARKDOWN_CORE_NODE_LIS
 static bool blank_line(const markdown_core_element_instance *self, markdown_core_parser *parser,
                        markdown_core_node *node) {
     (void)self;
-    return !(node->kind == MARKDOWN_CORE_NODE_LIST_ITEM && !node->first_child &&
+    return !(node->kind == MARKDOWN_CORE_NODE_LIST_ITEM && !node->children &&
              markdown_core_parser_starts_on_line(parser, node, parser->line_number));
 }
 

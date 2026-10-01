@@ -72,17 +72,17 @@ static bool S_attach_block_identifier(markdown_core_parser *parser, markdown_cor
 }
 
 void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identifier_work *work,
-                                                     markdown_core_parser *parser, markdown_core_node *paragraph) {
+                                                     markdown_core_parser *parser, markdown_core_node *parent,
+                                                     markdown_core_node *paragraph) {
     block_identifier candidate;
     if (!S_scan_block_identifier(work, paragraph->content.ptr, paragraph->content.size, &candidate)) {
         return;
     }
     markdown_core_node *owner = paragraph;
-    markdown_core_node *parent = paragraph->parent;
     int line;
     bufsize_t source;
     if (parent && markdown_core_block_type(parent) == MARKDOWN_CORE_NODE_LIST_ITEM &&
-        parent->first_child == paragraph &&
+        markdown_core_node_first_child(parent) == paragraph &&
         markdown_core_parser_content_place(parser, &paragraph->content_map,
                                            (bufsize_t)(candidate.identifier.data - paragraph->content.ptr), &line,
                                            &source) &&
@@ -104,7 +104,7 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identif
 
 bool markdown_core_block_attach_identifier_line(markdown_core_block_identifier_work *work, markdown_core_parser *parser,
                                                 markdown_core_node *parent, markdown_core_chunk *input) {
-    markdown_core_node *owner = parent->last_child;
+    markdown_core_node *owner = markdown_core_node_last_child(parent);
     block_identifier candidate;
     if (parser->indent >= CODE_INDENT || input->data[parser->first_nonspace] != '#' || !owner ||
         owner->attributes.anchor.len ||
@@ -116,7 +116,7 @@ bool markdown_core_block_attach_identifier_line(markdown_core_block_identifier_w
         !candidate.own_line || candidate.content_end || !markdown_core_block_ends_with_blank_line(parser, owner)) {
         return false;
     }
-    bool followed_by_boundary = parser->lookahead_cursor == parser->lookahead_end;
+    bool followed_by_boundary = parser->lookahead_cursor == parser->input_text.size;
     if (!followed_by_boundary) {
         markdown_core_block_lookahead lookahead;
         markdown_core_chunk next;

@@ -132,7 +132,7 @@ static bool markdown_core_callout_scan(const markdown_core_element_instance *sel
 static bool accepts_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
                          markdown_core_node *node) {
     (void)self;
-    return node->kind == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->variant.has_value && !node->first_child &&
+    return node->kind == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->variant.has_value && !node->children &&
            markdown_core_parser_starts_on_line(parser, node, parser->line_number - 1);
 }
 

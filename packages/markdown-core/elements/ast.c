@@ -126,22 +126,21 @@ static inline bool table_seal(definition_table *table, markdown_core_source_orde
     return true;
 }
 
-static bool relation_chain(markdown_core_relation *relation, const char *group, const markdown_core_node *first) {
-    *relation = (markdown_core_relation){group, first, NULL};
+/* A relation of the children [start, end) of `holder`, NULL when it holds
+ * nothing; of all its children; of the one node a field holds. */
+static bool relation_range(markdown_core_relation *relation, const char *group, const markdown_core_node *holder,
+                           size_t start, size_t end) {
+    *relation = (markdown_core_relation){group, NULL, (markdown_core_node *)holder, start, end};
     return true;
 }
 
-static bool relation_one(markdown_core_relation *relation, const markdown_core_node *node) {
-    *relation = (markdown_core_relation){NULL, node, node->next};
-    return true;
+static bool relation_children(markdown_core_relation *relation, const char *group, const markdown_core_node *holder) {
+    return relation_range(relation, group, holder, 0, holder ? markdown_core_node_children_count(holder) : 0);
 }
 
-size_t markdown_core_relation_count(const markdown_core_relation *relation) {
-    size_t count = 0;
-    for (const markdown_core_node *node = relation->first; node != relation->end; node = node->next) {
-        count++;
-    }
-    return count;
+static bool relation_one(markdown_core_relation *relation, markdown_core_node *const *field) {
+    *relation = (markdown_core_relation){NULL, (markdown_core_node **)field, NULL, 0, 1};
+    return true;
 }
 
 /* THE SHAPE of a kind's relations: most kinds own only their children; the
@@ -152,7 +151,6 @@ typedef enum {
     SHAPE_TABLE,
     SHAPE_DIRECTIVE,
     SHAPE_CALLOUT,
-    SHAPE_CITE,
     SHAPE_CITATION,
     SHAPE_DEFINITION
 } relation_shape;
@@ -179,7 +177,6 @@ static const uint8_t kind_slots[SHAPE_SLOTS] = {
     [SHAPE_INDEX(MARKDOWN_CORE_NODE_DIRECTIVE)] = SHAPE_DIRECTIVE,
     [SHAPE_INDEX(MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK)] = SHAPE_DIRECTIVE,
     [SHAPE_INDEX(MARKDOWN_CORE_NODE_CALLOUT)] = SHAPE_CALLOUT,
-    [SHAPE_INDEX(MARKDOWN_CORE_NODE_CITE)] = SHAPE_CITE,
     [SHAPE_INDEX(MARKDOWN_CORE_NODE_CITATION)] = SHAPE_CITATION,
     [SHAPE_INDEX(MARKDOWN_CORE_NODE_DEFINITION)] = SHAPE_DEFINITION,
     [SHAPE_INDEX(MARKDOWN_CORE_NODE_FOOTNOTE)] = SHAPE_CHILDREN | SLOT_LOOKUP,
@@ -196,26 +193,16 @@ static inline relation_shape shape_of(const markdown_core_node *node) {
  * line, read from its fields: a kind whose relations are all optional or
  * ungrouped, with nothing in them. A group the dump always draws keeps its
  * owner's relations open. */
-static bool fields_empty(const markdown_core_node *node, relation_shape shape);
-
-static inline bool relations_empty(const markdown_core_node *node) {
-    relation_shape shape = shape_of(node);
-    return shape == SHAPE_CHILDREN ? !node->first_child : fields_empty(node, shape);
-}
-
-/* The same question for a kind that owns fields besides its children. */
-static bool fields_empty(const markdown_core_node *node, relation_shape shape) {
-    switch (shape) {
+static bool relations_empty(const markdown_core_node *node) {
+    switch (shape_of(node)) {
     case SHAPE_CHILDREN:
-        return !node->first_child;
+        return !node->children;
     case SHAPE_DIRECTIVE:
-        return !node->first_child && !markdown_core_directive_label(node);
+        return !node->children && !markdown_core_directive_label(node);
     case SHAPE_CALLOUT:
-        return !node->first_child && !node->as.callout->title;
-    case SHAPE_CITE:
-        return !node->as.cite->citations;
+        return !node->children && !node->as.callout->title;
     case SHAPE_DOCUMENT:
-        return !node->first_child && !node->as.document->metadata;
+        return !node->children && !node->as.document->metadata;
     case SHAPE_TABLE:
     case SHAPE_CITATION:
     case SHAPE_DEFINITION:
@@ -225,7 +212,7 @@ static bool fields_empty(const markdown_core_node *node, relation_shape shape) {
 }
 
 void markdown_core_relations_begin(markdown_core_relation_cursor *cursor, const markdown_core_node *owner) {
-    *cursor = (markdown_core_relation_cursor){owner, (uint8_t)shape_of(owner), 0, NULL};
+    *cursor = (markdown_core_relation_cursor){owner, (uint8_t)shape_of(owner), 0, 0};
 }
 
 /* Each kind's relations in canonical field order. An optional field that is
@@ -241,19 +228,18 @@ static inline bool relations_next(markdown_core_relation_cursor *cursor, markdow
         if (step == 0) {
             if (node->as.document->metadata) {
                 *more = true;
-                return relation_one(relation, node->as.document->metadata);
+                return relation_one(relation, &node->as.document->metadata);
             }
             step = cursor->step++;
         }
         *more = false;
-        return step == 1 && relation_chain(relation, NULL, node->first_child);
+        return step == 1 && relation_children(relation, NULL, node);
     case SHAPE_TABLE: {
         const markdown_core_table *table = node->opaque;
         if (step == 0) {
-            cursor->next = node->first_child;
             if (table->caption) {
                 *more = true;
-                return relation_one(relation, table->caption);
+                return relation_one(relation, &table->caption);
             }
             step = cursor->step++;
         }
@@ -261,72 +247,61 @@ static inline bool relations_next(markdown_core_relation_cursor *cursor, markdow
             return false;
         }
         size_t count = step == 1 ? table->head_count : step == 2 ? table->content_count : table->foot_count;
-        const markdown_core_node *first = cursor->next, *end = first;
-        for (; count && end; count--) {
-            end = end->next;
-        }
-        cursor->next = end;
-        *relation = (markdown_core_relation){table_groups[step - 1], first, end};
+        size_t start = cursor->at, rows = markdown_core_node_children_count(node);
+        cursor->at = count < rows - start ? start + count : rows;
         *more = step < 3;
-        return true;
+        return relation_range(relation, table_groups[step - 1], node, start, cursor->at);
     }
     case SHAPE_DIRECTIVE:
         if (step == 0) {
-            const markdown_core_node *label = markdown_core_directive_label(node);
-            if (label) {
+            if (markdown_core_directive_label(node)) {
                 *more = true;
-                return relation_one(relation, label);
+                return relation_one(relation, &((const markdown_core_directive_value *)node->opaque)->label);
             }
             step = cursor->step++;
         }
         *more = false;
-        return step == 1 && relation_chain(relation, NULL, node->first_child);
+        return step == 1 && relation_children(relation, NULL, node);
     case SHAPE_CALLOUT:
         if (step == 0) {
             if (node->as.callout->title) {
                 *more = true;
-                return relation_chain(relation, "Title", node->as.callout->title->first_child);
+                return relation_children(relation, "Title", node->as.callout->title);
             }
             step = cursor->step++;
         }
         *more = false;
-        return step == 1 && relation_chain(relation, NULL, node->first_child);
-    case SHAPE_CITE:
-        *more = false;
-        return step == 0 && relation_chain(relation, NULL, node->as.cite->citations);
+        return step == 1 && relation_children(relation, NULL, node);
     case SHAPE_CITATION: {
         const markdown_core_citation_item *citation = node->as.citation;
         *more = true;
         if (step == 0) {
             if (citation->note) {
-                return relation_one(relation, citation->note);
+                return relation_one(relation, &citation->note);
             }
             step = cursor->step++;
         }
         if (step == 1) {
-            return relation_chain(relation, "CitationPrefix", citation->prefix ? citation->prefix->first_child : NULL);
+            return relation_children(relation, "CitationPrefix", citation->prefix);
         }
         *more = false;
-        return step == 2 &&
-               relation_chain(relation, "CitationSuffix", citation->suffix ? citation->suffix->first_child : NULL);
+        return step == 2 && relation_children(relation, "CitationSuffix", citation->suffix);
     }
     case SHAPE_DEFINITION: {
+        size_t bodies = markdown_core_node_children_count(node);
         if (step == 0) {
-            cursor->next = node->first_child;
-            *more = cursor->next != NULL;
-            return relation_chain(relation, "DefinitionTerm", node->as.definition->term->first_child);
+            *more = bodies != 0;
+            return relation_children(relation, "DefinitionTerm", node->as.definition->term);
         }
-        const markdown_core_node *body = cursor->next;
-        if (!body) {
+        if (cursor->at == bodies) {
             return false;
         }
-        cursor->next = body->next;
-        *more = cursor->next != NULL;
-        return relation_chain(relation, "DefinitionBody", body->first_child);
+        *more = ++cursor->at != bodies;
+        return relation_children(relation, "DefinitionBody", markdown_core_node_child(node, cursor->at - 1));
     }
     case SHAPE_CHILDREN:
         *more = false;
-        return step == 0 && relation_chain(relation, NULL, node->first_child);
+        return step == 0 && relation_children(relation, NULL, node);
     }
     return false;
 }
@@ -344,28 +319,31 @@ bool markdown_core_relations_next(markdown_core_relation_cursor *cursor, markdow
  * Matching runs within the relation of a matched owner. An old node's anchor
  * is the first byte of its range that survived the edits, and a new node of
  * its kind whose range holds the anchor's image continues the earliest such
- * old sibling. Both relations are in source order, so one pointer into the
+ * old sibling. Both relations are in source order, so one position in the
  * old relation moves forward with the new one. The root continues the old
  * root. A new node that continues nothing takes the next id.
  *
  * A matched node is SAME when its scalars and extent equal its old node's,
  * both have the same relations, every old node of each relation was matched
  * and every new node of it is same: matching is monotone and one-to-one, so
- * the old node then holds exactly those old nodes, in order. Each same pair
- * exchanges values, so the old node holds the new value and the storage it
- * borrows; the largest same subtrees are then swapped into the new tree in
- * place of their new nodes. The old tree, which now holds the new nodes they
- * replaced and every old node nothing matched, is released with the old
- * storage. When the root itself is same the old tree is the result and the
- * new one is released. A fresh parse continues no tree, so no node is
- * matched and every node takes the next id in walk order. */
+ * the old node then holds exactly those old nodes, in order, and equals the
+ * new node as a value. The old tree is shared (5.11): each largest same
+ * subtree's old node takes the place of its new node, which is released.
+ * When the root itself is same the old tree is the result. Either way the
+ * publish then drops its hold on the old tree, and only the old nodes the
+ * result does not share go back to the pool. A fresh parse continues no
+ * tree, so no node is matched and every node takes the next id in walk
+ * order. */
 
-/* A same pair, recorded in post-order: `node` gives `old` its value and, at
- * the root of a largest same subtree, its place. The pairs of the node's
- * subtree are those from `first` on. */
+/* A same pair, recorded in post-order: `old` takes the place of `node` when
+ * `node` is the root of a largest same subtree. The place is the field that
+ * holds `node`, or else its index among the children of `holder`. The pairs
+ * of the node's subtree are those from `first` on. */
 typedef struct {
-    markdown_core_node *node, *old, *owner, *old_owner;
-    size_t first;
+    markdown_core_node *node, *old;
+    markdown_core_node **field;
+    markdown_core_node *holder;
+    size_t index, first;
 } publish_swap;
 
 typedef struct {
@@ -423,94 +401,20 @@ static bool publish_reserve(void **values, size_t *capacity, size_t count, size_
     return true;
 }
 
-static inline bool is_link(const markdown_core_node *node) {
-    return node->kind == MARKDOWN_CORE_NODE_LINK || node->kind == MARKDOWN_CORE_NODE_EMBEDDED;
-}
-
-/* THE SLOT THAT HOLDS `node` when no sibling precedes it: its parent's first
- * child, or the field of `owner` the node heads. */
-static markdown_core_node **head_slot(markdown_core_node *owner, markdown_core_node *node) {
-    if (node->parent && node->parent->first_child == node) {
-        return &node->parent->first_child;
-    }
-    switch (shape_of(owner)) {
-    case SHAPE_DOCUMENT:
-        return &owner->as.document->metadata;
-    case SHAPE_TABLE:
-        return &((markdown_core_table *)owner->opaque)->caption;
-    case SHAPE_DIRECTIVE:
-        return &((markdown_core_directive_value *)owner->opaque)->label;
-    case SHAPE_CITE:
-        return &owner->as.cite->citations;
-    case SHAPE_CITATION:
-        return &owner->as.citation->note;
-    case SHAPE_CALLOUT:
-    case SHAPE_DEFINITION:
-    case SHAPE_CHILDREN:
-        break;
-    }
-    return NULL;
-}
-
-/* Exchanges the places of two nodes of two trees: each takes the other's
- * siblings, parent and the slot that held the other. */
-static void swap_places(const publish_swap *swap) {
-    markdown_core_node *a = swap->node, *b = swap->old;
-    markdown_core_node *a_prev = a->prev, *a_next = a->next, *a_parent = a->parent;
-    markdown_core_node *b_prev = b->prev, *b_next = b->next, *b_parent = b->parent;
-    markdown_core_node **a_head = a_prev ? &a_prev->next : head_slot(swap->owner, a);
-    markdown_core_node **b_head = b_prev ? &b_prev->next : head_slot(swap->old_owner, b);
-    markdown_core_node **a_tail = a_next                                  ? &a_next->prev
-                                  : a_parent && a_parent->last_child == a ? &a_parent->last_child
-                                                                          : NULL;
-    markdown_core_node **b_tail = b_next                                  ? &b_next->prev
-                                  : b_parent && b_parent->last_child == b ? &b_parent->last_child
-                                                                          : NULL;
-    *a_head = b;
-    *b_head = a;
-    if (a_tail) {
-        *a_tail = b;
-    }
-    if (b_tail) {
-        *b_tail = a;
-    }
-    b->prev = a_prev;
-    b->next = a_next;
-    b->parent = a_parent;
-    a->prev = b_prev;
-    a->next = b_next;
-    a->parent = b_parent;
-}
-
-/* The private nodes a same pair's relations hang from, such as a callout's
- * title, a definition's term and bodies and a citation's affixes, hold the
- * storage their nodes borrow: each pair of them exchanges values too. */
-static void swap_containers(markdown_core_node *node, markdown_core_node *old) {
-    if (shape_of(node) == SHAPE_CHILDREN) {
-        return;
-    }
-    markdown_core_relation_cursor cursor, old_cursor;
-    markdown_core_relation relation, old_relation;
-    bool more;
-    markdown_core_relations_begin(&cursor, node);
-    markdown_core_relations_begin(&old_cursor, old);
-    while (relations_next(&cursor, &relation, &more) && relations_next(&old_cursor, &old_relation, &more)) {
-        markdown_core_node *holder = relation.first ? relation.first->parent : NULL;
-        if (holder && holder != node) {
-            markdown_core_node_swap_values(holder, old_relation.first->parent);
-        }
-    }
-}
+/* The relation in hand: its next node is at `relation.start`, and that
+ * node's extent is relative to `anchor`. */
+typedef struct {
+    markdown_core_relation relation;
+    uint32_t anchor;
+} publish_relation;
 
 /* A node whose relations are being published: where the node starts, its
  * cursor and whether that may hold another relation, and, while a nested
- * node's relations are published, the rest of the relation in hand and the
- * offset its next node's extent is relative to (the end of the previous node
- * of its relation, or the owner's start). */
+ * node's relations are published, the rest of the relation in hand. */
 typedef struct {
     markdown_core_relation_cursor cursor;
-    const markdown_core_node *item, *end;
-    uint32_t start, anchor;
+    publish_relation rest;
+    uint32_t start;
     bool more;
 } publish_frame;
 
@@ -533,32 +437,21 @@ static bool publish_grow(publish_stack *stack) {
     return true;
 }
 
-/* The relation in hand: the walk keeps it apart from its frame, which holds
- * it only while the frame waits. */
-typedef struct {
-    const markdown_core_node *item, *end;
-    uint32_t anchor;
-} publish_relation;
-
 /* `node`'s first relation, which holds a node or a group, and whether more
  * may follow it: the one relation of a kind that owns only its children, or
  * the first its cursor finds. False when they hold no node. */
 static inline bool publish_first(const markdown_core_node *node, relation_shape shape,
-                                 markdown_core_relation_cursor *cursor, publish_relation *first, bool *more) {
+                                 markdown_core_relation_cursor *cursor, markdown_core_relation *first, bool *more) {
     if (shape == SHAPE_CHILDREN) {
-        first->item = node->first_child;
-        first->end = NULL;
+        relation_children(first, NULL, node);
         *more = false;
-        return node->first_child != NULL;
+        return first->end != 0;
     }
-    markdown_core_relation relation;
-    *cursor = (markdown_core_relation_cursor){node, (uint8_t)shape, 0, NULL};
-    if (!relations_next(cursor, &relation, more)) {
+    *cursor = (markdown_core_relation_cursor){node, (uint8_t)shape, 0, 0};
+    if (!relations_next(cursor, first, more)) {
         return false;
     }
-    first->item = relation.first;
-    first->end = relation.end;
-    return relation.first != relation.end || *more;
+    return first->start != first->end || *more;
 }
 
 /* What one publish carries through its walks: the walk stack, what matching
@@ -606,7 +499,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_fresh(publis
     size_t base = stack->count, count = base;
     uint64_t next_id = walk->next_id;
     markdown_core_relation_cursor cursor;
-    publish_relation hand, first;
+    markdown_core_relation first;
+    publish_relation hand;
     markdown_core_place place;
     bool more;
     if (!publish_first(node, shape, &cursor, &first, &more)) {
@@ -616,21 +510,21 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_fresh(publis
         return false;
     }
     publish_frame *frame = &stack->frames[count++];
-    *frame = (publish_frame){.cursor = cursor, .start = start, .more = more};
-    hand = (publish_relation){first.item, first.end, start};
+    frame->cursor = cursor;
+    frame->start = start;
+    frame->more = more;
+    hand = (publish_relation){first, start};
     while (count > base) {
-        if (hand.item == hand.end) {
-            markdown_core_relation relation;
-            if (frame->more && relations_next(&frame->cursor, &relation, &frame->more)) {
-                hand = (publish_relation){relation.first, relation.end, frame->start};
+        if (hand.relation.start == hand.relation.end) {
+            if (frame->more && relations_next(&frame->cursor, &hand.relation, &frame->more)) {
+                hand.anchor = frame->start;
             } else if (--count > base) {
                 frame--;
-                hand = (publish_relation){frame->item, frame->end, frame->anchor};
+                hand = frame->rest;
             }
             continue;
         }
-        markdown_core_node *child = (markdown_core_node *)hand.item;
-        hand.item = child->next;
+        markdown_core_node *child = markdown_core_relation_node(&hand.relation, hand.relation.start++);
         unsigned slot = slot_of(child);
         if (!publish_node(walk, child, slot, hand.anchor, ++next_id, &place)) {
             return false;
@@ -641,10 +535,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_fresh(publis
         }
         /* A frame with nothing left gives its slot to the node's own; any
          * other waits with the relation in hand. */
-        if (hand.item != hand.end || frame->more) {
-            frame->item = hand.item;
-            frame->end = hand.end;
-            frame->anchor = hand.anchor;
+        if (hand.relation.start != hand.relation.end || frame->more) {
+            frame->rest = hand;
             if (count == stack->capacity) {
                 if (!publish_grow(stack)) {
                     return false;
@@ -659,27 +551,31 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_fresh(publis
         if (more) {
             frame->cursor = cursor;
         }
-        hand = (publish_relation){first.item, first.end, place.start};
+        hand = (publish_relation){first, place.start};
     }
     walk->next_id = next_id;
     return true;
 }
 
 /* A matched node whose relations are being published: its frame of the
- * walk, the node and the old node it continues, the old node's relations not
- * yet paired, the old relation paired with the one in hand -- its next old
- * node, and the end of the node before that (the old node's start for the
- * first) -- and whether the node is same so far. */
+ * walk, the node, its place and the old node it continues, the old node's
+ * relations not yet paired, the old relation paired with the one in hand --
+ * its next old node, and the end of the node before that (the old node's
+ * start for the first) -- and whether the node is same so far. */
 typedef struct {
     publish_frame walk;
     markdown_core_node *node, *old;
+    markdown_core_node **field;
+    markdown_core_node *holder;
+    size_t index;
     bool same;
     markdown_core_relation_cursor old_cursor;
     markdown_core_relation old_relation;
     /* The old relation's field, or INT_MAX when the old node has no more. */
     int old_field;
-    markdown_core_node *old_item;
-    const markdown_core_node *old_end;
+    /* The old relation paired with the one in hand; its next node is at
+     * `start`, or it is empty when none pairs. */
+    markdown_core_relation old_hand;
     uint32_t old_start, old_anchor;
     /* The swaps pending when the node was entered, and its lookup table
      * entry counted from 1 (0 for none). */
@@ -688,7 +584,7 @@ typedef struct {
 
 /* The field a cursor's last relation holds: stepping leaves the cursor one
  * past it. A kind that owns only its children has field 0. */
-static inline int relation_field(const markdown_core_relation_cursor *cursor, relation_shape shape) {
+static inline int relation_index(const markdown_core_relation_cursor *cursor, relation_shape shape) {
     return shape == SHAPE_CHILDREN ? 0 : cursor->step - 1;
 }
 
@@ -707,13 +603,11 @@ static void publish_pair(publish_match_frame *frame, int field) {
     }
     frame->old_anchor = frame->old_start;
     if (frame->old_field == field) {
-        frame->old_item = (markdown_core_node *)frame->old_relation.first;
-        frame->old_end = frame->old_relation.end;
+        frame->old_hand = frame->old_relation;
         old_relation_next(frame);
     } else {
         frame->same = false;
-        frame->old_item = NULL;
-        frame->old_end = NULL;
+        frame->old_hand = (markdown_core_relation){0};
     }
 }
 
@@ -725,8 +619,9 @@ static markdown_core_node *publish_match(const publish_identity *identity, publi
                                          const markdown_core_node *node, uint32_t *old_start) {
     markdown_core_place place = node->where.place;
     markdown_core_node *match = NULL;
-    while (owner->old_item != owner->old_end) {
-        markdown_core_node *old = owner->old_item;
+    markdown_core_relation *old_hand = &owner->old_hand;
+    while (old_hand->start != old_hand->end) {
+        markdown_core_node *old = markdown_core_relation_node(old_hand, old_hand->start);
         uint32_t start = (uint32_t)((int64_t)owner->old_anchor + old->where.extent.lead);
         uint32_t end = start + old->where.extent.span, mapped;
         bool anchored = anchor_mapped(identity, start, end, &mapped);
@@ -740,7 +635,7 @@ static markdown_core_node *publish_match(const publish_identity *identity, publi
             owner->same = false;
         }
         owner->old_anchor = end;
-        owner->old_item = old->next;
+        old_hand->start++;
     }
     if (!match) {
         owner->same = false;
@@ -758,19 +653,21 @@ static bool publish_same(const markdown_core_node *node, const markdown_core_nod
 }
 
 /* A matched node's verdict, once its relations are published: a same node
- * is recorded after the pairs of its subtree, from `swaps` on, and the
- * lookup tables name the old node; a node that differs makes its owner
- * differ. */
-static void publish_verdict(publish_walk *walk, publish_match_frame *owner, markdown_core_node *node,
-                            markdown_core_node *old, bool same, size_t swaps, size_t entry) {
+ * is recorded after the pairs of its subtree, from `swaps` on, with its
+ * place, and the lookup tables name the old node; a node that differs makes
+ * its owner differ. */
+static void publish_verdict(publish_walk *walk, publish_match_frame *owner, const publish_swap *swap, bool same,
+                            size_t entry) {
     publish_identity *identity = &walk->identity;
     if (!same) {
         owner->same = false;
         return;
     }
-    identity->swaps[identity->swap_count++] = (publish_swap){node, old, owner->node, owner->old, swaps};
+    identity->swaps[identity->swap_count++] = *swap;
     if (entry) {
-        (node->kind == MARKDOWN_CORE_NODE_FOOTNOTE ? &walk->footnotes : &walk->specimens)->values[entry - 1].node = old;
+        (swap->node->kind == MARKDOWN_CORE_NODE_FOOTNOTE ? &walk->footnotes : &walk->specimens)
+            ->values[entry - 1]
+            .node = swap->old;
     }
 }
 
@@ -800,7 +697,8 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, markdo
     publish_match_frame *frames = NULL, *frame;
     size_t count = 0, capacity = 0;
     markdown_core_relation_cursor cursor, old_cursor;
-    publish_relation hand, first, old_first;
+    markdown_core_relation first, old_first;
+    publish_relation hand;
     markdown_core_place place;
     bool more, old_more, ok = true;
     unsigned slot = slot_of(root);
@@ -815,7 +713,7 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, markdo
         *same = verdict && !publish_first(previous, shape, &old_cursor, &old_first, &old_more);
         return true;
     }
-    markdown_core_node *node = root, *old = previous;
+    publish_swap at = {root, previous, NULL, NULL, 0, 0};
     uint32_t old_start = 0;
     size_t entry = 0;
     /* Enters a matched node that has relations: its frame waits for its
@@ -828,26 +726,28 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, markdo
         frame = &frames[count++];
         *frame = (publish_match_frame){
             .walk = {.cursor = cursor, .start = place.start, .more = more},
-            .node = node,
-            .old = old,
+            .node = at.node,
+            .old = at.old,
+            .field = at.field,
+            .holder = at.holder,
+            .index = at.index,
             .same = verdict,
             .old_start = old_start,
             .swaps = identity->swap_count,
             .entry = entry,
         };
-        hand = (publish_relation){first.item, first.end, place.start};
-        markdown_core_relations_begin(&frame->old_cursor, old);
+        hand = (publish_relation){first, place.start};
+        markdown_core_relations_begin(&frame->old_cursor, at.old);
         old_relation_next(frame);
-        publish_pair(frame, relation_field(&cursor, shape));
+        publish_pair(frame, relation_index(&cursor, shape));
         /* The next matched node with relations, or the end of the walk. */
-        for (node = NULL; ok && count && !node;) {
-            if (hand.item == hand.end) {
-                markdown_core_relation relation;
-                if (frame->old_item != frame->old_end) {
+        for (at.node = NULL; ok && count && !at.node;) {
+            if (hand.relation.start == hand.relation.end) {
+                if (frame->old_hand.start != frame->old_hand.end) {
                     frame->same = false;
                 }
-                if (frame->walk.more && relations_next(&frame->walk.cursor, &relation, &frame->walk.more)) {
-                    hand = (publish_relation){relation.first, relation.end, frame->walk.start};
+                if (frame->walk.more && relations_next(&frame->walk.cursor, &hand.relation, &frame->walk.more)) {
+                    hand.anchor = frame->walk.start;
                     publish_pair(frame, frame->walk.cursor.step - 1);
                     continue;
                 }
@@ -858,13 +758,16 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, markdo
                     *same = frame->same;
                     break;
                 }
-                publish_verdict(walk, frame - 1, frame->node, frame->old, frame->same, frame->swaps, frame->entry);
+                publish_verdict(
+                    walk, frame - 1,
+                    &(publish_swap){frame->node, frame->old, frame->field, frame->holder, frame->index, frame->swaps},
+                    frame->same, frame->entry);
                 frame--;
-                hand = (publish_relation){frame->walk.item, frame->walk.end, frame->walk.anchor};
+                hand = frame->walk.rest;
                 continue;
             }
-            markdown_core_node *child = (markdown_core_node *)hand.item;
-            hand.item = child->next;
+            size_t index = hand.relation.start++;
+            markdown_core_node *child = markdown_core_relation_node(&hand.relation, index);
             slot = slot_of(child);
             shape = (relation_shape)(slot & SLOT_SHAPE);
             markdown_core_node *match = publish_match(identity, frame, child, &old_start);
@@ -881,18 +784,16 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, markdo
             definition_table *table = child->kind == MARKDOWN_CORE_NODE_FOOTNOTE ? &walk->footnotes : &walk->specimens;
             entry = slot & SLOT_LOOKUP ? table->count : 0;
             verdict = publish_same(child, match);
+            at = (publish_swap){child, match, hand.relation.field, hand.relation.holder, index, identity->swap_count};
             if (!publish_first(child, shape, &cursor, &first, &more)) {
                 verdict = verdict && !publish_first(match, shape, &old_cursor, &old_first, &old_more);
-                publish_verdict(walk, frame, child, match, verdict, identity->swap_count, entry);
+                publish_verdict(walk, frame, &at, verdict, entry);
+                at.node = NULL;
                 continue;
             }
-            frame->walk.item = hand.item;
-            frame->walk.end = hand.end;
-            frame->walk.anchor = hand.anchor;
-            node = child;
-            old = match;
+            frame->walk.rest = hand;
         }
-        if (!ok || !node) {
+        if (!ok || !at.node) {
             break;
         }
     }
@@ -900,30 +801,29 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, markdo
     return ok;
 }
 
-/* Commits a published tree that continues the previous one: the previous
- * tree is the result when its root is `same`, and otherwise its largest same
- * subtrees take the place of their new nodes. Whatever tree is left over is
- * released into the pool. */
-static void publish_continue(markdown_core_parser *parser, const publish_identity *identity, bool same) {
-    markdown_core_node *root = parser->root, *previous = parser->revision->previous;
-    if (same) {
-        parser->root = previous;
-        markdown_core_node_pool_release(parser->pool, root);
-        return;
-    }
-    /* Backwards, a pair past the last root's first pair is the root of a
-     * largest same subtree. */
+/* Puts each largest same subtree's old node in place of its new node: the
+ * pairs backwards, where a pair past the last root's first pair is the root
+ * of a largest same subtree. False when copying a shared run failed. */
+static bool publish_share(markdown_core_parser *parser, const publish_identity *identity) {
     size_t roots = identity->swap_count;
     for (size_t i = identity->swap_count; i--;) {
         const publish_swap *swap = &identity->swaps[i];
-        swap_containers(swap->node, swap->old);
-        markdown_core_node_swap_values(swap->node, swap->old);
-        if (i < roots) {
-            swap_places(swap);
-            roots = swap->first;
+        if (i >= roots) {
+            continue;
         }
+        markdown_core_node *replaced = swap->node;
+        markdown_core_node_retain(swap->old);
+        if (swap->field) {
+            *swap->field = swap->old;
+        } else if (!markdown_core_children_replace(parser->pool, &swap->holder->children, swap->index, swap->old,
+                                                   &replaced)) {
+            markdown_core_node_pool_release(parser->pool, swap->old);
+            return false;
+        }
+        parser->nodes_freed += markdown_core_node_pool_release(parser->pool, replaced);
+        roots = swap->first;
     }
-    markdown_core_node_pool_release(parser->pool, previous);
+    return true;
 }
 
 bool markdown_core_publish_tree(markdown_core_parser *parser) {
@@ -949,9 +849,18 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
         ok = table_seal(&walk.footnotes, &parser->source_order, &value->footnotes) &&
              table_seal(&walk.specimens, &parser->source_order, &value->specimens);
     }
-    /* Nothing below can fail: the result is committed. */
+    if (ok && previous && !same) {
+        ok = publish_share(parser, &walk.identity);
+    }
+    /* Nothing below can fail: the result is committed, and it holds the
+     * revision's hold on the previous tree or drops it. */
     if (ok && previous) {
-        publish_continue(parser, &walk.identity, same);
+        if (same) {
+            parser->root = previous;
+            markdown_core_node_pool_release(parser->pool, root);
+        } else {
+            markdown_core_node_pool_release(parser->pool, previous);
+        }
     }
     if (ok) {
         revision->node_count = (size_t)(walk.next_id - revision->last_id) + walk.matched;
@@ -1114,14 +1023,6 @@ uint64_t markdown_core_node_id(const markdown_core_node *node) { return node->id
 
 markdown_core_extent markdown_core_node_extent(const markdown_core_node *node) { return node->where.extent; }
 
-static size_t chain_length(const markdown_core_node *first) {
-    size_t count = 0;
-    for (; first; first = first->next) {
-        count++;
-    }
-    return count;
-}
-
 void markdown_core_walk_begin(markdown_core_walk *walk, const markdown_core_node *root) {
     *walk = (markdown_core_walk){root, 0, false, false, false, NULL, 0, 0, 0};
 }
@@ -1171,7 +1072,7 @@ static bool walk_more_after(const markdown_core_walk_frame *frame) {
     markdown_core_relation_cursor cursor = frame->cursor;
     markdown_core_relation relation;
     while (markdown_core_relations_next(&cursor, &relation)) {
-        if (relation.group || relation.first != relation.end) {
+        if (relation.group || relation.start != relation.end) {
             return true;
         }
     }
@@ -1197,7 +1098,6 @@ bool markdown_core_walk_next(markdown_core_walk *walk, markdown_core_walk_item *
             }
             frame->active = true;
             frame->group_pending = frame->relation.group != NULL;
-            frame->next = frame->relation.first;
             frame->anchor = frame->owner_start;
         }
         if (frame->group_pending) {
@@ -1208,9 +1108,8 @@ bool markdown_core_walk_next(markdown_core_walk *walk, markdown_core_walk_item *
             walk->owner = walk->count;
             return true;
         }
-        if (frame->next != frame->relation.end) {
-            markdown_core_node *node = (markdown_core_node *)frame->next;
-            frame->next = node->next;
+        if (frame->relation.start != frame->relation.end) {
+            markdown_core_node *node = markdown_core_relation_node(&frame->relation, frame->relation.start++);
             markdown_core_place place = walk_place(node, frame->anchor);
             frame->anchor = place.end;
             size_t level = frame->level + (frame->relation.group ? 2 : 1);
@@ -1234,7 +1133,7 @@ bool markdown_core_walk_has_next(const markdown_core_walk *walk) {
     if (walk->at_group) {
         return walk_more_after(owner);
     }
-    return owner->next != owner->relation.end || (!owner->relation.group && walk_more_after(owner));
+    return owner->relation.start != owner->relation.end || (!owner->relation.group && walk_more_after(owner));
 }
 
 /* THE LINES OF A SOURCE: the offset each begins at. A line ends after LF,
@@ -1409,14 +1308,27 @@ markdown_core_status markdown_core_document_node_at(const markdown_core_document
     return MARKDOWN_CORE_OK;
 }
 
-const markdown_core_node *markdown_core_node_get_first_child(const markdown_core_node *node) {
-    return node->kind != MARKDOWN_CORE_NODE_DEFINITION ? node->first_child : NULL;
+/* A sequence is the children of the node that holds it: the run at the root
+ * of their children tree (children.h). */
+static const markdown_core_nodes *sequence_of(const markdown_core_node *holder) {
+    return holder ? (const markdown_core_nodes *)holder->children : NULL;
 }
 
-const markdown_core_node *markdown_core_node_get_next_sibling(const markdown_core_node *node) { return node->next; }
+size_t markdown_core_nodes_count(const markdown_core_nodes *nodes) {
+    return markdown_core_children_count((const markdown_core_run *)nodes);
+}
 
-size_t markdown_core_node_child_count(const markdown_core_node *node) {
-    return chain_length(markdown_core_node_get_first_child(node));
+markdown_core_status markdown_core_nodes_at(const markdown_core_nodes *nodes, size_t index,
+                                            const markdown_core_node **node) {
+    if (index >= markdown_core_nodes_count(nodes)) {
+        return MARKDOWN_CORE_OUT_OF_BOUNDS;
+    }
+    *node = markdown_core_children_at((const markdown_core_run *)nodes, index);
+    return MARKDOWN_CORE_OK;
+}
+
+const markdown_core_nodes *markdown_core_node_children(const markdown_core_node *node) {
+    return node->kind != MARKDOWN_CORE_NODE_DEFINITION ? sequence_of(node) : NULL;
 }
 
 /* THE READERS. Each reads a field of the kind it is named for, and the
@@ -1496,6 +1408,10 @@ static const markdown_core_table *table_of(const markdown_core_node *node) { ret
 static markdown_core_optional_string directive_name(const markdown_core_node *node) {
     const char *value = markdown_core_elements_get_directive_name((markdown_core_node *)node);
     return value ? (markdown_core_optional_string){true, cstr_string(value)} : (markdown_core_optional_string){0};
+}
+
+static inline bool is_link(const markdown_core_node *node) {
+    return node->kind == MARKDOWN_CORE_NODE_LINK || node->kind == MARKDOWN_CORE_NODE_EMBEDDED;
 }
 
 /* A node's attributes merge its own over the ones its resource contributes:
@@ -1969,25 +1885,26 @@ markdown_core_status markdown_core_node_definition_compact(const markdown_core_n
 }
 
 markdown_core_status markdown_core_node_definition_term(const markdown_core_node *node,
-                                                        const markdown_core_node **term) {
+                                                        const markdown_core_nodes **term) {
     REQUIRE_KIND(node, KIND_BIT(MARKDOWN_CORE_KIND_DEFINITION));
-    *term = node->as.definition->term->first_child;
+    *term = sequence_of(node->as.definition->term);
     return MARKDOWN_CORE_OK;
 }
 
-markdown_core_status markdown_core_node_definition_bodies(const markdown_core_node *node,
-                                                          const markdown_core_definition_body **bodies) {
+markdown_core_status markdown_core_node_definition_body_count(const markdown_core_node *node, size_t *count) {
     REQUIRE_KIND(node, KIND_BIT(MARKDOWN_CORE_KIND_DEFINITION));
-    *bodies = (const markdown_core_definition_body *)node->first_child;
+    *count = markdown_core_node_children_count(node);
     return MARKDOWN_CORE_OK;
 }
 
-const markdown_core_definition_body *markdown_core_definition_body_next(const markdown_core_definition_body *body) {
-    return (const markdown_core_definition_body *)((const markdown_core_node *)body)->next;
-}
-
-const markdown_core_node *markdown_core_definition_body_content(const markdown_core_definition_body *body) {
-    return ((const markdown_core_node *)body)->first_child;
+markdown_core_status markdown_core_node_definition_body_at(const markdown_core_node *node, size_t index,
+                                                           const markdown_core_nodes **body) {
+    REQUIRE_KIND(node, KIND_BIT(MARKDOWN_CORE_KIND_DEFINITION));
+    if (index >= markdown_core_node_children_count(node)) {
+        return MARKDOWN_CORE_OUT_OF_BOUNDS;
+    }
+    *body = sequence_of(markdown_core_node_child(node, index));
+    return MARKDOWN_CORE_OK;
 }
 
 const markdown_core_attribute_value *markdown_core_node_primary_attributes(const markdown_core_node *node) {
@@ -2197,9 +2114,9 @@ markdown_core_status markdown_core_node_callout_properties(const markdown_core_n
 }
 
 markdown_core_status markdown_core_node_callout_title(const markdown_core_node *node,
-                                                      const markdown_core_node **title) {
+                                                      const markdown_core_nodes **title) {
     REQUIRE_KIND(node, KIND_BIT(MARKDOWN_CORE_KIND_CALLOUT));
-    *title = node->as.callout->title ? node->as.callout->title->first_child : NULL;
+    *title = sequence_of(node->as.callout->title);
     return MARKDOWN_CORE_OK;
 }
 
@@ -2230,13 +2147,6 @@ markdown_core_status markdown_core_node_resource(const markdown_core_node *node,
     return MARKDOWN_CORE_OK;
 }
 
-markdown_core_status markdown_core_node_cite_citations(const markdown_core_node *node,
-                                                       const markdown_core_node **citations) {
-    REQUIRE_KIND(node, KIND_BIT(MARKDOWN_CORE_KIND_CITE));
-    *citations = node->as.cite->citations;
-    return MARKDOWN_CORE_OK;
-}
-
 markdown_core_status markdown_core_citation_referent(const markdown_core_node *citation,
                                                      markdown_core_referent *referent) {
     REQUIRE_KIND(citation, KIND_BIT(MARKDOWN_CORE_KIND_CITATION));
@@ -2245,16 +2155,16 @@ markdown_core_status markdown_core_citation_referent(const markdown_core_node *c
 }
 
 markdown_core_status markdown_core_citation_prefix(const markdown_core_node *citation,
-                                                   const markdown_core_node **prefix) {
+                                                   const markdown_core_nodes **prefix) {
     REQUIRE_KIND(citation, KIND_BIT(MARKDOWN_CORE_KIND_CITATION));
-    *prefix = citation->as.citation->prefix ? citation->as.citation->prefix->first_child : NULL;
+    *prefix = sequence_of(citation->as.citation->prefix);
     return MARKDOWN_CORE_OK;
 }
 
 markdown_core_status markdown_core_citation_suffix(const markdown_core_node *citation,
-                                                   const markdown_core_node **suffix) {
+                                                   const markdown_core_nodes **suffix) {
     REQUIRE_KIND(citation, KIND_BIT(MARKDOWN_CORE_KIND_CITATION));
-    *suffix = citation->as.citation->suffix ? citation->as.citation->suffix->first_child : NULL;
+    *suffix = sequence_of(citation->as.citation->suffix);
     return MARKDOWN_CORE_OK;
 }
 
@@ -2334,9 +2244,9 @@ markdown_core_status markdown_core_footnote_label(const markdown_core_node *foot
 }
 
 markdown_core_status markdown_core_footnote_content(const markdown_core_node *footnote,
-                                                    const markdown_core_node **content) {
+                                                    const markdown_core_nodes **content) {
     REQUIRE_KIND(footnote, KIND_BIT(MARKDOWN_CORE_KIND_FOOTNOTE));
-    *content = footnote->first_child;
+    *content = sequence_of(footnote);
     return MARKDOWN_CORE_OK;
 }
 
@@ -2349,9 +2259,9 @@ markdown_core_status markdown_core_specimen_properties(const markdown_core_node 
 }
 
 markdown_core_status markdown_core_specimen_content(const markdown_core_node *specimen,
-                                                    const markdown_core_node **content) {
+                                                    const markdown_core_nodes **content) {
     REQUIRE_KIND(specimen, KIND_BIT(MARKDOWN_CORE_KIND_SPECIMEN));
-    *content = specimen->first_child;
+    *content = sequence_of(specimen);
     return MARKDOWN_CORE_OK;
 }
 
@@ -2941,9 +2851,7 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, markd
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     /* `children` counts structural children: a cite's are its items and a
      * definition's its bodies. */
-    size_t child_count = kind == MARKDOWN_CORE_KIND_CITE         ? chain_length(node->as.cite->citations)
-                         : kind == MARKDOWN_CORE_KIND_DEFINITION ? chain_length(node->first_child)
-                                                                 : markdown_core_node_child_count(node);
+    size_t child_count = markdown_core_node_children_count(node);
     dump_prefix(buffer, depth);
     buffer_cstr(buffer, S_kind_name[kind]);
     buffer_cstr(buffer, " scope=");

@@ -13,6 +13,7 @@ set(HEADERS
     dialect.h
     buffer.h
     node.h
+    children.h
     node_type.h
     iterator.h
     chunk.h
@@ -33,6 +34,7 @@ set(LIBRARY_SOURCES
     alloc.c
     slab.c
     node.c
+    children.c
     iterator.c
     dialect.c
     blocks.c

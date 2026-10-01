@@ -11,7 +11,8 @@ typedef struct {
 } markdown_core_block_identifier_work;
 
 void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identifier_work *work,
-                                                     markdown_core_parser *parser, markdown_core_node *paragraph);
+                                                     markdown_core_parser *parser, markdown_core_node *parent,
+                                                     markdown_core_node *paragraph);
 bool markdown_core_block_attach_identifier_line(markdown_core_block_identifier_work *work, markdown_core_parser *parser,
                                                 markdown_core_node *parent, markdown_core_chunk *input);
 #endif

@@ -4,12 +4,18 @@
 #include "link.h"
 #include "block_identifier.h"
 void markdown_core_paragraph_finalize(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                      markdown_core_node *paragraph) {
+                                      markdown_core_node *parent, markdown_core_node *paragraph) {
     if (!markdown_core_block_resolve_reference_link_definitions(parser, paragraph)) {
         paragraph->flags |= MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY;
         return;
     }
-    markdown_core_block_attach_paragraph_identifier(self->state, parser, paragraph);
+    markdown_core_block_attach_paragraph_identifier(self->state, parser, parent, paragraph);
+}
+
+/* The paragraph's own `finalize_block`: it is the open spine's last block. */
+static void finalize_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                           markdown_core_node *paragraph) {
+    markdown_core_paragraph_finalize(self, parser, markdown_core_parser_open_parent(parser, paragraph), paragraph);
 }
 
 static int continue_paragraph(const markdown_core_element_instance *self, markdown_core_parser *parser,
@@ -37,8 +43,7 @@ static markdown_core_finish_result finish_step(const markdown_core_element_insta
     if (is_root || !(node->flags & MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY)) {
         return MARKDOWN_CORE_FINISH_CONTINUE;
     }
-    markdown_core_parser_release_node(parser, node);
-    return MARKDOWN_CORE_FINISH_CONSUMED;
+    return markdown_core_parser_walk_release(parser) ? MARKDOWN_CORE_FINISH_CONSUMED : MARKDOWN_CORE_FINISH_FAILED;
 }
 static const markdown_core_node_type PARAGRAPH_EXIT_KINDS[] = {MARKDOWN_CORE_NODE_PARAGRAPH, MARKDOWN_CORE_NODE_NONE};
 static bool accepts_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
@@ -61,7 +66,6 @@ static markdown_core_node *open_text(const markdown_core_element_instance *self,
     if (!container) {
         return NULL;
     }
-    parser->current = container;
     if (markdown_core_block_attach_identifier_line(self->state, parser, container, input) || parser->error) {
         return NULL;
     }
@@ -84,7 +88,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
     /* Inline content, unless the paragraph was only definitions. */
     .contains_inlines_func = contains_inlines,
     .paragraph = true,
-    .finalize_block = markdown_core_paragraph_finalize,
+    .finalize_block = finalize_block,
     .open_text_block = open_text,
     .finish_step = finish_step,
     .finish_exit_kinds = PARAGRAPH_EXIT_KINDS,

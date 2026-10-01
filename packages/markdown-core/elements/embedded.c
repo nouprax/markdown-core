@@ -64,14 +64,21 @@ void markdown_core_inline_apply_image_dimensions(const markdown_core_element_ins
     }
 
     /* A successful suffix contains only ordinary ASCII text and belongs to
-     * the final text run at this bracket depth. Remove it before delimiter
-     * reduction; the prefix keeps its nodes and its original source map. */
-    markdown_core_node *tail = image->last_child;
+     * the final text run at this bracket depth, which delimiter reduction
+     * leaves as the image's last child. Remove it; the prefix keeps its nodes
+     * and its original source map. */
+    markdown_core_parser *parser = inline_state->owner_parser;
+    markdown_core_node *tail = markdown_core_node_last_child(image);
     assert(tail && tail->kind == MARKDOWN_CORE_NODE_TEXT && tail->as.literal->len >= end - suffix);
     bufsize_t start = end - tail->as.literal->len;
     tail->as.literal->len -= end - suffix;
     if (tail->as.literal->len == 0) {
-        markdown_core_parser_release_node(inline_state->owner_parser, tail);
+        tail = markdown_core_node_take_child(parser->pool, image, markdown_core_node_children_count(image) - 1);
+        if (!tail) {
+            inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
+            return;
+        }
+        markdown_core_parser_release_node(parser, tail);
     } else {
         markdown_core_inline_state_place(inline_state, tail, start, suffix - 1);
     }
@@ -110,7 +117,7 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
         if (text) {
             markdown_core_inline_push_bracket(self->peers[EMBEDDED_LINK], inline_state, BRACKET_IMAGE, text);
         }
-        return text;
+        return NULL;
     }
     return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
                     markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));

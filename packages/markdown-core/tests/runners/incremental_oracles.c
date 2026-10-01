@@ -1025,7 +1025,7 @@ void check_parts(run *state, const char *where, const uint8_t *document, size_t 
             fail(state, "harness", "%s: part %zu did not parse", where, index + 1);
             return;
         }
-        sum += markdown_core_node_child_count(markdown_core_document_root(part));
+        sum += markdown_core_nodes_count(markdown_core_node_children(markdown_core_document_root(part)));
         markdown_core_document_free(part);
         from += entry->parts[index];
     }
@@ -1034,7 +1034,7 @@ void check_parts(run *state, const char *where, const uint8_t *document, size_t 
         return;
     }
     whole = ts_ast_parse(document, length);
-    if (!whole || markdown_core_node_child_count(markdown_core_document_root(whole)) != sum) {
+    if (!whole || markdown_core_nodes_count(markdown_core_node_children(markdown_core_document_root(whole))) != sum) {
         fail(state, "3.1", "%s: the composite's root children differ from its parts' sum %zu", where, sum);
     }
     markdown_core_document_free(whole);

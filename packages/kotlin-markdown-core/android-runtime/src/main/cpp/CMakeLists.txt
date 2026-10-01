@@ -13,6 +13,7 @@ add_library(
     "${MARKDOWN_CORE_CORE_DIR}/alloc.c"
     "${MARKDOWN_CORE_CORE_DIR}/slab.c"
     "${MARKDOWN_CORE_CORE_DIR}/node.c"
+    "${MARKDOWN_CORE_CORE_DIR}/children.c"
     "${MARKDOWN_CORE_CORE_DIR}/iterator.c"
     "${MARKDOWN_CORE_CORE_DIR}/dialect.c"
     "${MARKDOWN_CORE_CORE_DIR}/blocks.c"

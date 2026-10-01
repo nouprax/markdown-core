@@ -18,6 +18,7 @@ let package = Package(
                 "core/alloc.c",
                 "core/slab.c",
                 "core/node.c",
+                "core/children.c",
                 "core/iterator.c",
                 "core/dialect.c",
                 "core/blocks.c",

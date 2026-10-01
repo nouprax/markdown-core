@@ -39,6 +39,9 @@ struct markdown_core_inline_state {
      * parser -- and the map is then simply not consulted. */
     markdown_core_parser *owner_parser;
     markdown_core_node *owner;
+    /* The run's input as shared bytes, held while it runs, and the input the
+     * parser was reading before it, read again when it ends. */
+    markdown_core_bytes *bytes, *outer_bytes;
     /* The instance of `owner`'s structure element, resolved once. The projection is a pure
      * function of `owner->kind`, `owner` does not change across a run, and a
      * run's owner does not change kind during it -- so asking per token was
@@ -65,6 +68,8 @@ struct markdown_core_inline_state {
     bufsize_t mark_source;
     bool mapped;
     markdown_core_map *refmap;
+    /* The run's top-level nodes, in order (delimiter.h). */
+    markdown_core_inline_item *first_item, *last_item;
     delimiter *last_delim;
     delimiter_run cached_run;
     /* How many delimiters of each rule on the stack can open, and how many
@@ -208,6 +213,27 @@ unsigned char markdown_core_inline_peek_at(markdown_core_inline_state *inline_st
 int markdown_core_inline_is_eof(markdown_core_inline_state *inline_state);
 bool markdown_core_inline_skip_spaces(markdown_core_inline_state *inline_state);
 bool markdown_core_inline_skip_line_end(markdown_core_inline_state *inline_state);
+/* THE RUN'S ITEMS (delimiter.h). Each call that places a node takes the
+ * caller's hold on it; when it cannot, the run is failed and the node is
+ * released, and the call answers NULL. */
+/* Adds `node` at the end of the run as the run adds every token it reads:
+ * its owner's containment policy is asked, and a node that owns fields is
+ * pushed for their parse. */
+markdown_core_inline_item *markdown_core_inline_add(markdown_core_inline_state *inline_state, markdown_core_node *node);
+/* Puts `node` just before `before`, or at the end of the run for NULL. */
+markdown_core_inline_item *markdown_core_inline_put(markdown_core_inline_state *inline_state,
+                                                    markdown_core_inline_item *before, markdown_core_node *node);
+/* Takes `item` out of the run and hands its node's hold to the caller. */
+markdown_core_node *markdown_core_inline_take(markdown_core_inline_state *inline_state,
+                                              markdown_core_inline_item *item);
+/* Takes `item` out of the run and releases its node. */
+void markdown_core_inline_release(markdown_core_inline_state *inline_state, markdown_core_inline_item *item);
+/* Moves the nodes of the items from `first` up to `end` (NULL: the run's end)
+ * to `owner`, which has no children, as its children in order, counting each
+ * in `work` when given. False, with the run failed and nothing moved, when
+ * storage runs out. */
+bool markdown_core_inline_move(markdown_core_inline_state *inline_state, markdown_core_inline_item *first,
+                               markdown_core_inline_item *end, markdown_core_node *owner, size_t *work);
 void markdown_core_inline_remove_delimiter(markdown_core_inline_state *inline_state, delimiter *delim);
 delimiter *markdown_core_inline_push_delimiter_entry(markdown_core_inline_state *inline_state, delimiter_kind kind,
                                                      bufsize_t position);
@@ -217,6 +243,12 @@ int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_cor
 void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_core_node *parent,
                                         markdown_core_map *refmap, markdown_core_inline_state *inline_state);
 void markdown_core_inline_clear_inlines(markdown_core_inline_state *inline_state);
+/* A run the parser reads, from its start until it is suspended: the nodes
+ * the parser makes meanwhile hold its bytes. `finish_inlines` suspends the
+ * run before it clears it; a run suspended before then resumes to be
+ * finished. */
+void markdown_core_inline_resume(markdown_core_inline_state *inline_state);
+void markdown_core_inline_suspend(markdown_core_inline_state *inline_state);
 bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_core_inline_state *inline_state);
 markdown_core_node *markdown_core_inline_match_delimiter(const markdown_core_element_instance *self,
                                                          markdown_core_inline_state *inline_state);

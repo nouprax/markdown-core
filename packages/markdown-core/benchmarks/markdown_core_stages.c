@@ -14,9 +14,34 @@
  */
 #include <markdown_core.h>
 
+#include <stdlib.h>
+#include <string.h>
+
 #include "stage_runner.h"
 
 const char *bench_engine_name(void) { return "markdown-core"; }
+
+/* The root's child count, as the canonical dump writes it on the root's
+ * line: the dump is a facade call both revisions have, read after the
+ * measured stages. */
+static int root_children(const markdown_core_document *document, const char *source, size_t length, size_t *children) {
+    uint8_t *dump;
+    size_t size;
+    if (markdown_core_document_dump(document, markdown_core_document_root(document), (const uint8_t *)source, length,
+                                    &dump, &size) != MARKDOWN_CORE_OK) {
+        return 1;
+    }
+    const char *line = (const char *)dump, *end = memchr(line, '\n', size);
+    const char *field = NULL;
+    for (const char *at = line; end && at + 9 <= end; at++) {
+        if (!memcmp(at, "children=", 9)) {
+            field = at + 9;
+        }
+    }
+    *children = field ? strtoul(field, NULL, 10) : 0;
+    markdown_core_dump_free(dump);
+    return field ? 0 : 1;
+}
 
 int bench_parse_document(const char *source, size_t length, bench_receipt *receipt) {
     markdown_core_document *document = NULL;
@@ -24,7 +49,7 @@ int bench_parse_document(const char *source, size_t length, bench_receipt *recei
         return 1;
     }
     receipt->bytes = length;
-    receipt->root_children = markdown_core_node_child_count(markdown_core_document_root(document));
+    int failed = root_children(document, source, length, &receipt->root_children);
     markdown_core_document_free(document);
-    return 0;
+    return failed;
 }

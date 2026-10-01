@@ -37,10 +37,18 @@ void markdown_core_inline_pop_bracket(const markdown_core_element_instance *link
 markdown_core_node *markdown_core_inline_handle_close_bracket(const markdown_core_element_instance *link,
                                                               markdown_core_parser *parser,
                                                               markdown_core_inline_state *inline_state);
-void markdown_core_inline_take_bracket_content(const markdown_core_element_instance *link, markdown_core_parser *parser,
-                                               bracket *opener, markdown_core_node *owner);
+/* Moves the nodes the bracket holds -- after its opener, up to its closing
+ * text or the run's end -- into `owner`'s children. False, with the run
+ * failed, when storage runs out. */
+bool markdown_core_inline_take_bracket_content(const markdown_core_element_instance *link,
+                                               markdown_core_inline_state *inline_state, bracket *opener,
+                                               markdown_core_node *owner);
+/* Puts `replacement` in the opener's place, taking the caller's hold: an
+ * image opener keeps its `!` as text before it. */
 void markdown_core_inline_replace_bracket_opener(markdown_core_inline_state *inline_state, bracket *opener,
                                                  markdown_core_node *replacement);
+/* Adds the opener's literal text `inl_text` to the run, taking the caller's
+ * hold, and opens a bracket on it. */
 void markdown_core_inline_push_bracket(const markdown_core_element_instance *link,
                                        markdown_core_inline_state *inline_state, bracket_kind kind,
                                        markdown_core_node *inl_text);

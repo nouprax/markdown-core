@@ -32,11 +32,23 @@ typedef struct {
     bool exact_run;
 } delimiter_rule_spec;
 
+/* AN INLINE CONTAINER BEING PARSED IS A BUILDER (5.11: open blocks are
+ * builders). Its top-level inline nodes are a list of items in source order,
+ * so a closer can wrap the nodes between its opener and itself, and a bracket
+ * can take the nodes after its opener, in O(1) each; the nodes inside a node
+ * an item holds are already that node's children tree. When the run ends its
+ * nodes become the container's children, in order. An item holds its node's
+ * reference. */
+struct markdown_core_inline_item {
+    markdown_core_node *node;
+    struct markdown_core_inline_item *prev, *next;
+};
+
 struct delimiter {
     struct delimiter *previous;
     struct delimiter *next;
-    /* Borrowed marker Text or field owner; NULL for a content boundary. */
-    markdown_core_node *node;
+    /* The marker Text's or field owner's item; NULL for a content boundary. */
+    markdown_core_inline_item *item;
     /** The instance of the element that pushed it, or NULL for a core rule.
      *  One load. */
     const markdown_core_element_instance *owner;

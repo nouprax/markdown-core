@@ -61,6 +61,21 @@ promised to remain compatible between releases.
   source once. MCB3 gains the session entry points
   `markdown_core_wire_session_new`, `_edit` and `_append`.
 
+- Share unchanged subtrees between a session's documents (incremental
+  parsing, step 3). C nodes are counted, immutable once complete and have no
+  parent or sibling links, and a document holds every unchanged subtree of
+  the previous one instead of a copy. A node's children and its list fields
+  are a `markdown_core_nodes` sequence read with `markdown_core_nodes_count`
+  and `markdown_core_nodes_at`: `markdown_core_node_children` replaces
+  `markdown_core_node_get_first_child`, `_get_next_sibling` and
+  `_child_count`; a Cite's Citations are its children, replacing
+  `markdown_core_node_cite_citations`; `callout_title`, `definition_term`,
+  `citation_prefix`, `citation_suffix`, `footnote_content` and
+  `specimen_content` answer a sequence; and a Definition's bodies are
+  `markdown_core_node_definition_body_count` and `_body_at`, replacing
+  `markdown_core_definition_body` and its accessors. The bindings and MCB3
+  are unchanged.
+
 - Keep a tab in a pipe table's header cell after a leading caption, as every
   other pipe cell does. That one header was filled the way a simple table's
   cells are, column by column, so each tab became the spaces it reached:

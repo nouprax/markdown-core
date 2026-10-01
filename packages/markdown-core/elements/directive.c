@@ -553,9 +553,9 @@ static markdown_core_node *open_directive_block(const markdown_core_element_inst
     node->opaque = markdown_core_alloc(1, sizeof(node_directive));
     if (!node->opaque || !apply_parsed_directive(self->element, parser, node, input, &parsed,
                                                  markdown_core_parser_get_line_number(parser))) {
-        /* The suffix already validated; failure here is allocation loss. */
+        /* The suffix already validated; failure here is allocation loss.
+         * The block is in the tree, which the failed parse releases. */
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        markdown_core_parser_release_node(parser, node);
         node = NULL;
         goto done;
     }

@@ -11,7 +11,8 @@ int main(void) {
         return 1;
     }
     root = markdown_core_document_root(document);
-    if (markdown_core_node_get_kind(root) != MARKDOWN_CORE_KIND_DOCUMENT || markdown_core_node_child_count(root) != 1) {
+    if (markdown_core_node_get_kind(root) != MARKDOWN_CORE_KIND_DOCUMENT ||
+        markdown_core_nodes_count(markdown_core_node_children(root)) != 1) {
         markdown_core_document_free(document);
         return 2;
     }

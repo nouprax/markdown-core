@@ -129,8 +129,11 @@ typedef enum {
  */
 typedef struct delimiter delimiter;
 
-/** The literal text node the delimiter was pushed for. */
-markdown_core_node *markdown_core_delimiter_node(const delimiter *delim);
+/** An item of the inline run being built: one top-level node of the run. */
+typedef struct markdown_core_inline_item markdown_core_inline_item;
+
+/** The item of the literal text node the delimiter was pushed for. */
+markdown_core_inline_item *markdown_core_delimiter_item(const delimiter *delim);
 
 markdown_core_delimiter_rule markdown_core_delimiter_rule_of(const delimiter *delim);
 
@@ -616,18 +619,19 @@ typedef enum {
     MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED,
 } markdown_core_node_set_kind_result;
 
-/** Change 'node' to the internal kind encoded by 'kind'.
+/** Change 'node', a child of 'parent', to the internal kind encoded by 'kind'.
  *
  * Return OK on success, REJECTED when parent containment disallows the change,
  * or ALLOCATION_FAILED when replacement node data cannot be allocated.
- * Either failure preserves the original kind, data, and tree links.
+ * Either failure preserves the original kind, data, and children.
  *
  * A change releases values owned by the old kind and installs the new kind's
  * defaults. Node identity and element-owned opaque data are preserved.
  * A record that fits the node's existing cell needs no allocation.
  * Setting the current kind succeeds without allocating or changing its data.
  */
-markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_node *node, markdown_core_node_type kind);
+markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_node *parent, markdown_core_node *node,
+                                                               markdown_core_node_type kind);
 
 /** Return the string content for all types of 'node'.
  *  The pointer stays valid as long as 'node' isn't freed.
@@ -669,11 +673,10 @@ void markdown_core_inline_state_set_offset(markdown_core_inline_state *inline_st
  */
 struct markdown_core_chunk *markdown_core_inline_state_get_chunk(markdown_core_inline_state *inline_state);
 
-/** Remove the last n characters from the last child of the given node.
- * This only works where all n characters are in the single last child, and the last
- * child is MARKDOWN_CORE_NODE_TEXT.
+/** Remove the last n characters from the Text nodes at the end of the run
+ * being built.
  */
-void markdown_core_node_unput(markdown_core_parser *parser, markdown_core_node *node, int n);
+void markdown_core_inline_unput(markdown_core_inline_state *inline_state, int n);
 
 /** Get the character located at the current inline parsing offset
  */
@@ -704,7 +707,8 @@ int markdown_core_inline_state_find_opaque_close(markdown_core_inline_state *inl
                                                  markdown_core_delimiter_rule rule, int from,
                                                  markdown_core_opaque_delimiter_scanner scan);
 
-/** Push a delimiter on the delimiter stack.
+/** Add the marker text `inl_text` to the run being built, taking the
+ * caller's hold, and push its delimiter on the delimiter stack.
  * See <<http://spec.commonmark.org/0.24/#phase-2-inline-structure> for
  * more information on the parameters
  */

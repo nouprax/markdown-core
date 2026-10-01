@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include "references.h"
 #include "node.h"
+#include "iterator.h"
 #include "buffer.h"
 #include "dialect.h"
 #include "text_tree.h"
@@ -116,6 +117,31 @@ typedef struct {
     size_t work;
 } markdown_core_source_order;
 
+/* THE TEXT A PARSE READS (docs/plans/2026-09-29-incremental-parsing.md,
+ * 5.1): `size` bytes in pieces, in source order, read a piece at a time as
+ * tree-sitter's lexer reads its input. `read` answers the piece that holds
+ * byte `offset`, which is below `size`: its first byte, with the offsets
+ * where it begins and ends. A buffer is one piece. */
+typedef struct markdown_core_text {
+    const unsigned char *(*read)(const struct markdown_core_text *text, size_t offset, size_t *start, size_t *end);
+    const void *bytes;
+    size_t size;
+} markdown_core_text;
+
+static inline const unsigned char *markdown_core_text_buffer_read(const markdown_core_text *text, size_t offset,
+                                                                  size_t *start, size_t *end) {
+    (void)offset;
+    *start = 0;
+    *end = text->size;
+    return (const unsigned char *)text->bytes;
+}
+
+/* `size` bytes at `bytes`, as one piece. */
+static inline markdown_core_text markdown_core_text_buffer(const void *bytes, size_t size) {
+    markdown_core_text text = {markdown_core_text_buffer_read, bytes, size};
+    return text;
+}
+
 struct markdown_core_parser {
     /* A hashtable of urls in the current document for cross-references */
     struct markdown_core_map *refmap;
@@ -126,6 +152,13 @@ struct markdown_core_parser {
      * stage releases it when it ends. */
     void *walk_stack;
     size_t walk_stack_size;
+    /* The path the finish stage's walks share (iterator.h), and the walk
+     * whose node the finish steps are being asked about. */
+    markdown_core_iter_path walk_path;
+    markdown_core_iter *walk;
+    /* The inline input being read (node.h, markdown_core_bytes), which every
+     * node the parser makes holds; NULL outside an inline parse. */
+    markdown_core_bytes *bytes;
     /* Run records released by finished runs, kept for the next run
      * (markdown_core_inline_state_from_buf); linked through their first word
      * and released with the parser. Each is the dialect's `run_state_size`. */
@@ -142,14 +175,24 @@ struct markdown_core_parser {
      * share this parser and all document registries. Input roots stay owned by
      * the AST; the queue only borrows them until their block content is read. */
     struct markdown_core_node *block_root;
-    struct markdown_core_node *matched_container;
-    struct markdown_core_node **block_inputs;
+    /* The block kinds open around `block_root` when it was queued, as
+     * markdown_core_node_block_kind_bit sets them: the blocks enclosing an
+     * input that the spine, which starts at the input, does not hold. */
+    uint32_t block_around;
+    struct markdown_core_block_input {
+        struct markdown_core_node *owner;
+        uint32_t around;
+    } *block_inputs;
     size_t block_input_count, block_input_capacity, block_input_cursor;
     /* Geometry and grammar facts for the active immutable input. The driver
      * and lookahead extend one index; a source byte is scanned for line
      * geometry once, whether the input is the document or a mapped cell. */
-    const unsigned char *input_source;
-    size_t input_length, input_scanned;
+    markdown_core_text input_text;
+    size_t input_scanned;
+    /* The piece of the input the scan last read: its bytes and the offsets
+     * where it begins and ends. */
+    const unsigned char *input_piece;
+    size_t input_piece_start, input_piece_end;
     struct markdown_core_input_line *input_lines;
     struct markdown_core_normalized_line *normalized_lines;
     struct markdown_core_line_facts *input_facts;
@@ -162,13 +205,19 @@ struct markdown_core_parser {
     bool input_mapped;
     int input_first_line;
     size_t input_line_work;
-    /* A complete candidate may consume through a later source boundary. The
-     * source driver advances to it after the current line has finished. */
-    const unsigned char *claimed_cursor;
+    /* A complete candidate may consume through a later source line. The
+     * source driver advances past it after the current line has finished. */
+    bool claimed;
     int claimed_line;
     bufsize_t claimed_last_end;
-    /* The last open block after a line is fully processed */
-    struct markdown_core_node *current;
+    /* THE OPEN SPINE: the blocks open at this point of the parse, from
+     * `block_root` down to the deepest one, each the parent of the next
+     * (docs/plans/2026-09-29-incremental-parsing.md, 5.11). A node has no
+     * parent link; an open block's parent is the block before it here. A
+     * block joins the spine when it is added to its parent and leaves it when
+     * it is finalized, and only the deepest block is ever finalized. */
+    struct markdown_core_node **spine;
+    size_t spine_depth, spine_capacity;
     /* See the documentation for markdown_core_parser_get_line_number() in markdown_core.h */
     int line_number;
     /* See the documentation for markdown_core_parser_get_offset() in markdown_core.h */
@@ -300,13 +349,12 @@ struct markdown_core_parser {
      * visit matched itself, for its linearity gate. */
     size_t block_lookahead_work;
     /* THE SOURCE AFTER THE LINE BEING PROCESSED. `S_parse_source` sets the
-     * cursor to the first byte of the next raw line before it hands each line
-     * to `S_process_line`, so a block start whose grammar needs a later line --
+     * cursor to the offset of the next raw line before it hands each line to
+     * `S_process_line`, so a block start whose grammar needs a later line --
      * the `%%` block comment's closer -- can look ahead without consuming
-     * anything (see markdown_core_parser_lookahead_begin). NULL until the
-     * first line is processed; `cursor == end` once the input has run out. */
-    const unsigned char *lookahead_cursor;
-    const unsigned char *lookahead_end;
+     * anything (see markdown_core_parser_lookahead_begin). The input's size
+     * before the first line is processed and once the input has run out. */
+    size_t lookahead_cursor;
     /* The input's last line as the block parser will see it, normalized once
      * and reused by every lookahead that reaches it: it has no terminator of
      * its own in the source, and a line handed to the prefix matchers must
@@ -319,10 +367,12 @@ struct markdown_core_parser {
     struct markdown_core_node **lookahead_chain;
     markdown_core_node_internal_flags *lookahead_chain_flags;
     int lookahead_chain_alloc;
-    /* Delimiter entries removed from an inline parse, kept for the next push
-     * (see `markdown_core_inline_push_delimiter_entry`); linked through `next`
-     * and released with the parser. */
-    struct delimiter *free_delimiters;
+    /* The slots of the delimiter entries of inline parses (see
+     * `markdown_core_inline_push_delimiter_entry`) and of the items of
+     * inline runs (delimiter.h): an entry or item removed goes back for the
+     * next, and the slabs go with the parser. */
+    markdown_core_slab_pool delimiters;
+    markdown_core_slab_pool inline_items;
     /* The workspace every attribute value of the parse is read into before
      * it is laid out (core/attributes.h); released with the parser. */
     markdown_core_attribute_scratch attribute_scratch;
@@ -521,21 +571,120 @@ static inline bool markdown_core_finish_step_admitted(const markdown_core_finish
 static inline markdown_core_node *markdown_core_parser_make_node(markdown_core_parser *parser,
                                                                  markdown_core_node_type type) {
     markdown_core_parser_note_node(parser, type);
-    return markdown_core_node_pool_new(parser ? parser->pool : NULL, type, NULL);
+    markdown_core_node *node = markdown_core_node_pool_new(parser ? parser->pool : NULL, type, NULL);
+    if (node && parser) {
+        node->bytes = markdown_core_bytes_retain(parser->bytes);
+    }
+    return node;
 }
 
 static inline markdown_core_node *markdown_core_parser_make_node_with_ext(markdown_core_parser *parser,
                                                                           markdown_core_node_type type,
                                                                           const markdown_core_element *element) {
     markdown_core_parser_note_node(parser, type);
-    return markdown_core_node_pool_new(parser ? parser->pool : NULL, type, element);
+    markdown_core_node *node = markdown_core_node_pool_new(parser ? parser->pool : NULL, type, element);
+    if (node && parser) {
+        node->bytes = markdown_core_bytes_retain(parser->bytes);
+    }
+    return node;
 }
 
 static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_kind(markdown_core_parser *parser,
+                                                                                    markdown_core_node *parent,
                                                                                     markdown_core_node *node,
                                                                                     markdown_core_node_type kind) {
     markdown_core_parser_note_kind(parser, kind);
-    return markdown_core_node_set_kind(node, kind);
+    return markdown_core_node_set_kind(parent, node, kind);
+}
+
+/* Puts `child` at the end of `parent`'s children, taking the caller's hold,
+ * after the caller has established containment. False, with the parse failed
+ * and `child` released, when storage runs out. */
+static inline bool markdown_core_parser_append(markdown_core_parser *parser, markdown_core_node *parent,
+                                               markdown_core_node *child) {
+    if (markdown_core_node_attach_validated(parser->pool, parent, markdown_core_node_children_count(parent), child)) {
+        return true;
+    }
+    markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    markdown_core_parser_release_node(parser, child);
+    return false;
+}
+
+/* The deepest open block (the spine's last). */
+static inline markdown_core_node *markdown_core_parser_current(const markdown_core_parser *parser) {
+    return parser->spine[parser->spine_depth - 1];
+}
+
+/* Whether `container`, an open block, an open block above it, or a block
+ * around the active input is of a kind in `kinds`, a set of
+ * markdown_core_node_block_kind_bit bits. */
+static inline bool markdown_core_parser_open_within(const markdown_core_parser *parser,
+                                                    const markdown_core_node *container, uint32_t kinds) {
+    if (parser->block_around & kinds) {
+        return true;
+    }
+    size_t at = parser->spine_depth;
+    while (parser->spine[--at] != container) {
+        assert(at);
+    }
+    do {
+        if (markdown_core_node_block_kind_bit((markdown_core_node_type)parser->spine[at]->kind) & kinds) {
+            return true;
+        }
+    } while (at--);
+    return false;
+}
+
+/* The parent of `node`, an open block, or NULL for `block_root`. */
+static inline markdown_core_node *markdown_core_parser_open_parent(const markdown_core_parser *parser,
+                                                                   const markdown_core_node *node) {
+    size_t at = parser->spine_depth;
+    while (parser->spine[--at] != node) {
+        assert(at);
+    }
+    return at ? parser->spine[at - 1] : NULL;
+}
+
+/* THE FINISH WALK'S CURRENT NODE, for the steps it runs: its parent, and the
+ * changes a step may make to its place (iterator.h). The walk the parser is
+ * in is `parser->walk`. */
+static inline markdown_core_node *markdown_core_parser_walk_parent(const markdown_core_parser *parser) {
+    return markdown_core_iter_parent(parser->walk);
+}
+/* Puts `node` just before the current node, taking the caller's hold; false,
+ * with the parse failed and `node` released, when storage runs out. */
+static inline bool markdown_core_parser_walk_insert_before(markdown_core_parser *parser, markdown_core_node *node) {
+    if (markdown_core_iter_insert_before(parser->walk, parser->pool, node)) {
+        return true;
+    }
+    markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    markdown_core_parser_release_node(parser, node);
+    return false;
+}
+/* At the current node's EXIT: takes it out of the tree and releases it;
+ * false, with the parse failed, when storage runs out. */
+static inline bool markdown_core_parser_walk_release(markdown_core_parser *parser) {
+    markdown_core_node *node;
+    if (!markdown_core_iter_take_current(parser->walk, parser->pool, &node)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return false;
+    }
+    markdown_core_parser_release_node(parser, node);
+    return true;
+}
+
+/* At the current node's EXIT: puts `node` in its place, taking the caller's
+ * hold, and releases the node replaced; false, with the parse failed and
+ * `node` released, when storage runs out. */
+static inline bool markdown_core_parser_walk_replace(markdown_core_parser *parser, markdown_core_node *node) {
+    markdown_core_node *replaced;
+    if (!markdown_core_iter_replace_current(parser->walk, parser->pool, node, &replaced)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        markdown_core_parser_release_node(parser, node);
+        return false;
+    }
+    markdown_core_parser_release_node(parser, replaced);
+    return true;
 }
 
 /* The instance of the structure element of `node`'s kind (dialect.h,
@@ -556,6 +705,10 @@ static inline const markdown_core_kind_record *markdown_core_parser_kind(const m
 /* Physical geometry is present for every visited line. Optional normalized
  * views and grammar facts share one lazily created record for that line. */
 typedef struct markdown_core_input_line {
+    /* The line's bytes through its terminator: borrowed from the piece of the
+     * input that holds them, or, for a line that spans pieces, a view of them
+     * the parse keeps while the input is active (5.1). */
+    const unsigned char *bytes;
     /* Input buffers, hence offsets and line counts, are bounded by INT32_MAX / 2. */
     uint32_t start, end;
     /* One-based index; zero means no query needs optional state for this line. */
@@ -586,12 +739,11 @@ typedef struct markdown_core_line_facts {
     /* Blank after the recorded container's prefix. */
     bool blank;
     /* On the first line of a run of blank lines: the number of the first line
-     * after the run and where it begins, so a later scan whose extra containers
+     * after the run, so a later scan whose extra containers
      * accept every blank line steps over the run at once. 0 when not a run. */
     int run_end;
     /* Only NUL-bearing lines need this count; it occupies former padding. */
     uint32_t nul_count;
-    const unsigned char *run_end_cursor;
 } markdown_core_line_facts;
 /* The index is a contiguous prefix. Its next record already owns this line's
  * continuation; at the frontier the scanner owns it. No newline bytes need
@@ -600,6 +752,24 @@ static inline size_t markdown_core_input_line_next(const markdown_core_parser *p
                                                    const markdown_core_input_line *line) {
     const markdown_core_input_line *next = line + 1;
     return next < parser->input_lines + parser->input_line_count ? next->start : parser->input_scanned;
+}
+
+/* The byte at `offset` of the active input, which is below its size: in the
+ * piece the parse last read when that piece holds it, else in the piece the
+ * input reads for it, which the parse then holds. */
+static inline const unsigned char *markdown_core_parser_input_at(markdown_core_parser *parser, size_t offset) {
+    if (offset < parser->input_piece_start || offset >= parser->input_piece_end) {
+        parser->input_piece =
+            parser->input_text.read(&parser->input_text, offset, &parser->input_piece_start, &parser->input_piece_end);
+    }
+    return parser->input_piece + (offset - parser->input_piece_start);
+}
+
+/* A line's raw bytes through its terminator. */
+static inline const unsigned char *markdown_core_parser_line_bytes(markdown_core_parser *parser,
+                                                                   const markdown_core_input_line *line) {
+    (void)parser;
+    return line->bytes;
 }
 
 /* Returned pointers are borrowed until the next request that grows the
@@ -649,7 +819,7 @@ typedef struct {
     markdown_core_parser *parser;
     struct markdown_core_node *parent;
     int depth;
-    const unsigned char *cursor;
+    size_t cursor;
     int line;
     int run_start;
     bufsize_t saved_offset;
@@ -680,7 +850,8 @@ bool markdown_core_parser_has_block_start(markdown_core_parser *parser, markdown
 
 /* Schedule an already owned node's mapped content for the ordinary block
  * parser. No nested parse transaction, document, dialect or C recursion. */
-void markdown_core_parser_finalize_unmatched_blocks(markdown_core_parser *parser);
+/* Finalizes the open blocks below `block`, which is open. */
+void markdown_core_parser_finalize_to(markdown_core_parser *parser, struct markdown_core_node *block);
 bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdown_core_node *owner);
 /* WHERE A BYTE OF THE ACTIVE INPUT WAS WRITTEN, as a byte offset of the
  * document source. `line` is a line of the active input and `column` a byte
@@ -773,13 +944,21 @@ bool markdown_core_parser_register_definition(markdown_core_parser *parser,
  * could not be allocated. */
 markdown_core_parser *markdown_core_parser_create(const markdown_core_element *const *elements, size_t count,
                                                   markdown_core_parser_setup_func setup, void *context);
-/* One parse transaction: reads `source` as what `revision` says the parse
+/* One parse transaction: reads `text` as what `revision` says the parse
  * continues, with the storage it lends (above), and returns the published
  * tree, or NULL when the transaction fails. The transaction's state is
  * released before it returns, so an instance runs any number of them, one
  * at a time, each as the first. */
-markdown_core_node *markdown_core_parser_parse(markdown_core_parser *parser, const char *source, size_t length,
+markdown_core_node *markdown_core_parser_parse(markdown_core_parser *parser, const markdown_core_text *text,
                                                markdown_core_revision *revision);
+
+/* Bytes [start, end) of the active input in one run: borrowed from the
+ * piece that holds them, or a view that lives for the parse. NULL when the
+ * view cannot be allocated, which fails the parse. */
+const unsigned char *markdown_core_parser_input_view(markdown_core_parser *parser, size_t start, size_t end);
+
+/* Releases the storage of the input's line index and views. */
+void markdown_core_parser_release_input(markdown_core_parser *parser);
 void markdown_core_parser_destroy(markdown_core_parser *parser);
 
 #ifdef __cplusplus
