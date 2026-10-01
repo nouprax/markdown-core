@@ -92,7 +92,7 @@ import Testing
         #expect(try session.document.dump(in: current) == Document.parse(current, unit: unit).dump(in: current))
     }
 
-    @Test("a range outside the text and overlapping ranges are out of bounds; a split surrogate pair is inside a scalar")
+    @Test("out-of-bounds ranges and a split surrogate pair carry their own codes")
     func refusedRanges() throws {
         let emoji = try MarkdownSession("🚀\n")
         let letters = try MarkdownSession("abc\n")
