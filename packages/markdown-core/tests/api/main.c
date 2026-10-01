@@ -11231,9 +11231,10 @@ static void text_tree_refusal_changes_nothing(test_batch_runner *runner) {
     free(copy);
 }
 
-/* SESSIONS: a range that names no range of the text is OUT_OF_BOUNDS, a
- * text past the capacity is ALLOCATION_FAILED, and an edit that leaves a
- * node's value alone leaves its object. */
+/* SESSIONS: a range that names no range of the text is OUT_OF_BOUNDS, an
+ * offset inside a scalar is INSIDE_SCALAR, a text past the capacity is
+ * ALLOCATION_FAILED, and an edit that leaves a node's value alone leaves its
+ * object. */
 static void session_edits_and_spans(test_batch_runner *runner) {
     static const char source[] = "one\n\ntwo \xf0\xa0\x80\x80\n";
     markdown_core_session *session = NULL;
@@ -11254,13 +11255,17 @@ static void session_edits_and_spans(test_batch_runner *runner) {
     size_t units = 12;
     static const struct {
         size_t start, end, start2, end2, count;
-    } refused[] = {{13, 13, 0, 0, 1}, {2, 1, 0, 0, 1}, {0, 3, 2, 4, 2}, {10, 10, 0, 0, 1}, {0, 10, 0, 0, 1}};
+        markdown_core_status status;
+    } refused[] = {{13, 13, 0, 0, 1, MARKDOWN_CORE_OUT_OF_BOUNDS},
+                   {2, 1, 0, 0, 1, MARKDOWN_CORE_OUT_OF_BOUNDS},
+                   {0, 3, 2, 4, 2, MARKDOWN_CORE_OUT_OF_BOUNDS},
+                   {10, 10, 0, 0, 1, MARKDOWN_CORE_INSIDE_SCALAR},
+                   {0, 10, 0, 0, 1, MARKDOWN_CORE_INSIDE_SCALAR}};
     for (size_t i = 0; i < sizeof(refused) / sizeof(*refused); i++) {
         markdown_core_text_edit edits[2] = {{refused[i].start, refused[i].end, (const uint8_t *)"x", 1},
                                             {refused[i].start2, refused[i].end2, (const uint8_t *)"y", 1}};
-        OK(runner,
-           markdown_core_session_edit(session, edits, refused[i].count, &document) == MARKDOWN_CORE_OUT_OF_BOUNDS,
-           "range %zu names no range of the text", i);
+        OK(runner, markdown_core_session_edit(session, edits, refused[i].count, &document) == refused[i].status,
+           "range %zu is refused with its status", i);
     }
     OK(runner, markdown_core_session_text_size(session) == sizeof(source) - 1, "a refused edit changes nothing");
     markdown_core_text_edit vast = {0, 0, NULL, MARKDOWN_CORE_SOURCE_CAPACITY};
@@ -11278,6 +11283,34 @@ static void session_edits_and_spans(test_batch_runner *runner) {
     uint8_t text[64];
     markdown_core_session_text(session, text);
     OK(runner, memcmp(text, "one\n\ntwo \xf0\xa0\x80\x80s\n\xe4\xb8", sizeof(source) + 2) == 0, "the text");
+    markdown_core_session_free(session);
+    /* In UTF-8 an offset is inside a scalar at a continuation byte, by the
+     * rule the UTF-16 count reads bytes by, whether or not the text is well
+     * formed. */
+    static const char bytes[] = "two \xf0\xa0\x80\x80 \x80x";
+    session = NULL;
+    OK(runner,
+       markdown_core_session_new((const uint8_t *)bytes, sizeof(bytes) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
+           MARKDOWN_CORE_OK,
+       "a UTF-8 session opens on bytes that are not well formed");
+    if (!session) {
+        return;
+    }
+    static const struct {
+        size_t at;
+        markdown_core_status status;
+    } offsets[] = {{4, MARKDOWN_CORE_OK},
+                   {5, MARKDOWN_CORE_INSIDE_SCALAR},
+                   {7, MARKDOWN_CORE_INSIDE_SCALAR},
+                   {9, MARKDOWN_CORE_INSIDE_SCALAR},
+                   {10, MARKDOWN_CORE_OK},
+                   {11, MARKDOWN_CORE_OK},
+                   {12, MARKDOWN_CORE_OUT_OF_BOUNDS}};
+    for (size_t i = 0; i < sizeof(offsets) / sizeof(*offsets); i++) {
+        markdown_core_text_edit at = {offsets[i].at, offsets[i].at, NULL, 0};
+        OK(runner, markdown_core_session_edit(session, &at, 1, &document) == offsets[i].status,
+           "UTF-8 offset %zu answers its status", offsets[i].at);
+    }
     markdown_core_session_free(session);
 }
 

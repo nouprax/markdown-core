@@ -354,6 +354,17 @@ static bool parse_expectation(char **fields, size_t count, eh_step *step) {
     return parse_size(fields[2], &expectation->at);
 }
 
+static bool parse_refusal(const char *name, eh_status *refusal) {
+    if (strcmp(name, "out-of-bounds") == 0) {
+        *refusal = EH_OUT_OF_BOUNDS;
+    } else if (strcmp(name, "inside-scalar") == 0) {
+        *refusal = EH_INSIDE_SCALAR;
+    } else {
+        return false;
+    }
+    return true;
+}
+
 static bool parse_step(char **fields, size_t count, eh_script *script) {
     eh_step step;
     eh_step *grown;
@@ -375,10 +386,10 @@ static bool parse_step(char **fields, size_t count, eh_script *script) {
             step_free(&step);
             return false;
         }
-    } else if (strcmp(fields[0], "reject") == 0 && count >= 3 && eh_unit_parse(fields[1], &step.unit) &&
-               strcmp(fields[2], "edit") == 0) {
+    } else if (strcmp(fields[0], "reject") == 0 && count >= 4 && eh_unit_parse(fields[1], &step.unit) &&
+               parse_refusal(fields[2], &step.refusal) && strcmp(fields[3], "edit") == 0) {
         step.kind = EH_STEP_REJECT;
-        if (!parse_edits(fields + 3, count - 3, &step)) {
+        if (!parse_edits(fields + 4, count - 4, &step)) {
             step_free(&step);
             return false;
         }
@@ -706,7 +717,16 @@ typedef struct session_subject {
 } session_subject;
 
 static eh_status session_status(markdown_core_status status) {
-    return status == MARKDOWN_CORE_OK ? EH_OK : status == MARKDOWN_CORE_OUT_OF_BOUNDS ? EH_INVALID : EH_FAILED;
+    switch (status) {
+    case MARKDOWN_CORE_OK:
+        return EH_OK;
+    case MARKDOWN_CORE_OUT_OF_BOUNDS:
+        return EH_OUT_OF_BOUNDS;
+    case MARKDOWN_CORE_INSIDE_SCALAR:
+        return EH_INSIDE_SCALAR;
+    default:
+        return EH_FAILED;
+    }
 }
 
 static void *session_open(eh_unit unit, const uint8_t *text, size_t length, const markdown_core_document **document) {
@@ -782,23 +802,35 @@ typedef struct reparse_subject {
     markdown_core_document *document;
 } reparse_subject;
 
+/* The UTF-8 offset of `offset` in the subject's unit: EH_OUT_OF_BOUNDS past
+ * the text, and EH_INSIDE_SCALAR where no scalar begins. */
+static eh_status resolve_offset(const reparse_subject *subject, size_t offset, size_t *byte) {
+    if (subject->unit == EH_UTF16) {
+        if (offset > eh_utf16_units(subject->text.bytes, subject->text.length)) {
+            return EH_OUT_OF_BOUNDS;
+        }
+        return eh_utf8_offset(subject->text.bytes, subject->text.length, offset, byte) ? EH_OK : EH_INSIDE_SCALAR;
+    }
+    if (offset > subject->text.length) {
+        return EH_OUT_OF_BOUNDS;
+    }
+    *byte = offset;
+    return eh_utf8_boundary(subject->text.bytes, subject->text.length, offset) ? EH_OK : EH_INSIDE_SCALAR;
+}
+
 /* Resolve a batch to UTF-8 offsets in ascending order. A range that is
- * reversed, ends past the text or overlaps another, and a UTF-16 offset
- * between the two units of one scalar, name no range of the text. */
+ * reversed, ends past the text or overlaps another is out of bounds. */
 static eh_status resolve(const reparse_subject *subject, const eh_edit *edits, size_t count, eh_edit *resolved) {
     size_t index;
     for (index = 0; index < count; index++) {
         eh_edit edit = edits[index];
+        eh_status status;
         if (edit.start > edit.end) {
-            return EH_INVALID;
+            return EH_OUT_OF_BOUNDS;
         }
-        if (subject->unit == EH_UTF16) {
-            if (!eh_utf8_offset(subject->text.bytes, subject->text.length, edits[index].start, &edit.start) ||
-                !eh_utf8_offset(subject->text.bytes, subject->text.length, edits[index].end, &edit.end)) {
-                return EH_INVALID;
-            }
-        } else if (edit.end > subject->text.length) {
-            return EH_INVALID;
+        if ((status = resolve_offset(subject, edits[index].start, &edit.start)) != EH_OK ||
+            (status = resolve_offset(subject, edits[index].end, &edit.end)) != EH_OK) {
+            return status;
         }
         resolved[index] = edit;
     }
@@ -815,7 +847,7 @@ static eh_status resolve(const reparse_subject *subject, const eh_edit *edits, s
     }
     for (index = 1; index < count; index++) {
         if (resolved[index].start < resolved[index - 1].end) {
-            return EH_INVALID;
+            return EH_OUT_OF_BOUNDS;
         }
     }
     return EH_OK;

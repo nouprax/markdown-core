@@ -91,20 +91,20 @@ class SessionTest {
     }
 
     @Test
-    fun spansTheSessionRejectsAreOutOfBounds() {
+    fun spansTheSessionRejectsCarryTheirCode() {
         MarkdownSession("🚀 abc\n").use { session ->
             val rejected =
                 listOf(
-                    listOf(TextEdit(4, 3, "")),
-                    listOf(TextEdit(0, 8, "")),
-                    listOf(TextEdit(-1, 0, "")),
-                    listOf(TextEdit(3, 5, ""), TextEdit(4, 6, "")),
-                    listOf(TextEdit(1, 1, "x")),
-                    listOf(TextEdit(0, 1, "")),
+                    listOf(TextEdit(4, 3, "")) to ErrorCode.OUT_OF_BOUNDS,
+                    listOf(TextEdit(0, 8, "")) to ErrorCode.OUT_OF_BOUNDS,
+                    listOf(TextEdit(-1, 0, "")) to ErrorCode.OUT_OF_BOUNDS,
+                    listOf(TextEdit(3, 5, ""), TextEdit(4, 6, "")) to ErrorCode.OUT_OF_BOUNDS,
+                    listOf(TextEdit(1, 1, "x")) to ErrorCode.INSIDE_SCALAR,
+                    listOf(TextEdit(0, 1, "")) to ErrorCode.INSIDE_SCALAR,
                 )
-            for (edits in rejected) {
+            for ((edits, code) in rejected) {
                 val failure = assertFailsWith<MarkdownCoreException> { session.edit(edits) }
-                assertEquals(ErrorCode.OUT_OF_BOUNDS, failure.code, edits.toString())
+                assertEquals(code, failure.code, edits.toString())
             }
         }
     }

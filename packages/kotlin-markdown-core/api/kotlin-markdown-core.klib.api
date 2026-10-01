@@ -20,6 +20,7 @@ final enum class com.nouprax.markdown.core/BibMode : kotlin/Enum<com.nouprax.mar
 
 final enum class com.nouprax.markdown.core/ErrorCode : kotlin/Enum<com.nouprax.markdown.core/ErrorCode> { // com.nouprax.markdown.core/ErrorCode|null[0]
     enum entry ALLOCATION_FAILED // com.nouprax.markdown.core/ErrorCode.ALLOCATION_FAILED|null[0]
+    enum entry INSIDE_SCALAR // com.nouprax.markdown.core/ErrorCode.INSIDE_SCALAR|null[0]
     enum entry KIND_MISMATCH // com.nouprax.markdown.core/ErrorCode.KIND_MISMATCH|null[0]
     enum entry OUT_OF_BOUNDS // com.nouprax.markdown.core/ErrorCode.OUT_OF_BOUNDS|null[0]
 

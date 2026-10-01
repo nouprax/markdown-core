@@ -111,13 +111,21 @@ static int session_edit_compare(const void *left, const void *right) {
     return (a->index > b->index) - (a->index < b->index);
 }
 
-/* The byte offset of `offset` in the session's unit. */
-static bool session_offset(const markdown_core_session *session, size_t offset, size_t *byte) {
+/* The byte offset of `offset` in the session's unit: OUT_OF_BOUNDS past the
+ * text, and INSIDE_SCALAR where no scalar begins. */
+static markdown_core_status session_offset(const markdown_core_session *session, size_t offset, size_t *byte) {
     if (session->document.unit == MARKDOWN_CORE_TEXT_UNIT_UTF16) {
-        return markdown_core_text_tree_offset(&session->text, offset, byte);
+        if (offset > markdown_core_text_tree_units(&session->text)) {
+            return MARKDOWN_CORE_OUT_OF_BOUNDS;
+        }
+        return markdown_core_text_tree_offset(&session->text, offset, byte) ? MARKDOWN_CORE_OK
+                                                                            : MARKDOWN_CORE_INSIDE_SCALAR;
+    }
+    if (offset > markdown_core_text_tree_size(&session->text)) {
+        return MARKDOWN_CORE_OUT_OF_BOUNDS;
     }
     *byte = offset;
-    return offset <= markdown_core_text_tree_size(&session->text);
+    return markdown_core_text_tree_boundary(&session->text, offset) ? MARKDOWN_CORE_OK : MARKDOWN_CORE_INSIDE_SCALAR;
 }
 
 markdown_core_status markdown_core_session_edit(markdown_core_session *session, const markdown_core_text_edit *edits,
@@ -130,9 +138,10 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
     markdown_core_status status = MARKDOWN_CORE_OK;
     for (size_t i = 0; i < count && status == MARKDOWN_CORE_OK; i++) {
         session_edit *edit = &sorted[i];
-        if (edits[i].start > edits[i].end || !session_offset(session, edits[i].start, &edit->edit.start) ||
-            !session_offset(session, edits[i].end, &edit->edit.end)) {
+        if (edits[i].start > edits[i].end) {
             status = MARKDOWN_CORE_OUT_OF_BOUNDS;
+        } else if ((status = session_offset(session, edits[i].start, &edit->edit.start)) == MARKDOWN_CORE_OK) {
+            status = session_offset(session, edits[i].end, &edit->edit.end);
         }
         edit->edit.size = edits[i].size;
         edit->text = edits[i].text;

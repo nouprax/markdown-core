@@ -92,21 +92,21 @@ import Testing
         #expect(try session.document.dump(in: current) == Document.parse(current, unit: unit).dump(in: current))
     }
 
-    @Test("a range outside the text, overlapping ranges and a split surrogate pair are out of bounds")
-    func outOfBounds() throws {
+    @Test("a range outside the text and overlapping ranges are out of bounds; a split surrogate pair is inside a scalar")
+    func refusedRanges() throws {
         let emoji = try MarkdownSession("🚀\n")
         let letters = try MarkdownSession("abc\n")
-        let rejected: [(MarkdownSession, [TextEdit])] = [
+        let rejected: [(MarkdownSession, [TextEdit], ErrorCode)] = [
             // A negative start reaches the engine as a start after its end.
-            (emoji, [TextEdit(-1..<0, with: "x")]),
-            (emoji, [TextEdit(3..<4, with: "x")]),
-            (emoji, [TextEdit(1..<1, with: "x")]),
-            (emoji, [TextEdit(0..<1, with: "x")]),
-            (letters, [TextEdit(0..<2, with: "x"), TextEdit(1..<3, with: "y")]),
+            (emoji, [TextEdit(-1..<0, with: "x")], .outOfBounds),
+            (emoji, [TextEdit(3..<4, with: "x")], .outOfBounds),
+            (emoji, [TextEdit(1..<1, with: "x")], .insideScalar),
+            (emoji, [TextEdit(0..<1, with: "x")], .insideScalar),
+            (letters, [TextEdit(0..<2, with: "x"), TextEdit(1..<3, with: "y")], .outOfBounds),
         ]
-        for (session, edits) in rejected {
+        for (session, edits, code) in rejected {
             let error = #expect(throws: MarkdownCoreError.self) { try session.edit(edits) }
-            #expect(error?.code == .outOfBounds, "\(edits)")
+            #expect(error?.code == code, "\(edits)")
         }
     }
 }

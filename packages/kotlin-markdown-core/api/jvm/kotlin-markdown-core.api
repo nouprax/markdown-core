@@ -251,6 +251,7 @@ public final class com/nouprax/markdown/core/Emphasis : com/nouprax/markdown/cor
 
 public final class com/nouprax/markdown/core/ErrorCode : java/lang/Enum {
 	public static final field ALLOCATION_FAILED Lcom/nouprax/markdown/core/ErrorCode;
+	public static final field INSIDE_SCALAR Lcom/nouprax/markdown/core/ErrorCode;
 	public static final field KIND_MISMATCH Lcom/nouprax/markdown/core/ErrorCode;
 	public static final field OUT_OF_BOUNDS Lcom/nouprax/markdown/core/ErrorCode;
 	public static fun getEntries ()Lkotlin/enums/EnumEntries;

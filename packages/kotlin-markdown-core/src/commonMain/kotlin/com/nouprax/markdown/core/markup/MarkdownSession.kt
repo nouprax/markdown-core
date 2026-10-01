@@ -44,9 +44,9 @@ public class MarkdownSession
          *
          * @return the new [document].
          * @throws MarkdownCoreException [ErrorCode.OUT_OF_BOUNDS] when an edit
-         *   starts after its end or ends past the text, two edits overlap, or,
-         *   in UTF-16, an offset falls between the two halves of a surrogate
-         *   pair; [ErrorCode.ALLOCATION_FAILED] when the engine cannot allocate,
+         *   starts after its end or ends past the text, or two edits overlap;
+         *   [ErrorCode.INSIDE_SCALAR] when an offset falls inside a scalar;
+         *   [ErrorCode.ALLOCATION_FAILED] when the engine cannot allocate,
          *   the text would exceed 1 GiB of UTF-8, or the tree a byte array's
          *   capacity.
          */

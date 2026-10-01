@@ -179,12 +179,14 @@ Swift, Kotlin, and ECMAScript expose the same concepts:
 - source scopes
 - exhaustive per-node visitors
 - canonical AST debug dumping
-- one library error carrying a status code: `ALLOCATION_FAILED` from a parse,
-  `OUT_OF_BOUNDS` from a source or position a public call cannot read, and
-  `KIND_MISMATCH` from a C accessor given the wrong kind
+- sessions, whose `edit` and `append` publish a new `Document`
+- one library error carrying a status code: `ALLOCATION_FAILED` from a parse
+  or a session step, `OUT_OF_BOUNDS` from a source, position or edit range a
+  public call cannot read, `KIND_MISMATCH` from a C accessor given the wrong
+  kind, and `INSIDE_SCALAR` from a session edit offset inside a scalar
 
-They do not expose native handles, parser ownership, mutation, rendering,
-feed/edit/session types, CST nodes, or diagnostic lists.
+They do not expose native handles, parser ownership, node mutation,
+rendering, CST nodes, or diagnostic lists.
 
 The bindings share the canonical AST contract. A binding that can hold C node
 handles reads the facade directly; every other binding reads one core-owned

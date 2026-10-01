@@ -618,9 +618,9 @@ class Script {
     toggle(at, text) {
         return this.insert(at, text).remove(at, at + bytes(text));
     }
-    /** An edit batch out of bounds, offsets in `unit`. */
-    reject(unit, ...values) {
-        this.steps.push({ kind: "reject", unit, values });
+    /** An edit batch the session refuses with `status`, offsets in `unit`. */
+    reject(unit, status, ...values) {
+        this.steps.push({ kind: "reject", unit, status, values });
         return this;
     }
     expect(...values) {
@@ -1060,9 +1060,9 @@ export function identityScripts() {
 }
 
 /**
- * The ranges of 4.8 that name no range of the text, against a document with a
- * four-byte scalar: past the end, reversed, overlapping, and in UTF-16 between
- * the two units of that scalar.
+ * The refused batches of 4.8, against a document with a four-byte scalar: out
+ * of bounds past the end, reversed and overlapping, and inside that scalar at
+ * one of its continuation bytes in UTF-8 and between its two units in UTF-16.
  */
 export function rejectionScript(text) {
     const script = new Script("rejections", "rejections", text);
@@ -1072,13 +1072,15 @@ export function rejectionScript(text) {
         ["utf8", buffer.length],
         ["utf16", text.length]
     ]) {
-        script.reject(unit, length + 1, length + 1, "61");
-        script.reject(unit, 2, 1, "61");
-        script.reject(unit, 0, 4, "61", 2, 6, "61");
+        script.reject(unit, "out-of-bounds", length + 1, length + 1, "61");
+        script.reject(unit, "out-of-bounds", 2, 1, "61");
+        script.reject(unit, "out-of-bounds", 0, length, "61", 0, length, "61");
     }
+    script.reject("utf8", "inside-scalar", wide + 1, wide + 1, "61");
+    script.reject("utf8", "inside-scalar", 0, wide + 3, "61");
     const units = buffer.subarray(0, wide).toString("utf8").length;
-    script.reject("utf16", units + 1, units + 1, "61");
-    script.reject("utf16", 0, units + 1, "61");
+    script.reject("utf16", "inside-scalar", units + 1, units + 1, "61");
+    script.reject("utf16", "inside-scalar", 0, units + 1, "61");
     return script;
 }
 
@@ -1095,7 +1097,7 @@ export function formatScripts(scripts) {
             if (step.kind === "edit") {
                 lines.push(`edit ${step.edits.map((edit) => `${edit.start} ${edit.end} ${hex(edit.text)}`).join(" ")}`);
             } else if (step.kind === "reject") {
-                lines.push(`reject ${step.unit} edit ${step.values.join(" ")}`);
+                lines.push(`reject ${step.unit} ${step.status} edit ${step.values.join(" ")}`);
             }
             for (const expectation of step.expect ?? []) lines.push(`expect ${expectation}`);
         }
@@ -1126,8 +1128,8 @@ export function parseScripts(text) {
                     text: unhex(fields[index + 2])
                 });
             steps.push({ kind, edits });
-        } else if (kind === "reject" && fields[1] === "edit") {
-            steps.push({ kind, unit: fields[0], values: fields.slice(2) });
+        } else if (kind === "reject" && fields[2] === "edit") {
+            steps.push({ kind, unit: fields[0], status: fields[1], values: fields.slice(3) });
         } else if (kind === "expect") {
             steps.at(-1).expect = [...(steps.at(-1).expect ?? []), fields.join(" ")];
         } else {

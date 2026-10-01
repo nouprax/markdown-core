@@ -26,6 +26,7 @@ internal object WireDecoder {
             1 to ErrorCode.ALLOCATION_FAILED,
             2 to ErrorCode.OUT_OF_BOUNDS,
             3 to ErrorCode.KIND_MISMATCH,
+            4 to ErrorCode.INSIDE_SCALAR,
         )
 
     // The contract's enums, in the order of their wire indices.

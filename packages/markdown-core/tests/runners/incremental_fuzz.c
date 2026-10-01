@@ -10,9 +10,10 @@
  * boundaries of what the text's bytes begin, and a u8 whose value modulo 32
  * is the length of its text, which follows; the edits of a batch follow one
  * another in the text. An append reads its text the same way. A rejection is an edit batch
- * out of bounds: a reversed range, a range past the end, two overlapping
- * edits, or, when the text holds a four-byte scalar, the UTF-16 offset
- * between its two units. The decoder keeps its own copy of the text, so
+ * the session refuses: out of bounds, a reversed range, a range past the end
+ * or two overlapping edits; inside a scalar, the UTF-8 offset of a
+ * continuation byte or, when the text holds a four-byte scalar, the UTF-16
+ * offset between its two units. The decoder keeps its own copy of the text, so
  * every accepted step is valid against the text before it; the bytes are
  * never checked for being well formed. */
 #include <stdlib.h>
@@ -94,7 +95,7 @@ static bool decode_batch(reader *input, unsigned variant, eh_text *model, eh_scr
             return false;
         }
     }
-    return push_step(script, (eh_step){EH_STEP_EDIT, EH_UTF8, edits, count, NULL, 0});
+    return push_step(script, (eh_step){.kind = EH_STEP_EDIT, .edits = edits, .count = count});
 }
 
 static bool decode_append(reader *input, eh_text *model, eh_script *script) {
@@ -109,17 +110,17 @@ static bool decode_append(reader *input, eh_text *model, eh_script *script) {
         free(edit);
         return false;
     }
-    return push_step(script, (eh_step){EH_STEP_APPEND, EH_UTF8, edit, 1, NULL, 0});
+    return push_step(script, (eh_step){.kind = EH_STEP_APPEND, .edits = edit, .count = 1});
 }
 
 static bool decode_rejection(unsigned variant, const eh_text *model, eh_script *script) {
     eh_edit *edits = (eh_edit *)calloc(2, sizeof(*edits));
-    eh_step step = {EH_STEP_REJECT, EH_UTF8, edits, 1, NULL, 0};
+    eh_step step = {.kind = EH_STEP_REJECT, .unit = EH_UTF8, .refusal = EH_OUT_OF_BOUNDS, .edits = edits, .count = 1};
     size_t length = model->length, at;
     if (!edits) {
         return false;
     }
-    switch (variant % 4) {
+    switch (variant % 5) {
     case 0:
         edits[0] = (eh_edit){length ? length : 1, length ? length - 1 : 0, NULL, 0};
         break;
@@ -127,13 +128,24 @@ static bool decode_rejection(unsigned variant, const eh_text *model, eh_script *
         edits[0] = (eh_edit){length, length + 1, NULL, 0};
         break;
     case 2:
-        if (length) {
-            edits[0] = (eh_edit){0, length, NULL, 0};
-            edits[1] = (eh_edit){length - 1, length, NULL, 0};
+        at = snap(model, 0);
+        if (at < length) {
+            edits[0] = (eh_edit){at, length, NULL, 0};
+            edits[1] = (eh_edit){at, length, NULL, 0};
             step.count = 2;
             break;
         }
-        edits[0] = (eh_edit){1, 1, NULL, 0};
+        edits[0] = (eh_edit){length + 1, length + 1, NULL, 0};
+        break;
+    case 3:
+        for (at = 0; at < length && eh_utf8_boundary(model->bytes, length, at); at++) {
+        }
+        if (at == length) {
+            free(edits);
+            return true;
+        }
+        edits[0] = (eh_edit){at, at, NULL, 0};
+        step.refusal = EH_INSIDE_SCALAR;
         break;
     default:
         for (at = 0; at < length && model->bytes[at] < 0xf0; at++) {
@@ -145,6 +157,7 @@ static bool decode_rejection(unsigned variant, const eh_text *model, eh_script *
         at = eh_utf16_units(model->bytes, at) + 1;
         edits[0] = (eh_edit){at, at, NULL, 0};
         step.unit = EH_UTF16;
+        step.refusal = EH_INSIDE_SCALAR;
         break;
     }
     return push_step(script, step);

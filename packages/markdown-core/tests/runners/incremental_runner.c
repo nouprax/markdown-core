@@ -468,42 +468,44 @@ static eh_status revive_append(void *handle, const uint8_t *text, size_t length,
 static const eh_subject_class revive = {
     "reuses a retired id for a new node", faulty_open, revive_edit, revive_append, faulty_text, faulty_close};
 
-/* Accepts an offset between the two units of one scalar: in UTF-16 such an
- * offset reaches the session as the end of its scalar. */
+/* Accepts an offset inside a scalar: it reaches the session as the end of
+ * that scalar. */
+static size_t lenient_offset(const faulty *subject, size_t offset) {
+    size_t byte;
+    if (subject->unit == EH_UTF16) {
+        return !eh_utf8_offset(subject->text.bytes, subject->text.length, offset, &byte) &&
+                       offset < eh_utf16_units(subject->text.bytes, subject->text.length)
+                   ? offset + 1
+                   : offset;
+    }
+    while (offset < subject->text.length && !eh_utf8_boundary(subject->text.bytes, subject->text.length, offset)) {
+        offset++;
+    }
+    return offset;
+}
+
 static eh_status lenient_edit(void *handle, const eh_edit *edits, size_t count,
                               const markdown_core_document **document) {
     faulty *subject = (faulty *)handle;
     eh_edit *moved = (eh_edit *)malloc((count ? count : 1) * sizeof(*moved));
     eh_status status;
-    size_t index, byte;
+    size_t index;
     if (!moved || !faulty_remember(subject)) {
         free(moved);
         return EH_FAILED;
     }
     for (index = 0; index < count; index++) {
         moved[index] = edits[index];
-        if (subject->unit == EH_UTF16) {
-            if (!eh_utf8_offset(subject->text.bytes, subject->text.length, moved[index].start, &byte) &&
-                moved[index].start < eh_utf16_units(subject->text.bytes, subject->text.length)) {
-                moved[index].start++;
-            }
-            if (!eh_utf8_offset(subject->text.bytes, subject->text.length, moved[index].end, &byte) &&
-                moved[index].end < eh_utf16_units(subject->text.bytes, subject->text.length)) {
-                moved[index].end++;
-            }
-        }
+        moved[index].start = lenient_offset(subject, edits[index].start);
+        moved[index].end = lenient_offset(subject, edits[index].end);
     }
     status = eh_session.edit(subject->inner, moved, count, document);
     free(moved);
     return status;
 }
 
-static const eh_subject_class lenient = {"accepts an offset between the two units of one scalar",
-                                         faulty_open,
-                                         lenient_edit,
-                                         pass_append,
-                                         faulty_text,
-                                         faulty_close};
+static const eh_subject_class lenient = {
+    "accepts an offset inside a scalar", faulty_open, lenient_edit, pass_append, faulty_text, faulty_close};
 
 /* ------------------------------------------------------------ unit checks */
 

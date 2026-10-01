@@ -276,9 +276,10 @@ applied stay valid), and 4.1–4.4 hold for the batch as one step.
 
 ### 4.8 Errors
 
-A range whose start is after its end or whose end is past the text, two
-overlapping edits of one batch, and a UTF-16 offset between the two units of
-one scalar are rejected as out of bounds (plan 4.4). In C, the
+A range whose start is after its end or whose end is past the text and two
+overlapping edits of one batch are rejected as out of bounds; an offset at a
+continuation byte in UTF-8 or between the two units of one scalar in UTF-16 is
+rejected as inside a scalar (plan 4.4). In C, the
 allocator-seam sweep of plan 8 fails a sample of steps at every allocation
 boundary; each call throws the out-of-memory error, and freeing the session
 leaks nothing.
@@ -435,7 +436,7 @@ named oracle:
 | Gives an edited heading a new id | 4.4 |
 | Keeps a node whose text changed | 4.1 |
 | Reuses a retired id for a new node | 4.2 |
-| Accepts an end inside a scalar | 4.8 |
+| Accepts an offset inside a scalar | 4.8 |
 | Re-reads the whole document on every step | 6.2 |
 
 The faulty subjects wrap `reparse` (and, from step 1, fresh ids), live only in

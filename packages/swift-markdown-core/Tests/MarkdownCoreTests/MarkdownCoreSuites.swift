@@ -317,6 +317,7 @@ import Testing
             (MARKDOWN_CORE_ALLOCATION_FAILED, .allocationFailed),
             (MARKDOWN_CORE_OUT_OF_BOUNDS, .outOfBounds),
             (MARKDOWN_CORE_KIND_MISMATCH, .kindMismatch),
+            (MARKDOWN_CORE_INSIDE_SCALAR, .insideScalar),
         ]
         for (status, code) in cases {
             #expect(MarkdownCoreError(status).code == code)

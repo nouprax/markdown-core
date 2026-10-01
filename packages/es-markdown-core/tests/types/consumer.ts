@@ -69,7 +69,7 @@ try {
         void [code, message];
     }
 }
-const codes: readonly ErrorCode[] = ["allocationFailed", "outOfBounds", "kindMismatch"];
+const codes: readonly ErrorCode[] = ["allocationFailed", "outOfBounds", "kindMismatch", "insideScalar"];
 // @ts-expect-error the codes are closed
 const unknownCode: ErrorCode = "invalidArgument";
 // @ts-expect-error an error's code is readonly

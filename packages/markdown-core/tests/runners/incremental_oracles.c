@@ -902,9 +902,9 @@ void run_edits(run *state, const char *where, eh_unit unit, const uint8_t *docum
                 continue;
             }
             status = state->subject->edit(subject, step->edits, step->count, &next);
-            if (status != EH_INVALID) {
-                fail(state, "4.8", "%s step %zu: a range that names no range of the text was accepted", where,
-                     index + 1);
+            if (status != step->refusal) {
+                fail(state, "4.8", "%s step %zu: a refused batch returned status %d, not %d", where, index + 1,
+                     (int)status, (int)step->refusal);
             }
             /* A subject that accepted it no longer holds the model's text. */
             if (status == EH_OK) {
@@ -941,7 +941,7 @@ void run_edits(run *state, const char *where, eh_unit unit, const uint8_t *docum
                 !(step->kind == EH_STEP_EDIT ? model_batch(&model, step->edits, step->count)
                                              : eh_text_replace(&model, model.length, model.length, step->edits[0].text,
                                                                step->edits[0].length))) {
-                fail(state, status == EH_INVALID ? "4.8" : "harness", "%s step %zu: a valid step failed", where,
+                fail(state, status == EH_FAILED ? "harness" : "4.8", "%s step %zu: a valid step failed", where,
                      index + 1);
                 eh_text_free(&before);
                 free(bytes);
@@ -970,7 +970,7 @@ void run_edits(run *state, const char *where, eh_unit unit, const uint8_t *docum
  * hold after each one (4.6). */
 void run_stream(run *state, const char *where, eh_unit unit, const uint8_t *document, const size_t *ends,
                 size_t count) {
-    static const eh_step chunk = {EH_STEP_APPEND, EH_UTF8, NULL, 0, NULL, 0};
+    static const eh_step chunk = {.kind = EH_STEP_APPEND};
     eh_text model = {0};
     const markdown_core_document *current = NULL;
     history ids = {0};
@@ -993,7 +993,7 @@ void run_stream(run *state, const char *where, eh_unit unit, const uint8_t *docu
         eh_status status = state->subject->append(subject, document + from, ends[index] - from, &next);
         if (status != EH_OK ||
             !eh_text_replace(&model, model.length, model.length, document + from, ends[index] - from)) {
-            fail(state, status == EH_INVALID ? "4.8" : "harness", "%s chunk %zu: a valid chunk failed", where,
+            fail(state, status == EH_FAILED ? "harness" : "4.8", "%s chunk %zu: a valid chunk failed", where,
                  index + 1);
             break;
         }

@@ -84,8 +84,8 @@ export class MarkdownSession {
     /** Applies disjoint edits, listed in any order, to the text and parses it
      * once; two edits at one offset apply in the order listed. Throws
      * `MarkdownCoreError` `outOfBounds` when an edit's start is after its end,
-     * its end is past the text, two edits overlap, or, in UTF-16, an offset
-     * falls between the two units of one scalar; `allocationFailed` when an
+     * its end is past the text or two edits overlap; `insideScalar` when an
+     * offset falls inside a scalar; `allocationFailed` when an
      * allocation fails or the text would exceed 1 GiB. */
     edit(edits: readonly TextEdit[]): Document {
         const session = this.#open();

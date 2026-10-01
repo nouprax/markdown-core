@@ -187,13 +187,15 @@ Every failure is a `MarkdownCoreError`, whose `code` is one `ErrorCode`:
 - `"outOfBounds"`: `scope` or `dump` got a source that ends before the node
   does, `nodeAt` got a line or column that is not an integer of at least 1, or
   a session's `edit` got a range whose start is after its end, whose end is
-  past the text, that overlaps another edit of the batch, or, in UTF-16, that
-  falls between the two units of one scalar.
+  past the text, or that overlaps another edit of the batch.
   A position past the source, or one no node holds, is not an error: `nodeAt`
   returns `null`.
 - `"kindMismatch"`: the engine's status for a value that is not of the kind a
   call reads. The binding decodes the whole tree into typed values, so none of
   its calls reports it today; the code keeps the set equal to the engine's.
+- `"insideScalar"`: a session's `edit` got an offset inside a scalar: at a
+  continuation byte in UTF-8, or between the two units of one scalar in
+  UTF-16.
 
 A node of another document is not checked: pass the document's own nodes.
 

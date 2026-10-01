@@ -165,8 +165,8 @@ static void check_session(void) {
     check(size == strlen(expected) && memcmp(text, expected, size) == 0, "the session's text follows its steps");
     const size_t between[] = {13, 13, 0};
     message = markdown_core_wire_session_edit(session, between, 1, NULL);
-    check(message != NULL && message_status(message) == MARKDOWN_CORE_OUT_OF_BOUNDS,
-          "an offset between the units of one scalar answers OUT_OF_BOUNDS");
+    check(message != NULL && message_status(message) == MARKDOWN_CORE_INSIDE_SCALAR,
+          "an offset between the units of one scalar answers INSIDE_SCALAR");
     markdown_core_wire_free(message);
     markdown_core_session_free(session);
 }

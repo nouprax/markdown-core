@@ -62,8 +62,8 @@ public final class MarkdownSession {
     /// - Parameter edits: the replacements.
     /// - Returns: the new ``document``.
     /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/outOfBounds`` when a
-    ///   range reaches outside the text, two ranges overlap, or, in UTF-16, an
-    ///   offset falls between the two units of one scalar; with
+    ///   range reaches outside the text or two ranges overlap; with
+    ///   ``ErrorCode/insideScalar`` when an offset falls inside a scalar; with
     ///   ``ErrorCode/allocationFailed`` when an allocation fails or the text
     ///   would exceed 1 GiB of UTF-8.
     @discardableResult

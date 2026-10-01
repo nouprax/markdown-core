@@ -318,6 +318,16 @@ bool markdown_core_text_tree_offset(const markdown_core_text_tree *text, size_t 
     return counted == units;
 }
 
+bool markdown_core_text_tree_boundary(const markdown_core_text_tree *text, size_t offset) {
+    if (offset >= size_of(text->root)) {
+        return true;
+    }
+    text_cursor cursor;
+    size_t rank, begin;
+    const markdown_core_text_piece *piece = cursor_seek(&cursor, text, offset, &rank, &begin);
+    return byte_units(piece->bytes[offset - begin]) != 0;
+}
+
 /* THE PIECES ONE PART OF A BATCH MAKES AGAIN: pieces [first, last] of the
  * text before the batch, which hold bytes [from, to), and the edits
  * [edit, edit + count) that fall in them. */

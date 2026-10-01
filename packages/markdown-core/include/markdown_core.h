@@ -85,12 +85,14 @@ typedef struct markdown_core_node markdown_core_node;
  *   capacity the library can represent.
  * - OUT_OF_BOUNDS: an index, position or source length names something that
  *   is not there.
- * - KIND_MISMATCH: the node or value is not of the kind the accessor reads. */
+ * - KIND_MISMATCH: the node or value is not of the kind the accessor reads.
+ * - INSIDE_SCALAR: an offset falls inside a scalar, where none begins. */
 typedef enum markdown_core_status {
     MARKDOWN_CORE_OK = 0,
     MARKDOWN_CORE_ALLOCATION_FAILED = 1,
     MARKDOWN_CORE_OUT_OF_BOUNDS = 2,
     MARKDOWN_CORE_KIND_MISMATCH = 3,
+    MARKDOWN_CORE_INSIDE_SCALAR = 4,
 } markdown_core_status;
 
 /** A read-only run of UTF-8 bytes that this library owns.
@@ -404,10 +406,12 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_session_new(const uint8_t *
                                                                  markdown_core_session **session);
 /** Applies `count` disjoint edits, listed in any order, to the text and parses
  * it once; `*document` receives the new document. Two edits at one offset
- * apply in the order listed. OUT_OF_BOUNDS when an edit's start is after its
- * end, its end is past the text, two edits overlap, or, in UTF-16, an offset
- * falls between the two units of one scalar; ALLOCATION_FAILED when an
- * allocation fails or the text would exceed the 1 GiB a document can hold. */
+ * apply in the order listed, and each text is stored as given. OUT_OF_BOUNDS
+ * when an edit's start is after its end, its end is past the text or two
+ * edits overlap; INSIDE_SCALAR when an offset falls inside a scalar: at a
+ * continuation byte in UTF-8, or between the two units of one scalar in
+ * UTF-16; ALLOCATION_FAILED when an allocation fails or the text would
+ * exceed the 1 GiB a document can hold. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_session_edit(markdown_core_session *session,
                                                                   const markdown_core_text_edit *edits, size_t count,
                                                                   const markdown_core_document **document);

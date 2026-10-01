@@ -47,6 +47,11 @@ size_t markdown_core_text_tree_units(const markdown_core_text_tree *text);
  * the two units of one scalar. */
 bool markdown_core_text_tree_offset(const markdown_core_text_tree *text, size_t units, size_t *offset);
 
+/* Whether a scalar begins at byte `offset`, which is at most the text's size:
+ * the end of the text, or a byte that is not a continuation byte -- the rule
+ * the UTF-16 count reads bytes by. */
+bool markdown_core_text_tree_boundary(const markdown_core_text_tree *text, size_t offset);
+
 /* ONE EDIT between two texts, in bytes of the text before it: bytes
  * [start, end) were replaced by `size` bytes. */
 typedef struct markdown_core_byte_edit {

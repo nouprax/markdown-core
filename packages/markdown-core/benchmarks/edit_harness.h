@@ -85,9 +85,20 @@ typedef struct eh_expectation {
     size_t from; /* kept: the old position */
 } eh_expectation;
 
+typedef enum eh_status {
+    EH_OK = 0,
+    /* The arguments name no range of the text (gates 4.8). */
+    EH_OUT_OF_BOUNDS = 1,
+    /* An offset falls inside a scalar (gates 4.8). */
+    EH_INSIDE_SCALAR = 2,
+    /* The step could not be carried out: out of memory or a parse failure. */
+    EH_FAILED = 3
+} eh_status;
+
 typedef struct eh_step {
     eh_step_kind kind;
-    eh_unit unit; /* the unit a rejected step's offsets are written in */
+    eh_unit unit;      /* the unit a rejected step's offsets are written in */
+    eh_status refusal; /* the status a rejected step is refused with */
     eh_edit *edits;
     size_t count;
     eh_expectation *expectations;
@@ -161,14 +172,6 @@ void eh_manifest_free(eh_manifest *manifest);
 uint8_t *eh_read_file(const char *path, size_t *length);
 
 /* ---------------------------------------------------------------- subject */
-
-typedef enum eh_status {
-    EH_OK = 0,
-    /* The arguments name no range of the text (gates 4.8). */
-    EH_INVALID = 1,
-    /* The step could not be carried out: out of memory or a parse failure. */
-    EH_FAILED = 2
-} eh_status;
 
 /* A subject is an opaque handle its class opens and closes, so a harness can
  * wrap one subject in another. */

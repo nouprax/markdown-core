@@ -7,13 +7,18 @@ public enum class ErrorCode {
 
     /**
      * The source is too short for the node, a position's line or column is below 1, or a session rejects an
-     * edit's range: it starts after its end, ends past the text, overlaps another edit of its batch, or, in
-     * UTF-16, has an offset between the two halves of a surrogate pair.
+     * edit's range: it starts after its end, ends past the text, or overlaps another edit of its batch.
      */
     OUT_OF_BOUNDS,
 
     /** A value was read as another kind: the engine's code, shared by every binding; typed nodes never reach it. */
     KIND_MISMATCH,
+
+    /**
+     * A session edit's offset falls inside a scalar: at a continuation byte in UTF-8, or between the two halves
+     * of a surrogate pair in UTF-16.
+     */
+    INSIDE_SCALAR,
 }
 
 /**

@@ -870,7 +870,8 @@ test("errors: a native failure maps its status by value across the WASM boundary
     for (const [status, code] of [
         [1, "allocationFailed"],
         [2, "outOfBounds"],
-        [3, "kindMismatch"]
+        [3, "kindMismatch"],
+        [4, "insideScalar"]
     ]) {
         assert.throws(
             () => decoder(new MessageWriter().error(status)).decode(),
@@ -1696,23 +1697,29 @@ test("api: a session's documents are the parses of its text, continuing the prev
     }
 });
 
-test("errors: a session rejects an edit range its text does not hold", () => {
+test("errors: a session refuses an edit range out of bounds or inside a scalar", () => {
     const session = new MarkdownSession("a 😀 b\n");
+    const rejects = (subject, edits, code) =>
+        assert.throws(
+            () => subject.edit(edits),
+            (error) => error instanceof MarkdownCoreError && error.code === code
+        );
     try {
-        const rejects = (edits) =>
-            assert.throws(
-                () => session.edit(edits),
-                (error) => error instanceof MarkdownCoreError && error.code === "outOfBounds"
-            );
-        rejects([{ start: 3, end: 2, text: "" }]);
-        rejects([{ start: 0, end: 9, text: "" }]);
-        rejects([
-            { start: 0, end: 3, text: "" },
-            { start: 2, end: 4, text: "" }
-        ]);
-        rejects([{ start: 3, end: 3, text: "x" }]);
+        rejects(session, [{ start: 3, end: 2, text: "" }], "outOfBounds");
+        rejects(session, [{ start: 0, end: 9, text: "" }], "outOfBounds");
+        rejects(
+            session,
+            [
+                { start: 0, end: 2, text: "" },
+                { start: 1, end: 4, text: "" }
+            ],
+            "outOfBounds"
+        );
+        rejects(session, [{ start: 3, end: 3, text: "x" }], "insideScalar");
         const utf8 = new MarkdownSession("a 😀 b\n", { unit: "utf8" });
         try {
+            rejects(utf8, [{ start: 3, end: 3, text: "x" }], "insideScalar");
+            rejects(utf8, [{ start: 0, end: 5, text: "" }], "insideScalar");
             utf8.edit([{ start: 7, end: 8, text: "c" }]);
             assert.equal(utf8.text, "a 😀 c\n");
         } finally {

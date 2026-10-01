@@ -136,11 +136,13 @@ why:
 - `ErrorCode.OUT_OF_BOUNDS`: `scope` or `dump` got a source that ends before
   the node does, or `node` got a position whose line or column is below 1. A
   position past the source, or one no node holds, answers `null`. A session
-  edit whose range starts after its end, ends past the text, overlaps another
-  edit of its batch, or, in UTF-16, has an offset between the two halves of a
-  surrogate pair is `OUT_OF_BOUNDS` too.
+  edit whose range starts after its end, ends past the text or overlaps
+  another edit of its batch is `OUT_OF_BOUNDS` too.
 - `ErrorCode.KIND_MISMATCH`: the engine's code for a value read as the wrong
   kind. It is shared by every binding; the typed Kotlin nodes never reach it.
+- `ErrorCode.INSIDE_SCALAR`: a session edit has an offset inside a scalar: at
+  a continuation byte in UTF-8, or between the two halves of a surrogate pair
+  in UTF-16.
 
 A node of another document is not checked, and the answer for it means
 nothing.

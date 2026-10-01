@@ -66,7 +66,7 @@ a reader that received only a pointer knows where the message ends.
 
 - Status 1 is a failure. The body is one `u32`, the facade's
   `markdown_core_status` (`ALLOCATION_FAILED` 1, `OUT_OF_BOUNDS` 2,
-  `KIND_MISMATCH` 3), and the message ends. A parse fails only with
+  `KIND_MISMATCH` 3, `INSIDE_SCALAR` 4), and the message ends. A parse fails only with
   `ALLOCATION_FAILED`, which also reports a document too large for the
   message length.
 - Status 0 is a document. The body is a sequence of node records in
