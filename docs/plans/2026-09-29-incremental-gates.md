@@ -415,9 +415,10 @@ its numbers are reported with the `reparse` subject.
 | 0 Harness (this plan) | Scripts and text model self-tests; 4.1 with `reparse` | Edit and stream runners report the R column; one-shot adds the `buffer_to_ast` rule (6.4) |
 | 1 Model | 4.2 for fresh parses; deep equality and 4.9 on fresh documents | One-shot budget for the model change (G1), then 1.02 per PR |
 | 2 Sessions, whole-document restart | 4.1–4.11 on the correctness set, every platform, both units | 6.3 on every workload, which sets the session baseline for 6.4 (G4) |
-| 3 Block restart and convergence | Unchanged | 6.2 for the local edit families on the shapes without declarations: `list`, `table` and the 10,000-item list |
-| 4 Session registries | Unchanged | 6.2 for the local edit families on every remaining scale shape (`prose`, `quote`, `refs`, `flat`) and for the local steps of `declarations` |
-| 5 Frontier and inline restart | Unchanged | 6.2 for `tokens` and `rows` |
+| 3 Shared subtrees | Unchanged | Unchanged |
+| 4 Block reuse | Unchanged | 6.2 for the local edit families on the shapes without declarations: `list`, `table` and the 10,000-item list |
+| 5 Session registries | Unchanged | 6.2 for the local edit families on every remaining scale shape (`prose`, `quote`, `refs`, `flat`) and for the local steps of `declarations` |
+| 6 Inline reuse | Unchanged | 6.2 for `tokens` and `rows` |
 
 From step 2 on, the one-shot benchmark measures `Document.parse` through the
 session path it becomes (plan 4.4), so the one-shot gate also guards what the
@@ -519,7 +520,8 @@ their own pull requests.
 - **G4 The session baseline. Decided 2026-09-29: as proposed.** Proposed: the step 2 pull request sets the
   session baseline under 6.3, and the 1.02 regression rules apply to
   the session from then on (6.4).
-- **G5 `flat` with the registries. Decided 2026-10-01: move to step 4.**
+- **G5 `flat` with the registries. Decided 2026-10-01: move to the session
+  registries step.**
   `flat` has a heading in every section, and headings are declarations
   (plan 5.1, 5.7), so its 6.2 gate turns on with the session registries in
-  step 4 beside `prose`, `quote` and `refs` (section 7).
+  step 5 beside `prose`, `quote` and `refs` (section 7).

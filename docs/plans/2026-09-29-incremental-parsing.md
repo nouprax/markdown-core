@@ -84,9 +84,14 @@ without a second parser:
    entries with borrowed nodes) and resolved once. They are not rediscovered
    by tree searches.
 
-What is missing is (a) a record of what each decision read, (b) a way to
-restart the line machine from the middle, (c) resolution that can be
-recomputed for part of a registry, and (d) identity.
+What is missing is (a) a record on each node of what its parse depended on,
+(b) a re-parse that takes unchanged subtrees of the old tree whole, (c)
+resolution that can be recomputed for part of a registry, and (d) identity.
+Tree-sitter has (a) and (b) for any grammar: each subtree records its parse
+state and how far past its end the lexer looked, and a re-parse walks the old
+tree beside the input and reuses every subtree those records prove
+unchanged. Section 5 applies the same algorithm and the same tree storage to
+the line machine.
 
 ## 3. Dependency inventory
 
@@ -97,16 +102,16 @@ handles it.
 
 | Dependency | Examples | Direction | Mechanism |
 | --- | --- | --- | --- |
-| Carried block state | Open list item widths, blockquote and callout prefixes, definition body indentation, directive fence stack, last-line-blank flags | Earlier line → later lines | Block checkpoints and convergence (5.3) |
-| Lookahead | Setext underline, table separator and caption, definition term marker, multiline and grid tables, directive closer, Properties closing fence | Later lines → earlier decision | Read frontier (5.3) |
-| Retroactive write | A separate-line block identifier sets the preceding block's anchor | Later line → closed node | Read frontier through the write service (5.4) |
-| Container facts from children | `List.tight`, list layout, definition and definition-list scopes | Children → container | Spine re-finalization (5.3) |
-| Unclosed opaque leaves | Fenced code, HTML block, comment, formula block and directive block without a closer run to the end | Opener → rest of document | No special case: the damage runs until the state converges, which is the language's meaning (7.2) |
+| Carried block state | Open list item widths, blockquote and callout prefixes, definition body indentation, directive fence stack, last-line-blank flags | Earlier line → later lines | Entry state on every node; a node is taken only under an equal entry (5.3, E3) |
+| Lookahead | Setext underline, table separator and caption, definition term marker, multiline and grid tables, directive closer, Properties closing fence | Later lines → earlier decision | Reach on every node (5.1, 5.3) |
+| Retroactive write | A separate-line block identifier sets the preceding block's anchor | Later line → closed node | Reach raised by the write service (E2) |
+| Container facts from children | `List.tight`, list layout, definition and definition-list scopes | Children → container | Summaries folded in the children tree (5.3, E4) |
+| Unclosed opaque leaves | Fenced code, HTML block, comment, formula block and directive block without a closer run to the end | Opener → rest of document | No special case: nothing after the opener is taken until the live state equals an old entry again, which is the language's meaning (7.2) |
 | Registry lookups in inline parsing | `[label]` and heading labels in the reference map (`link.c`, `heading.c`), `[^label]` in the footnote label map (`footnote.c`), `@id` in the specimen id index (`citation.c`) | Any definition → any occurrence | Lookup dependency index (5.7) |
 | Document ordinals | `inline-N` footnote ids, heading anchor `-N` suffixes, footnote and specimen order | Earlier declarations → later values | `inline-N` and the lifted footnote and specimen sequences are removed from the model (4.5); anchor suffixes by recomputation by family (5.7) |
 | Shared resources | A definition's destination, title and attributes read by every occurrence | Definition → occurrences | Lookup dependency index (5.7) |
 | Absolute coordinates | Every `Scope` after an inserted or deleted line | Every earlier byte → every later scope | Positions leave the AST (4.3) |
-| Mapped cell inputs | Grid and multiline cell bodies | Table → cells | A table is one leaf unit (5.3) |
+| Mapped cell inputs | Grid and multiline cell bodies | Table → cells | Grid and multiline geometry is a fold over the table's lines (E6) |
 
 A dialect change that adds a dependency not covered by one of these
 mechanisms must add a row here and its mechanism, the same way a new kind
@@ -316,9 +321,8 @@ C views borrow from the session until its next edit.
   before the batch and parses once, for multi-cursor edits and bulk
   replacements. The batch keeps every edit as its own piece of the
   position mapping (5.2), so bytes between two edits stay surviving bytes
-  with their own shift. Damage is per edit; regions whose restart and
-  convergence windows overlap are merged, and the others are re-read
-  independently in source order (5.3).
+  with their own shift. Damage is per edit, and one parse covers every edit
+  of the batch (5.3).
 - **`Document.parse`** keeps its signature apart from the unit parameter. It
   is a session that inserts the whole source once and is then discarded.
 
@@ -379,24 +383,45 @@ binding (D2).
 | State | Contents | Size |
 | --- | --- | --- |
 | Text tree | The source as a balanced tree of bounded byte chunks; each subtree records its byte, line-terminator and UTF-16 counts | O(source) |
-| Tree | The live C tree: ids and each node's extent (4.3) | O(nodes) |
-| Block ledger | One entry per block node at any depth: start offset, node id, entry frontier, read end, spine snapshot (5.3) | O(blocks + changed frames) |
+| Tree | The document as shared immutable nodes (5.11); each node holds its id, its extent (4.3) and its parse record | O(nodes) |
 | Registries | Reference, heading, anchor, footnote and specimen declarations in source order; label winners | O(declarations) |
 | Lookup index | Registry key → inline roots that looked it up, hit or miss | O(lookups) |
-| Frontier | The suspended block parser at the last line boundary, when the document ends in open blocks (5.5) | O(open spine + open leaf content) |
-| Inline ledger | Per inline root: stable prefix end (5.6) | O(inline roots) |
 
-The text, the block ledger and the source-ordered registries are sequences
-whose elements have source extents. They share one structure: a balanced
-tree whose elements store their length (for text, a chunk's bytes; for a
-ledger or registry entry, the byte distance from the previous entry) and
-whose internal nodes store the sums. Absolute offsets, line numbers and
-UTF-16 offsets are prefix sums. Finding an offset, inserting, deleting, and
-shifting everything after an edit all cost O(log n), wherever the edit is, so
-alternating edits at opposite ends of a document cost the same as edits in
-one place. There is one such structure, not one per consumer. (A gap buffer,
-or a sorted array with one lazy shift, would move Θ(n) bytes or keys whenever
-consecutive edits are far apart.)
+The tree is the record of the parse, as it is in tree-sitter, where each
+subtree carries its parse state and how far past its end the lexer looked,
+and nothing else survives a parse. Every block node records three things when
+it is built:
+
+- its **entry**: the carried state (E3) of its parent at the start of its
+  lead, where its previous sibling ended;
+- its **head**: its own state after its opening line, and its **head end**,
+  the furthest byte the decisions on that line read;
+- its **reach**: how far past its end any decision about it read, including
+  lookahead, claimed ranges, the line that closed it and every later line
+  that wrote into it (E2). A container's reach covers its children's.
+
+The input index keeps a high-water mark of the last byte any decision has
+read, so heads and reaches are measured, not declared: an element cannot
+forget one. Inline nodes record an entry and a reach the same way (5.6). A
+fresh parse writes these few words per node and nothing else.
+
+The text, each container's children and the source-ordered registries are
+sequences whose elements have source extents. They share one structure: a
+balanced tree whose elements store their length (for text, a chunk's bytes;
+for children, a child's lead and span; for a registry entry, the byte
+distance from the previous entry) and whose internal nodes store the sums.
+For children, the internal nodes also store the furthest reach past their
+range's end and the combined summary of their children (E4). Absolute
+offsets, line numbers and UTF-16 offsets are prefix sums. Finding an offset,
+inserting, deleting, shifting everything after an edit, finding the first
+child whose reach meets an edit and combining the summaries of a run of
+children all cost O(log n), wherever the edit is, so alternating edits at
+opposite ends of a document cost the same as edits in one place. There is one
+such structure, not one per consumer. (A gap buffer, or a sorted array with
+one lazy shift, would move Θ(n) bytes or keys whenever consecutive edits are
+far apart.) The internal nodes of a children tree are storage, like
+tree-sitter's hidden repetition nodes: walks, the canonical dump and the
+bindings see the children in order.
 
 Line counts and UTF-16 counts must compose: CRLF is one line terminator, and
 a scalar counts as one or two UTF-16 units only when it is whole. The text
@@ -414,15 +439,14 @@ CRLF alike.
 
 Every other workspace in `docs/architecture/parser-input-storage.md`
 (lookahead facts, table geometry, source-order scratch, delimiter pools)
-stays scoped to the edit that re-parses the damaged region. Caches keyed
-by line are therefore never stale.
+lives for one edit's parse. Caches keyed by line are therefore never stale.
 
-Reading source now goes through the input index for every consumer, as it
-already does for the driver, lookahead, Properties and tables. The index
-resolves a line against the text tree. A line inside one chunk is borrowed. A
-line that spans chunks gets one contiguous view through the mechanism that
-already provides normalized views for NUL-bearing lines, so no scanner sees a
-chunk boundary. The view lives for the edit, like other scratch.
+The parser reads the text tree through the input index a line at a time, as
+tree-sitter's lexer reads its input a chunk at a time. A line inside one chunk
+is borrowed. A line that spans chunks gets one contiguous view through the
+mechanism that already provides normalized views for NUL-bearing lines, so no
+scanner sees a chunk boundary. The view lives for the edit, like other
+scratch. An edit reads only the lines it reads again.
 
 ### 5.2 From an edit to damage
 
@@ -448,204 +472,193 @@ the replacements before it. There is no interval and no ambiguous image;
 inserted bytes are the preimage of nothing. Identity (5.9) is defined through
 this mapping alone.
 
-### 5.3 Blocks: restart, re-parse, converge
+### 5.3 Blocks: re-parse against the old tree
 
-**Recording.** While S1 runs, the input index keeps a high-water mark of the
-last line any decision has read, including lookahead and claimed ranges. Each
-block records two values in the ledger:
+An edit parses the new text from its start with the ordinary line machine and
+a cursor over the old tree, as tree-sitter re-parses a file against its old
+tree. Wherever a node's record proves that reading it again would give it
+back, the node is taken whole instead of read.
 
-- its **entry frontier**: the high-water mark when the block opened;
-- its **read end**: the high-water mark when the block closed, raised
-  afterwards by any retroactive write that targets it (5.4).
+**Changed nodes.** An old node is changed when its range, from the start of
+its lead to its end plus its reach, meets or touches a replaced range of the
+batch (5.2). A container that holds a changed node is changed, because its
+range and reach cover its children's. The cursor finds a container's first
+changed child, and the run of unchanged children before the next changed
+one, from the container's children tree in O(log children).
 
-A block's read end therefore covers its closing line, its lookahead and every
-later line that wrote into it. The mark is automatic: an element does not
-declare what it read, so a new element cannot forget to.
+**The cursor.** The cursor is a stack of (old node, child position, old
+offset), like tree-sitter's reusable node, and it moves only forward. A
+**boundary** is a point where the live parse has no open block below its
+innermost open container: the start of a reopened container's children, the
+end of a taken run, and the point inside a read line where the line has
+closed the previous child and opens a new one. At a boundary at position `p`
+the cursor presents, outermost first, the old nodes whose lead starts at the
+image of `p`, and for each one of three things happens:
 
-**Restart.** A restart point is the start of a ledger block `R` such that:
+1. **Take.** The node is not changed; its entry, its parent's entry and so on
+   up to the document equal the carried state of the live spine at each
+   depth; and, at a boundary inside a read line, the block the line opened
+   has the node's head. The node is taken whole, with the run of unchanged
+   siblings after it, and the parent folds the run's combined summary (E4)
+   into its carried state. The block the line opened is dropped, and the
+   parse continues after the run without reading any line of it. The rest of
+   the run needs no comparison: equal state before a node and identical bytes
+   through its reach give equal state after it, which is its next sibling's
+   entry.
+2. **Reopen.** The node is a changed container whose entries are equal as in
+   (1), and either its head end is before its first changed byte or, at a
+   boundary inside a read line, the block the line opened has its head. The
+   container goes back on the live spine with its head state, without its
+   opening line being read again, and the cursor descends to its children.
+   From step 6 a changed leaf whose entries are equal also reopens, at its
+   first changed line (E5).
+3. **Read.** Otherwise the line machine reads the line with
+   `S_process_line`, as a fresh parse does.
 
-- (1) `R` starts at or before the damaged start line;
-- (2) `R`'s entry frontier is before the damaged start line, so nothing
-   decided before `R` read the damage;
-- (3) no block that closed before `R` has a read end at or after the damaged
-   start line.
+**Closing.** When the cursor has taken the last child of a reopened
+container, the container's state equals the old container's at the same
+point, so it closes where the old one did, on a line its last child's reach
+already covers, and that line is not read. A reopened container whose last
+lines are read closes when the line machine closes it. Either way its
+summary is recombined from its children tree in O(changed children × log
+children). That is what makes `List.tight` correct, and cheap, when an edit
+adds a blank line between two early items of a 10,000-item list and every
+later item is taken.
 
-The engine takes the latest such `R` by walking the ledger backwards from the
-damage. Condition 3 is what moves the restart before a paragraph whose Setext,
-table or definition lookahead reached the edited line. The restart is a block
-at any depth, so an edit in the thirtieth item of a list restarts at that item
-(or at the block in it), not at the list.
+**Leads.** The first node of a taken run that follows a read node gets its
+`lead` (4.3) from that node's end. The lead differs only when the edit
+touched the gap before the node, and then that node alone becomes a new value
+with the same id, with all of its children shared.
 
-**Spine snapshots.** An open container's carried state changes while it is
-open: list continuation, for example, reads and updates the list's
-last-line-blank flag on every line, and that flag decides whether a later blank
-line is consumed. A container's node therefore holds the state at the end of
-the old parse, not at `R`. So each ledger entry stores the carried state of
-its whole spine at the moment the block opened, as a **spine snapshot**: an
-immutable list of frames, innermost first, each holding one open container's
-id and its carried facts (E3). Snapshots share frames: a new frame is made
-only for a container whose facts differ from the frame the previous snapshot
-used, together with the frames inside it. Storage is one frame per block plus
-the frames of changed containers.
+**Tables.** A pipe table is a container: its header and delimiter rows are
+its head, which fixes its columns, and its rows are its children. Grid and
+multiline tables decide their geometry from all of their lines, which is a
+fold (E6), and each of their rows records that geometry as its entry. Cells
+are internal inputs of the table's transaction, as now.
 
-Restarting at `R` reopens `R`'s ancestors, which are exactly the open spine
-at that line: each ancestor is marked open and its carried facts are restored
-from `R`'s snapshot, not read from its final node data. `R` and everything
-after it in the ancestors' child chains are detached and kept as reuse
-candidates. The line machine then runs from
-`R`'s first line with the ordinary `S_process_line`. No other entry point
-exists.
+**Several edits.** A batch (4.4) is one parse. The cursor sees every edit of
+the batch, and the nodes between two edits are taken like any others.
 
-**Convergence.** After the damaged end, at the start of each new block at
-line `j`, the engine looks up the old ledger entry that starts at the mapped
-old line `j'`. It converges when all of these hold:
+**Degenerate cases are the same algorithm.** A fresh parse has no old tree,
+so every line is read. An edit in the Properties envelope changes the
+document's first block. An opener of an unclosed fence is followed by no
+taken node until something closes it, because the rest of the document
+really did change meaning.
 
-- (1) such an old block `O` exists and was not damaged;
-- (2) the live new spine and `O`'s spine snapshot are equal: the same kinds at
-   every depth and equal carried facts through each element's `carry_equal`
-   hook, including last-line-blank flags. The comparison is exact and walks
-   the spine; a hash only filters. Frames shared between the two sides
-   compare by identity;
-- (3) the new high-water mark is at most `j`, and `O`'s entry frontier is at
-   most `j'`, so no decision on either side is still reading across the
-   boundary.
-
-The line machine is a deterministic function of its state and the bytes it
-reads. With equal state and identical bytes from `j` on, the old parse's
-future is the new parse's future. So at convergence the engine stops reading:
-`O`, its following siblings and every later sibling of each spine ancestor are
-spliced back from the candidates, and their ledger entries are shifted, not
-rebuilt. The first spliced node in each relation now follows a re-parsed
-predecessor, so its `lead` (4.3) is recomputed from that predecessor's end; it
-differs only when the edit touched the gap before it, and then that node
-alone becomes a new value with the same id and all of its children reused.
-
-**Re-finalization.** The spine containers are still the new parse's open
-nodes. Their closing facts come from the old parse's corresponding closes,
-which convergence proves identical. Each container's child summaries (E4) are
-kept in its ledger entries, in the same summed balanced tree as the rest of
-the ledger (5.1): internal nodes hold the combined summary of their range. An
-edit replaces the summaries of the re-read children and recombines up the
-tree, so a spine container is re-finalized in O(changed children × log
-children), not by walking every child. That is what makes `List.tight`
-correct, and cheap, when the edit added a blank line between two early items
-of a 10,000-item list and every later item was reused.
-
-**Units that are always whole.** A leaf is re-read whole when damaged: a
-paragraph, a code block and an HTML block. A table takes its rows line by
-line, so it reopens at a row like a container: its carried state is its
-column geometry and the cells it has completed, and its counts are a fold of
-its rows (E4). Cells are internal inputs of the table's transaction, as now.
-Value deduplication (5.9) then keeps every unchanged row and cell.
-
-**Several damaged regions.** A batch (4.4) can damage several regions. The
-engine handles them in source order with the same procedure: restart before
-the first, converge after it, then restart before the next. When a region's
-restart point falls before the previous region's convergence, the two are one
-region. Convergence is never taken inside a region that is still to be
-re-read.
-
-**Degenerate cases are the same algorithm.** A fresh parse restarts at the
-document with nothing to converge with. An edit in the Properties envelope
-restarts at the document because the envelope is the first block. An opener
-of an unclosed fence converges nowhere until the fence closes, because the
-rest of the document really did change meaning.
+**Registrations.** The registries are source-ordered sequences held by the
+session (5.7), so the registrations of a taken node stay as they are and
+those of the old nodes that were read are replaced. Until the lookup index
+exists (step 5), every inline root depends on every key: when the
+registrations of the read nodes differ from the ones they replace, every
+inline root is parsed again.
 
 ### 5.4 The element contract
 
-The engine can reuse and restart only what elements make deterministic.
-These are requirements on every element, each checked by an audit script in
+The engine can take and reopen only what elements make deterministic. These
+are requirements on every element, each checked by an audit script in
 `scripts/audit/` in the style of `parser-boundaries.mjs`:
 
 - **E1 Reads go through the index.** Source reads, including lookahead and
   claimed ranges, go through the input index, so the high-water mark sees
-  them. An element never keeps a raw pointer into the source across lines.
+  them and every head end and reach is measured. An element never keeps a
+  raw pointer into the source across lines.
 - **E2 Retroactive writes go through one service.** Changing a node that has
   closed (the separate-line block identifier is the current case) uses
-  `markdown_core_parser_write_closed(parser, node)`, which raises the node's
-  read end to the current line. The audit forbids other writes to closed
-  nodes.
-- **E3 Carried state is declared.** Per-parse element state (`state_size`) is
-  one of three things: a cache that the parse may drop; a declaration
-  registry that moves to the session (5.7); or carried block state, which is
-  stored on the open node, saved into spine snapshots as the word
-  `carry_save` returns and restored by `carry_restore`; two containers with
-  equal flags and equal words take later lines alike. Nothing else may carry
-  information from one line to a later one.
+  `markdown_core_parser_write_closed(parser, node)`, which copies the node
+  when it is shared (5.11) and raises its reach to the current line. The
+  audit forbids other writes to closed nodes.
+- **E3 Carried state is a head and a fold.** Per-parse element state
+  (`state_size`) is one of three things: a cache that the parse may drop; a
+  declaration registry that moves to the session (5.7); or carried block
+  state. A container's carried state where a child can start is a function of
+  its head, the word `carry_save` returns after its opening line, and the
+  combined summary (E4) of its closed children, whose leads hold the blank
+  lines before them. Nothing else carries information from one line to a
+  later one. Equal heads and equal summaries are equal states, so every
+  comparison in 5.3 compares words.
 - **E4 Container finalize is a fold of child summaries.** It reads children
   and recorded facts and writes the container's own fields, and running it
   twice gives the same node. Each container kind declares a per-child summary
   and an associative combine, and its fields are a function of the combined
-  summary. `List.tight` is one: a child's summary is (starts after a blank
-  line, contains a blank between its own children), and the list is loose
-  when any child contains one or any child after the first starts after one.
-  Extents of definitions and lists combine from their children's extents.
-- **E5 Leaf finalize does not consume accumulation.** It produces the node's
-  value from the accumulated content without destroying that content, so the
-  frontier (5.5) can publish a provisional value and keep accumulating.
-  Paragraph already records its consumed reference-definition prefix as a
-  persistent fact; trailing-whitespace trimming becomes a length, not a
-  truncation of the buffer.
+  summary, which its children tree keeps (5.1). `List.tight` is one: a
+  child's summary is (starts after a blank line, contains a blank between its
+  own children), and the list is loose when any child contains one or any
+  child after the first starts after one. Extents of definitions and lists
+  combine from their children's extents.
+- **E5 Leaf finalize keeps the accumulation.** A leaf's value is produced from
+  its accumulated content without destroying it, and the closed leaf keeps
+  its content and content map, so it can reopen at a later line: its content
+  is cut at that line and reading continues there. Paragraph already records
+  its consumed reference-definition prefix as a persistent fact;
+  trailing-whitespace trimming becomes a length, not a truncation of the
+  buffer.
+- **E6 A decision over a node's own lines is a fold.** When a decision reads
+  all of a node's lines (the column geometry of a grid or multiline table),
+  each line has a summary, the node keeps the summaries in a children tree
+  of its lines, and the decision is a function of their combined summary,
+  made when the node closes. The rows built from the decision record it as
+  their entry. An edit reads the lines it changed, recombines in O(log
+  lines), and takes every row whose lines are unchanged while the decision
+  is unchanged.
 
-### 5.5 Tail streaming: the frontier checkpoint
+### 5.5 Streaming is an edit at the end
 
-When the document ends inside open blocks, which is almost always true during
-streaming, the session keeps the block parser suspended at the start of the
-last physical line: the open spine, each open leaf's accumulated content and
-content map, and the index's high-water mark. This is the one checkpoint that
-is not a block start, and it satisfies the same restart conditions: an edit
-at or after its line restarts there.
+An append inserts at the end of the text. A node that was open when the
+input ended read to the end, so its reach touches the insertion, and the
+changed nodes are exactly the open spine. The cursor reopens the spine's
+containers, whose heads are before the end, takes their closed children in
+runs, and reads from the last open leaf. Until step 6 that leaf is read
+whole; from step 6 it reopens at its last line (E5), so an append costs the
+last line, the new bytes and the inline work of 5.6. Blocks that the
+appended text closes close normally.
 
-Publishing a document from a suspended parser finalizes the open spine
-**provisionally**. Leaves produce values by E5 without consuming their
-buffers. Containers produce values by E4. The published nodes get ids and are
-matched by the ordinary rules at the next edit, so a paragraph that is still
-growing keeps its id from its first line to its last.
-
-An append of `c` bytes then costs: re-reading the previously unterminated last
-line and the new bytes through `S_process_line`, a provisional finalize of the
-open leaf, inline work from the leaf's stable prefix (5.6), and path copying.
-When the appended text closes blocks, they close normally and their
-provisional values are replaced by final ones only where the values differ.
+Every published document is a finished parse of the session's text. A
+paragraph that is still growing keeps its id from its first line to its last
+by the matching rule (5.9).
 
 ### 5.6 Inline parsing
 
-An inline root is re-parsed when its leaf was re-read, or when a registry
-winner it looked up changed (5.7). Everything else keeps its inline tree.
+An inline root is parsed again when its block was read again, or when a
+registry winner it looked up changed (5.7). Every other root keeps its inline
+tree.
 
-For a leaf that was re-read only by extension at its end (the frontier leaf
-during streaming, or an edit at the end of a paragraph), the inline parse
-restarts at the leaf's **stable prefix end**, recorded at the end of its
-previous inline parse. It is the smallest content offset of:
+From step 6 a root that is parsed again is parsed against its old inline tree
+by the algorithm of 5.3. Each inline node records its **entry**, the
+delimiter state at its start, and its **reach**, the furthest content offset
+any decision about it read:
 
-- a delimiter-stack entry that could still pair or be claimed: a marker that
-  can open, a citation token, a field, an unclosed bracket;
-- a token decision that reached the end of the content: an unmatched backtick
-  run, an unclosed HTML or comment token, a formula without a closer, or any
-  scanner that stopped at the slice limit rather than at a byte;
-- the start of the last line, because a line's trailing whitespace is a hard
+- a delimiter run that can still open or close, a citation token, a field
+  and an unclosed bracket reach the end of the content, because a later
+  closer can still pair with them;
+- a token decision that stopped at the end of the content (an unmatched
+  backtick run, an unclosed HTML or comment token, a formula without a
+  closer, or any scanner that stopped at the slice limit rather than at a
+  byte) reaches the end of the content;
+- a line's trailing whitespace reaches the next line, because it is a hard
   break inside a paragraph and is trimmed at its end.
 
-Before that offset the stack holds only boundary entries, and the delimiter
-model already summarizes those as one floor per range
-(`docs/architecture/inline-delimiters.md`). The state at the offset is
-therefore reconstructible exactly: an empty stack with that floor. Inline
-nodes wholly before the offset are reused, the Text node that straddles it is
-rebuilt, and parsing continues to the end. This is the same inline parser,
-starting at an offset.
+An inline node is changed when its range plus its reach meets the changed
+bytes of the content. The parser reads the content from its start with a
+cursor over the old inline children: an unchanged node whose entry equals the
+live delimiter state is taken with its run, and everything else is read. The
+state after a taken run equals the old state there, by the argument of 5.3.
+The entry is small because the delimiter model already summarizes the
+entries that can no longer pair as one floor per range
+(`docs/architecture/inline-delimiters.md`).
 
 Typical streamed prose closes its delimiters within a few words and its Text
 nodes are split per line by SoftBreak, so the per-chunk inline work is about
-the size of the current line. An early opener that never closes keeps the
-stable prefix at that opener: the cost then grows with the distance from it,
-which is inherent, because a later closer can still pair with it.
+the size of the current line. An early opener that never closes is read
+again on each append, together with the nodes whose entry it changes when a
+new closer pairs with it.
 
 ### 5.7 Registries and resolution
 
 The S1 registrations and S3 declarations move from the parse to the
-session and become source-ordered sequences (5.1). An edit replaces exactly
-the entries whose nodes were re-read, which is one contiguous range per
-registry. Then:
+session and become source-ordered sequences (5.1). An entry holds the
+declaration's values and its node's id. An edit replaces exactly the entries
+of the nodes it read, which is one contiguous range per registry and edit,
+and keeps the entries of taken nodes. Then:
 
 - **Winners.** For each normalized label whose entries changed, the first
   definition in source order is recomputed, with explicit definitions before
@@ -654,10 +667,10 @@ registry. Then:
 - **Lookup dependencies.** During inline parsing every registry query records
   `(registry, key) → inline root`, whether it hit or missed. A miss matters as
   much as a hit: adding `[x]: /u` turns every `[x]` into a Link. When a
-  winner changes, its dependents are queued for inline re-parse. The index
+  winner changes, its dependents are parsed again (5.6). The index
   holds edges in both directions: each inline root owns the list of keys it
-  queried, and each key the set of root ids that queried it. Re-parsing a
-  root first removes all of its old edges and then records the new ones;
+  queried, and each key the set of root ids that queried it. Parsing a
+  root again first removes all of its old edges and then records the new ones;
   retiring a root removes its edges. The
   index therefore holds exactly the current document's lookups, and an edge
   never names a retired node. A heading's
@@ -677,46 +690,44 @@ registry. Then:
   value (interning by content). A declaration that changes therefore yields a
   different value; there is nothing to update. Today
   `markdown_core_headings_finish` instead treats the heading target as a
-  mutable object and rewrites its URL in place. Reuse (5.9) assumes that a
-  node's content cannot change without the node being rebuilt, so in a
-  session that write would change Links the engine keeps as unchanged, so
-  the new document's Links would disagree with a fresh parse. The session therefore builds the heading target's value
-  once its anchor is final, and the Links that looked it up are re-parsed
-  against the new value through the lookup index.
+  mutable object and rewrites its URL in place. A taken node is shared with
+  the old tree (5.11), so in a session that write would change Links the
+  engine takes as unchanged, and the new document's Links would disagree
+  with a fresh parse. The session therefore builds the heading target's
+  value once its anchor is final, and the Links that looked it up are parsed
+  again against the new value through the lookup index.
 - **Definition lookups.** The footnote and specimen label registries are
-  source-ordered sequences like the others; a changed winner queues its
-  dependents. Definitions themselves stay in the tree, so nothing is spliced
-  into the document and no ordinal is recomputed.
+  source-ordered sequences like the others; a changed winner's dependents
+  are parsed again. Definitions themselves stay in the tree, so nothing is
+  spliced into the document and no ordinal is recomputed.
 
 ### 5.8 Finish steps and passes
 
-The finish walk runs on the inline roots and block subtrees that were re-read
-or re-resolved, never on reused ones. Consolidation, script-escape
-completion, list layout, formula promotion and the Autolink email pass all act
-within one root, so their results for a reused root are already in the reused
-tree. `check-finish-hook-shapes.mjs` gains the rule that a finish step or pass
+The finish walk runs on the inline roots and block subtrees that were read or
+re-resolved, never on taken ones. Consolidation, script-escape completion,
+list layout, formula promotion and the Autolink email pass all act within one
+root, so their results for a taken root are already in the taken tree.
+`check-finish-hook-shapes.mjs` gains the rule that a finish step or pass
 reads only its root and the registries, which is what lets them run per root.
 
-Within a root re-parsed from its stable prefix (5.6), finish resumes at the
-prefix too; otherwise every streamed chunk would re-finish the whole
-paragraph, and a long paragraph would cost quadratic work. Finished nodes
-wholly before the prefix are kept as they are. The finish walk visits the
-nodes the inline parse rebuilt (the suffix and the path of containers that
-straddle the prefix) plus, at each level of that path, the one finished
-sibling immediately before them. That is exact because of a second rule the
-audit enforces: **a finish step's result for a node depends only on that node
-and its immediately preceding sibling**, after the step has run on that
-sibling. Text consolidation merges a node into its predecessor, the email
-pass scans one consolidated Text, and the others read one node. The left
-sibling at the prefix ends no later than the start of the last line, where
-SoftBreak splits Text, so resumed finish work is of the same order as the
-inline re-parse. A step that needs a wider window must say so in its hook
-shape, and the stable prefix then moves back by that window.
+Within a root parsed against its old inline tree (5.6), finish runs where the
+parse read: taken nodes are already finished. The finish walk visits the
+read nodes, the path of containers above them, and at each level of that path
+the finished sibling immediately before each read run and the taken sibling
+immediately after it. That is exact because of a second rule the audit
+enforces: **a finish step's result for a node depends only on that node and
+its immediately preceding sibling**, after the step has run on that sibling.
+Text consolidation merges a node into its predecessor, the email pass scans
+one consolidated Text, and the others read one node. Finish work is
+therefore of the same order as the inline work. A step that needs a wider
+window must say so in its hook shape, and the reach of the nodes it reads
+(5.6) grows by that window.
 
 ### 5.9 Identity matching and value deduplication
 
-After re-parsing, each new node in the re-read region is matched to an old
-node:
+A taken node is the old node (5.11), so it and its whole subtree keep their
+ids wherever the parse puts them. Each node that was read is matched to an
+old node:
 
 - Matching runs per owner relation between a new owner and the old node it
   matched, starting from the reopened spine, whose nodes kept their ids.
@@ -743,36 +754,71 @@ node:
     id; the second retires.
   - Bytes between the edits of a batch keep their own exact images, so nodes
     there match as if each edit were alone.
-- Children of an unmatched owner get new ids. A paragraph that moves into a
-  new blockquote is a new node, as it is to every UI framework.
+- Read children of an unmatched owner get new ids. A paragraph that moves
+  into a new blockquote is read again, because its entry changed, and is a
+  new node, as it is to every UI framework.
 
-Then, in post-order, each matched `N` is compared with its `O`: equal kind,
-equal scalars, equal extent, and every child relation holding the same
-objects.
-If they are equal, `N` is released and `O` stays. Within the C session, a
-node that differs from its predecessor as an object therefore differs as a
-value, which is what R3 measures.
+Then, in post-order, each matched read node `N` is compared with its `O`:
+equal kind, equal scalars, equal extent, and every child relation holding the
+same objects. If they are equal, `N` is released and `O` is shared in its
+place. Within the C session, a node that differs from its predecessor as an
+object therefore differs as a value, which is what R3 measures.
 
 ### 5.10 Why the result equals a fresh parse
 
-- Blocks: the restart state equals the fresh parse's state at `R`, by
-  conditions 2 and 3 of the restart rule and E3. Re-reading is the same
-  function. At convergence the future is identical by determinism, E1 and E2.
-  Spine re-finalization is correct by E4.
-- Inline trees: a reused root's content and lookup answers are unchanged. A
-  re-parsed root runs the same parser against the same registries. A stable
-  prefix restart is exact by the delimiter model's floor summary.
+- Blocks: every line the edit reads is read by the fresh parse's line
+  machine. A taken node is exact by induction along the parse: at a take,
+  the live state equals the old state at the start of the node's lead (equal
+  entries and E3), the bytes from there through its reach are unchanged,
+  and the line machine is a deterministic function of its state and the
+  bytes it reads (E1, E2), so it would build the node again and leave the
+  same state after it. A reopened container's head state is the one its
+  unchanged opening line produced. A container's fields are a fold of its
+  children's summaries (E4), and a decision over a node's lines is a fold of
+  its lines' summaries (E6).
+- Inline trees: a kept root's content and lookup answers are unchanged. A
+  root parsed again runs the same parser against the same registries, and
+  its taken nodes are exact by the same induction.
 - Resolution: winners, families and ordinals are recomputed over complete
   source-ordered registries with the same rules.
 - Finish: per-root steps on unchanged roots gave the same results before.
 
 This argument is also the test oracle (section 8).
 
-### 5.11 Session state
+### 5.11 Session state and memory
 
-An edit changes session state in place: the text tree, the live tree, the ledger, the registries, the lookup index, the
-frontier and the inline ledger. Nodes and elements it removes are freed when
-it completes.
+The session's state is the text tree, the tree, the registries and the
+lookup index. Between edits the parser holds nothing else: like
+tree-sitter's `TSParser`, which is reset after every parse, its spine,
+cursor, input index and scratch live for one edit, and its lasting storage
+is the node pool's free slots.
+
+The tree is stored the way tree-sitter stores its syntax trees:
+
+- **Nodes are shared immutable values.** A node holds a reference count, its
+  id, kind, extent, parse record and fields, and its children tree. It has no
+  parent, previous-sibling or next-sibling link and no absolute position, so
+  one subtree can sit in the old tree and the new one at once. Walks carry
+  their path on an explicit stack, and no operation recurses along tree edges
+  (D3).
+- **Taking is a reference.** Taking a node retains it, in O(1). Taking a run
+  of children retains the few internal nodes of the old children tree that
+  hold it and joins them into the live container's children tree, in
+  O(log children).
+- **Writes copy what is shared.** A change to a node referenced once happens
+  in place. A change to a shared node first copies its header and its
+  references to its children, retaining each, like `ts_subtree_make_mut`.
+  An edit copies only the paths from the root to what changed.
+- **Open blocks are builders.** A block is mutable only while it is open on
+  the parser's spine. When it closes it becomes a node with a reference count
+  of one, with its children tree balanced as it was built.
+- **Release is iterative.** Releasing a node decrements its count. At zero,
+  its children are released the same way from an explicit stack, and the
+  freed slots return to the session's pool.
+
+An edit retains the old root for its parse, builds the new root, makes it the
+session's document and releases the old root: nodes that only the old tree
+held are freed, and nodes shared with the new tree live on.
 
 ## 6. Bindings
 
@@ -860,23 +906,24 @@ Values stay plain readonly objects. Lists key by id, and `React.memo` takes
 
 ### 7.1 Bounds
 
-Let `d` be the depth of the edit point, `F` the sum of child counts along the
-changed paths, `L` the size of the re-read leaves, `W` the lookahead window
-before convergence, and `k` the size of inline roots invalidated by
-resolution changes.
+Let `d` be the depth of the edit point, `b` the largest child count along
+the paths from the root to the changes, `L` the size of the read leaves, `W`
+the lines read after the damage before the next take, and `k` the size of
+inline roots invalidated by resolution changes.
 
 | Operation | Block work | Inline work | Resolution | C tree changes |
 | --- | --- | --- | --- | --- |
-| Append `c` bytes inside an open paragraph | O(c + last line) | O(c + distance to stable prefix) | O(changed declarations) | O(d + F) |
-| Append that closes and opens blocks | O(c + last line + closed leaves) | as above | as above | O(d + F) |
-| Edit inside one closed leaf | O(L + W) | O(L) | O(changed declarations + k) | O(d + F) |
-| Edit that changes container structure | O(blocks until convergence) | O(re-read leaves + k) | as above | O(changed nodes + F) |
+| Append `c` bytes inside an open paragraph | O(c + last line + d log b) | O(c + last line + open delimiters) | O(changed declarations) | O(d log b) |
+| Append that closes and opens blocks | O(c + last line + closed leaves + d log b) | as above | as above | O(d log b) |
+| Edit inside one closed leaf | O(L + W + d log b) | O(L) | O(changed declarations + k) | O(d log b) |
+| Edit that changes container structure | O(lines read + d log b) | O(read leaves + k) | as above | O(read nodes + d log b) |
 | Fresh parse | O(n), as today | O(n) | O(n) | O(n) |
 
-The text tree, the ledger and the registries add O(log n) per lookup,
-insertion, deletion and shift, wherever the edit is. A binding builds each
-published document whole (6.1); that O(nodes) is the platform's construction
-cost and is outside these bounds. No bound depends on a size threshold.
+The text tree, the children trees and the registries add O(log n) per
+lookup, insertion, deletion and shift, wherever the edit is. A binding builds
+each published document whole (6.1); that O(nodes) is the platform's
+construction cost and is outside these bounds. No bound depends on a size
+threshold.
 
 ### 7.2 Costs that are the language's, not the algorithm's
 
@@ -885,13 +932,16 @@ pretend otherwise:
 
 - Opening an unclosed fence, HTML block, comment or directive block near the
   top changes the meaning of everything after it until something closes it.
+- A comment block and the Properties envelope decide their opener by looking
+  ahead to their closer, so the opener's reach runs to the closer and an edit
+  inside them reads them from the opener.
 - A definition referenced 10,000 times changes 10,000 Links when its
   destination changes.
 - A leaf's literal is one string value, so a code block streamed to the end
   of a response produces a new literal of the whole block per chunk. The
   renderer re-highlights that block per chunk anyway.
-- A table at the tail is re-read whole per appended row, bounded by the
-  table's size.
+- A grid or multiline table whose geometry changes rebuilds every row,
+  because every cell's bounds changed.
 
 ## 8. Testing
 
@@ -930,7 +980,7 @@ which also says at which rollout step each one becomes a gate.
 - **Allocation failures.** The allocator-seam OOM sweep fails every edit at
   every allocation boundary and asserts that the edit throws and that
   freeing the session leaks nothing.
-- **Audits.** E1–E5 (5.4), the finish-step root rule (5.8), and the
+- **Audits.** E1–E6 (5.4), the finish-step root rule (5.8), and the
   dependency inventory (section 3) are enforced by scripts in
   `scripts/audit/`.
 
@@ -955,16 +1005,22 @@ activates for it.
    `canonical-ast.md` rule changes in the same step.
 - [ ] **Step 2: Sessions with a whole-document restart.** Session API on every platform,
    the text tree, identity matching,
-   and value deduplication. The restart
-   point is always the document and nothing converges: this is the degenerate
-   case of the final algorithm, and it already gives R1, R3, R4 and R5, with
-   O(n) parse work.
-- [ ] **Step 3: Block restart and convergence.** The ledger, the high-water mark, E1–E4
-   and their audits, spine re-finalization.
-- [ ] **Step 4: Session registries.** Source-ordered registries, winners, lookup
-   dependencies, anchor families, per-root finish steps.
-- [ ] **Step 5: Frontier and inline restart.** The suspended frontier, E5, and the
-   stable prefix.
+   and value deduplication. Every line is read again and nothing is taken:
+   this is the degenerate case of the final algorithm, and it already gives
+   R1, R3, R4 and R5, with O(n) parse work.
+- [ ] **Step 3: Shared subtrees.** The C tree becomes shared immutable nodes
+   with reference counts, children trees, builders for open blocks, copy on
+   write and iterative release, with no parent or sibling links (5.11). Walks
+   carry their path on explicit stacks. The parser reads the text tree a line
+   at a time (5.1). Every line is still read again, as in step 2.
+- [ ] **Step 4: Block reuse.** Node records and the high-water mark (5.1),
+   the cursor's take, reopen and read (5.3), E1–E4 and E6 and their audits,
+   summaries in children trees, streaming as an edit at the end (5.5), and
+   session-held registrations with every inline root depending on every key.
+- [ ] **Step 5: Session registries.** Winners, lookup dependencies, anchor
+   families, per-root finish steps (5.7, 5.8).
+- [ ] **Step 6: Inline reuse.** Inline records and the cursor over old inline
+   trees (5.6), leaf reopening (E5), and finish over read nodes (5.8).
 
 ## 10. Decisions for the owner
 
@@ -1002,6 +1058,12 @@ activates for it.
   binding state of its own (a table of previous objects, or the previous
   document as a second input) and the engine reports to maintain it.
 
+- **D6 Node storage. Decided 2026-10-01: shared subtrees.** The C tree is
+  stored the way tree-sitter stores its trees: shared immutable nodes with
+  reference counts, copy on write, balanced children trees and no parent or
+  sibling links (5.11). Rejected: a single-owner tree reused in place, which
+  keeps cmark's parent and sibling links.
+
 ## 11. Rejected alternatives
 
 - **Returning a diff or patch.** Excluded by the requirement. Consumers
@@ -1009,18 +1071,24 @@ activates for it.
   parallel source of truth.
 - **Re-parse everything, then reconcile the trees.** It achieves R3 and R4 but
   not R2, and it is O(n) per keystroke and per streamed token. It survives
-  only as the test oracle and as rollout step 2, where it is the degenerate
-  restart of the same algorithm.
+  only as the test oracle and as rollout steps 2 and 3, where it is the
+  degenerate case of the same algorithm.
 - **Content-hash or path identifiers.** A hash changes on every edit of the
   node, so an edited paragraph would lose its view state. A path changes when
   an earlier sibling is inserted. Neither is stable.
 - **A separate streaming parser.** Two parsers diverge. Streaming is an
-  insertion at the end, and the frontier checkpoint makes it cheap without a
-  second grammar.
+  insertion at the end, and the open spine is all that an append changes
+  (5.5).
 - **Top-level blocks as the only reuse unit.** Model output is often one long
-  list or quote, and such a unit would re-read all of it per token. Ledger
-  entries at every depth cost one entry per block.
-- **A general incremental parsing framework (GLR, packrat memoization).**
-  Markdown's block grammar is a line machine with bounded lookahead. The
-  existing parser's determinism is enough for convergence, and memoizing every
+  list or quote, and such a unit would re-read all of it per token. Records
+  on nodes at every depth cost a few words per block.
+- **Memoizing every rule (packrat).** Markdown's block grammar is a line
+  machine with bounded lookahead. Records on the nodes the parser already
+  builds are enough to take everything that is unchanged, and memoizing every
   rule would multiply memory for no additional reuse.
+- **A ledger of the parse beside the tree.** The first step 3 kept a ledger of
+  per-line checkpoints, carried state and spine snapshots, replayed at
+  finish, with a restart search and a convergence test. Writing it cost
+  every fresh parse (one-shot `buffer_to_ast` median 1.078, maximum 2.42,
+  against the 1.02 gate) and duplicated what the tree holds. Tree-sitter keeps
+  those facts on its nodes, and so does this design (5.1).
