@@ -154,16 +154,19 @@ static markdown_core_node_slot *S_slot_of(markdown_core_node *node) {
  * initializes the node and its active record after taking the slot. Spare
  * record capacity is storage, not an object to initialize. */
 static markdown_core_node_slot *S_slot_take(markdown_core_node_pool *pool) {
-    return (markdown_core_node_slot *)markdown_core_slab_take(pool, sizeof(markdown_core_node_slot),
-                                                              MARKDOWN_CORE_NODE_SLAB_BYTES);
+    return (markdown_core_node_slot *)markdown_core_slab_take(
+        pool ? &pool->nodes : NULL, sizeof(markdown_core_node_slot), MARKDOWN_CORE_NODE_SLAB_BYTES);
 }
 
 /* The node's storage, after its contents are released. */
 static void S_slot_release(markdown_core_node_pool *pool, markdown_core_node *node) {
-    markdown_core_slab_release(pool, S_slot_of(node));
+    markdown_core_slab_release(pool ? &pool->nodes : NULL, S_slot_of(node));
 }
 
-void markdown_core_node_pool_dispose(markdown_core_node_pool *pool) { markdown_core_slab_pool_dispose(pool); }
+void markdown_core_node_pool_dispose(markdown_core_node_pool *pool) {
+    markdown_core_slab_pool_dispose(&pool->nodes);
+    markdown_core_slab_pool_dispose(&pool->resources);
+}
 
 /* RECORD SIZE IS A PROPERTY OF THE KIND, so it is an array index.
  *
@@ -329,7 +332,7 @@ markdown_core_node *markdown_core_node_new(markdown_core_node_type type) {
     return markdown_core_node_pool_new(NULL, type, NULL);
 }
 
-static void free_node_as(markdown_core_node *node) {
+static void free_node_as(markdown_core_slab_pool *resources, markdown_core_node *node) {
     switch (node->kind) {
     case MARKDOWN_CORE_NODE_CALLOUT:
         markdown_core_optional_chunk_free(&node->as.callout->variant);
@@ -383,7 +386,7 @@ static void free_node_as(markdown_core_node *node) {
     case MARKDOWN_CORE_NODE_EMBEDDED:
         /* One holder fewer; a resource shared with other occurrences, or
          * still held by the reference map, stays. */
-        markdown_core_resource_release(node->as.link->resource);
+        markdown_core_resource_release(resources, node->as.link->resource);
         node->as.link->resource = NULL;
         break;
     default:
@@ -423,33 +426,35 @@ static int S_release_owned_subtree(markdown_core_node **slot, void *context) {
     return 1;
 }
 
-/* The node-valued fields join the same iterative free walk as content.
- * Kind conversion uses a separate walk so its siblings remain untouched. */
-static void S_splice_owned_fields(markdown_core_node *owner, markdown_core_node *after) {
-    switch (owner->kind) {
+/* THE NODE-VALUED FIELDS OF A NODE'S RECORD, each slot visited whether or
+ * not it holds a node. An element's own are visited by its
+ * `visit_owned_subtrees_func`; `S_visit_fields` visits both. */
+static int S_visit_record_fields(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor, void *context) {
+    switch (node->kind) {
     case MARKDOWN_CORE_NODE_DEFINITION:
-        S_splice_after(after, owner->as.definition->term);
-        break;
+        return visitor(&node->as.definition->term, context);
     case MARKDOWN_CORE_NODE_CALLOUT:
-        S_splice_after(after, owner->as.callout->title);
-        break;
+        return visitor(&node->as.callout->title, context);
     case MARKDOWN_CORE_NODE_CITE:
-        S_splice_after(after, owner->as.cite->citations);
-        break;
+        return visitor(&node->as.cite->citations, context);
     case MARKDOWN_CORE_NODE_CITATION:
-        S_splice_after(after, owner->as.citation->suffix);
-        S_splice_after(after, owner->as.citation->prefix);
-        S_splice_after(after, owner->as.citation->note);
-        break;
+        return visitor(&node->as.citation->note, context) && visitor(&node->as.citation->prefix, context) &&
+               visitor(&node->as.citation->suffix, context);
     case MARKDOWN_CORE_NODE_DOCUMENT:
-        S_splice_after(after, owner->as.document->metadata);
-        break;
+        return visitor(&node->as.document->metadata, context);
     default:
-        break;
+        return 1;
     }
 }
 
+static int S_visit_fields(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor, void *context) {
+    return S_visit_record_fields(node, visitor, context) &&
+           (!node->element || !node->element->visit_owned_subtrees_func ||
+            node->element->visit_owned_subtrees_func(node->element, node, visitor, context));
+}
+
 static size_t S_free_nodes(markdown_core_node_pool *pool, markdown_core_node *e) {
+    markdown_core_slab_pool *resources = pool ? &pool->resources : NULL;
     markdown_core_node *next;
     size_t released = 0;
     while (e != NULL) {
@@ -459,21 +464,19 @@ static size_t S_free_nodes(markdown_core_node_pool *pool, markdown_core_node *e)
          * beside it -- is made here, so a node that owns neither pays the
          * compares and no call. */
         if (markdown_core_attributes_owns(&e->attributes)) {
-            markdown_core_attributes_free(&e->attributes);
+            markdown_core_attributes_release(resources, &e->attributes);
         }
         if (markdown_core_strbuf_owns(&e->content)) {
             markdown_core_strbuf_free(&e->content);
         }
 
-        if (e->element && e->element->visit_owned_subtrees_func) {
-            e->element->visit_owned_subtrees_func(e->element, e, S_release_owned_subtree, e);
-        }
+        /* The node-valued fields join the same iterative free walk as
+         * content. */
+        S_visit_fields(e, S_release_owned_subtree, e);
         if (e->opaque && e->element && e->element->opaque_free_func) {
             e->element->opaque_free_func(e->element, e);
         }
-
-        S_splice_owned_fields(e, e);
-        free_node_as(e);
+        free_node_as(resources, e);
 
         if (e->last_child) {
             // Splice children into list
@@ -497,6 +500,55 @@ size_t markdown_core_node_release(markdown_core_node *node) { return markdown_co
 
 void markdown_core_node_free(markdown_core_node *node) { (void)markdown_core_node_release(node); }
 
+/* A visit of one node's fields that exchanges each with the field of
+ * `other` in the same place: fields of one kind sit at one offset from the
+ * storage that holds them, the record or the element's payload. */
+typedef struct {
+    const unsigned char *storage;
+    unsigned char *other;
+} S_field_pair;
+
+static int S_field_swap(markdown_core_node **slot, void *context) {
+    S_field_pair *pair = context;
+    markdown_core_node **at = (markdown_core_node **)(pair->other + ((const unsigned char *)slot - pair->storage));
+    markdown_core_node *held = *slot;
+    *slot = *at;
+    *at = held;
+    return 1;
+}
+
+/* Exchanges `size` bytes at `a` and `b`, through a buffer of `capacity`. */
+#define S_SWAP_BYTES(a, b, capacity)                                                                                   \
+    do {                                                                                                               \
+        unsigned char held[capacity];                                                                                  \
+        memcpy(held, (a), sizeof(held));                                                                               \
+        memcpy((a), (b), sizeof(held));                                                                                \
+        memcpy((b), held, sizeof(held));                                                                               \
+    } while (0)
+
+#define S_NODE_VALUE_OFFSET offsetof(markdown_core_node, attributes)
+
+void markdown_core_node_swap_values(markdown_core_node *a, markdown_core_node *b) {
+    S_SWAP_BYTES((unsigned char *)a + S_NODE_VALUE_OFFSET, (unsigned char *)b + S_NODE_VALUE_OFFSET,
+                 sizeof(markdown_core_node) - S_NODE_VALUE_OFFSET);
+    /* A record in the slot stays in the slot: the bytes move, not the view.
+     * The kind is the same, so either both records are in their slots or
+     * neither is. */
+    if (a->as.data && !a->node_data_allocation) {
+        unsigned char *p = S_slot_of(a)->record, *q = S_slot_of(b)->record;
+        S_SWAP_BYTES(p, q, MARKDOWN_CORE_NODE_SLOT_RECORD_BYTES);
+        a->as.data = p;
+        b->as.data = q;
+    }
+    /* The node-valued fields are places: each node takes its own back. */
+    S_field_pair pair = {a->as.data, b->as.data};
+    S_visit_record_fields(a, S_field_swap, &pair);
+    if (a->element && a->element->visit_owned_subtrees_func) {
+        pair = (S_field_pair){a->opaque, b->opaque};
+        a->element->visit_owned_subtrees_func(a->element, a, S_field_swap, &pair);
+    }
+}
+
 markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_node *node, markdown_core_node_type kind) {
     markdown_core_node_type initial_kind = (markdown_core_node_type)node->kind;
     if (kind == initial_kind) {
@@ -516,10 +568,12 @@ markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_nod
     if (size > MARKDOWN_CORE_NODE_SLOT_RECORD_BYTES && !allocation) {
         return MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED;
     }
+    /* Kind conversion keeps the element's fields; the record's are freed
+     * by a separate walk so the node's siblings remain untouched. */
     markdown_core_node fields = {0};
-    S_splice_owned_fields(node, &fields);
+    S_visit_record_fields(node, S_release_owned_subtree, &fields);
     S_free_nodes(NULL, fields.next);
-    free_node_as(node);
+    free_node_as(NULL, node);
     node->as.data = allocation ? allocation : size ? S_slot_of(node)->record : NULL;
     node->node_data_allocation = allocation;
     if (!allocation && size) {
@@ -565,10 +619,10 @@ int markdown_core_node_set_string_content(markdown_core_node *node, const char *
 
 #define MARKDOWN_CORE_RESOURCE_SLAB_BYTES ((size_t)8 * 1024)
 
-markdown_core_resource *markdown_core_resource_new(markdown_core_slab_pool *pool, markdown_core_chunk url,
+markdown_core_resource *markdown_core_resource_new(markdown_core_node_pool *pool, markdown_core_chunk url,
                                                    markdown_core_optional_chunk title) {
     markdown_core_resource *resource = (markdown_core_resource *)markdown_core_slab_take(
-        pool, sizeof(markdown_core_resource), MARKDOWN_CORE_RESOURCE_SLAB_BYTES);
+        pool ? &pool->resources : NULL, sizeof(markdown_core_resource), MARKDOWN_CORE_RESOURCE_SLAB_BYTES);
     if (!resource) {
         return NULL;
     }
@@ -585,7 +639,7 @@ void markdown_core_resource_retain(markdown_core_resource *resource) {
     }
 }
 
-void markdown_core_resource_release(markdown_core_resource *resource) {
+void markdown_core_resource_release(markdown_core_slab_pool *resources, markdown_core_resource *resource) {
     if (!resource) {
         return;
     }
@@ -595,8 +649,8 @@ void markdown_core_resource_release(markdown_core_resource *resource) {
     }
     markdown_core_chunk_free(&resource->url);
     markdown_core_optional_chunk_free(&resource->title);
-    markdown_core_attributes_free(&resource->attributes);
-    markdown_core_slab_release(NULL, resource);
+    markdown_core_attributes_release(resources, &resource->attributes);
+    markdown_core_slab_release(resources, resource);
 }
 
 int markdown_core_node_set_element(markdown_core_node *node, const markdown_core_element *element) {

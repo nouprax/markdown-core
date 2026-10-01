@@ -293,7 +293,7 @@ void *markdown_core_map_carve(markdown_core_map *map, size_t size) {
     return storage;
 }
 
-void markdown_core_map_free(markdown_core_map *map) {
+void markdown_core_map_free(markdown_core_slab_pool *resources, markdown_core_map *map) {
     markdown_core_map_record *record;
 
     if (map == NULL) {
@@ -303,7 +303,7 @@ void markdown_core_map_free(markdown_core_map *map) {
     /* The map's holder goes; a resource some node still reads through stays
      * with that node, which is how the tree outlives the parser. */
     for (record = map->records; record; record = record->next) {
-        markdown_core_resource_release(record->resource);
+        markdown_core_resource_release(resources, record->resource);
     }
     while (map->blocks) {
         markdown_core_map_block *next = map->blocks->head.next;

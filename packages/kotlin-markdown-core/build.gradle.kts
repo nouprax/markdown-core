@@ -251,6 +251,7 @@ fun KotlinNativeTarget.configureNativeFacade() {
                 repositoryRoot.files("CMakeLists.txt"),
                 repositoryRoot.dir("packages/markdown-core/core"),
                 repositoryRoot.dir("packages/markdown-core/elements"),
+                repositoryRoot.dir("packages/markdown-core/include"),
                 repositoryRoot.dir("packages/markdown-core/wire"),
                 layout.projectDirectory.dir("src/native"),
             )
@@ -274,6 +275,7 @@ fun KotlinNativeTarget.configureNativeFacade() {
             inputs.files(
                 repositoryRoot.dir("packages/markdown-core/core"),
                 repositoryRoot.dir("packages/markdown-core/elements"),
+                repositoryRoot.dir("packages/markdown-core/include"),
                 repositoryRoot.dir("packages/markdown-core/wire"),
                 layout.projectDirectory.dir("src/native"),
             )
@@ -307,7 +309,10 @@ fun KotlinNativeTarget.configureNativeFacade() {
 
     compilations.getByName("main").cinterops.create("markdownCoreKotlin") {
         definitionFile.set(generatedDefinitionDirectory.map { it.file("markdown_core_kotlin.def") })
-        compilerOpts("-I${repositoryRoot.dir("packages/markdown-core/wire").asFile.absolutePath}")
+        compilerOpts(
+            "-I${repositoryRoot.dir("packages/markdown-core/wire").asFile.absolutePath}",
+            "-I${repositoryRoot.dir("packages/markdown-core/include").asFile.absolutePath}",
+        )
         tasks.named(interopProcessingTaskName).configure {
             dependsOn(generateDefinition)
             if (embedNativeLibraries) {
@@ -337,6 +342,7 @@ val configureDesktopJni =
             repositoryRoot.files("CMakeLists.txt"),
             repositoryRoot.dir("packages/markdown-core/core"),
             repositoryRoot.dir("packages/markdown-core/elements"),
+            repositoryRoot.dir("packages/markdown-core/include"),
             repositoryRoot.dir("packages/markdown-core/wire"),
             layout.projectDirectory.dir("src/native"),
         )
@@ -369,6 +375,7 @@ val buildDesktopJni =
         inputs.files(
             repositoryRoot.dir("packages/markdown-core/core"),
             repositoryRoot.dir("packages/markdown-core/elements"),
+            repositoryRoot.dir("packages/markdown-core/include"),
             repositoryRoot.dir("packages/markdown-core/wire"),
             layout.projectDirectory.dir("src/native"),
         )

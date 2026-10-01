@@ -4,7 +4,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { TextDecoder } from "node:util";
 
 import {
     ADVERSARIAL_SHAPES,
@@ -203,35 +202,45 @@ test("scripts survive their text format unchanged", () => {
     assert.equal(formatScripts(parseScripts(text)), text);
 });
 
-test("the invalid arguments are each invalid in the unit they are written in", () => {
-    const text = "aé\u{20000}\n";
+test("every rejected batch is refused with the status it declares, in the unit it is written in", () => {
+    const text = "a\u00e9\u{20000}\n";
     const buffer = Buffer.from(text);
     const script = rejectionScript(text);
+    const statuses = new Set();
     for (const step of script.steps) {
         assert.equal(step.kind, "reject");
-        if (step.operation === "append") {
-            assert.throws(() => new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(step.values[0], "hex")));
-            continue;
-        }
-        const [start, end, hexText] = step.values.map((value, index) => (index < 2 ? Number(value) : value));
         const length = step.unit === "utf8" ? buffer.length : text.length;
-        const boundary = (at) =>
-            step.unit === "utf8"
-                ? scalarBoundaries(buffer).includes(at)
-                : at <= text.length && !(at > 0 && /[\ud800-\udbff]/.test(text[at - 1]));
-        const wellFormed = (() => {
-            try {
-                new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(hexText, "hex"));
-                return true;
-            } catch {
-                return false;
-            }
-        })();
-        assert.ok(
-            start > end || end > length || !boundary(start) || !boundary(end) || !wellFormed,
-            step.values.join(" ")
-        );
+        /* No scalar begins at a continuation byte or between two units of one scalar. */
+        const inside = (at) =>
+            at < length &&
+            (step.unit === "utf8" ? (buffer[at] & 0xc0) === 0x80 : at > 0 && /[\ud800-\udbff]/u.test(text[at - 1]));
+        const ranges = [];
+        for (let index = 0; index < step.values.length; index += 3) {
+            ranges.push([Number(step.values[index]), Number(step.values[index + 1])]);
+        }
+        /* The session checks each edit in order, its start before its end, then the overlaps. */
+        let status = null;
+        for (const [start, end] of ranges) {
+            if (start > end) status = "out-of-bounds";
+            else if (start > length) status = "out-of-bounds";
+            else if (inside(start)) status = "inside-scalar";
+            else if (end > length) status = "out-of-bounds";
+            else if (inside(end)) status = "inside-scalar";
+            if (status) break;
+        }
+        const sorted = ranges.toSorted((left, right) => left[0] - right[0] || left[1] - right[1]);
+        if (!status && sorted.some(([start], index) => index > 0 && start < sorted[index - 1][1])) {
+            status = "out-of-bounds";
+        }
+        assert.equal(status, step.status, `${step.unit} ${step.values.join(" ")}`);
+        statuses.add(`${step.unit} ${step.status}`);
     }
+    assert.deepEqual([...statuses].sort(), [
+        "utf16 inside-scalar",
+        "utf16 out-of-bounds",
+        "utf8 inside-scalar",
+        "utf8 out-of-bounds"
+    ]);
 });
 
 test("the correctness set declares exactly the families its cases belong to", () => {

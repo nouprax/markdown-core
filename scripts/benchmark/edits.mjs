@@ -16,8 +16,13 @@
  * workload's final text, both stages, exactly as the one-shot benchmark
  * measures a document.
  *
- * Until the session API exists the only subject is `reparse`, which reports
- * the R column (section 7, step 0).
+ * Two subjects run every workload: `reparse`, the R column, and `session`,
+ * the S column. The session takes every step of its windows, so it is
+ * measured on the workloads of at most 1,024 steps, where 6.3 holds every
+ * step to 1.25 times `reparse` on the same step; a longer stream is bounded
+ * per chunk by 6.2 from the step that makes its chunks local (section 7). The
+ * report is written either way, and a violation of 6.3 fails the run that
+ * writes the whole report.
  *
  *   node scripts/benchmark/edits.mjs [--out DIR] [--set all|corpus]
  *                                    [--workload NAME]... [--shard I/N]
@@ -38,13 +43,13 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { isMainThread, parentPort, Worker, workerData } from "node:worker_threads";
 
 import { parseCallgrind } from "./callgrind.mjs";
-import { groupWindows, summary, windowCost, windowEnds } from "./edit-gates.mjs";
+import { groupWindows, neverWorse, summary, WINDOWS, windowCost, windowEnds } from "./edit-gates.mjs";
 import { EDIT_RUNNER, measure, prepareBuild, profileRun } from "./run.mjs";
 import { STAGES } from "./stage-budget.mjs";
 import { BENCHMARK_SETS, writeBenchmarkWorkloads } from "./workloads.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
-const SUBJECT = "reparse";
+const SUBJECTS = Object.freeze(["reparse", "session"]);
 
 function fail(message) {
     console.error(`benchmark:edits: ${message}`);
@@ -93,13 +98,12 @@ function parseArguments(argv) {
 }
 
 /**
- * One workload, measured: the subject's windows and the one-shot parse of the
- * text it ends with. Runs in a worker; every path is absolute.
+ * One subject on one workload: its windows' costs and its receipt. The
+ * profile of the most expensive window is kept as `NAME.SUBJECT.max`; the
+ * rest are read and removed, because a long stream writes a thousand of them.
  */
-function measureWorkload(profile, out, workload) {
-    const dump = path.join(out, "callgrind", `${workload.name}.out`);
-    const final = path.join(out, "final", `${workload.name}.md`);
-    fs.mkdirSync(path.dirname(final), { recursive: true });
+function measureSubject(profile, out, workload, subject, final) {
+    const dump = path.join(out, "callgrind", `${workload.name}.${subject}.out`);
     const document = path.join(out, "workloads", workload.document);
     const input = workload.script
         ? ["--script", path.join(out, "workloads", workload.file), "--name", workload.script]
@@ -107,23 +111,18 @@ function measureWorkload(profile, out, workload) {
     const stdout = profileRun(
         profile,
         EDIT_RUNNER,
-        ["--subject", SUBJECT, "--document", document, ...input, "--final", final],
+        ["--subject", subject, "--document", document, ...input, "--final", final],
         dump,
         out
     );
     const receipt = /steps=(\d+) windows=(\d+) bytes=(\d+) root_children=(\d+)/u.exec(stdout);
-    if (!receipt) throw new Error(`${workload.name} produced no receipt`);
+    if (!receipt) throw new Error(`${workload.name} produced no receipt from ${subject}`);
     const [steps, windows, bytes, rootChildren] = receipt.slice(1).map(Number);
     if (windows !== windowEnds(steps).length) throw new Error(`${workload.name} reported ${windows} windows`);
-
-    /* One dump per window, then the process's own. The profile of the most
-     * expensive window is kept as the workload's raw profile; the rest are
-     * read and removed, because a long stream writes a thousand of them. */
     const costs = [];
     let highest = 0;
     for (let window = 1; window <= windows; window++) {
-        const file = `${dump}.${window}`;
-        const cost = windowCost(parseCallgrind(fs.readFileSync(file, "utf8")));
+        const cost = windowCost(parseCallgrind(fs.readFileSync(`${dump}.${window}`, "utf8")));
         costs.push(cost);
         if (cost.Ir > costs[highest].Ir) highest = window - 1;
     }
@@ -131,22 +130,42 @@ function measureWorkload(profile, out, workload) {
     fs.renameSync(`${dump}.${highest + 1}`, `${dump}.max`);
     for (let window = 1; window <= windows; window++) fs.rmSync(`${dump}.${window}`, { force: true });
     fs.rmSync(dump, { force: true });
+    return {
+        steps,
+        bytes,
+        rootChildren,
+        windows: costs.map((cost) => cost.Ir),
+        summary: {
+            ir: summary(costs.map((cost) => cost.Ir)),
+            dataRefs: costs.reduce((sum, cost) => sum + cost.Dr + cost.Dw, 0),
+            maxWindow: highest + 1
+        }
+    };
+}
 
+/**
+ * One workload, measured: each subject's windows, 6.3 between them, and the
+ * one-shot parse of the text they end with. Runs in a worker; every path is
+ * absolute.
+ */
+function measureWorkload(profile, out, workload) {
+    const final = path.join(out, "final", `${workload.name}.md`);
+    fs.mkdirSync(path.dirname(final), { recursive: true });
+    const reparse = measureSubject(profile, out, workload, "reparse", final);
+    const session = reparse.steps <= WINDOWS ? measureSubject(profile, out, workload, "session", final) : null;
     const oneshot = measure(profile, "markdown-core", { case: workload.name, file: final }, out);
-    if (oneshot.receiptBytes !== bytes || oneshot.rootChildren !== rootChildren) {
+    if (oneshot.receiptBytes !== reparse.bytes || oneshot.rootChildren !== reparse.rootChildren) {
         throw new Error(`${workload.name}: the one-shot parse of the final text disagrees with the subject's`);
     }
     fs.rmSync(oneshot.dump, { force: true });
     fs.rmSync(final, { force: true });
     return {
-        steps,
-        bytes,
-        windows: costs.map((cost) => cost.Ir),
-        reparse: {
-            ir: summary(costs.map((cost) => cost.Ir)),
-            dataRefs: costs.reduce((sum, cost) => sum + cost.Dr + cost.Dw, 0),
-            maxWindow: highest + 1
-        },
+        steps: reparse.steps,
+        bytes: reparse.bytes,
+        windows: reparse.windows,
+        reparse: reparse.summary,
+        session: session && { windows: session.windows, ...session.summary },
+        neverWorse: session ? neverWorse(session.windows, reparse.windows) : [],
         oneshot: { ir: STAGES.reduce((sum, stage) => sum + oneshot.stages[stage].cost.Ir, 0) }
     };
 }
@@ -205,34 +224,60 @@ function measureAll(profile, out, workloads, quiet) {
 
 const number = (value) => value.toLocaleString("en-US");
 
+/** A group's four figures, or blanks when it has no such column. */
+const figures = (column) =>
+    column ? [column.p50, column.p95, column.max, column.total].map(number) : ["", "", "", ""];
+
+/** The 6.3 violations of a report: every step above 1.25 times `reparse`. */
+export function violations(report) {
+    return report.results.flatMap((row) => row.neverWorse.map((entry) => ({ name: row.name, ...entry })));
+}
+
 /**
- * The human report: per document source, family and size, the R column pooled
- * over every window of every workload in the group, and the one-shot parse of
- * the final texts.
+ * The human report: per document source, family and size, the R and S
+ * columns pooled over every window of every workload in the group, the
+ * highest S / R of one step, and the one-shot parse of the final texts.
  */
 export function markdownReport(report) {
     const lines = [
         "# Edit and stream benchmark",
         "",
-        `Subject: \`${report.subject}\`. Workloads: ${number(report.results.length)} (\`${report.workloads.version}\`, digest \`${report.workloads.digest.slice(0, 16)}\`).`,
+        `Subjects: ${report.subjects.map((subject) => `\`${subject}\``).join(", ")}. Workloads: ${number(report.results.length)} (\`${report.workloads.version}\`, digest \`${report.workloads.digest.slice(0, 16)}\`).`,
         "Every figure is Ir per window, the edge into `bench_apply_step`; the one-shot column parses each workload's final text once, both stages.",
+        `S is measured on the workloads of at most ${number(WINDOWS)} steps, where each step costs at most 1.25 times R's (6.3).`,
         "",
-        "| Documents | Family | Size | Workloads | Windows | R p50 | R p95 | R max | R total | One-shot total |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
+        "| Documents | Family | Size | Workloads | Windows | R p50 | R p95 | R max | R total | S p50 | S p95 | S max | S total | Highest S / R | One-shot total |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
     ];
     const groups = groupWindows(report.results, (row) => JSON.stringify([row.source, row.family, row.size]));
     for (const group of groups) {
         const [source, family, size] = JSON.parse(group.key);
-        const { p50, p95, max, total } = group.reparse;
         lines.push(
-            `| ${source} | ${family} | ${size ? number(size) : ""} | ${[group.workloads, group.windows, p50, p95, max, total, group.oneshot].map(number).join(" | ")} |`
+            `| ${[
+                source,
+                family,
+                size ? number(size) : "",
+                number(group.workloads),
+                number(group.windows),
+                ...figures(group.reparse),
+                ...figures(group.session),
+                group.ratio === null ? "" : `${group.ratio.toFixed(3)}×`,
+                number(group.oneshot)
+            ].join(" | ")} |`
         );
+    }
+    const failed = violations(report);
+    if (failed.length) {
+        lines.push("", `6.3 fails on ${number(failed.length)} step(s):`, "");
+        for (const entry of failed.slice(0, 20)) {
+            lines.push(`- ${entry.name} step ${entry.step + 1}: ${entry.ratio.toFixed(3)}× reparse`);
+        }
     }
     return lines.join("\n");
 }
 
 /** The fields every part of one measurement shares, and the report carries. */
-const IDENTITY = ["schemaVersion", "subject", "toolchain", "binaries", "profile", "workloads"];
+const IDENTITY = ["schemaVersion", "subjects", "toolchain", "binaries", "profile", "workloads"];
 
 /** Write the report and its human rendering under `out`. */
 function writeReport(report, out, quiet) {
@@ -304,8 +349,8 @@ async function measureSet(options) {
         options.quiet
     );
     const report = {
-        schemaVersion: 1,
-        subject: SUBJECT,
+        schemaVersion: 2,
+        subjects: SUBJECTS,
         toolchain: versions,
         /* The two binaries this report measures, by content: parts built on
          * different machines agree on these and nothing else. */
@@ -329,14 +374,23 @@ async function measureSet(options) {
 
 async function main() {
     const options = parseArguments(process.argv.slice(2));
+    let report;
     if (options.merge) {
         const parts = fs
             .readdirSync(options.merge, { withFileTypes: true })
             .filter((entry) => entry.isDirectory())
             .map((entry) => JSON.parse(fs.readFileSync(path.join(options.merge, entry.name, "edits.json"), "utf8")));
-        writeReport(mergeParts(parts), options.out, options.quiet);
+        report = mergeParts(parts);
     } else {
-        writeReport(await measureSet(options), options.out, options.quiet);
+        report = await measureSet(options);
+    }
+    writeReport(report, options.out, options.quiet);
+    /* A part is judged with the others, once they are joined. */
+    const failed = report.shard ? [] : violations(report);
+    if (failed.length) {
+        fail(
+            `6.3: ${failed.length} step(s) cost more than 1.25 times reparse, the first ${failed[0].name} step ${failed[0].step + 1} at ${failed[0].ratio.toFixed(3)}×`
+        );
     }
 }
 

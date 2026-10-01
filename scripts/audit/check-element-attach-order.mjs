@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /** The product's composition root selects the complete core dialect at
- * exactly one site, and hands it to the engine's one parse transaction as the
+ * exactly one site, and hands it to the engine's parser instance as the
  * start of every instance's dialect. The engine itself names no element. Every descriptor occurs once
  * and table is last. Private setup probes can extend an instance's dialect
  * through its builder; production parsing must not register anything or
@@ -120,10 +120,11 @@ for (const site of sites) {
     );
 }
 
-// The one transaction attaches the whole table; neither facade, tests, nor
-// fuzzers own a configurable engine entry. Old option words cannot return.
+// The one instance constructor attaches the whole table; neither facade,
+// tests, nor fuzzers own a configurable engine entry. Old option words cannot
+// return.
 const dialectAttachSites = [];
-const engineParseSites = [];
+const engineInstanceSites = [];
 function cSources(dir) {
     return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
         const full = path.join(dir, entry.name);
@@ -141,25 +142,25 @@ for (const file of cSources(pkg)) {
         if (end < 0 || /^\s*\{/.test(source.slice(end))) continue;
         dialectAttachSites.push({ file: path.relative(pkg, file), function: enclosingFunction(source, match.index) });
     }
-    for (const match of source.matchAll(/\bmarkdown_core_parser_parse\s*\(/g)) {
+    for (const match of source.matchAll(/\bmarkdown_core_parser_create\s*\(/g)) {
         const end = endOfArguments(source, source.indexOf("(", match.index));
         if (end < 0 || /^\s*\{/.test(source.slice(end))) continue;
-        engineParseSites.push({ file: path.relative(pkg, file), function: enclosingFunction(source, match.index) });
+        engineInstanceSites.push({ file: path.relative(pkg, file), function: enclosingFunction(source, match.index) });
     }
 }
 if (
     dialectAttachSites.length !== 1 ||
     dialectAttachSites[0].file !== "elements/core-elements.c" ||
-    dialectAttachSites[0].function !== "markdown_core_parse_document_with_setup"
+    dialectAttachSites[0].function !== "markdown_core_core_parser"
 ) {
     failures.push("the sole composition root must select the complete core dialect");
 }
 if (
-    engineParseSites.length !== 1 ||
-    engineParseSites[0].file !== "elements/core-elements.c" ||
-    engineParseSites[0].function !== "markdown_core_parse_document_with_setup"
+    engineInstanceSites.length !== 1 ||
+    engineInstanceSites[0].file !== "elements/core-elements.c" ||
+    engineInstanceSites[0].function !== "markdown_core_core_parser"
 ) {
-    failures.push("only the composition root may run the engine's parse transaction");
+    failures.push("only the composition root may make the engine's parser instance");
 }
 
 // (2) The shared inventory proves every descriptor has exactly one position.

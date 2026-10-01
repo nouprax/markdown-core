@@ -325,11 +325,14 @@ const markdown_core_node *ts_field(const markdown_core_node *node, ts_node_field
 }
 
 /* One pending step of the walk: `count` nodes of one relation from `first`,
- * where `base` is the offset the first one's lead is relative to. */
+ * where `base` is the offset the first one's lead is relative to, and the
+ * relation's owner and its place among the owner's relations. */
 typedef struct {
     const markdown_core_node *first;
     size_t count;
     int64_t base;
+    const markdown_core_node *owner;
+    size_t relation;
 } ts_walk_entry;
 
 typedef struct {
@@ -338,7 +341,8 @@ typedef struct {
     bool failed;
 } ts_walk_stack;
 
-static void ts_walk_push(ts_walk_stack *stack, const markdown_core_node *first, size_t count, int64_t base) {
+static void ts_walk_push(ts_walk_stack *stack, const markdown_core_node *first, size_t count, int64_t base,
+                         const markdown_core_node *owner, size_t relation) {
     if (!first || !count || stack->failed) {
         return;
     }
@@ -352,7 +356,7 @@ static void ts_walk_push(ts_walk_stack *stack, const markdown_core_node *first, 
         stack->entries = entries;
         stack->capacity = capacity;
     }
-    stack->entries[stack->count++] = (ts_walk_entry){first, count, base};
+    stack->entries[stack->count++] = (ts_walk_entry){first, count, base, owner, relation};
 }
 
 static size_t ts_chain_length(const markdown_core_node *first) {
@@ -374,11 +378,12 @@ static const markdown_core_node *ts_chain_skip(const markdown_core_node *first, 
  * facade alone: each relation's first node leads from the owner's start. */
 static void ts_walk_relations(ts_walk_stack *stack, const markdown_core_node *node, int64_t start) {
     ts_walk_stack relations = {0};
+    size_t relation = 0;
 #define TS_RELATION(first_, count_)                                                                                    \
     do {                                                                                                               \
         const markdown_core_node *relation_first = (first_);                                                           \
         size_t relation_count = relation_first ? (count_) : 0;                                                         \
-        ts_walk_push(&relations, relation_first, relation_count, start);                                               \
+        ts_walk_push(&relations, relation_first, relation_count, start, node, relation++);                             \
     } while (0)
 #define TS_CHAIN(first_) TS_RELATION((first_), ts_chain_length(first_))
     const markdown_core_node *children = markdown_core_node_get_first_child(node);
@@ -434,32 +439,49 @@ static void ts_walk_relations(ts_walk_stack *stack, const markdown_core_node *no
     /* Later relations go on the stack first, so the first comes off first. */
     stack->failed = stack->failed || relations.failed;
     while (relations.count) {
-        ts_walk_entry relation = relations.entries[--relations.count];
-        ts_walk_push(stack, relation.first, relation.count, relation.base);
+        ts_walk_entry pending = relations.entries[--relations.count];
+        ts_walk_push(stack, pending.first, pending.count, pending.base, pending.owner, pending.relation);
     }
     free(relations.entries);
 }
 
-int ts_ast_walk(const markdown_core_node *root, ts_ast_visit_fn visit, void *context) {
+int ts_ast_walk_owned(const markdown_core_node *root, ts_ast_owned_visit_fn visit, void *context) {
     ts_walk_stack stack = {0};
     int result = 0;
-    ts_walk_push(&stack, root, 1, 0);
+    ts_walk_push(&stack, root, 1, 0, NULL, 0);
     while (stack.count && !stack.failed) {
         ts_walk_entry entry = stack.entries[--stack.count];
         markdown_core_extent extent = markdown_core_node_extent(entry.first);
-        ts_ast_range range = {entry.base + extent.lead, entry.base + extent.lead + (int64_t)extent.span};
-        result = visit(entry.first, range, context);
+        ts_ast_place place = {
+            {entry.base + extent.lead, entry.base + extent.lead + (int64_t)extent.span}, entry.owner, entry.relation};
+        result = visit(entry.first, place, context);
         if (result) {
             break;
         }
-        ts_walk_push(&stack, markdown_core_node_get_next_sibling(entry.first), entry.count - 1, range.end);
-        ts_walk_relations(&stack, entry.first, range.start);
+        ts_walk_push(&stack, markdown_core_node_get_next_sibling(entry.first), entry.count - 1, place.range.end,
+                     entry.owner, entry.relation);
+        ts_walk_relations(&stack, entry.first, place.range.start);
     }
     if (stack.failed) {
         result = -1;
     }
     free(stack.entries);
     return result;
+}
+
+typedef struct {
+    ts_ast_visit_fn visit;
+    void *context;
+} ts_ranged_visit;
+
+static int ts_visit_range(const markdown_core_node *node, ts_ast_place place, void *context) {
+    ts_ranged_visit *ranged = context;
+    return ranged->visit(node, place.range, ranged->context);
+}
+
+int ts_ast_walk(const markdown_core_node *root, ts_ast_visit_fn visit, void *context) {
+    ts_ranged_visit ranged = {visit, context};
+    return ts_ast_walk_owned(root, ts_visit_range, &ranged);
 }
 
 typedef struct {

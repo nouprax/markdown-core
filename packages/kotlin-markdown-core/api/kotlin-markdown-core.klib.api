@@ -20,6 +20,7 @@ final enum class com.nouprax.markdown.core/BibMode : kotlin/Enum<com.nouprax.mar
 
 final enum class com.nouprax.markdown.core/ErrorCode : kotlin/Enum<com.nouprax.markdown.core/ErrorCode> { // com.nouprax.markdown.core/ErrorCode|null[0]
     enum entry ALLOCATION_FAILED // com.nouprax.markdown.core/ErrorCode.ALLOCATION_FAILED|null[0]
+    enum entry INSIDE_SCALAR // com.nouprax.markdown.core/ErrorCode.INSIDE_SCALAR|null[0]
     enum entry KIND_MISMATCH // com.nouprax.markdown.core/ErrorCode.KIND_MISMATCH|null[0]
     enum entry OUT_OF_BOUNDS // com.nouprax.markdown.core/ErrorCode.OUT_OF_BOUNDS|null[0]
 
@@ -876,6 +877,21 @@ final class com.nouprax.markdown.core/MarkdownCoreException : kotlin/RuntimeExce
         final fun <get-code>(): com.nouprax.markdown.core/ErrorCode // com.nouprax.markdown.core/MarkdownCoreException.code.<get-code>|<get-code>(){}[0]
 }
 
+final class com.nouprax.markdown.core/MarkdownSession : kotlin/AutoCloseable { // com.nouprax.markdown.core/MarkdownSession|null[0]
+    constructor <init>(kotlin/String = ..., com.nouprax.markdown.core/TextUnit = ...) // com.nouprax.markdown.core/MarkdownSession.<init>|<init>(kotlin.String;com.nouprax.markdown.core.TextUnit){}[0]
+
+    final val document // com.nouprax.markdown.core/MarkdownSession.document|{}document[0]
+        final fun <get-document>(): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/MarkdownSession.document.<get-document>|<get-document>(){}[0]
+    final val text // com.nouprax.markdown.core/MarkdownSession.text|{}text[0]
+        final fun <get-text>(): kotlin/String // com.nouprax.markdown.core/MarkdownSession.text.<get-text>|<get-text>(){}[0]
+    final val unit // com.nouprax.markdown.core/MarkdownSession.unit|{}unit[0]
+        final fun <get-unit>(): com.nouprax.markdown.core/TextUnit // com.nouprax.markdown.core/MarkdownSession.unit.<get-unit>|<get-unit>(){}[0]
+
+    final fun append(kotlin/String): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/MarkdownSession.append|append(kotlin.String){}[0]
+    final fun close() // com.nouprax.markdown.core/MarkdownSession.close|close(){}[0]
+    final fun edit(kotlin.collections/List<com.nouprax.markdown.core/TextEdit>): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/MarkdownSession.edit|edit(kotlin.collections.List<com.nouprax.markdown.core.TextEdit>){}[0]
+}
+
 final class com.nouprax.markdown.core/Metadata : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Metadata|null[0]
     final val abstract // com.nouprax.markdown.core/Metadata.abstract|{}abstract[0]
         final fun <get-abstract>(): com.nouprax.markdown.core/MetadataValue? // com.nouprax.markdown.core/Metadata.abstract.<get-abstract>|<get-abstract>(){}[0]
@@ -1149,6 +1165,25 @@ final class com.nouprax.markdown.core/Text : com.nouprax.markdown.core/Markup { 
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/Text.id.<get-id>|<get-id>(){}[0]
     final val literal // com.nouprax.markdown.core/Text.literal|{}literal[0]
         final fun <get-literal>(): kotlin/String // com.nouprax.markdown.core/Text.literal.<get-literal>|<get-literal>(){}[0]
+}
+
+final class com.nouprax.markdown.core/TextEdit { // com.nouprax.markdown.core/TextEdit|null[0]
+    constructor <init>(kotlin/Int, kotlin/Int, kotlin/String) // com.nouprax.markdown.core/TextEdit.<init>|<init>(kotlin.Int;kotlin.Int;kotlin.String){}[0]
+
+    final val end // com.nouprax.markdown.core/TextEdit.end|{}end[0]
+        final fun <get-end>(): kotlin/Int // com.nouprax.markdown.core/TextEdit.end.<get-end>|<get-end>(){}[0]
+    final val start // com.nouprax.markdown.core/TextEdit.start|{}start[0]
+        final fun <get-start>(): kotlin/Int // com.nouprax.markdown.core/TextEdit.start.<get-start>|<get-start>(){}[0]
+    final val text // com.nouprax.markdown.core/TextEdit.text|{}text[0]
+        final fun <get-text>(): kotlin/String // com.nouprax.markdown.core/TextEdit.text.<get-text>|<get-text>(){}[0]
+
+    final fun component1(): kotlin/Int // com.nouprax.markdown.core/TextEdit.component1|component1(){}[0]
+    final fun component2(): kotlin/Int // com.nouprax.markdown.core/TextEdit.component2|component2(){}[0]
+    final fun component3(): kotlin/String // com.nouprax.markdown.core/TextEdit.component3|component3(){}[0]
+    final fun copy(kotlin/Int = ..., kotlin/Int = ..., kotlin/String = ...): com.nouprax.markdown.core/TextEdit // com.nouprax.markdown.core/TextEdit.copy|copy(kotlin.Int;kotlin.Int;kotlin.String){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/TextEdit.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/TextEdit.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // com.nouprax.markdown.core/TextEdit.toString|toString(){}[0]
 }
 
 final class com.nouprax.markdown.core/ThematicBreak : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/ThematicBreak|null[0]

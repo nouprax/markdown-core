@@ -16,23 +16,25 @@ same alignment, and that padding is included in measured memory costs.
 
 A node's storage is a fixed-size slot: a header naming the slab it came from,
 the node, and room for its kind's record. A parse takes slots from slabs --
-one allocation holding many slots -- through a pool the parser owns, and a
-caller with no parse takes one slot from the allocator; the header says which,
-and nothing else about the storage is visible through the node.
+one allocation holding many slots -- through a pool its caller lends it: a
+session's, which outlives each of its edits, or one made for a single parse.
+A caller with no parse takes one slot from the allocator; the header says
+which, and nothing else about the storage is visible through the node.
 
 A slab lives while anything holds it: every slot taken from it, and the pool
-while that slab is the one it takes slots from. A slot released during the
-parse goes back to the pool and is handed out again, initialized, before another
-slot is taken from a slab, so the storage a parse holds is bounded by its peak
-live node count rather than by how many nodes it made. A slot released with no
-pool drops its hold, and the slab is freed with its last one -- by whichever
-release that turns out to be. Disposing the pool drops the holds the pool
-itself has (its released slots, its current slab) and nothing else, so the
-finished tree keeps its slabs, and a subtree unlinked from a parsed document
-outlives the document like a hand-built one: `markdown_core_node_free` releases
-either. What a retained subtree keeps alive is its slabs, not its nodes. The
-nodes of one slab are released from one thread at a time; two parses never
-share a slab.
+while that slab is the one it takes slots from. A slot released into a pool
+goes back to it and is handed out again, initialized, before another slot is
+taken from a slab, so the storage a parse holds is bounded by its peak live
+node count rather than by how many nodes it made, and a session's edits reuse
+the slots of the nodes they retire instead of pinning a slab per edit. A slot
+released with no pool drops its hold, and the slab is freed with its last one
+-- by whichever release that turns out to be. Disposing the pool drops the
+holds the pool itself has (its released slots, its current slab) and nothing
+else, so a finished tree keeps its slabs, and a subtree unlinked from a parsed
+document outlives the document like a hand-built one: `markdown_core_node_free`
+releases either. What a retained subtree keeps alive is its slabs, not its
+nodes. The nodes of one slab are released from one thread at a time; two
+sessions never share a slab.
 
 Why: a node's chunk was larger than the C library's fast-path size classes, so
 every release of one walked the allocator's merge path, and releasing the
@@ -43,9 +45,28 @@ attributes a `Link` or `Embedded` reads, shared by every occurrence that
 resolves to one definition. It is taken from a second pool of the parse, and
 `slab.h` is the one mechanism both pools use. The last of its holders releases
 it: the map record, the attribute value of the heading that declares it, or
-an occurrence. Its slot
-never goes back to a pool; it drops its slab hold. So the tree keeps its
-resource slabs as it keeps its node slabs.
+an occurrence. Released into a pool, its slot goes back to that pool's
+resource slabs; released with none, it drops its slab hold. So the tree keeps
+its resource slabs as it keeps its node slabs.
+
+## A node's place and its value
+
+A node's fields are its PLACE -- its links (`next`, `prev`, `parent`,
+`first_child`, `last_child`) and its `id` -- and its VALUE, everything after
+them: attributes, content, extent, kind, flags, element state, the record and
+the storage all of these borrow. Inline literals are slices of their block's
+content buffer, so a value borrows from the parse that made it.
+
+A session's parse continues the previous document (docs/plans/
+2026-09-29-incremental-parsing.md, 5.9). When a new node equals the old node
+it continues, the old node is the one the new document holds, and it must
+hold the new parse's storage, since the old parse's is released with the old
+tree. `markdown_core_node_swap_values` exchanges the values of such a
+pair in one block copy of the value fields and one of the slot's record
+space, and then gives each node back the node-valued fields its record holds,
+which are places. After the exchanges the new tree holds only the new
+parse's storage and the retired tree only the old, and each is released as a
+whole.
 
 Reference-map records are not slots. Every record lives exactly as long as
 its map, so records are carved from blocks the map owns and freed with it,

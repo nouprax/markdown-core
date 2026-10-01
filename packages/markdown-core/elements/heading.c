@@ -376,8 +376,8 @@ void markdown_core_prepare_heading(const markdown_core_element_instance *self, m
         markdown_core_chunk label = {inline_state.input.data, run->label_end, 0};
         if (label.len > 0 && label.len <= MAX_LINK_LABEL_LENGTH &&
             markdown_core_inline_reference_label_length(label.data, label.len) == label.len) {
-            markdown_core_resource *resource = markdown_core_resource_new(
-                &parser->resources, markdown_core_chunk_literal(""), markdown_core_optional_chunk_absent());
+            markdown_core_resource *resource = markdown_core_resource_new(parser->pool, markdown_core_chunk_literal(""),
+                                                                          markdown_core_optional_chunk_absent());
             if (!resource) {
                 inline_state.error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
             } else {

@@ -8,7 +8,7 @@ promised to remain compatible between releases.
 
 - Give every public call one error model. A C call that can fail returns a
   `markdown_core_status` -- `MARKDOWN_CORE_OK`, `ALLOCATION_FAILED`,
-  `OUT_OF_BOUNDS` or `KIND_MISMATCH` -- and writes its result through
+  `OUT_OF_BOUNDS`, `KIND_MISMATCH` or `INSIDE_SCALAR` -- and writes its result through
   out-parameters only on success; the heap `markdown_core_error`, its message
   and `markdown_core_error_code` are removed. Each call checks its arguments
   once, where they enter: a kind accessor refuses another kind, an `*_at`
@@ -43,6 +43,23 @@ promised to remain compatible between releases.
   null label owned by its `Citation` through the `footnote(note)` referent,
   with no generated `inline-N` id. The wire format becomes MCB3, and Swift
   holds one immutable record per node again, released without recursion.
+
+- Add sessions (incremental parsing, step 2). A session holds a text and the
+  document parsed from it: `MarkdownSession` in Swift, Kotlin (`AutoCloseable`)
+  and ECMAScript (`dispose()`), and `markdown_core_session_new`, `_edit`,
+  `_append`, `_document`, `_text` and `_free` in C. `edit` takes a batch of
+  disjoint `TextEdit`s in the offsets of the text before the batch, counted in
+  the session's unit (UTF-16 by default in the bindings, UTF-8 in C), and
+  `append` adds text at the end. Each step parses the whole text again and
+  publishes a document that continues the previous one: a node that
+  continues an old node keeps its id, and a node whose value is unchanged is
+  the old node, equal to its predecessor. An edit range whose start is after
+  its end, whose end is past the text or that overlaps another edit is
+  `OUT_OF_BOUNDS`; an offset inside a scalar, at a continuation byte in UTF-8
+  or between the two units of one scalar in UTF-16, is `INSIDE_SCALAR`; text
+  is stored as given. `Document.parse` is a session that reads its
+  source once. MCB3 gains the session entry points
+  `markdown_core_wire_session_new`, `_edit` and `_append`.
 
 - Keep a tab in a pipe table's header cell after a leading caption, as every
   other pipe cell does. That one header was filled the way a simple table's

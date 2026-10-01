@@ -80,50 +80,8 @@ bool eh_unit_parse(const char *name, eh_unit *unit) {
     return true;
 }
 
-/* The length of the scalar a lead byte opens, or 0 for a continuation byte
- * or a byte no scalar starts with. */
-static size_t lead_length(uint8_t byte) {
-    if (byte < 0x80) {
-        return 1;
-    }
-    if (byte >= 0xc2 && byte <= 0xdf) {
-        return 2;
-    }
-    if (byte >= 0xe0 && byte <= 0xef) {
-        return 3;
-    }
-    if (byte >= 0xf0 && byte <= 0xf4) {
-        return 4;
-    }
-    return 0;
-}
-
-bool eh_utf8_valid(const uint8_t *bytes, size_t length) {
-    size_t at = 0;
-    while (at < length) {
-        uint8_t lead = bytes[at];
-        size_t width = lead_length(lead);
-        size_t index;
-        if (!width || width > length - at) {
-            return false;
-        }
-        for (index = 1; index < width; index++) {
-            if ((bytes[at + index] & 0xc0) != 0x80) {
-                return false;
-            }
-        }
-        /* Shortest form, no surrogates, nothing above U+10FFFF. */
-        if ((lead == 0xe0 && bytes[at + 1] < 0xa0) || (lead == 0xed && bytes[at + 1] > 0x9f) ||
-            (lead == 0xf0 && bytes[at + 1] < 0x90) || (lead == 0xf4 && bytes[at + 1] > 0x8f)) {
-            return false;
-        }
-        at += width;
-    }
-    return true;
-}
-
 bool eh_utf8_boundary(const uint8_t *bytes, size_t length, size_t offset) {
-    return offset == 0 || offset == length || (offset < length && (bytes[offset] & 0xc0) != 0x80);
+    return offset == length || (offset < length && (bytes[offset] & 0xc0) != 0x80);
 }
 
 size_t eh_utf16_units(const uint8_t *bytes, size_t offset) {
@@ -138,25 +96,16 @@ size_t eh_utf16_units(const uint8_t *bytes, size_t offset) {
 }
 
 bool eh_utf8_offset(const uint8_t *bytes, size_t length, size_t units, size_t *offset) {
-    size_t at = 0;
-    size_t counted = 0;
-    while (counted < units) {
-        size_t width;
-        if (at >= length) {
-            return false;
+    size_t at, counted = 0;
+    for (at = 0; at < length; at++) {
+        size_t width = (bytes[at] & 0xc0) == 0x80 ? 0 : bytes[at] >= 0xf0 ? 2 : 1;
+        if (width && counted >= units) {
+            break;
         }
-        width = lead_length(bytes[at]);
-        if (!width) {
-            return false;
-        }
-        counted += width == 4 ? 2 : 1;
-        at += width;
-    }
-    if (counted != units || at > length) {
-        return false;
+        counted += width;
     }
     *offset = at;
-    return true;
+    return counted == units;
 }
 
 /* ------------------------------------------------------------------ files */
@@ -405,6 +354,17 @@ static bool parse_expectation(char **fields, size_t count, eh_step *step) {
     return parse_size(fields[2], &expectation->at);
 }
 
+static bool parse_refusal(const char *name, eh_status *refusal) {
+    if (strcmp(name, "out-of-bounds") == 0) {
+        *refusal = EH_OUT_OF_BOUNDS;
+    } else if (strcmp(name, "inside-scalar") == 0) {
+        *refusal = EH_INSIDE_SCALAR;
+    } else {
+        return false;
+    }
+    return true;
+}
+
 static bool parse_step(char **fields, size_t count, eh_script *script) {
     eh_step step;
     eh_step *grown;
@@ -426,22 +386,11 @@ static bool parse_step(char **fields, size_t count, eh_script *script) {
             step_free(&step);
             return false;
         }
-    } else if (strcmp(fields[0], "reject") == 0 && count >= 4 && eh_unit_parse(fields[1], &step.unit)) {
-        if (strcmp(fields[2], "edit") == 0) {
-            step.kind = EH_STEP_REJECT_EDIT;
-            if (!parse_edits(fields + 3, count - 3, &step)) {
-                step_free(&step);
-                return false;
-            }
-        } else if (strcmp(fields[2], "append") == 0 && count == 4) {
-            step.kind = EH_STEP_REJECT_APPEND;
-            step.edits = (eh_edit *)calloc(1, sizeof(*step.edits));
-            step.count = 1;
-            if (!step.edits || !parse_hex(fields[3], &step.edits[0].text, &step.edits[0].length)) {
-                step_free(&step);
-                return false;
-            }
-        } else {
+    } else if (strcmp(fields[0], "reject") == 0 && count >= 4 && eh_unit_parse(fields[1], &step.unit) &&
+               parse_refusal(fields[2], &step.refusal) && strcmp(fields[3], "edit") == 0) {
+        step.kind = EH_STEP_REJECT;
+        if (!parse_edits(fields + 4, count - 4, &step)) {
+            step_free(&step);
             return false;
         }
     } else {
@@ -760,32 +709,128 @@ bool eh_manifest_load(const char *path, eh_manifest *manifest) {
     return true;
 }
 
+/* ---------------------------------------------------------------- session */
+
+typedef struct session_subject {
+    markdown_core_session *session;
+    eh_text text;
+} session_subject;
+
+static eh_status session_status(markdown_core_status status) {
+    switch (status) {
+    case MARKDOWN_CORE_OK:
+        return EH_OK;
+    case MARKDOWN_CORE_OUT_OF_BOUNDS:
+        return EH_OUT_OF_BOUNDS;
+    case MARKDOWN_CORE_INSIDE_SCALAR:
+        return EH_INSIDE_SCALAR;
+    default:
+        return EH_FAILED;
+    }
+}
+
+static void *session_open(eh_unit unit, const uint8_t *text, size_t length, const markdown_core_document **document) {
+    session_subject *subject = (session_subject *)calloc(1, sizeof(*subject));
+    *document = NULL;
+    if (!subject) {
+        return NULL;
+    }
+    if (markdown_core_session_new(text, length,
+                                  unit == EH_UTF16 ? MARKDOWN_CORE_TEXT_UNIT_UTF16 : MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                  &subject->session) != MARKDOWN_CORE_OK) {
+        free(subject);
+        return NULL;
+    }
+    *document = markdown_core_session_document(subject->session);
+    return subject;
+}
+
+static eh_status session_edit(void *handle, const eh_edit *edits, size_t count,
+                              const markdown_core_document **document) {
+    session_subject *subject = (session_subject *)handle;
+    markdown_core_text_edit *converted = (markdown_core_text_edit *)malloc((count ? count : 1) * sizeof(*converted));
+    eh_status status;
+    size_t index;
+    *document = NULL;
+    if (!converted) {
+        return EH_FAILED;
+    }
+    for (index = 0; index < count; index++) {
+        converted[index] =
+            (markdown_core_text_edit){edits[index].start, edits[index].end, edits[index].text, edits[index].length};
+    }
+    status = session_status(markdown_core_session_edit(subject->session, converted, count, document));
+    free(converted);
+    return status;
+}
+
+static eh_status session_append(void *handle, const uint8_t *text, size_t length,
+                                const markdown_core_document **document) {
+    session_subject *subject = (session_subject *)handle;
+    *document = NULL;
+    return session_status(markdown_core_session_append(subject->session, text, length, document));
+}
+
+static const uint8_t *session_text(const void *handle, size_t *length) {
+    session_subject *subject = (session_subject *)handle;
+    *length = markdown_core_session_text_size(subject->session);
+    if (!text_reserve(&subject->text, *length)) {
+        return NULL;
+    }
+    markdown_core_session_text(subject->session, subject->text.bytes);
+    subject->text.length = *length;
+    return subject->text.bytes;
+}
+
+static void session_close(void *handle) {
+    session_subject *subject = (session_subject *)handle;
+    if (subject) {
+        markdown_core_session_free(subject->session);
+        eh_text_free(&subject->text);
+        free(subject);
+    }
+}
+
+const eh_subject_class eh_session = {"session",      session_open, session_edit,
+                                     session_append, session_text, session_close};
+
 /* ---------------------------------------------------------------- reparse */
 
 typedef struct reparse_subject {
     eh_unit unit;
     eh_text text;
+    markdown_core_document *document;
 } reparse_subject;
 
-/* Validate a batch in the subject's unit and resolve it to UTF-8 offsets in
- * ascending order. Offsets out of bounds, inside a scalar, reversed or
- * overlapping, and texts that are not well-formed UTF-8, are invalid. */
+/* The UTF-8 offset of `offset` in the subject's unit: EH_OUT_OF_BOUNDS past
+ * the text, and EH_INSIDE_SCALAR where no scalar begins. */
+static eh_status resolve_offset(const reparse_subject *subject, size_t offset, size_t *byte) {
+    if (subject->unit == EH_UTF16) {
+        if (offset > eh_utf16_units(subject->text.bytes, subject->text.length)) {
+            return EH_OUT_OF_BOUNDS;
+        }
+        return eh_utf8_offset(subject->text.bytes, subject->text.length, offset, byte) ? EH_OK : EH_INSIDE_SCALAR;
+    }
+    if (offset > subject->text.length) {
+        return EH_OUT_OF_BOUNDS;
+    }
+    *byte = offset;
+    return eh_utf8_boundary(subject->text.bytes, subject->text.length, offset) ? EH_OK : EH_INSIDE_SCALAR;
+}
+
+/* Resolve a batch to UTF-8 offsets in ascending order. A range that is
+ * reversed, ends past the text or overlaps another is out of bounds. */
 static eh_status resolve(const reparse_subject *subject, const eh_edit *edits, size_t count, eh_edit *resolved) {
     size_t index;
     for (index = 0; index < count; index++) {
         eh_edit edit = edits[index];
-        if (edit.start > edit.end || !eh_utf8_valid(edit.text, edit.length)) {
-            return EH_INVALID;
+        eh_status status;
+        if (edit.start > edit.end) {
+            return EH_OUT_OF_BOUNDS;
         }
-        if (subject->unit == EH_UTF16) {
-            if (!eh_utf8_offset(subject->text.bytes, subject->text.length, edits[index].start, &edit.start) ||
-                !eh_utf8_offset(subject->text.bytes, subject->text.length, edits[index].end, &edit.end)) {
-                return EH_INVALID;
-            }
-        } else if (edit.end > subject->text.length ||
-                   !eh_utf8_boundary(subject->text.bytes, subject->text.length, edit.start) ||
-                   !eh_utf8_boundary(subject->text.bytes, subject->text.length, edit.end)) {
-            return EH_INVALID;
+        if ((status = resolve_offset(subject, edits[index].start, &edit.start)) != EH_OK ||
+            (status = resolve_offset(subject, edits[index].end, &edit.end)) != EH_OK) {
+            return status;
         }
         resolved[index] = edit;
     }
@@ -802,7 +847,7 @@ static eh_status resolve(const reparse_subject *subject, const eh_edit *edits, s
     }
     for (index = 1; index < count; index++) {
         if (resolved[index].start < resolved[index - 1].end) {
-            return EH_INVALID;
+            return EH_OUT_OF_BOUNDS;
         }
     }
     return EH_OK;
@@ -813,10 +858,7 @@ eh_status eh_reparse_apply_edit(void *handle, const eh_edit *edits, size_t count
     eh_edit *resolved;
     eh_status status;
     size_t index;
-    if (!count) {
-        return EH_INVALID;
-    }
-    resolved = (eh_edit *)malloc(count * sizeof(*resolved));
+    resolved = (eh_edit *)malloc((count ? count : 1) * sizeof(*resolved));
     if (!resolved) {
         return EH_FAILED;
     }
@@ -834,27 +876,29 @@ eh_status eh_reparse_apply_edit(void *handle, const eh_edit *edits, size_t count
 
 eh_status eh_reparse_apply_append(void *handle, const uint8_t *text, size_t length) {
     reparse_subject *subject = (reparse_subject *)handle;
-    if (!eh_utf8_valid(text, length)) {
-        return EH_INVALID;
-    }
     return eh_text_replace(&subject->text, subject->text.length, subject->text.length, text, length) ? EH_OK
                                                                                                      : EH_FAILED;
 }
 
-eh_status eh_reparse_parse(void *handle, markdown_core_document **document) {
+eh_status eh_reparse_parse(void *handle, const markdown_core_document **document) {
     reparse_subject *subject = (reparse_subject *)handle;
+    markdown_core_document *parsed = NULL;
     *document = NULL;
-    return markdown_core_document_parse(subject->text.bytes, subject->text.length, document) == MARKDOWN_CORE_OK
-               ? EH_OK
-               : EH_FAILED;
+    if (markdown_core_document_parse_in(subject->text.bytes, subject->text.length,
+                                        subject->unit == EH_UTF16 ? MARKDOWN_CORE_TEXT_UNIT_UTF16
+                                                                  : MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                        &parsed) != MARKDOWN_CORE_OK) {
+        return EH_FAILED;
+    }
+    markdown_core_document_free(subject->document);
+    subject->document = parsed;
+    *document = parsed;
+    return EH_OK;
 }
 
-static void *reparse_open(eh_unit unit, const uint8_t *text, size_t length, markdown_core_document **document) {
+static void *reparse_open(eh_unit unit, const uint8_t *text, size_t length, const markdown_core_document **document) {
     reparse_subject *subject;
     *document = NULL;
-    if (!eh_utf8_valid(text, length)) {
-        return NULL;
-    }
     subject = (reparse_subject *)calloc(1, sizeof(*subject));
     if (!subject) {
         return NULL;
@@ -868,13 +912,15 @@ static void *reparse_open(eh_unit unit, const uint8_t *text, size_t length, mark
     return subject;
 }
 
-static eh_status reparse_edit(void *subject, const eh_edit *edits, size_t count, markdown_core_document **document) {
+static eh_status reparse_edit(void *subject, const eh_edit *edits, size_t count,
+                              const markdown_core_document **document) {
     eh_status status = eh_reparse_apply_edit(subject, edits, count);
     *document = NULL;
     return status == EH_OK ? eh_reparse_parse(subject, document) : status;
 }
 
-static eh_status reparse_append(void *subject, const uint8_t *text, size_t length, markdown_core_document **document) {
+static eh_status reparse_append(void *subject, const uint8_t *text, size_t length,
+                                const markdown_core_document **document) {
     eh_status status = eh_reparse_apply_append(subject, text, length);
     *document = NULL;
     return status == EH_OK ? eh_reparse_parse(subject, document) : status;
@@ -889,6 +935,7 @@ static const uint8_t *reparse_text(const void *handle, size_t *length) {
 static void reparse_close(void *handle) {
     reparse_subject *subject = (reparse_subject *)handle;
     if (subject) {
+        markdown_core_document_free(subject->document);
         eh_text_free(&subject->text);
         free(subject);
     }

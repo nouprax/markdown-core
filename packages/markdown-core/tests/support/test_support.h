@@ -86,6 +86,20 @@ typedef int (*ts_ast_visit_fn)(const markdown_core_node *node, ts_ast_range rang
  * completion, or -1 on allocation failure. */
 int ts_ast_walk(const markdown_core_node *root, ts_ast_visit_fn visit, void *context);
 
+/* Where the walk found a node: its range, the node whose relation holds it
+ * (NULL for the root) and that relation's place among the owner's relations
+ * in canonical field order, counting absent and empty ones. */
+typedef struct {
+    ts_ast_range range;
+    const markdown_core_node *owner;
+    size_t relation;
+} ts_ast_place;
+
+typedef int (*ts_ast_owned_visit_fn)(const markdown_core_node *node, ts_ast_place place, void *context);
+
+/* `ts_ast_walk`, telling each node's owner and relation. */
+int ts_ast_walk_owned(const markdown_core_node *root, ts_ast_owned_visit_fn visit, void *context);
+
 /* THE FIRST NODE WHOSE RANGE LEAVES ITS SOURCE under `root`, or NULL when
  * every range lies in `[0, length]`.
  *

@@ -7,8 +7,8 @@ import { mergeParts } from "../edits.mjs";
  * (k / shards)th result of part k mod shards. */
 const parts = (count, shards) =>
     Array.from({ length: shards }, (_, index) => ({
-        schemaVersion: 1,
-        subject: "reparse",
+        schemaVersion: 2,
+        subjects: ["reparse", "session"],
         toolchain: { compiler: "cc" },
         binaries: { "markdown-core": { sha256: "a" }, "markdown-core edits": { sha256: "b" } },
         profile: { compiler: "cc", flags: "-O2" },

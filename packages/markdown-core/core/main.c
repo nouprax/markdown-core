@@ -92,6 +92,8 @@ static const char *status_text(markdown_core_status status) {
         return "out of bounds";
     case MARKDOWN_CORE_KIND_MISMATCH:
         return "kind mismatch";
+    case MARKDOWN_CORE_INSIDE_SCALAR:
+        return "inside a scalar";
     }
     return "no error";
 }

@@ -76,8 +76,28 @@ println(document.dump(source))
 dialect, in which every feature is always recognized: footnotes, tables,
 strikethrough, autolinks, task lists, formulas, and directives, on the
 CommonMark base. Quotation marks, hyphens, and periods are stored as written.
-The result is an immutable value tree. The package exposes parsing and typed
-AST inspection, not rendering or mutation.
+The result is an immutable value tree. The package exposes parsing, editing
+through a session, and typed AST inspection, not rendering.
+
+### Sessions
+
+A `MarkdownSession` holds a text and the document parsed from it, and changes
+both with each edit. The new document continues the previous one: a node that
+continues an old node keeps its id, so a Compose `key` survives the edit.
+
+```kotlin
+MarkdownSession("# Title\n\nfirst\n").use { session ->   // TextUnit.UTF16 by default
+    session.edit(listOf(TextEdit(9, 14, "edited")))   // one batch, parsed once
+    session.append("\n> quote\n")
+    val document = session.document                  // the tree of Document.parse(session.text), ids aside
+}
+```
+
+`edit` is the one way to change a range: a single replacement is a batch of
+one. A batch lists disjoint ranges in the text before it, in any order, and two
+edits at one offset apply in the order listed. Offsets count in the session's
+`unit`, which is also how its documents count scope columns. `close` releases
+the engine's session; the documents it returned stay complete values.
 
 ### Identity, equality and scopes
 
@@ -110,13 +130,19 @@ scalar. The canonical dump always prints UTF-8 columns.
 The library throws one exception, `MarkdownCoreException`, whose `code` says
 why:
 
-- `ErrorCode.ALLOCATION_FAILED`: `Document.parse` could not allocate, or the
-  source exceeds 1 GiB of UTF-8, or its tree exceeds a byte array's capacity.
+- `ErrorCode.ALLOCATION_FAILED`: `Document.parse` or a session step could not
+  allocate, or the text exceeds 1 GiB of UTF-8, or its tree exceeds a byte
+  array's capacity.
 - `ErrorCode.OUT_OF_BOUNDS`: `scope` or `dump` got a source that ends before
   the node does, or `node` got a position whose line or column is below 1. A
-  position past the source, or one no node holds, answers `null`.
+  position past the source, or one no node holds, answers `null`. A session
+  edit whose range starts after its end, ends past the text or overlaps
+  another edit of its batch is `OUT_OF_BOUNDS` too.
 - `ErrorCode.KIND_MISMATCH`: the engine's code for a value read as the wrong
   kind. It is shared by every binding; the typed Kotlin nodes never reach it.
+- `ErrorCode.INSIDE_SCALAR`: a session edit has an offset inside a scalar: at
+  a continuation byte in UTF-8, or between the two halves of a surrogate pair
+  in UTF-16.
 
 A node of another document is not checked, and the answer for it means
 nothing.

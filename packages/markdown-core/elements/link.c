@@ -364,7 +364,7 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_parser *parser, mar
     {
         markdown_core_chunk clean_url = markdown_core_clean_url(&url, &lost);
         markdown_core_optional_chunk clean_title = markdown_core_clean_title(&title, &lost);
-        resource = lost ? NULL : markdown_core_resource_new(&parser->resources, clean_url, clean_title);
+        resource = lost ? NULL : markdown_core_resource_new(parser->pool, clean_url, clean_title);
         if (!resource) {
             markdown_core_chunk_free(&clean_url);
             markdown_core_optional_chunk_free(&clean_title);
@@ -508,7 +508,7 @@ bool markdown_core_link_commit(const markdown_core_element_instance *link, markd
         markdown_core_resource_retain(record->resource);
         inl->as.link->resource = record->resource;
     } else if (inl) {
-        inl->as.link->resource = markdown_core_resource_new(&parser->resources, url, title);
+        inl->as.link->resource = markdown_core_resource_new(parser->pool, url, title);
         if (!inl->as.link->resource) {
             markdown_core_parser_release_node(parser, inl);
             inl = NULL;

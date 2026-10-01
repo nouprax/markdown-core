@@ -7,6 +7,7 @@
 #include "node.h"
 #include "buffer.h"
 #include "dialect.h"
+#include "text_tree.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -22,6 +23,33 @@ typedef enum {
 } markdown_core_parse_error;
 
 #define MAX_LINK_LABEL_LENGTH 1000
+
+/* WHAT A PARSE CONTINUES: the storage it takes nodes from and the tree it
+ * continues.
+ *
+ * `previous` is the root of a tree a parse published, and `edits` turn the
+ * text it was parsed from into the text this parse reads, in its
+ * coordinates: disjoint, in source order. The published tree continues it
+ * (docs/plans/2026-09-29-incremental-parsing.md, 5.9): every node matched to
+ * an old node takes its id, every other node takes the next id after
+ * `last_id`, and a matched node equal to its old node as a value is that old
+ * node. On success the parse owns `previous`: it is the returned root, or it
+ * is released into `pool` with every other node it retires, and `last_id` is
+ * the last id issued. `node_count` is the number of nodes in `previous`,
+ * and on success the number in the published tree. A fresh parse continues
+ * nothing: `previous` is NULL and `last_id` is 0, so its root is 1 and every
+ * node is numbered in canonical walk order.
+ *
+ * `pool` lends the parse every node and resource slot it takes (node.h); it
+ * outlives the parse, and its owner disposes it. */
+typedef struct markdown_core_revision {
+    markdown_core_node_pool *pool;
+    markdown_core_node *previous;
+    const markdown_core_byte_edit *edits;
+    size_t edit_count;
+    uint64_t last_id;
+    size_t node_count;
+} markdown_core_revision;
 
 /* Immutable runs map logical content bytes to authored byte intervals.
  * Blocks append runs as lines arrive; transformed cells and decoded inline
@@ -252,15 +280,12 @@ struct markdown_core_parser {
      * declares a finish step and opens an iterator. */
     size_t nodes_created, nodes_created_before_finish;
     size_t nodes_freed, nodes_freed_before_finish;
-    /* The parse's node storage (node.h): every node it makes is a slot of
-     * this pool's slabs, and every node it releases goes back here. The
-     * finished tree keeps its slabs; the pool is disposed with the parser. */
-    markdown_core_node_pool nodes;
-    /* The parse's resource storage (node.h): every resource a definition,
-     * a link or a heading's implicit reference states is a slot of this
-     * pool's slabs, which the tree keeps as long as anything reads through
-     * one. The pool is disposed with the parser. */
-    markdown_core_slab_pool resources;
+    /* What the parse continues, and the storage it borrows from its caller
+     * (the revision's pool): every node it makes and every resource a
+     * definition, a link or a heading's implicit reference states is a slot
+     * of this pool's slabs, and every one it releases goes back here. */
+    markdown_core_revision *revision;
+    markdown_core_node_pool *pool;
     /* The nodes the walk's own inline parsing handed it, at the ENTER of each
      * container it parsed: what the parse made less what it discarded before
      * returning (a bracket's opener text, a token that failed to close), which
@@ -479,7 +504,7 @@ static inline void markdown_core_parser_note_node(markdown_core_parser *parser, 
 /* A release counts what it freed, for the same denominator; a caller with no
  * parse frees as the public function does. */
 static inline void markdown_core_parser_release_node(markdown_core_parser *parser, markdown_core_node *node) {
-    size_t released = markdown_core_node_pool_release(parser ? &parser->nodes : NULL, node);
+    size_t released = markdown_core_node_pool_release(parser ? parser->pool : NULL, node);
     if (parser) {
         parser->nodes_freed += released;
     }
@@ -496,14 +521,14 @@ static inline bool markdown_core_finish_step_admitted(const markdown_core_finish
 static inline markdown_core_node *markdown_core_parser_make_node(markdown_core_parser *parser,
                                                                  markdown_core_node_type type) {
     markdown_core_parser_note_node(parser, type);
-    return markdown_core_node_pool_new(parser ? &parser->nodes : NULL, type, NULL);
+    return markdown_core_node_pool_new(parser ? parser->pool : NULL, type, NULL);
 }
 
 static inline markdown_core_node *markdown_core_parser_make_node_with_ext(markdown_core_parser *parser,
                                                                           markdown_core_node_type type,
                                                                           const markdown_core_element *element) {
     markdown_core_parser_note_node(parser, type);
-    return markdown_core_node_pool_new(parser ? &parser->nodes : NULL, type, element);
+    return markdown_core_node_pool_new(parser ? parser->pool : NULL, type, element);
 }
 
 static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_kind(markdown_core_parser *parser,
@@ -736,19 +761,26 @@ bool markdown_core_parser_register_definition(markdown_core_parser *parser,
  * is within this bound. */
 #define MARKDOWN_CORE_SOURCE_CAPACITY ((size_t)(INT32_MAX / 2))
 
-/* The engine has one parse operation. It parses with the dialect `elements`
- * names, in that order; the composition root that chooses the product's
- * dialect lives with the elements (markdown-core-elements.h), so the engine
- * names no element. `setup`, when present, extends the dialect this instance
- * will parse with: it receives the builder, already holding `elements`, and
- * never the parser, so what it registers is sealed before any source is read
- * and fixed for the instance's lifetime (dialect.h). `context` is handed to
- * setup and carried on the parser for element hooks. Returning false aborts
- * the transaction. The parser and its dialect never escape this call and are
- * released before it returns. */
-markdown_core_node *markdown_core_parser_parse(const char *source, size_t length,
-                                               const markdown_core_element *const *elements, size_t count,
-                                               markdown_core_parser_setup_func setup, void *context);
+/* The engine has one parse operation, run by a parser instance. An instance
+ * parses with the dialect `elements` names, in that order; the composition
+ * root that chooses the product's dialect lives with the elements
+ * (markdown-core-elements.h), so the engine names no element. `setup`, when
+ * present, extends the dialect the instance will parse with: it receives the
+ * builder, already holding `elements`, and never the parser, so what it
+ * registers is sealed before any source is read and fixed for the instance's
+ * lifetime (dialect.h). `context` is handed to setup and carried on the
+ * parser for element hooks. NULL when setup returns false or the instance
+ * could not be allocated. */
+markdown_core_parser *markdown_core_parser_create(const markdown_core_element *const *elements, size_t count,
+                                                  markdown_core_parser_setup_func setup, void *context);
+/* One parse transaction: reads `source` as what `revision` says the parse
+ * continues, with the storage it lends (above), and returns the published
+ * tree, or NULL when the transaction fails. The transaction's state is
+ * released before it returns, so an instance runs any number of them, one
+ * at a time, each as the first. */
+markdown_core_node *markdown_core_parser_parse(markdown_core_parser *parser, const char *source, size_t length,
+                                               markdown_core_revision *revision);
+void markdown_core_parser_destroy(markdown_core_parser *parser);
 
 #ifdef __cplusplus
 }

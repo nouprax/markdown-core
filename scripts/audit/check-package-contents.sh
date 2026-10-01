@@ -61,8 +61,8 @@ cmp LICENSE packages/es-markdown-core/LICENSE
 node packages/es-markdown-core/scripts/build.mjs >/dev/null
 find packages/es-markdown-core/dist -type f -name '*.d.ts' \
     ! -path '*/runtime/*' ! -path '*/wire/*' -exec grep -H -n -E \
-    '\b(render|feed|stream|edit|session|snapshot|delta|diagnostic|CST|Concrete|ConcreteSyntax|Token|Trivia|Recovery|set[A-Z]|insert|append|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)\b' \
-    {} + >"$temp_dir/es-retired-declarations.txt" || true
+    '\b(render|feed|stream|snapshot|delta|diagnostic|CST|Concrete|ConcreteSyntax|Token|Trivia|Recovery|set[A-Z]|insert|append|prepend|replace|unlink|nativeHandle|pointer|memory|wasm)\b' \
+    {} + | grep -v -E '/session\.d\.ts:[0-9]+:[[:space:]]*append\(' >"$temp_dir/es-retired-declarations.txt" || true
 if [ -s "$temp_dir/es-retired-declarations.txt" ]; then
     cat "$temp_dir/es-retired-declarations.txt"
     echo "ES declaration package exposes a retired or mutable API" >&2

@@ -14,27 +14,39 @@ export function parseDocument(source: string, unit: TextUnit): Document {
 export function parseDocumentWithNative(nativeExports: NativeExports, source: string, unit: TextUnit): Document {
     const bytes = utf8Encoder.encode(source);
     let sourcePointer = 0;
-    let resultPointer = 0;
     try {
-        // malloc(0) may return NULL, which would read as allocation failure,
-        // so an empty source still takes one byte.
-        sourcePointer = allocate(nativeExports, Math.max(bytes.length, 1));
-        new Uint8Array(nativeExports.memory.buffer, sourcePointer, bytes.length).set(bytes);
-        resultPointer = nativeExports.markdown_core_wire_parse(sourcePointer, bytes.length);
-        if (!resultPointer) throw new MarkdownCoreError("allocationFailed");
-
-        // Parsing may grow memory, which detaches every pre-call view. Take
-        // fresh views, then decode in place without another Wasm call. No
-        // view escapes this try.
-        const length = new DataView(nativeExports.memory.buffer).getUint32(resultPointer + lengthOffset, true);
-        return new Decoder(new Uint8Array(nativeExports.memory.buffer, resultPointer, length), unit).decode();
+        sourcePointer = allocateBytes(nativeExports, bytes);
+        return decodeMessage(nativeExports, nativeExports.markdown_core_wire_parse(sourcePointer, bytes.length), unit);
     } finally {
-        if (resultPointer) nativeExports.markdown_core_wire_free(resultPointer);
         if (sourcePointer) nativeExports.free(sourcePointer);
     }
 }
 
-function allocate(nativeExports: NativeExports, size: number): number {
+/** Decodes and releases one owned message: the document it carries, or its
+ * failure thrown as a `MarkdownCoreError`. Zero is a message that could not
+ * be allocated. */
+export function decodeMessage(nativeExports: NativeExports, message: number, unit: TextUnit): Document {
+    if (!message) throw new MarkdownCoreError("allocationFailed");
+    try {
+        // A call may grow memory, which detaches every pre-call view. Take
+        // fresh views, then decode in place without another Wasm call. No
+        // view escapes this try.
+        const length = new DataView(nativeExports.memory.buffer).getUint32(message + lengthOffset, true);
+        return new Decoder(new Uint8Array(nativeExports.memory.buffer, message, length), unit).decode();
+    } finally {
+        nativeExports.markdown_core_wire_free(message);
+    }
+}
+
+/** `bytes` copied into the module's memory. malloc(0) may return NULL, which
+ * would read as allocation failure, so no bytes still take one. */
+export function allocateBytes(nativeExports: NativeExports, bytes: Uint8Array): number {
+    const pointer = allocate(nativeExports, Math.max(bytes.length, 1));
+    new Uint8Array(nativeExports.memory.buffer, pointer, bytes.length).set(bytes);
+    return pointer;
+}
+
+export function allocate(nativeExports: NativeExports, size: number): number {
     const pointer = nativeExports.malloc(size);
     if (!pointer) throw new MarkdownCoreError("allocationFailed");
     return pointer;

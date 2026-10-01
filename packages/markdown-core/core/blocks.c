@@ -152,12 +152,6 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     parser->lookahead_chain = NULL;
     parser->lookahead_chain_flags = NULL;
     parser->lookahead_chain_alloc = 0;
-
-    /* Last, after every release above: the slots the parse gave back, and the
-     * slabs it was taking from. The finished tree, returned before this, holds
-     * its own slabs, for its nodes and for the resources they read through. */
-    markdown_core_node_pool_dispose(&parser->nodes);
-    markdown_core_slab_pool_dispose(&parser->resources);
 }
 
 /* ONE INSTANCE'S FIXED STATE: the parser and the dialect sealed for it,
@@ -168,33 +162,59 @@ static void S_parser_dispose(markdown_core_parser *parser) {
  * nothing else holds it, and it is released with the instance. Two blocks
  * would be two lifetimes to keep in step, and two places among the parse's
  * own buffers: split in two, the parser is small enough to fill a hole those
- * buffers would have grown into. */
+ * buffers would have grown into. The instance runs one transaction at a
+ * time, and each begins with the parser and the records as the instance was
+ * made: zeroed, holding the dialect and the setup's context. */
 typedef struct markdown_core_instance {
     markdown_core_parser parser;
+    /* The elements' parse records, which follow the dialect's tables. */
+    unsigned char *records;
+    size_t record_bytes;
+    /* Last: sealing lays the dialect's tables out right after it. */
     markdown_core_dialect dialect;
 } markdown_core_instance;
 
-/* A parser instance over the dialect `builder` describes, sealed into the
- * instance's own allocation before anything else runs, and the setup's
- * context. The builder is only read. */
-static markdown_core_parser *S_parser_new(const markdown_core_dialect_builder *builder, void *context) {
+markdown_core_parser *markdown_core_parser_create(const markdown_core_element *const *elements, size_t count,
+                                                  markdown_core_parser_setup_func setup, void *context) {
+    markdown_core_dialect_builder builder;
     markdown_core_dialect_sizes sizes;
-    markdown_core_instance *instance;
-    markdown_core_parser *parser;
-    markdown_core_node *document;
 
+    /* The instance's dialect: the given elements, whatever its setup
+     * registers after them, and then nothing more. The builder is gone before
+     * the instance parses, so no code a parse runs can hold anything that
+     * registers. */
+    markdown_core_dialect_builder_init(&builder, elements, count);
+    if (setup && !setup(&builder, context)) {
+        markdown_core_dialect_builder_dispose(&builder);
+        return NULL;
+    }
     /* The records follow the dialect's tables at the records' alignment.
      * Measuring counts every element's aligned record size, which is what
      * sealing lays out. */
-    size_t records = markdown_core_state_align(sizeof(*instance) + markdown_core_dialect_measure(builder, &sizes));
-    instance = markdown_core_alloc(1, records + sizes.state_bytes);
-    if (!instance) {
-        return NULL;
+    size_t records =
+        markdown_core_state_align(sizeof(markdown_core_instance) + markdown_core_dialect_measure(&builder, &sizes));
+    markdown_core_instance *instance = markdown_core_alloc(1, records + sizes.state_bytes);
+    if (instance) {
+        instance->records = (unsigned char *)instance + records;
+        instance->record_bytes = sizes.state_bytes;
+        markdown_core_dialect_seal(&builder, &sizes, &instance->dialect, instance->records);
+        instance->parser.dialect = &instance->dialect;
+        instance->parser.context = context;
     }
-    markdown_core_dialect_seal(builder, &sizes, &instance->dialect, (unsigned char *)instance + records);
-    parser = &instance->parser;
-    parser->dialect = &instance->dialect;
-    parser->context = context;
+    markdown_core_dialect_builder_dispose(&builder);
+    return instance ? &instance->parser : NULL;
+}
+
+void markdown_core_parser_destroy(markdown_core_parser *parser) {
+    markdown_core_free((markdown_core_instance *)parser);
+}
+
+/* Begins a transaction that continues `revision` and borrows its pool. */
+static void S_parse_begin(markdown_core_parser *parser, markdown_core_revision *revision) {
+    markdown_core_node *document;
+
+    parser->revision = revision;
+    parser->pool = revision->pool;
     markdown_core_strbuf_init(&parser->curline, 256);
     markdown_core_strbuf_init(&parser->lookahead_last_line, 0);
     /* The line index is a parse-owned workspace, like curline. Establish its
@@ -209,7 +229,7 @@ static markdown_core_parser *S_parser_new(const markdown_core_dialect_builder *b
 
     /* A transaction that could not build its initial structures is poisoned:
      * source processing becomes a no-op and the parse reports failure. Only a
-     * complete instance begins the document lifecycle -- its owner is
+     * complete transaction begins the document lifecycle -- its owner is
      * whichever element the dialect resolved it to, and it never sees a
      * failed transaction. Disposal does not depend on it having begun: the
      * lifecycle's own allocations can fail halfway, so its release already
@@ -221,25 +241,25 @@ static markdown_core_parser *S_parser_new(const markdown_core_dialect_builder *b
         const markdown_core_element_instance *document_structure = parser->dialect->document_structure;
         document_structure->element->init_document(document_structure, parser);
     }
+}
 
-    return parser;
+/* Ends the transaction: its parse state is released, and the parser and the
+ * records are as the instance was made, for the next. */
+static void S_parse_end(markdown_core_parser *parser) {
+    markdown_core_instance *instance = (markdown_core_instance *)parser;
+    S_parser_dispose(parser);
+    markdown_core_strbuf_free(&parser->curline);
+    markdown_core_strbuf_free(&parser->lookahead_last_line);
+    void *context = parser->context;
+    memset(parser, 0, sizeof(*parser));
+    parser->dialect = &instance->dialect;
+    parser->context = context;
+    memset(instance->records, 0, instance->record_bytes);
 }
 
 const markdown_core_element_instance *markdown_core_parser_instance(const markdown_core_parser *parser,
                                                                     const markdown_core_element *element) {
     return markdown_core_dialect_instance(parser->dialect, element);
-}
-
-/* Release the instance: its parse state, then the one allocation that holds
- * the parser and its dialect. */
-static void S_parser_free(markdown_core_parser *parser) {
-    if (!parser) {
-        return;
-    }
-    S_parser_dispose(parser);
-    markdown_core_strbuf_free(&parser->curline);
-    markdown_core_strbuf_free(&parser->lookahead_last_line);
-    markdown_core_free((markdown_core_instance *)parser);
 }
 
 /* "This block ends on the line being processed", lifted out of `markdown_core_block_finalize` so
@@ -1327,32 +1347,15 @@ static void S_parse_block_inputs(markdown_core_parser *parser) {
     parser->current = parser->root;
 }
 
-markdown_core_node *markdown_core_parser_parse(const char *source, size_t length,
-                                               const markdown_core_element *const *elements, size_t count,
-                                               markdown_core_parser_setup_func setup, void *context) {
-    markdown_core_dialect_builder builder;
-    markdown_core_parser *parser;
-    markdown_core_node *document;
-
-    /* The instance's dialect: the given elements, whatever its setup
-     * registers after them, and then nothing more. The builder is gone before
-     * the parse begins, so no code the parse runs can hold anything that
-     * registers. */
-    markdown_core_dialect_builder_init(&builder, elements, count);
-    if (setup && !setup(&builder, context)) {
-        markdown_core_dialect_builder_dispose(&builder);
-        return NULL;
+markdown_core_node *markdown_core_parser_parse(markdown_core_parser *parser, const char *source, size_t length,
+                                               markdown_core_revision *revision) {
+    markdown_core_node *document = NULL;
+    S_parse_begin(parser, revision);
+    if (!parser->error) {
+        S_parse_source(parser, (const unsigned char *)source, length);
+        document = S_finish_parse(parser);
     }
-    parser = S_parser_new(&builder, context);
-    markdown_core_dialect_builder_dispose(&builder);
-    if (!parser || parser->error) {
-        S_parser_free(parser);
-        return NULL;
-    }
-
-    S_parse_source(parser, (const unsigned char *)source, length);
-    document = S_finish_parse(parser);
-    S_parser_free(parser);
+    S_parse_end(parser);
     return document;
 }
 

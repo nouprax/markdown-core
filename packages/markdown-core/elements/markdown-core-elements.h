@@ -27,10 +27,15 @@ typedef enum {
  */
 const markdown_core_element *const *markdown_core_core_elements(size_t *count);
 
-/** Parse `source` with the complete core dialect, extended by `setup` when
- *  present (see markdown_core_parser_setup_func). The product's composition
- *  root: the one site that selects the core dialect for the engine. Tests add
- *  instrumentation through `setup`; no caller selects the language. */
+/** A parser instance (parser.h) over the complete core dialect, extended by
+ *  `setup` when present (see markdown_core_parser_setup_func). The product's
+ *  composition root: the one site that selects the core dialect for the
+ *  engine. Tests add instrumentation through `setup`; no caller selects the
+ *  language. */
+markdown_core_parser *markdown_core_core_parser(markdown_core_parser_setup_func setup, void *context);
+
+/** One parse by an instance of `markdown_core_core_parser`, in a pool of its
+ *  own: the tree it returns holds its slabs. */
 markdown_core_node *markdown_core_parse_document_with_setup(const char *source, size_t length,
                                                             markdown_core_parser_setup_func setup, void *context);
 

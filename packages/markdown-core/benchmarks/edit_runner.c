@@ -12,11 +12,12 @@
  * stream splits into 1,024 contiguous windows whose step counts differ by at
  * most one. The `reparse` subject is measured at each window's last step: the
  * steps before it only extend its text, because reparsing after every chunk of
- * a long stream is the quadratic cost the design removes.
+ * a long stream is the quadratic cost the design removes. The `session`
+ * subject takes every step in its window.
  *
- *   edit_runner --subject reparse --document PATH --script FILE --name NAME
- *               [--final PATH]
- *   edit_runner --subject reparse --document PATH --stream FAMILY
+ *   edit_runner --subject reparse|session --document PATH --script FILE
+ *               --name NAME [--final PATH]
+ *   edit_runner --subject reparse|session --document PATH --stream FAMILY
  *               --tokens FILE [--final PATH]
  *
  * `--final` writes the subject's final text, whose one-shot parse the driver
@@ -46,12 +47,12 @@ static eh_status reparse_advance(void *subject, const eh_step *step) {
                                         : eh_reparse_apply_edit(subject, step->edits, step->count);
 }
 
-static const measured_subject SUBJECTS[] = {{&eh_reparse, reparse_advance}};
+static const measured_subject SUBJECTS[] = {{&eh_reparse, reparse_advance}, {&eh_session, NULL}};
 
 /* The measured edge: one step, from its arguments to the subject's new
  * document. */
 __attribute__((noinline)) eh_status bench_apply_step(const eh_subject_class *subject, void *handle, const eh_step *step,
-                                                     markdown_core_document **document) {
+                                                     const markdown_core_document **document) {
     return step->kind == EH_STEP_APPEND ? subject->append(handle, step->edits[0].text, step->edits[0].length, document)
                                         : subject->edit(handle, step->edits, step->count, document);
 }
@@ -108,7 +109,7 @@ int main(int argc, char **argv) {
     eh_step *stream = NULL;
     eh_edit *chunks = NULL;
     const eh_step *steps;
-    markdown_core_document *current = NULL;
+    const markdown_core_document *current = NULL;
     const uint8_t *text;
     uint8_t *document;
     size_t length = 0, count = 0, windows, window, index, final_length = 0;
@@ -189,17 +190,15 @@ int main(int argc, char **argv) {
     for (window = 0, index = 0; window < windows; window++) {
         size_t end = (window + 1) * count / windows;
         for (; index < end; index++) {
-            markdown_core_document *next = NULL;
+            const markdown_core_document *next = NULL;
             eh_status step = index + 1 < end && measured->advance
                                  ? measured->advance(handle, &steps[index])
                                  : bench_apply_step(measured->subject, handle, &steps[index], &next);
             if (step != EH_OK) {
                 fprintf(stderr, "edit_runner: step %zu failed\n", index + 1);
-                markdown_core_document_free(next);
                 goto close;
             }
             if (next) {
-                markdown_core_document_free(current);
                 current = next;
             }
         }
@@ -221,7 +220,6 @@ int main(int argc, char **argv) {
            final_length, markdown_core_node_child_count(markdown_core_document_root(current)));
     status = 0;
 close:
-    markdown_core_document_free(current);
     measured->subject->close(handle);
 done:
     free(chunks);

@@ -153,19 +153,49 @@ line or column. `document.scope(node, source)` and
 and the source the document was parsed from, with columns in the document's
 unit.
 
+## Sessions
+
+A `MarkdownSession` holds a text and the document parsed from it, and changes
+both with each edit. The new document continues the previous one: a node that
+continues an old node keeps its `id`, so list keys and view state survive the
+edit, and an unchanged node is equal to its predecessor under `markupEquals`.
+
+```js
+import { MarkdownSession } from "@nouprax/es-markdown-core";
+
+const session = new MarkdownSession("# Hello\n\nworld\n");
+session.edit([{ start: 2, end: 7, text: "Hi" }]);
+session.append("more\n");
+console.log(session.document.dump(session.text));
+session.dispose();
+```
+
+`edit` takes a batch of disjoint `{ start, end, text }` edits, listed in any
+order, in the offsets of the text before the batch, and parses once; a single
+replacement is a batch of one. Offsets count in the session's `unit`, `"utf16"`
+by default, the unit of JavaScript strings, or `"utf8"`, chosen with
+`new MarkdownSession(source, { unit })`. Every document the session returns is
+an immutable value. The session itself lives in WebAssembly memory: `dispose()`
+releases it, and a session collected without it is released then.
+
 ## Errors
 
 Every failure is a `MarkdownCoreError`, whose `code` is one `ErrorCode`:
 
-- `"allocationFailed"`: `Document.parse` could not allocate, or the source's
-  UTF-8 exceeds the engine's 1 GiB capacity.
+- `"allocationFailed"`: a parse or a session step could not allocate, or the
+  text's UTF-8 exceeds the engine's 1 GiB capacity.
 - `"outOfBounds"`: `scope` or `dump` got a source that ends before the node
-  does, or `nodeAt` got a line or column that is not an integer of at least 1.
+  does, `nodeAt` got a line or column that is not an integer of at least 1, or
+  a session's `edit` got a range whose start is after its end, whose end is
+  past the text, or that overlaps another edit of the batch.
   A position past the source, or one no node holds, is not an error: `nodeAt`
   returns `null`.
 - `"kindMismatch"`: the engine's status for a value that is not of the kind a
   call reads. The binding decodes the whole tree into typed values, so none of
   its calls reports it today; the code keeps the set equal to the engine's.
+- `"insideScalar"`: a session's `edit` got an offset inside a scalar: at a
+  continuation byte in UTF-8, or between the two units of one scalar in
+  UTF-16.
 
 A node of another document is not checked: pass the document's own nodes.
 

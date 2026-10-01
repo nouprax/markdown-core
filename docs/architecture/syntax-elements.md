@@ -182,15 +182,15 @@ Each parser instance parses with one dialect: the element list, in order, and
 every table projected from it. The engine writes no construct's grammar of its
 own; the dialect is only the elements and their projections.
 
-A dialect has two types for its two states. The engine's one parse
-transaction (`markdown_core_parser_parse`) starts a builder
+A dialect has two types for its two states. The engine's parser instance
+(`markdown_core_parser_create`) starts a builder
 (`markdown_core_dialect_builder`) from the element list it is given and names
 no element itself. The product's composition root
-(`markdown_core_parse_document_with_setup`, with the elements) is the one site
-that gives it the complete core dialect. A private setup receives only that
-builder, never the parser, and may register further elements under the one
-registration rule. The transaction then seals the builder into a
-`markdown_core_dialect`. Sealing projects every table once:
+(`markdown_core_core_parser`, with the elements) is the one site that gives it
+the complete core dialect. A private setup receives only that builder, never
+the parser, and may register further elements under the one registration
+rule. The instance then seals the builder into a `markdown_core_dialect`.
+Sealing projects every table once:
 
 - the block-start families and their gate lists;
 - the container prefix;
@@ -203,10 +203,13 @@ The parser holds only a `const` pointer to the sealed dialect. Nothing
 reachable from a running instance can register an element or write a
 projection, so the dialect is fixed for the instance's lifetime by the types.
 The dialect begins and ends with its instance, so it has no allocation of its
-own. Sealing is two steps: the transaction measures the builder, allocates the
+own. Sealing is two steps: the instance measures the builder, allocates the
 parser and the dialect's tables as one block, and seals into that block before
 the parser starts. The sealed dialect copies its element list, so the builder
-is released before the parse and the instance is released as one block.
+is released before any parse and the instance is released as one block. An
+instance runs one parse transaction (`markdown_core_parser_parse`) at a time,
+and each begins with the parser and the element records as the instance was
+made; a session keeps its instance for every edit.
 Instances in one process may seal different dialects, and nothing about a
 dialect is process state, so no global initialization cache or lock is needed.
 
@@ -217,8 +220,8 @@ retained workspace, a work counter) belongs to that element, not to the
 parser. An element declares two record sizes in its descriptor:
 
 - `state_size`: one record per parse, laid out by sealing in the parser's own
-  allocation and zeroed with it. The element releases what the record points
-  to from its own lifecycle hook.
+  allocation and zeroed before each parse transaction. The element releases
+  what the record points to from its own lifecycle hook.
 - `run_state_size`: one record per inline run, zeroed when the run begins. The
   run takes every element's run record as one block from a pool the parser
   keeps and gives the block back after the run's dispose hooks.

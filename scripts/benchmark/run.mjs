@@ -76,7 +76,7 @@ import {
     markTree,
     sameCompileOptions
 } from "./compile-identity.mjs";
-import { allowance, STAGES, stageBudget, STAGE_IR_LIMITS } from "./stage-budget.mjs";
+import { STAGES, stageBudget, STAGE_IR_LIMIT } from "./stage-budget.mjs";
 import {
     buildGrammarCorpus,
     writeGrammarCorpus,
@@ -1630,7 +1630,7 @@ function main() {
         fs.writeFileSync(path.join(baseline.directory, "stages.md"), `${markdownReport(previous)}\n`);
         report.stageBudget = {
             baseline: baseline.revision,
-            limits: STAGE_IR_LIMITS,
+            limit: STAGE_IR_LIMIT,
             rows: stageBudget(cases, baseline.cases)
         };
     }
@@ -1641,7 +1641,7 @@ function main() {
     let rendered = markdownReport(report);
     if (report.stageBudget) {
         const failed = report.stageBudget.rows.filter((row) => !row.passed);
-        rendered += `\n\n## Stage regression gate\n\nBase: ${report.stageBudget.baseline}. Both revisions use this run's corpus, harness, toolchain and runtime libraries. Each document may grow by at most ${allowance(STAGE_IR_LIMITS.source_to_buffer)} of its baseline Ir in source_to_buffer and ${allowance(STAGE_IR_LIMITS.buffer_to_ast)} in buffer_to_ast. ${report.stageBudget.rows.length - failed.length}/${report.stageBudget.rows.length} document stages passed. One stage's improvement does not offset the other's regression.\n`;
+        rendered += `\n\n## Stage regression gate\n\nBase: ${report.stageBudget.baseline}. Both revisions use this run's corpus, harness, toolchain and runtime libraries. Each document must stay within ${((STAGE_IR_LIMIT - 1) * 100).toFixed(0)}% of its baseline Ir in source_to_buffer and in buffer_to_ast. ${report.stageBudget.rows.length - failed.length}/${report.stageBudget.rows.length} document stages passed. One stage's improvement does not offset the other's regression.\n`;
         if (failed.length)
             rendered +=
                 "\n| Case | Stage | Base Ir | Current Ir | Ratio |\n| --- | --- | ---: | ---: | ---: |\n" +

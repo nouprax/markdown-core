@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Document, MarkdownCoreError, MarkupDumper, markupEquals, walk } from "../dist/index.js";
+import { Document, MarkdownCoreError, MarkdownSession, MarkupDumper, markupEquals, walk } from "../dist/index.js";
 // Past index.js for the instance itself: the heap is what this asserts about,
 // and it is observable without the source carrying anything for the test.
 import { native } from "../dist/runtime/native.js";
@@ -611,6 +611,51 @@ test("robustness: uncapped list nesting remains traversable", () => {
     assert.equal(node.kind, "paragraph");
 });
 
+test("robustness: a session continues a deep document", () => {
+    // Plan gates 4.9: the deep document of a session, edited at its deepest
+    // leaf, compares, walks, locates and describes like a fresh parse.
+    const depth = 10_000;
+    const source = "- ".repeat(depth) + "leaf\n";
+    const session = new MarkdownSession(source);
+    try {
+        const first = session.document;
+        assert.ok(markupEquals(first, Document.parse(source)));
+        const edited = session.edit([{ start: depth * 2, end: depth * 2 + 4, text: "lean" }]);
+        assert.equal(markupEquals(edited, first), false);
+        assert.equal(edited.content[0].id, first.content[0].id);
+        let entered = 0;
+        walk(
+            edited,
+            walkingVisitor((_node, phase) => {
+                if (phase === "enter") entered += 1;
+            })
+        );
+        assert.equal(entered, depth * 2 + 3);
+        let node = edited.content[0];
+        while (node.kind === "list") node = node.items[0].content[0];
+        const leaf = node.content[0];
+        assert.equal(leaf.literal, "lean");
+        const column = depth * 2 + 1;
+        assert.deepEqual(edited.scope(leaf, session.text), {
+            start: { line: 1, column },
+            end: { line: 1, column: column + 3 }
+        });
+        assert.equal(edited.nodeAt({ line: 1, column }, session.text), leaf);
+    } finally {
+        session.dispose();
+    }
+});
+
+test("errors: a disposed session takes no further call", () => {
+    const session = new MarkdownSession("text\n");
+    session.dispose();
+    session.dispose();
+    assert.throws(() => session.edit([]), Error);
+    assert.throws(() => session.append("more"), Error);
+    assert.throws(() => session.text, Error);
+    assert.equal(session.document.content.length, 1);
+});
+
 function decoder(bytes, unit = "utf16") {
     return new Decoder(bytes, unit);
 }
@@ -825,7 +870,8 @@ test("errors: a native failure maps its status by value across the WASM boundary
     for (const [status, code] of [
         [1, "allocationFailed"],
         [2, "outOfBounds"],
-        [3, "kindMismatch"]
+        [3, "kindMismatch"],
+        [4, "insideScalar"]
     ]) {
         assert.throws(
             () => decoder(new MessageWriter().error(status)).decode(),
@@ -1620,4 +1666,66 @@ test("robustness: deep trees are released, compared, walked and queried with a s
         }
     );
     assert.equal(result.status, 0, result.stderr);
+});
+
+test("api: a session's documents are the parses of its text, continuing the previous document's ids", () => {
+    const session = new MarkdownSession("# One\n\nfirst 😀 here\n\nlast\n");
+    try {
+        const before = session.document;
+        assert.equal(before.unit, "utf16");
+        // UTF-16 offsets: the pair is 13 and 14, so " here" is [15, 20).
+        const after = session.edit([
+            { start: 15, end: 20, text: " there" },
+            { start: 2, end: 5, text: "Two" }
+        ]);
+        assert.equal(session.document, after);
+        assert.equal(session.text, "# Two\n\nfirst 😀 there\n\nlast\n");
+        assert.equal(after.dump(session.text), Document.parse(session.text).dump(session.text));
+        // The edited blocks continue their ids; the untouched one is unchanged.
+        assert.deepEqual(
+            after.content.map((node) => node.id),
+            before.content.map((node) => node.id)
+        );
+        assert.ok(markupEquals(after.content[2], before.content[2]));
+        assert.equal(markupEquals(after.content[1], before.content[1]), false);
+        const appended = session.append("more\n");
+        assert.equal(session.text, "# Two\n\nfirst 😀 there\n\nlast\nmore\n");
+        assert.equal(appended.dump(session.text), Document.parse(session.text).dump(session.text));
+        assert.equal(appended.content[2].id, before.content[2].id);
+    } finally {
+        session.dispose();
+    }
+});
+
+test("errors: a session refuses an edit range out of bounds or inside a scalar", () => {
+    const session = new MarkdownSession("a 😀 b\n");
+    const rejects = (subject, edits, code) =>
+        assert.throws(
+            () => subject.edit(edits),
+            (error) => error instanceof MarkdownCoreError && error.code === code
+        );
+    try {
+        rejects(session, [{ start: 3, end: 2, text: "" }], "outOfBounds");
+        rejects(session, [{ start: 0, end: 9, text: "" }], "outOfBounds");
+        rejects(
+            session,
+            [
+                { start: 0, end: 2, text: "" },
+                { start: 1, end: 4, text: "" }
+            ],
+            "outOfBounds"
+        );
+        rejects(session, [{ start: 3, end: 3, text: "x" }], "insideScalar");
+        const utf8 = new MarkdownSession("a 😀 b\n", { unit: "utf8" });
+        try {
+            rejects(utf8, [{ start: 3, end: 3, text: "x" }], "insideScalar");
+            rejects(utf8, [{ start: 0, end: 5, text: "" }], "insideScalar");
+            utf8.edit([{ start: 7, end: 8, text: "c" }]);
+            assert.equal(utf8.text, "a 😀 c\n");
+        } finally {
+            utf8.dispose();
+        }
+    } finally {
+        session.dispose();
+    }
 });

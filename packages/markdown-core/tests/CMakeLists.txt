@@ -118,11 +118,16 @@ markdown_core_add_runner(concurrency_runner runners/concurrency_runner.c)
 markdown_core_add_runner(stress_runner runners/stress_runner.c)
 add_executable(corpus_guard runners/corpus_guard.c)
 # The incremental harness (subject interface, text model, workload reader) is
-# one source the edit benchmark and this runner share, so the two never read a
-# script differently. It lives with the benchmark, which rebuilds it against a
-# base revision.
-markdown_core_add_runner(incremental_runner runners/incremental_runner.c ../benchmarks/edit_harness.c)
-target_include_directories(incremental_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../benchmarks")
+# one source the edit benchmark and these oracles share, so the two never read
+# a script differently. It lives with the benchmark, which rebuilds it against
+# a base revision. The oracles serve the runner and the session fuzz target.
+add_library(markdown-core-incremental-oracles STATIC runners/incremental_oracles.c runners/incremental_fuzz.c
+                                                     ../benchmarks/edit_harness.c)
+target_include_directories(markdown-core-incremental-oracles PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/runners"
+                                                                    "${CMAKE_CURRENT_SOURCE_DIR}/../benchmarks")
+target_link_libraries(markdown-core-incremental-oracles PUBLIC markdown-core-test-support)
+markdown_core_add_runner(incremental_runner runners/incremental_runner.c)
+target_link_libraries(incremental_runner markdown-core-incremental-oracles)
 
 target_include_directories(fuzz_smoke_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
 target_include_directories(concurrency_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
@@ -176,13 +181,27 @@ foreach(family IN LISTS _markdown_core_incremental_families)
     markdown_core_add_test(
         incremental_${family}
         incremental
-        1200
+        3600
         incremental_runner
         --set
         "${MARKDOWN_CORE_INCREMENTAL_DIR}"
         --family
         "${family}")
 endforeach()
+# 4.11: the session fuzz target's decoding over the fuzz corpus, seeded.
+markdown_core_add_test(
+    incremental_fuzz
+    incremental
+    1200
+    incremental_runner
+    --fuzz
+    32
+    "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/core/afl_test_cases/test.md"
+    "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/core/afl_test_cases/properties.md"
+    "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/core/afl_test_cases/comments.md"
+    "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/core/afl_test_cases/cross-links.md"
+    "${MARKDOWN_CORE_CANONICAL_AST_DIR}/blocks.md"
+    "${MARKDOWN_CORE_CANONICAL_AST_DIR}/inlines.md")
 markdown_core_add_test(
     api_incremental_faulty
     api

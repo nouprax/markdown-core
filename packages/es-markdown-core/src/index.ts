@@ -1,4 +1,6 @@
 export { Document } from "./document.js";
+export { MarkdownSession } from "./session.js";
+export type { TextEdit } from "./session.js";
 export type { CodeBlock } from "./markup/code-block.js";
 export type { Callout } from "./markup/callout.js";
 export type { Citation, Cite } from "./markup/cite.js";

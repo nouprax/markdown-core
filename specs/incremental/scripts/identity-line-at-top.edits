@@ -5,5 +5,4 @@ expect changed Document 0
 expect changed Paragraph 0
 expect changed Text 0
 expect changed SoftBreak 8
-expect changed Text 9
 expect only

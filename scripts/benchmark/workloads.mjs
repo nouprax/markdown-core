@@ -618,8 +618,9 @@ class Script {
     toggle(at, text) {
         return this.insert(at, text).remove(at, at + bytes(text));
     }
-    reject(unit, operation, ...values) {
-        this.steps.push({ kind: "reject", unit, operation, values });
+    /** An edit batch the session refuses with `status`, offsets in `unit`. */
+    reject(unit, status, ...values) {
+        this.steps.push({ kind: "reject", unit, status, values });
         return this;
     }
     expect(...values) {
@@ -1031,15 +1032,16 @@ export function identityScripts() {
                 .expect("changed", "Paragraph", 0)
                 .expect("changed", "Text", 0)
                 .expect("changed", "SoftBreak", 8)
-                .expect("changed", "Text", 9)
                 .expect("only")
         );
     }
-    add("heading-anchor-targets", "# Target\n\nsee [a](#target) and [b](#target)\n", (s) =>
+    /* The links resolve through the heading's label, so they carry its
+     * anchor as their destination. */
+    add("heading-anchor-targets", "# Target {#one}\n\nsee [a][Target] and [b][Target]\n", (s) =>
         s
-            .edit([{ start: 2, end: 8, text: "Goal" }])
-            .expect("changed", "Link", 12)
-            .expect("changed", "Link", 29)
+            .edit([{ start: 11, end: 14, text: "two" }])
+            .expect("changed", "Link", 21)
+            .expect("changed", "Link", 37)
     );
     {
         const paragraphs = Array.from({ length: 1000 }, (_, i) => `${word(i * 3 + 1)} ${word(i * 3 + 2)}\n\n`);
@@ -1057,26 +1059,28 @@ export function identityScripts() {
     return cases;
 }
 
-/** The invalid arguments of 4.8, each against a document with multi-byte scalars. */
+/**
+ * The refused batches of 4.8, against a document with a four-byte scalar: out
+ * of bounds past the end, reversed and overlapping, and inside that scalar at
+ * one of its continuation bytes in UTF-8 and between its two units in UTF-16.
+ */
 export function rejectionScript(text) {
     const script = new Script("rejections", "rejections", text);
     const buffer = Buffer.from(text);
     const wide = scalarBoundaries(buffer).find((at, index, all) => all[index + 1] - at === 4);
-    const utf16Length = text.length;
-    script.reject("utf8", "edit", buffer.length + 1, buffer.length + 1, "61");
-    script.reject("utf8", "edit", 2, 1, "61");
-    script.reject("utf16", "edit", utf16Length + 1, utf16Length + 1, "61");
-    if (wide !== undefined) {
-        script.reject("utf8", "edit", wide + 1, wide + 1, "61");
-        script.reject("utf8", "edit", 0, wide + 2, "61");
-        const units = Buffer.from(text.slice(0), "utf8").subarray(0, wide).toString("utf8").length;
-        script.reject("utf16", "edit", units + 1, units + 1, "61");
+    for (const [unit, length] of [
+        ["utf8", buffer.length],
+        ["utf16", text.length]
+    ]) {
+        script.reject(unit, "out-of-bounds", length + 1, length + 1, "61");
+        script.reject(unit, "out-of-bounds", 2, 1, "61");
+        script.reject(unit, "out-of-bounds", 0, length, "61", 0, length, "61");
     }
-    for (const invalid of ["ff", "80", "c0af", "e4b8", "eda080", "f4908080"]) {
-        script.reject("utf8", "edit", 0, 0, invalid);
-        script.reject("utf8", "append", invalid);
-    }
-    script.reject("utf8", "append", "61e4b8");
+    script.reject("utf8", "inside-scalar", wide + 1, wide + 1, "61");
+    script.reject("utf8", "inside-scalar", 0, wide + 3, "61");
+    const units = buffer.subarray(0, wide).toString("utf8").length;
+    script.reject("utf16", "inside-scalar", units + 1, units + 1, "61");
+    script.reject("utf16", "inside-scalar", 0, units + 1, "61");
     return script;
 }
 
@@ -1093,7 +1097,7 @@ export function formatScripts(scripts) {
             if (step.kind === "edit") {
                 lines.push(`edit ${step.edits.map((edit) => `${edit.start} ${edit.end} ${hex(edit.text)}`).join(" ")}`);
             } else if (step.kind === "reject") {
-                lines.push(`reject ${step.unit} ${step.operation} ${step.values.join(" ")}`);
+                lines.push(`reject ${step.unit} ${step.status} edit ${step.values.join(" ")}`);
             }
             for (const expectation of step.expect ?? []) lines.push(`expect ${expectation}`);
         }
@@ -1124,8 +1128,8 @@ export function parseScripts(text) {
                     text: unhex(fields[index + 2])
                 });
             steps.push({ kind, edits });
-        } else if (kind === "reject") {
-            steps.push({ kind, unit: fields[0], operation: fields[1], values: fields.slice(2) });
+        } else if (kind === "reject" && fields[2] === "edit") {
+            steps.push({ kind, unit: fields[0], status: fields[1], values: fields.slice(3) });
         } else if (kind === "expect") {
             steps.at(-1).expect = [...(steps.at(-1).expect ?? []), fields.join(" ")];
         } else {

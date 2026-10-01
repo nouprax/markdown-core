@@ -87,10 +87,13 @@ if (declared.join("\n") !== exported.join("\n")) {
 if (declared.join("\n") !== machOExported.join("\n")) {
     throw new Error("C header declarations and the Mach-O export list differ");
 }
+// A session is the one object that changes: its text takes edits and appends
+// (docs/plans/2026-09-29-incremental-parsing.md, R6 and R8).
+const sessionText = /^markdown_core_session_(?:new|append)$/;
 for (const symbol of declared) {
     if (
-        /_(?:set|insert|append|prepend|replace|unlink|new|render)(?:_|$)/.test(symbol) ||
-        /_(?:feed|stream|edit|session|snapshot|delta|diagnostic)(?:_|$)/.test(symbol) ||
+        (!sessionText.test(symbol) && /_(?:set|insert|append|prepend|replace|unlink|new|render)(?:_|$)/.test(symbol)) ||
+        /_(?:feed|stream|snapshot|delta|diagnostic)(?:_|$)/.test(symbol) ||
         /_parser_(?:new|new_with_mem|feed|finish|free)$/.test(symbol) ||
         /_parse_file$/.test(symbol)
     ) {
@@ -129,10 +132,14 @@ if grep -R -n -E 'markdown_core_document_parse_features|feature-registry|markdow
 fi
 
 # These are API identifier checks, not prose checks.
-retired_surface_terms='render|feed|stream|edit|session|snapshot|delta|diagnostic|concrete|Concrete|CST|ConcreteSyntax|Token|Trivia|Recovery|Walker|WalkEvent'
+retired_surface_terms='render|feed|stream|snapshot|delta|diagnostic|concrete|Concrete|CST|ConcreteSyntax|Token|Trivia|Recovery|Walker|WalkEvent'
 # Mutation verbs end at an identifier or camel/snake-case word boundary;
 # a noun sharing a lowercase prefix does not name a mutation operation.
 mutation_surface_terms='set[A-Z]|(insert|append|prepend|replace|unlink)([A-Z_]|\b)'
+# A session is the one object that changes: its text takes edits and appends
+# (docs/plans/2026-09-29-incremental-parsing.md, R6 and R8). Only its own
+# `append` is exempt from the mutation verbs.
+session_text_operation='/MarkdownSession\.(swift|kt):[0-9]+:[[:space:]]*public (func|fun) append\('
 
 CLANG_MODULE_CACHE_PATH="$temp_dir/swift-module-cache" \
     swift package --disable-sandbox dump-package >"$temp_dir/swift-package.json"
@@ -148,7 +155,7 @@ NODE
 
 if grep -R -n -E \
     "public (class|struct|enum|protocol|typealias|func|var|let|static func).*\\b(${retired_surface_terms}|${mutation_surface_terms}|nativeHandle|pointer|memory|wasm)" \
-    packages/swift-markdown-core/Sources/MarkdownCore; then
+    packages/swift-markdown-core/Sources/MarkdownCore | grep -v -E "$session_text_operation"; then
     fail "Swift exports a retired API, mutation, or native implementation detail"
 fi
 grep -q 'public func dump(in source: String)' packages/swift-markdown-core/Sources/MarkdownCore/DocumentScope.swift \
@@ -193,7 +200,7 @@ grep -q 'explicitApi()' packages/kotlin-markdown-core/build.gradle.kts \
     || fail "Kotlin explicit API mode is disabled"
 if grep -R -n -E \
     "public (class|data class|sealed class|enum class|object|interface|typealias|fun|val|var).*\\b(${retired_surface_terms}|${mutation_surface_terms}|nativeHandle|pointer|memory|wasm)" \
-    packages/kotlin-markdown-core/src/commonMain; then
+    packages/kotlin-markdown-core/src/commonMain | grep -v -E "$session_text_operation"; then
     fail "Kotlin exports a retired API, mutation, or native implementation detail"
 fi
 grep -q 'public fun dump(source: String): String' \
@@ -313,7 +320,7 @@ const runtimeExports = [
         match[1].split(",").map((name) => name.trim())
     )
 ].sort();
-const expectedRuntime = ["Attributes", "Document", "MarkdownCoreError", "MarkupDumper", "markupEquals", "walk"].sort();
+const expectedRuntime = ["Attributes", "Document", "MarkdownCoreError", "MarkdownSession", "MarkupDumper", "markupEquals", "walk"].sort();
 if (runtimeExports.join("\n") !== expectedRuntime.join("\n")) {
     throw new Error(`Unexpected ES runtime exports: ${runtimeExports.join(", ")}`);
 }
