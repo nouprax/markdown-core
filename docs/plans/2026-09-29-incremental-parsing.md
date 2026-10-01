@@ -495,25 +495,25 @@ closed the previous child and opens a new one. At a boundary at position `p`
 the cursor presents, outermost first, the old nodes whose lead starts at the
 image of `p`, and for each one of three things happens:
 
-1. **Take.** The node is not changed; its entry, its parent's entry and so on
-   up to the document equal the carried state of the live spine at each
-   depth; and, at a boundary inside a read line, the block the line opened
-   has the node's head. The node is taken whole, with the run of unchanged
-   siblings after it, and the parent folds the run's combined summary (E4)
-   into its carried state. The block the line opened is dropped, and the
-   parse continues after the run without reading any line of it. The rest of
-   the run needs no comparison: equal state before a node and identical bytes
-   through its reach give equal state after it, which is its next sibling's
-   entry.
-2. **Reopen.** The node is a changed container whose entries are equal as in
-   (1), and either its head end is before its first changed byte or, at a
-   boundary inside a read line, the block the line opened has its head. The
-   container goes back on the live spine with its head state, without its
-   opening line being read again, and the cursor descends to its children.
-   From step 6 a changed leaf whose entries are equal also reopens, at its
-   first changed line (E5).
-3. **Read.** Otherwise the line machine reads the line with
-   `S_process_line`, as a fresh parse does.
+- **Take.** The node is not changed; its entry, its parent's entry and so on
+  up to the document equal the carried state of the live spine at each
+  depth; and, at a boundary inside a read line, the block the line opened
+  has the node's head. The node is taken whole, with the run of unchanged
+  siblings after it, and the parent folds the run's combined summary (E4)
+  into its carried state. The block the line opened is dropped, and the
+  parse continues after the run without reading any line of it. The rest of
+  the run needs no comparison: equal state before a node and identical bytes
+  through its reach give equal state after it, which is its next sibling's
+  entry.
+- **Reopen.** The node is a changed container whose entries are equal as for
+  a take, and either its head end is before its first changed byte or, at a
+  boundary inside a read line, the block the line opened has its head. The
+  container goes back on the live spine with its head state, without its
+  opening line being read again, and the cursor descends to its children.
+  From step 6 a changed leaf whose entries are equal also reopens, at its
+  first changed line (E5).
+- **Read.** Otherwise the line machine reads the line with
+  `S_process_line`, as a fresh parse does.
 
 **Closing.** When the cursor has taken the last child of a reopened
 container, the container's state equals the old container's at the same
