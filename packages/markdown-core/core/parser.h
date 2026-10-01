@@ -108,7 +108,7 @@ static inline struct markdown_core_node *markdown_core_cut_first(const markdown_
  * whether it is open, what the finish stage cached and whether its
  * blank-line answer was asked (node.h). */
 #define MARKDOWN_CORE_CARRIED_BITS                                                                                     \
-    ((uint16_t) ~(MARKDOWN_CORE_NODE__OPEN | MARKDOWN_CORE_NODE__LAST_LINE_CHECKED | MARKDOWN_CORE_NODE__ENDS_BLANK))
+    ((uint16_t)~(MARKDOWN_CORE_NODE__OPEN | MARKDOWN_CORE_NODE__LAST_LINE_CHECKED | MARKDOWN_CORE_NODE__ENDS_BLANK))
 
 /* A LINE OF THE LEDGER (parser.h, the parser's ledger): a line start of the
  * document's input where a restart may reopen the spine. `inner` is the
