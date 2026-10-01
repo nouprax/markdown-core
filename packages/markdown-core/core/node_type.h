@@ -73,8 +73,7 @@ typedef enum {
     MARKDOWN_CORE_NODE_STRONG = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0007,
     MARKDOWN_CORE_NODE_LINK = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0008,
     MARKDOWN_CORE_NODE_EMBEDDED = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0009,
-    /* A citation cluster, whose items are a chain of CITATION nodes it owns
-     * beside its children, which it never has. */
+    /* A citation cluster, whose items are its children, CITATION nodes. */
     MARKDOWN_CORE_NODE_CITE = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000a,
     MARKDOWN_CORE_NODE_STRIKETHROUGH = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000b,
     /* Its payload comes from the formula element's opaque_alloc_func. */
