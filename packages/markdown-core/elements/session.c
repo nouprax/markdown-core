@@ -40,7 +40,7 @@ static markdown_core_status session_parse(markdown_core_session *session, const 
         .edits = edits,
         .edit_count = count,
     };
-    do {
+    for (;;) {
         revision.previous = session->document.root;
         revision.last_id = session->last_id;
         session->document.root =
@@ -56,10 +56,12 @@ static markdown_core_status session_parse(markdown_core_session *session, const 
             revision.edit_offset +=
                 (int64_t)revision.edits[i].size - (int64_t)(revision.edits[i].end - revision.edits[i].start);
         }
+        if (revision.applied == revision.edit_count) {
+            return MARKDOWN_CORE_OK;
+        }
         revision.edits += revision.applied;
         revision.edit_count -= revision.applied;
-    } while (revision.edit_count);
-    return MARKDOWN_CORE_OK;
+    }
 }
 
 /* Gives back what a session holds, but not the session itself. */
