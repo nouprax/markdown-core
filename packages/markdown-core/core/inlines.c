@@ -394,12 +394,12 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_inline_remove_deli
 /* THE RUN'S ITEMS are slots of the parser's like its delimiter entries: one
  * lives while its node is a top-level node of a run. A state with no parser
  * places nothing. */
-#define S_ITEM_SLAB_BYTES ((size_t)4 * 1024)
 
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
     markdown_core_inline_item *S_item_new(markdown_core_inline_state *inline_state, markdown_core_node *node) {
     markdown_core_parser *parser = inline_state->owner_parser;
-    markdown_core_inline_item *item = markdown_core_slab_take(&parser->inline_items, sizeof(*item), S_ITEM_SLAB_BYTES);
+    markdown_core_inline_item *item =
+        markdown_core_slab_take(&parser->scratch_slabs, &parser->inline_items, sizeof(*item));
     if (!item) {
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         markdown_core_parser_release_node(parser, node);
@@ -467,7 +467,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_inline_move(markdo
     assert(!owner->children);
     markdown_core_parser *parser = inline_state->owner_parser;
     markdown_core_children_builder builder;
-    markdown_core_children_build_begin(&builder, &parser->pool->runs);
+    markdown_core_children_build_begin(&builder, parser->pool);
     for (markdown_core_inline_item *item = first; item != end; item = item->next) {
         if (!markdown_core_children_build_put(&builder, item->node)) {
             inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
@@ -540,14 +540,13 @@ static void S_inline_freeze(markdown_core_inline_state *inline_state) {
  * allocator is asked once per slab, and the slabs go with the parser. Every
  * inline state that pushes has a parser; the one built without
  * (`markdown_core_parse_reference_inline`) scans a label and pushes nothing. */
-#define S_DELIMITER_SLAB_BYTES ((size_t)8 * 1024)
 
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) delimiter *S_inline_push_delimiter_entry(
     markdown_core_inline_state *inline_state, delimiter_kind kind, bufsize_t position) {
     markdown_core_parser *parser = inline_state->owner_parser;
     assert(parser);
     parser->delimiter_pushes++;
-    delimiter *entry = markdown_core_slab_take(&parser->delimiters, sizeof(*entry), S_DELIMITER_SLAB_BYTES);
+    delimiter *entry = markdown_core_slab_take(&parser->scratch_slabs, &parser->delimiters, sizeof(*entry));
     if (!entry) {
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         return NULL;

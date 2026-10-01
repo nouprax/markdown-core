@@ -371,7 +371,8 @@ struct markdown_core_parser {
     /* The slots of the delimiter entries of inline parses (see
      * `markdown_core_inline_push_delimiter_entry`) and of the items of
      * inline runs (delimiter.h): an entry or item removed goes back for the
-     * next, and the slabs go with the parser. */
+     * next, and the slabs they are cut from go with the parser. */
+    markdown_core_slabs scratch_slabs;
     markdown_core_slab_pool delimiters;
     markdown_core_slab_pool inline_items;
     /* The workspace every attribute value of the parse is read into before

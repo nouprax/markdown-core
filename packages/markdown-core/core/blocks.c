@@ -175,6 +175,7 @@ static void S_parser_dispose(markdown_core_parser *parser) {
 
     markdown_core_slab_pool_dispose(&parser->delimiters);
     markdown_core_slab_pool_dispose(&parser->inline_items);
+    markdown_core_slabs_dispose(&parser->scratch_slabs);
     markdown_core_inline_release_records(parser);
     markdown_core_attribute_scratch_free(&parser->attribute_scratch);
 
@@ -1499,10 +1500,12 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) const
     while ((size_t)(end - cursor) >= sizeof(uint64_t)) {
         uint64_t word;
         memcpy(&word, cursor, sizeof(word));
-        const uint64_t cr = word ^ (ones * '\r');
-        const uint64_t lf = word ^ (ones * '\n');
-        if ((((word - ones) & ~word) | ((cr - ones) & ~cr) | ((lf - ones) & ~lf)) & highs) {
-            break;
+        if ((word - ones * ('\r' + 1)) & ~word & highs) {
+            const uint64_t cr = word ^ (ones * '\r');
+            const uint64_t lf = word ^ (ones * '\n');
+            if ((((word - ones) & ~word) | ((cr - ones) & ~cr) | ((lf - ones) & ~lf)) & highs) {
+                break;
+            }
         }
         cursor += sizeof(word);
     }

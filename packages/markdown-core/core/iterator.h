@@ -96,7 +96,7 @@ static inline markdown_core_event_type markdown_core_iter_step(markdown_core_ite
         if (!children) {
             iter->event = MARKDOWN_CORE_EVENT_EXIT;
         } else {
-            path->frames[path->count - 1].at = 0;
+            /* The node's frame was pushed inside its first child. */
             markdown_core_iter_push(iter, markdown_core_children_at(children, 0));
         }
     } else if (iter->event == MARKDOWN_CORE_EVENT_EXIT) {

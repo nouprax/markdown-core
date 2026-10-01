@@ -535,46 +535,12 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node);
  * where it is done. */
 size_t markdown_core_node_release(markdown_core_node *node);
 
-/* WHERE A NODE'S STORAGE COMES FROM, and where it goes back to.
- *
- * A node lives in a SLOT (slab.h) holding the node and room for its kind's
- * record, and the resources links read through live in slots of their own.
- * A pool holds the slabs of both. A parse takes every slot from the pool its
- * caller lends it -- a session's, which outlives each of its edits, or one
- * the caller makes for a single parse -- and a caller with no pool takes one
- * slot from the allocator. A slot released into a pool goes back to it for
- * reuse, so a session's edits reuse the slots of the nodes they retire
- * instead of pinning a slab per edit; a slot released with no pool drops its
- * slab hold. So a subtree taken from a parsed document is as good as one
- * built by hand: it outlives the pool it came from and is released by
- * `markdown_core_node_free` like any other. The size of what it keeps alive
- * is the slab, not the node.
- *
- * Why slabs: a node's chunk was larger than the C library's fast-path size
- * classes, so every release of one walked the allocator's merge path, and the
- * document's teardown cost more than a third of its parse. */
-typedef struct markdown_core_node_pool {
-    markdown_core_slab_pool nodes;
-    markdown_core_slab_pool resources;
-    /* The runs of children trees (children.h). */
-    markdown_core_slab_pool runs;
-    /* The holders' counts of the bytes literals read. */
-    markdown_core_slab_pool bytes;
-} markdown_core_node_pool;
-
-/* The slots a pool's runs come from; NULL, the allocator's, for no pool. */
-static inline markdown_core_slab_pool *markdown_core_node_pool_runs(markdown_core_node_pool *pool) {
-    return pool ? &pool->runs : NULL;
-}
-
-#define MARKDOWN_CORE_BYTES_SLAB_BYTES ((size_t)4 * 1024)
-
 /* Takes `buffer`'s storage as new bytes from `pool`'s slots, held once,
  * leaving the buffer empty; NULL when the bytes cannot be allocated. */
 static inline markdown_core_bytes *markdown_core_bytes_take(markdown_core_node_pool *pool,
                                                             markdown_core_strbuf *buffer) {
     markdown_core_bytes *bytes = (markdown_core_bytes *)markdown_core_slab_take(
-        pool ? &pool->bytes : NULL, sizeof(*bytes), MARKDOWN_CORE_BYTES_SLAB_BYTES);
+        pool ? &pool->slabs : NULL, pool ? &pool->bytes : NULL, sizeof(*bytes));
     if (bytes) {
         bytes->refs = 1;
         bytes->data = buffer->ptr;

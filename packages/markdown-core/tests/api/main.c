@@ -3496,9 +3496,7 @@ static void inspect_lazy_block_content(const markdown_core_element_instance *sel
         markdown_core_node *node = markdown_core_parser_add_child_validated(parser, parser->root, kinds[i], 1);
         OK(runner, node && node->content.ptr == markdown_core_strbuf__initbuf && !node->content.asize,
            "every empty block starts with the same borrowed empty content");
-        /* The document's first child begins its children run, the one
-         * allocation adding a block may make. */
-        INT_EQ(runner, payload_probe_snapshot().allocations, before + (i == 0),
+        INT_EQ(runner, payload_probe_snapshot().allocations, before,
                "a block fits the existing slab without a content allocation");
         if (kinds[i] == MARKDOWN_CORE_NODE_PARAGRAPH) {
             /* Warm mapping storage independently so this measures content

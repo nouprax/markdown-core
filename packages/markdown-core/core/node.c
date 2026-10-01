@@ -123,8 +123,6 @@ typedef struct {
     unsigned char record[MARKDOWN_CORE_NODE_SLOT_RECORD_BYTES];
 } markdown_core_node_slot;
 
-#define MARKDOWN_CORE_NODE_SLAB_BYTES ((size_t)64 * 1024)
-
 static markdown_core_node_slot *S_slot_of(markdown_core_node *node) {
     return (markdown_core_node_slot *)((unsigned char *)node - offsetof(markdown_core_node_slot, node));
 }
@@ -133,8 +131,8 @@ static markdown_core_node_slot *S_slot_of(markdown_core_node *node) {
  * initializes the node and its active record after taking the slot. Spare
  * record capacity is storage, not an object to initialize. */
 static markdown_core_node_slot *S_slot_take(markdown_core_node_pool *pool) {
-    return (markdown_core_node_slot *)markdown_core_slab_take(
-        pool ? &pool->nodes : NULL, sizeof(markdown_core_node_slot), MARKDOWN_CORE_NODE_SLAB_BYTES);
+    return (markdown_core_node_slot *)markdown_core_slab_take(pool ? &pool->slabs : NULL, pool ? &pool->nodes : NULL,
+                                                              sizeof(markdown_core_node_slot));
 }
 
 /* The node's storage, after its contents are released. */
@@ -147,6 +145,7 @@ void markdown_core_node_pool_dispose(markdown_core_node_pool *pool) {
     markdown_core_slab_pool_dispose(&pool->resources);
     markdown_core_slab_pool_dispose(&pool->runs);
     markdown_core_slab_pool_dispose(&pool->bytes);
+    markdown_core_slabs_dispose(&pool->slabs);
 }
 
 /* RECORD SIZE IS A PROPERTY OF THE KIND, so it is an array index.
@@ -570,12 +569,10 @@ int markdown_core_node_set_string_content(markdown_core_node *node, const char *
     return true;
 }
 
-#define MARKDOWN_CORE_RESOURCE_SLAB_BYTES ((size_t)8 * 1024)
-
 markdown_core_resource *markdown_core_resource_new(markdown_core_node_pool *pool, markdown_core_chunk url,
                                                    markdown_core_optional_chunk title) {
     markdown_core_resource *resource = (markdown_core_resource *)markdown_core_slab_take(
-        pool ? &pool->resources : NULL, sizeof(markdown_core_resource), MARKDOWN_CORE_RESOURCE_SLAB_BYTES);
+        pool ? &pool->slabs : NULL, pool ? &pool->resources : NULL, sizeof(markdown_core_resource));
     if (!resource) {
         return NULL;
     }

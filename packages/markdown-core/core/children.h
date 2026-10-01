@@ -12,7 +12,6 @@ extern "C" {
 #endif
 
 struct markdown_core_node;
-struct markdown_core_node_pool;
 
 /* A NODE'S CHILDREN, as a balanced tree of shared runs
  * (docs/plans/2026-09-29-incremental-parsing.md, 5.1 and 5.11).
@@ -104,13 +103,13 @@ static inline struct markdown_core_node *markdown_core_children_last(const markd
 /* Puts `node` at `index`, at most the count, taking the caller's reference.
  * False, with nothing changed and the reference still the caller's, when
  * storage runs out. */
-bool markdown_core_children_insert(struct markdown_core_node_pool *pool, markdown_core_run **root, size_t index,
+bool markdown_core_children_insert(markdown_core_node_pool *pool, markdown_core_run **root, size_t index,
                                    struct markdown_core_node *node);
 
 /* `markdown_core_children_insert` at the count. Along the path of last
  * entries, a tree held only here with room in its last tier-zero run takes
  * the child in place; any other copies and splits as the insertion does. */
-static inline bool markdown_core_children_append(struct markdown_core_node_pool *pool, markdown_core_run **root,
+static inline bool markdown_core_children_append(markdown_core_node_pool *pool, markdown_core_run **root,
                                                  struct markdown_core_node *node) {
     markdown_core_run *run = *root;
     if (!run) {
@@ -133,15 +132,15 @@ static inline bool markdown_core_children_append(struct markdown_core_node_pool 
 /* `remove`'s step when a run on its path is shared or its tier-zero run
  * would fall below half: the runs on the path are copied, and each borrows
  * from or joins a neighbour as it must. */
-bool markdown_core_children_remove_joining(struct markdown_core_node_pool *pool, markdown_core_run **root, size_t index,
+bool markdown_core_children_remove_joining(markdown_core_node_pool *pool, markdown_core_run **root, size_t index,
                                            struct markdown_core_node **removed);
 
 /* Takes the child at `index` out, handing its reference to the caller in
  * `removed`. False, with nothing changed, when storage runs out. A tree held
  * only here whose tier-zero run keeps half the width, or is the root, gives
  * the child up in place. */
-static inline bool markdown_core_children_remove(struct markdown_core_node_pool *pool, markdown_core_run **root,
-                                                 size_t index, struct markdown_core_node **removed) {
+static inline bool markdown_core_children_remove(markdown_core_node_pool *pool, markdown_core_run **root, size_t index,
+                                                 struct markdown_core_node **removed) {
     markdown_core_run *run = *root;
     size_t at = index;
     while (run->hold.refs == 1 && run->tier) {
@@ -167,17 +166,14 @@ static inline bool markdown_core_children_remove(struct markdown_core_node_pool 
 /* Puts `node` at `index` in place of the child there, taking the caller's
  * reference and handing the old child's to the caller in `replaced`. False,
  * with nothing changed, when storage runs out. */
-bool markdown_core_children_replace(struct markdown_core_node_pool *pool, markdown_core_run **root, size_t index,
+bool markdown_core_children_replace(markdown_core_node_pool *pool, markdown_core_run **root, size_t index,
                                     struct markdown_core_node *node, struct markdown_core_node **replaced);
 
-/* Runs come from slabs of this size (slab.h). */
-#define MARKDOWN_CORE_RUN_SLAB_BYTES ((size_t)32 * 1024)
-
-/* An empty run of `tier`, held once, from `runs` (NULL: the allocator); NULL
+/* An empty run of `tier`, held once, from `pool` (NULL: the allocator); NULL
  * when storage runs out. */
-static inline markdown_core_run *markdown_core_run_new(markdown_core_slab_pool *runs, uint8_t tier) {
-    markdown_core_run *run =
-        (markdown_core_run *)markdown_core_slab_take(runs, sizeof(markdown_core_run), MARKDOWN_CORE_RUN_SLAB_BYTES);
+static inline markdown_core_run *markdown_core_run_new(markdown_core_node_pool *pool, uint8_t tier) {
+    markdown_core_run *run = (markdown_core_run *)markdown_core_slab_take(pool ? &pool->slabs : NULL,
+                                                                          pool ? &pool->runs : NULL, sizeof(*run));
     if (run) {
         run->hold.refs = 1;
         run->total = 0;
@@ -195,7 +191,7 @@ static inline markdown_core_run *markdown_core_run_new(markdown_core_slab_pool *
  * hands over is the builder's until `end` succeeds: on a failure the builder
  * gives back its runs and the caller still holds every child it put. */
 typedef struct {
-    markdown_core_slab_pool *runs;
+    markdown_core_node_pool *pool;
     /* The tier-zero runs filled so far, in order, linked through their
      * release link. */
     markdown_core_run *first, *last;
@@ -204,14 +200,14 @@ typedef struct {
 /* Gives back the filled runs from `first` on, leaving their entries the
  * caller's. The builder's out-of-line steps take its fields, not the
  * builder, so that the builder stays in registers. */
-void markdown_core_children_build_cancel(markdown_core_slab_pool *runs, markdown_core_run *first);
+void markdown_core_children_build_cancel(markdown_core_node_pool *pool, markdown_core_run *first);
 /* `end` when more than one run is filled: the root, or NULL, with the runs
  * given back, when storage runs out. */
-markdown_core_run *markdown_core_children_build_join(markdown_core_slab_pool *runs, markdown_core_run *first);
+markdown_core_run *markdown_core_children_build_join(markdown_core_node_pool *pool, markdown_core_run *first);
 
 static inline void markdown_core_children_build_begin(markdown_core_children_builder *builder,
-                                                      markdown_core_slab_pool *runs) {
-    builder->runs = runs;
+                                                      markdown_core_node_pool *pool) {
+    builder->pool = pool;
     builder->first = NULL;
     builder->last = NULL;
 }
@@ -222,9 +218,9 @@ static inline bool markdown_core_children_build_put(markdown_core_children_build
                                                     struct markdown_core_node *node) {
     markdown_core_run *run = builder->last;
     if (!run || run->count == MARKDOWN_CORE_RUN_WIDTH) {
-        run = markdown_core_run_new(builder->runs, 0);
+        run = markdown_core_run_new(builder->pool, 0);
         if (!run) {
-            markdown_core_children_build_cancel(builder->runs, builder->first);
+            markdown_core_children_build_cancel(builder->pool, builder->first);
             return false;
         }
         run->hold.released = NULL;
@@ -244,7 +240,7 @@ static inline bool markdown_core_children_build_put(markdown_core_children_build
  * with the builder cancelled, when storage runs out. */
 static inline markdown_core_run *markdown_core_children_build_end(markdown_core_children_builder *builder, bool *ok) {
     if (builder->first != builder->last) {
-        markdown_core_run *root = markdown_core_children_build_join(builder->runs, builder->first);
+        markdown_core_run *root = markdown_core_children_build_join(builder->pool, builder->first);
         *ok = root != NULL;
         return root;
     }

@@ -6,20 +6,16 @@
 
 #define S_HALF (MARKDOWN_CORE_RUN_WIDTH / 2)
 
-static markdown_core_run *S_run_new(markdown_core_node_pool *pool, uint8_t tier) {
-    return markdown_core_run_new(markdown_core_node_pool_runs(pool), tier);
-}
-
 /* A run's storage, its entries having moved elsewhere or been released. */
 void markdown_core_run_free_slot(markdown_core_node_pool *pool, markdown_core_run *run) {
-    markdown_core_slab_release(markdown_core_node_pool_runs(pool), run);
+    markdown_core_slab_release(pool ? &pool->runs : NULL, run);
 }
 
 /* A copy of the shared run in `slot`, put in its place: the copy holds
  * every entry once more, and the run loses this tree as a holder. */
 static bool S_copy(markdown_core_node_pool *pool, markdown_core_run **slot) {
     markdown_core_run *run = *slot;
-    markdown_core_run *copy = S_run_new(pool, run->tier);
+    markdown_core_run *copy = markdown_core_run_new(pool, run->tier);
     if (!copy) {
         return false;
     }
@@ -116,7 +112,7 @@ static bool S_insert_splitting(markdown_core_node_pool *pool, markdown_core_run 
     }
     int needed = splits + (splits == path->tiers);
     for (int i = 0; i < needed; i++) {
-        made[i] = S_run_new(pool, 0);
+        made[i] = markdown_core_run_new(pool, 0);
         if (!made[i]) {
             while (i--) {
                 markdown_core_run_free_slot(pool, made[i]);
@@ -172,7 +168,7 @@ static bool S_insert_splitting(markdown_core_node_pool *pool, markdown_core_run 
 bool markdown_core_children_insert(markdown_core_node_pool *pool, markdown_core_run **root, size_t index,
                                    markdown_core_node *node) {
     if (!*root) {
-        markdown_core_run *run = S_run_new(pool, 0);
+        markdown_core_run *run = markdown_core_run_new(pool, 0);
         if (!run) {
             return false;
         }
@@ -276,15 +272,15 @@ bool markdown_core_children_remove_joining(markdown_core_node_pool *pool, markdo
     return true;
 }
 
-void markdown_core_children_build_cancel(markdown_core_slab_pool *runs, markdown_core_run *first) {
+void markdown_core_children_build_cancel(markdown_core_node_pool *pool, markdown_core_run *first) {
     while (first) {
         markdown_core_run *run = first;
         first = run->hold.released;
-        markdown_core_slab_release(runs, run);
+        markdown_core_run_free_slot(pool, run);
     }
 }
 
-markdown_core_run *markdown_core_children_build_join(markdown_core_slab_pool *runs, markdown_core_run *first) {
+markdown_core_run *markdown_core_children_build_join(markdown_core_node_pool *pool, markdown_core_run *first) {
     /* Every run of the tiers above, made before any tier is joined. */
     size_t below = 0;
     for (markdown_core_run *run = first; run; run = run->hold.released) {
@@ -294,10 +290,10 @@ markdown_core_run *markdown_core_children_build_join(markdown_core_slab_pool *ru
     for (size_t made = below; made > 1;) {
         made = (made + MARKDOWN_CORE_RUN_WIDTH - 1) / MARKDOWN_CORE_RUN_WIDTH;
         for (size_t i = 0; i < made; i++) {
-            markdown_core_run *run = markdown_core_run_new(runs, 0);
+            markdown_core_run *run = markdown_core_run_new(pool, 0);
             if (!run) {
-                markdown_core_children_build_cancel(runs, spare);
-                markdown_core_children_build_cancel(runs, first);
+                markdown_core_children_build_cancel(pool, spare);
+                markdown_core_children_build_cancel(pool, first);
                 return NULL;
             }
             run->hold.released = spare;
