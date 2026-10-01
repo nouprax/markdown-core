@@ -4,9 +4,10 @@
  * what a restart needs to know:
  *
  * - E1: source bytes are read through the input index. The storage the index
- *   reads (the pieces, the session text, its cursor and the copies of lines
- *   that cross pieces) is touched by the index, the text tree and the session
- *   that owns the text, and by nothing else.
+ *   reads (the window over the input, the buffer a text input is copied into,
+ *   how much of it is filled, and the cursor into the session text) is touched
+ *   by the index, the text tree and the session that owns the text, and by
+ *   nothing else.
  * - E2: a closed block is written through `markdown_core_parser_write_closed`,
  *   and a dialect that writes one says through `writes_below` which closed
  *   blocks a later line may write.
@@ -20,7 +21,7 @@
  * `descriptors` are the element inventory's ({symbol, file, source, body});
  * `sources` are every library source ({file, source}), with paths relative to
  * the package. Returns the failures. */
-const INDEX_STORE = /->\s*(input_piece|input_pieces|input_text|input_cursor|input_copies)\b/;
+const INDEX_STORE = /->\s*(input_window|input_buffer|input_filled|input_cursor)\b/;
 const INDEX_OWNERS = new Set(["core/blocks.c", "core/parser.h", "core/text_tree.c", "core/text_tree.h"]);
 const TEXT_TREE = /\bmarkdown_core_text_tree_\w+\s*\(/;
 const TEXT_OWNERS = new Set([...INDEX_OWNERS, "elements/session.c"]);

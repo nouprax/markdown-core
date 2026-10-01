@@ -10,21 +10,27 @@ const list = descriptor(
 );
 const para = descriptor("PARAGRAPH", ".writes_below = writes_below,");
 const writer = { file: "elements/block_identifier.c", source: "markdown_core_parser_write_closed(parser, owner);" };
-const index = { file: "core/blocks.c", source: "parser->input_pieces[0]; markdown_core_text_tree_byte(text, 0);" };
+const index = { file: "core/blocks.c", source: "parser->input_window[0]; markdown_core_text_tree_byte(text, 0);" };
 
 test("the dialect as it stands keeps the contract", () => {
     assert.deepEqual(auditReparseContract([list, para], [index, writer]), []);
 });
 
 test("E1: only the index, the text tree and the session read the source's storage", () => {
-    for (const source of ["parser->input_piece + 1", "parser->input_copies", "markdown_core_text_tree_byte(t, 0)"]) {
+    for (const source of [
+        "parser->input_window + 1",
+        "parser->input_buffer[0]",
+        "parser->input_filled",
+        "parser -> input_cursor",
+        "markdown_core_text_tree_byte(t, 0)"
+    ]) {
         const failures = auditReparseContract([list, para], [index, writer, { file: "elements/x.c", source }]);
         assert.match(failures.join("\n"), /\(E1\)/, source);
     }
     const session = { file: "elements/session.c", source: "markdown_core_text_tree_edit(text, 0)" };
     assert.deepEqual(auditReparseContract([list, para], [index, writer, session]), []);
     /* A mention in a comment reads nothing. */
-    const comment = { file: "elements/y.c", source: "/* parser->input_pieces */" };
+    const comment = { file: "elements/y.c", source: "/* parser->input_window */" };
     assert.deepEqual(auditReparseContract([list, para], [index, writer, comment]), []);
 });
 
