@@ -96,17 +96,23 @@ import Testing
     func refusedRanges() throws {
         let emoji = try MarkdownSession("🚀\n")
         let letters = try MarkdownSession("abc\n")
-        let rejected: [(MarkdownSession, [TextEdit], ErrorCode)] = [
-            // A negative start reaches the engine as a start after its end.
-            (emoji, [TextEdit(-1..<0, with: "x")], .outOfBounds),
-            (emoji, [TextEdit(3..<4, with: "x")], .outOfBounds),
-            (emoji, [TextEdit(1..<1, with: "x")], .insideScalar),
-            (emoji, [TextEdit(0..<1, with: "x")], .insideScalar),
-            (letters, [TextEdit(0..<2, with: "x"), TextEdit(1..<3, with: "y")], .outOfBounds),
+        let rejected: [ErrorCode: [(MarkdownSession, [TextEdit])]] = [
+            .outOfBounds: [
+                // A negative start reaches the engine as a start after its end.
+                (emoji, [TextEdit(-1..<0, with: "x")]),
+                (emoji, [TextEdit(3..<4, with: "x")]),
+                (letters, [TextEdit(0..<2, with: "x"), TextEdit(1..<3, with: "y")]),
+            ],
+            .insideScalar: [
+                (emoji, [TextEdit(1..<1, with: "x")]),
+                (emoji, [TextEdit(0..<1, with: "x")]),
+            ],
         ]
-        for (session, edits, code) in rejected {
-            let error = #expect(throws: MarkdownCoreError.self) { try session.edit(edits) }
-            #expect(error?.code == code, "\(edits)")
+        for (code, cases) in rejected {
+            for (session, edits) in cases {
+                let error = #expect(throws: MarkdownCoreError.self) { try session.edit(edits) }
+                #expect(error?.code == code, "\(edits)")
+            }
         }
     }
 }
