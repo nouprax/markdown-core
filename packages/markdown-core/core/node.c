@@ -658,10 +658,9 @@ int markdown_core_node_check(markdown_core_node *node, FILE *out) {
         }
         errors += broken != 0;
     }
-    /* A walk that runs out of path storage stops early: it has checked
-     * fewer trees, and found no break in them. */
+    bool failed = iter.failed;
     markdown_core_iter_path_dispose(&path);
-    return errors;
+    return failed ? -1 : errors;
 }
 
 const markdown_core_chunk *markdown_core_node_anchor_chunk(const markdown_core_node *node) {

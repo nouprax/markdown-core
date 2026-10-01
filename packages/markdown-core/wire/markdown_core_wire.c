@@ -583,14 +583,16 @@ static void put_record(wire_buffer *buffer, wire_resources *resources, const mar
         break;
     case MARKDOWN_CORE_KIND_CALLOUT: {
         markdown_core_optional_bool collapsed;
+        /* A present title holds at least one node. */
+        bool titled = markdown_core_nodes_count(edges[0].nodes) != 0;
         markdown_core_node_callout_properties(node, &first, &collapsed);
         put_optional_string(buffer, first);
         put_bool(buffer, collapsed.has_value);
         if (collapsed.has_value) {
             put_bool(buffer, collapsed.value);
         }
-        put_node_presence(buffer, &edges[0]);
-        if (edges[0].node != NULL) {
+        put_bool(buffer, titled);
+        if (titled) {
             put_sequence_count(buffer, &edges[0]);
         }
         put_sequence_count(buffer, &edges[1]);

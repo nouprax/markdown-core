@@ -521,7 +521,8 @@ markdown_core_node *markdown_core_node_take_child(struct markdown_core_node_pool
 
 /* THE STRUCTURAL SELF-CHECK: the number of broken children trees under
  * `node`, each reported on `out` when it is given (children.h,
- * markdown_core_children_check). */
+ * markdown_core_children_check), or -1 when the walk runs out of path
+ * storage. */
 int markdown_core_node_check(markdown_core_node *node, FILE *out);
 
 /* The internal type's name, for diagnostics: "<unknown>" for a value no

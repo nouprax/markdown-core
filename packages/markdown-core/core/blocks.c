@@ -2843,23 +2843,26 @@ static bool S_finish_hook_selected(const markdown_core_parser *parser, const mar
  * per-step check would cost a traversal per step, which is the shape this
  * stage exists not to have. This is compiled in only when
  * `MARKDOWN_CORE_DEBUG_NODES` is defined, which no shipping configuration
- * defines, so the per-root cost is not a release cost. */
+ * defines, so the per-root cost is not a release cost. The check walks with
+ * a path of its own, and a walk out of path storage is the parse's
+ * allocation failure, like any other. */
+static int S_check_tree(markdown_core_node *root) {
 #if MARKDOWN_CORE_DEBUG_NODES
-#define MARKDOWN_CORE_CHECK_TREE(root)                                                                                 \
-    do {                                                                                                               \
-        if (markdown_core_node_check((root), stderr) != 0) {                                                           \
-            abort();                                                                                                   \
-        }                                                                                                              \
-    } while (0)
+    int errors = markdown_core_node_check(root, stderr);
+    if (errors > 0) {
+        abort();
+    }
+    return errors == 0;
 #else
-#define MARKDOWN_CORE_CHECK_TREE(root) ((void)0)
+    (void)root;
+    return 1;
 #endif
+}
 
 static int S_check_root(markdown_core_parser *parser, markdown_core_node *root, void *context) {
     (void)parser;
     (void)context;
-    MARKDOWN_CORE_CHECK_TREE(root);
-    return 1;
+    return S_check_tree(root);
 }
 
 /* THE GLOBAL PASSES, on one root, after the document's finalization: each
@@ -2870,7 +2873,9 @@ static int S_run_passes(markdown_core_parser *parser, markdown_core_node *root, 
         if (!pass->element->postprocess_func(pass, parser, root) || parser->error) {
             return 0;
         }
-        MARKDOWN_CORE_CHECK_TREE(root);
+        if (!S_check_tree(root)) {
+            return 0;
+        }
     }
     return 1;
 }
