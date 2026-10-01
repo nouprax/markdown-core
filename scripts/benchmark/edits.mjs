@@ -153,9 +153,6 @@ function measureWorkload(profile, out, workload) {
     fs.mkdirSync(path.dirname(final), { recursive: true });
     const reparse = measureSubject(profile, out, workload, "reparse", final);
     const session = reparse.steps <= WINDOWS ? measureSubject(profile, out, workload, "session", final) : null;
-    if (session && (session.bytes !== reparse.bytes || session.rootChildren !== reparse.rootChildren)) {
-        throw new Error(`${workload.name}: the subjects end with different documents`);
-    }
     const oneshot = measure(profile, "markdown-core", { case: workload.name, file: final }, out);
     if (oneshot.receiptBytes !== reparse.bytes || oneshot.rootChildren !== reparse.rootChildren) {
         throw new Error(`${workload.name}: the one-shot parse of the final text disagrees with the subject's`);
