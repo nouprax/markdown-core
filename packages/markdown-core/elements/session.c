@@ -19,6 +19,7 @@ struct markdown_core_session {
     markdown_core_text_tree text;
     markdown_core_parser *parser;
     markdown_core_node_pool pool;
+    markdown_core_block_records records;
     markdown_core_document document;
     uint64_t last_id;
     size_t node_count;
@@ -31,6 +32,7 @@ static markdown_core_status session_parse(markdown_core_session *session, const 
     static const uint8_t empty[1] = {0};
     markdown_core_revision revision = {
         .pool = &session->pool,
+        .records = &session->records,
         .previous = session->document.root,
         .edits = edits,
         .edit_count = count,
@@ -50,6 +52,7 @@ static markdown_core_status session_parse(markdown_core_session *session, const 
 
 /* Gives back what a session holds, but not the session itself. */
 static void session_close(markdown_core_session *session) {
+    markdown_core_block_records_dispose(&session->records);
     if (session->document.root) {
         markdown_core_node_pool_release(&session->pool, session->document.root);
     }

@@ -906,6 +906,19 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, markdo
  * released into the pool. */
 static void publish_continue(markdown_core_parser *parser, const publish_identity *identity, bool same) {
     markdown_core_node *root = parser->root, *previous = parser->revision->previous;
+    /* Every old node of a same pair stands where its new node stood, so it
+     * takes the new node's block record. */
+    for (size_t i = 0; i < identity->swap_count; i++) {
+        markdown_core_node *node = identity->swaps[i].node, *old = identity->swaps[i].old;
+        if (old->record) {
+            old->record->node = NULL;
+        }
+        old->record = node->record;
+        node->record = NULL;
+        if (old->record) {
+            old->record->node = old;
+        }
+    }
     if (same) {
         parser->root = previous;
         markdown_core_node_pool_release(parser->pool, root);

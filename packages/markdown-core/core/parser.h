@@ -8,6 +8,7 @@
 #include "buffer.h"
 #include "dialect.h"
 #include "text_tree.h"
+#include "block_records.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -44,12 +45,21 @@ typedef enum {
  * outlives the parse, and its owner disposes it. */
 typedef struct markdown_core_revision {
     markdown_core_node_pool *pool;
+    /* The session's block records: the parse records every block it opens
+     * in the document's input (block_records.h). */
+    markdown_core_block_records *records;
     markdown_core_node *previous;
     const markdown_core_byte_edit *edits;
     size_t edit_count;
     uint64_t last_id;
     size_t node_count;
 } markdown_core_revision;
+
+/* A record a parse made and the start of the line its block opened on. */
+typedef struct markdown_core_made_record {
+    markdown_core_block_record *record;
+    size_t line;
+} markdown_core_made_record;
 
 /* Immutable runs map logical content bytes to authored byte intervals.
  * Blocks append runs as lines arrive; transformed cells and decoded inline
@@ -298,6 +308,27 @@ struct markdown_core_parser {
      * declares a finish step and opens an iterator. */
     size_t nodes_created, nodes_created_before_finish;
     size_t nodes_freed, nodes_freed_before_finish;
+    /* THE BLOCK RECORDS THIS PARSE MAKES (block_records.h), in the order their
+     * blocks opened, each with the start of its line; and, at each line start
+     * of the document's input, the open spine as frames by depth, the block
+     * below it and the high-water mark: the checkpoint the line's first
+     * record takes. `line_reached` is the deepest open block the line asked
+     * whether it continues, and `line_reach` whether the line read or wrote a
+     * block that had closed. A restart reopens the leaf a checkpoint settled
+     * as `settled`, which its line closes as it is. */
+    struct markdown_core_made_record *made;
+    size_t made_count, made_capacity;
+    markdown_core_frame **spine;
+    size_t spine_depth, spine_capacity;
+    struct {
+        markdown_core_node *below;
+        uint16_t below_bits;
+        uint8_t marks;
+        size_t line, frontier, first;
+    } line_point;
+    const struct markdown_core_node *line_reached;
+    bool line_reach;
+    struct markdown_core_node *settled;
     /* What the parse continues, and the storage it borrows from its caller
      * (the revision's pool): every node it makes and every resource a
      * definition, a link or a heading's implicit reference states is a slot
@@ -650,6 +681,14 @@ static inline markdown_core_input_line *markdown_core_parser_source_line(markdow
     return index < parser->input_line_count ? &parser->input_lines[index]
                                             : markdown_core_parser_extend_source_lines(parser, index);
 }
+
+/* A LINE READS OR WRITES A BLOCK THAT HAS CLOSED: a block identifier on
+ * its own line, a trailing caption, a definition counted after its
+ * predecessor. Such a line depends on more than the open spine, so a
+ * re-parse never rejoins the old one there; and a block written after it
+ * closed is not reopened as it is (block_records.h). Every such access goes
+ * through here. */
+void markdown_core_parser_reach(markdown_core_parser *parser, struct markdown_core_node *node, bool write);
 
 /* THE BYTES OF LINES `first` THROUGH `last`, terminators included, read
  * contiguously from the returned pointer (the start of line `first`): where

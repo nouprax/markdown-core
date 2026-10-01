@@ -57,8 +57,10 @@ static void S_set_last_line_blank(markdown_core_node *node, bool markdown_core_b
 
 static void S_set_last_line_checked(markdown_core_node *node) { node->flags |= MARKDOWN_CORE_NODE__LAST_LINE_CHECKED; }
 
-static void S_input_begin(markdown_core_parser *parser, const unsigned char *bytes, size_t length);
+static void S_input_open(markdown_core_parser *parser, const unsigned char *bytes, size_t length);
 static void S_parse_source(markdown_core_parser *parser);
+static void S_record_block(markdown_core_parser *parser, markdown_core_node *block);
+static bool S_last_child_is_open(markdown_core_node *container);
 static markdown_core_node *S_finish_parse(markdown_core_parser *parser);
 static inline bool S_starts_on_line(markdown_core_parser *parser, const markdown_core_node *node, int line);
 static inline int S_append_input_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
@@ -139,6 +141,15 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     markdown_core_free(parser->input_lines);
     markdown_core_free(parser->input_facts);
     markdown_core_free(parser->input_pieces);
+    if (parser->revision && parser->revision->records) {
+        for (size_t i = 0; i < parser->made_count; i++) {
+            markdown_core_block_record_free(parser->revision->records, parser->made[i].record);
+        }
+        markdown_core_frame_drop(parser->revision->records,
+                                 parser->spine_depth ? parser->spine[parser->spine_depth - 1] : NULL);
+    }
+    markdown_core_free(parser->made);
+    markdown_core_free(parser->spine);
     if (parser->root) {
         markdown_core_node_free(parser->root);
     }
@@ -913,6 +924,9 @@ markdown_core_node *markdown_core_parser_add_child_validated(markdown_core_parse
     /* block_parent_for already established containment. Commit that decision
      * without re-entering a possibly stateful containment predicate. */
     markdown_core_node_attach_validated(parent, child, NULL);
+    if (parser->block_root == parser->root) {
+        S_record_block(parser, child);
+    }
     return child;
 }
 
@@ -1349,7 +1363,7 @@ static void S_parse_block_inputs(markdown_core_parser *parser) {
         parser->line_number = parser->input_first_line - 1;
         parser->last_line_end = parser->line_marks[owner->content_map.first].source;
         owner->flags |= MARKDOWN_CORE_NODE__OPEN;
-        S_input_begin(parser, owner->content.ptr, (size_t)owner->content.size);
+        S_input_open(parser, owner->content.ptr, (size_t)owner->content.size);
         S_parse_source(parser);
         while (parser->current != owner && !parser->error) {
             parser->current = markdown_core_block_finalize(parser, parser->current);
@@ -1368,7 +1382,7 @@ markdown_core_node *markdown_core_parser_parse(markdown_core_parser *parser, con
     markdown_core_node *document = NULL;
     S_parse_begin(parser, revision);
     if (!parser->error) {
-        S_input_begin(parser, (const unsigned char *)source, length);
+        S_input_open(parser, (const unsigned char *)source, length);
         S_parse_source(parser);
         document = S_finish_parse(parser);
     }
@@ -1492,7 +1506,7 @@ static bool S_input_next_piece(markdown_core_parser *parser) {
  * are copied once into a run of their own, which the entry then reads. The
  * index's high-water mark moves past the terminator, as for any line. Kept
  * out of line: a one-piece input never comes here. */
-static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_scan_spanning_line(markdown_core_parser *parser,
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_scan_split_line(markdown_core_parser *parser,
                                                                      markdown_core_input_line *entry,
                                                                      const unsigned char *line,
                                                                      const unsigned char *cursor,
@@ -1598,7 +1612,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
         }
         if (parser->input_piece_end < parser->input_length &&
             (cursor == end || (*cursor == '\r' && cursor + 1 == end))) {
-            if (!S_scan_spanning_line(parser, &entry, line, cursor, &nul_count)) {
+            if (!S_scan_split_line(parser, &entry, line, cursor, &nul_count)) {
                 return NULL;
             }
         } else {
@@ -1687,7 +1701,7 @@ static void S_input_reset(markdown_core_parser *parser) {
 }
 
 /* One piece: the document a fresh parse reads, or a cell's content. */
-static void S_input_begin(markdown_core_parser *parser, const unsigned char *bytes, size_t length) {
+static void S_input_open(markdown_core_parser *parser, const unsigned char *bytes, size_t length) {
     assert(length <= MARKDOWN_CORE_SOURCE_CAPACITY);
     S_input_reset(parser);
     parser->input_text = NULL;
@@ -1697,7 +1711,7 @@ static void S_input_begin(markdown_core_parser *parser, const unsigned char *byt
 }
 
 /* A session's text, read from byte `from` on, which begins a line. */
-static void S_input_begin_text(markdown_core_parser *parser, const markdown_core_text_tree *text, size_t from) {
+static void S_input_open_text(markdown_core_parser *parser, const markdown_core_text_tree *text, size_t from) {
     S_input_reset(parser);
     const uint8_t *bytes = NULL;
     size_t size = 0, start = from;
@@ -1709,6 +1723,123 @@ static void S_input_begin_text(markdown_core_parser *parser, const markdown_core
     }
     parser->input_scanned = from;
     S_input_enter_piece(parser, bytes, start, size);
+}
+
+/* THE CHECKPOINT AT A LINE START of the document's input (block_records.h): the
+ * open spine as frames, made again only from the first container whose node
+ * or flags differ from the previous line's; the block below the spine; and
+ * the high-water mark. The line's first record takes them. */
+static void S_record_line_start(markdown_core_parser *parser) {
+    markdown_core_block_records *records = parser->revision->records;
+    markdown_core_frame *inner = parser->spine_depth ? parser->spine[parser->spine_depth - 1] : NULL;
+    markdown_core_node *node = parser->root, *leaf = NULL;
+    size_t depth = 0;
+    bool changed = false;
+    while (S_last_child_is_open(node)) {
+        markdown_core_node *child = node->last_child;
+        if (S_kind_accepts_lines(markdown_core_parser_kind(parser, child), child)) {
+            leaf = child;
+            break;
+        }
+        uint16_t bits = (uint16_t)(child->flags & ~MARKDOWN_CORE_NODE__OPEN);
+        markdown_core_frame *frame = depth < parser->spine_depth ? parser->spine[depth] : NULL;
+        if (changed || !frame || !child->record || frame->record != child->record || frame->bits != bits) {
+            changed = true;
+            if (depth == parser->spine_capacity) {
+                void *grown = markdown_core_reserve(parser->spine, &parser->spine_capacity, depth + 1,
+                                                    sizeof(*parser->spine));
+                if (!grown) {
+                    markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+                    return;
+                }
+                parser->spine = grown;
+            }
+            frame = markdown_core_frame_new(records, depth ? parser->spine[depth - 1] : NULL, child->record, bits);
+            if (!frame) {
+                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+                return;
+            }
+            parser->spine[depth] = frame;
+        }
+        node = child;
+        depth++;
+    }
+    if (changed || depth != parser->spine_depth) {
+        markdown_core_frame_hold(depth ? parser->spine[depth - 1] : NULL);
+        markdown_core_frame_drop(records, inner);
+        parser->spine_depth = depth;
+    }
+    markdown_core_node *below = leaf ? leaf : node->last_child;
+    uint8_t marks = below ? MARKDOWN_CORE_BLOCK_RECORD_BELOW : 0;
+    if (leaf) {
+        const markdown_core_element_instance *structure = markdown_core_parser_structure(parser, leaf);
+        marks |= MARKDOWN_CORE_BLOCK_RECORD_LEAF;
+        if (structure && structure->element->accepts_lazy && structure->element->accepts_lazy(structure, parser, leaf)) {
+            marks |= MARKDOWN_CORE_BLOCK_RECORD_LAZY;
+        }
+    }
+    parser->line_point.below = below;
+    parser->line_point.below_bits = below ? below->flags : 0;
+    parser->line_point.marks = marks;
+    parser->line_point.line = (size_t)parser->line_start;
+    parser->line_point.frontier = parser->input_scanned;
+    parser->line_point.first = parser->made_count;
+    parser->line_reached = NULL;
+    parser->line_reach = false;
+}
+
+/* The line's first record, if it opened a block, takes the checkpoint: the
+ * leaf is settled when the line closed it without asking it. */
+static void S_record_line_end(markdown_core_parser *parser) {
+    if (parser->made_count == parser->line_point.first || parser->error) {
+        return;
+    }
+    markdown_core_block_record *record = parser->made[parser->line_point.first].record;
+    markdown_core_node *below = parser->line_point.below;
+    uint8_t marks = parser->line_point.marks | MARKDOWN_CORE_BLOCK_RECORD_CHECKPOINT;
+    if ((marks & MARKDOWN_CORE_BLOCK_RECORD_LEAF) && parser->line_reached != below &&
+        !(below->flags & MARKDOWN_CORE_NODE__OPEN)) {
+        marks |= MARKDOWN_CORE_BLOCK_RECORD_SETTLED;
+    }
+    if (parser->line_reach) {
+        marks |= MARKDOWN_CORE_BLOCK_RECORD_REACH;
+    }
+    record->marks |= marks;
+    record->frame = parser->spine_depth ? parser->spine[parser->spine_depth - 1] : NULL;
+    markdown_core_frame_hold(record->frame);
+    record->below = below ? below->record : NULL;
+    record->below_bits = parser->line_point.below_bits;
+    record->frontier = (uint32_t)(parser->line_point.frontier - parser->line_point.line);
+    record->after = (uint32_t)(parser->input_scanned - parser->line_point.line);
+}
+
+/* A block the parser opened in the document's input gets its record. */
+static void S_record_block(markdown_core_parser *parser, markdown_core_node *block) {
+    if (parser->made_count == parser->made_capacity) {
+        void *grown =
+            markdown_core_reserve(parser->made, &parser->made_capacity, parser->made_count + 1, sizeof(*parser->made));
+        if (!grown) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            return;
+        }
+        parser->made = grown;
+    }
+    markdown_core_block_record *record = markdown_core_block_record_new(parser->revision->records);
+    if (!record) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return;
+    }
+    record->node = block;
+    record->column = (int32_t)((int64_t)block->where.place.start - (int64_t)parser->line_point.line);
+    block->record = record;
+    parser->made[parser->made_count++] = (markdown_core_made_record){record, parser->line_point.line};
+}
+
+void markdown_core_parser_reach(markdown_core_parser *parser, markdown_core_node *node, bool write) {
+    parser->line_reach = true;
+    if (write && node->record) {
+        node->record->marks |= MARKDOWN_CORE_BLOCK_RECORD_WRITTEN;
+    }
 }
 
 /* THE DRIVER: the active input's lines, from the line after the current one,
@@ -1740,7 +1871,13 @@ static void S_parse_source(markdown_core_parser *parser) {
         } else {
             parser->line_end = markdown_core_parser_mapped_source_end(parser, parser->line_number + 1, content_length);
         }
+        if (at_root) {
+            S_record_line_start(parser);
+        }
         S_process_line(parser, content, content_length);
+        if (at_root) {
+            S_record_line_end(parser);
+        }
         if (parser->claimed_line) {
             assert(parser->claimed_line >= parser->line_number);
             parser->line_number = parser->claimed_line;
@@ -1935,6 +2072,7 @@ static markdown_core_node *check_open_blocks(markdown_core_parser *parser, markd
 
     while (S_last_child_is_open(container)) {
         container = container->last_child;
+        parser->line_reached = container;
 
         markdown_core_block_find_first_nonspace(parser, input);
 
@@ -1954,6 +2092,7 @@ static markdown_core_node *check_open_blocks(markdown_core_parser *parser, markd
                 goto done;
             }
             if (taken) {
+                parser->line_reached = parser->current;
                 if (S_kind_accepts_lines(markdown_core_parser_kind(parser, parser->current), parser->current)) {
                     markdown_core_block_add_line(parser->current, input, parser);
                 }
@@ -2942,6 +3081,27 @@ static int S_run_passes(markdown_core_parser *parser, markdown_core_node *root, 
     return 1;
 }
 
+/* The session's records become those of the published tree: the records
+ * this parse made, in the order their blocks opened. */
+static void S_commit_records(markdown_core_parser *parser) {
+    markdown_core_block_records *records = parser->revision->records;
+    markdown_core_block_records_clear(records);
+    size_t line = 0;
+    for (size_t i = 0; i < parser->made_count; i++) {
+        markdown_core_made_record *made = &parser->made[i];
+        made->record->link.own[MARKDOWN_CORE_BLOCK_RECORD_LINE] = made->line - line;
+        line = made->line;
+    }
+    /* The links are the array the tree is built from: `made` is reused in
+     * place, one pointer per record. */
+    markdown_core_summed_node **links = (markdown_core_summed_node **)(void *)parser->made;
+    for (size_t i = 0; i < parser->made_count; i++) {
+        links[i] = &parser->made[i].record->link;
+    }
+    markdown_core_summed_build(&records->tree, links, parser->made_count);
+    parser->made_count = 0;
+}
+
 static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     markdown_core_node *res;
 
@@ -3037,6 +3197,9 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     if (!parser->error) {
         const markdown_core_element_instance *document = parser->dialect->document_structure;
         document->element->publish_document(document, parser);
+    }
+    if (!parser->error) {
+        S_commit_records(parser);
     }
     markdown_core_free(parser->walk_stack);
     parser->walk_stack = NULL;

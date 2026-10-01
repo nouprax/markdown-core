@@ -5,6 +5,7 @@
 #include "alloc.h"
 #include "config.h"
 #include "node.h"
+#include "block_records.h"
 #include "references.h"
 #include "element.h"
 
@@ -459,6 +460,9 @@ static size_t S_free_nodes(markdown_core_node_pool *pool, markdown_core_node *e)
     size_t released = 0;
     while (e != NULL) {
         released++;
+        if (e->record) {
+            e->record->node = NULL;
+        }
         /* Almost no node owns an attribute value or a content buffer: the
          * test each releaser makes first -- its own predicate, defined once
          * beside it -- is made here, so a node that owns neither pays the

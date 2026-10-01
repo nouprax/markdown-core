@@ -321,6 +321,10 @@ struct markdown_core_node {
     /* The node's identifier, unique within its document; 0 until the
      * document is published (markdown_core_publish_tree). */
     uint64_t id;
+    /* The block record of a block the block parser opened in a session's
+     * document (block_records.h), or NULL. Part of the node's place: it stays with
+     * the node object. */
+    struct markdown_core_block_record *record;
 
     markdown_core_attributes attributes;
     markdown_core_strbuf content;

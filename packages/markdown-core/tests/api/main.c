@@ -3338,6 +3338,10 @@ static void inspect_lazy_block_content(const markdown_core_element_instance *sel
     parser->input_lines[0] = (markdown_core_input_line){0};
     parser->input_first_line = parser->line_number;
     parser->input_line_count = 1;
+    /* Warm the parse's block records independently so this measures the
+     * blocks' own storage, not the records' shared chunk and vector. */
+    OK(runner, markdown_core_parser_add_child_validated(parser, parser->root, MARKDOWN_CORE_NODE_THEMATIC_BREAK, 1),
+       "the block records are available");
     for (size_t i = 0; i < sizeof(kinds) / sizeof(*kinds); i++) {
         size_t before = payload_probe_snapshot().allocations;
         markdown_core_node *node = markdown_core_parser_add_child_validated(parser, parser->root, kinds[i], 1);
