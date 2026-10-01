@@ -57,8 +57,8 @@ typedef union {
 typedef struct markdown_core_slab_pool {
     /* The slab slots are being taken from, held by the pool. */
     markdown_core_slab *current;
-    /* Slots of `current` already taken, from its start. */
-    size_t taken;
+    /* Its next slot, and the end of its last. */
+    unsigned char *next, *end;
     /* Storage of slots released into the pool, linked through its first
      * bytes, reused before another slot is taken from a slab. */
     void *released;
@@ -69,10 +69,10 @@ typedef struct markdown_core_slab_pool {
     (sizeof(markdown_core_slot_header) + ((bytes) + sizeof(markdown_core_slot_header) - 1) /                           \
                                              sizeof(markdown_core_slot_header) * sizeof(markdown_core_slot_header))
 
-/* Starts a slab of `slab_bytes` for the pool to take from, dropping the
- * pool's hold on the one it replaces. False, leaving the pool as it was, when
- * the slab cannot be allocated. */
-bool markdown_core_slab_pool_grow(markdown_core_slab_pool *pool, size_t slab_bytes);
+/* Starts a slab of `slab_bytes`, of slots `stride` apart, for the pool to
+ * take from, dropping the pool's hold on the one it replaces. False, leaving
+ * the pool as it was, when the slab cannot be allocated. */
+bool markdown_core_slab_pool_grow(markdown_core_slab_pool *pool, size_t slab_bytes, size_t stride);
 
 /* Drops what the pool holds: its released slots and its current slab. Slots
  * still in use keep their slabs alive after this. */
@@ -102,16 +102,21 @@ static inline void *markdown_core_slab_take(markdown_core_slab_pool *pool, size_
         memcpy(&pool->released, storage, sizeof(pool->released));
         return storage;
     }
-    if ((!pool->current ||
-         pool->taken == (slab_bytes - sizeof(markdown_core_slab)) / MARKDOWN_CORE_SLOT_STRIDE(bytes)) &&
-        !markdown_core_slab_pool_grow(pool, slab_bytes)) {
+    if (pool->next == pool->end && !markdown_core_slab_pool_grow(pool, slab_bytes, MARKDOWN_CORE_SLOT_STRIDE(bytes))) {
         return NULL;
     }
-    slot = (markdown_core_slot_header *)((unsigned char *)(pool->current + 1) +
-                                         pool->taken++ * MARKDOWN_CORE_SLOT_STRIDE(bytes));
+    slot = (markdown_core_slot_header *)pool->next;
+    pool->next += MARKDOWN_CORE_SLOT_STRIDE(bytes);
     slot->slab = pool->current;
     pool->current->head.holds++;
     return slot + 1;
+}
+
+/* Puts the slot whose storage is `storage`, taken from `pool`, back into
+ * `pool` for reuse: a slot a pool hands out is always a slab's. */
+static inline void markdown_core_slab_return(markdown_core_slab_pool *pool, void *storage) {
+    memcpy(storage, &pool->released, sizeof(pool->released));
+    pool->released = storage;
 }
 
 /* Gives back the slot whose storage is `storage`, whatever is in it: into the

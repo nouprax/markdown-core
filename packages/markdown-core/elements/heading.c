@@ -136,9 +136,10 @@ static void project_anchor_literal(markdown_core_heading_state *state, markdown_
     markdown_core_utf8proc_anchor(base, text, length);
 }
 
-static bool push_anchor_projection(markdown_core_parser *parser, anchor_projection_stack *stack,
-                                   markdown_core_node *node, size_t at, anchor_projection_kind kind) {
-    if (!node || (kind != ANCHOR_KEY && at == markdown_core_node_children_count(node))) {
+/* Pushes `node`'s projection: its key, or its children from the first. */
+static inline bool push_anchor_projection(markdown_core_parser *parser, anchor_projection_stack *stack,
+                                          markdown_core_node *node, anchor_projection_kind kind) {
+    if (!node || (kind != ANCHOR_KEY && !node->children)) {
         return true;
     }
     if (stack->count == stack->capacity) {
@@ -155,7 +156,7 @@ static bool push_anchor_projection(markdown_core_parser *parser, anchor_projecti
         stack->values = values;
         stack->capacity = capacity;
     }
-    stack->values[stack->count++] = (anchor_projection){node, at, kind};
+    stack->values[stack->count++] = (anchor_projection){node, 0, kind};
     return true;
 }
 
@@ -167,26 +168,34 @@ static void heading_anchor_base(markdown_core_parser *parser, markdown_core_head
                                 anchor_projection_stack *stack) {
     const bufsize_t start = base->size;
     stack->count = 0;
-    push_anchor_projection(parser, stack, heading, 0, ANCHOR_CONTENT);
+    push_anchor_projection(parser, stack, heading, ANCHOR_CONTENT);
+    /* The top projection stays on the stack while it has children left, and
+     * what a child projects goes above it. */
     while (stack->count && !parser->error && !base->oom) {
-        anchor_projection projection = stack->values[--stack->count];
-        state->anchor_work++;
-        if (projection.kind == ANCHOR_KEY) {
-            markdown_core_citation_item *item = projection.node->as.citation;
+        anchor_projection *top = &stack->values[stack->count - 1];
+        if (top->kind == ANCHOR_KEY) {
+            markdown_core_citation_item *item = top->node->as.citation;
+            stack->count--;
+            state->anchor_work++;
             project_anchor_literal(state, base, (const unsigned char *)"@", 1);
             project_anchor_literal(state, base, item->value.data, item->value.len);
             continue;
         }
-        markdown_core_node *node = markdown_core_node_child(projection.node, projection.at);
-        push_anchor_projection(parser, stack, projection.node, projection.at + 1, projection.kind);
-        if (projection.kind == ANCHOR_CITATIONS) {
+        if (top->at == markdown_core_node_children_count(top->node)) {
+            stack->count--;
+            continue;
+        }
+        state->anchor_work++;
+        anchor_projection_kind kind = top->kind;
+        markdown_core_node *node = markdown_core_node_child(top->node, top->at++);
+        if (kind == ANCHOR_CITATIONS) {
             markdown_core_citation_item *item = node->as.citation;
             if (item->referent == MARKDOWN_CORE_NODE_REFERENT_BIB) {
-                push_anchor_projection(parser, stack, item->suffix, 0, ANCHOR_CONTENT);
-                push_anchor_projection(parser, stack, node, 0, ANCHOR_KEY);
-                push_anchor_projection(parser, stack, item->prefix, 0, ANCHOR_CONTENT);
+                push_anchor_projection(parser, stack, item->suffix, ANCHOR_CONTENT);
+                push_anchor_projection(parser, stack, node, ANCHOR_KEY);
+                push_anchor_projection(parser, stack, item->prefix, ANCHOR_CONTENT);
             } else if (item->referent == MARKDOWN_CORE_NODE_REFERENT_SPECIMEN) {
-                push_anchor_projection(parser, stack, node, 0, ANCHOR_KEY);
+                push_anchor_projection(parser, stack, node, ANCHOR_KEY);
             }
             continue;
         }
@@ -218,7 +227,7 @@ static void heading_anchor_base(markdown_core_parser *parser, markdown_core_head
             break;
         }
         case MARKDOWN_CORE_NODE_CITE:
-            push_anchor_projection(parser, stack, node, 0, ANCHOR_CITATIONS);
+            push_anchor_projection(parser, stack, node, ANCHOR_CITATIONS);
             break;
         case MARKDOWN_CORE_NODE_EMPHASIS:
         case MARKDOWN_CORE_NODE_STRONG:
@@ -231,11 +240,11 @@ static void heading_anchor_base(markdown_core_parser *parser, markdown_core_head
         case MARKDOWN_CORE_NODE_LINK:
         case MARKDOWN_CORE_NODE_EMBEDDED:
         case MARKDOWN_CORE_NODE_DIRECTIVE_LABEL:
-            push_anchor_projection(parser, stack, node, 0, ANCHOR_CONTENT);
+            push_anchor_projection(parser, stack, node, ANCHOR_CONTENT);
             break;
         case MARKDOWN_CORE_NODE_DIRECTIVE: {
             markdown_core_node *label = markdown_core_directive_label(node);
-            push_anchor_projection(parser, stack, label, 0, ANCHOR_CONTENT);
+            push_anchor_projection(parser, stack, label, ANCHOR_CONTENT);
             break;
         }
         default:

@@ -3548,7 +3548,7 @@ static void inspect_lazy_block_content(const markdown_core_element_instance *sel
          * and its parent's children, and the parse releases the hold the
          * parent had. */
         if (node) {
-            parser->spine_depth--;
+            parser->path.count--;
             markdown_core_parser_release_node(
                 parser, markdown_core_node_take_child(parser->pool, parser->root, child_index_of(parser->root, node)));
         }
@@ -9241,10 +9241,9 @@ static void parser_attachment_commits_one_decision(test_batch_runner *runner) {
     paragraph_root->flags |= MARKDOWN_CORE_NODE__OPEN;
     conversion_current_policy = &paragraph_policy;
     /* The root is the whole open spine. */
-    markdown_core_node *rejected_spine[] = {paragraph_root};
+    markdown_core_iter_frame rejected_spine[] = {{paragraph_root, 0}};
     rejected.root = paragraph_root;
-    rejected.spine = rejected_spine;
-    rejected.spine_depth = rejected.spine_capacity = 1;
+    rejected.path = (markdown_core_iter_path){rejected_spine, 1, 1};
     size_t attempts = payload_allocations;
     OK(runner, !markdown_core_parser_add_child(&rejected, paragraph_root, MARKDOWN_CORE_NODE_PARAGRAPH, 1),
        "root refusal terminates parent selection without walking past the root");

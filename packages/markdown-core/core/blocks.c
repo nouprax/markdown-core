@@ -159,8 +159,7 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     dialect->document_structure->element->dispose_document(dialect->document_structure, parser);
     markdown_core_source_order_dispose(&parser->source_order);
     markdown_core_free(parser->walk_stack);
-    markdown_core_iter_path_dispose(&parser->walk_path);
-    markdown_core_free(parser->spine);
+    markdown_core_iter_path_dispose(&parser->path);
     markdown_core_free(parser->block_inputs);
     markdown_core_parser_release_input(parser);
     if (parser->root) {
@@ -246,34 +245,17 @@ void markdown_core_parser_destroy(markdown_core_parser *parser) {
 
 /* The spine holds `block_root` alone. */
 static bool S_spine_reset(markdown_core_parser *parser, markdown_core_node *block_root) {
-    if (!parser->spine_capacity) {
-        parser->spine = markdown_core_alloc(16, sizeof(*parser->spine));
-        if (!parser->spine) {
-            return false;
-        }
-        parser->spine_capacity = 16;
+    if (!parser->path.capacity && !markdown_core_iter_path_reserve(&parser->path)) {
+        return false;
     }
-    parser->spine[0] = block_root;
-    parser->spine_depth = 1;
+    parser->path.frames[0] = (markdown_core_iter_frame){block_root, 0};
+    parser->path.count = 1;
     return true;
 }
 
 /* Room on the spine for one more block. */
 static bool S_spine_reserve(markdown_core_parser *parser) {
-    if (parser->spine_depth < parser->spine_capacity) {
-        return true;
-    }
-    size_t capacity = 2 * parser->spine_capacity;
-    if (capacity > SIZE_MAX / sizeof(*parser->spine)) {
-        return false;
-    }
-    markdown_core_node **spine = markdown_core_realloc(parser->spine, capacity * sizeof(*spine));
-    if (!spine) {
-        return false;
-    }
-    parser->spine = spine;
-    parser->spine_capacity = capacity;
-    return true;
+    return parser->path.count < parser->path.capacity || markdown_core_iter_path_reserve(&parser->path);
 }
 
 /* Begins a transaction that continues `revision` and borrows its pool. */
@@ -791,8 +773,8 @@ bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdo
         parser->block_input_capacity = capacity;
     }
     uint32_t around = parser->block_around;
-    for (size_t at = 0; at < parser->spine_depth; at++) {
-        around |= markdown_core_node_block_kind_bit((markdown_core_node_type)parser->spine[at]->kind);
+    for (size_t at = 0; at < parser->path.count; at++) {
+        around |= markdown_core_node_block_kind_bit((markdown_core_node_type)parser->path.frames[at].node->kind);
     }
     parser->block_inputs[parser->block_input_count++] = (struct markdown_core_block_input){owner, around};
     return true;
@@ -924,7 +906,7 @@ markdown_core_node *markdown_core_block_finalize(markdown_core_parser *parser, m
         structure->element->finalize_block(structure, parser, b);
     }
 
-    return --parser->spine_depth ? markdown_core_parser_current(parser) : NULL;
+    return --parser->path.count ? markdown_core_parser_current(parser) : NULL;
 }
 
 /* Finalize to the container that will own the next block-level construct,
@@ -951,7 +933,7 @@ markdown_core_node *markdown_core_block_parent_for(markdown_core_parser *parser,
     // if 'parent' isn't the kind of node that can accept this child,
     // then back up til we hit a node that can.
     while (!markdown_core_node_can_contain_type(parent, block_type)) {
-        if (parser->spine_depth == 1) {
+        if (parser->path.count == 1) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_CONTAINMENT_REJECTED);
             return NULL;
         }
@@ -977,14 +959,14 @@ markdown_core_node *markdown_core_parser_add_child_validated(markdown_core_parse
     /* block_parent_for already established containment. Commit that decision
      * without re-entering a possibly stateful containment predicate. */
     if (!child || child->content.oom || !S_spine_reserve(parser) ||
-        !markdown_core_node_attach_validated(parser->pool, parent, markdown_core_node_children_count(parent), child)) {
+        !markdown_core_node_append_validated(parser->pool, parent, child)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         if (child) {
             markdown_core_parser_release_node(parser, child);
         }
         return NULL;
     }
-    parser->spine[parser->spine_depth++] = child;
+    parser->path.frames[parser->path.count++] = (markdown_core_iter_frame){child, 0};
     return child;
 }
 
@@ -1004,7 +986,7 @@ static bool process_inline_tree(markdown_core_parser *parser, markdown_core_node
     bool whitespace = false;
 
     /* The walk's frames sit above those of the walk this parse is inside. */
-    markdown_core_iter_init(&iter, &parser->walk_path, root);
+    markdown_core_iter_init(&iter, &parser->path, root);
     while (!parser->error && (ev_type = markdown_core_iter_step(&iter)) != MARKDOWN_CORE_EVENT_DONE) {
         markdown_core_node *cur = markdown_core_iter_node(&iter);
         if (ev_type == MARKDOWN_CORE_EVENT_ENTER) {
@@ -1023,7 +1005,7 @@ static bool process_inline_tree(markdown_core_parser *parser, markdown_core_node
     }
     /* A walk that stopped early leaves its frames for the outer walk to
      * resume above. */
-    parser->walk_path.count = iter.base;
+    parser->path.count = iter.base;
     return whitespace;
 }
 
@@ -1286,7 +1268,7 @@ static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node *ro
         void **states = walk.states + (walk.count - 1) * walk.slots;
         markdown_core_iter *iter = &frame->iter;
         if (!frame->started) {
-            markdown_core_iter_init(iter, &parser->walk_path, frame->root);
+            markdown_core_iter_init(iter, &parser->path, frame->root);
             frame->started = true;
         }
         parser->walk = iter;
@@ -1593,9 +1575,10 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
         const unsigned char *source = markdown_core_parser_input_at(parser, parser->input_scanned);
         const unsigned char *end = source + (parser->input_piece_end - parser->input_scanned);
         const unsigned char *cursor = S_line_content_end(source, end, &nul_count);
+        const unsigned char *view = NULL;
         if (parser->input_piece_end < size && (cursor == end || (*cursor == '\r' && cursor + 1 == end))) {
             size_t after = S_input_line_after(parser, entry.start);
-            source = S_input_copy(parser, entry.start, after);
+            source = view = S_input_copy(parser, entry.start, after);
             if (!source) {
                 return NULL;
             }
@@ -1603,7 +1586,6 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
             nul_count = 0;
             cursor = S_line_content_end(source, end, &nul_count);
         }
-        entry.bytes = source;
         entry.end = entry.start + (uint32_t)(cursor - source);
         if (cursor < end && *cursor == '\r') {
             cursor++;
@@ -1611,13 +1593,14 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
         if (cursor < end && *cursor == '\n') {
             cursor++;
         }
-        if (nul_count) {
+        if (nul_count || view) {
             markdown_core_line_facts *facts = markdown_core_parser_extend_line_facts(parser, &entry);
             if (!facts) {
                 return NULL;
             }
+            facts->view = view;
             facts->nul_count = nul_count;
-            parser->input_mapped = true;
+            parser->input_mapped |= nul_count != 0;
         }
         parser->input_scanned = entry.start + (size_t)(cursor - source);
         parser->input_line_work += parser->input_scanned - entry.start;
@@ -1875,8 +1858,8 @@ static markdown_core_node *check_open_blocks(markdown_core_parser *parser, markd
      * container's place on it. */
     size_t depth = 0;
 
-    while (depth + 1 < parser->spine_depth) {
-        container = parser->spine[++depth];
+    while (depth + 1 < parser->path.count) {
+        container = parser->path.frames[++depth].node;
 
         markdown_core_block_find_first_nonspace(parser, input);
 
@@ -1924,7 +1907,7 @@ done:
     /* A container whose prefix consumed bytes and then declined still read
      * them; they are its marker up to the point it gave up. */
     if (!*all_matched) {
-        container = parser->spine[depth - 1]; // back up to last matching node
+        container = parser->path.frames[depth - 1].node; // back up to last matching node
     }
 
     return container;
@@ -2018,26 +2001,26 @@ static bool S_lookahead_extras_accept_blank(const markdown_core_parser *parser, 
 
 bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, markdown_core_node *parent_container,
                                           markdown_core_node_type child, markdown_core_block_lookahead *lookahead) {
-    int depth = (int)parser->spine_depth;
+    int depth = (int)parser->path.count;
     int i;
 
     memset(lookahead, 0, sizeof(*lookahead));
     /* The block joins the nearest open container that can hold it, which is
      * where `markdown_core_parser_add_child` backs up to when it is opened:
      * `parent_container` is open, and so is every block above it. */
-    while (parser->spine[depth - 1] != parent_container) {
+    while (parser->path.frames[depth - 1].node != parent_container) {
         depth--;
     }
-    while (depth > 1 && !markdown_core_node_can_contain_type(parser->spine[depth - 1], child)) {
+    while (depth > 1 && !markdown_core_node_can_contain_type(parser->path.frames[depth - 1].node, child)) {
         depth--;
     }
-    markdown_core_node *parent = parser->spine[depth - 1];
+    markdown_core_node *parent = parser->path.frames[depth - 1].node;
     if (!S_lookahead_reserve_chain(parser, depth)) {
         return false;
     }
     for (i = 0; i < depth; i++) {
-        parser->lookahead_chain[i] = parser->spine[i];
-        parser->lookahead_chain_flags[i] = parser->spine[i]->flags;
+        parser->lookahead_chain[i] = parser->path.frames[i].node;
+        parser->lookahead_chain_flags[i] = parser->path.frames[i].node->flags;
     }
 
     lookahead->parser = parser;
@@ -2509,8 +2492,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void add_text_to_containe
     S_set_last_line_blank(container, last_line_blank);
 
     /* Every open block around the container. */
-    for (markdown_core_node **around = parser->spine; *around != container; around++) {
-        S_set_last_line_blank(*around, false);
+    for (markdown_core_iter_frame *around = parser->path.frames; around->node != container; around++) {
+        S_set_last_line_blank(around->node, false);
     }
 
     // A line that may be lazy, opened no block and is not blank is a lazy

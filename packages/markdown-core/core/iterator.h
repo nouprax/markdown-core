@@ -91,40 +91,30 @@ static inline bool markdown_core_iter_push(markdown_core_iter *iter, markdown_co
 
 static inline markdown_core_event_type markdown_core_iter_step(markdown_core_iter *iter) {
     markdown_core_iter_path *path = iter->path;
-    switch (iter->event) {
-    case MARKDOWN_CORE_EVENT_NONE:
-        if (markdown_core_iter_push(iter, iter->root)) {
-            iter->event = MARKDOWN_CORE_EVENT_ENTER;
-        }
-        break;
-    case MARKDOWN_CORE_EVENT_ENTER: {
+    if (iter->event == MARKDOWN_CORE_EVENT_ENTER) {
         const markdown_core_run *children = iter->node->children;
         if (!children) {
             iter->event = MARKDOWN_CORE_EVENT_EXIT;
-            break;
+        } else {
+            path->frames[path->count - 1].at = 0;
+            markdown_core_iter_push(iter, markdown_core_children_at(children, 0));
         }
-        path->frames[path->count - 1].at = 0;
-        markdown_core_iter_push(iter, markdown_core_children_at(children, 0));
-        break;
-    }
-    case MARKDOWN_CORE_EVENT_EXIT: {
+    } else if (iter->event == MARKDOWN_CORE_EVENT_EXIT) {
         if (--path->count == iter->base) {
             iter->node = NULL;
             iter->event = MARKDOWN_CORE_EVENT_DONE;
-            break;
-        }
-        markdown_core_iter_frame *parent = &path->frames[path->count - 1];
-        const markdown_core_run *children = parent->node->children;
-        if (++parent->at < markdown_core_children_count(children)) {
-            iter->event = MARKDOWN_CORE_EVENT_ENTER;
-            markdown_core_iter_push(iter, markdown_core_children_at(children, parent->at));
         } else {
-            iter->node = parent->node;
+            markdown_core_iter_frame *parent = &path->frames[path->count - 1];
+            const markdown_core_run *children = parent->node->children;
+            if (++parent->at < markdown_core_children_count(children)) {
+                iter->event = MARKDOWN_CORE_EVENT_ENTER;
+                markdown_core_iter_push(iter, markdown_core_children_at(children, parent->at));
+            } else {
+                iter->node = parent->node;
+            }
         }
-        break;
-    }
-    case MARKDOWN_CORE_EVENT_DONE:
-        break;
+    } else if (iter->event == MARKDOWN_CORE_EVENT_NONE && markdown_core_iter_push(iter, iter->root)) {
+        iter->event = MARKDOWN_CORE_EVENT_ENTER;
     }
     return iter->event;
 }

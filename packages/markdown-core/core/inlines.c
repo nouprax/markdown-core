@@ -388,7 +388,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_inline_remove_deli
         inline_state->delim_closers[delim->rule]--;
     }
     /* Returned to the parser's pool, not to the allocator: see the push. */
-    markdown_core_slab_release(&inline_state->owner_parser->delimiters, delim);
+    markdown_core_slab_return(&inline_state->owner_parser->delimiters, delim);
 }
 
 /* THE RUN'S ITEMS are slots of the parser's like its delimiter entries: one
@@ -396,7 +396,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_inline_remove_deli
  * places nothing. */
 #define S_ITEM_SLAB_BYTES ((size_t)4 * 1024)
 
-static markdown_core_inline_item *S_item_new(markdown_core_inline_state *inline_state, markdown_core_node *node) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
+    markdown_core_inline_item *S_item_new(markdown_core_inline_state *inline_state, markdown_core_node *node) {
     markdown_core_parser *parser = inline_state->owner_parser;
     markdown_core_inline_item *item = markdown_core_slab_take(&parser->inline_items, sizeof(*item), S_ITEM_SLAB_BYTES);
     if (!item) {
@@ -409,7 +410,7 @@ static markdown_core_inline_item *S_item_new(markdown_core_inline_state *inline_
 }
 
 static void S_item_free(markdown_core_inline_state *inline_state, markdown_core_inline_item *item) {
-    markdown_core_slab_release(&inline_state->owner_parser->inline_items, item);
+    markdown_core_slab_return(&inline_state->owner_parser->inline_items, item);
 }
 
 static void S_item_unlink(markdown_core_inline_state *inline_state, markdown_core_inline_item *item) {
@@ -465,19 +466,21 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_inline_move(markdo
                                                                           markdown_core_node *owner, size_t *work) {
     assert(!owner->children);
     markdown_core_parser *parser = inline_state->owner_parser;
-    size_t count = 0;
-    for (markdown_core_inline_item *item = first; item != end; item = item->next) {
-        count++;
-    }
     markdown_core_children_builder builder;
-    if (!markdown_core_children_build_begin(&builder, markdown_core_node_pool_runs(parser->pool), count)) {
+    markdown_core_children_build_begin(&builder, &parser->pool->runs);
+    for (markdown_core_inline_item *item = first; item != end; item = item->next) {
+        if (!markdown_core_children_build_put(&builder, item->node)) {
+            inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
+            return false;
+        }
+    }
+    bool ok;
+    owner->children = markdown_core_children_build_end(&builder, &ok);
+    if (!ok) {
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         return false;
     }
-    if (work) {
-        *work += count;
-    }
-    if (!count) {
+    if (first == end) {
         return true;
     }
     /* The items leave the run as one range. */
@@ -492,13 +495,16 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_inline_move(markdo
     } else {
         inline_state->last_item = before;
     }
+    size_t count = 0;
     while (first != end) {
         markdown_core_inline_item *next = first->next;
-        markdown_core_children_build_put(&builder, first->node);
-        markdown_core_slab_release(&parser->inline_items, first);
+        markdown_core_slab_return(&parser->inline_items, first);
         first = next;
+        count++;
     }
-    owner->children = markdown_core_children_build_end(&builder);
+    if (work) {
+        *work += count;
+    }
     return true;
 }
 

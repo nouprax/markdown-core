@@ -486,26 +486,6 @@ static size_t S_drain(markdown_core_node_pool *pool, S_released *list) {
     }
 }
 
-#define S_BYTES_SLAB_BYTES ((size_t)4 * 1024)
-
-void markdown_core_bytes_release(markdown_core_node_pool *pool, markdown_core_bytes *bytes) {
-    if (bytes && !--bytes->refs) {
-        markdown_core_free(bytes->data);
-        markdown_core_slab_release(pool ? &pool->bytes : NULL, bytes);
-    }
-}
-
-markdown_core_bytes *markdown_core_bytes_take(markdown_core_node_pool *pool, markdown_core_strbuf *buffer) {
-    markdown_core_bytes *bytes =
-        markdown_core_slab_take(pool ? &pool->bytes : NULL, sizeof(*bytes), S_BYTES_SLAB_BYTES);
-    if (bytes) {
-        bytes->refs = 1;
-        bytes->data = buffer->ptr;
-        markdown_core_strbuf_init(buffer, 0);
-    }
-    return bytes;
-}
-
 size_t markdown_core_node_pool_release(markdown_core_node_pool *pool, markdown_core_node *node) {
     S_released list = {NULL, NULL};
     S_drop_node(&list, node);
@@ -642,6 +622,14 @@ bool markdown_core_node_attach_validated(markdown_core_node_pool *pool, markdown
     assert((parent->element && parent->element->can_contain_func) ||
            markdown_core_node_can_contain_builtin(parent, (markdown_core_node_type)child->kind));
     return markdown_core_children_insert(pool, &parent->children, index, child);
+}
+
+bool markdown_core_node_append_validated(markdown_core_node_pool *pool, markdown_core_node *parent,
+                                         markdown_core_node *child) {
+    assert(parent && child && parent != child);
+    assert((parent->element && parent->element->can_contain_func) ||
+           markdown_core_node_can_contain_builtin(parent, (markdown_core_node_type)child->kind));
+    return markdown_core_children_append(pool, &parent->children, child);
 }
 
 bool markdown_core_node_insert_child(markdown_core_node_pool *pool, markdown_core_node *node, size_t index,

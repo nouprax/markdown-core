@@ -410,6 +410,9 @@ typedef int (*markdown_core_owned_subtree_visitor)(markdown_core_node **root_slo
  * runs out. */
 bool markdown_core_node_attach_validated(struct markdown_core_node_pool *pool, markdown_core_node *parent, size_t index,
                                          markdown_core_node *child);
+/* `markdown_core_node_attach_validated` at the end of the children. */
+bool markdown_core_node_append_validated(struct markdown_core_node_pool *pool, markdown_core_node *parent,
+                                         markdown_core_node *child);
 
 /* The bit a BLOCK kind occupies in a container-kind set, or zero for an inline
  * kind or none at all. Block kind values are small and dense, so a set of the
@@ -472,18 +475,13 @@ markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type
  * node, its children and every node-valued field it holds. */
 void markdown_core_node_free(markdown_core_node *node);
 
-/* Bytes another holder now holds too; and a holder's release of them, which
- * frees them with their last holder. */
+/* Bytes another holder now holds too. */
 static inline markdown_core_bytes *markdown_core_bytes_retain(markdown_core_bytes *bytes) {
     if (bytes) {
         bytes->refs++;
     }
     return bytes;
 }
-void markdown_core_bytes_release(struct markdown_core_node_pool *pool, markdown_core_bytes *bytes);
-/* Takes `buffer`'s storage as new bytes from `pool`'s slots, held once,
- * leaving the buffer empty; NULL when the bytes cannot be allocated. */
-markdown_core_bytes *markdown_core_bytes_take(struct markdown_core_node_pool *pool, markdown_core_strbuf *buffer);
 
 /* A node another holder now holds too. */
 static inline markdown_core_node *markdown_core_node_retain(markdown_core_node *node) {
@@ -504,7 +502,7 @@ static inline markdown_core_node *markdown_core_node_first_child(const markdown_
     return node->children ? markdown_core_children_at(node->children, 0) : NULL;
 }
 static inline markdown_core_node *markdown_core_node_last_child(const markdown_core_node *node) {
-    return node->children ? markdown_core_children_at(node->children, node->children->total - 1) : NULL;
+    return node->children ? markdown_core_children_last(node->children) : NULL;
 }
 
 /* Puts `child` among `node`'s children at `index`, taking the caller's hold
@@ -567,6 +565,30 @@ typedef struct markdown_core_node_pool {
 /* The slots a pool's runs come from; NULL, the allocator's, for no pool. */
 static inline markdown_core_slab_pool *markdown_core_node_pool_runs(markdown_core_node_pool *pool) {
     return pool ? &pool->runs : NULL;
+}
+
+#define MARKDOWN_CORE_BYTES_SLAB_BYTES ((size_t)4 * 1024)
+
+/* Takes `buffer`'s storage as new bytes from `pool`'s slots, held once,
+ * leaving the buffer empty; NULL when the bytes cannot be allocated. */
+static inline markdown_core_bytes *markdown_core_bytes_take(markdown_core_node_pool *pool,
+                                                            markdown_core_strbuf *buffer) {
+    markdown_core_bytes *bytes = (markdown_core_bytes *)markdown_core_slab_take(
+        pool ? &pool->bytes : NULL, sizeof(*bytes), MARKDOWN_CORE_BYTES_SLAB_BYTES);
+    if (bytes) {
+        bytes->refs = 1;
+        bytes->data = buffer->ptr;
+        *buffer = (markdown_core_strbuf)MARKDOWN_CORE_BUF_INIT();
+    }
+    return bytes;
+}
+
+/* A holder's release of bytes, which frees them with their last holder. */
+static inline void markdown_core_bytes_release(markdown_core_node_pool *pool, markdown_core_bytes *bytes) {
+    if (bytes && !--bytes->refs) {
+        markdown_core_free(bytes->data);
+        markdown_core_slab_release(pool ? &pool->bytes : NULL, bytes);
+    }
 }
 
 /* `markdown_core_node_new_with_ext` from a pool's slots. A NULL pool is the

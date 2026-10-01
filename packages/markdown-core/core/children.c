@@ -210,8 +210,8 @@ bool markdown_core_children_replace(markdown_core_node_pool *pool, markdown_core
     return true;
 }
 
-bool markdown_core_children_remove(markdown_core_node_pool *pool, markdown_core_run **root, size_t index,
-                                   markdown_core_node **removed) {
+bool markdown_core_children_remove_joining(markdown_core_node_pool *pool, markdown_core_run **root, size_t index,
+                                           markdown_core_node **removed) {
     S_path path;
     if (!S_descend(pool, root, index, &path)) {
         return false;
@@ -276,31 +276,85 @@ bool markdown_core_children_remove(markdown_core_node_pool *pool, markdown_core_
     return true;
 }
 
-void markdown_core_children_build_cancel(markdown_core_children_builder *builder) {
-    while (builder->spare) {
-        markdown_core_run *run = builder->spare;
-        builder->spare = run->hold.released;
-        markdown_core_slab_release(builder->runs, run);
+void markdown_core_children_build_cancel(markdown_core_slab_pool *runs, markdown_core_run *first) {
+    while (first) {
+        markdown_core_run *run = first;
+        first = run->hold.released;
+        markdown_core_slab_release(runs, run);
     }
 }
 
-void markdown_core_children_build_carry(markdown_core_children_builder *builder, markdown_core_run *run) {
-    for (int at = 1;; at++) {
-        markdown_core_children_tier *tier = &builder->tier[at];
-        markdown_core_run *above = tier->open ? tier->open : markdown_core_children_build_open(builder, tier);
-        above->tier = (uint8_t)at;
-        above->entries[above->count++] = run;
-        above->total += run->total;
-        if (--tier->left) {
-            return;
-        }
-        tier->open = NULL;
-        if (at + 1 == builder->tiers) {
-            builder->root = above;
-            return;
-        }
-        run = above;
+markdown_core_run *markdown_core_children_build_join(markdown_core_slab_pool *runs, markdown_core_run *first) {
+    /* Every run of the tiers above, made before any tier is joined. */
+    size_t below = 0;
+    for (markdown_core_run *run = first; run; run = run->hold.released) {
+        below++;
     }
+    markdown_core_run *spare = NULL;
+    for (size_t made = below; made > 1;) {
+        made = (made + MARKDOWN_CORE_RUN_WIDTH - 1) / MARKDOWN_CORE_RUN_WIDTH;
+        for (size_t i = 0; i < made; i++) {
+            markdown_core_run *run = markdown_core_run_new(runs, 0);
+            if (!run) {
+                markdown_core_children_build_cancel(runs, spare);
+                markdown_core_children_build_cancel(runs, first);
+                return NULL;
+            }
+            run->hold.released = spare;
+            spare = run;
+        }
+    }
+    for (;;) {
+        /* Every run of the tier is full but the last; it takes half of what
+         * it and the one before it hold when it has less. */
+        markdown_core_run *before = first, *last;
+        while ((last = before->hold.released)->hold.released) {
+            before = last;
+        }
+        if (last->count < S_HALF) {
+            size_t moved = (size_t)(before->count + last->count) / 2 - last->count;
+            memmove(&last->entries[moved], last->entries, last->count * sizeof(last->entries[0]));
+            memcpy(last->entries, &before->entries[before->count - moved], moved * sizeof(last->entries[0]));
+            uint32_t total = (uint32_t)moved;
+            if (last->tier) {
+                total = 0;
+                for (size_t i = 0; i < moved; i++) {
+                    total += ((markdown_core_run *)last->entries[i])->total;
+                }
+            }
+            before->count = (uint8_t)(before->count - moved);
+            before->total -= total;
+            last->count = (uint8_t)(last->count + moved);
+            last->total += total;
+        }
+        /* The tier's runs, in order, under the runs of the tier above. */
+        markdown_core_run *above_first = NULL, *above = NULL;
+        while (first) {
+            markdown_core_run *next = first->hold.released;
+            if (!above || above->count == MARKDOWN_CORE_RUN_WIDTH) {
+                markdown_core_run *run = spare;
+                spare = run->hold.released;
+                run->tier = (uint8_t)(first->tier + 1);
+                run->hold.released = NULL;
+                if (above) {
+                    above->hold.released = run;
+                } else {
+                    above_first = run;
+                }
+                above = run;
+            }
+            first->hold.refs = 1;
+            above->entries[above->count++] = first;
+            above->total += first->total;
+            first = next;
+        }
+        first = above_first;
+        if (!first->hold.released) {
+            break;
+        }
+    }
+    first->hold.refs = 1;
+    return first;
 }
 
 void markdown_core_children_seek(markdown_core_children_cursor *cursor, const markdown_core_run *root, size_t index) {
