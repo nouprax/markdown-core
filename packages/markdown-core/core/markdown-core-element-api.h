@@ -338,9 +338,9 @@ typedef void (*markdown_core_opaque_free_func)(const markdown_core_element *elem
  * in records the engine gives it. The descriptor declares their sizes:
  *
  *   `state_size`     -- one record per parse transaction, zeroed before the
- *                       document lifecycle begins and released with the
- *                       parser. The element's `dispose_parser` releases
- *                       whatever the record owns.
+ *                       document lifecycle begins and released when the
+ *                       transaction ends. The element's `dispose_parser`
+ *                       releases whatever the record owns.
  *   `run_state_size` -- one record per inline-content run, zeroed before the
  *                       run's `init_inline` hooks and released after its
  *                       `dispose_inline` hooks, which release whatever the

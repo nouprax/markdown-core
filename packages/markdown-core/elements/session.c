@@ -10,13 +10,14 @@
 #include <parser.h>
 #include <text_tree.h>
 
-/* A SESSION: the text, the document parsed from it, the storage its nodes
- * live in, the last id it issued and the document's node count. Each edit
- * parses the whole text again as a revision of the document (parser.h), so
- * the new document continues the old one and the old one's nodes go back to
- * the session's pool. */
+/* A SESSION: the text, the parser instance that reads it, the document
+ * parsed from it, the storage its nodes live in, the last id it issued and
+ * the document's node count. Each edit parses the whole text again as a
+ * revision of the document (parser.h), so the new document continues the old
+ * one and the old one's nodes go back to the session's pool. */
 struct markdown_core_session {
     markdown_core_text_tree text;
+    markdown_core_parser *parser;
     markdown_core_node_pool pool;
     markdown_core_document document;
     uint64_t last_id;
@@ -37,7 +38,7 @@ static markdown_core_status session_parse(markdown_core_session *session, const 
         .node_count = session->node_count,
     };
     markdown_core_node *root =
-        markdown_core_parse_revision((const char *)(size ? source : empty), size, NULL, NULL, &revision);
+        markdown_core_parser_parse(session->parser, (const char *)(size ? source : empty), size, &revision);
     if (!root) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
@@ -54,19 +55,22 @@ static void session_close(markdown_core_session *session) {
     }
     markdown_core_node_pool_dispose(&session->pool);
     markdown_core_text_tree_dispose(&session->text);
+    markdown_core_parser_free(session->parser);
 }
 
-/* Opens a zeroed session in place: parses the source, then takes it as the
- * text. This is where a source enters the library, so the capacity is
- * checked here and at each edit, and nowhere below: offsets are int32 and
- * every buffer derived from the source stays under half of that. */
+/* Opens a zeroed session in place: makes its parser, parses the source,
+ * then takes it as the text. This is where a source enters the library, so
+ * the capacity is checked here and at each edit, and nowhere below: offsets
+ * are int32 and every buffer derived from the source stays under half of
+ * that. */
 static markdown_core_status session_open(markdown_core_session *session, const uint8_t *source, size_t size,
                                          markdown_core_text_unit unit) {
     if (size > MARKDOWN_CORE_SOURCE_CAPACITY) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     session->document.unit = unit;
-    if (session_parse(session, source, size, NULL, 0) != MARKDOWN_CORE_OK ||
+    session->parser = markdown_core_core_parser(NULL, NULL);
+    if (!session->parser || session_parse(session, source, size, NULL, 0) != MARKDOWN_CORE_OK ||
         !markdown_core_text_tree_init(&session->text, source, size)) {
         session_close(session);
         return MARKDOWN_CORE_ALLOCATION_FAILED;

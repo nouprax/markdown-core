@@ -500,28 +500,20 @@ size_t markdown_core_node_release(markdown_core_node *node) { return markdown_co
 
 void markdown_core_node_free(markdown_core_node *node) { (void)markdown_core_node_release(node); }
 
-/* The field of `other` in the place a visit of the node has reached. */
+/* A visit of one node's fields that exchanges each with the field of
+ * `other` in the same place: fields of one kind sit at one offset from the
+ * storage that holds them, the record or the element's payload. */
 typedef struct {
-    markdown_core_node *other;
-    size_t index;
-    markdown_core_node **slot;
+    const unsigned char *storage;
+    unsigned char *other;
 } S_field_pair;
 
-static int S_field_at(markdown_core_node **slot, void *context) {
-    S_field_pair *pair = context;
-    if (pair->index--) {
-        return 1;
-    }
-    pair->slot = slot;
-    return 0;
-}
-
 static int S_field_swap(markdown_core_node **slot, void *context) {
-    S_field_pair *pair = context, at = {NULL, pair->index++, NULL};
-    S_visit_fields(pair->other, S_field_at, &at);
+    S_field_pair *pair = context;
+    markdown_core_node **at = (markdown_core_node **)(pair->other + ((const unsigned char *)slot - pair->storage));
     markdown_core_node *held = *slot;
-    *slot = *at.slot;
-    *at.slot = held;
+    *slot = *at;
+    *at = held;
     return 1;
 }
 
@@ -549,8 +541,12 @@ void markdown_core_node_swap_values(markdown_core_node *a, markdown_core_node *b
         b->as.data = q;
     }
     /* The node-valued fields are places: each node takes its own back. */
-    S_field_pair pair = {b, 0, NULL};
-    S_visit_fields(a, S_field_swap, &pair);
+    S_field_pair pair = {a->as.data, b->as.data};
+    S_visit_record_fields(a, S_field_swap, &pair);
+    if (a->element && a->element->visit_owned_subtrees_func) {
+        pair = (S_field_pair){a->opaque, b->opaque};
+        a->element->visit_owned_subtrees_func(a->element, a, S_field_swap, &pair);
+    }
 }
 
 markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_node *node, markdown_core_node_type kind) {

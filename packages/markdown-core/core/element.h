@@ -26,8 +26,9 @@ typedef int (*markdown_core_probe_block_func)(const markdown_core_element_instan
  * public child iterator or make a field a parent/child edge. Destruction
  * transfers these roots to the shared iterative walk and clears their slots
  * before opaque_free_func releases the element payload. That callback must
- * not recursively destroy node-valued fields. Kind conversion preserves the
- * element payload and these roots. */
+ * not recursively destroy node-valued fields. The slots are in the element
+ * payload (`node->opaque`), and kind conversion preserves the payload and
+ * these roots. */
 typedef int (*markdown_core_visit_owned_subtrees_func)(const markdown_core_element *element, markdown_core_node *node,
                                                        markdown_core_owned_subtree_visitor visitor, void *context);
 
