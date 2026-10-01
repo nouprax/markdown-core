@@ -741,7 +741,7 @@ static void payload(properties *p) {
 }
 /* A fence line is exactly "---". */
 static bool fence_line(const markdown_core_parser *parser, const source_line *line) {
-    return line->end - line->start == 3 && !memcmp(markdown_core_input_line_bytes(parser, line), "---", 3);
+    return line->end - line->start == 3 && !memcmp(markdown_core_parser_input_at(parser, line->start), "---", 3);
 }
 void markdown_core_properties_parse(markdown_core_properties_work *work, markdown_core_parser *parser) {
     /* The opener is exactly "---" and a line ending. */
@@ -764,10 +764,7 @@ void markdown_core_properties_parse(markdown_core_properties_work *work, markdow
     }
     uint32_t close_start = line->start;
     properties p = {.parser = parser, .work = work, .count = (size_t)close - 2, .first_line = 1};
-    p.source = markdown_core_parser_input_view(parser, 1, close);
-    if (!p.source) {
-        return;
-    }
+    p.source = markdown_core_parser_input_at(parser, markdown_core_parser_visited_line(parser, 1)->start);
     markdown_core_node *node = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_METADATA);
     if (!node) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);

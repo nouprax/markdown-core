@@ -45,7 +45,7 @@ set(LIBRARY_SOURCES
     markdown_core_ctype.c
     text_tree.c
     summed_tree.c
-    block_records.c
+    checkpoints.c
     ${HEADERS})
 
 # Keep the engine target private, but make its sources available to the

@@ -62,6 +62,7 @@ jobs:
                   pnpm audit:element-special-chars
                   pnpm audit:element-attach-order
                   pnpm audit:finish-hook-shapes
+                  pnpm audit:reparse-contract
                   pnpm audit:parser-kind-record
                   pnpm audit:allocator-seam
                   pnpm audit:source-lists

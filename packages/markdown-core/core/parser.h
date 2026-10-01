@@ -8,7 +8,7 @@
 #include "buffer.h"
 #include "dialect.h"
 #include "text_tree.h"
-#include "block_records.h"
+#include "checkpoints.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,38 +28,143 @@ typedef enum {
 /* WHAT A PARSE CONTINUES: the storage it takes nodes from and the tree it
  * continues.
  *
- * `previous` is the root of a tree a parse published, and `edits` turn the
- * text it was parsed from into the text this parse reads, in its
- * coordinates: disjoint, in source order. The published tree continues it
+ * `previous` is the root of a tree a parse published, and the edits the
+ * parse applies turn the text it was parsed from into the text this parse
+ * reads: disjoint, in source order. The published tree continues it
  * (docs/plans/2026-09-29-incremental-parsing.md, 5.9): every node matched to
  * an old node takes its id, every other node takes the next id after
  * `last_id`, and a matched node equal to its old node as a value is that old
- * node. On success the parse owns `previous`: it is the returned root, or it
- * is released into `pool` with every other node it retires, and `last_id` is
- * the last id issued. `node_count` is the number of nodes in `previous`,
- * and on success the number in the published tree. A fresh parse continues
- * nothing: `previous` is NULL and `last_id` is 0, so its root is 1 and every
- * node is numbered in canonical walk order.
+ * node. The parse owns `previous`: each of its nodes is in the returned
+ * root or released into `pool`, and `last_id` is the last id issued. A
+ * fresh parse continues nothing: `previous` is NULL and `last_id` is 0, so
+ * its root is 1 and every node is numbered in canonical walk order.
  *
  * `pool` lends the parse every node and resource slot it takes (node.h); it
  * outlives the parse, and its owner disposes it. */
 typedef struct markdown_core_revision {
     markdown_core_node_pool *pool;
-    /* The session's block records: the parse records every block it opens
-     * in the document's input (block_records.h). */
-    markdown_core_block_records *records;
+    /* The session's checkpoints (checkpoints.h): where the parse may restart
+     * and rejoin, which it replaces with those of the parse it makes. */
+    markdown_core_checkpoints *checkpoints;
+    /* The session's text, which a parse that continues `previous` reads from
+     * where it restarts. */
+    const markdown_core_text_tree *text;
     markdown_core_node *previous;
+    /* The edits not yet applied, in source order; each one's offsets in the
+     * text `previous` was parsed from are its own plus `edit_offset`. The
+     * parse applies the first `applied` of them, at least one when there
+     * are any: a parse that continues `previous` covers the edits up to
+     * where it rejoins the old parse, and the next parse continues from
+     * there. */
     const markdown_core_byte_edit *edits;
-    size_t edit_count;
+    size_t edit_count, applied;
+    int64_t edit_offset;
     uint64_t last_id;
-    size_t node_count;
 } markdown_core_revision;
 
-/* A record a parse made and the start of the line its block opened on. */
-typedef struct markdown_core_made_record {
-    markdown_core_block_record *record;
-    size_t line;
-} markdown_core_made_record;
+/* A CUT: a container whose children a re-parse replaces in part (blocks.c,
+ * the restart). A container of the spine the restart reopened keeps its
+ * children up to and including `chain`, the one the spine went through (or
+ * the block below it), and the parse appends the children it reads after
+ * it; the old children after `chain` wait in `holder`, linked as they were,
+ * for the new ones to be matched against. A STAND-IN is the old node of a
+ * container that was open where the parse rejoined the old parse: it takes
+ * the value of `old`, the new container it continues, and the children the
+ * parse read into it, and `old` takes its old value and the old children
+ * read again. Where the parse rejoined, each cut takes back `suffix`, the old
+ * children after the rejoin, which follow the new ones unchanged; the new
+ * children end at `zone_end` and the old ones read again at `old_end`, the
+ * next stand-in and its new node, or the suffix and NULL. */
+typedef struct markdown_core_cut {
+    struct markdown_core_node *node, *chain, *old, *suffix, *zone_end, *old_end;
+    /* A reopened container's old children after `chain`, through its first
+     * and last child; their parents still name `node`. */
+    struct markdown_core_node holder;
+    bool standin;
+    /* Where the container started in the old text, which the first lead
+     * of each of its old relations is measured from; what the first old
+     * child's lead is measured from, which is where `chain` ended unless
+     * `chain` ends a relation; and where the suffix starts in the new text. */
+    uint32_t base, anchor, suffix_start;
+    /* The container's extent, flags, carried state (E3) and end at the end
+     * of the old parse, and `chain`'s extent. */
+    markdown_core_extent extent, chain_extent;
+    uint16_t flags;
+    uint64_t carry;
+    uint32_t end;
+    /* The container's fold (E4) at the end of the old parse, the summary of
+     * `chain` as a child but the last as it was, and the summaries, as
+     * children but the last, of the old children the parse replaced. */
+    uint32_t sum, last, chain_fold, dropped;
+} markdown_core_cut;
+
+/* A cut's first new child: the one after `chain` for a reopened container,
+ * the first of all for a stand-in. */
+static inline struct markdown_core_node *markdown_core_cut_first(const markdown_core_cut *cut) {
+    return cut->chain ? cut->chain->next : cut->node->first_child;
+}
+
+/* THE FLAGS OF A NODE THE LINE MACHINE CARRIES from line to line: all but
+ * whether it is open, what the finish stage cached and whether its
+ * blank-line answer was asked (node.h). */
+#define MARKDOWN_CORE_CARRIED_BITS                                                                                     \
+    ((uint16_t) ~(MARKDOWN_CORE_NODE__OPEN | MARKDOWN_CORE_NODE__LAST_LINE_CHECKED | MARKDOWN_CORE_NODE__ENDS_BLANK))
+
+/* A LINE OF THE LEDGER (parser.h, the parser's ledger): a line start of the
+ * document's input where a restart may reopen the spine. `inner` is the
+ * innermost open container there (the root when none is open), `below` the
+ * block below the spine with its marks (checkpoints.h), and `written`
+ * whether that block was written when the line ended; `frontier` and
+ * `after` are the high-water mark before and after the line, and `mark` the
+ * count of undo records when the line started. The replay finds `depth`,
+ * the containers of the spine below the root, and sets `inner` to NULL for
+ * a line that makes no checkpoint. */
+typedef struct markdown_core_line_record {
+    struct markdown_core_node *inner, *below;
+    uint32_t line, frontier, after, mark, depth;
+    uint8_t marks;
+    bool written;
+} markdown_core_line_record;
+
+/* AN UNDO RECORD: a block's carried flags, or the word its element carries,
+ * as they were before a line changed them. */
+typedef struct markdown_core_undo_record {
+    struct markdown_core_node *node;
+    uint64_t carry;
+    uint16_t bits;
+    bool flags;
+} markdown_core_undo_record;
+
+/* A RUN OF A LEDGER LOG: records a parse keeps, appended in place. A log's
+ * runs never move: each has room for twice as many records as the one
+ * before it, and a log that is emptied keeps its runs for the records after.
+ * `count` is the log's records. */
+typedef struct markdown_core_ledger_run {
+    struct markdown_core_ledger_run *before, *after;
+    size_t count, capacity;
+    uint64_t storage[];
+} markdown_core_ledger_run;
+typedef struct markdown_core_ledger_log {
+    markdown_core_ledger_run *first, *last;
+    size_t count;
+} markdown_core_ledger_log;
+
+/* Where the driver is in a line of the document's input, for the ledger. */
+enum {
+    /* The parse keeps no ledger, or the line is no document line. */
+    MARKDOWN_CORE_LINE_UNKEPT,
+    /* The line has opened no block yet. */
+    MARKDOWN_CORE_LINE_PLAIN,
+    /* The line opened a block. */
+    MARKDOWN_CORE_LINE_OPENED,
+};
+
+/* An open container of the spine as a line start found it. */
+typedef struct markdown_core_line_frame {
+    struct markdown_core_node *node;
+    uint16_t bits;
+    uint64_t carry;
+} markdown_core_line_frame;
 
 /* Immutable runs map logical content bytes to authored byte intervals.
  * Blocks append runs as lines arrive; transformed cells and decoded inline
@@ -161,22 +266,20 @@ struct markdown_core_parser {
      * `input_scanned` is the index's high-water mark: no decision of the
      * parse has read a byte at or past it.
      *
-     * THE INPUT'S BYTES are pieces read in source order: one piece -- the
-     * document a fresh parse reads, or a cell's content -- or the pieces of a
-     * session's text (`input_text`) from where the parse starts reading. The
-     * scanner holds the piece bytes [input_piece_start, input_piece_end) of
-     * the input are in. A line inside one piece is read where it is; a line
-     * that crosses into the next piece is copied once, with its terminator,
-     * into `input_copies`, which live until the input ends. */
-    const unsigned char *input_piece;
-    size_t input_piece_start, input_piece_end;
-    /* The pieces the scanner has entered, in order: a line within one piece
-     * is read through the piece that holds its first byte. */
-    struct markdown_core_input_piece *input_pieces;
-    size_t input_piece_count, input_piece_capacity;
-    const markdown_core_text_tree *input_text;
+     * THE INPUT'S BYTES are read through one contiguous WINDOW: the byte at
+     * offset `at` is `input_window[at]`, for every offset before
+     * `input_filled`. A fresh parse's document and a cell's content are in
+     * the window whole. A session's text is read into `input_buffer`, which
+     * has room for the whole text, from where the parse starts reading: the
+     * scanner copies the text's pieces (`input_cursor`) in as it reaches
+     * them, so a parse copies what it reads. */
+    const unsigned char *input_window;
+    size_t input_filled;
+    unsigned char *input_buffer;
     markdown_core_text_cursor input_cursor;
-    struct markdown_core_input_copy *input_copies;
+    /* Whether a reader asked for a line past the last: the high-water mark
+     * then covers the end of the input, one past its last byte. */
+    bool input_ended;
     size_t input_length, input_scanned;
     struct markdown_core_input_line *input_lines;
     struct markdown_core_normalized_line *normalized_lines;
@@ -308,27 +411,91 @@ struct markdown_core_parser {
      * declares a finish step and opens an iterator. */
     size_t nodes_created, nodes_created_before_finish;
     size_t nodes_freed, nodes_freed_before_finish;
-    /* THE BLOCK RECORDS THIS PARSE MAKES (block_records.h), in the order their
-     * blocks opened, each with the start of its line; and, at each line start
-     * of the document's input, the open spine as frames by depth, the block
-     * below it and the high-water mark: the checkpoint the line's first
-     * record takes. `line_reached` is the deepest open block the line asked
-     * whether it continues, and `line_reach` whether the line read or wrote a
-     * block that had closed. A restart reopens the leaf a checkpoint settled
-     * as `settled`, which its line closes as it is. */
-    struct markdown_core_made_record *made;
-    size_t made_count, made_capacity;
-    markdown_core_frame **spine;
-    size_t spine_depth, spine_capacity;
+    /* THE LEDGER THIS PARSE KEEPS (docs/plans/2026-09-29-incremental-
+     * parsing.md, 5.1 and 5.3; checkpoints.h). While a line of the
+     * document's input is read (`line_state` is LINE_PLAIN, or LINE_UNKEPT
+     * when the parse keeps no ledger), the driver knows the line start's
+     * open block (`line_current`) and the count of `undo_records` then
+     * (`line_mark`). The first block the line opens, or whose kind it
+     * changes, makes the line OPENED and fixes the line start's innermost
+     * open container (`line_inner`, the root when none is open) and the
+     * block below it (`line_below`, with `line_below_marks`). When the line
+     * ends in a state a restart can reopen -- every container of the spine
+     * reopens, the line wrote no closed block (`written_line` is one past
+     * the start of the last line that did), and an open leaf below the
+     * spine was closed by the line without being asked whether it continues
+     * (`line_reached` is the deepest open block the line asked) -- the line
+     * goes into `line_records`.
+     *
+     * The carried state of the spine -- the flags and the word each
+     * container's element carries (E3) -- is kept as it changes: each change
+     * the line machine makes to a block that opened on an earlier line puts
+     * the value it replaced into `undo_records`
+     * (markdown_core_parser_set_flags, markdown_core_parser_note_carry).
+     * When the parse finishes, or before it rejoins the old parse, the
+     * replay makes the ledger's checkpoints from the last line back: each
+     * block's state is the state it ends in with the changes made since the
+     * line start undone, and the frames are those of the checkpoint after as
+     * far as the spines agree (`spine`, the last made innermost frame, which
+     * the parse holds, at `spine_depth`). A restart reopens the leaf a
+     * checkpoint settled as `settled`, which its line closes as it is.
+     *
+     * Until the parse commits them, the checkpoints it built and the
+     * entries it made are chained newest first through their links' `up`:
+     * a checkpoint's `own` is where its line starts, and an entry's where
+     * its block started when the entry was made. */
+    markdown_core_checkpoint *taken;
+    markdown_core_entry *entered;
+    size_t taken_count, entered_count;
+    markdown_core_frame *spine;
+    size_t spine_depth;
+    markdown_core_line_frame *line_frames;
+    size_t line_frame_count, line_frame_capacity;
+    markdown_core_ledger_log line_records, undo_records;
+    uint8_t line_state;
+    uint8_t line_below_marks;
+    size_t line_mark;
+    struct markdown_core_node *line_current, *line_inner, *line_below;
+    const struct markdown_core_node *line_reached;
+    size_t written_line;
+    /* The block below the spine at a line start a rejoin reads
+     * (S_read_spine), with its flags and marks. */
     struct {
-        markdown_core_node *below;
+        struct markdown_core_node *below;
         uint16_t below_bits;
         uint8_t marks;
-        size_t line, frontier, first;
     } line_point;
-    const struct markdown_core_node *line_reached;
-    bool line_reach;
+    /* The high-water mark before the driver read the line in hand, one past
+     * the input's last byte once a reader asked past its last line. */
+    size_t line_frontier;
     struct markdown_core_node *settled;
+    /* The touched span of the parse (checkpoints.h), empty when `touched_end`
+     * is 0. */
+    size_t touched_start, touched_end;
+    /* THE RE-PARSE of a session's document (blocks.c). The parse restarts
+     * at the line start `restart`, where the old parse took the checkpoint
+     * `restarted` (NULL when it reads from the document's start), and the
+     * first `cut_reopened` cuts are the spine it reopened there, outermost
+     * first. It covers the first `applied` edits, which change the text's
+     * length by `shift`. A line start may rejoin the old parse when the line
+     * before it ends at or after `rejoin_from` and the old parse took a
+     * checkpoint there: `rejoin_next` is the next it may be, at the old line
+     * start `rejoin_next_line`. The next edit is covered too when the line
+     * where its own restart would be, `next_restart` in the old text, is not
+     * past the rejoin, and no rejoin starts before `rejoin_old` in the old
+     * text, the end of the old touched span. `shifts[i]` is the length
+     * change of the first `i` edits. `rejoin` is the checkpoint the parse
+     * rejoined at, and `old_root` the old root while the parse holds it
+     * apart from the tree it builds. */
+    markdown_core_checkpoint *restarted, *rejoin_next, *rejoin;
+    size_t restart, rejoin_next_line, rejoin_from, rejoin_old, next_restart;
+    size_t applied;
+    int64_t shift;
+    int64_t *shifts;
+    size_t shift_capacity;
+    markdown_core_cut *cuts;
+    size_t cut_count, cut_capacity, cut_reopened;
+    struct markdown_core_node *old_root;
     /* What the parse continues, and the storage it borrows from its caller
      * (the revision's pool): every node it makes and every resource a
      * definition, a link or a heading's implicit reference states is a slot
@@ -572,9 +739,15 @@ static inline markdown_core_node *markdown_core_parser_make_node_with_ext(markdo
     return markdown_core_node_pool_new(parser ? parser->pool : NULL, type, element);
 }
 
+/* The ledger's line opens a block, or changes the kind of one (blocks.c). */
+void markdown_core_parser_line_opened(markdown_core_parser *parser);
+
 static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_kind(markdown_core_parser *parser,
                                                                                     markdown_core_node *node,
                                                                                     markdown_core_node_type kind) {
+    if (parser->line_state == MARKDOWN_CORE_LINE_PLAIN) {
+        markdown_core_parser_line_opened(parser);
+    }
     markdown_core_parser_note_kind(parser, kind);
     return markdown_core_node_set_kind(node, kind);
 }
@@ -605,9 +778,6 @@ typedef struct markdown_core_input_line {
 
 typedef struct markdown_core_line_facts {
     struct markdown_core_normalized_line *normalized;
-    /* A line that crosses from one piece into the next: its bytes and
-     * terminator, copied once (the input's bytes). */
-    const unsigned char *copy;
     /* Table grammar search facts under one matched container prefix. */
     const struct markdown_core_node *table_container;
     int table_offset;
@@ -645,28 +815,10 @@ static inline size_t markdown_core_input_line_next(const markdown_core_parser *p
     return next < parser->input_lines + parser->input_line_count ? next->start : parser->input_scanned;
 }
 
-typedef struct markdown_core_input_piece {
-    size_t start;
-    const unsigned char *bytes;
-} markdown_core_input_piece;
-
-/* THE BYTES OF AN INDEXED LINE, from its first byte through its terminator:
- * its copy when it crosses pieces, else the piece holding its first byte. */
-static inline const unsigned char *markdown_core_input_line_bytes(const markdown_core_parser *parser,
-                                                                  const markdown_core_input_line *line) {
-    if (line->facts && parser->input_facts[line->facts - 1].copy) {
-        return parser->input_facts[line->facts - 1].copy;
-    }
-    size_t low = 0, high = parser->input_piece_count;
-    while (high - low > 1) {
-        size_t middle = low + (high - low) / 2;
-        if (parser->input_pieces[middle].start <= line->start) {
-            low = middle;
-        } else {
-            high = middle;
-        }
-    }
-    return parser->input_pieces[low].bytes + (line->start - parser->input_pieces[low].start);
+/* The bytes of the active input from offset `at` on, which the scanner has
+ * reached: the window (the input's bytes) holds every indexed line. */
+static inline const unsigned char *markdown_core_parser_input_at(const markdown_core_parser *parser, size_t at) {
+    return parser->input_window + at;
 }
 
 /* Returned pointers are borrowed until the next request that grows the
@@ -682,19 +834,41 @@ static inline markdown_core_input_line *markdown_core_parser_source_line(markdow
                                             : markdown_core_parser_extend_source_lines(parser, index);
 }
 
-/* A LINE READS OR WRITES A BLOCK THAT HAS CLOSED: a block identifier on
- * its own line, a trailing caption, a definition counted after its
- * predecessor. Such a line depends on more than the open spine, so a
- * re-parse never rejoins the old one there; and a block written after it
- * closed is not reopened as it is (block_records.h). Every such access goes
- * through here. */
-void markdown_core_parser_reach(markdown_core_parser *parser, struct markdown_core_node *node, bool write);
+/* A BLOCK THE PARSE READS FROM A REGISTRY OR DEPENDS ON THROUGH ONE -- a
+ * definition, a label, a heading's anchor, a lookup -- is TOUCHED: the
+ * session's touched span grows to cover it, and a re-parse that reads any of
+ * the span reads all of it (checkpoints.h). */
+void markdown_core_parser_touch(markdown_core_parser *parser, const struct markdown_core_node *node);
 
-/* THE BYTES OF LINES `first` THROUGH `last`, terminators included, read
- * contiguously from the returned pointer (the start of line `first`): where
- * they are in the input when one piece holds them, or a copy that lives
- * until the input ends. Both lines must be indexed. NULL on failure. */
-const unsigned char *markdown_core_parser_input_view(markdown_core_parser *parser, int first, int last);
+/* THE CARRIED STATE OF A BLOCK CHANGES (E3; the parser's ledger): its
+ * carried flags are written through markdown_core_parser_set_flags, and an
+ * element calls markdown_core_parser_note_carry before it changes the word
+ * it carries. A block that opened on an earlier line of a parse that keeps
+ * a ledger has the value it replaces kept in the ledger's undo records. */
+void markdown_core_parser_keep_flags(markdown_core_parser *parser, struct markdown_core_node *node);
+void markdown_core_parser_keep_carry(markdown_core_parser *parser, struct markdown_core_node *node);
+static inline bool markdown_core_parser_keeps(const markdown_core_parser *parser,
+                                              const struct markdown_core_node *node) {
+    return parser->line_state != MARKDOWN_CORE_LINE_UNKEPT && node->where.place.start < (uint32_t)parser->line_start;
+}
+static inline void markdown_core_parser_set_flags(markdown_core_parser *parser, struct markdown_core_node *node,
+                                                  uint16_t flags) {
+    if (((node->flags ^ flags) & MARKDOWN_CORE_CARRIED_BITS) && markdown_core_parser_keeps(parser, node)) {
+        markdown_core_parser_keep_flags(parser, node);
+    }
+    node->flags = flags;
+}
+static inline void markdown_core_parser_note_carry(markdown_core_parser *parser, struct markdown_core_node *node) {
+    if (markdown_core_parser_keeps(parser, node)) {
+        markdown_core_parser_keep_carry(parser, node);
+    }
+}
+
+/* A LINE WRITES A BLOCK THAT HAS CLOSED (E2): a block identifier on its own
+ * line, a trailing caption. The block is touched, and the line depends on
+ * more than the open spine, so it is no checkpoint. Every such write goes
+ * through here. */
+void markdown_core_parser_write_closed(markdown_core_parser *parser, struct markdown_core_node *node);
 
 /* Optional state is sparse within the input index: properties and ordinary
  * driver visits need only geometry unless they normalize a NUL-bearing line.
@@ -862,6 +1036,16 @@ markdown_core_parser *markdown_core_parser_create(const markdown_core_element *c
 markdown_core_node *markdown_core_parser_parse(markdown_core_parser *parser, const char *source, size_t length,
                                                markdown_core_revision *revision);
 void markdown_core_parser_destroy(markdown_core_parser *parser);
+
+/* The image in the text a parse reads of the first byte of the old range
+ * [start, end) that no edit the parse covers replaced, or false when they
+ * replaced it all (docs/plans/2026-09-29-incremental-parsing.md, 5.2). */
+bool markdown_core_parser_image(const markdown_core_parser *parser, size_t start, size_t end, size_t *image);
+
+/* Whether `child` is the last child of a relation of `container` but the
+ * last one (element.h, `relation_ends`). */
+bool markdown_core_parser_relation_ends(const markdown_core_parser *parser, const struct markdown_core_node *container,
+                                        const struct markdown_core_node *child);
 
 #ifdef __cplusplus
 }

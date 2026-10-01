@@ -75,7 +75,8 @@ static bool definition_next_lines_admit(markdown_core_parser *parser) {
         if (!next) {
             break;
         }
-        const unsigned char *at = markdown_core_input_line_bytes(parser, next), *end = at + (next->end - next->start);
+        const unsigned char *at = markdown_core_parser_input_at(parser, next->start),
+                            *end = at + (next->end - next->start);
         while (at < end && parser->dialect->container_prefix[*at]) {
             /* A declared prefix byte that is also a marker byte -- a
              * container whose continuation strips ':' or '~' -- cannot be

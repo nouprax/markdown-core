@@ -476,9 +476,12 @@ static void materialize_citation_key(const markdown_core_element_instance *self,
     }
     const markdown_core_element_instance *specimen_element = self->peers[CITATION_SPECIMEN];
     const markdown_core_specimen_state *specimens = specimen_element ? specimen_element->state : NULL;
-    bool specimen =
-        !token->suppress && token->key_start == token->start + 1 && specimens &&
-        markdown_core_key_index_lookup(&specimens->ids, item->as.citation->value.data, item->as.citation->value.len);
+    bool keyed = !token->suppress && token->key_start == token->start + 1 && specimens;
+    if (keyed) {
+        markdown_core_parser_touch(inline_state->owner_parser, inline_state->owner);
+    }
+    bool specimen = keyed && markdown_core_key_index_lookup(&specimens->ids, item->as.citation->value.data,
+                                                            item->as.citation->value.len);
     if (specimen) {
         item->as.citation->referent = MARKDOWN_CORE_NODE_REFERENT_SPECIMEN;
         item->as.citation->mode = 0;

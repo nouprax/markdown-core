@@ -3338,10 +3338,6 @@ static void inspect_lazy_block_content(const markdown_core_element_instance *sel
     parser->input_lines[0] = (markdown_core_input_line){0};
     parser->input_first_line = parser->line_number;
     parser->input_line_count = 1;
-    /* Warm the parse's block records independently so this measures the
-     * blocks' own storage, not the records' shared chunk and vector. */
-    OK(runner, markdown_core_parser_add_child_validated(parser, parser->root, MARKDOWN_CORE_NODE_THEMATIC_BREAK, 1),
-       "the block records are available");
     for (size_t i = 0; i < sizeof(kinds) / sizeof(*kinds); i++) {
         size_t before = payload_probe_snapshot().allocations;
         markdown_core_node *node = markdown_core_parser_add_child_validated(parser, parser->root, kinds[i], 1);
@@ -8512,8 +8508,8 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
             bytes[position] = (unsigned char)value;
             bytes[sizeof(bytes) - 1] = '\n';
             markdown_core_parser input = {0};
-            input.input_piece = bytes;
-            input.input_piece_end = sizeof(bytes);
+            input.input_window = bytes;
+            input.input_filled = sizeof(bytes);
             input.input_length = sizeof(bytes);
             input.input_first_line = 1;
             markdown_core_input_line *first = markdown_core_parser_source_line(&input, 1);
@@ -8534,8 +8530,8 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
     }
     static const unsigned char source[] = "a\0b\r\nc\rd\nlast";
     markdown_core_parser parser = {0};
-    parser.input_piece = source;
-    parser.input_piece_end = sizeof(source) - 1;
+    parser.input_window = source;
+    parser.input_filled = sizeof(source) - 1;
     parser.input_length = sizeof(source) - 1;
     parser.input_first_line = 7;
     static const size_t starts[] = {0, 5, 7, 9}, ends[] = {3, 6, 8, 13}, next[] = {5, 7, 9, 13};
@@ -8569,7 +8565,9 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
 }
 
 static void short_line_storage_is_bounded(test_batch_runner *runner) {
-    INT_EQ(runner, sizeof(markdown_core_input_line), 12, "ordinary physical geometry occupies twelve bytes");
+    /* A line's geometry is where its bytes are in the piece that holds them,
+     * its range and its fact index. */
+    OK(runner, sizeof(markdown_core_input_line) <= 24, "ordinary physical geometry fits in twenty-four bytes");
     for (size_t count = 8; count <= 65537; count = count == 8 ? 1025 : count * 64 - 63) {
         for (int shape = 0; shape < 3; shape++) {
             markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();

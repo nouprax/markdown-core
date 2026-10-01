@@ -8,11 +8,7 @@ static inline int level_of(const node_t *node) { return node ? node->level : 0; 
 static void update(node_t *node) {
     int before = level_of(node->before), after = level_of(node->after);
     node->level = 1 + (before > after ? before : after);
-    node->count = 1 + (node->before ? node->before->count : 0) + (node->after ? node->after->count : 0);
-    for (int k = 0; k < MARKDOWN_CORE_SUMMED_MEASURES; k++) {
-        node->sum[k] =
-            node->own[k] + (node->before ? node->before->sum[k] : 0) + (node->after ? node->after->sum[k] : 0);
-    }
+    node->sum = node->own + (node->before ? node->before->sum : 0) + (node->after ? node->after->sum : 0);
 }
 
 /* Puts `with` where `node` hangs: under the node's parent, or at the root. */
@@ -93,52 +89,58 @@ static node_t *last_below(node_t *node) {
     return node;
 }
 
-/* A range of the nodes still to place, and the slot its middle goes to. */
+/* A range of the nodes still to place, the slot its middle goes to, the sum
+ * of the measures before it, and its height. */
 typedef struct {
-    size_t from, to;
+    size_t from, to, base;
     node_t **slot, *up;
+    int level;
 } summed_span;
 
+/* The height of a range of `size` nodes, one of the two halves of a range
+ * `level` high: a range of n nodes split at its middle is as high as n has
+ * binary digits. */
+static inline int half_level(size_t size, int level) { return size >> (level - 2) ? level - 1 : level - 2; }
+
 void markdown_core_summed_build(tree_t *tree, node_t *const *nodes, size_t count) {
-    /* Middles first, from a stack of the ranges still to place: a balanced
-     * tree of fewer than 2^64 nodes is under 64 levels high. Then the sums,
-     * children before parents, in a post-order walk along the parents. */
-    summed_span stack[130];
-    size_t depth = 0;
+    /* The middles are placed from a stack of the ranges still to place,
+     * with their sums and heights: a range's sum is the sum of the measures
+     * through its last node less those before it, so each node's `sum`
+     * holds the measures through it until the walk places it. A balanced
+     * tree of fewer than 2^64 nodes is under 64 levels high. */
     tree->root = NULL;
-    stack[depth++] = (summed_span){0, count, &tree->root, NULL};
-    while (depth) {
-        summed_span range = stack[--depth];
-        if (range.from == range.to) {
-            *range.slot = NULL;
-            continue;
-        }
-        size_t middle = range.from + (range.to - range.from) / 2;
-        node_t *node = nodes[middle];
-        *range.slot = node;
-        node->up = range.up;
-        stack[depth++] = (summed_span){middle + 1, range.to, &node->after, node};
-        stack[depth++] = (summed_span){range.from, middle, &node->before, node};
-    }
-    node_t *node = tree->root;
-    if (!node) {
+    if (!count) {
         return;
     }
-    for (;;) {
-        while (node->before || node->after) {
-            node = node->before ? node->before : node->after;
+    size_t through = 0;
+    for (size_t i = 0; i < count; i++) {
+        through += nodes[i]->own;
+        nodes[i]->sum = through;
+    }
+    int level = 0;
+    for (size_t size = count; size; size >>= 1) {
+        level++;
+    }
+    summed_span stack[130];
+    size_t depth = 0;
+    stack[depth++] = (summed_span){0, count, 0, &tree->root, NULL, level};
+    while (depth) {
+        summed_span range = stack[--depth];
+        size_t middle = range.from + (range.to - range.from) / 2;
+        node_t *node = nodes[middle];
+        size_t last = nodes[range.to - 1]->sum, past = node->sum;
+        node->sum = last - range.base;
+        node->level = range.level;
+        node->up = range.up;
+        node->before = node->after = NULL;
+        *range.slot = node;
+        if (middle + 1 < range.to) {
+            stack[depth++] = (summed_span){middle + 1,   range.to, past,
+                                           &node->after, node,     half_level(range.to - middle - 1, range.level)};
         }
-        for (;;) {
-            update(node);
-            node_t *up = node->up;
-            if (!up) {
-                return;
-            }
-            if (node == up->before && up->after) {
-                node = up->after;
-                break;
-            }
-            node = up;
+        if (range.from < middle) {
+            stack[depth++] = (summed_span){range.from,    middle, range.base,
+                                           &node->before, node,   half_level(middle - range.from, range.level)};
         }
     }
 }
@@ -191,6 +193,27 @@ void markdown_core_summed_remove(tree_t *tree, node_t *node) {
     rebalance_up(tree, from);
 }
 
+void markdown_core_summed_take(tree_t *tree, node_t *node) {
+    node_t *next = markdown_core_summed_next(node);
+    size_t own = node->own;
+    markdown_core_summed_remove(tree, node);
+    if (next) {
+        next->own += own;
+        markdown_core_summed_refresh(next);
+    }
+}
+
+void markdown_core_summed_put(tree_t *tree, node_t *node, size_t offset) {
+    node_t *at = markdown_core_summed_last_through(tree, offset);
+    node_t *next = at ? markdown_core_summed_next(at) : markdown_core_summed_first(tree);
+    node->own = offset - (at ? markdown_core_summed_before(at) + at->own : 0);
+    markdown_core_summed_insert_after(tree, at, node);
+    if (next) {
+        next->own -= node->own;
+        markdown_core_summed_refresh(next);
+    }
+}
+
 void markdown_core_summed_refresh(node_t *node) {
     for (; node; node = node->up) {
         update(node);
@@ -221,21 +244,21 @@ node_t *markdown_core_summed_previous(const node_t *node) {
     return node->up;
 }
 
-size_t markdown_core_summed_before(const node_t *node, int measure) {
-    size_t sum = node->before ? node->before->sum[measure] : 0;
+size_t markdown_core_summed_before(const node_t *node) {
+    size_t sum = node->before ? node->before->sum : 0;
     for (; node->up; node = node->up) {
         if (node == node->up->after) {
-            sum += node->up->own[measure] + (node->up->before ? node->up->before->sum[measure] : 0);
+            sum += node->up->own + (node->up->before ? node->up->before->sum : 0);
         }
     }
     return sum;
 }
 
-node_t *markdown_core_summed_last_through(const tree_t *tree, int measure, size_t offset) {
+node_t *markdown_core_summed_last_through(const tree_t *tree, size_t offset) {
     node_t *node = tree->root, *found = NULL;
     size_t base = 0;
     while (node) {
-        size_t through = base + (node->before ? node->before->sum[measure] : 0) + node->own[measure];
+        size_t through = base + (node->before ? node->before->sum : 0) + node->own;
         if (through <= offset) {
             found = node;
             base = through;

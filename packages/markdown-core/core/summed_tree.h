@@ -13,20 +13,16 @@ extern "C" {
  * their own measures and whose subtrees store the sums. Absolute offsets are
  * prefix sums, so finding an offset, inserting, removing and shifting
  * everything after a change cost O(log n) wherever the change is. A session's
- * block records (block_records.h) are one such sequence.
+ * checkpoints and their entries (checkpoints.h) are one such sequence.
  *
  * The tree is intrusive: an element embeds a node and the tree never
  * allocates. Each node knows its parent, so the offset of any element is
  * found from the element itself. */
 
-#define MARKDOWN_CORE_SUMMED_MEASURES 2
-
 typedef struct markdown_core_summed_node {
     struct markdown_core_summed_node *before, *after, *up;
-    /* The element's own measures, and its subtree's sums and element count. */
-    size_t own[MARKDOWN_CORE_SUMMED_MEASURES];
-    size_t sum[MARKDOWN_CORE_SUMMED_MEASURES];
-    size_t count;
+    /* The element's own measure, and its subtree's sum and height. */
+    size_t own, sum;
     int level;
 } markdown_core_summed_node;
 
@@ -34,25 +30,22 @@ typedef struct markdown_core_summed_tree {
     markdown_core_summed_node *root;
 } markdown_core_summed_tree;
 
-static inline size_t markdown_core_summed_count(const markdown_core_summed_tree *tree) {
-    return tree->root ? tree->root->count : 0;
-}
-static inline size_t markdown_core_summed_total(const markdown_core_summed_tree *tree, int measure) {
-    return tree->root ? tree->root->sum[measure] : 0;
-}
-
 /* Builds a balanced tree of `count` nodes in the order given, their `own`
- * measures set, replacing nothing: the tree must be empty. */
-void markdown_core_summed_build(markdown_core_summed_tree *tree, markdown_core_summed_node *const *nodes,
-                                size_t count);
+ * measure set, replacing nothing: the tree must be empty. */
+void markdown_core_summed_build(markdown_core_summed_tree *tree, markdown_core_summed_node *const *nodes, size_t count);
 
-/* Inserts `node`, its `own` measures set, right after `at`, or first when
+/* Inserts `node`, its `own` measure set, right after `at`, or first when
  * `at` is NULL. */
 void markdown_core_summed_insert_after(markdown_core_summed_tree *tree, markdown_core_summed_node *at,
                                        markdown_core_summed_node *node);
 /* Takes `node` out of the tree. */
 void markdown_core_summed_remove(markdown_core_summed_tree *tree, markdown_core_summed_node *node);
-/* Recomputes the sums above `node` after its `own` measures changed. */
+/* Takes `node` out of the tree, or puts it in at the absolute `offset`
+ * after every element at or before it, keeping where every other element is:
+ * the measure of the element after it absorbs the change. */
+void markdown_core_summed_take(markdown_core_summed_tree *tree, markdown_core_summed_node *node);
+void markdown_core_summed_put(markdown_core_summed_tree *tree, markdown_core_summed_node *node, size_t offset);
+/* Recomputes the sums above `node` after its `own` measure changed. */
 void markdown_core_summed_refresh(markdown_core_summed_node *node);
 
 markdown_core_summed_node *markdown_core_summed_first(const markdown_core_summed_tree *tree);
@@ -60,12 +53,11 @@ markdown_core_summed_node *markdown_core_summed_last(const markdown_core_summed_
 markdown_core_summed_node *markdown_core_summed_next(const markdown_core_summed_node *node);
 markdown_core_summed_node *markdown_core_summed_previous(const markdown_core_summed_node *node);
 
-/* The sum of `measure` over the elements before `node`. */
-size_t markdown_core_summed_before(const markdown_core_summed_node *node, int measure);
-/* The last element whose sum of `measure` through itself is at most
+/* The sum of the measures of the elements before `node`. */
+size_t markdown_core_summed_before(const markdown_core_summed_node *node);
+/* The last element whose sum of measures through itself is at most
  * `offset`, or NULL when there is none. */
-markdown_core_summed_node *markdown_core_summed_last_through(const markdown_core_summed_tree *tree, int measure,
-                                                             size_t offset);
+markdown_core_summed_node *markdown_core_summed_last_through(const markdown_core_summed_tree *tree, size_t offset);
 
 #ifdef __cplusplus
 }

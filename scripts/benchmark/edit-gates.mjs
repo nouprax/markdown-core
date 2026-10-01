@@ -17,6 +17,13 @@ export const STEP_ENTRY = "bench_apply_step";
 export const WINDOWS = 1024;
 /** 6.2: a step at a larger size, or a later window of a stream, against its base. */
 export const FLATNESS_LIMIT = 1.25;
+/** 6.2's local edit families. */
+export const LOCAL_FAMILIES = Object.freeze(["typing", "lines", "ranges", "far", "batch"]);
+/**
+ * The shapes 6.2 gates for the local edit families (section 7): from rollout
+ * step 3, the shapes without declarations.
+ */
+export const FLAT_SHAPES = Object.freeze(["list", "table", "long-list"]);
 /** 6.3: a subject's step against `reparse` on the same step. */
 export const REPARSE_LIMIT = 1.25;
 /** 6.4: the same rule the one-shot gate applies per document and stage. */
@@ -84,6 +91,28 @@ export function flatSteps(costs) {
         });
     }
     return violations;
+}
+
+/**
+ * 6.2 over a report's results: for each local edit script on a gated shape,
+ * in each alphabet, the session's steps at every size against the smallest.
+ * A row carries its shape (`source`), `alphabet`, `size`, `family`, `script`
+ * and the session's per-step costs.
+ */
+export function flatScripts(results) {
+    const scripts = new Map();
+    for (const row of results) {
+        if (!FLAT_SHAPES.includes(row.source) || !LOCAL_FAMILIES.includes(row.family)) continue;
+        if (!row.session) throw new Error(`${row.name} has no session steps for 6.2`);
+        const key = JSON.stringify([row.source, row.alphabet, row.script]);
+        const costs = scripts.get(key) ?? {};
+        costs[row.size] = row.session.windows;
+        scripts.set(key, costs);
+    }
+    return [...scripts].flatMap(([key, costs]) => {
+        const [source, alphabet, script] = JSON.parse(key);
+        return flatSteps(costs).map((entry) => ({ source, alphabet, script, ...entry }));
+    });
 }
 
 /**

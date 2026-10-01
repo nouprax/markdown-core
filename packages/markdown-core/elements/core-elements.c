@@ -91,11 +91,11 @@ markdown_core_node *markdown_core_parse_document_with_setup(const char *source, 
         return NULL;
     }
     markdown_core_node_pool pool = {0};
-    markdown_core_block_records records = {0};
-    markdown_core_revision revision = {.pool = &pool, .records = &records};
+    /* A document parsed once has no session to restart it: the parse takes
+     * no checkpoints. */
+    markdown_core_revision revision = {.pool = &pool};
     markdown_core_node *root = markdown_core_parser_parse(parser, source, length, &revision);
     markdown_core_parser_destroy(parser);
-    markdown_core_block_records_dispose(&records);
     markdown_core_node_pool_dispose(&pool);
     return root;
 }

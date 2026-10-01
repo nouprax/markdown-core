@@ -575,7 +575,10 @@ static void check_identity(run *state, const char *where, size_t step, history *
         } else if (continues[node->owner] != SIZE_MAX) {
             const view_node *owner = &before->nodes[continues[node->owner]];
             size_t *at = &cursor[node->owner];
-            while (*at < owner->item_count) {
+            /* The cursor stops past the node continued: an old sibling
+             * after it whose image the node also holds may still be
+             * continued by a later new node whose range overlaps. */
+            while (match == SIZE_MAX && *at < owner->item_count) {
                 const view_node *old = &before->nodes[before->items[owner->items + *at]];
                 int64_t image = 0;
                 bool anchored = anchor(edits, count, old->range.start, old->range.end, &image);
@@ -583,7 +586,7 @@ static void check_identity(run *state, const char *where, size_t step, history *
                     (old->relation == node->relation && anchored && image >= node->range.end)) {
                     break;
                 }
-                if (old->relation == node->relation && anchored && image >= node->range.start && match == SIZE_MAX &&
+                if (old->relation == node->relation && anchored && image >= node->range.start &&
                     old->kind == node->kind) {
                     match = before->items[owner->items + *at];
                 }
@@ -601,7 +604,9 @@ static void check_identity(run *state, const char *where, size_t step, history *
         goto done;
     }
     /* 4.3, in post-order: a node is unchanged when the old node of its id
-     * has its value and its items, and each item is unchanged. */
+     * has its value and its items, and each item is unchanged, and then it
+     * is that old node. A changed node may be either: a new object, or an
+     * old one that took the new value in place. */
     for (index = after->count; index-- > 0;) {
         const view_node *node = &after->nodes[index];
         size_t old = id_lookup(&old_ids, node->id), item;
@@ -618,9 +623,6 @@ static void check_identity(run *state, const char *where, size_t step, history *
         changed[index] = !equal;
         if (equal && before->nodes[old].object != node->object) {
             fail(state, "4.3", "%s step %zu: unchanged node %llu is a new object", where, step,
-                 (unsigned long long)node->id);
-        } else if (!equal && view_find(before, node->object) != SIZE_MAX) {
-            fail(state, "4.3", "%s step %zu: changed node %llu is an object of the previous document", where, step,
                  (unsigned long long)node->id);
         }
     }

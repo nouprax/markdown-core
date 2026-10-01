@@ -2,6 +2,8 @@
 #include "table_scanners.h"
 #include <markdown-core-element-api.h>
 #include "element.h"
+#include "block_internal.h"
+#include <assert.h>
 #include <inlines.h>
 #include <parser.h>
 #include <references.h>
@@ -306,7 +308,8 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
     parent_string = markdown_core_node_get_string_content(parent_container);
     if (!recognize_pipe_row((unsigned char *)parent_string, (int)strlen(parent_string), &header_row) ||
         header_row.n_columns != delimiter_row.n_columns) {
-        parent_container->flags |= MARKDOWN_CORE_NODE__TABLE_VISITED;
+        markdown_core_parser_set_flags(parser, parent_container,
+                                       (uint16_t)(parent_container->flags | MARKDOWN_CORE_NODE__TABLE_VISITED));
         return NULL;
     }
 
@@ -447,8 +450,10 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
                              (bufsize_t)(cell->content.data - input));
         }
 
-        table->content_count++;
-        table->autocompleted_cells += (size_t)(table_columns - i);
+        if (i < table_columns) {
+            markdown_core_parser_note_carry(parser, parent_container);
+            table->autocompleted_cells += (size_t)(table_columns - i);
+        }
 
         /* AUTOCOMPLETED CELLS SIT WHERE THEY WERE COMPLETED (Q44, answered
          * 2026-08-23). A row shorter than its header is completed to the
@@ -2184,7 +2189,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool table_grammar_admits
     if (!line) {
         return false;
     }
-    const unsigned char *byte = markdown_core_input_line_bytes(parser, line);
+    const unsigned char *byte = markdown_core_parser_input_at(parser, line->start);
     const unsigned char *end = byte + (line->end - line->start);
     while (byte < end && markdown_core_is_space_or_tab(*byte)) {
         byte++;
@@ -2376,7 +2381,6 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
     table->column_count = candidate->column_count;
     table->head_count = candidate->head_count;
     table->foot_count = candidate->foot_count;
-    table->content_count = candidate->row_count - table->head_count - table->foot_count;
     /* The table and each of its rows begin at the margin on their first line. */
     node->where.place.start = (uint32_t)markdown_core_parser_source_offset(
         parser, first->line, table_margin_byte(first, candidate->margin) + 1);
@@ -2561,6 +2565,7 @@ static markdown_core_node *table_try_open(table_workspace *workspace, markdown_c
                                                                             source.lines[caption_last].length);
         parser->claimed_line = source.lines[caption_last].line;
         parser->claimed_last_end = result->where.place.end;
+        markdown_core_parser_write_closed(parser, result);
     } else {
         result = table_build(&source, parent, candidate);
         if (result && result->opaque && caption >= 0) {
@@ -2619,6 +2624,80 @@ static void dispose_parser(const markdown_core_element_instance *self, markdown_
     memset(workspace, 0, sizeof(*workspace));
 }
 
+/* AN OPEN PIPE TABLE CARRIES (E3) its column count, to which every later
+ * row is cut or completed, and the cells it has completed so far, past
+ * MAX_AUTOCOMPLETED_CELLS of which it takes no more rows. The count is the
+ * one field a row changes, so it is the one a reopened table takes back. */
+static uint64_t carry_save(const markdown_core_element_instance *self, const markdown_core_node *node) {
+    (void)self;
+    const markdown_core_table *table = node->opaque;
+    return (uint64_t)table->column_count << 32 | (uint64_t)table->autocompleted_cells;
+}
+static void carry_restore(const markdown_core_element_instance *self, markdown_core_node *node, uint64_t carry) {
+    (void)self;
+    ((markdown_core_table *)node->opaque)->autocompleted_cells = (size_t)(carry & UINT32_MAX);
+}
+static const markdown_core_node_type TABLE_KINDS[] = {MARKDOWN_CORE_NODE_TABLE, MARKDOWN_CORE_NODE_NONE};
+
+/* THE BODY COUNT IS A FOLD (E4): every row counts one, and the body is what
+ * the head and the foot leave. */
+static uint32_t fold_child(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                           markdown_core_node *node, markdown_core_node *child, bool last) {
+    (void)self;
+    (void)parser;
+    (void)node;
+    (void)child;
+    (void)last;
+    return 1;
+}
+static void fold_apply(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                       markdown_core_node *node, uint32_t sum, uint32_t last) {
+    (void)self;
+    (void)parser;
+    markdown_core_table *table = node->opaque;
+    table->content_count = (size_t)sum + last - table->head_count - table->foot_count;
+}
+static markdown_core_finish_result finish_step(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                               markdown_core_node *node, markdown_core_event_type event, int is_root,
+                                               void **state) {
+    (void)self;
+    (void)event;
+    (void)is_root;
+    (void)state;
+    assert(event == MARKDOWN_CORE_EVENT_EXIT);
+    markdown_core_parser_fold(parser, node);
+    return MARKDOWN_CORE_FINISH_CONTINUE;
+}
+
+/* A table's rows are its head, body and foot relations, in that order
+ * (table.h): the last head row ends the head, and the row before the first
+ * foot row ends the body. */
+static bool relation_ends(const markdown_core_element_instance *self, const markdown_core_node *node,
+                          const markdown_core_node *child) {
+    (void)self;
+    const markdown_core_table *table = node->opaque;
+    const markdown_core_node *row = node->first_child;
+    for (size_t i = 1; row && i < table->head_count; i++) {
+        row = row->next;
+    }
+    if (table->head_count && row == child) {
+        return true;
+    }
+    size_t after = 0;
+    for (row = child->next; row && after <= table->foot_count; row = row->next) {
+        after++;
+    }
+    return table->foot_count && after == table->foot_count;
+}
+
+/* A trailing caption writes the closed table before it (E2). */
+static bool writes_below(const markdown_core_element_instance *self, const markdown_core_parser *parser,
+                         const markdown_core_node *node) {
+    (void)self;
+    (void)parser;
+    return node->kind == MARKDOWN_CORE_NODE_TABLE && node->opaque && !((markdown_core_table *)node->opaque)->caption;
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .peers = TABLE_PEERS,
     .dispose_parser = dispose_parser,
@@ -2637,4 +2716,13 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .opaque_alloc_func = opaque_alloc,
     .opaque_free_func = opaque_free,
     .visit_owned_subtrees_func = visit_owned_subtrees,
+    .finish_step = finish_step,
+    .finish_exit_kinds = TABLE_KINDS,
+    .reopen_kinds = TABLE_KINDS,
+    .carry_save = carry_save,
+    .carry_restore = carry_restore,
+    .writes_below = writes_below,
+    .fold_child = fold_child,
+    .fold_apply = fold_apply,
+    .relation_ends = relation_ends,
 };

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { parseCallgrind } from "../callgrind.mjs";
 import {
+    flatScripts,
     flatSteps,
     flatStream,
     neverWorse,
@@ -73,6 +74,39 @@ test("6.2 rejects one step whose cost grows with the document, however few steps
         [[1048576, 2]]
     );
     assert.throws(() => flatSteps({ 16384: flat, 65536: costs([100]) }), /step counts differ/);
+});
+
+test("6.2 holds the session's steps of every local script on a gated shape, by alphabet and script", () => {
+    const row = (source, family, size, steps, alphabet = "ascii", script = `${family}-x`) => ({
+        name: `${source}-${alphabet}-${size}.${script}`,
+        source,
+        alphabet,
+        size,
+        family,
+        script,
+        session: { windows: steps }
+    });
+    const sizes = [16384, 65536, 262144, 1048576];
+    const rising = (family, source = "list", alphabet = "ascii") =>
+        sizes.map((size) => row(source, family, size, [100, (100 * size) / 16384], alphabet));
+    const flat = (family, source = "list", alphabet = "ascii") =>
+        sizes.map((size) => row(source, family, size, [100, 100], alphabet));
+    assert.deepEqual(flatScripts([...flat("typing"), ...flat("lines", "table"), ...flat("far", "list", "utf8")]), []);
+    const steep = flatScripts([...flat("typing"), ...rising("batch", "long-list", "utf8")]);
+    assert.deepEqual(
+        steep.map((entry) => [entry.source, entry.alphabet, entry.script, entry.size, entry.step]),
+        [
+            ["long-list", "utf8", "batch-x", 65536, 1],
+            ["long-list", "utf8", "batch-x", 262144, 1],
+            ["long-list", "utf8", "batch-x", 1048576, 1]
+        ]
+    );
+    /* Shapes and families outside 6.2's activation are not judged by it. */
+    assert.deepEqual(
+        flatScripts([...rising("markers"), ...rising("typing", "prose"), ...rising("typing", "deep-quotes")]),
+        []
+    );
+    assert.throws(() => flatScripts([{ ...row("list", "typing", 16384, [1]), session: null }]), /no session steps/);
 });
 
 test("6.2 rejects stream windows whose cost grows with the text already streamed", () => {

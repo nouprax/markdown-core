@@ -63,8 +63,9 @@ static void prepare_document(const markdown_core_element_instance *self, markdow
 static void observe_inline(const markdown_core_element_instance *self, markdown_core_parser *parser,
                            markdown_core_node *node) {
     const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
-    if (headings) {
-        markdown_core_headings_observe(headings, parser, node);
+    const markdown_core_chunk *anchor = markdown_core_node_anchor_chunk(node);
+    if (headings && anchor->len) {
+        markdown_core_headings_observe(headings, parser, node, anchor);
     }
 }
 static void finish_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {

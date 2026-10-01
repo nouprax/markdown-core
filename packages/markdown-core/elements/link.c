@@ -36,6 +36,7 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
         if (!pos) {
             break;
         }
+        markdown_core_parser_touch(parser, b);
         chunk.data += pos;
         chunk.len -= pos;
     }
@@ -58,7 +59,7 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
     // inline phase reads the same map against the shortened buffer.
     bufsize_t dropped = node_content->size - chunk.len;
     if (dropped) {
-        b->flags |= MARKDOWN_CORE_NODE__REFERENCE_PREFIX;
+        markdown_core_parser_set_flags(parser, b, (uint16_t)(b->flags | MARKDOWN_CORE_NODE__REFERENCE_PREFIX));
     }
     if (!(b->flags & MARKDOWN_CORE_NODE__REFERENCE_PREFIX)) {
         return !markdown_core_block_is_blank(node_content, 0);
@@ -470,6 +471,7 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
      * three spellings the author wrote, and nothing downstream can recover it
      * -- the module states one node for every successful form. */
     if (link_allowed && found_label) {
+        markdown_core_parser_touch(inline_state->owner_parser, inline_state->owner);
         record = markdown_core_map_lookup(inline_state->refmap, &raw_label);
     }
     markdown_core_chunk_free(&raw_label);

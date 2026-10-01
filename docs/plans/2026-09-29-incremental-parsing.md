@@ -532,9 +532,11 @@ correct, and cheap, when the edit added a blank line between two early items
 of a 10,000-item list and every later item was reused.
 
 **Units that are always whole.** A leaf is re-read whole when damaged: a
-paragraph, a code block, an HTML block, and a table with its caption and
-mapped cell inputs. Cells are internal inputs of the table's transaction, as
-now. Value deduplication (5.9) then keeps every unchanged row and cell.
+paragraph, a code block and an HTML block. A table takes its rows line by
+line, so it reopens at a row like a container: its carried state is its
+column geometry and the cells it has completed, and its counts are a fold of
+its rows (E4). Cells are internal inputs of the table's transaction, as now.
+Value deduplication (5.9) then keeps every unchanged row and cell.
 
 **Several damaged regions.** A batch (4.4) can damage several regions. The
 engine handles them in source order with the same procedure: restart before
@@ -566,9 +568,10 @@ These are requirements on every element, each checked by an audit script in
 - **E3 Carried state is declared.** Per-parse element state (`state_size`) is
   one of three things: a cache that the parse may drop; a declaration
   registry that moves to the session (5.7); or carried block state, which is
-  stored on the open node, saved into spine snapshots by `carry_save`,
-  restored by `carry_restore` and compared by `carry_equal`. Nothing else may
-  carry information from one line to a later one.
+  stored on the open node, saved into spine snapshots as the word
+  `carry_save` returns and restored by `carry_restore`; two containers with
+  equal flags and equal words take later lines alike. Nothing else may carry
+  information from one line to a later one.
 - **E4 Container finalize is a fold of child summaries.** It reads children
   and recorded facts and writes the container's own fields, and running it
   twice gives the same node. Each container kind declares a per-child summary
@@ -722,11 +725,10 @@ node:
   and cannot be matched; its id retires.
 - An old node `O` can match a new node `N` when their kinds are equal and
   `N`'s source range contains the exact image of `O`'s anchor byte (5.2).
-  Siblings in one parsed relation have disjoint ranges, so an anchor image
-  lies in at most one candidate.
-- When `N` contains the anchors of several old siblings, it takes the
-  earliest. Both sequences are in source order and the match is monotone, so
-  it is linear in the region.
+- `N` takes the earliest such old sibling after the one its previous sibling
+  took. Both sequences are in source order and the match is monotone, so it
+  is linear in the region. Siblings whose ranges share bytes, like the cells a
+  table completes at the end of a short row, pair in order.
 - Consequences, each from the one rule:
   - Typing at the start of a paragraph keeps its id: the old first byte
     survives and its image lies inside the extended paragraph.
