@@ -5,7 +5,9 @@
 
 #define TEXT_PIECE_MAX ((size_t)1024)
 #define TEXT_PIECE_MIN (TEXT_PIECE_MAX / 4)
-#define TEXT_TREE_DEPTH MARKDOWN_CORE_TEXT_TREE_DEPTH
+/* An AVL tree of n pieces is at most 1.44 log2(n + 2) high, and a text holds
+ * fewer than 2^40 pieces. */
+#define TEXT_TREE_DEPTH 64
 
 struct markdown_core_text_piece {
     markdown_core_text_piece *before, *after;
@@ -178,7 +180,13 @@ static void remove_at(markdown_core_text_tree *text, size_t rank) {
     rebalance_path(path, depth);
 }
 
-typedef markdown_core_text_cursor text_cursor;
+/* The pieces of a tree in order from a byte offset, with the ancestors still
+ * to come on a stack. */
+typedef struct {
+    markdown_core_text_piece *stack[TEXT_TREE_DEPTH];
+    size_t depth;
+    markdown_core_text_piece *piece;
+} text_cursor;
 
 /* The piece holding byte `offset`, or the last piece when `offset` is the
  * size of the text; its rank and where it begins. NULL for an empty text. */
@@ -472,52 +480,4 @@ bool markdown_core_text_tree_replace(markdown_core_text_tree *text, const markdo
 
 void markdown_core_text_tree_copy(const markdown_core_text_tree *text, uint8_t *bytes) {
     copy_span(text, 0, size_of(text->root), bytes);
-}
-
-bool markdown_core_text_cursor_seek(markdown_core_text_cursor *cursor, const markdown_core_text_tree *text,
-                                    size_t offset, const uint8_t **bytes, size_t *size, size_t *start) {
-    size_t rank;
-    if (offset >= size_of(text->root)) {
-        return false;
-    }
-    const markdown_core_text_piece *piece = cursor_seek(cursor, text, offset, &rank, start);
-    *bytes = piece->bytes;
-    *size = piece->size;
-    return true;
-}
-
-bool markdown_core_text_cursor_next(markdown_core_text_cursor *cursor, const uint8_t **bytes, size_t *size) {
-    const markdown_core_text_piece *piece = cursor_next(cursor);
-    if (!piece) {
-        return false;
-    }
-    *bytes = piece->bytes;
-    *size = piece->size;
-    return true;
-}
-
-uint8_t markdown_core_text_tree_byte(const markdown_core_text_tree *text, size_t offset) {
-    text_cursor cursor;
-    size_t rank, begin;
-    const markdown_core_text_piece *piece = cursor_seek(&cursor, text, offset, &rank, &begin);
-    return piece->bytes[offset - begin];
-}
-
-/* Backwards from `offset`, one piece at a time: each piece is found again
- * from the root, since a reader keeps only the ancestors still to come. */
-size_t markdown_core_text_tree_line_start(const markdown_core_text_tree *text, size_t offset) {
-    size_t at = offset;
-    while (at > 0) {
-        text_cursor cursor;
-        size_t rank, begin;
-        const markdown_core_text_piece *piece = cursor_seek(&cursor, text, at - 1, &rank, &begin);
-        for (size_t i = at - begin; i-- > 0;) {
-            uint8_t byte = piece->bytes[i];
-            if (byte == '\n' || byte == '\r') {
-                return begin + i + 1;
-            }
-        }
-        at = begin;
-    }
-    return 0;
 }

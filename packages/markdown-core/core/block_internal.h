@@ -26,13 +26,6 @@ bool markdown_core_block_is_blank(markdown_core_strbuf *s, bufsize_t offset);
 void markdown_core_block_rebase_content_marks(markdown_core_parser *parser, markdown_core_node *node, bufsize_t dropped,
                                               bufsize_t remaining);
 bool markdown_core_block_ends_with_blank_line(const markdown_core_parser *parser, markdown_core_node *node);
-/* THE FOLD OF A CONTAINER'S CHILDREN (E4, element.h): `fold` sums the
- * summaries of a container's children, keeps the sums in its checkpoint
- * entry when it has one, and applies them; `fold_totals` reads a container's
- * sums, kept or folded afresh. */
-void markdown_core_parser_fold(markdown_core_parser *parser, markdown_core_node *node);
-void markdown_core_parser_fold_totals(markdown_core_parser *parser, markdown_core_node *node, uint32_t *sum,
-                                      uint32_t *last);
 markdown_core_node *markdown_core_block_finalize(markdown_core_parser *parser, markdown_core_node *b);
 void markdown_core_block_advance_offset(markdown_core_parser *parser, markdown_core_chunk *input, bufsize_t count,
                                         bool columns);

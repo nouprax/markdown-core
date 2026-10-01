@@ -263,21 +263,10 @@ enum markdown_core_node__internal_flags {
      * A later arrival may supply its first surviving content line. */
     MARKDOWN_CORE_NODE__REFERENCE_PREFIX = (1 << 7),
 
-    /* Whether the block ends with a blank line, as the finish stage asks of
-     * a finalized block (markdown_core_block_ends_with_blank_line): valid
-     * while LAST_LINE_CHECKED is set. LAST_LINE_BLANK stays the line
-     * machine's own. */
-    MARKDOWN_CORE_NODE__ENDS_BLANK = (1 << 8),
-
-    /* A later line wrote this closed block (E2, markdown_core_parser_
-     * write_closed). A block is written once: no later line writes it
-     * again. */
-    MARKDOWN_CORE_NODE__WRITTEN = (1 << 9),
-
     // The first bit an element may claim. Element flags are compile-time
     // constants owned by the element that uses them; there is no runtime
     // registration and no allocator to run out of bits.
-    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 10),
+    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 8),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;
@@ -332,9 +321,6 @@ struct markdown_core_node {
     /* The node's identifier, unique within its document; 0 until the
      * document is published (markdown_core_publish_tree). */
     uint64_t id;
-    /* The checkpoint entry that names the block (checkpoints.h), or NULL.
-     * Part of the node's place: it stays with the node object. */
-    struct markdown_core_entry *entry;
 
     markdown_core_attributes attributes;
     markdown_core_strbuf content;
@@ -360,14 +346,7 @@ struct markdown_core_node {
 
 /* The effective declaration is occurrence-local, then inherited from its
  * shared definition. All consumers, including synthesis reservation, use it. */
-static inline const markdown_core_chunk *markdown_core_node_anchor_chunk(const markdown_core_node *node) {
-    if (!node->attributes.anchor.len &&
-        (node->kind == MARKDOWN_CORE_NODE_LINK || node->kind == MARKDOWN_CORE_NODE_EMBEDDED) &&
-        node->as.link->resource) {
-        return &node->as.link->resource->attributes.anchor;
-    }
-    return &node->attributes.anchor;
-}
+const markdown_core_chunk *markdown_core_node_anchor_chunk(const markdown_core_node *node);
 
 /* Both cross kinds own the same raw reference fields in one payload allocation.
  * Only CrossEmbedded allocates the dimension value beside those fields. */
@@ -528,17 +507,10 @@ markdown_core_node *markdown_core_node_pool_new(markdown_core_node_pool *pool, m
  * the nodes their fields hold. Each value keeps the storage it borrows from,
  * so a node takes the other's value with the other's storage. */
 void markdown_core_node_swap_values(markdown_core_node *a, markdown_core_node *b);
-/* Exchanges the node-valued fields of two nodes of one kind, which are part
- * of their places: a field's node does not name its owner. */
-void markdown_core_node_swap_fields(markdown_core_node *a, markdown_core_node *b);
 /* `markdown_core_node_release` into a pool: the node slots and the slots of
  * the resources the nodes held last go back to it for reuse rather than
  * dropping their slabs. A NULL pool is the plain release. */
 size_t markdown_core_node_pool_release(markdown_core_node_pool *pool, markdown_core_node *node);
-/* Releases `first` and every node after it in its chain, with their
- * subtrees, without unlinking anything: the chain is detached and nothing
- * reads its nodes' parents. Returns the number of nodes released. */
-size_t markdown_core_node_pool_release_chain(markdown_core_node_pool *pool, markdown_core_node *first);
 /* Drops what the pool holds: its released slots and its current slabs. Slots
  * still in use keep their slabs alive after this. */
 void markdown_core_node_pool_dispose(markdown_core_node_pool *pool);

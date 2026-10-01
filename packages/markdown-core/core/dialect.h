@@ -157,7 +157,6 @@ typedef struct markdown_core_finish_step_entry {
  *   takes a text line as prose; IS_PARAGRAPH, `paragraph`;
  * - BLANK_OPAQUE, BLANK_ASK (`blank_line`), BLANK_RUNS and BLANK_PROPAGATES
  *   (`propagates_child_blank`): what a blank line means inside it;
- * - REOPENS: the kind is one of its structure's `reopen_kinds`;
  * - FIELDS: the kind can own a field root through its own record
  *   (`markdown_core_kind_owns_fields`, element.h -- a subtree an element owns
  *   is found through the node's `element`, which the walk tests beside this).
@@ -178,8 +177,7 @@ enum {
     MARKDOWN_CORE_KIND_BLANK_OPAQUE = 1u << 8,
     MARKDOWN_CORE_KIND_BLANK_ASK = 1u << 9,
     MARKDOWN_CORE_KIND_BLANK_RUNS = 1u << 10,
-    MARKDOWN_CORE_KIND_BLANK_PROPAGATES = 1u << 11,
-    MARKDOWN_CORE_KIND_REOPENS = 1u << 12
+    MARKDOWN_CORE_KIND_BLANK_PROPAGATES = 1u << 11
 };
 typedef struct markdown_core_kind_record {
     const markdown_core_element_instance *structure;
@@ -272,14 +270,6 @@ typedef struct markdown_core_dialect {
     /* The inline-content families, in descriptor order. */
     const markdown_core_element_instance *const *inline_hooks[MARKDOWN_CORE_INLINE_HOOK_COUNT];
     size_t inline_hook_counts[MARKDOWN_CORE_INLINE_HOOK_COUNT];
-    /* The elements that say whether a later line may write a closed block
-     * (`writes_below`, E2), in descriptor order: a checkpoint asks them of
-     * the block below its spine. */
-    const markdown_core_element_instance *const *closed_writers;
-    size_t closed_writer_count;
-    /* Whether any element declares a postprocess pass: a pass reads the
-     * whole finished tree, so its parse restarts at the document's start. */
-    bool passes_declared;
     /* Each byte's inline owners, by precedence and then descriptor order:
      * `inline_dispatch[inline_dispatch_offsets[c] .. inline_dispatch_offsets[c + 1])`. */
     size_t inline_dispatch_offsets[257];
@@ -344,7 +334,6 @@ typedef struct markdown_core_dialect_sizes {
     size_t inline_totals[MARKDOWN_CORE_INLINE_HOOK_COUNT];
     size_t inline_dispatch_offsets[257];
     size_t finish_key_counts[MARKDOWN_CORE_FINISH_KEY_COUNT];
-    size_t closed_writers;
     size_t pointers, steps, instance_slots, gate_bytes;
     /* The bytes the elements' parse records take, and one run's records. */
     size_t state_bytes, run_state_bytes;

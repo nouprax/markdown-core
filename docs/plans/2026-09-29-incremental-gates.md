@@ -236,8 +236,7 @@ computes the expected matching itself, for every node of every step:
   of whose bytes survived has no anchor.
 - Within the relation of a matched owner, a new node of the same kind whose
   source range contains the image of an old sibling's anchor continues the
-  earliest such sibling after the one the new node's previous sibling
-  continues.
+  earliest such sibling.
 - A new node that continues an old node has the old node's id. Every other
   new node, including every child of an unmatched owner, has an id the
   lineage has never seen. An old node that nothing continues is retired.

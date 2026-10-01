@@ -70,13 +70,9 @@ static bool markdown_core_block_definition_marker(markdown_core_chunk *input, in
  * admitted any line with ': ' in it. Every answer of false is a line the
  * transaction would refuse too. */
 static bool definition_next_lines_admit(markdown_core_parser *parser) {
-    for (int line = 1; line <= 2; line++) {
-        markdown_core_input_line *next = markdown_core_parser_source_line(parser, parser->line_number + line);
-        if (!next) {
-            break;
-        }
-        const unsigned char *at = markdown_core_parser_input_at(parser, next->start),
-                            *end = at + (next->end - next->start);
+    const unsigned char *cursor = parser->lookahead_cursor, *end = parser->lookahead_end;
+    for (int line = 0; line < 2 && cursor && cursor < end; line++) {
+        const unsigned char *at = cursor;
         while (at < end && parser->dialect->container_prefix[*at]) {
             /* A declared prefix byte that is also a marker byte -- a
              * container whose continuation strips ':' or '~' -- cannot be
@@ -89,10 +85,17 @@ static bool definition_next_lines_admit(markdown_core_parser *parser) {
             }
             at++;
         }
-        if (at < end) {
+        if (at < end && !markdown_core_is_line_end(*at)) {
             return (*at == ':' || *at == '~') && (at + 1 == end || markdown_core_is_whitespace(at[1]));
         }
         /* Blank once stripped: the transaction skips one such line. */
+        cursor = at;
+        if (cursor < end && *cursor == '\r') {
+            cursor++;
+        }
+        if (cursor < end && *cursor == '\n') {
+            cursor++;
+        }
     }
     return false;
 }

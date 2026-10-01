@@ -43,7 +43,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { isMainThread, parentPort, Worker, workerData } from "node:worker_threads";
 
 import { parseCallgrind } from "./callgrind.mjs";
-import { flatScripts, groupWindows, neverWorse, summary, WINDOWS, windowCost, windowEnds } from "./edit-gates.mjs";
+import { groupWindows, neverWorse, summary, WINDOWS, windowCost, windowEnds } from "./edit-gates.mjs";
 import { EDIT_RUNNER, measure, prepareBuild, profileRun } from "./run.mjs";
 import { STAGES } from "./stage-budget.mjs";
 import { BENCHMARK_SETS, writeBenchmarkWorkloads } from "./workloads.mjs";
@@ -233,11 +233,6 @@ export function violations(report) {
     return report.results.flatMap((row) => row.neverWorse.map((entry) => ({ name: row.name, ...entry })));
 }
 
-/** The 6.2 violations of a report: every step of a gated script above 1.25 times its cost at the smallest size. */
-export function flatness(report) {
-    return flatScripts(report.results);
-}
-
 /**
  * The human report: per document source, family and size, the R and S
  * columns pooled over every window of every workload in the group, the
@@ -276,15 +271,6 @@ export function markdownReport(report) {
         lines.push("", `6.3 fails on ${number(failed.length)} step(s):`, "");
         for (const entry of failed.slice(0, 20)) {
             lines.push(`- ${entry.name} step ${entry.step + 1}: ${entry.ratio.toFixed(3)}× reparse`);
-        }
-    }
-    const steep = flatness(report);
-    if (steep.length) {
-        lines.push("", `6.2 fails on ${number(steep.length)} step(s):`, "");
-        for (const entry of steep.slice(0, 20)) {
-            lines.push(
-                `- ${entry.source} ${entry.alphabet} ${entry.script} step ${entry.step + 1} at ${number(entry.size)} bytes: ${entry.ratio.toFixed(3)}× the smallest size`
-            );
         }
     }
     return lines.join("\n");
@@ -380,7 +366,6 @@ async function measureSet(options) {
             alphabet: workload.document.alphabet,
             size: workload.document.shape ? workload.document.size : null,
             family: workload.family,
-            script: workload.script?.name ?? null,
             ...measured.get(workload.name)
         }))
     };
@@ -402,16 +387,9 @@ async function main() {
     writeReport(report, options.out, options.quiet);
     /* A part is judged with the others, once they are joined. */
     const failed = report.shard ? [] : violations(report);
-    const steep = report.shard ? [] : flatness(report);
     if (failed.length) {
         fail(
             `6.3: ${failed.length} step(s) cost more than 1.25 times reparse, the first ${failed[0].name} step ${failed[0].step + 1} at ${failed[0].ratio.toFixed(3)}×`
-        );
-    }
-    if (steep.length) {
-        const first = steep[0];
-        fail(
-            `6.2: ${steep.length} step(s) cost more than 1.25 times the smallest size, the first ${first.source} ${first.alphabet} ${first.script} step ${first.step + 1} at ${first.size} bytes at ${first.ratio.toFixed(3)}×`
         );
     }
 }

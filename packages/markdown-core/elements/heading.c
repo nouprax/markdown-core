@@ -39,7 +39,6 @@ void markdown_core_block_register_heading(const markdown_core_element_instance *
         headings->capacity = capacity;
     }
     headings->values[headings->count++] = (markdown_core_heading_parse){.node = node};
-    markdown_core_parser_touch(parser, node);
 }
 
 static markdown_core_key_index_slot *anchor_slot(markdown_core_parser *parser, markdown_core_heading_state *state,
@@ -52,16 +51,18 @@ static markdown_core_key_index_slot *anchor_slot(markdown_core_parser *parser, m
     return slot;
 }
 
-/* An explicit anchor, `node`'s nonempty `markdown_core_node_anchor_chunk`,
- * is reserved as the finish walk enters its node, before any heading is
- * given a computed one; a parse without headings reserves nothing, since
- * only a heading's computed anchor can collide. */
+/* An explicit anchor is reserved as the finish walk enters its node, before
+ * any heading is given a computed one; a parse without headings reserves
+ * nothing, since only a heading's computed anchor can collide. */
 void markdown_core_headings_observe(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                    markdown_core_node *node, const markdown_core_chunk *anchor) {
+                                    markdown_core_node *node) {
     markdown_core_heading_state *state = self->state;
     anchor_registry *registry = &state->anchors;
-    markdown_core_parser_touch(parser, node);
     if (!state->headings.count) {
+        return;
+    }
+    const markdown_core_chunk *anchor = markdown_core_node_anchor_chunk(node);
+    if (!anchor->len) {
         return;
     }
     state->anchor_work++;

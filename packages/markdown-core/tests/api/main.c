@@ -8508,8 +8508,7 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
             bytes[position] = (unsigned char)value;
             bytes[sizeof(bytes) - 1] = '\n';
             markdown_core_parser input = {0};
-            input.input_window = bytes;
-            input.input_filled = sizeof(bytes);
+            input.input_source = bytes;
             input.input_length = sizeof(bytes);
             input.input_first_line = 1;
             markdown_core_input_line *first = markdown_core_parser_source_line(&input, 1);
@@ -8530,8 +8529,7 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
     }
     static const unsigned char source[] = "a\0b\r\nc\rd\nlast";
     markdown_core_parser parser = {0};
-    parser.input_window = source;
-    parser.input_filled = sizeof(source) - 1;
+    parser.input_source = source;
     parser.input_length = sizeof(source) - 1;
     parser.input_first_line = 7;
     static const size_t starts[] = {0, 5, 7, 9}, ends[] = {3, 6, 8, 13}, next[] = {5, 7, 9, 13};
@@ -8565,9 +8563,7 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
 }
 
 static void short_line_storage_is_bounded(test_batch_runner *runner) {
-    /* A line's geometry is where its bytes are in the piece that holds them,
-     * its range and its fact index. */
-    OK(runner, sizeof(markdown_core_input_line) <= 24, "ordinary physical geometry fits in twenty-four bytes");
+    INT_EQ(runner, sizeof(markdown_core_input_line), 12, "ordinary physical geometry occupies twelve bytes");
     for (size_t count = 8; count <= 65537; count = count == 8 ? 1025 : count * 64 - 63) {
         for (int shape = 0; shape < 3; shape++) {
             markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();

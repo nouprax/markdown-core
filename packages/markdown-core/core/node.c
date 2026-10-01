@@ -5,7 +5,6 @@
 #include "alloc.h"
 #include "config.h"
 #include "node.h"
-#include "checkpoints.h"
 #include "references.h"
 #include "element.h"
 
@@ -460,9 +459,6 @@ static size_t S_free_nodes(markdown_core_node_pool *pool, markdown_core_node *e)
     size_t released = 0;
     while (e != NULL) {
         released++;
-        if (e->entry) {
-            e->entry->node = NULL;
-        }
         /* Almost no node owns an attribute value or a content buffer: the
          * test each releaser makes first -- its own predicate, defined once
          * beside it -- is made here, so a node that owns neither pays the
@@ -498,10 +494,6 @@ size_t markdown_core_node_pool_release(markdown_core_node_pool *pool, markdown_c
     S_node_unlink(node);
     node->next = NULL;
     return S_free_nodes(pool, node);
-}
-
-size_t markdown_core_node_pool_release_chain(markdown_core_node_pool *pool, markdown_core_node *first) {
-    return S_free_nodes(pool, first);
 }
 
 size_t markdown_core_node_release(markdown_core_node *node) { return markdown_core_node_pool_release(NULL, node); }
@@ -549,10 +541,6 @@ void markdown_core_node_swap_values(markdown_core_node *a, markdown_core_node *b
         b->as.data = q;
     }
     /* The node-valued fields are places: each node takes its own back. */
-    markdown_core_node_swap_fields(a, b);
-}
-
-void markdown_core_node_swap_fields(markdown_core_node *a, markdown_core_node *b) {
     S_field_pair pair = {a->as.data, b->as.data};
     S_visit_record_fields(a, S_field_swap, &pair);
     if (a->element && a->element->visit_owned_subtrees_func) {
@@ -804,6 +792,15 @@ int markdown_core_node_check(markdown_core_node *node, FILE *out) {
     }
 
     return errors;
+}
+
+const markdown_core_chunk *markdown_core_node_anchor_chunk(const markdown_core_node *node) {
+    if (!node->attributes.anchor.len &&
+        (node->kind == MARKDOWN_CORE_NODE_LINK || node->kind == MARKDOWN_CORE_NODE_EMBEDDED) &&
+        node->as.link->resource) {
+        return &node->as.link->resource->attributes.anchor;
+    }
+    return &node->attributes.anchor;
 }
 
 bool markdown_core_node_kind_set_intersects(const markdown_core_node_kind_set *a,

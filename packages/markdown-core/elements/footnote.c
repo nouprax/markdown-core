@@ -60,7 +60,6 @@ markdown_core_inline_footnote_definition(const markdown_core_element_instance *s
      * aliases, so the only allocation in here is the map's own normalization,
      * and that one reports itself through the map's sticky flag. */
     label = markdown_core_chunk_dup(&inline_state->input, label_start + 1, after_close - label_start - 2);
-    markdown_core_parser_touch(inline_state->owner_parser, inline_state->owner);
     return markdown_core_map_lookup(((markdown_core_footnote_state *)self->state)->labels, &label);
 }
 
@@ -109,9 +108,6 @@ markdown_core_node *markdown_core_inline_close_inline_footnote(const markdown_co
         return NULL;
     }
     markdown_core_inline_state_place(inline_state, footnote, opener->position - 2, inline_state->pos - 1);
-    /* An inline note is in the document's footnote table: its block is
-     * touched, as a definition's is. */
-    markdown_core_parser_touch(parser, inline_state->owner);
     markdown_core_inline_finish_citation_tokens(self->peers[FOOTNOTE_CITATION], inline_state, &opener->citations);
     markdown_core_inline_process_delimiters(parser, inline_state, opener->position, opener->delim_end);
     markdown_core_inline_take_bracket_content(self->peers[FOOTNOTE_LINK], parser, opener, footnote);
@@ -341,7 +337,6 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
      * labels owns no node and picks no winner, so order decides
      * nothing left to get wrong. */
     markdown_core_footnote_definition_create(state->labels, &label->value);
-    markdown_core_parser_touch(parser, *container);
     markdown_core_chunk_free(&c);
 
     (*container)->internal_offset = matched;

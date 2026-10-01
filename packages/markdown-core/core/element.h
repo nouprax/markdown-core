@@ -136,7 +136,8 @@ struct markdown_core_element {
     void (*init_document)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*dispose_parser)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*dispose_document)(const markdown_core_element_instance *, markdown_core_parser *);
-    void (*read_document_prefix)(const markdown_core_element_instance *, markdown_core_parser *);
+    size_t (*read_document_prefix)(const markdown_core_element_instance *, markdown_core_parser *,
+                                   const unsigned char *, size_t);
     void (*prepare_document)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*finish_document)(const markdown_core_element_instance *, markdown_core_parser *);
     /* The last step of the parse: the tree is final, and the owner publishes
@@ -148,44 +149,6 @@ struct markdown_core_element {
     markdown_core_node *(*try_interrupting_block)(const markdown_core_element_instance *, markdown_core_parser *,
                                                   markdown_core_node *, markdown_core_chunk *, bool);
     bool interrupts_paragraph;
-
-    /* THE RE-PARSE CONTRACT (docs/plans/2026-09-29-incremental-parsing.md,
-     * 5.4). `reopen_kinds`, terminated by MARKDOWN_CORE_NODE_NONE, are the
-     * container kinds a re-parse may reopen at a checkpoint: an open one's
-     * state at a line start is its node flags and the word `carry_save`
-     * returns (E3), which `carry_restore` puts back on the reopened node and
-     * which says, with the flags, whether two such containers take later
-     * lines alike; a container of any other kind on the open spine makes the
-     * line no checkpoint.
-     *
-     * `writes_below` says whether a later line may write `node`, a closed
-     * block of any kind, through markdown_core_parser_write_closed (E2): a
-     * closed block a later line may write is not the block below a
-     * checkpoint's spine.
-     *
-     * `fold_child` and `fold_apply` make the container's finalize a fold of
-     * its children's summaries (E4): `fold_child` is a child's summary, as
-     * its container's last child or as any other, and `fold_apply` sets the
-     * container's fields from the sum over the children but the last and the
-     * last child's summary. The engine keeps the sums, so a re-parse that
-     * re-reads some children of a container finalizes it from the summaries
-     * of those children alone.
-     *
-     * `relation_ends` says whether `child`, a child of `container`, is the
-     * last child of one of the container's relations but the last: a child
-     * after it is in another relation and measures its lead from the
-     * container's start, as the first of every relation does. */
-    const markdown_core_node_type *reopen_kinds;
-    uint64_t (*carry_save)(const markdown_core_element_instance *, const markdown_core_node *);
-    void (*carry_restore)(const markdown_core_element_instance *, markdown_core_node *, uint64_t);
-    bool (*relation_ends)(const markdown_core_element_instance *, const markdown_core_node *,
-                          const markdown_core_node *);
-    bool (*writes_below)(const markdown_core_element_instance *, const markdown_core_parser *,
-                         const markdown_core_node *);
-    uint32_t (*fold_child)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                           markdown_core_node *, bool);
-    void (*fold_apply)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *, uint32_t,
-                       uint32_t);
 
     bool (*continue_container)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
                                markdown_core_chunk *, const markdown_core_node *, bool *);

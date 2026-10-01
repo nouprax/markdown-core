@@ -102,26 +102,21 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identif
     }
 }
 
-/* A list, a callout or a table that has no identifier yet takes one from an
- * identifier line after it. */
-bool markdown_core_block_identifier_writes(const markdown_core_node *owner) {
-    return !owner->attributes.anchor.len && (markdown_core_block_type(owner) == MARKDOWN_CORE_NODE_LIST ||
-                                             markdown_core_block_type(owner) == MARKDOWN_CORE_NODE_CALLOUT ||
-                                             markdown_core_block_type(owner) == MARKDOWN_CORE_NODE_TABLE);
-}
-
 bool markdown_core_block_attach_identifier_line(markdown_core_block_identifier_work *work, markdown_core_parser *parser,
                                                 markdown_core_node *parent, markdown_core_chunk *input) {
     markdown_core_node *owner = parent->last_child;
     block_identifier candidate;
     if (parser->indent >= CODE_INDENT || input->data[parser->first_nonspace] != '#' || !owner ||
-        !markdown_core_block_identifier_writes(owner) ||
+        owner->attributes.anchor.len ||
+        (markdown_core_block_type(owner) != MARKDOWN_CORE_NODE_LIST &&
+         markdown_core_block_type(owner) != MARKDOWN_CORE_NODE_CALLOUT &&
+         markdown_core_block_type(owner) != MARKDOWN_CORE_NODE_TABLE) ||
         !S_scan_block_identifier(work, input->data + parser->first_nonspace, input->len - parser->first_nonspace,
                                  &candidate) ||
         !candidate.own_line || candidate.content_end || !markdown_core_block_ends_with_blank_line(parser, owner)) {
         return false;
     }
-    bool followed_by_boundary = !markdown_core_parser_source_line(parser, parser->line_number + 1);
+    bool followed_by_boundary = parser->lookahead_cursor == parser->lookahead_end;
     if (!followed_by_boundary) {
         markdown_core_block_lookahead lookahead;
         markdown_core_chunk next;
@@ -137,6 +132,5 @@ bool markdown_core_block_attach_identifier_line(markdown_core_block_identifier_w
         return false;
     }
     markdown_core_block_set_end_to_current_line(parser, owner);
-    markdown_core_parser_write_closed(parser, owner);
     return true;
 }

@@ -278,11 +278,6 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
                     record.flags |= (uint16_t)facts[i].flag;
                 }
             }
-            for (const markdown_core_node_type *open = structure->reopen_kinds; open && *open; open++) {
-                if (*open == kind) {
-                    record.flags |= MARKDOWN_CORE_KIND_REOPENS;
-                }
-            }
             record.complete = structure->complete_inline;
         }
         if (markdown_core_kind_owns_fields(kind)) {
@@ -596,10 +591,6 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
                 sizes->pointers++;
             }
         }
-        if (elements[i]->writes_below) {
-            sizes->closed_writers++;
-            sizes->pointers++;
-        }
         sizes->steps += S_count_finish_keys(elements[i], sizes->finish_key_counts);
         sizes->state_bytes += markdown_core_state_align(elements[i]->state_size);
         sizes->run_state_bytes += markdown_core_state_align(elements[i]->run_state_size);
@@ -629,8 +620,7 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
 /* SEAL: every table the dialect decides, projected once, into the storage
  * `sizes` was measured for. The tail after the struct holds the finish step
  * entries, then the instances, then the instance-pointer lists (the block
- * families, the inline-content families, the closed-block writers, the inline
- * dispatch), the
+ * families, the inline-content families, the inline dispatch), the
  * instance table and the resolved peers, then the gate tables. Each region's alignment is at most
  * the one before it, so each starts where the one before ends. The element
  * list is copied into the instances rather than taken, so the dialect owns
@@ -681,14 +671,6 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
                 entries[at++] = &instances[i];
             }
         }
-    }
-    dialect->closed_writers = entries + at;
-    dialect->closed_writer_count = sizes->closed_writers;
-    for (size_t i = 0; i < count; i++) {
-        if (instances[i].element->writes_below) {
-            entries[at++] = &instances[i];
-        }
-        dialect->passes_declared |= instances[i].element->postprocess_func != NULL;
     }
     memcpy(dialect->inline_dispatch_offsets, sizes->inline_dispatch_offsets, sizeof(dialect->inline_dispatch_offsets));
     S_project_inline_dispatch(dialect, entries + at);

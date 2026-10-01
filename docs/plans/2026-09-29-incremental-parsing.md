@@ -736,10 +736,11 @@ old node:
   and cannot be matched; its id retires.
 - An old node `O` can match a new node `N` when their kinds are equal and
   `N`'s source range contains the exact image of `O`'s anchor byte (5.2).
-- `N` takes the earliest such old sibling after the one its previous sibling
-  took. Both sequences are in source order and the match is monotone, so it
-  is linear in the region. Siblings whose ranges share bytes, like the cells a
-  table completes at the end of a short row, pair in order.
+  Siblings in one parsed relation have disjoint ranges, so an anchor image
+  lies in at most one candidate.
+- When `N` contains the anchors of several old siblings, it takes the
+  earliest. Both sequences are in source order and the match is monotone, so
+  it is linear in the region.
 - Consequences, each from the one rule:
   - Typing at the start of a paragraph keeps its id: the old first byte
     survives and its image lies inside the extended paragraph.

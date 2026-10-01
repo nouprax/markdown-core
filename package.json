@@ -22,7 +22,6 @@
         "audit:packages": "scripts/audit/check-package-contents.sh",
         "audit:position-places": "node scripts/audit/check-position-places.mjs",
         "audit:reference-order": "node scripts/audit/check-reference-order-independence.mjs",
-        "audit:reparse-contract": "node --test scripts/audit/tests/reparse-contract.test.mjs && node scripts/audit/check-reparse-contract.mjs",
         "audit:repository": "scripts/audit/check-repository.sh",
         "audit:repository:clean": "scripts/audit/check-repository.sh --clean",
         "audit:scope-containment": "node scripts/audit/check-scope-containment.mjs",

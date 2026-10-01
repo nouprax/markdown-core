@@ -69,33 +69,6 @@ bool markdown_core_text_tree_replace(markdown_core_text_tree *text, const markdo
 /* Copies the whole text into `bytes`, which holds its size. */
 void markdown_core_text_tree_copy(const markdown_core_text_tree *text, uint8_t *bytes);
 
-/* An AVL tree of n pieces is at most 1.44 log2(n + 2) high, and a text holds
- * fewer than 2^40 pieces. */
-#define MARKDOWN_CORE_TEXT_TREE_DEPTH 64
-
-/* A READER OF THE PIECES in source order from a byte offset: the piece in
- * hand and the ancestors still to come. Pieces are never changed after they
- * are made, so the bytes a reader hands out stay as they are until the text
- * is next edited. */
-typedef struct markdown_core_text_cursor {
-    markdown_core_text_piece *stack[MARKDOWN_CORE_TEXT_TREE_DEPTH];
-    size_t depth;
-    markdown_core_text_piece *piece;
-} markdown_core_text_cursor;
-
-/* The piece that holds byte `offset`: its bytes, its size and the offset it
- * begins at. False when `offset` is at or past the end of the text. */
-bool markdown_core_text_cursor_seek(markdown_core_text_cursor *cursor, const markdown_core_text_tree *text,
-                                    size_t offset, const uint8_t **bytes, size_t *size, size_t *start);
-/* The piece after the one in hand, or false after the last. */
-bool markdown_core_text_cursor_next(markdown_core_text_cursor *cursor, const uint8_t **bytes, size_t *size);
-
-/* Where the line that holds byte `offset` begins: just after the line
- * terminator before it, or 0. A CR LF pair is one terminator. */
-size_t markdown_core_text_tree_line_start(const markdown_core_text_tree *text, size_t offset);
-/* The byte at `offset`, which is inside the text. */
-uint8_t markdown_core_text_tree_byte(const markdown_core_text_tree *text, size_t offset);
-
 #ifdef __cplusplus
 }
 #endif

@@ -63,9 +63,8 @@ static void prepare_document(const markdown_core_element_instance *self, markdow
 static void observe_inline(const markdown_core_element_instance *self, markdown_core_parser *parser,
                            markdown_core_node *node) {
     const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
-    const markdown_core_chunk *anchor = markdown_core_node_anchor_chunk(node);
-    if (headings && anchor->len) {
-        markdown_core_headings_observe(headings, parser, node, anchor);
+    if (headings) {
+        markdown_core_headings_observe(headings, parser, node);
     }
 }
 static void finish_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
@@ -91,8 +90,9 @@ static void publish_document(const markdown_core_element_instance *self, markdow
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
 }
-static void read_document_prefix(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    markdown_core_properties_parse(self->state, parser);
+static size_t read_document_prefix(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                   const unsigned char *source, size_t length) {
+    return markdown_core_properties_parse(self->state, parser, source, length);
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {

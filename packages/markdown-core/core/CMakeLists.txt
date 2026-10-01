@@ -44,8 +44,6 @@ set(LIBRARY_SOURCES
     houdini_html_u.c
     markdown_core_ctype.c
     text_tree.c
-    summed_tree.c
-    checkpoints.c
     ${HEADERS})
 
 # Keep the engine target private, but make its sources available to the

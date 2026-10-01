@@ -6,8 +6,7 @@
 void markdown_core_paragraph_finalize(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                       markdown_core_node *paragraph) {
     if (!markdown_core_block_resolve_reference_link_definitions(parser, paragraph)) {
-        markdown_core_parser_set_flags(parser, paragraph,
-                                       (uint16_t)(paragraph->flags | MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY));
+        paragraph->flags |= MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY;
         return;
     }
     markdown_core_block_attach_paragraph_identifier(self->state, parser, paragraph);
@@ -74,14 +73,6 @@ static markdown_core_node *open_text(const markdown_core_element_instance *self,
     return container;
 }
 
-/* An identifier line writes the closed block before it (E2). */
-static bool writes_below(const markdown_core_element_instance *self, const markdown_core_parser *parser,
-                         const markdown_core_node *node) {
-    (void)self;
-    (void)parser;
-    return markdown_core_block_identifier_writes(node);
-}
-
 const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
     .state_size = sizeof(markdown_core_block_identifier_work),
     .accepts_lazy = accepts_lazy,
@@ -97,5 +88,4 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
     .open_text_block = open_text,
     .finish_step = finish_step,
     .finish_exit_kinds = PARAGRAPH_EXIT_KINDS,
-    .writes_below = writes_below,
 };
