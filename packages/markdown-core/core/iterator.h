@@ -30,7 +30,8 @@ extern "C" {
  * one's from its `base`, and are gone when the inner walk is DONE. */
 typedef struct {
     markdown_core_node *node;
-    /* The index of the child the walk is inside, among the node's children. */
+    /* The index of the child the walk is inside, among the node's children,
+     * set when the walk steps into them. */
     size_t at;
 } markdown_core_iter_frame;
 
@@ -84,9 +85,7 @@ static inline bool markdown_core_iter_push(markdown_core_iter *iter, markdown_co
         iter->event = MARKDOWN_CORE_EVENT_DONE;
         return false;
     }
-    markdown_core_iter_frame *frame = &path->frames[path->count++];
-    frame->node = node;
-    frame->at = 0;
+    path->frames[path->count++].node = node;
     iter->node = node;
     return true;
 }
@@ -99,6 +98,7 @@ static inline markdown_core_event_type markdown_core_iter_step(markdown_core_ite
             iter->event = MARKDOWN_CORE_EVENT_EXIT;
         } else {
             /* The node's frame was pushed inside its first child. */
+            path->frames[path->count - 1].at = 0;
             markdown_core_iter_push(iter, markdown_core_children_at(children, 0));
         }
     } else if (iter->event == MARKDOWN_CORE_EVENT_EXIT) {
@@ -114,7 +114,6 @@ static inline markdown_core_event_type markdown_core_iter_step(markdown_core_ite
                 /* The next sibling takes the exited node's frame. */
                 markdown_core_node *next = markdown_core_children_at(children, parent->at);
                 parent[1].node = next;
-                parent[1].at = 0;
                 iter->node = next;
                 iter->event = MARKDOWN_CORE_EVENT_ENTER;
             } else {
