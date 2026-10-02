@@ -102,16 +102,23 @@ static inline markdown_core_event_type markdown_core_iter_step(markdown_core_ite
             markdown_core_iter_push(iter, markdown_core_children_at(children, 0));
         }
     } else if (iter->event == MARKDOWN_CORE_EVENT_EXIT) {
-        if (--path->count == iter->base) {
+        size_t count = path->count;
+        if (count - 1 == iter->base) {
+            path->count = count - 1;
             iter->node = NULL;
             iter->event = MARKDOWN_CORE_EVENT_DONE;
         } else {
-            markdown_core_iter_frame *parent = &path->frames[path->count - 1];
+            markdown_core_iter_frame *parent = &path->frames[count - 2];
             const markdown_core_run *children = parent->node->children;
             if (++parent->at < markdown_core_children_count(children)) {
+                /* The next sibling takes the exited node's frame. */
+                markdown_core_node *next = markdown_core_children_at(children, parent->at);
+                parent[1].node = next;
+                parent[1].at = 0;
+                iter->node = next;
                 iter->event = MARKDOWN_CORE_EVENT_ENTER;
-                markdown_core_iter_push(iter, markdown_core_children_at(children, parent->at));
             } else {
+                path->count = count - 1;
                 iter->node = parent->node;
             }
         }
