@@ -38,10 +38,12 @@ typedef struct {
  * can take the nodes after its opener, in O(1) each; the nodes inside a node
  * an item holds are already that node's children tree. When the run ends its
  * nodes become the container's children, in order. An item holds its node's
- * reference. */
+ * reference. An item's first word is its next link, the word a released
+ * slot links its pool through (slab.h), so a range of items leaving the run
+ * is already a chain the pool takes whole. */
 struct markdown_core_inline_item {
+    struct markdown_core_inline_item *next, *prev;
     markdown_core_node *node;
-    struct markdown_core_inline_item *prev, *next;
 };
 
 struct delimiter {
