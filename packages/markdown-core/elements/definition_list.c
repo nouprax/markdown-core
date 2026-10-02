@@ -71,28 +71,35 @@ static bool markdown_core_block_definition_marker(markdown_core_chunk *input, in
  * admitted any line with ': ' in it. Every answer of false is a line the
  * transaction would refuse too. */
 static bool definition_next_lines_admit(markdown_core_parser *parser) {
-    for (int number = parser->line_number + 1; number <= parser->line_number + 2; number++) {
-        markdown_core_input_line *line = markdown_core_parser_source_line(parser, number);
-        if (!line) {
-            break;
-        }
-        const unsigned char *at = markdown_core_parser_line_bytes(parser, line), *end = at + (line->end - line->start);
-        while (at < end && parser->dialect->container_prefix[*at]) {
+    size_t at = parser->lookahead_cursor, end = parser->input_text.size;
+    for (int line = 0; line < 2 && at < end; line++) {
+        unsigned char byte = *markdown_core_parser_input_at(parser, at);
+        while (parser->dialect->container_prefix[byte]) {
             /* A declared prefix byte that is also a marker byte -- a
              * container whose continuation strips ':' or '~' -- cannot be
              * told from the marker here; only the transaction can, so the
              * key admits. No element declares one today; the rule is what
              * lets one do so without this key silently refusing the
              * definitions inside it. */
-            if (*at == ':' || *at == '~') {
+            if (byte == ':' || byte == '~') {
                 return true;
             }
-            at++;
+            if (++at == end) {
+                return false;
+            }
+            byte = *markdown_core_parser_input_at(parser, at);
         }
-        if (at < end) {
-            return (*at == ':' || *at == '~') && (at + 1 == end || markdown_core_is_whitespace(at[1]));
+        if (!markdown_core_is_line_end(byte)) {
+            return (byte == ':' || byte == '~') &&
+                   (at + 1 == end || markdown_core_is_whitespace(*markdown_core_parser_input_at(parser, at + 1)));
         }
         /* Blank once stripped: the transaction skips one such line. */
+        if (byte == '\r' && ++at < end) {
+            byte = *markdown_core_parser_input_at(parser, at);
+        }
+        if (at < end && byte == '\n') {
+            at++;
+        }
     }
     return false;
 }
