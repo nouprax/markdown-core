@@ -104,10 +104,12 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identif
 
 bool markdown_core_block_attach_identifier_line(markdown_core_block_identifier_work *work, markdown_core_parser *parser,
                                                 markdown_core_node *parent, markdown_core_chunk *input) {
+    if (parser->indent >= CODE_INDENT || input->data[parser->first_nonspace] != '#') {
+        return false;
+    }
     markdown_core_node *owner = markdown_core_node_last_child(parent);
     block_identifier candidate;
-    if (parser->indent >= CODE_INDENT || input->data[parser->first_nonspace] != '#' || !owner ||
-        owner->attributes.anchor.len ||
+    if (!owner || owner->attributes.anchor.len ||
         (markdown_core_block_type(owner) != MARKDOWN_CORE_NODE_LIST &&
          markdown_core_block_type(owner) != MARKDOWN_CORE_NODE_CALLOUT &&
          markdown_core_block_type(owner) != MARKDOWN_CORE_NODE_TABLE) ||
