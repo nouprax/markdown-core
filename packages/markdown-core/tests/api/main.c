@@ -1129,6 +1129,74 @@ static void directive_element_accessors(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 }
 
+/* A CHILDREN TREE IS A SEQUENCE. Inserting and taking children anywhere --
+ * at the end, as an open block grows, and in the middle and at the front --
+ * leaves the children in the order a plain array would hold them, and keeps
+ * every invariant of the tree, while another tree that shares its runs keeps
+ * its own children unchanged. */
+static void children_tree_sequence(test_batch_runner *runner) {
+    enum { most = 1200 };
+    markdown_core_node *nodes[most];
+    for (size_t i = 0; i < most; i++) {
+        nodes[i] = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
+    }
+    markdown_core_node *live = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+    markdown_core_node *kept = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+    markdown_core_node *expected[most], *shared[most];
+    size_t count = 0, shared_count = 0, next = 0;
+    uint32_t state = 7;
+    bool ordered = true, valid = true;
+    for (int round = 0; round < 6000; round++) {
+        state = state * 1103515245u + 12345u;
+        uint32_t draw = state >> 8;
+        /* Growth by appending, then mixed changes, then shrinking from the
+         * end and from the front, so that last runs empty and tiers fold. */
+        int phase = round / 1500;
+        bool insert = phase == 0 ? draw % 8 != 0 : phase == 1 ? draw % 2 == 0 : false;
+        if (!count || (insert && count < most)) {
+            size_t at = phase == 0 && draw % 4 ? count : (draw >> 4) % (count + 1);
+            markdown_core_node *child = nodes[next++ % most];
+            markdown_core_node_retain(child);
+            OK(runner, markdown_core_node_insert_child(NULL, live, at, child), "insert %d", round);
+            memmove(&expected[at + 1], &expected[at], (count - at) * sizeof(expected[0]));
+            expected[at] = child;
+            count++;
+        } else if (count) {
+            size_t at = phase == 2   ? count - 1 - (draw >> 4) % (count < 3 ? count : 3)
+                        : phase == 3 ? (draw >> 4) % (count < 3 ? count : 3)
+                                     : (draw >> 4) % count;
+            markdown_core_node *taken = markdown_core_node_take_child(NULL, live, at);
+            ordered = ordered && taken == expected[at];
+            markdown_core_node_free(taken);
+            memmove(&expected[at], &expected[at + 1], (count - at - 1) * sizeof(expected[0]));
+            count--;
+        }
+        if (round % 97 == 0) {
+            /* The other tree takes the live tree's runs as they stand. */
+            markdown_core_node_pool_release_children(NULL, kept->children);
+            kept->children = markdown_core_run_retain(live->children);
+            memcpy(shared, expected, count * sizeof(expected[0]));
+            shared_count = count;
+        }
+        valid = valid && markdown_core_node_check(live, NULL) == 0 && markdown_core_node_check(kept, NULL) == 0;
+        ordered = ordered && markdown_core_node_children_count(live) == count &&
+                  markdown_core_node_children_count(kept) == shared_count;
+        for (size_t i = 0; ordered && i < count; i++) {
+            ordered = child_at(live, i) == expected[i];
+        }
+        for (size_t i = 0; ordered && i < shared_count; i++) {
+            ordered = child_at(kept, i) == shared[i];
+        }
+    }
+    OK(runner, ordered, "the children are the sequence's, in both trees");
+    OK(runner, valid, "every change keeps both trees' invariants");
+    markdown_core_node_free(live);
+    markdown_core_node_free(kept);
+    for (size_t i = 0; i < most; i++) {
+        markdown_core_node_free(nodes[i]);
+    }
+}
+
 static void node_check(test_batch_runner *runner) {
     markdown_core_node *doc = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
     markdown_core_node *p1 = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
@@ -11765,6 +11833,7 @@ int main(void) {
     table_margin_is_shared_indentation(runner);
     pipe_rows_are_one_row(runner);
     node_check(runner);
+    children_tree_sequence(runner);
     iterator(runner);
     iterator_delete(runner);
     create_tree(runner);

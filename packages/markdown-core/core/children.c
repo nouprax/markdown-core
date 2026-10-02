@@ -100,11 +100,16 @@ static bool S_descend(markdown_core_node_pool *pool, markdown_core_run **root, s
 }
 
 /* The insertion of `node` at `at` in the full tier-zero run of `path`: each
- * full run from tier zero up splits in halves, and a root goes above them
- * when every run on the path is full. The new runs are made before anything
- * changes. */
+ * full run from tier zero up splits, and a root goes above them when every
+ * run on the path is full. A run splits in halves, except at the tree's end,
+ * where it stays full and the entry starts the next run. The new runs are
+ * made before anything changes. */
 static bool S_insert_splitting(markdown_core_node_pool *pool, markdown_core_run **root, S_path *path, size_t at,
                                markdown_core_node *node) {
+    bool end = at == path->runs[path->tiers - 1]->count;
+    for (int tier = 0; end && tier < path->tiers - 1; tier++) {
+        end = path->at[tier] + 1 == path->runs[tier]->count;
+    }
     markdown_core_run *made[MARKDOWN_CORE_RUN_TIERS + 1];
     int splits = 0;
     while (splits < path->tiers && path->runs[path->tiers - 1 - splits]->count == MARKDOWN_CORE_RUN_WIDTH) {
@@ -132,6 +137,15 @@ static bool S_insert_splitting(markdown_core_node_pool *pool, markdown_core_run 
             S_put(run, at, entry);
             run->total++;
             entry = NULL;
+        } else if (end) {
+            /* The entry starts the run after the full last run of its tier,
+             * which goes into the parent after it. */
+            markdown_core_run *next = made[used++];
+            next->tier = run->tier;
+            next->entries[0] = entry;
+            next->count = 1;
+            S_recount(next);
+            entry = next;
         } else {
             /* Split the full run in halves and put the entry in its half; the
              * right half then goes into the parent after the left. */
@@ -222,21 +236,33 @@ bool markdown_core_children_remove_joining(markdown_core_node_pool *pool, markdo
             return false;
         }
     }
+    /* The runs on the path that are the last of their tier. */
+    bool last[MARKDOWN_CORE_RUN_TIERS];
+    last[0] = true;
+    for (int tier = 1; tier < path.tiers; tier++) {
+        last[tier] = last[tier - 1] && path.at[tier - 1] + 1 == path.runs[tier - 1]->count;
+    }
     markdown_core_run *leaf = path.runs[path.tiers - 1];
     *removed = (markdown_core_node *)S_take(leaf, path.at[path.tiers - 1]);
     for (int tier = 0; tier < path.tiers; tier++) {
         path.runs[tier]->total--;
     }
-    /* Restore every run's half from tier zero up: borrow an entry from a
-     * neighbour that can spare one, or else join the run and its neighbour,
-     * which takes an entry from the parent. */
+    /* Restore what every run must hold from tier zero up: borrow an entry
+     * from a neighbour that can spare one, or else join the run and its
+     * neighbour, which takes an entry from the parent. A last run left empty
+     * that is its parent's only entry leaves the parent empty in its turn. */
     for (int tier = path.tiers - 1; tier > 0; tier--) {
         markdown_core_run *run = path.runs[tier];
-        if (run->count >= S_HALF) {
+        if (run->count >= (last[tier] ? 1u : S_HALF)) {
             break;
         }
         markdown_core_run *parent = path.runs[tier - 1];
         size_t k = path.at[tier - 1];
+        if (parent->count == 1) {
+            S_take(parent, 0);
+            markdown_core_run_free_slot(pool, run);
+            continue;
+        }
         size_t neighbour = k ? k - 1 : k + 1;
         markdown_core_run *other = (markdown_core_run *)parent->entries[neighbour];
         if (other->count > S_HALF) {
@@ -301,28 +327,6 @@ markdown_core_run *markdown_core_children_build_join(markdown_core_node_pool *po
         }
     }
     for (;;) {
-        /* Every run of the tier is full but the last; it takes half of what
-         * it and the one before it hold when it has less. */
-        markdown_core_run *before = first, *last;
-        while ((last = before->hold.released)->hold.released) {
-            before = last;
-        }
-        if (last->count < S_HALF) {
-            size_t moved = (size_t)(before->count + last->count) / 2 - last->count;
-            memmove(&last->entries[moved], last->entries, last->count * sizeof(last->entries[0]));
-            memcpy(last->entries, &before->entries[before->count - moved], moved * sizeof(last->entries[0]));
-            uint32_t total = (uint32_t)moved;
-            if (last->tier) {
-                total = 0;
-                for (size_t i = 0; i < moved; i++) {
-                    total += ((markdown_core_run *)last->entries[i])->total;
-                }
-            }
-            before->count = (uint8_t)(before->count - moved);
-            before->total -= total;
-            last->count = (uint8_t)(last->count + moved);
-            last->total += total;
-        }
         /* The tier's runs, in order, under the runs of the tier above. */
         markdown_core_run *above_first = NULL, *above = NULL;
         while (first) {
@@ -378,15 +382,19 @@ size_t markdown_core_children_check(const markdown_core_run *root) {
     }
     /* Depth first over the runs, at most a run's width pending per tier. */
     const markdown_core_run *pending[MARKDOWN_CORE_RUN_TIERS * MARKDOWN_CORE_RUN_WIDTH];
+    /* Whether each pending run is the last of its tier. */
+    bool last[MARKDOWN_CORE_RUN_TIERS * MARKDOWN_CORE_RUN_WIDTH];
     size_t count = 0, errors = 0;
     if (root->tier >= MARKDOWN_CORE_RUN_TIERS) {
         return 1;
     }
-    pending[count++] = root;
+    pending[count] = root;
+    last[count++] = true;
     while (count) {
         const markdown_core_run *run = pending[--count];
-        errors += !run->hold.refs || !run->count || run->count > MARKDOWN_CORE_RUN_WIDTH ||
-                  (run != root && run->count < S_HALF);
+        bool ends = last[count];
+        errors +=
+            !run->hold.refs || !run->count || run->count > MARKDOWN_CORE_RUN_WIDTH || (!ends && run->count < S_HALF);
         if (!run->tier) {
             errors += run->total != run->count;
             for (size_t i = 0; i < run->count; i++) {
@@ -403,7 +411,8 @@ size_t markdown_core_children_check(const markdown_core_run *root) {
                 continue;
             }
             total += entry->total;
-            pending[count++] = entry;
+            pending[count] = entry;
+            last[count++] = ends && i + 1 == run->count;
         }
         errors += total != run->total;
     }

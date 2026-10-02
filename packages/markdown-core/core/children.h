@@ -17,12 +17,14 @@ struct markdown_core_node;
  * (docs/plans/2026-09-29-incremental-parsing.md, 5.1 and 5.11).
  *
  * A run holds up to MARKDOWN_CORE_RUN_WIDTH entries: nodes when its tier is
- * zero, and runs of the tier below otherwise. Every run of a tree that is not
- * its root holds at least half the width, and every tier-zero run is at the
- * same depth, so finding, inserting and removing a child costs O(log
- * children). Runs are storage, like tree-sitter's hidden repetition nodes:
- * the children are their tier-zero entries in order, and nothing else sees a
- * run.
+ * zero, and runs of the tier below otherwise. Every run but the last of its
+ * tier -- the runs of the tree's end, the edge an open block grows along --
+ * holds at least half the width, every run holds an entry, and every
+ * tier-zero run is at the same depth, so finding, inserting and removing a
+ * child costs O(log children). A tree grows at its end the way a builder
+ * fills it: a child appended to a full last run starts the next run and
+ * leaves the full one as it is, so appended children fill their runs. Runs are storage, like tree-sitter's hidden
+ * repetition nodes: the children are their tier-zero entries in order, and nothing else sees a run.
  *
  * A run is a shared value with a reference count, as a node is. A tree that
  * holds a run another tree holds copies it before changing it, so a change
@@ -130,23 +132,26 @@ static inline bool markdown_core_children_append(markdown_core_node_pool *pool, 
 }
 
 /* `remove`'s step when a run on its path is shared or its tier-zero run
- * would fall below half: the runs on the path are copied, and each borrows
- * from or joins a neighbour as it must. */
+ * would fall below what it must hold: the runs on the path are copied, and
+ * each borrows from or joins a neighbour as it must. */
 bool markdown_core_children_remove_joining(markdown_core_node_pool *pool, markdown_core_run **root, size_t index,
                                            struct markdown_core_node **removed);
 
 /* Takes the child at `index` out, handing its reference to the caller in
  * `removed`. False, with nothing changed, when storage runs out. A tree held
- * only here whose tier-zero run keeps half the width, or is the root, gives
- * the child up in place. */
+ * only here whose tier-zero run keeps another entry, and half the width when
+ * it is not the last of its tier, gives the child up in place. */
 static inline bool markdown_core_children_remove(markdown_core_node_pool *pool, markdown_core_run **root, size_t index,
                                                  struct markdown_core_node **removed) {
     markdown_core_run *run = *root;
     size_t at = index;
+    bool last = true;
     while (run->hold.refs == 1 && run->tier) {
-        run = (markdown_core_run *)run->entries[markdown_core_run_find(run, &at)];
+        size_t k = markdown_core_run_find(run, &at);
+        last = last && k + 1 == run->count;
+        run = (markdown_core_run *)run->entries[k];
     }
-    if (run->hold.refs != 1 || (run != *root && run->count <= MARKDOWN_CORE_RUN_WIDTH / 2) || run->count == 1) {
+    if (run->hold.refs != 1 || run->count == 1 || (!last && run->count <= MARKDOWN_CORE_RUN_WIDTH / 2)) {
         return markdown_core_children_remove_joining(pool, root, index, removed);
     }
     for (run = *root; run->tier;) {
@@ -185,9 +190,9 @@ static inline markdown_core_run *markdown_core_run_new(markdown_core_node_pool *
 
 /* A TREE BUILT FROM A SEQUENCE: an open run of inline nodes freezing into
  * its owner's children (5.11). `put` fills tier-zero runs in order, each to
- * the width, and `end` evens the last two runs of a tier so that each holds
- * at least half the width, then joins the tier's runs under the tier above
- * the same way, until one run, the root, holds them all. Nothing the caller
+ * the width, and `end` joins the tier's runs under the tier above the same
+ * way, until one run, the root, holds them all: the tree appending them one
+ * by one would make. Nothing the caller
  * hands over is the builder's until `end` succeeds: on a failure the builder
  * gives back its runs and the caller still holds every child it put. */
 typedef struct {
@@ -252,7 +257,8 @@ static inline markdown_core_run *markdown_core_children_build_end(markdown_core_
 }
 
 /* The number of broken invariants in the tree: a run with no holder, an
- * empty or overfull run, a run below the root less than half full, a total
+ * empty or overfull run, a run less than half full that is not the last of
+ * its tier, a total
  * that is not its entries' sum, or an entry of the wrong tier. */
 size_t markdown_core_children_check(const markdown_core_run *root);
 
