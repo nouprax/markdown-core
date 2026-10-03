@@ -792,6 +792,7 @@ size_t markdown_core_properties_parse(markdown_core_properties_work *work, markd
         return 0;
     }
     parser->root->as.document->metadata = node;
+    markdown_core_parser_complete_field(parser, node, parser->root);
     parser->line_number = (int)(p.count + 2);
     parser->last_line_end = (bufsize_t)(close + 3);
     return consumed;

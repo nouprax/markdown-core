@@ -764,6 +764,7 @@ static markdown_core_finish_result postprocess_text(markdown_core_parser *parser
             markdown_core_parser_release_node(parser, link_node);
             break;
         }
+        markdown_core_parser_publish_node(parser, link_text, link_node);
         if (!markdown_core_parser_append(parser, link_node, link_text)) {
             markdown_core_parser_release_node(parser, link_node);
             break;

@@ -223,13 +223,14 @@ typedef struct {
 } markdown_core_place;
 
 /* WHERE A NODE IS, in bytes of the UTF-8 source, and never in lines or
- * columns. While a parse builds the tree every node holds its absolute
- * `place`. Publishing the document (markdown_core_publish_tree) rewrites
- * each node's place as its `extent`: `lead`, the signed distance from the end
- * of the previous node in the same relation (or from its owner's start, for
- * the first node), and `span`, the length of its range. Relative extents are
- * what lets a node keep its value when text before it moves. A published node
- * holds only its extent; nothing reads a place after publishing. */
+ * columns. A node holds its absolute `place` until its owner completes:
+ * the owner, when the parse publishes it (markdown_core_publish_node),
+ * rewrites the place of every node of its relations as its `extent`: `lead`,
+ * the signed distance from the end of the previous node in the same relation
+ * (or from the owner's start, for the first node), and `span`, the length of
+ * its range; the root's extent is measured from 0. Relative extents are what
+ * lets a node keep its value when text before it moves. A published tree
+ * holds only extents. */
 typedef union {
     markdown_core_place place;
     markdown_core_extent extent;

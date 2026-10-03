@@ -195,7 +195,7 @@ static markdown_core_node *markdown_core_block_open_definition(markdown_core_def
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     /* The term is a field, complete once made. */
-    markdown_core_parser_complete(parser, term, NULL);
+    markdown_core_parser_complete_field(parser, term, definition);
     markdown_core_block_advance_offset(parser, input, input->len - 1 - parser->offset, false);
     return definition;
 }

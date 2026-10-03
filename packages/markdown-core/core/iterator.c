@@ -76,18 +76,6 @@ bool markdown_core_iter_take_current(markdown_core_iter *iter, markdown_core_nod
     return true;
 }
 
-bool markdown_core_iter_replace_current(markdown_core_iter *iter, markdown_core_node_pool *pool,
-                                        markdown_core_node *node, markdown_core_node **replaced) {
-    assert(iter->event == MARKDOWN_CORE_EVENT_EXIT);
-    markdown_core_iter_frame *parent = &iter->path->frames[iter->path->count - 2];
-    if (!markdown_core_children_replace(pool, &parent->node->children, parent->at, node, replaced)) {
-        return false;
-    }
-    iter->path->frames[iter->path->count - 1].node = node;
-    iter->node = node;
-    return true;
-}
-
 bool markdown_core_iter_take_next(markdown_core_iter *iter, markdown_core_node_pool *pool, markdown_core_node **taken) {
     markdown_core_iter_frame *parent = &iter->path->frames[iter->path->count - 2];
     return markdown_core_children_remove(pool, &parent->node->children, parent->at + 1, taken);

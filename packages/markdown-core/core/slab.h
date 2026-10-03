@@ -146,7 +146,9 @@ static inline void *markdown_core_slab_take(markdown_core_slabs *slabs, markdown
         memcpy(&pool->released, storage, sizeof(pool->released));
         return storage;
     }
-    if ((size_t)(slabs->end - slabs->next) < MARKDOWN_CORE_SLOT_STRIDE(bytes) && !markdown_core_slabs_grow(slabs)) {
+    /* Before the first slab `next` and `end` point at nothing to subtract. */
+    if ((!slabs->current || (size_t)(slabs->end - slabs->next) < MARKDOWN_CORE_SLOT_STRIDE(bytes)) &&
+        !markdown_core_slabs_grow(slabs)) {
         return NULL;
     }
     slot = (markdown_core_slot_header *)slabs->next;

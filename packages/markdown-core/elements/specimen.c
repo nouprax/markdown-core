@@ -70,7 +70,7 @@ void markdown_core_block_prepare_specimens(const markdown_core_element_instance 
         return;
     }
     for (size_t i = 0; i < collection->count; i++) {
-        markdown_core_node *definition = collection->values[i];
+        markdown_core_node *definition = collection->values[i].node;
         markdown_core_optional_chunk *id = &definition->as.specimen->label;
         if (id->has_value &&
             !markdown_core_key_index_insert(&state->ids, id->value.data, id->value.len, definition, 0, NULL)) {

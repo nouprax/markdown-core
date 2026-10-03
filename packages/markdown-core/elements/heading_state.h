@@ -9,6 +9,9 @@
  * nodes and resources remain owned by the tree and reference map. */
 typedef struct {
     markdown_core_node *node;
+    /* Where the heading starts, recorded as it closes, for the source order
+     * its collection is put in once the heading holds its extent. */
+    uint64_t start;
     markdown_core_inline_state *pending;
     markdown_core_resource *resource;
 } markdown_core_heading_parse;

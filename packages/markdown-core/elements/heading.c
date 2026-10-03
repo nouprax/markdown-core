@@ -41,8 +41,10 @@ void markdown_core_block_register_heading(const markdown_core_element_instance *
         headings->values = values;
         headings->capacity = capacity;
     }
-    headings->values[headings->count++] = (markdown_core_heading_parse){.node = node};
+    headings->values[headings->count++] = (markdown_core_heading_parse){.node = node, .start = node->where.place.start};
 }
+
+static uint64_t heading_start(const void *entry) { return ((const markdown_core_heading_parse *)entry)->start; }
 
 static markdown_core_key_index_slot *anchor_slot(markdown_core_parser *parser, markdown_core_heading_state *state,
                                                  markdown_core_chunk key) {
@@ -109,7 +111,7 @@ void markdown_core_headings_prepare(const markdown_core_element_instance *self, 
     markdown_core_heading_state *state = self->state;
     markdown_core_heading_collection *headings = &state->headings;
     if (!markdown_core_order_source_entries(&parser->source_order, headings->values, headings->count,
-                                            sizeof(*headings->values), markdown_core_source_key)) {
+                                            sizeof(*headings->values), heading_start)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
@@ -418,7 +420,7 @@ void markdown_core_prepare_heading(const markdown_core_element_instance *self, m
                 markdown_core_map_record *record = markdown_core_reference_create(parser->refmap, &label, resource);
                 if (record) {
                     record->implicit = true;
-                    record->source_key = heading->node->where.place.start;
+                    record->source_key = heading->start;
                     heading->resource = record->resource;
                 }
             }

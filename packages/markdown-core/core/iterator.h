@@ -161,11 +161,6 @@ bool markdown_core_iter_insert_before(markdown_core_iter *iter, markdown_core_no
  * nothing changed, when storage runs out. */
 bool markdown_core_iter_take_current(markdown_core_iter *iter, markdown_core_node_pool *pool,
                                      markdown_core_node **taken);
-/* At an EXIT: puts `node` in the current node's place, taking the caller's
- * hold and handing the replaced node's to the caller; the walk goes on with
- * what follows. False, with nothing changed, when storage runs out. */
-bool markdown_core_iter_replace_current(markdown_core_iter *iter, markdown_core_node_pool *pool,
-                                        markdown_core_node *node, markdown_core_node **replaced);
 /* Takes the sibling just after the current node out of its parent and hands
  * the hold to the caller. False, with nothing changed, when storage runs
  * out. */

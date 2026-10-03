@@ -36,10 +36,9 @@ typedef enum {
  * `last_id`, and a matched node equal to its old node as a value is that old
  * node. On success the parse owns `previous`: it is the returned root, or it
  * is released into `pool` with every other node it retires, and `last_id` is
- * the last id issued. `node_count` is the number of nodes in `previous`,
- * and on success the number in the published tree. A fresh parse continues
- * nothing: `previous` is NULL and `last_id` is 0, so its root is 1 and every
- * node is numbered in canonical walk order.
+ * the last id issued. A fresh parse continues nothing: `previous` is NULL
+ * and `last_id` is 0, so its nodes are numbered from 1 in the order the parse
+ * completes them.
  *
  * `pool` lends the parse every node and resource slot it takes (node.h); it
  * outlives the parse, and its owner disposes it. */
@@ -49,7 +48,6 @@ typedef struct markdown_core_revision {
     const markdown_core_byte_edit *edits;
     size_t edit_count;
     uint64_t last_id;
-    size_t node_count;
 } markdown_core_revision;
 
 /* Immutable runs map logical content bytes to authored byte intervals.
@@ -101,7 +99,11 @@ typedef struct {
  * for the index citations resolve against. Every definition is owned by the
  * block tree; the collection only borrows it until the document finishes. */
 typedef struct {
-    struct markdown_core_node **values;
+    /* Each definition and where it starts, recorded when it opens. */
+    struct markdown_core_definition_start {
+        struct markdown_core_node *node;
+        uint64_t start;
+    } *values;
     size_t count;
     size_t capacity;
 } markdown_core_definition_collection;
@@ -156,11 +158,15 @@ struct markdown_core_parser {
     markdown_core_iter *walk;
     /* THE INLINE ROOTS (docs/plans/2026-09-29-incremental-parsing.md, 5.8):
      * every complete block whose content is inline, and every inline field of
-     * a block, with the node that holds it as a child (NULL for a field). The
-     * blocks add them as they complete, and the inline stage parses and
-     * completes each one; the list only borrows the nodes. */
+     * a block, with the node that holds it as a child (NULL for a field), and
+     * the published node whose relation the content joins -- the root, or the
+     * owner of the group the root holds -- with that node's start, recorded
+     * while it held its place. The blocks add them as they complete, and the
+     * inline stage parses and completes each one; the list only borrows the
+     * nodes. */
     struct markdown_core_inline_root {
-        struct markdown_core_node *node, *parent;
+        struct markdown_core_node *node, *parent, *owner;
+        uint32_t start;
     } *inline_roots;
     size_t inline_root_count, inline_root_capacity;
     /* The inline input being read (node.h, markdown_core_bytes), which every
@@ -189,6 +195,9 @@ struct markdown_core_parser {
     struct markdown_core_block_input {
         struct markdown_core_node *owner;
         uint32_t around;
+        /* Where the owner starts, recorded while it held its place: its
+         * blocks are measured from it once they are read. */
+        uint32_t start;
     } *block_inputs;
     size_t block_input_count, block_input_capacity, block_input_cursor;
     /* Geometry and grammar facts for the active immutable input. The driver
@@ -598,15 +607,17 @@ static inline markdown_core_node *markdown_core_parser_open_parent(const markdow
     return at ? parser->path.frames[at - 1].node : NULL;
 }
 
-/* THE FINISH WALK'S CURRENT NODE, for the steps it runs: its parent, and the
- * changes a step may make to its place (iterator.h). The walk the parser is
- * in is `parser->walk`. */
-static inline markdown_core_node *markdown_core_parser_walk_parent(const markdown_core_parser *parser) {
-    return markdown_core_iter_parent(parser->walk);
-}
-/* Puts `node` just before the current node, taking the caller's hold; false,
- * with the parse failed and `node` released, when storage runs out. */
+/* THE INLINE ROOT PASS'S CURRENT NODE, for the steps it runs: the changes a
+ * step may make to its place (iterator.h). The pass the parser is in is
+ * `parser->walk`. */
+void markdown_core_parser_publish_node(markdown_core_parser *parser, struct markdown_core_node *node,
+                                       const struct markdown_core_node *owner);
+/* Puts `node`, complete, just before the current node, taking the caller's
+ * hold. The walk does not visit it, so it is published here, held by the
+ * current node's parent; its maker published what it holds. False, with the
+ * parse failed and `node` released, when storage runs out. */
 static inline bool markdown_core_parser_walk_insert_before(markdown_core_parser *parser, markdown_core_node *node) {
+    markdown_core_parser_publish_node(parser, node, markdown_core_iter_parent(parser->walk));
     if (markdown_core_iter_insert_before(parser->walk, parser->pool, node)) {
         return true;
     }
@@ -623,20 +634,6 @@ static inline bool markdown_core_parser_walk_release(markdown_core_parser *parse
         return false;
     }
     markdown_core_parser_release_node(parser, node);
-    return true;
-}
-
-/* At the current node's EXIT: puts `node` in its place, taking the caller's
- * hold, and releases the node replaced; false, with the parse failed and
- * `node` released, when storage runs out. */
-static inline bool markdown_core_parser_walk_replace(markdown_core_parser *parser, markdown_core_node *node) {
-    markdown_core_node *replaced;
-    if (!markdown_core_iter_replace_current(parser->walk, parser->pool, node, &replaced)) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        markdown_core_parser_release_node(parser, node);
-        return false;
-    }
-    markdown_core_parser_release_node(parser, replaced);
     return true;
 }
 
@@ -792,24 +789,38 @@ void markdown_core_source_order_dispose(markdown_core_source_order *workspace);
 /* The walk stack with room for `count` entries of `size` bytes, keeping what
  * it holds, or NULL when that much cannot be allocated. */
 void *markdown_core_parser_walk_stack(markdown_core_parser *parser, size_t count, size_t size);
-/* The document's observation of a complete node (`observe_inline`): a node's
- * explicit anchor is reserved before the headings are given theirs. A block
- * is observed when it completes, an inline node when its root's pass
- * reaches it, and a closed block whose anchor a later line writes
- * (block_identifier.c) when it is written. */
+/* The document's observation of a node (`observe_node`): its explicit
+ * anchor, which is reserved before the headings are given theirs. A node is
+ * observed when it completes, and a closed block whose anchor a later line
+ * writes (block_identifier.c) when it is written. */
 void markdown_core_parser_observe(markdown_core_parser *parser, markdown_core_node *node);
 
-/* COMPLETES `node`, a block the parse has finished making (5.8): the
- * paragraph of only definitions still standing as its last child is
- * dropped, and then a node whose content is inline joins the inline roots,
- * which complete it when their parse ends, while any other node runs the
- * steps declared at its kind's EXIT now. `parent` holds `node` as a child,
- * or is NULL when `node` is a field. A block the line machine closes is
- * completed by `markdown_core_block_finalize`; a node an element makes
- * closed (a table's row or cell, a definition's term, a callout's title, a
- * caption, a block directive's label) is completed by that element once it
- * is made. */
+/* A NODE IS COMPLETE WHEN IT IS MADE (docs/plans/2026-09-29-incremental-
+ * parsing.md, 5.8). Completing `node`, a block the parse has finished
+ * making, drops the paragraph of only definitions still standing as its last
+ * child; then a node whose content is inline joins the inline roots, whose
+ * pass runs its steps once its content is parsed, while any other node runs
+ * the steps declared at its kind's EXIT now. The document observes it and
+ * publishes it (element.h, `publish_node`): it takes its id, and the nodes
+ * of its relations their extents, so every node it holds is complete before
+ * it is, and it holds its own place until its owner completes. `parent`
+ * holds `node` as a child, or is NULL for the document's root. A block the
+ * line machine closes is completed by `markdown_core_block_finalize`; a node
+ * an element makes closed (a table's row or cell) is completed by that
+ * element once it is made. */
 void markdown_core_parser_complete(markdown_core_parser *parser, markdown_core_node *node, markdown_core_node *parent);
+/* Completes `node`, a field of `owner` (a definition's term, a callout's
+ * title, a caption, a block directive's label, the document's metadata), as
+ * above; its steps see no parent. */
+void markdown_core_parser_complete_field(markdown_core_parser *parser, markdown_core_node *node,
+                                         markdown_core_node *owner);
+/* Publishes `node`, which a step made complete and puts in the tree, held
+ * by `owner` (declared with the walk's operations above). */
+/* `field` joined `owner`, which was published and holds its place, after
+ * `owner` completed (a caption after its table): it is measured in its
+ * relation. */
+void markdown_core_parser_measure_field(markdown_core_parser *parser, const markdown_core_node *owner,
+                                        const markdown_core_node *field);
 int markdown_core_order_source_entries(markdown_core_source_order *workspace, void *entries, size_t count,
                                        size_t stride, uint64_t (*key)(const void *));
 

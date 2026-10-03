@@ -140,9 +140,23 @@ struct markdown_core_element {
     void (*prepare_document)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*finish_document)(const markdown_core_element_instance *, markdown_core_parser *);
     /* The last step of the parse: the tree is final, and the owner publishes
-     * it (ids, extents, definition tables). */
+     * the document (its lookup tables; a revision's identity matching). */
     void (*publish_document)(const markdown_core_element_instance *, markdown_core_parser *);
-    void (*observe_inline)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
+    /* A node is complete and holds its place (parser.h, completion);
+     * `owner` holds it, as a child or a field, or is NULL for the document's
+     * root. The owner publishes it -- its id and its relations' extents --
+     * and answers whether it is a node of the document, rather than the
+     * holder of a group of its owner's relation. */
+    bool (*publish_node)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                         const markdown_core_node *);
+    /* The nodes of the relations of `owner` that `part` holds joined them
+     * after `owner` was published -- content parsed later, a field attached
+     * later -- and are complete: they take their extents, measured from
+     * `start`, where `owner` starts. */
+    void (*measure_relation)(const markdown_core_element_instance *, markdown_core_parser *, const markdown_core_node *,
+                             uint32_t, const markdown_core_node *);
+    /* The document's observation of a node: its explicit anchor. */
+    void (*observe_node)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
     markdown_core_node *(*open_text_block)(const markdown_core_element_instance *, markdown_core_parser *,
                                            markdown_core_node *, markdown_core_chunk *);
     markdown_core_node *(*try_interrupting_block)(const markdown_core_element_instance *, markdown_core_parser *,

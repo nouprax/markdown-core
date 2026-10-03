@@ -18,7 +18,6 @@
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
 #endif
 
-uint64_t markdown_core_source_key(const void *entry);
 bool markdown_core_block_last_line_blank(const markdown_core_node *node);
 markdown_core_node_type markdown_core_block_type(const markdown_core_node *node);
 void markdown_core_block_set_end_to_current_line(markdown_core_parser *parser, markdown_core_node *b);

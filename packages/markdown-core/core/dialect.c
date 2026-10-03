@@ -16,7 +16,7 @@
  * instead of its own, so it is refused too: that key is never declared.
  *
  * The document lifecycle is one concern too. The engine calls every one of
- * its hooks but `observe_inline` without asking, on whichever element owns
+ * its hooks but `observe_node` without asking, on whichever element owns
  * it, so an element that declares part of it would have the engine call
  * through a NULL the moment it became the owner: it declares all of them or
  * none.
@@ -41,7 +41,8 @@ static bool S_finish_kind_indexable(markdown_core_node_type kind) {
 
 static bool S_owns_document_lifecycle(const markdown_core_element *element) {
     return element->init_document && element->dispose_document && element->read_document_prefix &&
-           element->prepare_document && element->finish_document && element->publish_document;
+           element->prepare_document && element->finish_document && element->publish_document &&
+           element->publish_node && element->measure_relation;
 }
 
 static bool S_element_refused(const markdown_core_element *element) {
@@ -75,8 +76,8 @@ static bool S_element_refused(const markdown_core_element *element) {
     }
     /* Only part of the document lifecycle. */
     if ((element->init_document || element->dispose_document || element->read_document_prefix ||
-         element->prepare_document || element->finish_document || element->publish_document ||
-         element->observe_inline) &&
+         element->prepare_document || element->finish_document || element->publish_document || element->publish_node ||
+         element->measure_relation || element->observe_node) &&
         !S_owns_document_lifecycle(element)) {
         return true;
     }

@@ -444,6 +444,7 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
         set_cell_content(parser, table_header, header_cell, cell, parent_container, parser->line_number,
                          parser->line_start, (bufsize_t)(cell->content.data - (unsigned char *)parent_string));
     }
+    markdown_core_parser_complete(parser, table_header, parent_container);
 
     markdown_core_parser_advance_offset(
         parser, (char *)input, (int)strlen((char *)input) - 1 - markdown_core_parser_get_offset(parser), false);
@@ -525,6 +526,7 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
             }
             node->where.place.end =
                 (uint32_t)markdown_core_parser_source_end(parser, parser->line_number, (int)completed_at);
+            markdown_core_parser_complete(parser, node, table_row_block);
         }
     }
 
@@ -2338,6 +2340,12 @@ static void table_append_newline(table_source *source, markdown_core_node *node,
 
 static void table_fill_cell(table_source *source, markdown_core_node *row, markdown_core_node *node,
                             const table_source_cell *cell, bool blocks, int padding_limit) {
+    /* A cell of inline content is complete once it holds its bytes. A cell of
+     * blocks is complete as it is made, and holds no inlines: its blocks are
+     * read once the document's are, and measured then. */
+    if (blocks) {
+        markdown_core_parser_complete(source->parser, node, row);
+    }
     int padding = padding_limit;
     for (size_t i = cell->first; i <= cell->last; i++) {
         table_source_line *line = &source->lines[i];
@@ -2359,9 +2367,7 @@ static void table_fill_cell(table_source *source, markdown_core_node *row, markd
         table_append_range(source, node, i, first, end, !blocks);
         table_append_newline(source, node, i);
     }
-    /* A cell of inline content is complete once it holds its bytes; one of
-     * blocks completes its blocks when its input is read. */
-    if (blocks && !source->parser->error) {
+    if (blocks) {
         markdown_core_parser_queue_block_input(source->parser, node);
     } else {
         markdown_core_parser_complete(source->parser, node, row);
@@ -2399,18 +2405,13 @@ static markdown_core_node *table_child(markdown_core_parser *parser, markdown_co
 
 static markdown_core_node *table_build(table_source *source, markdown_core_node *parent, table_candidate *candidate) {
     markdown_core_parser *parser = source->parser;
-    table_source_line *first = &source->lines[candidate->first], *last = &source->lines[candidate->last];
+    table_source_line *first = &source->lines[candidate->first];
     markdown_core_node *node =
         markdown_core_parser_add_child(parser, parent, MARKDOWN_CORE_NODE_TABLE, source->lines[0].first + 1);
     if (!node) {
         return NULL;
     }
     markdown_core_node_set_element(node, &MARKDOWN_CORE_ELEMENT_TABLE);
-    /* A table without pipes is complete once built: no later line reads
-     * into it. Its place is set below. */
-    if (!candidate->pipe) {
-        markdown_core_block_finalize(parser, node);
-    }
     node->opaque = markdown_core_alloc(1, sizeof(markdown_core_table));
     if (!node->opaque) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -2427,10 +2428,10 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
     table->head_count = candidate->head_count;
     table->foot_count = candidate->foot_count;
     table->content_count = candidate->row_count - table->head_count - table->foot_count;
-    /* The table and each of its rows begin at the margin on their first line. */
+    /* The table and each of its rows begin at the margin on their first line;
+     * the table ends where its maker says, once it has closed it. */
     node->where.place.start = (uint32_t)markdown_core_parser_source_offset(
         parser, first->line, table_margin_byte(first, candidate->margin) + 1);
-    node->where.place.end = (uint32_t)markdown_core_parser_source_end(parser, last->line, last->length);
     for (size_t i = 0; i < candidate->row_count && !parser->error; i++) {
         table_source_row *row = &candidate->rows[i];
         table_source_line *begin = &source->lines[row->first], *end = &source->lines[row->last];
@@ -2458,6 +2459,7 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
         if (candidate->pipe && row_node && !parser->error) {
             table_fill_pipe_row(parser, row_node, begin);
         }
+        markdown_core_parser_complete(parser, row_node, node);
     }
     return node;
 }
@@ -2478,8 +2480,6 @@ static markdown_core_node *table_caption_build(table_source *source, size_t last
         table_append_range(source, node, i, left, line->columns, false);
         table_append_newline(source, node, i);
     }
-    /* The caption is a field, complete once made. */
-    markdown_core_parser_complete(source->parser, node, NULL);
     return node;
 }
 
@@ -2603,20 +2603,40 @@ static markdown_core_node *table_try_open(table_workspace *workspace, markdown_c
         goto done;
     }
     if (trailing) {
+        /* The table above was complete when it closed: its caption is a field
+         * that joins it now, and is measured in it. */
         result = preceding;
         table_candidate_reset(candidate);
-        ((markdown_core_table *)result->opaque)->caption = table_caption_build(&source, caption_last, caption);
+        markdown_core_node *caption_node = table_caption_build(&source, caption_last, caption);
+        ((markdown_core_table *)result->opaque)->caption = caption_node;
         result->where.place.end = (uint32_t)markdown_core_parser_source_end(parser, source.lines[caption_last].line,
                                                                             source.lines[caption_last].length);
+        if (caption_node) {
+            markdown_core_parser_complete_field(parser, caption_node, result);
+            markdown_core_parser_measure_field(parser, result, caption_node);
+        }
         parser->claimed = true;
         parser->claimed_line = source.lines[caption_last].line;
         parser->claimed_last_end = result->where.place.end;
     } else {
         result = table_build(&source, parent, candidate);
         if (result && result->opaque && caption >= 0) {
-            ((markdown_core_table *)result->opaque)->caption = table_caption_build(&source, caption_last, caption);
+            markdown_core_node *caption_node = table_caption_build(&source, caption_last, caption);
+            ((markdown_core_table *)result->opaque)->caption = caption_node;
             result->where.place.start =
                 (uint32_t)markdown_core_parser_source_offset(parser, source.lines[0].line, source.lines[0].first + 1);
+            if (caption_node) {
+                markdown_core_parser_complete_field(parser, caption_node, result);
+            }
+        }
+        /* A table without pipes is complete once built: no later line reads
+         * into it. It ends on its last line. */
+        if (result && !candidate->pipe) {
+            markdown_core_block_finalize(parser, result);
+        }
+        if (result) {
+            const table_source_line *last = &source.lines[candidate->last];
+            result->where.place.end = (uint32_t)markdown_core_parser_source_end(parser, last->line, last->length);
         }
         if (result) {
             parser->claimed = true;

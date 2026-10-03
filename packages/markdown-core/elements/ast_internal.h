@@ -22,14 +22,54 @@ struct markdown_core_document {
     markdown_core_text_unit unit;
 };
 
-/* PUBLISHING, the last step of the parse transaction: the one canonical walk
- * that gives every node its id, rewrites its parse-time place as its extent
- * and records the definition tables it finds on the way in the root,
- * continuing the tree the parser's revision names (parser.h): a fresh parse
- * numbers every node from 1 in walk order. The parser's root is the result.
- * It works in the parser's scratch. False, having changed neither tree's
- * structure, when an allocation failed. Nothing reads a place after this. */
-bool markdown_core_publish_tree(markdown_core_parser *parser);
+/* WHERE A FOOTNOTE OR SPECIMEN WAS WRITTEN: the definitions of each kind, as
+ * they complete, with their starts, from which publishing builds the
+ * document's lookup tables. */
+typedef struct {
+    uint64_t start;
+    const markdown_core_node *node;
+} markdown_core_definition_entry;
+
+typedef struct {
+    markdown_core_definition_entry *values;
+    size_t count, capacity;
+} markdown_core_definition_registry;
+
+typedef struct {
+    markdown_core_definition_registry footnotes, specimens;
+} markdown_core_lookup_registry;
+
+void markdown_core_lookup_registry_dispose(markdown_core_lookup_registry *registry);
+
+/* A NODE IS PUBLISHED WHEN IT COMPLETES (docs/plans/2026-09-29-incremental-
+ * parsing.md, 4.1, 4.3, 5.8). `node` holds its place, and `owner` holds it,
+ * as a child or a field, or is NULL for the document's root. Unless `node`
+ * only holds a group of its owner's relation (a callout's title, a
+ * definition's term and bodies, a citation's affixes), which is not a node
+ * of the document, it takes the next id after the revision's last, the
+ * nodes of its relations take their extents (markdown_core_measure_relation),
+ * and a footnote or specimen joins `registry`; the root's extent is
+ * measured from 0. Returns whether `node` is a node of the document. An
+ * allocation failure fails the parse. */
+bool markdown_core_publish_node(markdown_core_parser *parser, markdown_core_lookup_registry *registry,
+                                markdown_core_node *node, const markdown_core_node *owner);
+
+/* MEASURING a relation: every node of the relations of `owner` that `part`
+ * holds -- `part` itself, when it is a field of `owner`; its children, when
+ * it is `owner` or the holder of one of `owner`'s groups -- takes its extent
+ * in place of its place: the distance from the end of the node before it in
+ * the relation, or from `start`, where `owner` starts, for the first, and its
+ * length (node.h). */
+void markdown_core_measure_relation(const markdown_core_node *owner, uint32_t start, const markdown_core_node *part);
+
+/* PUBLISHING THE DOCUMENT, the last step of the parse transaction: every node
+ * already holds its id and its extent, and the lookup tables are built from
+ * `registry`. A parse that continues a tree (the parser's revision, parser.h)
+ * matches its nodes to the old ones (5.9): a matched node takes its old
+ * node's id, and the old tree is shared where the two are equal. The
+ * parser's root is the result. It works in the parser's scratch. False,
+ * having changed neither tree's structure, when an allocation failed. */
+bool markdown_core_publish_tree(markdown_core_parser *parser, markdown_core_lookup_registry *registry);
 
 /* The scope of `node` in the published tree `root` parsed from `source`,
  * with columns in `unit`; markdown_core_document_scope is this query over a

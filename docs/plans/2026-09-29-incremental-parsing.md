@@ -717,10 +717,10 @@ parse.
 - **Blocks complete when they close.** Closing a block runs everything that
   decides it: the element's close (a formula block's literal; a code block
   whose info names a formula becomes a FormulaBlock), the container's fold of
-  its children (E4: list layout, definition scopes), its extent (4.3) and its
-  id. The open parent keeps where its last closed child ends, which is the
-  next child's lead. A paragraph that held only definitions is not added to
-  its parent.
+  its children (E4: list layout, definition scopes), its id, and the extents
+  (4.3) of the nodes it holds, which keep their absolute places until then.
+  The document root's extent is measured from 0. A paragraph that held only
+  definitions is not added to its parent.
 - **Inline roots complete when their parse ends.** A block's inline content
   and each inline field of a block (a definition's term, a callout's title, a
   table's caption, a directive's label) is an inline root. The closing block
@@ -731,7 +731,8 @@ parse.
   email autolinks, and runs of Text that become one. So an inline node is
   complete when its root's parse ends, and the root completes its own tree
   then, in one pass over that tree: consolidation, completion, email
-  autolinks, extents and ids. A paragraph whose only content is a standalone
+  autolinks, extents and ids. The root's owner measures the root's content
+  from the start it recorded. A paragraph whose only content is a standalone
   formula becomes a FormulaBlock at that point.
 - **Absolute positions belong to the parse.** A node holds only its extent
   once it is complete. Everything that needs an absolute position after that

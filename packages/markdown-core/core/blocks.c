@@ -782,7 +782,8 @@ bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdo
     for (size_t at = 0; at < parser->path.count; at++) {
         around |= markdown_core_node_block_kind_bit((markdown_core_node_type)parser->path.frames[at].node->kind);
     }
-    parser->block_inputs[parser->block_input_count++] = (struct markdown_core_block_input){owner, around};
+    parser->block_inputs[parser->block_input_count++] =
+        (struct markdown_core_block_input){owner, around, owner->where.place.start};
     return true;
 }
 
@@ -1053,13 +1054,20 @@ bool markdown_core_parse_inline_subtrees(markdown_core_parser *parser, markdown_
  * above). `parsed` is the container whose inline tree the pass is inside, or
  * NULL: nothing below a parsed container is parsed again, since an inline
  * node's content is its container's, already parsed. `holder` holds the
- * frame's root as a child, NULL for a field. */
+ * frame's root as a child, NULL for a field.
+ *
+ * The frame of an inline root (`late`) completes the root's content: the
+ * root itself completed when its block closed, and its content is measured
+ * in the relation of `owner`, which started at `start`, once the frame is
+ * done. Any other frame's root is a field of `owner`, an inline node in this
+ * pass, and is published at its EXIT like every node below it. */
 typedef struct {
-    markdown_core_node *root, *holder;
+    markdown_core_node *root, *holder, *owner;
     markdown_core_iter iter;
     markdown_core_node *parsed;
+    uint32_t start;
     int script_depth;
-    bool parses, started;
+    bool parses, started, late;
 } owned_tree_frame;
 
 typedef struct {
@@ -1070,8 +1078,10 @@ typedef struct {
     void **states;
     size_t slots;
     size_t count, capacity;
-    /* What a root pushed now starts with: the pushing node's word depth and
-     * whether its fields are the pass's to parse. */
+    /* What a root pushed now starts with: the node that holds it, the
+     * pushing node's word depth and whether its fields are the pass's to
+     * parse. */
+    markdown_core_node *owner;
     int script_depth;
     bool parses;
 } owned_tree_walk;
@@ -1112,41 +1122,28 @@ static int push_owned_root(markdown_core_node *root, markdown_core_node *holder,
     bool block = ((unsigned)root->kind & MARKDOWN_CORE_NODE_TYPE_MASK) == MARKDOWN_CORE_NODE_TYPE_BLOCK;
     walk->frames[walk->count++] = (owned_tree_frame){.root = root,
                                                      .holder = holder,
+                                                     .owner = walk->owner,
                                                      .parsed = NULL,
                                                      .script_depth = block ? 0 : walk->script_depth,
                                                      .parses = walk->parses,
-                                                     .started = false};
+                                                     .started = false,
+                                                     .late = false};
     return 1;
 }
 
-/* INLINE COMPLETION IS THE ROOT PASS'S ENTER. A node is completed once, when
- * its root's pass reaches it: the element's `complete_inline` (text.c turns
- * an escaped space into NBSP inside a word) and the document's
- * `observe_inline` (a node's explicit anchor is reserved before the headings
- * are given theirs). Both read the node and its ancestors' word depth and
- * nothing else, so the ENTER is where they belong. The pass reads the two
- * hooks through its per-kind record and the document's hook it holds in a
- * register; this form is for the sibling consolidation absorbs at a Text's
- * EXIT, whose ENTER is stepped over, so consolidation completes it first
- * (iterator.h). */
-static inline void complete_inline_from_plan(markdown_core_parser *parser, markdown_core_node *node,
-                                             const markdown_core_kind_record *plan, int script_depth,
-                                             const markdown_core_element_instance *document,
-                                             void (*observe)(const markdown_core_element_instance *,
-                                                             markdown_core_parser *, markdown_core_node *)) {
+/* AN INLINE NODE'S CONTENT IS READ AT ITS ENTER. The element's
+ * `complete_inline` (text.c turns an escaped space into NBSP inside a word)
+ * reads the node and its ancestors' word depth and nothing else, so the
+ * ENTER is where it belongs; the node is complete at its EXIT. The pass
+ * reads the hook through its per-kind record; this form is for the sibling
+ * consolidation absorbs at a Text's EXIT, whose ENTER is stepped over, so
+ * consolidation completes it first (iterator.h). */
+static void complete_consolidated_text(markdown_core_parser *parser, markdown_core_node *node, int script_depth) {
+    const markdown_core_kind_record *plan = &parser->dialect->kinds[MARKDOWN_CORE_FINISH_TEXT_INDEX];
+    assert(node->kind == MARKDOWN_CORE_NODE_TEXT);
     if (plan->complete) {
         plan->complete(plan->structure, parser, node, script_depth);
     }
-    if (observe) {
-        observe(document, parser, node);
-    }
-}
-
-static void complete_consolidated_text(markdown_core_parser *parser, markdown_core_node *node, int script_depth) {
-    const markdown_core_element_instance *document = parser->dialect->document_structure;
-    assert(node->kind == MARKDOWN_CORE_NODE_TEXT);
-    complete_inline_from_plan(parser, node, &parser->dialect->kinds[MARKDOWN_CORE_FINISH_TEXT_INDEX], script_depth,
-                              document, document->element->observe_inline);
 }
 
 /* The steps projected for one event, in descriptor order, each behind its
@@ -1183,6 +1180,21 @@ static int push_owned_tree(markdown_core_node **slot, void *context) {
     return push_owned_root(slot ? *slot : NULL, NULL, context);
 }
 
+/* Publishes `node`, held by `owner`, which holds its place (element.h,
+ * `publish_node`). */
+static bool S_publish(markdown_core_parser *parser, markdown_core_node *node, const markdown_core_node *owner) {
+    const markdown_core_element_instance *document = parser->dialect->document_structure;
+    return document->element->publish_node(document, parser, node, owner);
+}
+
+/* Measures the nodes of the relations of `owner` that `part` holds, which
+ * joined them after `owner` was published, from `start`. */
+static void S_measure(markdown_core_parser *parser, const markdown_core_node *owner, uint32_t start,
+                      const markdown_core_node *part) {
+    const markdown_core_element_instance *document = parser->dialect->document_structure;
+    document->element->measure_relation(document, parser, owner, start, part);
+}
+
 /* A PARAGRAPH THAT HELD ONLY REFERENCE DEFINITIONS IS NOT A PARAGRAPH. Its
  * finalization consumed the definitions and left nothing, but it holds its
  * place as its parent's last child while the parent is open: a later
@@ -1205,7 +1217,8 @@ static void S_drop_definition_paragraph(markdown_core_parser *parser, markdown_c
     markdown_core_parser_release_node(parser, taken);
 }
 
-static void S_add_inline_root(markdown_core_parser *parser, markdown_core_node *node, markdown_core_node *parent) {
+static void S_add_inline_root(markdown_core_parser *parser, markdown_core_node *node, markdown_core_node *parent,
+                              markdown_core_node *owner, uint32_t start) {
     if (parser->inline_root_count == parser->inline_root_capacity) {
         size_t capacity = parser->inline_root_capacity ? 2 * parser->inline_root_capacity : 64;
         struct markdown_core_inline_root *roots;
@@ -1217,29 +1230,30 @@ static void S_add_inline_root(markdown_core_parser *parser, markdown_core_node *
         parser->inline_roots = roots;
         parser->inline_root_capacity = capacity;
     }
-    parser->inline_roots[parser->inline_root_count++] = (struct markdown_core_inline_root){node, parent};
+    parser->inline_roots[parser->inline_root_count++] = (struct markdown_core_inline_root){node, parent, owner, start};
 }
 
 void markdown_core_parser_observe(markdown_core_parser *parser, markdown_core_node *node) {
     const markdown_core_element_instance *document = parser->dialect->document_structure;
-    if (document->element->observe_inline) {
-        document->element->observe_inline(document, parser, node);
+    if (document->element->observe_node) {
+        document->element->observe_node(document, parser, node);
     }
 }
 
-void markdown_core_parser_complete(markdown_core_parser *parser, markdown_core_node *node, markdown_core_node *parent) {
+/* Completes `node`, which `parent` holds as a child or, when that is NULL,
+ * `owner` holds as a field (parser.h). */
+static void S_complete(markdown_core_parser *parser, markdown_core_node *node, markdown_core_node *parent,
+                       markdown_core_node *owner) {
     S_drop_definition_paragraph(parser, node);
-    if (parser->error) {
+    /* A child paragraph that held only definitions is no node: it never
+     * completes, and its parent drops it. */
+    if (parser->error || (parent && (node->flags & MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY))) {
         return;
     }
     size_t index = markdown_core_finish_kind_index((markdown_core_node_type)node->kind);
     const markdown_core_kind_record *kind = &parser->dialect->kinds[index];
-    if (S_kind_contains_inlines(kind, node)) {
-        S_add_inline_root(parser, node, parent);
-        return;
-    }
-    markdown_core_parser_observe(parser, node);
-    const markdown_core_finish_step_entry *entry = parser->dialect->finish_dispatch[2 * index + 1];
+    bool inlines = S_kind_contains_inlines(kind, node);
+    const markdown_core_finish_step_entry *entry = inlines ? NULL : parser->dialect->finish_dispatch[2 * index + 1];
     for (; entry && entry->instance; entry++) {
         if (!markdown_core_finish_step_admitted(entry, parser)) {
             continue;
@@ -1251,6 +1265,36 @@ void markdown_core_parser_complete(markdown_core_parser *parser, markdown_core_n
             return;
         }
     }
+    /* A node holding inlines is observed once the root pass has completed its
+     * content (complete_inline_root). */
+    if (!inlines) {
+        markdown_core_parser_observe(parser, node);
+    }
+    uint32_t start = node->where.place.start;
+    bool published = S_publish(parser, node, owner);
+    if (inlines) {
+        S_add_inline_root(parser, node, parent, published ? node : owner, published ? start : owner->where.place.start);
+    }
+}
+
+void markdown_core_parser_complete(markdown_core_parser *parser, markdown_core_node *node, markdown_core_node *parent) {
+    S_complete(parser, node, parent, parent);
+}
+
+void markdown_core_parser_complete_field(markdown_core_parser *parser, markdown_core_node *node,
+                                         markdown_core_node *owner) {
+    S_complete(parser, node, NULL, owner);
+}
+
+void markdown_core_parser_publish_node(markdown_core_parser *parser, markdown_core_node *node,
+                                       const markdown_core_node *owner) {
+    markdown_core_parser_observe(parser, node);
+    S_publish(parser, node, owner);
+}
+
+void markdown_core_parser_measure_field(markdown_core_parser *parser, const markdown_core_node *owner,
+                                        const markdown_core_node *field) {
+    S_measure(parser, owner, owner->where.place.start, field);
 }
 
 /* THE ROOT PASS: one traversal of an inline root and of every field root
@@ -1264,23 +1308,27 @@ void markdown_core_parser_complete(markdown_core_parser *parser, markdown_core_n
  * parses the node's inline content when it is the node's to parse (`parses`,
  * see owned_tree_frame; the content of a kind the record marks PARSES, not
  * DEFERRED, that the structure says holds inlines), runs the steps projected
- * for the ENTER, completes the node (the element's `complete_inline` the
- * record carries, the document's `observe_inline`) and pushes the node's
- * field roots; at a Text's EXIT it consolidates the run when there is one to
- * merge or a Text with no bytes to drop, and then runs the steps projected
- * for the EXIT, in descriptor order, each behind its gate. Parsing at ENTER
- * gives the pass the container's children as the next events. */
-static int complete_inline_root(owned_tree_walk *walk, markdown_core_node *root, markdown_core_node *holder) {
+ * for the ENTER, runs the element's `complete_inline` the record carries and
+ * pushes the node's field roots; at a node's EXIT it consolidates a Text's
+ * run when there is one to merge or a Text with no bytes to drop, runs the
+ * steps projected for the EXIT, in descriptor order, each behind its gate,
+ * and then the node is complete: the document observes and publishes it.
+ * At the root's own EXIT the document observes the root, which completed
+ * at its close, and the root's owner measures the content the pass
+ * completed. Parsing at ENTER gives the pass the container's children as the
+ * next events. */
+static int complete_inline_root(owned_tree_walk *walk, const struct markdown_core_inline_root *entry) {
     markdown_core_parser *parser = walk->parser;
-    const markdown_core_element_instance *const document = parser->dialect->document_structure;
-    void (*const observe)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *) =
-        document->element->observe_inline;
     const markdown_core_kind_record *const kinds = parser->dialect->kinds;
     const markdown_core_finish_step_entry *const *const dispatch = parser->dialect->finish_dispatch;
 
     walk->script_depth = 0;
     walk->parses = true;
-    push_owned_root(root, holder, walk);
+    walk->owner = entry->owner;
+    if (push_owned_root(entry->node, entry->parent, walk)) {
+        walk->frames[walk->count - 1].start = entry->start;
+        walk->frames[walk->count - 1].late = true;
+    }
     while (walk->count && !parser->error) {
         owned_tree_frame *frame = &walk->frames[walk->count - 1];
         /* `frame` is the top of the stack, so its state words are the last row. */
@@ -1303,7 +1351,8 @@ static int complete_inline_root(owned_tree_walk *walk, markdown_core_node *root,
                 break;
             }
             markdown_core_node *node = markdown_core_iter_node(iter);
-            markdown_core_node *parent = node == frame->root ? frame->holder : markdown_core_iter_parent(iter);
+            bool root = node == frame->root;
+            markdown_core_node *parent = root ? frame->holder : markdown_core_iter_parent(iter);
             size_t index = markdown_core_finish_kind_index((markdown_core_node_type)node->kind);
             if (node->element && node->element->delimiter.body == DELIMITER_WORD_BODY) {
                 frame->script_depth += event == MARKDOWN_CORE_EVENT_ENTER ? 1 : -1;
@@ -1330,6 +1379,15 @@ static int complete_inline_root(owned_tree_walk *walk, markdown_core_node *root,
                     markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
                     break;
                 }
+                if (result == MARKDOWN_CORE_FINISH_CONSUMED) {
+                    continue;
+                }
+                markdown_core_parser_observe(parser, node);
+                if (root && frame->late) {
+                    S_measure(parser, frame->owner, frame->start, node);
+                } else {
+                    S_publish(parser, node, root ? frame->owner : parent);
+                }
                 continue;
             }
             const markdown_core_kind_record *facts = &kinds[index];
@@ -1351,13 +1409,16 @@ static int complete_inline_root(owned_tree_walk *walk, markdown_core_node *root,
                     break;
                 }
             }
-            complete_inline_from_plan(parser, node, facts, frame->script_depth, document, observe);
+            if (facts->complete) {
+                facts->complete(facts->structure, parser, node, frame->script_depth);
+            }
             /* The field roots, of a kind that owns them through its record
              * or of an element that owns them through its hook: the answer is
              * no for almost every node, and it is one flag and one load. */
             if (!(flags & MARKDOWN_CORE_KIND_FIELDS) && !node->element) {
                 continue;
             }
+            walk->owner = node;
             walk->script_depth = frame->script_depth;
             walk->parses = reach;
             size_t first = walk->count;
@@ -1410,6 +1471,7 @@ static void S_parse_block_inputs(markdown_core_parser *parser) {
         S_parse_source(parser, &content);
         markdown_core_parser_finalize_to(parser, owner);
         S_drop_definition_paragraph(parser, owner);
+        S_measure(parser, owner, input.start, owner);
         owner->flags &= ~MARKDOWN_CORE_NODE__OPEN;
         markdown_core_strbuf_clear(&owner->content);
         owner->content_map.count = 0;
@@ -2628,7 +2690,7 @@ bool markdown_core_parser_register_definition(markdown_core_parser *parser,
     assert(definition && collection);
     if (collection->count == collection->capacity) {
         size_t capacity = collection->capacity ? collection->capacity * 2 : 8;
-        markdown_core_node **values;
+        struct markdown_core_definition_start *values;
         if (capacity > SIZE_MAX / sizeof(*values)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return false;
@@ -2641,15 +2703,14 @@ bool markdown_core_parser_register_definition(markdown_core_parser *parser,
         collection->values = values;
         collection->capacity = capacity;
     }
-    collection->values[collection->count++] = definition;
+    collection->values[collection->count++] =
+        (struct markdown_core_definition_start){definition, definition->where.place.start};
     parser->definition_registration_work++;
     return true;
 }
 
-uint64_t markdown_core_source_key(const void *entry) {
-    markdown_core_node *node;
-    memcpy(&node, entry, sizeof(node));
-    return node->where.place.start;
+static uint64_t S_definition_start(const void *entry) {
+    return ((const struct markdown_core_definition_start *)entry)->start;
 }
 
 /* A STABLE LINEAR ORDERING BY SOURCE COORDINATE, keyed once.
@@ -2760,7 +2821,7 @@ int markdown_core_order_source_entries(markdown_core_source_order *workspace, vo
 int markdown_core_block_order_definitions(markdown_core_parser *parser,
                                           markdown_core_definition_collection *collection) {
     return markdown_core_order_source_entries(&parser->source_order, collection->values, collection->count,
-                                              sizeof(*collection->values), markdown_core_source_key);
+                                              sizeof(*collection->values), S_definition_start);
 }
 
 /* Every writer of this tree is checked.
@@ -2819,7 +2880,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_node *S_finish_parse(ma
     {
         owned_tree_walk walk = {.parser = parser, .slots = parser->dialect->finish_step_slots};
         for (size_t i = 0; i < parser->inline_root_count && !parser->error; i++) {
-            complete_inline_root(&walk, parser->inline_roots[i].node, parser->inline_roots[i].parent);
+            complete_inline_root(&walk, &parser->inline_roots[i]);
         }
         markdown_core_free(walk.states);
         parser->walk = NULL;

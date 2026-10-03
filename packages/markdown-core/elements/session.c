@@ -11,17 +11,16 @@
 #include <text_tree.h>
 
 /* A SESSION: the text, the parser instance that reads it, the document
- * parsed from it, the storage its nodes live in, the last id it issued and
- * the document's node count. Each edit parses the whole text again as a
- * revision of the document (parser.h), so the new document continues the old
- * one and the old one's nodes go back to the session's pool. */
+ * parsed from it, the storage its nodes live in and the last id it issued.
+ * Each edit parses the whole text again as a revision of the document
+ * (parser.h), so the new document continues the old one and the old one's
+ * nodes go back to the session's pool. */
 struct markdown_core_session {
     markdown_core_text_tree text;
     markdown_core_parser *parser;
     markdown_core_node_pool pool;
     markdown_core_document document;
     uint64_t last_id;
-    size_t node_count;
 };
 
 /* The session's text as the parser reads it, a piece at a time. */
@@ -39,7 +38,6 @@ static markdown_core_status session_parse(markdown_core_session *session, const 
         .edits = edits,
         .edit_count = count,
         .last_id = session->last_id,
-        .node_count = session->node_count,
     };
     markdown_core_node *root = markdown_core_parser_parse(session->parser, text, &revision);
     if (!root) {
@@ -47,7 +45,6 @@ static markdown_core_status session_parse(markdown_core_session *session, const 
     }
     session->document.root = root;
     session->last_id = revision.last_id;
-    session->node_count = revision.node_count;
     return MARKDOWN_CORE_OK;
 }
 

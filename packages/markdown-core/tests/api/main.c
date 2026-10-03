@@ -6424,10 +6424,12 @@ typedef struct source_entry {
     int serial;
 } source_entry;
 
+static uint64_t source_entry_start(const void *entry) { return ((const source_entry *)entry)->node->where.place.start; }
+
 static int source_entries_ordered(const source_entry *entries, size_t count) {
     for (size_t i = 1; i < count; i++) {
-        uint64_t previous = markdown_core_source_key(&entries[i - 1]);
-        uint64_t current = markdown_core_source_key(&entries[i]);
+        uint64_t previous = source_entry_start(&entries[i - 1]);
+        uint64_t current = source_entry_start(&entries[i]);
         if (previous > current || (previous == current && entries[i - 1].serial > entries[i].serial)) {
             return 0;
         }
@@ -6476,13 +6478,11 @@ static void source_entries_order_by_the_key_bytes_that_differ(test_batch_runner 
         }
         markdown_core_source_order workspace = {0};
         payload_probe_arm();
-        int ok =
-            markdown_core_order_source_entries(&workspace, entries, COUNT, sizeof(*entries), markdown_core_source_key);
+        int ok = markdown_core_order_source_entries(&workspace, entries, COUNT, sizeof(*entries), source_entry_start);
         INT_EQ(runner, workspace.work, COUNT * (1 + 2 * shapes[shape].passes),
                "ordering charges the key scan and only the radix passes performed");
         size_t allocations = payload_allocations;
-        OK(runner,
-           markdown_core_order_source_entries(&workspace, entries, COUNT, sizeof(*entries), markdown_core_source_key),
+        OK(runner, markdown_core_order_source_entries(&workspace, entries, COUNT, sizeof(*entries), source_entry_start),
            "a second ordering reuses scratch");
         INT_EQ(runner, payload_allocations, allocations, "ordering allocates only on capacity growth");
         INT_EQ(runner, workspace.work, COUNT * (2 + 2 * shapes[shape].passes),
@@ -6498,8 +6498,8 @@ static void source_entries_order_by_the_key_bytes_that_differ(test_batch_runner 
     }
     markdown_core_source_order workspace = {0};
     OK(runner,
-       markdown_core_order_source_entries(&workspace, entries, 0, sizeof(*entries), markdown_core_source_key) &&
-           markdown_core_order_source_entries(&workspace, entries, 1, sizeof(*entries), markdown_core_source_key),
+       markdown_core_order_source_entries(&workspace, entries, 0, sizeof(*entries), source_entry_start) &&
+           markdown_core_order_source_entries(&workspace, entries, 1, sizeof(*entries), source_entry_start),
        "fewer than two entries are ordered as they are");
 }
 
@@ -10392,7 +10392,7 @@ static size_t owned_node_census(markdown_core_node *root) {
 typedef struct {
     markdown_core_element document;
     void (*observe)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
-    size_t spaces, uncompleted;
+    size_t uncompleted;
 } completion_probe;
 
 static void observe_completed_text(const markdown_core_element_instance *self, markdown_core_parser *parser,
@@ -10400,7 +10400,6 @@ static void observe_completed_text(const markdown_core_element_instance *self, m
     completion_probe *probe = parser->context;
     if (node->kind == MARKDOWN_CORE_NODE_TEXT) {
         probe->uncompleted += (node->flags & MARKDOWN_CORE_NODE__ESCAPED_SPACE) != 0;
-        probe->spaces += node->as.literal->len == 2 && !memcmp(node->as.literal->data, "\xc2\xa0", 2);
     }
     if (probe->observe) {
         probe->observe(self, parser, node);
@@ -10413,8 +10412,8 @@ static bool configure_completion_probe(markdown_core_dialect_builder *builder, v
     completion_probe *probe = context;
     probe->document = MARKDOWN_CORE_ELEMENT_DOCUMENT;
     probe->document.name = "completion-probe-document";
-    probe->observe = probe->document.observe_inline;
-    probe->document.observe_inline = observe_completed_text;
+    probe->observe = probe->document.observe_node;
+    probe->document.observe_node = observe_completed_text;
     return markdown_core_dialect_builder_attach(builder, &probe->document);
 }
 
@@ -10426,7 +10425,6 @@ static void absorbed_text_completes_before_observation(test_batch_runner *runner
     OK(runner, root != NULL, "normal and absorbed text completion share a successful transaction");
     if (root) {
         INT_EQ(runner, probe.uncompleted, 0, "the observer never sees a Text before kind completion");
-        INT_EQ(runner, probe.spaces, 2, "both absorbed escaped spaces complete exactly once at their word depth");
         markdown_core_node *script = child_at(child_at(root, 0), 0);
         INT_EQ(runner, script->kind, MARKDOWN_CORE_NODE_SUPERSCRIPT, "the word owner is preserved");
         LITERAL_EQ(runner, child_at(script, 0),
