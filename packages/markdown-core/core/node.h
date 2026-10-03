@@ -72,9 +72,13 @@ typedef struct {
  * reading through the resource; the last one out frees it, which is how the
  * tree outlives the parser that built the map.
  *
- * Identity is the pointer: `markdown_core_node_resource` hands it out, and a
- * consumer that materializes a destination once per distinct resource keys
- * on it. Nothing else about the pointer is stated. */
+ * A resource is a VALUE: two are equal exactly when their fields are, and the
+ * pointer is only its storage. Nodes holding one storage hold equal values;
+ * equal values can live in different storage, because a session's document
+ * takes Links and Embeddeds whole from the previous one and they keep the
+ * storage they were parsed with. `markdown_core_node_resource` hands the
+ * storage out, so a consumer can decode each storage once, and one that names
+ * each value once keys on the value. */
 struct markdown_core_resource {
     /* REQUIRED (Q26). `[a]()`, `[a](<>)` and `[a]: <>` wrote a destination
      * and it was empty; there is no link whose author wrote no destination at

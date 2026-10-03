@@ -241,55 +241,190 @@ static void put_metadata(wire_buffer *buffer, const markdown_core_node *metadata
 
 /* ---- Shared resources ---------------------------------------------------- */
 
-/* Numbers each distinct resource in the order the message first names it. An
- * open-addressing table keyed by the resource's identity. */
+/* Numbers each distinct resource VALUE in the order the message first names
+ * it. A resource is a value (its destination, title and inherited
+ * attributes), and nodes that hold equal values may hold them in different
+ * storage: a session's Link taken whole from the previous document keeps the
+ * storage it was parsed with, while a new occurrence of the same definition
+ * holds this parse's. So the ordinal is keyed by the value. Hashing a value
+ * reads all of it, so each storage is hashed once: the `cells` table answers
+ * a storage already seen, and only a new storage reaches the `values` table.
+ *
+ * Both are open-addressing tables of slots: `key` is the storage in
+ * `cells`, and in `values` a node holding the value. */
 typedef struct wire_resource_slot {
-    const markdown_core_resource *resource;
+    const void *key;
+    size_t hash;
     uint32_t ordinal;
 } wire_resource_slot;
 
-typedef struct wire_resources {
+typedef struct wire_resource_table {
     wire_resource_slot *slots;
     size_t count;
     size_t capacity;
+} wire_resource_table;
+
+typedef struct wire_resources {
+    wire_resource_table cells;
+    wire_resource_table values;
 } wire_resources;
 
-static size_t hash_resource(const markdown_core_resource *resource) {
-    uint64_t bits = (uint64_t)(uintptr_t)resource;
+static size_t mix_bits(uint64_t bits) {
     bits ^= bits >> 33;
     bits *= UINT64_C(0xff51afd7ed558ccd);
     bits ^= bits >> 33;
     return (size_t)bits;
 }
 
-static wire_resource_slot *find_resource_slot(wire_resource_slot *slots, size_t capacity,
-                                              const markdown_core_resource *resource) {
-    size_t position = hash_resource(resource) & (capacity - 1);
-    while (slots[position].resource != NULL && slots[position].resource != resource) {
-        position = (position + 1) & (capacity - 1);
+/* FNV-1a over the length, then the bytes, so adjacent strings cannot trade
+ * bytes. */
+static uint64_t hash_text(uint64_t hash, markdown_core_string text) {
+    size_t index;
+    uint64_t length = (uint64_t)text.length;
+    for (index = 0; index < sizeof(length); ++index) {
+        hash = (hash ^ ((length >> (8 * index)) & 0xff)) * UINT64_C(0x100000001b3);
     }
-    return &slots[position];
+    for (index = 0; index < text.length; ++index) {
+        hash = (hash ^ text.data[index]) * UINT64_C(0x100000001b3);
+    }
+    return hash;
 }
 
-static bool grow_resources(wire_resources *resources) {
-    size_t capacity = resources->capacity == 0 ? 64 : resources->capacity * 2;
+static uint64_t hash_optional_text(uint64_t hash, markdown_core_optional_string text) {
+    hash = (hash ^ (uint64_t)text.has_value) * UINT64_C(0x100000001b3);
+    return text.has_value ? hash_text(hash, text.value) : hash;
+}
+
+static size_t hash_resource_value(const markdown_core_node *node) {
+    markdown_core_destination destination;
+    markdown_core_optional_string title;
+    const markdown_core_attribute_value *inherited;
+    size_t classes, records, index;
+    uint64_t hash = UINT64_C(0xcbf29ce484222325);
+    markdown_core_node_destination(node, &destination);
+    hash = (hash ^ (uint64_t)destination.kind) * UINT64_C(0x100000001b3);
+    if (destination.kind == MARKDOWN_CORE_DESTINATION_URL) {
+        hash = hash_text(hash, destination.url);
+    } else {
+        hash = hash_text(hash, destination.path);
+        hash = hash_optional_text(hash, destination.anchor);
+    }
+    markdown_core_node_title(node, &title);
+    hash = hash_optional_text(hash, title);
+    markdown_core_node_inherited_attributes(node, &inherited);
+    hash = hash_optional_text(hash, markdown_core_attribute_value_anchor(inherited));
+    classes = markdown_core_attribute_value_class_count(inherited);
+    records = markdown_core_attribute_value_record_count(inherited);
+    hash = (hash ^ (uint64_t)classes) * UINT64_C(0x100000001b3);
+    for (index = 0; index < classes; ++index) {
+        markdown_core_string value;
+        markdown_core_attribute_value_class_at(inherited, index, &value);
+        hash = hash_text(hash, value);
+    }
+    hash = (hash ^ (uint64_t)records) * UINT64_C(0x100000001b3);
+    for (index = 0; index < records; ++index) {
+        markdown_core_string name, value;
+        markdown_core_attribute_value_record_at(inherited, index, &name, &value);
+        hash = hash_text(hash_text(hash, name), value);
+    }
+    return mix_bits(hash);
+}
+
+static bool text_equal(markdown_core_string a, markdown_core_string b) {
+    return a.length == b.length && (a.length == 0 || memcmp(a.data, b.data, a.length) == 0);
+}
+
+static bool optional_text_equal(markdown_core_optional_string a, markdown_core_optional_string b) {
+    return a.has_value == b.has_value && (!a.has_value || text_equal(a.value, b.value));
+}
+
+static bool resource_values_equal(const markdown_core_node *a, const markdown_core_node *b) {
+    markdown_core_destination x, y;
+    markdown_core_optional_string x_title, y_title;
+    const markdown_core_attribute_value *x_inherited, *y_inherited;
+    size_t classes, records, index;
+    markdown_core_node_destination(a, &x);
+    markdown_core_node_destination(b, &y);
+    if (x.kind != y.kind || (x.kind == MARKDOWN_CORE_DESTINATION_URL
+                                 ? !text_equal(x.url, y.url)
+                                 : !text_equal(x.path, y.path) || !optional_text_equal(x.anchor, y.anchor))) {
+        return false;
+    }
+    markdown_core_node_title(a, &x_title);
+    markdown_core_node_title(b, &y_title);
+    markdown_core_node_inherited_attributes(a, &x_inherited);
+    markdown_core_node_inherited_attributes(b, &y_inherited);
+    classes = markdown_core_attribute_value_class_count(x_inherited);
+    records = markdown_core_attribute_value_record_count(x_inherited);
+    if (!optional_text_equal(x_title, y_title) ||
+        !optional_text_equal(markdown_core_attribute_value_anchor(x_inherited),
+                             markdown_core_attribute_value_anchor(y_inherited)) ||
+        classes != markdown_core_attribute_value_class_count(y_inherited) ||
+        records != markdown_core_attribute_value_record_count(y_inherited)) {
+        return false;
+    }
+    for (index = 0; index < classes; ++index) {
+        markdown_core_string x_value, y_value;
+        markdown_core_attribute_value_class_at(x_inherited, index, &x_value);
+        markdown_core_attribute_value_class_at(y_inherited, index, &y_value);
+        if (!text_equal(x_value, y_value)) {
+            return false;
+        }
+    }
+    for (index = 0; index < records; ++index) {
+        markdown_core_string x_name, x_value, y_name, y_value;
+        markdown_core_attribute_value_record_at(x_inherited, index, &x_name, &x_value);
+        markdown_core_attribute_value_record_at(y_inherited, index, &y_name, &y_value);
+        if (!text_equal(x_name, y_name) || !text_equal(x_value, y_value)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* The slot holding `key`, or the vacant slot it would take. `values` says
+ * which table's equality applies. */
+static wire_resource_slot *find_resource_slot(const wire_resource_table *table, const void *key, size_t hash,
+                                              bool values) {
+    size_t mask = table->capacity - 1, position = hash & mask;
+    wire_resource_slot *slot;
+    for (;; position = (position + 1) & mask) {
+        slot = &table->slots[position];
+        if (slot->key == NULL || slot->key == key ||
+            (values && slot->hash == hash &&
+             resource_values_equal((const markdown_core_node *)slot->key, (const markdown_core_node *)key))) {
+            return slot;
+        }
+    }
+}
+
+/* Room for one more key, at most half full. */
+static bool reserve_resource_slot(wire_resource_table *table) {
+    size_t capacity = table->capacity == 0 ? 64 : table->capacity * 2;
     wire_resource_slot *slots;
     size_t index;
-    if (capacity < resources->capacity || capacity > SIZE_MAX / sizeof(*slots)) {
+    if (table->count + 1 <= table->capacity / 2) {
+        return true;
+    }
+    if (capacity < table->capacity || capacity > SIZE_MAX / sizeof(*slots)) {
         return false;
     }
     slots = (wire_resource_slot *)calloc(capacity, sizeof(*slots));
     if (slots == NULL) {
         return false;
     }
-    for (index = 0; index < resources->capacity; ++index) {
-        if (resources->slots[index].resource != NULL) {
-            *find_resource_slot(slots, capacity, resources->slots[index].resource) = resources->slots[index];
+    for (index = 0; index < table->capacity; ++index) {
+        if (table->slots[index].key != NULL) {
+            size_t position = table->slots[index].hash & (capacity - 1);
+            while (slots[position].key != NULL) {
+                position = (position + 1) & (capacity - 1);
+            }
+            slots[position] = table->slots[index];
         }
     }
-    free(resources->slots);
-    resources->slots = slots;
-    resources->capacity = capacity;
+    free(table->slots);
+    table->slots = slots;
+    table->capacity = capacity;
     return true;
 }
 
@@ -299,24 +434,35 @@ static void put_resource(wire_buffer *buffer, wire_resources *resources, const m
     const markdown_core_resource *resource;
     const markdown_core_attribute_value *inherited;
     markdown_core_optional_string title;
-    wire_resource_slot *slot;
+    wire_resource_slot *stored, *valued;
+    size_t hash;
     markdown_core_node_resource(node, &resource);
-    if (resources->count + 1 > resources->capacity / 2 && !grow_resources(resources)) {
+    if (!reserve_resource_slot(&resources->cells) || !reserve_resource_slot(&resources->values)) {
         buffer->failed = true;
         return;
     }
-    slot = find_resource_slot(resources->slots, resources->capacity, resource);
-    if (slot->resource != NULL) {
-        put_u32(buffer, slot->ordinal);
+    hash = mix_bits((uint64_t)(uintptr_t)resource);
+    stored = find_resource_slot(&resources->cells, resource, hash, false);
+    if (stored->key != NULL) {
+        put_u32(buffer, stored->ordinal);
         return;
     }
-    if (resources->count >= UINT32_MAX) {
+    *stored = (wire_resource_slot){resource, hash, 0};
+    resources->cells.count++;
+    hash = hash_resource_value(node);
+    valued = find_resource_slot(&resources->values, node, hash, true);
+    if (valued->key != NULL) {
+        stored->ordinal = valued->ordinal;
+        put_u32(buffer, valued->ordinal);
+        return;
+    }
+    if (resources->values.count >= UINT32_MAX) {
         buffer->failed = true;
         return;
     }
-    slot->resource = resource;
-    slot->ordinal = (uint32_t)resources->count++;
-    put_u32(buffer, slot->ordinal);
+    *valued = (wire_resource_slot){node, hash, (uint32_t)resources->values.count++};
+    stored->ordinal = valued->ordinal;
+    put_u32(buffer, valued->ordinal);
     put_destination(buffer, node);
     markdown_core_node_title(node, &title);
     put_optional_string(buffer, title);
@@ -850,7 +996,8 @@ static void put_tree(wire_buffer *buffer, const markdown_core_node *root) {
         }
     }
     free(stack.actions);
-    free(resources.slots);
+    free(resources.cells.slots);
+    free(resources.values.slots);
 }
 
 /* The document's footnote and specimen tables: each a count, then the id of

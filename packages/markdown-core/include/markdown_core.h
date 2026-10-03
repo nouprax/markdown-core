@@ -646,17 +646,22 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_node_cross_label(const mark
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_title(const markdown_core_node *node,
                                                                 markdown_core_optional_string *title);
 
-/** The resource a `Link` or `Embedded` reads its destination and title from, as
- * an opaque identity (M2). Two nodes answer the same pointer exactly when they
- * share one resource: every occurrence that resolved through one link
- * reference definition does -- `[t][l]`, `[l][]` and `[l]` alike -- and a
- * direct link, a direct image and an autolink never do.
+/** The storage of the resource a `Link` or `Embedded` reads its destination,
+ * title and inherited attributes from (M2). A resource is a value: two are
+ * equal exactly when those fields are, and this pointer is only where one is
+ * stored. Nodes answering the same pointer hold equal values. A parse stores
+ * each link reference definition's value once, and every occurrence it
+ * resolves through that definition -- `[t][l]`, `[l][]` and `[l]` alike --
+ * answers that storage; a direct link, a direct image and an autolink each
+ * answer their own. A session's document takes unchanged occurrences whole
+ * from the previous document, and they keep the storage they were parsed with,
+ * so equal values can answer different pointers.
  *
  * The sharing is what bounds a document: one definition with a long
  * destination referenced many times stores that destination once, however
- * many occurrences name it. A consumer that materializes a destination once
- * per distinct resource keys on this pointer. Nothing else about it is
- * stated, and it is valid only while the document is. */
+ * many occurrences name it. A consumer can decode each storage once by keying
+ * on this pointer; one that names each value once keys on the value. The
+ * pointer is valid only while the document is. */
 #ifndef MARKDOWN_CORE_RESOURCE_TYPEDEF
 #define MARKDOWN_CORE_RESOURCE_TYPEDEF
 typedef struct markdown_core_resource markdown_core_resource;

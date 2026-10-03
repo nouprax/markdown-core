@@ -18,9 +18,10 @@ public enum Destination: Sendable, Hashable {
 
 /// The destination and title a link or image reads through its resource.
 ///
-/// Every occurrence of one reference definition shares one resource in the C
-/// tree, and its identity keys one materialization here, so a long destination
-/// referenced many times is decoded once however often it is named.
+/// A parse stores each reference definition's resource once in the C tree, and
+/// that storage keys one materialization here, so a long destination
+/// referenced many times is decoded once however often it is named. The
+/// resource is a value; the storage only keys the decode.
 struct SharedResource {
     let dest: Destination
     let title: String?
