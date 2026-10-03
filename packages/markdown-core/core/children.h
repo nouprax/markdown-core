@@ -102,6 +102,20 @@ static inline struct markdown_core_node *markdown_core_children_last(const markd
     return (struct markdown_core_node *)run->entries[run->count - 1];
 }
 
+/* An empty run of `tier`, held once, from `pool` (NULL: the allocator); NULL
+ * when storage runs out. */
+static inline markdown_core_run *markdown_core_run_new(markdown_core_node_pool *pool, uint8_t tier) {
+    markdown_core_run *run = (markdown_core_run *)markdown_core_slab_take(pool ? &pool->slabs : NULL,
+                                                                          pool ? &pool->runs : NULL, sizeof(*run));
+    if (run) {
+        run->hold.refs = 1;
+        run->total = 0;
+        run->count = 0;
+        run->tier = tier;
+    }
+    return run;
+}
+
 /* Puts `node` at `index`, at most the count, taking the caller's reference.
  * False, with nothing changed and the reference still the caller's, when
  * storage runs out. */
@@ -115,7 +129,15 @@ static inline bool markdown_core_children_append(markdown_core_node_pool *pool, 
                                                  struct markdown_core_node *node) {
     markdown_core_run *run = *root;
     if (!run) {
-        return markdown_core_children_insert(pool, root, 0, node);
+        /* The first child makes the tree: one tier-zero run holding it. */
+        if (!(run = markdown_core_run_new(pool, 0))) {
+            return false;
+        }
+        run->entries[0] = node;
+        run->count = 1;
+        run->total = 1;
+        *root = run;
+        return true;
     }
     while (run->hold.refs == 1 && run->tier) {
         run = (markdown_core_run *)run->entries[run->count - 1];
@@ -173,20 +195,6 @@ static inline bool markdown_core_children_remove(markdown_core_node_pool *pool, 
  * with nothing changed, when storage runs out. */
 bool markdown_core_children_replace(markdown_core_node_pool *pool, markdown_core_run **root, size_t index,
                                     struct markdown_core_node *node, struct markdown_core_node **replaced);
-
-/* An empty run of `tier`, held once, from `pool` (NULL: the allocator); NULL
- * when storage runs out. */
-static inline markdown_core_run *markdown_core_run_new(markdown_core_node_pool *pool, uint8_t tier) {
-    markdown_core_run *run = (markdown_core_run *)markdown_core_slab_take(pool ? &pool->slabs : NULL,
-                                                                          pool ? &pool->runs : NULL, sizeof(*run));
-    if (run) {
-        run->hold.refs = 1;
-        run->total = 0;
-        run->count = 0;
-        run->tier = tier;
-    }
-    return run;
-}
 
 /* A TREE BUILT FROM A SEQUENCE: an open run of inline nodes freezing into
  * its owner's children (5.11). `put` fills tier-zero runs in order, each to
