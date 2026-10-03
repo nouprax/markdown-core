@@ -524,6 +524,9 @@ typedef struct {
     size_t count;
     /* shift[i] is the length change of edits [0, i). */
     int64_t *shift;
+    /* Where the last anchor's search ended: the walk meets anchors mostly in
+     * source order, so the next search starts from there. */
+    size_t finger;
     publish_swap *swaps;
     size_t swap_count, swap_capacity;
     publish_lookup *lookups;
@@ -532,11 +535,29 @@ typedef struct {
 
 /* The image of the first byte of [start, end) that no edit replaced, or false
  * when every byte of it was replaced (5.2). */
-static bool anchor_mapped(const publish_identity *identity, uint32_t start, uint32_t end, uint32_t *mapped) {
+static bool anchor_mapped(publish_identity *identity, uint32_t start, uint32_t end, uint32_t *mapped) {
     const markdown_core_byte_edit *edits = identity->edits;
-    size_t lo = 0, hi = identity->count, x = start;
+    size_t count = identity->count, x = start, lo = identity->finger, hi = lo, step = 1;
     /* The first edit that ends after x: every one before it ends at or
-     * before x, so x is past it and shifted by it. */
+     * before x, so x is past it and shifted by it. The edits' ends ascend;
+     * the search gallops from the finger to a range that holds the answer
+     * and halves that range. */
+    if (lo < count && edits[lo].end <= x) {
+        lo = hi = lo + 1;
+        while (hi < count && edits[hi].end <= x) {
+            lo = hi + 1;
+            hi += step;
+            step *= 2;
+        }
+        hi = hi < count ? hi : count;
+    } else if (lo > 0 && edits[lo - 1].end > x) {
+        lo = hi = lo - 1;
+        while (lo > 0 && edits[lo - 1].end > x) {
+            hi = lo - 1;
+            lo = lo > step ? lo - step : 0;
+            step *= 2;
+        }
+    }
     while (lo < hi) {
         size_t mid = lo + (hi - lo) / 2;
         if (edits[mid].end <= x) {
@@ -545,7 +566,8 @@ static bool anchor_mapped(const publish_identity *identity, uint32_t start, uint
             hi = mid;
         }
     }
-    while (lo < identity->count && edits[lo].start <= x) {
+    identity->finger = lo;
+    while (lo < count && edits[lo].start <= x) {
         if (x < edits[lo].end) {
             x = edits[lo].end;
         }
@@ -584,20 +606,19 @@ typedef struct {
 
 /* A matched node whose relations are being compared: its cursor and whether
  * that may hold another relation, where the node starts, the relation in
- * hand while a nested node's relations are compared, the node, its place and
- * the old node it continues, the old node's relations not yet paired, the
- * old relation paired with the one in hand -- its next old node, and the end
- * of the node before that (the old node's start for the first) -- and
- * whether the node is same so far. */
+ * hand while a nested node's relations are compared, its pair -- the node,
+ * the old node it continues, its place, and the swaps pending when it was
+ * entered -- the old node's relations not yet paired, the old relation
+ * paired with the one in hand -- its next old node, and the end of the node
+ * before that (the old node's start for the first) -- and whether the node
+ * is same so far. Every field is set before it is read, so entering a node
+ * sets only those it starts with. */
 typedef struct {
     markdown_core_relation_cursor cursor;
     publish_relation rest;
     uint32_t start;
     bool more;
-    markdown_core_node *node, *old;
-    markdown_core_node **field;
-    markdown_core_node *holder;
-    size_t index;
+    publish_swap swap;
     bool same;
     markdown_core_relation_cursor old_cursor;
     markdown_core_relation old_relation;
@@ -607,8 +628,6 @@ typedef struct {
      * `start`, or it is empty when none pairs. */
     markdown_core_relation old_hand;
     uint32_t old_start, old_anchor;
-    /* The swaps pending when the node was entered. */
-    size_t swaps;
 } publish_match_frame;
 
 /* The field a cursor's last relation holds: stepping leaves the cursor one
@@ -644,7 +663,7 @@ static void publish_pair(publish_match_frame *frame, int field) {
  * pairs with the one in hand, stepping past every old node whose anchor's
  * image lies before `node`'s end. An old node stepped past without being
  * matched makes the owner differ. */
-static markdown_core_node *publish_match(const publish_identity *identity, publish_match_frame *owner,
+static markdown_core_node *publish_match(publish_identity *identity, publish_match_frame *owner,
                                          const markdown_core_node *node, markdown_core_place place,
                                          uint32_t *old_start) {
     markdown_core_node *match = NULL;
@@ -757,19 +776,12 @@ static bool publish_matched(publish_identity *identity, markdown_core_node *root
             break;
         }
         frame = &frames[count++];
-        *frame = (publish_match_frame){
-            .cursor = cursor,
-            .start = place.start,
-            .more = more,
-            .node = at.node,
-            .old = at.old,
-            .field = at.field,
-            .holder = at.holder,
-            .index = at.index,
-            .same = verdict,
-            .old_start = old_start,
-            .swaps = identity->swap_count,
-        };
+        frame->cursor = cursor;
+        frame->start = place.start;
+        frame->more = more;
+        frame->swap = at;
+        frame->same = verdict;
+        frame->old_start = old_start;
         hand = (publish_relation){first, place.start};
         markdown_core_relations_begin(&frame->old_cursor, at.old);
         old_relation_next(frame);
@@ -792,10 +804,7 @@ static bool publish_matched(publish_identity *identity, markdown_core_node *root
                     *same = frame->same;
                     break;
                 }
-                ok = publish_verdict(
-                    identity, frame - 1,
-                    &(publish_swap){frame->node, frame->old, frame->field, frame->holder, frame->index, frame->swaps},
-                    frame->same, frame->start);
+                ok = publish_verdict(identity, frame - 1, &frame->swap, frame->same, frame->start);
                 frame--;
                 hand = frame->rest;
                 continue;
