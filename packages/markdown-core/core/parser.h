@@ -762,12 +762,21 @@ typedef struct markdown_core_line_facts {
     int run_end;
     /* Only NUL-bearing lines need this count; it occupies former padding. */
     uint32_t nul_count;
+    /* Where the line's terminator ends, on the last line before the index
+     * steps over a run of lines a parse takes (markdown_core_parser_lookahead_skip):
+     * the next record starts after that run. 0 on every other line. */
+    uint32_t after;
 } markdown_core_line_facts;
-/* The index is a contiguous prefix. Its next record already owns this line's
- * continuation; at the frontier the scanner owns it. No newline bytes need
- * rereading and no third offset needs retaining on every physical line. */
+/* The index is a prefix of the input with a gap where a lookahead stepped
+ * over a run of lines a parse took. Its next record owns this line's
+ * continuation, as the scanner does at the frontier, except on the line
+ * before a gap, whose facts hold it. No newline bytes need rereading and no
+ * third offset needs retaining on every physical line. */
 static inline size_t markdown_core_input_line_next(const markdown_core_parser *parser,
                                                    const markdown_core_input_line *line) {
+    if (line->facts && parser->input_facts[line->facts - 1].after) {
+        return parser->input_facts[line->facts - 1].after;
+    }
     const markdown_core_input_line *next = line + 1;
     return next < parser->input_lines + parser->input_line_count ? next->start : parser->input_scanned;
 }
@@ -988,6 +997,21 @@ bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, struct m
 int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead, markdown_core_chunk *line,
                                         int *first_nonspace, int *indent, int *blank_lines);
 void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead);
+/* THE LOOKAHEAD STEPS OVER A RUN OF LINES THE PARSE TAKES (5.3): its next
+ * line is the one that starts at `next`, after the last line it returned.
+ * The run was read in the parse that made the old tree under the open
+ * containers' prefixes, which carry what they carried then, and both it and
+ * the line before it end on a line that is not blank at the lookahead's
+ * level: the containers stand after the run as they stand before it. The
+ * index records the gap, and the reads reach `reads`. */
+void markdown_core_parser_lookahead_skip(markdown_core_block_lookahead *lookahead, size_t next, size_t reads);
+/* The start of the line after the one whose content ends at `end`: past its
+ * terminator, or the input's end. */
+size_t markdown_core_parser_line_after(markdown_core_parser *parser, size_t end);
+/* The input index forgets the lines after the line being processed, with any
+ * gap a lookahead stepped over among them: the next lookahead reads them from
+ * the source again. */
+void markdown_core_parser_unread_lines(markdown_core_parser *parser);
 
 /* THE LONGEST SOURCE A PARSE TAKES: offsets are int32, and every buffer
  * derived from the source stays under half of that. The public parse entry

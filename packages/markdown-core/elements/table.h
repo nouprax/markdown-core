@@ -5,14 +5,21 @@
 #include "../include/markdown_core.h"
 #include "../core/parser.h"
 
+/* THE RECORD OF A TABLE'S FOLD over its lines (docs/plans/2026-09-29-
+ * incremental-parsing.md, E6), which a later parse reads the table's rows
+ * against: elements/table.c owns it. */
+struct markdown_core_table_fold;
+
 /* Children are one owned row chain; group counts partition it. The parser
- * appends head, content, then foot rows in that order. */
+ * appends head, content, then foot rows in that order. `fold` is the record
+ * of the fold that made a grid table, NULL for every other table. */
 typedef struct {
     size_t column_count;
     markdown_core_table_column *columns;
     size_t head_count, content_count, foot_count;
     size_t autocompleted_cells;
     markdown_core_node *caption;
+    struct markdown_core_table_fold *fold;
 } markdown_core_table;
 
 /* THE TABLE GRAMMAR'S WORK in one parse, for its complexity gates: scalar and

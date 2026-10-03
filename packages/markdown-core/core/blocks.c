@@ -1180,6 +1180,65 @@ static const markdown_core_node *S_old_child(const markdown_core_parser *parser,
     return *lead + child->where.extent.lead == (int64_t)start && child->kind == kind ? child : NULL;
 }
 
+const markdown_core_node *markdown_core_parser_old_block(const markdown_core_parser *parser,
+                                                         const markdown_core_node *parent, markdown_core_node_type kind,
+                                                         size_t from, size_t to, int64_t *start) {
+    size_t depth = 0;
+    while (depth < parser->path.count && parser->path.frames[depth].node != parent) {
+        depth++;
+    }
+    if (depth == parser->path.count) {
+        return NULL;
+    }
+    for (size_t at = 0; at <= depth; at++) {
+        const markdown_core_iter_frame *frame = &parser->path.frames[at];
+        const markdown_core_element_instance *structure = markdown_core_parser_structure(parser, frame->node);
+        if (!frame->old ||
+            (structure && structure->element->carries_as && !structure->element->carries_as(frame->node, frame->old))) {
+            return NULL;
+        }
+    }
+    const markdown_core_node *holder = parser->path.frames[depth].old;
+    markdown_core_children_relation relation = S_relation(parser, depth);
+    size_t index;
+    int64_t lead;
+    if (relation.first == relation.end ||
+        !markdown_core_children_find(holder->children,
+                                     (int64_t)S_children_origin(parser, depth, relation.from_parent) -
+                                         markdown_core_children_length_before(holder->children, relation.first),
+                                     (int64_t)from, &index, &lead) ||
+        index >= relation.end) {
+        return NULL;
+    }
+    const markdown_core_node *child = markdown_core_children_at(holder->children, index);
+    *start = lead + child->where.extent.lead;
+    return child->kind == kind && *start >= (int64_t)from && *start <= (int64_t)to ? child : NULL;
+}
+
+bool markdown_core_parser_take_parts(markdown_core_parser *parser, markdown_core_node *node,
+                                     const markdown_core_node *old, size_t first, size_t count, size_t start,
+                                     size_t end) {
+    bool ok = true;
+    markdown_core_run *run = markdown_core_children_slice(parser->pool, old->children, first, count, &ok);
+    void *takes = ok ? markdown_core_reserve(parser->takes, &parser->take_capacity, parser->take_count + 1,
+                                             sizeof(*parser->takes))
+                     : NULL;
+    if (!takes) {
+        markdown_core_node_pool_release_children(parser->pool, run);
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return false;
+    }
+    parser->takes = takes;
+    if (!markdown_core_children_join(parser->pool, &node->children, run)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return false;
+    }
+    assert(!parser->take_count || parser->takes[parser->take_count - 1].start < start);
+    parser->takes[parser->take_count++] =
+        (markdown_core_take){(uint32_t)start, (uint32_t)end, markdown_core_children_at(old->children, first), count};
+    return true;
+}
+
 bool markdown_core_parser_set_node_kind(markdown_core_parser *parser, markdown_core_node *node,
                                         markdown_core_node_type kind) {
     markdown_core_parser_note_kind(parser, kind);
@@ -2056,10 +2115,9 @@ markdown_core_line_facts *markdown_core_parser_extend_line_facts(markdown_core_p
     return entry;
 }
 
-/* The parse resumes at the line after `end`, where a run it took ends
- * (5.3): the line index starts again there, and its lines number on from
- * the line in hand. */
-static void S_input_resume(markdown_core_parser *parser, size_t end) {
+/* The start of the line after the one whose content ends at `end`: past its
+ * terminator, or the input's end. */
+static size_t S_line_after(markdown_core_parser *parser, size_t end) {
     size_t size = parser->input_text.size, next = end;
     if (next < size) {
         unsigned char byte = *markdown_core_parser_input_at(parser, next);
@@ -2068,6 +2126,14 @@ static void S_input_resume(markdown_core_parser *parser, size_t end) {
             next++;
         }
     }
+    return next;
+}
+
+/* The parse resumes at the line after `end`, where a run it took ends
+ * (5.3): the line index starts again there, and its lines number on from
+ * the line in hand. */
+static void S_input_resume(markdown_core_parser *parser, size_t end) {
+    size_t next = S_line_after(parser, end);
     parser->input_first_line = parser->line_number + 1;
     parser->input_line_count = 0;
     parser->input_fact_count = 0;
@@ -2670,6 +2736,56 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
     parser->partially_consumed_tab = lookahead->saved_partially_consumed_tab;
     lookahead->active = false;
     lookahead->parser = NULL;
+}
+
+size_t markdown_core_parser_line_after(markdown_core_parser *parser, size_t end) { return S_line_after(parser, end); }
+
+void markdown_core_parser_lookahead_skip(markdown_core_block_lookahead *lookahead, size_t next, size_t reads) {
+    markdown_core_parser *parser = lookahead->parser;
+    if (reads > parser->line_reads) {
+        parser->line_reads = reads;
+    }
+    if (next < parser->input_scanned) {
+        /* An earlier lookahead indexed the line: the records from the next
+         * line the lookahead reads are contiguous, and one starts there. */
+        size_t low = (size_t)(lookahead->line - parser->input_first_line), up = parser->input_line_count;
+        while (low < up) {
+            size_t middle = low + (up - low) / 2;
+            if (parser->input_lines[middle].start < next) {
+                low = middle + 1;
+            } else {
+                up = middle;
+            }
+        }
+        assert(low < parser->input_line_count && parser->input_lines[low].start == next);
+        lookahead->line = parser->input_first_line + (int)low;
+    } else {
+        if (next > parser->input_scanned) {
+            markdown_core_input_line *last = &parser->input_lines[parser->input_line_count - 1];
+            markdown_core_line_facts *facts =
+                last->facts ? &parser->input_facts[last->facts - 1] : markdown_core_parser_extend_line_facts(parser, last);
+            if (!facts) {
+                return;
+            }
+            facts->after = (uint32_t)parser->input_scanned;
+            parser->input_scanned = next;
+        }
+        lookahead->line = parser->input_first_line + (int)parser->input_line_count;
+    }
+    lookahead->cursor = next;
+}
+
+void markdown_core_parser_unread_lines(markdown_core_parser *parser) {
+    size_t count = (size_t)(parser->line_number + 1 - parser->input_first_line);
+    if (count > parser->input_line_count) {
+        return;
+    }
+    markdown_core_input_line *line = &parser->input_lines[count - 1];
+    parser->input_scanned = markdown_core_input_line_next(parser, line);
+    if (line->facts) {
+        parser->input_facts[line->facts - 1].after = 0;
+    }
+    parser->input_line_count = count;
 }
 
 /* THE LINE NAMES ITS CANDIDATES; THE DISPATCHER DOES NOT ASK EVERY OWNER.

@@ -46,6 +46,25 @@ bool markdown_core_parser_close_lead(markdown_core_parser *parser, markdown_core
  * and no run of taken blocks ends at it. */
 markdown_core_node *markdown_core_parser_write_closed(markdown_core_parser *parser, markdown_core_node *parent,
                                                       size_t end);
+/* THE OLD BLOCK A MAKER READS ITS PARTS FROM (docs/plans/2026-09-29-
+ * incremental-parsing.md, 5.3 and E5): the old block of `kind` that starts
+ * in [from, to] among the children of the old block the open block
+ * `parent` continues, when the open blocks down to `parent` carry what their
+ * old blocks carried, with where it starts in `*start`; NULL otherwise. A
+ * block its element makes whole from the lines a lookahead reads -- a grid,
+ * multiline or simple table -- takes the parts of the old one its own
+ * reading reproduces. */
+const markdown_core_node *markdown_core_parser_old_block(const markdown_core_parser *parser,
+                                                         const markdown_core_node *parent, markdown_core_node_type kind,
+                                                         size_t from, size_t to, int64_t *start);
+/* A RUN OF PARTS A MAKER TAKES (5.3): the `count` children of `old` from
+ * child `first`, the first of which starts at `start` and the last ends at
+ * `end`, join the children of `node`, which the maker is making, as the
+ * parse that made them left them, and the parse records the run. False when
+ * storage runs out, with the parse lost. */
+bool markdown_core_parser_take_parts(markdown_core_parser *parser, markdown_core_node *node,
+                                     const markdown_core_node *old, size_t first, size_t count, size_t start,
+                                     size_t end);
 void markdown_core_block_advance_offset(markdown_core_parser *parser, markdown_core_chunk *input, bufsize_t count,
                                         bool columns);
 typedef struct markdown_core_block_start_context {

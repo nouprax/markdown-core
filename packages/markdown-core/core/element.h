@@ -206,6 +206,13 @@ struct markdown_core_element {
      * none. */
     bool (*take_children)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *container,
                           const markdown_core_node *old, size_t first, size_t count, uint32_t tally);
+    /* THE RECORD A NODE CARRIES BEYOND ITS VALUE, ITS EXTENT AND ITS REACH
+     * (docs/plans/2026-09-29-incremental-parsing.md, 5.1 and E6): the state
+     * of its maker's fold where it began, which a later parse compares
+     * before it takes the node -- a table row's. An `old` node equal to
+     * `node` as a value takes it with the rest of `node`'s record (5.9).
+     * NULL when the element's nodes carry none. */
+    void (*take_record)(markdown_core_node *old, const markdown_core_node *node);
     bool (*accepts_blank)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
     bool (*blank_line)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
     bool (*ends_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,

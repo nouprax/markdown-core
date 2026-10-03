@@ -7,6 +7,7 @@
 #include "../include/markdown_core.h"
 
 #include "ast_internal.h"
+#include "element.h"
 #include "directive.h"
 #include "formula.h"
 #include "markdown-core-elements.h"
@@ -776,6 +777,9 @@ static bool publish_take_record(markdown_core_node *old, const markdown_core_nod
     old->flags = flags;
     old->reach = node->reach;
     old->tally = node->tally;
+    if (node->element && node->element->take_record) {
+        node->element->take_record(old, node);
+    }
     return changed;
 }
 
