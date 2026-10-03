@@ -433,8 +433,8 @@ MARKDOWN_CORE_API void markdown_core_session_free(markdown_core_session *session
  * end when the document is freed. */
 MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_root(const markdown_core_document *document);
 
-/** The node's identifier: unique within its document, and numbered from 1 in
- * canonical walk order by a parse. In a session a node that continues a node
+/** The node's identifier: unique within its document, and numbered from 1 by a
+ * parse, each owner numbering the nodes it holds when it completes. In a session a node that continues a node
  * of the previous document keeps its identifier, and a node that continues
  * none takes one the session has never issued. Every identifier is below
  * 2^53. */

@@ -102,8 +102,8 @@ the engine's session; the documents it returned stay complete values.
 ### Identity, equality and scopes
 
 Every node has an `id: MarkupID`, unique within its document across every
-owned relation and numbered from 1 in walk order by a parse, so two parses of
-one text are equal, ids included. Ids suit Compose `key` in lazy lists.
+owned relation and numbered from 1 by a parse, each owner numbering the nodes
+it holds when it completes, so two parses of one text are equal, ids included. Ids suit Compose `key` in lazy lists.
 `equals` is deep value equality: the same kind, id, scalar fields, extent and
 pairwise equal children in every relation, compared with an explicit work
 stack after a reference check. `hashCode` reads the id alone.

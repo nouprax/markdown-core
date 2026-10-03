@@ -36,19 +36,20 @@ import Testing
     @Test("a position names a byte of its line at a scalar boundary, and finds the last node holding it")
     func hitTesting() throws {
         let source = "é🚀\r\nx"
-        // Ids: 1 document, 2 paragraph, 3 "é🚀", 4 the soft break (the CR),
-        // 5 "x". Zero is no node.
-        let expected: [(TextUnit, [UInt64])] = [
-            (.utf8, [3, 0, 3, 0, 0, 0, 4, 2, 0]),
-            (.utf16, [3, 3, 0, 4, 2, 0, 0, 0, 0]),
+        // 0 is no node, 1 "é🚀", 2 the soft break (the CR), 3 the paragraph.
+        let expected: [(TextUnit, [Int])] = [
+            (.utf8, [1, 0, 1, 0, 0, 0, 2, 3, 0]),
+            (.utf16, [1, 1, 0, 2, 3, 0, 0, 0, 0]),
         ]
-        for (unit, ids) in expected {
+        for (unit, nodes) in expected {
             let document = try Document.parse(source, unit: unit)
-            let found = try (1...Int32(ids.count)).map { column in
-                try document.node(at: Position(line: 1, column: column), in: source)?.id.value ?? 0
+            let paragraph = try #require(document.content.first as? Paragraph)
+            let ids: [MarkupID?] = [nil, paragraph.content[0].id, paragraph.content[1].id, paragraph.id]
+            let found = try (1...Int32(nodes.count)).map { column in
+                try document.node(at: Position(line: 1, column: column), in: source)?.id
             }
-            #expect(found == ids, "\(unit)")
-            #expect(try document.node(at: Position(line: 2, column: 1), in: source)?.id.value == 5)
+            #expect(found == nodes.map { ids[$0] }, "\(unit)")
+            #expect(try document.node(at: Position(line: 2, column: 1), in: source)?.id == paragraph.content[2].id)
             #expect(try document.node(at: Position(line: 2, column: 2), in: source) == nil)
             #expect(try document.node(at: Position(line: 3, column: 1), in: source) == nil)
         }

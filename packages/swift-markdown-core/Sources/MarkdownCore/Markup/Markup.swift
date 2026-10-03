@@ -51,8 +51,9 @@ public enum TextUnit: Sendable, Hashable {
     case utf16
 }
 
-/// A node's identifier: unique within its document, and numbered from 1 in
-/// canonical walk order by a parse, so two parses of the same text agree.
+/// A node's identifier: unique within its document, and numbered from 1 by a
+/// parse, each owner numbering the nodes it holds when it completes, so two
+/// parses of the same text agree.
 ///
 /// Identifiers from different documents are not comparable. Every value is
 /// below 2^53.

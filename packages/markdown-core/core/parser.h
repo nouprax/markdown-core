@@ -38,7 +38,7 @@ typedef enum {
  * is released into `pool` with every other node it retires, and `last_id` is
  * the last id issued. A fresh parse continues nothing: `previous` is NULL
  * and `last_id` is 0, so its nodes are numbered from 1: each owner numbers
- * the nodes it holds when it completes, and the root takes the last id.
+ * the nodes it holds when it completes, and the root numbers itself when it completes.
  *
  * `pool` lends the parse every node and resource slot it takes (node.h); it
  * outlives the parse, and its owner disposes it. */

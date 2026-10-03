@@ -143,7 +143,7 @@ Rules:
   bodies, affixes, footnote referents, metadata).
 - **Deterministic for a fresh parse.** `Document.parse` numbers nodes from 1:
   each node's owner numbers the nodes it holds when it completes, and the
-  root takes the last id (5.8). Two fresh parses of the same text are equal,
+  root numbers itself when it completes (5.8). Two fresh parses of the same text are equal,
   identifiers included.
 - **Stable in a session.** A node reused or matched by an edit keeps its id
   (5.9). A node the edit creates takes the next unused id of the session.
@@ -720,8 +720,8 @@ parse.
   whose info names a formula becomes a FormulaBlock), the container's fold of
   its children (E4: list layout, definition scopes), and the ids and extents
   (4.3) of the nodes it holds, which keep their absolute places until then,
-  in canonical field order. The document root takes the last id, and its
-  extent is measured from 0. A paragraph that held only definitions is not
+  in canonical field order. The document root numbers itself when it
+  completes, and its extent is measured from 0. A paragraph that held only definitions is not
   added to its parent.
 - **Inline roots complete when their parse ends.** A block's inline content
   and each inline field of a block (a definition's term, a callout's title, a
