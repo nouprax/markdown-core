@@ -88,6 +88,8 @@ static bool markdown_core_block_parse_callout_metadata(markdown_core_callout_wor
                                                                             title->content.size, 0)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
+        /* The title is a field, complete once made. */
+        markdown_core_parser_complete(parser, title, NULL);
     }
     markdown_core_block_advance_offset(parser, input, input->len - 1 - parser->offset, false);
     return true;

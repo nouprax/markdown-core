@@ -622,7 +622,8 @@ static markdown_core_node *email_text_fragment(markdown_core_parser *parser,
  * A Text that is nothing but addresses is freed once its splits are in place;
  * the return value says so, because the caller's event names a node that is
  * then gone. Sets parser->error on failure and leaves the tree consistent. */
-static markdown_core_finish_result postprocess_text(markdown_core_parser *parser, markdown_core_node *text) {
+static markdown_core_finish_result postprocess_text(markdown_core_parser *parser, markdown_core_node *text,
+                                                    markdown_core_node *parent) {
     size_t start = 0;
     size_t offset = 0;
     markdown_core_content_map source_map = text->content_map;
@@ -726,7 +727,6 @@ static markdown_core_finish_result postprocess_text(markdown_core_parser *parser
         /* Recognition alone cannot authorize a rewrite in an extension-owned
          * parent. Decide before allocating or splitting the original text. */
         size_t prefix_len = offset + max_rewind - rewind;
-        markdown_core_node *parent = markdown_core_parser_walk_parent(parser);
         if (!parent || !markdown_core_node_can_contain_type(parent, MARKDOWN_CORE_NODE_LINK) ||
             (prefix_len && !markdown_core_node_can_contain_type(parent, MARKDOWN_CORE_NODE_TEXT))) {
             break;
@@ -803,21 +803,20 @@ static markdown_core_finish_result postprocess_text(markdown_core_parser *parser
     return MARKDOWN_CORE_FINISH_CONTINUE;
 }
 
-/* The email scan is a finish STEP: it is asked, from inside the one finish
- * walk, at a Text's EXIT (the kind it acts on) and at a Link's ENTER and EXIT
+/* The email scan is a finish STEP: it is asked, from inside an inline root's
+ * pass, at a Text's EXIT (the kind it acts on) and at a Link's ENTER and EXIT
  * (the kind whose extent it tracks). The Link events set and clear the
  * per-root state word -- a Text inside a Link is never scanned, an address
  * there is already a link's text -- and a Text's EXIT outside a Link is
- * scanned. The walk has already consolidated that Text with the siblings that
+ * scanned. The pass has already consolidated that Text with the siblings that
  * followed it when this is asked, so the scan sees the whole run, and the
  * EXIT's lookahead already names the following survivor, so the splits
  * inserted before the Text are never visited and the Text itself may be
  * freed. */
 static markdown_core_finish_result finish_step(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                               markdown_core_node *node, markdown_core_event_type event, int is_root,
-                                               void **state) {
+                                               markdown_core_node *node, markdown_core_event_type event,
+                                               markdown_core_node *parent, void **state) {
     (void)self;
-    (void)is_root;
     if (node->kind == MARKDOWN_CORE_NODE_LINK) {
         *state = event == MARKDOWN_CORE_EVENT_ENTER ? node : NULL;
         return MARKDOWN_CORE_FINISH_CONTINUE;
@@ -826,7 +825,7 @@ static markdown_core_finish_result finish_step(const markdown_core_element_insta
     if (*state) {
         return MARKDOWN_CORE_FINISH_CONTINUE;
     }
-    return postprocess_text(parser, node);
+    return postprocess_text(parser, node, parent);
 }
 
 static const markdown_core_node_type AUTOLINK_FINISH_KINDS[] = {MARKDOWN_CORE_NODE_TEXT, MARKDOWN_CORE_NODE_NONE};

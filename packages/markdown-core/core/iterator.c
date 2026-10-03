@@ -93,28 +93,6 @@ bool markdown_core_iter_take_next(markdown_core_iter *iter, markdown_core_node_p
     return markdown_core_children_remove(pool, &parent->node->children, parent->at + 1, taken);
 }
 
-/* Every iterator step a finish-stage consolidation takes is counted on the
- * parser when there is one, so the traversal count the finish stage claims
- * can be checked (see the counters in parser.h). */
-static void S_count_step(markdown_core_parser *parser, markdown_core_event_type event) {
-    if (!parser) {
-        return;
-    }
-    parser->finish_walk_events++;
-    if (event == MARKDOWN_CORE_EVENT_ENTER) {
-        parser->finish_nodes_entered++;
-    } else if (event == MARKDOWN_CORE_EVENT_DONE) {
-        parser->finish_walk_roots++;
-    }
-}
-
-/* An absorbed sibling is visited by consolidation, which completes and frees
- * it, and counted as visited: its ENTER and its EXIT. */
-static void S_count_absorbed(markdown_core_parser *parser) {
-    S_count_step(parser, MARKDOWN_CORE_EVENT_ENTER);
-    S_count_step(parser, MARKDOWN_CORE_EVENT_EXIT);
-}
-
 /* The surviving Text owns the concatenated literal and a concatenation of
  * its operands' source runs. A caller outside a parse has no parser-owned
  * map to retain and uses the public entry point with NULL.
@@ -193,7 +171,6 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
         }
         for (size_t left = end - parent->at - 1; left; left--) {
             markdown_core_node *tmp = markdown_core_iter_next_sibling(iter);
-            S_count_absorbed(parser);
             if (complete) {
                 complete(parser, tmp, depth);
             }
@@ -246,40 +223,4 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
         return MARKDOWN_CORE_FINISH_CONSUMED;
     }
     return MARKDOWN_CORE_FINISH_CONTINUE;
-}
-
-/* The same step, driven by a walk of its own. Inside a parse the finish walk
- * runs the step itself and never comes here; this is the entry point for a
- * tree built or rewritten outside a parse, and a pass that calls it with a
- * parser pays -- and is counted for -- one more traversal of the root. */
-int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parser, markdown_core_node *root) {
-    if (root == NULL) {
-        return 1;
-    }
-    markdown_core_iter_path path = {0};
-    markdown_core_iter iter;
-    markdown_core_event_type ev_type;
-    int ok = 1;
-
-    markdown_core_iter_init(&iter, &path, root);
-    while ((ev_type = markdown_core_iter_step(&iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *cur = markdown_core_iter_node(&iter);
-        S_count_step(parser, ev_type);
-        if (ev_type != MARKDOWN_CORE_EVENT_EXIT || cur->kind != MARKDOWN_CORE_NODE_TEXT ||
-            !markdown_core_text_needs_consolidation(&iter, cur)) {
-            continue;
-        }
-        if (markdown_core_consolidate_text_step(parser, &iter, cur, NULL, 0) == MARKDOWN_CORE_FINISH_FAILED) {
-            ok = 0;
-            break;
-        }
-    }
-    if (iter.failed) {
-        ok = 0;
-    }
-    if (ok) {
-        S_count_step(parser, MARKDOWN_CORE_EVENT_DONE);
-    }
-    markdown_core_iter_path_dispose(&path);
-    return ok;
 }

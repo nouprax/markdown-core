@@ -24,28 +24,12 @@ static int continue_paragraph(const markdown_core_element_instance *self, markdo
 }
 /* A PARAGRAPH THAT HELD ONLY REFERENCE DEFINITIONS IS NOT A PARAGRAPH. Its
  * finalization consumed the definitions and left nothing, so it has no
- * inline content to parse and no place in the tree: it is released at its
- * EXIT, from inside the one finish walk, which is postorder -- the list it
- * sits in lays itself out at its own EXIT, after this, and sees the cleaned
- * children. A root is never released: it belongs to whoever holds it, and a
- * definition's term that was only definitions stays the empty term it is. */
+ * inline content to parse; its parent drops it (blocks.c,
+ * S_drop_definition_paragraph). */
 static int contains_inlines(const markdown_core_element *element, markdown_core_node *node) {
     (void)element;
     return !(node->flags & MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY);
 }
-static markdown_core_finish_result finish_step(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                               markdown_core_node *node, markdown_core_event_type event, int is_root,
-                                               void **state) {
-    (void)self;
-    (void)event;
-    (void)state;
-    assert(event == MARKDOWN_CORE_EVENT_EXIT);
-    if (is_root || !(node->flags & MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY)) {
-        return MARKDOWN_CORE_FINISH_CONTINUE;
-    }
-    return markdown_core_parser_walk_release(parser) ? MARKDOWN_CORE_FINISH_CONSUMED : MARKDOWN_CORE_FINISH_FAILED;
-}
-static const markdown_core_node_type PARAGRAPH_EXIT_KINDS[] = {MARKDOWN_CORE_NODE_PARAGRAPH, MARKDOWN_CORE_NODE_NONE};
 static bool accepts_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
                          markdown_core_node *node) {
     (void)self;
@@ -90,6 +74,4 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
     .paragraph = true,
     .finalize_block = finalize_block,
     .open_text_block = open_text,
-    .finish_step = finish_step,
-    .finish_exit_kinds = PARAGRAPH_EXIT_KINDS,
 };

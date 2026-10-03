@@ -290,6 +290,8 @@ static int apply_parsed_directive(const markdown_core_element *element, markdown
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return 0;
         }
+        /* The label is a field, complete once made. */
+        markdown_core_parser_complete(parser, directive->label, NULL);
     }
 
     return 1;

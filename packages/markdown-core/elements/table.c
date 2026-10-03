@@ -98,8 +98,9 @@ static markdown_core_node *new_cell(markdown_core_parser *parser, markdown_core_
  * alternate inline parser and no position repair after parsing. `offset`
  * indexes the content of `source`, whose map places it, when the row was
  * recovered from a paragraph, and otherwise the input of physical `line`. */
-static void set_cell_content(markdown_core_parser *parser, markdown_core_node *node, const node_cell *cell,
-                             markdown_core_node *source, int line, bufsize_t line_start, bufsize_t offset) {
+static void set_cell_content(markdown_core_parser *parser, markdown_core_node *row, markdown_core_node *node,
+                             const node_cell *cell, markdown_core_node *source, int line, bufsize_t line_start,
+                             bufsize_t offset) {
     node->internal_offset = cell->internal_offset;
     for (bufsize_t from = 0; from < cell->content.len && !parser->error;) {
         bufsize_t to = from;
@@ -138,6 +139,8 @@ static void set_cell_content(markdown_core_parser *parser, markdown_core_node *n
         }
         from = to;
     }
+    /* A pipe cell is complete once it holds its bytes. */
+    markdown_core_parser_complete(parser, node, row);
 }
 
 /* A pipe-row cursor borrows source bytes. Recognition and materialization
@@ -306,8 +309,21 @@ static void try_inserting_table_header_paragraph(const markdown_core_element_ins
     }
 
     /* A table split completes this paragraph just as a later block start
-     * would: reference definitions and anchor attachment share finalization. */
+     * would: reference definitions and anchor attachment share finalization.
+     * A lead of only definitions is no paragraph, and the table after it
+     * stands in its place. */
     markdown_core_paragraph_finalize(paragraph_element, parser, parent, paragraph);
+    if (paragraph->flags & MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY) {
+        markdown_core_node *lead =
+            markdown_core_node_take_child(parser->pool, parent, markdown_core_node_children_count(parent) - 2);
+        if (!lead) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            return;
+        }
+        markdown_core_parser_release_node(parser, lead);
+        return;
+    }
+    markdown_core_parser_complete(parser, paragraph, parent);
 }
 
 /* Return NULL when the syntax does not match or the parent rejects the table
@@ -425,8 +441,8 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
             break;
         }
         S_place_content_span(parser, parent_container, header_cell, cell->start_offset, cell->end_offset);
-        set_cell_content(parser, header_cell, cell, parent_container, parser->line_number, parser->line_start,
-                         (bufsize_t)(cell->content.data - (unsigned char *)parent_string));
+        set_cell_content(parser, table_header, header_cell, cell, parent_container, parser->line_number,
+                         parser->line_start, (bufsize_t)(cell->content.data - (unsigned char *)parent_string));
     }
 
     markdown_core_parser_advance_offset(
@@ -478,7 +494,7 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
             }
             node->where.place.end = (uint32_t)markdown_core_parser_source_end(
                 parser, parser->line_number, parser->first_nonspace + 1 + cell->end_offset);
-            set_cell_content(parser, node, cell, NULL, parser->line_number, parser->line_start,
+            set_cell_content(parser, table_row_block, node, cell, NULL, parser->line_number, parser->line_start,
                              (bufsize_t)(cell->content.data - input));
         }
 
@@ -2320,8 +2336,8 @@ static void table_append_newline(table_source *source, markdown_core_node *node,
     }
 }
 
-static void table_fill_cell(table_source *source, markdown_core_node *node, const table_source_cell *cell, bool blocks,
-                            int padding_limit) {
+static void table_fill_cell(table_source *source, markdown_core_node *row, markdown_core_node *node,
+                            const table_source_cell *cell, bool blocks, int padding_limit) {
     int padding = padding_limit;
     for (size_t i = cell->first; i <= cell->last; i++) {
         table_source_line *line = &source->lines[i];
@@ -2343,8 +2359,12 @@ static void table_fill_cell(table_source *source, markdown_core_node *node, cons
         table_append_range(source, node, i, first, end, !blocks);
         table_append_newline(source, node, i);
     }
+    /* A cell of inline content is complete once it holds its bytes; one of
+     * blocks completes its blocks when its input is read. */
     if (blocks && !source->parser->error) {
         markdown_core_parser_queue_block_input(source->parser, node);
+    } else {
+        markdown_core_parser_complete(source->parser, node, row);
     }
 }
 
@@ -2360,7 +2380,8 @@ static void table_fill_pipe_row(markdown_core_parser *parser, markdown_core_node
     markdown_core_children_seek(&at, row->children, 0);
     for (markdown_core_node *node = markdown_core_children_next(&at);
          node && !parser->error && pipe_row_next(&cells, &cell); node = markdown_core_children_next(&at)) {
-        set_cell_content(parser, node, &cell, NULL, line->line, markdown_core_parser_line_start(parser, line->line),
+        set_cell_content(parser, row, node, &cell, NULL, line->line,
+                         markdown_core_parser_line_start(parser, line->line),
                          (bufsize_t)(cell.content.data - line->data));
     }
 }
@@ -2431,7 +2452,7 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
             cell_node->as.table_cell->rowspan = cell->rowspan;
             cell_node->as.table_cell->colspan = cell->colspan;
             if (!candidate->pipe) {
-                table_fill_cell(source, cell_node, cell, candidate->block_content, candidate->padding_limit);
+                table_fill_cell(source, row_node, cell_node, cell, candidate->block_content, candidate->padding_limit);
             }
         }
         if (candidate->pipe && row_node && !parser->error) {
@@ -2457,6 +2478,8 @@ static markdown_core_node *table_caption_build(table_source *source, size_t last
         table_append_range(source, node, i, left, line->columns, false);
         table_append_newline(source, node, i);
     }
+    /* The caption is a field, complete once made. */
+    markdown_core_parser_complete(source->parser, node, NULL);
     return node;
 }
 

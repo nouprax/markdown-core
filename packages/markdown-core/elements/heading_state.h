@@ -29,6 +29,12 @@ typedef struct {
 typedef struct {
     markdown_core_heading_collection headings;
     anchor_registry anchors;
+    /* The complete nodes that declare an explicit anchor, as they complete;
+     * the tree owns them. */
+    struct {
+        markdown_core_node **values;
+        size_t count, capacity;
+    } declared;
     size_t anchor_work;
 } markdown_core_heading_state;
 

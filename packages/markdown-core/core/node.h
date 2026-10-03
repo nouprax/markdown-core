@@ -246,8 +246,9 @@ enum markdown_core_node__internal_flags {
     // type-2 block rather than the input or a container running out.
     MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION = (1 << 4),
     // A finalized paragraph consumed entirely by reference definitions. It
-    // retains block adjacency until block parsing ends, then is discarded
-    // before list layout and inline parsing observe the semantic children.
+    // keeps its place as its open parent's last child, and the parent drops
+    // it when it takes another child or completes, before list layout and
+    // inline parsing observe the semantic children.
     MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY = (1 << 5),
 
     // Deferred contextual escape token, decoded when inline ownership is final.

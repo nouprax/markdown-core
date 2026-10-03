@@ -2095,80 +2095,26 @@ static bool attach_precedence_observers(markdown_core_dialect_builder *builder, 
  * the byte set alone decides -- a gate that leans on a container kind is
  * checked for the case where that container is absent, which is the case that
  * loses documents. */
-static int postprocess_runs[2];
-
-static int count_postprocess_absent(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                    markdown_core_node *root) {
-    (void)self;
-    (void)root;
-    (void)parser;
-    postprocess_runs[0]++;
-    return 1;
-}
-
-static int count_postprocess_present(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                     markdown_core_node *root) {
-    (void)self;
-    (void)root;
-    (void)parser;
-    postprocess_runs[1]++;
-    return 1;
-}
-
+/* A GATE SKIPS A STEP. A step declares the kinds it acts on apart from the
+ * kinds it is asked at, because they differ for formula: it acts on a
+ * Formula and is asked at the Paragraph that holds it. The gate reads the
+ * former, so a document that produced none of them never asks the step at
+ * all -- not at any of its paragraphs -- while a document that produced one
+ * asks it at every event it was projected to. Counted, not timed: skipping is
+ * invisible in the output. */
+static int step_asked[2];
 static const markdown_core_node_type OBSERVER_ABSENT_KINDS[] = {MARKDOWN_CORE_NODE_CODE_BLOCK, MARKDOWN_CORE_NODE_NONE};
 static const markdown_core_node_type OBSERVER_PRESENT_KINDS[] = {MARKDOWN_CORE_NODE_TEXT, MARKDOWN_CORE_NODE_NONE};
 
-static bool attach_postprocess_observers(markdown_core_dialect_builder *builder, void *context) {
-    /* One pass declares a kind this document cannot contain, the other a kind
-     * every paragraph of prose contains. */
-    static const markdown_core_element absent = {.name = "postprocess-absent-observer",
-                                                 .postprocess_func = count_postprocess_absent,
-                                                 .finish_acts_on_kinds = OBSERVER_ABSENT_KINDS};
-    static const markdown_core_element present = {.name = "postprocess-present-observer",
-                                                  .postprocess_func = count_postprocess_present,
-                                                  .finish_acts_on_kinds = OBSERVER_PRESENT_KINDS};
-    (void)context;
-    return markdown_core_dialect_builder_attach(builder, &absent) &&
-           markdown_core_dialect_builder_attach(builder, &present);
-}
-
-/* A postprocess pass is a whole-tree walk, so a pass that cannot match anything
- * still costs the tree. Declaring the kinds it acts on is what lets the engine
- * skip it -- and skipping is invisible in the output, which is exactly why it
- * is asserted by counting runs rather than by comparing a dump.
- *
- * Counting runs, not time: a pass that is skipped runs zero times on a document
- * that cannot feed it, and exactly once on one that can. */
-static void postprocess_skips_absent_kinds(test_batch_runner *runner) {
-    static const char source[] = "just some prose\n";
-    markdown_core_node *doc;
-
-    postprocess_runs[0] = 0;
-    postprocess_runs[1] = 0;
-    doc = markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_postprocess_observers, NULL);
-    OK(runner, doc != NULL, "a document with observing postprocess passes parses");
-    INT_EQ(runner, postprocess_runs[0], 0, "a pass whose declared kinds never occurred does not walk the tree");
-    INT_EQ(runner, postprocess_runs[1], 1, "a pass whose declared kind occurred runs exactly once");
-    markdown_core_node_free(doc);
-}
-
-/* THE SAME GATE SKIPS A STEP. A step declares the kinds it acts on apart
- * from the kinds it is asked at, because they differ for formula: it acts on
- * a Formula and is asked at the Paragraph that holds it. The gate reads the
- * former, so a document that produced none of them never asks the step at
- * all -- not at any of its paragraphs -- while a document that produced one
- * asks it at every event it was projected to. Counted, not timed, for the
- * same reason as the pass above: skipping is invisible in the output. */
-static int step_asked[2];
-
 static markdown_core_finish_result count_step_absent(const markdown_core_element_instance *self,
                                                      markdown_core_parser *parser, markdown_core_node *node,
-                                                     markdown_core_event_type event, int is_root, void **state) {
+                                                     markdown_core_event_type event, markdown_core_node *parent,
+                                                     void **state) {
     (void)self;
     (void)parser;
     (void)node;
     (void)event;
-    (void)is_root;
+    (void)parent;
     (void)state;
     step_asked[0]++;
     return MARKDOWN_CORE_FINISH_CONTINUE;
@@ -2176,12 +2122,13 @@ static markdown_core_finish_result count_step_absent(const markdown_core_element
 
 static markdown_core_finish_result count_step_present(const markdown_core_element_instance *self,
                                                       markdown_core_parser *parser, markdown_core_node *node,
-                                                      markdown_core_event_type event, int is_root, void **state) {
+                                                      markdown_core_event_type event, markdown_core_node *parent,
+                                                      void **state) {
     (void)self;
     (void)parser;
     (void)node;
     (void)event;
-    (void)is_root;
+    (void)parent;
     (void)state;
     step_asked[1]++;
     return MARKDOWN_CORE_FINISH_CONTINUE;
@@ -2218,9 +2165,9 @@ static void finish_step_skips_absent_kinds(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 }
 
-/* THE GATE IS READ AT THE EVENT. The walk parses each container's inline
- * content at that container's ENTER, so a kind the step acts on may first be
- * made after the walk began; the gate opens when it is. A step asked at a
+/* THE GATE IS READ AT THE EVENT. Each inline root is parsed when its pass
+ * reaches it, in document order, so a kind the step acts on may first be
+ * made after the inline stage began; the gate opens when it is. A step asked at a
  * Paragraph's EXIT that acts on inline Code is asked at the paragraph that
  * holds the first Code and at every paragraph after it, and not at the
  * paragraphs before it -- where no Code existed and the step could have
@@ -2368,7 +2315,7 @@ typedef struct {
     size_t without_hook;
 } kind_set_sweep;
 
-static bool sweep_postprocess_kind_sets(markdown_core_dialect_builder *builder, void *context) {
+static bool sweep_finish_kind_sets(markdown_core_dialect_builder *builder, void *context) {
     kind_set_sweep *sweep = context;
     size_t element_count;
     const markdown_core_element *const *elements = markdown_core_dialect_builder_elements(builder, &element_count);
@@ -2384,10 +2331,7 @@ static bool sweep_postprocess_kind_sets(markdown_core_dialect_builder *builder, 
             continue;
         }
         sweep->declared++;
-        if (!element->postprocess_func && !element->finish_step) {
-            sweep->without_hook++;
-        }
-        if ((element->finish_exit_kinds || element->finish_scope_kinds) && !element->finish_step) {
+        if (!element->finish_step) {
             sweep->without_hook++;
         }
         for (size_t list = 0; list < sizeof(lists) / sizeof(*lists); list++) {
@@ -2421,15 +2365,15 @@ static bool sweep_postprocess_kind_sets(markdown_core_dialect_builder *builder, 
  * produced none of them. A kind written into the wrong namespace would skip the
  * documents that DO feed the pass, silently, so the declarations are checked
  * for well-formedness -- and separately, above, for actually taking effect. */
-static void postprocess_kind_sets_are_well_formed(test_batch_runner *runner) {
+static void finish_kind_sets_are_well_formed(test_batch_runner *runner) {
     kind_set_sweep sweep = {0, 0, 0};
     static const char probe_source[] = "probe\n";
-    markdown_core_node *probe_doc = markdown_core_parse_document_with_setup(probe_source, sizeof(probe_source) - 1,
-                                                                            sweep_postprocess_kind_sets, &sweep);
+    markdown_core_node *probe_doc =
+        markdown_core_parse_document_with_setup(probe_source, sizeof(probe_source) - 1, sweep_finish_kind_sets, &sweep);
 
     OK(runner, sweep.declared > 0, "at least one finish hook declares its kinds for this law to bind");
     INT_EQ(runner, (int)sweep.without_hook, 0, "only a pass or a step declares the kinds it acts on");
-    INT_EQ(runner, (int)sweep.malformed, 0, "every declared postprocess kind belongs to exactly one namespace");
+    INT_EQ(runner, (int)sweep.malformed, 0, "every declared finish kind belongs to exactly one namespace");
     markdown_core_node_free(probe_doc);
 }
 
@@ -4481,17 +4425,13 @@ static void table_values(test_batch_runner *runner) {
 /* Many contractions followed by many address splits must retain one linear
  * source map, rather than copying every unconsumed suffix for each link. */
 static int observed_source_marks;
-static int roots_read_after_delete;
-static int observe_source_marks(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                markdown_core_node *root) {
+static void observe_source_marks(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     (void)self;
-    (void)root;
     observed_source_marks = parser->line_marks_size;
-    return 1;
 }
 
 static void table_source_map_growth(test_batch_runner *runner) {
-    static const markdown_core_element observer = {.postprocess_func = observe_source_marks};
+    static const markdown_core_element observer = {.dispose_parser = observe_source_marks};
     const markdown_core_element *elements[] = {&observer};
     const char *unit = "\\| &amp; user@example.com ";
     size_t unit_length = strlen(unit);
@@ -4747,17 +4687,14 @@ static const markdown_core_element PEER_ABSENT = {.name = "absent"};
 static const markdown_core_element *const PROBE_PEERS[] = {&MARKDOWN_CORE_ELEMENT_TABLE, &PEER_ABSENT,
                                                            &MARKDOWN_CORE_ELEMENT_LINK, NULL};
 static int peers_resolved;
-static int observe_peers(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                         markdown_core_node *root) {
-    (void)root;
+static void observe_peers(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     peers_resolved = self->peers[0] == markdown_core_parser_instance(parser, &MARKDOWN_CORE_ELEMENT_TABLE) &&
                      self->peers[0] && self->peers[0]->element == &MARKDOWN_CORE_ELEMENT_TABLE && !self->peers[1] &&
                      self->peers[2] == markdown_core_parser_instance(parser, &MARKDOWN_CORE_ELEMENT_LINK) &&
                      self->peers[2] && !markdown_core_parser_instance(parser, &PEER_ABSENT);
-    return 1;
 }
 static void peers_resolve_at_seal(test_batch_runner *runner) {
-    static const markdown_core_element probe = {.postprocess_func = observe_peers, .peers = PROBE_PEERS};
+    static const markdown_core_element probe = {.dispose_parser = observe_peers, .peers = PROBE_PEERS};
     const markdown_core_element *elements[] = {&probe};
     peers_resolved = 0;
     markdown_core_node *root = parse_with_probes("text\n", 5, elements, 1);
@@ -4766,16 +4703,13 @@ static void peers_resolve_at_seal(test_batch_runner *runner) {
 }
 
 static size_t properties_decoded_bytes;
-static int observe_properties(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                              markdown_core_node *root) {
+static void observe_properties(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     (void)self;
-    (void)root;
     properties_decoded_bytes =
         ELEMENT_STATE(parser, markdown_core_properties_work, MARKDOWN_CORE_ELEMENT_DOCUMENT)->decoded_bytes;
-    return 1;
 }
 static void properties_member_work(test_batch_runner *runner) {
-    static const markdown_core_element observer = {.postprocess_func = observe_properties};
+    static const markdown_core_element observer = {.dispose_parser = observe_properties};
     const markdown_core_element *elements[] = {&observer};
     const struct {
         const char *source;
@@ -5005,16 +4939,11 @@ typedef struct {
     size_t registered_definitions, definition_lists, citation_brace_bytes, tables, table_frontier;
     size_t table_workspace_growth, table_geometry_lines, table_separator_scans, table_horizontal_work;
     size_t physical_lines, physical_capacity, physical_facts, physical_fact_capacity, normalized_lines;
-    bool heading_collection_disposed;
     size_t attributes, anchors, definitions, definition_resources, whitespace, brackets, citations, list_markers,
         specimens;
     size_t inline_hooks;
     size_t properties_lines, physical_line_bytes, metadata_key_bytes, metadata_value_bytes, table_scratch_growth;
-    /* The finish stage's traversal count and its denominator (parser.h):
-     * recorded by a global pass at the document root, which is the last root
-     * the finish walk completes, so these are the stage's totals. */
-    size_t finish_events, finish_entered, finish_roots, finish_parsed;
-    size_t nodes_created, nodes_created_before_finish, nodes_freed, nodes_freed_before_finish;
+    size_t nodes_created, nodes_freed;
     size_t delimiter_pushes;
     size_t pooled_delimiters;
     size_t content_mark_queries;
@@ -5022,25 +4951,18 @@ typedef struct {
     /* The runs the content-to-source map holds when the parse ends. */
     size_t line_marks;
 } inline_work;
-static int record_inline_work(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                              markdown_core_node *root) {
+static void record_inline_work(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     (void)self;
     inline_work *work = parser->context;
-    if (root != parser->root || !work) {
-        return 1;
+    if (!work) {
+        return;
     }
     const markdown_core_table_work *tables =
         markdown_core_table_work_in(markdown_core_parser_instance(parser, &MARKDOWN_CORE_ELEMENT_TABLE));
     const markdown_core_heading_state *headings =
         ELEMENT_STATE(parser, markdown_core_heading_state, MARKDOWN_CORE_ELEMENT_HEADING);
-    work->finish_events = parser->finish_walk_events;
-    work->finish_entered = parser->finish_nodes_entered;
-    work->finish_roots = parser->finish_walk_roots;
-    work->finish_parsed = parser->finish_nodes_parsed;
     work->nodes_created = parser->nodes_created;
-    work->nodes_created_before_finish = parser->nodes_created_before_finish;
     work->nodes_freed = parser->nodes_freed;
-    work->nodes_freed_before_finish = parser->nodes_freed_before_finish;
     work->cross_link = ELEMENT_STATE(parser, markdown_core_cross_link_work, MARKDOWN_CORE_ELEMENT_CROSS_LINK)->scan;
     work->autolink_domains =
         ELEMENT_STATE(parser, markdown_core_autolink_work, MARKDOWN_CORE_ELEMENT_AUTOLINK)->domains;
@@ -5099,14 +5021,12 @@ static int record_inline_work(const markdown_core_element_instance *self, markdo
         work->definitions++;
         work->definition_resources += record->resource != NULL;
     }
-    work->heading_collection_disposed = headings->headings.values == NULL && headings->headings.count == 0;
     work->footnote_body = parser->footnote_body_work;
     work->registered_definitions = parser->definition_registration_work;
     work->definition_lists =
         ELEMENT_STATE(parser, markdown_core_definition_list_work, MARKDOWN_CORE_ELEMENT_DEFINITION_LIST)->work;
-    return 1;
 }
-static const markdown_core_element WORK_RECORDER = {.name = "work-recorder", .postprocess_func = record_inline_work};
+static const markdown_core_element WORK_RECORDER = {.name = "work-recorder", .dispose_parser = record_inline_work};
 static bool measure_inline_work(markdown_core_dialect_builder *builder, void *context) {
     (void)context;
     return markdown_core_dialect_builder_attach(builder, &WORK_RECORDER);
@@ -5526,166 +5446,6 @@ static void footnote_registration(test_batch_runner *runner) {
     }
 }
 
-/* The postprocess contract says a pass may rewrite the tree rooted at `root`
- * but may not substitute a different node for `root` itself. These two passes
- * are the requirements that contract has to keep serving: strip every comment,
- * and replace every html node with a placeholder. Both reach every owned
- * subtree -- a definition term, a callout title, a cite prefix, a table
- * caption, a directive label -- and in none of them is the node to remove or
- * replace ever the root, because a field root is the container its OWNER
- * created and the comment or html sits inside it. */
-static int contract_removed_comments;
-static int contract_replaced_html;
-static int contract_root_was_target;
-
-static int strip_comments(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_node *root) {
-    (void)self;
-    markdown_core_iter *iter = markdown_core_iter_new(root);
-    markdown_core_event_type event;
-    if (!iter) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return 0;
-    }
-    /* At EXIT the walk takes the node out of its parent and goes on with its
-     * next sibling, so freeing the node cannot invalidate traversal state. */
-    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *node = markdown_core_iter_get_node(iter);
-        if (event != MARKDOWN_CORE_EVENT_EXIT ||
-            (node->kind != MARKDOWN_CORE_NODE_COMMENT && node->kind != MARKDOWN_CORE_NODE_COMMENT_BLOCK)) {
-            continue;
-        }
-        if (node == root) {
-            contract_root_was_target++;
-            continue;
-        }
-        markdown_core_node *taken = NULL;
-        if (!markdown_core_iter_take_current(iter, parser->pool, &taken)) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            markdown_core_iter_free(iter);
-            return 0;
-        }
-        markdown_core_node_free(taken);
-        contract_removed_comments++;
-    }
-    markdown_core_iter_free(iter);
-    return 1;
-}
-
-static int html_to_placeholder(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                               markdown_core_node *root) {
-    (void)self;
-    markdown_core_iter *iter = markdown_core_iter_new(root);
-    markdown_core_event_type event;
-    if (!iter) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return 0;
-    }
-    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *node = markdown_core_iter_get_node(iter);
-        if (event != MARKDOWN_CORE_EVENT_EXIT ||
-            (node->kind != MARKDOWN_CORE_NODE_HTML && node->kind != MARKDOWN_CORE_NODE_HTML_BLOCK)) {
-            continue;
-        }
-        if (node == root) {
-            contract_root_was_target++;
-            continue;
-        }
-        markdown_core_node *parent = markdown_core_iter_parent(iter);
-        if (markdown_core_node_set_kind(parent, node, MARKDOWN_CORE_NODE_TEXT) == MARKDOWN_CORE_NODE_SET_KIND_OK) {
-            set_literal(node, "[html]");
-            contract_replaced_html++;
-            continue;
-        }
-        /* Inline Text is not containable where this html node sits, so the
-         * placeholder is a block. A non-root node is replaced through its
-         * parent, which is exactly what the root has none of. */
-        markdown_core_node *para = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
-        markdown_core_node *text = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
-        if (!para || !text || !set_literal(text, "[html]") || !markdown_core_node_append_child(NULL, para, text)) {
-            markdown_core_node_free(para);
-            markdown_core_node_free(text);
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            markdown_core_iter_free(iter);
-            return 0;
-        }
-        if (!markdown_core_node_can_contain_type(parent, MARKDOWN_CORE_NODE_PARAGRAPH)) {
-            markdown_core_node_free(para);
-            continue;
-        }
-        /* The placeholder goes in just before the node, which the walk then
-         * takes out; containment was proved above. */
-        if (!markdown_core_iter_insert_before(iter, parser->pool, para)) {
-            markdown_core_node_free(para);
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            markdown_core_iter_free(iter);
-            return 0;
-        }
-        markdown_core_node *taken = NULL;
-        if (!markdown_core_iter_take_current(iter, parser->pool, &taken)) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            markdown_core_iter_free(iter);
-            return 0;
-        }
-        markdown_core_node_free(taken);
-        contract_replaced_html++;
-    }
-    markdown_core_iter_free(iter);
-    return 1;
-}
-
-static void postprocess_rewrites_every_owned_tree(test_batch_runner *runner) {
-    static const markdown_core_element strip = {.name = "strip-comments", .postprocess_func = strip_comments};
-    static const markdown_core_element placeholder = {.name = "html-placeholder",
-                                                      .postprocess_func = html_to_placeholder};
-    const markdown_core_element *elements[] = {&strip, &placeholder};
-    static const struct {
-        const char *source;
-        int comments, html;
-    } cases[] = {
-        {"Body %%gone%% and <b>h</b> tail\n", 1, 2},
-        {"Term %%gone%% <b>h</b>\n: Body %%gone%% <b>h</b>\n", 2, 4},
-        {"> [!NOTE] Title %%gone%% <b>h</b>\n> Body\n", 1, 2},
-        {"See [pre %%gone%% <b>h</b> @doe99 post].\n", 1, 2},
-        {"| a |\n| - |\n| b |\n\nTable: Cap %%gone%% <b>h</b>\n", 1, 2},
-        {":::note[Label %%gone%% <b>h</b>]\nBody\n:::\n", 1, 2},
-        /* The whole block is the construct: still never the walked root. */
-        {"%%whole paragraph is a comment%%\n", 1, 0},
-        {"<div>whole block is html</div>\n", 0, 1},
-        {"Term\n: %%only a comment%%\n", 1, 0},
-        {"Term\n: <b>only html</b>\n", 0, 2},
-    };
-    for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
-        contract_removed_comments = 0;
-        contract_replaced_html = 0;
-        contract_root_was_target = 0;
-        markdown_core_node *root = parse_with_probes(cases[i].source, strlen(cases[i].source), elements, 2);
-        OK(runner, root != NULL, "contract case %zu parses", i);
-        if (!root) {
-            continue;
-        }
-        int left = 0;
-        markdown_core_iter *iter = markdown_core_iter_new(root);
-        markdown_core_event_type event;
-        while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-            markdown_core_node *node = markdown_core_iter_get_node(iter);
-            if (event != MARKDOWN_CORE_EVENT_ENTER) {
-                continue;
-            }
-            if (node->kind == MARKDOWN_CORE_NODE_COMMENT || node->kind == MARKDOWN_CORE_NODE_COMMENT_BLOCK ||
-                node->kind == MARKDOWN_CORE_NODE_HTML || node->kind == MARKDOWN_CORE_NODE_HTML_BLOCK) {
-                left++;
-            }
-        }
-        markdown_core_iter_free(iter);
-        INT_EQ(runner, contract_removed_comments, cases[i].comments, "contract case %zu strips its comments", i);
-        INT_EQ(runner, contract_replaced_html, cases[i].html, "contract case %zu replaces its html", i);
-        INT_EQ(runner, contract_root_was_target, 0, "contract case %zu never meets the target at a root", i);
-        INT_EQ(runner, left, 0, "contract case %zu leaves neither kind behind", i);
-        markdown_core_node_free(root);
-    }
-}
-
 /* A standalone formula is promoted to a FormulaBlock only where the paragraph
  * wrapping it has a parent to take the substitute. As a definition term it is
  * the root of an owned subtree, which has none: the promotion is skipped and
@@ -5715,76 +5475,6 @@ static void standalone_formula_as_owned_root(test_batch_runner *runner) {
            "the term holds the inline formula");
     }
     markdown_core_node_free(root);
-}
-
-typedef struct {
-    size_t removed;
-} footnote_postprocess_probe;
-
-/* A pass may remove every footnote: definitions from the content, and inline
- * notes from their citations. Nothing in the parser points at them by then. */
-static int remove_footnotes(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                            markdown_core_node *root) {
-    (void)self;
-    if (root->kind != MARKDOWN_CORE_NODE_DOCUMENT) {
-        return 1;
-    }
-    footnote_postprocess_probe *probe = parser->context;
-    node_list notes = footnotes_of(root);
-    node_list cites = nodes_of_kind(root, MARKDOWN_CORE_NODE_CITE);
-    /* Detach every note from its owner first, so freeing one never reaches
-     * another through it. */
-    for (size_t i = 0; i < cites.count; i++) {
-        for (size_t k = 0; k < markdown_core_node_children_count(cites.nodes[i]); k++) {
-            markdown_core_node_child(cites.nodes[i], k)->as.citation->note = NULL;
-        }
-    }
-    for (size_t i = 0; i < notes.count; i++) {
-        markdown_core_node *parent = parent_in(root, notes.nodes[i]);
-        if (parent && !markdown_core_node_take_child(parser->pool, parent, child_index_of(parent, notes.nodes[i]))) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            free(cites.nodes);
-            free(notes.nodes);
-            return 0;
-        }
-    }
-    for (size_t i = 0; i < notes.count; i++) {
-        markdown_core_node_free(notes.nodes[i]);
-        probe->removed++;
-    }
-    free(cites.nodes);
-    free(notes.nodes);
-    return 1;
-}
-
-static bool observe_footnote_removal(markdown_core_dialect_builder *builder, void *context) {
-    (void)context;
-    static const markdown_core_element probe = {.name = "remove-footnotes", .postprocess_func = remove_footnotes};
-    return markdown_core_dialect_builder_attach(builder, &probe);
-}
-
-static void footnote_postprocessing(test_batch_runner *runner) {
-    static const char source[] = "^[outer ^[inner]] :d[^[label]]\n\n[^n]: ^[body]\n";
-    footnote_postprocess_probe probe = {0};
-    markdown_core_node *root =
-        markdown_core_parse_document_with_setup(source, sizeof(source) - 1, observe_footnote_removal, &probe);
-    OK(runner, root != NULL, "postprocessing may remove footnotes without stale parser pointers");
-    INT_EQ(runner, probe.removed, 5, "postprocessor reaches every definition and inline note");
-    if (root) {
-        markdown_core_node *cite = child_at(child_at(root, 0), 0);
-        node_list notes = footnotes_of(root);
-        markdown_core_node *item = child_at(cite, 0);
-        OK(runner, notes.count == 0 && item && item->kind == MARKDOWN_CORE_NODE_CITATION && !item->as.citation->note,
-           "no footnote remains and a Cite has no structural body");
-        free(notes.nodes);
-        markdown_core_node *note = markdown_core_node_new(MARKDOWN_CORE_NODE_FOOTNOTE);
-        bool appended = markdown_core_node_append_child(NULL, cite, note);
-        OK(runner, !appended, "Cite containment rejects a Footnote child");
-        if (!appended) {
-            markdown_core_node_free(note);
-        }
-        markdown_core_node_free(root);
-    }
 }
 
 /* Attribute recognition work is totalled in the parse's attribute workspace,
@@ -7183,7 +6873,6 @@ static void heading_registry_invariants(test_batch_runner *runner) {
                 markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
             OK(runner, root != NULL, "heading registry handles dense future reservations");
             if (root) {
-                OK(runner, work.heading_collection_disposed, "postprocessors never observe live heading parse state");
                 for (size_t i = 0; i < count; i++) {
                     markdown_core_node *node = child_at(root, i);
                     char expected[80];
@@ -8249,15 +7938,15 @@ typedef struct {
 } container_prefix_sweep;
 
 /* The table is projected when the instance's dialect is sealed, so it is read
- * from inside the instance, from a pass, like the work counters. */
-static int record_container_prefix(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                   markdown_core_node *root) {
+ * from inside the instance, when the parser is disposed, like the work
+ * counters. */
+static void record_container_prefix(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     (void)self;
     container_prefix_sweep *sweep = parser->context;
     const markdown_core_dialect *dialect = parser->dialect;
     bool expected[256] = {false};
-    if (root != parser->root || !sweep) {
-        return 1;
+    if (!sweep) {
+        return;
     }
     expected[' '] = expected['\t'] = true;
     for (size_t i = 0; i < dialect->element_count; i++) {
@@ -8275,10 +7964,9 @@ static int record_container_prefix(const markdown_core_element_instance *self, m
     for (int byte = 0; byte < 256; byte++) {
         sweep->extra += dialect->container_prefix[byte] && !expected[byte];
     }
-    return 1;
 }
 static const markdown_core_element CONTAINER_PREFIX_RECORDER = {.name = "container-prefix-recorder",
-                                                                .postprocess_func = record_container_prefix};
+                                                                .dispose_parser = record_container_prefix};
 static bool sweep_container_prefix(markdown_core_dialect_builder *builder, void *context) {
     (void)context;
     return markdown_core_dialect_builder_attach(builder, &CONTAINER_PREFIX_RECORDER);
@@ -9465,8 +9153,9 @@ static void formula_leaf_construction_work(test_batch_runner *runner) {
     }
 }
 
-/* Promotion moves the value's existing owner. An allocation failure before the
- * commit preserves the old subtree; borrowed code bytes are never modified. */
+/* Promotion changes the node in place and moves the value's existing owner;
+ * borrowed code bytes are never modified. An allocation failure is reported
+ * and leaks nothing. */
 static void formula_promotion_transfers_storage(test_batch_runner *runner) {
     for (int shape = 0; shape < 3; shape++) {
         for (size_t fail = 0; fail < 4; fail++) {
@@ -9478,11 +9167,11 @@ static void formula_promotion_transfers_storage(test_batch_runner *runner) {
             markdown_core_node *old =
                 markdown_core_node_new(shape == 0 ? MARKDOWN_CORE_NODE_PARAGRAPH : MARKDOWN_CORE_NODE_CODE_BLOCK);
             markdown_core_node_append_child(NULL, root, old);
-            markdown_core_node *donor = NULL;
             const char *before;
             void *opaque = NULL;
             if (shape == 0) {
-                donor = markdown_core_node_new_with_ext(MARKDOWN_CORE_NODE_FORMULA, &MARKDOWN_CORE_ELEMENT_FORMULA);
+                markdown_core_node *donor =
+                    markdown_core_node_new_with_ext(MARKDOWN_CORE_NODE_FORMULA, &MARKDOWN_CORE_ELEMENT_FORMULA);
                 markdown_core_elements_set_formula_mode(donor, MARKDOWN_CORE_FORMULA_MODE_STANDALONE);
                 markdown_core_elements_set_formula_literal(donor, " \t value \n ");
                 markdown_core_node_append_child(NULL, old, donor);
@@ -9496,23 +9185,19 @@ static void formula_promotion_transfers_storage(test_batch_runner *runner) {
                 }
                 before = (const char *)old->as.code->literal.data;
             }
-            parser.walk = walk_to_exit(root, old);
             payload_fail_at = fail ? payload_allocations + fail : 0;
             markdown_core_finish_result result = MARKDOWN_CORE_ELEMENT_FORMULA.finish_step(
-                &formula_instance, &parser, old, MARKDOWN_CORE_EVENT_EXIT, 0, NULL);
+                &formula_instance, &parser, old, MARKDOWN_CORE_EVENT_EXIT, root, NULL);
             payload_fail_at = 0;
-            markdown_core_iter_free(parser.walk);
             if (result == MARKDOWN_CORE_FINISH_FAILED) {
                 INT_EQ(runner, parser.error, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED, "loss is reported");
-                OK(runner, child_at(root, 0) == old, "failed promotion preserves the old owner");
-                STR_EQ(runner, before, " \t value \n ", "failed promotion preserves the old literal");
-                if (donor) {
-                    OK(runner, donor->opaque == opaque, "failed promotion preserves the payload owner");
-                }
             } else {
-                INT_EQ(runner, result, MARKDOWN_CORE_FINISH_CONSUMED, "promotion consumes the replaced subtree");
-                markdown_core_node *formula = child_at(root, 0);
-                const char *after = markdown_core_elements_get_formula_literal(formula);
+                INT_EQ(runner, result, MARKDOWN_CORE_FINISH_CONTINUE, "promotion keeps the node in its place");
+                OK(runner,
+                   child_at(root, 0) == old && old->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK &&
+                       markdown_core_node_children_count(old) == 0,
+                   "the node itself becomes the formula block");
+                const char *after = markdown_core_elements_get_formula_literal(old);
                 STR_EQ(runner, after, "value", "promotion trims and NUL-terminates its literal");
                 if (shape < 2) {
                     OK(runner, before == after, "owned literal allocation is transferred without copying");
@@ -9521,7 +9206,7 @@ static void formula_promotion_transfers_storage(test_batch_runner *runner) {
                     STR_EQ(runner, before, " \t value \n ", "borrowed source remains immutable");
                 }
                 if (opaque) {
-                    OK(runner, formula->opaque == opaque, "the formula payload has one lifetime across promotion");
+                    OK(runner, old->opaque == opaque, "the formula payload has one lifetime across promotion");
                 }
             }
             markdown_core_node_free(root);
@@ -9796,140 +9481,6 @@ static void definition_open_gate_admits_only_possible_terms(test_batch_runner *r
                "the gate admits a definition list with %zu blank lines before its marker", i);
         markdown_core_node_free(built);
     }
-}
-
-/* A postprocess pass may free any node it reaches, and a Cite OWNS its
- * citations' prefix and suffix roots -- freeing it frees them. So the set of
- * owned roots is not stable across passes, and no list of them survives a pass
- * that is allowed to run.
- *
- * This crashed under ASan the moment the finish stage recorded the roots for
- * later passes to replay, and is here so that the next attempt trips on a test
- * rather than on a user. The finish stage still enumerates the roots once, but
- * it never holds them: every phase a root needs runs at the single point where
- * that root's iteration completes, which is after every owned root nested
- * inside it is finished and popped. The second pass only reads `root->kind`;
- * under a replay that read is the use-after-free. */
-static int postprocess_deletes_cites(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                     markdown_core_node *root) {
-    (void)self;
-    (void)parser;
-    markdown_core_iter *iter = markdown_core_iter_new(root);
-    markdown_core_event_type event;
-    if (!iter) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return 0;
-    }
-    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *node = markdown_core_iter_get_node(iter);
-        if (event == MARKDOWN_CORE_EVENT_EXIT && node->kind == MARKDOWN_CORE_NODE_CITE && node != root) {
-            markdown_core_node *taken = NULL;
-            if (!markdown_core_iter_take_current(iter, parser->pool, &taken)) {
-                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-                markdown_core_iter_free(iter);
-                return 0;
-            }
-            markdown_core_node_free(taken);
-        }
-    }
-    markdown_core_iter_free(iter);
-    return 1;
-}
-
-static int postprocess_reads_its_root(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                      markdown_core_node *root) {
-    (void)self;
-    (void)parser;
-    roots_read_after_delete += root->kind != MARKDOWN_CORE_NODE_NONE;
-    return 1;
-}
-
-static const markdown_core_node_type CITE_DELETE_KINDS[] = {MARKDOWN_CORE_NODE_TEXT, MARKDOWN_CORE_NODE_NONE};
-
-static bool attach_delete_then_read(markdown_core_dialect_builder *builder, void *context) {
-    static const markdown_core_element deleter = {.name = "cite-deleter",
-                                                  .postprocess_func = postprocess_deletes_cites,
-                                                  .finish_acts_on_kinds = CITE_DELETE_KINDS};
-    static const markdown_core_element reader = {.name = "root-reader",
-                                                 .postprocess_func = postprocess_reads_its_root,
-                                                 .finish_acts_on_kinds = CITE_DELETE_KINDS};
-    (void)context;
-    return markdown_core_dialect_builder_attach(builder, &deleter) &&
-           markdown_core_dialect_builder_attach(builder, &reader);
-}
-
-static void a_pass_may_free_the_roots_a_later_pass_reads(test_batch_runner *runner) {
-    static const char source[] = "See [pre text @doe99 post text] and [more @smith2020 tail].\n";
-    roots_read_after_delete = 0;
-    markdown_core_node *doc =
-        markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_delete_then_read, NULL);
-    OK(runner, doc != NULL, "a pass that deletes a subtree owner, followed by one that reads its roots, parses");
-    INT_EQ(runner, count_kind(doc, MARKDOWN_CORE_NODE_CITE), 0, "the cites are gone");
-    OK(runner, roots_read_after_delete > 0, "the following pass still received roots to read: %d",
-       roots_read_after_delete);
-    markdown_core_node_free(doc);
-}
-
-/* ONE ENUMERATION, NOT ONE PER PHASE.
- *
- * Finding the owned roots is a full traversal of the document, and it used to
- * be paid again for every postprocess pass. Nothing in the public surface
- * counts traversals, but the ORDER the passes observe says which shape ran:
- * a traversal per pass shows every root to pass A before pass B sees any,
- * while one traversal shows each root to A and then to B before moving on.
- *
- * The document has three roots -- the content tree, a definition term and a
- * callout title -- so `AAABBB` is the old shape and `ABABAB` the fused one.
- * Restoring the per-phase enumeration turns this test red with `AAABBB`. */
-static char phase_order[64];
-static size_t phase_order_len;
-
-static int postprocess_records_a(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 markdown_core_node *root) {
-    (void)self;
-    (void)parser;
-    (void)root;
-    if (phase_order_len + 1 < sizeof(phase_order)) {
-        phase_order[phase_order_len++] = 'A';
-    }
-    return 1;
-}
-
-static int postprocess_records_b(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 markdown_core_node *root) {
-    (void)self;
-    (void)parser;
-    (void)root;
-    if (phase_order_len + 1 < sizeof(phase_order)) {
-        phase_order[phase_order_len++] = 'B';
-    }
-    return 1;
-}
-
-static bool attach_two_recorders(markdown_core_dialect_builder *builder, void *context) {
-    static const markdown_core_element first = {.name = "phase-a", .postprocess_func = postprocess_records_a};
-    static const markdown_core_element second = {.name = "phase-b", .postprocess_func = postprocess_records_b};
-    (void)context;
-    return markdown_core_dialect_builder_attach(builder, &first) &&
-           markdown_core_dialect_builder_attach(builder, &second);
-}
-
-static void finish_stage_runs_every_phase_at_each_root(test_batch_runner *runner) {
-    static const char source[] = "term\n: body\n\n> [!note] title\n> body\n";
-    phase_order_len = 0;
-    memset(phase_order, 0, sizeof(phase_order));
-    markdown_core_node *doc =
-        markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_two_recorders, NULL);
-    OK(runner, doc != NULL, "the document with two owned roots parses");
-    OK(runner, phase_order_len >= 6, "both passes ran over every root: %zu visits", phase_order_len);
-    /* Every root sees A immediately followed by B: no pass ran ahead of the
-     * other over the whole document, so there was one enumeration. */
-    int interleaved = phase_order_len % 2 == 0;
-    for (size_t i = 0; interleaved && i < phase_order_len; i += 2) {
-        interleaved = phase_order[i] == 'A' && phase_order[i + 1] == 'B';
-    }
-    OK(runner, interleaved, "every root ran both phases before the next root: %s", phase_order);
-    markdown_core_node_free(doc);
 }
 
 /* The mailto links of a root and of every owned field root under it: the
@@ -10800,16 +10351,6 @@ static size_t owned_node_census(markdown_core_node *root) {
     return count;
 }
 
-/* The one-traversal identity (parser.h): the finish stage entered each node
- * it was handed exactly once, and the finished tree is those nodes less the
- * ones the stage freed plus the ones its steps made. The nodes the walk's own
- * inline parsing made are handed to it -- made at a container's ENTER, they
- * are the next events -- so they come out of the "made" term. */
-static size_t nodes_handed_to_finish(const inline_work *work, size_t finished_tree) {
-    return finished_tree + (work->nodes_freed - work->nodes_freed_before_finish) -
-           (work->nodes_created - work->nodes_created_before_finish - work->finish_parsed);
-}
-
 /* ONE TRAVERSAL PER ROOT, AND EVERY FINISH HOOK INSIDE IT.
  *
  * The finish stage used to walk each root once to find the owned roots, once
@@ -10926,35 +10467,8 @@ static void finish_stage_walks_each_root_once(test_batch_runner *runner) {
     if (!root) {
         return;
     }
-    size_t finished = owned_node_census(root);
     INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_FORMULA_BLOCK), 2,
            "formula's step promoted the standalone block and replaced the fence");
-    OK(runner, work.finish_roots >= 6,
-       "the document, its field roots and the inline footnote were each completed: %zu roots", work.finish_roots);
-    OK(runner, work.nodes_freed - work.nodes_freed_before_finish >= 4,
-       "consolidation freed the siblings it absorbed and formula's step the fence and paragraph it replaced, "
-       "with their children: %zu freed",
-       work.nodes_freed - work.nodes_freed_before_finish);
-    OK(runner, work.nodes_created > work.nodes_created_before_finish,
-       "autolink's and formula's steps made nodes inside the walk: %zu of %zu",
-       work.nodes_created - work.nodes_created_before_finish, work.nodes_created);
-    OK(runner, work.finish_entered == nodes_handed_to_finish(&work, finished),
-       "the finish stage entered every node it was handed exactly once: %zu entered, %zu in the finished tree, "
-       "%zu freed, %zu made",
-       work.finish_entered, finished, work.nodes_freed - work.nodes_freed_before_finish,
-       work.nodes_created - work.nodes_created_before_finish);
-    OK(runner, work.finish_events == 2 * work.finish_entered + work.finish_roots,
-       "and every step it took was one of those events: %zu events, %zu entered, %zu roots", work.finish_events,
-       work.finish_entered, work.finish_roots);
-    OK(runner, work.finish_events < 2 * (2 * finished + work.finish_roots),
-       "so it took fewer steps than two traversals of the finished tree: %zu events for %zu nodes", work.finish_events,
-       finished);
-    /* The inline content was parsed by the walk, not before it: the nodes
-     * that parsing made were made after the walk noted its starting point,
-     * and every one of them is a node the walk entered. */
-    OK(runner, work.finish_parsed > 0 && work.finish_parsed <= work.nodes_created - work.nodes_created_before_finish,
-       "the walk parsed the inline content itself: %zu nodes made by its parsing of the %zu made inside it",
-       work.finish_parsed, work.nodes_created - work.nodes_created_before_finish);
 
     /* Every address became a link -- seven of them, four on field roots the
      * public iterator does not descend into -- including the one
@@ -11010,19 +10524,6 @@ static void finish_stage_is_one_traversal_at_any_depth(test_batch_runner *runner
                 if (root) {
                     INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LINK), sizes[w],
                            "autolink's step linked every address at depth %zu", sizes[d]);
-                    /* Document, Paragraph, the nesting, and the addresses as
-                     * ONE Text: the Links are autolink's, made from inside the
-                     * finish walk and never entered by it. */
-                    size_t census = owned_node_census(root), handed = nodes_handed_to_finish(&work, census);
-                    OK(runner, handed >= sizes[d] + 3,
-                       "the walk was handed the nesting: %zu nodes at depth %zu width %zu", handed, sizes[d], sizes[w]);
-                    OK(runner, work.finish_entered == handed,
-                       "one traversal at depth %zu width %zu: %zu entered, %zu handed", sizes[d], sizes[w],
-                       work.finish_entered, handed);
-                    OK(runner, work.finish_events == 2 * work.finish_entered + work.finish_roots,
-                       "and every step was one of its events at depth %zu width %zu: %zu events, %zu entered, "
-                       "%zu roots",
-                       sizes[d], sizes[w], work.finish_events, work.finish_entered, work.finish_roots);
                     markdown_core_node_free(root);
                 }
                 markdown_core_strbuf_free(&source);
@@ -11031,71 +10532,19 @@ static void finish_stage_is_one_traversal_at_any_depth(test_batch_runner *runner
     }
 }
 
-/* THE NEGATIVE CONTROL: the counter measures traversals.
- *
- * A global pass that consolidates its root again through the public entry
- * point pays one more traversal of that root, and the counter must say so --
- * exactly 2n + 1 for a root of n nodes, since the finish walk has already
- * merged every run and this second pass absorbs nothing. If the counter did
- * not move, the assertion above would be vacuous. */
-static size_t control_root_nodes;
-
-static int consolidate_document_again(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                      markdown_core_node *root) {
-    (void)self;
-    if (root->kind != MARKDOWN_CORE_NODE_DOCUMENT) {
-        return 1;
-    }
-    control_root_nodes = total_nodes(root);
-    return markdown_core_consolidate_text_nodes_with_parser(parser, root);
-}
-
-static bool attach_control_then_recorder(markdown_core_dialect_builder *builder, void *context) {
-    (void)context;
-    static const markdown_core_element control = {.name = "consolidate-again",
-                                                  .postprocess_func = consolidate_document_again};
-    return markdown_core_dialect_builder_attach(builder, &control) &&
-           markdown_core_dialect_builder_attach(builder, &WORK_RECORDER);
-}
-
-static void a_whole_root_pass_costs_one_traversal(test_batch_runner *runner) {
-    static const char source[] = "Term a\\.b@c.io\n: body with x\\.y@z.com\n\n> [!note] title q@r.st\n> body\n";
-    inline_work plain = {0}, controlled = {0};
-    markdown_core_node *root =
-        markdown_core_parse_document_with_setup(source, sizeof(source) - 1, measure_inline_work, &plain);
-    OK(runner, root != NULL, "the control document parses");
-    markdown_core_node_free(root);
-    control_root_nodes = 0;
-    root =
-        markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_control_then_recorder, &controlled);
-    OK(runner, root != NULL, "the control document parses with the consolidating pass attached");
-    OK(runner, control_root_nodes > 0, "the control pass saw the document root");
-    INT_EQ(runner, (int)(controlled.finish_events - plain.finish_events), (int)(2 * control_root_nodes + 1),
-           "a whole-root consolidation costs exactly one traversal of its root: 2n+1 for n=%zu", control_root_nodes);
-    INT_EQ(runner, (int)(controlled.finish_roots - plain.finish_roots), 1, "and completes that root once more");
-    INT_EQ(runner, (int)(controlled.finish_entered - plain.finish_entered), (int)control_root_nodes,
-           "entering each of its nodes once");
-    size_t census = owned_node_census(root), handed = nodes_handed_to_finish(&controlled, census);
-    INT_EQ(runner, (int)plain.finish_entered, (int)handed,
-           "while the denominator, the nodes the stage was handed, is the same tree either way");
-    OK(runner, controlled.finish_entered > handed,
-       "so the extra traversal is exactly what the one-traversal equality refuses: %zu entered, %zu handed",
-       controlled.finish_entered, handed);
-    markdown_core_node_free(root);
-}
-
 /* A descriptor declares a LOCAL step or a GLOBAL pass, never both; the one
  * that declares both is refused at attachment, with the dialect untouched, so
  * the parse that tried to attach it reports the refusal rather than running
  * an element whose two hooks have no contract between them. */
 static markdown_core_finish_result no_op_finish_step(const markdown_core_element_instance *self,
                                                      markdown_core_parser *parser, markdown_core_node *node,
-                                                     markdown_core_event_type event, int is_root, void **state) {
+                                                     markdown_core_event_type event, markdown_core_node *parent,
+                                                     void **state) {
     (void)self;
     (void)parser;
     (void)node;
     (void)event;
-    (void)is_root;
+    (void)parent;
     (void)state;
     return MARKDOWN_CORE_FINISH_CONTINUE;
 }
@@ -11104,16 +10553,6 @@ typedef struct {
     size_t before, after;
     int attached;
 } attach_probe;
-
-static bool attach_step_and_pass(markdown_core_dialect_builder *builder, void *context) {
-    static const markdown_core_element both = {
-        .name = "step-and-pass", .finish_step = no_op_finish_step, .postprocess_func = postprocess_records_a};
-    attach_probe *probe = context;
-    markdown_core_dialect_builder_elements(builder, &probe->before);
-    probe->attached = markdown_core_dialect_builder_attach(builder, &both);
-    markdown_core_dialect_builder_elements(builder, &probe->after);
-    return probe->attached != 0;
-}
 
 static bool attach_overlapping_step(markdown_core_dialect_builder *builder, void *context) {
     static const markdown_core_element overlapping = {.name = "step-exit-and-scope",
@@ -11172,15 +10611,7 @@ static bool attach_partial_document(markdown_core_dialect_builder *builder, void
 static void an_element_declares_one_finish_shape(test_batch_runner *runner) {
     static const char source[] = "prose\n";
     attach_probe probe = {0, 0, -1};
-    markdown_core_node *doc =
-        markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_step_and_pass, &probe);
-    INT_EQ(runner, probe.attached, 0, "a descriptor with both a finish step and a postprocess pass is refused");
-    INT_EQ(runner, (int)probe.after, (int)probe.before, "and the dialect is left as it was");
-    OK(runner, doc == NULL, "so the parse whose setup tried to attach it reports the refusal");
-    if (doc) {
-        markdown_core_node_free(doc);
-    }
-    probe = (attach_probe){0, 0, -1};
+    markdown_core_node *doc;
     doc = markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_overlapping_step, &probe);
     INT_EQ(runner, probe.attached, 0, "a step declaring one kind as both an exit kind and a scope kind is refused");
     INT_EQ(runner, (int)probe.after, (int)probe.before, "with the dialect left as it was");
@@ -11804,7 +11235,6 @@ int main(void) {
     cross_link_linear_work(runner);
     inline_footnote_linear_work(runner);
     footnote_registration(runner);
-    footnote_postprocessing(runner);
     speculative_probe_allocations(runner);
     literal_text_allocations(runner);
     core_delimiter_stack_eligibility(runner);
@@ -11890,14 +11320,10 @@ int main(void) {
     directive_recognition_survives_construction(runner);
     lookahead_and_driver_share_normalized_lines(runner);
     definition_open_gate_admits_only_possible_terms(runner);
-    a_pass_may_free_the_roots_a_later_pass_reads(runner);
-    finish_stage_runs_every_phase_at_each_root(runner);
     finish_stage_walks_each_root_once(runner);
     finish_stage_is_one_traversal_at_any_depth(runner);
-    a_whole_root_pass_costs_one_traversal(runner);
     an_element_declares_one_finish_shape(runner);
     a_flanking_transparent_byte_is_ascii(runner);
-    postprocess_rewrites_every_owned_tree(runner);
     standalone_formula_as_owned_root(runner);
     simple_table_body_boundaries(runner);
     simple_table_footer_work(runner);
@@ -11908,10 +11334,9 @@ int main(void) {
     strbuf_overflow(runner);
     strbuf_failure_is_a_transaction(runner);
     stray_delimiter(runner);
-    postprocess_skips_absent_kinds(runner);
     finish_step_skips_absent_kinds(runner);
     finish_step_gate_opens_when_its_kind_is_made(runner);
-    postprocess_kind_sets_are_well_formed(runner);
+    finish_kind_sets_are_well_formed(runner);
     block_gate_admits_every_opener(runner);
     inline_dispatch_ownership(runner);
     inline_dispatch_orders_every_precedence(runner);

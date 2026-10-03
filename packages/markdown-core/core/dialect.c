@@ -5,12 +5,8 @@
 #include "block_internal.h"
 #include "dialect.h"
 
-/* Whether a descriptor is refused. The rule: an element takes part in
- * the finish stage as a LOCAL step or as a GLOBAL pass, never both
- * (markdown-core-element-api.h states the invariant). A descriptor that
- * declares both would run its step from inside the walk and its pass after it,
- * and nothing in either hook's contract says what the second may assume about
- * the first's work; that is two concerns, which is two elements. A step is
+/* Whether a descriptor is refused. An element takes part in completion
+ * through its finish step (markdown-core-element-api.h). A step is
  * asked once per event, so a kind in both of its lists -- one EXIT declared
  * twice -- is refused rather than delivered twice. A step asked at no kind
  * would never be called, and is refused rather than silently kept. And a kind
@@ -49,10 +45,6 @@ static bool S_owns_document_lifecycle(const markdown_core_element *element) {
 }
 
 static bool S_element_refused(const markdown_core_element *element) {
-    /* Both a finish step and a postprocess pass. */
-    if (element->finish_step && element->postprocess_func) {
-        return true;
-    }
     /* Kinds to ask a finish step at, without a finish step. */
     if ((element->finish_exit_kinds || element->finish_scope_kinds) && !element->finish_step) {
         return true;

@@ -300,16 +300,15 @@ static bool continue_container(const markdown_core_element_instance *self, markd
     (void)self;
     return markdown_core_list_continue(parser, node, input, joining, taken);
 }
-/* A LIST IS LAID OUT AT ITS EXIT, from inside the one finish walk: tight or
- * loose is read off its items and their children, which are complete there
- * -- a paragraph that was only definitions has been released at its own
- * EXIT, before this. */
+/* A LIST IS LAID OUT WHEN IT COMPLETES: tight or loose is read off its items
+ * and their children, which are complete then -- a paragraph that was only
+ * definitions has been dropped by the item that held it. */
 static markdown_core_finish_result finish_step(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                               markdown_core_node *node, markdown_core_event_type event, int is_root,
-                                               void **state) {
+                                               markdown_core_node *node, markdown_core_event_type event,
+                                               markdown_core_node *parent, void **state) {
     (void)self;
     (void)event;
-    (void)is_root;
+    (void)parent;
     (void)state;
     assert(event == MARKDOWN_CORE_EVENT_EXIT && node->kind == MARKDOWN_CORE_NODE_LIST);
     markdown_core_block_finalize_list(parser, node);
