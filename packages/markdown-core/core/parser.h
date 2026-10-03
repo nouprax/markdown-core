@@ -161,13 +161,15 @@ struct markdown_core_parser {
      * block, with the node that holds it as a child (NULL for a field), the
      * node that owns it, and where each of the two starts, recorded while
      * they held their places. The blocks add them as they close, and the
-     * inline stage parses and completes each one; the list only borrows the
-     * nodes. */
+     * inline stage parses and completes each one, in the order they were
+     * added; the queue only borrows the nodes. Its entries are slots of the
+     * scratch slabs, back in `inline_root_slots` once the stage has taken
+     * them. */
     struct markdown_core_inline_root {
         struct markdown_core_node *node, *parent, *owner;
         uint32_t start, owner_start;
-    } *inline_roots;
-    size_t inline_root_count, inline_root_capacity;
+        struct markdown_core_inline_root *next;
+    } *inline_roots, *inline_roots_last;
     /* The closed paragraph that held only reference definitions, which the
      * deepest open block holds as its last child until that block takes
      * another child or completes (blocks.c, S_drop_definition_paragraph);
@@ -344,6 +346,7 @@ struct markdown_core_parser {
     markdown_core_slabs scratch_slabs;
     markdown_core_slab_pool delimiters;
     markdown_core_slab_pool inline_items;
+    markdown_core_slab_pool inline_root_slots;
     /* The workspace every attribute value of the parse is read into before
      * it is laid out (core/attributes.h); released with the parser. */
     markdown_core_attribute_scratch attribute_scratch;

@@ -163,7 +163,11 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     dialect->document_structure->element->dispose_document(dialect->document_structure, parser);
     markdown_core_source_order_dispose(&parser->source_order);
     markdown_core_free(parser->walk_stack);
-    markdown_core_free(parser->inline_roots);
+    while (parser->inline_roots) {
+        struct markdown_core_inline_root *entry = parser->inline_roots;
+        parser->inline_roots = entry->next;
+        markdown_core_slab_return(&parser->inline_root_slots, entry);
+    }
     markdown_core_iter_path_dispose(&parser->path);
     markdown_core_free(parser->block_inputs);
     markdown_core_parser_release_input(parser);
@@ -180,6 +184,7 @@ static void S_parser_dispose(markdown_core_parser *parser) {
 
     markdown_core_slab_pool_dispose(&parser->delimiters);
     markdown_core_slab_pool_dispose(&parser->inline_items);
+    markdown_core_slab_pool_dispose(&parser->inline_root_slots);
     markdown_core_slabs_dispose(&parser->scratch_slabs);
     markdown_core_inline_release_records(parser);
     markdown_core_attribute_scratch_free(&parser->attribute_scratch);
@@ -1121,13 +1126,15 @@ static int push_owned_root(markdown_core_node *root, markdown_core_node *holder,
      * begins content of its own: a root that is a block, such as an inline
      * note's Footnote, starts outside every word body its owner is in. */
     bool block = ((unsigned)root->kind & MARKDOWN_CORE_NODE_TYPE_MASK) == MARKDOWN_CORE_NODE_TYPE_BLOCK;
-    walk->frames[walk->count++] = (owned_tree_frame){.root = root,
-                                                     .holder = holder,
-                                                     .owner = walk->owner,
-                                                     .parsed = NULL,
-                                                     .script_depth = block ? 0 : walk->script_depth,
-                                                     .parses = walk->parses,
-                                                     .started = false};
+    /* The frame's iterator is set when its pass starts. */
+    owned_tree_frame *frame = &walk->frames[walk->count++];
+    frame->root = root;
+    frame->holder = holder;
+    frame->owner = walk->owner;
+    frame->parsed = NULL;
+    frame->script_depth = block ? 0 : walk->script_depth;
+    frame->parses = walk->parses;
+    frame->started = false;
     return 1;
 }
 
@@ -1231,19 +1238,20 @@ static void S_drop_definition_paragraph(markdown_core_parser *parser, markdown_c
 
 static void S_add_inline_root(markdown_core_parser *parser, markdown_core_node *node, markdown_core_node *parent,
                               markdown_core_node *owner) {
-    if (parser->inline_root_count == parser->inline_root_capacity) {
-        size_t capacity = parser->inline_root_capacity ? 2 * parser->inline_root_capacity : 64;
-        struct markdown_core_inline_root *roots;
-        if (capacity > SIZE_MAX / sizeof(*roots) ||
-            !(roots = markdown_core_realloc(parser->inline_roots, capacity * sizeof(*roots)))) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            return;
-        }
-        parser->inline_roots = roots;
-        parser->inline_root_capacity = capacity;
+    struct markdown_core_inline_root *entry =
+        markdown_core_slab_take(&parser->scratch_slabs, &parser->inline_root_slots, sizeof(*entry));
+    if (!entry) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return;
     }
-    parser->inline_roots[parser->inline_root_count++] =
-        (struct markdown_core_inline_root){node, parent, owner, node->where.place.start, owner->where.place.start};
+    *entry = (struct markdown_core_inline_root){node, parent, owner, node->where.place.start, owner->where.place.start,
+                                                NULL};
+    if (parser->inline_roots_last) {
+        parser->inline_roots_last->next = entry;
+    } else {
+        parser->inline_roots = entry;
+    }
+    parser->inline_roots_last = entry;
     node->flags |= MARKDOWN_CORE_NODE__PENDING;
 }
 
@@ -2899,8 +2907,13 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_node *S_finish_parse(ma
      * declared kinds finds nothing to do. */
     {
         owned_tree_walk walk = {.parser = parser, .slots = parser->dialect->finish_step_slots};
-        for (size_t i = 0; i < parser->inline_root_count && !parser->error; i++) {
-            complete_inline_root(&walk, &parser->inline_roots[i]);
+        while (parser->inline_roots && !parser->error) {
+            struct markdown_core_inline_root *entry = parser->inline_roots;
+            if (!(parser->inline_roots = entry->next)) {
+                parser->inline_roots_last = NULL;
+            }
+            complete_inline_root(&walk, entry);
+            markdown_core_slab_return(&parser->inline_root_slots, entry);
         }
         markdown_core_free(walk.states);
         parser->walk = NULL;
