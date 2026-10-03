@@ -168,6 +168,12 @@ struct markdown_core_parser {
         uint32_t start, owner_start;
     } *inline_roots;
     size_t inline_root_count, inline_root_capacity;
+    /* The closed paragraph that held only reference definitions, which the
+     * deepest open block holds as its last child until that block takes
+     * another child or completes (blocks.c, S_drop_definition_paragraph);
+     * NULL when there is none. Only the deepest open block can hold one, so
+     * there is at most one. */
+    struct markdown_core_node *definition_paragraph;
     /* The inline input being read (node.h, markdown_core_bytes), which every
      * node the parser makes holds; NULL outside an inline parse. */
     markdown_core_bytes *bytes;

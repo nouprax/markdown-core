@@ -1215,10 +1215,11 @@ static void S_publish_relation(markdown_core_parser *parser, const markdown_core
  * layout reads the semantic children. A field is never dropped: a
  * definition's term that was only definitions stays the empty term it is. */
 static void S_drop_definition_paragraph(markdown_core_parser *parser, markdown_core_node *parent) {
-    markdown_core_node *last = markdown_core_node_last_child(parent);
-    if (!last || !(last->flags & MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY)) {
+    if (!parser->definition_paragraph) {
         return;
     }
+    assert(markdown_core_node_last_child(parent) == parser->definition_paragraph);
+    parser->definition_paragraph = NULL;
     markdown_core_node *taken =
         markdown_core_node_take_child(parser->pool, parent, markdown_core_node_children_count(parent) - 1);
     if (!taken) {
@@ -1253,7 +1254,11 @@ static void S_complete(markdown_core_parser *parser, markdown_core_node *node, m
     S_drop_definition_paragraph(parser, node);
     /* A child paragraph that held only definitions is no node: it never
      * completes, and its parent drops it. */
-    if (parser->error || (parent && (node->flags & MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY))) {
+    if (parser->error) {
+        return;
+    }
+    if (parent && (node->flags & MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY)) {
+        parser->definition_paragraph = node;
         return;
     }
     size_t index = markdown_core_finish_kind_index((markdown_core_node_type)node->kind);
