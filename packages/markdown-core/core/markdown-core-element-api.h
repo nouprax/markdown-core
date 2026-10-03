@@ -574,25 +574,18 @@ const markdown_core_element *const *markdown_core_dialect_builder_elements(const
  *  the parse. */
 typedef bool (*markdown_core_parser_setup_func)(markdown_core_dialect_builder *builder, void *context);
 
-typedef enum {
-    MARKDOWN_CORE_NODE_SET_KIND_OK,
-    MARKDOWN_CORE_NODE_SET_KIND_REJECTED,
-    MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED,
-} markdown_core_node_set_kind_result;
-
-/** Change 'node', a child of 'parent', to the internal kind encoded by 'kind'.
+/** Change 'node' to the internal kind encoded by 'kind'.
  *
- * Return OK on success, REJECTED when parent containment disallows the change,
- * or ALLOCATION_FAILED when replacement node data cannot be allocated.
- * Either failure preserves the original kind, data, and children.
+ * Return false, with the original kind, data, and children preserved, when
+ * replacement node data cannot be allocated. The caller converts to a kind
+ * the node's place can hold.
  *
  * A change releases values owned by the old kind and installs the new kind's
  * defaults. Node identity and element-owned opaque data are preserved.
  * A record that fits the node's existing cell needs no allocation.
  * Setting the current kind succeeds without allocating or changing its data.
  */
-markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_node *parent, markdown_core_node *node,
-                                                               markdown_core_node_type kind);
+bool markdown_core_node_set_kind(markdown_core_node *node, markdown_core_node_type kind);
 
 /** Return the string content for all types of 'node'.
  *  The pointer stays valid as long as 'node' isn't freed.

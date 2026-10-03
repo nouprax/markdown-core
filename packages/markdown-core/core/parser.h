@@ -559,12 +559,10 @@ static inline markdown_core_node *markdown_core_parser_make_node_with_ext(markdo
     return node;
 }
 
-static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_kind(markdown_core_parser *parser,
-                                                                                    markdown_core_node *parent,
-                                                                                    markdown_core_node *node,
-                                                                                    markdown_core_node_type kind) {
+static inline bool markdown_core_parser_set_node_kind(markdown_core_parser *parser, markdown_core_node *node,
+                                                      markdown_core_node_type kind) {
     markdown_core_parser_note_kind(parser, kind);
-    return markdown_core_node_set_kind(parent, node, kind);
+    return markdown_core_node_set_kind(node, kind);
 }
 
 /* Puts `child` at the end of `parent`'s children, taking the caller's hold,

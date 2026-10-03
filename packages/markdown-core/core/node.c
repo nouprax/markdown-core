@@ -501,14 +501,9 @@ size_t markdown_core_node_release(markdown_core_node *node) { return markdown_co
 
 void markdown_core_node_free(markdown_core_node *node) { (void)markdown_core_node_release(node); }
 
-markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_node *parent, markdown_core_node *node,
-                                                               markdown_core_node_type kind) {
-    markdown_core_node_type initial_kind = (markdown_core_node_type)node->kind;
-    if (kind == initial_kind) {
-        return MARKDOWN_CORE_NODE_SET_KIND_OK;
-    }
-    if (!parent || !markdown_core_node_can_contain_type(parent, kind)) {
-        return MARKDOWN_CORE_NODE_SET_KIND_REJECTED;
+bool markdown_core_node_set_kind(markdown_core_node *node, markdown_core_node_type kind) {
+    if (kind == (markdown_core_node_type)node->kind) {
+        return true;
     }
 
     /* Reserve any external replacement before releasing anything. A record
@@ -518,7 +513,7 @@ markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_nod
     size_t size = S_node_payload_size(kind);
     void *allocation = size > MARKDOWN_CORE_NODE_SLOT_RECORD_BYTES ? markdown_core_alloc(1, size) : NULL;
     if (size > MARKDOWN_CORE_NODE_SLOT_RECORD_BYTES && !allocation) {
-        return MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED;
+        return false;
     }
     /* Kind conversion keeps the element's fields; the record's are freed
      * by a separate walk so the node's siblings remain untouched. */
@@ -533,7 +528,7 @@ markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_nod
     }
     S_init_node_as(kind, &node->as);
     node->kind = (uint16_t)kind;
-    return MARKDOWN_CORE_NODE_SET_KIND_OK;
+    return true;
 }
 
 const char *markdown_core_node_get_type_string(markdown_core_node *node) {

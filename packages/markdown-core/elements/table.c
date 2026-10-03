@@ -361,21 +361,18 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
         return NULL;
     }
 
-    /* A split introduces a new sibling. Decide before converting or allocating,
-     * so refusal leaves the complete original paragraph available to grammar. */
-    if (header_row.paragraph_offset &&
-        !markdown_core_node_can_contain_type(markdown_core_parser_open_parent(parser, parent_container),
-                                             MARKDOWN_CORE_NODE_PARAGRAPH)) {
+    /* The table, and a split's new paragraph sibling, must be kinds the parent
+     * holds. Decide before converting or allocating, so refusal leaves the
+     * complete original paragraph available to grammar. */
+    markdown_core_node *table_parent = markdown_core_parser_open_parent(parser, parent_container);
+    if (!markdown_core_node_can_contain_type(table_parent, MARKDOWN_CORE_NODE_TABLE) ||
+        (header_row.paragraph_offset &&
+         !markdown_core_node_can_contain_type(table_parent, MARKDOWN_CORE_NODE_PARAGRAPH))) {
         return NULL;
     }
 
-    markdown_core_node_set_kind_result result = markdown_core_parser_set_node_kind(
-        parser, markdown_core_parser_open_parent(parser, parent_container), parent_container, MARKDOWN_CORE_NODE_TABLE);
-    if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
-        if (result == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        }
-
+    if (!markdown_core_parser_set_node_kind(parser, parent_container, MARKDOWN_CORE_NODE_TABLE)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return NULL;
     }
 

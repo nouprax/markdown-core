@@ -535,13 +535,12 @@ static bool open_setext(const markdown_core_element_instance *self, markdown_cor
     has_content = markdown_core_block_resolve_reference_link_definitions(parser, *container);
 
     if (has_content) {
-
-        markdown_core_node_set_kind_result result = markdown_core_parser_set_node_kind(
-            parser, markdown_core_parser_open_parent(parser, *container), *container, MARKDOWN_CORE_NODE_HEADING);
-        if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
-            if (result == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED) {
-                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            }
+        if (!markdown_core_node_can_contain_type(markdown_core_parser_open_parent(parser, *container),
+                                                 MARKDOWN_CORE_NODE_HEADING)) {
+            return false;
+        }
+        if (!markdown_core_parser_set_node_kind(parser, *container, MARKDOWN_CORE_NODE_HEADING)) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return false;
         }
         (*container)->as.heading->level = matched;

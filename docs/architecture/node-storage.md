@@ -160,10 +160,10 @@ current record, while `node_data_allocation` owns whichever record is not in
 the slot, if any, because it exceeds the slot's record space. Ownership is
 never inferred by comparing potentially adjacent
 addresses.
-`markdown_core_node_set_kind` distinguishes containment rejection from allocation
-failure. Parser callers decline rejected conversions and set the OOM flag only
-for allocation failure. Either failure leaves the original kind and all owned
-values intact. A successful conversion releases node-valued fields through the
+`markdown_core_node_set_kind` fails only on allocation failure, which leaves the
+original kind and all owned values intact. The caller converts to a kind the
+node's place can hold; a parser rule that depends on containment asks
+`markdown_core_node_can_contain_type` before converting. A successful conversion releases node-valued fields through the
 same iterative destruction walk used for ordinary tree destruction. The
 element's opaque state belongs to the node and element, so it survives a
 kind conversion. So does the attribute value, with everything it holds: an

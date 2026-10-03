@@ -639,8 +639,7 @@ static markdown_core_finish_result become_formula_block(const markdown_core_elem
         node->as.code->literal = (markdown_core_chunk)MARKDOWN_CORE_CHUNK_EMPTY;
     }
     payload->mode = MARKDOWN_CORE_FORMULA_MODE_STANDALONE;
-    if (markdown_core_parser_set_node_kind(parser, parent, node, MARKDOWN_CORE_NODE_FORMULA_BLOCK) !=
-        MARKDOWN_CORE_NODE_SET_KIND_OK) {
+    if (!markdown_core_parser_set_node_kind(parser, node, MARKDOWN_CORE_NODE_FORMULA_BLOCK)) {
         markdown_core_chunk_free(&payload->literal);
         markdown_core_free(payload);
         goto failed;

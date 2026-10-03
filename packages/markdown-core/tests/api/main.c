@@ -2760,11 +2760,9 @@ static void link_resource_lifecycle(test_batch_runner *runner) {
     OK(runner, facade_resource(image) == NULL, "a hand-built image reads through no resource");
 
     OK(runner, set_literal(converted, "~~"), "the text to convert has a literal");
-    INT_EQ(runner, markdown_core_node_set_kind(paragraph, converted, MARKDOWN_CORE_NODE_LINK),
-           MARKDOWN_CORE_NODE_SET_KIND_OK, "set_kind converts text into a link");
+    OK(runner, markdown_core_node_set_kind(converted, MARKDOWN_CORE_NODE_LINK), "set_kind converts text into a link");
     OK(runner, facade_resource(converted) == NULL, "a converted link starts without a resource");
-    INT_EQ(runner, markdown_core_node_set_kind(paragraph, converted, MARKDOWN_CORE_NODE_TEXT),
-           MARKDOWN_CORE_NODE_SET_KIND_OK, "set_kind converts the link back");
+    OK(runner, markdown_core_node_set_kind(converted, MARKDOWN_CORE_NODE_TEXT), "set_kind converts the link back");
     LITERAL_EQ(runner, converted, "", "converting back starts the literal empty");
 
     markdown_core_node_free(paragraph);
@@ -3110,9 +3108,7 @@ static void borrowed_anchor_survives_a_kind_change(test_batch_runner *runner) {
         markdown_core_document_free(document);
         return;
     }
-    INT_EQ(runner,
-           markdown_core_node_set_kind(parent_in(document->root, heading), heading, MARKDOWN_CORE_NODE_PARAGRAPH),
-           MARKDOWN_CORE_NODE_SET_KIND_OK, "the heading becomes a paragraph");
+    OK(runner, markdown_core_node_set_kind(heading, MARKDOWN_CORE_NODE_PARAGRAPH), "the heading becomes a paragraph");
     OK(runner, heading->attributes.anchor_owner == owner && owner->holders == 1,
        "the paragraph's value still holds the destination");
     markdown_core_optional_string anchor = markdown_core_node_anchor(heading);
@@ -3633,11 +3629,11 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
     markdown_core_chunk *original_payload = text->as.literal;
     size_t before = payload_live;
     payload_fail_at = payload_allocations + 1;
-    INT_EQ(runner, markdown_core_node_set_kind(parent, text, MARKDOWN_CORE_NODE_TEXT), MARKDOWN_CORE_NODE_SET_KIND_OK,
-           "setting the current kind preserves its data without allocation");
+    OK(runner, markdown_core_node_set_kind(text, MARKDOWN_CORE_NODE_TEXT),
+       "setting the current kind preserves its data without allocation");
     INT_EQ(runner, payload_allocations + 1, payload_fail_at, "setting the current kind allocates nothing");
-    INT_EQ(runner, markdown_core_node_set_kind(parent, text, MARKDOWN_CORE_NODE_CROSS_EMBEDDED),
-           MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED, "conversion reports replacement allocation failure");
+    OK(runner, !markdown_core_node_set_kind(text, MARKDOWN_CORE_NODE_CROSS_EMBEDDED),
+       "conversion reports replacement allocation failure");
     OK(runner,
        text->kind == MARKDOWN_CORE_NODE_TEXT && text->as.literal == original_payload && child_at(parent, 0) == text,
        "failed kind conversion preserves data, identity, and tree links");
@@ -3647,29 +3643,19 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
      * is armed to fail. Its cell is already owned by this node. */
     payload_fail_at = payload_allocations + 1;
     size_t inline_attempts = payload_allocations;
-    INT_EQ(runner, markdown_core_node_set_kind(parent, text, MARKDOWN_CORE_NODE_LINK), MARKDOWN_CORE_NODE_SET_KIND_OK,
-           "successful kind conversion installs new defaults");
+    OK(runner, markdown_core_node_set_kind(text, MARKDOWN_CORE_NODE_LINK),
+       "successful kind conversion installs new defaults");
     OK(runner, text->as.link && !text->as.link->resource && !text->node_data_allocation,
        "converted link reuses its cell with empty defaults");
     INT_EQ(runner, payload_allocations, inline_attempts, "inline replacement does not attempt allocation");
-    size_t attempts = payload_allocations;
-    markdown_core_link *original_link = text->as.link;
-    payload_fail_at = attempts + 1;
-    INT_EQ(runner, markdown_core_node_set_kind(parent, text, MARKDOWN_CORE_NODE_CODE_BLOCK),
-           MARKDOWN_CORE_NODE_SET_KIND_REJECTED, "containment rejects a block in a paragraph");
-    INT_EQ(runner, payload_allocations, attempts, "invalid containment allocates nothing");
-    OK(runner, text->kind == MARKDOWN_CORE_NODE_LINK && text->as.link == original_link && child_at(parent, 0) == text,
-       "containment rejection preserves kind, data, identity, and tree links");
     payload_fail_at = 0;
-    OK(runner,
-       markdown_core_node_set_kind(parent, text, MARKDOWN_CORE_NODE_STRONG) == MARKDOWN_CORE_NODE_SET_KIND_OK &&
-           !text->as.data,
+    OK(runner, markdown_core_node_set_kind(text, MARKDOWN_CORE_NODE_STRONG) && !text->as.data,
        "a fieldless kind releases the old payload without creating an empty record");
 
     markdown_core_node *empty = markdown_core_node_new(MARKDOWN_CORE_NODE_EMPHASIS);
     OK(runner, markdown_core_node_append_child(NULL, parent, empty), "a fieldless node joins the parent");
-    INT_EQ(runner, markdown_core_node_set_kind(parent, empty, MARKDOWN_CORE_NODE_CROSS_LINK),
-           MARKDOWN_CORE_NODE_SET_KIND_OK, "a node constructed without fields acquires an inline replacement record");
+    OK(runner, markdown_core_node_set_kind(empty, MARKDOWN_CORE_NODE_CROSS_LINK),
+       "a node constructed without fields acquires an inline replacement record");
     OK(runner, !empty->node_data_allocation, "a previously unused cell record becomes active");
     markdown_core_destination destination = facade_destination(empty);
     markdown_core_optional_string label = facade_cross_label(empty);
@@ -3685,14 +3671,13 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
     payload_fail_at = payload_allocations + 1;
     before = payload_live;
     OK(runner,
-       markdown_core_node_set_kind(parent, item, MARKDOWN_CORE_NODE_CROSS_EMBEDDED) ==
-               MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED &&
+       !markdown_core_node_set_kind(item, MARKDOWN_CORE_NODE_CROSS_EMBEDDED) &&
            child_at(item->as.citation->prefix, 0) == prefix,
        "failed retyping preserves node-valued fields");
     INT_EQ(runner, payload_live, before, "failed retyping leaves the owned subtree alive");
     payload_fail_at = 0;
-    INT_EQ(runner, markdown_core_node_set_kind(parent, item, MARKDOWN_CORE_NODE_TEXT), MARKDOWN_CORE_NODE_SET_KIND_OK,
-           "kind conversion releases the old owned subtrees");
+    OK(runner, markdown_core_node_set_kind(item, MARKDOWN_CORE_NODE_TEXT),
+       "kind conversion releases the old owned subtrees");
     markdown_core_node_free(parent);
     INT_EQ(runner, payload_live, 0, "conversion and destruction release payloads, fields, and affixes exactly once");
     payload_probe_disarm();
@@ -3712,20 +3697,19 @@ static void kind_conversion_reuses_cell_storage(test_batch_runner *runner) {
 
         size_t attempts = payload_allocations;
         payload_fail_at = attempts + 1;
-        INT_EQ(runner, markdown_core_node_set_kind(parent, node, MARKDOWN_CORE_NODE_LINK),
-               MARKDOWN_CORE_NODE_SET_KIND_OK,
-               "inline replacement succeeds with allocation refused, even after pool disposal");
+        OK(runner, markdown_core_node_set_kind(node, MARKDOWN_CORE_NODE_LINK),
+           "inline replacement succeeds with allocation refused, even after pool disposal");
         OK(runner, node->as.data == cell_record && !node->node_data_allocation && !node->as.link->resource,
            "inline replacement reuses the original record address with new defaults");
         INT_EQ(runner, payload_allocations, attempts, "inline replacement makes no allocator call");
-        INT_EQ(runner, markdown_core_node_set_kind(parent, node, MARKDOWN_CORE_NODE_CROSS_EMBEDDED),
-               MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED, "external replacement can still fail atomically");
+        OK(runner, !markdown_core_node_set_kind(node, MARKDOWN_CORE_NODE_CROSS_EMBEDDED),
+           "external replacement can still fail atomically");
         OK(runner, node->kind == MARKDOWN_CORE_NODE_LINK && node->as.data == cell_record && child_at(parent, 0) == node,
            "failed external replacement retains the inline record and tree links");
 
         payload_fail_at = 0;
-        INT_EQ(runner, markdown_core_node_set_kind(parent, node, MARKDOWN_CORE_NODE_CROSS_EMBEDDED),
-               MARKDOWN_CORE_NODE_SET_KIND_OK, "a record exceeding capacity obtains external storage");
+        OK(runner, markdown_core_node_set_kind(node, MARKDOWN_CORE_NODE_CROSS_EMBEDDED),
+           "a record exceeding capacity obtains external storage");
         void *external = node->node_data_allocation;
         OK(runner, external && node->as.data == external && external != cell_record,
            "external allocation ownership is explicit");
@@ -3733,21 +3717,21 @@ static void kind_conversion_reuses_cell_storage(test_batch_runner *runner) {
            "the external record owns a string");
         attempts = payload_allocations;
         payload_fail_at = attempts + 1;
-        INT_EQ(runner, markdown_core_node_set_kind(parent, node, MARKDOWN_CORE_NODE_CROSS_EMBEDDED),
-               MARKDOWN_CORE_NODE_SET_KIND_OK, "the same external kind preserves its record without allocation");
+        OK(runner, markdown_core_node_set_kind(node, MARKDOWN_CORE_NODE_CROSS_EMBEDDED),
+           "the same external kind preserves its record without allocation");
         OK(runner, node->node_data_allocation == external, "no-op conversion preserves external ownership");
         STR_EQ(runner, (char *)node->as.cross_embedded->reference.path.data, "owned path",
                "no-op conversion preserves external fields");
 
         size_t releases = payload_releases;
-        INT_EQ(runner, markdown_core_node_set_kind(parent, node, MARKDOWN_CORE_NODE_TEXT),
-               MARKDOWN_CORE_NODE_SET_KIND_OK, "external to inline conversion succeeds with allocation refused");
+        OK(runner, markdown_core_node_set_kind(node, MARKDOWN_CORE_NODE_TEXT),
+           "external to inline conversion succeeds with allocation refused");
         INT_EQ(runner, payload_allocations, attempts, "returning to the cell makes no allocation");
         INT_EQ(runner, payload_releases, releases + 2, "the external record and its string are each released once");
         OK(runner, node->as.data == cell_record && !node->node_data_allocation && !node->as.literal->data,
            "returning to the cell reinitializes its former record bytes");
-        INT_EQ(runner, markdown_core_node_set_kind(parent, node, MARKDOWN_CORE_NODE_STRONG),
-               MARKDOWN_CORE_NODE_SET_KIND_OK, "a fieldless kind releases its active record without storage work");
+        OK(runner, markdown_core_node_set_kind(node, MARKDOWN_CORE_NODE_STRONG),
+           "a fieldless kind releases its active record without storage work");
         OK(runner, !node->as.data && !node->node_data_allocation, "a fieldless kind owns no record");
         payload_fail_at = 0;
         markdown_core_node_free(parent);
@@ -3818,8 +3802,8 @@ static void element_owned_field_lifecycle(test_batch_runner *runner) {
     owned_field_probe *retained = root->opaque;
     markdown_core_node *retained_first = retained->first;
     OK(runner,
-       markdown_core_node_set_kind(document, root, MARKDOWN_CORE_NODE_HEADING) == MARKDOWN_CORE_NODE_SET_KIND_OK &&
-           root->opaque == retained && retained->first == retained_first,
+       markdown_core_node_set_kind(root, MARKDOWN_CORE_NODE_HEADING) && root->opaque == retained &&
+           retained->first == retained_first,
        "kind conversion preserves the element's opaque state and owned fields");
     size_t before = payload_allocations;
     payload_fail_at = before + 1;
@@ -3835,9 +3819,7 @@ static void element_owned_field_lifecycle(test_batch_runner *runner) {
     if (document) {
         markdown_core_node *directive = child_at(child_at(document, 0), 0);
         markdown_core_node *label = markdown_core_directive_label(directive);
-        OK(runner,
-           label && markdown_core_node_set_kind(child_at(document, 0), directive, MARKDOWN_CORE_NODE_EMPHASIS) ==
-                        MARKDOWN_CORE_NODE_SET_KIND_OK,
+        OK(runner, label && markdown_core_node_set_kind(directive, MARKDOWN_CORE_NODE_EMPHASIS),
            "directive kind conversion preserves its element-owned label");
         before = payload_allocations;
         payload_fail_at = before + 1;
@@ -4277,8 +4259,8 @@ static void set_kind_keeps_element_data_beside_the_arm(test_batch_runner *runner
     INT_EQ(runner, markdown_core_node_get_kind(formula), MARKDOWN_CORE_KIND_FORMULA,
            "the paragraph opens with a formula");
     OK(runner, formula->opaque != NULL, "the formula's element owns per-node data");
-    INT_EQ(runner, markdown_core_node_set_kind(child_at(document->root, 0), formula, MARKDOWN_CORE_NODE_LINK),
-           MARKDOWN_CORE_NODE_SET_KIND_OK, "set_kind converts the formula into a link");
+    OK(runner, markdown_core_node_set_kind(formula, MARKDOWN_CORE_NODE_LINK),
+       "set_kind converts the formula into a link");
     OK(runner, formula->opaque != NULL, "the element's data stays with the node");
     OK(runner, facade_resource(formula) == NULL, "the converted link starts without a resource");
     markdown_core_document_free(document);
