@@ -199,9 +199,10 @@ to the fresh parse's answers, in the same order (plan 8).
 - Ids are unique within the document, across every owned relation.
 - Over the whole lineage, the harness keeps a map from id to kind and a set of
   retired ids. An id never changes kind, and a retired id never appears again.
-- A fresh parse numbers its nodes from 1 in the order the parse completes
-  them (plan 4.1, 5.8), so two fresh parses of the same text are equal, ids
-  included.
+- A fresh parse numbers its nodes from 1: each node's owner numbers the
+  nodes it holds when it completes, and the root takes the last id (plan
+  4.1, 5.8). Its ids are 1 through its node count, and two fresh parses of
+  the same text are equal, ids included.
 
 ### 4.3 Minimal AST mutation
 

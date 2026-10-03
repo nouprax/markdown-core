@@ -141,9 +141,10 @@ Rules:
 - **Unique within a document.** No two nodes of one document share an id,
   across every owned relation (content, labels, captions, titles, terms,
   bodies, affixes, footnote referents, metadata).
-- **Deterministic for a fresh parse.** `Document.parse` numbers nodes from 1
-  in the order the parse completes them (5.8). Two fresh parses of the same
-  text are equal, identifiers included.
+- **Deterministic for a fresh parse.** `Document.parse` numbers nodes from 1:
+  each node's owner numbers the nodes it holds when it completes, and the
+  root takes the last id (5.8). Two fresh parses of the same text are equal,
+  identifiers included.
 - **Stable in a session.** A node reused or matched by an edit keeps its id
   (5.9). A node the edit creates takes the next unused id of the session.
   Ids of removed nodes are never reused by the same session.
@@ -717,23 +718,27 @@ parse.
 - **Blocks complete when they close.** Closing a block runs everything that
   decides it: the element's close (a formula block's literal; a code block
   whose info names a formula becomes a FormulaBlock), the container's fold of
-  its children (E4: list layout, definition scopes), its id, and the extents
-  (4.3) of the nodes it holds, which keep their absolute places until then.
-  The document root's extent is measured from 0. A paragraph that held only
-  definitions is not added to its parent.
+  its children (E4: list layout, definition scopes), and the ids and extents
+  (4.3) of the nodes it holds, which keep their absolute places until then,
+  in canonical field order. The document root takes the last id, and its
+  extent is measured from 0. A paragraph that held only definitions is not
+  added to its parent.
 - **Inline roots complete when their parse ends.** A block's inline content
   and each inline field of a block (a definition's term, a callout's title, a
-  table's caption, a directive's label) is an inline root. The closing block
-  adds it to the parse's list of roots with its absolute start. After S3,
+  table's caption, a directive's label) is an inline root. Closing the block
+  adds it to the parse's list of roots with its absolute start; its owner
+  completes, and numbers it, first. After S3,
   each root on the list is parsed. Delimiters decide nesting only when a
   closer pairs, and the language gives an inline node meaning from what
   encloses it: an escaped space inside a word body, a Text outside a Link for
   email autolinks, and runs of Text that become one. So an inline node is
   complete when its root's parse ends, and the root completes its own tree
   then, in one pass over that tree: consolidation, completion, email
-  autolinks, extents and ids. The root's owner measures the root's content
-  from the start it recorded. A paragraph whose only content is a standalone
-  formula becomes a FormulaBlock at that point.
+  autolinks, extents and ids. The root completes last, from the start it
+  recorded, and the content of a group it holds for its owner is published
+  from where the owner starts. A paragraph whose only content is a standalone
+  formula becomes a FormulaBlock at that point; the Formula it consumes was
+  never numbered.
 - **Absolute positions belong to the parse.** A node holds only its extent
   once it is complete. Everything that needs an absolute position after that
   (source-ordered registrations, a root on the list, table geometry) records

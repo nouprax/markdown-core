@@ -10391,29 +10391,32 @@ static size_t owned_node_census(markdown_core_node *root) {
 
 typedef struct {
     markdown_core_element document;
-    void (*observe)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
+    bool (*complete)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                     const markdown_core_node *, uint32_t);
     size_t uncompleted;
 } completion_probe;
 
-static void observe_completed_text(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                   markdown_core_node *node) {
+static bool observe_completed_text(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                   markdown_core_node *node, const markdown_core_node *owner, uint32_t start) {
     completion_probe *probe = parser->context;
-    if (node->kind == MARKDOWN_CORE_NODE_TEXT) {
-        probe->uncompleted += (node->flags & MARKDOWN_CORE_NODE__ESCAPED_SPACE) != 0;
+    for (size_t i = 0; i < markdown_core_node_children_count(node); i++) {
+        const markdown_core_node *child = markdown_core_node_child(node, i);
+        if (child->kind == MARKDOWN_CORE_NODE_TEXT) {
+            probe->uncompleted += (child->flags & MARKDOWN_CORE_NODE__ESCAPED_SPACE) != 0;
+        }
     }
-    if (probe->observe) {
-        probe->observe(self, parser, node);
-    }
+    return probe->complete(self, parser, node, owner, start);
 }
 
-/* The observer is the document lifecycle's, so the probe registers a document
- * owner that keeps the core document's hooks and wraps that one. */
+/* The document publishes every node as its owner completes, so the probe
+ * registers a document owner that keeps the core document's hooks and wraps
+ * that one, reading the children each completion publishes. */
 static bool configure_completion_probe(markdown_core_dialect_builder *builder, void *context) {
     completion_probe *probe = context;
     probe->document = MARKDOWN_CORE_ELEMENT_DOCUMENT;
     probe->document.name = "completion-probe-document";
-    probe->observe = probe->document.observe_node;
-    probe->document.observe_node = observe_completed_text;
+    probe->complete = probe->document.complete_node;
+    probe->document.complete_node = observe_completed_text;
     return markdown_core_dialect_builder_attach(builder, &probe->document);
 }
 

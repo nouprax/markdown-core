@@ -2341,11 +2341,8 @@ static void table_append_newline(table_source *source, markdown_core_node *node,
 static void table_fill_cell(table_source *source, markdown_core_node *row, markdown_core_node *node,
                             const table_source_cell *cell, bool blocks, int padding_limit) {
     /* A cell of inline content is complete once it holds its bytes. A cell of
-     * blocks is complete as it is made, and holds no inlines: its blocks are
-     * read once the document's are, and measured then. */
-    if (blocks) {
-        markdown_core_parser_complete(source->parser, node, row);
-    }
+     * blocks holds no inlines: it completes once its blocks are read, after
+     * the document's. */
     int padding = padding_limit;
     for (size_t i = cell->first; i <= cell->last; i++) {
         table_source_line *line = &source->lines[i];
@@ -2368,7 +2365,7 @@ static void table_fill_cell(table_source *source, markdown_core_node *row, markd
         table_append_newline(source, node, i);
     }
     if (blocks) {
-        markdown_core_parser_queue_block_input(source->parser, node);
+        markdown_core_parser_queue_block_input(source->parser, node, row);
     } else {
         markdown_core_parser_complete(source->parser, node, row);
     }
@@ -2613,7 +2610,7 @@ static markdown_core_node *table_try_open(table_workspace *workspace, markdown_c
                                                                             source.lines[caption_last].length);
         if (caption_node) {
             markdown_core_parser_complete_field(parser, caption_node, result);
-            markdown_core_parser_measure_field(parser, result, caption_node);
+            markdown_core_parser_publish_field(parser, result, caption_node);
         }
         parser->claimed = true;
         parser->claimed_line = source.lines[caption_last].line;

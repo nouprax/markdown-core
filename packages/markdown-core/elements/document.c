@@ -68,22 +68,13 @@ static void prepare_document(const markdown_core_element_instance *self, markdow
         markdown_core_headings_prepare(headings, parser);
     }
 }
-static bool publish_node(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                         markdown_core_node *node, const markdown_core_node *owner) {
-    return markdown_core_publish_node(parser, &((document_state *)self->state)->lookups, node, owner);
+static bool complete_node(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                          markdown_core_node *node, const markdown_core_node *owner, uint32_t start) {
+    return markdown_core_publish_node(parser, &((document_state *)self->state)->lookups, node, owner, start);
 }
-static void measure_relation(const markdown_core_element_instance *self, markdown_core_parser *parser,
+static void publish_relation(const markdown_core_element_instance *self, markdown_core_parser *parser,
                              const markdown_core_node *owner, uint32_t start, const markdown_core_node *part) {
-    (void)self;
-    (void)parser;
-    markdown_core_measure_relation(owner, start, part);
-}
-static void observe_node(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                         markdown_core_node *node) {
-    const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
-    if (headings) {
-        markdown_core_headings_observe(headings, parser, node);
-    }
+    markdown_core_publish_relation(parser, &((document_state *)self->state)->lookups, owner, start, part);
 }
 static void finish_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
@@ -96,7 +87,8 @@ static void finish_document(const markdown_core_element_instance *self, markdown
         markdown_core_specimen_dispose(specimens);
     }
     if (!parser->error && headings) {
-        markdown_core_headings_finish(headings, parser);
+        const markdown_core_lookup_registry *lookups = &((document_state *)self->state)->lookups;
+        markdown_core_headings_finish(headings, parser, lookups->anchors.values, lookups->anchors.count);
     }
     if (headings) {
         markdown_core_headings_dispose(headings);
@@ -121,7 +113,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
     .prepare_document = prepare_document,
     .finish_document = finish_document,
     .publish_document = publish_document,
-    .publish_node = publish_node,
-    .measure_relation = measure_relation,
-    .observe_node = observe_node,
+    .complete_node = complete_node,
+    .publish_relation = publish_relation,
 };

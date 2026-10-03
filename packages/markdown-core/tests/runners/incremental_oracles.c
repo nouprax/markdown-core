@@ -698,9 +698,10 @@ done:
     free(cursor);
 }
 
-/* A lineage's first document: a fresh parse numbers its nodes from 1 in the
- * order the parse completes them, so its ids are 1 through its node count,
- * each once, and equal the ids of another fresh parse of the same text. */
+/* A lineage's first document: a fresh parse numbers its nodes from 1, each
+ * owner numbering the nodes it holds when it completes, so its ids are 1
+ * through its node count, each once, and equal the ids of another fresh
+ * parse of the same text. */
 static void history_open(run *state, const char *where, history *ids, const view *opened, const view *fresh) {
     size_t index;
     if (!history_reserve(ids, opened->count + 1)) {

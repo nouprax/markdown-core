@@ -133,8 +133,8 @@ bool markdown_core_block_attach_identifier_line(markdown_core_block_identifier_w
     if (!followed_by_boundary || parser->error || !S_attach_block_identifier(parser, owner, &candidate)) {
         return false;
     }
-    /* The owner completed when it closed; its new anchor is observed now. */
-    markdown_core_parser_observe(parser, owner);
+    /* The owner completed when it closed; its parent, which is open,
+     * publishes it with its new anchor. */
     markdown_core_block_set_end_to_current_line(parser, owner);
     return true;
 }

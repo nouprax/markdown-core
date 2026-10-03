@@ -7,9 +7,10 @@ void markdown_core_block_register_heading(const markdown_core_element_instance *
                                           markdown_core_node *node);
 /* The heading lifecycle the document element drives (document.c). */
 void markdown_core_headings_prepare(const markdown_core_element_instance *self, markdown_core_parser *parser);
-void markdown_core_headings_observe(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                    markdown_core_node *node);
-void markdown_core_headings_finish(const markdown_core_element_instance *self, markdown_core_parser *parser);
+/* Gives each heading its anchor, avoiding every anchor `declared` (`count`
+ * nodes that declare one) reserves. */
+void markdown_core_headings_finish(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                   markdown_core_node *const *declared, size_t count);
 void markdown_core_headings_dispose(const markdown_core_element_instance *self);
 void markdown_core_heading_begin_inlines(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                          markdown_core_inline_state *inline_state, markdown_core_node *parent);

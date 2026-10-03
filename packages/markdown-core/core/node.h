@@ -259,10 +259,15 @@ enum markdown_core_node__internal_flags {
      * A later arrival may supply its first surviving content line. */
     MARKDOWN_CORE_NODE__REFERENCE_PREFIX = (1 << 7),
 
+    /* A closed block whose completion waits for its content -- an inline
+     * root's pass, or a cell's blocks (parser.h, completion) -- so its owner
+     * completes, and publishes it, first. */
+    MARKDOWN_CORE_NODE__PENDING = (1 << 8),
+
     // The first bit an element may claim. Element flags are compile-time
     // constants owned by the element that uses them; there is no runtime
     // registration and no allocator to run out of bits.
-    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 8),
+    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 9),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;
@@ -362,7 +367,14 @@ struct markdown_core_node {
 
 /* The effective declaration is occurrence-local, then inherited from its
  * shared definition. All consumers, including synthesis reservation, use it. */
-const markdown_core_chunk *markdown_core_node_anchor_chunk(const markdown_core_node *node);
+static inline const markdown_core_chunk *markdown_core_node_anchor_chunk(const markdown_core_node *node) {
+    if (!node->attributes.anchor.len &&
+        (node->kind == MARKDOWN_CORE_NODE_LINK || node->kind == MARKDOWN_CORE_NODE_EMBEDDED) &&
+        node->as.link->resource) {
+        return &node->as.link->resource->attributes.anchor;
+    }
+    return &node->attributes.anchor;
+}
 
 /* Both cross kinds own the same raw reference fields in one payload allocation.
  * Only CrossEmbedded allocates the dimension value beside those fields. */

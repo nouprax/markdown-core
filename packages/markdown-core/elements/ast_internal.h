@@ -35,32 +35,45 @@ typedef struct {
     size_t count, capacity;
 } markdown_core_definition_registry;
 
+/* WHAT PUBLISHING RECORDS FOR THE DOCUMENT: the footnote and specimen
+ * definitions, and the nodes that declare an explicit anchor, which every
+ * heading's computed anchor avoids (heading.c). The tree owns the nodes. */
 typedef struct {
     markdown_core_definition_registry footnotes, specimens;
+    struct {
+        markdown_core_node **values;
+        size_t count, capacity;
+    } anchors;
 } markdown_core_lookup_registry;
 
 void markdown_core_lookup_registry_dispose(markdown_core_lookup_registry *registry);
 
-/* A NODE IS PUBLISHED WHEN IT COMPLETES (docs/plans/2026-09-29-incremental-
- * parsing.md, 4.1, 4.3, 5.8). `node` holds its place, and `owner` holds it,
- * as a child or a field, or is NULL for the document's root. Unless `node`
- * only holds a group of its owner's relation (a callout's title, a
- * definition's term and bodies, a citation's affixes), which is not a node
- * of the document, it takes the next id after the revision's last, the
- * nodes of its relations take their extents (markdown_core_measure_relation),
- * and a footnote or specimen joins `registry`; the root's extent is
- * measured from 0. Returns whether `node` is a node of the document. An
- * allocation failure fails the parse. */
+/* A NODE PUBLISHES ITS RELATIONS WHEN IT COMPLETES (docs/plans/2026-09-29-
+ * incremental-parsing.md, 4.1, 4.3, 5.8). `node` starts at `start`, and
+ * `owner` holds it, as a child or a field, or is NULL for the document's
+ * root. Unless `node` only holds a group of its owner's relation (a
+ * callout's title, a definition's term and bodies, a citation's affixes),
+ * which is not a node of the document, a node its owner published while it
+ * was pending (node.h) declares its explicit anchor, the nodes of its
+ * relations are published (markdown_core_publish_relation), and the root,
+ * which holds its place, then takes the next id and its extent, measured
+ * from 0. Returns
+ * whether `node` is a node of the document. An allocation failure fails the
+ * parse. */
 bool markdown_core_publish_node(markdown_core_parser *parser, markdown_core_lookup_registry *registry,
-                                markdown_core_node *node, const markdown_core_node *owner);
+                                markdown_core_node *node, const markdown_core_node *owner, uint32_t start);
 
-/* MEASURING a relation: every node of the relations of `owner` that `part`
+/* PUBLISHING a relation: every node of the relations of `owner` that `part`
  * holds -- `part` itself, when it is a field of `owner`; its children, when
- * it is `owner` or the holder of one of `owner`'s groups -- takes its extent
- * in place of its place: the distance from the end of the node before it in
- * the relation, or from `start`, where `owner` starts, for the first, and its
- * length (node.h). */
-void markdown_core_measure_relation(const markdown_core_node *owner, uint32_t start, const markdown_core_node *part);
+ * it is `owner` or the holder of one of `owner`'s groups -- in relation
+ * order takes the next id after the revision's last, joins `registry` when
+ * it is a footnote or specimen or declares an explicit anchor and is not
+ * pending, and takes its extent in place of its place:
+ * the distance from the end of the node before it in the relation, or from
+ * `start`, where `owner` starts, for the first, and its length (node.h). An
+ * allocation failure fails the parse. */
+void markdown_core_publish_relation(markdown_core_parser *parser, markdown_core_lookup_registry *registry,
+                                    const markdown_core_node *owner, uint32_t start, const markdown_core_node *part);
 
 /* PUBLISHING THE DOCUMENT, the last step of the parse transaction: every node
  * already holds its id and its extent, and the lookup tables are built from

@@ -56,28 +56,6 @@ static markdown_core_key_index_slot *anchor_slot(markdown_core_parser *parser, m
     return slot;
 }
 
-/* An explicit anchor is declared as its node completes, and every
- * declaration is reserved before any heading is given a computed anchor. */
-void markdown_core_headings_observe(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                    markdown_core_node *node) {
-    markdown_core_heading_state *state = self->state;
-    if (!markdown_core_node_anchor_chunk(node)->len) {
-        return;
-    }
-    if (state->declared.count == state->declared.capacity) {
-        size_t capacity = state->declared.capacity ? 2 * state->declared.capacity : 8;
-        markdown_core_node **values;
-        if (capacity > SIZE_MAX / sizeof(*values) ||
-            !(values = markdown_core_realloc(state->declared.values, capacity * sizeof(*values)))) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            return;
-        }
-        state->declared.values = values;
-        state->declared.capacity = capacity;
-    }
-    state->declared.values[state->declared.count++] = node;
-}
-
 /* Reserves `node`'s explicit anchor; a parse without headings reserves
  * nothing, since only a heading's computed anchor can collide. */
 static void reserve_declared_anchor(markdown_core_parser *parser, markdown_core_heading_state *state,
@@ -142,9 +120,6 @@ void markdown_core_headings_dispose(const markdown_core_element_instance *self) 
     }
     markdown_core_free(headings->values);
     *headings = (markdown_core_heading_collection){0};
-    markdown_core_free(state->declared.values);
-    state->declared.values = NULL;
-    state->declared.count = state->declared.capacity = 0;
     markdown_core_key_index_free(&state->anchors.index);
     markdown_core_key_index_free(&state->anchors.resources);
 }
@@ -296,14 +271,15 @@ static void append_anchor_suffix(markdown_core_strbuf *base, size_t ordinal) {
  * that as its destination, and the heading's anchor borrows the bytes after
  * the `#`, its attribute value holding the resource (attributes.h). Only a
  * heading with no implicit reference owns a copy of its computed anchor. */
-void markdown_core_headings_finish(const markdown_core_element_instance *self, markdown_core_parser *parser) {
+void markdown_core_headings_finish(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                   markdown_core_node *const *declared, size_t count) {
     markdown_core_heading_state *state = self->state;
     markdown_core_heading_collection *headings = &state->headings;
     anchor_registry *registry = &state->anchors;
     markdown_core_strbuf base = MARKDOWN_CORE_BUF_INIT();
     anchor_projection_stack stack = {0};
-    for (size_t i = 0; headings->count && i < state->declared.count && !parser->error; i++) {
-        reserve_declared_anchor(parser, state, state->declared.values[i]);
+    for (size_t i = 0; headings->count && i < count && !parser->error; i++) {
+        reserve_declared_anchor(parser, state, declared[i]);
     }
     for (size_t i = 0; i < headings->count && !parser->error; i++) {
         markdown_core_node *node = headings->values[i].node;

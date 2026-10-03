@@ -47,6 +47,7 @@ static uint64_t definition_key(const void *entry) { return ((const definition_en
 void markdown_core_lookup_registry_dispose(markdown_core_lookup_registry *registry) {
     markdown_core_free(registry->footnotes.values);
     markdown_core_free(registry->specimens.values);
+    markdown_core_free(registry->anchors.values);
     *registry = (markdown_core_lookup_registry){0};
 }
 
@@ -342,14 +343,67 @@ static inline bool publish_first(const markdown_core_node *node, relation_shape 
     return first->start != first->end || *more;
 }
 
-/* Every node of `relation` takes its extent, measured from `anchor`. */
-static inline void measure_nodes(const markdown_core_relation *relation, uint32_t anchor) {
-    for (size_t at = relation->start; at < relation->end; at++) {
-        markdown_core_node *node = markdown_core_relation_node(relation, at);
-        markdown_core_place place = node->where.place;
-        node->where.extent =
-            (markdown_core_extent){(int32_t)((int64_t)place.start - (int64_t)anchor), place.end - place.start};
-        anchor = place.end;
+/* Publishing one relation's nodes: the revision that issues their ids, the
+ * registry their lookups join, and where the last one ended. */
+typedef struct {
+    markdown_core_parser *parser;
+    markdown_core_lookup_registry *registry;
+    uint32_t anchor;
+} publish_cursor;
+
+/* Records `node`, which declares an explicit anchor. */
+static void declare_anchor(publish_cursor *cursor, markdown_core_node *node) {
+    markdown_core_lookup_registry *registry = cursor->registry;
+    if (registry->anchors.count == registry->anchors.capacity) {
+        size_t capacity = registry->anchors.capacity ? 2 * registry->anchors.capacity : 8;
+        markdown_core_node **values;
+        if (capacity > SIZE_MAX / sizeof(*values) ||
+            !(values = markdown_core_realloc(registry->anchors.values, capacity * sizeof(*values)))) {
+            markdown_core_parser_fail(cursor->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            return;
+        }
+        registry->anchors.values = values;
+        registry->anchors.capacity = capacity;
+    }
+    registry->anchors.values[registry->anchors.count++] = node;
+}
+
+/* `node` takes the next id, joins the registry when it is a footnote or
+ * specimen, or when it is complete and declares an explicit anchor (a
+ * pending node declares its own when it completes), and takes its extent,
+ * measured from the cursor's anchor, which becomes its end. */
+static inline void publish_one(publish_cursor *cursor, markdown_core_node *node) {
+    markdown_core_place place = node->where.place;
+    node->id = ++cursor->parser->revision->last_id;
+    if ((slot_of(node) & SLOT_LOOKUP) &&
+        !table_add(node->kind == MARKDOWN_CORE_NODE_FOOTNOTE ? &cursor->registry->footnotes
+                                                             : &cursor->registry->specimens,
+                   node, place.start)) {
+        markdown_core_parser_fail(cursor->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+    if (!(node->flags & MARKDOWN_CORE_NODE__PENDING) && markdown_core_node_anchor_chunk(node)->len) {
+        declare_anchor(cursor, node);
+    }
+    node->where.extent =
+        (markdown_core_extent){(int32_t)((int64_t)place.start - (int64_t)cursor->anchor), place.end - place.start};
+    cursor->anchor = place.end;
+}
+
+/* Every node of `relation`, in order. A range of children is read a
+ * tier-zero run at a time. */
+static inline void publish_nodes(publish_cursor *cursor, const markdown_core_relation *relation) {
+    if (relation->field) {
+        publish_one(cursor, *relation->field);
+        return;
+    }
+    for (size_t at = relation->start; at < relation->end;) {
+        size_t index = at;
+        const markdown_core_run *run = markdown_core_children_leaf(relation->holder->children, &index);
+        size_t end = run->count - index < relation->end - at ? run->count : index + (relation->end - at);
+        at += end - index;
+        for (; index < end; index++) {
+            publish_one(cursor, (markdown_core_node *)run->entries[index]);
+        }
     }
 }
 
@@ -358,7 +412,8 @@ static inline bool relation_of(const markdown_core_relation *relation, const mar
     return relation->field ? *relation->field == part : relation->holder == part;
 }
 
-void markdown_core_measure_relation(const markdown_core_node *owner, uint32_t start, const markdown_core_node *part) {
+void markdown_core_publish_relation(markdown_core_parser *parser, markdown_core_lookup_registry *registry,
+                                    const markdown_core_node *owner, uint32_t start, const markdown_core_node *part) {
     markdown_core_relation_cursor cursor;
     markdown_core_relation relation;
     bool more;
@@ -367,7 +422,7 @@ void markdown_core_measure_relation(const markdown_core_node *owner, uint32_t st
     }
     for (;;) {
         if (relation_of(&relation, part)) {
-            measure_nodes(&relation, start);
+            publish_nodes(&(publish_cursor){parser, registry, start}, &relation);
         }
         if (!more || !relations_next(&cursor, &relation, &more)) {
             return;
@@ -375,10 +430,10 @@ void markdown_core_measure_relation(const markdown_core_node *owner, uint32_t st
     }
 }
 
-/* Whether `owner` holds `node` as the holder of one of its groups rather than
- * as a node of its relations (relations_next). */
-static bool holds_group(const markdown_core_node *owner, const markdown_core_node *node) {
-    switch (shape_of(owner)) {
+/* Whether `owner`, of `shape`, holds `node` as the holder of one of its
+ * groups rather than as a node of its relations (relations_next). */
+static inline bool holds_group(relation_shape shape, const markdown_core_node *owner, const markdown_core_node *node) {
+    switch (shape) {
     case SHAPE_CALLOUT:
         return node == owner->as.callout->title;
     case SHAPE_CITATION:
@@ -391,37 +446,40 @@ static bool holds_group(const markdown_core_node *owner, const markdown_core_nod
 }
 
 bool markdown_core_publish_node(markdown_core_parser *parser, markdown_core_lookup_registry *registry,
-                                markdown_core_node *node, const markdown_core_node *owner) {
-    if (owner && holds_group(owner, node)) {
+                                markdown_core_node *node, const markdown_core_node *owner, uint32_t start) {
+    if (owner && holds_group(shape_of(owner), owner, node)) {
         return false;
     }
-    markdown_core_place place = node->where.place;
-    unsigned slot = slot_of(node);
-    node->id = ++parser->revision->last_id;
-    if ((slot & SLOT_LOOKUP) &&
-        !table_add(node->kind == MARKDOWN_CORE_NODE_FOOTNOTE ? &registry->footnotes : &registry->specimens, node,
-                   place.start)) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    if ((node->flags & MARKDOWN_CORE_NODE__PENDING) && markdown_core_node_anchor_chunk(node)->len) {
+        declare_anchor(&(publish_cursor){parser, registry, 0}, node);
     }
-    markdown_core_relation_cursor cursor;
-    markdown_core_relation relation;
-    bool more;
-    if (publish_first(node, (relation_shape)(slot & SLOT_SHAPE), &cursor, &relation, &more)) {
-        do {
-            measure_nodes(&relation, place.start);
-        } while (more && relations_next(&cursor, &relation, &more));
+    relation_shape shape = shape_of(node);
+    if (shape == SHAPE_CHILDREN) {
+        if (node->children) {
+            publish_nodes(&(publish_cursor){parser, registry, start},
+                          &(markdown_core_relation){NULL, NULL, node, 0, node->children->total});
+        }
+    } else {
+        markdown_core_relation_cursor cursor;
+        markdown_core_relation relation;
+        bool more;
+        if (publish_first(node, shape, &cursor, &relation, &more)) {
+            do {
+                publish_nodes(&(publish_cursor){parser, registry, start}, &relation);
+            } while (more && relations_next(&cursor, &relation, &more));
+        }
     }
     if (!owner) {
-        node->where.extent = (markdown_core_extent){(int32_t)place.start, place.end - place.start};
+        publish_one(&(publish_cursor){parser, registry, 0}, node);
     }
     return true;
 }
 
 /* PUBLISHING CONTINUES THE PREVIOUS TREE (docs/plans/2026-09-29-incremental-
- * parsing.md, 5.9). Every node took its id and its extent when it completed;
- * this one comparison of the two trees matches each new node, relation by
- * relation, to the old node it continues, and decides in post-order whether
- * it equals that old node as a value.
+ * parsing.md, 5.9). Every node took its id and its extent when its owner
+ * completed; this one comparison of the two trees matches each new node,
+ * relation by relation, to the old node it continues, and decides in
+ * post-order whether it equals that old node as a value.
  *
  * Matching runs within the relation of a matched owner. An old node's anchor
  * is the first byte of its range that survived the edits, and a new node of

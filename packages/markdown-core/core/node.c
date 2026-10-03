@@ -663,15 +663,6 @@ int markdown_core_node_check(markdown_core_node *node, FILE *out) {
     return failed ? -1 : errors;
 }
 
-const markdown_core_chunk *markdown_core_node_anchor_chunk(const markdown_core_node *node) {
-    if (!node->attributes.anchor.len &&
-        (node->kind == MARKDOWN_CORE_NODE_LINK || node->kind == MARKDOWN_CORE_NODE_EMBEDDED) &&
-        node->as.link->resource) {
-        return &node->as.link->resource->attributes.anchor;
-    }
-    return &node->attributes.anchor;
-}
-
 bool markdown_core_node_kind_set_intersects(const markdown_core_node_kind_set *a,
                                             const markdown_core_node_kind_set *b) {
     return (a->blocks & b->blocks) != 0 || (a->inlines & b->inlines) != 0;

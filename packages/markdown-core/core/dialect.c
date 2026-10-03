@@ -16,10 +16,8 @@
  * instead of its own, so it is refused too: that key is never declared.
  *
  * The document lifecycle is one concern too. The engine calls every one of
- * its hooks but `observe_node` without asking, on whichever element owns
- * it, so an element that declares part of it would have the engine call
- * through a NULL the moment it became the owner: it declares all of them or
- * none.
+ * its hooks without asking, on whichever element owns it, so an element that declares part of it would have the engine
+ * call through a NULL the moment it became the owner: it declares all of them or none.
  *
  * A flanking-transparent byte is ASCII. Flanking tests a decoded scalar
  * against these bytes, and only a scalar below 0x80 is its own byte. Its walk
@@ -42,7 +40,7 @@ static bool S_finish_kind_indexable(markdown_core_node_type kind) {
 static bool S_owns_document_lifecycle(const markdown_core_element *element) {
     return element->init_document && element->dispose_document && element->read_document_prefix &&
            element->prepare_document && element->finish_document && element->publish_document &&
-           element->publish_node && element->measure_relation;
+           element->complete_node && element->publish_relation;
 }
 
 static bool S_element_refused(const markdown_core_element *element) {
@@ -76,8 +74,8 @@ static bool S_element_refused(const markdown_core_element *element) {
     }
     /* Only part of the document lifecycle. */
     if ((element->init_document || element->dispose_document || element->read_document_prefix ||
-         element->prepare_document || element->finish_document || element->publish_document || element->publish_node ||
-         element->measure_relation || element->observe_node) &&
+         element->prepare_document || element->finish_document || element->publish_document || element->complete_node ||
+         element->publish_relation) &&
         !S_owns_document_lifecycle(element)) {
         return true;
     }
