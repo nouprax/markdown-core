@@ -3676,26 +3676,22 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
     OK(runner, destination.path.length == 0 && !destination.anchor.has_value && !label.has_value,
        "converted cross link establishes ordinary empty and absent defaults");
 
-    markdown_core_node *cite = markdown_core_node_new(MARKDOWN_CORE_NODE_CITE);
     markdown_core_node *item = markdown_core_node_new(MARKDOWN_CORE_NODE_CITATION);
     markdown_core_node *prefix = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
-    OK(runner, markdown_core_node_append_child(NULL, parent, cite), "cite joins its parent");
-    /* A Cite's items are its children, which the parse puts there itself:
-     * the fixture builds the children as the parse does. */
-    OK(runner, markdown_core_children_append(NULL, &cite->children, item), "the item is the cite's child");
+    OK(runner, markdown_core_node_append_child(NULL, parent, item), "citation joins its parent");
     item->as.citation->prefix = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
     markdown_core_node_append_child(NULL, item->as.citation->prefix, prefix);
     OK(runner, set_literal(prefix, "prefix"), "citation owns an affix subtree");
     payload_fail_at = payload_allocations + 1;
     before = payload_live;
     OK(runner,
-       markdown_core_node_set_kind(parent, cite, MARKDOWN_CORE_NODE_CROSS_EMBEDDED) ==
+       markdown_core_node_set_kind(parent, item, MARKDOWN_CORE_NODE_CROSS_EMBEDDED) ==
                MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED &&
-           child_at(cite, 0) == item && child_at(item->as.citation->prefix, 0) == prefix,
+           child_at(item->as.citation->prefix, 0) == prefix,
        "failed retyping preserves node-valued fields");
     INT_EQ(runner, payload_live, before, "failed retyping leaves the owned subtree alive");
     payload_fail_at = 0;
-    INT_EQ(runner, markdown_core_node_set_kind(parent, cite, MARKDOWN_CORE_NODE_TEXT), MARKDOWN_CORE_NODE_SET_KIND_OK,
+    INT_EQ(runner, markdown_core_node_set_kind(parent, item, MARKDOWN_CORE_NODE_TEXT), MARKDOWN_CORE_NODE_SET_KIND_OK,
            "kind conversion releases the old owned subtrees");
     markdown_core_node_free(parent);
     INT_EQ(runner, payload_live, 0, "conversion and destruction release payloads, fields, and affixes exactly once");
@@ -4450,18 +4446,24 @@ static void table_source_map_growth(test_batch_runner *runner) {
             // even as the number of links and remaining runs both increase.
             OK(runner, observed_source_marks > 0 && (size_t)observed_source_marks <= 16 * count + 16,
                "source map storage is linear at %zu repeats (%d runs)", count, observed_source_marks);
-            markdown_core_node *table = child_at(root, 0);
-            markdown_core_node *cell = child_at(child_at(table, 1), 0);
+            /* One walk reads every address's range, which a scope query per
+             * node would find by a walk of its own. The row's line starts at
+             * byte 12. */
             size_t links = 0;
-            for (size_t node_index = 0; node_index < markdown_core_node_children_count(cell); node_index++) {
-                markdown_core_node *node = markdown_core_node_child(cell, node_index);
-                if (node->kind != MARKDOWN_CORE_NODE_LINK) {
+            markdown_core_walk walk;
+            markdown_core_walk_item item;
+            markdown_core_walk_begin(&walk, root);
+            while (markdown_core_walk_next(&walk, &item)) {
+                if (!item.node || item.node->kind != MARKDOWN_CORE_NODE_LINK) {
                     continue;
                 }
-                INT_EQ(runner, START_COLUMN(node), 12 + links * unit_length, "address begins at its authored byte");
-                INT_EQ(runner, END_COLUMN(node), 27 + links * unit_length, "address ends at its authored byte");
+                INT_EQ(runner, item.place.start - 12 + 1, 12 + links * unit_length,
+                       "address begins at its authored byte");
+                INT_EQ(runner, item.place.end - 12, 27 + links * unit_length, "address ends at its authored byte");
                 links++;
             }
+            OK(runner, !walk.failed, "the walk reads every node");
+            markdown_core_walk_end(&walk);
             INT_EQ(runner, links, count, "every address is retained");
             markdown_core_node_free(root);
         }
