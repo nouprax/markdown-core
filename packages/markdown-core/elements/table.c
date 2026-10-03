@@ -89,13 +89,18 @@ static bool table_entry_shapes(const table_entry *entry, const table_point *poin
     return entry->shape == point->shape && !memcmp(entry->values, values, entry->shape * sizeof(int));
 }
 
-/* THE RECORD OF A GRID TABLE'S FOLD (E6): the geometry columns of its walls;
- * the fold's state after its closing border, `tail_span` bytes past the end
- * of its last row; and its full '=' borders, each named by the rows above it,
- * with the alignment it reads. A later parse reads the table again against
- * it: it speculates the walls, steps over the runs of rows it takes, and
- * reads what the borders it stepped over decided from here. */
+/* THE RECORD OF A TABLE'S FOLD (E5, E6): the table's form and margin; the
+ * geometry columns of a grid table's walls, or the starts and ends of a
+ * simple or multiline table's dash runs; a grid table's fold state after its
+ * closing border, `tail_span` bytes past the end of its last row; and its
+ * full '=' borders, each named by the rows above it, with the alignment it
+ * reads. A later parse reads the table again against it: it steps over the
+ * runs of rows it takes, and reads what the lines it stepped over decided
+ * from here. */
+enum { TABLE_FORM_GRID = 1, TABLE_FORM_SIMPLE, TABLE_FORM_MULTILINE };
+
 struct markdown_core_table_fold {
+    int form, margin;
     int *positions;
     size_t position_count;
     table_entry *tail;
@@ -802,6 +807,9 @@ typedef struct {
     int end_line;
     struct markdown_core_table_fold fold;
     size_t tail;
+    /* The rows the table took, and the lines at the margin in those of a
+     * simple or multiline table (their tallies, node.h). */
+    size_t taken_rows, taken_tally;
     size_t equal_capacity;
 } table_candidate;
 
@@ -852,11 +860,12 @@ struct markdown_core_table_workspace {
     table_separator_group *separator_groups;
     size_t separator_groups_capacity;
     /* A grid fold's columns: its shape (`grid_parents`, `grid_sizes`, and
-     * `grid_classes` while it is named), the walls it speculates
-     * (`grid_positions`), and per geometry column of a wall, the border's
-     * edges, the band's walls, the patch at the column and an order. */
-    int *grid_parents, *grid_sizes, *grid_classes, *grid_positions;
-    size_t grid_capacity, grid_positions_capacity;
+     * `grid_classes` while it is named), and per geometry column of a wall,
+     * the border's edges, the band's walls, the patch at the column and an
+     * order. A fold's record positions: a grid table's walls, a simple or
+     * multiline table's dash runs (`fold_positions`). */
+    int *grid_parents, *grid_sizes, *grid_classes, *fold_positions;
+    size_t grid_capacity, fold_positions_capacity;
     unsigned char *lattice_edges;
     bool *lattice_walls;
     int *lattice_faces, *lattice_order, *lattice_losers;
@@ -964,7 +973,8 @@ static void table_candidate_reset(table_candidate *candidate) {
     table_entry_release(candidate->fold.tail);
     candidate->fold.tail = NULL;
     candidate->fold.positions = NULL;
-    candidate->fold.position_count = candidate->fold.equal_count = 0;
+    candidate->fold.position_count = candidate->fold.equal_count = candidate->taken_rows = candidate->taken_tally = 0;
+    candidate->fold.form = candidate->fold.margin = 0;
     candidate->column_count = candidate->row_count = candidate->cell_count = candidate->part_count = 0;
     candidate->head_count = candidate->foot_count = candidate->first = candidate->last = candidate->end = 0;
     candidate->block_content = candidate->pipe = false;
@@ -1196,8 +1206,8 @@ static bool table_add_row(table_source *source, table_candidate *candidate, size
     return true;
 }
 
-static bool table_add_cell(table_source *source, table_candidate *candidate, size_t first, size_t last, int left,
-                           int right, int start, int end) {
+static bool table_add_cell(table_source *source, table_candidate *candidate, size_t row, size_t first, size_t last,
+                           int left, int right, int start, int end) {
     {
         void *grown = table_reserve(source, candidate->cells, &candidate->cell_capacity, candidate->cell_count + 1,
                                     sizeof(*candidate->cells));
@@ -1206,9 +1216,8 @@ static bool table_add_cell(table_source *source, table_candidate *candidate, siz
         }
         candidate->cells = grown;
     }
-    candidate->cells[candidate->cell_count++] =
-        (table_source_cell){first, last, left, right, candidate->row_count - 1, 1, 1, start, end};
-    candidate->rows[candidate->row_count - 1].count++;
+    candidate->cells[candidate->cell_count++] = (table_source_cell){first, last, left, right, row, 1, 1, start, end};
+    candidate->rows[row].count++;
     return true;
 }
 
@@ -1251,16 +1260,16 @@ static int table_margin_byte(const table_source_line *line, int margin) {
     return byte;
 }
 
-static bool table_rectangular_row(table_source *source, table_candidate *candidate, size_t first, size_t last,
-                                  size_t runs) {
+/* The cells of row `row` of a simple or multiline table, once its margin is
+ * known: its lines are read for their columns only then. */
+static bool table_row_cells(table_source *source, table_candidate *candidate, size_t row, size_t runs) {
+    size_t first = candidate->rows[row].first, last = candidate->rows[row].last;
     for (size_t i = first; i <= last; i++) {
         if (!table_source_columns(source, i)) {
             return false;
         }
     }
-    if (!table_add_row(source, candidate, first, last)) {
-        return false;
-    }
+    candidate->rows[row].cell = candidate->cell_count;
     /* Interior columns meet at dash-run starts; the outer two reach the
      * table's edges, the margin and the line's end. */
     for (size_t column = 0; column < candidate->column_count; column++) {
@@ -1295,7 +1304,7 @@ static bool table_rectangular_row(table_source *source, table_candidate *candida
         if (end > finish->length) {
             end = finish->length;
         }
-        if (!table_add_cell(source, candidate, cell_first, cell_last, left, right, start + 1, end)) {
+        if (!table_add_cell(source, candidate, row, cell_first, cell_last, left, right, start + 1, end)) {
             return false;
         }
     }
@@ -1375,6 +1384,113 @@ static bool table_has_block_start(table_source *source, size_t index, bool parag
     markdown_core_block_reader reader = {&context, table_read_block_line};
     return markdown_core_parser_has_block_start(source->parser, source->lookahead.parent, &chunk, line->first,
                                                 line->first_column, line->indent, paragraph, &reader);
+}
+
+/* Where the line holding `at` begins. */
+static size_t table_line_begin(markdown_core_parser *parser, size_t at) {
+    while (at > 0) {
+        unsigned char byte = *markdown_core_parser_input_at(parser, at - 1);
+        if (byte == '\n' || byte == '\r') {
+            break;
+        }
+        at--;
+    }
+    return at;
+}
+
+/* THE OLD TABLE'S SECTIONS: its head, body and foot are each a relation,
+ * whose first row's lead runs from the table's start. The rows of the
+ * section that holds row `index`: from `*first` to `*end`. */
+static void table_old_section(const markdown_core_node *old, size_t index, size_t *first, size_t *end) {
+    const markdown_core_table *table = old->opaque;
+    size_t head = table->head_count, body = head + table->content_count;
+    *first = index < head ? 0 : index < body ? head : body;
+    *end = index < head ? head : index < body ? body : markdown_core_children_count(old->children);
+}
+
+/* Where the lead of the old table's row `index` starts. */
+static int64_t table_old_lead(const table_source *source, size_t index) {
+    const markdown_core_run *children = source->old->children;
+    size_t first, end;
+    table_old_section(source->old, index, &first, &end);
+    return source->old_start + markdown_core_children_length_before(children, index) -
+           markdown_core_children_length_before(children, first);
+}
+
+/* Whether row `index` of a table whose head holds `head` rows and whose
+ * foot begins at row `foot` is the first of its section. */
+static bool table_section_first(size_t head, size_t foot, size_t index) {
+    return index == 0 || index == head || index == foot;
+}
+
+/* The old row that ends first after `at`, child `*child` of the old table,
+ * whose lead starts at `*lead`; false when none does. A section's rows are
+ * measured from the table's start (above). */
+static bool table_old_row(const table_source *source, int64_t at, size_t *child, int64_t *lead) {
+    const markdown_core_node *old = source->old;
+    size_t first = 0, end = 0, total = markdown_core_children_count(old->children);
+    for (; first < total; first = end) {
+        table_old_section(old, first, &first, &end);
+        if (markdown_core_children_find(old->children,
+                                        source->old_start - markdown_core_children_length_before(old->children, first),
+                                        at, child, lead) &&
+            *child >= first && *child < end) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* A run of `count` old rows from child `first` that the table takes, from
+ * `start` to `end`, ordered with its rows by `key`; it joins the run before
+ * it when they are adjacent. */
+static void table_candidate_part(table_source *source, table_candidate *candidate, size_t key, size_t first,
+                                 size_t count, size_t start, size_t end) {
+    candidate->taken_rows += count;
+    if (candidate->part_count) {
+        table_source_part *last = &candidate->parts[candidate->part_count - 1];
+        if (last->first + last->count == first) {
+            last->count += count;
+            last->end = end;
+            return;
+        }
+    }
+    void *grown = table_reserve(source, candidate->parts, &candidate->part_capacity, candidate->part_count + 1,
+                                sizeof(*candidate->parts));
+    if (!grown) {
+        return;
+    }
+    candidate->parts = grown;
+    candidate->parts[candidate->part_count++] = (table_source_part){key, first, count, start, end};
+}
+
+/* Whether the old rows the table takes keep their place in their sections'
+ * chains: a row that begins a section of the old table begins one of the
+ * new table, and the other way round, since its lead runs from the table's
+ * start or from the row before it. */
+static bool table_parts_chained(const table_source *source, const table_candidate *candidate, size_t rows) {
+    const markdown_core_table *was = source->old ? source->old->opaque : NULL;
+    size_t head = candidate->head_count, foot = rows - candidate->foot_count;
+    size_t old_head = was ? was->head_count : 0, old_foot = was ? was->head_count + was->content_count : 0;
+    for (size_t r = 0, p = 0, index = 0; p < candidate->part_count;) {
+        if (r < candidate->row_count && candidate->rows[r].key <= candidate->parts[p].key) {
+            r++;
+            index++;
+            continue;
+        }
+        const table_source_part *part = &candidate->parts[p++];
+        size_t bounds[3] = {0, head, foot}, old_bounds[3] = {0, old_head, old_foot};
+        for (size_t i = 0; i < 3; i++) {
+            if ((bounds[i] >= index && bounds[i] < index + part->count &&
+                 !table_section_first(old_head, old_foot, bounds[i] - index + part->first)) ||
+                (old_bounds[i] >= part->first && old_bounds[i] < part->first + part->count &&
+                 !table_section_first(head, foot, old_bounds[i] - part->first + index))) {
+                return false;
+            }
+        }
+        index += part->count;
+    }
+    return true;
 }
 
 static bool table_header_allowed(table_source *source, size_t index) {
@@ -1540,6 +1656,115 @@ done:
     return;
 }
 
+/* THE RECORD A SIMPLE OR MULTILINE TABLE IS READ AGAINST (E5): the old
+ * table's, when it had this form and these dash runs, from `runs`. */
+static const struct markdown_core_table_fold *table_lines_record(table_source *source, int form, size_t runs,
+                                                                 size_t count) {
+    const markdown_core_table *old = source->old ? source->old->opaque : NULL;
+    const struct markdown_core_table_fold *record = old ? old->fold : NULL;
+    if (!record || record->form != form || record->position_count != 2 * count) {
+        return NULL;
+    }
+    source->workspace->work.scan += count;
+    for (size_t i = 0; i < count; i++) {
+        table_interval run = table_dash(source, runs, i);
+        if (record->positions[2 * i] != run.start || record->positions[2 * i + 1] != run.end) {
+            return NULL;
+        }
+    }
+    return record;
+}
+
+/* THE FOLD OF A SIMPLE OR MULTILINE TABLE TAKES THE RUN OF UNCHANGED OLD ROWS
+ * that begins on the line after line `index`, through the last line it has
+ * read: it steps over their lines, which their reach covers, and reads on
+ * from the line after them. Whether it took them. */
+static bool table_lines_take(table_source *source, table_candidate *candidate, size_t index) {
+    markdown_core_parser *parser = source->parser;
+    const markdown_core_node *old = source->old;
+    const table_source_line *line = &source->lines[index];
+    int64_t at = markdown_core_parser_source_end(parser, line->line, line->length), lead;
+    size_t child, section, section_end;
+    if (index + 2 < source->count || !table_old_row(source, at, &child, &lead)) {
+        return false;
+    }
+    const markdown_core_node *row = markdown_core_children_at(old->children, child);
+    int64_t start = lead + row->where.extent.lead;
+    if (at >= start || (row->flags & MARKDOWN_CORE_NODE__CHANGED) ||
+        table_line_begin(parser, (size_t)start) != markdown_core_parser_line_after(parser, (size_t)at)) {
+        return false;
+    }
+    table_old_section(old, child, &section, &section_end);
+    markdown_core_run_sums sums;
+    size_t count = markdown_core_children_take_run(old->children, child, section_end, &sums);
+    if (!count) {
+        return false;
+    }
+    size_t end = (size_t)(lead + (int64_t)sums.length);
+    table_candidate_part(source, candidate, index, child, count, (size_t)start, end);
+    candidate->taken_tally += sums.tally;
+    markdown_core_parser_lookahead_skip(&source->lookahead, markdown_core_parser_line_after(parser, end),
+                                        end + sums.reach);
+    candidate->end = end;
+    candidate->end_line = source->lookahead.line - 1;
+    return !parser->error;
+}
+
+/* A SIMPLE OR MULTILINE TABLE'S MARGIN, its read lines from `first` to
+ * `last` reaching `margin` at the least, and its record: the old table's
+ * when it took rows, which are measured from it. False when it took rows
+ * and its margin is another, and the table is read again without them;
+ * the rows it took reach the old margin when their tallies do. Then each
+ * row it read has its cells. */
+static bool table_lines_finish(table_source *source, table_candidate *candidate,
+                               const struct markdown_core_table_fold *record, int form, size_t runs, size_t count) {
+    int margin = table_margin(source, candidate->first, candidate->last);
+    if (candidate->part_count) {
+        if (margin < record->margin || (margin > record->margin && !candidate->taken_tally)) {
+            return false;
+        }
+        margin = record->margin;
+    }
+    candidate->margin = margin;
+    if (!table_parts_chained(source, candidate, candidate->row_count + candidate->taken_rows)) {
+        return false;
+    }
+    for (size_t r = 0; r < candidate->row_count; r++) {
+        if (!table_row_cells(source, candidate, r, runs)) {
+            return false;
+        }
+    }
+    table_workspace *workspace = source->workspace;
+    void *grown = table_reserve(source, workspace->fold_positions, &workspace->fold_positions_capacity, 2 * count,
+                                sizeof(*workspace->fold_positions));
+    if (!grown) {
+        return false;
+    }
+    workspace->fold_positions = grown;
+    for (size_t i = 0; i < count; i++) {
+        table_interval run = table_dash(source, runs, i);
+        workspace->fold_positions[2 * i] = run.start;
+        workspace->fold_positions[2 * i + 1] = run.end;
+    }
+    candidate->fold.form = form;
+    candidate->fold.margin = margin;
+    candidate->fold.positions = workspace->fold_positions;
+    candidate->fold.position_count = 2 * count;
+    return true;
+}
+
+/* A row a simple or multiline table read, from line `first` to `last`,
+ * decided once the input was read as far as it is now. */
+static bool table_lines_row(table_source *source, table_candidate *candidate, size_t first, size_t last) {
+    if (!table_add_row(source, candidate, first, last)) {
+        return false;
+    }
+    table_source_row *row = &candidate->rows[candidate->row_count - 1];
+    row->key = first;
+    row->reads = source->parser->line_reads;
+    return true;
+}
+
 static bool table_parse_simple(table_source *source, size_t start, table_candidate *candidate) {
     size_t count = table_dash_count(source, start);
     bool headerless = count > 1;
@@ -1556,47 +1781,57 @@ static bool table_parse_simple(table_source *source, size_t start, table_candida
     if (!table_prepare_dashes(source, delimiter)) {
         goto failed;
     }
+    size_t runs = source->lines[delimiter].dash_offset;
+    const struct markdown_core_table_fold *record = table_lines_record(source, TABLE_FORM_SIMPLE, runs, count);
+    if (!headerless && !table_lines_row(source, candidate, start, start)) {
+        goto failed;
+    }
     bool footer = false;
     /* Simple rows own inline text until a blank/valid footer. Pandoc 3.11
      * retains heading, quote and fence markers here; the header/caption
-     * paragraph-interruption rules do not apply to an existing body. */
-    for (size_t i = body; table_source_get(source, i) && !source->lines[i].blanks; i++) {
+     * paragraph-interruption rules do not apply to an existing body. Each
+     * body line is a row, and the rows of the old table that no edit met
+     * are taken after the first body line, which a headerless table reads
+     * its alignment from. */
+    for (size_t i = body;; i++) {
+        if (record && i > body && i == source->count) {
+            table_lines_take(source, candidate, i - 1);
+        }
+        if (!table_source_get(source, i) || source->lines[i].blanks) {
+            break;
+        }
         end = i;
+        candidate->end = 0;
         if (table_same_dashes(source, delimiter, i)) {
             footer = true;
             break;
+        }
+        if (!table_lines_row(source, candidate, i, i)) {
+            goto failed;
         }
     }
     if (source->parser->error) {
         goto failed;
     }
-    if (headerless && !footer) {
+    if (headerless && !footer && !candidate->part_count) {
         table_simple_search_finish(source, delimiter, end);
     }
-    if (end == delimiter || (headerless && !footer) || source->parser->error) {
+    if ((end == delimiter && !candidate->part_count) || (headerless && !footer) || source->parser->error) {
         goto failed;
     }
-    if (!table_source_columns(source, start) || !table_source_columns(source, body)) {
-        goto failed;
-    }
-    size_t runs = source->lines[delimiter].dash_offset;
-    if (!table_set_columns(source, candidate, runs, count, headerless ? body : start, false)) {
+    if (!table_source_columns(source, start) || !table_source_columns(source, body) ||
+        !table_set_columns(source, candidate, runs, count, headerless ? body : start, false)) {
         goto failed;
     }
     candidate->first = start;
     candidate->last = end;
-    candidate->margin = table_margin(source, start, end);
     candidate->head_count = headerless ? 0 : 1;
-    if (!headerless && !table_rectangular_row(source, candidate, start, start, runs)) {
+    if (!table_lines_finish(source, candidate, record, TABLE_FORM_SIMPLE, runs, count)) {
         goto failed;
-    }
-    for (size_t i = body; i <= end - (footer ? 1u : 0u); i++) {
-        if (!table_rectangular_row(source, candidate, i, i, runs)) {
-            goto failed;
-        }
     }
     return true;
 failed:
+    source->redo |= candidate->part_count != 0;
     table_candidate_reset(candidate);
     return false;
 }
@@ -1632,59 +1867,71 @@ static bool table_parse_multiline(table_source *source, size_t start, table_cand
          * separated by blank lines only once the body has begun. */
         goto failed;
     }
-    if (table_search_absent(source, delimiter, TABLE_NO_CLOSING_BOUNDARY)) {
-        goto failed;
-    }
-    size_t end = delimiter + 1;
-    /* This search judges with `table_full_boundary` and `.blanks`, both of
-     * which read RAW BYTES. It must not build the per-scalar column map: the
-     * lines it walks may never become part of a table, and every routine that
-     * does read the map builds it for the lines it reads. On `block-hr.x1` a
-     * lone ` -  -  -  -  -` keeps a headerless multiline alive to EOF, and the
-     * map built here covered 56,680 of that document's 56,704 non-blank
-     * characters for a candidate that then failed. */
-    for (; table_source_get(source, end); end++) {
-        if (table_full_boundary(source, end) && (!table_source_get(source, end + 1) || source->lines[end + 1].blanks)) {
-            break;
-        }
-    }
-    if (end >= source->count) {
-        table_search_finish(source, delimiter, source->count, TABLE_NO_CLOSING_BOUNDARY);
-    }
-    if (end >= source->count || end == delimiter + 1) {
-        goto failed;
-    }
-    if (!table_prepare_dashes(source, delimiter)) {
+    if (table_search_absent(source, delimiter, TABLE_NO_CLOSING_BOUNDARY) || !table_prepare_dashes(source, delimiter)) {
         goto failed;
     }
     size_t runs = source->lines[delimiter].dash_offset;
+    const struct markdown_core_table_fold *record = table_lines_record(source, TABLE_FORM_MULTILINE, runs, count);
+    if (header && !table_lines_row(source, candidate, start + 1, delimiter - 1)) {
+        goto failed;
+    }
+    /* The table ends at a full boundary followed by a blank line or the end
+     * of the input, and a blank line begins each row after the first. This
+     * search judges with `table_full_boundary` and `.blanks`, both of which
+     * read RAW BYTES; the rows' cells are made once the table is found, and
+     * only then is the per-scalar column map built for their lines: the
+     * lines it walks may never become part of a table. On `block-hr.x1` a
+     * lone ` -  -  -  -  -` keeps a headerless multiline alive to EOF, and
+     * the map built for it covered 56,680 of that document's 56,704
+     * non-blank characters for a candidate that then failed. After a blank
+     * line, the rows of the old table that no edit met are taken. */
+    size_t first = delimiter + 1, end = delimiter + 1, body_count = 0;
+    for (;; end++) {
+        if (!table_source_get(source, end)) {
+            if (!candidate->part_count) {
+                table_search_finish(source, delimiter, source->count, TABLE_NO_CLOSING_BOUNDARY);
+            }
+            goto failed;
+        }
+        candidate->end = 0;
+        if (table_full_boundary(source, end) && (!table_source_get(source, end + 1) || source->lines[end + 1].blanks)) {
+            break;
+        }
+        if (source->lines[end].blanks && end > first) {
+            if (!table_lines_row(source, candidate, first, end - 1)) {
+                goto failed;
+            }
+            body_count++;
+            first = end;
+            if (record && table_lines_take(source, candidate, end - 1)) {
+                first = end + 1;
+            }
+        }
+    }
+    if (end == delimiter + 1 || source->parser->error) {
+        goto failed;
+    }
+    if (first < end) {
+        if (!table_lines_row(source, candidate, first, end - 1)) {
+            goto failed;
+        }
+        body_count++;
+    }
+    if (body_count + candidate->taken_rows == 1 && !source->lines[end].blanks) {
+        goto failed;
+    }
     candidate->block_content = true;
     candidate->padding_limit = INT_MAX;
     candidate->first = start;
     candidate->last = end;
-    candidate->margin = table_margin(source, start, end);
     candidate->head_count = header ? 1 : 0;
-    if (!table_set_columns(source, candidate, runs, count, header ? start + 1 : delimiter + 1, true)) {
-        goto failed;
-    }
-    if (header && !table_rectangular_row(source, candidate, start + 1, delimiter - 1, runs)) {
-        goto failed;
-    }
-    size_t first = delimiter + 1, body_count = 0;
-    for (size_t i = first + 1; i <= end; i++) {
-        if (i == end || source->lines[i].blanks) {
-            if (!table_rectangular_row(source, candidate, first, i - 1, runs)) {
-                goto failed;
-            }
-            body_count++;
-            first = i;
-        }
-    }
-    if (body_count == 1 && !source->lines[end].blanks) {
+    if (!table_set_columns(source, candidate, runs, count, header ? start + 1 : delimiter + 1, true) ||
+        !table_lines_finish(source, candidate, record, TABLE_FORM_MULTILINE, runs, count)) {
         goto failed;
     }
     return true;
 failed:
+    source->redo |= candidate->part_count != 0;
     table_candidate_reset(candidate);
     return false;
 }
@@ -2056,8 +2303,8 @@ static void table_lattice_row(table_lattice *lattice, size_t top, size_t bottom)
         table_source_line *begin = &source->lines[first],
                           *finish = &source->lines[cell_last < first ? first : cell_last];
         int left = lattice->positions[patch.from] + 1, right = lattice->positions[patch.to + 1];
-        if (!table_add_cell(source, candidate, first, cell_last, left, right, table_byte(begin, left) + 1,
-                            table_byte(finish, right))) {
+        if (!table_add_cell(source, candidate, candidate->row_count - 1, first, cell_last, left, right,
+                            table_byte(begin, left) + 1, table_byte(finish, right))) {
             return;
         }
         int64_t spans = 0;
@@ -2308,63 +2555,6 @@ static void table_lattice_equal(table_lattice *lattice, size_t rows, const markd
     lattice->source->workspace->work.scan += 2 * width;
 }
 
-/* Where the line holding `at` begins. */
-static size_t table_line_begin(markdown_core_parser *parser, size_t at) {
-    while (at > 0) {
-        unsigned char byte = *markdown_core_parser_input_at(parser, at - 1);
-        if (byte == '\n' || byte == '\r') {
-            break;
-        }
-        at--;
-    }
-    return at;
-}
-
-/* THE OLD TABLE'S SECTIONS: its head, body and foot are each a relation,
- * whose first row's lead runs from the table's start. The rows of the
- * section that holds row `index`: from `*first` to `*end`. */
-static void table_old_section(const markdown_core_node *old, size_t index, size_t *first, size_t *end) {
-    const markdown_core_table *table = old->opaque;
-    size_t head = table->head_count, body = head + table->content_count;
-    *first = index < head ? 0 : index < body ? head : body;
-    *end = index < head ? head : index < body ? body : markdown_core_children_count(old->children);
-}
-
-/* Where the lead of the old table's row `index` starts. */
-static int64_t table_old_lead(const table_source *source, size_t index) {
-    const markdown_core_run *children = source->old->children;
-    size_t first, end;
-    table_old_section(source->old, index, &first, &end);
-    return source->old_start + markdown_core_children_length_before(children, index) -
-           markdown_core_children_length_before(children, first);
-}
-
-/* Whether row `index` of a table whose head holds `head` rows and whose
- * foot begins at row `foot` is the first of its section. */
-static bool table_section_first(size_t head, size_t foot, size_t index) {
-    return index == 0 || index == head || index == foot;
-}
-
-static void table_lattice_part(table_lattice *lattice, size_t key, size_t first, size_t count, size_t start,
-                               size_t end) {
-    table_candidate *candidate = lattice->candidate;
-    if (candidate->part_count) {
-        table_source_part *last = &candidate->parts[candidate->part_count - 1];
-        if (last->first + last->count == first) {
-            last->count += count;
-            last->end = end;
-            return;
-        }
-    }
-    void *grown = table_reserve(lattice->source, candidate->parts, &candidate->part_capacity, candidate->part_count + 1,
-                                sizeof(*candidate->parts));
-    if (!grown) {
-        return;
-    }
-    candidate->parts = grown;
-    candidate->parts[candidate->part_count++] = (table_source_part){key, first, count, start, end};
-}
-
 /* THE FOLD STEPS OVER THE RUN OF UNCHANGED OLD ROWS from child `first` of
  * the old table, whose lead starts at `lead`: through the top border of the
  * row after it, which the run's reach covers, or through the old table's
@@ -2382,7 +2572,7 @@ static void table_lattice_skip(table_lattice *lattice, size_t border, size_t fir
         return;
     }
     size_t end = (size_t)(lead + (int64_t)sums.length);
-    table_lattice_part(lattice, border, first, count, (size_t)start, end);
+    table_candidate_part(source, lattice->candidate, border, first, count, (size_t)start, end);
     for (size_t i = 0; i < record->equal_count; i++) {
         size_t rows = record->equal_rows[i];
         if (rows > first && rows <= first + count) {
@@ -2424,17 +2614,8 @@ static void table_lattice_take(table_lattice *lattice, size_t border, size_t ind
     const markdown_core_node *old = source->old;
     const table_source_line *line = &source->lines[index];
     int64_t at = markdown_core_parser_source_end(source->parser, line->line, line->length), lead;
-    size_t child = 0, first = 0, end = 0, total = markdown_core_children_count(old->children);
-    for (; first < total; first = end) {
-        table_old_section(old, first, &first, &end);
-        if (markdown_core_children_find(old->children,
-                                        source->old_start - markdown_core_children_length_before(old->children, first),
-                                        at, &child, &lead) &&
-            child >= first && child < end) {
-            break;
-        }
-    }
-    if (first == total) {
+    size_t child;
+    if (!table_old_row(source, at, &child, &lead)) {
         return;
     }
     const markdown_core_node *row = markdown_core_children_at(old->children, child);
@@ -2452,7 +2633,8 @@ static void table_lattice_take(table_lattice *lattice, size_t border, size_t ind
         return;
     }
     band->taken = true;
-    table_lattice_part(lattice, border, child, 1, (size_t)start, (size_t)start + row->where.extent.span);
+    table_candidate_part(source, lattice->candidate, border, child, 1, (size_t)start,
+                         (size_t)start + row->where.extent.span);
 }
 
 /* A border, on line `index`: the band above it ends, its walls joining its
@@ -2540,35 +2722,6 @@ static void table_lattice_border(table_lattice *lattice, size_t index) {
     if (source->old && lattice->record && after != SIZE_MAX) {
         table_lattice_take(lattice, border, index);
     }
-}
-
-/* Whether the old rows the table takes keep their place in their sections'
- * chains: a row that begins a section of the old table begins one of the
- * new table, and the other way round, since its lead runs from the table's
- * start or from the row before it. */
-static bool table_parts_chained(const table_source *source, const table_candidate *candidate, size_t rows) {
-    const markdown_core_table *was = source->old ? source->old->opaque : NULL;
-    size_t head = candidate->head_count, foot = rows - candidate->foot_count;
-    size_t old_head = was ? was->head_count : 0, old_foot = was ? was->head_count + was->content_count : 0;
-    for (size_t r = 0, p = 0, index = 0; p < candidate->part_count;) {
-        if (r < candidate->row_count && candidate->rows[r].key < candidate->parts[p].key) {
-            r++;
-            index++;
-            continue;
-        }
-        const table_source_part *part = &candidate->parts[p++];
-        size_t bounds[3] = {0, head, foot}, old_bounds[3] = {0, old_head, old_foot};
-        for (size_t i = 0; i < 3; i++) {
-            if ((bounds[i] >= index && bounds[i] < index + part->count &&
-                 !table_section_first(old_head, old_foot, bounds[i] - index + part->first)) ||
-                (old_bounds[i] >= part->first && old_bounds[i] < part->first + part->count &&
-                 !table_section_first(head, foot, old_bounds[i] - part->first + index))) {
-                return false;
-            }
-        }
-        index += part->count;
-    }
-    return true;
 }
 
 /* Reads the table's lines from its opening border with the walls at
@@ -2668,20 +2821,21 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
         workspace->grid_capacity = capacity;
     }
     {
-        void *grown = table_reserve(source, workspace->grid_positions, &workspace->grid_positions_capacity, columns,
-                                    sizeof(*workspace->grid_positions));
+        void *grown = table_reserve(source, workspace->fold_positions, &workspace->fold_positions_capacity, columns,
+                                    sizeof(*workspace->fold_positions));
         if (!grown) {
             return false;
         }
-        workspace->grid_positions = grown;
+        workspace->fold_positions = grown;
     }
-    int *positions = workspace->grid_positions;
+    int *positions = workspace->fold_positions;
     const markdown_core_table *old = source->old ? source->old->opaque : NULL;
     const struct markdown_core_table_fold *record = old ? old->fold : NULL;
     size_t count = 0;
     /* The walls the fold speculates: the old table's, when it had the
      * opening border's outer walls, or the opening border's own. */
-    if (record && record->positions[0] == left && record->positions[record->position_count - 1] == right) {
+    if (record && record->form == TABLE_FORM_GRID && record->positions[0] == left &&
+        record->positions[record->position_count - 1] == right) {
         count = record->position_count;
         memcpy(positions, record->positions, count * sizeof(*positions));
     } else {
@@ -2856,6 +3010,8 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
         candidate->columns[c].relative =
             (markdown_core_optional_double){true, (positions[c + 1] - positions[c] - 1) / total};
     }
+    candidate->fold.form = TABLE_FORM_GRID;
+    candidate->fold.margin = left;
     candidate->fold.positions = positions;
     candidate->fold.position_count = count;
     candidate->tail = table_band_at(&lattice, lattice.count - 1)->after;
@@ -2916,8 +3072,8 @@ static bool table_parse_pipe_header(table_source *source, size_t start, table_ca
                                        : (r ? MARKDOWN_CORE_FLOW_RIGHT : MARKDOWN_CORE_FLOW_NONE);
         const node_cell *cell = &geometry;
         int from = head->first + cell->start_offset, to = head->first + cell->end_offset + 1;
-        if (!table_add_cell(source, candidate, start, start, table_column(head, from), table_column(head, to), from + 1,
-                            to)) {
+        if (!table_add_cell(source, candidate, candidate->row_count - 1, start, start, table_column(head, from),
+                            table_column(head, to), from + 1, to)) {
             matches = false;
             goto done;
         }
@@ -3019,12 +3175,15 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool table_grammar_admits
 static bool table_parse_admitted_candidate(table_source *source, size_t start, table_candidate *candidate, bool pipe) {
     assert(start < source->count && source->lines[start].indent < 4);
     bool boundary = table_full_boundary(source, start);
-    if (table_parse_grid(source, start, candidate) || (boundary && table_parse_multiline(source, start, candidate)) ||
-        table_parse_simple(source, start, candidate) ||
-        (!boundary && table_parse_multiline(source, start, candidate))) {
+    /* A form that took old rows and then failed read speculatively: the
+     * table is read again without them (`redo`) before another form. */
+    if (table_parse_grid(source, start, candidate) ||
+        (!source->redo && boundary && table_parse_multiline(source, start, candidate)) ||
+        (!source->redo && table_parse_simple(source, start, candidate)) ||
+        (!source->redo && !boundary && table_parse_multiline(source, start, candidate))) {
         return true;
     }
-    return pipe && table_parse_pipe_header(source, start, candidate);
+    return !source->redo && pipe && table_parse_pipe_header(source, start, candidate);
 }
 
 static bool table_parse_candidate(table_source *source, size_t start, table_candidate *candidate, bool pipe) {
@@ -3223,6 +3382,8 @@ static void table_fold_build(markdown_core_parser *parser, markdown_core_table *
         return;
     }
     memcpy(fold->positions, from->positions, from->position_count * sizeof(*fold->positions));
+    fold->form = from->form;
+    fold->margin = from->margin;
     fold->position_count = from->position_count;
     fold->tail = table_entry_retain(from->tail);
     fold->tail_span = tail_span;
@@ -3257,10 +3418,7 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
         return node;
     }
     memcpy(table->columns, candidate->columns, candidate->column_count * sizeof(*table->columns));
-    size_t rows = candidate->row_count;
-    for (size_t p = 0; p < candidate->part_count; p++) {
-        rows += candidate->parts[p].count;
-    }
+    size_t rows = candidate->row_count + candidate->taken_rows;
     /* A grid row's entry, and the table's tail, are made from the states
      * the fold kept, before a cell's content reads another table. */
     for (size_t r = 0; r < candidate->row_count && !parser->error; r++) {
@@ -3268,7 +3426,7 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
             candidate->rows[r].entry = table_point_entry(source, candidate->rows[r].point);
         }
     }
-    if (candidate->fold.position_count && !parser->error) {
+    if (candidate->fold.form == TABLE_FORM_GRID && !parser->error) {
         candidate->fold.tail = table_point_entry(source, candidate->tail);
     }
     table->column_count = candidate->column_count;
@@ -3299,11 +3457,19 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
             break;
         }
         last_end = row_node->where.place.end;
-        /* A grid row carries its entry, and how far past its end the fold
-         * read before it made the row. */
+        /* A row of a fold carries how far past its end the fold read before
+         * it made the row; a grid row, its entry; and a simple or multiline
+         * row, its lines at the table's margin. */
         row_node->opaque = table_entry_retain(row->entry);
-        if (row->entry && parser->block_root == parser->root) {
+        if (candidate->fold.form && parser->block_root == parser->root) {
             row_node->reach = row->reads > last_end ? (uint32_t)(row->reads - last_end) : 0;
+        }
+        if (candidate->fold.form == TABLE_FORM_SIMPLE || candidate->fold.form == TABLE_FORM_MULTILINE) {
+            uint32_t tally = 0;
+            for (size_t i = row->first; i <= row->last; i++) {
+                tally += source->lines[i].indent == candidate->margin;
+            }
+            row_node->tally = tally;
         }
         for (size_t j = 0; j < row->count && !parser->error; j++) {
             table_source_cell *cell = &candidate->cells[row->cell + j];
@@ -3325,7 +3491,7 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
         }
         markdown_core_parser_complete(parser, row_node, node);
     }
-    if (candidate->fold.position_count && !parser->error) {
+    if (candidate->fold.form && !parser->error) {
         size_t end = table_candidate_end(source, candidate);
         table_fold_build(parser, table, candidate, end > last_end ? end - last_end : 0);
     }
@@ -3580,7 +3746,7 @@ static void dispose_parser(const markdown_core_element_instance *self, markdown_
     markdown_core_free(workspace->grid_parents);
     markdown_core_free(workspace->grid_sizes);
     markdown_core_free(workspace->grid_classes);
-    markdown_core_free(workspace->grid_positions);
+    markdown_core_free(workspace->fold_positions);
     markdown_core_free(workspace->lattice_edges);
     markdown_core_free(workspace->lattice_walls);
     markdown_core_free(workspace->lattice_faces);

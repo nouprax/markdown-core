@@ -391,9 +391,10 @@ struct markdown_core_node {
      * (5.1): the input's high-water mark when it closed, raised by a later
      * write to it (markdown_core_parser_write_closed). */
     uint32_t reach;
-    /* What the node adds to a count its open parent carries over its
-     * children (E3), which the children tree sums (children.h): a table
-     * row's completed cells. */
+    /* What the node adds to a count its parent carries over its children
+     * (E3, E5), which the children tree sums (children.h): a pipe table
+     * row's completed cells; a simple or multiline table row's lines at the
+     * table's margin. */
     uint32_t tally;
 
     const markdown_core_element *element;
