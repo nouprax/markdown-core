@@ -1258,8 +1258,7 @@ static bool S_take(markdown_core_parser *parser, markdown_core_node *parent, mar
         return false;
     }
     parser->takes = takes;
-    parser->takes[parser->take_count].start = (uint32_t)start;
-    parser->takes[parser->take_count++].end = (uint32_t)end;
+    parser->takes[parser->take_count++] = (markdown_core_take){(uint32_t)start, (uint32_t)end, first, count};
     frame->last_end = end;
     S_frame_joins(frame);
     S_frame_folds(frame, sums.marks);

@@ -275,7 +275,8 @@ static inline void publish_one(publish_cursor *cursor, markdown_core_node *node)
 }
 
 /* Every node of `relation`, in order. A range of children is read a
- * tier-zero run at a time. */
+ * tier-zero run at a time, and a run of siblings the parse took is stepped
+ * over whole: its nodes hold their extents and ids. */
 static inline void publish_nodes(publish_cursor *cursor, const markdown_core_relation *relation) {
     if (relation->field) {
         publish_one(cursor, *relation->field);
@@ -285,9 +286,19 @@ static inline void publish_nodes(publish_cursor *cursor, const markdown_core_rel
         size_t index = at;
         const markdown_core_run *run = markdown_core_children_leaf(relation->holder->children, &index);
         size_t end = run->count - index < relation->end - at ? run->count : index + (relation->end - at);
-        at += end - index;
-        for (; index < end; index++) {
-            publish_one(cursor, (markdown_core_node *)run->entries[index]);
+        for (; index < end; index++, at++) {
+            markdown_core_node *node = (markdown_core_node *)run->entries[index];
+            const markdown_core_take *take =
+                (node->flags & MARKDOWN_CORE_NODE__PUBLISHED)
+                    ? markdown_core_parser_take_at(cursor->parser, node,
+                                                   (int64_t)cursor->anchor + node->where.extent.lead)
+                    : NULL;
+            if (take) {
+                cursor->anchor = take->end;
+                at += take->count;
+                break;
+            }
+            publish_one(cursor, node);
         }
     }
 }
@@ -409,7 +420,9 @@ bool markdown_core_publish_node(markdown_core_parser *parser, markdown_core_node
  * old relation moves forward with the new one. The root continues the old
  * root. A matched node takes its old node's id; a node that continues
  * nothing keeps the id it took, and so does everything below it, which the
- * walk steps over.
+ * walk steps over. A run of siblings the parse took is the old run, shared
+ * by reference, and the walk steps over it whole, so it visits only what the
+ * parse read.
  *
  * A matched node is SAME when its scalars and extent equal its old node's,
  * both have the same relations, every old node of each relation was matched
@@ -513,9 +526,11 @@ static void old_relation_next(publish_match_frame *frame) {
         relations_next(&frame->old_cursor, &frame->old_relation, &more) ? frame->old_cursor.step - 1 : INT_MAX;
 }
 
-/* Pairs the new node's relation `field` with the old node's. A relation
- * either node has and the other lacks makes the node differ. */
-static void publish_pair(publish_match_frame *frame, int field) {
+/* Pairs the new node's relation `field`, `relation`, with the old node's. A
+ * relation either node has and the other lacks makes the node differ. A
+ * relation held by a group the parse took -- a definition's body -- is the
+ * old relation, and its nodes are stepped over. */
+static void publish_pair(publish_match_frame *frame, int field, markdown_core_relation *relation) {
     while (frame->old_field < field) {
         frame->same = false;
         old_relation_next(frame);
@@ -524,6 +539,10 @@ static void publish_pair(publish_match_frame *frame, int field) {
     if (frame->old_field == field) {
         frame->old_hand = frame->old_relation;
         old_relation_next(frame);
+        if (relation->holder && relation->holder == frame->old_hand.holder) {
+            relation->start = relation->end;
+            frame->old_hand.start = frame->old_hand.end;
+        }
     } else {
         frame->same = false;
         frame->old_hand = (markdown_core_relation){0};
@@ -628,8 +647,9 @@ static bool publish_verdict(publish_identity *identity, publish_match_frame *own
  * the walk goes. A matched node takes its old node's id; a node that
  * continues nothing is stepped over with everything below it. `*same` is
  * the root's verdict. */
-static bool publish_matched(publish_identity *identity, const markdown_core_revision *revision,
-                            markdown_core_node *root, markdown_core_node *previous, bool *same) {
+static bool publish_matched(const markdown_core_parser *parser, publish_identity *identity, markdown_core_node *root,
+                            markdown_core_node *previous, bool *same) {
+    const markdown_core_revision *revision = parser->revision;
     publish_match_frame *frames = NULL, *frame;
     size_t count = 0, capacity = 0;
     markdown_core_relation_cursor cursor, old_cursor;
@@ -665,7 +685,7 @@ static bool publish_matched(publish_identity *identity, const markdown_core_revi
         hand = (publish_relation){first, place.start};
         markdown_core_relations_begin(&frame->old_cursor, at.old);
         old_relation_next(frame);
-        publish_pair(frame, relation_index(&cursor, shape));
+        publish_pair(frame, relation_index(&cursor, shape), &hand.relation);
         /* The next matched node with relations, or the end of the walk. */
         for (at.node = NULL; ok && count && !at.node;) {
             if (hand.relation.start == hand.relation.end) {
@@ -674,7 +694,7 @@ static bool publish_matched(publish_identity *identity, const markdown_core_revi
                 }
                 if (frame->more && relations_next(&frame->cursor, &hand.relation, &frame->more)) {
                     hand.anchor = frame->start;
-                    publish_pair(frame, frame->cursor.step - 1);
+                    publish_pair(frame, frame->cursor.step - 1, &hand.relation);
                     continue;
                 }
                 if (frame->old_field != INT_MAX) {
@@ -698,6 +718,17 @@ static bool publish_matched(publish_identity *identity, const markdown_core_revi
             size_t old_index = 0;
             markdown_core_node *match = publish_match(frame, child, place, &old_start, &old_index);
             if (!match) {
+                continue;
+            }
+            /* A node the parse took is its old node, and so is every sibling
+             * of the run it took with it: the walk steps over the run. */
+            if (match == child) {
+                const markdown_core_take *take = markdown_core_parser_take_at(parser, child, place.start);
+                assert(take);
+                hand.relation.start = index + take->count;
+                hand.anchor = take->end;
+                frame->old_hand.start = old_index + take->count;
+                frame->old_anchor = take->end;
                 continue;
             }
             child->id = match->id;
@@ -814,7 +845,7 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
     publish_identity identity = {0};
     bool ok = true, same = false;
     if (previous) {
-        ok = publish_matched(&identity, revision, root, previous, &same);
+        ok = publish_matched(parser, &identity, root, previous, &same);
     }
     for (size_t i = 0; ok && i < identity.lookup_count; i++) {
         markdown_core_registries_remap(parser, identity.lookups[i].start, identity.lookups[i].old);

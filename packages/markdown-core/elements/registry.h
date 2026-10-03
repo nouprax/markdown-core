@@ -67,6 +67,9 @@ typedef struct markdown_core_registry_entry {
     bool moved, changed, answered;
     markdown_core_fact_list fresh;
     markdown_core_fact *answer;
+    /* Where each list's first dropped fact is when the round commits, or
+     * SIZE_MAX for none. */
+    size_t cut[2];
 } markdown_core_registry_entry;
 
 typedef struct markdown_core_registries {

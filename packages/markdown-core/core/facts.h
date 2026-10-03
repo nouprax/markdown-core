@@ -50,6 +50,8 @@ typedef struct markdown_core_fact {
     /* While the parse that declared it runs, where it is. */
     uint32_t position;
     uint8_t kind;
+    /* Whether the round that committed last dropped it from its lists. */
+    bool dropped;
     /* An ANCHOR's spelling, and a HEADING's anchor once it has one. Owned. */
     markdown_core_chunk anchor;
     /* A HEADING's anchor base (heading.c), absent when its anchor is

@@ -1039,6 +1039,28 @@ static int pc_reference_payload_visit(const markdown_core_node *node, ts_ast_ran
     return 0;
 }
 
+/* An edit that drops every declaration of one label leaves the label's list
+ * in one pass, whatever the count. */
+static int case_session_drops_duplicate_definitions(pc_context *context) {
+    enum { DEFINITIONS = 600000 };
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document = NULL;
+    size_t counts[TS_KIND_COUNT] = {0};
+    int result = -1;
+    if (pc_build(context, NULL, "[x]: /u\n", DEFINITIONS, "\n[x]\n") != 0 ||
+        markdown_core_session_new((const uint8_t *)context->input, context->input_length, MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                  &session) != MARKDOWN_CORE_OK) {
+        return -1;
+    }
+    markdown_core_text_edit edit = {0, context->input_length - 5, (const uint8_t *)"a\n", 2};
+    if (markdown_core_session_edit(session, &edit, 1, &document) == MARKDOWN_CORE_OK &&
+        ts_ast_count_kinds(markdown_core_document_root(document), counts) == 0) {
+        result = counts[MARKDOWN_CORE_KIND_PARAGRAPH] == 2 && counts[MARKDOWN_CORE_KIND_LINK] == 0 ? 0 : -1;
+    }
+    markdown_core_session_free(session);
+    return result;
+}
+
 static int case_reference_expansion_bound(pc_context *context) {
     enum { DESTINATION_LENGTH = 1024, REFERENCE_COUNT = 131072, IDENTITIES = 1024 };
     /* Decoding never lengthens a destination or a title, and a resource is
@@ -1428,6 +1450,7 @@ static const pc_case_entry PC_CASES[] = {
     {"tables", case_tables},
     {"reference_collisions", case_reference_collisions},
     {"reference_expansion_bound", case_reference_expansion_bound},
+    {"session_drops_duplicate_definitions", case_session_drops_duplicate_definitions},
     {"dump_deep_nesting", case_dump_deep_nesting},
     {"dump_wide_siblings", case_dump_wide_siblings},
     {"directive_unclosed_labels", case_directive_unclosed_labels},

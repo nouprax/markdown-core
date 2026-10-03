@@ -390,6 +390,7 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     tables
     reference_collisions
     reference_expansion_bound
+    session_drops_duplicate_definitions
     directive_unclosed_labels
     directive_unclosed_attributes
     directive_colon_pairs

@@ -32,6 +32,15 @@ typedef struct markdown_core_moved {
     markdown_core_extent extent;
 } markdown_core_moved;
 
+/* A run of old siblings a parse took whole (5.3): the range from the start of
+ * its first node to the end of its last, its first node, and how many
+ * siblings it holds. */
+typedef struct markdown_core_take {
+    uint32_t start, end;
+    const markdown_core_node *first;
+    size_t count;
+} markdown_core_take;
+
 /* WHAT A PARSE CONTINUES: the storage it takes nodes from and the tree it
  * continues.
  *
@@ -244,12 +253,11 @@ struct markdown_core_parser {
      * resumes at the line after `taken_end`, where the run ends. */
     bool taken;
     size_t taken_end;
-    /* THE RANGES THE PARSE TOOK, in source order, each from the start of the
-     * first node of a run to the end of the last: the facts of the nodes
-     * inside them stay in the registries (elements/registry.h). */
-    struct {
-        uint32_t start, end;
-    } *takes;
+    /* THE RUNS THE PARSE TOOK, in source order: each one's range, from the
+     * start of its first node to the end of its last, its first node and how
+     * many siblings it holds. The facts of the nodes inside them stay in the
+     * registries (elements/registry.h), and publishing steps over them (5.9). */
+    markdown_core_take *takes;
     size_t take_count, take_capacity;
     /* Where the inline root being parsed starts: the place its lookups are
      * recorded at. */
@@ -401,6 +409,28 @@ struct markdown_core_parser {
     bufsize_t line_marks_size;
     bufsize_t line_marks_alloc;
 };
+
+/* How many of the runs the parse took start at or before `position`. */
+static inline size_t markdown_core_parser_takes_through(const markdown_core_parser *parser, int64_t position) {
+    size_t low = 0, high = parser->take_count;
+    while (low < high) {
+        size_t middle = low + (high - low) / 2;
+        if ((int64_t)parser->takes[middle].start <= position) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    return low;
+}
+
+/* The run the parse took that `node`, starting at `start`, begins, or NULL
+ * when `node` begins none. */
+static inline const markdown_core_take *markdown_core_parser_take_at(const markdown_core_parser *parser,
+                                                                     const markdown_core_node *node, int64_t start) {
+    size_t through = markdown_core_parser_takes_through(parser, start);
+    return through && parser->takes[through - 1].first == node ? &parser->takes[through - 1] : NULL;
+}
 
 /* THE RUN AN OFFSET LIES IN, FOUND FROM WHERE THE LAST ONE WAS.
  *

@@ -48,18 +48,32 @@ static size_t S_list_seek(const markdown_core_fact_list *list, uint64_t order) {
     return low;
 }
 
-/* Puts `fact` in `list`, which has room for it. */
-static void S_list_insert(markdown_core_fact_list *list, markdown_core_fact *fact) {
-    size_t at = S_list_seek(list, fact->order);
-    memmove(list->values + at + 1, list->values + at, (list->count - at) * sizeof(*list->values));
-    list->values[at] = fact;
-    list->count++;
+/* Takes the dropped facts out of `list`, the first of them at `cut`: the
+ * facts after it move down once. */
+static void S_list_compact(markdown_core_fact_list *list, size_t cut) {
+    size_t kept = cut;
+    for (size_t i = cut; i < list->count; i++) {
+        if (!list->values[i]->dropped) {
+            list->values[kept++] = list->values[i];
+        }
+    }
+    list->count = kept;
 }
 
-static void S_list_remove(markdown_core_fact_list *list, const markdown_core_fact *fact) {
-    size_t at = S_list_seek(list, fact->order);
-    memmove(list->values + at, list->values + at + 1, (list->count - at - 1) * sizeof(*list->values));
-    list->count--;
+static int S_order_compare(const void *a, const void *b) {
+    uint64_t left = (*(markdown_core_fact *const *)a)->order, right = (*(markdown_core_fact *const *)b)->order;
+    return (left > right) - (left < right);
+}
+
+/* Merges the `count` facts of `fresh`, in order, into `list`, which has room
+ * for them: from the end, so each fact of the list moves once. */
+static void S_list_merge(markdown_core_fact_list *list, markdown_core_fact **fresh, size_t count) {
+    size_t old = list->count, at = old + count;
+    list->count = at;
+    while (count) {
+        list->values[--at] =
+            old && list->values[old - 1]->order > fresh[count - 1]->order ? list->values[--old] : fresh[--count];
+    }
 }
 
 static uint64_t S_fact_position(const void *entry) { return (*(markdown_core_fact *const *)entry)->position; }
@@ -100,6 +114,7 @@ static void S_touch(markdown_core_registries *registries, markdown_core_registry
     entry->moved = entry->changed = entry->answered = false;
     entry->fresh.count = 0;
     entry->answer = NULL;
+    entry->cut[0] = entry->cut[1] = SIZE_MAX;
 }
 
 /* The entry of `label` in `group`, made when there is none, or NULL when
@@ -249,16 +264,8 @@ static int64_t S_position(const markdown_core_registries *registries, const mark
 }
 
 static bool S_taken(const markdown_core_parser *parser, int64_t position) {
-    size_t low = 0, high = parser->take_count;
-    while (low < high) {
-        size_t middle = low + (high - low) / 2;
-        if ((int64_t)parser->takes[middle].start <= position) {
-            low = middle + 1;
-        } else {
-            high = middle;
-        }
-    }
-    return low && position < (int64_t)parser->takes[low - 1].end;
+    size_t through = markdown_core_parser_takes_through(parser, position);
+    return through && position < (int64_t)parser->takes[through - 1].end;
 }
 
 /* The first fact of `list` that stays, and where it is; NULL for none. */
@@ -891,9 +898,10 @@ void markdown_core_registries_commit(markdown_core_parser *parser) {
     markdown_core_node_pool *pool = parser->pool;
     markdown_core_registry_builder *builders = registries->builders;
     markdown_core_node **built = registries->built, **labels = registries->built_labels;
-    /* Nothing here fails. The dropped facts leave the lists while their
-     * orders still sort them, the registries take their new orders, and the
-     * fresh facts join the lists by them. */
+    /* Nothing here fails. The dropped facts are marked, with where the
+     * first of them is in each list while their orders still sort them,
+     * and each touched list sheds them in one pass; the registries take
+     * their new orders, and the fresh facts merge into the lists by them. */
     for (int kind = 0; kind < MARKDOWN_CORE_FACT_KINDS; kind++) {
         const markdown_core_fact_list *dropped = &registries->dropped[kind];
         for (size_t i = 0; i < dropped->count; i++) {
@@ -909,10 +917,21 @@ void markdown_core_registries_commit(markdown_core_parser *parser) {
                 }
                 continue;
             }
+            fact->dropped = true;
             for (int slot = 0; slot < 2; slot++) {
-                if (fact->entries[slot]) {
-                    S_list_remove(&fact->entries[slot]->lists[S_list_of(fact->entries[slot], fact)], fact);
+                markdown_core_registry_entry *entry = fact->entries[slot];
+                if (entry) {
+                    int list = S_list_of(entry, fact);
+                    size_t at = S_list_seek(&entry->lists[list], fact->order);
+                    entry->cut[list] = at < entry->cut[list] ? at : entry->cut[list];
                 }
+            }
+        }
+    }
+    for (markdown_core_registry_entry *entry = registries->touched; entry; entry = entry->touched) {
+        for (int list = 0; list < 2; list++) {
+            if (entry->cut[list] != SIZE_MAX) {
+                S_list_compact(&entry->lists[list], entry->cut[list]);
             }
         }
     }
@@ -926,25 +945,40 @@ void markdown_core_registries_commit(markdown_core_parser *parser) {
         }
         registries->registries[kind] = built[kind];
         built[kind] = NULL;
+        if (kind != MARKDOWN_CORE_FACT_LOOKUP) {
+            continue;
+        }
         const markdown_core_fact_list *fresh = &registries->fresh[kind];
         for (size_t i = 0; i < fresh->count; i++) {
             markdown_core_fact *fact = fresh->values[i];
-            if (kind == MARKDOWN_CORE_FACT_LOOKUP) {
-                markdown_core_registry_entry *entry = fact->entries[0];
-                fact->previous = NULL;
-                fact->next = entry->lookups;
-                if (entry->lookups) {
-                    entry->lookups->previous = fact;
-                }
-                entry->lookups = fact;
-                continue;
+            markdown_core_registry_entry *entry = fact->entries[0];
+            fact->previous = NULL;
+            fact->next = entry->lookups;
+            if (entry->lookups) {
+                entry->lookups->previous = fact;
             }
-            for (int slot = 0; slot < 2; slot++) {
-                if (fact->entries[slot]) {
-                    S_list_insert(&fact->entries[slot]->lists[S_list_of(fact->entries[slot], fact)], fact);
-                }
+            entry->lookups = fact;
+        }
+    }
+    /* Each touched entry's fresh facts, its first list's before its
+     * second's, each part in order. */
+    for (markdown_core_registry_entry *entry = registries->touched; entry; entry = entry->touched) {
+        markdown_core_fact **fresh = entry->fresh.values;
+        size_t first = 0;
+        if (!entry->fresh.count) {
+            continue;
+        }
+        for (size_t i = 0; i < entry->fresh.count; i++) {
+            if (S_list_of(entry, fresh[i]) == 0) {
+                markdown_core_fact *fact = fresh[i];
+                fresh[i] = fresh[first];
+                fresh[first++] = fact;
             }
         }
+        qsort(fresh, first, sizeof(*fresh), S_order_compare);
+        qsort(fresh + first, entry->fresh.count - first, sizeof(*fresh), S_order_compare);
+        S_list_merge(&entry->lists[0], fresh, first);
+        S_list_merge(&entry->lists[1], fresh + first, entry->fresh.count - first);
     }
     for (int i = 0; i < 2; i++) {
         if (registries->labels[i]) {
