@@ -58,7 +58,7 @@ static void S_set_last_line_blank(markdown_core_node *node, bool markdown_core_b
 static void S_set_last_line_checked(markdown_core_node *node) { node->flags |= MARKDOWN_CORE_NODE__LAST_LINE_CHECKED; }
 
 static void S_parse_source(markdown_core_parser *parser, const markdown_core_text *text);
-static markdown_core_node *S_finish_parse(markdown_core_parser *parser);
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_node *S_finish_parse(markdown_core_parser *parser);
 static void S_drop_definition_paragraph(markdown_core_parser *parser, markdown_core_node *parent);
 static inline bool S_starts_on_line(markdown_core_parser *parser, const markdown_core_node *node, int line);
 static inline int S_append_input_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
@@ -2785,7 +2785,9 @@ static int S_check_tree(markdown_core_node *root) {
 #endif
 }
 
-static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
+/* The AST stage of a parse, after its source is read. It stays out of line:
+ * the benchmark measures the stage at this call. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     markdown_core_node *res;
 
     if (parser->root == NULL || parser->error) {
