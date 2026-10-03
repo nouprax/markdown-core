@@ -1303,6 +1303,13 @@ void markdown_core_parser_publish_field(markdown_core_parser *parser, const mark
     S_publish_relation(parser, owner, owner->where.place.start, field);
 }
 
+/* The node that holds the pass's current node: the frame's holder at its
+ * root, read only by the events that need it. */
+static inline markdown_core_node *S_pass_parent(const owned_tree_frame *frame, const markdown_core_iter *iter,
+                                                bool root) {
+    return root ? frame->holder : markdown_core_iter_parent(iter);
+}
+
 /* THE ROOT PASS: one traversal of an inline root and of every field root
  * found under it, on one explicit continuation stack -- a field root stays
  * the node its owner put there, no step may substitute one, so a frame
@@ -1355,7 +1362,6 @@ static int complete_inline_root(owned_tree_walk *walk, const struct markdown_cor
             }
             markdown_core_node *node = markdown_core_iter_node(iter);
             bool root = node == frame->root;
-            markdown_core_node *parent = root ? frame->holder : markdown_core_iter_parent(iter);
             size_t index = markdown_core_finish_kind_index((markdown_core_node_type)node->kind);
             if (node->element && node->element->delimiter.body == DELIMITER_WORD_BODY) {
                 frame->script_depth += event == MARKDOWN_CORE_EVENT_ENTER ? 1 : -1;
@@ -1376,7 +1382,8 @@ static int complete_inline_root(owned_tree_walk *walk, const struct markdown_cor
                                                                  frame->script_depth);
                 }
                 if (result == MARKDOWN_CORE_FINISH_CONTINUE && dispatch[2 * index + 1]) {
-                    result = run_finish_steps(parser, dispatch[2 * index + 1], node, event, parent, states);
+                    result = run_finish_steps(parser, dispatch[2 * index + 1], node, event,
+                                              S_pass_parent(frame, iter, root), states);
                 }
                 if (result == MARKDOWN_CORE_FINISH_FAILED) {
                     markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -1387,7 +1394,8 @@ static int complete_inline_root(owned_tree_walk *walk, const struct markdown_cor
                 }
                 if (frame != walk->frames || !root) {
                     if (S_holds_nodes(&kinds[index], node)) {
-                        S_publish(parser, node, root ? frame->owner : parent, node->where.place.start);
+                        S_publish(parser, node, root ? frame->owner : markdown_core_iter_parent(iter),
+                                  node->where.place.start);
                     }
                 } else {
                     if (!S_publish(parser, node, entry->owner, entry->start)) {
@@ -1410,7 +1418,8 @@ static int complete_inline_root(owned_tree_walk *walk, const struct markdown_cor
                 frame->parsed = node;
             }
             if (dispatch[2 * index]) {
-                result = run_finish_steps(parser, dispatch[2 * index], node, event, parent, states);
+                result = run_finish_steps(parser, dispatch[2 * index], node, event, S_pass_parent(frame, iter, root),
+                                          states);
                 if (result == MARKDOWN_CORE_FINISH_FAILED) {
                     markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
                     break;
