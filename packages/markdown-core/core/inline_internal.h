@@ -67,7 +67,6 @@ struct markdown_core_inline_state {
     int mark_line, mark_step, mark_width;
     bufsize_t mark_source;
     bool mapped;
-    markdown_core_map *refmap;
     /* The run's top-level nodes, in order (delimiter.h). */
     markdown_core_inline_item *first_item, *last_item;
     delimiter *last_delim;
@@ -206,7 +205,7 @@ markdown_core_node *markdown_core_inline_make_simple(markdown_core_inline_state 
 markdown_core_node *markdown_core_inline_make_simple_with_state(markdown_core_inline_state *inline_state,
                                                                 markdown_core_node_type t);
 void markdown_core_inline_state_from_buf(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
-                                         markdown_core_chunk *chunk, markdown_core_map *refmap);
+                                         markdown_core_chunk *chunk);
 unsigned char markdown_core_inline_peek_char_n(markdown_core_inline_state *inline_state, bufsize_t n);
 unsigned char markdown_core_inline_peek_char(markdown_core_inline_state *inline_state);
 unsigned char markdown_core_inline_peek_at(markdown_core_inline_state *inline_state, bufsize_t pos);
@@ -245,7 +244,7 @@ void markdown_core_inline_process_delimiters(markdown_core_parser *parser, markd
                                              bufsize_t stack_bottom, delimiter *after);
 int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_core_inline_state *inline_state);
 void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_core_node *parent,
-                                        markdown_core_map *refmap, markdown_core_inline_state *inline_state);
+                                        markdown_core_inline_state *inline_state);
 void markdown_core_inline_clear_inlines(markdown_core_inline_state *inline_state);
 /* A run the parser reads, from its start until it is suspended: the nodes
  * the parser makes meanwhile hold its bytes. `finish_inlines` suspends the

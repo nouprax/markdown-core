@@ -391,8 +391,8 @@ binding (D2).
 | --- | --- | --- |
 | Text tree | The source as a balanced tree of bounded byte chunks; each subtree records its byte, line-terminator and UTF-16 counts | O(source) |
 | Tree | The document as shared immutable nodes (5.11); each node holds its id, its extent (4.3) and its parse record | O(nodes) |
-| Registries | Reference, heading, anchor, footnote and specimen declarations in source order; label winners | O(declarations) |
-| Lookup index | Registry key → inline roots that looked it up, hit or miss | O(lookups) |
+| Registries | Facts in source order, one sequence per kind: reference definitions, headings, explicit anchors, footnote and specimen definitions, and lookups; the footnote and specimen label tables | O(declarations + lookups) |
+| Key index | Each key → its facts in source order and the lookups that asked for it, hit or miss | O(declarations + lookups) |
 
 The tree is the record of the parse, as it is in tree-sitter, where each
 subtree carries its parse state and how far past its end the lexer looked,
@@ -482,6 +482,7 @@ plus its reach, meets or touches a replaced range, and for each such node:
   lengthens the lead, an edit that starts in the lead and reaches into the
   span moves the start to the edit's end, and an edit inside the span
   changes the span, exactly as `ts_subtree_edit` adjusts padding and size;
+- an empty node, which has no byte, takes the image of its start;
 - it marks the node **changed**;
 - it copies the node first when it is shared (5.11), so the published old
   document is unchanged and only the root-to-edit paths are copied.
@@ -515,7 +516,11 @@ for a reusable node before it lexes:
   summary (E4) into its carried state, and the parse continues after the run
   without reading any line of it. The rest of the run needs no comparison:
   equal state before a node and identical bytes through its reach give equal
-  state after it, which is its next sibling's entry.
+  state after it, which is its next sibling's entry. A run ends only at a
+  node after which the parse reads the next lines as the old one did: not at
+  one whose closing line refused a block start because it was open, not at
+  one that was open over blank lines after its end, and not at one a later
+  line may still write into (E2).
 - **Descend.** Otherwise the cursor moves to the node's first child, as
   tree-sitter breaks a changed node down, and the line machine reads the line
   with `S_process_line`, as a fresh parse does. A changed container is built
@@ -544,11 +549,8 @@ taken node until something closes it, because the rest of the document
 really did change meaning.
 
 **Registrations.** The registries are source-ordered sequences held by the
-session (5.7), so the registrations of a taken node stay as they are and
-those of the old nodes that were read are replaced. Until the lookup index
-exists, every inline root depends on every key: when the registrations of
-the read nodes differ from the ones they replace, every inline root is parsed
-again.
+session (5.7), so the facts of a taken node stay as they are and those of
+the old nodes that were read are replaced.
 
 ### 5.4 The element contract
 
@@ -561,10 +563,12 @@ are requirements on every element, each checked by an audit script in
   them and every reach is measured. An element never keeps a
   raw pointer into the source across lines.
 - **E2 Retroactive writes go through one service.** Changing a node that has
-  closed (the separate-line block identifier is the current case) uses
-  `markdown_core_parser_write_closed(parser, node)`, which copies the node
-  when it is shared (5.11) and raises its reach to the current line. The
-  audit forbids other writes to closed nodes.
+  closed (a separate-line block identifier, a table's trailing caption) uses
+  `markdown_core_parser_write_closed(parser, parent, end)`, which extends the
+  open parent's last child to `end` and raises its reach to what the line has
+  read. No run of taken blocks ends at a block a later line may write into
+  (5.3), so that block is the parse's own and changes in place. The audit
+  forbids other writes to closed nodes.
 - **E3 Carried state is a word.** Per-parse element state
   (`state_size`) is one of three things: a cache that the parse may drop; a
   declaration registry that moves to the session (5.7); or carried block
@@ -651,52 +655,50 @@ new closer pairs with it.
 
 ### 5.7 Registries and resolution
 
-The S1 registrations and S3 declarations move from the parse to the
-session and become source-ordered sequences (5.1). An entry holds the
-declaration's values and its node's id. An edit replaces exactly the entries
-of the nodes it read, which is one contiguous range per registry and edit,
-and keeps the entries of taken nodes. Then:
+What a place in the source declares to the whole document, and each question
+an inline root asks of it, is a **fact**: a reference definition, a heading
+(its label, its target and its anchor base), an explicit anchor, a footnote
+or specimen definition, or a lookup of a key. The facts of one kind form a
+**registry**, a source-ordered sequence held in the shared sequence
+structure (5.1): each entry places its fact at the byte distance from the
+previous one. The edit pass shifts the registries as it shifts the tree
+(5.2). Facts also carry order keys (Dietz and Sleator's order maintenance),
+so the facts of one key are kept in source order without positions, and a
+fact's position is found from its key in O(log n).
 
-- **Winners.** For each normalized label whose entries changed, the first
-  definition in source order is recomputed, with explicit definitions before
-  implicit heading targets as today. The same happens for footnote labels and
-  specimen ids.
-- **Lookup dependencies.** During inline parsing every registry query records
-  `(registry, key) → inline root`, whether it hit or missed. A miss matters as
-  much as a hit: adding `[x]: /u` turns every `[x]` into a Link. When a
-  winner changes, its dependents are parsed again (5.6). The index
-  holds edges in both directions: each inline root owns the list of keys it
-  queried, and each key the set of root ids that queried it. Parsing a
-  root again first removes all of its old edges and then records the new ones;
-  retiring a root removes its edges. The
-  index therefore holds exactly the current document's lookups, and an edge
-  never names a retired node. A heading's
-  declarability depends only on its own content ("a valid declaration cannot
-  depend on a reference lookup", `heading-resolution.md`), so this settles in
-  one round, with no fixed point.
-- **Anchors by family.** Generated anchors interact only through their
-  spelling. A family is the set of spellings with the same stem after
-  stripping trailing `-N` groups. An edit recomputes, in source order, only the
-  families of changed headings and changed explicit anchors, with the same
-  reservation and suffix-cursor algorithm as today. The resource's occurrences
-  follow through the lookup index.
-- **Resources are values.** A shared resource (a definition's destination,
-  title and attributes, or a heading target) is not an AST node and has no
-  identity: it is a value, equal to another resource exactly when its fields
-  are equal, and occurrences that share one only share storage for an equal
-  value (interning by content). A declaration that changes therefore yields a
-  different value; there is nothing to update. Today
-  `markdown_core_headings_finish` instead treats the heading target as a
-  mutable object and rewrites its URL in place. A taken node is shared with
-  the old tree (5.11), so in a session that write would change Links the
-  engine takes as unchanged, and the new document's Links would disagree
-  with a fresh parse. The session therefore builds the heading target's
-  value once its anchor is final, and the Links that looked it up are parsed
-  again against the new value through the lookup index.
-- **Definition lookups.** The footnote and specimen label registries are
-  source-ordered sequences like the others; a changed winner's dependents
-  are parsed again. Definitions themselves stay in the tree, so nothing is
-  spliced into the document and no ordinal is recomputed.
+The **key index** maps each key to its facts and lookups. A key is a group
+and a label: a reference label, which explicit definitions and then heading
+targets declare; a footnote label; a specimen id; and an anchor **family**,
+the spellings with the same stem after stripping trailing `-N` groups,
+which explicit anchors reserve and headings take their anchors from. A
+key's winner is its first fact in source order, explicit definitions before
+heading targets.
+
+A parse is a **round**. The facts inside the ranges the parse took (5.3)
+stay; the facts of what it read are dropped, and what it reads declares
+fresh ones. A lookup made in the round is answered at once: from the key's
+winner when nothing of the key changed, otherwise from the staying and
+fresh facts by position. Once the tree is complete:
+
+- **Anchors by family.** Each family whose facts changed is assigned again
+  in source order, with the same reservation and suffix-cursor algorithm as
+  a fresh parse. A heading the round read takes its anchor, and its target
+  its destination, before the round publishes, so the target is built once
+  as a value. A heading the round took keeps its anchor; when the
+  assignment would give it another one, its place is **touched**.
+- **Lookups.** Each key whose answer changed as a value (a reference's
+  resource, a definition's being there), or whose heading target a touched
+  heading declares, touches the places of the lookups taken nodes made.
+  Lookups the round made already have the new answer.
+
+A round that touches nothing commits: the registries are rebuilt from the
+runs of the staying facts and the fresh facts, and the key index follows.
+A round that touches places is discarded, and the session parses again with
+those places marked as an empty edit marks them (5.2), so the nodes there
+are read. Every touched node is read in every later round, and a round
+touches only taken nodes, so the rounds end; in practice one extra round
+follows an edit that changes a winner. Definitions stay in the tree, so
+nothing is spliced into the document and no ordinal is recomputed.
 
 ### 5.8 Nodes are complete when they are made
 
@@ -757,18 +759,20 @@ new text, and steps over every subtree they share by reference, so it visits
 only what the parse read.
 
 - Matching runs per owner relation between a new owner and the old node it
-  matched, starting from the two document roots.
+  matched, starting from the two document roots. A definition's bodies are
+  each a relation of it, so the cursor (5.3) continues a body only from the
+  old body at its place.
 - Each old node has an **anchor byte**: the first byte of its source range
   that survived the edit. Its image is the node's start in the edited old
   tree. A node none of whose bytes survived has an empty span there, has no
   anchor and cannot be matched; its id retires.
 - An old node `O` can match a new node `N` when their kinds are equal and
   `N`'s source range contains the image of `O`'s anchor byte (5.2).
-  Siblings in one parsed relation have disjoint ranges, so an anchor image
-  lies in at most one candidate.
 - When `N` contains the anchors of several old siblings, it takes the
-  earliest. Both sequences are in source order and the match is monotone, so
-  it is linear in the region.
+  earliest not yet passed, and the ones after it remain for the next new
+  sibling: the cells of a grid table that span rows start inside the ranges
+  of the cells before them. Both sequences are in source order and the match
+  is monotone, so it is linear in the region.
 - Consequences, each from the one rule:
   - Typing at the start of a paragraph keeps its id: the old first byte
     survives and its image lies inside the extended paragraph.
@@ -819,7 +823,7 @@ This argument is also the test oracle (section 8).
 ### 5.11 Session state and memory
 
 The session's state is the text tree, the tree, the registries and the
-lookup index. Between edits the parser holds nothing else: like
+key index. Between edits the parser holds nothing else: like
 tree-sitter's `TSParser`, which is reset after every parse, its spine,
 cursor, input index and scratch live for one edit, and its lasting storage
 is the node pool's free slots.

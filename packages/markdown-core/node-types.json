@@ -140,6 +140,20 @@
             "record": "markdown_core_metadata_fields",
             "structure": null,
             "note": "Read by the document element's prefix reader (properties.c) and never parsed as a block, so no element defines its structure."
+        },
+        {
+            "name": "REGISTRY",
+            "kind": null,
+            "record": null,
+            "structure": null,
+            "note": "A private collection root of a session's registries and a document's definition tables (facts.h), not a public Markup kind."
+        },
+        {
+            "name": "FACT",
+            "kind": null,
+            "record": "markdown_core_fact_place",
+            "structure": null,
+            "note": "A private entry of a registry: where a fact is, as the distance from the fact before it (facts.h)."
         }
     ],
     "inline": [

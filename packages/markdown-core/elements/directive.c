@@ -645,7 +645,14 @@ static int visit_owned_subtrees(const markdown_core_element *element, markdown_c
 /* The opener consumes the complete token; the shared inline parser parses its
  * owned label before continuing beyond it. No close-bracket dispatch exists. */
 
+/* A directive block's lines continue it up to a closer of its fence's
+ * length. */
+static bool carries_as(const markdown_core_node *node, const markdown_core_node *old) {
+    return ((const node_directive *)node->opaque)->fence_length == ((const node_directive *)old->opaque)->fence_length;
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
+    .carries_as = carries_as,
     .interrupts_paragraph = true,
 
     .pending_close = true,

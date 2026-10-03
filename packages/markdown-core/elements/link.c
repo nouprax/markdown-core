@@ -7,6 +7,7 @@
 #include "attributes.h"
 #include "citation.h"
 #include "link.h"
+#include "registry.h"
 #include "embedded.h"
 #include "inline_internal.h"
 #include "block_internal.h"
@@ -31,8 +32,7 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
         bufsize_t source = b->where.place.start;
         markdown_core_parser_content_place(parser, &b->content_map, (bufsize_t)(chunk.data - node_content->ptr), &line,
                                            &source);
-        uint64_t source_key = (uint64_t)source;
-        pos = markdown_core_parse_reference_inline(parser, &chunk, parser->refmap, &attributes, source_key);
+        pos = markdown_core_parse_reference_inline(parser, &chunk, &attributes, (uint32_t)source);
         if (!pos) {
             break;
         }
@@ -283,26 +283,26 @@ static bool reference_tail(markdown_core_inline_state *inline_state, markdown_co
     return markdown_core_inline_skip_line_end(inline_state);
 }
 
-bufsize_t markdown_core_parse_reference_inline(markdown_core_parser *parser, markdown_core_chunk *input,
-                                               markdown_core_map *refmap, markdown_core_attribute_parser *attributes,
-                                               uint64_t source_key) {
+/* A link reference definition at the front of `input`: its length, 0 when
+ * there is none, and its parts, the attributes `value` holds when there is
+ * one. */
+typedef struct {
+    markdown_core_chunk label, url, title;
+    markdown_core_attributes value;
+} reference_definition;
+
+static bufsize_t S_reference_definition(markdown_core_chunk *input, markdown_core_attribute_parser *attributes,
+                                        reference_definition *definition) {
     markdown_core_inline_state inline_state;
-    markdown_core_resource *resource;
-    int lost = 0;
-    markdown_core_attributes value = {0};
-
-    markdown_core_chunk lab;
-    markdown_core_chunk url;
-    markdown_core_chunk title;
     const markdown_core_chunk absent_title = MARKDOWN_CORE_CHUNK_EMPTY;
-
     bufsize_t matchlen = 0;
     bufsize_t beforetitle;
+    *definition = (reference_definition){0};
 
-    markdown_core_inline_state_from_buf(NULL, &inline_state, input, NULL);
+    markdown_core_inline_state_from_buf(NULL, &inline_state, input);
 
     // parse label:
-    if (!markdown_core_inline_link_label(&inline_state, &lab) || lab.len == 0) {
+    if (!markdown_core_inline_link_label(&inline_state, &definition->label) || definition->label.len == 0) {
         return 0;
     }
     // colon:
@@ -314,7 +314,8 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_parser *parser, mar
 
     // parse link url:
     spnl(&inline_state);
-    if ((matchlen = markdown_core_inline_manual_scan_link_url(&inline_state.input, inline_state.pos, &url)) > -1) {
+    if ((matchlen =
+             markdown_core_inline_manual_scan_link_url(&inline_state.input, inline_state.pos, &definition->url)) > -1) {
         inline_state.pos += matchlen;
     } else {
         return 0;
@@ -327,63 +328,70 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_parser *parser, mar
                    ? 0
                    : scan_link_title(inline_state.input.data, inline_state.input.len, inline_state.pos);
     if (matchlen) {
-        title = markdown_core_chunk_dup(&inline_state.input, inline_state.pos, matchlen);
+        definition->title = markdown_core_chunk_dup(&inline_state.input, inline_state.pos, matchlen);
         inline_state.pos += matchlen;
     } else {
         inline_state.pos = beforetitle;
         // No title was written, so record that rather than an empty one.
-        title = absent_title;
+        definition->title = absent_title;
     }
 
     // parse final spaces and newline:
-    if (!reference_tail(&inline_state, attributes, &value)) {
+    if (!reference_tail(&inline_state, attributes, &definition->value)) {
         if (matchlen) { // try rewinding before title
             inline_state.pos = beforetitle;
-            if (!reference_tail(&inline_state, attributes, &value)) {
+            if (!reference_tail(&inline_state, attributes, &definition->value)) {
                 return 0;
             }
             // The title candidate is un-read here: its bytes stay paragraph
             // text, and the definition has no title. `title` still held the
-            // scanned chunk, which then went into the reference map -- so a
+            // scanned chunk, which then went into the definition -- so a
             // reference to this label resolved with a title the definition does
             // not have, and the same bytes were stated twice, once as prose and
             // once as a title.
-            title = absent_title;
+            definition->title = absent_title;
         } else {
             return 0;
         }
     }
-    if (!refmap) {
-        markdown_core_attributes_free(&value);
-        return inline_state.pos;
-    }
-    // The definition is consumed into the map, which owns its resource ONCE
-    // and lends it to every occurrence that resolves to the label (M2). The
-    // destination and title are cleaned here, the way a direct link's are, so
-    // a resolved occurrence and a direct one state the same values.
-    {
-        markdown_core_chunk clean_url = markdown_core_clean_url(&url, &lost);
-        markdown_core_optional_chunk clean_title = markdown_core_clean_title(&title, &lost);
-        resource = lost ? NULL : markdown_core_resource_new(parser->pool, clean_url, clean_title);
-        if (!resource) {
-            markdown_core_chunk_free(&clean_url);
-            markdown_core_optional_chunk_free(&clean_title);
-            lost = 1;
-        }
-    }
-    if (resource) {
-        resource->attributes = value;
-        markdown_core_map_record *record = markdown_core_reference_create(refmap, &lab, resource);
-        if (record) {
-            record->source_key = source_key;
-        }
-    } else {
-        markdown_core_attributes_free(&value);
-    }
-    if ((inline_state.error || lost) && refmap) {
-        refmap->oom = 1;
-    }
     return inline_state.pos;
+}
+
+bufsize_t markdown_core_reference_definition_length(markdown_core_chunk *input,
+                                                    markdown_core_attribute_parser *attributes) {
+    reference_definition definition;
+    bufsize_t length = S_reference_definition(input, attributes, &definition);
+    if (length) {
+        markdown_core_attributes_free(&definition.value);
+    }
+    return length;
+}
+
+bufsize_t markdown_core_parse_reference_inline(markdown_core_parser *parser, markdown_core_chunk *input,
+                                               markdown_core_attribute_parser *attributes, uint32_t position) {
+    reference_definition definition;
+    bufsize_t length = S_reference_definition(input, attributes, &definition);
+    if (!length) {
+        return 0;
+    }
+    // The definition is declared to the registries, which hold its resource
+    // ONCE and lend it to every occurrence that resolves to the label (M2).
+    // The destination and title are cleaned here, the way a direct link's
+    // are, so a resolved occurrence and a direct one state the same values.
+    int lost = 0;
+    markdown_core_chunk clean_url = markdown_core_clean_url(&definition.url, &lost);
+    markdown_core_optional_chunk clean_title = markdown_core_clean_title(&definition.title, &lost);
+    markdown_core_resource *resource = lost ? NULL : markdown_core_resource_new(parser->pool, clean_url, clean_title);
+    if (!resource) {
+        markdown_core_chunk_free(&clean_url);
+        markdown_core_optional_chunk_free(&clean_title);
+        markdown_core_attributes_free(&definition.value);
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return length;
+    }
+    resource->attributes = definition.value;
+    markdown_core_registries_declare_reference(parser, &definition.label, resource, position);
+    return length;
 }
 
 markdown_core_link_match markdown_core_link_recognize(const markdown_core_element_instance *link,
@@ -393,7 +401,7 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
     markdown_core_chunk url_chunk, title_chunk, raw_label;
     markdown_core_chunk url = MARKDOWN_CORE_CHUNK_EMPTY;
     markdown_core_optional_chunk title = {MARKDOWN_CORE_CHUNK_EMPTY, false};
-    markdown_core_map_record *record = NULL;
+    markdown_core_resource *resource = NULL;
     int found_label;
     bool explicit_tail = false;
     // If we got here, we matched a potential link/image text.
@@ -448,7 +456,7 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
         }
     }
 
-    // Next, look for a following [link label] that matches in refmap.
+    // Next, look for a following [link label] that a definition declares.
     // skip spaces
     raw_label = markdown_core_chunk_literal("");
     found_label = markdown_core_inline_link_label(inline_state, &raw_label);
@@ -470,12 +478,12 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
      * three spellings the author wrote, and nothing downstream can recover it
      * -- the module states one node for every successful form. */
     if (link_allowed && found_label) {
-        record = markdown_core_map_lookup(inline_state->refmap, &raw_label);
+        resource = markdown_core_registries_reference(inline_state->owner_parser, &raw_label);
     }
     markdown_core_chunk_free(&raw_label);
-    candidate->record = record;
+    candidate->resource = resource;
     candidate->explicit_tail = explicit_tail;
-    return record ? (explicit_tail ? LINK_EXPLICIT : LINK_SHORTCUT) : LINK_UNMATCHED;
+    return resource ? (explicit_tail ? LINK_EXPLICIT : LINK_SHORTCUT) : LINK_UNMATCHED;
 }
 
 bool markdown_core_link_commit(const markdown_core_element_instance *link, markdown_core_parser *parser,
@@ -483,7 +491,7 @@ bool markdown_core_link_commit(const markdown_core_element_instance *link, markd
                                markdown_core_link_candidate *candidate, bufsize_t initial_pos) {
     bool is_image = opener->kind == BRACKET_IMAGE;
     bool explicit_tail = candidate->explicit_tail;
-    markdown_core_map_record *record = candidate->record;
+    markdown_core_resource *resource = candidate->resource;
     markdown_core_chunk url = candidate->url;
     markdown_core_optional_chunk title = candidate->title;
     markdown_core_node *inl;
@@ -496,17 +504,16 @@ bool markdown_core_link_commit(const markdown_core_element_instance *link, markd
     }
     inl = markdown_core_inline_make_simple(inline_state,
                                            is_image ? MARKDOWN_CORE_NODE_EMBEDDED : MARKDOWN_CORE_NODE_LINK);
-    if (inl && record) {
+    if (inl && resource) {
         /* A RESOLVED REFERENCE IS THE LINK OR EMBEDDED IT NAMES (M2), and it reads
          * its destination and title through the definition's resource, which
-         * the map owns once and every occurrence shares. Nothing is copied, so
+         * the registries hold once and every occurrence shares. Nothing is copied, so
          * there is nothing to charge and no budget can make whether a reference
          * resolves depend on how many resolved before it (D9). The occurrence
          * keeps its own scope, below: the definition's range is never copied,
          * unioned or substituted into it. */
-        assert(record->resource != NULL);
-        markdown_core_resource_retain(record->resource);
-        inl->as.link->resource = record->resource;
+        markdown_core_resource_retain(resource);
+        inl->as.link->resource = resource;
     } else if (inl) {
         inl->as.link->resource = markdown_core_resource_new(parser->pool, url, title);
         if (!inl->as.link->resource) {
@@ -516,7 +523,7 @@ bool markdown_core_link_commit(const markdown_core_element_instance *link, markd
     }
     if (!inl) {
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
-        if (!record) {
+        if (!resource) {
             markdown_core_chunk_free(&url);
             markdown_core_optional_chunk_free(&title);
         }

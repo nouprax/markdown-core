@@ -7,28 +7,8 @@
 extern "C" {
 #endif
 
-struct markdown_core_resource;
-struct markdown_core_slab_pool;
-
-/* A record is a normalized LABEL and, for a link reference definition, the
- * RESOURCE the definition stated -- destination and title -- owned once, here,
- * and shared by every occurrence that resolves to it (M2). It used to carry a
- * `size`, which was the number of bytes resolving against it copied into a
- * node -- the quantity D9's expansion budget charged. A reference that shares
- * its definition's resource copies nothing, so there is nothing to charge and
- * no field to carry it. A footnote definition's record has no resource. */
-struct markdown_core_map_record {
-    struct markdown_core_map_record *next;
-    struct markdown_core_resource *resource;
-    uint64_t source_key;
-    bool implicit;
-    /* The normalized label and its length; the bytes are NUL-terminated. */
-    bufsize_t label_len;
-    unsigned char label[];
-};
-
-typedef struct markdown_core_map_record markdown_core_map_record;
-
+/* AN INDEX OF BYTE KEYS: open addressing with linear probing, a key's
+ * bytes borrowed from what its value owns. */
 typedef struct markdown_core_key_index_slot {
     uint64_t hash;
     const unsigned char *key;
@@ -45,25 +25,6 @@ typedef struct markdown_core_key_index {
     size_t size;
 } markdown_core_key_index;
 
-/* Storage records are carved from; see markdown_core_map_carve. */
-typedef struct markdown_core_map_block markdown_core_map_block;
-
-struct markdown_core_map {
-    markdown_core_map_record *records;
-    /* The blocks records are carved from, newest first, and how much of the
-     * newest is used. They go with the map. */
-    markdown_core_map_block *blocks;
-    size_t block_used, block_size;
-    markdown_core_key_index index;
-    size_t size;
-    int prepared;
-    markdown_core_strbuf label_buffer;
-    /* Sticky flag: any allocation failure is terminal for the owning parse. */
-    int oom;
-};
-
-typedef struct markdown_core_map markdown_core_map;
-
 /* Reuses caller-owned scratch; returns false for empty labels or OOM. */
 int normalize_map_label_into(markdown_core_strbuf *normalized, markdown_core_chunk *ref);
 unsigned char *normalize_map_label(markdown_core_chunk *ref, int *lost);
@@ -79,15 +40,8 @@ void markdown_core_key_index_commit(markdown_core_key_index *index, markdown_cor
 int markdown_core_key_index_insert(markdown_core_key_index *index, const unsigned char *key, bufsize_t key_len,
                                    void *value, int replace, void **existing);
 void *markdown_core_key_index_lookup(const markdown_core_key_index *index, const unsigned char *key, bufsize_t key_len);
-markdown_core_map *markdown_core_map_new(void);
-/* `size` bytes of storage aligned for any record, owned by the map, or NULL
- * when it cannot be allocated. */
-void *markdown_core_map_carve(markdown_core_map *map, size_t size);
-/* Frees the map, its holds on the resources its records keep going back to
- * `resources` (a pool's resource slabs, node.h), or dropping their slab holds
- * when that is NULL. */
-void markdown_core_map_free(struct markdown_core_slab_pool *resources, markdown_core_map *map);
-markdown_core_map_record *markdown_core_map_lookup(markdown_core_map *map, markdown_core_chunk *label);
+/* Removes `key`, which the index holds. */
+void markdown_core_key_index_remove(markdown_core_key_index *index, const unsigned char *key, bufsize_t key_len);
 
 #ifdef __cplusplus
 }

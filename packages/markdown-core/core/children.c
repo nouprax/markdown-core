@@ -22,7 +22,9 @@ static bool S_copy(markdown_core_node_pool *pool, markdown_core_run **slot) {
     copy->count = run->count;
     copy->total = run->total;
     copy->sealed = run->sealed;
+    copy->marks = run->marks;
     copy->reach = run->reach;
+    copy->tally = run->tally;
     copy->length = run->length;
     memcpy(copy->entries, run->entries, run->count * sizeof(run->entries[0]));
     for (size_t i = 0; i < run->count; i++) {

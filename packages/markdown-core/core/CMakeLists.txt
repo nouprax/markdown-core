@@ -20,7 +20,6 @@ set(HEADERS
     attributes.h
     slab.h
     metadata.h
-    references.h
     map.h
     utf8.h
     inlines.h
@@ -41,11 +40,11 @@ set(LIBRARY_SOURCES
     inlines.c
     utf8.c
     buffer.c
-    references.c
     map.c
     houdini_html_u.c
     markdown_core_ctype.c
     text_tree.c
+    facts.c
     ${HEADERS})
 
 # Keep the engine target private, but make its sources available to the

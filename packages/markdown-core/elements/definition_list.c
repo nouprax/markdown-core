@@ -120,7 +120,7 @@ static bool markdown_core_block_definition_prefix(const markdown_core_element_in
         counts->work += term.len;
         markdown_core_attribute_parser attributes = {
             .data = term.data, .length = term.len, .scratch = &parser->attribute_scratch};
-        bool reference = markdown_core_parse_reference_inline(parser, &term, NULL, &attributes, 0) != 0;
+        bool reference = markdown_core_reference_definition_length(&term, &attributes) != 0;
         if (attributes.oom) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
@@ -250,18 +250,35 @@ static bool continue_container(const markdown_core_element_instance *self, markd
     return node->kind != MARKDOWN_CORE_NODE_DEFINITION_BODY ||
            markdown_core_definition_list_continue(parser, node, input);
 }
+/* A body's lines continue it by its marker's width. */
+static bool carries_as(const markdown_core_node *node, const markdown_core_node *old) {
+    return node->kind != MARKDOWN_CORE_NODE_DEFINITION_BODY ||
+           node->as.definition_body->continuation == old->as.definition_body->continuation;
+}
+/* A DEFINITION'S BODIES ARE EACH A RELATION OF IT, and a body's children
+ * one more, all from where the definition starts (canonical-ast.md): a
+ * body continues only the old body of its place (5.9). */
+static void children_relation(const markdown_core_node *node, const markdown_core_node *old,
+                              markdown_core_children_relation *relation) {
+    (void)old;
+    if (node->kind == MARKDOWN_CORE_NODE_DEFINITION) {
+        relation->first = markdown_core_node_children_count(node);
+        relation->end = relation->first + 1;
+    } else if (node->kind == MARKDOWN_CORE_NODE_DEFINITION_BODY) {
+        relation->from_parent = true;
+    }
+}
 /* A definition list, a definition and a body end where their last child
  * ends: taken when each one completes, when its children are complete. */
 static markdown_core_finish_result finish_step(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                                markdown_core_node *node, markdown_core_event_type event,
                                                markdown_core_node *parent, void **state) {
     (void)self;
-    (void)parser;
     (void)event;
     (void)parent;
     (void)state;
     assert(event == MARKDOWN_CORE_EVENT_EXIT);
-    markdown_core_definition_list_complete(node);
+    markdown_core_definition_list_complete(parser, node);
     return MARKDOWN_CORE_FINISH_CONTINUE;
 }
 static const markdown_core_node_type DEFINITION_LIST_EXIT_KINDS[] = {
@@ -286,6 +303,8 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
 
     .name = "definition_list",
     .continue_container = continue_container,
+    .carries_as = carries_as,
+    .children_relation = children_relation,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_definition_list_scan,
     .scan_block_gate = {.bytes = ":~"},
@@ -298,10 +317,10 @@ void markdown_core_definition_list_close_body(markdown_core_node *node) {
     }
 }
 
-void markdown_core_definition_list_complete(markdown_core_node *node) {
+void markdown_core_definition_list_complete(const markdown_core_parser *parser, markdown_core_node *node) {
     if ((node->kind == MARKDOWN_CORE_NODE_DEFINITION_LIST || node->kind == MARKDOWN_CORE_NODE_DEFINITION ||
          node->kind == MARKDOWN_CORE_NODE_DEFINITION_BODY) &&
         node->children) {
-        node->where.place.end = markdown_core_node_last_child(node)->where.place.end;
+        node->where.place.end = (uint32_t)markdown_core_parser_children_end(parser, node);
     }
 }

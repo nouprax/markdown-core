@@ -1,4 +1,5 @@
 #include "document.h"
+#include "registry.h"
 #include "attributes.h"
 #include "code_block.h"
 #include "html_block.h"
@@ -91,10 +92,13 @@ markdown_core_node *markdown_core_parse_document_with_setup(const char *source, 
         return NULL;
     }
     markdown_core_node_pool pool = {0};
-    markdown_core_revision revision = {.pool = &pool};
+    markdown_core_registries registries;
+    markdown_core_registries_init(&registries);
+    markdown_core_revision revision = {.pool = &pool, .registries = &registries};
     markdown_core_text text = markdown_core_text_buffer(source, length);
     markdown_core_node *root = markdown_core_parser_parse(parser, &text, &revision);
     markdown_core_parser_destroy(parser);
+    markdown_core_registries_dispose(&registries, &pool);
     markdown_core_node_pool_dispose(&pool);
     return root;
 }

@@ -5,7 +5,7 @@
 #include "alloc.h"
 #include "config.h"
 #include "node.h"
-#include "references.h"
+#include "facts.h"
 #include "element.h"
 #include "iterator.h"
 
@@ -176,6 +176,7 @@ static const size_t S_block_payload_size[MARKDOWN_CORE_NODE_KIND_COUNT] = {
     [MARKDOWN_CORE_NODE_DEFINITION & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_definition),
     [MARKDOWN_CORE_NODE_DEFINITION_BODY & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_definition_body_value),
     [MARKDOWN_CORE_NODE_METADATA & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_metadata_fields),
+    [MARKDOWN_CORE_NODE_FACT & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_fact_place),
 };
 
 static const size_t S_inline_payload_size[MARKDOWN_CORE_NODE_KIND_COUNT] = {
@@ -213,6 +214,8 @@ static const char *const S_block_type_string[MARKDOWN_CORE_NODE_KIND_COUNT] = {
     [MARKDOWN_CORE_NODE_DEFINITION_BODY & MARKDOWN_CORE_NODE_VALUE_MASK] = "definition_body",
     [MARKDOWN_CORE_NODE_TABLE_CAPTION & MARKDOWN_CORE_NODE_VALUE_MASK] = "table_caption",
     [MARKDOWN_CORE_NODE_METADATA & MARKDOWN_CORE_NODE_VALUE_MASK] = "metadata",
+    [MARKDOWN_CORE_NODE_REGISTRY & MARKDOWN_CORE_NODE_VALUE_MASK] = "registry",
+    [MARKDOWN_CORE_NODE_FACT & MARKDOWN_CORE_NODE_VALUE_MASK] = "fact",
 };
 
 static const char *const S_inline_type_string[MARKDOWN_CORE_NODE_KIND_COUNT] = {
@@ -350,12 +353,6 @@ static void free_node_as(markdown_core_slab_pool *resources, markdown_core_node 
          * referent's bytes are the arm's. */
         markdown_core_chunk_free(&node->as.citation->value);
         break;
-    case MARKDOWN_CORE_NODE_DOCUMENT:
-        markdown_core_free((void *)node->as.document->footnotes.nodes);
-        markdown_core_free((void *)node->as.document->footnotes.labeled);
-        markdown_core_free((void *)node->as.document->specimens.nodes);
-        markdown_core_free((void *)node->as.document->specimens.labeled);
-        break;
     case MARKDOWN_CORE_NODE_SPECIMEN:
         markdown_core_optional_chunk_free(&node->as.specimen->label);
         break;
@@ -365,7 +362,7 @@ static void free_node_as(markdown_core_slab_pool *resources, markdown_core_node 
     case MARKDOWN_CORE_NODE_LINK:
     case MARKDOWN_CORE_NODE_EMBEDDED:
         /* One holder fewer; a resource shared with other occurrences, or
-         * still held by the reference map, stays. */
+         * still held by the fact that declares it, stays. */
         markdown_core_resource_release(resources, node->as.link->resource);
         node->as.link->resource = NULL;
         break;
@@ -406,6 +403,19 @@ static inline void S_drop_run(S_released *list, markdown_core_run *run) {
         run->hold.released = list->runs;
         list->runs = run;
     }
+}
+
+/* A fact whose last holder went gives back what it holds: its definition
+ * goes on the list, and its resource and bytes go now. */
+static void S_drop_fact(S_released *list, markdown_core_slab_pool *resources, markdown_core_fact *fact) {
+    if (--fact->refs) {
+        return;
+    }
+    S_drop_node(list, fact->node);
+    markdown_core_resource_release(resources, fact->resource);
+    markdown_core_chunk_free(&fact->anchor);
+    markdown_core_optional_chunk_free(&fact->base);
+    markdown_core_free(fact);
 }
 
 static int S_drop_field(markdown_core_node **slot, void *context) {
@@ -473,6 +483,9 @@ static size_t S_drain(markdown_core_node_pool *pool, S_released *list) {
             markdown_core_strbuf_free(&e->content);
         }
         S_visit_fields(e, S_drop_field, list);
+        if (e->kind == MARKDOWN_CORE_NODE_FACT) {
+            S_drop_fact(list, resources, e->as.fact_place->fact);
+        }
         S_drop_run(list, e->children);
         if (e->bytes) {
             markdown_core_bytes_release(pool, e->bytes);
@@ -495,6 +508,12 @@ size_t markdown_core_node_pool_release_children(markdown_core_node_pool *pool, m
     S_released list = {NULL, NULL};
     S_drop_run(&list, run);
     return S_drain(pool, &list);
+}
+
+void markdown_core_fact_release(markdown_core_node_pool *pool, markdown_core_fact *fact) {
+    S_released list = {NULL, NULL};
+    S_drop_fact(&list, pool ? &pool->resources : NULL, fact);
+    S_drain(pool, &list);
 }
 
 size_t markdown_core_node_release(markdown_core_node *node) { return markdown_core_node_pool_release(NULL, node); }
@@ -663,21 +682,37 @@ bool markdown_core_node_kind_set_intersects(const markdown_core_node_kind_set *a
     return (a->blocks & b->blocks) != 0 || (a->inlines & b->inlines) != 0;
 }
 
+/* The marks of one child (children.h). */
+static inline unsigned S_child_marks(const markdown_core_node *node) {
+    return ((node->flags & MARKDOWN_CORE_NODE__CHANGED) ? MARKDOWN_CORE_RUN_CHANGED : 0u) |
+           ((node->flags & MARKDOWN_CORE_NODE__EXIT_FRAGILE) ? 0u : (unsigned)MARKDOWN_CORE_RUN_ENDS) |
+           ((node->flags & MARKDOWN_CORE_NODE__CONTAINS_BLANK) ? (unsigned)MARKDOWN_CORE_RUN_CONTAINS_BLANK : 0u) |
+           ((node->flags & MARKDOWN_CORE_NODE__AFTER_BLANK_END) ? (unsigned)MARKDOWN_CORE_RUN_AFTER_BLANK_END : 0u) |
+           ((node->flags & MARKDOWN_CORE_NODE__AFTER_LOOSE_END) ? (unsigned)MARKDOWN_CORE_RUN_AFTER_LOOSE_END : 0u);
+}
+
 /* A tier-zero run's sums from its children's extents and reaches, and a run
  * above from its entries' sums: in both, a child's end and its reach are
- * measured from the run's start through the lengths before it. */
+ * measured from the run's start through the lengths before it. Its marks
+ * are its entries' together, and its tally their sum. */
 static void S_seal_run(markdown_core_run *run) {
     int64_t length = 0, furthest = 0;
+    unsigned marks = 0;
+    uint32_t tally = 0;
     for (size_t i = 0; i < run->count; i++) {
         int64_t end, reach;
         if (run->tier) {
             const markdown_core_run *entry = run->entries[i];
             end = length + entry->length;
             reach = entry->reach;
+            marks |= entry->marks;
+            tally += entry->tally;
         } else {
             const markdown_core_node *node = run->entries[i];
             end = length + node->where.extent.lead + node->where.extent.span;
             reach = node->reach;
+            marks |= S_child_marks(node);
+            tally += node->tally;
         }
         length = end;
         if (end + reach > furthest) {
@@ -686,6 +721,8 @@ static void S_seal_run(markdown_core_run *run) {
     }
     run->length = length;
     run->reach = furthest > length ? (uint32_t)(furthest - length) : 0;
+    run->marks = (uint8_t)marks;
+    run->tally = tally;
     run->sealed = 1;
 }
 
@@ -715,4 +752,171 @@ void markdown_core_children_seal(markdown_core_run *root) {
         S_seal_run(run);
         tiers--;
     }
+}
+
+void markdown_core_children_reseal(markdown_core_run *root, size_t index) {
+    for (markdown_core_run *run = root;;) {
+        run->sealed = 0;
+        if (!run->tier) {
+            break;
+        }
+        run = run->entries[markdown_core_run_find(run, &index)];
+    }
+    markdown_core_children_seal(root);
+}
+
+bool markdown_core_children_find(const markdown_core_run *root, int64_t origin, int64_t offset, size_t *index,
+                                 int64_t *lead) {
+    if (!root) {
+        return false;
+    }
+    const markdown_core_run *run = root;
+    int64_t base = origin;
+    size_t before = 0;
+    while (run->tier) {
+        size_t k = 0;
+        for (; k < run->count; k++) {
+            const markdown_core_run *entry = run->entries[k];
+            if (base + entry->length > offset) {
+                break;
+            }
+            base += entry->length;
+            before += entry->total;
+        }
+        if (k == run->count) {
+            return false;
+        }
+        run = run->entries[k];
+    }
+    for (size_t k = 0; k < run->count; k++) {
+        const markdown_core_node *node = run->entries[k];
+        int64_t end = base + node->where.extent.lead + node->where.extent.span;
+        if (end > offset) {
+            *index = before + k;
+            *lead = base;
+            return true;
+        }
+        base = end;
+    }
+    return false;
+}
+
+int64_t markdown_core_children_length_before(const markdown_core_run *root, size_t index) {
+    int64_t length = 0;
+    const markdown_core_run *run = root;
+    while (run && run->tier) {
+        size_t k = 0;
+        for (const markdown_core_run *entry; (entry = run->entries[k])->total <= index; k++) {
+            index -= entry->total;
+            length += entry->length;
+        }
+        run = run->entries[k];
+    }
+    for (size_t k = 0; k < index; k++) {
+        const markdown_core_node *node = run->entries[k];
+        length += node->where.extent.lead + node->where.extent.span;
+    }
+    return length;
+}
+
+/* The sums of the children walked so far: their count, their bytes, the
+ * furthest end of their reaches, from where the first lead starts, their
+ * marks and their tallies' sum. */
+typedef struct {
+    size_t count;
+    int64_t length, furthest;
+    unsigned marks;
+    uint32_t tally;
+} take_sums;
+
+static inline void take_add(take_sums *sums, size_t count, int64_t length, int64_t reach, unsigned marks,
+                            uint32_t tally) {
+    sums->count += count;
+    sums->marks |= marks;
+    sums->tally += tally;
+    sums->length += length;
+    if (sums->length + reach > sums->furthest) {
+        sums->furthest = sums->length + reach;
+    }
+}
+
+size_t markdown_core_children_take_run(const markdown_core_run *root, size_t first, size_t end,
+                                       markdown_core_run_sums *sums) {
+    markdown_core_children_cursor cursor;
+    markdown_core_children_seek(&cursor, root, first);
+    /* The walk takes each entry after `first` whole when no edit met a child
+     * of it and it ends by `end`, and steps into it otherwise, up to the
+     * first child an edit met or `end`.
+     * The sums stand at the last child that can end the run, or before the
+     * last whole entry that holds one, whose own last such child is found
+     * after the walk. */
+    take_sums walked = {0, 0, 0, 0, 0}, ends = {0, 0, 0, 0, 0};
+    const markdown_core_run *within = NULL;
+    int top = cursor.tiers - 1;
+    while (top >= 0) {
+        const markdown_core_run *run = cursor.runs[top];
+        if (cursor.at[top] == run->count) {
+            if (--top >= 0) {
+                cursor.at[top]++;
+            }
+            continue;
+        }
+        if (!run->tier) {
+            const markdown_core_node *node = run->entries[cursor.at[top]];
+            if ((node->flags & MARKDOWN_CORE_NODE__CHANGED) || first + walked.count == end) {
+                break;
+            }
+            take_add(&walked, 1, node->where.extent.lead + (int64_t)node->where.extent.span, node->reach,
+                     S_child_marks(node), node->tally);
+            if (!(node->flags & MARKDOWN_CORE_NODE__EXIT_FRAGILE)) {
+                ends = walked;
+                within = NULL;
+            }
+            cursor.at[top]++;
+            continue;
+        }
+        const markdown_core_run *entry = run->entries[cursor.at[top]];
+        if ((entry->marks & MARKDOWN_CORE_RUN_CHANGED) || first + walked.count + entry->total > end) {
+            cursor.runs[++top] = entry;
+            cursor.at[top] = 0;
+            continue;
+        }
+        if (entry->marks & MARKDOWN_CORE_RUN_ENDS) {
+            ends = walked;
+            within = entry;
+        }
+        take_add(&walked, entry->total, entry->length, entry->reach, entry->marks, entry->tally);
+        cursor.at[top]++;
+    }
+    /* Into the whole entry that holds the last child that can end the run,
+     * down to that child: the entries before its last such entry whole. */
+    while (within) {
+        size_t last = within->count;
+        while (last--) {
+            unsigned found = within->tier ? ((const markdown_core_run *)within->entries[last])->marks
+                                          : S_child_marks(within->entries[last]);
+            if (found & MARKDOWN_CORE_RUN_ENDS) {
+                break;
+            }
+        }
+        for (size_t k = 0; k <= last; k++) {
+            if (within->tier && k == last) {
+                break;
+            }
+            if (within->tier) {
+                const markdown_core_run *entry = within->entries[k];
+                take_add(&ends, entry->total, entry->length, entry->reach, entry->marks, entry->tally);
+            } else {
+                const markdown_core_node *node = within->entries[k];
+                take_add(&ends, 1, node->where.extent.lead + (int64_t)node->where.extent.span, node->reach,
+                         S_child_marks(node), node->tally);
+            }
+        }
+        within = within->tier ? within->entries[last] : NULL;
+    }
+    sums->length = ends.length;
+    sums->reach = ends.furthest > ends.length ? (uint32_t)(ends.furthest - ends.length) : 0;
+    sums->marks = ends.marks;
+    sums->tally = ends.tally;
+    return ends.count;
 }

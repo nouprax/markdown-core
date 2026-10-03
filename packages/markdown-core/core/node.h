@@ -68,9 +68,9 @@ typedef struct {
  * definition with a long destination referenced many times costs one copy of
  * the destination however many times it is named, so nothing has to be
  * charged and no budget can make WHETHER A REFERENCE RESOLVES depend on how
- * many resolved before it. `holders` counts the map record and every node
- * reading through the resource; the last one out frees it, which is how the
- * tree outlives the parser that built the map.
+ * many resolved before it. `holders` counts the fact that declares it and
+ * every node reading through the resource; the last one out frees it, which
+ * is how the tree outlives the registries that declared it.
  *
  * A resource is a VALUE: two are equal exactly when their fields are, and the
  * pointer is only its storage. Nodes holding one storage hold equal values;
@@ -183,24 +183,12 @@ typedef struct {
     int continuation_line;
 } markdown_core_definition_body_value;
 
-/* A DEFINITION TABLE of a published document: every Footnote, or every
- * Specimen, in source order, borrowed from the tree. */
-typedef struct markdown_core_definitions {
-    /* Every definition of the kind, in source order. */
-    const struct markdown_core_node **nodes;
-    size_t count;
-    /* The labeled ones by label, in source order among equal labels. */
-    const struct markdown_core_node **labeled;
-    size_t labeled_count;
-} markdown_core_definitions;
-
 /* THE DOCUMENT's own field: the metadata the properties envelope produced.
  * Footnote and specimen definitions stay in the tree where they were
- * written; publishing the document records its definition tables here. */
+ * written; the document's tables of them are the session's registries
+ * (elements/registry.h). */
 typedef struct {
     struct markdown_core_node *metadata;
-    markdown_core_definitions footnotes;
-    markdown_core_definitions specimens;
 } markdown_core_document_value;
 
 /* A link reference definition is not a node (M2). The block phase reads it off
@@ -243,7 +231,13 @@ typedef union {
 enum markdown_core_node__internal_flags {
     MARKDOWN_CORE_NODE__OPEN = (1 << 0),
     MARKDOWN_CORE_NODE__LAST_LINE_BLANK = (1 << 1),
-    MARKDOWN_CORE_NODE__LAST_LINE_CHECKED = (1 << 2),
+    // THE BLANK-LINE FACTS (docs/plans/2026-09-29-incremental-parsing.md,
+    // E3 and E4), each written once, by the parse that makes the block, and
+    // only read after; blocks.c settles them. A completed block ENDS BLANK
+    // when its own last line is blank or, for a kind a blank line propagates
+    // out of that holds children, when its last child ends blank as the
+    // block saw it, counting the blank lines after that child.
+    MARKDOWN_CORE_NODE__ENDS_BLANK = (1 << 2),
     MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK = (1 << 3),
     // An HTML block whose own end condition matched on the line being
     // processed. `finalize` reads it to end the block on that line rather
@@ -273,18 +267,34 @@ enum markdown_core_node__internal_flags {
      * the tree it is in reads it again rather than taking it. */
     MARKDOWN_CORE_NODE__CHANGED = (1 << 9),
 
-    /* The line that closed this block decided what followed it from a state
-     * in which the block was still open: a block start refused there because
-     * a paragraph or a lazy line was open, or a blank line after a blank last
-     * line, which a list reads. A run of taken blocks cannot end at this
-     * one, since the parse after a run reads that line with the run closed
-     * (5.3). */
+    /* A run of taken blocks cannot end at this one (5.3): the parse after a
+     * run reads the lines after it with the run closed, and the old parse
+     * read one of them from a state in which the block was still open -- a
+     * block start was refused on the line that closed it because a paragraph
+     * or a lazy line was open, or the block was open over blank lines after
+     * its end, which its last descendants saw; or a later line may still
+     * write into it (E2, markdown_core_parser_write_closed), which only a
+     * block of the parse that makes it takes. */
     MARKDOWN_CORE_NODE__EXIT_FRAGILE = (1 << 10),
+
+    /* The node's `where` holds its extent: its owner published it, in this
+     * parse or, for a node the parse took, in the one that made it. */
+    MARKDOWN_CORE_NODE__PUBLISHED = (1 << 11),
+
+    /* The rest of the blank-line facts. A completed block CONTAINS A BLANK
+     * when a child but its last ends blank as the block saw it. A block's
+     * entry records what it starts after: the sibling before it ENDS BLANK
+     * as their parent saw it, or that sibling ENDS LOOSE, which a list item
+     * separates from the next on: its own last line is blank, a blank line
+     * follows it, or it ends blank. */
+    MARKDOWN_CORE_NODE__CONTAINS_BLANK = (1 << 12),
+    MARKDOWN_CORE_NODE__AFTER_BLANK_END = (1 << 13),
+    MARKDOWN_CORE_NODE__AFTER_LOOSE_END = (1 << 14),
 
     // The first bit an element may claim. Element flags are compile-time
     // constants owned by the element that uses them; there is no runtime
     // registration and no allocator to run out of bits.
-    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 11),
+    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 15),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;
@@ -304,6 +314,12 @@ typedef struct {
  * the record after an aligned node allocation header; a kind with no fields
  * has no record. Retyping keeps node identity stable and reuses slot capacity
  * or owns an external record. The common node layout never depends on record size. */
+/* A REGISTRY ENTRY's record (facts.h): the fact the entry places. */
+struct markdown_core_fact;
+typedef struct {
+    struct markdown_core_fact *fact;
+} markdown_core_fact_place;
+
 typedef union {
     void *data;
     markdown_core_chunk *literal;
@@ -323,6 +339,7 @@ typedef union {
     markdown_core_definition_body_value *definition_body;
     markdown_core_html_block *html_block;
     markdown_core_table_cell *table_cell;
+    markdown_core_fact_place *fact_place;
 } markdown_core_node_data;
 
 /* THE BYTES A LITERAL READS (docs/plans/2026-09-29-incremental-parsing.md,
@@ -374,6 +391,10 @@ struct markdown_core_node {
      * (5.1): the input's high-water mark when it closed, raised by a later
      * write to it (markdown_core_parser_write_closed). */
     uint32_t reach;
+    /* What the node adds to a count its open parent carries over its
+     * children (E3), which the children tree sums (children.h): a table
+     * row's completed cells. */
+    uint32_t tally;
 
     const markdown_core_element *element;
     /* Element-owned data, allocated by opaque_alloc_func and released by
@@ -607,6 +628,24 @@ size_t markdown_core_node_pool_release_children(markdown_core_node_pool *pool, m
 /* Seals the sums (children.h) of every unsealed run of the tree `root`,
  * whose children hold their extents; a sealed run's are already right. */
 void markdown_core_children_seal(markdown_core_run *root);
+/* Seals again the runs on the path to the child at `index` of `root`, whose
+ * extent or record changed. */
+void markdown_core_children_reseal(markdown_core_run *root, size_t index);
+/* THE CHILD AT AN OFFSET of the sealed tree `root`, whose first child's lead
+ * runs from `origin`: the first child that ends after `offset`, its index,
+ * and where its lead starts. False when none does. */
+bool markdown_core_children_find(const markdown_core_run *root, int64_t origin, int64_t offset, size_t *index,
+                                 int64_t *lead);
+/* The bytes the children of the sealed tree `root` before child `index`
+ * cover, their leads and spans. */
+int64_t markdown_core_children_length_before(const markdown_core_run *root, size_t index);
+/* THE RUN A PARSE CAN TAKE FROM CHILD `first` of the sealed tree `root`
+ * (docs/plans/2026-09-29-incremental-parsing.md, 5.3): the children from
+ * `first` before `end` and before the first one an edit met, through the
+ * last of them that can end a run. Its count, 0 for none, and its sums in
+ * `sums`. */
+size_t markdown_core_children_take_run(const markdown_core_run *root, size_t first, size_t end,
+                                       markdown_core_run_sums *sums);
 /* A run's storage, its entries having moved elsewhere or been released. */
 void markdown_core_run_free_slot(markdown_core_node_pool *pool, markdown_core_run *run);
 /* Drops what the pool holds: its released slots and its current slabs. Slots

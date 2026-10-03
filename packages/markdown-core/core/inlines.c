@@ -8,7 +8,7 @@
 #include "config.h"
 #include "node.h"
 #include "parser.h"
-#include "references.h"
+#include "map.h"
 #include "map.h"
 #include "node_type.h"
 #include "buffer.h"
@@ -164,11 +164,10 @@ static bool S_inline_run_began(const markdown_core_inline_state *inline_state) {
 }
 
 void markdown_core_inline_state_from_buf(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
-                                         markdown_core_chunk *chunk, markdown_core_map *refmap) {
+                                         markdown_core_chunk *chunk) {
     memset(inline_state, 0, sizeof(*inline_state));
     inline_state->input = *chunk;
     inline_state->owner_parser = parser;
-    inline_state->refmap = refmap;
     inline_state->text_end = -1;
     if (parser) {
         inline_state->dialect = parser->dialect;
@@ -594,7 +593,7 @@ static void complete_inline_token(markdown_core_parser *parser, markdown_core_in
     if (!entry || entry->kind != DELIMITER_FIELD) {
         return;
     }
-    bool whitespace = markdown_core_parse_inline_subtrees(parser, entry->item->node, inline_state->refmap);
+    bool whitespace = markdown_core_parse_inline_subtrees(parser, entry->item->node);
     if (whitespace) {
         entry->kind = DELIMITER_BOUNDARY;
         entry->item = NULL;
@@ -1046,7 +1045,7 @@ void markdown_core_inline_suspend(markdown_core_inline_state *inline_state) {
 }
 
 void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_core_node *parent,
-                                        markdown_core_map *refmap, markdown_core_inline_state *inline_state) {
+                                        markdown_core_inline_state *inline_state) {
     /* EVERY content-bearing block has a map by the time its inlines are parsed.
      * One the parser fed line by line already does; one whose content was SET
      * -- a table cell, a directive's label -- gets one mark here, derived from
@@ -1067,7 +1066,7 @@ void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_c
         lost = !bytes;
     }
     markdown_core_chunk content = {bytes ? bytes->data : parent->content.ptr, size, 0};
-    markdown_core_inline_state_from_buf(parser, inline_state, &content, refmap);
+    markdown_core_inline_state_from_buf(parser, inline_state, &content);
     if (lost) {
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
     }
@@ -1138,9 +1137,9 @@ bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_
     return whitespace;
 }
 
-bool markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_map *refmap) {
+bool markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent) {
     markdown_core_inline_state inline_state;
-    markdown_core_inline_start_inlines(parser, parent, refmap, &inline_state);
+    markdown_core_inline_start_inlines(parser, parent, &inline_state);
     return markdown_core_inline_finish_inlines(parser, &inline_state);
 }
 

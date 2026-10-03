@@ -3,7 +3,7 @@
 
 #include <assert.h>
 #include <stdint.h>
-#include "references.h"
+#include "map.h"
 #include "node.h"
 #include "iterator.h"
 #include "buffer.h"
@@ -51,13 +51,23 @@ typedef struct markdown_core_moved {
  * the nodes it holds when it completes, and the root numbers itself when it completes.
  *
  * `pool` lends the parse every node and resource slot it takes (node.h); it
- * outlives the parse, and its owner disposes it. */
+ * outlives the parse, and its owner disposes it.
+ *
+ * `registries` are the facts the document declares and the lookups it made
+ * (elements/registry.h), which the parse continues as it continues the tree.
+ * A parse whose lookups of taken nodes are no longer answered as they were
+ * returns NULL with the places to read again in `touches`, `touch_count` in
+ * source order, which the registries hold: it keeps nothing, and `previous`
+ * is still its caller's. */
 typedef struct markdown_core_revision {
     markdown_core_node_pool *pool;
     markdown_core_node *previous;
     const markdown_core_moved *moved;
     size_t moved_count;
     uint64_t last_id;
+    struct markdown_core_registries *registries;
+    const uint32_t *touches;
+    size_t touch_count;
 } markdown_core_revision;
 
 /* Immutable runs map logical content bytes to authored byte intervals.
@@ -105,19 +115,6 @@ typedef struct {
     bool has_start, has_end;
 } markdown_core_content_span;
 
-/* The specimen definitions of one parse, in the order they were committed,
- * for the index citations resolve against. Every definition is owned by the
- * block tree; the collection only borrows it until the document finishes. */
-typedef struct {
-    /* Each definition and where it starts, recorded when it opens. */
-    struct markdown_core_definition_start {
-        struct markdown_core_node *node;
-        uint64_t start;
-    } *values;
-    size_t count;
-    size_t capacity;
-} markdown_core_definition_collection;
-
 /* Sequential source-order operations share scratch, such as an element's
  * deferred registrations or a table's regions. Space depends on entries, never on the
  * area of a sparse table or the numeric range of source coordinates. */
@@ -155,8 +152,6 @@ static inline markdown_core_text markdown_core_text_buffer(const void *bytes, si
 }
 
 struct markdown_core_parser {
-    /* A hashtable of urls in the current document for cross-references */
-    struct markdown_core_map *refmap;
     markdown_core_source_order source_order;
     /* The stack the inline stage's root passes and then publishing borrow in
      * turn: each grows it to what it needs (markdown_core_parser_walk_stack)
@@ -243,6 +238,27 @@ struct markdown_core_parser {
     bool claimed;
     int claimed_line;
     bufsize_t claimed_last_end;
+    /* THE RUN A LINE TOOK (docs/plans/2026-09-29-incremental-parsing.md,
+     * 5.3): the block the line began is an old one the parse took whole, with
+     * the run of siblings after it, so the line ends there and the parse
+     * resumes at the line after `taken_end`, where the run ends. */
+    bool taken;
+    size_t taken_end;
+    /* THE RANGES THE PARSE TOOK, in source order, each from the start of the
+     * first node of a run to the end of the last: the facts of the nodes
+     * inside them stay in the registries (elements/registry.h). */
+    struct {
+        uint32_t start, end;
+    } *takes;
+    size_t take_count, take_capacity;
+    /* Where the inline root being parsed starts: the place its lookups are
+     * recorded at. */
+    uint32_t lookup_at;
+    /* Whether a block start was refused on the line being processed because a
+     * paragraph or a lazy line was open there: a block that closes on such a
+     * line closed from a state a run of taken blocks does not reproduce, and
+     * no run ends at it. */
+    bool line_refused;
     /* THE PARSER'S PATH (docs/plans/2026-09-29-incremental-parsing.md,
      * 5.11): a node has no parent link, so every walk of the parse carries
      * its path here, one frame per node from its root down. While lines are
@@ -302,7 +318,6 @@ struct markdown_core_parser {
      * element counts its own work in its own state record. */
     size_t opaque_scan_work;
     size_t footnote_body_work;
-    size_t definition_registration_work;
     /* Run bytes, opener comparisons, and child moves in the shared delimiter algorithm. */
     size_t delimiter_work;
     /* Delimiter entries pushed, against which the pool's growth is measured. */
@@ -576,11 +591,11 @@ static inline markdown_core_node *markdown_core_parser_make_node_with_ext(markdo
     return node;
 }
 
-static inline bool markdown_core_parser_set_node_kind(markdown_core_parser *parser, markdown_core_node *node,
-                                                      markdown_core_node_type kind) {
-    markdown_core_parser_note_kind(parser, kind);
-    return markdown_core_node_set_kind(node, kind);
-}
+/* Makes `node` a block of `kind`. An open block then continues the old block
+ * of that kind that begins where it does (5.3), so a block's start is placed
+ * before its kind changes. False when storage runs out. */
+bool markdown_core_parser_set_node_kind(markdown_core_parser *parser, markdown_core_node *node,
+                                        markdown_core_node_type kind);
 
 /* Puts `child` at the end of `parent`'s children, taking the caller's hold,
  * after the caller has established containment. False, with the parse failed
@@ -878,6 +893,19 @@ bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdo
 bufsize_t markdown_core_parser_mapped_source_offset(markdown_core_parser *parser, int line, int column);
 bufsize_t markdown_core_parser_mapped_source_end(markdown_core_parser *parser, int line, int column);
 
+/* Where the last closed child of `block`, the deepest open block, ends: a
+ * child the parse took holds its extent, not its place (5.3). */
+static inline size_t markdown_core_parser_children_end(const markdown_core_parser *parser,
+                                                       const struct markdown_core_node *block) {
+    assert(parser->path.frames[parser->path.count - 1].node == block);
+    (void)block;
+    return parser->path.frames[parser->path.count - 1].last_end;
+}
+
+/* A block start the line would have opened was refused because a paragraph
+ * or a lazy line was open (`line_refused`). */
+static inline void markdown_core_parser_refuse(markdown_core_parser *parser) { parser->line_refused = true; }
+
 /* The geometry of input line `line`, which the driver has already visited. */
 static inline markdown_core_input_line *markdown_core_parser_visited_line(const markdown_core_parser *parser,
                                                                           int line) {
@@ -930,12 +958,6 @@ bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, struct m
 int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead, markdown_core_chunk *line,
                                         int *first_nonspace, int *indent, int *blank_lines);
 void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead);
-
-/* Register an element's committed definition in its borrowed parse index.
- * The block tree keeps ownership. Allocation failure aborts the transaction. */
-bool markdown_core_parser_register_definition(markdown_core_parser *parser,
-                                              markdown_core_definition_collection *collection,
-                                              markdown_core_node *definition);
 
 /* THE LONGEST SOURCE A PARSE TAKES: offsets are int32, and every buffer
  * derived from the source stays under half of that. The public parse entry

@@ -1,19 +1,19 @@
 #ifndef MARKDOWN_CORE_HEADING_STATE_H
 #define MARKDOWN_CORE_HEADING_STATE_H
-#include "references.h"
+#include "facts.h"
 #include "inline_internal.h"
 
-/* A heading is registered once when its block closes. Source order is settled
- * before resolution, independently of the order in which mapped inputs close.
- * Pending holds the ordinary inline cursor at its declaration dependency;
- * nodes and resources remain owned by the tree and reference map. */
+/* A heading the parse read, registered once when its block closes. Source
+ * order is settled before its inlines are parsed, independently of the
+ * order in which mapped inputs close. Pending holds the ordinary inline
+ * cursor at its declaration dependency; `fact` is what it declares to the
+ * registries (registry.h), which hold it. */
 typedef struct {
     markdown_core_node *node;
-    /* Where the heading starts, recorded as it closes, for the source order
-     * its collection is put in once the heading holds its extent. */
+    /* Where the heading starts, recorded as it closes. */
     uint64_t start;
     markdown_core_inline_state *pending;
-    markdown_core_resource *resource;
+    markdown_core_fact *fact;
 } markdown_core_heading_parse;
 
 typedef struct {
@@ -21,18 +21,10 @@ typedef struct {
     size_t count, capacity;
 } markdown_core_heading_collection;
 
-typedef struct {
-    markdown_core_key_index index, resources;
-} anchor_registry;
-
 /* THE HEADINGS OF ONE PARSE (the heading element's parse record): each
- * heading as its block closed, the anchors the document reserves and assigns
- * once the tree is complete, and the projection and registry work that
- * assignment did, for its complexity gate. */
+ * heading the parse read, as its block closed. */
 typedef struct {
     markdown_core_heading_collection headings;
-    anchor_registry anchors;
-    size_t anchor_work;
 } markdown_core_heading_state;
 
 /* ONE HEADING'S INLINE RUN (the heading element's run record): where

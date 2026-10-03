@@ -100,6 +100,13 @@ typedef struct markdown_core_block_gate {
  * dialect as it was, rather than the projection wrapping a byte. */
 #define MARKDOWN_CORE_ELEMENT_LIMIT 255
 
+/* Where the children a parse adds to an open container go (its
+ * `children_relation`). */
+typedef struct {
+    size_t first, end;
+    bool from_parent;
+} markdown_core_children_relation;
+
 struct markdown_core_element {
     /* Negative/zero/positive precedence separates protected tokens, ordinary
      * alternatives, and literal fallbacks without a second dispatch algorithm.
@@ -177,6 +184,28 @@ struct markdown_core_element {
      * from that marker in raw source, so the key hands such a line to the
      * lookahead rather than walking over it. */
     const char *container_prefix_bytes;
+    /* WHAT A CONTAINER CARRIES TO ITS CHILDREN (docs/plans/2026-09-29-
+     * incremental-parsing.md, 5.3 and E3): whether the open `container`
+     * reads its later lines as the finished `old` one, which starts where it
+     * does and is of its kind, read them -- the facts its opening lines
+     * decided that its continuation and its children read. NULL when a
+     * container's kind decides them all. */
+    bool (*carries_as)(const markdown_core_node *container, const markdown_core_node *old);
+    /* THE RELATION THE CHILDREN A PARSE ADDS TO THE OPEN `container` JOIN
+     * (canonical-ast.md): their leads run from its start, or from its
+     * parent's when `relation->from_parent` is set, and among the children
+     * of the `old` block it continues, when there is one, the relation's are
+     * [first, end). NULL when every child is of one relation from its
+     * start. */
+    void (*children_relation)(const markdown_core_node *container, const markdown_core_node *old,
+                              markdown_core_children_relation *relation);
+    /* Whether the open `container` admits the `count` children of `old` from
+     * child `first`, whose tallies sum to `tally` (node.h), taken whole after
+     * its last child, and then holds them as their own parse left it, for a
+     * container whose state its children change (E3). NULL when they change
+     * none. */
+    bool (*take_children)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *container,
+                          const markdown_core_node *old, size_t first, size_t count, uint32_t tally);
     bool (*accepts_blank)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
     bool (*blank_line)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
     bool (*ends_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,

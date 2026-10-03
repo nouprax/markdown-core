@@ -61,7 +61,28 @@ static markdown_core_node *open_text(const markdown_core_element_instance *self,
     return container;
 }
 
+/* A LIST, A CALLOUT OR A TABLE WITHOUT AN ANCHOR may take one from a
+ * separate identifier line after it, a later line's write
+ * (markdown_core_parser_write_closed): no run of taken blocks ends at it. */
+static markdown_core_finish_result finish_step(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                               markdown_core_node *node, markdown_core_event_type event,
+                                               markdown_core_node *parent, void **state) {
+    (void)self;
+    (void)parser;
+    (void)event;
+    (void)parent;
+    (void)state;
+    if (!node->attributes.anchor.len) {
+        node->flags |= MARKDOWN_CORE_NODE__EXIT_FRAGILE;
+    }
+    return MARKDOWN_CORE_FINISH_CONTINUE;
+}
+static const markdown_core_node_type IDENTIFIER_OWNER_KINDS[] = {MARKDOWN_CORE_NODE_LIST, MARKDOWN_CORE_NODE_CALLOUT,
+                                                                 MARKDOWN_CORE_NODE_TABLE, MARKDOWN_CORE_NODE_NONE};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
+    .finish_step = finish_step,
+    .finish_exit_kinds = IDENTIFIER_OWNER_KINDS,
     .state_size = sizeof(markdown_core_block_identifier_work),
     .accepts_lazy = accepts_lazy,
     .open_lazy = open_lazy,

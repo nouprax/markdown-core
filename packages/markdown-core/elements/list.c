@@ -1,5 +1,6 @@
 #include "list.h"
 #include "tasklist.h"
+#include "block_identifier.h"
 #define BLOCK_PEEK(input, at) ((input)->data[(at)])
 #include "block_internal.h"
 
@@ -155,6 +156,7 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *
             data->delimiter.kind = MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT;
         }
         if (interrupts_paragraph && data->start != 1) {
+            markdown_core_parser_refuse(parser);
             return 0;
         }
         if (!committed || !markdown_core_block_list_facts_match(committed, data)) {
@@ -191,6 +193,7 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *
             at++;
         }
         if (markdown_core_is_line_end(BLOCK_PEEK(input, at))) {
+            markdown_core_parser_refuse(parser);
             return 0;
         }
     }
@@ -198,28 +201,7 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *
 }
 
 void markdown_core_block_finalize_list(const markdown_core_parser *parser, markdown_core_node *list) {
-    list->as.list->tight = true;
-    size_t items = markdown_core_node_children_count(list);
-    markdown_core_children_cursor at;
-    markdown_core_children_seek(&at, list->children, 0);
-    for (size_t i = 0; i < items; i++) {
-        markdown_core_node *item = markdown_core_children_next(&at);
-        bool last_item = i + 1 == items;
-        if (markdown_core_block_last_line_blank(item) && !last_item) {
-            list->as.list->tight = false;
-            return;
-        }
-        size_t children = markdown_core_node_children_count(item);
-        markdown_core_children_cursor child_at;
-        markdown_core_children_seek(&child_at, item->children, 0);
-        for (size_t j = 0; j < children; j++) {
-            markdown_core_node *child = markdown_core_children_next(&child_at);
-            if ((!last_item || j + 1 < children) && markdown_core_block_ends_with_blank_line(parser, child)) {
-                list->as.list->tight = false;
-                return;
-            }
-        }
-    }
+    list->as.list->tight = !markdown_core_block_list_loose(parser);
 }
 
 static bool markdown_core_list_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
@@ -300,6 +282,26 @@ static bool continue_container(const markdown_core_element_instance *self, markd
     (void)self;
     return markdown_core_list_continue(parser, node, input, joining, taken);
 }
+/* A list's later items join it by its marker's facts; an item's lines
+ * continue it by its marker's width. */
+static bool carries_as(const markdown_core_node *node, const markdown_core_node *old) {
+    const markdown_core_list *list = node->as.list, *was = old->as.list;
+    if (node->kind == MARKDOWN_CORE_NODE_LIST) {
+        return markdown_core_block_list_facts_match(list, was);
+    }
+    return list->marker_offset == was->marker_offset && list->padding == was->padding;
+}
+/* AN ITEM'S ANCHOR is the one its first paragraph gave it when it closed
+ * (block_identifier.c): an item that takes that child whole has it. */
+static bool take_children(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                          markdown_core_node *node, const markdown_core_node *old, size_t first, size_t count,
+                          uint32_t tally) {
+    (void)self;
+    (void)count;
+    (void)tally;
+    return node->kind != MARKDOWN_CORE_NODE_LIST_ITEM || first ||
+           markdown_core_block_take_item_identifier(parser, node, old);
+}
 /* A LIST IS LAID OUT WHEN IT COMPLETES: tight or loose is read off its items
  * and their children, which are complete then -- a paragraph that was only
  * definitions has been dropped by the item that held it. */
@@ -331,6 +333,8 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
 
     .name = "list",
     .continue_container = continue_container,
+    .carries_as = carries_as,
+    .take_children = take_children,
     .propagates_child_blank = true,
     .blank_runs = true,
     .maximum_block_indent = 3,

@@ -37,6 +37,15 @@ typedef struct {
      * decision read while the frame's block was open, from which the block's
      * reach is measured when it closes. */
     size_t reads;
+    /* On the open spine, when the parse continues an old tree (5.3): the old
+     * node the frame's block continues, which starts where it does and is of
+     * its kind, or NULL; and where the block's last closed child ends, or
+     * where its children's leads run from when it has none. */
+    const struct markdown_core_node *old;
+    size_t last_end;
+    /* On the open spine: what the block has seen of blank lines among its
+     * children (blocks.c, THE BLANK-LINE FACTS). */
+    unsigned blanks;
 } markdown_core_iter_frame;
 
 typedef struct {

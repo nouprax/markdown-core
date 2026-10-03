@@ -5,6 +5,7 @@
 #include "html.h"
 #include "citation.h"
 #include "specimen.h"
+#include "registry.h"
 #include "inline_internal.h"
 #include "block_internal.h"
 
@@ -478,11 +479,8 @@ static void materialize_citation_key(const markdown_core_element_instance *self,
         }
         return;
     }
-    const markdown_core_element_instance *specimen_element = self->peers[CITATION_SPECIMEN];
-    const markdown_core_specimen_state *specimens = specimen_element ? specimen_element->state : NULL;
-    bool specimen =
-        !token->suppress && token->key_start == token->start + 1 && specimens &&
-        markdown_core_key_index_lookup(&specimens->ids, item->as.citation->value.data, item->as.citation->value.len);
+    bool specimen = !token->suppress && token->key_start == token->start + 1 && self->peers[CITATION_SPECIMEN] &&
+                    markdown_core_registries_specimen(inline_state->owner_parser, &item->as.citation->value);
     if (specimen) {
         item->as.citation->referent = MARKDOWN_CORE_NODE_REFERENT_SPECIMEN;
         item->as.citation->mode = 0;

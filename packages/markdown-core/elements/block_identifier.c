@@ -102,6 +102,13 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identif
     }
 }
 
+bool markdown_core_block_take_item_identifier(markdown_core_parser *parser, markdown_core_node *item,
+                                              const markdown_core_node *old) {
+    block_identifier candidate = {markdown_core_chunk_dup(&old->attributes.anchor, 0, old->attributes.anchor.len), 0,
+                                  false};
+    return !candidate.identifier.len || S_attach_block_identifier(parser, item, &candidate);
+}
+
 bool markdown_core_block_attach_identifier_line(markdown_core_block_identifier_work *work, markdown_core_parser *parser,
                                                 markdown_core_node *parent, markdown_core_chunk *input) {
     if (parser->indent >= CODE_INDENT || input->data[parser->first_nonspace] != '#') {
@@ -115,7 +122,7 @@ bool markdown_core_block_attach_identifier_line(markdown_core_block_identifier_w
          markdown_core_block_type(owner) != MARKDOWN_CORE_NODE_TABLE) ||
         !S_scan_block_identifier(work, input->data + parser->first_nonspace, input->len - parser->first_nonspace,
                                  &candidate) ||
-        !candidate.own_line || candidate.content_end || !markdown_core_block_ends_with_blank_line(parser, owner)) {
+        !candidate.own_line || candidate.content_end || !markdown_core_block_last_child_ends_blank(parser, parent)) {
         return false;
     }
     bool followed_by_boundary = parser->lookahead_cursor == parser->input_text.size;
@@ -130,11 +137,11 @@ bool markdown_core_block_attach_identifier_line(markdown_core_block_identifier_w
         followed_by_boundary = blank_lines > 0;
         markdown_core_parser_lookahead_end(&lookahead);
     }
-    if (!followed_by_boundary || parser->error || !S_attach_block_identifier(parser, owner, &candidate)) {
+    if (!followed_by_boundary || parser->error) {
         return false;
     }
     /* The owner completed when it closed; its parent, which is open,
      * publishes it with its new anchor. */
-    markdown_core_block_set_end_to_current_line(parser, owner);
-    return true;
+    return S_attach_block_identifier(parser, markdown_core_parser_write_closed(parser, parent, parser->line_end),
+                                     &candidate);
 }

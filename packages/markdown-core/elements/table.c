@@ -5,7 +5,7 @@
 #include "block_internal.h"
 #include <inlines.h>
 #include <parser.h>
-#include <references.h>
+#include <map.h>
 #include <string.h>
 #include <limits.h>
 #include "utf8.h"
@@ -323,7 +323,7 @@ static void try_inserting_table_header_paragraph(const markdown_core_element_ins
         markdown_core_parser_release_node(parser, lead);
         return;
     }
-    markdown_core_parser_complete(parser, paragraph, parent);
+    markdown_core_parser_close_lead(parser, paragraph);
 }
 
 /* Return NULL when the syntax does not match or the parent rejects the table
@@ -371,21 +371,22 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
         return NULL;
     }
 
-    if (!markdown_core_parser_set_node_kind(parser, parent_container, MARKDOWN_CORE_NODE_TABLE)) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return NULL;
-    }
-
     if (header_row.paragraph_offset) {
         try_inserting_table_header_paragraph(self->peers[TABLE_PARAGRAPH], parser, parent_container,
                                              (unsigned char *)parent_string, header_row.paragraph_offset);
         /* The table starts where its HEADER ROW was written, not where the
-         * paragraph it was split out of did. Taken before the row and cells
-         * below read start_column, because they are placed against it. */
+         * paragraph it was split out of did. Taken before its kind changes,
+         * which places it, and before the row and cells below read
+         * start_column, because they are placed against it. */
         if (markdown_core_parser_content_place(parser, &parent_container->content_map, header_row.paragraph_offset,
                                                &header_line, &header_start)) {
             parent_container->where.place.start = (uint32_t)header_start;
         }
+    }
+
+    if (parser->error || !markdown_core_parser_set_node_kind(parser, parent_container, MARKDOWN_CORE_NODE_TABLE)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return NULL;
     }
 
     /* Table data belongs to the element. Its cleanup accepts partial
@@ -498,6 +499,7 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
 
         table->content_count++;
         table->autocompleted_cells += (size_t)(table_columns - i);
+        table_row_block->tally = (uint32_t)(table_columns - i);
 
         /* AUTOCOMPLETED CELLS SIT WHERE THEY WERE COMPLETED (Q44, answered
          * 2026-08-23). A row shorter than its header is completed to the
@@ -2549,7 +2551,13 @@ static bool table_open_admits(markdown_core_parser *parser, const unsigned char 
 static markdown_core_node *table_try_open(table_workspace *workspace, markdown_core_parser *parser,
                                           markdown_core_node *parent, unsigned char *input, int length) {
     if (parser->indent > 3 || parser->blank || parent->kind == MARKDOWN_CORE_NODE_TABLE ||
-        parent->kind == MARKDOWN_CORE_NODE_TABLE_ROW || parent->kind == MARKDOWN_CORE_NODE_PARAGRAPH) {
+        parent->kind == MARKDOWN_CORE_NODE_TABLE_ROW) {
+        return NULL;
+    }
+    if (parent->kind == MARKDOWN_CORE_NODE_PARAGRAPH) {
+        if (table_open_admits(parser, input, length)) {
+            markdown_core_parser_refuse(parser);
+        }
         return NULL;
     }
     /* Every opening grammar needs a later physical line. At EOF only an
@@ -2599,12 +2607,13 @@ static markdown_core_node *table_try_open(table_workspace *workspace, markdown_c
     if (trailing) {
         /* The table above was complete when it closed: its caption is a field
          * that joins it now, and is measured in it. */
-        result = preceding;
+        result = markdown_core_parser_write_closed(
+            parser, parent,
+            (size_t)markdown_core_parser_source_end(parser, source.lines[caption_last].line,
+                                                    source.lines[caption_last].length));
         table_candidate_reset(candidate);
         markdown_core_node *caption_node = table_caption_build(&source, caption_last, caption);
         ((markdown_core_table *)result->opaque)->caption = caption_node;
-        result->where.place.end = (uint32_t)markdown_core_parser_source_end(parser, source.lines[caption_last].line,
-                                                                            source.lines[caption_last].length);
         if (caption_node) {
             markdown_core_parser_complete_field(parser, caption_node, result);
             markdown_core_parser_publish_field(parser, result, caption_node);
@@ -2650,8 +2659,13 @@ done:
 static markdown_core_node *try_interrupting_block(const markdown_core_element_instance *self,
                                                   markdown_core_parser *parser, markdown_core_node *node,
                                                   markdown_core_chunk *input, bool lazy) {
-    if (parser->indent >= 4 || lazy || node->kind == MARKDOWN_CORE_NODE_PARAGRAPH ||
-        input->data[parser->first_nonspace] != '-') {
+    if (parser->indent >= 4 || input->data[parser->first_nonspace] != '-') {
+        return NULL;
+    }
+    if (lazy || node->kind == MARKDOWN_CORE_NODE_PARAGRAPH) {
+        if (table_open_admits(parser, input->data, input->len)) {
+            markdown_core_parser_refuse(parser);
+        }
         return NULL;
     }
     return table_try_open(self->state, parser, node, input->data, input->len);
@@ -2684,7 +2698,67 @@ static void dispose_parser(const markdown_core_element_instance *self, markdown_
     memset(workspace, 0, sizeof(*workspace));
 }
 
+/* A TABLE WITHOUT A CAPTION may take a trailing one from the lines after
+ * it, a later line's write (markdown_core_parser_write_closed): no run of
+ * taken blocks ends at it. */
+static markdown_core_finish_result finish_step(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                               markdown_core_node *node, markdown_core_event_type event,
+                                               markdown_core_node *parent, void **state) {
+    (void)self;
+    (void)parser;
+    (void)event;
+    (void)parent;
+    (void)state;
+    if (!node->opaque || !((markdown_core_table *)node->opaque)->caption) {
+        node->flags |= MARKDOWN_CORE_NODE__EXIT_FRAGILE;
+    }
+    return MARKDOWN_CORE_FINISH_CONTINUE;
+}
+static const markdown_core_node_type TABLE_EXIT_KINDS[] = {MARKDOWN_CORE_NODE_TABLE, MARKDOWN_CORE_NODE_NONE};
+
+/* A PIPE TABLE'S ROWS ARE READ AS ITS HEADER DECIDED: as many cells as its
+ * columns. */
+static bool carries_as(const markdown_core_node *node, const markdown_core_node *old) {
+    return ((const markdown_core_table *)node->opaque)->column_count ==
+           ((const markdown_core_table *)old->opaque)->column_count;
+}
+
+/* A PIPE TABLE'S LATER ROWS JOIN ITS BODY, the relation after its head
+ * rows (canonical-ast.md). */
+static void children_relation(const markdown_core_node *node, const markdown_core_node *old,
+                              markdown_core_children_relation *relation) {
+    if (old && node->kind == MARKDOWN_CORE_NODE_TABLE) {
+        const markdown_core_table *table = old->opaque;
+        relation->first = table->head_count;
+        relation->end = table->head_count + table->content_count;
+    }
+}
+
+/* THE STATE A PIPE TABLE'S ROWS CHANGE (E3): the cells completed so far,
+ * past MAX_AUTOCOMPLETED_CELLS of which a row is refused, and which each row
+ * tallies its own of. A run of rows is admitted when its last row is, with
+ * the cells the rows before it in the run completed. */
+static bool take_children(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                          markdown_core_node *node, const markdown_core_node *old, size_t first, size_t count,
+                          uint32_t tally) {
+    (void)self;
+    (void)parser;
+    markdown_core_table *table = node->opaque;
+    const markdown_core_node *last = markdown_core_children_at(old->children, first + count - 1);
+    if (table->autocompleted_cells + tally - last->tally > MAX_AUTOCOMPLETED_CELLS) {
+        return false;
+    }
+    table->content_count += count;
+    table->autocompleted_cells += tally;
+    return true;
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
+    .finish_step = finish_step,
+    .finish_exit_kinds = TABLE_EXIT_KINDS,
+    .carries_as = carries_as,
+    .children_relation = children_relation,
+    .take_children = take_children,
     .peers = TABLE_PEERS,
     .dispose_parser = dispose_parser,
     .state_size = sizeof(table_workspace),

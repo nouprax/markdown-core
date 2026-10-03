@@ -583,11 +583,14 @@ static void check_identity(run *state, const char *where, size_t step, history *
                     (old->relation == node->relation && anchored && image >= node->range.end)) {
                     break;
                 }
-                if (old->relation == node->relation && anchored && image >= node->range.start && match == SIZE_MAX &&
-                    old->kind == node->kind) {
-                    match = before->items[owner->items + *at];
-                }
                 ++*at;
+                /* The earliest such sibling; the ones after it stay for the
+                 * next new sibling, as ranges of siblings can overlap. */
+                if (old->relation == node->relation && anchored && image >= node->range.start &&
+                    old->kind == node->kind) {
+                    match = before->items[owner->items + *at - 1];
+                    break;
+                }
             }
         }
         continues[index] = match;

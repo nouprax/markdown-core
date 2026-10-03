@@ -14,39 +14,22 @@
 extern "C" {
 #endif
 
-/* A PUBLISHED DOCUMENT: the tree, whose nodes hold ids and extents and whose
- * root holds the definition tables, and the text unit its scope queries count
- * columns in. */
+/* A PUBLISHED DOCUMENT: the tree, whose nodes hold ids and extents; the
+ * text unit its scope queries count columns in; and its definition tables,
+ * the registries of its footnotes and specimens in source order and of the
+ * ones that win their labels, by label (registry.h), each NULL while it
+ * holds nothing. The document holds each part once. */
 struct markdown_core_document {
     markdown_core_node *root;
     markdown_core_text_unit unit;
+    markdown_core_node *footnotes, *specimens, *footnote_labels, *specimen_labels;
 };
 
-/* WHERE A FOOTNOTE OR SPECIMEN WAS WRITTEN: the definitions of each kind, as
- * they complete, with their starts, from which publishing builds the
- * document's lookup tables. */
-typedef struct {
-    uint64_t start;
-    const markdown_core_node *node;
-} markdown_core_definition_entry;
+/* Drops the document's holds on its parts. */
+void markdown_core_document_release(markdown_core_document *document);
 
-typedef struct {
-    markdown_core_definition_entry *values;
-    size_t count, capacity;
-} markdown_core_definition_registry;
-
-/* WHAT PUBLISHING RECORDS FOR THE DOCUMENT: the footnote and specimen
- * definitions, and the nodes that declare an explicit anchor, which every
- * heading's computed anchor avoids (heading.c). The tree owns the nodes. */
-typedef struct {
-    markdown_core_definition_registry footnotes, specimens;
-    struct {
-        markdown_core_node **values;
-        size_t count, capacity;
-    } anchors;
-} markdown_core_lookup_registry;
-
-void markdown_core_lookup_registry_dispose(markdown_core_lookup_registry *registry);
+/* Whether two resources are equal values (node.h). */
+bool markdown_core_resource_equal(const markdown_core_resource *a, const markdown_core_resource *b);
 
 /* A NODE PUBLISHES ITS RELATIONS WHEN IT COMPLETES (docs/plans/2026-09-29-
  * incremental-parsing.md, 4.1, 4.3, 5.8). `node` starts at `start`, and
@@ -60,29 +43,30 @@ void markdown_core_lookup_registry_dispose(markdown_core_lookup_registry *regist
  * from 0. Returns
  * whether `node` is a node of the document. An allocation failure fails the
  * parse. */
-bool markdown_core_publish_node(markdown_core_parser *parser, markdown_core_lookup_registry *registry,
-                                markdown_core_node *node, const markdown_core_node *owner, uint32_t start);
+bool markdown_core_publish_node(markdown_core_parser *parser, markdown_core_node *node, const markdown_core_node *owner,
+                                uint32_t start);
 
 /* PUBLISHING a relation: every node of the relations of `owner` that `part`
  * holds -- `part` itself, when it is a field of `owner`; its children, when
  * it is `owner` or the holder of one of `owner`'s groups -- in relation
- * order takes the next id after the revision's last, joins `registry` when
- * it is a footnote or specimen or declares an explicit anchor and is not
- * pending, and takes its extent in place of its place:
+ * order takes the next id after the revision's last, declares itself to the
+ * registries when it is a footnote or specimen or declares an explicit
+ * anchor and is not pending, and takes its extent in place of its place:
  * the distance from the end of the node before it in the relation, or from
  * `start`, where `owner` starts, for the first, and its length (node.h). An
  * allocation failure fails the parse. */
-void markdown_core_publish_relation(markdown_core_parser *parser, markdown_core_lookup_registry *registry,
-                                    const markdown_core_node *owner, uint32_t start, const markdown_core_node *part);
+void markdown_core_publish_relation(markdown_core_parser *parser, const markdown_core_node *owner, uint32_t start,
+                                    const markdown_core_node *part);
 
 /* PUBLISHING THE DOCUMENT, the last step of the parse transaction: every node
- * already holds its id and its extent, and the lookup tables are built from
- * `registry`. A parse that continues a tree (the parser's revision, parser.h)
+ * already holds its id and its extent. A parse that continues a tree (the parser's revision, parser.h)
  * matches its nodes to the old ones (5.9): a matched node takes its old
- * node's id, and the old tree is shared where the two are equal. The
- * parser's root is the result. It works in the parser's scratch. False,
- * having changed neither tree's structure, when an allocation failed. */
-bool markdown_core_publish_tree(markdown_core_parser *parser, markdown_core_lookup_registry *registry);
+ * node's id, and the old tree is shared where the two are equal, in the
+ * facts that declare its footnotes and specimens too, and the registries
+ * commit the parse's round with it (registry.h). The parser's root is the
+ * result. It works in the parser's scratch. False, having changed neither
+ * tree's structure nor the registries, when an allocation failed. */
+bool markdown_core_publish_tree(markdown_core_parser *parser);
 
 /* THE EDIT PASS (5.2): applies `count` edits, disjoint and in source order,
  * each in bytes of the text before the batch, to the published tree `root`
@@ -94,6 +78,10 @@ bool markdown_core_publish_tree(markdown_core_parser *parser, markdown_core_look
  * allocation failed. */
 bool markdown_core_tree_edit(markdown_core_node *root, const markdown_core_byte_edit *edits, size_t count,
                              markdown_core_moved **moved, size_t *moved_count);
+
+/* The edit pass over a registry (registry.h): each fact the batch meets
+ * moves to the image of its place. False when an allocation failed. */
+bool markdown_core_registry_edit(markdown_core_node *registry, const markdown_core_byte_edit *edits, size_t count);
 
 /* The scope of `node` in the published tree `root` parsed from `source`,
  * with columns in `unit`; markdown_core_document_scope is this query over a

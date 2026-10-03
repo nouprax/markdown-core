@@ -3517,39 +3517,6 @@ static void whitespace_is_space_tab_and_line_ending(test_batch_runner *runner) {
     }
 }
 
-/* A MAP'S RECORDS ARE CARVED FROM BLOCKS IT OWNS: a run of definitions is a
- * few block allocations rather than one each, and the blocks go with the map. */
-static void map_records_are_carved_from_its_blocks(test_batch_runner *runner) {
-    enum { COUNT = 400 };
-    payload_probe_arm();
-    markdown_core_map *map = markdown_core_reference_map_new();
-    OK(runner, map != NULL, "a map is made");
-    if (!map) {
-        payload_probe_disarm();
-        return;
-    }
-    size_t before = payload_allocations;
-    char label[32];
-    for (size_t i = 0; i < COUNT; i++) {
-        snprintf(label, sizeof(label), "label %zu", i);
-        markdown_core_chunk chunk = {(unsigned char *)label, (bufsize_t)strlen(label), 0};
-        markdown_core_map_record *record = markdown_core_reference_create(
-            map, &chunk,
-            markdown_core_resource_new(NULL, markdown_core_chunk_literal("/u"), markdown_core_optional_chunk_absent()));
-        OK(runner, record && !record->implicit && record->label_len == chunk.len, "record %zu is carved", i);
-    }
-    /* One allocation per resource (no pool here), one for the label scratch,
-     * and the blocks. */
-    size_t blocks = payload_allocations - before - COUNT - 1;
-    OK(runner, blocks <= 8, "%d records took %zu blocks", COUNT, blocks);
-    markdown_core_chunk lookup = {(unsigned char *)"LABEL 399", 9, 0};
-    markdown_core_map_record *found = markdown_core_map_lookup(map, &lookup);
-    OK(runner, found && found->label_len == 9 && !memcmp(found->label, "label 399", 9), "a carved record is found");
-    markdown_core_map_free(NULL, map);
-    INT_EQ(runner, payload_live, 0, "the map's blocks, index and resources are all released");
-    payload_probe_disarm();
-}
-
 /* Run from the instance's own beginning -- a document owner's lifecycle --
  * because what it measures is the fresh parser's storage. */
 static void inspect_lazy_block_content(const markdown_core_element_instance *self, markdown_core_parser *parser) {
@@ -4985,11 +4952,10 @@ static void universal_values(test_batch_runner *runner) {
 typedef struct {
     size_t autolink_domains;
     size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body, block_identifier, callout, dimensions;
-    size_t registered_definitions, definition_lists, citation_brace_bytes, tables, table_frontier;
+    size_t definition_lists, citation_brace_bytes, tables, table_frontier;
     size_t table_workspace_growth, table_geometry_lines, table_separator_scans, table_horizontal_work;
     size_t physical_lines, physical_capacity, physical_facts, physical_fact_capacity, normalized_lines;
-    size_t attributes, anchors, definitions, definition_resources, whitespace, brackets, citations, list_markers,
-        specimens;
+    size_t attributes, whitespace, brackets, citations, list_markers;
     size_t inline_hooks;
     size_t properties_lines, physical_line_bytes, metadata_key_bytes, metadata_value_bytes, table_scratch_growth;
     size_t nodes_created, nodes_freed;
@@ -5008,8 +4974,6 @@ static void record_inline_work(const markdown_core_element_instance *self, markd
     }
     const markdown_core_table_work *tables =
         markdown_core_table_work_in(markdown_core_parser_instance(parser, &MARKDOWN_CORE_ELEMENT_TABLE));
-    const markdown_core_heading_state *headings =
-        ELEMENT_STATE(parser, markdown_core_heading_state, MARKDOWN_CORE_ELEMENT_HEADING);
     work->nodes_created = parser->nodes_created;
     work->nodes_freed = parser->nodes_freed;
     work->cross_link = ELEMENT_STATE(parser, markdown_core_cross_link_work, MARKDOWN_CORE_ELEMENT_CROSS_LINK)->scan;
@@ -5047,7 +5011,6 @@ static void record_inline_work(const markdown_core_element_instance *self, markd
     work->citations = ELEMENT_STATE(parser, markdown_core_citation_work, MARKDOWN_CORE_ELEMENT_CITATION)->work;
     work->citation_brace_bytes =
         ELEMENT_STATE(parser, markdown_core_citation_work, MARKDOWN_CORE_ELEMENT_CITATION)->brace_bytes;
-    work->specimens = ELEMENT_STATE(parser, markdown_core_specimen_state, MARKDOWN_CORE_ELEMENT_SPECIMEN)->work;
     work->list_markers = ELEMENT_STATE(parser, markdown_core_list_work, MARKDOWN_CORE_ELEMENT_LIST)->markers;
     work->comment = ELEMENT_STATE(parser, markdown_core_comment_work, MARKDOWN_CORE_ELEMENT_COMMENT)->scan;
     work->lookahead = parser->block_lookahead_work;
@@ -5064,14 +5027,7 @@ static void record_inline_work(const markdown_core_element_instance *self, markd
         ELEMENT_STATE(parser, markdown_core_embedded_work, MARKDOWN_CORE_ELEMENT_EMBEDDED)->dimensions +
         ELEMENT_STATE(parser, markdown_core_cross_link_work, MARKDOWN_CORE_ELEMENT_CROSS_LINK)->dimensions;
     work->attributes = parser->attribute_scratch.work;
-    work->anchors = headings->anchor_work;
-    work->definitions = 0;
-    for (markdown_core_map_record *record = parser->refmap->records; record; record = record->next) {
-        work->definitions++;
-        work->definition_resources += record->resource != NULL;
-    }
     work->footnote_body = parser->footnote_body_work;
-    work->registered_definitions = parser->definition_registration_work;
     work->definition_lists =
         ELEMENT_STATE(parser, markdown_core_definition_list_work, MARKDOWN_CORE_ELEMENT_DEFINITION_LIST)->work;
 }
@@ -5301,7 +5257,7 @@ static void citation_linear_work(test_batch_runner *runner) {
                "citation scans and resolutions are linear: case=%zu size=%d work=%zu", c, source.size, work.citations);
             OK(runner, work.brackets <= 4 * (size_t)source.size && work.delimiters <= 20 * (size_t)source.size,
                "citation ranges share bounded delimiter reduction: case=%zu count=%zu", c, count);
-            OK(runner, work.list_markers <= 20 * (size_t)source.size && work.specimens <= 20 * (size_t)source.size,
+            OK(runner, work.list_markers <= 20 * (size_t)source.size,
                "list marker scans are bounded: case=%zu count=%zu", c, count);
             markdown_core_node_free(root);
             markdown_core_strbuf_free(&source);
@@ -5898,9 +5854,7 @@ static void span_and_script_linear_work(test_batch_runner *runner) {
         if (root) {
             STR_EQ(runner, (const char *)child_at(root, 0)->attributes.anchor.data, "a-b-x-1",
                    "heading projection includes script bodies and reserves the later Span anchor");
-            OK(runner,
-               work.anchors < 25 * (size_t)source.size && work.brackets <= 8 * (size_t)source.size &&
-                   work.delimiters <= 8 * (size_t)source.size,
+            OK(runner, work.brackets <= 8 * (size_t)source.size && work.delimiters <= 8 * (size_t)source.size,
                "heading projection and mixed bracket/delimiter ownership stay linear");
             markdown_core_node_free(root);
         }
@@ -6753,7 +6707,6 @@ static void an_undeclared_first_byte_reaches_no_gated_scanner(test_batch_runner 
         markdown_core_parse_document_with_setup((const char *)source.ptr, source.size, measure_inline_work, &work);
     OK(runner, root != NULL, "the document parses");
     INT_EQ(runner, (int)work.list_markers, 0, "the list scanner is not asked about a line it cannot start");
-    INT_EQ(runner, (int)work.specimens, 0, "nor the specimen scanner");
     markdown_core_node_free(root);
     markdown_core_strbuf_free(&source);
 }
@@ -6863,7 +6816,6 @@ static void heading_completion_invariants(test_batch_runner *runner) {
         }
         markdown_core_node_free(root);
     }
-    size_t anchor_work = 0;
     for (size_t count = 128; count <= 4096; count *= 2) {
         for (int referenced = 0; referenced < 2; referenced++) {
             markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
@@ -6877,27 +6829,9 @@ static void heading_completion_invariants(test_batch_runner *runner) {
             markdown_core_node *root =
                 markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
             OK(runner, root != NULL, "repeated heading declarations parse");
-            INT_EQ(runner, work.definitions, count, "each heading creates its own implicit reference definition");
-            INT_EQ(runner, work.definition_resources, count,
-                   "duplicate heading definitions retain their ordinary resources");
             markdown_core_node_free(root);
             markdown_core_strbuf_free(&source);
         }
-        markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
-        markdown_core_strbuf_puts(&source, "# Only\n\n");
-        for (size_t i = 0; i < count; i++) {
-            markdown_core_strbuf_puts(&source, "Plain **paragraph**.\n\n");
-        }
-        inline_work work = {0};
-        markdown_core_node *root =
-            markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
-        OK(runner, root != NULL, "unrelated content does not add anchor work");
-        if (!anchor_work) {
-            anchor_work = work.anchors;
-        }
-        INT_EQ(runner, work.anchors, anchor_work, "anchor work is independent of unrelated AST size");
-        markdown_core_node_free(root);
-        markdown_core_strbuf_free(&source);
     }
 }
 
@@ -6934,8 +6868,6 @@ static void heading_registry_invariants(test_batch_runner *runner) {
                     STR_EQ(runner, (const char *)node->attributes.anchor.data, expected,
                            "every generated suffix is the smallest available");
                 }
-                OK(runner, work.anchors > count && work.anchors < 25 * (size_t)source.size,
-                   "registry work is linear in input and generated spelling bytes: %zu/%d", work.anchors, source.size);
                 markdown_core_node *last = markdown_core_node_last_child(root);
                 markdown_core_node *first = child_at(last, 0);
                 OK(runner,
@@ -6963,7 +6895,7 @@ static void heading_registry_invariants(test_batch_runner *runner) {
             INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LINK), count, "every forward call resolves once");
             INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_EMPHASIS), count,
                    "every live delimiter pair resolves once");
-            OK(runner, work.anchors + work.attributes + work.footnote_body < 40 * (size_t)source.size,
+            OK(runner, work.attributes + work.footnote_body < 40 * (size_t)source.size,
                "declaration parsing and finalization stay linear with pending cursors");
             markdown_core_node_free(root);
         }
@@ -7023,8 +6955,6 @@ static void heading_reference_resource_lifetime(test_batch_runner *runner) {
     inline_work work = {0};
     root = markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
     OK(runner, root != NULL, "inherited anchor reservation preserves the reference expansion bound");
-    OK(runner, work.anchors < 25 * (size_t)source.size,
-       "a shared inherited anchor is inspected once, not once per occurrence: %zu/%d", work.anchors, source.size);
     markdown_core_node_free(root);
     markdown_core_strbuf_free(&source);
 }
@@ -9044,7 +8974,7 @@ static void parser_attachment_commits_one_decision(test_batch_runner *runner) {
     paragraph_root->flags |= MARKDOWN_CORE_NODE__OPEN;
     conversion_current_policy = &paragraph_policy;
     /* The root is the whole open spine. */
-    markdown_core_iter_frame rejected_spine[] = {{paragraph_root, 0, 0}};
+    markdown_core_iter_frame rejected_spine[] = {{paragraph_root, 0, 0, NULL, 0, 0}};
     rejected.root = paragraph_root;
     rejected.path = (markdown_core_iter_path){rejected_spine, 1, 1};
     size_t attempts = payload_allocations;
@@ -11240,7 +11170,6 @@ int main(void) {
     unicode_classes_are_total(runner);
     anchor_images_only_scalars(runner);
     whitespace_is_space_tab_and_line_ending(runner);
-    map_records_are_carved_from_its_blocks(runner);
     properties_values(runner);
     properties_source_boundaries(runner);
     properties_member_work(runner);

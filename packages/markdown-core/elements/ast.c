@@ -10,6 +10,7 @@
 #include "directive.h"
 #include "formula.h"
 #include "markdown-core-elements.h"
+#include "registry.h"
 #include "strikethrough.h"
 #include "table.h"
 
@@ -38,108 +39,6 @@ typedef struct dump_buffer {
     size_t *lines;
     size_t line_count;
 } dump_buffer;
-
-typedef markdown_core_definition_entry definition_entry;
-typedef markdown_core_definition_registry definition_table;
-
-static uint64_t definition_key(const void *entry) { return ((const definition_entry *)entry)->start; }
-
-void markdown_core_lookup_registry_dispose(markdown_core_lookup_registry *registry) {
-    markdown_core_free(registry->footnotes.values);
-    markdown_core_free(registry->specimens.values);
-    markdown_core_free(registry->anchors.values);
-    *registry = (markdown_core_lookup_registry){0};
-}
-
-static bool table_add(definition_table *table, const markdown_core_node *node, uint32_t start) {
-    if (table->count == table->capacity) {
-        size_t capacity = table->capacity ? table->capacity * 2 : 8;
-        if (capacity > SIZE_MAX / sizeof(*table->values)) {
-            return false;
-        }
-        definition_entry *values = markdown_core_realloc(table->values, capacity * sizeof(*values));
-        if (!values) {
-            return false;
-        }
-        table->values = values;
-        table->capacity = capacity;
-    }
-    table->values[table->count++] = (definition_entry){start, node};
-    return true;
-}
-
-static const markdown_core_optional_chunk *definition_label(const markdown_core_node *node) {
-    return node->kind == MARKDOWN_CORE_NODE_FOOTNOTE ? &node->as.footnote->label : &node->as.specimen->label;
-}
-
-/* Two labels in byte order, the shorter first on a common prefix. */
-static int label_compare(const uint8_t *a, size_t a_length, const uint8_t *b, size_t b_length) {
-    size_t common = a_length < b_length ? a_length : b_length;
-    int order = common ? memcmp(a, b, common) : 0;
-    return order ? order : (a_length > b_length) - (a_length < b_length);
-}
-
-/* Labeled definitions by label, and in source order among equal labels, so
- * the first of a label is the one a lookup answers. */
-static int label_entry_compare(const void *left, const void *right) {
-    const definition_entry *a = left, *b = right;
-    const markdown_core_optional_chunk *x = definition_label(a->node), *y = definition_label(b->node);
-    int order = label_compare(x->value.data, (size_t)x->value.len, y->value.data, (size_t)y->value.len);
-    return order ? order : (a->start > b->start) - (a->start < b->start);
-}
-
-/* The table in source order. */
-static inline bool table_order(definition_table *table, markdown_core_source_order *order) {
-    return !table->count || markdown_core_order_source_entries(order, table->values, table->count,
-                                                               sizeof(*table->values), definition_key);
-}
-
-/* The entry of the definition that starts at `start` in a table in source
- * order; definitions of one kind never start at the same byte. */
-static definition_entry *table_find(definition_table *table, uint64_t start) {
-    size_t lo = 0, hi = table->count;
-    while (lo < hi) {
-        size_t mid = lo + (hi - lo) / 2;
-        if (table->values[mid].start < start) {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-    return &table->values[lo];
-}
-
-/* The table, in source order, and its labeled definitions in label order, as
- * node handles the document borrows. */
-static inline bool table_seal(definition_table *table, markdown_core_definitions *out) {
-    *out = (markdown_core_definitions){0};
-    if (!table->count) {
-        return true;
-    }
-    const markdown_core_node **nodes = markdown_core_alloc(table->count, sizeof(*nodes));
-    const markdown_core_node **labeled = markdown_core_alloc(table->count, sizeof(*labeled));
-    if (!nodes || !labeled) {
-        markdown_core_free((void *)nodes);
-        markdown_core_free((void *)labeled);
-        return false;
-    }
-    size_t labels = 0;
-    for (size_t i = 0; i < table->count; i++) {
-        nodes[i] = table->values[i].node;
-        /* The source index replaces the start as the tie-break, now that the
-         * entries are in source order. */
-        table->values[i].start = i;
-        if (definition_label(nodes[i])->has_value) {
-            table->values[labels++] = table->values[i];
-        }
-    }
-    qsort(table->values, labels, sizeof(*table->values), label_entry_compare);
-    for (size_t i = 0; i < labels; i++) {
-        labeled[i] = table->values[i].node;
-    }
-    *out = (markdown_core_definitions){nodes, table->count, labeled, labels};
-    return true;
-}
 
 /* A relation of the children [start, end) of `holder`, NULL when it holds
  * nothing; of all its children; of the one node a field holds. */
@@ -343,46 +242,32 @@ static inline bool publish_first(const markdown_core_node *node, relation_shape 
     return first->start != first->end || *more;
 }
 
-/* Publishing one relation's nodes: the revision that issues their ids, the
- * registry their lookups join, and where the last one ended. */
+/* Publishing one relation's nodes: the parse that issues their ids and
+ * where the last one ended. */
 typedef struct {
     markdown_core_parser *parser;
-    markdown_core_lookup_registry *registry;
     uint32_t anchor;
 } publish_cursor;
 
-/* Records `node`, which declares an explicit anchor. */
-static void declare_anchor(publish_cursor *cursor, markdown_core_node *node) {
-    markdown_core_lookup_registry *registry = cursor->registry;
-    if (registry->anchors.count == registry->anchors.capacity) {
-        size_t capacity = registry->anchors.capacity ? 2 * registry->anchors.capacity : 8;
-        markdown_core_node **values;
-        if (capacity > SIZE_MAX / sizeof(*values) ||
-            !(values = markdown_core_realloc(registry->anchors.values, capacity * sizeof(*values)))) {
-            markdown_core_parser_fail(cursor->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            return;
-        }
-        registry->anchors.values = values;
-        registry->anchors.capacity = capacity;
-    }
-    registry->anchors.values[registry->anchors.count++] = node;
-}
-
-/* `node` takes the next id, joins the registry when it is a footnote or
- * specimen, or when it is complete and declares an explicit anchor (a
- * pending node declares its own when it completes), and takes its extent,
- * measured from the cursor's anchor, which becomes its end. */
+/* `node` takes the next id, declares itself to the registries when it is a
+ * footnote or specimen, or when it is complete and declares an explicit
+ * anchor (a pending node declares its own when it completes), and takes its
+ * extent, measured from the cursor's anchor, which becomes its end. A node
+ * the parse took holds its extent and id already, and its declarations stay
+ * in the registries. */
 static inline void publish_one(publish_cursor *cursor, markdown_core_node *node) {
+    if (node->flags & MARKDOWN_CORE_NODE__PUBLISHED) {
+        cursor->anchor = (uint32_t)((int64_t)cursor->anchor + node->where.extent.lead) + node->where.extent.span;
+        return;
+    }
     markdown_core_place place = node->where.place;
     node->id = ++cursor->parser->revision->last_id;
-    if ((slot_of(node) & SLOT_LOOKUP) &&
-        !table_add(node->kind == MARKDOWN_CORE_NODE_FOOTNOTE ? &cursor->registry->footnotes
-                                                             : &cursor->registry->specimens,
-                   node, place.start)) {
-        markdown_core_parser_fail(cursor->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    node->flags |= MARKDOWN_CORE_NODE__PUBLISHED;
+    if (slot_of(node) & SLOT_LOOKUP) {
+        markdown_core_registries_declare_definition(cursor->parser, node, place.start);
     }
     if (!(node->flags & MARKDOWN_CORE_NODE__PENDING) && markdown_core_node_anchor_chunk(node)->len) {
-        declare_anchor(cursor, node);
+        markdown_core_registries_declare_anchor(cursor->parser, markdown_core_node_anchor_chunk(node), place.start);
     }
     node->where.extent =
         (markdown_core_extent){(int32_t)((int64_t)place.start - (int64_t)cursor->anchor), place.end - place.start};
@@ -412,8 +297,8 @@ static inline bool relation_of(const markdown_core_relation *relation, const mar
     return relation->field ? *relation->field == part : relation->holder == part;
 }
 
-void markdown_core_publish_relation(markdown_core_parser *parser, markdown_core_lookup_registry *registry,
-                                    const markdown_core_node *owner, uint32_t start, const markdown_core_node *part) {
+void markdown_core_publish_relation(markdown_core_parser *parser, const markdown_core_node *owner, uint32_t start,
+                                    const markdown_core_node *part) {
     markdown_core_relation_cursor cursor;
     markdown_core_relation relation;
     bool more;
@@ -422,7 +307,7 @@ void markdown_core_publish_relation(markdown_core_parser *parser, markdown_core_
     }
     for (;;) {
         if (relation_of(&relation, part)) {
-            publish_nodes(&(publish_cursor){parser, registry, start}, &relation);
+            publish_nodes(&(publish_cursor){parser, start}, &relation);
         }
         if (!more || !relations_next(&cursor, &relation, &more)) {
             return;
@@ -454,26 +339,31 @@ static void publish_bodies(markdown_core_node *definition, uint32_t start) {
     markdown_core_children_seek(&at, definition->children, 0);
     uint32_t anchor = start;
     for (markdown_core_node *body; (body = markdown_core_children_next(&at));) {
+        if (body->flags & MARKDOWN_CORE_NODE__PUBLISHED) {
+            anchor = (uint32_t)((int64_t)anchor + body->where.extent.lead) + body->where.extent.span;
+            continue;
+        }
         markdown_core_place place = body->where.place;
         body->where.extent =
             (markdown_core_extent){(int32_t)((int64_t)place.start - (int64_t)anchor), place.end - place.start};
+        body->flags |= MARKDOWN_CORE_NODE__PUBLISHED;
         anchor = place.end;
     }
     markdown_core_children_seal(definition->children);
 }
 
-bool markdown_core_publish_node(markdown_core_parser *parser, markdown_core_lookup_registry *registry,
-                                markdown_core_node *node, const markdown_core_node *owner, uint32_t start) {
+bool markdown_core_publish_node(markdown_core_parser *parser, markdown_core_node *node, const markdown_core_node *owner,
+                                uint32_t start) {
     if (owner && holds_group(shape_of(owner), owner, node)) {
         return false;
     }
     if ((node->flags & MARKDOWN_CORE_NODE__PENDING) && markdown_core_node_anchor_chunk(node)->len) {
-        declare_anchor(&(publish_cursor){parser, registry, 0}, node);
+        markdown_core_registries_declare_anchor(parser, markdown_core_node_anchor_chunk(node), start);
     }
     relation_shape shape = shape_of(node);
     if (shape == SHAPE_CHILDREN) {
         if (node->children) {
-            publish_nodes(&(publish_cursor){parser, registry, start},
+            publish_nodes(&(publish_cursor){parser, start},
                           &(markdown_core_relation){NULL, NULL, node, 0, node->children->total});
             markdown_core_children_seal(node->children);
         }
@@ -483,18 +373,23 @@ bool markdown_core_publish_node(markdown_core_parser *parser, markdown_core_look
         bool more;
         if (publish_first(node, shape, &cursor, &relation, &more)) {
             do {
-                publish_nodes(&(publish_cursor){parser, registry, start}, &relation);
-                if (relation.holder) {
-                    markdown_core_children_seal(relation.holder->children);
-                }
+                publish_nodes(&(publish_cursor){parser, start}, &relation);
             } while (more && relations_next(&cursor, &relation, &more));
+        }
+        /* A children tree seals once every relation it holds is published:
+         * a table's rows are three. */
+        markdown_core_relations_begin(&cursor, node);
+        while (markdown_core_relations_next(&cursor, &relation)) {
+            if (relation.holder) {
+                markdown_core_children_seal(relation.holder->children);
+            }
         }
         if (shape == SHAPE_DEFINITION) {
             publish_bodies(node, start);
         }
     }
     if (!owner) {
-        publish_one(&(publish_cursor){parser, registry, 0}, node);
+        publish_one(&(publish_cursor){parser, 0}, node);
     }
     return true;
 }
@@ -529,20 +424,22 @@ bool markdown_core_publish_node(markdown_core_parser *parser, markdown_core_look
 /* A same pair, recorded in post-order: `old` takes the place of `node` when
  * `node` is the root of a largest same subtree. The place is the field that
  * holds `node`, or else its index among the children of `holder`. The pairs
- * of the node's subtree are those from `first` on. */
+ * of the node's subtree are those from `first` on. `old` is the child at
+ * `old_index` of `old_holder`, when children hold it. */
 typedef struct {
     markdown_core_node *node, *old;
     markdown_core_node **field;
     markdown_core_node *holder;
     size_t index, first;
+    markdown_core_node *old_holder;
+    size_t old_index;
 } publish_swap;
 
-/* A same footnote or specimen: the old node takes the new one's place in its
- * lookup table, where the new one starts at `start`. */
+/* A same footnote or specimen the parse read: the old node takes the place
+ * of the new one, which starts at `start`, in the fact that declares it. */
 typedef struct {
-    uint64_t start;
+    uint32_t start;
     const markdown_core_node *old;
-    bool footnote;
 } publish_lookup;
 
 /* What matching records: the same pairs and the same footnotes and
@@ -638,7 +535,7 @@ static void publish_pair(publish_match_frame *frame, int field) {
  * before `node`'s end. An old node stepped past without being
  * matched makes the owner differ. */
 static markdown_core_node *publish_match(publish_match_frame *owner, const markdown_core_node *node,
-                                         markdown_core_place place, uint32_t *old_start) {
+                                         markdown_core_place place, uint32_t *old_start, size_t *old_index) {
     markdown_core_node *match = NULL;
     markdown_core_relation *old_hand = &owner->old_hand;
     while (old_hand->start != old_hand->end) {
@@ -649,14 +546,18 @@ static markdown_core_node *publish_match(publish_match_frame *owner, const markd
         if (anchored && start >= place.end) {
             break;
         }
-        if (anchored && start >= place.start && !match && old->kind == node->kind) {
-            match = old;
-            *old_start = start;
-        } else {
-            owner->same = false;
-        }
         owner->old_anchor = end;
         old_hand->start++;
+        /* The earliest such sibling is the match; the ones after it stay for
+         * the next new sibling, as cells of a grid table that span rows
+         * start inside the ranges of the cells before them. */
+        if (anchored && start >= place.start && old->kind == node->kind) {
+            match = old;
+            *old_start = start;
+            *old_index = old_hand->start - 1;
+            break;
+        }
+        owner->same = false;
     }
     if (!match) {
         owner->same = false;
@@ -709,15 +610,14 @@ static bool publish_verdict(publish_identity *identity, publish_match_frame *own
         return false;
     }
     identity->swaps[identity->swap_count++] = *swap;
-    if (!(slot_of(swap->node) & SLOT_LOOKUP)) {
+    if (!(slot_of(swap->node) & SLOT_LOOKUP) || swap->node == swap->old) {
         return true;
     }
     if (!publish_reserve((void **)&identity->lookups, &identity->lookup_capacity, identity->lookup_count,
                          sizeof(*identity->lookups))) {
         return false;
     }
-    identity->lookups[identity->lookup_count++] =
-        (publish_lookup){start, swap->old, swap->node->kind == MARKDOWN_CORE_NODE_FOOTNOTE};
+    identity->lookups[identity->lookup_count++] = (publish_lookup){start, swap->old};
     return true;
 }
 
@@ -746,7 +646,7 @@ static bool publish_matched(publish_identity *identity, const markdown_core_revi
         *same = verdict && !publish_first(previous, shape, &old_cursor, &old_first, &old_more);
         return true;
     }
-    publish_swap at = {root, previous, NULL, NULL, 0, 0};
+    publish_swap at = {root, previous, NULL, NULL, 0, 0, NULL, 0};
     uint32_t old_start = (uint32_t)previous->where.extent.lead;
     /* Enters a matched node that has relations: its frame waits for its
      * verdict while they are compared. */
@@ -795,13 +695,21 @@ static bool publish_matched(publish_identity *identity, const markdown_core_revi
             place.start = (uint32_t)((int64_t)hand.anchor + child->where.extent.lead);
             place.end = place.start + child->where.extent.span;
             hand.anchor = place.end;
-            markdown_core_node *match = publish_match(frame, child, place, &old_start);
+            size_t old_index = 0;
+            markdown_core_node *match = publish_match(frame, child, place, &old_start, &old_index);
             if (!match) {
                 continue;
             }
             child->id = match->id;
             verdict = publish_same(revision, child, match);
-            at = (publish_swap){child, match, hand.relation.field, hand.relation.holder, index, identity->swap_count};
+            at = (publish_swap){child,
+                                match,
+                                hand.relation.field,
+                                hand.relation.holder,
+                                index,
+                                identity->swap_count,
+                                frame->old_hand.holder,
+                                old_index};
             if (!publish_first(child, shape, &cursor, &first, &more)) {
                 verdict = verdict && !publish_first(match, shape, &old_cursor, &old_first, &old_more);
                 ok = publish_verdict(identity, frame, &at, verdict, place.start);
@@ -821,32 +729,64 @@ static bool publish_matched(publish_identity *identity, const markdown_core_revi
 /* An old node equal to `node` as a value carries the extent and the record
  * of the parse that made `node` (5.1): an edit met the old node, and the
  * parse read it again rather than take it. The groups it holds its children
- * in are read again with it. */
-static void publish_record(markdown_core_node *old, const markdown_core_node *node) {
-    unsigned record = MARKDOWN_CORE_NODE__CHANGED | MARKDOWN_CORE_NODE__EXIT_FRAGILE;
+ * in are read again with it, and the runs that hold it seal its record. */
+/* `old` takes `node`'s record; whether that changed it. */
+static bool publish_take_record(markdown_core_node *old, const markdown_core_node *node) {
+    unsigned record = MARKDOWN_CORE_NODE__CHANGED | MARKDOWN_CORE_NODE__EXIT_FRAGILE |
+                      MARKDOWN_CORE_NODE__LAST_LINE_BLANK | MARKDOWN_CORE_NODE__ENDS_BLANK |
+                      MARKDOWN_CORE_NODE__CONTAINS_BLANK | MARKDOWN_CORE_NODE__AFTER_BLANK_END |
+                      MARKDOWN_CORE_NODE__AFTER_LOOSE_END;
+    markdown_core_node_internal_flags flags =
+        (markdown_core_node_internal_flags)((old->flags & ~record) | (node->flags & record));
+    bool changed = flags != old->flags || node->reach != old->reach || node->tally != old->tally ||
+                   node->where.extent.lead != old->where.extent.lead ||
+                   node->where.extent.span != old->where.extent.span;
     old->where.extent = node->where.extent;
-    old->flags = (markdown_core_node_internal_flags)((old->flags & ~record) | (node->flags & record));
+    old->flags = flags;
     old->reach = node->reach;
-    markdown_core_relation_cursor cursor;
-    markdown_core_relation relation;
+    old->tally = node->tally;
+    return changed;
+}
+
+static void publish_record(const publish_swap *swap) {
+    markdown_core_node *old = swap->old;
+    const markdown_core_node *node = swap->node;
+    if (publish_take_record(old, node) && swap->old_holder) {
+        markdown_core_children_reseal(swap->old_holder->children, swap->old_index);
+    }
+    /* The nodes that hold its relations apart from it -- a definition's
+     * term, a field, and its bodies, its children -- take their records with
+     * it. */
+    markdown_core_relation_cursor cursor, new_cursor;
+    markdown_core_relation relation, new_relation;
     markdown_core_relations_begin(&cursor, old);
-    while (markdown_core_relations_next(&cursor, &relation)) {
-        if (relation.holder && relation.holder != old) {
-            relation.holder->flags =
-                (markdown_core_node_internal_flags)(relation.holder->flags & ~MARKDOWN_CORE_NODE__CHANGED);
+    markdown_core_relations_begin(&new_cursor, node);
+    size_t index = 0, children = markdown_core_node_children_count(old);
+    while (markdown_core_relations_next(&cursor, &relation) &&
+           markdown_core_relations_next(&new_cursor, &new_relation)) {
+        if (!relation.holder || relation.holder == old) {
+            continue;
         }
+        bool child = index < children && markdown_core_node_child(old, index) == relation.holder;
+        if (publish_take_record(relation.holder, new_relation.holder) && child) {
+            markdown_core_children_reseal(old->children, index);
+        }
+        index += child;
     }
 }
 
-/* Puts each largest same subtree's old node in place of its new node: the
- * pairs backwards, where a pair past the last root's first pair is the root
- * of a largest same subtree. Every old node of a pair takes its new node's
- * record. False when copying a shared run failed. */
+/* Every old node of a pair takes its new node's record, while every new
+ * node is there to read. Then each largest same subtree's old node takes the
+ * place of its new node, which is released: the pairs backwards, where a
+ * pair past the last root's first pair is the root of a largest same
+ * subtree. False when copying a shared run failed. */
 static bool publish_share(markdown_core_parser *parser, const publish_identity *identity) {
+    for (size_t i = identity->swap_count; i--;) {
+        publish_record(&identity->swaps[i]);
+    }
     size_t roots = identity->swap_count;
     for (size_t i = identity->swap_count; i--;) {
         const publish_swap *swap = &identity->swaps[i];
-        publish_record(swap->old, swap->node);
         if (i >= roots) {
             continue;
         }
@@ -868,37 +808,32 @@ static bool publish_share(markdown_core_parser *parser, const publish_identity *
     return true;
 }
 
-bool markdown_core_publish_tree(markdown_core_parser *parser, markdown_core_lookup_registry *registry) {
+bool markdown_core_publish_tree(markdown_core_parser *parser) {
     markdown_core_revision *revision = parser->revision;
     markdown_core_node *root = parser->root, *previous = revision->previous;
-    markdown_core_document_value *value = root->as.document;
     publish_identity identity = {0};
     bool ok = true, same = false;
     if (previous) {
         ok = publish_matched(&identity, revision, root, previous, &same);
     }
-    if (ok && !same) {
-        ok = table_order(&registry->footnotes, &parser->source_order) &&
-             table_order(&registry->specimens, &parser->source_order);
-        for (size_t i = 0; ok && i < identity.lookup_count; i++) {
-            const publish_lookup *lookup = &identity.lookups[i];
-            table_find(lookup->footnote ? &registry->footnotes : &registry->specimens, lookup->start)->node =
-                lookup->old;
-        }
-        ok = ok && table_seal(&registry->footnotes, &value->footnotes) &&
-             table_seal(&registry->specimens, &value->specimens);
+    for (size_t i = 0; ok && i < identity.lookup_count; i++) {
+        markdown_core_registries_remap(parser, identity.lookups[i].start, identity.lookups[i].old);
     }
+    ok = ok && markdown_core_registries_stage(parser);
     if (ok && previous && !same) {
         ok = publish_share(parser, &identity);
     }
-    /* Nothing below can fail: the result is committed, and it holds the
-     * revision's hold on the previous tree or drops it. */
+    /* Nothing below can fail: the result is committed, with the registries,
+     * and it holds the revision's hold on the previous tree or drops it. */
+    if (ok) {
+        markdown_core_registries_commit(parser);
+    }
     if (ok && previous) {
         if (same) {
             for (size_t i = 0; i < identity.swap_count; i++) {
-                publish_record(identity.swaps[i].old, identity.swaps[i].node);
+                publish_record(&identity.swaps[i]);
             }
-            publish_record(previous, root);
+            publish_record(&(publish_swap){root, previous, NULL, NULL, 0, 0, NULL, 0});
             parser->root = previous;
             markdown_core_node_pool_release(parser->pool, root);
         } else {
@@ -914,8 +849,18 @@ void markdown_core_document_free(markdown_core_document *document) {
     if (!document) {
         return;
     }
-    markdown_core_node_free(document->root);
+    markdown_core_document_release(document);
     markdown_core_free(document);
+}
+
+void markdown_core_document_release(markdown_core_document *document) {
+    markdown_core_node *const parts[] = {document->root, document->footnotes, document->specimens,
+                                         document->footnote_labels, document->specimen_labels};
+    for (size_t i = 0; i < sizeof(parts) / sizeof(*parts); i++) {
+        if (parts[i]) {
+            markdown_core_node_free(parts[i]);
+        }
+    }
 }
 
 markdown_core_text_unit markdown_core_document_unit(const markdown_core_document *document) { return document->unit; }
@@ -1604,13 +1549,14 @@ static bool dimensions_equal(const markdown_core_node *a, const markdown_core_no
     return x == y || (x && y && x->width == y->width && optional_int_equal(x->height, y->height));
 }
 
+bool markdown_core_resource_equal(const markdown_core_resource *a, const markdown_core_resource *b) {
+    return a == b || (chunk_equal(a->url, b->url) && a->title.has_value == b->title.has_value &&
+                      chunk_equal(a->title.value, b->title.value) && attributes_equal(&a->attributes, &b->attributes));
+}
+
 /* Whether two `Link` or `Embedded` nodes read equal resources. */
 static bool resources_equal(const markdown_core_node *a, const markdown_core_node *b) {
-    if (a->as.link->resource == b->as.link->resource) {
-        return true;
-    }
-    return destination_equal(a, b) && optional_string_equal(link_title(a), link_title(b)) &&
-           attributes_equal(inherited_attributes(a), inherited_attributes(b));
+    return markdown_core_resource_equal(a->as.link->resource, b->as.link->resource);
 }
 
 static bool metadata_value_equal(const markdown_core_metadata_value *a, const markdown_core_metadata_value *b) {
@@ -2203,72 +2149,76 @@ markdown_core_status markdown_core_citation_suffix(const markdown_core_node *cit
     return MARKDOWN_CORE_OK;
 }
 
-/* The definition tables publishing recorded in the document's root. */
-static const markdown_core_definitions *document_footnotes(const markdown_core_document *document) {
-    return &document->root->as.document->footnotes;
+/* THE DEFINITION TABLES of a document: its registries of footnotes and
+ * specimens, in source order, and of the ones that win their labels, by
+ * label (registry.h), each NULL when it holds nothing. */
+static size_t definition_count(const markdown_core_node *table) {
+    return table ? markdown_core_registry_count(table) : 0;
 }
 
-static const markdown_core_definitions *document_specimens(const markdown_core_document *document) {
-    return &document->root->as.document->specimens;
-}
-
-static markdown_core_status definition_at(const markdown_core_definitions *table, size_t index,
+static markdown_core_status definition_at(const markdown_core_node *table, size_t index,
                                           const markdown_core_node **node) {
-    if (index >= table->count) {
+    if (index >= definition_count(table)) {
         return MARKDOWN_CORE_OUT_OF_BOUNDS;
     }
-    *node = table->nodes[index];
+    *node = markdown_core_fact_of(markdown_core_children_at(table->children, index))->node;
     return MARKDOWN_CORE_OK;
 }
 
+/* A definition's label against `label`, in byte order, the shorter first on
+ * a common prefix. */
+static int definition_label_compare(const markdown_core_fact *fact, const markdown_core_string *label) {
+    const markdown_core_node *node = fact->node;
+    const markdown_core_optional_chunk *own =
+        node->kind == MARKDOWN_CORE_NODE_FOOTNOTE ? &node->as.footnote->label : &node->as.specimen->label;
+    size_t length = (size_t)own->value.len, common = length < label->length ? length : label->length;
+    int order = common ? memcmp(own->value.data, label->data, common) : 0;
+    return order ? order : (length > label->length) - (length < label->length);
+}
+
+static bool definition_label_below(const markdown_core_fact *fact, const void *label) {
+    return definition_label_compare(fact, label) < 0;
+}
+
+/* The definition that wins `label`, byte for byte. */
+static const markdown_core_node *definition_for(const markdown_core_node *labels, markdown_core_string label) {
+    if (!labels) {
+        return NULL;
+    }
+    size_t index = markdown_core_registry_search(labels, definition_label_below, &label);
+    if (index == markdown_core_registry_count(labels)) {
+        return NULL;
+    }
+    const markdown_core_fact *fact = markdown_core_fact_of(markdown_core_children_at(labels->children, index));
+    return definition_label_compare(fact, &label) ? NULL : fact->node;
+}
+
 size_t markdown_core_document_footnote_count(const markdown_core_document *document) {
-    return document_footnotes(document)->count;
+    return definition_count(document->footnotes);
 }
 
 markdown_core_status markdown_core_document_footnote_at(const markdown_core_document *document, size_t index,
                                                         const markdown_core_node **footnote) {
-    return definition_at(document_footnotes(document), index, footnote);
+    return definition_at(document->footnotes, index, footnote);
 }
 
 size_t markdown_core_document_specimen_count(const markdown_core_document *document) {
-    return document_specimens(document)->count;
+    return definition_count(document->specimens);
 }
 
 markdown_core_status markdown_core_document_specimen_at(const markdown_core_document *document, size_t index,
                                                         const markdown_core_node **specimen) {
-    return definition_at(document_specimens(document), index, specimen);
-}
-
-/* The first definition in source order whose label is `label`, byte for
- * byte: the lowest of that label in the label order. */
-static const markdown_core_node *definition_for(const markdown_core_definitions *table, markdown_core_string label) {
-    size_t lo = 0, hi = table->labeled_count;
-    while (lo < hi) {
-        size_t mid = lo + (hi - lo) / 2;
-        const markdown_core_optional_chunk *candidate = definition_label(table->labeled[mid]);
-        if (label_compare(candidate->value.data, (size_t)candidate->value.len, label.data, label.length) < 0) {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-    if (lo == table->labeled_count) {
-        return NULL;
-    }
-    const markdown_core_optional_chunk *found = definition_label(table->labeled[lo]);
-    return label_compare(found->value.data, (size_t)found->value.len, label.data, label.length) == 0
-               ? table->labeled[lo]
-               : NULL;
+    return definition_at(document->specimens, index, specimen);
 }
 
 const markdown_core_node *markdown_core_document_footnote_for(const markdown_core_document *document,
                                                               markdown_core_string label) {
-    return definition_for(document_footnotes(document), label);
+    return definition_for(document->footnote_labels, label);
 }
 
 const markdown_core_node *markdown_core_document_specimen_for(const markdown_core_document *document,
                                                               markdown_core_string label) {
-    return definition_for(document_specimens(document), label);
+    return definition_for(document->specimen_labels, label);
 }
 
 markdown_core_status markdown_core_footnote_label(const markdown_core_node *footnote,

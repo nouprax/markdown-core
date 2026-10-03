@@ -70,7 +70,8 @@ static bool edit_push(edit_pass *pass, markdown_core_node *node, int64_t old_ori
 
 /* The image of a node [start, end): its start is the image of its first byte
  * that survives the edit, or the edit's start when none does, and its end the
- * image of its last surviving byte's end, or its start when none survives. */
+ * image of its last surviving byte's end, or its start when none survives. An
+ * empty node, which has no byte, is where its start's image is. */
 static inline int64_t image_start(const edit_range *edit, int64_t start, int64_t end) {
     if (start < edit->start) {
         return start;
@@ -82,6 +83,9 @@ static inline int64_t image_start(const edit_range *edit, int64_t start, int64_t
 }
 
 static inline int64_t image_end(const edit_range *edit, int64_t start, int64_t end, int64_t image) {
+    if (start == end) {
+        return image;
+    }
     if (end <= edit->start) {
         return end;
     }
@@ -91,23 +95,31 @@ static inline int64_t image_end(const edit_range *edit, int64_t start, int64_t e
     return start < edit->start ? edit->start : image;
 }
 
-/* `node` takes its image, relative to `image`, the new end of the node before
- * it in its relation, which ended at `previous`, and is marked changed;
- * `image` moves to its new end. The first edit of the batch to move a node
- * records its extent before the batch; false when that record could not be
- * stored. */
-static inline bool edit_image(edit_pass *pass, markdown_core_node *node, int64_t previous, int64_t *image) {
-    const edit_range *edit = &pass->edit;
+/* `node`, which the edit moves, is marked changed. The first edit of the
+ * batch to move a node records its extent before the batch; false when that
+ * record could not be stored. */
+static inline bool edit_mark(edit_pass *pass, markdown_core_node *node) {
     if (!(node->flags & MARKDOWN_CORE_NODE__CHANGED)) {
         if (!edit_reserve((void **)&pass->moved, &pass->moved_capacity, pass->moved_count, sizeof(*pass->moved))) {
             return false;
         }
         pass->moved[pass->moved_count++] = (markdown_core_moved){node, node->where.extent};
     }
+    node->flags |= MARKDOWN_CORE_NODE__CHANGED;
+    return true;
+}
+
+/* `node` takes its image, relative to `image`, the new end of the node before
+ * it in its relation, which ended at `previous`, and is marked changed;
+ * `image` moves to its new end. */
+static inline bool edit_image(edit_pass *pass, markdown_core_node *node, int64_t previous, int64_t *image) {
+    const edit_range *edit = &pass->edit;
+    if (!edit_mark(pass, node)) {
+        return false;
+    }
     int64_t start = previous + node->where.extent.lead, end = start + node->where.extent.span;
     int64_t new_start = image_start(edit, start, end), new_end = image_end(edit, start, end, new_start);
     node->where.extent = (markdown_core_extent){(int32_t)(new_start - *image), (uint32_t)(new_end - new_start)};
-    node->flags |= MARKDOWN_CORE_NODE__CHANGED;
     *image = new_end;
     return true;
 }
@@ -275,8 +287,10 @@ static int moved_compare(const void *left, const void *right) {
     return (a > b) - (a < b);
 }
 
-bool markdown_core_tree_edit(markdown_core_node *root, const markdown_core_byte_edit *edits, size_t count,
-                             markdown_core_moved **moved, size_t *moved_count) {
+/* The batch applied to the relations under `root`: the document's, whose
+ * root every edit meets, or a registry's, whose entries run from 0. */
+static bool edit_batch(markdown_core_node *root, bool registry, const markdown_core_byte_edit *edits, size_t count,
+                       markdown_core_moved **moved, size_t *moved_count) {
     edit_pass pass = {{0, 0, 0}, NULL, 0, 0, NULL, 0, 0, true};
     for (size_t i = count; pass.ok && i--;) {
         pass.edit = (edit_range){(int64_t)edits[i].start, (int64_t)edits[i].end, (int64_t)edits[i].size};
@@ -285,23 +299,36 @@ bool markdown_core_tree_edit(markdown_core_node *root, const markdown_core_byte_
             pass.edit.start = (int64_t)edits[i].start;
             pass.edit.size += (int64_t)edits[i].size;
         }
-        /* The root is always met: the document is read again whatever the
-         * edit. */
-        int64_t image = 0, old_start = root->where.extent.lead;
-        pass.ok = edit_image(&pass, root, 0, &image) &&
-                  edit_push(&pass, root, old_start, image - root->where.extent.span, false);
+        if (registry) {
+            pass.ok = edit_push(&pass, root, 0, 0, false);
+        } else {
+            /* The root is always met: the document is read again whatever
+             * the edit. It holds the whole text, from its first byte. */
+            pass.ok = edit_mark(&pass, root) && edit_push(&pass, root, 0, 0, false);
+            root->where.extent.span =
+                (uint32_t)(root->where.extent.span + pass.edit.size - (pass.edit.end - pass.edit.start));
+        }
         while (pass.ok && pass.count) {
             edit_task task = pass.tasks[--pass.count];
             pass.ok = edit_relations(&pass, &task);
         }
     }
     markdown_core_free(pass.tasks);
-    if (!pass.ok) {
+    if (!pass.ok || !moved) {
         markdown_core_free(pass.moved);
-        return false;
+        return pass.ok;
     }
     qsort(pass.moved, pass.moved_count, sizeof(*pass.moved), moved_compare);
     *moved = pass.moved;
     *moved_count = pass.moved_count;
     return true;
+}
+
+bool markdown_core_tree_edit(markdown_core_node *root, const markdown_core_byte_edit *edits, size_t count,
+                             markdown_core_moved **moved, size_t *moved_count) {
+    return edit_batch(root, false, edits, count, moved, moved_count);
+}
+
+bool markdown_core_registry_edit(markdown_core_node *registry, const markdown_core_byte_edit *edits, size_t count) {
+    return edit_batch(registry, true, edits, count, NULL, NULL);
 }

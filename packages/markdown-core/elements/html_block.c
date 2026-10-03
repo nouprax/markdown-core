@@ -65,6 +65,10 @@ static bool scan_html(const markdown_core_element_instance *self, markdown_core_
     if (!(start->matched = scan_html_block_start(context->input->data, context->input->len, context->first)) &&
         !(!context->paragraph && !context->lazy &&
           (start->matched = scan_html_block_start_7(context->input->data, context->input->len, context->first)))) {
+        if ((context->paragraph || context->lazy) &&
+            scan_html_block_start_7(context->input->data, context->input->len, context->first)) {
+            markdown_core_parser_refuse(parser);
+        }
         return false;
     }
     start->kind = MARKDOWN_CORE_NODE_HTML_BLOCK;

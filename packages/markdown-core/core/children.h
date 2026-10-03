@@ -53,15 +53,40 @@ typedef struct markdown_core_run {
      * sealed when the owner of the tree publishes it, its children holding
      * extents then, and a change to the run unseals them. */
     uint8_t sealed;
+    /* What the run's children record, sealed with the sums: whether an edit
+     * met one of them, whether one of them can end a run of taken children
+     * (5.3), and the blank-line facts any of them holds (node.h). */
+    uint8_t marks;
     /* THE RUN'S SUMS (docs/plans/2026-09-29-incremental-parsing.md, 5.1):
      * the bytes its children cover, each child's lead and span, and how far
      * past the end of those bytes the furthest reach of a child goes. A
      * child's place in a relation of its owner is the relation's origin plus
      * the lengths before it in the relation plus its lead. */
     uint32_t reach;
+    /* The sum of its children's tallies (node.h). */
+    uint32_t tally;
     int64_t length;
     void *entries[MARKDOWN_CORE_RUN_WIDTH];
 } markdown_core_run;
+
+/* The sums of a run of children a parse takes (5.3 and E4): the bytes from
+ * the start of the lead of its first child to the end of its last, how far
+ * past that end the furthest of their reaches goes, their marks together,
+ * and their tallies' sum. */
+typedef struct {
+    int64_t length;
+    uint32_t reach;
+    unsigned marks;
+    uint32_t tally;
+} markdown_core_run_sums;
+
+enum {
+    MARKDOWN_CORE_RUN_CHANGED = 1,
+    MARKDOWN_CORE_RUN_ENDS = 2,
+    MARKDOWN_CORE_RUN_CONTAINS_BLANK = 4,
+    MARKDOWN_CORE_RUN_AFTER_BLANK_END = 8,
+    MARKDOWN_CORE_RUN_AFTER_LOOSE_END = 16
+};
 
 static inline size_t markdown_core_children_count(const markdown_core_run *run) { return run ? run->total : 0; }
 

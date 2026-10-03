@@ -41,12 +41,15 @@ const UNCOUNTED_FREE = /\bmarkdown_core_node_free\s*\(/g;
 const COUNTED_FREE = /\bmarkdown_core_parser_release_node\s*\(/g;
 /** The two releases outside any parse: the document's teardown and the
  * parser's teardown of a root it never handed out. */
-const TEARDOWNS = new Set(["elements/ast.c:markdown_core_document_free", "core/blocks.c:S_parser_dispose"]);
+const TEARDOWNS = new Set(["elements/ast.c:markdown_core_document_release", "core/blocks.c:S_parser_dispose"]);
 
 /** Where the parser-less forms are allowed to appear: the two headers that
  * DECLARE them, the translation unit that DEFINES them, and `parser.h`, where
  * the recording wrappers are the one thing in the library that calls them. */
 const DEFINES_THEM = new Set(["core/node.h", "core/markdown-core-element-api.h", "core/node.c", "core/parser.h"]);
+/** The recording wrapper defined outside those, which records the kind and
+ * then sets it: the spine's open block takes its old block with it. */
+const RECORDING_WRAPPERS = new Set(["core/blocks.c:markdown_core_parser_set_node_kind"]);
 
 const failures = [];
 let recordingSites = 0;
@@ -76,6 +79,7 @@ for (const file of librarySources()) {
     for (const match of stripped.matchAll(UNRECORDED)) {
         const line = stripped.slice(0, match.index).split("\n").length;
         const owner = enclosingFunction(stripped, match.index);
+        if (RECORDING_WRAPPERS.has(`${file}:${owner}`)) continue;
         failures.push(
             `${file}:${line}: ${owner} produces a node kind through ${match[0].replace(/\s*\($/, "")}, ` +
                 `which does not record it; use the markdown_core_parser_ form`
