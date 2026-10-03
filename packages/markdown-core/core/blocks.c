@@ -1122,12 +1122,15 @@ markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser,
  * continues. */
 static markdown_core_children_relation S_relation(const markdown_core_parser *parser, size_t depth) {
     const markdown_core_iter_frame *frame = &parser->path.frames[depth];
-    markdown_core_children_relation relation = {0, frame->old ? markdown_core_node_children_count(frame->old) : 0,
-                                                false};
+    size_t count = frame->old ? markdown_core_node_children_count(frame->old) : 0;
+    markdown_core_children_relation relation = {0, count, false};
     const markdown_core_element_instance *structure = markdown_core_parser_structure(parser, frame->node);
     if (structure && structure->element->children_relation) {
         structure->element->children_relation(frame->node, frame->old, &relation);
     }
+    /* The old block's children are all a relation can hold. */
+    relation.end = relation.end < count ? relation.end : count;
+    relation.first = relation.first < relation.end ? relation.first : relation.end;
     return relation;
 }
 

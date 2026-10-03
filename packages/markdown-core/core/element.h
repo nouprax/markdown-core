@@ -195,7 +195,7 @@ struct markdown_core_element {
      * (canonical-ast.md): their leads run from its start, or from its
      * parent's when `relation->from_parent` is set, and among the children
      * of the `old` block it continues, when there is one, the relation's are
-     * [first, end). NULL when every child is of one relation from its
+     * those in [first, end). NULL when every child is of one relation from its
      * start. */
     void (*children_relation)(const markdown_core_node *container, const markdown_core_node *old,
                               markdown_core_children_relation *relation);

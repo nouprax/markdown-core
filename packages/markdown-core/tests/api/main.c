@@ -11053,6 +11053,31 @@ static void text_tree_refusal_changes_nothing(test_batch_runner *runner) {
  * offset inside a scalar is INSIDE_SCALAR, a text past the capacity is
  * ALLOCATION_FAILED, and an edit that leaves a node's value alone leaves its
  * object. */
+/* A definition that grows past the bodies of the definition it continues
+ * finds no old body for the new ones. */
+static void session_definition_outgrows_its_old_bodies(test_batch_runner *runner) {
+    static const char source[] = "T\n: a\n";
+    char bodies[41 * 4 + 1];
+    for (size_t i = 0; i < 41; i++) {
+        memcpy(bodies + i * 4, ": b\n", 4);
+    }
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document = NULL;
+    markdown_core_text_edit edit = {sizeof(source) - 1, sizeof(source) - 1, (const uint8_t *)bodies, 41 * 4};
+    OK(runner,
+       markdown_core_session_new((const uint8_t *)source, sizeof(source) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
+               MARKDOWN_CORE_OK &&
+           markdown_core_session_edit(session, &edit, 1, &document) == MARKDOWN_CORE_OK,
+       "a definition takes new bodies after its old one");
+    if (document) {
+        INT_EQ(
+            runner,
+            (int)count_kind((markdown_core_node *)markdown_core_document_root(document), MARKDOWN_CORE_NODE_PARAGRAPH),
+            42, "and holds every body");
+    }
+    markdown_core_session_free(session);
+}
+
 static void session_edits_and_spans(test_batch_runner *runner) {
     static const char source[] = "one\n\ntwo \xf0\xa0\x80\x80\n";
     markdown_core_session *session = NULL;
@@ -11349,6 +11374,7 @@ int main(void) {
     text_tree_matches_a_flat_buffer(runner);
     text_tree_refusal_changes_nothing(runner);
     session_edits_and_spans(runner);
+    session_definition_outgrows_its_old_bodies(runner);
     session_allocation_failures(runner);
 
     test_print_summary(runner);
