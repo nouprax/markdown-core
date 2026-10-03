@@ -233,7 +233,7 @@ of the step (plan 5.2), the absolute scopes of the snapshot and of
 computes the expected matching itself, for every node of every step:
 
 - The new document continues the old document (plan 5.9 starts matching
-  from the reopened spine, whose root is the document).
+  from the two document roots).
 - An old node's anchor is its first byte that survived the step. A node none
   of whose bytes survived has no anchor.
 - Within the relation of a matched owner, a new node of the same kind whose
@@ -245,9 +245,9 @@ computes the expected matching itself, for every node of every step:
 
 A continued node whose value equals its predecessor's is unchanged and outside
 `N` (4.3). Extents are relative, so text that moves a node without touching it
-leaves its value unchanged, except that the first continued node after a
-changed or inserted sibling in the same relation may get a new `lead` (plan
-5.3). The oracle predicts that `lead` from the fresh parse.
+leaves its value unchanged, except that a continued node whose lead holds an
+edit, or that follows a changed or inserted sibling in the same relation,
+may get a new `lead`. The oracle predicts that `lead` from the fresh parse.
 
 ### 4.5 Scripted identity
 
