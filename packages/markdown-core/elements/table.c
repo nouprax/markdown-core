@@ -48,8 +48,9 @@ typedef struct {
  * SHAPE, each geometry column's class among the columns the '+' joins of the
  * lines so far put together, named by its least column; the rest is how it
  * reads rows, from the border's edges to the cells that run on past it
- * (`table_lattice_point`). Rows with equal entries share one, and so does a
- * table's tail. */
+ * (`table_lattice_point`). A row's entry is made with the row, from the
+ * state the fold kept in its workspace; rows with equal states share one,
+ * and so does a table's tail. */
 typedef struct table_entry {
     size_t refs;
     size_t shape, count;
@@ -69,14 +70,23 @@ static void table_entry_release(table_entry *entry) {
     }
 }
 
-/* Two entries read rows alike, and fold the same shape. */
-static bool table_entry_reads(const table_entry *a, const table_entry *b) {
-    return a == b || (a->count - a->shape == b->count - b->shape &&
-                      !memcmp(a->values + a->shape, b->values + b->shape, (a->count - a->shape) * sizeof(int)));
+/* A STATE OF THE FOLD that a parse kept (`table_lattice_point`): its
+ * values, from `at` in the workspace's `point_values`, the first `shape` of
+ * them its shape, and the entry that holds the same values, once there is
+ * one: the old row's it stands at, or the one a row made from it took. */
+typedef struct {
+    size_t at, shape, count;
+    table_entry *entry;
+} table_point;
+
+/* Whether an entry and a state read rows alike, and fold the same shape. */
+static bool table_entry_reads(const table_entry *entry, const table_point *point, const int *values) {
+    return entry->count - entry->shape == point->count - point->shape &&
+           !memcmp(entry->values + entry->shape, values + point->shape, (entry->count - entry->shape) * sizeof(int));
 }
 
-static bool table_entry_shapes(const table_entry *a, const table_entry *b) {
-    return a == b || (a->shape == b->shape && !memcmp(a->values, b->values, a->shape * sizeof(int)));
+static bool table_entry_shapes(const table_entry *entry, const table_point *point, const int *values) {
+    return entry->shape == point->shape && !memcmp(entry->values, values, entry->shape * sizeof(int));
 }
 
 /* THE RECORD OF A GRID TABLE'S FOLD (E6): the geometry columns of its walls;
@@ -753,10 +763,12 @@ typedef struct {
 } table_source_cell;
 /* A row a grammar read. A grid table's rows and the runs of old rows its fold
  * took (`table_source_part`) are ordered by `key`, the top border of their
- * first row; a fresh grid row carries its entry and how far the input was
- * read when the fold decided it. */
+ * first row; a fresh grid row carries the fold's state it begins at
+ * (`point`), its entry once it is made, and how far the input was read
+ * when the fold decided it. */
 typedef struct {
     size_t first, last, cell, count, key;
+    size_t point;
     table_entry *entry;
     size_t reads;
 } table_source_row;
@@ -782,12 +794,14 @@ typedef struct {
     int margin;
     /* A grid table's fold: the runs of old rows it took; where its last line
      * ends and that line's number, when the fold stepped over it (`end` 0
-     * otherwise: line `last` is the last); its record. */
+     * otherwise: line `last` is the last); its record, whose tail is made
+     * with the table from the state after its closing border (`tail`). */
     table_source_part *parts;
     size_t part_count, part_capacity;
     size_t end;
     int end_line;
     struct markdown_core_table_fold fold;
+    size_t tail;
     size_t equal_capacity;
 } table_candidate;
 
@@ -815,7 +829,7 @@ typedef struct {
  * top it is and the furthest border they reach. */
 typedef struct {
     size_t line, deepest;
-    table_entry *after;
+    size_t after;
     int closed;
     bool full, kept, taken;
 } table_band;
@@ -852,8 +866,11 @@ struct markdown_core_table_workspace {
     int patch_free;
     table_band *bands;
     size_t band_count, band_capacity;
-    int *values;
-    size_t values_capacity;
+    /* The states of the fold the sweep kept, and their values. */
+    table_point *points;
+    size_t point_count, point_capacity;
+    int *point_values;
+    size_t point_values_count, point_values_capacity;
     markdown_core_table_work work;
 };
 
@@ -1174,7 +1191,8 @@ static bool table_add_row(table_source *source, table_candidate *candidate, size
         }
         candidate->rows = grown;
     }
-    candidate->rows[candidate->row_count++] = (table_source_row){first, last, candidate->cell_count, 0, 0, NULL, 0};
+    candidate->rows[candidate->row_count++] =
+        (table_source_row){first, last, candidate->cell_count, 0, 0, SIZE_MAX, NULL, 0};
     return true;
 }
 
@@ -1833,7 +1851,8 @@ typedef struct {
     size_t last;
     size_t end;
     int end_line;
-    table_entry *point;
+    /* The last state the fold kept. */
+    size_t point;
 } table_lattice;
 
 static bool table_wall(const table_source_line *line, int column) {
@@ -1885,13 +1904,10 @@ static int table_patch_root(table_workspace *workspace, int index) {
     return root;
 }
 
-/* The bands and patches of a fold, and the entries its borders hold, go
- * from the workspace; the next border is `base`. */
+/* The bands and patches of a fold go from the workspace; the next border is
+ * `base`. */
 static void table_lattice_clear(table_lattice *lattice, size_t base) {
     table_workspace *workspace = lattice->source->workspace;
-    for (size_t i = 0; i < workspace->band_count; i++) {
-        table_entry_release(workspace->bands[i].after);
-    }
     workspace->band_count = 0;
     workspace->patch_count = 0;
     workspace->patch_free = -1;
@@ -1900,14 +1916,14 @@ static void table_lattice_clear(table_lattice *lattice, size_t base) {
 
 static table_band *table_lattice_band(table_lattice *lattice, size_t line) {
     table_workspace *workspace = lattice->source->workspace;
-    void *grown = table_reserve(lattice->source, workspace->bands, &workspace->band_capacity,
-                                workspace->band_count + 1, sizeof(*workspace->bands));
+    void *grown = table_reserve(lattice->source, workspace->bands, &workspace->band_capacity, workspace->band_count + 1,
+                                sizeof(*workspace->bands));
     if (!grown) {
         return NULL;
     }
     workspace->bands = grown;
     table_band *band = &workspace->bands[workspace->band_count++];
-    *band = (table_band){line, 0, NULL, -1, false, false, false};
+    *band = (table_band){line, 0, SIZE_MAX, -1, false, false, false};
     lattice->count++;
     return band;
 }
@@ -1924,7 +1940,8 @@ static void table_lattice_shape(table_lattice *lattice, const table_source_line 
         int ch = table_character(line, c);
         if (ch == '+') {
             if (previous >= 0 && horizontal) {
-                int a = table_grid_root(lattice->source, parents, previous), b = table_grid_root(lattice->source, parents, c);
+                int a = table_grid_root(lattice->source, parents, previous),
+                    b = table_grid_root(lattice->source, parents, c);
                 if (a != b) {
                     table_grid_join(lattice->source, parents, sizes, a, b);
                     lattice->shape_dirty = true;
@@ -2019,7 +2036,7 @@ static void table_lattice_row(table_lattice *lattice, size_t top, size_t bottom)
     }
     table_source_row *row = &candidate->rows[candidate->row_count - 1];
     row->key = top;
-    row->entry = table_entry_retain(band->after);
+    row->point = band->after;
     row->reads = source->parser->line_reads;
     int *order = workspace->lattice_order;
     for (int index = band->closed; index >= 0; index = workspace->patches[index].next) {
@@ -2036,7 +2053,8 @@ static void table_lattice_row(table_lattice *lattice, size_t top, size_t bottom)
         table_patch patch = workspace->patches[index];
         table_patch_free(workspace, index);
         size_t cell_last = table_band_at(lattice, patch.bottom + 1)->line - 1;
-        table_source_line *begin = &source->lines[first], *finish = &source->lines[cell_last < first ? first : cell_last];
+        table_source_line *begin = &source->lines[first],
+                          *finish = &source->lines[cell_last < first ? first : cell_last];
         int left = lattice->positions[patch.from] + 1, right = lattice->positions[patch.to + 1];
         if (!table_add_cell(source, candidate, first, cell_last, left, right, table_byte(begin, left) + 1,
                             table_byte(finish, right))) {
@@ -2083,23 +2101,31 @@ static void table_lattice_emit(table_lattice *lattice, size_t limit) {
  * then the border's width and edges, the walls of the band below so far,
  * whether a row starts at the border, and the patches that go on past it,
  * named per column in column order, each with how many borders above this
- * one it began, its columns and its area. Equal to the last state taken,
- * it is that entry. */
-static table_entry *table_lattice_point(table_lattice *lattice) {
+ * one it began, its columns and its area. Kept in the workspace, and equal
+ * to the last state kept, it is that state. SIZE_MAX when an allocation
+ * failed. */
+static size_t table_lattice_point(table_lattice *lattice) {
     table_source *source = lattice->source;
     table_workspace *workspace = source->workspace;
     size_t columns = (size_t)(lattice->right - lattice->left) + 1, width = lattice->width;
-    size_t capacity = columns + 7 * width + 3, border = lattice->count - 1;
+    size_t used = workspace->point_values_count, border = lattice->count - 1;
     {
-        void *grown =
-            table_reserve(source, workspace->values, &workspace->values_capacity, capacity, sizeof(*workspace->values));
+        void *grown = table_reserve(source, workspace->point_values, &workspace->point_values_capacity,
+                                    used + columns + 7 * width + 3, sizeof(*workspace->point_values));
         if (!grown) {
-            return NULL;
+            return SIZE_MAX;
         }
-        workspace->values = grown;
+        workspace->point_values = grown;
+        grown = table_reserve(source, workspace->points, &workspace->point_capacity, workspace->point_count + 1,
+                              sizeof(*workspace->points));
+        if (!grown) {
+            return SIZE_MAX;
+        }
+        workspace->points = grown;
     }
-    int *values = workspace->values;
-    if (lattice->shape_dirty || !lattice->point) {
+    int *values = workspace->point_values + used;
+    const table_point *last = lattice->point == SIZE_MAX ? NULL : &workspace->points[lattice->point];
+    if (lattice->shape_dirty || !last) {
         int *classes = workspace->grid_classes;
         for (int c = lattice->left; c <= lattice->right; c++) {
             classes[c] = -1;
@@ -2114,7 +2140,7 @@ static table_entry *table_lattice_point(table_lattice *lattice) {
         lattice->shape_dirty = false;
         workspace->work.scan += 2 * columns;
     } else {
-        memcpy(values, lattice->point->values, columns * sizeof(*values));
+        memcpy(values, workspace->point_values + last->at, columns * sizeof(*values));
     }
     size_t at = columns;
     values[at++] = lattice->full;
@@ -2148,22 +2174,32 @@ static table_entry *table_lattice_point(table_lattice *lattice) {
     }
     values[slots] = count;
     workspace->work.scan += at;
-    table_entry *point = lattice->point;
-    if (point && point->shape == columns && point->count == at && !memcmp(point->values, values, at * sizeof(int))) {
-        return table_entry_retain(point);
+    if (last && last->shape == columns && last->count == at &&
+        !memcmp(workspace->point_values + last->at, values, at * sizeof(int))) {
+        return lattice->point;
     }
-    table_entry *entry = markdown_core_alloc(1, sizeof(*entry) + at * sizeof(int));
+    workspace->points[workspace->point_count] = (table_point){used, columns, at, NULL};
+    workspace->point_values_count = used + at;
+    return lattice->point = workspace->point_count++;
+}
+
+/* The entry of state `index`, which the caller holds: the one that holds
+ * its values already, or a new one. */
+static table_entry *table_point_entry(table_source *source, size_t index) {
+    table_point *point = &source->workspace->points[index];
+    if (point->entry) {
+        return table_entry_retain(point->entry);
+    }
+    table_entry *entry = markdown_core_alloc(1, sizeof(*entry) + point->count * sizeof(int));
     if (!entry) {
         markdown_core_parser_fail(source->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return NULL;
     }
     entry->refs = 1;
-    entry->shape = columns;
-    entry->count = at;
-    memcpy(entry->values, values, at * sizeof(int));
-    table_entry_release(lattice->point);
-    lattice->point = table_entry_retain(entry);
-    return entry;
+    entry->shape = point->shape;
+    entry->count = point->count;
+    memcpy(entry->values, source->workspace->point_values + point->at, point->count * sizeof(int));
+    return point->entry = entry;
 }
 
 /* The fold stands after a border again at `entry`, the state an old row's
@@ -2183,8 +2219,25 @@ static void table_lattice_restore(table_lattice *lattice, table_entry *entry, si
         sizes[values[c - lattice->left]]++;
     }
     lattice->shape_dirty = false;
-    table_entry_release(lattice->point);
-    lattice->point = table_entry_retain(entry);
+    size_t used = workspace->point_values_count;
+    {
+        void *grown = table_reserve(source, workspace->point_values, &workspace->point_values_capacity,
+                                    used + entry->count, sizeof(*workspace->point_values));
+        if (!grown) {
+            return;
+        }
+        workspace->point_values = grown;
+        grown = table_reserve(source, workspace->points, &workspace->point_capacity, workspace->point_count + 1,
+                              sizeof(*workspace->points));
+        if (!grown) {
+            return;
+        }
+        workspace->points = grown;
+    }
+    memcpy(workspace->point_values + used, values, entry->count * sizeof(int));
+    workspace->point_values_count = used + entry->count;
+    workspace->points[workspace->point_count] = (table_point){used, entry->shape, entry->count, entry};
+    lattice->point = workspace->point_count++;
     table_lattice_clear(lattice, lattice->count);
     size_t at = columns;
     lattice->full = (unsigned char)values[at++];
@@ -2198,7 +2251,7 @@ static void table_lattice_restore(table_lattice *lattice, table_entry *entry, si
     if (!band) {
         return;
     }
-    band->after = table_entry_retain(entry);
+    band->after = lattice->point;
     band->full = lattice->full != 0;
     band->kept = values[at++] != 0;
     int count = values[at++];
@@ -2233,8 +2286,8 @@ static void table_lattice_equal(table_lattice *lattice, size_t rows, const markd
     }
     size_t width = lattice->width;
     {
-        void *grown = table_reserve(lattice->source, candidate->fold.equal_flows, &candidate->equal_capacity,
-                                    3 * width, sizeof(*candidate->fold.equal_flows));
+        void *grown = table_reserve(lattice->source, candidate->fold.equal_flows, &candidate->equal_capacity, 3 * width,
+                                    sizeof(*candidate->fold.equal_flows));
         if (!grown) {
             return;
         }
@@ -2267,6 +2320,31 @@ static size_t table_line_begin(markdown_core_parser *parser, size_t at) {
     return at;
 }
 
+/* THE OLD TABLE'S SECTIONS: its head, body and foot are each a relation,
+ * whose first row's lead runs from the table's start. The rows of the
+ * section that holds row `index`: from `*first` to `*end`. */
+static void table_old_section(const markdown_core_node *old, size_t index, size_t *first, size_t *end) {
+    const markdown_core_table *table = old->opaque;
+    size_t head = table->head_count, body = head + table->content_count;
+    *first = index < head ? 0 : index < body ? head : body;
+    *end = index < head ? head : index < body ? body : markdown_core_children_count(old->children);
+}
+
+/* Where the lead of the old table's row `index` starts. */
+static int64_t table_old_lead(const table_source *source, size_t index) {
+    const markdown_core_run *children = source->old->children;
+    size_t first, end;
+    table_old_section(source->old, index, &first, &end);
+    return source->old_start + markdown_core_children_length_before(children, index) -
+           markdown_core_children_length_before(children, first);
+}
+
+/* Whether row `index` of a table whose head holds `head` rows and whose
+ * foot begins at row `foot` is the first of its section. */
+static bool table_section_first(size_t head, size_t foot, size_t index) {
+    return index == 0 || index == head || index == foot;
+}
+
 static void table_lattice_part(table_lattice *lattice, size_t key, size_t first, size_t count, size_t start,
                                size_t end) {
     table_candidate *candidate = lattice->candidate;
@@ -2278,8 +2356,8 @@ static void table_lattice_part(table_lattice *lattice, size_t key, size_t first,
             return;
         }
     }
-    void *grown = table_reserve(lattice->source, candidate->parts, &candidate->part_capacity,
-                                candidate->part_count + 1, sizeof(*candidate->parts));
+    void *grown = table_reserve(lattice->source, candidate->parts, &candidate->part_capacity, candidate->part_count + 1,
+                                sizeof(*candidate->parts));
     if (!grown) {
         return;
     }
@@ -2296,9 +2374,10 @@ static void table_lattice_skip(table_lattice *lattice, size_t border, size_t fir
     markdown_core_parser *parser = source->parser;
     const markdown_core_node *old = source->old;
     const struct markdown_core_table_fold *record = lattice->record;
-    size_t total = markdown_core_children_count(old->children);
+    size_t total = markdown_core_children_count(old->children), section, section_end;
+    table_old_section(old, first, &section, &section_end);
     markdown_core_run_sums sums;
-    size_t count = markdown_core_children_take_run(old->children, first, total, &sums);
+    size_t count = markdown_core_children_take_run(old->children, first, section_end, &sums);
     if (!count) {
         return;
     }
@@ -2315,7 +2394,8 @@ static void table_lattice_skip(table_lattice *lattice, size_t border, size_t fir
     table_entry *entry;
     if (first + count < total) {
         const markdown_core_node *row = markdown_core_children_at(old->children, first + count);
-        next = table_line_begin(parser, end + (size_t)row->where.extent.lead);
+        int64_t from = first + count < section_end ? (int64_t)end : source->old_start;
+        next = table_line_begin(parser, (size_t)(from + row->where.extent.lead));
         entry = row->opaque;
     } else {
         next = markdown_core_parser_line_after(parser, end + record->tail_span);
@@ -2330,8 +2410,8 @@ static void table_lattice_skip(table_lattice *lattice, size_t border, size_t fir
         last--;
     }
     lattice->end = last;
-    lattice->end_line = source->lines[source->count - 1].line;
     markdown_core_parser_lookahead_skip(&source->lookahead, next, end + sums.reach);
+    lattice->end_line = source->lookahead.line - 1;
     lattice->skipped = true;
     table_lattice_restore(lattice, entry, source->count - 1);
 }
@@ -2344,19 +2424,30 @@ static void table_lattice_take(table_lattice *lattice, size_t border, size_t ind
     const markdown_core_node *old = source->old;
     const table_source_line *line = &source->lines[index];
     int64_t at = markdown_core_parser_source_end(source->parser, line->line, line->length), lead;
-    size_t child;
-    if (!markdown_core_children_find(old->children, source->old_start, at, &child, &lead)) {
+    size_t child = 0, first = 0, end = 0, total = markdown_core_children_count(old->children);
+    for (; first < total; first = end) {
+        table_old_section(old, first, &first, &end);
+        if (markdown_core_children_find(old->children,
+                                        source->old_start - markdown_core_children_length_before(old->children, first),
+                                        at, &child, &lead) &&
+            child >= first && child < end) {
+            break;
+        }
+    }
+    if (first == total) {
         return;
     }
     const markdown_core_node *row = markdown_core_children_at(old->children, child);
     int64_t start = lead + row->where.extent.lead;
     table_band *band = table_band_at(lattice, border);
     const table_entry *entry = row->opaque;
-    if (at >= start || (row->flags & MARKDOWN_CORE_NODE__CHANGED) || !entry || !band->after ||
-        !table_entry_reads(entry, band->after)) {
+    const table_point *point = &source->workspace->points[band->after];
+    const int *values = source->workspace->point_values + point->at;
+    if (at >= start || (row->flags & MARKDOWN_CORE_NODE__CHANGED) || !entry ||
+        !table_entry_reads(entry, point, values)) {
         return;
     }
-    if (lattice->next_top == border && index + 1 == source->count && table_entry_shapes(entry, band->after)) {
+    if (lattice->next_top == border && index + 1 == source->count && table_entry_shapes(entry, point, values)) {
         table_lattice_skip(lattice, border, child, lead, start);
         return;
     }
@@ -2444,11 +2535,40 @@ static void table_lattice_border(table_lattice *lattice, size_t index) {
     if (full == '=') {
         table_lattice_equal(lattice, lattice->rows, NULL, line);
     }
-    table_entry *after = table_lattice_point(lattice);
+    size_t after = table_lattice_point(lattice);
     table_band_at(lattice, border)->after = after;
-    if (source->old && lattice->record && after) {
+    if (source->old && lattice->record && after != SIZE_MAX) {
         table_lattice_take(lattice, border, index);
     }
+}
+
+/* Whether the old rows the table takes keep their place in their sections'
+ * chains: a row that begins a section of the old table begins one of the
+ * new table, and the other way round, since its lead runs from the table's
+ * start or from the row before it. */
+static bool table_parts_chained(const table_source *source, const table_candidate *candidate, size_t rows) {
+    const markdown_core_table *was = source->old ? source->old->opaque : NULL;
+    size_t head = candidate->head_count, foot = rows - candidate->foot_count;
+    size_t old_head = was ? was->head_count : 0, old_foot = was ? was->head_count + was->content_count : 0;
+    for (size_t r = 0, p = 0, index = 0; p < candidate->part_count;) {
+        if (r < candidate->row_count && candidate->rows[r].key < candidate->parts[p].key) {
+            r++;
+            index++;
+            continue;
+        }
+        const table_source_part *part = &candidate->parts[p++];
+        size_t bounds[3] = {0, head, foot}, old_bounds[3] = {0, old_head, old_foot};
+        for (size_t i = 0; i < 3; i++) {
+            if ((bounds[i] >= index && bounds[i] < index + part->count &&
+                 !table_section_first(old_head, old_foot, bounds[i] - index + part->first)) ||
+                (old_bounds[i] >= part->first && old_bounds[i] < part->first + part->count &&
+                 !table_section_first(head, foot, old_bounds[i] - part->first + index))) {
+                return false;
+            }
+        }
+        index += part->count;
+    }
+    return true;
 }
 
 /* Reads the table's lines from its opening border with the walls at
@@ -2464,8 +2584,8 @@ static void table_lattice_sweep(table_lattice *lattice) {
         workspace->lattice_faces[c] = workspace->lattice_order[c] = -1;
     }
     table_lattice_clear(lattice, 0);
-    table_entry_release(lattice->point);
-    lattice->point = NULL;
+    workspace->point_count = workspace->point_values_count = 0;
+    lattice->point = SIZE_MAX;
     lattice->held = lattice->broken = lattice->skipped = lattice->misaligned = false;
     lattice->shape_dirty = true;
     lattice->full = 0;
@@ -2579,7 +2699,8 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
                              .start = start,
                              .left = left,
                              .right = right,
-                             .positions = positions};
+                             .positions = positions,
+                             .point = SIZE_MAX};
     bool valid = false, searched = false;
     for (;;) {
         lattice.width = count - 1;
@@ -2713,6 +2834,10 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
     bool closes_equal = lattice.full == '=';
     candidate->head_count = equals && !(closes_equal && equals == 1) ? candidate->fold.equal_rows[0] : 0;
     candidate->foot_count = closes_equal && equals >= 2 ? rows - candidate->fold.equal_rows[equals - 2] : 0;
+    if (!table_parts_chained(source, candidate, rows)) {
+        source->redo = true;
+        goto done;
+    }
     double total = 0;
     for (size_t c = 0; c < width; c++) {
         total += positions[c + 1] - positions[c] - 1;
@@ -2733,7 +2858,7 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
     }
     candidate->fold.positions = positions;
     candidate->fold.position_count = count;
-    candidate->fold.tail = table_entry_retain(table_band_at(&lattice, lattice.count - 1)->after);
+    candidate->tail = table_band_at(&lattice, lattice.count - 1)->after;
     valid = !source->parser->error;
 done:
     if (!valid) {
@@ -2741,7 +2866,6 @@ done:
         table_candidate_reset(candidate);
     }
     table_lattice_clear(&lattice, 0);
-    table_entry_release(lattice.point);
     return valid;
 }
 
@@ -3050,6 +3174,38 @@ static int table_candidate_end_line(const table_source *source, const table_cand
     return candidate->end ? candidate->end_line : source->lines[candidate->last].line;
 }
 
+/* A run of old rows the table takes, its first at row `index` of the table:
+ * a take holds siblings of one section, so the run splits where a section
+ * of the table or of the old table begins. */
+static void table_take_part(table_source *source, markdown_core_node *node, const markdown_core_table *table,
+                            const table_source_part *part, size_t index) {
+    markdown_core_parser *parser = source->parser;
+    const markdown_core_node *old = source->old;
+    const markdown_core_table *was = old->opaque;
+    size_t rows = table->head_count + table->content_count;
+    size_t bounds[4] = {table->head_count + part->first - index, rows + part->first - index, was->head_count,
+                        was->head_count + was->content_count};
+    size_t from = part->first, last = part->first + part->count;
+    while (from < last && !parser->error) {
+        size_t to = last;
+        for (size_t i = 0; i < 4; i++) {
+            if (bounds[i] > from && bounds[i] < to) {
+                to = bounds[i];
+            }
+        }
+        const markdown_core_node *before = markdown_core_children_at(old->children, to - 1);
+        size_t start = from == part->first
+                           ? part->start
+                           : (size_t)(table_old_lead(source, from) +
+                                      markdown_core_children_at(old->children, from)->where.extent.lead);
+        size_t end = to == last ? part->end
+                                : (size_t)(table_old_lead(source, to - 1) + before->where.extent.lead +
+                                           (int64_t)before->where.extent.span);
+        markdown_core_parser_take_parts(parser, node, old, from, to - from, start, end);
+        from = to;
+    }
+}
+
 /* THE RECORD OF A GRID TABLE'S FOLD: its walls, its tail, `tail_span`
  * bytes past its last row, and its '=' borders. */
 static void table_fold_build(markdown_core_parser *parser, markdown_core_table *table, const table_candidate *candidate,
@@ -3105,6 +3261,16 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
     for (size_t p = 0; p < candidate->part_count; p++) {
         rows += candidate->parts[p].count;
     }
+    /* A grid row's entry, and the table's tail, are made from the states
+     * the fold kept, before a cell's content reads another table. */
+    for (size_t r = 0; r < candidate->row_count && !parser->error; r++) {
+        if (candidate->rows[r].point != SIZE_MAX) {
+            candidate->rows[r].entry = table_point_entry(source, candidate->rows[r].point);
+        }
+    }
+    if (candidate->fold.position_count && !parser->error) {
+        candidate->fold.tail = table_point_entry(source, candidate->tail);
+    }
     table->column_count = candidate->column_count;
     table->head_count = candidate->head_count;
     table->foot_count = candidate->foot_count;
@@ -3113,15 +3279,17 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
      * the table ends where its maker says, once it has closed it. */
     node->where.place.start = (uint32_t)markdown_core_parser_source_offset(
         parser, first->line, table_margin_byte(first, candidate->margin) + 1);
-    size_t last_end = 0;
+    size_t last_end = 0, index = 0;
     for (size_t r = 0, p = 0; (r < candidate->row_count || p < candidate->part_count) && !parser->error;) {
-        if (p < candidate->part_count && (r == candidate->row_count || candidate->parts[p].key < candidate->rows[r].key)) {
+        if (p < candidate->part_count &&
+            (r == candidate->row_count || candidate->parts[p].key < candidate->rows[r].key)) {
             const table_source_part *part = &candidate->parts[p++];
-            markdown_core_parser_take_parts(parser, node, source->old, part->first, part->count, part->start,
-                                            part->end);
+            table_take_part(source, node, table, part, index);
+            index += part->count;
             last_end = part->end;
             continue;
         }
+        index++;
         table_source_row *row = &candidate->rows[r++];
         table_source_line *begin = &source->lines[row->first], *end = &source->lines[row->last];
         markdown_core_node *row_node =
@@ -3420,7 +3588,8 @@ static void dispose_parser(const markdown_core_element_instance *self, markdown_
     markdown_core_free(workspace->lattice_losers);
     markdown_core_free(workspace->patches);
     markdown_core_free(workspace->bands);
-    markdown_core_free(workspace->values);
+    markdown_core_free(workspace->points);
+    markdown_core_free(workspace->point_values);
     memset(workspace, 0, sizeof(*workspace));
 }
 

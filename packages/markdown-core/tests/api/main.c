@@ -7396,8 +7396,10 @@ static void block_identifier_ownership(test_batch_runner *runner) {
  * columns or grid topology. Track live allocations as well as geometry work,
  * including long valid prefixes whose rejection occurs near the line end. */
 /* Whole-width and cell-width borders have different semantic extents. Work
- * stays within one whole-line recognition plus the interior cell intervals,
- * independently of row count, column count, scalar width and container prefix. */
+ * stays within one whole-line recognition plus the cell intervals of every
+ * border after the opening one, whose edges are part of the fold's state a
+ * later parse resumes from, independently of row count, column count,
+ * scalar width and container prefix. */
 static void grid_border_recognition_work(test_batch_runner *runner) {
     const int widths[] = {8, 257}, columns[] = {1, 3, 17}, rows[] = {1, 9};
     for (size_t w = 0; w < sizeof(widths) / sizeof(*widths); w++) {
@@ -7428,7 +7430,7 @@ static void grid_border_recognition_work(test_batch_runner *runner) {
                     if (root) {
                         INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE_CELL), rows[r] * columns[c],
                                "whole-border facts do not collapse cell ownership");
-                        size_t intervals = (size_t)(rows[r] - 1) * columns[c] * (widths[w] + 2);
+                        size_t intervals = (size_t)rows[r] * columns[c] * (widths[w] + 2);
                         OK(runner, work.table_horizontal_work <= (size_t)source.size + intervals,
                            "one whole extent plus cell intervals: rows=%d columns=%d width=%d work=%zu bound=%zu",
                            rows[r], columns[c], widths[w], work.table_horizontal_work, (size_t)source.size + intervals);

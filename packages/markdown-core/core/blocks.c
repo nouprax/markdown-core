@@ -2762,8 +2762,8 @@ void markdown_core_parser_lookahead_skip(markdown_core_block_lookahead *lookahea
     } else {
         if (next > parser->input_scanned) {
             markdown_core_input_line *last = &parser->input_lines[parser->input_line_count - 1];
-            markdown_core_line_facts *facts =
-                last->facts ? &parser->input_facts[last->facts - 1] : markdown_core_parser_extend_line_facts(parser, last);
+            markdown_core_line_facts *facts = last->facts ? &parser->input_facts[last->facts - 1]
+                                                          : markdown_core_parser_extend_line_facts(parser, last);
             if (!facts) {
                 return;
             }
