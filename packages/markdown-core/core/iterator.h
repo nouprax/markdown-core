@@ -122,9 +122,10 @@ static inline markdown_core_event_type markdown_core_iter_step(markdown_core_ite
             iter->event = MARKDOWN_CORE_EVENT_DONE;
         } else {
             markdown_core_iter_frame *parent = &path->frames[count - 2];
-            /* The parent holds the exited node, so it has children. */
+            /* The parent held the exited node; a walk that took it out may
+             * have left the parent none. */
             const markdown_core_run *children = parent->node->children;
-            if (++parent->at < children->total) {
+            if (++parent->at < markdown_core_children_count(children)) {
                 /* The next sibling takes the exited node's frame. */
                 markdown_core_node *next = markdown_core_children_at(children, parent->at);
                 parent[1].node = next;

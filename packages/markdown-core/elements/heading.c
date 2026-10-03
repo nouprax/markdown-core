@@ -13,11 +13,11 @@ enum { HEADING_CITATION };
 static const markdown_core_element *const HEADING_PEERS[] = {[HEADING_CITATION] = &MARKDOWN_CORE_ELEMENT_CITATION,
                                                              NULL};
 typedef enum { ANCHOR_CONTENT, ANCHOR_CITATIONS, ANCHOR_KEY } anchor_projection_kind;
-/* A key's citation, or the children of `node` from `at` on: content, or a
- * cite's citations. */
+/* A key's citation, or the children of `node` from `at` on, walked in
+ * order: content, or a cite's citations. */
 typedef struct {
     markdown_core_node *node;
-    size_t at;
+    markdown_core_children_cursor at;
     anchor_projection_kind kind;
 } anchor_projection;
 
@@ -104,7 +104,12 @@ static inline bool push_anchor_projection(markdown_core_parser *parser, anchor_p
         stack->values = values;
         stack->capacity = capacity;
     }
-    stack->values[stack->count++] = (anchor_projection){node, 0, kind};
+    anchor_projection *projection = &stack->values[stack->count++];
+    projection->node = node;
+    projection->kind = kind;
+    if (kind != ANCHOR_KEY) {
+        markdown_core_children_seek(&projection->at, node->children, 0);
+    }
     return true;
 }
 
@@ -127,12 +132,12 @@ static void heading_anchor_base(markdown_core_parser *parser, markdown_core_node
             project_anchor_literal(base, item->value.data, item->value.len);
             continue;
         }
-        if (top->at == markdown_core_node_children_count(top->node)) {
+        anchor_projection_kind kind = top->kind;
+        markdown_core_node *node = markdown_core_children_next(&top->at);
+        if (!node) {
             stack->count--;
             continue;
         }
-        anchor_projection_kind kind = top->kind;
-        markdown_core_node *node = markdown_core_node_child(top->node, top->at++);
         if (kind == ANCHOR_CITATIONS) {
             markdown_core_citation_item *item = node->as.citation;
             if (item->referent == MARKDOWN_CORE_NODE_REFERENT_BIB) {

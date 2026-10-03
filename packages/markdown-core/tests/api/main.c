@@ -1297,6 +1297,29 @@ static void iterator(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 }
 
+/* A WALK THAT TAKES AN ONLY CHILD OUT steps on to the parent's EXIT, the
+ * parent holding no children then. */
+static void iterator_takes_an_only_child(test_batch_runner *runner) {
+    markdown_core_node *doc = markdown_core_parse_document("> a\n", 4);
+    markdown_core_iter *iter = markdown_core_iter_new(doc);
+    markdown_core_event_type ev_type;
+    int quote_exits = 0;
+    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = markdown_core_iter_get_node(iter);
+        if (ev_type == MARKDOWN_CORE_EVENT_EXIT && node->kind == MARKDOWN_CORE_NODE_PARAGRAPH) {
+            markdown_core_node *taken = NULL;
+            if (markdown_core_iter_take_current(iter, NULL, &taken)) {
+                markdown_core_node_free(taken);
+            }
+        }
+        quote_exits += ev_type == MARKDOWN_CORE_EVENT_EXIT && node->kind == MARKDOWN_CORE_NODE_CALLOUT;
+    }
+    INT_EQ(runner, quote_exits, 1, "the quote exits once after its only child is taken");
+    OK(runner, !markdown_core_node_first_child(markdown_core_node_first_child(doc)), "and holds no children");
+    markdown_core_iter_free(iter);
+    markdown_core_node_free(doc);
+}
+
 static void iterator_delete(test_batch_runner *runner) {
     static const char md[] = "a *b* c\n"
                              "\n"
@@ -11245,6 +11268,7 @@ int main(void) {
     children_tree_sequence(runner);
     children_tree_ranges(runner);
     iterator(runner);
+    iterator_takes_an_only_child(runner);
     iterator_delete(runner);
     create_tree(runner);
     attachment_containment(runner);
