@@ -506,16 +506,11 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_inline_move(markdo
     return true;
 }
 
-/* `markdown_core_inline_move`, putting `owner` in the items' place; NULL,
- * with the run failed and `owner` released, when it cannot. */
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_inline_item *S_inline_enclose(
-    markdown_core_inline_state *inline_state, markdown_core_inline_item *first, markdown_core_inline_item *end,
-    markdown_core_node *owner) {
-    if (!S_inline_move(inline_state, first, end, owner, &inline_state->owner_parser->delimiter_work)) {
-        markdown_core_parser_release_node(inline_state->owner_parser, owner);
-        return NULL;
-    }
-    return S_inline_put(inline_state, end, owner);
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_inline_replace(markdown_core_inline_state *inline_state,
+                                                                             markdown_core_inline_item *item,
+                                                                             markdown_core_node *node) {
+    markdown_core_parser_release_node(inline_state->owner_parser, item->node);
+    item->node = node;
 }
 
 /* The run's nodes become its owner's children, in order, and the run is
@@ -835,12 +830,6 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) delimiter *S_insert_delim
     opener_inl->as.literal->len = opener_num_chars;
     closer_inl->as.literal->len = closer_num_chars;
 
-    // The nodes between the two markers become the inline's children, and
-    // the inline takes their place.
-    if (!S_inline_enclose(inline_state, opener->item->next, closer->item, inline_node)) {
-        return closer->next;
-    }
-
     /* REQUIREMENT 11b: the delimiters the inline USED are now its markers.
      * They were claimed CONTENT when they were read, because a `*` that matches
      * nothing is its own literal; this claim is later and wins. `position` is
@@ -865,12 +854,23 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) delimiter *S_insert_delim
         closer_inl->where.place.start = closer_inl->where.place.end - (uint32_t)closer_num_chars;
     }
 
-    // if opener has 0 characters, remove it and its associated inline
+    // The nodes between the two markers become the inline's children, and
+    // the inline takes their place: the opener's, when it spent the opener.
+    if (!S_inline_move(inline_state, opener->item->next, closer->item, inline_node,
+                       &inline_state->owner_parser->delimiter_work)) {
+        markdown_core_parser_release_node(inline_state->owner_parser, inline_node);
+        return closer->next;
+    }
     if (opener_num_chars == 0) {
-        S_inline_release(inline_state, opener->item);
+        S_inline_replace(inline_state, opener->item, inline_node);
+    } else if (!S_inline_put(inline_state, closer->item, inline_node)) {
+        return closer->next;
+    }
+
+    // A spent opener's inline is gone, and a remaining single sign is only
+    // text: neither keeps its delimiter.
+    if (opener_num_chars < minimum_width || opener_num_chars == 0) {
         S_inline_remove_delimiter(inline_state, opener);
-    } else if (opener_num_chars < minimum_width) {
-        S_inline_remove_delimiter(inline_state, opener); // A remaining single sign is only text.
     }
 
     // if closer has 0 characters, remove it and its associated inline
@@ -1344,6 +1344,11 @@ markdown_core_node *markdown_core_inline_take(markdown_core_inline_state *inline
 
 void markdown_core_inline_release(markdown_core_inline_state *inline_state, markdown_core_inline_item *item) {
     S_inline_release(inline_state, item);
+}
+
+void markdown_core_inline_replace(markdown_core_inline_state *inline_state, markdown_core_inline_item *item,
+                                  markdown_core_node *node) {
+    S_inline_replace(inline_state, item, node);
 }
 
 bool markdown_core_inline_move(markdown_core_inline_state *inline_state, markdown_core_inline_item *first,

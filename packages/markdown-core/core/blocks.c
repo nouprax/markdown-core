@@ -1390,7 +1390,8 @@ static int complete_inline_root(owned_tree_walk *walk, const struct markdown_cor
                  * delivered to anything else, which is what makes freeing
                  * them safe. */
                 result = MARKDOWN_CORE_FINISH_CONTINUE;
-                if (index == MARKDOWN_CORE_FINISH_TEXT_INDEX && markdown_core_text_needs_consolidation(iter, node)) {
+                if (index == MARKDOWN_CORE_FINISH_TEXT_INDEX && !root &&
+                    markdown_core_text_needs_consolidation(iter, node)) {
                     result = markdown_core_consolidate_text_step(parser, iter, node, complete_consolidated_text,
                                                                  frame->script_depth);
                 }
@@ -1405,7 +1406,7 @@ static int complete_inline_root(owned_tree_walk *walk, const struct markdown_cor
                 if (result == MARKDOWN_CORE_FINISH_CONSUMED) {
                     continue;
                 }
-                if (frame != walk->frames || !root) {
+                if (!root || frame != walk->frames) {
                     if (S_holds_nodes(&kinds[index], node)) {
                         S_publish(parser, node, root ? frame->owner : markdown_core_iter_parent(iter),
                                   node->where.place.start);

@@ -109,8 +109,9 @@ static inline markdown_core_event_type markdown_core_iter_step(markdown_core_ite
             iter->event = MARKDOWN_CORE_EVENT_DONE;
         } else {
             markdown_core_iter_frame *parent = &path->frames[count - 2];
+            /* The parent holds the exited node, so it has children. */
             const markdown_core_run *children = parent->node->children;
-            if (++parent->at < markdown_core_children_count(children)) {
+            if (++parent->at < children->total) {
                 /* The next sibling takes the exited node's frame. */
                 markdown_core_node *next = markdown_core_children_at(children, parent->at);
                 parent[1].node = next;
@@ -179,20 +180,17 @@ void markdown_core_iter_free(markdown_core_iter *iter);
 markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter);
 markdown_core_node *markdown_core_iter_get_node(markdown_core_iter *iter);
 
-/* Whether consolidation has anything to do at the current Text's EXIT: a
- * Text sibling to absorb, or no bytes of its own to keep. The step below
- * answers the same two questions itself; this is what lets the walk ask them
- * in place and enter the step only when one holds. */
+/* Whether consolidation has anything to do at the current Text's EXIT, the
+ * Text not being the walk's root: a Text sibling to absorb, or no bytes of
+ * its own to keep. The step below answers the same two questions itself;
+ * this is what lets the walk ask them in place and enter the step only when
+ * one holds. */
 static inline bool markdown_core_text_needs_consolidation(const markdown_core_iter *iter,
                                                           const markdown_core_node *text) {
-    size_t count = iter->path->count;
-    if (count - iter->base < 2) {
-        return false;
-    }
     if (text->as.literal->len == 0) {
         return true;
     }
-    const markdown_core_iter_frame *parent = &iter->path->frames[count - 2];
+    const markdown_core_iter_frame *parent = &iter->path->frames[iter->path->count - 2];
     const markdown_core_run *siblings = parent->node->children;
     return parent->at + 1 < siblings->total &&
            markdown_core_children_at(siblings, parent->at + 1)->kind == MARKDOWN_CORE_NODE_TEXT;

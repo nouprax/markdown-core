@@ -228,6 +228,10 @@ markdown_core_node *markdown_core_inline_take(markdown_core_inline_state *inline
                                               markdown_core_inline_item *item);
 /* Takes `item` out of the run and releases its node. */
 void markdown_core_inline_release(markdown_core_inline_state *inline_state, markdown_core_inline_item *item);
+/* `node`, taking the caller's hold, takes the place of `item`'s node, which
+ * is released. */
+void markdown_core_inline_replace(markdown_core_inline_state *inline_state, markdown_core_inline_item *item,
+                                  markdown_core_node *node);
 /* Moves the nodes of the items from `first` up to `end` (NULL: the run's end)
  * to `owner`, which has no children, as its children in order, counting each
  * in `work` when given. False, with the run failed and nothing moved, when

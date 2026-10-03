@@ -659,8 +659,8 @@ void markdown_core_inline_replace_bracket_opener(markdown_core_inline_state *inl
         mark->as.literal->len = 1;
         markdown_core_inline_state_place(inline_state, mark, opener->position - 2, opener->position - 2);
         markdown_core_inline_put(inline_state, opener->inl_text->next, replacement);
-    } else if (markdown_core_inline_put(inline_state, opener->inl_text, replacement)) {
-        markdown_core_inline_release(inline_state, opener->inl_text);
+    } else {
+        markdown_core_inline_replace(inline_state, opener->inl_text, replacement);
     }
 }
 
