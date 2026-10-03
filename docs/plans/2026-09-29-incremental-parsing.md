@@ -93,6 +93,12 @@ tree beside the input and reuses every subtree those records prove
 unchanged. Section 5 applies the same algorithm and the same tree storage to
 the line machine.
 
+The stages after S1 are cmark's: a walk over the finished document (S4), a
+walk per pass (S6) and, since step 1, a walk that numbers nodes and writes
+their extents. Tree-sitter has none of these. A node is complete when the
+parser makes it, and nothing visits the tree after the parse. Section 5.8
+makes every node complete when it is made, which removes those walks.
+
 ## 3. Dependency inventory
 
 Incremental parsing is correct only if every way that one part of the source
@@ -136,8 +142,8 @@ Rules:
   across every owned relation (content, labels, captions, titles, terms,
   bodies, affixes, footnote referents, metadata).
 - **Deterministic for a fresh parse.** `Document.parse` numbers nodes from 1
-  in canonical walk order. Two fresh parses of the same text are equal,
-  identifiers included.
+  in the order the parse completes them (5.8). Two fresh parses of the same
+  text are equal, identifiers included.
 - **Stable in a session.** A node reused or matched by an edit keeps its id
   (5.9). A node the edit creates takes the next unused id of the session.
   Ids of removed nodes are never reused by the same session.
@@ -701,33 +707,57 @@ and keeps the entries of taken nodes. Then:
   are parsed again. Definitions themselves stay in the tree, so nothing is
   spliced into the document and no ordinal is recomputed.
 
-### 5.8 Finish steps and passes
+### 5.8 Nodes are complete when they are made
 
-The finish walk runs on the inline roots and block subtrees that were read or
-re-resolved, never on taken ones. Consolidation, script-escape completion,
-list layout, formula promotion and the Autolink email pass all act within one
-root, so their results for a taken root are already in the taken tree.
-`check-finish-hook-shapes.mjs` gains the rule that a finish step or pass
-reads only its root and the registries, which is what lets them run per root.
+A tree-sitter node is complete when the parser reduces it: its children, its
+size and its padding are set then, and nothing changes it afterwards. The
+engine makes its nodes the same way, so no stage walks the tree after the
+parse.
 
-Within a root parsed against its old inline tree (5.6), finish runs where the
-parse read: taken nodes are already finished. The finish walk visits the
-read nodes, the path of containers above them, and at each level of that path
-the finished sibling immediately before each read run and the taken sibling
-immediately after it. That is exact because of a second rule the audit
-enforces: **a finish step's result for a node depends only on that node and
-its immediately preceding sibling**, after the step has run on that sibling.
-Text consolidation merges a node into its predecessor, the email pass scans
-one consolidated Text, and the others read one node. Finish work is
-therefore of the same order as the inline work. A step that needs a wider
-window must say so in its hook shape, and the reach of the nodes it reads
-(5.6) grows by that window.
+- **Blocks complete when they close.** Closing a block runs everything that
+  decides it: the element's close (a formula block's literal; a code block
+  whose info names a formula becomes a FormulaBlock), the container's fold of
+  its children (E4: list layout, definition scopes), its extent (4.3) and its
+  id. The open parent keeps where its last closed child ends, which is the
+  next child's lead. A paragraph that held only definitions is not added to
+  its parent.
+- **Inline roots complete when their parse ends.** A block's inline content
+  and each inline field of a block (a definition's term, a callout's title, a
+  table's caption, a directive's label) is an inline root. The closing block
+  adds it to the parse's list of roots with its absolute start. After S3,
+  each root on the list is parsed. Delimiters decide nesting only when a
+  closer pairs, and the language gives an inline node meaning from what
+  encloses it: an escaped space inside a word body, a Text outside a Link for
+  email autolinks, and runs of Text that become one. So an inline node is
+  complete when its root's parse ends, and the root completes its own tree
+  then, in one pass over that tree: consolidation, completion, email
+  autolinks, extents and ids. A paragraph whose only content is a standalone
+  formula becomes a FormulaBlock at that point.
+- **Absolute positions belong to the parse.** A node holds only its extent
+  once it is complete. Everything that needs an absolute position after that
+  (source-ordered registrations, a root on the list, table geometry) records
+  it when it is made.
+- **Document facts come from the registries.** S5 resolves anchors and
+  builds the footnote and specimen lookup tables from the source-ordered
+  registries, whose entries name complete nodes.
+
+A fresh parse is the block parse, the inline parse of each root, and S5.
+`check-finish-hook-shapes.mjs` becomes the audit of these hooks: a close step
+reads its block and the block's children, and a completion reads one inline
+root.
+
+For a root parsed against its old inline tree (5.6), taken inline nodes are
+already complete, and completion runs over the nodes the parse read and the
+Text before and after each read run, which consolidation may merge with them.
 
 ### 5.9 Identity matching and value deduplication
 
 A taken node is the old node (5.11), so it and its whole subtree keep their
 ids wherever the parse puts them. Each node that was read is matched to an
-old node:
+old node. This is the one comparison of the old and new trees, the
+counterpart of tree-sitter's `ts_tree_get_changed_ranges`: it walks the two
+trees together and steps over every subtree they share by reference, so it
+visits only what the parse read.
 
 - Matching runs per owner relation between a new owner and the old node it
   matched, starting from the reopened spine, whose nodes kept their ids.
@@ -755,7 +785,9 @@ old node:
     id; the second retires.
   - Bytes between the edits of a batch keep their own exact images, so nodes
     there match as if each edit were alone.
-- Read children of an unmatched owner get new ids. A paragraph that moves
+- A read node took a new id when it was completed (5.8). A matched node takes
+  its old node's id instead. Read children of an unmatched owner keep their
+  new ids. A paragraph that moves
   into a new blockquote is read again, because its entry changed, and is a
   new node, as it is to every UI framework.
 
@@ -811,8 +843,10 @@ The tree is stored the way tree-sitter stores its syntax trees:
   references to its children, retaining each, like `ts_subtree_make_mut`.
   An edit copies only the paths from the root to what changed.
 - **Open blocks are builders.** A block is mutable only while it is open on
-  the parser's spine. When it closes it becomes a node with a reference count
-  of one, with its children tree balanced as it was built.
+  the parser's spine. When it closes it is complete (5.8) and becomes a node
+  with a reference count of one, with its children tree balanced as it was
+  built. An inline root's block is complete except for its inline content,
+  which its root's parse completes.
 - **Release is iterative.** Releasing a node decrements its count. At zero,
   its children are released the same way from an explicit stack, and the
   freed slots return to the session's pool.
@@ -981,7 +1015,7 @@ which also says at which rollout step each one becomes a gate.
 - **Allocation failures.** The allocator-seam OOM sweep fails every edit at
   every allocation boundary and asserts that the edit throws and that
   freeing the session leaks nothing.
-- **Audits.** E1–E6 (5.4), the finish-step root rule (5.8), and the
+- **Audits.** E1–E6 (5.4), the close and completion hook rules (5.8), and the
   dependency inventory (section 3) are enforced by scripts in
   `scripts/audit/`.
 
@@ -1013,15 +1047,18 @@ activates for it.
    with reference counts, children trees, builders for open blocks, copy on
    write and iterative release, with no parent or sibling links (5.11). Walks
    carry their path on explicit stacks. The parser reads the text tree a line
-   at a time (5.1). Every line is still read again, as in step 2.
+   at a time (5.1). Nodes are complete when they are made (5.8): the finish
+   walk, the pass walks and the numbering walk are removed, and identity
+   matching is the one comparison of the old and new trees (5.9). Every line
+   is still read again, as in step 2.
 - [ ] **Step 4: Block reuse.** Node records and the high-water mark (5.1),
    the cursor's take, reopen and read (5.3), E1–E4 and E6 and their audits,
    summaries in children trees, streaming as an edit at the end (5.5), and
    session-held registrations with every inline root depending on every key.
 - [ ] **Step 5: Session registries.** Winners, lookup dependencies, anchor
-   families, per-root finish steps (5.7, 5.8).
+   families (5.7).
 - [ ] **Step 6: Inline reuse.** Inline records and the cursor over old inline
-   trees (5.6), leaf reopening (E5), and finish over read nodes (5.8).
+   trees (5.6), leaf reopening (E5), and completion over read nodes (5.8).
 
 ## 10. Decisions for the owner
 
@@ -1093,3 +1130,9 @@ activates for it.
   every fresh parse (one-shot `buffer_to_ast` median 1.078, maximum 2.42,
   against the 1.02 gate) and duplicated what the tree holds. Tree-sitter keeps
   those facts on its nodes, and so does this design (5.1).
+- **Walks over the finished tree.** cmark finishes a document with a walk that
+  parses inlines and runs finish steps, and step 1 added a walk that numbers
+  nodes and writes extents. On a tree of shared nodes each walk costs a step
+  through the children trees of every node, a cost cmark's sibling links do
+  not have, and the walks only finish what the parser could finish when it
+  made each node. Tree-sitter has no such walk (5.8).
