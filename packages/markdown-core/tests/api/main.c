@@ -1197,6 +1197,71 @@ static void children_tree_sequence(test_batch_runner *runner) {
     }
 }
 
+/* Ranges of a shared tree, sliced and joined onto other trees, keep every
+ * tree's sequence and invariants: the source tree is never changed, and a
+ * slice of any range costs only the runs its cuts divide. */
+static void children_tree_ranges(test_batch_runner *runner) {
+    enum { most = 3000 };
+    markdown_core_node *nodes[most];
+    for (size_t i = 0; i < most; i++) {
+        nodes[i] = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
+    }
+    markdown_core_node *source = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+    for (size_t i = 0; i < most; i++) {
+        markdown_core_node_retain(nodes[i]);
+        OK(runner, markdown_core_node_append_child(NULL, source, nodes[i]), "append %zu", i);
+    }
+    uint32_t state = 11;
+    bool ordered = true, valid = true, ok = true;
+    for (int round = 0; round < 400; round++) {
+        markdown_core_node *built = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+        markdown_core_node *expected[4 * most];
+        size_t count = 0;
+        /* A few ranges, each joined at the end, some of them lone children
+         * appended between, as a parse takes runs and reads nodes. */
+        int pieces = 1 + (int)((state >> 3) % 6);
+        for (int piece = 0; piece < pieces; piece++) {
+            state = state * 1103515245u + 12345u;
+            size_t first = (state >> 8) % most;
+            state = state * 1103515245u + 12345u;
+            size_t length = round % 3 == 0 ? (state >> 8) % 20 : (state >> 8) % (most - first + 1);
+            if (first + length > most) {
+                length = most - first;
+            }
+            bool made = true;
+            markdown_core_run *slice = markdown_core_children_slice(NULL, source->children, first, length, &made);
+            ok = ok && made && markdown_core_children_count(slice) == length;
+            ok = ok && markdown_core_children_join(NULL, &built->children, slice);
+            memcpy(&expected[count], &nodes[first], length * sizeof(nodes[0]));
+            count += length;
+            if (piece % 2) {
+                markdown_core_node *lone = nodes[(state >> 4) % most];
+                markdown_core_node_retain(lone);
+                ok = ok && markdown_core_node_append_child(NULL, built, lone);
+                expected[count++] = lone;
+            }
+        }
+        valid = valid && markdown_core_node_check(built, NULL) == 0 && markdown_core_node_check(source, NULL) == 0;
+        ordered = ordered && markdown_core_node_children_count(built) == count;
+        markdown_core_children_cursor at;
+        markdown_core_children_seek(&at, built->children, 0);
+        for (size_t i = 0; ordered && i < count; i++) {
+            ordered = markdown_core_children_next(&at) == expected[i];
+        }
+        markdown_core_node_free(built);
+    }
+    for (size_t i = 0; ordered && i < most; i++) {
+        ordered = child_at(source, i) == nodes[i];
+    }
+    OK(runner, ok, "every slice and join succeeds");
+    OK(runner, ordered, "the joined slices are the source's ranges, in order, and the source is unchanged");
+    OK(runner, valid, "every joined tree and the source keep their invariants");
+    markdown_core_node_free(source);
+    for (size_t i = 0; i < most; i++) {
+        markdown_core_node_free(nodes[i]);
+    }
+}
+
 static void node_check(test_batch_runner *runner) {
     markdown_core_node *doc = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
     markdown_core_node *p1 = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
@@ -8979,7 +9044,7 @@ static void parser_attachment_commits_one_decision(test_batch_runner *runner) {
     paragraph_root->flags |= MARKDOWN_CORE_NODE__OPEN;
     conversion_current_policy = &paragraph_policy;
     /* The root is the whole open spine. */
-    markdown_core_iter_frame rejected_spine[] = {{paragraph_root, 0}};
+    markdown_core_iter_frame rejected_spine[] = {{paragraph_root, 0, 0}};
     rejected.root = paragraph_root;
     rejected.path = (markdown_core_iter_path){rejected_spine, 1, 1};
     size_t attempts = payload_allocations;
@@ -11249,6 +11314,7 @@ int main(void) {
     pipe_rows_are_one_row(runner);
     node_check(runner);
     children_tree_sequence(runner);
+    children_tree_ranges(runner);
     iterator(runner);
     iterator_delete(runner);
     create_tree(runner);

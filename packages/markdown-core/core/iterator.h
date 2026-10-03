@@ -33,6 +33,10 @@ typedef struct {
     /* The index of the child the walk is inside, among the node's children,
      * set when the walk steps into them. */
     size_t at;
+    /* On the parser's open spine (parser.h): the end of the furthest byte any
+     * decision read while the frame's block was open, from which the block's
+     * reach is measured when it closes. */
+    size_t reads;
 } markdown_core_iter_frame;
 
 typedef struct {

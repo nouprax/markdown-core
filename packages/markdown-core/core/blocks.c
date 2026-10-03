@@ -259,7 +259,7 @@ static bool S_spine_reset(markdown_core_parser *parser, markdown_core_node *bloc
     if (!parser->path.capacity && !markdown_core_iter_path_reserve(&parser->path)) {
         return false;
     }
-    parser->path.frames[0] = (markdown_core_iter_frame){block_root, 0};
+    parser->path.frames[0] = (markdown_core_iter_frame){block_root, 0, parser->line_reads};
     parser->path.count = 1;
     return true;
 }
@@ -876,6 +876,23 @@ bool markdown_core_block_ends_with_blank_line(const markdown_core_parser *parser
     }
 }
 
+/* HOW FAR PAST ITS END THE DECISIONS ABOUT `node` READ (5.1): the reads of
+ * its frame, the deepest open block's, together with the line's so far,
+ * which its parent then holds as read while it was open too. A cell's
+ * blocks are read from the cell's content, not the source, and are never
+ * taken on their own, so they record none. */
+static inline void S_record_reach(markdown_core_parser *parser, markdown_core_node *node) {
+    markdown_core_iter_frame *frame = &parser->path.frames[parser->path.count - 1];
+    size_t reads = frame->reads > parser->line_reads ? frame->reads : parser->line_reads;
+    if (parser->path.count > 1 && frame[-1].reads < reads) {
+        frame[-1].reads = reads;
+    }
+    if (parser->block_root == parser->root) {
+        size_t end = node->where.place.end;
+        node->reach = reads > end ? (uint32_t)(reads - end) : 0;
+    }
+}
+
 markdown_core_node *markdown_core_block_finalize(markdown_core_parser *parser, markdown_core_node *b) {
     assert(b == markdown_core_parser_current(parser)); // only the deepest open block is finalized
     assert(b->flags & MARKDOWN_CORE_NODE__OPEN);       // shouldn't call markdown_core_block_finalize on closed blocks
@@ -920,6 +937,7 @@ markdown_core_node *markdown_core_block_finalize(markdown_core_parser *parser, m
     if (structure && structure->element->finalize_block) {
         structure->element->finalize_block(structure, parser, b);
     }
+    S_record_reach(parser, b);
     markdown_core_node *parent = parser->path.count > 1 ? parser->path.frames[parser->path.count - 2].node : NULL;
     markdown_core_parser_complete(parser, b, parent);
 
@@ -984,7 +1002,8 @@ markdown_core_node *markdown_core_parser_add_child_validated(markdown_core_parse
         }
         return NULL;
     }
-    parser->path.frames[parser->path.count++] = (markdown_core_iter_frame){child, 0};
+    /* What the line has read so far decided to open the block. */
+    parser->path.frames[parser->path.count++] = (markdown_core_iter_frame){child, 0, parser->line_reads};
     return child;
 }
 
@@ -1756,6 +1775,7 @@ static void S_parse_source(markdown_core_parser *parser, const markdown_core_tex
         /* Callbacks may grow the line index; keep only stable bytes/offsets. */
         size_t next = markdown_core_input_line_next(parser, found);
         parser->lookahead_cursor = next;
+        parser->line_reads = next;
         parser->line_start = (bufsize_t)found->start;
         /* A document line's scan recorded where its content ends; a cell's
          * line ends where the cell's map places its last byte. */
@@ -2709,6 +2729,14 @@ finished:
      * delimiters and attribute containers. Inline content trimming never
      * changes this source boundary. */
     parser->last_line_end = parser->line_end;
+    /* The line was read for the deepest open block, and so for every block
+     * around it, which takes it when that block closes. */
+    {
+        markdown_core_iter_frame *top = &parser->path.frames[parser->path.count - 1];
+        if (top->reads < parser->line_reads) {
+            top->reads = parser->line_reads;
+        }
+    }
 
     markdown_core_strbuf_clear(&parser->curline);
 }

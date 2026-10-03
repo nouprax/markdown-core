@@ -78,6 +78,7 @@ let package = Package(
                 "elements/superscript.c",
                 "elements/table.c",
                 "elements/tasklist.c",
+                "elements/tree_edit.c",
             ],
             publicHeadersPath: "include",
             cSettings: [

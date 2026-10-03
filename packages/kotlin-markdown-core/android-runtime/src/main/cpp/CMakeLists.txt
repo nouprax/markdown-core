@@ -73,6 +73,7 @@ add_library(
     "${MARKDOWN_CORE_ELEMENTS_DIR}/superscript.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/table.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/tasklist.c"
+    "${MARKDOWN_CORE_ELEMENTS_DIR}/tree_edit.c"
     "${MARKDOWN_CORE_ROOT}/packages/markdown-core/wire/markdown_core_wire.c"
     "${MARKDOWN_CORE_ROOT}/packages/kotlin-markdown-core/src/native/markdown_core_kotlin_jni.c")
 

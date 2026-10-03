@@ -25,16 +25,26 @@ typedef enum {
 
 #define MAX_LINK_LABEL_LENGTH 1000
 
+/* An old node the edit pass moved, with the extent it had in the text before
+ * the batch. */
+typedef struct markdown_core_moved {
+    const markdown_core_node *node;
+    markdown_core_extent extent;
+} markdown_core_moved;
+
 /* WHAT A PARSE CONTINUES: the storage it takes nodes from and the tree it
  * continues.
  *
- * `previous` is the root of a tree a parse published, and `edits` turn the
- * text it was parsed from into the text this parse reads, in its
- * coordinates: disjoint, in source order. The published tree continues it
+ * `previous` is the root of a tree a parse published, which the edit pass
+ * (markdown_core_tree_edit) has put in the coordinates of the text this parse
+ * reads. The published tree continues it
  * (docs/plans/2026-09-29-incremental-parsing.md, 5.9): every node matched to
  * an old node takes its id, every other node takes the next id after
  * `last_id`, and a matched node equal to its old node as a value is that old
- * node. On success the parse owns `previous`: it is the returned root, or it
+ * node. `moved`, `moved_count` entries in the order of their node's address,
+ * holds the extent each node the edit pass moved had before the batch: its
+ * value is that node's, which is the one compared, and a new node equal to it
+ * takes its extent again. On success the parse owns `previous`: it is the returned root, or it
  * is released into `pool` with every other node it retires, and `last_id` is
  * the last id issued. A fresh parse continues nothing: `previous` is NULL
  * and `last_id` is 0, so its nodes are numbered from 1: each owner numbers
@@ -45,8 +55,8 @@ typedef enum {
 typedef struct markdown_core_revision {
     markdown_core_node_pool *pool;
     markdown_core_node *previous;
-    const markdown_core_byte_edit *edits;
-    size_t edit_count;
+    const markdown_core_moved *moved;
+    size_t moved_count;
     uint64_t last_id;
 } markdown_core_revision;
 
@@ -273,6 +283,13 @@ struct markdown_core_parser {
      * ending: the driver records it as it hands the line to the block
      * parser, and it holds while `curline` does. */
     bufsize_t line_end;
+    /* THE INPUT'S HIGH-WATER MARK FOR THE LINE BEING PROCESSED (5.1): the end
+     * of the furthest byte read since the line began, the line itself and
+     * every later line a decision asked for through the index (E1). A block
+     * opened on the line starts its reads from here; at the end of the line
+     * the deepest open block takes it, and a block that closes hands its
+     * reads to its parent (blocks.c). */
+    size_t line_reads;
     /* Where input line `line_number` starts in the active input: the driver
      * records it with `line_end`, and a claim of later lines moves it. */
     bufsize_t line_start;
@@ -739,8 +756,17 @@ static inline markdown_core_input_line *markdown_core_parser_source_line(markdow
         return NULL;
     }
     size_t index = (size_t)(line - parser->input_first_line);
-    return index < parser->input_line_count ? &parser->input_lines[index]
-                                            : markdown_core_parser_extend_source_lines(parser, index);
+    markdown_core_input_line *found = index < parser->input_line_count
+                                          ? &parser->input_lines[index]
+                                          : markdown_core_parser_extend_source_lines(parser, index);
+    /* Asking for a line is reading it. */
+    if (found) {
+        size_t next = markdown_core_input_line_next(parser, found);
+        if (next > parser->line_reads) {
+            parser->line_reads = next;
+        }
+    }
+    return found;
 }
 
 /* Optional state is sparse within the input index: properties and ordinary

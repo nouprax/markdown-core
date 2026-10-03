@@ -662,3 +662,57 @@ bool markdown_core_node_kind_set_intersects(const markdown_core_node_kind_set *a
                                             const markdown_core_node_kind_set *b) {
     return (a->blocks & b->blocks) != 0 || (a->inlines & b->inlines) != 0;
 }
+
+/* A tier-zero run's sums from its children's extents and reaches, and a run
+ * above from its entries' sums: in both, a child's end and its reach are
+ * measured from the run's start through the lengths before it. */
+static void S_seal_run(markdown_core_run *run) {
+    int64_t length = 0, furthest = 0;
+    for (size_t i = 0; i < run->count; i++) {
+        int64_t end, reach;
+        if (run->tier) {
+            const markdown_core_run *entry = run->entries[i];
+            end = length + entry->length;
+            reach = entry->reach;
+        } else {
+            const markdown_core_node *node = run->entries[i];
+            end = length + node->where.extent.lead + node->where.extent.span;
+            reach = node->reach;
+        }
+        length = end;
+        if (end + reach > furthest) {
+            furthest = end + reach;
+        }
+    }
+    run->length = length;
+    run->reach = furthest > length ? (uint32_t)(furthest - length) : 0;
+    run->sealed = 1;
+}
+
+void markdown_core_children_seal(markdown_core_run *root) {
+    if (!root || root->sealed) {
+        return;
+    }
+    /* Down the unsealed runs, each sealed after the entries below it. */
+    markdown_core_run *runs[MARKDOWN_CORE_RUN_TIERS];
+    uint8_t at[MARKDOWN_CORE_RUN_TIERS];
+    int tiers = 1;
+    runs[0] = root;
+    at[0] = 0;
+    while (tiers) {
+        markdown_core_run *run = runs[tiers - 1];
+        if (run->tier) {
+            while (at[tiers - 1] < run->count && ((markdown_core_run *)run->entries[at[tiers - 1]])->sealed) {
+                at[tiers - 1]++;
+            }
+            if (at[tiers - 1] < run->count) {
+                runs[tiers] = run->entries[at[tiers - 1]++];
+                at[tiers] = 0;
+                tiers++;
+                continue;
+            }
+        }
+        S_seal_run(run);
+        tiers--;
+    }
+}

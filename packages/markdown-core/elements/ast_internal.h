@@ -84,6 +84,17 @@ void markdown_core_publish_relation(markdown_core_parser *parser, markdown_core_
  * having changed neither tree's structure, when an allocation failed. */
 bool markdown_core_publish_tree(markdown_core_parser *parser, markdown_core_lookup_registry *registry);
 
+/* THE EDIT PASS (5.2): applies `count` edits, disjoint and in source order,
+ * each in bytes of the text before the batch, to the published tree `root`
+ * parsed from that text, which only its session holds. Every node whose range
+ * from the start of its lead to its end plus its reach meets or touches an
+ * edit takes the extent of its image and is marked changed. `*moved` is each
+ * node it moved with its extent before the batch, `*moved_count` entries in
+ * the order of their node's address, which the caller frees. False when an
+ * allocation failed. */
+bool markdown_core_tree_edit(markdown_core_node *root, const markdown_core_byte_edit *edits, size_t count,
+                             markdown_core_moved **moved, size_t *moved_count);
+
 /* The scope of `node` in the published tree `root` parsed from `source`,
  * with columns in `unit`; markdown_core_document_scope is this query over a
  * document's tree and unit, behind its public check that the source covers

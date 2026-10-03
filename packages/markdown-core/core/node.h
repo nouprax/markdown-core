@@ -268,10 +268,23 @@ enum markdown_core_node__internal_flags {
      * completes, and publishes it, first. */
     MARKDOWN_CORE_NODE__PENDING = (1 << 8),
 
+    /* An edit met this node, its lead or its reach
+     * (docs/plans/2026-09-29-incremental-parsing.md, 5.2): a parse against
+     * the tree it is in reads it again rather than taking it. */
+    MARKDOWN_CORE_NODE__CHANGED = (1 << 9),
+
+    /* The line that closed this block decided what followed it from a state
+     * in which the block was still open: a block start refused there because
+     * a paragraph or a lazy line was open, or a blank line after a blank last
+     * line, which a list reads. A run of taken blocks cannot end at this
+     * one, since the parse after a run reads that line with the run closed
+     * (5.3). */
+    MARKDOWN_CORE_NODE__EXIT_FRAGILE = (1 << 10),
+
     // The first bit an element may claim. Element flags are compile-time
     // constants owned by the element that uses them; there is no runtime
     // registration and no allocator to run out of bits.
-    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 9),
+    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 11),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;
@@ -357,6 +370,10 @@ struct markdown_core_node {
     markdown_core_content_map content_map;
     uint16_t kind;
     markdown_core_node_internal_flags flags;
+    /* How far past its end the decisions about this node read, in bytes
+     * (5.1): the input's high-water mark when it closed, raised by a later
+     * write to it (markdown_core_parser_write_closed). */
+    uint32_t reach;
 
     const markdown_core_element *element;
     /* Element-owned data, allocated by opaque_alloc_func and released by
@@ -587,6 +604,9 @@ markdown_core_node *markdown_core_node_pool_new(markdown_core_node_pool *pool, m
 size_t markdown_core_node_pool_release(markdown_core_node_pool *pool, markdown_core_node *node);
 /* The same for a children tree's hold on its root run. */
 size_t markdown_core_node_pool_release_children(markdown_core_node_pool *pool, markdown_core_run *run);
+/* Seals the sums (children.h) of every unsealed run of the tree `root`,
+ * whose children hold their extents; a sealed run's are already right. */
+void markdown_core_children_seal(markdown_core_run *root);
 /* A run's storage, its entries having moved elsewhere or been released. */
 void markdown_core_run_free_slot(markdown_core_node_pool *pool, markdown_core_run *run);
 /* Drops what the pool holds: its released slots and its current slabs. Slots

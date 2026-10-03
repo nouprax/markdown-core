@@ -71,7 +71,8 @@ const elements = [
     "subscript.c",
     "superscript.c",
     "table.c",
-    "tasklist.c"
+    "tasklist.c",
+    "tree_edit.c"
 ].map((file) => path.join(root, "packages/markdown-core/elements", file));
 
 await rm(dist, { recursive: true, force: true });

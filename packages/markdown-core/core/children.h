@@ -49,6 +49,17 @@ typedef struct markdown_core_run {
     uint32_t total;
     uint8_t count;
     uint8_t tier;
+    /* Whether `length` and `reach` hold for the entries: a run's sums are
+     * sealed when the owner of the tree publishes it, its children holding
+     * extents then, and a change to the run unseals them. */
+    uint8_t sealed;
+    /* THE RUN'S SUMS (docs/plans/2026-09-29-incremental-parsing.md, 5.1):
+     * the bytes its children cover, each child's lead and span, and how far
+     * past the end of those bytes the furthest reach of a child goes. A
+     * child's place in a relation of its owner is the relation's origin plus
+     * the lengths before it in the relation plus its lead. */
+    uint32_t reach;
+    int64_t length;
     void *entries[MARKDOWN_CORE_RUN_WIDTH];
 } markdown_core_run;
 
@@ -112,6 +123,7 @@ static inline markdown_core_run *markdown_core_run_new(markdown_core_node_pool *
         run->total = 0;
         run->count = 0;
         run->tier = tier;
+        run->sealed = 0;
     }
     return run;
 }
@@ -148,8 +160,10 @@ static inline bool markdown_core_children_append(markdown_core_node_pool *pool, 
     run->entries[run->count++] = node;
     for (run = *root; run->tier; run = (markdown_core_run *)run->entries[run->count - 1]) {
         run->total++;
+        run->sealed = 0;
     }
     run->total++;
+    run->sealed = 0;
     return true;
 }
 
@@ -179,11 +193,13 @@ static inline bool markdown_core_children_remove(markdown_core_node_pool *pool, 
     for (run = *root; run->tier;) {
         markdown_core_run *entry = (markdown_core_run *)run->entries[markdown_core_run_find(run, &index)];
         run->total--;
+        run->sealed = 0;
         run = entry;
     }
     *removed = (struct markdown_core_node *)run->entries[index];
     run->count--;
     run->total--;
+    run->sealed = 0;
     for (size_t i = index; i < run->count; i++) {
         run->entries[i] = run->entries[i + 1];
     }
@@ -263,6 +279,20 @@ static inline markdown_core_run *markdown_core_children_build_end(markdown_core_
     }
     return builder->first;
 }
+
+/* THE CHILDREN [first, first + count) of the tree `root` as a tree of their
+ * own, sharing every run that lies wholly inside the range, so it costs
+ * O(log n) whatever the count; NULL for none. Its runs hold half the width
+ * except along its two spines, which a join restores. False in `ok` when
+ * storage runs out. */
+markdown_core_run *markdown_core_children_slice(markdown_core_node_pool *pool, markdown_core_run *root, size_t first,
+                                                size_t count, bool *ok);
+
+/* Puts the children of `tail` after those of `*root`, taking the caller's
+ * hold on `tail`: O(log n), copying the shared runs along the two spines it
+ * joins. False, with `tail` released and `*root` the children it held,
+ * when storage runs out. */
+bool markdown_core_children_join(markdown_core_node_pool *pool, markdown_core_run **root, markdown_core_run *tail);
 
 /* The number of broken invariants in the tree: a run with no holder, an
  * empty or overfull run, a run less than half full that is not the last of

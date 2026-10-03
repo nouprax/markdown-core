@@ -12,9 +12,10 @@
 
 /* A SESSION: the text, the parser instance that reads it, the document
  * parsed from it, the storage its nodes live in and the last id it issued.
- * Each edit parses the whole text again as a revision of the document
- * (parser.h), so the new document continues the old one and the old one's
- * nodes go back to the session's pool. */
+ * Each edit applies to the text and to the tree (the edit pass), and the
+ * text is parsed again against the edited tree as a revision of the document
+ * (parser.h), so the new document continues the old one and the old nodes it
+ * does not hold go back to the session's pool. */
 struct markdown_core_session {
     markdown_core_text_tree text;
     markdown_core_parser *parser;
@@ -29,14 +30,15 @@ static const unsigned char *session_text_read(const markdown_core_text *text, si
     return markdown_core_text_tree_read(text->bytes, offset, start, end);
 }
 
-/* The one parse of a session's text. */
+/* The one parse of a session's text, against its tree as the edit pass
+ * left it. */
 static markdown_core_status session_parse(markdown_core_session *session, const markdown_core_text *text,
-                                          const markdown_core_byte_edit *edits, size_t count) {
+                                          const markdown_core_moved *moved, size_t moved_count) {
     markdown_core_revision revision = {
         .pool = &session->pool,
         .previous = session->document.root,
-        .edits = edits,
-        .edit_count = count,
+        .moved = moved,
+        .moved_count = moved_count,
         .last_id = session->last_id,
     };
     markdown_core_node *root = markdown_core_parser_parse(session->parser, text, &revision);
@@ -151,8 +153,8 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
     if (status == MARKDOWN_CORE_OK) {
         qsort(sorted, count, sizeof(*sorted), session_edit_compare);
     }
-    /* The batch in source order, in bytes: the edits the text applies and
-     * the revision describes, and the bytes each writes. */
+    /* The batch in source order, in bytes: the edits the text and the tree
+     * apply, and the bytes each writes. */
     markdown_core_byte_edit *revision = NULL;
     const uint8_t **texts = NULL;
     if (status == MARKDOWN_CORE_OK) {
@@ -186,10 +188,17 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
     if (status == MARKDOWN_CORE_OK && !markdown_core_text_tree_replace(&session->text, revision, texts, count)) {
         status = MARKDOWN_CORE_ALLOCATION_FAILED;
     }
+    markdown_core_moved *moved = NULL;
+    size_t moved_count = 0;
+    if (status == MARKDOWN_CORE_OK &&
+        !markdown_core_tree_edit(session->document.root, revision, count, &moved, &moved_count)) {
+        status = MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
     if (status == MARKDOWN_CORE_OK) {
         markdown_core_text text = {session_text_read, &session->text, after};
-        status = session_parse(session, &text, revision, count);
+        status = session_parse(session, &text, moved, moved_count);
     }
+    markdown_core_free(moved);
     markdown_core_free(texts);
     markdown_core_free(revision);
     markdown_core_free(sorted);
