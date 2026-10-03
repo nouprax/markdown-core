@@ -1683,8 +1683,8 @@ static bool table_lines_take(table_source *source, table_candidate *candidate, s
     markdown_core_parser *parser = source->parser;
     const markdown_core_node *old = source->old;
     const table_source_line *line = &source->lines[index];
-    int64_t at = markdown_core_parser_source_end(parser, line->line, line->length), lead;
-    size_t child, section, section_end;
+    int64_t at = markdown_core_parser_source_end(parser, line->line, line->length), lead = 0;
+    size_t child = 0, section = 0, section_end = 0;
     if (index + 2 < source->count || !table_old_row(source, at, &child, &lead)) {
         return false;
     }
@@ -2613,7 +2613,7 @@ static void table_lattice_take(table_lattice *lattice, size_t border, size_t ind
     table_source *source = lattice->source;
     const markdown_core_node *old = source->old;
     const table_source_line *line = &source->lines[index];
-    int64_t at = markdown_core_parser_source_end(source->parser, line->line, line->length), lead;
+    int64_t at = markdown_core_parser_source_end(source->parser, line->line, line->length), lead = 0;
     size_t child;
     if (!table_old_row(source, at, &child, &lead)) {
         return;
