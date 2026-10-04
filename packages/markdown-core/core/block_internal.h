@@ -100,6 +100,10 @@ void markdown_core_block_find_first_nonspace(markdown_core_parser *parser, markd
 bool markdown_core_block_continue_indented(markdown_core_parser *parser, markdown_core_chunk *input, int continuation,
                                            bool has_content);
 void markdown_core_block_add_line(markdown_core_node *node, markdown_core_chunk *input, markdown_core_parser *parser);
+/* `node`, a leaf block, starts at `start` now, its content having lost what
+ * came before: its lines stay where they were read, the first one's lead
+ * running from the new start (E5). */
+void markdown_core_parser_move_start(markdown_core_parser *parser, markdown_core_node *node, uint32_t start);
 markdown_core_node *markdown_core_block_parent_for(markdown_core_parser *parser, markdown_core_node *parent,
                                                    markdown_core_node_type kind);
 /* Commit a parent selected by block_parent_for without repeating its policy. */

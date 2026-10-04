@@ -154,6 +154,13 @@
             "record": "markdown_core_fact_place",
             "structure": null,
             "note": "A private entry of a registry: where a fact is, as the distance from the fact before it (facts.h)."
+        },
+        {
+            "name": "LINE",
+            "kind": null,
+            "record": "markdown_core_line_value",
+            "structure": null,
+            "note": "A private line of a leaf block (E5): one of the hidden children the leaf keeps in its lines, with the leaf's state before it."
         }
     ],
     "inline": [

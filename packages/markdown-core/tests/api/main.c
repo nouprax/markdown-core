@@ -3565,18 +3565,20 @@ static void inspect_lazy_block_content(const markdown_core_element_instance *sel
             /* Warm mapping storage independently so this measures content
              * ownership, not the parser's shared source-map vector. */
             OK(runner, markdown_core_parser_mark_content(parser, node, 1, 1), "the content mapping is available");
-            before = payload_probe_snapshot().allocations;
+            /* Each write also records the line it read (E5), so the content's
+             * storage is observed on the content itself. */
             markdown_core_chunk empty = {(unsigned char *)"", 0, 0};
             markdown_core_block_add_line(node, &empty, parser);
-            INT_EQ(runner, payload_probe_snapshot().allocations, before, "an empty write acquires no storage");
+            OK(runner, !markdown_core_strbuf_owns(&node->content), "an empty write acquires no storage");
             markdown_core_chunk first = {(unsigned char *)"first write\n", 12, 0};
             markdown_core_block_add_line(node, &first, parser);
-            INT_EQ(runner, payload_probe_snapshot().allocations, before + 1,
-                   "the first write alone acquires content storage");
+            OK(runner, markdown_core_strbuf_owns(&node->content), "the first write alone acquires content storage");
+            unsigned char *reserved = node->content.ptr;
+            bufsize_t reservation = node->content.asize;
             markdown_core_chunk second = {(unsigned char *)"second write\n", 13, 0};
             markdown_core_block_add_line(node, &second, parser);
-            INT_EQ(runner, payload_probe_snapshot().allocations, before + 1,
-                   "streaming content retains its established initial reservation");
+            OK(runner, node->content.ptr == reserved && node->content.asize == reservation,
+               "streaming content retains its established initial reservation");
             STR_EQ(runner, (char *)node->content.ptr, "first write\nsecond write\n",
                    "incremental writes preserve the complete value");
             unsigned char bytes[256];
@@ -3589,9 +3591,11 @@ static void inspect_lazy_block_content(const markdown_core_element_instance *sel
                 parser->offset = 0;
                 parser->column = 1;
                 parser->partially_consumed_tab = partial_tab;
-                before = payload_probe_snapshot().allocations;
                 markdown_core_block_add_line(node, &large, parser);
-                INT_EQ(runner, payload_probe_snapshot().allocations, before + 1,
+                /* One reservation of the whole write, as the buffer sizes
+                 * one (buffer.c), and no growth after it. */
+                bufsize_t whole = node->content.size;
+                INT_EQ(runner, node->content.asize, (whole + whole / 2 + 1 + 7) & ~7,
                        "the complete first write, including tab expansion, needs one allocation");
                 INT_EQ(runner, node->content.size, sizeof(bytes) + (partial_tab ? 2 : 0),
                        "first-write reservation preserves expanded content length");
@@ -9147,8 +9151,8 @@ static void formula_leaf_construction_work(test_batch_runner *runner) {
                 markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
             OK(runner, root != NULL, "opaque formula constructs at every size and delimiter form");
             INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_FORMULA), count, "every body is one opaque leaf");
-            INT_EQ(runner, work.nodes_created, 2 * count + 3,
-                   "only document, paragraph, formula leaves and surrounding text are constructed");
+            INT_EQ(runner, work.nodes_created, 3 * count + 4,
+                   "only document, paragraph, its lines, formula leaves and surrounding text are constructed");
             INT_EQ(runner, work.nodes_freed, 0, "recognized opaque bodies have no transient AST ownership");
             OK(runner, work.opaque <= 4 * (size_t)source.size, "opaque search remains linear");
             markdown_core_node_free(root);

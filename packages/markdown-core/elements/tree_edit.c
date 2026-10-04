@@ -38,15 +38,15 @@ typedef struct {
 } edit_task;
 
 /* The edit in hand, the nodes whose relations it may still meet, each node
- * the batch moved, with its extent before the batch, and each holder whose
- * children tree the batch unsealed, sealed once when the batch is done. */
+ * the batch moved, with its extent before the batch, and each children tree
+ * the batch unsealed, sealed once when the batch is done. */
 typedef struct {
     edit_range edit;
     edit_task *tasks;
     size_t count, capacity;
     markdown_core_moved *moved;
     size_t moved_count, moved_capacity;
-    markdown_core_node **unsealed;
+    markdown_core_run **unsealed;
     size_t unsealed_count, unsealed_capacity;
     bool ok;
 } edit_pass;
@@ -118,12 +118,13 @@ static inline bool edit_mark(edit_pass *pass, markdown_core_node *node, bool anc
 
 /* `node` takes its image, relative to `image`, the new end of the node before
  * it in its relation, which ended at `previous`, and is marked changed;
- * `image` moves to its new end. */
-static inline bool edit_image(edit_pass *pass, markdown_core_node *node, int64_t previous, int64_t *image) {
+ * `image` moves to its new end. A leaf's line is anchored nowhere: no new
+ * node is matched to one (`line`). */
+static inline bool edit_image(edit_pass *pass, markdown_core_node *node, int64_t previous, int64_t *image, bool line) {
     const edit_range *edit = &pass->edit;
     int64_t start = previous + node->where.extent.lead, end = start + node->where.extent.span;
     int64_t new_start = image_start(edit, start, end), new_end = image_end(edit, start, end, new_start);
-    if (!edit_mark(pass, node, new_end != new_start)) {
+    if (!edit_mark(pass, node, !line && new_end != new_start)) {
         return false;
     }
     node->where.extent = (markdown_core_extent){(int32_t)(new_start - *image), (uint32_t)(new_end - new_start)};
@@ -138,38 +139,39 @@ static inline bool edit_image(edit_pass *pass, markdown_core_node *node, int64_t
  * does not meet keeps its extent, and `image` moves to its end, which the
  * edit leaves where it was. A node it meets takes its image; `pass->ok` turns
  * false when its record could not be stored. */
-static inline bool edit_node(edit_pass *pass, markdown_core_node *node, int64_t previous, int64_t from,
-                             int64_t *image) {
+static inline bool edit_node(edit_pass *pass, markdown_core_node *node, int64_t previous, int64_t from, int64_t *image,
+                             bool line) {
     const edit_range *edit = &pass->edit;
     int64_t start = previous + node->where.extent.lead, end = start + node->where.extent.span;
     if ((start < from ? start : from) > edit->end || end + node->reach < edit->start) {
         *image = end;
         return false;
     }
-    pass->ok = edit_image(pass, node, previous, image);
+    pass->ok = edit_image(pass, node, previous, image, line);
     return true;
 }
 
-/* The children [first, last) of `holder`, a relation whose first node's lead
- * runs from `old_origin`, now at `new_origin`. A run is stepped over whole
+/* The children [first, last) of the tree `root`, a relation whose first
+ * node's lead runs from `old_origin`, now at `new_origin`. A run is stepped over whole
  * when its range plus reach ends before the edit, and the walk stops at the
  * first node that starts after it: the children of one relation are in
  * source order, and every node after that one keeps its lead. Under `body`
  * the children are a definition's bodies, each a relation whose first node's
  * lead runs from `old_origin` (canonical-ast.md): the edit meets every body
- * from the one it reaches on, and each is pushed with that origin. Any other
- * node the edit meets is pushed with its own start. The runs on the path to
+ * from the one it reaches on, and each is pushed with that origin. A leaf's lines
+ * (`lines`) hold no relations, and any other node the edit meets is pushed
+ * with its own start. The runs on the path to
  * a changed node are unsealed, and sealed again when the batch is done
  * (5.1): an earlier edit steps over runs before it, which a later edit does
  * not move. `*met` says whether the edit met a node; false when storage ran
  * out. */
-static bool edit_children(edit_pass *pass, markdown_core_node *holder, size_t first, size_t last, int64_t old_origin,
-                          int64_t new_origin, bool body, bool *met) {
+static bool edit_children(edit_pass *pass, markdown_core_run *root, size_t first, size_t last, int64_t old_origin,
+                          int64_t new_origin, bool body, bool lines, bool *met) {
     const edit_range *edit = &pass->edit;
     markdown_core_run *path[MARKDOWN_CORE_RUN_TIERS];
     uint8_t at[MARKDOWN_CORE_RUN_TIERS];
     int depth = 1;
-    path[0] = holder->children;
+    path[0] = root;
     at[0] = 0;
     /* The lengths of the children before `index`, and where the relation's
      * first node's lead starts less the lengths before it, once the walk has
@@ -229,7 +231,7 @@ static bool edit_children(edit_pass *pass, markdown_core_node *holder, size_t fi
         }
         prefix += node->where.extent.lead + (int64_t)node->where.extent.span;
         int64_t old_start = previous + node->where.extent.lead;
-        if (!edit_node(pass, node, previous, body ? old_origin : previous, &image)) {
+        if (!edit_node(pass, node, previous, body ? old_origin : previous, &image, lines)) {
             continue;
         }
         if (!pass->ok) {
@@ -242,7 +244,7 @@ static bool edit_children(edit_pass *pass, markdown_core_node *holder, size_t fi
                               sizeof(*pass->unsealed))) {
                 return false;
             }
-            pass->unsealed[pass->unsealed_count++] = holder;
+            pass->unsealed[pass->unsealed_count++] = root;
         }
         for (int i = 0; i < depth; i++) {
             path[i]->sealed = 0;
@@ -250,7 +252,7 @@ static bool edit_children(edit_pass *pass, markdown_core_node *holder, size_t fi
         /* A definition's body holds no byte of its own to be anchored by:
          * its children are read against it by their body (canonical-ast.md),
          * so the pass descends into every body it meets. */
-        if (!body && !node->where.extent.span) {
+        if (lines || (!body && !node->where.extent.span)) {
             continue;
         }
         if (!(body ? edit_push(pass, node, old_origin, new_origin, true)
@@ -266,8 +268,13 @@ static bool edit_relations(edit_pass *pass, const edit_task *task) {
     markdown_core_node *owner = task->node;
     bool met;
     if (task->body) {
-        return !owner->children ||
-               edit_children(pass, owner, 0, owner->children->total, task->old_origin, task->new_origin, false, &met);
+        return !owner->children || edit_children(pass, owner->children, 0, owner->children->total, task->old_origin,
+                                                 task->new_origin, false, false, &met);
+    }
+    /* A leaf's lines run from its start (E5). */
+    if (owner->lines && !edit_children(pass, owner->lines, 0, owner->lines->total, task->old_origin, task->new_origin,
+                                       false, true, &met)) {
+        return false;
     }
     markdown_core_relation_cursor cursor;
     markdown_core_relation relation;
@@ -276,7 +283,7 @@ static bool edit_relations(edit_pass *pass, const edit_task *task) {
         if (relation.field) {
             markdown_core_node *node = *relation.field;
             int64_t image = task->new_origin, old_start = task->old_origin + node->where.extent.lead;
-            if (edit_node(pass, node, task->old_origin, task->old_origin, &image) &&
+            if (edit_node(pass, node, task->old_origin, task->old_origin, &image, false) &&
                 !(pass->ok && (!node->where.extent.span ||
                                edit_push(pass, node, old_start, image - node->where.extent.span, false)))) {
                 return false;
@@ -285,8 +292,8 @@ static bool edit_relations(edit_pass *pass, const edit_task *task) {
         }
         met = false;
         if (relation.holder && relation.holder->children &&
-            !edit_children(pass, relation.holder, relation.start, relation.end, task->old_origin, task->new_origin,
-                           false, &met)) {
+            !edit_children(pass, relation.holder->children, relation.start, relation.end, task->old_origin,
+                           task->new_origin, false, false, &met)) {
             return false;
         }
         if (relation.holder != owner && met) {
@@ -296,8 +303,8 @@ static bool edit_relations(edit_pass *pass, const edit_task *task) {
          * definition starts (ast.c, publish_bodies): the bodies the edit
          * meets are walked for their children, and the others are not. */
         if (owner->kind == MARKDOWN_CORE_NODE_DEFINITION) {
-            return !owner->children || edit_children(pass, owner, 0, owner->children->total, task->old_origin,
-                                                     task->new_origin, true, &met);
+            return !owner->children || edit_children(pass, owner->children, 0, owner->children->total, task->old_origin,
+                                                     task->new_origin, true, false, &met);
         }
     }
     return true;
@@ -333,7 +340,7 @@ static bool edit_batch(markdown_core_node *root, bool registry, const markdown_c
     }
     markdown_core_free(pass.tasks);
     for (size_t i = 0; i < pass.unsealed_count; i++) {
-        markdown_core_children_seal(pass.unsealed[i]->children);
+        markdown_core_children_seal(pass.unsealed[i]);
     }
     markdown_core_free(pass.unsealed);
     /* In the order of their nodes' addresses, which ast.c searches. */

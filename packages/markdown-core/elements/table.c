@@ -431,6 +431,7 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
     }
 
     // Select the final header row and verify width before committing a table.
+    markdown_core_parser_read_back(parser);
     parent_string = markdown_core_node_get_string_content(parent_container);
     if (!recognize_pipe_row((unsigned char *)parent_string, (int)strlen(parent_string), &header_row) ||
         header_row.n_columns != delimiter_row.n_columns) {
@@ -1690,7 +1691,7 @@ static bool table_lines_take(table_source *source, table_candidate *candidate, s
     }
     const markdown_core_node *row = markdown_core_children_at(old->children, child);
     int64_t start = lead + row->where.extent.lead;
-    if (at >= start || (row->flags & MARKDOWN_CORE_NODE__CHANGED) ||
+    if (at >= start || (row->flags & MARKDOWN_CORE_NODE__READ_ANEW) ||
         table_line_begin(parser, (size_t)start) != markdown_core_parser_line_after(parser, (size_t)at)) {
         return false;
     }
@@ -2624,7 +2625,7 @@ static void table_lattice_take(table_lattice *lattice, size_t border, size_t ind
     const table_entry *entry = row->opaque;
     const table_point *point = &source->workspace->points[band->after];
     const int *values = source->workspace->point_values + point->at;
-    if (at >= start || (row->flags & MARKDOWN_CORE_NODE__CHANGED) || !entry ||
+    if (at >= start || (row->flags & MARKDOWN_CORE_NODE__READ_ANEW) || !entry ||
         !table_entry_reads(entry, point, values)) {
         return;
     }

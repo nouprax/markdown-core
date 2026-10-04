@@ -184,12 +184,12 @@ struct markdown_core_element {
      * from that marker in raw source, so the key hands such a line to the
      * lookahead rather than walking over it. */
     const char *container_prefix_bytes;
-    /* WHAT A CONTAINER CARRIES TO ITS CHILDREN (docs/plans/2026-09-29-
-     * incremental-parsing.md, 5.3 and E3): whether the open `container`
+    /* WHAT A BLOCK CARRIES TO ITS LATER LINES (docs/plans/2026-09-29-
+     * incremental-parsing.md, 5.3, E3 and E5): whether the open `container`
      * reads its later lines as the finished `old` one, which starts where it
      * does and is of its kind, read them -- the facts its opening lines
-     * decided that its continuation and its children read. NULL when a
-     * container's kind decides them all. */
+     * decided that its continuation, its children and, for a leaf, its lines
+     * read. NULL when a block's kind decides them all. */
     bool (*carries_as)(const markdown_core_node *container, const markdown_core_node *old);
     /* THE RELATION THE CHILDREN A PARSE ADDS TO THE OPEN `container` JOIN
      * (canonical-ast.md): their leads run from its start, or from its

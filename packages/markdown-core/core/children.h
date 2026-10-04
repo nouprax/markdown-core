@@ -81,7 +81,7 @@ typedef struct {
 } markdown_core_run_sums;
 
 enum {
-    MARKDOWN_CORE_RUN_CHANGED = 1,
+    MARKDOWN_CORE_RUN_READ_ANEW = 1,
     MARKDOWN_CORE_RUN_ENDS = 2,
     MARKDOWN_CORE_RUN_CONTAINS_BLANK = 4,
     MARKDOWN_CORE_RUN_AFTER_BLANK_END = 8,

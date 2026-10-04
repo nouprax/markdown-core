@@ -9,9 +9,13 @@ export function auditParserBoundaries(sources, { elementHeaders = [], syntaxScan
         const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "");
         for (const match of code.matchAll(/\bMARKDOWN_CORE_NODE_([A-Z][A-Z_]*)\b/g)) {
             const kind = match[1];
-            // The structural roots, the type and value masks, and the kind
-            // count are the engine's own vocabulary, not an element's kind.
-            if (["NONE", "DOCUMENT", "TEXT", "VALUE_MASK", "KIND_COUNT"].includes(kind) || kind.startsWith("TYPE_")) {
+            // The structural roots, a leaf's lines, the type and value masks,
+            // and the kind count are the engine's own vocabulary, not an
+            // element's kind.
+            if (
+                ["NONE", "DOCUMENT", "TEXT", "LINE", "VALUE_MASK", "KIND_COUNT"].includes(kind) ||
+                kind.startsWith("TYPE_")
+            ) {
                 continue;
             }
             failures.push(`${file}: engine refers to element kind ${kind}`);
@@ -19,7 +23,7 @@ export function auditParserBoundaries(sources, { elementHeaders = [], syntaxScan
         for (const [, name] of code.matchAll(/\b(_?scan_\w+)\s*\(/g)) {
             if (scanners.has(name)) failures.push(`${file}: engine invokes syntax scanner ${name}`);
         }
-        if (/->as\.(?!literal\b)\w+/.test(code)) {
+        if (/->as\.(?!(?:literal|line)\b)\w+/.test(code)) {
             failures.push(`${file}: engine inspects an element payload`);
         }
         if (/\bcase\s*'(?! |\\[rnt])/.test(code)) failures.push(`${file}: engine dispatches a source spelling`);

@@ -76,7 +76,7 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
      * is what makes both arrivals give the same result. On a block with no
      * definitions in front of it this is what the block already said. */
     if (markdown_core_parser_content_place(parser, &b->content_map, 0, &line, &source)) {
-        b->where.place.start = (uint32_t)source;
+        markdown_core_parser_move_start(parser, b, (uint32_t)source);
     }
     return !markdown_core_block_is_blank(&b->content, 0);
 }

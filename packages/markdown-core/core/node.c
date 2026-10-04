@@ -177,6 +177,7 @@ static const size_t S_block_payload_size[MARKDOWN_CORE_NODE_KIND_COUNT] = {
     [MARKDOWN_CORE_NODE_DEFINITION_BODY & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_definition_body_value),
     [MARKDOWN_CORE_NODE_METADATA & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_metadata_fields),
     [MARKDOWN_CORE_NODE_FACT & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_fact_place),
+    [MARKDOWN_CORE_NODE_LINE & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_line_value),
 };
 
 static const size_t S_inline_payload_size[MARKDOWN_CORE_NODE_KIND_COUNT] = {
@@ -216,6 +217,7 @@ static const char *const S_block_type_string[MARKDOWN_CORE_NODE_KIND_COUNT] = {
     [MARKDOWN_CORE_NODE_METADATA & MARKDOWN_CORE_NODE_VALUE_MASK] = "metadata",
     [MARKDOWN_CORE_NODE_REGISTRY & MARKDOWN_CORE_NODE_VALUE_MASK] = "registry",
     [MARKDOWN_CORE_NODE_FACT & MARKDOWN_CORE_NODE_VALUE_MASK] = "fact",
+    [MARKDOWN_CORE_NODE_LINE & MARKDOWN_CORE_NODE_VALUE_MASK] = "line",
 };
 
 static const char *const S_inline_type_string[MARKDOWN_CORE_NODE_KIND_COUNT] = {
@@ -487,6 +489,7 @@ static size_t S_drain(markdown_core_node_pool *pool, S_released *list) {
             S_drop_fact(list, resources, e->as.fact_place->fact);
         }
         S_drop_run(list, e->children);
+        S_drop_run(list, e->lines);
         if (e->bytes) {
             markdown_core_bytes_release(pool, e->bytes);
         }
@@ -665,7 +668,7 @@ int markdown_core_node_check(markdown_core_node *node, FILE *out) {
         if (iter.event != MARKDOWN_CORE_EVENT_ENTER) {
             continue;
         }
-        size_t broken = markdown_core_children_check(cur->children);
+        size_t broken = markdown_core_children_check(cur->children) + markdown_core_children_check(cur->lines);
         if (broken && out) {
             fprintf(out, "Invalid children tree in node type %s (id %llu)\n", markdown_core_node_get_type_string(cur),
                     (unsigned long long)cur->id);
@@ -684,7 +687,7 @@ bool markdown_core_node_kind_set_intersects(const markdown_core_node_kind_set *a
 
 /* The marks of one child (children.h). */
 static inline unsigned S_child_marks(const markdown_core_node *node) {
-    return ((node->flags & MARKDOWN_CORE_NODE__CHANGED) ? MARKDOWN_CORE_RUN_CHANGED : 0u) |
+    return ((node->flags & MARKDOWN_CORE_NODE__READ_ANEW) ? MARKDOWN_CORE_RUN_READ_ANEW : 0u) |
            ((node->flags & MARKDOWN_CORE_NODE__EXIT_FRAGILE) ? 0u : (unsigned)MARKDOWN_CORE_RUN_ENDS) |
            ((node->flags & MARKDOWN_CORE_NODE__CONTAINS_BLANK) ? (unsigned)MARKDOWN_CORE_RUN_CONTAINS_BLANK : 0u) |
            ((node->flags & MARKDOWN_CORE_NODE__AFTER_BLANK_END) ? (unsigned)MARKDOWN_CORE_RUN_AFTER_BLANK_END : 0u) |
@@ -863,7 +866,7 @@ size_t markdown_core_children_take_run(const markdown_core_run *root, size_t fir
         }
         if (!run->tier) {
             const markdown_core_node *node = run->entries[cursor.at[top]];
-            if ((node->flags & MARKDOWN_CORE_NODE__CHANGED) || first + walked.count == end) {
+            if ((node->flags & MARKDOWN_CORE_NODE__READ_ANEW) || first + walked.count == end) {
                 break;
             }
             take_add(&walked, 1, node->where.extent.lead + (int64_t)node->where.extent.span, node->reach,
@@ -876,7 +879,7 @@ size_t markdown_core_children_take_run(const markdown_core_run *root, size_t fir
             continue;
         }
         const markdown_core_run *entry = run->entries[cursor.at[top]];
-        if ((entry->marks & MARKDOWN_CORE_RUN_CHANGED) || first + walked.count + entry->total > end) {
+        if ((entry->marks & MARKDOWN_CORE_RUN_READ_ANEW) || first + walked.count + entry->total > end) {
             cursor.runs[++top] = entry;
             cursor.at[top] = 0;
             continue;

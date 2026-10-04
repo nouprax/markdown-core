@@ -227,8 +227,8 @@ part of the value; the absolute scope serves only the matching of 4.4.
 4.3 classifies nodes by the ids the subject assigned, so on its own it would
 accept an implementation that gives a surviving node a new id and so loses its
 view state. The plan states which old node each new node continues (5.9) in
-terms the harness evaluates from the public model alone: the position mapping
-of the step (plan 5.2), the absolute scopes of the snapshot and of
+terms the harness evaluates from the public model alone: the image of each
+position under the step's edits (plan 5.2), the absolute scopes of the snapshot and of
 `scope(of:in:)` on the new document, kinds and owner relations. The harness
 computes the expected matching itself, for every node of every step:
 

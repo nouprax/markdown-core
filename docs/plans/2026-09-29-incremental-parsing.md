@@ -326,10 +326,10 @@ C views borrow from the session until its next edit.
   and the conformance fixtures stay in UTF-8 columns.
 - **Batches.** `edit` takes disjoint edits in the coordinates of the text
   before the batch and parses once, for multi-cursor edits and bulk
-  replacements. The batch keeps every edit as its own piece of the
-  position mapping (5.2), so bytes between two edits stay surviving bytes
-  with their own shift. One edit pass and one parse cover every edit of the
-  batch (5.2, 5.3).
+  replacements. The edit pass applies each edit of the batch on its own
+  (5.2), so bytes between two edits stay surviving bytes with their own
+  shift. One edit pass and one parse cover every edit of the batch (5.2,
+  5.3).
 - **`Document.parse`** keeps its signature apart from the unit parameter. It
   is a session that inserts the whole source once and is then discarded.
 
@@ -597,8 +597,12 @@ are requirements on every element, each checked by an audit script in
   trailing-blank trimming as a length, and the column geometry of a grid or
   multiline table, whose rows record that geometry as their entry. A changed
   leaf is descended like a container: its unchanged lines are taken in runs,
-  its changed lines are read, and the leaf recombines in O(log lines). The
-  hidden lines are storage, like the internal nodes of a children tree:
+  its changed lines are read, and the content of the taken lines is copied
+  back into the leaf's content, in O(copied bytes), with no decision made
+  again. A line on which a decision read the leaf's content before it (a
+  table header or setext underline tried against the paragraph so far) is
+  read again by every parse, as tree-sitter never reuses a node its parse
+  state does not account for. The hidden lines are storage, like the internal nodes of a children tree:
   walks, the canonical dump and the bindings do not see them.
 
 ### 5.5 Streaming is an edit at the end
@@ -980,6 +984,8 @@ pretend otherwise:
   renderer re-highlights that block per chunk anyway.
 - A grid or multiline table whose geometry changes rebuilds every row,
   because every cell's bounds changed.
+- An edit that makes a table stop being one, or start being one, reads
+  every row of it again, because every row's meaning changed.
 
 ## 8. Testing
 

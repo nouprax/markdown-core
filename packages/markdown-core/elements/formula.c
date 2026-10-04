@@ -706,8 +706,14 @@ static const markdown_core_node_type FORMULA_EXIT_KINDS[] = {MARKDOWN_CORE_NODE_
                                                              MARKDOWN_CORE_NODE_CODE_BLOCK,
                                                              MARKDOWN_CORE_NODE_PARAGRAPH, MARKDOWN_CORE_NODE_NONE};
 
+/* A formula block's lines continue it up to a closer of its delimiter. */
+static bool carries_as(const markdown_core_node *node, const markdown_core_node *old) {
+    return ((const node_formula *)node->opaque)->block_delim == ((const node_formula *)old->opaque)->block_delim;
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .interrupts_paragraph = true,
+    .carries_as = carries_as,
 
     .name = "formula",
     .match_inline = match,

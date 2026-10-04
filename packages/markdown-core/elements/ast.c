@@ -764,7 +764,7 @@ static bool publish_matched(const markdown_core_parser *parser, publish_identity
  * in are read again with it, and the runs that hold it seal its record. */
 /* `old` takes `node`'s record; whether that changed it. */
 static bool publish_take_record(markdown_core_node *old, const markdown_core_node *node) {
-    unsigned record = MARKDOWN_CORE_NODE__CHANGED | MARKDOWN_CORE_NODE__EXIT_FRAGILE |
+    unsigned record = MARKDOWN_CORE_NODE__CHANGED | MARKDOWN_CORE_NODE__READS_BACK | MARKDOWN_CORE_NODE__EXIT_FRAGILE |
                       MARKDOWN_CORE_NODE__LAST_LINE_BLANK | MARKDOWN_CORE_NODE__ENDS_BLANK |
                       MARKDOWN_CORE_NODE__CONTAINS_BLANK | MARKDOWN_CORE_NODE__AFTER_BLANK_END |
                       MARKDOWN_CORE_NODE__AFTER_LOOSE_END;

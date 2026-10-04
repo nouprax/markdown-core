@@ -291,13 +291,33 @@ enum markdown_core_node__internal_flags {
     MARKDOWN_CORE_NODE__AFTER_BLANK_END = (1 << 13),
     MARKDOWN_CORE_NODE__AFTER_LOOSE_END = (1 << 14),
 
+    /* A decision about this node read the content before it, which no entry
+     * records (a leaf's line on which a table header or a setext underline
+     * was tried against the paragraph so far, E5): every parse reads it
+     * again rather than taking it, as tree-sitter never reuses a node its
+     * parse state does not account for. */
+    MARKDOWN_CORE_NODE__READS_BACK = (1 << 15),
+
     // The first bit an element may claim. Element flags are compile-time
     // constants owned by the element that uses them; there is no runtime
     // registration and no allocator to run out of bits.
-    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 15),
+    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 16),
 };
 
-typedef uint16_t markdown_core_node_internal_flags;
+typedef uint32_t markdown_core_node_internal_flags;
+
+/* What makes a parse against the tree a node is in read it again rather than
+ * take it (5.3): an edit met it, or it read back. */
+#define MARKDOWN_CORE_NODE__READ_ANEW                                                                                  \
+    ((markdown_core_node_internal_flags)(MARKDOWN_CORE_NODE__CHANGED | MARKDOWN_CORE_NODE__READS_BACK))
+
+/* AN OPEN LEAF'S LINE STATE (E5): the flags of a leaf block the lines it
+ * reads can set and the decisions on its later lines read -- its last line's
+ * blankness, the definitions it has dropped and every element's own. A line
+ * records them as its entry. */
+#define MARKDOWN_CORE_NODE__LINE_STATE                                                                                 \
+    ((markdown_core_node_internal_flags)(MARKDOWN_CORE_NODE__LAST_LINE_BLANK | MARKDOWN_CORE_NODE__REFERENCE_PREFIX |  \
+                                         (uint32_t)~(MARKDOWN_CORE_NODE__ELEMENT_FIRST - 1)))
 
 /* HTML recognition state and the eventual literal have one owner throughout
  * the block lifecycle. They never overlay or replace each other's storage. */
@@ -320,6 +340,20 @@ typedef struct {
     struct markdown_core_fact *fact;
 } markdown_core_fact_place;
 
+/* A LEAF BLOCK'S LINE (docs/plans/2026-09-29-incremental-parsing.md, E5):
+ * one of the hidden children a leaf keeps in its `lines`, as tokens are a
+ * tree-sitter node's leaves. Its extent runs from where the line's content
+ * starts, after the prefixes of the containers around the leaf, to the start
+ * of the next line, and its lead from where the line before it ended, or
+ * from the leaf's start for the first; its reach is how far past that end
+ * the decisions on the line read. `entry` is the leaf's state before the
+ * line (MARKDOWN_CORE_NODE__LINE_STATE), and `spaces` the columns of a tab
+ * the prefixes consumed in part, which the content begins with. */
+typedef struct {
+    markdown_core_node_internal_flags entry;
+    uint8_t spaces;
+} markdown_core_line_value;
+
 typedef union {
     void *data;
     markdown_core_chunk *literal;
@@ -340,6 +374,7 @@ typedef union {
     markdown_core_html_block *html_block;
     markdown_core_table_cell *table_cell;
     markdown_core_fact_place *fact_place;
+    markdown_core_line_value *line;
 } markdown_core_node_data;
 
 /* THE BYTES A LITERAL READS (docs/plans/2026-09-29-incremental-parsing.md,
@@ -369,6 +404,10 @@ struct markdown_core_node {
     } hold;
     /* The content children (children.h), or NULL when there are none. */
     markdown_core_run *children;
+    /* A leaf block's lines (markdown_core_line_value), a children tree no
+     * walk, dump, comparison or binding reads: storage, like the runs of a
+     * children tree. NULL when there are none. */
+    markdown_core_run *lines;
     /* The inline input the parser was reading when it made the node, which
      * its literals may point into, or NULL. */
     markdown_core_bytes *bytes;

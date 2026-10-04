@@ -461,6 +461,7 @@ static bool open_setext(const markdown_core_element_instance *self, markdown_cor
     bufsize_t matched = start->matched;
     bool has_content;
     // markdown_core_block_finalize paragraph, resolving reference links
+    markdown_core_parser_read_back(parser);
     has_content = markdown_core_block_resolve_reference_link_definitions(parser, *container);
 
     if (has_content) {

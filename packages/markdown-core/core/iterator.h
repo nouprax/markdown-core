@@ -39,8 +39,9 @@ typedef struct {
     size_t reads;
     /* On the open spine, when the parse continues an old tree (5.3): the old
      * node the frame's block continues, which starts where it does and is of
-     * its kind, or NULL; and where the block's last closed child ends, or
-     * where its children's leads run from when it has none. */
+     * its kind, or NULL; and where the block's last closed child ends, or a
+     * leaf's last line (E5), or where their leads run from when it has
+     * none. */
     const struct markdown_core_node *old;
     size_t last_end;
     /* On the open spine: what the block has seen of blank lines among its

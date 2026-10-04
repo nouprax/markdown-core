@@ -99,8 +99,14 @@ static bool blank_line(const markdown_core_element_instance *self, markdown_core
     return true;
 }
 
+/* An HTML block's lines continue it up to the end condition of its type. */
+static bool carries_as(const markdown_core_node *node, const markdown_core_node *old) {
+    return node->as.html_block->block_type == old->as.html_block->block_type;
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_HTML_BLOCK = {
     .blank_line = blank_line,
+    .carries_as = carries_as,
 
     .name = "html_block",
     .maximum_block_indent = 3,

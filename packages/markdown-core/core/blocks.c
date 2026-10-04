@@ -63,6 +63,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_process_line(markd
                                                                            bufsize_t bytes);
 static inline const unsigned char *S_input_line_content(markdown_core_parser *parser, markdown_core_input_line *line,
                                                         bufsize_t *length);
+static size_t S_take_lines(markdown_core_parser *parser, markdown_core_node *node);
+static void S_read_taken_lines(markdown_core_parser *parser, markdown_core_node *node, size_t count);
 
 static markdown_core_node *make_block(markdown_core_parser *parser, markdown_core_node_type tag, bufsize_t start) {
     markdown_core_node *e;
@@ -437,20 +439,21 @@ static void S_record_content_mark(markdown_core_parser *parser, markdown_core_no
     S_append_input_marks(parser, node, parser->line_number, parser->line_start, column, length, node->content.size);
 }
 
-void markdown_core_block_add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown_core_parser *parser) {
-    int chars_to_tab;
-    int i;
-    assert(node->flags & MARKDOWN_CORE_NODE__OPEN);
+/* Appends a line's content to `node`: the bytes of `data`, a line of `size`
+ * bytes, from `offset`, and a line ending after them when `ending` is set,
+ * for a line read from the input index without its terminator. `spaces`,
+ * when not zero, is the columns of the tab at `offset` that the prefixes
+ * before it left, which the content begins with. */
+static void S_add_content(markdown_core_parser *parser, markdown_core_node *node, const unsigned char *data,
+                          bufsize_t size, bufsize_t offset, int spaces, bool ending) {
+    bufsize_t length = size + (ending ? 1 : 0);
     /* Block content accumulates physical lines. Keep its existing initial
      * minimum reservation, but acquire enough for the complete first write
      * rather than allocating a small buffer and immediately growing it.
      * Empty blocks, including containers, never acquire this storage.
      * Producers of already delimited values use ordinary strbuf writes. */
-    if (!markdown_core_strbuf_owns(&node->content) && (parser->partially_consumed_tab || ch->len > parser->offset)) {
-        size_t initial = (size_t)(ch->len - parser->offset);
-        if (parser->partially_consumed_tab) {
-            initial += TAB_STOP - (parser->column % TAB_STOP) - 1;
-        }
+    if (!markdown_core_strbuf_owns(&node->content) && (spaces || length > offset)) {
+        size_t initial = (size_t)(length - offset) + (spaces ? (size_t)spaces - 1 : 0);
         /* Saturate only the conversion; strbuf owns the capacity limit and
          * failure contract, including a tab expansion beyond that limit. */
         markdown_core_strbuf_grow(&node->content, initial > INT32_MAX ? INT32_MAX
@@ -468,22 +471,102 @@ void markdown_core_block_add_line(markdown_core_node *node, markdown_core_chunk 
      * start before its own scope. The bytes that ARE copied are its content,
      * and the tab below is one of them, because its expansion is what lands in
      * the buffer. */
-    if (parser->partially_consumed_tab) {
-        /* The spaces below stand for the tail of the tab at parser->offset and
+    if (spaces) {
+        /* The spaces below stand for the tail of the tab at `offset` and
          * have no source bytes of their own, so they are marked against the
          * tab itself and the copied bytes get a mark of their own. */
-        S_record_content_mark(parser, node, parser->offset + 1, 1);
-        parser->offset += 1; // skip over tab
-        // add space characters:
-        chars_to_tab = TAB_STOP - (parser->column % TAB_STOP);
-        for (i = 0; i < chars_to_tab; i++) {
+        S_record_content_mark(parser, node, offset + 1, 1);
+        offset += 1; // skip over tab
+        for (int i = 0; i < spaces; i++) {
             markdown_core_strbuf_putc(&node->content, ' ');
         }
     }
-    S_record_content_mark(parser, node, parser->offset + 1, ch->len - parser->offset);
-    markdown_core_strbuf_put(&node->content, ch->data + parser->offset, ch->len - parser->offset);
+    S_record_content_mark(parser, node, offset + 1, length - offset);
+    markdown_core_strbuf_put(&node->content, data + offset, size - offset);
+    if (ending) {
+        markdown_core_strbuf_putc(&node->content, '\n');
+    }
     if (node->content.oom) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+}
+
+/* THE LINE THE LEAF `node`, the deepest open block, has just read (E5): its
+ * content begins at `offset` of the line in `ch`, with `spaces` columns of
+ * the tab there when that is not zero. */
+static void S_record_line(markdown_core_parser *parser, markdown_core_node *node, const markdown_core_chunk *ch,
+                          bufsize_t offset, int spaces) {
+    markdown_core_iter_frame *frame = &parser->path.frames[parser->path.count - 1];
+    assert(frame->node == node);
+    /* A line whose content its opener consumed to its end, ending
+     * included, holds no byte. */
+    size_t next = parser->line_next, start = (size_t)parser->line_start + (size_t)offset;
+    start = start < next ? start : next;
+    markdown_core_node *line = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_LINE);
+    if (!line || !markdown_core_children_append(parser->pool, &node->lines, line)) {
+        if (line) {
+            markdown_core_parser_release_node(parser, line);
+        }
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return;
+    }
+    line->where.extent =
+        (markdown_core_extent){(int32_t)((int64_t)start - (int64_t)frame->last_end), (uint32_t)(next - start)};
+    line->reach = parser->line_reads > next ? (uint32_t)(parser->line_reads - next) : 0;
+    /* A run of taken lines does not end at a blank one: the containers
+     * around the leaf hold blank-line marks after it (blocks.c, S_take). A
+     * line that read the content before it is read again by every parse:
+     * its entry is that content, which no line records. */
+    if (markdown_core_is_blank_to_line_end(ch->data, offset, ch->len)) {
+        line->flags |= MARKDOWN_CORE_NODE__EXIT_FRAGILE;
+    }
+    if (parser->line_reads_back) {
+        line->flags |= MARKDOWN_CORE_NODE__READS_BACK;
+    }
+    line->as.line->entry = node->flags & MARKDOWN_CORE_NODE__LINE_STATE;
+    line->as.line->spaces = (uint8_t)spaces;
+    frame->last_end = next;
+}
+
+void markdown_core_parser_move_start(markdown_core_parser *parser, markdown_core_node *node, uint32_t start) {
+    if (node->lines && start != node->where.place.start) {
+        /* The first line may be an old leaf's too: it is replaced, not
+         * changed. */
+        const markdown_core_node *first = markdown_core_children_at(node->lines, 0);
+        markdown_core_node *line = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_LINE), *replaced;
+        if (!line || !markdown_core_children_replace(parser->pool, &node->lines, 0, line, &replaced)) {
+            if (line) {
+                markdown_core_parser_release_node(parser, line);
+            }
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            return;
+        }
+        line->where.extent = (markdown_core_extent){
+            (int32_t)(first->where.extent.lead + (int64_t)node->where.place.start - (int64_t)start),
+            first->where.extent.span};
+        line->flags = first->flags;
+        line->reach = first->reach;
+        *line->as.line = *first->as.line;
+        markdown_core_parser_release_node(parser, replaced);
+    }
+    node->where.place.start = start;
+}
+
+void markdown_core_block_add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown_core_parser *parser) {
+    assert(node->flags & MARKDOWN_CORE_NODE__OPEN);
+    int spaces = parser->partially_consumed_tab ? TAB_STOP - (parser->column % TAB_STOP) : 0;
+    bufsize_t offset = parser->offset;
+    /* A cell's blocks are read from the cell's content and never taken, so
+     * their lines are not recorded. */
+    bool recorded = parser->block_root == parser->root;
+    size_t taken = recorded && parser->path.frames[parser->path.count - 1].old ? S_take_lines(parser, node) : 0;
+    S_add_content(parser, node, ch->data, ch->len, offset, spaces, false);
+    /* The content holds the tab's expansion, not the tab. */
+    parser->offset += spaces ? 1 : 0;
+    if (taken > 1) {
+        S_read_taken_lines(parser, node, taken - 1);
+    } else if (!taken && recorded && !parser->error) {
+        S_record_line(parser, node, ch, offset, spaces);
     }
 }
 
@@ -967,6 +1050,8 @@ static inline void S_record_reach(markdown_core_parser *parser, markdown_core_no
  * the frame it was open on, `around` its parent's, NULL for the root. */
 static void S_close(markdown_core_parser *parser, markdown_core_node *b, const markdown_core_iter_frame *own,
                     markdown_core_iter_frame *around) {
+    /* Its lines are all read (E5). */
+    markdown_core_children_seal(b->lines);
     /* The state its element kept while it was open goes with it. */
     const markdown_core_element_instance *structure = markdown_core_parser_structure(parser, b);
     if (structure) {
@@ -1247,6 +1332,12 @@ bool markdown_core_parser_set_node_kind(markdown_core_parser *parser, markdown_c
     if (!markdown_core_node_set_kind(node, kind)) {
         return false;
     }
+    /* Its lines were read for the kind it was (E5): no old block of the new
+     * kind continues them. */
+    if (node->lines) {
+        parser->nodes_freed += markdown_core_node_pool_release_children(parser->pool, node->lines);
+        node->lines = NULL;
+    }
     /* An open block, the deepest, continues the old block of its new kind at
      * its start, and its children's leads run from there. */
     if (node->flags & MARKDOWN_CORE_NODE__OPEN) {
@@ -1285,7 +1376,7 @@ static bool S_take(markdown_core_parser *parser, markdown_core_node *parent, mar
     *old = first;
     const markdown_core_node *previous = parent->children ? markdown_core_node_last_child(parent) : NULL;
     const markdown_core_node *old_previous = index ? markdown_core_children_at(holder->children, index - 1) : NULL;
-    if ((first->flags & MARKDOWN_CORE_NODE__CHANGED) || lead != (int64_t)frame->last_end ||
+    if ((first->flags & MARKDOWN_CORE_NODE__READ_ANEW) || lead != (int64_t)frame->last_end ||
         (previous ? previous->kind : MARKDOWN_CORE_NODE_NONE) !=
             (old_previous ? old_previous->kind : MARKDOWN_CORE_NODE_NONE) ||
         !S_spine_carries(parser)) {
@@ -1683,7 +1774,7 @@ static void S_complete(markdown_core_parser *parser, markdown_core_node *node, m
     if (!owner || (node->flags & MARKDOWN_CORE_NODE__PENDING) || S_holds_nodes(&parser->dialect->kinds[index], node)) {
         S_publish(parser, node, owner, start);
     }
-    node->flags &= (uint16_t)~MARKDOWN_CORE_NODE__PENDING;
+    node->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__PENDING;
 }
 
 void markdown_core_parser_complete(markdown_core_parser *parser, markdown_core_node *node, markdown_core_node *parent) {
@@ -1808,7 +1899,7 @@ static int complete_inline_root(owned_tree_walk *walk, const struct markdown_cor
                     if (!S_publish(parser, node, entry->owner, entry->start)) {
                         S_publish_relation(parser, entry->owner, entry->owner_start, node);
                     }
-                    node->flags &= (uint16_t)~MARKDOWN_CORE_NODE__PENDING;
+                    node->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__PENDING;
                 }
                 continue;
             }
@@ -2143,6 +2234,101 @@ static void S_input_resume(markdown_core_parser *parser, size_t end) {
     parser->lookahead_last_line_ready = false;
 }
 
+/* THE CURSOR OVER A LEAF'S LINES (docs/plans/2026-09-29-incremental-parsing.md,
+ * E5): the line the leaf `node`, the deepest open block, is about to read
+ * is an old one when the old leaf it continues has a line whose content
+ * starts here. It is taken, with the run of unchanged lines after it, by the
+ * rule of S_take: no edit met it, the parse stands where the old one stood
+ * before it -- its lead starts where the leaf's last line ended, and the
+ * open blocks carry what their old blocks carried -- and the leaf's state is
+ * the one the old line recorded as its entry. The run joins the leaf's
+ * lines; the count it holds, the line in hand first, or 0 when none is
+ * taken. */
+static size_t S_take_lines(markdown_core_parser *parser, markdown_core_node *node) {
+    markdown_core_iter_frame *frame = &parser->path.frames[parser->path.count - 1];
+    const markdown_core_node *old = frame->old;
+    assert(frame->node == node);
+    size_t start = (size_t)parser->line_start + (size_t)parser->offset, index;
+    int64_t lead;
+    if (!old->lines ||
+        !markdown_core_children_find(old->lines, (int64_t)node->where.place.start, (int64_t)start, &index, &lead) ||
+        lead != (int64_t)frame->last_end) {
+        return 0;
+    }
+    const markdown_core_node *first = markdown_core_children_at(old->lines, index);
+    if (lead + first->where.extent.lead != (int64_t)start ||
+        first->as.line->entry != (node->flags & MARKDOWN_CORE_NODE__LINE_STATE) || !S_spine_carries(parser)) {
+        return 0;
+    }
+    /* A run ends before the old leaf's last line: the line after that one
+     * closed the leaf, from a state the leaf's decisions on its last line
+     * left -- its end condition met, a closer read -- which a run does not
+     * reproduce. */
+    markdown_core_run_sums sums;
+    size_t count = markdown_core_children_take_run(old->lines, index, old->lines->total - 1, &sums);
+    if (!count) {
+        return 0;
+    }
+    bool ok = true;
+    markdown_core_run *run = markdown_core_children_slice(parser->pool, old->lines, index, count, &ok);
+    if (!ok || !markdown_core_children_join(parser->pool, &node->lines, run)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return 0;
+    }
+    frame->last_end = (size_t)(lead + sums.length);
+    if (frame->reads < frame->last_end + sums.reach) {
+        frame->reads = frame->last_end + sums.reach;
+    }
+    return count;
+}
+
+/* The `count` lines after the line in hand that the leaf `node` took
+ * (S_take_lines), the last of its lines: each is read from the input index
+ * as the line machine reads a line, and its content is the leaf's, as the
+ * old parse added it, with no decision made again. The leaf's state after
+ * them is the last one's entry, and the open blocks around it hold no
+ * blank-line marks, as after any line that is not blank: a run ends at none
+ * (S_record_line). */
+static void S_read_taken_lines(markdown_core_parser *parser, markdown_core_node *node, size_t count) {
+    markdown_core_children_cursor cursor;
+    markdown_core_children_seek(&cursor, node->lines, node->lines->total - count);
+    const markdown_core_node *line = NULL;
+    for (size_t i = 0; i < count && !parser->error; i++) {
+        line = markdown_core_children_next(&cursor);
+        size_t index = (size_t)(parser->line_number + 1 - parser->input_first_line);
+        markdown_core_input_line *found = S_extend_source_lines(parser, index);
+        bufsize_t length;
+        const unsigned char *content = found ? S_input_line_content(parser, found, &length) : NULL;
+        if (!content) {
+            return;
+        }
+        /* The line starts where the one before it ended, and its lead runs
+         * over the prefixes of the containers around the leaf, or over the
+         * whole line when its opener consumed it, ending included
+         * (S_record_line). */
+        assert(found->start == parser->line_next && line->where.extent.lead >= 0);
+        bool ending = line->where.extent.lead <= length;
+        bufsize_t offset = ending ? (bufsize_t)line->where.extent.lead : length;
+        size_t next = markdown_core_input_line_next(parser, found);
+        parser->line_number++;
+        parser->line_start = (bufsize_t)found->start;
+        parser->line_end = (bufsize_t)found->end;
+        parser->line_next = next;
+        parser->lookahead_cursor = next;
+        if (parser->line_reads < next) {
+            parser->line_reads = next;
+        }
+        S_add_content(parser, node, content, length, offset, line->as.line->spaces, ending);
+    }
+    node->flags =
+        (markdown_core_node_internal_flags)((node->flags & ~MARKDOWN_CORE_NODE__LINE_STATE) | line->as.line->entry);
+    for (size_t at = 0; at + 1 < parser->path.count; at++) {
+        parser->path.frames[at].node->flags &= (markdown_core_node_internal_flags) ~(
+            MARKDOWN_CORE_NODE__LAST_LINE_BLANK | MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK);
+    }
+    parser->lines_taken = true;
+}
+
 static void S_parse_source(markdown_core_parser *parser, const markdown_core_text *text) {
     assert(text->size <= MARKDOWN_CORE_SOURCE_CAPACITY);
     S_clear_normalized_lines(parser);
@@ -2176,6 +2362,7 @@ static void S_parse_source(markdown_core_parser *parser, const markdown_core_tex
         size_t next = markdown_core_input_line_next(parser, found);
         parser->lookahead_cursor = next;
         parser->line_reads = next;
+        parser->line_next = next;
         parser->line_start = (bufsize_t)found->start;
         /* A document line's scan recorded where its content ends; a cell's
          * line ends where the cell's map places its last byte. */
@@ -3093,7 +3280,9 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void add_text_to_containe
 
         if (accepts_lines) {
             markdown_core_block_add_line(container, input, parser);
-            if (structure->element->ends_block && structure->element->ends_block(structure, parser, container, input)) {
+            /* Lines a run took after this one continued the block. */
+            if (!parser->lines_taken && structure->element->ends_block &&
+                structure->element->ends_block(structure, parser, container, input)) {
                 container->flags |= MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION;
                 container = markdown_core_block_finalize(parser, container);
             }
@@ -3163,6 +3352,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_process_line(markd
 
     parser->line_number++;
     parser->line_refused = false;
+    parser->line_reads_back = false;
+    parser->lines_taken = false;
 
     last_matched_container = check_open_blocks(parser, &input, &all_matched);
 

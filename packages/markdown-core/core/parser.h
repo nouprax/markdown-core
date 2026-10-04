@@ -267,6 +267,11 @@ struct markdown_core_parser {
      * line closed from a state a run of taken blocks does not reproduce, and
      * no run ends at it. */
     bool line_refused;
+    /* Whether a decision on the line being processed read the content of
+     * the open leaf it continues (markdown_core_parser_read_back), and
+     * whether the line took a run of the leaf's later lines (E5). */
+    bool line_reads_back;
+    bool lines_taken;
     /* THE PARSER'S PATH (docs/plans/2026-09-29-incremental-parsing.md,
      * 5.11): a node has no parent link, so every walk of the parse carries
      * its path here, one frame per node from its root down. While lines are
@@ -314,6 +319,9 @@ struct markdown_core_parser {
      * the deepest open block takes it, and a block that closes hands its
      * reads to its parent (blocks.c). */
     size_t line_reads;
+    /* Where the line after the one being processed starts in the active
+     * input: past its terminator, or the input's end. */
+    size_t line_next;
     /* Where input line `line_number` starts in the active input: the driver
      * records it with `line_end`, and a claim of later lines moves it. */
     bufsize_t line_start;
@@ -944,6 +952,12 @@ static inline size_t markdown_core_parser_children_end(const markdown_core_parse
 /* A block start the line would have opened was refused because a paragraph
  * or a lazy line was open (`line_refused`). */
 static inline void markdown_core_parser_refuse(markdown_core_parser *parser) { parser->line_refused = true; }
+
+/* A decision on the line being processed reads the content of the open leaf
+ * the line continues, the lines before it: no parse takes the line, since
+ * its entry is that content (blocks.c, E5). Every such decision calls this
+ * before it reads. */
+static inline void markdown_core_parser_read_back(markdown_core_parser *parser) { parser->line_reads_back = true; }
 
 /* The geometry of input line `line`, which the driver has already visited. */
 static inline markdown_core_input_line *markdown_core_parser_visited_line(const markdown_core_parser *parser,
