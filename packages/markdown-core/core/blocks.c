@@ -2297,7 +2297,7 @@ static void S_read_taken_lines(markdown_core_parser *parser, markdown_core_node 
         line = markdown_core_children_next(&cursor);
         size_t index = (size_t)(parser->line_number + 1 - parser->input_first_line);
         markdown_core_input_line *found = S_extend_source_lines(parser, index);
-        bufsize_t length;
+        bufsize_t length = 0;
         const unsigned char *content = found ? S_input_line_content(parser, found, &length) : NULL;
         if (!content) {
             return;
