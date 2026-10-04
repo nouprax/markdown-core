@@ -222,6 +222,10 @@ void markdown_core_block_convert_comment_block(markdown_core_parser *parser, mar
         return;
     }
 
+    if (!markdown_core_node_can_contain_type(markdown_core_parser_open_parent(parser, b),
+                                             MARKDOWN_CORE_NODE_COMMENT_BLOCK)) {
+        return;
+    }
     body_start = open + 4;
     body_len = close > body_start ? close - body_start : 0;
     /* Keep ownership of the HTML literal across the kind change. Restore it
@@ -229,13 +233,9 @@ void markdown_core_block_convert_comment_block(markdown_core_parser *parser, mar
     assert(literal->alloc);
     markdown_core_chunk owned_literal = *literal;
     *literal = (markdown_core_chunk)MARKDOWN_CORE_CHUNK_EMPTY;
-    markdown_core_node_set_kind_result result =
-        markdown_core_parser_set_node_kind(parser, b, MARKDOWN_CORE_NODE_COMMENT_BLOCK);
-    if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
+    if (!markdown_core_parser_set_node_kind(parser, b, MARKDOWN_CORE_NODE_COMMENT_BLOCK)) {
         *literal = owned_literal;
-        if (result == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        }
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
     *b->as.literal = owned_literal;

@@ -5,10 +5,9 @@
 #include "alloc.h"
 #include "config.h"
 #include "node.h"
-#include "references.h"
+#include "facts.h"
 #include "element.h"
-
-static void S_node_unlink(markdown_core_node *node);
+#include "iterator.h"
 
 /* These kinds are owned roots/fields, never ordinary child edges, even under
  * a dynamic policy. Both decision paths share this structural boundary. */
@@ -100,26 +99,6 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
     return markdown_core_node_can_contain_builtin(node, child_type);
 }
 
-static bool S_can_contain(markdown_core_node *node, markdown_core_node *child) {
-    if (node == NULL || child == NULL) {
-        return false;
-    }
-    /* Arbitrary reparenting must reject cycles. Parser construction instead
-     * proves containment and transfers a disjoint subtree through
-     * attach_validated. */
-    {
-        markdown_core_node *cur = node;
-        do {
-            if (cur == child) {
-                return false;
-            }
-            cur = cur->parent;
-        } while (cur != NULL);
-    }
-
-    return markdown_core_node_can_contain_type(node, (markdown_core_node_type)child->kind);
-}
-
 /* A NODE'S SLOT STORAGE (slab.h): the node, then room for its kind's record.
  * A C99 union aligns the node and the record space after it for ordinary
  * scalar fields, as the slot header before them is; the node sits at one
@@ -144,8 +123,6 @@ typedef struct {
     unsigned char record[MARKDOWN_CORE_NODE_SLOT_RECORD_BYTES];
 } markdown_core_node_slot;
 
-#define MARKDOWN_CORE_NODE_SLAB_BYTES ((size_t)64 * 1024)
-
 static markdown_core_node_slot *S_slot_of(markdown_core_node *node) {
     return (markdown_core_node_slot *)((unsigned char *)node - offsetof(markdown_core_node_slot, node));
 }
@@ -154,8 +131,8 @@ static markdown_core_node_slot *S_slot_of(markdown_core_node *node) {
  * initializes the node and its active record after taking the slot. Spare
  * record capacity is storage, not an object to initialize. */
 static markdown_core_node_slot *S_slot_take(markdown_core_node_pool *pool) {
-    return (markdown_core_node_slot *)markdown_core_slab_take(
-        pool ? &pool->nodes : NULL, sizeof(markdown_core_node_slot), MARKDOWN_CORE_NODE_SLAB_BYTES);
+    return (markdown_core_node_slot *)markdown_core_slab_take(pool ? &pool->slabs : NULL, pool ? &pool->nodes : NULL,
+                                                              sizeof(markdown_core_node_slot));
 }
 
 /* The node's storage, after its contents are released. */
@@ -166,6 +143,9 @@ static void S_slot_release(markdown_core_node_pool *pool, markdown_core_node *no
 void markdown_core_node_pool_dispose(markdown_core_node_pool *pool) {
     markdown_core_slab_pool_dispose(&pool->nodes);
     markdown_core_slab_pool_dispose(&pool->resources);
+    markdown_core_slab_pool_dispose(&pool->runs);
+    markdown_core_slab_pool_dispose(&pool->bytes);
+    markdown_core_slabs_dispose(&pool->slabs);
 }
 
 /* RECORD SIZE IS A PROPERTY OF THE KIND, so it is an array index.
@@ -196,6 +176,8 @@ static const size_t S_block_payload_size[MARKDOWN_CORE_NODE_KIND_COUNT] = {
     [MARKDOWN_CORE_NODE_DEFINITION & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_definition),
     [MARKDOWN_CORE_NODE_DEFINITION_BODY & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_definition_body_value),
     [MARKDOWN_CORE_NODE_METADATA & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_metadata_fields),
+    [MARKDOWN_CORE_NODE_FACT & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_fact_place),
+    [MARKDOWN_CORE_NODE_LINE & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_line_value),
 };
 
 static const size_t S_inline_payload_size[MARKDOWN_CORE_NODE_KIND_COUNT] = {
@@ -204,7 +186,6 @@ static const size_t S_inline_payload_size[MARKDOWN_CORE_NODE_KIND_COUNT] = {
     [MARKDOWN_CORE_NODE_HTML & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_chunk),
     [MARKDOWN_CORE_NODE_LINK & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_link),
     [MARKDOWN_CORE_NODE_EMBEDDED & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_link),
-    [MARKDOWN_CORE_NODE_CITE & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_cite),
     [MARKDOWN_CORE_NODE_COMMENT & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_chunk),
     [MARKDOWN_CORE_NODE_CITATION & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_citation_item),
     [MARKDOWN_CORE_NODE_CROSS_LINK & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_cross_reference),
@@ -234,6 +215,9 @@ static const char *const S_block_type_string[MARKDOWN_CORE_NODE_KIND_COUNT] = {
     [MARKDOWN_CORE_NODE_DEFINITION_BODY & MARKDOWN_CORE_NODE_VALUE_MASK] = "definition_body",
     [MARKDOWN_CORE_NODE_TABLE_CAPTION & MARKDOWN_CORE_NODE_VALUE_MASK] = "table_caption",
     [MARKDOWN_CORE_NODE_METADATA & MARKDOWN_CORE_NODE_VALUE_MASK] = "metadata",
+    [MARKDOWN_CORE_NODE_REGISTRY & MARKDOWN_CORE_NODE_VALUE_MASK] = "registry",
+    [MARKDOWN_CORE_NODE_FACT & MARKDOWN_CORE_NODE_VALUE_MASK] = "fact",
+    [MARKDOWN_CORE_NODE_LINE & MARKDOWN_CORE_NODE_VALUE_MASK] = "line",
 };
 
 static const char *const S_inline_type_string[MARKDOWN_CORE_NODE_KIND_COUNT] = {
@@ -312,6 +296,7 @@ markdown_core_node *markdown_core_node_pool_new(markdown_core_node_pool *pool, m
         node->as.data = payload_size ? slot->record : NULL;
     }
     markdown_core_strbuf_init_zeroed(&node->content);
+    node->hold.refs = 1;
     node->kind = (uint16_t)type;
     node->element = element;
     S_init_node_as(type, &node->as);
@@ -366,15 +351,9 @@ static void free_node_as(markdown_core_slab_pool *resources, markdown_core_node 
         break;
     }
     case MARKDOWN_CORE_NODE_CITATION:
-        /* The affix chains are freed by the walk in `S_free_nodes`, spliced
-         * in beside the children; only the referent's bytes are the arm's. */
+        /* The release drops the note and affix roots as fields; only the
+         * referent's bytes are the arm's. */
         markdown_core_chunk_free(&node->as.citation->value);
-        break;
-    case MARKDOWN_CORE_NODE_DOCUMENT:
-        markdown_core_free((void *)node->as.document->footnotes.nodes);
-        markdown_core_free((void *)node->as.document->footnotes.labeled);
-        markdown_core_free((void *)node->as.document->specimens.nodes);
-        markdown_core_free((void *)node->as.document->specimens.labeled);
         break;
     case MARKDOWN_CORE_NODE_SPECIMEN:
         markdown_core_optional_chunk_free(&node->as.specimen->label);
@@ -385,7 +364,7 @@ static void free_node_as(markdown_core_slab_pool *resources, markdown_core_node 
     case MARKDOWN_CORE_NODE_LINK:
     case MARKDOWN_CORE_NODE_EMBEDDED:
         /* One holder fewer; a resource shared with other occurrences, or
-         * still held by the reference map, stays. */
+         * still held by the fact that declares it, stays. */
         markdown_core_resource_release(resources, node->as.link->resource);
         node->as.link->resource = NULL;
         break;
@@ -404,24 +383,45 @@ static void free_node_as(markdown_core_slab_pool *resources, markdown_core_node 
     node->as.data = NULL;
 }
 
-// Free a markdown_core_node list and any children.
-/* Splices `first`'s sibling chain into the free walk right after `e`, so the
- * walk frees it as it frees children: without recursion. */
-static void S_splice_after(markdown_core_node *e, markdown_core_node *first) {
-    markdown_core_node *last;
-    if (first == NULL) {
-        return;
+/* THE RELEASE. A node or run whose last holder went is put on one of two
+ * lists threaded through its hold word, and the lists are drained until both
+ * are empty: a released node drops its hold on its children's run and on
+ * every node-valued field, and a released run drops its hold on each entry.
+ * Nothing recurses and nothing allocates, however deep or wide the tree. */
+typedef struct {
+    markdown_core_node *nodes;
+    markdown_core_run *runs;
+} S_released;
+
+static inline void S_drop_node(S_released *list, markdown_core_node *node) {
+    if (node && --node->hold.refs == 0) {
+        node->hold.released = list->nodes;
+        list->nodes = node;
     }
-    last = first;
-    while (last->next != NULL) {
-        last = last->next;
-    }
-    last->next = e->next;
-    e->next = first;
 }
 
-static int S_release_owned_subtree(markdown_core_node **slot, void *context) {
-    S_splice_after(context, *slot);
+static inline void S_drop_run(S_released *list, markdown_core_run *run) {
+    if (run && --run->hold.refs == 0) {
+        run->hold.released = list->runs;
+        list->runs = run;
+    }
+}
+
+/* A fact whose last holder went gives back what it holds: its definition
+ * goes on the list, and its resource and bytes go now. */
+static void S_drop_fact(S_released *list, markdown_core_slab_pool *resources, markdown_core_fact *fact) {
+    if (--fact->refs) {
+        return;
+    }
+    S_drop_node(list, fact->node);
+    markdown_core_resource_release(resources, fact->resource);
+    markdown_core_chunk_free(&fact->anchor);
+    markdown_core_optional_chunk_free(&fact->base);
+    markdown_core_free(fact);
+}
+
+static int S_drop_field(markdown_core_node **slot, void *context) {
+    S_drop_node(context, *slot);
     *slot = NULL;
     return 1;
 }
@@ -435,8 +435,6 @@ static int S_visit_record_fields(markdown_core_node *node, markdown_core_owned_s
         return visitor(&node->as.definition->term, context);
     case MARKDOWN_CORE_NODE_CALLOUT:
         return visitor(&node->as.callout->title, context);
-    case MARKDOWN_CORE_NODE_CITE:
-        return visitor(&node->as.cite->citations, context);
     case MARKDOWN_CORE_NODE_CITATION:
         return visitor(&node->as.citation->note, context) && visitor(&node->as.citation->prefix, context) &&
                visitor(&node->as.citation->suffix, context);
@@ -453,11 +451,28 @@ static int S_visit_fields(markdown_core_node *node, markdown_core_owned_subtree_
             node->element->visit_owned_subtrees_func(node->element, node, visitor, context));
 }
 
-static size_t S_free_nodes(markdown_core_node_pool *pool, markdown_core_node *e) {
+static size_t S_drain(markdown_core_node_pool *pool, S_released *list) {
     markdown_core_slab_pool *resources = pool ? &pool->resources : NULL;
-    markdown_core_node *next;
     size_t released = 0;
-    while (e != NULL) {
+    for (;;) {
+        if (list->runs) {
+            markdown_core_run *run = list->runs;
+            list->runs = run->hold.released;
+            for (size_t i = 0; i < run->count; i++) {
+                if (run->tier) {
+                    S_drop_run(list, (markdown_core_run *)run->entries[i]);
+                } else {
+                    S_drop_node(list, (markdown_core_node *)run->entries[i]);
+                }
+            }
+            markdown_core_run_free_slot(pool, run);
+            continue;
+        }
+        markdown_core_node *e = list->nodes;
+        if (!e) {
+            return released;
+        }
+        list->nodes = e->hold.released;
         released++;
         /* Almost no node owns an attribute value or a content buffer: the
          * test each releaser makes first -- its own predicate, defined once
@@ -469,94 +484,48 @@ static size_t S_free_nodes(markdown_core_node_pool *pool, markdown_core_node *e)
         if (markdown_core_strbuf_owns(&e->content)) {
             markdown_core_strbuf_free(&e->content);
         }
-
-        /* The node-valued fields join the same iterative free walk as
-         * content. */
-        S_visit_fields(e, S_release_owned_subtree, e);
+        S_visit_fields(e, S_drop_field, list);
+        if (e->kind == MARKDOWN_CORE_NODE_FACT) {
+            S_drop_fact(list, resources, e->as.fact_place->fact);
+        }
+        S_drop_run(list, e->children);
+        S_drop_run(list, e->lines);
+        if (e->bytes) {
+            markdown_core_bytes_release(pool, e->bytes);
+        }
         if (e->opaque && e->element && e->element->opaque_free_func) {
             e->element->opaque_free_func(e->element, e);
         }
         free_node_as(resources, e);
-
-        if (e->last_child) {
-            // Splice children into list
-            e->last_child->next = e->next;
-            e->next = e->first_child;
-        }
-        next = e->next;
         S_slot_release(pool, e);
-        e = next;
     }
-    return released;
 }
 
 size_t markdown_core_node_pool_release(markdown_core_node_pool *pool, markdown_core_node *node) {
-    S_node_unlink(node);
-    node->next = NULL;
-    return S_free_nodes(pool, node);
+    S_released list = {NULL, NULL};
+    S_drop_node(&list, node);
+    return S_drain(pool, &list);
+}
+
+size_t markdown_core_node_pool_release_children(markdown_core_node_pool *pool, markdown_core_run *run) {
+    S_released list = {NULL, NULL};
+    S_drop_run(&list, run);
+    return S_drain(pool, &list);
+}
+
+void markdown_core_fact_release(markdown_core_node_pool *pool, markdown_core_fact *fact) {
+    S_released list = {NULL, NULL};
+    S_drop_fact(&list, pool ? &pool->resources : NULL, fact);
+    S_drain(pool, &list);
 }
 
 size_t markdown_core_node_release(markdown_core_node *node) { return markdown_core_node_pool_release(NULL, node); }
 
 void markdown_core_node_free(markdown_core_node *node) { (void)markdown_core_node_release(node); }
 
-/* A visit of one node's fields that exchanges each with the field of
- * `other` in the same place: fields of one kind sit at one offset from the
- * storage that holds them, the record or the element's payload. */
-typedef struct {
-    const unsigned char *storage;
-    unsigned char *other;
-} S_field_pair;
-
-static int S_field_swap(markdown_core_node **slot, void *context) {
-    S_field_pair *pair = context;
-    markdown_core_node **at = (markdown_core_node **)(pair->other + ((const unsigned char *)slot - pair->storage));
-    markdown_core_node *held = *slot;
-    *slot = *at;
-    *at = held;
-    return 1;
-}
-
-/* Exchanges `size` bytes at `a` and `b`, through a buffer of `capacity`. */
-#define S_SWAP_BYTES(a, b, capacity)                                                                                   \
-    do {                                                                                                               \
-        unsigned char held[capacity];                                                                                  \
-        memcpy(held, (a), sizeof(held));                                                                               \
-        memcpy((a), (b), sizeof(held));                                                                                \
-        memcpy((b), held, sizeof(held));                                                                               \
-    } while (0)
-
-#define S_NODE_VALUE_OFFSET offsetof(markdown_core_node, attributes)
-
-void markdown_core_node_swap_values(markdown_core_node *a, markdown_core_node *b) {
-    S_SWAP_BYTES((unsigned char *)a + S_NODE_VALUE_OFFSET, (unsigned char *)b + S_NODE_VALUE_OFFSET,
-                 sizeof(markdown_core_node) - S_NODE_VALUE_OFFSET);
-    /* A record in the slot stays in the slot: the bytes move, not the view.
-     * The kind is the same, so either both records are in their slots or
-     * neither is. */
-    if (a->as.data && !a->node_data_allocation) {
-        unsigned char *p = S_slot_of(a)->record, *q = S_slot_of(b)->record;
-        S_SWAP_BYTES(p, q, MARKDOWN_CORE_NODE_SLOT_RECORD_BYTES);
-        a->as.data = p;
-        b->as.data = q;
-    }
-    /* The node-valued fields are places: each node takes its own back. */
-    S_field_pair pair = {a->as.data, b->as.data};
-    S_visit_record_fields(a, S_field_swap, &pair);
-    if (a->element && a->element->visit_owned_subtrees_func) {
-        pair = (S_field_pair){a->opaque, b->opaque};
-        a->element->visit_owned_subtrees_func(a->element, a, S_field_swap, &pair);
-    }
-}
-
-markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_node *node, markdown_core_node_type kind) {
-    markdown_core_node_type initial_kind = (markdown_core_node_type)node->kind;
-    if (kind == initial_kind) {
-        return MARKDOWN_CORE_NODE_SET_KIND_OK;
-    }
-    /* Conversion preserves every tree edge, so it cannot introduce a cycle. */
-    if (!node->parent || !markdown_core_node_can_contain_type(node->parent, kind)) {
-        return MARKDOWN_CORE_NODE_SET_KIND_REJECTED;
+bool markdown_core_node_set_kind(markdown_core_node *node, markdown_core_node_type kind) {
+    if (kind == (markdown_core_node_type)node->kind) {
+        return true;
     }
 
     /* Reserve any external replacement before releasing anything. A record
@@ -566,13 +535,13 @@ markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_nod
     size_t size = S_node_payload_size(kind);
     void *allocation = size > MARKDOWN_CORE_NODE_SLOT_RECORD_BYTES ? markdown_core_alloc(1, size) : NULL;
     if (size > MARKDOWN_CORE_NODE_SLOT_RECORD_BYTES && !allocation) {
-        return MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED;
+        return false;
     }
     /* Kind conversion keeps the element's fields; the record's are freed
      * by a separate walk so the node's siblings remain untouched. */
-    markdown_core_node fields = {0};
-    S_visit_record_fields(node, S_release_owned_subtree, &fields);
-    S_free_nodes(NULL, fields.next);
+    S_released fields = {NULL, NULL};
+    S_visit_record_fields(node, S_drop_field, &fields);
+    S_drain(NULL, &fields);
     free_node_as(NULL, node);
     node->as.data = allocation ? allocation : size ? S_slot_of(node)->record : NULL;
     node->node_data_allocation = allocation;
@@ -581,7 +550,7 @@ markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_nod
     }
     S_init_node_as(kind, &node->as);
     node->kind = (uint16_t)kind;
-    return MARKDOWN_CORE_NODE_SET_KIND_OK;
+    return true;
 }
 
 const char *markdown_core_node_get_type_string(markdown_core_node *node) {
@@ -617,12 +586,10 @@ int markdown_core_node_set_string_content(markdown_core_node *node, const char *
     return true;
 }
 
-#define MARKDOWN_CORE_RESOURCE_SLAB_BYTES ((size_t)8 * 1024)
-
 markdown_core_resource *markdown_core_resource_new(markdown_core_node_pool *pool, markdown_core_chunk url,
                                                    markdown_core_optional_chunk title) {
     markdown_core_resource *resource = (markdown_core_resource *)markdown_core_slab_take(
-        pool ? &pool->resources : NULL, sizeof(markdown_core_resource), MARKDOWN_CORE_RESOURCE_SLAB_BYTES);
+        pool ? &pool->slabs : NULL, pool ? &pool->resources : NULL, sizeof(markdown_core_resource));
     if (!resource) {
         return NULL;
     }
@@ -661,149 +628,298 @@ int markdown_core_node_set_element(markdown_core_node *node, const markdown_core
     return 1;
 }
 
-// Unlink a node without adjusting its next, prev, and parent pointers.
-static void S_node_unlink(markdown_core_node *node) {
-    if (node == NULL) {
-        return;
-    }
-
-    if (node->prev) {
-        node->prev->next = node->next;
-    }
-    if (node->next) {
-        node->next->prev = node->prev;
-    }
-
-    // Adjust first_child and last_child of parent.
-    markdown_core_node *parent = node->parent;
-    if (parent) {
-        if (parent->first_child == node) {
-            parent->first_child = node->next;
-        }
-        if (parent->last_child == node) {
-            parent->last_child = node->prev;
-        }
-    }
-}
-
-void markdown_core_node_unlink(markdown_core_node *node) {
-    S_node_unlink(node);
-
-    node->next = NULL;
-    node->prev = NULL;
-    node->parent = NULL;
-}
-
-/* Commit a validated, detached subtree. No callbacks or rejecting checks may
- * run here: public mutations have already detached the child from its owner. */
-void markdown_core_node_attach_validated(markdown_core_node *parent, markdown_core_node *child,
-                                         markdown_core_node *before) {
+bool markdown_core_node_attach_validated(markdown_core_node_pool *pool, markdown_core_node *parent, size_t index,
+                                         markdown_core_node *child) {
     assert(parent && child && parent != child);
-    assert(!child->parent && !child->prev && !child->next);
-    assert(!before || before->parent == parent);
     /* Built-in containment is pure and shares its rules with checked mutation.
      * Dynamic policies were decided before ownership moved; never replay them. */
     assert((parent->element && parent->element->can_contain_func) ||
            markdown_core_node_can_contain_builtin(parent, (markdown_core_node_type)child->kind));
-    markdown_core_node *previous = before ? before->prev : parent->last_child;
-    child->parent = parent;
-    child->prev = previous;
-    child->next = before;
-    if (previous) {
-        previous->next = child;
-    } else {
-        parent->first_child = child;
-    }
-    if (before) {
-        before->prev = child;
-    } else {
-        parent->last_child = child;
-    }
+    return markdown_core_children_insert(pool, &parent->children, index, child);
 }
 
-int markdown_core_node_append_child(markdown_core_node *node, markdown_core_node *child) {
-    if (!S_can_contain(node, child)) {
-        return 0;
-    }
-    markdown_core_node_unlink(child);
-    markdown_core_node_attach_validated(node, child, NULL);
-    return 1;
+bool markdown_core_node_append_validated(markdown_core_node_pool *pool, markdown_core_node *parent,
+                                         markdown_core_node *child) {
+    assert(parent && child && parent != child);
+    assert((parent->element && parent->element->can_contain_func) ||
+           markdown_core_node_can_contain_builtin(parent, (markdown_core_node_type)child->kind));
+    return markdown_core_children_append(pool, &parent->children, child);
 }
 
-static void S_print_error(FILE *out, markdown_core_node *node, const char *elem) {
-    if (out == NULL) {
-        return;
-    }
-    fprintf(out, "Invalid '%s' in node type %s (id %llu)\n", elem, markdown_core_node_get_type_string(node),
-            (unsigned long long)node->id);
+bool markdown_core_node_insert_child(markdown_core_node_pool *pool, markdown_core_node *node, size_t index,
+                                     markdown_core_node *child) {
+    return markdown_core_node_can_contain_type(node, (markdown_core_node_type)child->kind) &&
+           markdown_core_children_insert(pool, &node->children, index, child);
+}
+
+markdown_core_node *markdown_core_node_take_child(markdown_core_node_pool *pool, markdown_core_node *node,
+                                                  size_t index) {
+    markdown_core_node *child;
+    return markdown_core_children_remove(pool, &node->children, index, &child) ? child : NULL;
 }
 
 int markdown_core_node_check(markdown_core_node *node, FILE *out) {
-    markdown_core_node *cur;
+    markdown_core_iter_path path = {0};
+    markdown_core_iter iter;
     int errors = 0;
-
-    if (!node) {
-        return 0;
-    }
-
-    cur = node;
-    for (;;) {
-        if (cur->first_child) {
-            if (cur->first_child->prev != NULL) {
-                S_print_error(out, cur->first_child, "prev");
-                cur->first_child->prev = NULL;
-                ++errors;
-            }
-            if (cur->first_child->parent != cur) {
-                S_print_error(out, cur->first_child, "parent");
-                cur->first_child->parent = cur;
-                ++errors;
-            }
-            cur = cur->first_child;
+    markdown_core_iter_init(&iter, &path, node);
+    while (markdown_core_iter_step(&iter) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *cur = markdown_core_iter_node(&iter);
+        if (iter.event != MARKDOWN_CORE_EVENT_ENTER) {
             continue;
         }
-
-    next_sibling:
-        if (cur == node) {
-            break;
+        size_t broken = markdown_core_children_check(cur->children) + markdown_core_children_check(cur->lines);
+        if (broken && out) {
+            fprintf(out, "Invalid children tree in node type %s (id %llu)\n", markdown_core_node_get_type_string(cur),
+                    (unsigned long long)cur->id);
         }
-        if (cur->next) {
-            if (cur->next->prev != cur) {
-                S_print_error(out, cur->next, "prev");
-                cur->next->prev = cur;
-                ++errors;
-            }
-            if (cur->next->parent != cur->parent) {
-                S_print_error(out, cur->next, "parent");
-                cur->next->parent = cur->parent;
-                ++errors;
-            }
-            cur = cur->next;
-            continue;
-        }
-
-        if (cur->parent->last_child != cur) {
-            S_print_error(out, cur->parent, "last_child");
-            cur->parent->last_child = cur;
-            ++errors;
-        }
-        cur = cur->parent;
-        goto next_sibling;
+        errors += broken != 0;
     }
-
-    return errors;
-}
-
-const markdown_core_chunk *markdown_core_node_anchor_chunk(const markdown_core_node *node) {
-    if (!node->attributes.anchor.len &&
-        (node->kind == MARKDOWN_CORE_NODE_LINK || node->kind == MARKDOWN_CORE_NODE_EMBEDDED) &&
-        node->as.link->resource) {
-        return &node->as.link->resource->attributes.anchor;
-    }
-    return &node->attributes.anchor;
+    bool failed = iter.failed;
+    markdown_core_iter_path_dispose(&path);
+    return failed ? -1 : errors;
 }
 
 bool markdown_core_node_kind_set_intersects(const markdown_core_node_kind_set *a,
                                             const markdown_core_node_kind_set *b) {
     return (a->blocks & b->blocks) != 0 || (a->inlines & b->inlines) != 0;
+}
+
+/* The marks of one child (children.h). */
+static inline unsigned S_child_marks(const markdown_core_node *node) {
+    return ((node->flags & MARKDOWN_CORE_NODE__READ_ANEW) ? MARKDOWN_CORE_RUN_READ_ANEW : 0u) |
+           ((node->flags & MARKDOWN_CORE_NODE__EXIT_FRAGILE) ? 0u : (unsigned)MARKDOWN_CORE_RUN_ENDS) |
+           ((node->flags & MARKDOWN_CORE_NODE__CONTAINS_BLANK) ? (unsigned)MARKDOWN_CORE_RUN_CONTAINS_BLANK : 0u) |
+           ((node->flags & MARKDOWN_CORE_NODE__AFTER_BLANK_END) ? (unsigned)MARKDOWN_CORE_RUN_AFTER_BLANK_END : 0u) |
+           ((node->flags & MARKDOWN_CORE_NODE__AFTER_LOOSE_END) ? (unsigned)MARKDOWN_CORE_RUN_AFTER_LOOSE_END : 0u);
+}
+
+/* A tier-zero run's sums from its children's extents and reaches, and a run
+ * above from its entries' sums: in both, a child's end and its reach are
+ * measured from the run's start through the lengths before it. Its marks
+ * are its entries' together, and its tally their sum. */
+static void S_seal_run(markdown_core_run *run) {
+    int64_t length = 0, furthest = 0;
+    unsigned marks = 0;
+    uint32_t tally = 0;
+    for (size_t i = 0; i < run->count; i++) {
+        int64_t end, reach;
+        if (run->tier) {
+            const markdown_core_run *entry = run->entries[i];
+            end = length + entry->length;
+            reach = entry->reach;
+            marks |= entry->marks;
+            tally += entry->tally;
+        } else {
+            const markdown_core_node *node = run->entries[i];
+            end = length + node->where.extent.lead + node->where.extent.span;
+            reach = node->reach;
+            marks |= S_child_marks(node);
+            tally += node->tally;
+        }
+        length = end;
+        if (end + reach > furthest) {
+            furthest = end + reach;
+        }
+    }
+    run->length = length;
+    run->reach = furthest > length ? (uint32_t)(furthest - length) : 0;
+    run->marks = (uint8_t)marks;
+    run->tally = tally;
+    run->sealed = 1;
+}
+
+void markdown_core_children_seal(markdown_core_run *root) {
+    if (!root || root->sealed) {
+        return;
+    }
+    /* Down the unsealed runs, each sealed after the entries below it. */
+    markdown_core_run *runs[MARKDOWN_CORE_RUN_TIERS];
+    uint8_t at[MARKDOWN_CORE_RUN_TIERS];
+    int tiers = 1;
+    runs[0] = root;
+    at[0] = 0;
+    while (tiers) {
+        markdown_core_run *run = runs[tiers - 1];
+        if (run->tier) {
+            while (at[tiers - 1] < run->count && ((markdown_core_run *)run->entries[at[tiers - 1]])->sealed) {
+                at[tiers - 1]++;
+            }
+            if (at[tiers - 1] < run->count) {
+                runs[tiers] = run->entries[at[tiers - 1]++];
+                at[tiers] = 0;
+                tiers++;
+                continue;
+            }
+        }
+        S_seal_run(run);
+        tiers--;
+    }
+}
+
+void markdown_core_children_reseal(markdown_core_run *root, size_t index) {
+    for (markdown_core_run *run = root;;) {
+        run->sealed = 0;
+        if (!run->tier) {
+            break;
+        }
+        run = run->entries[markdown_core_run_find(run, &index)];
+    }
+    markdown_core_children_seal(root);
+}
+
+bool markdown_core_children_find(const markdown_core_run *root, int64_t origin, int64_t offset, size_t *index,
+                                 int64_t *lead) {
+    if (!root) {
+        return false;
+    }
+    const markdown_core_run *run = root;
+    int64_t base = origin;
+    size_t before = 0;
+    while (run->tier) {
+        size_t k = 0;
+        for (; k < run->count; k++) {
+            const markdown_core_run *entry = run->entries[k];
+            if (base + entry->length > offset) {
+                break;
+            }
+            base += entry->length;
+            before += entry->total;
+        }
+        if (k == run->count) {
+            return false;
+        }
+        run = run->entries[k];
+    }
+    for (size_t k = 0; k < run->count; k++) {
+        const markdown_core_node *node = run->entries[k];
+        int64_t end = base + node->where.extent.lead + node->where.extent.span;
+        if (end > offset) {
+            *index = before + k;
+            *lead = base;
+            return true;
+        }
+        base = end;
+    }
+    return false;
+}
+
+int64_t markdown_core_children_length_before(const markdown_core_run *root, size_t index) {
+    int64_t length = 0;
+    const markdown_core_run *run = root;
+    while (run && run->tier) {
+        size_t k = 0;
+        for (const markdown_core_run *entry; (entry = run->entries[k])->total <= index; k++) {
+            index -= entry->total;
+            length += entry->length;
+        }
+        run = run->entries[k];
+    }
+    for (size_t k = 0; k < index; k++) {
+        const markdown_core_node *node = run->entries[k];
+        length += node->where.extent.lead + node->where.extent.span;
+    }
+    return length;
+}
+
+/* The sums of the children walked so far: their count, their bytes, the
+ * furthest end of their reaches, from where the first lead starts, their
+ * marks and their tallies' sum. */
+typedef struct {
+    size_t count;
+    int64_t length, furthest;
+    unsigned marks;
+    uint32_t tally;
+} take_sums;
+
+static inline void take_add(take_sums *sums, size_t count, int64_t length, int64_t reach, unsigned marks,
+                            uint32_t tally) {
+    sums->count += count;
+    sums->marks |= marks;
+    sums->tally += tally;
+    sums->length += length;
+    if (sums->length + reach > sums->furthest) {
+        sums->furthest = sums->length + reach;
+    }
+}
+
+size_t markdown_core_children_take_run(const markdown_core_run *root, size_t first, size_t end,
+                                       markdown_core_run_sums *sums) {
+    markdown_core_children_cursor cursor;
+    markdown_core_children_seek(&cursor, root, first);
+    /* The walk takes each entry after `first` whole when no edit met a child
+     * of it and it ends by `end`, and steps into it otherwise, up to the
+     * first child an edit met or `end`.
+     * The sums stand at the last child that can end the run, or before the
+     * last whole entry that holds one, whose own last such child is found
+     * after the walk. */
+    take_sums walked = {0, 0, 0, 0, 0}, ends = {0, 0, 0, 0, 0};
+    const markdown_core_run *within = NULL;
+    int top = cursor.tiers - 1;
+    while (top >= 0) {
+        const markdown_core_run *run = cursor.runs[top];
+        if (cursor.at[top] == run->count) {
+            if (--top >= 0) {
+                cursor.at[top]++;
+            }
+            continue;
+        }
+        if (!run->tier) {
+            const markdown_core_node *node = run->entries[cursor.at[top]];
+            if ((node->flags & MARKDOWN_CORE_NODE__READ_ANEW) || first + walked.count == end) {
+                break;
+            }
+            take_add(&walked, 1, node->where.extent.lead + (int64_t)node->where.extent.span, node->reach,
+                     S_child_marks(node), node->tally);
+            if (!(node->flags & MARKDOWN_CORE_NODE__EXIT_FRAGILE)) {
+                ends = walked;
+                within = NULL;
+            }
+            cursor.at[top]++;
+            continue;
+        }
+        const markdown_core_run *entry = run->entries[cursor.at[top]];
+        if ((entry->marks & MARKDOWN_CORE_RUN_READ_ANEW) || first + walked.count + entry->total > end) {
+            cursor.runs[++top] = entry;
+            cursor.at[top] = 0;
+            continue;
+        }
+        if (entry->marks & MARKDOWN_CORE_RUN_ENDS) {
+            ends = walked;
+            within = entry;
+        }
+        take_add(&walked, entry->total, entry->length, entry->reach, entry->marks, entry->tally);
+        cursor.at[top]++;
+    }
+    /* Into the whole entry that holds the last child that can end the run,
+     * down to that child: the entries before its last such entry whole. */
+    while (within) {
+        size_t last = within->count;
+        while (last--) {
+            unsigned found = within->tier ? ((const markdown_core_run *)within->entries[last])->marks
+                                          : S_child_marks(within->entries[last]);
+            if (found & MARKDOWN_CORE_RUN_ENDS) {
+                break;
+            }
+        }
+        for (size_t k = 0; k <= last; k++) {
+            if (within->tier && k == last) {
+                break;
+            }
+            if (within->tier) {
+                const markdown_core_run *entry = within->entries[k];
+                take_add(&ends, entry->total, entry->length, entry->reach, entry->marks, entry->tally);
+            } else {
+                const markdown_core_node *node = within->entries[k];
+                take_add(&ends, 1, node->where.extent.lead + (int64_t)node->where.extent.span, node->reach,
+                         S_child_marks(node), node->tally);
+            }
+        }
+        within = within->tier ? within->entries[last] : NULL;
+    }
+    sums->length = ends.length;
+    sums->reach = ends.furthest > ends.length ? (uint32_t)(ends.furthest - ends.length) : 0;
+    sums->marks = ends.marks;
+    sums->tally = ends.tally;
+    return ends.count;
 }

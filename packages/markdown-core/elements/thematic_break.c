@@ -47,6 +47,7 @@ static bool scan_thematic(const markdown_core_element_instance *self, markdown_c
                           block_start_context *context, block_start *start) {
     (void)self;
     if (context->paragraph && !context->all_matched) {
+        markdown_core_parser_refuse(parser);
         return false;
     }
     if (context->thematic_kill > context->first ||

@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -10,6 +11,25 @@
 #include "parser.h"
 #include "iterator.h"
 
+bool markdown_core_iter_path_reserve(markdown_core_iter_path *path) {
+    size_t capacity = path->capacity ? 2 * path->capacity : 32;
+    if (capacity > SIZE_MAX / sizeof(*path->frames)) {
+        return false;
+    }
+    markdown_core_iter_frame *frames = markdown_core_realloc(path->frames, capacity * sizeof(*frames));
+    if (!frames) {
+        return false;
+    }
+    path->frames = frames;
+    path->capacity = capacity;
+    return true;
+}
+
+void markdown_core_iter_path_dispose(markdown_core_iter_path *path) {
+    markdown_core_free(path->frames);
+    *path = (markdown_core_iter_path){0};
+}
+
 markdown_core_iter *markdown_core_iter_new(markdown_core_node *root) {
     if (root == NULL) {
         return NULL;
@@ -18,55 +38,71 @@ markdown_core_iter *markdown_core_iter_new(markdown_core_node *root) {
     if (!iter) {
         return NULL;
     }
-    markdown_core_iter_init(iter, root);
+    markdown_core_iter_init(iter, &iter->own, root);
     return iter;
 }
 
-void markdown_core_iter_free(markdown_core_iter *iter) { markdown_core_free(iter); }
+void markdown_core_iter_free(markdown_core_iter *iter) {
+    if (iter) {
+        markdown_core_iter_path_dispose(&iter->own);
+        markdown_core_free(iter);
+    }
+}
 
 markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter) { return markdown_core_iter_step(iter); }
 
-void markdown_core_iter_reset(markdown_core_iter *iter, markdown_core_node *current,
-                              markdown_core_event_type event_type) {
-    iter->next.ev_type = event_type;
-    iter->next.node = current;
-    markdown_core_iter_step(iter);
+markdown_core_node *markdown_core_iter_get_node(markdown_core_iter *iter) { return markdown_core_iter_node(iter); }
+
+bool markdown_core_iter_insert_before(markdown_core_iter *iter, markdown_core_node_pool *pool,
+                                      markdown_core_node *node) {
+    markdown_core_iter_frame *parent = &iter->path->frames[iter->path->count - 2];
+    if (!markdown_core_children_insert(pool, &parent->node->children, parent->at, node)) {
+        return false;
+    }
+    parent->at++;
+    return true;
 }
 
-markdown_core_node *markdown_core_iter_get_node(markdown_core_iter *iter) { return iter->cur.node; }
-
-/* Every iterator step a finish-stage consolidation takes is counted on the
- * parser when there is one, so the traversal count the finish stage claims
- * can be checked (see the counters in parser.h). */
-static void S_count_step(markdown_core_parser *parser, markdown_core_event_type event) {
-    if (!parser) {
-        return;
+bool markdown_core_iter_take_current(markdown_core_iter *iter, markdown_core_node_pool *pool,
+                                     markdown_core_node **taken) {
+    assert(iter->event == MARKDOWN_CORE_EVENT_EXIT);
+    markdown_core_iter_frame *parent = &iter->path->frames[iter->path->count - 2];
+    if (!markdown_core_children_remove(pool, &parent->node->children, parent->at, taken)) {
+        return false;
     }
-    parser->finish_walk_events++;
-    if (event == MARKDOWN_CORE_EVENT_ENTER) {
-        parser->finish_nodes_entered++;
-    } else if (event == MARKDOWN_CORE_EVENT_DONE) {
-        parser->finish_walk_roots++;
-    }
+    /* The step after this EXIT moves the parent past the child it was in,
+     * which is now the next sibling's index. */
+    parent->at--;
+    return true;
 }
 
 /* The surviving Text owns the concatenated literal and a concatenation of
  * its operands' source runs. A caller outside a parse has no parser-owned
  * map to retain and uses the public entry point with NULL.
  *
- * EXIT, not ENTER, and that is Step 5's mutation rule: the only node a walk
- * may free is the one whose EXIT is current. `TEXT` was in the old
- * `S_is_leaf` list, so its EXIT was suppressed and freeing at ENTER
- * happened to be safe; with the contract total it is a use-after-free. */
+ * EXIT, not ENTER: the only node a walk takes out of the tree is the one
+ * whose EXIT is current, and the siblings after it, which the walk has not
+ * reached. */
 markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_parser *parser, markdown_core_iter *iter,
                                                                 markdown_core_node *cur,
                                                                 markdown_core_complete_node_func complete, int depth) {
-    markdown_core_node *tmp, *next;
+    markdown_core_node_pool *pool = parser ? parser->pool : NULL;
+    markdown_core_iter_frame *parent = &iter->path->frames[iter->path->count - 2];
+    const markdown_core_run *siblings = parent->node->children;
 
-    assert(iter->cur.node == cur && iter->cur.ev_type == MARKDOWN_CORE_EVENT_EXIT);
+    assert(markdown_core_iter_node(iter) == cur && iter->event == MARKDOWN_CORE_EVENT_EXIT);
     assert(cur->kind == MARKDOWN_CORE_NODE_TEXT);
 
-    if (cur->next && cur->next->kind == MARKDOWN_CORE_NODE_TEXT) {
+    /* The Text siblings after `cur`: the run is [parent->at + 1, end), read
+     * in order by one cursor, and each pass over it below by another. */
+    markdown_core_children_cursor cursor;
+    markdown_core_children_seek(&cursor, siblings, parent->at + 1);
+    size_t end = parent->at + 1;
+    for (const markdown_core_node *next;
+         (next = markdown_core_children_next(&cursor)) && next->kind == MARKDOWN_CORE_NODE_TEXT;) {
+        end++;
+    }
+    if (end > parent->at + 1) {
         /* THE MERGED TEXT'S MAP IS A VIEW WHEN ITS OPERANDS ARE. A Text that
          * is a verbatim copy of its source holds a slice of its container's
          * runs (markdown_core_inline_map_text), and the siblings absorbed
@@ -88,7 +124,9 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
          * taken here, and each operand is copied to its place: no buffer
          * grows, and none is handed over and grown again for the next run. */
         size_t length = (size_t)cur->as.literal->len;
-        for (tmp = cur->next; tmp && tmp->kind == MARKDOWN_CORE_NODE_TEXT; tmp = tmp->next) {
+        markdown_core_children_seek(&cursor, siblings, parent->at + 1);
+        for (size_t i = parent->at + 1; i < end; i++) {
+            const markdown_core_node *tmp = markdown_core_children_next(&cursor);
             length += (size_t)tmp->as.literal->len;
             if (!view) {
                 continue;
@@ -118,14 +156,9 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
         if (at) {
             memcpy(merged, cur->as.literal->data, (size_t)at);
         }
-        tmp = cur->next;
-        while (tmp && tmp->kind == MARKDOWN_CORE_NODE_TEXT) {
-            /* Bring `tmp` to its own EXIT before freeing it: two events now,
-             * where a suppressed EXIT used to make one enough. They are steps
-             * of the walk this is part of, taken HERE so that no step after
-             * this one is ever handed a node this one is about to free. */
-            S_count_step(parser, markdown_core_iter_next(iter)); /* tmp ENTER */
-            S_count_step(parser, markdown_core_iter_next(iter)); /* tmp EXIT  */
+        markdown_core_children_seek(&cursor, siblings, parent->at + 1);
+        for (size_t i = parent->at + 1; i < end; i++) {
+            markdown_core_node *tmp = markdown_core_children_next(&cursor);
             if (complete) {
                 complete(parser, tmp, depth);
             }
@@ -147,20 +180,21 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
             if (tmp->as.literal->len > 0) {
                 cur->where.place.end = tmp->where.place.end;
             }
-            next = tmp->next;
-            markdown_core_parser_release_node(parser, tmp);
-            tmp = next;
         }
-        /* Every node the loop freed was ahead of the cursor and is now
-         * unlinked, so the cursor sits at the last one's EXIT. Re-establish
-         * `cur`'s EXIT: it recomputes the lookahead from the siblings that
-         * survived, and it is what makes the drop below legal under the
-         * rule rather than merely safe. It is not a step of the walk -- the
-         * event it re-delivers was delivered already -- so it is not counted. */
+        /* The absorbed siblings leave together, the walk not having reached
+         * them. */
+        size_t released;
+        if (!markdown_core_children_remove_range(pool, &parent->node->children, parent->at + 1, end - parent->at - 1,
+                                                 &released)) {
+            markdown_core_free(merged);
+            return MARKDOWN_CORE_FINISH_FAILED;
+        }
+        if (parser) {
+            parser->nodes_freed += released;
+        }
         if (parser) {
             cur->content_map = combined_map;
         }
-        markdown_core_iter_reset(iter, cur, MARKDOWN_CORE_EVENT_EXIT);
         markdown_core_chunk_free(cur->as.literal);
         merged[at] = '\0';
         *cur->as.literal = (markdown_core_chunk){merged, at, 1};
@@ -173,49 +207,14 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
     // producer unreachable by construction: a run of empties can no longer
     // merge into an empty, because the operands are gone before the merge.
     //
-    // Freeing here is legal because `cur`'s EXIT is current -- Step 5's
-    // mutation rule -- so `iter->next` already names a node outside this
-    // one's subtree. The caller learns that `cur` is gone and hands this
-    // event to nothing else.
+    // Taking it out is legal because `cur`'s EXIT is current. The caller
+    // learns that `cur` is gone and hands this event to nothing else.
     if (cur->as.literal->len == 0) {
-        markdown_core_chunk_free(cur->as.literal);
+        if (!markdown_core_iter_take_current(iter, pool, &cur)) {
+            return MARKDOWN_CORE_FINISH_FAILED;
+        }
         markdown_core_parser_release_node(parser, cur);
         return MARKDOWN_CORE_FINISH_CONSUMED;
     }
     return MARKDOWN_CORE_FINISH_CONTINUE;
-}
-
-/* The same step, driven by a walk of its own. Inside a parse the finish walk
- * runs the step itself and never comes here; this is the entry point for a
- * tree built or rewritten outside a parse, and a pass that calls it with a
- * parser pays -- and is counted for -- one more traversal of the root. */
-int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parser, markdown_core_node *root) {
-    if (root == NULL) {
-        return 1;
-    }
-    markdown_core_iter *iter = markdown_core_iter_new(root);
-    markdown_core_event_type ev_type;
-    int ok = 1;
-
-    if (!iter) {
-        return 0;
-    }
-
-    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *cur = markdown_core_iter_get_node(iter);
-        S_count_step(parser, ev_type);
-        if (ev_type != MARKDOWN_CORE_EVENT_EXIT || cur->kind != MARKDOWN_CORE_NODE_TEXT) {
-            continue;
-        }
-        if (markdown_core_consolidate_text_step(parser, iter, cur, NULL, 0) == MARKDOWN_CORE_FINISH_FAILED) {
-            ok = 0;
-            break;
-        }
-    }
-    if (ok) {
-        S_count_step(parser, MARKDOWN_CORE_EVENT_DONE);
-    }
-
-    markdown_core_iter_free(iter);
-    return ok;
 }

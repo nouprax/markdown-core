@@ -583,11 +583,14 @@ static void check_identity(run *state, const char *where, size_t step, history *
                     (old->relation == node->relation && anchored && image >= node->range.end)) {
                     break;
                 }
-                if (old->relation == node->relation && anchored && image >= node->range.start && match == SIZE_MAX &&
-                    old->kind == node->kind) {
-                    match = before->items[owner->items + *at];
-                }
                 ++*at;
+                /* The earliest such sibling; the ones after it stay for the
+                 * next new sibling, as ranges of siblings can overlap. */
+                if (old->relation == node->relation && anchored && image >= node->range.start &&
+                    old->kind == node->kind) {
+                    match = before->items[owner->items + *at - 1];
+                    break;
+                }
             }
         }
         continues[index] = match;
@@ -698,21 +701,30 @@ done:
     free(cursor);
 }
 
-/* A lineage's first document: a fresh parse, numbered from 1 in walk order. */
-static void history_open(run *state, const char *where, history *ids, const view *opened) {
+/* A lineage's first document: a fresh parse numbers its nodes from 1, each
+ * owner numbering the nodes it holds when it completes, so its ids are 1
+ * through its node count, each once, and equal the ids of another fresh
+ * parse of the same text. */
+static void history_open(run *state, const char *where, history *ids, const view *opened, const view *fresh) {
     size_t index;
     if (!history_reserve(ids, opened->count + 1)) {
         fail(state, "harness", "%s: out of memory", where);
         return;
     }
     for (index = 0; index < opened->count; index++) {
-        if (opened->nodes[index].id != index + 1) {
+        uint64_t id = opened->nodes[index].id;
+        if (id == 0 || id > opened->count || ids->state[id] != 0) {
             fail(state, "4.2", "%s: node %zu of the opened document's walk has id %llu", where, index + 1,
-                 (unsigned long long)opened->nodes[index].id);
+                 (unsigned long long)id);
             return;
         }
-        ids->state[index + 1] = 1;
-        ids->kinds[index + 1] = opened->nodes[index].kind;
+        if (id != fresh->nodes[index].id) {
+            fail(state, "4.2", "%s: node %zu of the opened document's walk has id %llu, a fresh parse's has %llu",
+                 where, index + 1, (unsigned long long)id, (unsigned long long)fresh->nodes[index].id);
+            return;
+        }
+        ids->state[id] = 1;
+        ids->kinds[id] = opened->nodes[index].kind;
     }
 }
 
@@ -769,7 +781,7 @@ static bool check_document(run *state, const char *where, size_t step, eh_unit u
     if (before) {
         check_identity(state, where, step, ids, before, after, edits, count, entry);
     } else {
-        history_open(state, where, ids, after);
+        history_open(state, where, ids, after, &expected_view);
     }
 done:
     view_free(&expected_view);
@@ -1025,7 +1037,7 @@ void check_parts(run *state, const char *where, const uint8_t *document, size_t 
             fail(state, "harness", "%s: part %zu did not parse", where, index + 1);
             return;
         }
-        sum += markdown_core_node_child_count(markdown_core_document_root(part));
+        sum += markdown_core_nodes_count(markdown_core_node_children(markdown_core_document_root(part)));
         markdown_core_document_free(part);
         from += entry->parts[index];
     }
@@ -1034,7 +1046,7 @@ void check_parts(run *state, const char *where, const uint8_t *document, size_t 
         return;
     }
     whole = ts_ast_parse(document, length);
-    if (!whole || markdown_core_node_child_count(markdown_core_document_root(whole)) != sum) {
+    if (!whole || markdown_core_nodes_count(markdown_core_node_children(markdown_core_document_root(whole))) != sum) {
         fail(state, "3.1", "%s: the composite's root children differ from its parts' sum %zu", where, sum);
     }
     markdown_core_document_free(whole);

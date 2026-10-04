@@ -4,12 +4,18 @@
 #include "link.h"
 #include "block_identifier.h"
 void markdown_core_paragraph_finalize(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                      markdown_core_node *paragraph) {
+                                      markdown_core_node *parent, markdown_core_node *paragraph) {
     if (!markdown_core_block_resolve_reference_link_definitions(parser, paragraph)) {
         paragraph->flags |= MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY;
         return;
     }
-    markdown_core_block_attach_paragraph_identifier(self->state, parser, paragraph);
+    markdown_core_block_attach_paragraph_identifier(self->state, parser, parent, paragraph);
+}
+
+/* The paragraph's own `finalize_block`: it is the open spine's last block. */
+static void finalize_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                           markdown_core_node *paragraph) {
+    markdown_core_paragraph_finalize(self, parser, markdown_core_parser_open_parent(parser, paragraph), paragraph);
 }
 
 static int continue_paragraph(const markdown_core_element_instance *self, markdown_core_parser *parser,
@@ -18,29 +24,12 @@ static int continue_paragraph(const markdown_core_element_instance *self, markdo
 }
 /* A PARAGRAPH THAT HELD ONLY REFERENCE DEFINITIONS IS NOT A PARAGRAPH. Its
  * finalization consumed the definitions and left nothing, so it has no
- * inline content to parse and no place in the tree: it is released at its
- * EXIT, from inside the one finish walk, which is postorder -- the list it
- * sits in lays itself out at its own EXIT, after this, and sees the cleaned
- * children. A root is never released: it belongs to whoever holds it, and a
- * definition's term that was only definitions stays the empty term it is. */
+ * inline content to parse; its parent drops it (blocks.c,
+ * S_drop_definition_paragraph). */
 static int contains_inlines(const markdown_core_element *element, markdown_core_node *node) {
     (void)element;
     return !(node->flags & MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY);
 }
-static markdown_core_finish_result finish_step(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                               markdown_core_node *node, markdown_core_event_type event, int is_root,
-                                               void **state) {
-    (void)self;
-    (void)event;
-    (void)state;
-    assert(event == MARKDOWN_CORE_EVENT_EXIT);
-    if (is_root || !(node->flags & MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY)) {
-        return MARKDOWN_CORE_FINISH_CONTINUE;
-    }
-    markdown_core_parser_release_node(parser, node);
-    return MARKDOWN_CORE_FINISH_CONSUMED;
-}
-static const markdown_core_node_type PARAGRAPH_EXIT_KINDS[] = {MARKDOWN_CORE_NODE_PARAGRAPH, MARKDOWN_CORE_NODE_NONE};
 static bool accepts_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
                          markdown_core_node *node) {
     (void)self;
@@ -61,7 +50,6 @@ static markdown_core_node *open_text(const markdown_core_element_instance *self,
     if (!container) {
         return NULL;
     }
-    parser->current = container;
     if (markdown_core_block_attach_identifier_line(self->state, parser, container, input) || parser->error) {
         return NULL;
     }
@@ -73,7 +61,28 @@ static markdown_core_node *open_text(const markdown_core_element_instance *self,
     return container;
 }
 
+/* A LIST, A CALLOUT OR A TABLE WITHOUT AN ANCHOR may take one from a
+ * separate identifier line after it, a later line's write
+ * (markdown_core_parser_write_closed): no run of taken blocks ends at it. */
+static markdown_core_finish_result finish_step(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                               markdown_core_node *node, markdown_core_event_type event,
+                                               markdown_core_node *parent, void **state) {
+    (void)self;
+    (void)parser;
+    (void)event;
+    (void)parent;
+    (void)state;
+    if (!node->attributes.anchor.len) {
+        node->flags |= MARKDOWN_CORE_NODE__EXIT_FRAGILE;
+    }
+    return MARKDOWN_CORE_FINISH_CONTINUE;
+}
+static const markdown_core_node_type IDENTIFIER_OWNER_KINDS[] = {MARKDOWN_CORE_NODE_LIST, MARKDOWN_CORE_NODE_CALLOUT,
+                                                                 MARKDOWN_CORE_NODE_TABLE, MARKDOWN_CORE_NODE_NONE};
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
+    .finish_step = finish_step,
+    .finish_exit_kinds = IDENTIFIER_OWNER_KINDS,
     .state_size = sizeof(markdown_core_block_identifier_work),
     .accepts_lazy = accepts_lazy,
     .open_lazy = open_lazy,
@@ -84,8 +93,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
     /* Inline content, unless the paragraph was only definitions. */
     .contains_inlines_func = contains_inlines,
     .paragraph = true,
-    .finalize_block = markdown_core_paragraph_finalize,
+    .finalize_block = finalize_block,
     .open_text_block = open_text,
-    .finish_step = finish_step,
-    .finish_exit_kinds = PARAGRAPH_EXIT_KINDS,
 };

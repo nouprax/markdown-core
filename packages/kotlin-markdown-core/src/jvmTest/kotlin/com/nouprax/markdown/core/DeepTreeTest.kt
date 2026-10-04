@@ -32,11 +32,11 @@ class DeepTreeTest {
         assertNotEquals(document, other)
         assertEquals(document.hashCode(), other.hashCode())
 
-        // Walking visits every node once, numbered in walk order.
+        // Walking visits every node once, each numbered once from 1.
         val visitor = NodeVisitor()
         document.walk(visitor)
         assertEquals(depth * 2 + 3, visitor.nodes.size)
-        assertEquals((1L..visitor.nodes.size).toList(), visitor.nodes.map { it.id.value })
+        assertEquals((1L..visitor.nodes.size).toList(), visitor.nodes.map { it.id.value }.sorted())
         val leaf = assertIs<Text>(visitor.nodes.last())
         assertEquals("leaf", leaf.literal)
 
@@ -47,8 +47,8 @@ class DeepTreeTest {
         assertNull(document.node(Position(2, 1), source))
 
         // A description never follows tree edges.
-        assertEquals("Document(id=1)", document.toString())
-        assertEquals("Text(id=${depth * 2 + 3})", leaf.toString())
+        assertEquals("Document(id=${document.id.value})", document.toString())
+        assertEquals("Text(id=${leaf.id.value})", leaf.toString())
 
         // Release of a deep document while a view still holds a subtree.
         val (released, subtree) = retain(source, depth / 2)
@@ -83,7 +83,7 @@ class DeepTreeTest {
             val column = depth * 2 + 1
             assertEquals(Scope(Position(1, column), Position(1, column + 3)), edited.scope(leaf, text))
             assertSame(leaf, edited.node(Position(1, column), text))
-            assertEquals("Document(id=1)", edited.toString())
+            assertEquals("Document(id=${edited.id.value})", edited.toString())
         }
     }
 

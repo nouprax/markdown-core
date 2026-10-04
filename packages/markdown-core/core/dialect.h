@@ -78,7 +78,7 @@ typedef enum {
 
 /* THE FINISH STEPS, projected by EVENT and KIND.
  *
- * The finish walk delivers two events per node, and a step declares the kinds
+ * Completion delivers two events per node, and a step declares the kinds
  * it is ASKED AT (their EXIT, once the subtree is complete) and the kinds
  * whose EXTENT it tracks (their ENTER and EXIT), so the natural key of the
  * dispatch is (event, kind): a Text's EXIT reaches autolink, a Paragraph's
@@ -86,8 +86,8 @@ typedef enum {
  * ENTER or a List's EXIT reach nothing. The projection is one table with a
  * pointer per key to a terminated list of steps in descriptor order, NULL for
  * a key nothing declared, built once when the dialect is sealed, beside the
- * block and inline-content families, and gated, once the tree is complete, on the kinds
- * the parse produced (element.h, `finish_acts_on_kinds`). One load decides
+ * block and inline-content families, and gated, at each event, on the kinds
+ * the parse has produced (element.h, `finish_acts_on_kinds`). One load decides
  * the common case.
  *
  * Kinds are indexed by class then ordinal, so a block and an inline kind that
@@ -145,7 +145,7 @@ typedef struct markdown_core_finish_step_entry {
  * is handed -- or NULL for a kind with none or whose structure element the
  * dialect does not hold, which then has no flag but FIELDS. Each flag is a
  * fact of that element's descriptor (element.h), read with the record by the
- * line engine and the finish walk alike. A fact a hook answers per node is a
+ * line engine and the inline root passes alike. A fact a hook answers per node is a
  * flag saying the element declares the hook, which is then asked:
  *
  * - INLINES / INLINES_ASK: `inline_content` / `contains_inlines_func` -- the

@@ -28,7 +28,8 @@ static bool accepts_blank(const markdown_core_element_instance *self, markdown_c
         return true;
     }
     markdown_core_block_lookahead lookahead;
-    if (!markdown_core_parser_lookahead_begin(parser, body->parent, MARKDOWN_CORE_NODE_PARAGRAPH, &lookahead)) {
+    if (!markdown_core_parser_lookahead_begin(parser, markdown_core_parser_open_parent(parser, body),
+                                              MARKDOWN_CORE_NODE_PARAGRAPH, &lookahead)) {
         return false;
     }
     markdown_core_chunk next;
@@ -70,32 +71,31 @@ static bool markdown_core_block_definition_marker(markdown_core_chunk *input, in
  * admitted any line with ': ' in it. Every answer of false is a line the
  * transaction would refuse too. */
 static bool definition_next_lines_admit(markdown_core_parser *parser) {
-    const unsigned char *cursor = parser->lookahead_cursor, *end = parser->lookahead_end;
-    for (int line = 0; line < 2 && cursor && cursor < end; line++) {
-        const unsigned char *at = cursor;
-        while (at < end && parser->dialect->container_prefix[*at]) {
+    /* The next lines are read through the input index (E1). */
+    for (int line = 1; line <= 2; line++) {
+        markdown_core_input_line *next = markdown_core_parser_source_line(parser, parser->line_number + line);
+        if (!next) {
+            return false;
+        }
+        const unsigned char *bytes = markdown_core_parser_line_bytes(parser, next);
+        size_t at = 0, length = next->end - next->start;
+        while (at < length && parser->dialect->container_prefix[bytes[at]]) {
             /* A declared prefix byte that is also a marker byte -- a
              * container whose continuation strips ':' or '~' -- cannot be
              * told from the marker here; only the transaction can, so the
              * key admits. No element declares one today; the rule is what
              * lets one do so without this key silently refusing the
              * definitions inside it. */
-            if (*at == ':' || *at == '~') {
+            if (bytes[at] == ':' || bytes[at] == '~') {
                 return true;
             }
             at++;
         }
-        if (at < end && !markdown_core_is_line_end(*at)) {
-            return (*at == ':' || *at == '~') && (at + 1 == end || markdown_core_is_whitespace(at[1]));
+        if (at < length) {
+            return (bytes[at] == ':' || bytes[at] == '~') &&
+                   (at + 1 == length || markdown_core_is_whitespace(bytes[at + 1]));
         }
         /* Blank once stripped: the transaction skips one such line. */
-        cursor = at;
-        if (cursor < end && *cursor == '\r') {
-            cursor++;
-        }
-        if (cursor < end && *cursor == '\n') {
-            cursor++;
-        }
     }
     return false;
 }
@@ -120,7 +120,7 @@ static bool markdown_core_block_definition_prefix(const markdown_core_element_in
         counts->work += term.len;
         markdown_core_attribute_parser attributes = {
             .data = term.data, .length = term.len, .scratch = &parser->attribute_scratch};
-        bool reference = markdown_core_parse_reference_inline(parser, &term, NULL, &attributes, 0) != 0;
+        bool reference = markdown_core_reference_definition_length(&term, &attributes) != 0;
         if (attributes.oom) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
@@ -155,6 +155,7 @@ static markdown_core_node *markdown_core_block_open_definition(markdown_core_def
     /* A new term requires the separating blank run. If the preceding body's
      * prefix declined it, append at the existing list's definition boundary. */
     if (parent->kind == MARKDOWN_CORE_NODE_DEFINITION) {
+        markdown_core_parser_finalize_to(parser, parent);
         parent = markdown_core_block_finalize(parser, parent);
     }
     if (parent->kind != MARKDOWN_CORE_NODE_DEFINITION_LIST) {
@@ -189,6 +190,8 @@ static markdown_core_node *markdown_core_block_open_definition(markdown_core_def
                                                                        term->content.size, 0)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
+    /* The term is a field, complete once made. */
+    markdown_core_parser_complete_field(parser, term, definition);
     markdown_core_block_advance_offset(parser, input, input->len - 1 - parser->offset, false);
     return definition;
 }
@@ -247,19 +250,35 @@ static bool continue_container(const markdown_core_element_instance *self, markd
     return node->kind != MARKDOWN_CORE_NODE_DEFINITION_BODY ||
            markdown_core_definition_list_continue(parser, node, input);
 }
+/* A body's lines continue it by its marker's width. */
+static bool carries_as(const markdown_core_node *node, const markdown_core_node *old) {
+    return node->kind != MARKDOWN_CORE_NODE_DEFINITION_BODY ||
+           node->as.definition_body->continuation == old->as.definition_body->continuation;
+}
+/* A DEFINITION'S BODIES ARE EACH A RELATION OF IT, and a body's children
+ * one more, all from where the definition starts (canonical-ast.md): a
+ * body continues only the old body of its place (5.9). */
+static void children_relation(const markdown_core_node *node, const markdown_core_node *old,
+                              markdown_core_children_relation *relation) {
+    (void)old;
+    if (node->kind == MARKDOWN_CORE_NODE_DEFINITION) {
+        relation->first = markdown_core_node_children_count(node);
+        relation->end = relation->first + 1;
+    } else if (node->kind == MARKDOWN_CORE_NODE_DEFINITION_BODY) {
+        relation->from_parent = true;
+    }
+}
 /* A definition list, a definition and a body end where their last child
- * ends: taken at each one's EXIT, from inside the one finish walk, where the
- * children are complete. */
+ * ends: taken when each one completes, when its children are complete. */
 static markdown_core_finish_result finish_step(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                               markdown_core_node *node, markdown_core_event_type event, int is_root,
-                                               void **state) {
+                                               markdown_core_node *node, markdown_core_event_type event,
+                                               markdown_core_node *parent, void **state) {
     (void)self;
-    (void)parser;
     (void)event;
-    (void)is_root;
+    (void)parent;
     (void)state;
     assert(event == MARKDOWN_CORE_EVENT_EXIT);
-    markdown_core_definition_list_complete(node);
+    markdown_core_definition_list_complete(parser, node);
     return MARKDOWN_CORE_FINISH_CONTINUE;
 }
 static const markdown_core_node_type DEFINITION_LIST_EXIT_KINDS[] = {
@@ -284,6 +303,8 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
 
     .name = "definition_list",
     .continue_container = continue_container,
+    .carries_as = carries_as,
+    .children_relation = children_relation,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_definition_list_scan,
     .scan_block_gate = {.bytes = ":~"},
@@ -291,15 +312,15 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
 };
 
 void markdown_core_definition_list_close_body(markdown_core_node *node) {
-    if (!node->last_child) {
+    if (!node->children) {
         node->where.place.end = (uint32_t)node->internal_offset;
     }
 }
 
-void markdown_core_definition_list_complete(markdown_core_node *node) {
+void markdown_core_definition_list_complete(const markdown_core_parser *parser, markdown_core_node *node) {
     if ((node->kind == MARKDOWN_CORE_NODE_DEFINITION_LIST || node->kind == MARKDOWN_CORE_NODE_DEFINITION ||
          node->kind == MARKDOWN_CORE_NODE_DEFINITION_BODY) &&
-        node->last_child) {
-        node->where.place.end = node->last_child->where.place.end;
+        node->children) {
+        node->where.place.end = (uint32_t)markdown_core_parser_children_end(parser, node);
     }
 }

@@ -14,22 +14,74 @@
 extern "C" {
 #endif
 
-/* A PUBLISHED DOCUMENT: the tree, whose nodes hold ids and extents and whose
- * root holds the definition tables, and the text unit its scope queries count
- * columns in. */
+/* A PUBLISHED DOCUMENT: the tree, whose nodes hold ids and extents; the
+ * text unit its scope queries count columns in; and its definition tables,
+ * the registries of its footnotes and specimens in source order and of the
+ * ones that win their labels, by label (registry.h), each NULL while it
+ * holds nothing. The document holds each part once. */
 struct markdown_core_document {
     markdown_core_node *root;
     markdown_core_text_unit unit;
+    markdown_core_node *footnotes, *specimens, *footnote_labels, *specimen_labels;
 };
 
-/* PUBLISHING, the last step of the parse transaction: the one canonical walk
- * that gives every node its id, rewrites its parse-time place as its extent
- * and records the definition tables it finds on the way in the root,
- * continuing the tree the parser's revision names (parser.h): a fresh parse
- * numbers every node from 1 in walk order. The parser's root is the result.
- * It works in the parser's scratch. False, having changed neither tree's
- * structure, when an allocation failed. Nothing reads a place after this. */
+/* Drops the document's holds on its parts. */
+void markdown_core_document_release(markdown_core_document *document);
+
+/* Whether two resources are equal values (node.h). */
+bool markdown_core_resource_equal(const markdown_core_resource *a, const markdown_core_resource *b);
+
+/* A NODE PUBLISHES ITS RELATIONS WHEN IT COMPLETES (docs/plans/2026-09-29-
+ * incremental-parsing.md, 4.1, 4.3, 5.8). `node` starts at `start`, and
+ * `owner` holds it, as a child or a field, or is NULL for the document's
+ * root. Unless `node` only holds a group of its owner's relation (a
+ * callout's title, a definition's term and bodies, a citation's affixes),
+ * which is not a node of the document, a node its owner published while it
+ * was pending (node.h) declares its explicit anchor, the nodes of its
+ * relations are published (markdown_core_publish_relation), and the root,
+ * which holds its place, then takes the next id and its extent, measured
+ * from 0. Returns
+ * whether `node` is a node of the document. An allocation failure fails the
+ * parse. */
+bool markdown_core_publish_node(markdown_core_parser *parser, markdown_core_node *node, const markdown_core_node *owner,
+                                uint32_t start);
+
+/* PUBLISHING a relation: every node of the relations of `owner` that `part`
+ * holds -- `part` itself, when it is a field of `owner`; its children, when
+ * it is `owner` or the holder of one of `owner`'s groups -- in relation
+ * order takes the next id after the revision's last, declares itself to the
+ * registries when it is a footnote or specimen or declares an explicit
+ * anchor and is not pending, and takes its extent in place of its place:
+ * the distance from the end of the node before it in the relation, or from
+ * `start`, where `owner` starts, for the first, and its length (node.h). An
+ * allocation failure fails the parse. */
+void markdown_core_publish_relation(markdown_core_parser *parser, const markdown_core_node *owner, uint32_t start,
+                                    const markdown_core_node *part);
+
+/* PUBLISHING THE DOCUMENT, the last step of the parse transaction: every node
+ * already holds its id and its extent. A parse that continues a tree (the parser's revision, parser.h)
+ * matches its nodes to the old ones (5.9): a matched node takes its old
+ * node's id, and the old tree is shared where the two are equal, in the
+ * facts that declare its footnotes and specimens too, and the registries
+ * commit the parse's round with it (registry.h). The parser's root is the
+ * result. It works in the parser's scratch. False, having changed neither
+ * tree's structure nor the registries, when an allocation failed. */
 bool markdown_core_publish_tree(markdown_core_parser *parser);
+
+/* THE EDIT PASS (5.2): applies `count` edits, disjoint and in source order,
+ * each in bytes of the text before the batch, to the published tree `root`
+ * parsed from that text, which only its session holds. Every node whose range
+ * from the start of its lead to its end plus its reach meets or touches an
+ * edit takes the extent of its image and is marked changed. `*moved` is each
+ * node it moved with its extent before the batch, `*moved_count` entries in
+ * the order of their node's address, which the caller frees. False when an
+ * allocation failed. */
+bool markdown_core_tree_edit(markdown_core_node *root, const markdown_core_byte_edit *edits, size_t count,
+                             markdown_core_moved **moved, size_t *moved_count);
+
+/* The edit pass over a registry (registry.h): each fact the batch meets
+ * moves to the image of its place. False when an allocation failed. */
+bool markdown_core_registry_edit(markdown_core_node *registry, const markdown_core_byte_edit *edits, size_t count);
 
 /* The scope of `node` in the published tree `root` parsed from `source`,
  * with columns in `unit`; markdown_core_document_scope is this query over a
@@ -39,21 +91,30 @@ bool markdown_core_tree_scope(const markdown_core_node *root, const markdown_cor
                               size_t length, markdown_core_text_unit unit, markdown_core_scope *scope);
 
 /* ONE RELATION of a node: a node-valued field of the canonical AST, in the
- * canonical field order. `first` is its first node and the rest follow by
- * `next` up to `end`, the node after its last (NULL at a chain's end; a
- * table's row groups share one chain). `group` names the list when the
- * canonical dump draws it as a group line (`Title`, `CitationPrefix`, a
- * table's row groups, a definition's term and bodies), and is NULL when its
- * nodes are drawn directly under the owner. A node's extent is relative to
+ * canonical field order. Its nodes are the one node `field` holds, or the
+ * children [start, end) of `holder`, which is NULL when there are none (a
+ * table's row groups are ranges of the table's children); a relation of one
+ * field node runs from 0 to 1. `group` names the list when the canonical
+ * dump draws it as a group line (`Title`, `CitationPrefix`, a table's row
+ * groups, a definition's term and bodies), and is NULL when its nodes are
+ * drawn directly under the owner. A node's extent is relative to the end of
  * the previous node of its relation, or to the owner's start. */
 typedef struct markdown_core_relation {
     const char *group;
-    const markdown_core_node *first;
-    const markdown_core_node *end;
+    markdown_core_node **field;
+    markdown_core_node *holder;
+    size_t start, end;
 } markdown_core_relation;
 
 /* How many nodes `relation` holds. */
-size_t markdown_core_relation_count(const markdown_core_relation *relation);
+static inline size_t markdown_core_relation_count(const markdown_core_relation *relation) {
+    return relation->end - relation->start;
+}
+
+/* The node of `relation` at `at`, in [start, end). */
+static inline markdown_core_node *markdown_core_relation_node(const markdown_core_relation *relation, size_t at) {
+    return relation->field ? *relation->field : markdown_core_children_at(relation->holder->children, at);
+}
 
 /* The relations of one node, one at a time. This is the one place that knows
  * which fields each kind owns and in what order: publishing, scope queries
@@ -63,7 +124,8 @@ typedef struct markdown_core_relation_cursor {
     /* The owner kind's shape of relations (ast.c), read once. */
     uint8_t shape;
     int step;
-    const markdown_core_node *next;
+    /* The next of the owner's children a later relation starts at. */
+    size_t at;
 } markdown_core_relation_cursor;
 
 void markdown_core_relations_begin(markdown_core_relation_cursor *cursor, const markdown_core_node *owner);
@@ -86,9 +148,9 @@ typedef struct markdown_core_walk_item {
 typedef struct markdown_core_walk_frame {
     size_t level;
     markdown_core_relation_cursor cursor;
+    /* The relation in hand: `start` is its next node. */
     markdown_core_relation relation;
     bool active, group_pending;
-    const markdown_core_node *next;
     uint32_t owner_start, anchor;
 } markdown_core_walk_frame;
 

@@ -154,8 +154,8 @@ for (const testCase of canonicalManifest.cases) {
     });
 
     test(`conformance: fresh parse ids of shared case ${testCase.name}`, () => {
-        // Ids are unique across every owned relation and numbered from 1 in
-        // canonical walk order, so two fresh parses are equal, ids included.
+        // Ids are unique across every owned relation and numbered from 1 with
+        // none skipped, so two fresh parses are equal, ids included.
         const document = Document.parse(testCase.source);
         const ids = [];
         walk(
@@ -170,7 +170,7 @@ for (const testCase of canonicalManifest.cases) {
             )
         );
         assert.deepEqual(
-            ids,
+            [...ids].sort((left, right) => left - right),
             ids.map((_, index) => index + 1)
         );
         assert.ok(markupEquals(document, Document.parse(testCase.source)));

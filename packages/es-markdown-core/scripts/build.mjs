@@ -10,15 +10,16 @@ const core = [
     "alloc.c",
     "slab.c",
     "node.c",
+    "children.c",
     "iterator.c",
     "dialect.c",
     "blocks.c",
     "inlines.c",
     "utf8.c",
     "buffer.c",
-    "references.c",
     "map.c",
     "text_tree.c",
+    "facts.c",
     "houdini_html_u.c",
     "markdown_core_ctype.c"
 ].map((file) => path.join(root, "packages/markdown-core/core", file));
@@ -63,6 +64,7 @@ const elements = [
     "mark.c",
     "embedded.c",
     "properties.c",
+    "registry.c",
     "session.c",
     "span.c",
     "specimen.c",
@@ -70,7 +72,8 @@ const elements = [
     "subscript.c",
     "superscript.c",
     "table.c",
-    "tasklist.c"
+    "tasklist.c",
+    "tree_edit.c"
 ].map((file) => path.join(root, "packages/markdown-core/elements", file));
 
 await rm(dist, { recursive: true, force: true });

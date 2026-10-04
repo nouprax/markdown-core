@@ -391,7 +391,7 @@ class ApiTest {
         val table = assertIs<Table>(Document.parse("| a |\n| --- |\n| b |\n").content.single())
         val tableVisitor = RecordingWalkingVisitor()
         table.walk(tableVisitor)
-        assertEquals(listOf(3L, 6L), tableVisitor.tableRowIds)
+        assertEquals((table.head + table.content).map { it.id.value }, tableVisitor.tableRowIds)
         tableVisitor.events.clear()
         val typed: MarkupVisitor = tableVisitor
         typed.visit(tableRow = table.head.single(), phase = MarkupVisitPhase.ENTER)

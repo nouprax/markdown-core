@@ -140,6 +140,27 @@
             "record": "markdown_core_metadata_fields",
             "structure": null,
             "note": "Read by the document element's prefix reader (properties.c) and never parsed as a block, so no element defines its structure."
+        },
+        {
+            "name": "REGISTRY",
+            "kind": null,
+            "record": null,
+            "structure": null,
+            "note": "A private collection root of a session's registries and a document's definition tables (facts.h), not a public Markup kind."
+        },
+        {
+            "name": "FACT",
+            "kind": null,
+            "record": "markdown_core_fact_place",
+            "structure": null,
+            "note": "A private entry of a registry: where a fact is, as the distance from the fact before it (facts.h)."
+        },
+        {
+            "name": "LINE",
+            "kind": null,
+            "record": "markdown_core_line_value",
+            "structure": null,
+            "note": "A private line of a leaf block (E5): one of the hidden children the leaf keeps in its lines, with the leaf's state before it."
         }
     ],
     "inline": [
@@ -200,9 +221,9 @@
         {
             "name": "CITE",
             "kind": "Cite",
-            "record": "markdown_core_cite",
+            "record": null,
             "structure": "CITATION",
-            "note": "A citation cluster, whose items are a chain of CITATION nodes it owns beside its children, which it never has."
+            "note": "A citation cluster, whose items are its children, CITATION nodes."
         },
         {
             "name": "STRIKETHROUGH",

@@ -478,6 +478,15 @@ bool markdown_core_text_tree_replace(markdown_core_text_tree *text, const markdo
     return true;
 }
 
+const uint8_t *markdown_core_text_tree_read(const markdown_core_text_tree *text, size_t offset, size_t *start,
+                                            size_t *end) {
+    text_cursor cursor;
+    size_t rank;
+    markdown_core_text_piece *piece = cursor_seek(&cursor, text, offset, &rank, start);
+    *end = *start + piece->size;
+    return piece->bytes;
+}
+
 void markdown_core_text_tree_copy(const markdown_core_text_tree *text, uint8_t *bytes) {
     copy_span(text, 0, size_of(text->root), bytes);
 }

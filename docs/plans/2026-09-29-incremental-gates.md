@@ -199,8 +199,10 @@ to the fresh parse's answers, in the same order (plan 8).
 - Ids are unique within the document, across every owned relation.
 - Over the whole lineage, the harness keeps a map from id to kind and a set of
   retired ids. An id never changes kind, and a retired id never appears again.
-- A fresh parse numbers its nodes from 1 in canonical walk order (plan 4.1),
-  so two fresh parses of the same text are equal, ids included.
+- A fresh parse numbers its nodes from 1: each node's owner numbers the
+  nodes it holds when it completes, and the root numbers itself when it
+  completes (plan 4.1, 5.8). Its ids are 1 through its node count, and two fresh parses of
+  the same text are equal, ids included.
 
 ### 4.3 Minimal AST mutation
 
@@ -225,13 +227,13 @@ part of the value; the absolute scope serves only the matching of 4.4.
 4.3 classifies nodes by the ids the subject assigned, so on its own it would
 accept an implementation that gives a surviving node a new id and so loses its
 view state. The plan states which old node each new node continues (5.9) in
-terms the harness evaluates from the public model alone: the position mapping
-of the step (plan 5.2), the absolute scopes of the snapshot and of
+terms the harness evaluates from the public model alone: the image of each
+position under the step's edits (plan 5.2), the absolute scopes of the snapshot and of
 `scope(of:in:)` on the new document, kinds and owner relations. The harness
 computes the expected matching itself, for every node of every step:
 
 - The new document continues the old document (plan 5.9 starts matching
-  from the reopened spine, whose root is the document).
+  from the two document roots).
 - An old node's anchor is its first byte that survived the step. A node none
   of whose bytes survived has no anchor.
 - Within the relation of a matched owner, a new node of the same kind whose
@@ -243,9 +245,9 @@ computes the expected matching itself, for every node of every step:
 
 A continued node whose value equals its predecessor's is unchanged and outside
 `N` (4.3). Extents are relative, so text that moves a node without touching it
-leaves its value unchanged, except that the first continued node after a
-changed or inserted sibling in the same relation may get a new `lead` (plan
-5.3). The oracle predicts that `lead` from the fresh parse.
+leaves its value unchanged, except that a continued node whose lead holds an
+edit, or that follows a changed or inserted sibling in the same relation,
+may get a new `lead`. The oracle predicts that `lead` from the fresh parse.
 
 ### 4.5 Scripted identity
 
@@ -414,9 +416,10 @@ its numbers are reported with the `reparse` subject.
 | 0 Harness (this plan) | Scripts and text model self-tests; 4.1 with `reparse` | Edit and stream runners report the R column; one-shot adds the `buffer_to_ast` rule (6.4) |
 | 1 Model | 4.2 for fresh parses; deep equality and 4.9 on fresh documents | One-shot budget for the model change (G1), then 1.02 per PR |
 | 2 Sessions, whole-document restart | 4.1–4.11 on the correctness set, every platform, both units | 6.3 on every workload, which sets the session baseline for 6.4 (G4) |
-| 3 Block restart and convergence | Unchanged | 6.2 for the local edit families on shapes without declarations |
-| 4 Session registries | Unchanged | 6.2 for the local edit families on every remaining scale shape (`prose`, `quote`, `refs`) and for the local steps of `declarations` |
-| 5 Frontier and inline restart | Unchanged | 6.2 for `tokens` and `rows` |
+| 3 Shared subtrees | Unchanged | Unchanged |
+| 4 Block reuse | Unchanged | 6.2 for the local edit families on the shapes without declarations: `list`, `table` and the 10,000-item list |
+| 5 Session registries | Unchanged | 6.2 for the local edit families on every remaining scale shape (`prose`, `quote`, `refs`, `flat`) and for the local steps of `declarations` |
+| 6 Inline reuse | Unchanged | 6.2 for `tokens` and `rows` |
 
 From step 2 on, the one-shot benchmark measures `Document.parse` through the
 session path it becomes (plan 4.4), so the one-shot gate also guards what the
@@ -518,3 +521,8 @@ their own pull requests.
 - **G4 The session baseline. Decided 2026-09-29: as proposed.** Proposed: the step 2 pull request sets the
   session baseline under 6.3, and the 1.02 regression rules apply to
   the session from then on (6.4).
+- **G5 `flat` with the registries. Decided 2026-10-01: move to the session
+  registries step.**
+  `flat` has a heading in every section, and headings are declarations
+  (plan 5.1, 5.7), so its 6.2 gate turns on with the session registries in
+  step 5 beside `prose`, `quote` and `refs` (section 7).

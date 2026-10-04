@@ -5,8 +5,10 @@
 struct bracket;
 void markdown_core_inline_free_citation_tokens(markdown_core_inline_state *inline_state, citation_tokens *tokens);
 markdown_core_node *markdown_core_inline_new_cite(markdown_core_inline_state *inline_state);
+/* A Citation at the end of `cite`'s items, held there; NULL, with the run
+ * failed, when it cannot be made or placed. */
 markdown_core_node *markdown_core_inline_new_citation(markdown_core_inline_state *inline_state,
-                                                      markdown_core_node *cite, markdown_core_node *last);
+                                                      markdown_core_node *cite);
 extern const markdown_core_element MARKDOWN_CORE_ELEMENT_CITATION;
 /* The citation grammar's calls from the bracket algorithm, with `citation`
  * the citation element's instance. Tokens exist only where that element read

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-/** `parser->kinds_created` decides which finish hooks run -- a postprocess
- * pass, or a finish step at every event it was projected to. A production
+/** `parser->kinds_created` decides which finish steps run at the events they
+ * were projected to. A production
  * site that produces a node kind without recording it does not fail a build or
  * a test: it makes the gate skip a hook some document needed, and the defect
  * surfaces as a missing rewrite far from the line that caused it.
@@ -18,10 +18,8 @@
  * site cannot quietly opt out of it.
  *
  * THE SAME RULE HOLDS FOR A RELEASE. `parser->nodes_freed` is the other half
- * of the finish stage's traversal count (parser.h): the walk parses inline
- * content as it goes, so a node the inline parser makes and discards is made
- * after the walk noted its starting point, and the count is only right when
- * the discard is counted where the creation was. Production code releases a
+ * of the parse's node count (parser.h), and it is only right when a discard
+ * is counted where the creation was. Production code releases a
  * node through `markdown_core_parser_release_node`; the parser-less
  * `markdown_core_node_free` is for a caller with no parse, which in the
  * library is the two teardowns -- a document's, and a parser's own root.
@@ -43,12 +41,15 @@ const UNCOUNTED_FREE = /\bmarkdown_core_node_free\s*\(/g;
 const COUNTED_FREE = /\bmarkdown_core_parser_release_node\s*\(/g;
 /** The two releases outside any parse: the document's teardown and the
  * parser's teardown of a root it never handed out. */
-const TEARDOWNS = new Set(["elements/ast.c:markdown_core_document_free", "core/blocks.c:S_parser_dispose"]);
+const TEARDOWNS = new Set(["elements/ast.c:markdown_core_document_release", "core/blocks.c:S_parser_dispose"]);
 
 /** Where the parser-less forms are allowed to appear: the two headers that
  * DECLARE them, the translation unit that DEFINES them, and `parser.h`, where
  * the recording wrappers are the one thing in the library that calls them. */
 const DEFINES_THEM = new Set(["core/node.h", "core/markdown-core-element-api.h", "core/node.c", "core/parser.h"]);
+/** The recording wrapper defined outside those, which records the kind and
+ * then sets it: the spine's open block takes its old block with it. */
+const RECORDING_WRAPPERS = new Set(["core/blocks.c:markdown_core_parser_set_node_kind"]);
 
 const failures = [];
 let recordingSites = 0;
@@ -78,6 +79,7 @@ for (const file of librarySources()) {
     for (const match of stripped.matchAll(UNRECORDED)) {
         const line = stripped.slice(0, match.index).split("\n").length;
         const owner = enclosingFunction(stripped, match.index);
+        if (RECORDING_WRAPPERS.has(`${file}:${owner}`)) continue;
         failures.push(
             `${file}:${line}: ${owner} produces a node kind through ${match[0].replace(/\s*\($/, "")}, ` +
                 `which does not record it; use the markdown_core_parser_ form`

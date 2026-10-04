@@ -71,6 +71,16 @@ void ts_require_ok(markdown_core_status status, const char *call);
 typedef markdown_core_status (*ts_node_field)(const markdown_core_node *node, const markdown_core_node **field);
 const markdown_core_node *ts_field(const markdown_core_node *node, ts_node_field accessor);
 
+/* A sequence field read through its accessor, which must succeed. */
+typedef markdown_core_status (*ts_nodes_field)(const markdown_core_node *node, const markdown_core_nodes **field);
+const markdown_core_nodes *ts_nodes(const markdown_core_node *node, ts_nodes_field accessor);
+
+/* The node at `index` of `nodes`, or NULL past its end. */
+const markdown_core_node *ts_at(const markdown_core_nodes *nodes, size_t index);
+
+/* The child at `index` of `node`, or NULL past its last child. */
+const markdown_core_node *ts_child(const markdown_core_node *node, size_t index);
+
 /* A node's absolute source range in bytes, resolved from the extents by the
  * walk itself rather than by the facade's scope query. */
 typedef struct {

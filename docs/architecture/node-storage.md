@@ -1,6 +1,6 @@
 # Node storage and lifetime
 
-The engine node contains its tree links, source mapping, attributes, element
+The engine node contains its hold count, its children, source mapping, attributes, element
 state, and a union of typed node data pointers. Every union arm is a pointer;
 adding fields to one kind cannot enlarge the common node. A kind with no
 kind-specific fields has no data record. Field-bearing kinds own a
@@ -30,7 +30,7 @@ the slots of the nodes they retire instead of pinning a slab per edit. A slot
 released with no pool drops its hold, and the slab is freed with its last one
 -- by whichever release that turns out to be. Disposing the pool drops the
 holds the pool itself has (its released slots, its current slab) and nothing
-else, so a finished tree keeps its slabs, and a subtree unlinked from a parsed
+else, so a finished tree keeps its slabs, and a subtree taken from a parsed
 document outlives the document like a hand-built one: `markdown_core_node_free`
 releases either. What a retained subtree keeps alive is its slabs, not its
 nodes. The nodes of one slab are released from one thread at a time; two
@@ -49,24 +49,35 @@ an occurrence. Released into a pool, its slot goes back to that pool's
 resource slabs; released with none, it drops its slab hold. So the tree keeps
 its resource slabs as it keeps its node slabs.
 
-## A node's place and its value
+## Shared nodes
 
-A node's fields are its PLACE -- its links (`next`, `prev`, `parent`,
-`first_child`, `last_child`) and its `id` -- and its VALUE, everything after
-them: attributes, content, extent, kind, flags, element state, the record and
-the storage all of these borrow. Inline literals are slices of their block's
-content buffer, so a value borrows from the parse that made it.
+A node is shared and immutable once its block or inline run completes. It has
+no parent, sibling or child links: it holds a count of its holders, its
+children and its value -- attributes, content, extent, kind, flags, element
+state and its record. Its children are a balanced tree of runs (`children.h`)
+that hold node pointers in order; a run is counted the same way, so two nodes
+can hold one run and a change to a held run copies the path to it first. A
+node-valued field, such as a callout's title or a directive's label, is a
+holder like a parent. Walks over the tree carry their path on explicit
+stacks, and release is iterative: a node's last holder releases its children
+and fields through the same work list.
+
+While a block is open it is on the parser's spine, the path of open blocks
+from the document down, and the parser changes it in place, as the only
+holder. An inline run builds its nodes the same way and completes them when
+the run closes.
+
+An inline literal is a slice of the bytes its run read. Those bytes are a
+counted value (`markdown_core_bytes`): every node a run makes holds them, so a
+node kept by a later document keeps the storage its literal borrows, and the
+bytes are freed with the last node that holds them.
 
 A session's parse continues the previous document (docs/plans/
-2026-09-29-incremental-parsing.md, 5.9). When a new node equals the old node
-it continues, the old node is the one the new document holds, and it must
-hold the new parse's storage, since the old parse's is released with the old
-tree. `markdown_core_node_swap_values` exchanges the values of such a
-pair in one block copy of the value fields and one of the slot's record
-space, and then gives each node back the node-valued fields its record holds,
-which are places. After the exchanges the new tree holds only the new
-parse's storage and the retired tree only the old, and each is released as a
-whole.
+2026-09-29-incremental-parsing.md, 5.9). Publishing compares the new tree with
+the old one, and where a new subtree equals the old subtree it continues, the
+new tree holds the old subtree in its place and releases the new one. So every
+unchanged node is the previous document's node, and the two documents share
+it.
 
 Reference-map records are not slots. Every record lives exactly as long as
 its map, so records are carved from blocks the map owns and freed with it,
@@ -110,24 +121,19 @@ retains its own dimensions even when its destination and title come from a
 resource shared with other resolved references. Cross references own their raw
 destination fields directly and do not share a resource with a definition.
 
-Parser construction transfers a detached, independently owned subtree. The
-caller establishes disjoint ownership by creating the subtree or detaching it
-from a known separate owner; merely having no parent is not proof of
-disjointness. `markdown_core_node_attach_validated` is the one non-failing
-splice for callers with an established containment decision. The unused
-checked-detached wrapper has been removed; unproven trees use checked mutation.
-It asserts local links and the pure built-in containment rule in Debug/ASan.
-Checked mutation and assertions share that rule. Built-in elements declare the
+Parser construction gives a node to its parent with the caller's hold.
+`markdown_core_node_attach_validated` is the insertion for callers with an
+established containment decision; `markdown_core_node_insert_child` checks
+containment itself. It asserts the pure built-in containment rule in
+Debug/ASan. Checked insertion and assertions share that rule. Built-in elements declare the
 parent-kind domain retained by their payload across conversion; an unrelated
 kind cannot silently inherit a different containment policy. Dynamic callbacks
 remain decision operations and are never replayed by an assertion.
 Internal inline constructors must return a detached token admitted by their
 fixed grammar owner. The private element API states this obligation; arbitrary
 third-party descriptors are not an installed or supported extension surface.
-The arbitrary mutation API checks ancestry and containment once before
-unlinking, then commits through the same splice. A custom predicate therefore
-observes the original tree and is never called again after detachment.
-Rejection leaves both trees unchanged. Optional rewrites, including formula
+Checked insertion checks containment once and then commits through the same
+insertion. Rejection leaves the tree unchanged and the hold the caller's. Optional rewrites, including formula
 promotion and email splitting, validate before allocating or consuming the
 old node; rejection preserves the authored content. A constructed inline
 token rejected by its destination remains owned by the parser and is released
@@ -137,12 +143,12 @@ Parser and inline transactions use the same error enum; allocation failures use
 cause. Buffer allocation flags remain allocation-only. Table lead splitting
 checks acceptance before conversion, so a refused optional split preserves the
 complete original paragraph. There is no per-node allocator identity to check.
-Kind conversion changes no edges and checks only containment.
+Kind conversion changes no children and checks only containment.
 There is no safety mode, ancestry cache, or separate inline splice algorithm.
 A source-boundary audit keeps arbitrary reparenting out of parser construction;
 regression inputs vary nesting depth and autolink count independently.
 
-Kind conversion preserves node identity and tree links. After containment
+Kind conversion preserves node identity and children. After containment
 validation, it reserves an external replacement before releasing the old
 fields if the new record exceeds slot capacity. A record that fits already
 has storage: the conversion releases the old fields, zeroes the new active
@@ -154,10 +160,10 @@ current record, while `node_data_allocation` owns whichever record is not in
 the slot, if any, because it exceeds the slot's record space. Ownership is
 never inferred by comparing potentially adjacent
 addresses.
-`markdown_core_node_set_kind` distinguishes containment rejection from allocation
-failure. Parser callers decline rejected conversions and set the OOM flag only
-for allocation failure. Either failure leaves the original kind and all owned
-values intact. A successful conversion releases node-valued fields through the
+`markdown_core_node_set_kind` fails only on allocation failure, which leaves the
+original kind and all owned values intact. The caller converts to a kind the
+node's place can hold; a parser rule that depends on containment asks
+`markdown_core_node_can_contain_type` before converting. A successful conversion releases node-valued fields through the
 same iterative destruction walk used for ordinary tree destruction. The
 element's opaque state belongs to the node and element, so it survives a
 kind conversion. So does the attribute value, with everything it holds: an
@@ -186,7 +192,7 @@ native alignment, and sanitizer suites exercise the same ownership paths.
 
 Link reference definitions are recognized during block parsing so paragraph
 content and Setext classification can use the remaining text. A finalized
-paragraph containing only definitions stays in its parent's child chain with
+paragraph containing only definitions stays among its parent's children with
 the internal `REFERENCE_DEFINITION_ONLY` flag. Later block identifiers see
 that paragraph in source order and cannot attach across it. After all block
 syntax and anchor decisions finish, one iterative postorder pass discards
@@ -220,7 +226,7 @@ context's start and closing delimiter, preserving the footnote boundary.
 
 Element-owned fields participate in the same iterative destruction walk.
 Before freeing an element payload, the core visits its owned-root slots,
-splices their chains into the walk, and clears the slots. The element frees
+adds their nodes to the walk, and clears the slots. The element frees
 only its remaining value storage. Directive labels use this contract, and
 table captions use the same operation. The operation allocates nothing and does
 not recurse through field nesting. Kind conversion continues to preserve the
@@ -281,7 +287,7 @@ The table caption is an independent element-owned root, visited before rows.
 C exposes it through `markdown_core_node_table_caption`; Swift, Kotlin and ES
 copy it with the rest of the immutable result. JNI uses the shared optional
 node-field continuation, and Wasm's fixed node record uses its owner-typed
-`fieldIndex` for either a directive label or a table caption. The row chain and
+`fieldIndex` for either a directive label or a table caption. The rows and
 its head/body/foot counts continue to describe rows alone.
 
 Allocation failure and semantic refusal can occur in one token construction.

@@ -13,13 +13,13 @@ set(HEADERS
     dialect.h
     buffer.h
     node.h
+    children.h
     node_type.h
     iterator.h
     chunk.h
     attributes.h
     slab.h
     metadata.h
-    references.h
     map.h
     utf8.h
     inlines.h
@@ -33,17 +33,18 @@ set(LIBRARY_SOURCES
     alloc.c
     slab.c
     node.c
+    children.c
     iterator.c
     dialect.c
     blocks.c
     inlines.c
     utf8.c
     buffer.c
-    references.c
     map.c
     houdini_html_u.c
     markdown_core_ctype.c
     text_tree.c
+    facts.c
     ${HEADERS})
 
 # Keep the engine target private, but make its sources available to the

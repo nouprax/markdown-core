@@ -6,6 +6,13 @@ and node storage. Scratch never becomes an AST field.
 
 ## One physical input index
 
+The parser reads its input as a `markdown_core_text`: bytes in pieces, in
+source order, which it reads a piece at a time. A buffer is one piece; a
+session's text tree is many. A line whose bytes and terminator lie in one piece
+is read in place. A line that may run past its piece is read from a view of the
+whole line, which its optional record holds, so no scanner sees a piece
+boundary. A view lives with the input, like a normalized view.
+
 `markdown_core_input_line` records the raw start, content end, and optional-fact
 index of one physical line. The next-line offset is derived from the following record or the scan
 frontier; NUL counts live only in the optional record. Container-prefix lookahead and

@@ -86,8 +86,9 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(markdown_core_inli
     // paragraph, produced a Link that did not contain its own Text.
     markdown_core_inline_state_place(inline_state, link, start_column, end_column);
     text = make_str_with_entities(inline_state, start_column + 1, end_column - 1, &url);
-    if (text) {
-        markdown_core_node_attach_validated(link, text, NULL);
+    if (text && !markdown_core_parser_append(inline_state->owner_parser, link, text)) {
+        markdown_core_parser_release_node(inline_state->owner_parser, link);
+        return NULL;
     }
     markdown_core_inline_attach_inline_attributes(inline_state, link, start_column);
     /* The pointy braces are the syntax; what they enclose is the text. */
@@ -403,7 +404,10 @@ static markdown_core_node *www_match(const markdown_core_element_instance *self,
         return NULL;
     }
     *text->as.literal = markdown_core_chunk_dup(chunk, (bufsize_t)max_rewind, (bufsize_t)link_end);
-    markdown_core_node_attach_validated(node, text, NULL);
+    if (!markdown_core_parser_append(parser, node, text)) {
+        markdown_core_parser_release_node(parser, node);
+        return NULL;
+    }
 
     markdown_core_inline_state_place(inline_state, node, (int)max_rewind, (int)(max_rewind + link_end - 1));
     markdown_core_inline_state_place(inline_state, text, (int)max_rewind, (int)(max_rewind + link_end - 1));
@@ -451,7 +455,7 @@ static markdown_core_node *url_match(const markdown_core_element_instance *self,
     }
 
     markdown_core_inline_state_set_offset(inline_state, (int)(max_rewind + link_end));
-    markdown_core_node_unput(parser, parent, rewind);
+    markdown_core_inline_unput(inline_state, rewind);
 
     markdown_core_node *node = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_LINK);
     if (!node) {
@@ -472,7 +476,10 @@ static markdown_core_node *url_match(const markdown_core_element_instance *self,
         return NULL;
     }
     *text->as.literal = url;
-    markdown_core_node_attach_validated(node, text, NULL);
+    if (!markdown_core_parser_append(parser, node, text)) {
+        markdown_core_parser_release_node(parser, node);
+        return NULL;
+    }
 
     markdown_core_inline_state_place(inline_state, node, max_rewind - rewind, (int)(max_rewind + link_end - 1));
     markdown_core_inline_state_place(inline_state, text, max_rewind - rewind, (int)(max_rewind + link_end - 1));
@@ -615,7 +622,8 @@ static markdown_core_node *email_text_fragment(markdown_core_parser *parser,
  * A Text that is nothing but addresses is freed once its splits are in place;
  * the return value says so, because the caller's event names a node that is
  * then gone. Sets parser->error on failure and leaves the tree consistent. */
-static markdown_core_finish_result postprocess_text(markdown_core_parser *parser, markdown_core_node *text) {
+static markdown_core_finish_result postprocess_text(markdown_core_parser *parser, markdown_core_node *text,
+                                                    markdown_core_node *parent) {
     size_t start = 0;
     size_t offset = 0;
     markdown_core_content_map source_map = text->content_map;
@@ -719,8 +727,8 @@ static markdown_core_finish_result postprocess_text(markdown_core_parser *parser
         /* Recognition alone cannot authorize a rewrite in an extension-owned
          * parent. Decide before allocating or splitting the original text. */
         size_t prefix_len = offset + max_rewind - rewind;
-        if (!text->parent || !markdown_core_node_can_contain_type(text->parent, MARKDOWN_CORE_NODE_LINK) ||
-            (prefix_len && !markdown_core_node_can_contain_type(text->parent, MARKDOWN_CORE_NODE_TEXT))) {
+        if (!parent || !markdown_core_node_can_contain_type(parent, MARKDOWN_CORE_NODE_LINK) ||
+            (prefix_len && !markdown_core_node_can_contain_type(parent, MARKDOWN_CORE_NODE_TEXT))) {
             break;
         }
         markdown_core_node *link_node = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_LINK);
@@ -756,16 +764,21 @@ static markdown_core_finish_result postprocess_text(markdown_core_parser *parser
             markdown_core_parser_release_node(parser, link_node);
             break;
         }
-        markdown_core_node_attach_validated(link_node, link_text, NULL);
+        markdown_core_parser_publish_node(parser, link_text, link_node);
+        if (!markdown_core_parser_append(parser, link_node, link_text)) {
+            markdown_core_parser_release_node(parser, link_node);
+            break;
+        }
         if (prefix_len) {
             markdown_core_node *prefix = email_text_fragment(parser, &source_map, &source, prefix_start, prefix_len);
-            if (!prefix) {
+            if (!prefix || !markdown_core_parser_walk_insert_before(parser, prefix)) {
                 markdown_core_parser_release_node(parser, link_node);
                 break;
             }
-            markdown_core_node_attach_validated(text->parent, prefix, text);
         }
-        markdown_core_node_attach_validated(text->parent, link_node, text);
+        if (!markdown_core_parser_walk_insert_before(parser, link_node)) {
+            break;
+        }
         start = post_start;
         remaining = source.len - start;
         offset = 0;
@@ -778,8 +791,7 @@ static markdown_core_finish_result postprocess_text(markdown_core_parser *parser
         return MARKDOWN_CORE_FINISH_CONTINUE;
     }
     if (!remaining) {
-        markdown_core_parser_release_node(parser, text);
-        return MARKDOWN_CORE_FINISH_CONSUMED;
+        return markdown_core_parser_walk_release(parser) ? MARKDOWN_CORE_FINISH_CONSUMED : MARKDOWN_CORE_FINISH_FAILED;
     }
     markdown_core_chunk tail = markdown_core_chunk_dup(&source, (bufsize_t)start, (bufsize_t)remaining);
     if (!markdown_core_chunk_to_cstr(&tail)) {
@@ -792,21 +804,20 @@ static markdown_core_finish_result postprocess_text(markdown_core_parser *parser
     return MARKDOWN_CORE_FINISH_CONTINUE;
 }
 
-/* The email scan is a finish STEP: it is asked, from inside the one finish
- * walk, at a Text's EXIT (the kind it acts on) and at a Link's ENTER and EXIT
+/* The email scan is a finish STEP: it is asked, from inside an inline root's
+ * pass, at a Text's EXIT (the kind it acts on) and at a Link's ENTER and EXIT
  * (the kind whose extent it tracks). The Link events set and clear the
  * per-root state word -- a Text inside a Link is never scanned, an address
  * there is already a link's text -- and a Text's EXIT outside a Link is
- * scanned. The walk has already consolidated that Text with the siblings that
+ * scanned. The pass has already consolidated that Text with the siblings that
  * followed it when this is asked, so the scan sees the whole run, and the
  * EXIT's lookahead already names the following survivor, so the splits
  * inserted before the Text are never visited and the Text itself may be
  * freed. */
 static markdown_core_finish_result finish_step(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                               markdown_core_node *node, markdown_core_event_type event, int is_root,
-                                               void **state) {
+                                               markdown_core_node *node, markdown_core_event_type event,
+                                               markdown_core_node *parent, void **state) {
     (void)self;
-    (void)is_root;
     if (node->kind == MARKDOWN_CORE_NODE_LINK) {
         *state = event == MARKDOWN_CORE_EVENT_ENTER ? node : NULL;
         return MARKDOWN_CORE_FINISH_CONTINUE;
@@ -815,7 +826,7 @@ static markdown_core_finish_result finish_step(const markdown_core_element_insta
     if (*state) {
         return MARKDOWN_CORE_FINISH_CONTINUE;
     }
-    return postprocess_text(parser, node);
+    return postprocess_text(parser, node, parent);
 }
 
 static const markdown_core_node_type AUTOLINK_FINISH_KINDS[] = {MARKDOWN_CORE_NODE_TEXT, MARKDOWN_CORE_NODE_NONE};

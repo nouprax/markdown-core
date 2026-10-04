@@ -138,14 +138,16 @@ source, as the facade's scope query does.
 ## Shared resources
 
 Every occurrence of a reference definition reads its destination, title and
-definition attributes through one shared resource (the facade's
-`markdown_core_node_resource`). The wire keeps that sharing, so a definition
-referenced many times crosses the boundary once and a reader materializes it
-once:
+definition attributes through a resource (the facade's
+`markdown_core_node_resource`). A resource is a value, and the wire names each
+distinct value once, so a definition referenced many times crosses the
+boundary once and a reader materializes it once, whatever storage its
+occurrences hold in the C tree:
 
 - A `Link` or `Embedded` record writes a `u32` **resource ordinal** in place
   of its `dest` field and writes nothing for `title`.
 - Resources are numbered from 0 in the order the message first names them.
+  Equal resources have one number.
   An ordinal equal to the number named so far defines the next resource and
   is followed by its `Destination`, its title `String?`, its anchor `String?`
   and its `Attributes`. A smaller ordinal refers to one already defined; a

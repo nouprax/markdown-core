@@ -142,8 +142,8 @@ introducing extra Markup wrappers.
 ## Identity, equality and scopes
 
 Every node has `id`, a number below 2^53 that is unique within its document
-and numbered from 1 in canonical walk order by a parse, so two parses of one
-text are equal, ids included. Use it as a list key. `markupEquals(a, b)` is
+and numbered from 1 by a parse, each owner numbering the nodes it holds when
+it completes, so two parses of one text are equal, ids included. Use it as a list key. `markupEquals(a, b)` is
 deep value equality including ids, the comparator for
 `React.memo(component, (a, b) => markupEquals(a.node, b.node))`.
 

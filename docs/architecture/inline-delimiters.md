@@ -128,17 +128,20 @@ Allocation failure frees continuations independently of the AST they borrow.
 
 Each populated affix owns a private inline root, exposed through the public
 Citation's prefix/suffix collections. Source trimming only changes raw edge
-whitespace; nested markup keeps its authored scope. The finish stage
-traverses all owned inline roots using one explicit stack, and walks each root
-exactly once: a container's inline content is parsed at the container's ENTER
-(the walk then continues into the children that parse produced), inline
-completion (the element's `complete_inline`, the document's anchor
-reservation) runs at each node's ENTER, text consolidation and every element
-finish step (a reference-only paragraph's removal, a list's layout, autolink's
-email scan, formula's block promotion) run at the events of that one walk, and
-a global postprocess pass receives the root after its walk completes. A step
-that declares the kinds it acts on reads that gate at each event it is asked
-at, since a kind's first node may be made by the walk itself. A Text sibling that consolidation
+whitespace; nested markup keeps its authored scope. A node is
+complete when it is made. A block completes when it closes: a reference-only
+paragraph is dropped then, the document observes the block, and its element
+finish steps (a list's layout, formula's block promotion) run at its EXIT. A
+block whose content is inline becomes an inline root, and after every block is
+complete each inline root, in document order, is parsed and completed by one
+pass over its own tree, using one explicit stack: a container's inline content
+is parsed at the container's ENTER (the pass then continues into the children
+that parse produced), inline completion (the element's `complete_inline`, the
+document's observation) runs at each node's ENTER, and text consolidation and
+the inline finish steps (autolink's email scan, formula's block promotion of a
+paragraph) run at its EXIT. A step that declares the kinds it acts on reads
+that gate at each event it is asked at, since a kind's first node may be made
+by an inline parse. A Text sibling that consolidation
 absorbs is completed by consolidation before it is read, since its ENTER is
 stepped over. Both paths use the parser's projected finish-kind completion
 plan, with kind completion before document observation at the inherited word

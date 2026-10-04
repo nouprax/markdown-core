@@ -88,6 +88,8 @@ static bool markdown_core_block_parse_callout_metadata(markdown_core_callout_wor
                                                                             title->content.size, 0)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
+        /* The title is a field, complete once made. */
+        markdown_core_parser_complete_field(parser, title, node);
     }
     markdown_core_block_advance_offset(parser, input, input->len - 1 - parser->offset, false);
     return true;
@@ -132,7 +134,7 @@ static bool markdown_core_callout_scan(const markdown_core_element_instance *sel
 static bool accepts_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
                          markdown_core_node *node) {
     (void)self;
-    return node->kind == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->variant.has_value && !node->first_child &&
+    return node->kind == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->variant.has_value && !node->children &&
            markdown_core_parser_starts_on_line(parser, node, parser->line_number - 1);
 }
 

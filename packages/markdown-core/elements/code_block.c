@@ -195,7 +195,11 @@ static bool scan_code(const markdown_core_element_instance *self, markdown_core_
     (void)self;
     if (context->indent >= CODE_INDENT) {
         /* Indented code interrupts no paragraph, and a lazy line is text. */
-        if (context->paragraph || context->lazy || markdown_core_is_line_end(context->input->data[context->first])) {
+        if (markdown_core_is_line_end(context->input->data[context->first])) {
+            return false;
+        }
+        if (context->paragraph || context->lazy) {
+            markdown_core_parser_refuse(parser);
             return false;
         }
         start->open = open_indented;
@@ -214,8 +218,16 @@ static bool blank_line(const markdown_core_element_instance *self, markdown_core
     (void)self;
     return !node->as.code->fenced;
 }
+/* A code block's lines continue it by its indent, or up to a closer of its
+ * fence, past the fence's indent. */
+static bool carries_as(const markdown_core_node *node, const markdown_core_node *old) {
+    const markdown_core_code *code = node->as.code, *was = old->as.code;
+    return code->fenced == was->fenced && code->fence_char == was->fence_char &&
+           code->fence_length == was->fence_length && code->fence_offset == was->fence_offset;
+}
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE_BLOCK = {
     .name = "code_block",
+    .carries_as = carries_as,
     .maximum_block_indent = INT_MAX,
     .scan_block_start = scan_code,
     /* A fence; an indented block is reached through the indent bound. */

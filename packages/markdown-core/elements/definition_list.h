@@ -13,5 +13,5 @@ typedef struct {
 } markdown_core_definition_list_work;
 
 void markdown_core_definition_list_close_body(markdown_core_node *node);
-void markdown_core_definition_list_complete(markdown_core_node *node);
+void markdown_core_definition_list_complete(const markdown_core_parser *parser, markdown_core_node *node);
 #endif

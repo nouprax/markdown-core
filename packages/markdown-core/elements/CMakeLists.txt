@@ -29,6 +29,7 @@ set(LIBRARY_SOURCES
     html.c
     html_block.c
     html_scanners.c
+    registry.c
     session.c
     insertion.c
     line_break.c
@@ -49,7 +50,8 @@ set(LIBRARY_SOURCES
     tasklist.c
     text.c
     text_scanners.c
-    thematic_break.c)
+    thematic_break.c
+    tree_edit.c)
 
 include_directories(${MARKDOWN_CORE_CORE_SOURCE_DIR} ${MARKDOWN_CORE_CORE_BINARY_DIR}
                     ${CMAKE_CURRENT_SOURCE_DIR}/../include)

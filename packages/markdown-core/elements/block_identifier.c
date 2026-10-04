@@ -72,17 +72,17 @@ static bool S_attach_block_identifier(markdown_core_parser *parser, markdown_cor
 }
 
 void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identifier_work *work,
-                                                     markdown_core_parser *parser, markdown_core_node *paragraph) {
+                                                     markdown_core_parser *parser, markdown_core_node *parent,
+                                                     markdown_core_node *paragraph) {
     block_identifier candidate;
     if (!S_scan_block_identifier(work, paragraph->content.ptr, paragraph->content.size, &candidate)) {
         return;
     }
     markdown_core_node *owner = paragraph;
-    markdown_core_node *parent = paragraph->parent;
     int line;
     bufsize_t source;
     if (parent && markdown_core_block_type(parent) == MARKDOWN_CORE_NODE_LIST_ITEM &&
-        parent->first_child == paragraph &&
+        markdown_core_node_first_child(parent) == paragraph &&
         markdown_core_parser_content_place(parser, &paragraph->content_map,
                                            (bufsize_t)(candidate.identifier.data - paragraph->content.ptr), &line,
                                            &source) &&
@@ -102,21 +102,30 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identif
     }
 }
 
+bool markdown_core_block_take_item_identifier(markdown_core_parser *parser, markdown_core_node *item,
+                                              const markdown_core_node *old) {
+    block_identifier candidate = {markdown_core_chunk_dup(&old->attributes.anchor, 0, old->attributes.anchor.len), 0,
+                                  false};
+    return !candidate.identifier.len || S_attach_block_identifier(parser, item, &candidate);
+}
+
 bool markdown_core_block_attach_identifier_line(markdown_core_block_identifier_work *work, markdown_core_parser *parser,
                                                 markdown_core_node *parent, markdown_core_chunk *input) {
-    markdown_core_node *owner = parent->last_child;
+    if (parser->indent >= CODE_INDENT || input->data[parser->first_nonspace] != '#') {
+        return false;
+    }
+    markdown_core_node *owner = markdown_core_node_last_child(parent);
     block_identifier candidate;
-    if (parser->indent >= CODE_INDENT || input->data[parser->first_nonspace] != '#' || !owner ||
-        owner->attributes.anchor.len ||
+    if (!owner || owner->attributes.anchor.len ||
         (markdown_core_block_type(owner) != MARKDOWN_CORE_NODE_LIST &&
          markdown_core_block_type(owner) != MARKDOWN_CORE_NODE_CALLOUT &&
          markdown_core_block_type(owner) != MARKDOWN_CORE_NODE_TABLE) ||
         !S_scan_block_identifier(work, input->data + parser->first_nonspace, input->len - parser->first_nonspace,
                                  &candidate) ||
-        !candidate.own_line || candidate.content_end || !markdown_core_block_ends_with_blank_line(parser, owner)) {
+        !candidate.own_line || candidate.content_end || !markdown_core_block_last_child_ends_blank(parser, parent)) {
         return false;
     }
-    bool followed_by_boundary = parser->lookahead_cursor == parser->lookahead_end;
+    bool followed_by_boundary = parser->lookahead_cursor == parser->input_text.size;
     if (!followed_by_boundary) {
         markdown_core_block_lookahead lookahead;
         markdown_core_chunk next;
@@ -128,9 +137,11 @@ bool markdown_core_block_attach_identifier_line(markdown_core_block_identifier_w
         followed_by_boundary = blank_lines > 0;
         markdown_core_parser_lookahead_end(&lookahead);
     }
-    if (!followed_by_boundary || parser->error || !S_attach_block_identifier(parser, owner, &candidate)) {
+    if (!followed_by_boundary || parser->error) {
         return false;
     }
-    markdown_core_block_set_end_to_current_line(parser, owner);
-    return true;
+    /* The owner completed when it closed; its parent, which is open,
+     * publishes it with its new anchor. */
+    return S_attach_block_identifier(parser, markdown_core_parser_write_closed(parser, parent, parser->line_end),
+                                     &candidate);
 }

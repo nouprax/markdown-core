@@ -290,6 +290,8 @@ static int apply_parsed_directive(const markdown_core_element *element, markdown
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return 0;
         }
+        /* The label is a field, complete once made. */
+        markdown_core_parser_complete_field(parser, directive->label, node);
     }
 
     return 1;
@@ -553,9 +555,9 @@ static markdown_core_node *open_directive_block(const markdown_core_element_inst
     node->opaque = markdown_core_alloc(1, sizeof(node_directive));
     if (!node->opaque || !apply_parsed_directive(self->element, parser, node, input, &parsed,
                                                  markdown_core_parser_get_line_number(parser))) {
-        /* The suffix already validated; failure here is allocation loss. */
+        /* The suffix already validated; failure here is allocation loss.
+         * The block is in the tree, which the failed parse releases. */
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        markdown_core_parser_release_node(parser, node);
         node = NULL;
         goto done;
     }
@@ -643,7 +645,14 @@ static int visit_owned_subtrees(const markdown_core_element *element, markdown_c
 /* The opener consumes the complete token; the shared inline parser parses its
  * owned label before continuing beyond it. No close-bracket dispatch exists. */
 
+/* A directive block's lines continue it up to a closer of its fence's
+ * length. */
+static bool carries_as(const markdown_core_node *node, const markdown_core_node *old) {
+    return ((const node_directive *)node->opaque)->fence_length == ((const node_directive *)old->opaque)->fence_length;
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
+    .carries_as = carries_as,
     .interrupts_paragraph = true,
 
     .pending_close = true,
