@@ -10,7 +10,9 @@
  * from the root along the nodes whose range, from the start of their lead to
  * their end plus their reach, meets or touches it; each such node takes the
  * extent of its image and is marked changed. Every other node keeps its
- * extent, which is relative, and is not visited.
+ * extent, which is relative, and is not visited. A node the edit leaves with
+ * no byte is anchored nowhere: no new node is matched to it and no lookup
+ * continues it (blocks.c), so the pass does not descend into it.
  *
  * The session holds its tree once between edits: the previous parse released
  * every node its result does not hold, so the pass changes the tree in place.
@@ -96,10 +98,12 @@ static inline int64_t image_end(const edit_range *edit, int64_t start, int64_t e
 }
 
 /* `node`, which the edit moves, is marked changed. The first edit of the
- * batch to move a node records its extent before the batch; false when that
- * record could not be stored. */
-static inline bool edit_mark(edit_pass *pass, markdown_core_node *node) {
-    if (!(node->flags & MARKDOWN_CORE_NODE__CHANGED)) {
+ * batch to move a node records its extent before the batch, which is what a
+ * new node matched to it compares (ast.c, publish_same); false when that
+ * record could not be stored. A node left with no byte is anchored nowhere,
+ * so no new node is matched to it and it needs no record. */
+static inline bool edit_mark(edit_pass *pass, markdown_core_node *node, bool anchored) {
+    if (anchored && !(node->flags & MARKDOWN_CORE_NODE__CHANGED)) {
         if (!edit_reserve((void **)&pass->moved, &pass->moved_capacity, pass->moved_count, sizeof(*pass->moved))) {
             return false;
         }
@@ -114,11 +118,11 @@ static inline bool edit_mark(edit_pass *pass, markdown_core_node *node) {
  * `image` moves to its new end. */
 static inline bool edit_image(edit_pass *pass, markdown_core_node *node, int64_t previous, int64_t *image) {
     const edit_range *edit = &pass->edit;
-    if (!edit_mark(pass, node)) {
-        return false;
-    }
     int64_t start = previous + node->where.extent.lead, end = start + node->where.extent.span;
     int64_t new_start = image_start(edit, start, end), new_end = image_end(edit, start, end, new_start);
+    if (!edit_mark(pass, node, new_end != new_start)) {
+        return false;
+    }
     node->where.extent = (markdown_core_extent){(int32_t)(new_start - *image), (uint32_t)(new_end - new_start)};
     *image = new_end;
     return true;
@@ -231,6 +235,12 @@ static bool edit_children(edit_pass *pass, markdown_core_node *holder, size_t fi
         for (int i = 0; i < depth; i++) {
             path[i]->sealed = 0;
         }
+        /* A definition's body holds no byte of its own to be anchored by:
+         * its children are read against it by their body (canonical-ast.md),
+         * so the pass descends into every body it meets. */
+        if (!body && !node->where.extent.span) {
+            continue;
+        }
         if (!(body ? edit_push(pass, node, old_origin, new_origin, true)
                    : edit_push(pass, node, old_start, new_start, false))) {
             return false;
@@ -256,7 +266,8 @@ static bool edit_relations(edit_pass *pass, const edit_task *task) {
             markdown_core_node *node = *relation.field;
             int64_t image = task->new_origin, old_start = task->old_origin + node->where.extent.lead;
             if (edit_node(pass, node, task->old_origin, task->old_origin, &image) &&
-                !(pass->ok && edit_push(pass, node, old_start, image - node->where.extent.span, false))) {
+                !(pass->ok && (!node->where.extent.span ||
+                               edit_push(pass, node, old_start, image - node->where.extent.span, false)))) {
                 return false;
             }
             continue;
@@ -304,7 +315,7 @@ static bool edit_batch(markdown_core_node *root, bool registry, const markdown_c
         } else {
             /* The root is always met: the document is read again whatever
              * the edit. It holds the whole text, from its first byte. */
-            pass.ok = edit_mark(&pass, root) && edit_push(&pass, root, 0, 0, false);
+            pass.ok = edit_mark(&pass, root, true) && edit_push(&pass, root, 0, 0, false);
             root->where.extent.span =
                 (uint32_t)(root->where.extent.span + pass.edit.size - (pass.edit.end - pass.edit.start));
         }

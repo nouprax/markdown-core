@@ -53,7 +53,8 @@ markdown_core_node *markdown_core_parser_write_closed(markdown_core_parser *pars
  * old blocks carried, with where it starts in `*start`; NULL otherwise. A
  * block its element makes whole from the lines a lookahead reads -- a grid,
  * multiline or simple table -- takes the parts of the old one its own
- * reading reproduces. */
+ * reading reproduces. A block the edits left with no byte is no such
+ * block. */
 const markdown_core_node *markdown_core_parser_old_block(const markdown_core_parser *parser,
                                                          const markdown_core_node *parent, markdown_core_node_type kind,
                                                          size_t from, size_t to, int64_t *start);

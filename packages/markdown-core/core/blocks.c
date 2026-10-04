@@ -1212,7 +1212,9 @@ const markdown_core_node *markdown_core_parser_old_block(const markdown_core_par
     }
     const markdown_core_node *child = markdown_core_children_at(holder->children, index);
     *start = lead + child->where.extent.lead;
-    return child->kind == kind && *start >= (int64_t)from && *start <= (int64_t)to ? child : NULL;
+    /* A block the edits left with no byte continues nothing (tree_edit.c). */
+    return child->kind == kind && child->where.extent.span && *start >= (int64_t)from && *start <= (int64_t)to ? child
+                                                                                                               : NULL;
 }
 
 bool markdown_core_parser_take_parts(markdown_core_parser *parser, markdown_core_node *node,
