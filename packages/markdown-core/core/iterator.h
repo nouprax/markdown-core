@@ -176,18 +176,6 @@ bool markdown_core_iter_insert_before(markdown_core_iter *iter, markdown_core_no
  * nothing changed, when storage runs out. */
 bool markdown_core_iter_take_current(markdown_core_iter *iter, markdown_core_node_pool *pool,
                                      markdown_core_node **taken);
-/* Takes the sibling just after the current node out of its parent and hands
- * the hold to the caller. False, with nothing changed, when storage runs
- * out. */
-bool markdown_core_iter_take_next(markdown_core_iter *iter, markdown_core_node_pool *pool, markdown_core_node **taken);
-/* The sibling just after the current node, or NULL. */
-static inline markdown_core_node *markdown_core_iter_next_sibling(const markdown_core_iter *iter) {
-    const markdown_core_iter_frame *parent = &iter->path->frames[iter->path->count - 2];
-    return parent->at + 1 < markdown_core_children_count(parent->node->children)
-               ? markdown_core_children_at(parent->node->children, parent->at + 1)
-               : NULL;
-}
-
 /* A walk with a path of its own, for a caller outside the parse. */
 markdown_core_iter *markdown_core_iter_new(markdown_core_node *root);
 void markdown_core_iter_free(markdown_core_iter *iter);

@@ -76,11 +76,6 @@ bool markdown_core_iter_take_current(markdown_core_iter *iter, markdown_core_nod
     return true;
 }
 
-bool markdown_core_iter_take_next(markdown_core_iter *iter, markdown_core_node_pool *pool, markdown_core_node **taken) {
-    markdown_core_iter_frame *parent = &iter->path->frames[iter->path->count - 2];
-    return markdown_core_children_remove(pool, &parent->node->children, parent->at + 1, taken);
-}
-
 /* The surviving Text owns the concatenated literal and a concatenation of
  * its operands' source runs. A caller outside a parse has no parser-owned
  * map to retain and uses the public entry point with NULL.
@@ -94,14 +89,17 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
     markdown_core_node_pool *pool = parser ? parser->pool : NULL;
     markdown_core_iter_frame *parent = &iter->path->frames[iter->path->count - 2];
     const markdown_core_run *siblings = parent->node->children;
-    size_t total = markdown_core_children_count(siblings);
 
     assert(markdown_core_iter_node(iter) == cur && iter->event == MARKDOWN_CORE_EVENT_EXIT);
     assert(cur->kind == MARKDOWN_CORE_NODE_TEXT);
 
-    /* The Text siblings after `cur`: the run is [parent->at + 1, end). */
+    /* The Text siblings after `cur`: the run is [parent->at + 1, end), read
+     * in order by one cursor, and each pass over it below by another. */
+    markdown_core_children_cursor cursor;
+    markdown_core_children_seek(&cursor, siblings, parent->at + 1);
     size_t end = parent->at + 1;
-    while (end < total && markdown_core_children_at(siblings, end)->kind == MARKDOWN_CORE_NODE_TEXT) {
+    for (const markdown_core_node *next;
+         (next = markdown_core_children_next(&cursor)) && next->kind == MARKDOWN_CORE_NODE_TEXT;) {
         end++;
     }
     if (end > parent->at + 1) {
@@ -126,8 +124,9 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
          * taken here, and each operand is copied to its place: no buffer
          * grows, and none is handed over and grown again for the next run. */
         size_t length = (size_t)cur->as.literal->len;
+        markdown_core_children_seek(&cursor, siblings, parent->at + 1);
         for (size_t i = parent->at + 1; i < end; i++) {
-            const markdown_core_node *tmp = markdown_core_children_at(siblings, i);
+            const markdown_core_node *tmp = markdown_core_children_next(&cursor);
             length += (size_t)tmp->as.literal->len;
             if (!view) {
                 continue;
@@ -157,18 +156,15 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
         if (at) {
             memcpy(merged, cur->as.literal->data, (size_t)at);
         }
-        for (size_t left = end - parent->at - 1; left; left--) {
-            markdown_core_node *tmp = markdown_core_iter_next_sibling(iter);
+        markdown_core_children_seek(&cursor, siblings, parent->at + 1);
+        for (size_t i = parent->at + 1; i < end; i++) {
+            markdown_core_node *tmp = markdown_core_children_next(&cursor);
             if (complete) {
                 complete(parser, tmp, depth);
             }
             if (parser && !view &&
                 !markdown_core_parser_append_content_marks(parser, &tmp->content_map, &combined_map, 0,
                                                            tmp->as.literal->len, at)) {
-                markdown_core_free(merged);
-                return MARKDOWN_CORE_FINISH_FAILED;
-            }
-            if (!markdown_core_iter_take_next(iter, pool, &tmp)) {
                 markdown_core_free(merged);
                 return MARKDOWN_CORE_FINISH_FAILED;
             }
@@ -184,7 +180,17 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
             if (tmp->as.literal->len > 0) {
                 cur->where.place.end = tmp->where.place.end;
             }
-            markdown_core_parser_release_node(parser, tmp);
+        }
+        /* The absorbed siblings leave together, the walk not having reached
+         * them. */
+        size_t released;
+        if (!markdown_core_children_remove_range(pool, &parent->node->children, parent->at + 1, end - parent->at - 1,
+                                                 &released)) {
+            markdown_core_free(merged);
+            return MARKDOWN_CORE_FINISH_FAILED;
+        }
+        if (parser) {
+            parser->nodes_freed += released;
         }
         if (parser) {
             cur->content_map = combined_map;

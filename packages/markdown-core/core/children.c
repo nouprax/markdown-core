@@ -835,3 +835,32 @@ bool markdown_core_children_join(markdown_core_node_pool *pool, markdown_core_ru
     }
     return true;
 }
+
+bool markdown_core_children_remove_range(markdown_core_node_pool *pool, markdown_core_run **root, size_t first,
+                                         size_t count, size_t *released) {
+    size_t total = markdown_core_children_count(*root);
+    bool ok = true;
+    markdown_core_run *before = markdown_core_children_slice(pool, *root, 0, first, &ok);
+    if (!ok) {
+        return false;
+    }
+    markdown_core_run *after = markdown_core_children_slice(pool, *root, first + count, total - first - count, &ok);
+    if (!ok) {
+        markdown_core_node_pool_release_children(pool, before);
+        return false;
+    }
+    markdown_core_run *kept = NULL;
+    if (!markdown_core_children_join(pool, &kept, before)) {
+        markdown_core_node_pool_release_children(pool, after);
+        return false;
+    }
+    if (!markdown_core_children_join(pool, &kept, after)) {
+        markdown_core_node_pool_release_children(pool, kept);
+        return false;
+    }
+    /* The old tree's runs outside the range are the kept tree's too: the
+     * release frees the children inside it and the runs no one else holds. */
+    *released = markdown_core_node_pool_release_children(pool, *root);
+    *root = kept;
+    return true;
+}

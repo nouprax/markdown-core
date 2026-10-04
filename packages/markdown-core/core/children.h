@@ -231,6 +231,14 @@ static inline bool markdown_core_children_remove(markdown_core_node_pool *pool, 
     return true;
 }
 
+/* Takes the children [first, first + count) out and releases them, keeping
+ * the rest in order: the two slices around the range joined, O(log n)
+ * whatever the count. Returns the number of nodes released, as
+ * `markdown_core_node_pool_release_children` counts them. False, with
+ * nothing changed, when storage runs out. */
+bool markdown_core_children_remove_range(markdown_core_node_pool *pool, markdown_core_run **root, size_t first,
+                                         size_t count, size_t *released);
+
 /* Puts `node` at `index` in place of the child there, taking the caller's
  * reference and handing the old child's to the caller in `replaced`. False,
  * with nothing changed, when storage runs out. */
