@@ -37,14 +37,17 @@ typedef struct {
     bool body;
 } edit_task;
 
-/* The edit in hand, the nodes whose relations it may still meet, and each
- * node the batch moved, with its extent before the batch. */
+/* The edit in hand, the nodes whose relations it may still meet, each node
+ * the batch moved, with its extent before the batch, and each holder whose
+ * children tree the batch unsealed, sealed once when the batch is done. */
 typedef struct {
     edit_range edit;
     edit_task *tasks;
     size_t count, capacity;
     markdown_core_moved *moved;
     size_t moved_count, moved_capacity;
+    markdown_core_node **unsealed;
+    size_t unsealed_count, unsealed_capacity;
     bool ok;
 } edit_pass;
 
@@ -156,8 +159,10 @@ static inline bool edit_node(edit_pass *pass, markdown_core_node *node, int64_t 
  * lead runs from `old_origin` (canonical-ast.md): the edit meets every body
  * from the one it reaches on, and each is pushed with that origin. Any other
  * node the edit meets is pushed with its own start. The runs on the path to
- * a changed node are sealed again (5.1). `*met` says whether the edit met a
- * node; false when storage ran out. */
+ * a changed node are unsealed, and sealed again when the batch is done
+ * (5.1): an earlier edit steps over runs before it, which a later edit does
+ * not move. `*met` says whether the edit met a node; false when storage ran
+ * out. */
 static bool edit_children(edit_pass *pass, markdown_core_node *holder, size_t first, size_t last, int64_t old_origin,
                           int64_t new_origin, bool body, bool *met) {
     const edit_range *edit = &pass->edit;
@@ -232,6 +237,13 @@ static bool edit_children(edit_pass *pass, markdown_core_node *holder, size_t fi
         }
         *met = true;
         int64_t new_start = image - node->where.extent.span;
+        if (path[0]->sealed) {
+            if (!edit_reserve((void **)&pass->unsealed, &pass->unsealed_capacity, pass->unsealed_count,
+                              sizeof(*pass->unsealed))) {
+                return false;
+            }
+            pass->unsealed[pass->unsealed_count++] = holder;
+        }
         for (int i = 0; i < depth; i++) {
             path[i]->sealed = 0;
         }
@@ -246,7 +258,6 @@ static bool edit_children(edit_pass *pass, markdown_core_node *holder, size_t fi
             return false;
         }
     }
-    markdown_core_children_seal(holder->children);
     return true;
 }
 
@@ -292,17 +303,13 @@ static bool edit_relations(edit_pass *pass, const edit_task *task) {
     return true;
 }
 
-static int moved_compare(const void *left, const void *right) {
-    uintptr_t a = (uintptr_t)((const markdown_core_moved *)left)->node;
-    uintptr_t b = (uintptr_t)((const markdown_core_moved *)right)->node;
-    return (a > b) - (a < b);
-}
+static uint64_t moved_key(const void *entry) { return (uint64_t)(uintptr_t)((const markdown_core_moved *)entry)->node; }
 
 /* The batch applied to the relations under `root`: the document's, whose
  * root every edit meets, or a registry's, whose entries run from 0. */
 static bool edit_batch(markdown_core_node *root, bool registry, const markdown_core_byte_edit *edits, size_t count,
                        markdown_core_moved **moved, size_t *moved_count) {
-    edit_pass pass = {{0, 0, 0}, NULL, 0, 0, NULL, 0, 0, true};
+    edit_pass pass = {{0, 0, 0}, NULL, 0, 0, NULL, 0, 0, NULL, 0, 0, true};
     for (size_t i = count; pass.ok && i--;) {
         pass.edit = (edit_range){(int64_t)edits[i].start, (int64_t)edits[i].end, (int64_t)edits[i].size};
         while (i && edits[i - 1].end == edits[i].start) {
@@ -325,11 +332,21 @@ static bool edit_batch(markdown_core_node *root, bool registry, const markdown_c
         }
     }
     markdown_core_free(pass.tasks);
+    for (size_t i = 0; i < pass.unsealed_count; i++) {
+        markdown_core_children_seal(pass.unsealed[i]->children);
+    }
+    markdown_core_free(pass.unsealed);
+    /* In the order of their nodes' addresses, which ast.c searches. */
+    if (pass.ok && moved) {
+        markdown_core_source_order order = {0};
+        pass.ok =
+            markdown_core_order_source_entries(&order, pass.moved, pass.moved_count, sizeof(*pass.moved), moved_key);
+        markdown_core_source_order_dispose(&order);
+    }
     if (!pass.ok || !moved) {
         markdown_core_free(pass.moved);
         return pass.ok;
     }
-    qsort(pass.moved, pass.moved_count, sizeof(*pass.moved), moved_compare);
     *moved = pass.moved;
     *moved_count = pass.moved_count;
     return true;
