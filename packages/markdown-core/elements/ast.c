@@ -540,29 +540,6 @@ size_t markdown_core_source_runs_ranges(const markdown_core_source_runs *table, 
     return count;
 }
 
-/* The first source byte at or after `source` that `table` reads, in `*at`,
- * and the content offset it is read at: its own in a copied run, the run's
- * first in any other. False when no run reads one. */
-static bool source_run_from(const markdown_core_source_runs *table, uint32_t source, uint32_t *at, uint32_t *offset) {
-    /* The first run that ends after `source`. */
-    size_t lo = 0, hi = table->count;
-    while (lo < hi) {
-        size_t mid = lo + (hi - lo) / 2;
-        if (table->runs[mid].end <= source) {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-    if (lo == table->count) {
-        return false;
-    }
-    const markdown_core_source_run *run = &table->runs[lo];
-    *at = source > run->start ? source : run->start;
-    *offset = source_run_copied(run) ? run->content + (*at - run->start) : run->content;
-    return true;
-}
-
 /* PUBLISHING CONTINUES THE PREVIOUS TREE (docs/plans/2026-09-29-incremental-
  * parsing.md, 5.9). The walk that gives each node its id and extent also
  * matches it, relation by relation, to the old node it continues, and
@@ -605,13 +582,11 @@ typedef struct {
     size_t swap_count;
 } publish_identity;
 
-/* The image of the first byte of [start, end) that no edit replaced, or false
- * when every byte of it was replaced (5.2). */
-static bool anchor_mapped(const publish_identity *identity, uint32_t start, uint32_t end, uint32_t *mapped) {
+/* The first edit that ends after old byte `x`: every one before it ends at
+ * or before x, so x is past it and shifted by it. */
+static size_t edit_after(const publish_identity *identity, uint32_t x) {
     const markdown_core_byte_edit *edits = identity->edits;
-    size_t lo = 0, hi = identity->count, x = start;
-    /* The first edit that ends after x: every one before it ends at or
-     * before x, so x is past it and shifted by it. */
+    size_t lo = 0, hi = identity->count;
     while (lo < hi) {
         size_t mid = lo + (hi - lo) / 2;
         if (edits[mid].end <= x) {
@@ -620,6 +595,15 @@ static bool anchor_mapped(const publish_identity *identity, uint32_t start, uint
             hi = mid;
         }
     }
+    return lo;
+}
+
+/* The image of the first byte of [start, end) that no edit replaced, or false
+ * when every byte of it was replaced (5.2). */
+static bool anchor_mapped(const publish_identity *identity, uint32_t start, uint32_t end, uint32_t *mapped) {
+    const markdown_core_byte_edit *edits = identity->edits;
+    size_t lo = edit_after(identity, start);
+    uint32_t x = start;
     while (lo < identity->count && edits[lo].start <= x) {
         if (x < edits[lo].end) {
             x = edits[lo].end;
@@ -630,28 +614,6 @@ static bool anchor_mapped(const publish_identity *identity, uint32_t start, uint
         return false;
     }
     *mapped = (uint32_t)((int64_t)x + identity->shift[lo]);
-    return true;
-}
-
-/* The old byte whose image is `at`, or false when an edit inserted the byte
- * at `at`, with where that insertion ends in `*after`. An edit's image ends
- * where its old end's would, so the images of the edits are in order. */
-static bool anchor_source(const publish_identity *identity, uint32_t at, uint32_t *old, uint32_t *after) {
-    const markdown_core_byte_edit *edits = identity->edits;
-    size_t lo = 0, hi = identity->count;
-    while (lo < hi) {
-        size_t mid = lo + (hi - lo) / 2;
-        if ((int64_t)edits[mid].end + identity->shift[mid + 1] <= at) {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-    if (lo < identity->count && (int64_t)edits[lo].start + identity->shift[lo] <= at) {
-        *after = (uint32_t)((int64_t)edits[lo].end + identity->shift[lo + 1]);
-        return false;
-    }
-    *old = (uint32_t)((int64_t)at - identity->shift[lo]);
     return true;
 }
 
@@ -817,18 +779,36 @@ static inline bool publish_first(const markdown_core_node *node, relation_shape 
  * needs, the lookup tables, the last id issued and the nodes matched. Every
  * other node takes an id, so the published tree counts the ids issued and
  * the nodes matched. */
+/* THE IMAGES OF AN OLD ROOT'S CONTENT in the new root's (5.2): for each part
+ * of the old content whose bytes the new root reads too, in content order,
+ * the new content offset its first byte is read at, and whether the rest
+ * follow it byte for byte. An old copied run's part reads each content byte
+ * from one source byte that no edit replaced and the new root reads; any
+ * other old run is one part, imaged where the new root reads the first of
+ * its source bytes it still reads. `hint` is where the last lookup ended. */
+typedef struct {
+    uint32_t from, to, at;
+    bool copied;
+} content_image;
+
+typedef struct {
+    content_image *items;
+    size_t count, capacity, hint;
+} content_images;
+
 typedef struct {
     publish_stack stack;
     publish_identity identity;
     definition_table tables[TABLE_COUNT];
     uint64_t next_id;
     size_t matched;
-    /* The runs of the inline root whose content the walk is in, and of the
-     * old root it continues, in absolute offsets: roots never nest, so one
-     * of each serves every root in turn. The root's own runs, and where it
-     * starts, wait in `entered` until a node of its content asks for the
-     * table. */
-    markdown_core_source_runs runs, old_runs;
+    /* The runs of the inline root whose content the walk is in, in absolute
+     * offsets, and the images of the content of the old root it continues:
+     * roots never nest, so one of each serves every root in turn. The
+     * root's own runs, and where it starts, wait in `entered` until a node of
+     * its content asks for the table. */
+    markdown_core_source_runs runs;
+    content_images images;
     const markdown_core_runs *entered;
     uint32_t entered_start;
 } publish_walk;
@@ -1072,49 +1052,121 @@ static void publish_pair(publish_match_frame *frame, int field) {
     }
 }
 
+static bool content_image_add(content_images *images, content_image image) {
+    if (!publish_reserve((void **)&images->items, &images->capacity, images->count, sizeof(*images->items))) {
+        return false;
+    }
+    images->items[images->count++] = image;
+    return true;
+}
+
+/* Reads the images of the content of the old root whose runs are `runs`,
+ * measured from `origin`, against the new root's runs the walk holds. The
+ * old runs, the edits and the new runs all increase in source, so one pass
+ * over each pairs them. False when the table could not grow. */
+static bool content_images_read(publish_walk *walk, const markdown_core_runs *runs, uint32_t origin) {
+    content_images *images = &walk->images;
+    const publish_identity *identity = &walk->identity;
+    const markdown_core_byte_edit *edits = identity->edits;
+    const markdown_core_source_runs *fresh = &walk->runs;
+    images->count = images->hint = 0;
+    if (!runs || !runs->count) {
+        return true;
+    }
+    int64_t at = origin;
+    uint32_t content = 0;
+    size_t edit = edit_after(identity, (uint32_t)(at + runs->items[0].run.lead)), next = 0;
+    for (uint32_t i = 0; i < runs->count; i++) {
+        const markdown_core_run run = runs->items[i].run;
+        const uint32_t start = (uint32_t)(at + run.lead), end = start + run.span, from = content;
+        const bool copied = run.span == run.length;
+        at = end;
+        content += run.length;
+        if (!run.length) {
+            continue;
+        }
+        /* Each stretch of the run's source that no edit replaced, and the
+         * parts of its image the new runs read. */
+        for (uint32_t x = start; x < end;) {
+            while (edit < identity->count && edits[edit].end <= x) {
+                edit++;
+            }
+            if (edit < identity->count && edits[edit].start <= x) {
+                x = edits[edit].end;
+                continue;
+            }
+            const uint32_t stop = edit < identity->count && edits[edit].start < end ? edits[edit].start : end;
+            const int64_t shift = identity->shift[edit];
+            const uint32_t low = (uint32_t)(x + shift), high = (uint32_t)(stop + shift);
+            while (next < fresh->count && fresh->runs[next].end <= low) {
+                next++;
+            }
+            for (size_t j = next; j < fresh->count && fresh->runs[j].start < high; j++) {
+                const markdown_core_source_run *read = &fresh->runs[j];
+                const uint32_t first = low > read->start ? low : read->start;
+                const uint32_t last = high < read->end ? high : read->end;
+                if (first >= last) {
+                    continue;
+                }
+                const bool follows = source_run_copied(read);
+                const uint32_t image = follows ? read->content + (first - read->start) : read->content;
+                if (!copied) {
+                    if (!content_image_add(images, (content_image){from, content, image, false})) {
+                        return false;
+                    }
+                    x = end;
+                    break;
+                }
+                const uint32_t old_first = from + (uint32_t)(first - shift - start);
+                if (!content_image_add(images, (content_image){old_first, old_first + (last - first), image, follows})) {
+                    return false;
+                }
+            }
+            if (x < end) {
+                x = stop;
+            }
+        }
+    }
+    return true;
+}
+
 /* The image of an old content range [start, end): the content offset at
  * which the new root reads the first source byte that the old root read for
  * the range, that no edit replaced, and that the new root reads too (5.2).
- * False when there is none. */
-static bool content_anchor(const publish_walk *walk, uint32_t start, uint32_t end, uint32_t *mapped) {
-    const markdown_core_source_runs *old = &walk->old_runs;
-    for (size_t i = old->count ? source_run_at(old, start) : 0; i < old->count && old->runs[i].content < end; i++) {
-        const markdown_core_source_run *run = &old->runs[i];
-        const uint32_t from = start > run->content ? start : run->content;
-        const uint32_t to = end < run->content + run->length ? end : run->content + run->length;
-        if (from >= to) {
-            continue;
-        }
-        /* The source bytes the old root read for the part of the range in
-         * this run. */
-        uint32_t first = source_run_copied(run) ? run->start + (from - run->content) : run->start;
-        uint32_t last = source_run_copied(run) ? run->start + (to - run->content) : run->end;
-        uint32_t image, at, source, after;
-        if (!anchor_mapped(&walk->identity, first, last, &image)) {
-            continue;
-        }
-        /* The images of the bytes that survive are in order: step to the
-         * next one the new root reads until one is, or one lies past the
-         * part. */
-        while (source_run_from(&walk->runs, image, &at, mapped)) {
-            if (!anchor_source(&walk->identity, at, &source, &after)) {
-                image = after;
-                continue;
+ * False when there is none. Matching asks in content order, so the lookup
+ * steps on from where the last one ended. */
+static bool content_anchor(publish_walk *walk, uint32_t start, uint32_t end, uint32_t *mapped) {
+    content_images *images = &walk->images;
+    size_t i = images->hint;
+    if (i && images->items[i - 1].to > start) {
+        size_t lo = 0, hi = i;
+        while (lo < hi) {
+            size_t mid = lo + (hi - lo) / 2;
+            if (images->items[mid].to <= start) {
+                lo = mid + 1;
+            } else {
+                hi = mid;
             }
-            if (source >= last) {
-                break;
-            }
-            return true;
         }
+        i = lo;
     }
-    return false;
+    while (i < images->count && images->items[i].to <= start) {
+        i++;
+    }
+    images->hint = i;
+    if (i == images->count || images->items[i].from >= end) {
+        return false;
+    }
+    const content_image *image = &images->items[i];
+    *mapped = image->at + (image->copied && start > image->from ? start - image->from : 0);
+    return true;
 }
 
 /* The old node `node` continues in the old relation `owner` pairs with the
  * one in hand, stepping past every old node whose anchor's image lies before
  * `node`'s end. An old node stepped past without being matched makes the
  * owner differ. */
-static markdown_core_node *publish_match(const publish_walk *walk, publish_match_frame *owner,
+static markdown_core_node *publish_match(publish_walk *walk, publish_match_frame *owner,
                                          const markdown_core_node *node, uint32_t *old_start) {
     markdown_core_place place = node->where.place;
     markdown_core_node *match = NULL;
@@ -1271,13 +1323,9 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, markdo
             break;
         }
         /* The old node's content is read by its own runs, if any. */
-        const markdown_core_runs *old_runs = frame->walk.root ? content_runs(old) : NULL;
-        if (old_runs && !markdown_core_source_runs_read(&walk->old_runs, old_runs, old_start)) {
+        if (frame->walk.root && !content_images_read(walk, content_runs(old), old_start)) {
             ok = false;
             break;
-        }
-        if (frame->walk.root && !old_runs) {
-            walk->old_runs.count = 0;
         }
         markdown_core_relations_begin(&frame->old_cursor, old);
         old_relation_next(frame);
@@ -1432,7 +1480,7 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
     walk.next_id = revision->last_id;
     walk.matched = 0;
     walk.runs = (markdown_core_source_runs){0};
-    walk.old_runs = (markdown_core_source_runs){0};
+    walk.images = (content_images){0};
     walk.entered = NULL;
     markdown_core_place place;
     bool ok, same = false;
@@ -1466,7 +1514,7 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
         markdown_core_free(walk.tables[table].values);
     }
     markdown_core_free(walk.runs.runs);
-    markdown_core_free(walk.old_runs.runs);
+    markdown_core_free(walk.images.items);
     if (previous) {
         markdown_core_free(walk.identity.shift);
         markdown_core_free(walk.identity.swaps);
