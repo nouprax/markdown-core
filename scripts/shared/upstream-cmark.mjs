@@ -609,8 +609,8 @@ function normalizeLabel(label) {
  * with the definition's classes and records ahead of the occurrence's and its
  * anchor where the occurrence has none; or, when no `Reference` states it, to
  * the first `Heading` whose text declares it, whose `#anchor` the occurrence
- * takes with no title. A heading's text is the `source` its content spans,
- * under the reference-label normalization.
+ * takes with no title. A heading's text is the `source` of its own ranges
+ * that its content spans, under the reference-label normalization.
  */
 export function resolveReferences(root, source, fired) {
     // Lines end at LF, CR, or CRLF, as the parser's do.
@@ -619,10 +619,9 @@ export function resolveReferences(root, source, fired) {
         .split(/\r\n|\r|\n/u)
         .map((line) => Buffer.from(line, "latin1"));
     const point = (text) => text.split(":").map(Number);
-    // The bytes from the start of `first` to the end of `last`, both scopes.
-    const spanned = (first, last) => {
-        const [startLine, startColumn] = point(first.split("..")[0]);
-        const [endLine, endColumn] = point(last.split("..")[1]);
+    const before = ([a, b], [c, d]) => a < c || (a === c && b < d);
+    // The bytes from `start` to `end`, both points, inclusive.
+    const spanned = ([startLine, startColumn], [endLine, endColumn]) => {
         const parts = [];
         for (let line = startLine; line <= endLine; line++) {
             const bytes = lines[line - 1] ?? Buffer.alloc(0);
@@ -632,13 +631,27 @@ export function resolveReferences(root, source, fired) {
         }
         return parts.join("\n");
     };
+    // A heading's text: the bytes of its own scope's ranges, which leave out
+    // container prefixes, from where its first child starts to where its
+    // last child ends.
+    const headingText = (heading) => {
+        const start = point(heading.children[0].tokens.scope.split("..")[0]);
+        const end = point(heading.children.at(-1).tokens.scope.split(",").at(-1).split("..")[1]);
+        return heading.tokens.scope
+            .split(",")
+            .map((range) => range.split("..").map(point))
+            .map(([from, to]) => [before(from, start) ? start : from, before(end, to) ? end : to])
+            .filter(([from, to]) => !before(to, from))
+            .map(([from, to]) => spanned(from, to))
+            .join("\n");
+    };
     const fold = (label) => normalizeLabel(label);
     const definitions = new Map();
     const headings = new Map();
     const survey = (node) => {
         if (node.kind === "Reference" && !definitions.has(node.fields.label)) definitions.set(node.fields.label, node);
         if (node.kind === "Heading" && node.children.length > 0) {
-            const key = fold(spanned(node.children[0].tokens.scope, node.children.at(-1).tokens.scope));
+            const key = fold(headingText(node));
             if (key && !headings.has(key)) headings.set(key, node);
         }
         for (const child of node.children) survey(child);
