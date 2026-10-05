@@ -101,14 +101,34 @@ static int label_compare(const uint8_t *a, size_t a_length, const uint8_t *b, si
     return order ? order : (a_length > b_length) - (a_length < b_length);
 }
 
-/* A labeled definition and its label, as the label sort reads them. */
+/* A labeled definition and its label, as the label sort reads them: the
+ * label's first eight bytes, big-endian and padded with zero bytes, order two
+ * labels whose heads differ there; equal heads leave it to the lengths, or to
+ * the bytes past the eighth. */
 typedef struct {
+    uint64_t head;
     const uint8_t *label;
     size_t length;
     const markdown_core_node *node;
 } label_entry;
 
+static label_entry label_entry_of(const uint8_t *label, size_t length, const markdown_core_node *node) {
+    uint64_t head = 0;
+    for (size_t i = 0; i < 8; i++) {
+        head = head << 8 | (i < length ? label[i] : 0);
+    }
+    return (label_entry){head, label, length, node};
+}
+
 static inline bool label_before(const label_entry *a, const label_entry *b) {
+    if (a->head != b->head) {
+        return a->head < b->head;
+    }
+    /* Equal heads hold all of two labels no longer than eight bytes: the
+     * shorter is first. */
+    if (a->length <= 8 && b->length <= 8) {
+        return a->length < b->length;
+    }
     return label_compare(a->label, a->length, b->label, b->length) < 0;
 }
 
@@ -164,7 +184,7 @@ static bool label_order(const markdown_core_node *const *nodes, size_t count, co
     for (size_t i = 0; i < count; i++) {
         markdown_core_chunk label;
         if (definition_label(nodes[i], &label)) {
-            entries[taken++] = (label_entry){label.data, (size_t)label.len, nodes[i]};
+            entries[taken++] = label_entry_of(label.data, (size_t)label.len, nodes[i]);
         }
     }
     const label_entry *sorted = label_sort(entries, entries + taken, ends, taken);
