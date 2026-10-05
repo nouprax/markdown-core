@@ -169,12 +169,6 @@ void markdown_core_node_pool_dispose(markdown_core_node_pool *pool) {
     markdown_core_bytes_pool_dispose(&pool->bytes);
 }
 
-#define MARKDOWN_CORE_BYTES_SLAB_BYTES ((size_t)16 * 1024)
-
-void *markdown_core_node_pool_bytes(markdown_core_node_pool *pool, size_t bytes) {
-    return markdown_core_bytes_take(pool ? &pool->bytes : NULL, bytes, MARKDOWN_CORE_BYTES_SLAB_BYTES);
-}
-
 void markdown_core_node_pool_bytes_free(markdown_core_node_pool *pool, void *storage) {
     markdown_core_bytes_release(pool ? &pool->bytes : NULL, storage);
 }

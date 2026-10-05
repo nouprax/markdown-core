@@ -553,7 +553,10 @@ typedef struct markdown_core_node_pool {
 /* Uninitialized storage of `bytes` a node owns -- its pieces, its runs, a
  * label it declares -- from the pool's slabs, or from the allocator with no
  * pool; NULL when none can be had. The node releases it with itself. */
-void *markdown_core_node_pool_bytes(markdown_core_node_pool *pool, size_t bytes);
+#define MARKDOWN_CORE_NODE_BYTES_SLAB_BYTES ((size_t)16 * 1024)
+static inline void *markdown_core_node_pool_bytes(markdown_core_node_pool *pool, size_t bytes) {
+    return markdown_core_bytes_take(pool ? &pool->bytes : NULL, bytes, MARKDOWN_CORE_NODE_BYTES_SLAB_BYTES);
+}
 /* Gives back storage `markdown_core_node_pool_bytes` took, into `pool` for
  * reuse; a NULL pool is the plain release. */
 void markdown_core_node_pool_bytes_free(markdown_core_node_pool *pool, void *storage);
