@@ -13,6 +13,7 @@ struct KindVisitor: MarkupVisitor {
     mutating func visit(_ node: Footnote, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
     mutating func visit(_ node: Specimen, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
     mutating func visit(_ node: Metadata, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
+    mutating func visit(_ node: Reference, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
 
     mutating func visit(_ node: Document, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
     mutating func visit(_ node: Callout, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
@@ -66,6 +67,7 @@ func kindName(_ node: any Markup) -> String {
 
 struct RecordingWalkingVisitor: MarkupVisitor {
     mutating func visit(_ node: Metadata, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Reference, phase: MarkupVisitPhase) { record(node, phase) }
     private let recordEvents: Bool
     var events: [String] = []
     var rows: [MarkupID] = []

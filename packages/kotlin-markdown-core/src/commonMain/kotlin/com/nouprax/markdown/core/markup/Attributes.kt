@@ -19,16 +19,3 @@ public class Attributes(
         public val empty: Attributes = Attributes(emptyList(), emptyList())
     }
 }
-
-/** Definition values decoded once; no C handle survives materialization. */
-internal data class DefinitionResource(
-    val dest: Destination,
-    val title: String?,
-    val anchor: String?,
-    val attributes: Attributes,
-)
-
-internal fun Attributes.inheriting(inherited: Attributes): Attributes {
-    if (classes.isEmpty() && records.isEmpty()) return inherited
-    return Attributes(inherited.classes + classes, inherited.records + records)
-}

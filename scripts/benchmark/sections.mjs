@@ -14,7 +14,7 @@ export const sectionDispositions = {
         ),
         "Implicit heading references": grammar("heading-reference"),
         "Anchor ownership": context(
-            "Anchor ownership, inheritance and application matching are output/resolution contracts. Authored forms are covered by explicit/implicit anchor sections and attribute-reference."
+            "Anchor ownership and application matching are output/resolution contracts. Authored forms are covered by explicit/implicit anchor sections and attribute-reference."
         )
     },
     attributes: {
@@ -40,7 +40,7 @@ export const sectionDispositions = {
         "Inline code": grammar("attribute-code"),
         Headings: grammar("attribute-heading"),
         "Fenced code": grammar("attribute-fence"),
-        "Links, images, and inherited attributes": grammar(
+        "Links, images, and reference definitions": grammar(
             "attribute-link",
             "attribute-image",
             "attribute-autolink",

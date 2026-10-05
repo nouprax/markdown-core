@@ -37,10 +37,11 @@ test("the facade reports each public kind from exactly the native types that nam
 });
 
 test("ordinals must run from 1 without a gap or a repeat", () => {
-    for (const ordinal of [0, 2, 44]) {
+    const count = contract().kinds.length;
+    for (const ordinal of [0, 2, count + 1]) {
         const broken = contract();
         broken.kinds[0].ordinal = ordinal;
-        assert.throws(() => buildModel(broken, native()), /ordinals must run 1\.\.43 once each/);
+        assert.throws(() => buildModel(broken, native()), new RegExp(`ordinals must run 1\\.\\.${count} once each`));
     }
 });
 

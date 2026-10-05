@@ -110,15 +110,12 @@ static const markdown_core_metadata_value *facade_metadata(const markdown_core_n
 FACADE_ANSWER(markdown_core_string, facade_literal, markdown_core_node_literal)
 FACADE_ANSWER(markdown_core_destination, facade_destination, markdown_core_node_destination)
 FACADE_ANSWER(markdown_core_optional_string, facade_title, markdown_core_node_title)
-FACADE_ANSWER(const markdown_core_resource *, facade_resource, markdown_core_node_resource)
 FACADE_ANSWER(markdown_core_optional_string, facade_cross_label, markdown_core_node_cross_label)
 FACADE_ANSWER(markdown_core_optional_string, facade_list_item_marker, markdown_core_node_list_item_marker)
 FACADE_ANSWER(markdown_core_optional_string, facade_footnote_label, markdown_core_footnote_label)
 FACADE_ANSWER(markdown_core_referent, facade_referent, markdown_core_citation_referent)
 FACADE_ANSWER(int32_t, facade_heading_level, markdown_core_node_heading_level)
 FACADE_ANSWER(const markdown_core_dimensions *, facade_dimensions, markdown_core_node_dimensions)
-FACADE_ANSWER(const markdown_core_attribute_value *, facade_inherited_attributes,
-              markdown_core_node_inherited_attributes)
 #undef FACADE_ANSWER
 
 static markdown_core_metadata_scalar facade_scalar(const markdown_core_metadata_value *value) {
@@ -148,12 +145,6 @@ static markdown_core_table_column facade_column_at(const markdown_core_node *nod
 static markdown_core_string facade_class_at(const markdown_core_node *node, size_t index) {
     markdown_core_string value;
     EXPECT_OK(markdown_core_node_attribute_class_at(node, index, &value));
-    return value;
-}
-
-static markdown_core_string facade_value_class_at(const markdown_core_attribute_value *attributes, size_t index) {
-    markdown_core_string value;
-    EXPECT_OK(markdown_core_attribute_value_class_at(attributes, index, &value));
     return value;
 }
 
@@ -2577,12 +2568,12 @@ static void citation_and_footnote_values(test_batch_runner *runner) {
 }
 
 static void link_resource_lifecycle(test_batch_runner *runner) {
-    /* M2: a link or image reads its destination and title through a resource
-     * the parser creates -- one per direct link, image, or autolink, and one
-     * per definition, shared by every occurrence that resolves to it. Nothing
-     * else writes one: the engine's url and title setters left with the
-     * model. A node built by hand, or converted into a link, has no resource
-     * rather than reading another arm's bytes as a resource pointer. */
+    /* M2: a direct link, image or autolink states its destination and title
+     * in a resource the parser creates; a reference occurrence names its
+     * definition by label and has none. Nothing else writes one: the
+     * engine's url and title setters left with the model. A node built by
+     * hand, or converted into a link, has no resource rather than reading
+     * another arm's bytes as a resource pointer. */
     markdown_core_node *paragraph = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
     markdown_core_node *link = markdown_core_node_new(MARKDOWN_CORE_NODE_LINK);
     markdown_core_node *image = markdown_core_node_new(MARKDOWN_CORE_NODE_EMBEDDED);
@@ -2592,54 +2583,69 @@ static void link_resource_lifecycle(test_batch_runner *runner) {
     OK(runner, markdown_core_node_append_child(paragraph, image), "hand-built image joins a paragraph");
     OK(runner, markdown_core_node_append_child(paragraph, converted), "text joins a paragraph");
 
-    OK(runner, facade_resource(link) == NULL, "a hand-built link reads through no resource");
-    OK(runner, facade_resource(image) == NULL, "a hand-built image reads through no resource");
+    OK(runner, link->as.link->resource == NULL, "a hand-built link has no resource");
+    OK(runner, image->as.link->resource == NULL, "a hand-built image has no resource");
 
     OK(runner, set_literal(converted, "~~"), "the text to convert has a literal");
     INT_EQ(runner, markdown_core_node_set_kind(converted, MARKDOWN_CORE_NODE_LINK), MARKDOWN_CORE_NODE_SET_KIND_OK,
            "set_kind converts text into a link");
-    OK(runner, facade_resource(converted) == NULL, "a converted link starts without a resource");
+    OK(runner, converted->as.link->resource == NULL, "a converted link starts without a resource");
     INT_EQ(runner, markdown_core_node_set_kind(converted, MARKDOWN_CORE_NODE_TEXT), MARKDOWN_CORE_NODE_SET_KIND_OK,
            "set_kind converts the link back");
     LITERAL_EQ(runner, converted, "", "converting back starts the literal empty");
 
     markdown_core_node_free(paragraph);
 
-    /* Every occurrence of one definition reads one resource; a direct link
-     * with the same bytes owns its own. */
-    static const char markdown[] = "[a]: /shared \"t\"\n\n[a] [a] [d](/shared \"t\")\n";
+    /* An occurrence of a definition names it by label and states no title;
+     * the Reference states the destination and title, and a direct link
+     * with the same bytes states its own. */
+    static const char markdown[] = "[a]: /shared \"t\"\n\n[A] [a] [d](/shared \"t\")\n";
     markdown_core_node *doc = markdown_core_parse_document(markdown, sizeof(markdown) - 1);
-    markdown_core_node *first = doc->first_child->first_child;
+    markdown_core_node *reference = doc->first_child;
+    markdown_core_node *first = reference->next->first_child;
     markdown_core_node *second = first->next->next;
     markdown_core_node *direct = second->next->next;
-    OK(runner, facade_resource(first) != NULL && facade_resource(first) == facade_resource(second),
-       "two occurrences of one definition read one resource");
-    OK(runner, facade_resource(direct) != NULL && facade_resource(direct) != facade_resource(first),
-       "a direct link with the same bytes owns its own resource");
+    INT_EQ(runner, markdown_core_node_get_kind(reference), MARKDOWN_CORE_KIND_REFERENCE,
+           "the definition is a Reference where it was written");
+    markdown_core_destination destination = facade_destination(reference);
+    OK(runner,
+       destination.kind == MARKDOWN_CORE_DESTINATION_URL && destination.url.length == 7 &&
+           !memcmp(destination.url.data, "/shared", 7) && facade_title(reference).has_value,
+       "the Reference states the destination and title");
+    for (int i = 0; i < 2; i++) {
+        destination = facade_destination(i ? second : first);
+        OK(runner,
+           destination.kind == MARKDOWN_CORE_DESTINATION_REFERENCE && destination.label.length == 1 &&
+               destination.label.data[0] == 'a' && !facade_title(i ? second : first).has_value,
+           "occurrence %d names the normalized label and states no title", i);
+    }
+    destination = facade_destination(direct);
+    OK(runner, destination.kind == MARKDOWN_CORE_DESTINATION_URL && facade_title(direct).has_value,
+       "a direct link with the same bytes states its own");
     markdown_core_node_free(doc);
 }
 
+/* A REFERENCE'S ATTRIBUTES ARE ITS OWN, and an occurrence's are the ones
+ * written on it: nothing merges them. */
 static void reference_attribute_lifecycle(test_batch_runner *runner) {
     const char source[] = "[r][] [r][]{#own .same k=2}\n\n[r]: /u {#definition .same k=1 k=1}\n";
     markdown_core_node *root = markdown_core_parse_document(source, sizeof(source) - 1);
     markdown_core_node *first = root->first_child->first_child;
     markdown_core_node *second = first->next->next;
-    const markdown_core_attribute_value *inherited = facade_inherited_attributes(first);
-    OK(runner, inherited == facade_inherited_attributes(second), "definition owns one normalized value");
-    INT_EQ(runner, markdown_core_attribute_value_class_count(markdown_core_node_primary_attributes(first)), 0,
-           "inherited declarations are not copied into occurrence values");
-    INT_EQ(runner, markdown_core_attribute_value_class_count(markdown_core_node_primary_attributes(second)), 1,
-           "occurrence retains only its local sequence");
-    INT_EQ(runner, markdown_core_node_attribute_class_count(second), 2, "merged classes retain duplicates");
-    attribute_eq(runner, second, 0, "k", "1", "first inherited declaration");
-    attribute_eq(runner, second, 1, "k", "1", "duplicate inherited declaration");
-    attribute_eq(runner, second, 2, "k", "2", "local declaration is last");
-    markdown_core_node_unlink(second);
+    markdown_core_node *reference = root->first_child->next;
+    INT_EQ(runner, markdown_core_node_get_kind(reference), MARKDOWN_CORE_KIND_REFERENCE, "the definition is a node");
+    INT_EQ(runner, markdown_core_node_attribute_class_count(first), 0, "a bare occurrence has no attributes");
+    OK(runner, !markdown_core_node_anchor(first).has_value, "a bare occurrence has no anchor");
+    INT_EQ(runner, markdown_core_node_attribute_class_count(second), 1, "an occurrence keeps its own classes");
+    INT_EQ(runner, markdown_core_node_attribute_record_count(second), 1, "an occurrence keeps its own records");
+    attribute_eq(runner, second, 0, "k", "2", "the occurrence's own declaration");
+    INT_EQ(runner, markdown_core_node_attribute_record_count(reference), 2, "the Reference keeps duplicates");
+    attribute_eq(runner, reference, 0, "k", "1", "the Reference's first declaration");
+    attribute_eq(runner, reference, 1, "k", "1", "the Reference's duplicate declaration");
+    markdown_core_optional_string anchor = markdown_core_node_anchor(reference);
+    OK(runner, anchor.has_value && anchor.value.length == 10 && !memcmp(anchor.value.data, "definition", 10),
+       "the Reference has the anchor the definition states");
     markdown_core_node_free(root);
-    attribute_eq(runner, second, 0, "k", "1", "retained occurrence keeps its definition alive");
-    markdown_core_string value = facade_value_class_at(inherited, 0);
-    OK(runner, value.length == 4 && memcmp(value.data, "same", 4) == 0, "borrowed definition survives sibling removal");
-    markdown_core_node_free(second);
 }
 
 typedef struct {
@@ -2826,8 +2832,7 @@ static void resource_slots_come_from_slabs_and_outlive_the_pool(test_batch_runne
     for (size_t i = 0; i < COUNT; i++) {
         taken[i] =
             markdown_core_resource_new(&pool, markdown_core_chunk_literal("/u"), markdown_core_optional_chunk_absent());
-        OK(runner, taken[i] && taken[i]->holders == 1 && !taken[i]->title.has_value && !taken[i]->attributes.anchor.len,
-           "resource %zu is taken zeroed with one holder", i);
+        OK(runner, taken[i] && !taken[i]->title.has_value && taken[i]->url.len == 2, "resource %zu is taken", i);
     }
     OK(runner, payload_allocations > 0 && payload_allocations <= COUNT / 32, "%d resources took %zu allocations", COUNT,
        payload_allocations);
@@ -2835,7 +2840,7 @@ static void resource_slots_come_from_slabs_and_outlive_the_pool(test_batch_runne
     markdown_core_node_pool_dispose(&pool);
     INT_EQ(runner, payload_releases, releases, "disposing the pool frees no slab a resource is still in");
     for (size_t i = 0; i < COUNT; i++) {
-        markdown_core_resource_release(NULL, taken[i]);
+        markdown_core_resource_free(NULL, taken[i]);
     }
     INT_EQ(runner, payload_live, 0, "every slab went with the last resource in it");
     payload_probe_disarm();
@@ -2894,68 +2899,31 @@ static const char *footnote_label_of(const markdown_core_node *note) {
     return note->as.footnote->label.has_value ? (const char *)note->as.footnote->label.value.data : NULL;
 }
 
-/* A HEADING'S COMPUTED ANCHOR IS STORED ONCE, as its implicit reference's
- * destination after the `#`, and the heading holds that resource (node.h).
- * The facade has released the parser, its map and its pools by the time the
- * document is returned, so reading both here reads what the tree kept. */
-static void heading_anchor_shares_its_reference_destination(test_batch_runner *runner) {
+/* A REFERENCE OCCURRENCE A HEADING DECLARES names the heading's label, and
+ * the document resolves the label to the heading; the heading owns its
+ * computed anchor. */
+static void heading_reference_resolves_to_the_heading(test_batch_runner *runner) {
     const char *source = "# Straße and more\n\n[STRASSE AND MORE] and [straße and more]\n\n# Untitled [x]\n";
     markdown_core_document *document = facade_parse((const uint8_t *)source, strlen(source));
-    OK(runner, document != NULL, "heading anchor document parses");
+    OK(runner, document != NULL, "heading reference document parses");
     if (!document) {
         return;
     }
     markdown_core_node *heading = first_of_kind(document->root, MARKDOWN_CORE_NODE_HEADING);
-    markdown_core_node *link = first_of_kind(document->root, MARKDOWN_CORE_NODE_LINK);
-    OK(runner, heading && link && heading->attributes.anchor_owner && link->as.link->resource,
-       "the heading's anchor and a link resolved to it both hold a resource");
-    if (heading && link && heading->attributes.anchor_owner) {
-        markdown_core_resource *resource = heading->attributes.anchor_owner;
-        OK(runner, link->as.link->resource == resource, "the link reads through the heading's own resource");
-        OK(runner, resource->holders >= 3, "the heading and both links hold it after the map is gone: %zu",
-           resource->holders);
+    markdown_core_node *links[] = {heading->next->first_child, heading->next->last_child};
+    for (int i = 0; i < 2; i++) {
+        markdown_core_destination destination = facade_destination(links[i]);
         OK(runner,
-           !heading->attributes.anchor.alloc && heading->attributes.anchor.data == resource->url.data + 1 &&
-               resource->url.len == heading->attributes.anchor.len + 1 && resource->url.data[0] == '#',
-           "the anchor borrows the destination's bytes after the #");
-        STR_EQ(runner, (const char *)heading->attributes.anchor.data, "straße-and-more", "the anchor is the slug");
+           destination.kind == MARKDOWN_CORE_DESTINATION_REFERENCE && destination.label.length == 16 &&
+               !memcmp(destination.label.data, "strasse and more", 16),
+           "occurrence %d names the case-folded label", i);
+        OK(runner, markdown_core_document_reference_for(document, destination.label) == heading,
+           "the label resolves to the heading");
     }
-    markdown_core_node *second = heading ? heading->next ? heading->next->next : NULL : NULL;
-    OK(runner,
-       second && second->kind == MARKDOWN_CORE_NODE_HEADING && !second->attributes.anchor_owner &&
-           second->attributes.anchor.alloc,
-       "a heading whose text cannot be a label owns its anchor");
-    markdown_core_document_free(document);
-}
-
-/* THE HOLD IS THE ANCHOR'S, NOT THE HEADING'S: a kind change keeps a node's
- * attribute value and releases only its old kind's record, so a heading made
- * into a paragraph keeps a borrowed anchor readable -- here after the parse,
- * with no link and no map left holding the destination it borrows. */
-static void borrowed_anchor_survives_a_kind_change(test_batch_runner *runner) {
-    const char *source = "# Lone heading {.kept}\n";
-    markdown_core_document *document = facade_parse((const uint8_t *)source, strlen(source));
-    OK(runner, document != NULL, "lone heading document parses");
-    if (!document) {
-        return;
-    }
-    markdown_core_node *heading = first_of_kind(document->root, MARKDOWN_CORE_NODE_HEADING);
-    markdown_core_resource *owner = heading ? heading->attributes.anchor_owner : NULL;
-    OK(runner, owner && owner->holders == 1, "the anchor's value is the one holder of its destination");
-    if (!heading || !owner) {
-        markdown_core_document_free(document);
-        return;
-    }
-    INT_EQ(runner, markdown_core_node_set_kind(heading, MARKDOWN_CORE_NODE_PARAGRAPH), MARKDOWN_CORE_NODE_SET_KIND_OK,
-           "the heading becomes a paragraph");
-    OK(runner, heading->attributes.anchor_owner == owner && owner->holders == 1,
-       "the paragraph's value still holds the destination");
-    markdown_core_optional_string anchor = markdown_core_node_anchor(heading);
-    OK(runner,
-       anchor.has_value && anchor.value.length == 12 && !memcmp(anchor.value.data, "lone-heading", 12) &&
-           anchor.value.data == owner->url.data + 1,
-       "the paragraph's anchor still reads the destination's bytes");
-    INT_EQ(runner, (int)markdown_core_node_attribute_class_count(heading), 1, "its authored class stays too");
+    STR_EQ(runner, (const char *)heading->attributes.anchor.data, "straße-and-more", "the anchor is the slug");
+    OK(runner, heading->attributes.anchor.alloc, "the heading owns its anchor");
+    INT_EQ(runner, markdown_core_document_reference_label_count(document), 1,
+           "only the label a heading's text declares resolves");
     markdown_core_document_free(document);
 }
 
@@ -3307,20 +3275,17 @@ static void map_records_are_carved_from_its_blocks(test_batch_runner *runner) {
     for (size_t i = 0; i < COUNT; i++) {
         snprintf(label, sizeof(label), "label %zu", i);
         markdown_core_chunk chunk = {(unsigned char *)label, (bufsize_t)strlen(label), 0};
-        markdown_core_map_record *record = markdown_core_reference_create(
-            map, &chunk,
-            markdown_core_resource_new(NULL, markdown_core_chunk_literal("/u"), markdown_core_optional_chunk_absent()));
-        OK(runner, record && !record->implicit && record->label_len == chunk.len, "record %zu is carved", i);
+        markdown_core_label_declare(map, &chunk);
+        OK(runner, !map->oom && map->records && map->records->label_len == chunk.len, "record %zu is carved", i);
     }
-    /* One allocation per resource (no pool here), one for the label scratch,
-     * and the blocks. */
-    size_t blocks = payload_allocations - before - COUNT - 1;
+    /* Only the blocks the records are carved from. */
+    size_t blocks = payload_allocations - before;
     OK(runner, blocks <= 8, "%d records took %zu blocks", COUNT, blocks);
     markdown_core_chunk lookup = {(unsigned char *)"LABEL 399", 9, 0};
     markdown_core_map_record *found = markdown_core_map_lookup(map, &lookup);
     OK(runner, found && found->label_len == 9 && !memcmp(found->label, "label 399", 9), "a carved record is found");
-    markdown_core_map_free(NULL, map);
-    INT_EQ(runner, payload_live, 0, "the map's blocks, index and resources are all released");
+    markdown_core_map_free(map);
+    INT_EQ(runner, payload_live, 0, "the map's blocks and index are all released");
     payload_probe_disarm();
 }
 
@@ -4074,7 +4039,7 @@ static void set_kind_keeps_element_data_beside_the_arm(test_batch_runner *runner
     INT_EQ(runner, markdown_core_node_set_kind(formula, MARKDOWN_CORE_NODE_LINK), MARKDOWN_CORE_NODE_SET_KIND_OK,
            "set_kind converts the formula into a link");
     OK(runner, formula->opaque != NULL, "the element's data stays with the node");
-    OK(runner, facade_resource(formula) == NULL, "the converted link starts without a resource");
+    OK(runner, formula->as.link->resource == NULL, "the converted link starts without a resource");
     markdown_core_document_free(document);
 }
 
@@ -4083,19 +4048,22 @@ static void ref_source_pos(test_batch_runner *runner) {
                                    "\n"
                                    "[reference]: https://github.com (GitHub)\n";
 
-    /* M2: the occurrence is the Link it names, with its own scope and the
-     * definition's destination and title; the definition produces no node. */
+    /* M2: the occurrence is the Link that names its definition by label,
+     * with its own scope; the definition is a Reference where it was
+     * written, spanning it. */
     test_facade_dump(runner, markdown,
-                     "Document scope=1:1..3:40 anchor=null attributes={} children=1\n"
-                     "└── Paragraph scope=1:1..1:28 anchor=null attributes={} children=3\n"
-                     "    ├── Text scope=1:1..1:10 anchor=null attributes={} literal=\"Let's try \" children=0\n"
-                     "    ├── Link scope=1:11..1:21 anchor=null attributes={} dest=url(\"https://github.com\") "
-                     "title=\"GitHub\" children=1\n"
-                     "    │   └── Text scope=1:12..1:20 anchor=null attributes={} literal=\"reference\" children=0\n"
-                     "    └── Text scope=1:22..1:28 anchor=null attributes={} literal=\" links.\" children=0\n",
+                     "Document scope=1:1..3:40 anchor=null attributes={} children=2\n"
+                     "├── Paragraph scope=1:1..1:28 anchor=null attributes={} children=3\n"
+                     "│   ├── Text scope=1:1..1:10 anchor=null attributes={} literal=\"Let's try \" children=0\n"
+                     "│   ├── Link scope=1:11..1:21 anchor=null attributes={} dest=reference(\"reference\") "
+                     "title=null children=1\n"
+                     "│   │   └── Text scope=1:12..1:20 anchor=null attributes={} literal=\"reference\" children=0\n"
+                     "│   └── Text scope=1:22..1:28 anchor=null attributes={} literal=\" links.\" children=0\n"
+                     "└── Reference scope=3:1..3:40 anchor=null attributes={} label=\"reference\" "
+                     "dest=url(\"https://github.com\") title=\"GitHub\" children=0\n",
                      "reference link scopes are as expected");
     markdown_core_node *root = parse("[r]: /u\n===\ntext\n");
-    markdown_core_node *paragraph = root ? root->first_child : NULL;
+    markdown_core_node *paragraph = root && root->first_child ? root->first_child->next : NULL;
     OK(runner,
        paragraph && paragraph->kind == MARKDOWN_CORE_NODE_PARAGRAPH && START_LINE(paragraph) == 2 &&
            END_LINE(paragraph) == 3 && paragraph->first_child && START_LINE(paragraph->first_child) == 2,
@@ -4738,8 +4706,7 @@ typedef struct {
     size_t table_workspace_growth, table_geometry_lines, table_separator_scans, table_horizontal_work;
     size_t physical_lines, physical_capacity, physical_facts, physical_fact_capacity, normalized_lines;
     bool heading_collection_disposed;
-    size_t attributes, anchors, definitions, definition_resources, whitespace, brackets, citations, list_markers,
-        specimens;
+    size_t attributes, anchors, definitions, whitespace, brackets, citations, list_markers, specimens;
     size_t inline_hooks;
     size_t properties_lines, physical_line_bytes, metadata_key_bytes, metadata_value_bytes, table_scratch_growth;
     /* The finish stage's traversal count and its denominator (parser.h):
@@ -4829,7 +4796,6 @@ static int record_inline_work(const markdown_core_element_instance *self, markdo
     work->definitions = 0;
     for (markdown_core_map_record *record = parser->refmap->records; record; record = record->next) {
         work->definitions++;
-        work->definition_resources += record->resource != NULL;
     }
     work->heading_collection_disposed = headings->headings.values == NULL && headings->headings.count == 0;
     work->footnote_body = parser->footnote_body_work;
@@ -6808,8 +6774,8 @@ static void heading_completion_invariants(test_batch_runner *runner) {
         const char *source, *anchor;
     } cases[] = {
         {"# x\n\n# T {#x}\n", "x-1"},
-        {"# x\n\n[r]: /u {#x}\n", "x"},
-        {"# x\n\n[r][]{#y}\n\n[r]: /u {#x}\n", "x"},
+        {"# x\n\n[r]: /u {#x}\n", "x-1"},
+        {"# x\n\n[r][]{#y}\n\n[r]: /u {#x}\n", "x-1"},
         {"# x\n\n[^`a`{#x}]\n\n[^`a`{#x}]: note\n", "x"},
         {"# x\n\n:d[`a`{#x}]\n", "x-1"},
         {"# x\n\n:d[^[`a`{#x}]]\n", "x-1"},
@@ -6840,8 +6806,6 @@ static void heading_completion_invariants(test_batch_runner *runner) {
                 markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
             OK(runner, root != NULL, "repeated heading declarations parse");
             INT_EQ(runner, work.definitions, count, "each heading creates its own implicit reference definition");
-            INT_EQ(runner, work.definition_resources, count,
-                   "duplicate heading definitions retain their ordinary resources");
             markdown_core_node_free(root);
             markdown_core_strbuf_free(&source);
         }
@@ -6899,11 +6863,15 @@ static void heading_registry_invariants(test_batch_runner *runner) {
                 }
                 OK(runner, work.anchors > count && work.anchors < 25 * (size_t)source.size,
                    "registry work is linear in input and generated spelling bytes: %zu/%d", work.anchors, source.size);
-                markdown_core_node *first = root->last_child->first_child;
-                OK(runner,
-                   first->as.link->resource == first->next->next->as.link->resource &&
-                       first->as.link->resource == first->next->next->next->next->as.link->resource,
-                   "all reference spellings share the first heading's resource");
+                bool named = true;
+                for (markdown_core_node *node = root->last_child->first_child; node; node = node->next) {
+                    if (node->kind == MARKDOWN_CORE_NODE_LINK) {
+                        markdown_core_link *link = node->as.link;
+                        named =
+                            named && !link->resource && link->label.len == 4 && !memcmp(link->label.data, "same", 4);
+                    }
+                }
+                OK(runner, named, "all reference spellings name the heading's label");
                 markdown_core_node_free(root);
             }
             markdown_core_strbuf_free(&source);
@@ -6933,60 +6901,42 @@ static void heading_registry_invariants(test_batch_runner *runner) {
     }
 }
 
-static void heading_reference_resource_lifetime(test_batch_runner *runner) {
+/* AN OCCURRENCE NAMES ITS TARGET BY LABEL: however long the heading's
+ * anchor or a Reference's attributes, each occurrence holds the label alone,
+ * and the attributes are the target's, never copied into it. */
+static void reference_occurrences_hold_the_label_alone(test_batch_runner *runner) {
     markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
     const size_t count = 4096, length = 65536;
-    markdown_core_strbuf_puts(&source, "# Target {id=");
-    for (size_t i = 0; i < length; i++) {
-        markdown_core_strbuf_putc(&source, 'a');
-    }
-    markdown_core_strbuf_puts(&source, " .heading k=1}\n\n");
-    for (size_t i = 0; i < count; i++) {
-        markdown_core_strbuf_puts(&source, "[Target] ");
-    }
-    markdown_core_node *root = parse((char *)source.ptr);
-    OK(runner, root != NULL, "large virtual destination has no expansion cutoff");
-    if (root) {
-        markdown_core_resource *resource = NULL;
+    for (int definition = 0; definition < 2; definition++) {
+        markdown_core_strbuf_clear(&source);
+        markdown_core_strbuf_puts(&source, definition ? "# x\n\n[Target]: /u {id=" : "# Target {id=");
+        for (size_t i = 0; i < length; i++) {
+            markdown_core_strbuf_putc(&source, 'a');
+        }
+        markdown_core_strbuf_puts(&source, " .c k=1}\n\n");
+        for (size_t i = 0; i < count; i++) {
+            markdown_core_strbuf_puts(&source, "[Target] ");
+        }
+        markdown_core_node *root = parse((char *)source.ptr);
+        OK(runner, root != NULL, "a long target parses");
+        if (!root) {
+            continue;
+        }
         size_t references = 0;
+        bool alone = true;
         for (markdown_core_node *node = root->last_child->first_child; node; node = node->next) {
             if (node->kind != MARKDOWN_CORE_NODE_LINK) {
                 continue;
             }
-            if (!resource) {
-                resource = node->as.link->resource;
-            }
-            OK(runner, resource == node->as.link->resource, "the virtual destination is materialized once");
+            alone = alone && !node->as.link->resource && node->as.link->label.len == 6 &&
+                    !memcmp(node->as.link->label.data, "target", 6) && !node->attributes.anchor.len &&
+                    !node->attributes.class_count && !node->attributes.record_count;
             references++;
         }
-        INT_EQ(runner, references, count, "all forward/shortcut references survive parser destruction");
-        INT_EQ(runner, resource->url.len, length + 1, "virtual destination includes exactly one fragment marker");
-        INT_EQ(runner, resource->url.data[0], '#', "virtual destination is the URL branch");
-        OK(runner,
-           !resource->title.has_value && !resource->attributes.anchor.len && !resource->attributes.class_count &&
-               !resource->attributes.record_count,
-           "heading metadata never becomes inherited reference metadata");
-        markdown_core_node *occurrences = root->last_child;
-        markdown_core_node_unlink(occurrences);
+        INT_EQ(runner, references, count, "every occurrence resolves");
+        OK(runner, alone, "every occurrence holds the label and none of the target's attributes");
         markdown_core_node_free(root);
-        OK(runner, resource->url.data[length] == 'a', "shared targets outlive both parser and heading declaration");
-        markdown_core_node_free(occurrences);
     }
-    markdown_core_strbuf_clear(&source);
-    markdown_core_strbuf_puts(&source, "# x\n\n[r]: /u {id=");
-    for (size_t i = 0; i < length; i++) {
-        markdown_core_strbuf_putc(&source, 'a');
-    }
-    markdown_core_strbuf_puts(&source, "}\n\n");
-    for (size_t i = 0; i < count; i++) {
-        markdown_core_strbuf_puts(&source, "[r] ");
-    }
-    inline_work work = {0};
-    root = markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
-    OK(runner, root != NULL, "inherited anchor reservation preserves the reference expansion bound");
-    OK(runner, work.anchors < 25 * (size_t)source.size,
-       "a shared inherited anchor is inspected once, not once per occurrence: %zu/%d", work.anchors, source.size);
-    markdown_core_node_free(root);
     markdown_core_strbuf_free(&source);
 }
 
@@ -7336,11 +7286,14 @@ static void reference_definition_lifetime(test_batch_runner *runner) {
     OK(runner, root != NULL, "deferred reference definition parses");
     OK(runner, retained_at_anchor, "the finalized definition remains a sibling when anchor syntax is reached");
     if (root) {
-        markdown_core_node *marker = root->first_child ? root->first_child->next : NULL;
+        markdown_core_node *reference = root->first_child ? root->first_child->next : NULL;
+        OK(runner, reference && reference->kind == MARKDOWN_CORE_NODE_REFERENCE,
+           "the definition is a Reference where it was written");
+        markdown_core_node *marker = reference ? reference->next : NULL;
         OK(runner,
            marker && marker->kind == MARKDOWN_CORE_NODE_PARAGRAPH && marker->first_child &&
                marker->first_child->kind == MARKDOWN_CORE_NODE_TEXT && literal_is(marker->first_child, "#list#"),
-           "definition cleanup leaves the marker's paragraph as the next semantic sibling");
+           "the marker's paragraph follows the Reference");
         OK(runner,
            marker && marker->next && marker->next->first_child &&
                marker->next->first_child->kind == MARKDOWN_CORE_NODE_LINK && !marker->next->next,
@@ -11027,21 +10980,28 @@ static void table_mapped_ownership(test_batch_runner *runner) {
         "                 |                        |\n| [^f]: first            | [^f]: second           |\n|           "
         "             |                        |\n| [r] [^f]               | [r] [^f]               "
         "|\n+------------------------+------------------------+\n\n[r] [Same] [^f]\n";
-    markdown_core_node *root = markdown_core_parse_document(source, strlen(source));
-    OK(runner, root != NULL, "mapped cell block parsing completes");
-    if (!root) {
+    markdown_core_document *document = facade_parse((const uint8_t *)source, strlen(source));
+    OK(runner, document != NULL, "mapped cell block parsing completes");
+    if (!document) {
         return;
     }
+    /* Columns are read from the parse's places, which a bare parse keeps. */
+    markdown_core_node *root = markdown_core_parse_document(source, strlen(source));
     markdown_core_node *table = root->first_child, *row = table->first_child;
+    markdown_core_node *resolved_row = document->root->first_child->first_child;
     markdown_core_node *first = row->first_child, *second = first->next;
-    STR_EQ(runner, (const char *)first->first_child->attributes.anchor.data, "same",
+    STR_EQ(runner, (const char *)first->first_child->next->attributes.anchor.data, "same",
            "first cell heading owns unsuffixed anchor");
-    STR_EQ(runner, (const char *)second->first_child->attributes.anchor.data, "same-1",
+    STR_EQ(runner, (const char *)second->first_child->next->attributes.anchor.data, "same-1",
            "same-line later heading is ordered by original column");
-    INT_EQ(runner, START_COLUMN(second->first_child), 28, "mapped block starts in original source column");
-    for (markdown_core_node *cell = first; cell; cell = cell->next) {
+    INT_EQ(runner, START_COLUMN(second->first_child->next), 28, "mapped block starts in original source column");
+    INT_EQ(runner, START_COLUMN(second->first_child), 28, "a cell's Reference starts in its original column");
+    for (markdown_core_node *cell = resolved_row->first_child; cell; cell = cell->next) {
         markdown_core_destination dest = facade_destination(cell->last_child->first_child);
-        OK(runner, dest.url.length == 6 && !memcmp(dest.url.data, "/first", 6),
+        const markdown_core_node *target = dest.kind == MARKDOWN_CORE_DESTINATION_REFERENCE
+                                               ? markdown_core_document_reference_for(document, dest.label)
+                                               : NULL;
+        OK(runner, target == resolved_row->first_child->first_child,
            "first authored definition wins across queued cells");
     }
     node_list notes = footnotes_of(root);
@@ -11052,6 +11012,7 @@ static void table_mapped_ownership(test_batch_runner *runner) {
     }
     free(notes.nodes);
     markdown_core_node_free(root);
+    markdown_core_document_free(document);
 }
 
 /* Nested mapped inputs use the parser queue; source depth does not recurse
@@ -11366,8 +11327,7 @@ int main(void) {
     block_content_storage_follows_writes(runner);
     node_slots_come_from_slabs_and_go_back_to_the_pool(runner);
     resource_slots_come_from_slabs_and_outlive_the_pool(runner);
-    heading_anchor_shares_its_reference_destination(runner);
-    borrowed_anchor_survives_a_kind_change(runner);
+    heading_reference_resolves_to_the_heading(runner);
     class_runs_split_on_ascii_white_space(runner);
     unicode_classes_are_unicode_17(runner);
     utf8_decode_reads_every_scalar(runner);
@@ -11404,7 +11364,7 @@ int main(void) {
     attribute_attachment_linear_work(runner);
     heading_completion_invariants(runner);
     heading_registry_invariants(runner);
-    heading_reference_resource_lifetime(runner);
+    reference_occurrences_hold_the_label_alone(runner);
     heading_label_length_boundary(runner);
     autolink_domain_linear_work(runner);
     deep_inline_construction(runner);

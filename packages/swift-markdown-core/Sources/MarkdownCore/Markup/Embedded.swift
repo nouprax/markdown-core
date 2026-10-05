@@ -1,12 +1,13 @@
 import MarkdownCoreC
 
-/// An inline embed — `![alt](source)` or a resolved reference.
-/// The target type is not inferred.
+/// An inline embed — `![alt](source)` or a reference image, which answers the
+/// ``Destination/reference(label:)`` branch, no title, and its own anchor and
+/// attributes. The target type is not inferred.
 ///
 /// Its content is PARSED alt text: `![a *b*](s)` has an ``Emphasis`` in it, and
 /// flattening it to a string is the consumer's decision, not the parser's.
 /// Complete `W`, `WxH`, `alt|W` and `alt|WxH` labels supply positive 32-bit
-/// dimensions without leading zeros, on both direct and resolved images.
+/// dimensions without leading zeros, on both direct and reference images.
 public struct Embedded: Markup {
     let record: EmbeddedRecord
 
@@ -23,7 +24,7 @@ public struct Embedded: Markup {
     public var content: MarkupCollection<any Markup> { record.collection(record.children.indices) }
     /// Required, for the reason ``Link/dest`` is.
     public var dest: Destination { record.dest }
-    /// Optional.
+    /// Optional. A reference image writes none.
     public var title: String? { record.title }
     /// Authored size from a complete label suffix, or nil. Independent of attribute records.
     public var dimensions: Dimensions? { record.dimensions }
@@ -56,16 +57,11 @@ final class EmbeddedRecord: MarkupRecord, @unchecked Sendable {
 }
 
 extension EmbeddedRecord {
-    convenience init(
-        from node: OpaquePointer,
-        content: [MarkupRecord],
-        resources: inout [Int: SharedResource]
-    ) {
-        let resource = SharedResource.shared(by: node, in: &resources)
+    convenience init(from node: OpaquePointer, content: [MarkupRecord]) {
         self.init(
-            resource.fields(of: node),
-            dest: resource.dest,
-            title: resource.title,
+            InheritedFields(from: node),
+            dest: Destination(from: node),
+            title: answer(markdown_core_optional_string()) { markdown_core_node_title(node, $0) }.string,
             dimensions: answer(nil) { markdown_core_node_dimensions(node, $0) }.map { Dimensions($0.pointee) },
             content: content
         )

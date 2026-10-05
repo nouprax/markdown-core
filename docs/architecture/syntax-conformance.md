@@ -99,7 +99,7 @@ classification and projection boundaries.
    correctness tests, and conformance targets.
 
 Important compositions include bracket precedence, literal-body ownership,
-task prefixes before the first block, inherited attributes and references,
+task prefixes before the first block, attributes on references and their definitions,
 heading/specimen resolution independent of source order, caption ownership,
 and table span geometry. Maintain semantic coverage rather than a percentage
 of executed branches or a duplicate documentation-only fixture registry.

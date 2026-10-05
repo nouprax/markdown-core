@@ -118,6 +118,13 @@
             "kind": "deliberate-difference",
             "summary": "cmark-gfm walks an extended autolink's domain a byte at a time and ends it at the second byte of the first multi-byte character, so an underscore after any non-ASCII character escapes its last-two-segments rule. Markdown Core walks whole characters and applies the rule after ASCII and non-ASCII characters alike.",
             "handling": "Keyed to the exact links-and-images fixture input; the ASCII form of the rule is unchanged and compared everywhere."
+        },
+        {
+            "id": "reference-definition-node",
+            "kind": "deliberate-difference",
+            "summary": "A link reference definition is a `Reference` block where it was written, holding its normalized label, destination and title, and a reference `Link` or `Embedded` names that label (`dest=reference(\"...\")`) with no title. Upstream consumes the definition and copies its destination and title into every occurrence that resolves to it.",
+            "handling": "The shared normalizer projects this side's tree onto upstream's shape (`resolveReferences`): each reference destination takes its target's destination as the document resolves the label -- the url and title of the first `Reference` with the label, or the `#anchor` of the first `Heading` whose text declares it -- every `Reference` leaves the tree, and the projection records that it acted. A model difference, so a projection rather than a list of inputs; which occurrences resolve, and to which target, is compared unchanged.",
+            "projected": true
         }
     ],
     "expectedDivergences": [

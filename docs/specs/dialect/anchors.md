@@ -75,7 +75,8 @@ Reference a heading by its authored text:
 [First chapter] [First chapter][] [go there][First chapter]
 ```
 
-All three links resolve to `#first-chapter`. References may appear before the
+All three links name the label `first chapter`, which resolves to the
+heading, whose anchor is `first-chapter`. References may appear before the
 heading. The heading label excludes its opening/closing marker and attached
 attributes, then follows ordinary reference-label normalization. Inline markup
 remains part of that label: `# *Foo*` is referenced by `[*Foo*]`, not `[Foo]`.
@@ -83,15 +84,15 @@ remains part of that label: `# *Foo*` is referenced by `[*Foo*]`, not `[Foo]`.
 An explicit link definition wins over a heading with the same normalized label.
 Repeated heading labels target the first heading in source order. Labels that
 cannot be expressed as reference labels contribute no implicit definition.
-Reference images can use these definitions too. Attributes on a heading are
-not inherited by its implicit references.
+Reference images can use these definitions too. A reference occurrence has
+only the attributes written on it.
 
 ## Anchor ownership
 
-An occurrence's non-null explicit anchor wins over an inherited reference
-anchor. Inherited attributes change semantic values, never the occurrence's
-source range. An unused reference definition reserves no anchor; its resolved
-occurrences do. Two explicit declarations may keep the same anchor.
+A link reference definition is a `Reference` with the anchor and attributes
+the definition states, and a reference occurrence has the ones written on it.
+Every explicit anchor reserves its name, a `Reference`'s included. Two explicit
+declarations may keep the same anchor.
 
 Cross-link anchors remain raw; the application chooses how to match them to
 these declarations. See [cross links](cross-links.md#headings-and-blocks) and

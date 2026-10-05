@@ -162,17 +162,31 @@ static void put_attributes(wire_buffer *buffer, const markdown_core_attribute_va
     }
 }
 
-/* Destination: url { value } | cross { path, anchor? }. */
+/* Destination: url { value } | cross { path, anchor? } | reference { label }. */
 static void put_destination(wire_buffer *buffer, const markdown_core_node *node) {
     markdown_core_destination destination;
     markdown_core_node_destination(node, &destination);
     put_index(buffer, destination.kind, MARKDOWN_CORE_DESTINATION_URL);
-    if (destination.kind == MARKDOWN_CORE_DESTINATION_URL) {
+    switch (destination.kind) {
+    case MARKDOWN_CORE_DESTINATION_URL:
         put_string(buffer, destination.url);
-    } else {
+        break;
+    case MARKDOWN_CORE_DESTINATION_CROSS:
         put_string(buffer, destination.path);
         put_optional_string(buffer, destination.anchor);
+        break;
+    case MARKDOWN_CORE_DESTINATION_REFERENCE:
+        put_string(buffer, destination.label);
+        break;
     }
+}
+
+/* `dest`, then `title`: a Link's, an Embedded's or a Reference's. */
+static void put_resource(wire_buffer *buffer, const markdown_core_node *node) {
+    markdown_core_optional_string title;
+    put_destination(buffer, node);
+    markdown_core_node_title(node, &title);
+    put_optional_string(buffer, title);
 }
 
 /* Dimensions?: { width: Int, height: Int? }. */
@@ -237,91 +251,6 @@ static void put_metadata(wire_buffer *buffer, const markdown_core_node *metadata
         metadata_fields[index](metadata, &value);
         put_metadata_value(buffer, value);
     }
-}
-
-/* ---- Shared resources ---------------------------------------------------- */
-
-/* Numbers each distinct resource in the order the message first names it. An
- * open-addressing table keyed by the resource's identity. */
-typedef struct wire_resource_slot {
-    const markdown_core_resource *resource;
-    uint32_t ordinal;
-} wire_resource_slot;
-
-typedef struct wire_resources {
-    wire_resource_slot *slots;
-    size_t count;
-    size_t capacity;
-} wire_resources;
-
-static size_t hash_resource(const markdown_core_resource *resource) {
-    uint64_t bits = (uint64_t)(uintptr_t)resource;
-    bits ^= bits >> 33;
-    bits *= UINT64_C(0xff51afd7ed558ccd);
-    bits ^= bits >> 33;
-    return (size_t)bits;
-}
-
-static wire_resource_slot *find_resource_slot(wire_resource_slot *slots, size_t capacity,
-                                              const markdown_core_resource *resource) {
-    size_t position = hash_resource(resource) & (capacity - 1);
-    while (slots[position].resource != NULL && slots[position].resource != resource) {
-        position = (position + 1) & (capacity - 1);
-    }
-    return &slots[position];
-}
-
-static bool grow_resources(wire_resources *resources) {
-    size_t capacity = resources->capacity == 0 ? 64 : resources->capacity * 2;
-    wire_resource_slot *slots;
-    size_t index;
-    if (capacity < resources->capacity || capacity > SIZE_MAX / sizeof(*slots)) {
-        return false;
-    }
-    slots = (wire_resource_slot *)calloc(capacity, sizeof(*slots));
-    if (slots == NULL) {
-        return false;
-    }
-    for (index = 0; index < resources->capacity; ++index) {
-        if (resources->slots[index].resource != NULL) {
-            *find_resource_slot(slots, capacity, resources->slots[index].resource) = resources->slots[index];
-        }
-    }
-    free(resources->slots);
-    resources->slots = slots;
-    resources->capacity = capacity;
-    return true;
-}
-
-/* The `dest` field of a Link or Embedded, which also stands for its `title`:
- * the resource ordinal, followed by the resource the first time it is named. */
-static void put_resource(wire_buffer *buffer, wire_resources *resources, const markdown_core_node *node) {
-    const markdown_core_resource *resource;
-    const markdown_core_attribute_value *inherited;
-    markdown_core_optional_string title;
-    wire_resource_slot *slot;
-    markdown_core_node_resource(node, &resource);
-    if (resources->count + 1 > resources->capacity / 2 && !grow_resources(resources)) {
-        buffer->failed = true;
-        return;
-    }
-    slot = find_resource_slot(resources->slots, resources->capacity, resource);
-    if (slot->resource != NULL) {
-        put_u32(buffer, slot->ordinal);
-        return;
-    }
-    if (resources->count >= UINT32_MAX) {
-        buffer->failed = true;
-        return;
-    }
-    slot->resource = resource;
-    slot->ordinal = (uint32_t)resources->count++;
-    put_u32(buffer, slot->ordinal);
-    put_destination(buffer, node);
-    markdown_core_node_title(node, &title);
-    put_optional_string(buffer, title);
-    markdown_core_node_inherited_attributes(node, &inherited);
-    put_attributes(buffer, inherited);
 }
 
 /* ---- Node-valued fields -------------------------------------------------- */
@@ -554,7 +483,7 @@ static void put_citation_fields(wire_buffer *buffer, const markdown_core_node *n
 
 /* A node's record: its kind, its inherited fields, then its own fields in the
  * contract's order, node-valued fields written as counts. */
-static void put_record(wire_buffer *buffer, wire_resources *resources, const markdown_core_node *node) {
+static void put_record(wire_buffer *buffer, const markdown_core_node *node) {
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     wire_edge edges[WIRE_MAX_EDGES];
     markdown_core_string literal;
@@ -565,7 +494,7 @@ static void put_record(wire_buffer *buffer, wire_resources *resources, const mar
     put_u8(buffer, (uint8_t)kind);
     put_u64(buffer, markdown_core_node_id(node));
     put_extent(buffer, markdown_core_node_extent(node));
-    put_attributes(buffer, markdown_core_node_primary_attributes(node));
+    put_attributes(buffer, markdown_core_node_attributes(node));
 
     switch (kind) {
     case MARKDOWN_CORE_KIND_DOCUMENT:
@@ -667,11 +596,16 @@ static void put_record(wire_buffer *buffer, wire_resources *resources, const mar
         break;
     case MARKDOWN_CORE_KIND_LINK:
     case MARKDOWN_CORE_KIND_EMBEDDED:
-        put_resource(buffer, resources, node);
+        put_resource(buffer, node);
         if (kind == MARKDOWN_CORE_KIND_EMBEDDED) {
             put_dimensions(buffer, node);
         }
         put_chain_count(buffer, &edges[0]);
+        break;
+    case MARKDOWN_CORE_KIND_REFERENCE:
+        markdown_core_reference_label(node, &literal);
+        put_string(buffer, literal);
+        put_resource(buffer, node);
         break;
     case MARKDOWN_CORE_KIND_DEFINITION:
         put_chain_count(buffer, &edges[0]);
@@ -796,7 +730,6 @@ static void push_edge(wire_buffer *buffer, wire_stack *stack, const wire_edge *e
 
 static void put_tree(wire_buffer *buffer, const markdown_core_node *root) {
     wire_stack stack = {0};
-    wire_resources resources = {0};
     push(buffer, &stack, WIRE_VISIT, root, NULL);
     while (stack.count != 0 && !buffer->failed) {
         wire_action action = stack.actions[--stack.count];
@@ -811,7 +744,7 @@ static void put_tree(wire_buffer *buffer, const markdown_core_node *root) {
             break;
         }
         case WIRE_RECORD:
-            put_record(buffer, &resources, action.node);
+            put_record(buffer, action.node);
             break;
         case WIRE_CHAIN: {
             const markdown_core_node *next = markdown_core_node_get_next_sibling(action.node);
@@ -835,11 +768,10 @@ static void put_tree(wire_buffer *buffer, const markdown_core_node *root) {
         }
     }
     free(stack.actions);
-    free(resources.slots);
 }
 
-/* The document's footnote and specimen tables: each a count, then the id of
- * every definition in source order. */
+/* The document's footnote, specimen and Reference tables: each a count,
+ * then the id of every definition in source order. */
 typedef markdown_core_status (*definition_at)(const markdown_core_document *, size_t, const markdown_core_node **);
 
 static void put_definition_table(wire_buffer *buffer, const markdown_core_document *document, size_t count,
@@ -853,11 +785,29 @@ static void put_definition_table(wire_buffer *buffer, const markdown_core_docume
     }
 }
 
+/* The document's reference label table: a count, then each label that
+ * resolves, in byte order, and the id of the Reference or Heading it
+ * resolves to. */
+static void put_reference_labels(wire_buffer *buffer, const markdown_core_document *document) {
+    size_t count = markdown_core_document_reference_label_count(document), index;
+    put_count(buffer, count);
+    for (index = 0; index < count && !buffer->failed; ++index) {
+        markdown_core_string label;
+        const markdown_core_node *target;
+        markdown_core_document_reference_label_at(document, index, &label, &target);
+        put_string(buffer, label);
+        put_u64(buffer, markdown_core_node_id(target));
+    }
+}
+
 static void put_definitions(wire_buffer *buffer, const markdown_core_document *document) {
     put_definition_table(buffer, document, markdown_core_document_footnote_count(document),
                          markdown_core_document_footnote_at);
     put_definition_table(buffer, document, markdown_core_document_specimen_count(document),
                          markdown_core_document_specimen_at);
+    put_definition_table(buffer, document, markdown_core_document_reference_count(document),
+                         markdown_core_document_reference_at);
+    put_reference_labels(buffer, document);
 }
 
 /* ---- Messages ------------------------------------------------------------ */

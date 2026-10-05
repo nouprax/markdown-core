@@ -491,6 +491,18 @@ class State {
                 [`label=${optional(node.label)}`, `start=${node.start ?? "null"}`],
                 node.content.length
             );
+        },
+        reference: (node, phase) => {
+            if (phase === "exit") {
+                this.end();
+                return;
+            }
+            this.start();
+            this.line("Reference", node, [
+                `label=${escaped(node.label)}`,
+                `dest=${destination(node.dest)}`,
+                `title=${optional(node.title)}`
+            ]);
         }
     };
 
@@ -614,9 +626,14 @@ function referent(value: CitationReferent): string {
 
 /** A tagged value prints its branch and its named fields with no spaces. */
 function destination(value: Destination): string {
-    return value.kind === "url"
-        ? `url(${escaped(value.value)})`
-        : `cross(path=${escaped(value.path)},anchor=${optional(value.anchor)})`;
+    switch (value.kind) {
+        case "url":
+            return `url(${escaped(value.value)})`;
+        case "cross":
+            return `cross(path=${escaped(value.path)},anchor=${optional(value.anchor)})`;
+        case "reference":
+            return `reference(${escaped(value.label)})`;
+    }
 }
 
 function escaped(value: string): string {

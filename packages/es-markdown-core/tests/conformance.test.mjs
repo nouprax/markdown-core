@@ -56,7 +56,8 @@ test("conformance: public node schema is reachable", () => {
             "link",
             "embedded",
             "directive",
-            "cite"
+            "cite",
+            "reference"
         ])
     );
     assert.ok(

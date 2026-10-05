@@ -259,7 +259,7 @@ paragraph that becomes a Setext heading is a new node; a paragraph moved into
 a new quote is a new node; unwrapping a nested inline note makes the inner note
 a new node; inserting a line at the top of a long document changes only the
 Document and the edited paragraph; changing a heading anchor that Links target
-changes every such Link. Typing in paragraph 5 of 1,000 changes exactly that
+changes only the Document and the heading. Typing in paragraph 5 of 1,000 changes exactly that
 paragraph, its Text nodes on the edited line and the Document.
 
 ### 4.6 Streaming

@@ -205,7 +205,11 @@ void markdown_core_block_finalize_list(const markdown_core_parser *parser, markd
             return;
         }
         for (markdown_core_node *child = item->first_child; child; child = child->next) {
-            if ((item->next || child->next) && markdown_core_block_ends_with_blank_line(parser, child)) {
+            if (child->flags & MARKDOWN_CORE_NODE__BLANK_TRANSPARENT) {
+                continue;
+            }
+            if ((item->next || markdown_core_block_next_seen(child)) &&
+                markdown_core_block_ends_with_blank_line(parser, child)) {
                 list->as.list->tight = false;
                 return;
             }

@@ -7,6 +7,8 @@ import type { DirectiveLabel } from "../markup/directive-label.js";
 import type { Citation } from "../markup/cite.js";
 import type { Document } from "../markup/document.js";
 import type { Footnote } from "../markup/footnote.js";
+import type { Heading } from "../markup/heading.js";
+import type { Reference } from "../markup/reference.js";
 import type { Specimen } from "../markup/specimen.js";
 import type { ListItem } from "../markup/list.js";
 import type { Markup } from "../markup/markup.js";
@@ -33,8 +35,8 @@ import { kinds, type NativeKind } from "./kinds.js";
  * The MCB3 reader (docs/architecture/wire-format.md). Records arrive in
  * post-order, so each node is built bottom-up from the nodes already on the
  * stack, without recursion and without another call into WebAssembly. The
- * document's definition tables follow its record. The reader retains no view
- * of the message after decode returns.
+ * document's definition tables and its reference label table follow its
+ * record. The reader retains no view of the message after decode returns.
  */
 
 /** The byte offset of the u32 message length, after the magic. */
@@ -56,26 +58,30 @@ const errorCodes: { readonly [status: number]: ErrorCode } = {
 
 /** The document's members that are not contract fields: the decoder adds them
  * once the definition tables are read. */
-type DocumentMembers = "unit" | "footnotes" | "specimens" | "footnote" | "specimen" | "scope" | "nodeAt" | "dump";
+type DocumentMembers =
+    | "unit"
+    | "footnotes"
+    | "specimens"
+    | "references"
+    | "footnote"
+    | "specimen"
+    | "reference"
+    | "scope"
+    | "nodeAt"
+    | "dump";
 type MarkupValue = Markup extends infer Node ? (Node extends Document ? Omit<Document, DocumentMembers> : Node) : never;
 type Base<Kind extends Markup["kind"]> = MarkupBase<Kind>;
-
-/** A reference definition's shared values, decoded once however often it is used. */
-interface Resource {
-    readonly dest: Destination;
-    readonly title: string | null;
-    readonly anchor: string | null;
-    readonly attributes: Attributes;
-}
+/** A node a definition table or the reference label table names. */
+type Target = Footnote | Specimen | Reference | Heading;
 
 export class Decoder {
     private readonly view: DataView;
     private readonly utf8 = new TextDecoder("utf-8", { ignoreBOM: true });
     private offset = 0;
     private readonly stack: Markup[] = [];
-    private readonly resources: Resource[] = [];
-    /** Every Footnote and Specimen by id, for the definition tables. */
-    private readonly definitions = new Map<number, Footnote | Specimen>();
+    /** Every Footnote, Specimen, Reference and Heading by id, for the
+     * definition tables and the reference label table. */
+    private readonly definitions = new Map<number, Target>();
 
     /** `unit` is the text unit of the document the message decodes to. */
     constructor(
@@ -95,7 +101,9 @@ export class Decoder {
         }
         const footnotes = this.table() as Footnote[];
         const specimens = this.table() as Specimen[];
-        return this.document(root, footnotes, specimens);
+        const references = this.table() as Reference[];
+        const labels = this.labels();
+        return this.document(root, footnotes, specimens, references, labels);
     }
 
     /** Status 1 is a failure, whose body is its u32 `markdown_core_status`
@@ -114,7 +122,14 @@ export class Decoder {
         const anchor = this.optional(() => this.string());
         const attributes = this.attributes();
         const node = this.fields(kind, { kind, id, extent, anchor, attributes }) as Markup;
-        if (node.kind === "footnote" || node.kind === "specimen") this.definitions.set(id, node);
+        if (
+            node.kind === "footnote" ||
+            node.kind === "specimen" ||
+            node.kind === "reference" ||
+            node.kind === "heading"
+        ) {
+            this.definitions.set(id, node);
+        }
         return node;
     }
 
@@ -287,27 +302,31 @@ export class Decoder {
                     dimensions: this.optional(() => this.dimensions())
                 };
             case "link": {
-                const resource = this.resource();
+                const dest = this.destination();
+                const title = this.optional(() => this.string());
                 const content = this.count();
-                return {
-                    ...this.inheriting(base as Base<"link">, resource),
-                    dest: resource.dest,
-                    title: resource.title,
-                    content: this.nodes(content).take(content)
-                };
+                return { ...(base as Base<"link">), dest, title, content: this.nodes(content).take(content) };
             }
             case "embedded": {
-                const resource = this.resource();
+                const dest = this.destination();
+                const title = this.optional(() => this.string());
                 const dimensions = this.optional(() => this.dimensions());
                 const content = this.count();
                 return {
-                    ...this.inheriting(base as Base<"embedded">, resource),
-                    dest: resource.dest,
-                    title: resource.title,
+                    ...(base as Base<"embedded">),
+                    dest,
+                    title,
                     dimensions,
                     content: this.nodes(content).take(content)
                 };
             }
+            case "reference":
+                return {
+                    ...(base as Base<"reference">),
+                    label: this.string(),
+                    dest: this.destination(),
+                    title: this.optional(() => this.string())
+                };
             case "cite": {
                 const citations = this.count();
                 return {
@@ -384,8 +403,14 @@ export class Decoder {
     // ---- Definition tables -------------------------------------------------
 
     /** A table's definitions in source order, by id. */
-    private table(): (Footnote | Specimen)[] {
+    private table(): Target[] {
         return this.list(() => this.definitions.get(this.id())!);
+    }
+
+    /** The reference label table: each label that resolves, in byte order,
+     * with the Reference or Heading it resolves to. */
+    private labels(): ReadonlyMap<string, Reference | Heading> {
+        return new Map(this.list(() => [this.string(), this.definitions.get(this.id()) as Reference | Heading]));
     }
 
     /**
@@ -393,7 +418,13 @@ export class Decoder {
      * lookups, built here, once, over data the document carries. They are not
      * enumerable, so the document's enumerable fields stay its contract fields.
      */
-    private document(root: Omit<Document, DocumentMembers>, footnotes: Footnote[], specimens: Specimen[]): Document {
+    private document(
+        root: Omit<Document, DocumentMembers>,
+        footnotes: Footnote[],
+        specimens: Specimen[],
+        references: Reference[],
+        labels: ReadonlyMap<string, Reference | Heading>
+    ): Document {
         const footnoteFor = firstByLabel(footnotes);
         const specimenFor = firstByLabel(specimens);
         const member = (value: unknown): PropertyDescriptor => ({ value, enumerable: false });
@@ -401,8 +432,10 @@ export class Decoder {
             unit: member(this.unit),
             footnotes: member(footnotes),
             specimens: member(specimens),
+            references: member(references),
             footnote: member((label: string): Footnote | null => footnoteFor.get(label) ?? null),
             specimen: member((label: string): Specimen | null => specimenFor.get(label) ?? null),
+            reference: member((label: string): Reference | Heading | null => labels.get(label) ?? null),
             scope: member(function (this: Document, node: Markup, source: string) {
                 return scopeOf(this, node, source);
             }),
@@ -422,35 +455,6 @@ export class Decoder {
         return new Nodes(this.stack.splice(this.stack.length - count, count));
     }
 
-    // ---- Shared resources --------------------------------------------------
-
-    private resource(): Resource {
-        const ordinal = this.u32();
-        if (ordinal < this.resources.length) return this.resources[ordinal] as Resource;
-        const resource: Resource = {
-            dest: this.destination(),
-            title: this.optional(() => this.string()),
-            anchor: this.optional(() => this.string()),
-            attributes: this.attributes()
-        };
-        this.resources.push(resource);
-        return resource;
-    }
-
-    /** The occurrence's anchor wins; the definition's classes and records come first. */
-    private inheriting<Kind extends "link" | "embedded">(base: Base<Kind>, resource: Resource): Base<Kind> {
-        const primary = base.attributes;
-        const inherited = resource.attributes;
-        const attributes =
-            primary.classes.length === 0 && primary.records.length === 0
-                ? inherited
-                : {
-                      classes: [...inherited.classes, ...primary.classes],
-                      records: [...inherited.records, ...primary.records]
-                  };
-        return { ...base, anchor: base.anchor ?? resource.anchor, attributes };
-    }
-
     // ---- Values ------------------------------------------------------------
 
     private extent(): Extent {
@@ -468,8 +472,10 @@ export class Decoder {
         switch (this.branch()) {
             case 0:
                 return { kind: "url", value: this.string() };
-            default:
+            case 1:
                 return { kind: "cross", path: this.string(), anchor: this.optional(() => this.string()) };
+            default:
+                return { kind: "reference", label: this.string() };
         }
     }
 

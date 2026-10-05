@@ -159,18 +159,13 @@ const stateValidators = {
     "directive.label.empty": (tree) => /DirectiveLabel scope=\S+ anchor=null attributes=\{\} children=0$/m.test(tree),
     "directive.label.populated": (tree) =>
         /DirectiveLabel scope=\S+ anchor=null attributes=\{\} children=[1-9]\d*$/m.test(tree),
-    // M2: a reference occurrence is the `Link` or `Embedded` it names, and dumps
-    // identically to a direct one apart from scope. The case holds one direct
-    // and several reference occurrences of each kind, so every `Link` line and
-    // every `Embedded` line, scope removed, must be one line.
-    "reference.resolution.identical": (tree) =>
-        ["Link", "Embedded"].every((kind) => {
-            const lines = tree
-                .split("\n")
-                .filter((line) => new RegExp(`(?:^|\u2500 )${kind} scope=`).test(line))
-                .map((line) => line.replace(/^.*?(?= scope=)/, "").replace(/ scope=\S+/, ""));
-            return lines.length >= 2 && new Set(lines).size === 1;
-        }),
+    // A reference occurrence is a `Link` or `Embedded` naming its definition's
+    // normalized label, and the definition is a `Reference` where it was
+    // written, holding the url destination it states.
+    "destination.reference.label": (tree) =>
+        /(?:Link|Embedded) scope=.* dest=reference\("(?:\\.|[^"\\])+"\) /.test(tree),
+    "reference.definition.url": (tree) =>
+        /Reference scope=.* label="(?:\\.|[^"\\])+" dest=url\("(?:\\.|[^"\\])*"\) title=/.test(tree),
     "link.title.null": (tree) => /^.*Link scope=.* title=null /m.test(tree),
     "link.title.empty": (tree) => /^.*Link scope=.* title="" /m.test(tree),
     "link.title.value": (tree) => /^.*Link scope=.* title=".+" /m.test(tree),

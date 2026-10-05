@@ -91,8 +91,9 @@ followed by a JSON string, for example `."a}b"` or `."中文"`. This escaping is
 only dump syntax; it never changes the stored class or the attribute grammar.
 
 - A tagged value prints its branch and its named fields with no spaces: a
-  `Destination` prints as `dest=url("...")`, or as
-  `dest=cross(path="...",anchor=null)` with `anchor` a string or `null`.
+  `Destination` prints as `dest=url("...")`, as
+  `dest=cross(path="...",anchor=null)` with `anchor` a string or `null`, or
+  as `dest=reference("...")` with the normalized label.
 - Every optional and default-bearing field is printed; fields are never
   omitted because they are null, empty, false, or default.
 - The inherited fields lead: `scope`, the node's scope computed from its
@@ -196,6 +197,7 @@ that the dump represents as nested descendants.
 | `Footnote` | `anchor`, `attributes`, `label` |
 | `Specimen` | `anchor`, `attributes`, `label`, `start` |
 | `Metadata` | `anchor`, `attributes`, `name`, `title`, `subtitle`, `time`, `date`, `authors`, `keywords`, `abstract`, `state`, `comment` |
+| `Reference` | `anchor`, `attributes`, `label`, `dest`, `title` |
 
 Example:
 

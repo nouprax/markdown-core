@@ -139,8 +139,8 @@ table boundaries do not discard source information.
 The following rules describe authored editor positions, not independently
 sliceable string ranges. They refine the general coordinate contract. A syntax's
 punctuation can be inside its owner's scope without appearing in visible
-content. Unscoped semantic fields, including generated anchors and inherited
-resources, never gain a range of their own.
+content. Unscoped semantic fields, including generated anchors, never gain a
+range of their own.
 
 | Syntax | Range |
 | --- | --- |
@@ -224,19 +224,19 @@ records: [Record])` is never null. `Record(name: String, value: String)`
 retains every assignment occurrence; classes retain every word occurrence.
 The last identifier wins and an empty final `id=` clears the anchor.
 
-Inline code, ATX/Setext headings, fenced code, and completed link/image
-occurrences attach the same normalized attribute grammar. Reference definitions
-supply inherited attributes; local anchors take precedence and local classes and
-records follow inherited declarations without deduplication. Each binding keeps its native collection types and owns all
+Inline code, ATX/Setext headings, fenced code, completed link/image
+occurrences, and reference definitions attach the same normalized attribute
+grammar. Every node's anchor and attributes are the ones written on it: a
+`Reference` has the definition's, and a reference occurrence has its own. Each binding keeps its native collection types and owns all
 returned values after the native document is released.
 
 Parsed headings always have a nonempty anchor: an explicit identifier wins,
 otherwise the [anchors module](dialect/anchors.md) derives one from parsed
 content after reserving every emitted explicit anchor. Generated anchors add
-no source range. Writable authored heading labels also define ordinary
-reference targets, including forward references. These use `Destination.url`
-with the final `#anchor`, no title, and no inherited heading attributes; all
-occurrences share the existing reference resource. Explicit definitions win.
+no source range. Writable authored heading labels also declare reference
+labels, including for forward references: a `reference` destination whose
+label no `Reference` states resolves to the first such `Heading`, whose
+anchor is the target. Explicit definitions win.
 `Document.metadata: Metadata?` holds ten named optional values defined by the
 [properties grammar](dialect/properties.md). Metadata is a leaf `Markup` node
 produced by the leading properties envelope. It receives ordinary visitor and
@@ -256,16 +256,21 @@ The value is independent of a destination's shared identity and attribute record
 ### Destination
 
 ```text
-Destination = url(String) | cross(path: String, anchor: String?)
+Destination = url(String) | cross(path: String, anchor: String?) | reference(label: String)
 ```
 
 `Destination` is a tagged value, not a node: it has no id, extent, children,
 anchor, or attributes, and a branch's fields exist only in that branch. It is
-the `dest` of every `Link` and `Embedded`, which own the `url` branch: the
+the `dest` of every `Link`, `Embedded` and `Reference`. A direct `Link` or
+`Embedded` and every `Reference` own the `url` branch: the
 complete semantic destination the inherited grammar produced, the bytes
 between angle brackets or the bare destination with backslash escapes and
 character references decoded and no percent-encoding, normalization, or
-resolution, and possibly empty. The `cross` branch is the workspace address of
+resolution, and possibly empty. A reference `Link` or `Embedded` owns the
+`reference` branch: the normalized label it names, which resolves to the
+first `Reference` in document source order whose label is equal, or, when
+none is, the first `Heading` in document source order whose text declares
+it. The `cross` branch is the workspace address of
 the [cross links](dialect/cross-links.md) module and is stored by
 `CrossLink` and `CrossEmbedded`. The parser fetches no URL, opens no file, tests no
 existence, and infers no media type; no such result is a field or a branch.
@@ -325,13 +330,18 @@ order; neither definitions nor references store that derived state. See
 [specimens](dialect/specimens.md) for definition and reference syntax.
 Ordinary lists have no specimen variant or label field.
 
-`Document` carries the parser's footnote and specimen tables.
-`document.footnotes` and `document.specimens` list every definition in source
-order, inline notes included, and `document.footnote(for: label)` and
-`document.specimen(for: label)` return the first one whose stored label equals
-the referent's. The C facade answers them through
-`markdown_core_document_footnote_count`, `_footnote_at`, `_footnote_for` and
-the specimen equivalents, and exposes the nodes through `markdown_core_node`
+`Document` carries the parser's footnote, specimen and reference tables.
+`document.footnotes`, `document.specimens` and `document.references` list
+every definition in source order, inline notes included, and
+`document.footnote(for: label)` and `document.specimen(for: label)` return the
+first one whose stored label equals the referent's.
+`document.reference(for: label)` returns the node a `reference` destination
+with that label resolves to: the first `Reference` whose label equals it, or,
+when none does, the first `Heading` whose text declares it. The C facade
+answers them through `markdown_core_document_footnote_count`, `_footnote_at`,
+`_footnote_for`, the specimen and reference equivalents, and
+`_reference_label_count` and `_reference_label_at`, which list each label that
+resolves with its node, and exposes the nodes through `markdown_core_node`
 and typed field accessors. Swift, Kotlin, and ECMAScript include them in
 `Markup`. `CitationReferent` and `FootnoteTarget` are modeled as
 `Destination` is modeled: a Swift enum with associated values, a Kotlin sealed
@@ -379,8 +389,8 @@ them without checking.
 | `Span` | `content: [Markup]` | inline content; may be empty |
 | `Superscript` | `content: [Markup]` | inline content; empty bodies are retained |
 | `Subscript` | `content: [Markup]` | inline content; non-empty body |
-| `Link` | `dest: Destination`, `title: String?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url("")`; a reference occurrence answers the destination its definition stated, and an unresolved reference is the inherited literal text; every `Link` owns the `url` branch; absent and empty title remain distinct; inline content |
-| `Embedded` | `dest: Destination`, `title: String?`, `dimensions: Dimensions?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; every `Embedded` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content |
+| `Link` | `dest: Destination`, `title: String?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url("")`; a direct link owns the `url` branch; a reference occurrence owns the `reference` branch with the normalized label it names, and an unresolved reference is the inherited literal text; absent and empty title remain distinct; inline content |
+| `Embedded` | `dest: Destination`, `title: String?`, `dimensions: Dimensions?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; a direct image owns the `url` branch and a reference image the `reference` branch; absent and empty title remain distinct; content is parsed alt-text inline content |
 | `Directive` | `name: String`, `label: DirectiveLabel?` | letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; leaf |
 | `Cite` | `citations: [Citation]` | one or more items in source order; every item has exactly one referent and one cite never mixes referent families; an inherited `[^label]` call is one item with a `footnote(label)` referent whose value is the normalized label without the caret and with empty affixes; its items are owned Citation nodes in the citations field; ordinary content remains empty |
 | `DefinitionList` | `definitions: [Definition]` | non-empty ordered associations |
@@ -389,15 +399,17 @@ them without checking.
 | `Footnote` | `label: String?`, `content: [Markup]` | A definition where it was written, or an inline note owned by its `Citation`'s referent. A referenced definition keeps its normalized label and block content; an inline note has a null label and direct inline content. Duplicate and unused definitions remain. |
 | `Specimen` | `label: String?`, `start: Int?`, `content: [Markup]` | A definition where it was written, including duplicates and anonymous definitions. label is the authored label or null; start is an explicit effective counter reset or null. Display numbers are derived. |
 | `Metadata` | `name: MetadataValue?`, `title: MetadataValue?`, `subtitle: MetadataValue?`, `time: MetadataValue?`, `date: MetadataValue?`, `authors: MetadataValue?`, `keywords: MetadataValue?`, `abstract: MetadataValue?`, `state: MetadataValue?`, `comment: MetadataValue?` | A leaf Markup node owned by Document.metadata. Field absence differs from explicit null. Its scope covers the authored properties block; unsupported attribute syntax yields null anchor and empty attributes. |
+| `Reference` | `label: String`, `dest: Destination`, `title: String?` | A link reference definition where it was written: a leaf block with its normalized label, the `url` destination it states, and its title, absent and empty remaining distinct. Its anchor and attributes are the ones the definition states. Duplicates and unused definitions remain. |
 
 Every row also has the ordered inherited fields `id: MarkupID`,
 `extent: Extent`, `anchor: String?`, and `attributes: Attributes`; they are not repeated in the table. The `url` of a `Link` or `Embedded` destination, and
 every `title`, are the CommonMark-unescaped values with angle-bracket
 wrappers removed and no percent-encoding or normalization. A link reference
-definition produces no node: the parser consumes it, and every successful
-full, collapsed, shortcut, or autolink form is the `Link` or `Embedded` it names,
-with the definition's destination and title and its own occurrence scope. An
-unresolved reference is the inherited literal text with its brackets.
+definition is a `Reference` block where it was written, and every successful
+full, collapsed or shortcut form is a `Link` or `Embedded` whose `reference`
+destination names the definition's label, with no title and its own
+occurrence scope. An unresolved reference is the inherited literal text with
+its brackets.
 
 ### Typed table ownership
 

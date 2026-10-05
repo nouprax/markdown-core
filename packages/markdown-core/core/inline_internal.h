@@ -82,7 +82,7 @@ struct markdown_core_inline_state {
     unsigned char *run_state;
     /* The owning parser's sealed dialect, which the scan reads its byte
      * tables and delimiter owners from. NULL with no parser: that state is a
-     * reference definition's cursor (markdown_core_parse_reference_inline),
+     * reference definition's cursor (link.c, S_reference_definition),
      * which reads no table, as it pushes no delimiter. */
     const markdown_core_dialect *dialect;
     /* Sticky allocation-failure flag, copied to the parser after the inline

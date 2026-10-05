@@ -39,10 +39,11 @@ Document scope=1:1..1:25 anchor=null attributes={} children=1
 
 [text]: /u
 .
-Document scope=1:1..3:10 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:12 anchor=null attributes={} children=1
-    └── Span scope=1:1..1:12 anchor=null attributes={.key} children=1
-        └── Text scope=1:2..1:5 anchor=null attributes={} literal="text" children=0
+Document scope=1:1..3:10 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:12 anchor=null attributes={} children=1
+│   └── Span scope=1:1..1:12 anchor=null attributes={.key} children=1
+│       └── Text scope=1:2..1:5 anchor=null attributes={} literal="text" children=0
+└── Reference scope=3:1..3:10 anchor=null attributes={} label="text" dest=url("/u") title=null children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -50,13 +51,14 @@ Document scope=1:1..3:10 anchor=null attributes={} children=1
 
 [r]: /r
 .
-Document scope=1:1..3:7 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:28 anchor=null attributes={} children=3
-    ├── Link scope=1:1..1:14 anchor=null attributes={.c} dest=url("/u") title=null children=1
-    │   └── Text scope=1:2..1:5 anchor=null attributes={} literal="text" children=0
-    ├── Text scope=1:15..1:15 anchor=null attributes={} literal=" " children=0
-    └── Link scope=1:16..1:28 anchor=null attributes={.c} dest=url("/r") title=null children=1
-        └── Text scope=1:17..1:20 anchor=null attributes={} literal="text" children=0
+Document scope=1:1..3:7 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:28 anchor=null attributes={} children=3
+│   ├── Link scope=1:1..1:14 anchor=null attributes={.c} dest=url("/u") title=null children=1
+│   │   └── Text scope=1:2..1:5 anchor=null attributes={} literal="text" children=0
+│   ├── Text scope=1:15..1:15 anchor=null attributes={} literal=" " children=0
+│   └── Link scope=1:16..1:28 anchor=null attributes={.c} dest=reference("r") title=null children=1
+│       └── Text scope=1:17..1:20 anchor=null attributes={} literal="text" children=0
+└── Reference scope=3:1..3:7 anchor=null attributes={} label="r" dest=url("/r") title=null children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -158,19 +160,20 @@ Document scope=1:1..1:26 anchor=null attributes={} children=1
 
 [r]: /u {.inherited}
 .
-Document scope=1:1..3:20 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:42 anchor=null attributes={} children=7
-    ├── Link scope=1:1..1:10 anchor=null attributes={.c} dest=url("u") title=null children=1
-    │   └── Text scope=1:2..1:2 anchor=null attributes={} literal="x" children=0
-    ├── Text scope=1:11..1:11 anchor=null attributes={} literal=" " children=0
-    ├── Link scope=1:12..1:21 anchor=null attributes={.inherited .c} dest=url("/u") title=null children=1
-    │   └── Text scope=1:13..1:13 anchor=null attributes={} literal="x" children=0
-    ├── Text scope=1:22..1:22 anchor=null attributes={} literal=" " children=0
-    ├── Link scope=1:23..1:31 anchor=null attributes={.inherited .c} dest=url("/u") title=null children=1
-    │   └── Text scope=1:24..1:24 anchor=null attributes={} literal="r" children=0
-    ├── Text scope=1:32..1:32 anchor=null attributes={} literal=" " children=0
-    └── Span scope=1:33..1:42 anchor=null attributes={.span} children=1
-        └── Text scope=1:34..1:34 anchor=null attributes={} literal="r" children=0
+Document scope=1:1..3:20 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:42 anchor=null attributes={} children=7
+│   ├── Link scope=1:1..1:10 anchor=null attributes={.c} dest=url("u") title=null children=1
+│   │   └── Text scope=1:2..1:2 anchor=null attributes={} literal="x" children=0
+│   ├── Text scope=1:11..1:11 anchor=null attributes={} literal=" " children=0
+│   ├── Link scope=1:12..1:21 anchor=null attributes={.c} dest=reference("r") title=null children=1
+│   │   └── Text scope=1:13..1:13 anchor=null attributes={} literal="x" children=0
+│   ├── Text scope=1:22..1:22 anchor=null attributes={} literal=" " children=0
+│   ├── Link scope=1:23..1:31 anchor=null attributes={.c} dest=reference("r") title=null children=1
+│   │   └── Text scope=1:24..1:24 anchor=null attributes={} literal="r" children=0
+│   ├── Text scope=1:32..1:32 anchor=null attributes={} literal=" " children=0
+│   └── Span scope=1:33..1:42 anchor=null attributes={.span} children=1
+│       └── Text scope=1:34..1:34 anchor=null attributes={} literal="r" children=0
+└── Reference scope=3:1..3:20 anchor=null attributes={.inherited} label="r" dest=url("/u") title=null children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -178,16 +181,17 @@ Document scope=1:1..3:20 anchor=null attributes={} children=1
 
 [r]: /u
 .
-Document scope=1:1..3:7 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:30 anchor=null attributes={} children=5
-    ├── Link scope=1:1..1:3 anchor=null attributes={} dest=url("/u") title=null children=1
-    │   └── Text scope=1:2..1:2 anchor=null attributes={} literal="r" children=0
-    ├── Text scope=1:4..1:7 anchor=null attributes={} literal="{.} " children=0
-    ├── Link scope=1:8..1:10 anchor=null attributes={} dest=url("/u") title=null children=1
-    │   └── Text scope=1:9..1:9 anchor=null attributes={} literal="r" children=0
-    ├── Text scope=1:11..1:23 anchor=null attributes={} literal=" {.x} [x]{.c " children=0
-    └── Span scope=1:24..1:30 anchor=null attributes={.d} children=1
-        └── Text scope=1:25..1:25 anchor=null attributes={} literal="y" children=0
+Document scope=1:1..3:7 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:30 anchor=null attributes={} children=5
+│   ├── Link scope=1:1..1:3 anchor=null attributes={} dest=reference("r") title=null children=1
+│   │   └── Text scope=1:2..1:2 anchor=null attributes={} literal="r" children=0
+│   ├── Text scope=1:4..1:7 anchor=null attributes={} literal="{.} " children=0
+│   ├── Link scope=1:8..1:10 anchor=null attributes={} dest=reference("r") title=null children=1
+│   │   └── Text scope=1:9..1:9 anchor=null attributes={} literal="r" children=0
+│   ├── Text scope=1:11..1:23 anchor=null attributes={} literal=" {.x} [x]{.c " children=0
+│   └── Span scope=1:24..1:30 anchor=null attributes={.d} children=1
+│       └── Text scope=1:25..1:25 anchor=null attributes={} literal="y" children=0
+└── Reference scope=3:1..3:7 anchor=null attributes={} label="r" dest=url("/u") title=null children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -329,16 +333,17 @@ Document scope=1:1..1:22 anchor=null attributes={} children=1
 
 [r]: /u
 .
-Document scope=1:1..5:7 anchor=null attributes={} children=2
+Document scope=1:1..5:7 anchor=null attributes={} children=3
 ├── Paragraph scope=1:1..1:26 anchor=null attributes={} children=3
-│   ├── Link scope=1:1..1:11 anchor=null attributes={.c} dest=url("/u") title=null children=1
+│   ├── Link scope=1:1..1:11 anchor=null attributes={.c} dest=reference("r") title=null children=1
 │   │   └── Text scope=1:2..1:3 anchor=null attributes={} literal="^n" children=0
 │   ├── Text scope=1:12..1:12 anchor=null attributes={} literal=" " children=0
 │   └── Link scope=1:13..1:26 anchor=null attributes={.link} dest=url("u") title=null children=1
 │       └── Text scope=1:14..1:15 anchor=null attributes={} literal="^n" children=0
-└── Footnote scope=3:1..4:0 anchor=null attributes={} label="n" children=1
-    └── Paragraph scope=3:7..3:10 anchor=null attributes={} children=1
-        └── Text scope=3:7..3:10 anchor=null attributes={} literal="note" children=0
+├── Footnote scope=3:1..4:0 anchor=null attributes={} label="n" children=1
+│   └── Paragraph scope=3:7..3:10 anchor=null attributes={} children=1
+│       └── Text scope=3:7..3:10 anchor=null attributes={} literal="note" children=0
+└── Reference scope=5:1..5:7 anchor=null attributes={} label="r" dest=url("/u") title=null children=0
 ````````````````````````````````
 
 ```````````````````````````````` example

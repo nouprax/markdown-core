@@ -65,6 +65,13 @@
             "summary": "Where cmark 0.31.2 departs from the text of its own specification about whitespace and control characters, Markdown Core follows the text. cmark treats vertical tab and form feed as whitespace (055b9ea follows the 0.29 definition, which 0.30 removed), lets ASCII control characters into an unbracketed link destination and DEL into an absolute URI, trims a pointy destination, lets a backslash escape a line ending in one, and decodes an info string's references before trimming it.",
             "rationale": "The pinned specification names spaces, tabs and up to one line ending as separators, excludes ASCII control characters (U+0000 to U+001F and U+007F) from unbracketed destinations and absolute URIs, keeps a pointy destination's contents, and trims the info string as written. micromark, an independent implementation, agrees with the text on every registered input.",
             "handling": "Keyed to the exact inputs of the regression fixture's whitespace section; docs/specs/dialect.md names the whitespace classes."
+        },
+        {
+            "id": "reference-definition-node",
+            "kind": "deliberate-difference",
+            "summary": "A link reference definition is a `Reference` block where it was written, holding its normalized label, destination and title, and a reference `Link` or `Embedded` names that label (`dest=reference(\"...\")`) with no title. Upstream consumes the definition and copies its destination and title into every occurrence that resolves to it.",
+            "handling": "The shared normalizer projects this side's tree onto upstream's shape (`resolveReferences`): each reference destination takes its target's destination as the document resolves the label -- the url and title of the first `Reference` with the label, or the `#anchor` of the first `Heading` whose text declares it -- every `Reference` leaves the tree, and the projection records that it acted. A model difference, so a projection rather than a list of inputs; which occurrences resolve, and to which target, is compared unchanged.",
+            "projected": true
         }
     ],
     "expectedDivergences": [

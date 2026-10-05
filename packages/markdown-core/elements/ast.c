@@ -39,7 +39,8 @@ typedef struct dump_buffer {
     size_t line_count;
 } dump_buffer;
 
-/* Where a Footnote or Specimen was written, for the definition tables. */
+/* Where a Footnote, Specimen, Reference or Heading was written, for the
+ * definition tables. */
 typedef struct {
     uint64_t start;
     const markdown_core_node *node;
@@ -69,8 +70,27 @@ static bool table_add(definition_table *table, const markdown_core_node *node, u
     return true;
 }
 
-static const markdown_core_optional_chunk *definition_label(const markdown_core_node *node) {
-    return node->kind == MARKDOWN_CORE_NODE_FOOTNOTE ? &node->as.footnote->label : &node->as.specimen->label;
+/* THE DEFINITION TABLES a publish fills, one per kind of node the
+ * document finds by label. Every Heading enters its table; the ones whose
+ * text declares a reference label are the labeled ones. */
+typedef enum { TABLE_FOOTNOTES, TABLE_SPECIMENS, TABLE_REFERENCES, TABLE_HEADINGS, TABLE_COUNT } definition_kind;
+
+/* Whether a definition has a label, and the label in `label`. */
+static bool definition_label(const markdown_core_node *node, markdown_core_chunk *label) {
+    switch (node->kind) {
+    case MARKDOWN_CORE_NODE_FOOTNOTE:
+        *label = node->as.footnote->label.value;
+        return node->as.footnote->label.has_value;
+    case MARKDOWN_CORE_NODE_SPECIMEN:
+        *label = node->as.specimen->label.value;
+        return node->as.specimen->label.has_value;
+    case MARKDOWN_CORE_NODE_REFERENCE:
+        *label = node->as.reference->label;
+        return label->len > 0;
+    default:
+        *label = node->as.heading->label;
+        return label->len > 0;
+    }
 }
 
 /* Two labels in byte order, the shorter first on a common prefix. */
@@ -84,8 +104,10 @@ static int label_compare(const uint8_t *a, size_t a_length, const uint8_t *b, si
  * the first of a label is the one a lookup answers. */
 static int label_entry_compare(const void *left, const void *right) {
     const definition_entry *a = left, *b = right;
-    const markdown_core_optional_chunk *x = definition_label(a->node), *y = definition_label(b->node);
-    int order = label_compare(x->value.data, (size_t)x->value.len, y->value.data, (size_t)y->value.len);
+    markdown_core_chunk x, y;
+    definition_label(a->node, &x);
+    definition_label(b->node, &y);
+    int order = label_compare(x.data, (size_t)x.len, y.data, (size_t)y.len);
     return order ? order : (a->start > b->start) - (a->start < b->start);
 }
 
@@ -114,7 +136,8 @@ static inline bool table_seal(definition_table *table, markdown_core_source_orde
         /* The source index replaces the start as the tie-break, now that the
          * entries are in source order. */
         table->values[i].start = i;
-        if (definition_label(nodes[i])->has_value) {
+        markdown_core_chunk label;
+        if (definition_label(nodes[i], &label)) {
             table->values[labels++] = table->values[i];
         }
     }
@@ -158,12 +181,13 @@ typedef enum {
 } relation_shape;
 
 /* A kind's slot: its value, and one bit for its class. The slot holds the
- * kind's shape and, in SLOT_LOOKUP, whether the document's lookup tables
- * find nodes of it by label. */
+ * kind's shape and, above it, the definition table that lists nodes of the
+ * kind, one more than its index, or 0 when none does. */
 #define SHAPE_SLOTS 64
 #define SHAPE_INDEX(kind) ((((kind) >> 9) | (kind)) & 0x3f)
 #define SLOT_SHAPE 0x0f
-#define SLOT_LOOKUP 0x10
+#define SLOT_LOOKUP(table) (((table) + 1) << 4)
+#define SLOT_TABLE(slot) ((slot) >> 4)
 /* C99 has no _Static_assert: an array of negative size fails the build when a
  * condition is false. */
 typedef char kind_slots_are_distinct[(MARKDOWN_CORE_NODE_KIND_COUNT <= 0x20 &&
@@ -171,7 +195,7 @@ typedef char kind_slots_are_distinct[(MARKDOWN_CORE_NODE_KIND_COUNT <= 0x20 &&
                                       (MARKDOWN_CORE_NODE_TYPE_PRESENT >> 9 & 0x3f) == 0)
                                          ? 1
                                          : -1];
-typedef char shapes_fit_their_slot[SHAPE_DEFINITION <= SLOT_SHAPE ? 1 : -1];
+typedef char shapes_fit_their_slot[SHAPE_DEFINITION <= SLOT_SHAPE && SLOT_LOOKUP(TABLE_COUNT) <= 0xff ? 1 : -1];
 
 static const uint8_t kind_slots[SHAPE_SLOTS] = {
     [SHAPE_INDEX(MARKDOWN_CORE_NODE_DOCUMENT)] = SHAPE_DOCUMENT,
@@ -182,8 +206,10 @@ static const uint8_t kind_slots[SHAPE_SLOTS] = {
     [SHAPE_INDEX(MARKDOWN_CORE_NODE_CITE)] = SHAPE_CITE,
     [SHAPE_INDEX(MARKDOWN_CORE_NODE_CITATION)] = SHAPE_CITATION,
     [SHAPE_INDEX(MARKDOWN_CORE_NODE_DEFINITION)] = SHAPE_DEFINITION,
-    [SHAPE_INDEX(MARKDOWN_CORE_NODE_FOOTNOTE)] = SHAPE_CHILDREN | SLOT_LOOKUP,
-    [SHAPE_INDEX(MARKDOWN_CORE_NODE_SPECIMEN)] = SHAPE_CHILDREN | SLOT_LOOKUP,
+    [SHAPE_INDEX(MARKDOWN_CORE_NODE_FOOTNOTE)] = SHAPE_CHILDREN | SLOT_LOOKUP(TABLE_FOOTNOTES),
+    [SHAPE_INDEX(MARKDOWN_CORE_NODE_SPECIMEN)] = SHAPE_CHILDREN | SLOT_LOOKUP(TABLE_SPECIMENS),
+    [SHAPE_INDEX(MARKDOWN_CORE_NODE_REFERENCE)] = SHAPE_CHILDREN | SLOT_LOOKUP(TABLE_REFERENCES),
+    [SHAPE_INDEX(MARKDOWN_CORE_NODE_HEADING)] = SHAPE_CHILDREN | SLOT_LOOKUP(TABLE_HEADINGS),
 };
 
 static inline unsigned slot_of(const markdown_core_node *node) { return kind_slots[SHAPE_INDEX(node->kind)]; }
@@ -568,7 +594,7 @@ static inline bool publish_first(const markdown_core_node *node, relation_shape 
 typedef struct {
     publish_stack stack;
     publish_identity identity;
-    definition_table footnotes, specimens;
+    definition_table tables[TABLE_COUNT];
     uint64_t next_id;
     size_t matched;
 } publish_walk;
@@ -582,11 +608,10 @@ static inline bool publish_node(publish_walk *walk, markdown_core_node *node, un
     node->id = id;
     node->where.extent =
         (markdown_core_extent){(int32_t)((int64_t)place->start - (int64_t)anchor), place->end - place->start};
-    if (!(slot & SLOT_LOOKUP)) {
+    if (!SLOT_TABLE(slot)) {
         return true;
     }
-    return table_add(node->kind == MARKDOWN_CORE_NODE_FOOTNOTE ? &walk->footnotes : &walk->specimens, node,
-                     place->start);
+    return table_add(&walk->tables[SLOT_TABLE(slot) - 1], node, place->start);
 }
 
 /* PUBLISHING WHAT CONTINUES NOTHING: every node below `node`, which starts
@@ -770,7 +795,7 @@ static void publish_verdict(publish_walk *walk, publish_match_frame *owner, mark
     }
     identity->swaps[identity->swap_count++] = (publish_swap){node, old, owner->node, owner->old, swaps};
     if (entry) {
-        (node->kind == MARKDOWN_CORE_NODE_FOOTNOTE ? &walk->footnotes : &walk->specimens)->values[entry - 1].node = old;
+        walk->tables[SLOT_TABLE(slot_of(node)) - 1].values[entry - 1].node = old;
     }
 }
 
@@ -878,8 +903,7 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, markdo
                 continue;
             }
             walk->matched++;
-            definition_table *table = child->kind == MARKDOWN_CORE_NODE_FOOTNOTE ? &walk->footnotes : &walk->specimens;
-            entry = slot & SLOT_LOOKUP ? table->count : 0;
+            entry = SLOT_TABLE(slot) ? walk->tables[SLOT_TABLE(slot) - 1].count : 0;
             verdict = publish_same(child, match);
             if (!publish_first(child, shape, &cursor, &first, &more)) {
                 verdict = verdict && !publish_first(match, shape, &old_cursor, &old_first, &old_more);
@@ -926,13 +950,56 @@ static void publish_continue(markdown_core_parser *parser, const publish_identit
     markdown_core_node_pool_release(parser->pool, previous);
 }
 
+/* The node each label a reference occurrence can name resolves to, in label
+ * order: the first Reference declaring it, or, when none does, the first
+ * Heading whose text declares it. The two labeled tables are in label order
+ * and in source order among equal labels, so one merge that takes the
+ * Reference on a tie and keeps the first of each label answers it. */
+static bool reference_targets(markdown_core_document_value *value, const markdown_core_definitions *headings) {
+    const markdown_core_definitions *references = &value->references;
+    size_t total = references->labeled_count + headings->labeled_count;
+    value->reference_targets = NULL;
+    value->reference_target_count = 0;
+    if (!total) {
+        return true;
+    }
+    const markdown_core_node **targets = markdown_core_alloc(total, sizeof(*targets));
+    if (!targets) {
+        return false;
+    }
+    size_t count = 0, i = 0, j = 0;
+    markdown_core_chunk last = {0}, x = {0}, y = {0};
+    while (i < references->labeled_count || j < headings->labeled_count) {
+        const markdown_core_node *target;
+        if (i < references->labeled_count) {
+            definition_label(references->labeled[i], &x);
+        }
+        if (j < headings->labeled_count) {
+            definition_label(headings->labeled[j], &y);
+        }
+        bool reference =
+            j == headings->labeled_count ||
+            (i < references->labeled_count && label_compare(x.data, (size_t)x.len, y.data, (size_t)y.len) <= 0);
+        target = reference ? references->labeled[i++] : headings->labeled[j++];
+        markdown_core_chunk label = reference ? x : y;
+        if (count && label_compare(last.data, (size_t)last.len, label.data, (size_t)label.len) == 0) {
+            continue;
+        }
+        targets[count++] = target;
+        last = label;
+    }
+    value->reference_targets = targets;
+    value->reference_target_count = count;
+    return true;
+}
+
 bool markdown_core_publish_tree(markdown_core_parser *parser) {
     markdown_core_revision *revision = parser->revision;
     markdown_core_node *root = parser->root, *previous = revision->previous;
     markdown_core_document_value *value = root->as.document;
     publish_walk walk;
     walk.stack = (publish_stack){parser, parser->walk_stack, 0, parser->walk_stack_size / sizeof(publish_frame)};
-    walk.footnotes = walk.specimens = (definition_table){0};
+    memset(walk.tables, 0, sizeof(walk.tables));
     walk.next_id = revision->last_id;
     walk.matched = 0;
     markdown_core_place place;
@@ -946,8 +1013,14 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
              publish_fresh(&walk, root, (relation_shape)(slot & SLOT_SHAPE), place.start);
     }
     if (ok && !same) {
-        ok = table_seal(&walk.footnotes, &parser->source_order, &value->footnotes) &&
-             table_seal(&walk.specimens, &parser->source_order, &value->specimens);
+        markdown_core_definitions headings = {0};
+        ok = table_seal(&walk.tables[TABLE_FOOTNOTES], &parser->source_order, &value->footnotes) &&
+             table_seal(&walk.tables[TABLE_SPECIMENS], &parser->source_order, &value->specimens) &&
+             table_seal(&walk.tables[TABLE_REFERENCES], &parser->source_order, &value->references) &&
+             table_seal(&walk.tables[TABLE_HEADINGS], &parser->source_order, &headings);
+        ok = ok && reference_targets(value, &headings);
+        markdown_core_free((void *)headings.nodes);
+        markdown_core_free((void *)headings.labeled);
     }
     /* Nothing below can fail: the result is committed. */
     if (ok && previous) {
@@ -957,8 +1030,9 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
         revision->node_count = (size_t)(walk.next_id - revision->last_id) + walk.matched;
         revision->last_id = walk.next_id;
     }
-    markdown_core_free(walk.footnotes.values);
-    markdown_core_free(walk.specimens.values);
+    for (size_t table = 0; table < TABLE_COUNT; table++) {
+        markdown_core_free(walk.tables[table].values);
+    }
     if (previous) {
         markdown_core_free(walk.identity.shift);
         markdown_core_free(walk.identity.swaps);
@@ -1005,6 +1079,7 @@ static const markdown_core_node_kind S_block_kind[MARKDOWN_CORE_NODE_KIND_COUNT]
     [MARKDOWN_CORE_NODE_DEFINITION & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_DEFINITION,
     [MARKDOWN_CORE_NODE_TABLE_CAPTION & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_TABLE_CAPTION,
     [MARKDOWN_CORE_NODE_METADATA & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_METADATA,
+    [MARKDOWN_CORE_NODE_REFERENCE & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_REFERENCE,
 };
 
 static const markdown_core_node_kind S_inline_kind[MARKDOWN_CORE_NODE_KIND_COUNT] = {
@@ -1079,6 +1154,7 @@ static const char *const S_kind_name[] = {
     "Footnote",
     "Specimen",
     "Metadata",
+    "Reference",
 };
 /* clang-format on */
 /* END GENERATED */
@@ -1104,7 +1180,7 @@ markdown_core_status markdown_core_node_kind_name(markdown_core_node_kind kind, 
  * makes: whether `node`'s public kind is one of `kinds`, a set of
  * KIND_BIT()s. Every public kind is below 64. */
 #define KIND_BIT(kind) (UINT64_C(1) << (kind))
-typedef char kinds_fit_a_set[MARKDOWN_CORE_KIND_METADATA < 64 ? 1 : -1];
+typedef char kinds_fit_a_set[MARKDOWN_CORE_KIND_REFERENCE < 64 ? 1 : -1];
 
 static inline bool node_is(const markdown_core_node *node, uint64_t kinds) {
     return (kinds >> public_kind(node) & 1) != 0;
@@ -1498,30 +1574,20 @@ static markdown_core_optional_string directive_name(const markdown_core_node *no
     return value ? (markdown_core_optional_string){true, cstr_string(value)} : (markdown_core_optional_string){0};
 }
 
-/* A node's attributes merge its own over the ones its resource contributes:
- * a link or image reads through a resource, and no other kind has one, so
- * its inherited counts are zero. */
-static const markdown_core_attribute_value *inherited_attributes(const markdown_core_node *node) {
-    return &node->as.link->resource->attributes;
-}
-static size_t inherited_class_count(const markdown_core_node *node) {
-    return is_link(node) ? inherited_attributes(node)->class_count : 0;
-}
-static size_t inherited_record_count(const markdown_core_node *node) {
-    return is_link(node) ? inherited_attributes(node)->record_count : 0;
-}
 static markdown_core_string attribute_class(const markdown_core_node *node, size_t index) {
-    size_t count = inherited_class_count(node);
-    const markdown_core_attribute_value *attributes = index < count ? inherited_attributes(node) : &node->attributes;
-    return chunk_string(attributes->classes[index < count ? index : index - count]);
+    return chunk_string(node->attributes.classes[index]);
 }
 static void attribute_record(const markdown_core_node *node, size_t index, markdown_core_string *name,
                              markdown_core_string *value) {
-    size_t count = inherited_record_count(node);
-    const markdown_core_attribute_value *attributes = index < count ? inherited_attributes(node) : &node->attributes;
-    const markdown_core_record *record = &attributes->records[index < count ? index : index - count];
+    const markdown_core_record *record = &node->attributes.records[index];
     *name = chunk_string(record->name);
     *value = chunk_string(record->value);
+}
+
+/* The resource a direct `Link` or `Embedded`, or a `Reference`, states; NULL
+ * for a reference occurrence, which names its definition by label. */
+static const markdown_core_resource *resource_of(const markdown_core_node *node) {
+    return node->kind == MARKDOWN_CORE_NODE_REFERENCE ? node->as.reference->resource : node->as.link->resource;
 }
 
 static const markdown_core_dimensions *dimensions_of(const markdown_core_node *node) {
@@ -1543,9 +1609,15 @@ static void callout_properties(const markdown_core_node *node, markdown_core_opt
 
 static markdown_core_destination destination_of(const markdown_core_node *node) {
     markdown_core_destination destination = {0};
-    if (is_link(node)) {
-        destination.kind = MARKDOWN_CORE_DESTINATION_URL;
-        destination.url = chunk_string(node->as.link->resource->url);
+    if (is_link(node) || node->kind == MARKDOWN_CORE_NODE_REFERENCE) {
+        const markdown_core_resource *resource = resource_of(node);
+        if (resource) {
+            destination.kind = MARKDOWN_CORE_DESTINATION_URL;
+            destination.url = chunk_string(resource->url);
+        } else {
+            destination.kind = MARKDOWN_CORE_DESTINATION_REFERENCE;
+            destination.label = chunk_string(node->as.link->label);
+        }
         return destination;
     }
     const markdown_core_cross_reference *cross = markdown_core_node_cross_reference(node);
@@ -1560,7 +1632,8 @@ static markdown_core_optional_string cross_label(const markdown_core_node *node)
 }
 
 static markdown_core_optional_string link_title(const markdown_core_node *node) {
-    return optional_chunk_string(node->as.link->resource->title);
+    const markdown_core_resource *resource = resource_of(node);
+    return resource ? optional_chunk_string(resource->title) : (markdown_core_optional_string){0};
 }
 
 static markdown_core_referent citation_referent(const markdown_core_node *citation) {
@@ -1643,9 +1716,14 @@ static bool destination_equal(const markdown_core_node *a, const markdown_core_n
     if (x.kind != y.kind) {
         return false;
     }
-    return x.kind == MARKDOWN_CORE_DESTINATION_URL
-               ? string_equal(x.url, y.url)
-               : string_equal(x.path, y.path) && optional_string_equal(x.anchor, y.anchor);
+    switch (x.kind) {
+    case MARKDOWN_CORE_DESTINATION_URL:
+        return string_equal(x.url, y.url);
+    case MARKDOWN_CORE_DESTINATION_REFERENCE:
+        return string_equal(x.label, y.label);
+    default:
+        return string_equal(x.path, y.path) && optional_string_equal(x.anchor, y.anchor);
+    }
 }
 
 static bool dimensions_equal(const markdown_core_node *a, const markdown_core_node *b) {
@@ -1653,13 +1731,10 @@ static bool dimensions_equal(const markdown_core_node *a, const markdown_core_no
     return x == y || (x && y && x->width == y->width && optional_int_equal(x->height, y->height));
 }
 
-/* Whether two `Link` or `Embedded` nodes read equal resources. */
-static bool resources_equal(const markdown_core_node *a, const markdown_core_node *b) {
-    if (a->as.link->resource == b->as.link->resource) {
-        return true;
-    }
-    return destination_equal(a, b) && optional_string_equal(link_title(a), link_title(b)) &&
-           attributes_equal(inherited_attributes(a), inherited_attributes(b));
+/* Whether two `Link`, `Embedded` or `Reference` nodes state equal
+ * destinations and titles. */
+static bool links_equal(const markdown_core_node *a, const markdown_core_node *b) {
+    return destination_equal(a, b) && optional_string_equal(link_title(a), link_title(b));
 }
 
 static bool metadata_value_equal(const markdown_core_metadata_value *a, const markdown_core_metadata_value *b) {
@@ -1812,7 +1887,9 @@ static bool scalars_equal(const markdown_core_node *a, const markdown_core_node 
                (kind == MARKDOWN_CORE_KIND_CROSS_LINK || dimensions_equal(a, b));
     case MARKDOWN_CORE_KIND_LINK:
     case MARKDOWN_CORE_KIND_EMBEDDED:
-        return resources_equal(a, b) && (kind == MARKDOWN_CORE_KIND_LINK || dimensions_equal(a, b));
+        return links_equal(a, b) && (kind == MARKDOWN_CORE_KIND_LINK || dimensions_equal(a, b));
+    case MARKDOWN_CORE_KIND_REFERENCE:
+        return links_equal(a, b) && chunk_equal(a->as.reference->label, b->as.reference->label);
     case MARKDOWN_CORE_KIND_DEFINITION:
         return a->as.definition->compact == b->as.definition->compact;
     case MARKDOWN_CORE_KIND_CITATION:
@@ -1867,6 +1944,7 @@ static bool scalars_equal(const markdown_core_node *a, const markdown_core_node 
 #define FORMULA_KINDS (KIND_BIT(MARKDOWN_CORE_KIND_FORMULA) | KIND_BIT(MARKDOWN_CORE_KIND_FORMULA_BLOCK))
 #define DIRECTIVE_KINDS (KIND_BIT(MARKDOWN_CORE_KIND_DIRECTIVE) | KIND_BIT(MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK))
 #define LINK_KINDS (KIND_BIT(MARKDOWN_CORE_KIND_LINK) | KIND_BIT(MARKDOWN_CORE_KIND_EMBEDDED))
+#define RESOURCE_KINDS (LINK_KINDS | KIND_BIT(MARKDOWN_CORE_KIND_REFERENCE))
 #define CROSS_KINDS (KIND_BIT(MARKDOWN_CORE_KIND_CROSS_LINK) | KIND_BIT(MARKDOWN_CORE_KIND_CROSS_EMBEDDED))
 #define DIMENSIONS_KINDS (KIND_BIT(MARKDOWN_CORE_KIND_EMBEDDED) | KIND_BIT(MARKDOWN_CORE_KIND_CROSS_EMBEDDED))
 
@@ -1990,15 +2068,8 @@ const markdown_core_node *markdown_core_definition_body_content(const markdown_c
     return ((const markdown_core_node *)body)->first_child;
 }
 
-const markdown_core_attribute_value *markdown_core_node_primary_attributes(const markdown_core_node *node) {
+const markdown_core_attribute_value *markdown_core_node_attributes(const markdown_core_node *node) {
     return &node->attributes;
-}
-
-markdown_core_status markdown_core_node_inherited_attributes(const markdown_core_node *node,
-                                                             const markdown_core_attribute_value **attributes) {
-    REQUIRE_KIND(node, LINK_KINDS);
-    *attributes = inherited_attributes(node);
-    return MARKDOWN_CORE_OK;
 }
 
 markdown_core_optional_string markdown_core_attribute_value_anchor(const markdown_core_attribute_value *attributes) {
@@ -2034,13 +2105,10 @@ markdown_core_status markdown_core_attribute_value_record_at(const markdown_core
 }
 
 markdown_core_optional_string markdown_core_node_anchor(const markdown_core_node *node) {
-    const markdown_core_chunk *anchor = markdown_core_node_anchor_chunk(node);
-    return (markdown_core_optional_string){anchor->len > 0, chunk_string(*anchor)};
+    return markdown_core_attribute_value_anchor(&node->attributes);
 }
 
-size_t markdown_core_node_attribute_class_count(const markdown_core_node *node) {
-    return inherited_class_count(node) + node->attributes.class_count;
-}
+size_t markdown_core_node_attribute_class_count(const markdown_core_node *node) { return node->attributes.class_count; }
 
 markdown_core_status markdown_core_node_attribute_class_at(const markdown_core_node *node, size_t index,
                                                            markdown_core_string *value) {
@@ -2052,7 +2120,7 @@ markdown_core_status markdown_core_node_attribute_class_at(const markdown_core_n
 }
 
 size_t markdown_core_node_attribute_record_count(const markdown_core_node *node) {
-    return inherited_record_count(node) + node->attributes.record_count;
+    return node->attributes.record_count;
 }
 
 markdown_core_status markdown_core_node_attribute_record_at(const markdown_core_node *node, size_t index,
@@ -2205,7 +2273,7 @@ markdown_core_status markdown_core_node_callout_title(const markdown_core_node *
 
 markdown_core_status markdown_core_node_destination(const markdown_core_node *node,
                                                     markdown_core_destination *destination) {
-    REQUIRE_KIND(node, LINK_KINDS | CROSS_KINDS);
+    REQUIRE_KIND(node, RESOURCE_KINDS | CROSS_KINDS);
     *destination = destination_of(node);
     return MARKDOWN_CORE_OK;
 }
@@ -2218,15 +2286,8 @@ markdown_core_status markdown_core_node_cross_label(const markdown_core_node *no
 }
 
 markdown_core_status markdown_core_node_title(const markdown_core_node *node, markdown_core_optional_string *title) {
-    REQUIRE_KIND(node, LINK_KINDS);
+    REQUIRE_KIND(node, RESOURCE_KINDS);
     *title = link_title(node);
-    return MARKDOWN_CORE_OK;
-}
-
-markdown_core_status markdown_core_node_resource(const markdown_core_node *node,
-                                                 const markdown_core_resource **resource) {
-    REQUIRE_KIND(node, LINK_KINDS);
-    *resource = node->as.link->resource;
     return MARKDOWN_CORE_OK;
 }
 
@@ -2296,34 +2357,34 @@ markdown_core_status markdown_core_document_specimen_at(const markdown_core_docu
 
 /* The first definition in source order whose label is `label`, byte for
  * byte: the lowest of that label in the label order. */
-static const markdown_core_node *definition_for(const markdown_core_definitions *table, markdown_core_string label) {
-    size_t lo = 0, hi = table->labeled_count;
+static const markdown_core_node *definition_for(const markdown_core_node *const *labeled, size_t count,
+                                                markdown_core_string label) {
+    size_t lo = 0, hi = count;
+    markdown_core_chunk candidate;
     while (lo < hi) {
         size_t mid = lo + (hi - lo) / 2;
-        const markdown_core_optional_chunk *candidate = definition_label(table->labeled[mid]);
-        if (label_compare(candidate->value.data, (size_t)candidate->value.len, label.data, label.length) < 0) {
+        definition_label(labeled[mid], &candidate);
+        if (label_compare(candidate.data, (size_t)candidate.len, label.data, label.length) < 0) {
             lo = mid + 1;
         } else {
             hi = mid;
         }
     }
-    if (lo == table->labeled_count) {
+    if (lo == count) {
         return NULL;
     }
-    const markdown_core_optional_chunk *found = definition_label(table->labeled[lo]);
-    return label_compare(found->value.data, (size_t)found->value.len, label.data, label.length) == 0
-               ? table->labeled[lo]
-               : NULL;
+    definition_label(labeled[lo], &candidate);
+    return label_compare(candidate.data, (size_t)candidate.len, label.data, label.length) == 0 ? labeled[lo] : NULL;
 }
 
 const markdown_core_node *markdown_core_document_footnote_for(const markdown_core_document *document,
                                                               markdown_core_string label) {
-    return definition_for(document_footnotes(document), label);
+    return definition_for(document_footnotes(document)->labeled, document_footnotes(document)->labeled_count, label);
 }
 
 const markdown_core_node *markdown_core_document_specimen_for(const markdown_core_document *document,
                                                               markdown_core_string label) {
-    return definition_for(document_specimens(document), label);
+    return definition_for(document_specimens(document)->labeled, document_specimens(document)->labeled_count, label);
 }
 
 markdown_core_status markdown_core_footnote_label(const markdown_core_node *footnote,
@@ -2337,6 +2398,45 @@ markdown_core_status markdown_core_footnote_content(const markdown_core_node *fo
                                                     const markdown_core_node **content) {
     REQUIRE_KIND(footnote, KIND_BIT(MARKDOWN_CORE_KIND_FOOTNOTE));
     *content = footnote->first_child;
+    return MARKDOWN_CORE_OK;
+}
+
+size_t markdown_core_document_reference_count(const markdown_core_document *document) {
+    return document->root->as.document->references.count;
+}
+
+markdown_core_status markdown_core_document_reference_at(const markdown_core_document *document, size_t index,
+                                                         const markdown_core_node **reference) {
+    return definition_at(&document->root->as.document->references, index, reference);
+}
+
+const markdown_core_node *markdown_core_document_reference_for(const markdown_core_document *document,
+                                                               markdown_core_string label) {
+    const markdown_core_document_value *value = document->root->as.document;
+    return definition_for(value->reference_targets, value->reference_target_count, label);
+}
+
+size_t markdown_core_document_reference_label_count(const markdown_core_document *document) {
+    return document->root->as.document->reference_target_count;
+}
+
+markdown_core_status markdown_core_document_reference_label_at(const markdown_core_document *document, size_t index,
+                                                               markdown_core_string *label,
+                                                               const markdown_core_node **target) {
+    const markdown_core_document_value *value = document->root->as.document;
+    if (index >= value->reference_target_count) {
+        return MARKDOWN_CORE_OUT_OF_BOUNDS;
+    }
+    markdown_core_chunk chunk;
+    definition_label(value->reference_targets[index], &chunk);
+    *label = chunk_string(chunk);
+    *target = value->reference_targets[index];
+    return MARKDOWN_CORE_OK;
+}
+
+markdown_core_status markdown_core_reference_label(const markdown_core_node *reference, markdown_core_string *label) {
+    REQUIRE_KIND(reference, KIND_BIT(MARKDOWN_CORE_KIND_REFERENCE));
+    *label = chunk_string(reference->as.reference->label);
     return MARKDOWN_CORE_OK;
 }
 
@@ -2550,6 +2650,12 @@ static void buffer_destination(dump_buffer *buffer, markdown_core_destination de
         buffer_json_string(buffer, destination.path);
         buffer_cstr(buffer, ",anchor=");
         buffer_optional_string(buffer, destination.anchor);
+        buffer_cstr(buffer, ")");
+        return;
+    }
+    if (destination.kind == MARKDOWN_CORE_DESTINATION_REFERENCE) {
+        buffer_cstr(buffer, "reference(");
+        buffer_json_string(buffer, destination.label);
         buffer_cstr(buffer, ")");
         return;
     }
@@ -2803,6 +2909,14 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
      * author wrote no destination when the empty parentheses are the
      * destination they wrote; it is `dest=url("")` now. */
     case MARKDOWN_CORE_KIND_LINK:
+        buffer_cstr(buffer, " dest=");
+        buffer_destination(buffer, destination_of(node));
+        buffer_cstr(buffer, " title=");
+        buffer_optional_string(buffer, link_title(node));
+        break;
+    case MARKDOWN_CORE_KIND_REFERENCE:
+        buffer_cstr(buffer, " label=");
+        buffer_json_string(buffer, chunk_string(node->as.reference->label));
         buffer_cstr(buffer, " dest=");
         buffer_destination(buffer, destination_of(node));
         buffer_cstr(buffer, " title=");

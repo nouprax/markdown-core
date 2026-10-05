@@ -28,13 +28,13 @@
  * `pathological_runner.c` now guards the payload ratio directly; this audit
  * guards the independent lookup-order invariant.
  *
- * A reference that SHARES its definition's resource buys both, and that is
- * M2's model: the parser's map owns each winning destination and title once,
- * every occurrence that resolves to the label is the `Link` or `Embedded` it
- * names and reads through that one resource, so nothing is copied, there is
- * nothing to charge and no budget. `reference_expansion_bound` counts the
- * payload once per distinct resource identity and holds it within the source
- * while both properties below hold.
+ * A reference that HOLDS ONLY ITS LABEL buys both, and that is the model:
+ * each definition is a `Reference` node holding its destination and title
+ * once, every occurrence that resolves is the `Link` or `Embedded` it names
+ * with a `reference` destination naming the label, so nothing is copied,
+ * there is nothing to charge and no budget. `reference_expansion_bound`
+ * counts each node's own payload and holds the sum within the source while
+ * both properties below hold.
  *
  *   node scripts/audit/check-reference-order-independence.mjs [--update] [--verbose]
  */
@@ -43,7 +43,7 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-import { parseCanonicalDump, parseDestination } from "../shared/upstream-cmark.mjs";
+import { parseCanonicalDump, parseDestination, resolveReferences } from "../shared/upstream-cmark.mjs";
 import { loadLedger, reconcileLedger, requireBinary, runBinary, walkWithPath } from "./source-positions.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -53,10 +53,10 @@ const update = process.argv.includes("--update");
 const verbose = process.argv.includes("--verbose");
 
 const ours = requireBinary(root, "build/cmake/packages/markdown-core/core/markdown-core", "pnpm build:c");
-const parse = (input) => parseCanonicalDump(runBinary(ours, [], input));
-// A reference RESOLVED is the `Link` its definition names, carrying that
-// definition's destination (M2); a reference that did not is prose, brackets
-// intact.
+const parse = (input) => resolveReferences(parseCanonicalDump(runBinary(ours, [], input)), input);
+// A reference RESOLVED is the `Link` its definition names, whose destination
+// is the definition's once its label is resolved (`resolveReferences`); a
+// reference that did not is prose, brackets intact.
 const resolved = (tree, destination) =>
     [...walkWithPath(tree)].filter(({ node }) => {
         if (node.kind !== "Link") return false;

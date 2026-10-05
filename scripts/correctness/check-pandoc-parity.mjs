@@ -2,7 +2,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { parseCanonicalDump } from "../shared/upstream-cmark.mjs";
+import { parseCanonicalDump, resolveReferences } from "../shared/upstream-cmark.mjs";
 import {
     root,
     withOracle,
@@ -20,7 +20,7 @@ const entries = validatePolicy(policy, cases);
 const cli = path.join(root, "build/cmake/packages/markdown-core/core/markdown-core");
 withOracle((run) => {
     assertCanaries(run, (input) =>
-        fromCanonical(parseCanonicalDump(execFileSync(cli, [], { input, encoding: "utf8" })))
+        fromCanonical(resolveReferences(parseCanonicalDump(execFileSync(cli, [], { input, encoding: "utf8" })), input))
     );
     let differences = 0;
     const failures = [];
@@ -28,7 +28,10 @@ withOracle((run) => {
         try {
             const expected = fromPandoc(run(testCase.input, testCase.from));
             const actual = fromCanonical(
-                parseCanonicalDump(execFileSync(cli, [], { input: testCase.input, encoding: "utf8" }))
+                resolveReferences(
+                    parseCanonicalDump(execFileSync(cli, [], { input: testCase.input, encoding: "utf8" })),
+                    testCase.input
+                )
             );
             if (verifyComparison(testCase, expected, actual, entries.get(testCase.id))) differences++;
         } catch (error) {

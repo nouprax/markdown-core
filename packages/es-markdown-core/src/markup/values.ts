@@ -46,16 +46,21 @@ export type OrderedListVariant =
     | "default";
 export type OrderedListDelimiter = "period" | { readonly kind: "parenthesis"; readonly closed: boolean } | "default";
 /**
- * The target of a `Link` or `Embedded`: a tagged value, not a node, so it has no
- * id, no extent and no children, and a branch's fields exist only in that branch.
- * Every link and image owns the `url` branch, the complete semantic
- * destination the inherited grammar produced -- decoded, not percent-encoded,
- * normalized, or resolved, and possibly empty. The `cross` branch is the
- * workspace address a cross link produces.
+ * The target of a `Link`, `Embedded` or `Reference`: a tagged value, not a
+ * node, so it has no id, no extent and no children, and a branch's fields
+ * exist only in that branch. A direct link or image and every `Reference` own
+ * the `url` branch, the complete semantic destination the inherited grammar
+ * produced -- decoded, not percent-encoded, normalized, or resolved, and
+ * possibly empty. A reference link or image owns the `reference` branch, the
+ * normalized label it names: the first `Reference` in document source order
+ * whose label is equal, or, when none is, the first `Heading` in document
+ * source order whose text declares it (`Document.reference`). The `cross`
+ * branch is the workspace address a cross link produces.
  */
 export type Destination =
     | { readonly kind: "url"; readonly value: string }
-    | { readonly kind: "cross"; readonly path: string; readonly anchor: string | null };
+    | { readonly kind: "cross"; readonly path: string; readonly anchor: string | null }
+    | { readonly kind: "reference"; readonly label: string };
 export type Placement = "embedded" | "standalone";
 /**
  * How a bibliographic citation is rendered: `[@key]` is `normal`, `@key` in

@@ -119,6 +119,7 @@ abstract interface com.nouprax.markdown.core/MarkupVisitor { // com.nouprax.mark
     abstract fun visit(com.nouprax.markdown.core/Mark, com.nouprax.markdown.core/MarkupVisitPhase) // com.nouprax.markdown.core/MarkupVisitor.visit|visit(com.nouprax.markdown.core.Mark;com.nouprax.markdown.core.MarkupVisitPhase){}[0]
     abstract fun visit(com.nouprax.markdown.core/Metadata, com.nouprax.markdown.core/MarkupVisitPhase) // com.nouprax.markdown.core/MarkupVisitor.visit|visit(com.nouprax.markdown.core.Metadata;com.nouprax.markdown.core.MarkupVisitPhase){}[0]
     abstract fun visit(com.nouprax.markdown.core/Paragraph, com.nouprax.markdown.core/MarkupVisitPhase) // com.nouprax.markdown.core/MarkupVisitor.visit|visit(com.nouprax.markdown.core.Paragraph;com.nouprax.markdown.core.MarkupVisitPhase){}[0]
+    abstract fun visit(com.nouprax.markdown.core/Reference, com.nouprax.markdown.core/MarkupVisitPhase) // com.nouprax.markdown.core/MarkupVisitor.visit|visit(com.nouprax.markdown.core.Reference;com.nouprax.markdown.core.MarkupVisitPhase){}[0]
     abstract fun visit(com.nouprax.markdown.core/SoftBreak, com.nouprax.markdown.core/MarkupVisitPhase) // com.nouprax.markdown.core/MarkupVisitor.visit|visit(com.nouprax.markdown.core.SoftBreak;com.nouprax.markdown.core.MarkupVisitPhase){}[0]
     abstract fun visit(com.nouprax.markdown.core/Span, com.nouprax.markdown.core/MarkupVisitPhase) // com.nouprax.markdown.core/MarkupVisitor.visit|visit(com.nouprax.markdown.core.Span;com.nouprax.markdown.core.MarkupVisitPhase){}[0]
     abstract fun visit(com.nouprax.markdown.core/Specimen, com.nouprax.markdown.core/MarkupVisitPhase) // com.nouprax.markdown.core/MarkupVisitor.visit|visit(com.nouprax.markdown.core.Specimen;com.nouprax.markdown.core.MarkupVisitPhase){}[0]
@@ -181,6 +182,16 @@ sealed interface com.nouprax.markdown.core/Destination { // com.nouprax.markdown
         final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Destination.Cross.equals|equals(kotlin.Any?){}[0]
         final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/Destination.Cross.hashCode|hashCode(){}[0]
         final fun toString(): kotlin/String // com.nouprax.markdown.core/Destination.Cross.toString|toString(){}[0]
+    }
+
+    final class Reference : com.nouprax.markdown.core/Destination { // com.nouprax.markdown.core/Destination.Reference|null[0]
+        final val label // com.nouprax.markdown.core/Destination.Reference.label|{}label[0]
+            final fun <get-label>(): kotlin/String // com.nouprax.markdown.core/Destination.Reference.label.<get-label>|<get-label>(){}[0]
+
+        final fun component1(): kotlin/String // com.nouprax.markdown.core/Destination.Reference.component1|component1(){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Destination.Reference.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/Destination.Reference.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // com.nouprax.markdown.core/Destination.Reference.toString|toString(){}[0]
     }
 
     final class Url : com.nouprax.markdown.core/Destination { // com.nouprax.markdown.core/Destination.Url|null[0]
@@ -625,6 +636,8 @@ final class com.nouprax.markdown.core/Document : com.nouprax.markdown.core/Marku
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/Document.id.<get-id>|<get-id>(){}[0]
     final val metadata // com.nouprax.markdown.core/Document.metadata|{}metadata[0]
         final fun <get-metadata>(): com.nouprax.markdown.core/Metadata? // com.nouprax.markdown.core/Document.metadata.<get-metadata>|<get-metadata>(){}[0]
+    final val references // com.nouprax.markdown.core/Document.references|{}references[0]
+        final fun <get-references>(): kotlin.collections/List<com.nouprax.markdown.core/Reference> // com.nouprax.markdown.core/Document.references.<get-references>|<get-references>(){}[0]
     final val specimens // com.nouprax.markdown.core/Document.specimens|{}specimens[0]
         final fun <get-specimens>(): kotlin.collections/List<com.nouprax.markdown.core/Specimen> // com.nouprax.markdown.core/Document.specimens.<get-specimens>|<get-specimens>(){}[0]
     final val unit // com.nouprax.markdown.core/Document.unit|{}unit[0]
@@ -634,6 +647,7 @@ final class com.nouprax.markdown.core/Document : com.nouprax.markdown.core/Marku
     final fun dump(kotlin/String): kotlin/String // com.nouprax.markdown.core/Document.dump|dump(kotlin.String){}[0]
     final fun footnote(kotlin/String): com.nouprax.markdown.core/Footnote? // com.nouprax.markdown.core/Document.footnote|footnote(kotlin.String){}[0]
     final fun node(com.nouprax.markdown.core/Position, kotlin/String): com.nouprax.markdown.core/Markup? // com.nouprax.markdown.core/Document.node|node(com.nouprax.markdown.core.Position;kotlin.String){}[0]
+    final fun reference(kotlin/String): com.nouprax.markdown.core/Markup? // com.nouprax.markdown.core/Document.reference|reference(kotlin.String){}[0]
     final fun scope(com.nouprax.markdown.core/Markup, kotlin/String): com.nouprax.markdown.core/Scope // com.nouprax.markdown.core/Document.scope|scope(com.nouprax.markdown.core.Markup;kotlin.String){}[0]
     final fun specimen(kotlin/String): com.nouprax.markdown.core/Specimen? // com.nouprax.markdown.core/Document.specimen|specimen(kotlin.String){}[0]
 
@@ -966,6 +980,23 @@ final class com.nouprax.markdown.core/Record { // com.nouprax.markdown.core/Reco
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Record.equals|equals(kotlin.Any?){}[0]
     final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/Record.hashCode|hashCode(){}[0]
     final fun toString(): kotlin/String // com.nouprax.markdown.core/Record.toString|toString(){}[0]
+}
+
+final class com.nouprax.markdown.core/Reference : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Reference|null[0]
+    final val anchor // com.nouprax.markdown.core/Reference.anchor|{}anchor[0]
+        final fun <get-anchor>(): kotlin/String? // com.nouprax.markdown.core/Reference.anchor.<get-anchor>|<get-anchor>(){}[0]
+    final val attributes // com.nouprax.markdown.core/Reference.attributes|{}attributes[0]
+        final fun <get-attributes>(): com.nouprax.markdown.core/Attributes // com.nouprax.markdown.core/Reference.attributes.<get-attributes>|<get-attributes>(){}[0]
+    final val dest // com.nouprax.markdown.core/Reference.dest|{}dest[0]
+        final fun <get-dest>(): com.nouprax.markdown.core/Destination // com.nouprax.markdown.core/Reference.dest.<get-dest>|<get-dest>(){}[0]
+    final val extent // com.nouprax.markdown.core/Reference.extent|{}extent[0]
+        final fun <get-extent>(): com.nouprax.markdown.core/Extent // com.nouprax.markdown.core/Reference.extent.<get-extent>|<get-extent>(){}[0]
+    final val id // com.nouprax.markdown.core/Reference.id|{}id[0]
+        final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/Reference.id.<get-id>|<get-id>(){}[0]
+    final val label // com.nouprax.markdown.core/Reference.label|{}label[0]
+        final fun <get-label>(): kotlin/String // com.nouprax.markdown.core/Reference.label.<get-label>|<get-label>(){}[0]
+    final val title // com.nouprax.markdown.core/Reference.title|{}title[0]
+        final fun <get-title>(): kotlin/String? // com.nouprax.markdown.core/Reference.title.<get-title>|<get-title>(){}[0]
 }
 
 final class com.nouprax.markdown.core/Scope { // com.nouprax.markdown.core/Scope|null[0]

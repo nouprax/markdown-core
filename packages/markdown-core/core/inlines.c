@@ -387,7 +387,7 @@ void markdown_core_inline_remove_delimiter(markdown_core_inline_state *inline_st
  * asked only when more entries are live at once than ever were before: the
  * pool's size is the largest live count in the document, and it is released
  * with the parser. Every inline state that pushes has a parser; the one built
- * without (`markdown_core_parse_reference_inline`) scans a label and pushes
+ * without (link.c, `S_reference_definition`) scans a label and pushes
  * nothing. */
 delimiter *markdown_core_inline_push_delimiter_entry(markdown_core_inline_state *inline_state, delimiter_kind kind,
                                                      bufsize_t position) {

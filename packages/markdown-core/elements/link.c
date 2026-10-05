@@ -20,19 +20,20 @@ static const markdown_core_element *const LINK_PEERS[] = {[LINK_EMBEDDED] = &MAR
 
 static bufsize_t markdown_core_inline_manual_scan_link_url(markdown_core_chunk *input, bufsize_t offset,
                                                            markdown_core_chunk *output);
+/* Reads the link reference definition at the front of `input`, its bytes
+ * `before` past the front of `b`'s content, into a Reference node put in
+ * `b`'s parent before `b`. Its length, 0 when there is none. */
+static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_node *b, markdown_core_chunk *input,
+                                  markdown_core_attribute_parser *attributes, bufsize_t before);
+
 bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b) {
     bufsize_t pos;
     markdown_core_strbuf *node_content = &b->content;
     markdown_core_chunk chunk = {node_content->ptr, node_content->size, 0};
     markdown_core_attribute_parser attributes = {
         .data = chunk.data, .length = chunk.len, .scratch = &parser->attribute_scratch};
-    while (chunk.len && chunk.data[0] == '[') {
-        int line;
-        bufsize_t source = b->where.place.start;
-        markdown_core_parser_content_place(parser, &b->content_map, (bufsize_t)(chunk.data - node_content->ptr), &line,
-                                           &source);
-        uint64_t source_key = (uint64_t)source;
-        pos = markdown_core_parse_reference_inline(parser, &chunk, parser->refmap, &attributes, source_key);
+    while (chunk.len && chunk.data[0] == '[' && !parser->error) {
+        pos = S_read_reference(parser, b, &chunk, &attributes, (bufsize_t)(chunk.data - node_content->ptr));
         if (!pos) {
             break;
         }
@@ -43,19 +44,6 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     markdown_core_attribute_parser_free(&attributes);
-    // The definitions are dropped off the FRONT of the block's content, so what
-    // is left starts further down the source than the block was told it did.
-    // Without this a paragraph whose leading definitions were consumed keeps the
-    // DEFINITION's position, and so does every inline in it, because
-    // markdown_core_parse_inlines seeds the inline state from the block's start.
-    //
-    // D18 corrected the LINE here by counting the line endings in the prefix
-    // that goes away, and left the column alone with the note that it was
-    // right wherever the remaining first line has the same stripped prefix as
-    // the definition's line. Requirement 10 removes both the count and the
-    // caveat: the map says where the surviving first byte was written, so the
-    // column is answered rather than assumed, and the marks are rebased so the
-    // inline phase reads the same map against the shortened buffer.
     bufsize_t dropped = node_content->size - chunk.len;
     if (dropped) {
         b->flags |= MARKDOWN_CORE_NODE__REFERENCE_PREFIX;
@@ -283,26 +271,26 @@ static bool reference_tail(markdown_core_inline_state *inline_state, markdown_co
     return markdown_core_inline_skip_line_end(inline_state);
 }
 
-bufsize_t markdown_core_parse_reference_inline(markdown_core_parser *parser, markdown_core_chunk *input,
-                                               markdown_core_map *refmap, markdown_core_attribute_parser *attributes,
-                                               uint64_t source_key) {
+/* A link reference definition at the front of `input`: its length, 0 when
+ * there is none, and its parts, the attributes `value` holds when there is
+ * one. */
+typedef struct {
+    markdown_core_chunk label, url, title;
+    markdown_core_attributes value;
+} reference_definition;
+
+static bufsize_t S_reference_definition(markdown_core_chunk *input, markdown_core_attribute_parser *attributes,
+                                        reference_definition *definition) {
     markdown_core_inline_state inline_state;
-    markdown_core_resource *resource;
-    int lost = 0;
-    markdown_core_attributes value = {0};
-
-    markdown_core_chunk lab;
-    markdown_core_chunk url;
-    markdown_core_chunk title;
     const markdown_core_chunk absent_title = MARKDOWN_CORE_CHUNK_EMPTY;
-
     bufsize_t matchlen = 0;
     bufsize_t beforetitle;
+    *definition = (reference_definition){0};
 
     markdown_core_inline_state_from_buf(NULL, &inline_state, input, NULL);
 
     // parse label:
-    if (!markdown_core_inline_link_label(&inline_state, &lab) || lab.len == 0) {
+    if (!markdown_core_inline_link_label(&inline_state, &definition->label) || definition->label.len == 0) {
         return 0;
     }
     // colon:
@@ -314,7 +302,8 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_parser *parser, mar
 
     // parse link url:
     spnl(&inline_state);
-    if ((matchlen = markdown_core_inline_manual_scan_link_url(&inline_state.input, inline_state.pos, &url)) > -1) {
+    if ((matchlen =
+             markdown_core_inline_manual_scan_link_url(&inline_state.input, inline_state.pos, &definition->url)) > -1) {
         inline_state.pos += matchlen;
     } else {
         return 0;
@@ -327,63 +316,94 @@ bufsize_t markdown_core_parse_reference_inline(markdown_core_parser *parser, mar
                    ? 0
                    : scan_link_title(inline_state.input.data, inline_state.input.len, inline_state.pos);
     if (matchlen) {
-        title = markdown_core_chunk_dup(&inline_state.input, inline_state.pos, matchlen);
+        definition->title = markdown_core_chunk_dup(&inline_state.input, inline_state.pos, matchlen);
         inline_state.pos += matchlen;
     } else {
         inline_state.pos = beforetitle;
         // No title was written, so record that rather than an empty one.
-        title = absent_title;
+        definition->title = absent_title;
     }
 
     // parse final spaces and newline:
-    if (!reference_tail(&inline_state, attributes, &value)) {
+    if (!reference_tail(&inline_state, attributes, &definition->value)) {
         if (matchlen) { // try rewinding before title
             inline_state.pos = beforetitle;
-            if (!reference_tail(&inline_state, attributes, &value)) {
+            if (!reference_tail(&inline_state, attributes, &definition->value)) {
                 return 0;
             }
             // The title candidate is un-read here: its bytes stay paragraph
             // text, and the definition has no title. `title` still held the
-            // scanned chunk, which then went into the reference map -- so a
+            // scanned chunk, which then went into the definition -- so a
             // reference to this label resolved with a title the definition does
             // not have, and the same bytes were stated twice, once as prose and
             // once as a title.
-            title = absent_title;
+            definition->title = absent_title;
         } else {
             return 0;
         }
     }
-    if (!refmap) {
-        markdown_core_attributes_free(&value);
-        return inline_state.pos;
+    return inline_state.pos;
+}
+
+bufsize_t markdown_core_reference_definition_length(markdown_core_chunk *input,
+                                                    markdown_core_attribute_parser *attributes) {
+    reference_definition definition;
+    bufsize_t length = S_reference_definition(input, attributes, &definition);
+    if (length) {
+        markdown_core_attributes_free(&definition.value);
     }
-    // The definition is consumed into the map, which owns its resource ONCE
-    // and lends it to every occurrence that resolves to the label (M2). The
-    // destination and title are cleaned here, the way a direct link's are, so
-    // a resolved occurrence and a direct one state the same values.
-    {
-        markdown_core_chunk clean_url = markdown_core_clean_url(&url, &lost);
-        markdown_core_optional_chunk clean_title = markdown_core_clean_title(&title, &lost);
-        resource = lost ? NULL : markdown_core_resource_new(parser->pool, clean_url, clean_title);
-        if (!resource) {
+    return length;
+}
+
+static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_node *b, markdown_core_chunk *input,
+                                  markdown_core_attribute_parser *attributes, bufsize_t before) {
+    reference_definition definition;
+    bufsize_t length = S_reference_definition(input, attributes, &definition);
+    if (!length) {
+        return 0;
+    }
+    /* The destination and title are cleaned here, the way a direct link's
+     * are, so a Reference and a direct link state the same values. */
+    int lost = 0;
+    markdown_core_chunk clean_url = markdown_core_clean_url(&definition.url, &lost);
+    markdown_core_optional_chunk clean_title = markdown_core_clean_title(&definition.title, &lost);
+    unsigned char *label = normalize_map_label(&definition.label, &lost);
+    markdown_core_resource *resource = lost ? NULL : markdown_core_resource_new(parser->pool, clean_url, clean_title);
+    markdown_core_node *reference =
+        resource
+            ? markdown_core_parser_make_node_with_ext(parser, MARKDOWN_CORE_NODE_REFERENCE, &MARKDOWN_CORE_ELEMENT_LINK)
+            : NULL;
+    if (!reference) {
+        if (resource) {
+            markdown_core_resource_free(&parser->pool->resources, resource);
+        } else {
             markdown_core_chunk_free(&clean_url);
             markdown_core_optional_chunk_free(&clean_title);
-            lost = 1;
         }
+        markdown_core_free(label);
+        markdown_core_attributes_free(&definition.value);
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return length;
     }
-    if (resource) {
-        resource->attributes = value;
-        markdown_core_map_record *record = markdown_core_reference_create(refmap, &lab, resource);
-        if (record) {
-            record->source_key = source_key;
-        }
-    } else {
-        markdown_core_attributes_free(&value);
+    reference->as.reference->resource = resource;
+    reference->as.reference->label =
+        label ? (markdown_core_chunk){label, (bufsize_t)strlen((char *)label), 1} : markdown_core_chunk_literal("");
+    reference->attributes = definition.value;
+    reference->flags |= MARKDOWN_CORE_NODE__BLANK_TRANSPARENT;
+    markdown_core_label_declare(parser->refmap, &reference->as.reference->label);
+    /* It spans its definition, through the end of its last line's content:
+     * the line ending after it belongs to no block. */
+    bufsize_t end = before + length;
+    while (end > before && (b->content.ptr[end - 1] == '\n' || b->content.ptr[end - 1] == '\r')) {
+        end--;
     }
-    if ((inline_state.error || lost) && refmap) {
-        refmap->oom = 1;
-    }
-    return inline_state.pos;
+    int line;
+    bufsize_t start = b->where.place.start, stop = b->where.place.start;
+    markdown_core_parser_content_place(parser, &b->content_map, before, &line, &start);
+    markdown_core_parser_content_end_place(parser, &b->content_map, end - 1, &line, &stop);
+    reference->where.place = (markdown_core_place){(uint32_t)start, (uint32_t)stop};
+    markdown_core_node_attach_validated(b->parent, reference, b);
+    return length;
 }
 
 markdown_core_link_match markdown_core_link_recognize(const markdown_core_element_instance *link,
@@ -473,7 +493,8 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
         record = markdown_core_map_lookup(inline_state->refmap, &raw_label);
     }
     markdown_core_chunk_free(&raw_label);
-    candidate->record = record;
+    candidate->label =
+        record ? (markdown_core_chunk){record->label, record->label_len, 0} : markdown_core_chunk_literal("");
     candidate->explicit_tail = explicit_tail;
     return record ? (explicit_tail ? LINK_EXPLICIT : LINK_SHORTCUT) : LINK_UNMATCHED;
 }
@@ -483,7 +504,7 @@ bool markdown_core_link_commit(const markdown_core_element_instance *link, markd
                                markdown_core_link_candidate *candidate, bufsize_t initial_pos) {
     bool is_image = opener->kind == BRACKET_IMAGE;
     bool explicit_tail = candidate->explicit_tail;
-    markdown_core_map_record *record = candidate->record;
+    bool reference = candidate->label.len != 0;
     markdown_core_chunk url = candidate->url;
     markdown_core_optional_chunk title = candidate->title;
     markdown_core_node *inl;
@@ -496,17 +517,16 @@ bool markdown_core_link_commit(const markdown_core_element_instance *link, markd
     }
     inl = markdown_core_inline_make_simple(inline_state,
                                            is_image ? MARKDOWN_CORE_NODE_EMBEDDED : MARKDOWN_CORE_NODE_LINK);
-    if (inl && record) {
-        /* A RESOLVED REFERENCE IS THE LINK OR EMBEDDED IT NAMES (M2), and it reads
-         * its destination and title through the definition's resource, which
-         * the map owns once and every occurrence shares. Nothing is copied, so
-         * there is nothing to charge and no budget can make whether a reference
-         * resolves depend on how many resolved before it (D9). The occurrence
-         * keeps its own scope, below: the definition's range is never copied,
-         * unioned or substituted into it. */
-        assert(record->resource != NULL);
-        markdown_core_resource_retain(record->resource);
-        inl->as.link->resource = record->resource;
+    if (inl && reference) {
+        /* A RESOLVED REFERENCE NAMES ITS DEFINITION BY LABEL: the Link or
+         * Embedded holds its own copy of the normalized label, and its
+         * destination and title are those of the node the document finds by
+         * that label. The occurrence keeps its own scope and attributes. */
+        inl->as.link->label = candidate->label;
+        if (!markdown_core_chunk_to_cstr(&inl->as.link->label)) {
+            markdown_core_parser_release_node(parser, inl);
+            inl = NULL;
+        }
     } else if (inl) {
         inl->as.link->resource = markdown_core_resource_new(parser->pool, url, title);
         if (!inl->as.link->resource) {
@@ -516,7 +536,7 @@ bool markdown_core_link_commit(const markdown_core_element_instance *link, markd
     }
     if (!inl) {
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
-        if (!record) {
+        if (!reference) {
             markdown_core_chunk_free(&url);
             markdown_core_optional_chunk_free(&title);
         }

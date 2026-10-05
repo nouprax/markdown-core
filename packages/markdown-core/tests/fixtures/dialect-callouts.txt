@@ -584,9 +584,10 @@ indented definition defines, and a line led by emphasis starts with it.
   *em* x
 .
 Document scope=1:1..7:8 anchor=null attributes={} children=3
-├── Callout scope=1:1..2:9 anchor=null attributes={} variant="note" collapsed=null children=0
+├── Callout scope=1:1..2:9 anchor=null attributes={} variant="note" collapsed=null children=1
+│   └── Reference scope=2:3..2:9 anchor=null attributes={} label="x" dest=url("/u") title=null children=0
 ├── Paragraph scope=4:1..4:3 anchor=null attributes={} children=1
-│   └── Link scope=4:1..4:3 anchor=null attributes={} dest=url("/u") title=null children=1
+│   └── Link scope=4:1..4:3 anchor=null attributes={} dest=reference("x") title=null children=1
 │       └── Text scope=4:2..4:2 anchor=null attributes={} literal="x" children=0
 └── Callout scope=6:1..7:8 anchor=null attributes={} variant="tip" collapsed=null children=1
     └── Paragraph scope=7:3..7:8 anchor=null attributes={} children=2
@@ -760,7 +761,7 @@ Document scope=1:1..14:5 anchor=null attributes={} children=1
 [ref]: /u "title"
 [^n]: definition
 .
-Document scope=1:1..5:16 anchor=null attributes={} children=2
+Document scope=1:1..5:16 anchor=null attributes={} children=3
 ├── Callout scope=1:1..2:12 anchor=null attributes={} variant="Mixed" collapsed=true children=1
 │   ├── Title children=25
 │   │   ├── Strong scope=1:13..1:20 anchor=null attributes={} children=1
@@ -783,7 +784,7 @@ Document scope=1:1..5:16 anchor=null attributes={} children=2
 │   │   ├── Text scope=1:72..1:72 anchor=null attributes={} literal=" " children=0
 │   │   ├── CrossEmbedded scope=1:73..1:80 anchor=null attributes={} dest=cross(path="Pic",anchor=null) label=null dimensions=null children=0
 │   │   ├── Text scope=1:81..1:81 anchor=null attributes={} literal=" " children=0
-│   │   ├── Link scope=1:82..1:86 anchor=null attributes={} dest=url("/u") title="title" children=1
+│   │   ├── Link scope=1:82..1:86 anchor=null attributes={} dest=reference("ref") title=null children=1
 │   │   │   └── Text scope=1:83..1:85 anchor=null attributes={} literal="ref" children=0
 │   │   ├── Text scope=1:87..1:87 anchor=null attributes={} literal=" " children=0
 │   │   ├── Embedded scope=1:88..1:99 anchor=null attributes={} dest=url("/img") title=null dimensions=null children=1
@@ -807,8 +808,9 @@ Document scope=1:1..5:16 anchor=null attributes={} children=2
 │   │           └── CitationSuffix children=0
 │   └── Paragraph scope=2:3..2:12 anchor=null attributes={} children=2
 │       ├── Text scope=2:3..2:7 anchor=null attributes={} literal="body " children=0
-│       └── Link scope=2:8..2:12 anchor=null attributes={} dest=url("/u") title="title" children=1
+│       └── Link scope=2:8..2:12 anchor=null attributes={} dest=reference("ref") title=null children=1
 │           └── Text scope=2:9..2:11 anchor=null attributes={} literal="ref" children=0
+├── Reference scope=4:1..4:17 anchor=null attributes={} label="ref" dest=url("/u") title="title" children=0
 └── Footnote scope=5:1..5:16 anchor=null attributes={} label="n" children=1
     └── Paragraph scope=5:7..5:16 anchor=null attributes={} children=1
         └── Text scope=5:7..5:16 anchor=null attributes={} literal="definition" children=0
@@ -924,12 +926,13 @@ Document scope=1:1..9:3 anchor=null attributes={} children=4
 │       └── Text scope=2:3..2:5 anchor=null attributes={} literal="[x]" children=0
 ├── Paragraph scope=4:1..4:3 anchor=null attributes={} children=1
 │   └── Text scope=4:1..4:3 anchor=null attributes={} literal="[x]" children=0
-├── Callout scope=6:1..7:12 anchor=null attributes={} variant="note" collapsed=null children=0
-│   └── Title children=1
-│       └── Link scope=6:11..6:13 anchor=null attributes={} dest=url("/body") title=null children=1
-│           └── Text scope=6:12..6:12 anchor=null attributes={} literal="y" children=0
+├── Callout scope=6:1..7:12 anchor=null attributes={} variant="note" collapsed=null children=1
+│   ├── Title children=1
+│   │   └── Link scope=6:11..6:13 anchor=null attributes={} dest=reference("y") title=null children=1
+│   │       └── Text scope=6:12..6:12 anchor=null attributes={} literal="y" children=0
+│   └── Reference scope=7:3..7:12 anchor=null attributes={} label="y" dest=url("/body") title=null children=0
 └── Paragraph scope=9:1..9:3 anchor=null attributes={} children=1
-    └── Link scope=9:1..9:3 anchor=null attributes={} dest=url("/body") title=null children=1
+    └── Link scope=9:1..9:3 anchor=null attributes={} dest=reference("y") title=null children=1
         └── Text scope=9:2..9:2 anchor=null attributes={} literal="y" children=0
 ````````````````````````````````
 

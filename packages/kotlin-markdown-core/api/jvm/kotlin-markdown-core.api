@@ -156,6 +156,14 @@ public final class com/nouprax/markdown/core/Destination$Cross : com/nouprax/mar
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class com/nouprax/markdown/core/Destination$Reference : com/nouprax/markdown/core/Destination {
+	public final fun component1 ()Ljava/lang/String;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getLabel ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class com/nouprax/markdown/core/Destination$Url : com/nouprax/markdown/core/Destination {
 	public final fun component1 ()Ljava/lang/String;
 	public fun equals (Ljava/lang/Object;)Z
@@ -217,9 +225,11 @@ public final class com/nouprax/markdown/core/Document : com/nouprax/markdown/cor
 	public final fun getFootnotes ()Ljava/util/List;
 	public fun getId-cjMMCNQ ()J
 	public final fun getMetadata ()Lcom/nouprax/markdown/core/Metadata;
+	public final fun getReferences ()Ljava/util/List;
 	public final fun getSpecimens ()Ljava/util/List;
 	public final fun getUnit ()Lcom/nouprax/markdown/core/TextUnit;
 	public final fun node (Lcom/nouprax/markdown/core/Position;Ljava/lang/String;)Lcom/nouprax/markdown/core/Markup;
+	public final fun reference (Ljava/lang/String;)Lcom/nouprax/markdown/core/Markup;
 	public final fun scope (Lcom/nouprax/markdown/core/Markup;Ljava/lang/String;)Lcom/nouprax/markdown/core/Scope;
 	public final fun specimen (Ljava/lang/String;)Lcom/nouprax/markdown/core/Specimen;
 }
@@ -504,6 +514,7 @@ public abstract interface class com/nouprax/markdown/core/MarkupVisitor {
 	public abstract fun visit (Lcom/nouprax/markdown/core/Mark;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
 	public abstract fun visit (Lcom/nouprax/markdown/core/Metadata;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
 	public abstract fun visit (Lcom/nouprax/markdown/core/Paragraph;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/Reference;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
 	public abstract fun visit (Lcom/nouprax/markdown/core/SoftBreak;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
 	public abstract fun visit (Lcom/nouprax/markdown/core/Span;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
 	public abstract fun visit (Lcom/nouprax/markdown/core/Specimen;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
@@ -727,6 +738,16 @@ public final class com/nouprax/markdown/core/Record {
 	public final fun getValue ()Ljava/lang/String;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/nouprax/markdown/core/Reference : com/nouprax/markdown/core/Markup {
+	public fun getAnchor ()Ljava/lang/String;
+	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
+	public final fun getDest ()Lcom/nouprax/markdown/core/Destination;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
+	public final fun getLabel ()Ljava/lang/String;
+	public final fun getTitle ()Ljava/lang/String;
 }
 
 public final class com/nouprax/markdown/core/Scope {

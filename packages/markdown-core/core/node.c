@@ -196,6 +196,7 @@ static const size_t S_block_payload_size[MARKDOWN_CORE_NODE_KIND_COUNT] = {
     [MARKDOWN_CORE_NODE_DEFINITION & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_definition),
     [MARKDOWN_CORE_NODE_DEFINITION_BODY & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_definition_body_value),
     [MARKDOWN_CORE_NODE_METADATA & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_metadata_fields),
+    [MARKDOWN_CORE_NODE_REFERENCE & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_reference_value),
 };
 
 static const size_t S_inline_payload_size[MARKDOWN_CORE_NODE_KIND_COUNT] = {
@@ -234,6 +235,7 @@ static const char *const S_block_type_string[MARKDOWN_CORE_NODE_KIND_COUNT] = {
     [MARKDOWN_CORE_NODE_DEFINITION_BODY & MARKDOWN_CORE_NODE_VALUE_MASK] = "definition_body",
     [MARKDOWN_CORE_NODE_TABLE_CAPTION & MARKDOWN_CORE_NODE_VALUE_MASK] = "table_caption",
     [MARKDOWN_CORE_NODE_METADATA & MARKDOWN_CORE_NODE_VALUE_MASK] = "metadata",
+    [MARKDOWN_CORE_NODE_REFERENCE & MARKDOWN_CORE_NODE_VALUE_MASK] = "reference",
 };
 
 static const char *const S_inline_type_string[MARKDOWN_CORE_NODE_KIND_COUNT] = {
@@ -375,6 +377,12 @@ static void free_node_as(markdown_core_slab_pool *resources, markdown_core_node 
         markdown_core_free((void *)node->as.document->footnotes.labeled);
         markdown_core_free((void *)node->as.document->specimens.nodes);
         markdown_core_free((void *)node->as.document->specimens.labeled);
+        markdown_core_free((void *)node->as.document->references.nodes);
+        markdown_core_free((void *)node->as.document->references.labeled);
+        markdown_core_free((void *)node->as.document->reference_targets);
+        break;
+    case MARKDOWN_CORE_NODE_HEADING:
+        markdown_core_chunk_free(&node->as.heading->label);
         break;
     case MARKDOWN_CORE_NODE_SPECIMEN:
         markdown_core_optional_chunk_free(&node->as.specimen->label);
@@ -384,10 +392,14 @@ static void free_node_as(markdown_core_slab_pool *resources, markdown_core_node 
         break;
     case MARKDOWN_CORE_NODE_LINK:
     case MARKDOWN_CORE_NODE_EMBEDDED:
-        /* One holder fewer; a resource shared with other occurrences, or
-         * still held by the reference map, stays. */
-        markdown_core_resource_release(resources, node->as.link->resource);
+        markdown_core_resource_free(resources, node->as.link->resource);
         node->as.link->resource = NULL;
+        markdown_core_chunk_free(&node->as.link->label);
+        break;
+    case MARKDOWN_CORE_NODE_REFERENCE:
+        markdown_core_resource_free(resources, node->as.reference->resource);
+        node->as.reference->resource = NULL;
+        markdown_core_chunk_free(&node->as.reference->label);
         break;
     default:
         break;
@@ -464,7 +476,7 @@ static size_t S_free_nodes(markdown_core_node_pool *pool, markdown_core_node *e)
          * beside it -- is made here, so a node that owns neither pays the
          * compares and no call. */
         if (markdown_core_attributes_owns(&e->attributes)) {
-            markdown_core_attributes_release(resources, &e->attributes);
+            markdown_core_attributes_free(&e->attributes);
         }
         if (markdown_core_strbuf_owns(&e->content)) {
             markdown_core_strbuf_free(&e->content);
@@ -629,27 +641,15 @@ markdown_core_resource *markdown_core_resource_new(markdown_core_node_pool *pool
     memset(resource, 0, sizeof(*resource));
     resource->url = url;
     resource->title = title;
-    resource->holders = 1;
     return resource;
 }
 
-void markdown_core_resource_retain(markdown_core_resource *resource) {
-    if (resource) {
-        resource->holders++;
-    }
-}
-
-void markdown_core_resource_release(markdown_core_slab_pool *resources, markdown_core_resource *resource) {
+void markdown_core_resource_free(markdown_core_slab_pool *resources, markdown_core_resource *resource) {
     if (!resource) {
-        return;
-    }
-    assert(resource->holders > 0);
-    if (--resource->holders > 0) {
         return;
     }
     markdown_core_chunk_free(&resource->url);
     markdown_core_optional_chunk_free(&resource->title);
-    markdown_core_attributes_release(resources, &resource->attributes);
     markdown_core_slab_release(resources, resource);
 }
 
@@ -792,15 +792,6 @@ int markdown_core_node_check(markdown_core_node *node, FILE *out) {
     }
 
     return errors;
-}
-
-const markdown_core_chunk *markdown_core_node_anchor_chunk(const markdown_core_node *node) {
-    if (!node->attributes.anchor.len &&
-        (node->kind == MARKDOWN_CORE_NODE_LINK || node->kind == MARKDOWN_CORE_NODE_EMBEDDED) &&
-        node->as.link->resource) {
-        return &node->as.link->resource->attributes.anchor;
-    }
-    return &node->attributes.anchor;
 }
 
 bool markdown_core_node_kind_set_intersects(const markdown_core_node_kind_set *a,

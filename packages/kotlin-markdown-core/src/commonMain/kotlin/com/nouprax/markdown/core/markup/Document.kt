@@ -3,9 +3,9 @@ package com.nouprax.markdown.core
 import kotlin.jvm.JvmOverloads
 
 /**
- * The immutable semantic root returned by a parse. Every footnote and
- * specimen stays in the tree where it was written; the document lists them
- * in source order and answers lookups by label.
+ * The immutable semantic root returned by a parse. Every footnote, specimen
+ * and reference stays in the tree where it was written; the document lists
+ * them in source order and answers lookups by label.
  */
 public class Document internal constructor(
     public val content: kotlin.collections.List<Markup>,
@@ -16,6 +16,10 @@ public class Document internal constructor(
     public val footnotes: kotlin.collections.List<Footnote>,
     /** Every specimen of the document, in source order. */
     public val specimens: kotlin.collections.List<Specimen>,
+    /** Every link reference definition of the document, in source order. */
+    public val references: kotlin.collections.List<Reference>,
+    /** Each normalized label a reference occurrence resolves, with the node it resolves to. */
+    private val labels: Map<String, Markup>,
     override val id: MarkupID,
     override val extent: Extent,
     override val anchor: String?,
@@ -42,6 +46,14 @@ public class Document internal constructor(
 
     /** The first specimen in source order whose label is [label]. */
     public fun specimen(label: String): Specimen? = specimenLabels[label]
+
+    /**
+     * The node a [Destination.Reference] naming [label], a normalized label,
+     * resolves to: the first [Reference] in source order whose label is
+     * [label], or, when none is, the first [Heading] in source order whose
+     * text declares it; null when neither does.
+     */
+    public fun reference(label: String): Markup? = labels[label]
 
     /**
      * The editor coordinates of [node], computed from the extents and

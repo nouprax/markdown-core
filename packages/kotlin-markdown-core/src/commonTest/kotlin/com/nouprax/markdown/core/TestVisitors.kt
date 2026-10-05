@@ -31,6 +31,11 @@ internal class KindVisitor : MarkupVisitor {
     ): Unit = record(name(metadata), phase)
 
     override fun visit(
+        reference: Reference,
+        phase: MarkupVisitPhase,
+    ): Unit = record(name(reference), phase)
+
+    override fun visit(
         document: Document,
         phase: MarkupVisitPhase,
     ): Unit = record(name(document), phase)
@@ -247,6 +252,11 @@ internal class RecordingVisitor : MarkupVisitor {
         phase: MarkupVisitPhase,
     ): Unit = if (phase == MarkupVisitPhase.ENTER) record(metadata) else Unit
 
+    override fun visit(
+        reference: Reference,
+        phase: MarkupVisitPhase,
+    ): Unit = if (phase == MarkupVisitPhase.ENTER) record(reference) else Unit
+
     val visited: MutableList<String> = mutableListOf()
 
     override fun visit(
@@ -458,6 +468,11 @@ internal class RecordingWalkingVisitor(
         metadata: Metadata,
         phase: MarkupVisitPhase,
     ): Unit = record(metadata, phase)
+
+    override fun visit(
+        reference: Reference,
+        phase: MarkupVisitPhase,
+    ): Unit = record(reference, phase)
 
     val events: MutableList<String> = mutableListOf()
     val tableRowIds: MutableList<Long> = mutableListOf()
@@ -923,4 +938,9 @@ internal class NodeVisitor : MarkupVisitor {
         metadata: Metadata,
         phase: MarkupVisitPhase,
     ): Unit = record(metadata, phase)
+
+    override fun visit(
+        reference: Reference,
+        phase: MarkupVisitPhase,
+    ): Unit = record(reference, phase)
 }

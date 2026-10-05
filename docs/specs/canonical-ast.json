@@ -548,7 +548,7 @@
                     "optional": false
                 }
             ],
-            "invariants": "`dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url(\"\")`; a reference occurrence answers the destination its definition stated, and an unresolved reference is the inherited literal text; every `Link` owns the `url` branch; absent and empty title remain distinct; inline content"
+            "invariants": "`dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url(\"\")`; a direct link owns the `url` branch; a reference occurrence owns the `reference` branch with the normalized label it names, and an unresolved reference is the inherited literal text; absent and empty title remain distinct; inline content"
         },
         {
             "name": "Embedded",
@@ -575,7 +575,7 @@
                     "optional": false
                 }
             ],
-            "invariants": "`dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; every `Embedded` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content"
+            "invariants": "`dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; a direct image owns the `url` branch and a reference image the `reference` branch; absent and empty title remain distinct; content is parsed alt-text inline content"
         },
         {
             "name": "Directive",
@@ -757,11 +757,33 @@
                 }
             ],
             "invariants": "A leaf Markup node owned by Document.metadata. Field absence differs from explicit null. Its scope covers the authored properties block; unsupported attribute syntax yields null anchor and empty attributes."
+        },
+        {
+            "name": "Reference",
+            "ordinal": 44,
+            "fields": [
+                {
+                    "name": "label",
+                    "type": "String",
+                    "optional": false
+                },
+                {
+                    "name": "dest",
+                    "type": "Destination",
+                    "optional": false
+                },
+                {
+                    "name": "title",
+                    "type": "String",
+                    "optional": true
+                }
+            ],
+            "invariants": "A link reference definition where it was written: a leaf block with its normalized label, the `url` destination it states, and its title, absent and empty remaining distinct. Its anchor and attributes are the ones the definition states. Duplicates and unused definitions remain."
         }
     ],
     "values": {
         "Destination": {
-            "purpose": "A tagged value, not a node: it has no id, extent, children, anchor, or attributes, and a branch's fields exist only in that branch. Every Link and Embedded owns the url branch; the cross branch is the workspace address CrossLink and CrossEmbedded produce.",
+            "purpose": "A tagged value, not a node: it has no id, extent, children, anchor, or attributes, and a branch's fields exist only in that branch. A direct Link or Embedded and every Reference own the url branch; a reference Link or Embedded owns the reference branch, the normalized label it names: the first Reference in document source order whose label is equal, or, when none is, the first Heading in document source order whose text declares it; the cross branch is the workspace address CrossLink and CrossEmbedded produce.",
             "branches": {
                 "url": [
                     {
@@ -781,9 +803,16 @@
                         "type": "String",
                         "optional": true
                     }
+                ],
+                "reference": [
+                    {
+                        "name": "label",
+                        "type": "String",
+                        "optional": false
+                    }
                 ]
             },
-            "dump": "url(\"...\") or cross(path=\"...\",anchor=null)"
+            "dump": "url(\"...\"), cross(path=\"...\",anchor=null) or reference(\"...\")"
         },
         "CitationReferent": {
             "purpose": "A tagged value, not a node: it has no id or extent, and a branch's fields exist only in that branch. The bib branch is produced by bibliography citations; every referenced or inline footnote call produces the footnote branch. Its label target names the first Footnote in document source order whose label is equal, and its note target owns an inline note's Footnote. The specimen branch names the first Specimen in document source order whose label is equal.",

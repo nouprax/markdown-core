@@ -29,9 +29,9 @@ public struct MarkdownCoreError: Error, Sendable, Hashable {
 
 /// The immutable semantic root returned by a parse.
 ///
-/// Every footnote and specimen definition stays in the tree where it was
-/// written. The document lists them in source order and looks a label up in
-/// those lists; it owns no definition of its own.
+/// Every footnote, specimen and reference definition stays in the tree where
+/// it was written. The document lists them in source order and looks a label
+/// up in those lists; it owns no definition of its own.
 public struct Document: Markup {
     let record: DocumentRecord
 
@@ -59,6 +59,9 @@ public struct Document: Markup {
     public var footnotes: MarkupCollection<Footnote> { MarkupCollection(records: record.footnotes[...]) }
     /// Every specimen definition in source order.
     public var specimens: MarkupCollection<Specimen> { MarkupCollection(records: record.specimens[...]) }
+    /// Every link reference definition in source order, duplicates and unused
+    /// ones included.
+    public var references: MarkupCollection<Reference> { MarkupCollection(records: record.references[...]) }
 
     /// The first footnote in source order whose label equals `label` byte for
     /// byte, or `nil`. An inline note has no label and is never found.
@@ -70,6 +73,14 @@ public struct Document: Markup {
     /// byte, or `nil`. An anonymous definition is never found.
     public func specimen(for label: String) -> Specimen? {
         record.specimenLabels[Array(label.utf8)].map { Specimen(record: $0) }
+    }
+
+    /// The node a ``Destination/reference(label:)`` naming `label`, a
+    /// normalized label, resolves to, byte for byte: the first ``Reference``
+    /// in source order whose label equals it, or else the first ``Heading``
+    /// in source order whose text declares it; `nil` when none does.
+    public func reference(for label: String) -> (any Markup)? {
+        record.referenceLabels[Array(label.utf8)]?.markup
     }
 
     /// Parses `source` and returns the whole tree as values.
@@ -108,14 +119,18 @@ extension Document {
 }
 
 /// Children: the metadata, when authored, then the content. The definition
-/// tables name records of the tree; they own nothing the tree does not.
+/// tables name records of the tree; they own nothing the tree does not. A
+/// reference label resolves as the engine's label table states, since the
+/// binding does not normalize labels itself.
 final class DocumentRecord: MarkupRecord, @unchecked Sendable {
     let unit: TextUnit
     let metadataCount: Int
     let footnotes: [MarkupRecord]
     let specimens: [MarkupRecord]
+    let references: [MarkupRecord]
     let footnoteLabels: [[UInt8]: FootnoteRecord]
     let specimenLabels: [[UInt8]: SpecimenRecord]
+    let referenceLabels: [[UInt8]: MarkupRecord]
 
     init(
         _ fields: InheritedFields,
@@ -123,13 +138,17 @@ final class DocumentRecord: MarkupRecord, @unchecked Sendable {
         metadata: MetadataRecord?,
         content: [MarkupRecord],
         footnotes: [FootnoteRecord],
-        specimens: [SpecimenRecord]
+        specimens: [SpecimenRecord],
+        references: [ReferenceRecord],
+        referenceLabels: [[UInt8]: MarkupRecord]
     ) {
         let metadatas: [MarkupRecord] = metadata.map { [$0] } ?? []
         self.unit = unit
         metadataCount = metadatas.count
         self.footnotes = footnotes
         self.specimens = specimens
+        self.references = references
+        self.referenceLabels = referenceLabels
         footnoteLabels = DocumentRecord.labels(of: footnotes, \.label)
         specimenLabels = DocumentRecord.labels(of: specimens, \.label)
         super.init(fields, children: metadatas + content)

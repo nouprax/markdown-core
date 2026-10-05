@@ -43,9 +43,13 @@ typedef struct {
     int8_t fence_closed;
 } markdown_core_code;
 
+/* A heading's `label` is the normalized reference label its text declares,
+ * the one a reference occurrence names when no Reference declares it; empty
+ * when its text declares none. */
 typedef struct {
     int level;
     bool setext;
+    markdown_core_chunk label;
 } markdown_core_heading;
 
 /* The title has one private inline parsing root throughout its lifetime.
@@ -57,40 +61,16 @@ typedef struct {
     struct markdown_core_node *title;
 } markdown_core_callout;
 
-/* THE RESOURCE a Link or Embedded reads its destination and title from (M2).
- *
- * It is COUNTED and SHARED. A link reference definition's resource is built
- * once, when the block phase reads the definition into the parser's map, and
- * every occurrence that resolves to that definition -- full, collapsed or
- * shortcut -- holds the same one; a direct link, a direct image and an
- * autolink each own one of their own. Sharing is what deletes D9 for good: a
- * definition with a long destination referenced many times costs one copy of
- * the destination however many times it is named, so nothing has to be
- * charged and no budget can make WHETHER A REFERENCE RESOLVES depend on how
- * many resolved before it. `holders` counts the map record and every node
- * reading through the resource; the last one out frees it, which is how the
- * tree outlives the parser that built the map.
- *
- * Identity is the pointer: `markdown_core_node_resource` hands it out, and a
- * consumer that materializes a destination once per distinct resource keys
- * on it. Nothing else about the pointer is stated. */
-struct markdown_core_resource {
+/* THE RESOURCE a direct Link or Embedded, or a Reference, states: its
+ * destination and title, which the node owns out of its slot. */
+typedef struct markdown_core_resource {
     /* REQUIRED (Q26). `[a]()`, `[a](<>)` and `[a]: <>` wrote a destination
-     * and it was empty; there is no link whose author wrote no destination at
-     * all, because a reference resolves to its definition's. */
+     * and it was empty. */
     markdown_core_chunk url;
     /* OPTIONAL (requirement 14): `[a](/u)` wrote no title and `[a](/u "")`
      * wrote an empty one. */
     markdown_core_optional_chunk title;
-    /* Definition metadata is immutable and owned by the same resource. Each
-     * occurrence holds only its own normalized attributes on the node. */
-    markdown_core_attributes attributes;
-    size_t holders;
-};
-#ifndef MARKDOWN_CORE_RESOURCE_TYPEDEF
-#define MARKDOWN_CORE_RESOURCE_TYPEDEF
-typedef struct markdown_core_resource markdown_core_resource;
-#endif
+} markdown_core_resource;
 struct markdown_core_node_pool;
 
 typedef struct {
@@ -98,16 +78,17 @@ typedef struct {
     markdown_core_dimensions value;
 } markdown_core_optional_dimensions;
 
+/* A LINK OR EMBEDDED names its destination one of two ways (4.5): a direct
+ * one states it, in `resource`; a reference names the definition it resolves
+ * to by its normalized label, in `label`, as a citation names a footnote, and
+ * has no resource. */
 typedef struct {
-    /* NEVER NULL on a node the parser finished: the resource is attached in
-     * the same step that makes the node a link, and an allocation that could
-     * not attach one frees the node. */
     markdown_core_resource *resource;
+    markdown_core_chunk label;
     markdown_core_optional_dimensions dimensions;
 } markdown_core_link;
 
-/* One authored workspace reference. Each occurrence owns its raw strings;
- * unlike resolved links, it has no resource shared with a definition. */
+/* One authored workspace reference. Each occurrence owns its raw strings. */
 typedef struct {
     markdown_core_chunk path;
     markdown_core_optional_chunk anchor;
@@ -174,6 +155,15 @@ typedef struct {
     bool has_start;
 } markdown_core_specimen_value;
 
+/* A REFERENCE: a link reference definition where it was written. `label` is
+ * its normalized label, the one a reference occurrence names; `resource` is
+ * the destination and title it states. The attributes it supplies are the
+ * node's own. */
+typedef struct {
+    markdown_core_chunk label;
+    markdown_core_resource *resource;
+} markdown_core_reference_value;
+
 typedef struct {
     struct markdown_core_node *term;
     bool compact;
@@ -185,8 +175,8 @@ typedef struct {
     int continuation_line;
 } markdown_core_definition_body_value;
 
-/* A DEFINITION TABLE of a published document: every Footnote, or every
- * Specimen, in source order, borrowed from the tree. */
+/* A DEFINITION TABLE of a published document: every Footnote, every
+ * Specimen, or every Reference, in source order, borrowed from the tree. */
 typedef struct markdown_core_definitions {
     /* Every definition of the kind, in source order. */
     const struct markdown_core_node **nodes;
@@ -197,22 +187,19 @@ typedef struct markdown_core_definitions {
 } markdown_core_definitions;
 
 /* THE DOCUMENT's own field: the metadata the properties envelope produced.
- * Footnote and specimen definitions stay in the tree where they were
- * written; publishing the document records its definition tables here. */
+ * Footnote, specimen and Reference definitions stay in the tree where they
+ * were written; publishing the document records its definition tables here,
+ * and the nodes reference occurrences resolve to, by label: for each label,
+ * the first Reference declaring it, or, when none does, the first Heading
+ * whose text declares it. */
 typedef struct {
     struct markdown_core_node *metadata;
     markdown_core_definitions footnotes;
     markdown_core_definitions specimens;
+    markdown_core_definitions references;
+    const struct markdown_core_node **reference_targets;
+    size_t reference_target_count;
 } markdown_core_document_value;
-
-/* A link reference definition is not a node (M2). The block phase reads it off
- * the front of the paragraph that held it into the parser's map, which owns
- * its resource once, and every reference that resolves to it is the `Link` or
- * `Embedded` it names, sharing that resource. This is the inherited grammar's
- * model: a definition exists to be referred to, an unreferenced one produces
- * nothing, and the first definition of a label in source order wins. A footnote
- * definition is a node, because its body is flow content, and stays where it
- * was written. */
 
 /* A node's source extent in UTF-8 bytes (the published form of its place). */
 #ifndef MARKDOWN_CORE_EXTENT_TYPEDEF
@@ -251,9 +238,10 @@ enum markdown_core_node__internal_flags {
     // than on the line before, and to know that a `-->` line really closed a
     // type-2 block rather than the input or a container running out.
     MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION = (1 << 4),
-    // A finalized paragraph consumed entirely by reference definitions. It
-    // retains block adjacency until block parsing ends, then is discarded
-    // before list layout and inline parsing observe the semantic children.
+    // A finalized paragraph consumed entirely by reference definitions,
+    // which its finalization made References before it. It retains block
+    // adjacency until block parsing ends, then is discarded before list
+    // layout and inline parsing observe the semantic children.
     MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY = (1 << 5),
 
     // Deferred contextual escape token, decoded when inline ownership is final.
@@ -263,10 +251,16 @@ enum markdown_core_node__internal_flags {
      * A later arrival may supply its first surviving content line. */
     MARKDOWN_CORE_NODE__REFERENCE_PREFIX = (1 << 7),
 
+    /* A block the blank-line facts read through, as CommonMark reads through
+     * a link reference definition: whether a block ends with a blank line,
+     * and whether another block follows it, are answered by the blocks
+     * around it. */
+    MARKDOWN_CORE_NODE__BLANK_TRANSPARENT = (1 << 8),
+
     // The first bit an element may claim. Element flags are compile-time
     // constants owned by the element that uses them; there is no runtime
     // registration and no allocator to run out of bits.
-    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 8),
+    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 9),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;
@@ -300,6 +294,7 @@ typedef union {
     markdown_core_citation_item *citation;
     markdown_core_footnote_value *footnote;
     markdown_core_specimen_value *specimen;
+    markdown_core_reference_value *reference;
     markdown_core_document_value *document;
     markdown_core_metadata_fields *metadata;
     markdown_core_definition *definition;
@@ -344,27 +339,21 @@ struct markdown_core_node {
     markdown_core_node_data as;
 };
 
-/* The effective declaration is occurrence-local, then inherited from its
- * shared definition. All consumers, including synthesis reservation, use it. */
-const markdown_core_chunk *markdown_core_node_anchor_chunk(const markdown_core_node *node);
-
 /* Both cross kinds own the same raw reference fields in one payload allocation.
  * Only CrossEmbedded allocates the dimension value beside those fields. */
 static inline markdown_core_cross_reference *markdown_core_node_cross_reference(const markdown_core_node *node) {
     return node->kind == MARKDOWN_CORE_NODE_CROSS_LINK ? node->as.cross_link : &node->as.cross_embedded->reference;
 }
 
-/* Takes ownership of `url` and `title` and answers a resource with one holder,
- * or NULL having taken nothing -- the caller still owns both chunks and frees
- * them. The resource's slot comes from `pool`'s resource slabs, or from the
+/* Takes ownership of `url` and `title` and answers a resource, or NULL
+ * having taken nothing -- the caller still owns both chunks and frees them.
+ * The resource's slot comes from `pool`'s resource slabs, or from the
  * allocator when it is NULL (slab.h). */
 markdown_core_resource *markdown_core_resource_new(struct markdown_core_node_pool *pool, markdown_core_chunk url,
                                                    markdown_core_optional_chunk title);
-void markdown_core_resource_retain(markdown_core_resource *resource);
-/* Drops one holder and frees the resource with the last, its slot going back
- * to `resources` (a pool's resource slabs) or, when that is NULL, dropping its
- * slab hold. NULL is a no-op. */
-void markdown_core_resource_release(markdown_core_slab_pool *resources, markdown_core_resource *resource);
+/* Frees the resource, its slot going back to `resources` (a pool's resource
+ * slabs) or, when that is NULL, dropping its slab hold. NULL is a no-op. */
+void markdown_core_resource_free(markdown_core_slab_pool *resources, markdown_core_resource *resource);
 int markdown_core_node_check(markdown_core_node *node, FILE *out);
 
 static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_TYPE_BLOCK_P(markdown_core_node_type node_type) {

@@ -14,7 +14,7 @@ Commit abbreviations identify the reviewed history, not implementation layers.
 | Element or syntax | Implementation | Reviewed feature commits |
 | --- | --- | --- |
 | Document: source envelope, definition dependencies and resolution order | `document.c`, invoking the participating element services | Inherited and shared document grammar |
-| Paragraph: default prose, reference-only cleanup and lazy continuation | `paragraph.c` | Inherited |
+| Paragraph: default prose, closing into the References it held, and lazy continuation | `paragraph.c` | Inherited |
 | Text: literals, entities, escapes and contextual escaped spaces | `text.c` | Inherited; script-space semantics from `0c68bd1d` |
 | SoftBreak and LineBreak: authored line endings and hard breaks | `line_break.c`, with escaped breaks recognized by Text | Inherited |
 | Emphasis and Strong: asterisk and underscore rules | `emphasis.c`, declaring both spellings to the shared delimiter engine | Inherited |
@@ -25,7 +25,7 @@ Commit abbreviations identify the reviewed history, not implementation layers.
 | ThematicBreak: marker runs and failed-suffix cache | `thematic_break.c` | Inherited |
 | Autolink: angle-delimited URI/email and bare links | `autolink.c` | Inherited |
 | Comment: HTML comments and `%%` inline/block comments | `comment.c` | `ab01af37`, `b7dc8daf` |
-| Link: direct destinations, shared reference resources, reference definitions, attribute attachment | `link.c`, using `attributes.c` | `18602b2e`, `1c5c7a39`, `8d9177fa` |
+| Link: direct destinations, reference occurrences, `Reference` definitions, attribute attachment | `link.c`, using `attributes.c` | `18602b2e`, `1c5c7a39`, `8d9177fa` |
 | Embedded: image prefix, destinations and authored label dimensions | `embedded.c`, using Link's shared destination and bracket grammar | `18602b2e`, `1c5c7a39`, `9ab6dfee` |
 | CrossLink and CrossEmbedded: `[[...]]` and `![[...]]` | `cross_link.c`, using the same `embedded.c` dimension parser | `4853f2ad`, `9ab6dfee` |
 | Callout: quote container, variant/fold metadata and inline title | `callout.c` | `b6a11e50`, `d53b6f53` |
@@ -63,7 +63,7 @@ delimiter events, pairing, range reduction and inline-field continuation.
 `core/blocks.c` owns the open-container spine, indentation advancement,
 streaming and mapped inputs, lookahead, source marks and lifecycle dispatch.
 Neither driver recognizes element spellings or reads element-specific AST
-payloads. Canonical node storage, resource identity and owned-field traversal
+payloads. Canonical node storage and owned-field traversal
 remain shared model operations, independent of a syntax's spelling.
 
 Elements own lexical rules, recognition results, element construction,

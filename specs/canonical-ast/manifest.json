@@ -52,7 +52,8 @@
             "Citation",
             "Footnote",
             "Specimen",
-            "Metadata"
+            "Metadata",
+            "Reference"
         ],
         "states": [
             "directiveBlock.name.null",
@@ -143,7 +144,8 @@
             "directive.label.null",
             "directive.label.empty",
             "directive.label.populated",
-            "reference.resolution.identical",
+            "destination.reference.label",
+            "reference.definition.url",
             "link.title.null",
             "link.title.empty",
             "link.title.value",
@@ -247,7 +249,8 @@
                     "HTMLBlock",
                     "Link",
                     "Embedded",
-                    "Footnote"
+                    "Footnote",
+                    "Reference"
                 ],
                 "states": [
                     "callout.variant.null",
@@ -486,9 +489,10 @@
             "input": "references.md",
             "expected": "references.ast",
             "coverage": {
-                "kinds": ["Document", "Paragraph", "Link", "Embedded", "Text"],
+                "kinds": ["Document", "Paragraph", "Link", "Embedded", "Text", "Reference"],
                 "states": [
-                    "reference.resolution.identical",
+                    "destination.reference.label",
+                    "reference.definition.url",
                     "destination.url.value",
                     "link.title.value",
                     "embedded.title.value",
@@ -675,7 +679,8 @@
                     "Comment",
                     "Cite",
                     "Citation",
-                    "Footnote"
+                    "Footnote",
+                    "Reference"
                 ],
                 "states": [
                     "callout.variant.value",
@@ -704,7 +709,8 @@
                     "Table",
                     "TableRow",
                     "TableCell",
-                    "CrossEmbedded"
+                    "CrossEmbedded",
+                    "Reference"
                 ],
                 "states": [
                     "embedded.dimensions.width",
@@ -748,7 +754,8 @@
                     "CodeBlock",
                     "Citation",
                     "Footnote",
-                    "Metadata"
+                    "Metadata",
+                    "Reference"
                 ],
                 "states": [
                     "document.metadata.present",
@@ -820,7 +827,17 @@
             "input": "attribute-sites.md",
             "expected": "attribute-sites.ast",
             "coverage": {
-                "kinds": ["Document", "Heading", "CodeBlock", "Paragraph", "Code", "Link", "Embedded", "Text"],
+                "kinds": [
+                    "Document",
+                    "Heading",
+                    "CodeBlock",
+                    "Paragraph",
+                    "Code",
+                    "Link",
+                    "Embedded",
+                    "Text",
+                    "Reference"
+                ],
                 "states": [
                     "markup.anchor.value",
                     "markup.attributes.classes",
@@ -937,7 +954,8 @@
                     "Directive",
                     "Cite",
                     "Citation",
-                    "Footnote"
+                    "Footnote",
+                    "Reference"
                 ],
                 "states": [
                     "citation.bib.mode.normal",
@@ -1120,7 +1138,8 @@
                     "Link",
                     "Cite",
                     "Citation",
-                    "Footnote"
+                    "Footnote",
+                    "Reference"
                 ],
                 "states": ["citation.referent.footnote.label"],
                 "orders": []

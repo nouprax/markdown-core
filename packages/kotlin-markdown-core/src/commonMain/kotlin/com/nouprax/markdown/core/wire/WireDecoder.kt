@@ -41,11 +41,14 @@ internal object WireDecoder {
     ) {
         private var offset = 0
         private val nodes = ArrayList<Markup>()
-        private val resources = ArrayList<DefinitionResource>()
 
-        /** Every footnote and specimen built so far, by id, for the definition tables. */
+        /** Every footnote, specimen and reference built so far, by id, for the definition tables. */
         private val footnotes = HashMap<Long, Footnote>()
         private val specimens = HashMap<Long, Specimen>()
+        private val references = HashMap<Long, Reference>()
+
+        /** Every reference and heading built so far, by id, for the reference label table. */
+        private val resolvable = HashMap<Long, Markup>()
 
         fun decode(): Document {
             offset = STATUS_OFFSET
@@ -71,6 +74,8 @@ internal object WireDecoder {
             val node = children.fields(kind, id, extent, anchor, attributes)
             if (node is Footnote) footnotes[id.value] = node
             if (node is Specimen) specimens[id.value] = node
+            if (node is Reference) references[id.value] = node
+            if (node is Reference || node is Heading) resolvable[id.value] = node
             nodes.subList(children.start, nodes.size).clear()
             nodes += node
         }
@@ -95,6 +100,8 @@ internal object WireDecoder {
                         unit,
                         table(footnotes),
                         table(specimens),
+                        table(references),
+                        labels(),
                         id,
                         extent,
                         anchor,
@@ -255,30 +262,19 @@ internal object WireDecoder {
                 }
 
                 WireNodeKind.LINK -> {
-                    val resource = resource()
-                    Link(
-                        resource.dest,
-                        resource.title,
-                        content(),
-                        id,
-                        extent,
-                        anchor ?: resource.anchor,
-                        attributes.inheriting(resource.attributes),
-                    )
+                    Link(destination(), optional { string() }, content(), id, extent, anchor, attributes)
                 }
 
                 WireNodeKind.EMBEDDED -> {
-                    val resource = resource()
-                    val dimensions = optional { dimensions() }
                     Embedded(
-                        resource.dest,
-                        resource.title,
-                        dimensions,
+                        destination(),
+                        optional { string() },
+                        optional { dimensions() },
                         content(),
                         id,
                         extent,
-                        anchor ?: resource.anchor,
-                        attributes.inheriting(resource.attributes),
+                        anchor,
+                        attributes,
                     )
                 }
 
@@ -417,6 +413,10 @@ internal object WireDecoder {
                         attributes = attributes,
                     )
                 }
+
+                WireNodeKind.REFERENCE -> {
+                    Reference(string(), destination(), optional { string() }, id, extent, anchor, attributes)
+                }
             }
 
         /** One record's nodes: the top of the stack, handed to its fields in order. */
@@ -457,16 +457,8 @@ internal object WireDecoder {
         private fun <T : Markup> table(definitions: Map<Long, T>): kotlin.collections.List<T> =
             list { definitions.getValue(int()) }
 
-        // ---- Shared resources --------------------------------------------------
-
-        private fun resource(): DefinitionResource {
-            // A resource's first occurrence defines it, with the next ordinal.
-            val ordinal = count()
-            if (ordinal < resources.size) return resources[ordinal]
-            val resource = DefinitionResource(destination(), optional { string() }, optional { string() }, attributes())
-            resources += resource
-            return resource
-        }
+        /** A `u32` count and that many labels, each with the `u64` id of the reference or heading it resolves to. */
+        private fun labels(): Map<String, Markup> = list { string() to resolvable.getValue(int()) }.toMap()
 
         // ---- Values ------------------------------------------------------------
 
@@ -479,7 +471,8 @@ internal object WireDecoder {
         private fun destination(): Destination =
             when (u8()) {
                 0 -> Destination.Url(string())
-                else -> Destination.Cross(string(), optional { string() })
+                1 -> Destination.Cross(string(), optional { string() })
+                else -> Destination.Reference(string())
             }
 
         private fun cross(): Destination.Cross = destination() as Destination.Cross

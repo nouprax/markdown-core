@@ -216,6 +216,11 @@ public interface MarkupVisitor {
         metadata: Metadata,
         phase: MarkupVisitPhase,
     ): Unit
+
+    public fun visit(
+        reference: Reference,
+        phase: MarkupVisitPhase,
+    ): Unit
 }
 
 /** The phase supplied to a markup visit. */

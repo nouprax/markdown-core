@@ -14,6 +14,8 @@
  * load-bearing and each rule is a claim about equivalence, not a convenience.
  */
 
+import { Buffer } from "node:buffer";
+
 /** cmark-gfm XML element -> canonical node kind. */
 const XML_KIND = {
     document: "Document",
@@ -239,6 +241,11 @@ export function crossDestination(path, anchor) {
     return { kind: "cross", path, anchor };
 }
 
+/** The `reference` branch of a `Destination`: the normalized label a reference names. */
+export function referenceDestination(label) {
+    return { kind: "reference", label };
+}
+
 function scanJsonString(text, start) {
     if (text[start] !== '"') return null;
     for (let cursor = start + 1; cursor < text.length; cursor++) {
@@ -291,6 +298,13 @@ export function parseDestination(raw) {
     }
 
     cursor = 0;
+    if (consume("reference(")) {
+        const label = string();
+        if (label === undefined || !consume(")") || !complete()) return null;
+        return referenceDestination(label);
+    }
+
+    cursor = 0;
     if (!consume("cross(") || !consume("path=")) return null;
     const path = string();
     if (path === undefined || !consume(",") || !consume("anchor=")) return null;
@@ -323,6 +337,7 @@ export function citationItem(fields, prefix = [], suffix = []) {
 /** The canonical dump spelling of a `Destination`: the one form both sides compare. */
 export function renderDestination(destination) {
     if (destination.kind === "url") return `url(${JSON.stringify(destination.value)})`;
+    if (destination.kind === "reference") return `reference(${JSON.stringify(destination.label)})`;
     const anchor = destination.anchor === null ? "null" : JSON.stringify(destination.anchor);
     return `cross(path=${JSON.stringify(destination.path)},anchor=${anchor})`;
 }
@@ -539,10 +554,88 @@ export function applyUpstreamFootnoteModel(root, fired) {
     return rewrite(root);
 }
 
-/* No reference projection any more (M2): both sides consume a link reference
- * definition into a map and resolve every reference into the `Link` or `Embedded`
- * it names, so a reference that resolved to the wrong definition, or to none,
- * shows up as a plain difference in `dest`, `title`, or kind. */
+/**
+ * Registered delta `reference-definition-node`: upstream consumes a link
+ * reference definition and copies it into every `Link` or `Embedded` that
+ * resolves to it, while this repository keeps the definition as a
+ * `Reference` block where it was written and has each occurrence name its
+ * label (`dest=reference("...")`), which the document resolves. A tree from
+ * this side is projected onto upstream's shape: each reference destination
+ * that resolves takes its target's destination, and every `Reference` leaves
+ * the tree. A reference that resolved to the wrong definition, or to none,
+ * still shows up as a plain difference in `dest`, `title`, or kind.
+ *
+ * The label resolves as the document resolves it: to the first `Reference`
+ * in source order with that label, whose url and title the occurrence takes,
+ * with the definition's classes and records ahead of the occurrence's and its
+ * anchor where the occurrence has none; or, when no `Reference` states it, to
+ * the first `Heading` whose text declares it, whose `#anchor` the occurrence
+ * takes with no title. A heading's text is the `source` its content spans,
+ * under the reference-label normalization.
+ */
+export function resolveReferences(root, source, fired) {
+    const lines = Buffer.from(source, "utf8")
+        .toString("latin1")
+        .split("\n")
+        .map((line) => Buffer.from(line, "latin1"));
+    const point = (text) => text.split(":").map(Number);
+    // The bytes from the start of `first` to the end of `last`, both scopes.
+    const spanned = (first, last) => {
+        const [startLine, startColumn] = point(first.split("..")[0]);
+        const [endLine, endColumn] = point(last.split("..")[1]);
+        const parts = [];
+        for (let line = startLine; line <= endLine; line++) {
+            const bytes = lines[line - 1] ?? Buffer.alloc(0);
+            const from = line === startLine ? startColumn - 1 : 0;
+            const to = line === endLine ? endColumn : bytes.length;
+            parts.push(bytes.subarray(from, to).toString("utf8"));
+        }
+        return parts.join("\n");
+    };
+    const fold = (label) =>
+        label
+            .trim()
+            .replace(/[ \t\r\n]+/g, " ")
+            .toUpperCase()
+            .toLowerCase();
+    const definitions = new Map();
+    const headings = new Map();
+    const survey = (node) => {
+        if (node.kind === "Reference" && !definitions.has(node.fields.label)) definitions.set(node.fields.label, node);
+        if (node.kind === "Heading" && node.children.length > 0) {
+            const key = fold(spanned(node.children[0].tokens.scope, node.children.at(-1).tokens.scope));
+            if (key && !headings.has(key)) headings.set(key, node);
+        }
+        for (const child of node.children) survey(child);
+    };
+    survey(root);
+    const rewrite = (node) => {
+        const destination =
+            node.kind === "Link" || node.kind === "Embedded" ? parseDestination(node.fields.dest) : null;
+        if (destination?.kind === "reference") {
+            const definition = definitions.get(destination.label);
+            const heading = definition ? undefined : headings.get(fold(destination.label));
+            if (definition) {
+                const inner = (attributes) => attributes.slice(1, -1);
+                node.fields.dest = definition.fields.dest;
+                node.fields.title = definition.fields.title;
+                node.fields.attributes = `{${[inner(definition.fields.attributes), inner(node.fields.attributes)]
+                    .filter(Boolean)
+                    .join(" ")}}`;
+                if (node.fields.anchor === "null") node.fields.anchor = definition.fields.anchor;
+            } else if (heading) {
+                node.fields.dest = renderDestination(urlDestination(`#${heading.fields.anchor}`));
+            }
+            fired?.add("reference-definition-node");
+        }
+        const before = node.children.length;
+        node.children = node.children.filter((child) => child.kind !== "Reference");
+        if (node.children.length !== before) fired?.add("reference-definition-node");
+        for (const child of node.children) rewrite(child);
+        return node;
+    };
+    return rewrite(root);
+}
 
 export function render(node, indent = "") {
     const fields = Object.entries(node.fields)

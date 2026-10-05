@@ -204,6 +204,15 @@ order, and `document.footnote(label)` and `document.specimen(label)` return the
 first one whose label equals the referent's; an inline note is never found by
 label.
 
+A link reference definition `[label]: /url "title"` is a `Reference` block where
+it was written, with its normalized `label`, a `Destination.Url` `dest`, its
+`title`, and the anchor and attributes it states. A reference occurrence --
+`[text][label]`, `[label][]`, `[label]` or `![alt][label]` -- is a `Link` or
+`Embedded` whose `dest` is `Destination.Reference(label)` with a null title.
+`Document.references` lists every definition in source order, and
+`document.reference(label)` returns the node the label resolves to: the first
+`Reference` with that label, else the first `Heading` whose text declares it.
+
 `%%comment%%` produces `Comment`, the kind an HTML comment already produces,
 inline or as a block when both `%%` fences stand on lines of their own under
 the same container prefixes. The body is opaque and stored as written, nothing
@@ -275,18 +284,19 @@ with no starting cells retain `cells=[]`; an authored empty cell retains
 and spans.
 
 Attributes attach to inline code (``x`{.code}`), ATX and Setext headings,
-fenced code, direct links/media, resolved references and angle autolinks.
-Reference definitions can supply an anchor, classes and records. An occurrence's
-nonempty anchor wins; its classes and records follow inherited declarations,
-including duplicates. Image dimension suffixes and dimension attribute records
+fenced code, links/media, reference definitions and angle autolinks. Each node
+holds the anchor, classes and records written on it, including duplicates: a
+reference occurrence holds its own, and the `Reference` it names holds the
+definition's. Image dimension suffixes and dimension attribute records
 remain independent. All returned values use the binding's native collections
 and remain usable after parsing finishes.
 
 Parsed headings receive automatic anchors: `# Hello World` declares
 `hello-world`, with `-1`, `-2`, and later suffixes for collisions. Explicit
 anchors anywhere in the document are reserved first. `[Hello World]`,
-`[Hello World][]`, and `[go][Hello World]` resolve to `#hello-world`, including
-before the heading; an explicit reference definition takes priority. Labels
+`[Hello World][]`, and `[go][Hello World]` name `reference("hello world")`, and
+`document.reference("hello world")` answers the heading, including before the
+heading; an explicit reference definition takes priority. Labels
 use authored heading text, so `# *Title*` is referenced by `[*Title*]`.
 Heading attributes stay on the heading, and generated targets add no scope.
 

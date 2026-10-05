@@ -145,5 +145,6 @@ const relations: {
     crossEmbedded: () => none,
     comment: () => none,
     formula: () => none,
-    metadata: () => none
+    metadata: () => none,
+    reference: () => none
 };

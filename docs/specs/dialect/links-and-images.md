@@ -31,9 +31,11 @@ Give a destination a label and reuse it:
 [guide]: /guide "Getting started"
 ```
 
-All three occurrences become ordinary `Link` nodes with the same destination
-and title. The definition itself produces no node. Definitions can appear before
-or after uses. Labels ignore case and normalize whitespace; the first definition
+All three occurrences become `Link` nodes whose destination names the label
+`guide`. The definition is a `Reference` block where it was written, holding
+the label, the destination `/guide` and the title `Getting started`; the
+document resolves a label to its definition. Definitions can appear before or
+after uses. Labels ignore case and normalize whitespace; the first definition
 wins when labels repeat. Each link keeps the scope of its own occurrence.
 
 An undefined reference remains bracket text. A definition is recognized only
@@ -117,7 +119,8 @@ reference, or angle autolink:
 The first link receives a class and a record. The image has typed width 320
 and a separate `width="50%"` record; neither overwrites the other. Whitespace
 before `{` prevents attachment. Bare automatic links have no attribute suffix.
-Reference definitions can supply inherited [attributes](attributes.md).
+A reference definition carries its own [attributes](attributes.md), as a
+`Reference` node where it was written.
 
 ## Bracket precedence
 

@@ -204,9 +204,7 @@ static int index_map(markdown_core_map *map) {
     if (!markdown_core_key_index_init(&map->index, map->size)) {
         return 0;
     }
-    /* Construction order is independent of source order for mapped block
-     * inputs. Explicit definitions precede implicit heading declarations;
-     * within either class the first authored occurrence wins. */
+    /* A label is defined once any record declares it. */
     for (record = map->records; record; record = record->next) {
         markdown_core_key_index_slot *slot =
             markdown_core_key_index_entry(&map->index, record->label, record->label_len);
@@ -214,12 +212,8 @@ static int index_map(markdown_core_map *map) {
             markdown_core_key_index_free(&map->index);
             return 0;
         }
-        markdown_core_map_record *existing = slot->key ? slot->value.pointer : NULL;
-        if (!existing || (existing->implicit && !record->implicit) ||
-            (existing->implicit == record->implicit && record->source_key <= existing->source_key)) {
-            if (!existing) {
-                markdown_core_key_index_commit(&map->index, slot, record->label);
-            }
+        if (!slot->key) {
+            markdown_core_key_index_commit(&map->index, slot, record->label);
             slot->value.pointer = record;
         }
     }
@@ -293,17 +287,9 @@ void *markdown_core_map_carve(markdown_core_map *map, size_t size) {
     return storage;
 }
 
-void markdown_core_map_free(markdown_core_slab_pool *resources, markdown_core_map *map) {
-    markdown_core_map_record *record;
-
+void markdown_core_map_free(markdown_core_map *map) {
     if (map == NULL) {
         return;
-    }
-
-    /* The map's holder goes; a resource some node still reads through stays
-     * with that node, which is how the tree outlives the parser. */
-    for (record = map->records; record; record = record->next) {
-        markdown_core_resource_release(resources, record->resource);
     }
     while (map->blocks) {
         markdown_core_map_block *next = map->blocks->head.next;

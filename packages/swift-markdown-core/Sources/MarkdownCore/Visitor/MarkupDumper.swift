@@ -308,6 +308,18 @@ private struct LineVisitor: MarkupVisitor {
             ]
         )
     }
+
+    mutating func visit(_ node: Reference, phase: MarkupVisitPhase) {
+        line(
+            "Reference",
+            node,
+            fields: [
+                "label=\(dump(escaped: node.label))",
+                "dest=\(dump(destination: node.dest))",
+                "title=\(dump(optional: node.title))",
+            ]
+        )
+    }
 }
 
 private func dump(columns value: [TableColumn]) -> String {
@@ -337,6 +349,7 @@ private func dump(destination value: Destination) -> String {
     switch value {
     case .url(let url): "url(\(dump(escaped: url)))"
     case .cross(let path, let anchor): "cross(path=\(dump(escaped: path)),anchor=\(dump(optional: anchor)))"
+    case .reference(let label): "reference(\(dump(escaped: label)))"
     }
 }
 

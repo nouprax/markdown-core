@@ -5,9 +5,9 @@ import type { Markup } from "../markup/markup.js";
  * same kind, id, extent, scalar fields and pairwise equal children in every
  * relation. Nodes and values are plain objects, so this is one structural
  * comparison of every enumerable field, run over an explicit work stack: depth
- * is data, not call stack. An object shared by both sides, such as a
- * definition's destination, is compared once. The comparator React.memo takes
- * for a node; a list keys the same nodes by `id`.
+ * is data, not call stack. An object shared by both sides is compared once.
+ * The comparator React.memo takes for a node; a list keys the same nodes by
+ * `id`.
  */
 export function markupEquals(a: Markup, b: Markup): boolean {
     const pending: unknown[] = [a, b];

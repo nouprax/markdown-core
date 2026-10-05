@@ -130,7 +130,7 @@ The code block has info/language `python`, class `numberLines`, and a
 suffix or one followed by other text remains ordinary info-string content;
 the original fence rule must still accept the complete opening line.
 
-### Links, images, and inherited attributes
+### Links, images, and reference definitions
 
 ```markdown
 [guide][r]{#local .new k=2}
@@ -138,14 +138,14 @@ the original fence rule must still accept the complete opening line.
 [r]: /guide {#shared .base k=1}
 ```
 
-The link receives anchor `local`, classes `base`, `new`, and records `k="1"`,
-`k="2"`. Definition classes/records come first, followed by occurrence values.
-A non-null occurrence anchor wins; otherwise the definition's anchor is used.
-Nothing is deduplicated and the occurrence retains its own source range.
+The link has anchor `local`, class `new` and record `k="2"`, and its
+destination names the label `r`. The `Reference` has anchor `shared`, class
+`base` and record `k="1"`. Each node has the attributes written on it; a
+consumer reads the definition's through the document's reference lookup.
 
 A definition's container can follow spaces/tabs and at most one line ending;
 only whitespace may follow it on its closing line. Invalid syntax falls back
-to the ordinary definition grammar. An unresolved reference inherits nothing.
+to the ordinary definition grammar.
 
 An attribute container after a shortcut-looking bracket makes a
 [span](bracketed-spans.md), since spans have earlier precedence. Bare automatic

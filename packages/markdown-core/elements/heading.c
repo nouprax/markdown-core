@@ -61,23 +61,11 @@ void markdown_core_headings_observe(const markdown_core_element_instance *self, 
     if (!state->headings.count) {
         return;
     }
-    const markdown_core_chunk *anchor = markdown_core_node_anchor_chunk(node);
+    const markdown_core_chunk *anchor = &node->attributes.anchor;
     if (!anchor->len) {
         return;
     }
     state->anchor_work++;
-    if (anchor != &node->attributes.anchor) {
-        const unsigned char *identity = (const unsigned char *)&node->as.link->resource;
-        void *existing = NULL;
-        if (!markdown_core_key_index_insert(&registry->resources, identity, sizeof(node->as.link->resource),
-                                            node->as.link->resource, 0, &existing)) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            return;
-        }
-        if (existing) {
-            return;
-        }
-    }
     markdown_core_key_index_slot *slot = anchor_slot(parser, state, *anchor);
     if (slot && !slot->key) {
         markdown_core_key_index_commit(&registry->index, slot, anchor->data);
@@ -107,8 +95,7 @@ void markdown_core_headings_prepare(const markdown_core_element_instance *self, 
     for (size_t i = 0; i < headings->count && !parser->error; i++) {
         markdown_core_finish_heading(parser, &headings->values[i]);
     }
-    if (!parser->error && (!markdown_core_key_index_init(&state->anchors.index, headings->count) ||
-                           !markdown_core_key_index_init(&state->anchors.resources, 0))) {
+    if (!parser->error && !markdown_core_key_index_init(&state->anchors.index, headings->count)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
 }
@@ -124,7 +111,6 @@ void markdown_core_headings_dispose(const markdown_core_element_instance *self) 
     markdown_core_free(headings->values);
     *headings = (markdown_core_heading_collection){0};
     markdown_core_key_index_free(&state->anchors.index);
-    markdown_core_key_index_free(&state->anchors.resources);
 }
 
 static void project_anchor_literal(markdown_core_heading_state *state, markdown_core_strbuf *base,
@@ -258,12 +244,8 @@ static void append_anchor_suffix(markdown_core_strbuf *base, size_t ordinal) {
     markdown_core_strbuf_put(base, (const unsigned char *)start, (bufsize_t)(end - start));
 }
 
-/* Each heading's anchor, and the destination of the implicit reference it
- * declares. The destination is the anchor after a `#`, so a computed anchor
- * is built there once: `base` holds `#` and the anchor, the resource keeps
- * that as its destination, and the heading's anchor borrows the bytes after
- * the `#`, its attribute value holding the resource (attributes.h). Only a
- * heading with no implicit reference owns a copy of its computed anchor. */
+/* Each heading's anchor: an authored one stays, and a computed one is the
+ * heading's own copy of the first free name its text projects to. */
 void markdown_core_headings_finish(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     markdown_core_heading_state *state = self->state;
     markdown_core_heading_collection *headings = &state->headings;
@@ -273,69 +255,43 @@ void markdown_core_headings_finish(const markdown_core_element_instance *self, m
     for (size_t i = 0; i < headings->count && !parser->error; i++) {
         markdown_core_node *node = headings->values[i].node;
         markdown_core_chunk *anchor = &node->attributes.anchor;
-        markdown_core_resource *resource = headings->values[i].resource;
-        markdown_core_strbuf_clear(&base);
-        markdown_core_strbuf_putc(&base, '#');
-        if (!anchor->len) {
-            heading_anchor_base(parser, state, node, &base, &stack);
-            if (parser->error) {
-                break;
-            }
-            bufsize_t base_length = base.size;
-            markdown_core_key_index_slot *entry =
-                anchor_slot(parser, state, (markdown_core_chunk){base.ptr + 1, base.size - 1, 0});
-            markdown_core_key_index_slot *candidate = entry;
-            if (entry && entry->key) {
-                do {
-                    markdown_core_strbuf_truncate(&base, base_length);
-                    append_anchor_suffix(&base, entry->value.counter++);
-                    if (base.oom) {
-                        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-                        break;
-                    }
-                    /* Only a vacant candidate can grow the index. The base
-                     * cursor is updated before that call and never used after
-                     * it returns a vacant entry, so no pointer survives growth. */
-                    candidate = anchor_slot(parser, state, (markdown_core_chunk){base.ptr + 1, base.size - 1, 0});
-                } while (candidate && candidate->key);
-            }
-            if (parser->error) {
-                break;
-            }
-            markdown_core_chunk_free(anchor);
-            if (resource) {
-                markdown_core_chunk_free(&resource->url);
-                resource->url = (markdown_core_chunk){base.ptr, base.size, 0};
-                if (!markdown_core_chunk_to_cstr(&resource->url)) {
-                    markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-                    break;
-                }
-                *anchor = (markdown_core_chunk){resource->url.data + 1, resource->url.len - 1, 0};
-                markdown_core_resource_retain(resource);
-                node->attributes.anchor_owner = resource;
-            } else {
-                *anchor = (markdown_core_chunk){base.ptr + 1, base.size - 1, 0};
-                if (!markdown_core_chunk_to_cstr(anchor)) {
-                    markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-                    break;
-                }
-            }
-            markdown_core_key_index_commit(&registry->index, candidate, anchor->data);
-            candidate->value.counter = 1;
-        } else if (resource) {
-            /* An authored anchor is the attribute value's own; the
-             * destination is a copy of it after the `#`. */
-            markdown_core_strbuf_put(&base, anchor->data, anchor->len);
-            if (base.oom) {
-                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-                break;
-            }
-            markdown_core_chunk_free(&resource->url);
-            resource->url = (markdown_core_chunk){base.ptr, base.size, 0};
-            if (!markdown_core_chunk_to_cstr(&resource->url)) {
-                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            }
+        if (anchor->len) {
+            continue;
         }
+        markdown_core_strbuf_clear(&base);
+        heading_anchor_base(parser, state, node, &base, &stack);
+        if (parser->error) {
+            break;
+        }
+        bufsize_t base_length = base.size;
+        markdown_core_key_index_slot *entry = anchor_slot(parser, state, (markdown_core_chunk){base.ptr, base.size, 0});
+        markdown_core_key_index_slot *candidate = entry;
+        if (entry && entry->key) {
+            do {
+                markdown_core_strbuf_truncate(&base, base_length);
+                append_anchor_suffix(&base, entry->value.counter++);
+                if (base.oom) {
+                    markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+                    break;
+                }
+                /* Only a vacant candidate can grow the index. The base
+                 * cursor is updated before that call and never used after
+                 * it returns a vacant entry, so no pointer survives growth. */
+                candidate = anchor_slot(parser, state, (markdown_core_chunk){base.ptr, base.size, 0});
+            } while (candidate && candidate->key);
+        }
+        if (parser->error) {
+            break;
+        }
+        markdown_core_chunk_free(anchor);
+        *anchor = (markdown_core_chunk){base.ptr, base.size, 0};
+        if (!markdown_core_chunk_to_cstr(anchor)) {
+            *anchor = (markdown_core_chunk){0};
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            break;
+        }
+        markdown_core_key_index_commit(&registry->index, candidate, anchor->data);
+        candidate->value.counter = 1;
     }
     markdown_core_free(stack.values);
     markdown_core_strbuf_free(&base);
@@ -374,19 +330,19 @@ void markdown_core_prepare_heading(const markdown_core_element_instance *self, m
         markdown_core_inline_process_delimiters(parser, &inline_state, 0, NULL);
         const markdown_core_heading_run *run = markdown_core_run_state(&inline_state, self);
         markdown_core_chunk label = {inline_state.input.data, run->label_end, 0};
+        /* A heading whose text is writable as a reference label declares
+         * it, normalized: an occurrence naming it resolves to the heading
+         * when no Reference declares it. */
         if (label.len > 0 && label.len <= MAX_LINK_LABEL_LENGTH &&
             markdown_core_inline_reference_label_length(label.data, label.len) == label.len) {
-            markdown_core_resource *resource = markdown_core_resource_new(parser->pool, markdown_core_chunk_literal(""),
-                                                                          markdown_core_optional_chunk_absent());
-            if (!resource) {
-                inline_state.error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
-            } else {
-                markdown_core_map_record *record = markdown_core_reference_create(parser->refmap, &label, resource);
-                if (record) {
-                    record->implicit = true;
-                    record->source_key = heading->node->where.place.start;
-                    heading->resource = record->resource;
-                }
+            int lost = 0;
+            unsigned char *normalized = normalize_map_label(&label, &lost);
+            if (lost) {
+                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            } else if (normalized) {
+                markdown_core_chunk *declared = &heading->node->as.heading->label;
+                *declared = (markdown_core_chunk){normalized, (bufsize_t)strlen((char *)normalized), 1};
+                markdown_core_label_declare(parser->refmap, declared);
             }
         }
     }

@@ -140,6 +140,13 @@
             "record": "markdown_core_metadata_fields",
             "structure": null,
             "note": "Read by the document element's prefix reader (properties.c) and never parsed as a block, so no element defines its structure."
+        },
+        {
+            "name": "REFERENCE",
+            "kind": "Reference",
+            "record": "markdown_core_reference_value",
+            "structure": null,
+            "note": "A link reference definition: a leaf block the close of the paragraph that held it makes whole, so it is never open on the spine and no element defines its structure."
         }
     ],
     "inline": [

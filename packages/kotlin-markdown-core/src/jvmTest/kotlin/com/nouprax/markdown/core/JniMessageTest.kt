@@ -3,6 +3,7 @@ package com.nouprax.markdown.core
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class JniMessageTest {
@@ -23,7 +24,7 @@ class JniMessageTest {
         }
         val short = "a"
         val long = "中".repeat(1024)
-        // The resource's anchor, class and record value: three strings, once.
+        // The Reference's anchor, class and record value: three strings, once.
         val attributeGrowth = 3 * (long.encodeToByteArray().size - short.encodeToByteArray().size)
         for (occurrences in listOf(1, 64, 4096)) {
             val bytes = message(occurrences, long)
@@ -31,15 +32,19 @@ class JniMessageTest {
             val document = WireDecoder.decode(bytes, TextUnit.UTF16)
             // The tree owns its values: nothing reads the message after decoding.
             bytes.fill(0)
-            val links = document.content.map { assertIs<Link>(assertIs<Paragraph>(it).content.single()) }
-            assertEquals(occurrences, links.size)
-            assertTrue(
-                links.all {
-                    it.anchor == long && it.attributes.records
-                        .single()
-                        .value == long
-                },
+            val reference = assertIs<Reference>(document.content.first())
+            assertEquals(long, reference.anchor)
+            assertEquals(
+                long,
+                reference.attributes.records
+                    .single()
+                    .value,
             )
+            val links =
+                document.content.drop(1).map { assertIs<Link>(assertIs<Paragraph>(it).content.single()) }
+            assertEquals(occurrences, links.size)
+            assertTrue(links.all { it.dest == Destination.Reference("r") && it.attributes == Attributes.empty })
+            assertSame<Markup?>(reference, document.reference("r"))
         }
     }
 }

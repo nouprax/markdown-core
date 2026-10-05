@@ -188,7 +188,7 @@ public sealed class Markup {
             }
 
             is ThematicBreak, is CodeBlock, is HTMLBlock, is FormulaBlock, is Text, is SoftBreak, is LineBreak, is Code,
-            is HTML, is Comment, is CrossLink, is CrossEmbedded, is Formula, is Metadata,
+            is HTML, is Comment, is CrossLink, is CrossEmbedded, is Formula, is Metadata, is Reference,
             -> {
                 emptyList()
             }
@@ -370,6 +370,10 @@ public sealed class Markup {
 
             is Specimen -> {
                 other is Specimen && label == other.label && start == other.start
+            }
+
+            is Reference -> {
+                other is Reference && label == other.label && dest == other.dest && title == other.title
             }
 
             is Metadata -> {

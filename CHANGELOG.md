@@ -6,6 +6,26 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Make each link reference definition a `Reference(label, dest, title)`
+  leaf block where it was written, with the anchor and attributes the
+  definition states; a paragraph of only definitions is its References.
+  A reference `Link` or `Embedded` now holds `dest: .reference(label)`, the
+  normalized label it names, no title and only its own anchor and
+  attributes: definition attributes are no longer merged into occurrences.
+  `document.references` lists the definitions in source order and
+  `document.reference(for:)` resolves a label to the first `Reference` that
+  states it or, when none does, the first `Heading` whose text declares it.
+  A `Reference`'s explicit anchor reserves its name, so a heading that would
+  compute the same anchor takes the next suffix. The C facade replaces
+  `markdown_core_node_primary_attributes`,
+  `markdown_core_node_inherited_attributes` and `markdown_core_node_resource`
+  with `markdown_core_node_attributes`, and adds
+  `markdown_core_document_reference_count`, `_at`, `_for`,
+  `_reference_label_count`, `_reference_label_at` and
+  `markdown_core_reference_label`. MCB3 drops resource ordinals, writes a
+  `Link`'s and `Embedded`'s `dest` and `title` directly, and appends the
+  Reference table and the reference label table to the definition tables.
+
 - Give every public call one error model. A C call that can fail returns a
   `markdown_core_status` -- `MARKDOWN_CORE_OK`, `ALLOCATION_FAILED`,
   `OUT_OF_BOUNDS`, `KIND_MISMATCH` or `INSIDE_SCALAR` -- and writes its result through

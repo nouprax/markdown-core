@@ -775,13 +775,31 @@ void markdown_core_block_rebase_content_marks(markdown_core_parser *parser, mark
     markdown_core_parser_adopt_content_marks(parser, &node->content_map, &node->content_map, dropped, remaining);
 }
 
+markdown_core_node *markdown_core_block_next_seen(const markdown_core_node *node) {
+    markdown_core_node *next = node->next;
+    while (next && (next->flags & MARKDOWN_CORE_NODE__BLANK_TRANSPARENT)) {
+        next = next->next;
+    }
+    return next;
+}
+
+/* The last child of `node` the blank-line facts see, or NULL. */
+static markdown_core_node *S_last_seen_child(const markdown_core_node *node) {
+    markdown_core_node *last = node->last_child;
+    while (last && (last->flags & MARKDOWN_CORE_NODE__BLANK_TRANSPARENT)) {
+        last = last->prev;
+    }
+    return last;
+}
+
 // Check to see if a node ends with a blank line, descending
 // if needed into lists and sublists.
 bool markdown_core_block_ends_with_blank_line(const markdown_core_parser *parser, markdown_core_node *node) {
     markdown_core_node *last = node;
     while (!S_last_line_checked(last) &&
-           (markdown_core_parser_kind(parser, last)->flags & MARKDOWN_CORE_KIND_BLANK_PROPAGATES) && last->last_child) {
-        last = last->last_child;
+           (markdown_core_parser_kind(parser, last)->flags & MARKDOWN_CORE_KIND_BLANK_PROPAGATES) &&
+           S_last_seen_child(last)) {
+        last = S_last_seen_child(last);
     }
     bool blank = markdown_core_block_last_line_blank(last);
     /* Cache the answer as well as the fact that it was checked. Both list

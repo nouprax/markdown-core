@@ -86,11 +86,18 @@ private class MessageWriter {
         content: Int,
         footnotes: kotlin.collections.List<Long> = emptyList(),
         specimens: kotlin.collections.List<Long> = emptyList(),
+        references: kotlin.collections.List<Long> = emptyList(),
+        labels: kotlin.collections.List<Pair<String, Long>> = emptyList(),
     ) = record(WireNodeKind.DOCUMENT)
         .u32(content)
         .bool(false)
         .table(footnotes)
         .table(specimens)
+        .table(references)
+        .apply {
+            u32(labels.size)
+            labels.forEach { (label, id) -> string(label).int(id) }
+        }
 
     private fun table(ids: kotlin.collections.List<Long>) =
         apply {
@@ -212,36 +219,88 @@ class WireDecoderTest {
     }
 
     @Test
-    fun aResourceIsDefinedOnceAndInheritedByEveryOccurrence() {
-        // The first occurrence defines resource 0; the second names it. The
-        // node's anchor is its own when present, and its attributes are the
-        // resource's followed by its own.
+    fun linksAndReferencesWriteTheirDestinationAndTitleInTheirRecords() {
+        // A direct link writes the url branch and its title, a reference
+        // occurrence the reference branch and no title, and a Reference its
+        // label, url and title. Each node holds the anchor and attributes its
+        // own record writes.
         val document =
             decode(
                 MessageWriter()
+                    .text("a")
                     .record(WireNodeKind.LINK)
-                    .u32(0)
                     .u8(0)
                     .string("/u")
                     .optional("t") { string(it) }
-                    .optional("definition") { string(it) }
-                    .attributes(listOf("shared"))
-                    .u32(0)
+                    .u32(1)
                     .record(WireNodeKind.LINK, anchor = "own", classes = listOf("mine"))
+                    .u8(2)
+                    .string("r")
+                    .optional<String>(null) { string(it) }
                     .u32(0)
+                    .record(WireNodeKind.EMBEDDED)
+                    .u8(2)
+                    .string("r")
+                    .optional<String>(null) { string(it) }
+                    .optional<Long>(null) { int(it) }
                     .u32(0)
                     .record(WireNodeKind.PARAGRAPH)
-                    .u32(2)
-                    .root(1),
+                    .u32(3)
+                    .record(WireNodeKind.REFERENCE, anchor = "definition", classes = listOf("shared"))
+                    .string("r")
+                    .u8(0)
+                    .string("/r")
+                    .optional("title") { string(it) }
+                    .root(2, references = listOf(6), labels = listOf("r" to 6L)),
             )
-        val (first, second) = assertIs<Paragraph>(document.content.single()).content.map { assertIs<Link>(it) }
-        assertSame(first.dest, second.dest)
-        assertEquals("/u", assertIs<Destination.Url>(first.dest).value)
-        assertEquals("t", second.title)
-        assertEquals("definition", first.anchor)
-        assertEquals("own", second.anchor)
-        assertEquals(listOf("shared"), first.attributes.classes)
-        assertEquals(listOf("shared", "mine"), second.attributes.classes)
+        val inlines = assertIs<Paragraph>(document.content[0]).content
+        val direct = assertIs<Link>(inlines[0])
+        assertEquals(Destination.Url("/u"), direct.dest)
+        assertEquals("t", direct.title)
+        assertNull(direct.anchor)
+        assertSame(Attributes.empty, direct.attributes)
+        val occurrence = assertIs<Link>(inlines[1])
+        assertEquals(Destination.Reference("r"), occurrence.dest)
+        assertNull(occurrence.title)
+        assertEquals("own", occurrence.anchor)
+        assertEquals(listOf("mine"), occurrence.attributes.classes)
+        val image = assertIs<Embedded>(inlines[2])
+        assertEquals(Destination.Reference("r"), image.dest)
+        assertNull(image.title)
+        assertNull(image.dimensions)
+
+        val reference = assertIs<Reference>(document.content[1])
+        assertEquals(MarkupID(6), reference.id)
+        assertEquals("r", reference.label)
+        assertEquals(Destination.Url("/r"), reference.dest)
+        assertEquals("title", reference.title)
+        assertEquals("definition", reference.anchor)
+        assertEquals(listOf("shared"), reference.attributes.classes)
+        assertEquals(listOf(reference), document.references)
+        assertSame<Markup?>(reference, document.reference("r"))
+    }
+
+    @Test
+    fun theLabelTableNamesAReferenceOrASectionTitle() {
+        // A label resolves to the Heading its id names; an id naming any
+        // other kind is an invalid message.
+        fun document(id: Long) =
+            decode(
+                MessageWriter()
+                    .text("T")
+                    .record(WireNodeKind.HEADING)
+                    .int(1)
+                    .u32(1)
+                    .text("p")
+                    .record(WireNodeKind.PARAGRAPH)
+                    .u32(1)
+                    .root(2, labels = listOf("t" to id)),
+            )
+        val valid = document(2)
+        assertSame<Markup?>(valid.content[0], valid.reference("t"))
+        assertTrue(valid.references.isEmpty())
+        assertNull(valid.reference("p"))
+        assertFailsWith<NoSuchElementException> { document(4) }
     }
 
     @Test

@@ -17,7 +17,8 @@ static int continue_paragraph(const markdown_core_element_instance *self, markdo
     return !parser->blank;
 }
 /* A PARAGRAPH THAT HELD ONLY REFERENCE DEFINITIONS IS NOT A PARAGRAPH. Its
- * finalization consumed the definitions and left nothing, so it has no
+ * finalization made the definitions References before it and left nothing,
+ * so it has no
  * inline content to parse and no place in the tree: it is released at its
  * EXIT, from inside the one finish walk, which is postorder -- the list it
  * sits in lays itself out at its own EXIT, after this, and sees the cleaned

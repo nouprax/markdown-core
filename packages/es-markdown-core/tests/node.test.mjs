@@ -10,7 +10,7 @@ import { Decoder } from "../dist/wire/node-decoder.js";
 import { emptyVisitor } from "./visitor.mjs";
 import { MessageWriter, nativeMessage } from "./wire.mjs";
 
-test("ast: dimensions belong to each image occurrence while its destination stays shared", () => {
+test("ast: dimensions belong to each image occurrence while each one names its Reference", () => {
     const source = '![*alt*|2147483647x2][r] ![3][r] ![bad|01][r]\n\n[r]: /shared "title"\n';
     const document = Document.parse(source);
     const images = document.content[0].content.filter((node) => node.kind === "embedded");
@@ -18,9 +18,14 @@ test("ast: dimensions belong to each image occurrence while its destination stay
         images.map((node) => node.dimensions),
         [{ width: 2147483647, height: 2 }, { width: 3, height: null }, null]
     );
-    assert.equal(images[0].dest, images[1].dest);
-    assert.equal(images[1].dest, images[2].dest);
-    assert.equal(images[0].title, "title");
+    for (const image of images) {
+        assert.deepEqual(image.dest, { kind: "reference", label: "r" });
+        assert.equal(image.title, null);
+    }
+    const reference = document.reference("r");
+    assert.equal(reference, document.content[1]);
+    assert.deepEqual(reference.dest, { kind: "url", value: "/shared" });
+    assert.equal(reference.title, "title");
     assert.equal(images[0].content[0].kind, "emphasis");
     assert.equal(images[0].content[0].content[0].literal, "alt");
     assert.equal(document.scope(images[0].content[0], source).end.column, 7);
@@ -412,12 +417,10 @@ test("errors: allocation failure is terminal across the WASM boundary", () => {
     assert.deepEqual(frees, [8]);
 });
 
-test("ownership: every occurrence of one definition crosses the boundary once and is materialized once", () => {
-    // M2: the C tree shares one resource across every occurrence of a
-    // definition. The message writes it with the first occurrence and every
-    // later one names its ordinal, and the decoder reuses the value it built
-    // for the first. Growing the definition therefore grows the message by
-    // the definition, never by the definition times its occurrences.
+test("ownership: a definition crosses the boundary once, as its Reference, however often it is named", () => {
+    // Each occurrence names the definition by its normalized label, so
+    // growing the definition grows the message by the definition, never by
+    // the definition times its occurrences.
     const count = 20_000;
     const source = (size) => {
         const destination = `/${"u".repeat(size)}`;
@@ -430,39 +433,56 @@ test("ownership: every occurrence of one definition crosses the boundary once an
     assert.ok(growth < 2 * authored, `the message grew ${growth} bytes for ${authored} authored bytes`);
 
     const destination = `/${"u".repeat(size)}`;
-    const classes = Array.from({ length: size }, () => "c");
     const document = Document.parse(source(size));
-    const links = document.content.map((paragraph) => paragraph.content[0]);
-    assert.equal(links.length, count);
-    assert.equal(links[0].anchor, "a".repeat(size));
-    assert.deepEqual(links[0].attributes.classes, classes);
-    assert.equal(links[1].attributes.classes[0], "c");
-    assert.equal(links[1].attributes.records[0].value, destination);
-    assert.ok(links.every((link) => link.attributes.classes === links[0].attributes.classes));
-    assert.ok(links.every((link) => link.attributes.records === links[0].attributes.records));
-    assert.deepEqual(links[0].dest, { kind: "url", value: destination });
-    assert.ok(
-        links.every((link) => link.kind === "link" && link.dest === links[0].dest),
-        "every occurrence materializes the one destination"
+    const [reference, ...blocks] = document.content;
+    assert.equal(reference.kind, "reference");
+    assert.deepEqual(document.references, [reference]);
+    assert.equal(reference.label, "a");
+    assert.deepEqual(reference.dest, { kind: "url", value: destination });
+    assert.equal(reference.title, null);
+    assert.equal(reference.anchor, "a".repeat(size));
+    assert.deepEqual(
+        reference.attributes.classes,
+        Array.from({ length: size }, () => "c")
     );
+    assert.deepEqual(reference.attributes.records, [{ name: "k", value: destination }]);
+    const links = blocks.map((block) => block.content[0]);
+    assert.equal(links.length, count);
+    assert.ok(
+        links.every(
+            (link) =>
+                link.kind === "link" &&
+                link.dest.kind === "reference" &&
+                link.dest.label === "a" &&
+                link.title === null &&
+                link.anchor === null &&
+                link.attributes.classes.length === 0 &&
+                link.attributes.records.length === 0
+        ),
+        "every occurrence holds its own label and only its own attributes"
+    );
+    assert.equal(document.reference("a"), reference);
 });
 
-test("ownership: forward heading references share their finalized target without inheriting heading attributes", () => {
+test("ownership: forward heading references name their heading without its attributes", () => {
     const count = 5_000;
     const source = (size) => `${"[Target]\n\n".repeat(count)}# Target {#${"a".repeat(size)} .heading k=1}\n`;
     const size = 1024;
     const anchor = "a".repeat(size);
-    // The anchor crosses twice, on the heading and in the one shared
-    // destination, whatever the number of references.
+    // The anchor crosses once, on the heading, whatever the number of
+    // references.
     const growth = nativeMessage(source(size)).length - nativeMessage(source(1)).length;
-    assert.ok(growth < 3 * (size - 1), `the message grew ${growth} bytes`);
+    assert.ok(growth < 2 * (size - 1), `the message grew ${growth} bytes`);
     const document = Document.parse(source(size));
+    const head = document.content[count];
     const links = document.content.slice(0, count).map((paragraph) => paragraph.content[0]);
-    assert.equal(document.content[count].anchor, anchor);
-    assert.deepEqual(links[0].dest, { kind: "url", value: `#${anchor}` });
-    assert.ok(links.every((link) => link.dest === links[0].dest));
+    assert.equal(head.anchor, anchor);
+    assert.deepEqual(links[0].dest, { kind: "reference", label: "target" });
+    assert.ok(links.every((link) => link.dest.kind === "reference" && link.dest.label === "target"));
     assert.ok(links.every((link) => link.anchor === null && link.title === null));
     assert.deepEqual(links[0].attributes, { classes: [], records: [] });
+    assert.deepEqual(document.references, []);
+    assert.equal(document.reference("target"), head);
 });
 
 test("ast: an ordinary quote is a metadata-free callout", () => {
@@ -828,23 +848,31 @@ test("robustness: the heap grows, and a document larger than the initial one par
 
 test("ast: the decoder's reference, formula, list and empty-string arms are exercised", () => {
     // Decoder arms that no other suite reaches, and each is an ordinary
-    // language feature rather than a defensive branch: a resolved reference's
-    // shared resource, a formula's placement, an ordered list's flavour, and
+    // language feature rather than a defensive branch: a Reference and the
+    // occurrences that name it, a formula's placement, an ordered list's flavour, and
     // requirement 14's "written and empty" answer, which is the one a `null`
     // would be confused with.
     const document = Document.parse(
         ['[foo]: /url "t"', "", "See [foo] and [x][foo] and $$x$$ and [a]().", "", "3. one", "4. two", ""].join("\n")
     );
 
-    // M2: the definition produces no node, and each reference is the link it
-    // names, with the definition's destination and title. Both occurrences
-    // read one resource, materialized once.
-    const [paragraph, list] = document.content;
-    const references = paragraph.content.filter((node) => node.kind === "link" && node.dest.value === "/url");
-    assert.equal(references.length, 2);
-    assert.deepEqual(references[0].dest, { kind: "url", value: "/url" });
-    assert.equal(references[0].title, "t");
-    assert.equal(references[0].dest, references[1].dest, "one definition materializes one destination");
+    // The definition is a Reference where it was written, holding its
+    // destination and title; each occurrence is a link whose destination is
+    // the `reference` branch naming its label, with no title of its own.
+    const [definition, paragraph, list] = document.content;
+    assert.equal(definition.kind, "reference");
+    assert.equal(definition.label, "foo");
+    assert.deepEqual(definition.dest, { kind: "url", value: "/url" });
+    assert.equal(definition.title, "t");
+    const references = paragraph.content.filter((node) => node.kind === "link" && node.dest.kind === "reference");
+    assert.deepEqual(
+        references.map((node) => [node.dest, node.title]),
+        [
+            [{ kind: "reference", label: "foo" }, null],
+            [{ kind: "reference", label: "foo" }, null]
+        ]
+    );
+    assert.equal(document.reference("foo"), definition);
 
     const formula = paragraph.content.find((node) => node.kind === "formula");
     assert.equal(formula.mode, "standalone");
@@ -947,6 +975,117 @@ test("ast: ids up to 2^53 - 1 and definition tables decode exactly", () => {
     );
     const note = new MessageWriter().record("footnote", { id: 7 }).bool(false).u32(0);
     assert.equal(decode(note.root(1, { footnotes: [7] })).footnotes[0].id, 7);
+});
+
+test("ast: References, reference destinations and the reference label table decode exactly", () => {
+    // Destination: url(0) | cross(1) | reference(2). A Reference record is
+    // its label, its destination and its title; the label table pairs each
+    // label that resolves with the id of its Reference or Heading.
+    const bytes = new MessageWriter()
+        .text("H", { id: 1 })
+        .record("heading", { id: 2, anchor: "h" })
+        .int(1)
+        .u32(1)
+        .text("a", { id: 3 })
+        .record("link", { id: 4, attributes: { classes: ["own"] } })
+        .u8(2)
+        .string("r")
+        .bool(false)
+        .u32(1)
+        .text("b", { id: 5 })
+        .record("embedded", { id: 6 })
+        .u8(2)
+        .string("h")
+        .bool(false)
+        .bool(false)
+        .u32(1)
+        .record("paragraph", { id: 7 })
+        .u32(2)
+        .record("reference", { id: 8, anchor: "d", attributes: { classes: ["c"] } })
+        .string("r")
+        .u8(0)
+        .string("/u")
+        .optional("t", MessageWriter.prototype.string)
+        .record("reference", { id: 9 })
+        .string("r")
+        .u8(0)
+        .string("/v")
+        .bool(false)
+        .root(4, {
+            id: 10,
+            references: [8, 9],
+            labels: [
+                ["h", 2],
+                ["r", 8]
+            ]
+        })
+        .document();
+    const document = decoder(bytes).decode();
+    bytes.fill(0);
+    const [head, block, first, second] = document.content;
+    const [link, image] = block.content;
+    assert.deepEqual(link.dest, { kind: "reference", label: "r" });
+    assert.equal(link.title, null);
+    assert.equal(link.anchor, null);
+    assert.deepEqual(link.attributes, { classes: ["own"], records: [] });
+    assert.deepEqual(image.dest, { kind: "reference", label: "h" });
+    assert.equal(image.title, null);
+    assert.deepEqual(
+        [first, second].map(({ kind, label, dest, title, anchor }) => [kind, label, dest, title, anchor]),
+        [
+            ["reference", "r", { kind: "url", value: "/u" }, "t", "d"],
+            ["reference", "r", { kind: "url", value: "/v" }, null, null]
+        ]
+    );
+    assert.deepEqual(first.attributes, { classes: ["c"], records: [] });
+    assert.deepEqual(document.references, [first, second]);
+    assert.equal(document.reference("r"), first);
+    assert.equal(document.reference("h"), head);
+    assert.equal(document.reference("missing"), null);
+    assert.ok(!Object.keys(document).includes("references"));
+    const dumped = document.dump("");
+    assert.match(dumped, /dest=reference\("r"\) title=null children=1/u);
+    assert.match(
+        dumped,
+        /Reference scope=\S+ anchor="d" attributes=\{\.c\} label="r" dest=url\("\/u"\) title="t" children=0/u
+    );
+    const events = [];
+    walk(
+        document,
+        walkingVisitor((value, phase) => events.push(`${phase}:${value.kind}`))
+    );
+    assert.deepEqual(events.slice(-6), [
+        "exit:paragraph",
+        "enter:reference",
+        "exit:reference",
+        "enter:reference",
+        "exit:reference",
+        "exit:document"
+    ]);
+});
+
+test("api: Document lists every Reference and resolves a label to the first one, else to a heading", () => {
+    const source = "[x] [Head] [none]\n\n[X]: /first {.a}\n\n[x]: /second\n\n# Head\n\n[head]: /shadow\n";
+    const document = Document.parse(source);
+    const [block, first, second, head, shadow] = document.content;
+    assert.deepEqual(
+        document.references.map((node) => [node.label, node.dest.value]),
+        [
+            ["x", "/first"],
+            ["x", "/second"],
+            ["head", "/shadow"]
+        ]
+    );
+    assert.deepEqual(document.references, [first, second, shadow]);
+    assert.equal(document.reference("x"), first);
+    assert.equal(document.reference("head"), shadow);
+    assert.equal(head.kind, "heading");
+    assert.equal(document.reference("none"), null);
+    const [link] = block.content;
+    assert.deepEqual(link.dest, { kind: "reference", label: "x" });
+    assert.deepEqual(link.attributes, { classes: [], records: [] });
+    assert.deepEqual(first.attributes, { classes: ["a"], records: [] });
+    assert.equal(Document.parse("# Only\n\n[Only]\n").reference("only").kind, "heading");
 });
 
 test("ast: every ordered delimiter and associated numbering value survives decoding", () => {
@@ -1220,7 +1359,13 @@ test("ast: dimensions belong to occurrences and universal attributes survive rel
     const document = decoder(bytes).decode();
     bytes.fill(0);
     const images = document.content[0].content.filter((value) => value.kind === "embedded");
-    assert.equal(images[0].dest, images[1].dest);
+    assert.deepEqual(
+        images.map((value) => value.dest),
+        [
+            { kind: "reference", label: "r" },
+            { kind: "reference", label: "r" }
+        ]
+    );
     assert.deepEqual(
         images.map((value) => value.dimensions),
         [{ width: 640, height: 480 }, null]
@@ -1312,7 +1457,7 @@ test("ast: embedded dimensions survive the wire lifetime", () => {
     assert.deepEqual(link.dest, { kind: "cross", path: "", anchor: "id" });
 });
 
-test("ast: P2 attributes preserve native arrays, inheritance, dimensions and occurrence scopes", () => {
+test("ast: P2 attributes preserve native arrays, ownership, dimensions and occurrence scopes", () => {
     const source =
         "# T ## {#heading}\n\n`x`{.code} [x][r]{#own .same k=2} ![alt|20x30][r]{width=50% height=2in}\n\n[r]: /u {#definition .same k=1 k=1}\n";
     const document = Document.parse(source);
@@ -1321,22 +1466,34 @@ test("ast: P2 attributes preserve native arrays, inheritance, dimensions and occ
     assert.deepEqual(code.attributes.classes, ["code"]);
     assert.equal(code.literal, "x");
     assert.equal(document.scope(code, source).end.column, 10);
+    // Each occurrence holds only the attributes it wrote; the definition's
+    // stay on its Reference.
     assert.equal(link.anchor, "own");
-    assert.deepEqual(link.attributes.classes, ["same", "same"]);
-    assert.deepEqual(
-        link.attributes.records.map((value) => value.value),
-        ["1", "1", "2"]
-    );
-    assert.equal(image.anchor, "definition");
+    assert.deepEqual(link.attributes, { classes: ["same"], records: [{ name: "k", value: "2" }] });
+    assert.equal(image.anchor, null);
     assert.deepEqual(image.dimensions, { width: 20, height: 30 });
-    assert.deepEqual(image.attributes.records.slice(-2), [
-        { name: "width", value: "50%" },
-        { name: "height", value: "2in" }
-    ]);
+    assert.deepEqual(image.attributes, {
+        classes: [],
+        records: [
+            { name: "width", value: "50%" },
+            { name: "height", value: "2in" }
+        ]
+    });
+    const reference = document.content[2];
+    assert.equal(reference.kind, "reference");
+    assert.equal(reference.anchor, "definition");
+    assert.deepEqual(reference.attributes, {
+        classes: ["same"],
+        records: [
+            { name: "k", value: "1" },
+            { name: "k", value: "1" }
+        ]
+    });
     assert.equal(document.scope(link, source).end.line, 3);
     assert.equal(document.scope(image, source).end.line, 3);
+    assert.equal(document.scope(reference, source).start.line, 5);
     assert.ok(Array.isArray(link.attributes.classes));
-    assert.ok(document.dump(source).includes('anchor="definition"'));
+    assert.ok(document.dump(source).includes('Reference scope=5:1..5:35 anchor="definition"'));
 });
 
 test("ast: definition terms and ordered bodies are owned and walk without body wrapper nodes", () => {

@@ -62,6 +62,10 @@ typedef enum {
     /* Read by the document element's prefix reader (properties.c) and never
      * parsed as a block, so no element defines its structure. */
     MARKDOWN_CORE_NODE_METADATA = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0016,
+    /* A link reference definition: a leaf block the close of the paragraph that
+     * held it makes whole, so it is never open on the spine and no element
+     * defines its structure. */
+    MARKDOWN_CORE_NODE_REFERENCE = MARKDOWN_CORE_NODE_TYPE_BLOCK | 0x0017,
 
     /* Inline */
     MARKDOWN_CORE_NODE_TEXT = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0001,

@@ -344,6 +344,18 @@ private fun describe(node: Markup): Line =
             )
         }
 
+        is Reference -> {
+            Line(
+                "Reference",
+                0,
+                listOf(
+                    "label=${escaped(node.label)}",
+                    "dest=${destination(node.dest)}",
+                    "title=${optional(node.title)}",
+                ),
+            )
+        }
+
         is Directive -> {
             Line("Directive", 0, listOf("name=${escaped(node.name)}"))
         }
@@ -367,6 +379,7 @@ private fun destination(value: Destination): String =
     when (value) {
         is Destination.Url -> "url(${escaped(value.value)})"
         is Destination.Cross -> "cross(path=${escaped(value.path)},anchor=${optional(value.anchor)})"
+        is Destination.Reference -> "reference(${escaped(value.label)})"
     }
 
 private fun referent(value: CitationReferent): String =

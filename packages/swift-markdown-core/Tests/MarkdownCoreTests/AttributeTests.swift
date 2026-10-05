@@ -60,7 +60,9 @@ extension APISuite {
                 metadata: metadata,
                 content: [],
                 footnotes: [],
-                specimens: []
+                specimens: [],
+                references: [],
+                referenceLabels: [:]
             )
         )
         #expect(
@@ -80,7 +82,7 @@ extension APISuite {
 }
 
 extension APISuite {
-    @Test("P2 inheritance retains native values and occurrence scopes")
+    @Test("each attribute site keeps its own values and occurrence scopes")
     func attributeSites() throws {
         let source =
             "# T ## {#heading}\n\n`x`{.code} [x][r]{#own .same k=2} "
@@ -91,86 +93,90 @@ extension APISuite {
         let code = try #require(paragraph.content[0] as? Code)
         let link = try #require(paragraph.content[2] as? Link)
         let image = try #require(paragraph.content[4] as? Embedded)
+        let reference = try #require(document.content[2] as? Reference)
         #expect(code.literal == "x" && code.attributes.classes == ["code"])
         #expect(try scope(of: code, in: document, source: source).end.column == 10)
+        // A reference occurrence carries only what it wrote itself.
         #expect(link.anchor == "own")
-        #expect(link.attributes.classes == ["same", "same"])
-        #expect(link.attributes.records.map(\.value) == ["1", "1", "2"])
-        #expect(image.anchor == "definition")
+        #expect(link.attributes == Attributes(classes: ["same"], records: [Record(name: "k", value: "2")]))
+        #expect(link.dest == .reference(label: "r") && link.title == nil)
+        #expect(image.anchor == nil)
         #expect(image.dimensions == Dimensions(width: 20, height: 30))
-        #expect(image.attributes.records.suffix(2).map(\.value) == ["50%", "2in"])
-        // A reference occurrence keeps its own place, not its definition's.
+        #expect(image.attributes.classes.isEmpty)
+        #expect(image.attributes.records.map(\.value) == ["50%", "2in"])
+        #expect(image.dest == .reference(label: "r") && image.title == nil)
+        // The definition keeps the attributes it states.
+        #expect(reference.anchor == "definition")
+        #expect(reference.attributes.classes == ["same"])
+        #expect(reference.attributes.records.map(\.value) == ["1", "1"])
         #expect(try scope(of: link, in: document, source: source).end.line == 3)
         #expect(try scope(of: image, in: document, source: source).end.line == 3)
+        #expect(try scope(of: reference, in: document, source: source).start.line == 5)
     }
 }
 
-extension ErrorsSuite {
-    @Test("forward heading references share the final target after native release")
-    func sharedHeadingResource() throws {
-        let anchor = String(repeating: "a", count: 1024)
-        let count = 5_000
-        let document = try Document.parse(
-            String(repeating: "[Target]\n\n", count: count)
-                + "# Target {#\(anchor) .heading k=1}\n"
+extension APISuite {
+    @Test("a reference definition is a leaf block with its label, destination and title")
+    func referenceFields() throws {
+        let source = "[Foo  Bar]: </a b> \"t\" {#x .c k=v}\n\n[u]: /u\n\n[e]: /e \"\"\n"
+        let document = try Document.parse(source)
+        let references = document.content.compactMap { $0 as? Reference }
+        #expect(references.count == 3)
+        #expect(references.map(\.label) == ["foo bar", "u", "e"])
+        #expect(references.map(\.dest) == [.url("/a b"), .url("/u"), .url("/e")])
+        #expect(references.map(\.title) == ["t", nil, ""])
+        #expect(references[0].anchor == "x")
+        #expect(references[0].attributes == Attributes(classes: ["c"], records: [Record(name: "k", value: "v")]))
+        #expect(references[1].anchor == nil && references[1].attributes == .empty)
+        var visitor = RecordingWalkingVisitor()
+        references[0].walk(with: &visitor)
+        #expect(visitor.events == ["enter:Reference", "exit:Reference"])
+        #expect(
+            try document.dump(references[0], in: source)
+                == "Reference scope=1:1..1:34 anchor=\"x\" attributes={.c k=\"v\"} label=\"foo bar\" "
+                + "dest=url(\"/a b\") title=\"t\" children=0\n"
         )
-        let links = try document.content.prefix(count).map {
-            try #require(($0 as? Paragraph)?.content.first as? Link)
-        }
-        #expect(document.content[count].anchor == anchor)
-        guard case .url(var first) = links[0].dest else {
-            Issue.record("a heading reference is the url branch")
-            return
-        }
-        #expect(first == "#" + anchor)
-        let storage = first.withUTF8 { UnsafeRawPointer($0.baseAddress!) }
-        for link in links {
-            #expect(link.anchor == nil && link.title == nil && link.attributes == .empty)
-            guard case .url(var url) = link.dest else {
-                Issue.record("a heading reference is the url branch")
-                continue
-            }
-            #expect(url.withUTF8 { UnsafeRawPointer($0.baseAddress!) } == storage)
-        }
     }
 
-    @Test("every occurrence of one reference definition materializes one resource")
-    func sharedResource() throws {
-        // M2: the C tree shares one resource across every occurrence of a
-        // definition, and the Swift tree decodes it once. The destination is
-        // long enough to live in heap storage, so two Strings that share it
-        // report one buffer and two independent decodes would report two.
-        let destination = "/" + String(repeating: "u", count: 1024)
-        let count = 5_000
-        let anchor = String(repeating: "a", count: 1024)
-        let classes = String(repeating: " .c", count: 1024)
-        let document = try Document.parse(
-            "[a]: \(destination) {#\(anchor)\(classes) k=\(destination)}\n\n"
-                + String(repeating: "[a]\n\n", count: count)
-        )
-        let links = try document.content.map { try #require(($0 as? Paragraph)?.content.first as? Link) }
-        #expect(links.count == count)
-        #expect(links[0].anchor == anchor)
-        #expect(links[0].attributes.classes.count == 1024)
-        let classStorage = links[0].attributes.classes.withUnsafeBufferPointer { $0.baseAddress }
-        for link in links {
-            #expect(link.attributes.classes.withUnsafeBufferPointer { $0.baseAddress } == classStorage)
-        }
-        var editable = links[0].attributes.classes
-        editable[0] = "edited"
-        #expect(links[1].attributes.classes[0] == "c")
-        guard case .url(var first) = links[0].dest else {
-            Issue.record("a resolved reference is the url branch")
-            return
-        }
-        #expect(first == destination)
-        let storage = first.withUTF8 { UnsafeRawPointer($0.baseAddress!) }
-        for link in links.dropFirst() {
-            guard case .url(var url) = link.dest else {
-                Issue.record("a resolved reference is the url branch")
-                return
-            }
-            #expect(url.withUTF8 { UnsafeRawPointer($0.baseAddress!) } == storage)
-        }
+    @Test("every reference form names its definition by the normalized label")
+    func referenceDestinations() throws {
+        let source = "[t][Ref] [Ref][] [Ref] ![i][REF] [d](/d \"t\")\n\n[ref]: /u \"title\"\n"
+        let document = try Document.parse(source)
+        let inline = try #require(document.content[0] as? Paragraph)
+        let links = inline.content.compactMap { $0 as? Link }
+        let embedded = try #require(inline.content.compactMap { $0 as? Embedded }.first)
+        let named = Destination.reference(label: "ref")
+        #expect(links.map(\.dest) == [named, named, named, .url("/d")])
+        #expect(links.map(\.title) == [nil, nil, nil, "t"])
+        #expect(embedded.dest == named && embedded.title == nil)
+        #expect(try document.dump(links[0], in: source).contains(" dest=reference(\"ref\") title=null "))
+        // An unresolved reference stays literal text.
+        let literal = try #require(try Document.parse("[missing]\n").content.first as? Paragraph)
+        #expect(literal.content.allSatisfy { $0 is Text })
+    }
+
+    @Test("the document lists references in source order and resolves a label to a reference or a heading")
+    func referenceTable() throws {
+        let source =
+            "[Target] [a] [Both]\n\n# Target {#chapter}\n\n# Both\n\n"
+            + "[a]: /one\n[a]: /two \"t\"\n\n[unused]: /x\n\n[both]: /b\n"
+        let document = try Document.parse(source)
+        let chapter = try #require(document.content[1] as? Heading)
+        #expect(document.references.map(\.label) == ["a", "a", "unused", "both"])
+        #expect(document.references.map(\.dest) == [.url("/one"), .url("/two"), .url("/x"), .url("/b")])
+        #expect(document.references.map(\.id) == document.content.compactMap { ($0 as? Reference)?.id })
+        // Duplicates remain; the first one in source order resolves.
+        let first = try #require(document.reference(for: "a") as? Reference)
+        #expect(first == document.references[0])
+        // A heading resolves a label no definition states.
+        let resolved = try #require(document.reference(for: "target") as? Heading)
+        #expect(resolved == chapter)
+        // A definition resolves before a heading of the same label.
+        #expect((document.reference(for: "both") as? Reference) == document.references[3])
+        #expect(document.reference(for: "unused")?.isEqual(document.references[2]) == true)
+        // A label matches byte for byte: an unnormalized spelling is another label.
+        #expect(document.reference(for: "Target") == nil)
+        #expect(document.reference(for: "missing") == nil)
+        #expect(try Document.parse("text\n").references.isEmpty)
     }
 }

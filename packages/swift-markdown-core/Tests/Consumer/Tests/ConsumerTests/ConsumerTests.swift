@@ -35,4 +35,15 @@ import Testing
         let bodies: [MarkupCollection<any Markup>] = Array(groups)
         #expect(bodies.map(\.count) == [1, 0, 1])
     }
+
+    @Test("reference definitions are public leaf blocks that a reference link names")
+    func referenceDefinitions() throws {
+        let document = try Document.parse("[Text][Label]\n\n[label]: /u \"t\"\n")
+        let link = try #require((document.content.first as? Paragraph)?.content.first as? Link)
+        let reference = try #require(document.content.last as? Reference)
+        #expect(link.dest == .reference(label: "label") && link.title == nil)
+        #expect(reference.label == "label" && reference.dest == .url("/u") && reference.title == "t")
+        #expect(Array(document.references) == [reference])
+        #expect((document.reference(for: "label") as? Reference) == reference)
+    }
 }

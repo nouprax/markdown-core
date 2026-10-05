@@ -107,16 +107,24 @@ export class MessageWriter {
     }
 
     /** A document record over the `content` nodes written before it, then
-     * its definition tables, which name footnote and specimen ids. */
-    root(content, { metadata = false, footnotes = [], specimens = [], id, extent } = {}) {
+     * its definition tables, which name footnote, specimen and Reference ids,
+     * and its reference label table, `[label, id]` pairs in byte order. */
+    root(content, { metadata = false, footnotes = [], specimens = [], references = [], labels = [], id, extent } = {}) {
         this.record("document", { id, extent }).u32(content).bool(metadata);
-        return this.table(footnotes).table(specimens);
+        return this.table(footnotes).table(specimens).table(references).labels(labels);
     }
 
     /** A definition table: a count, then that many ids. */
     table(ids) {
         this.u32(ids.length);
         for (const id of ids) this.id(id);
+        return this;
+    }
+
+    /** The reference label table: a count, then each label and its target's id. */
+    labels(entries) {
+        this.u32(entries.length);
+        for (const [label, id] of entries) this.string(label).id(id);
         return this;
     }
 

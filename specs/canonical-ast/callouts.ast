@@ -1,4 +1,4 @@
-Document scope=1:1..10:26 anchor=null attributes={} children=2
+Document scope=1:1..10:26 anchor=null attributes={} children=3
 ├── Callout scope=1:1..6:9 anchor="callout" attributes={} variant="MiXeD" collapsed=true children=2
 │   ├── Title children=9
 │   │   ├── Strong scope=1:13..1:20 anchor=null attributes={} children=1
@@ -12,7 +12,7 @@ Document scope=1:1..10:26 anchor=null attributes={} children=2
 │   │   │       └── Mark scope=1:36..1:44 anchor=null attributes={} children=1
 │   │   │           └── Text scope=1:38..1:42 anchor=null attributes={} literal="label" children=0
 │   │   ├── Text scope=1:46..1:46 anchor=null attributes={} literal=" " children=0
-│   │   ├── Link scope=1:47..1:51 anchor=null attributes={} dest=url("/target") title="reference" children=1
+│   │   ├── Link scope=1:47..1:51 anchor=null attributes={} dest=reference("ref") title=null children=1
 │   │   │   └── Text scope=1:48..1:50 anchor=null attributes={} literal="ref" children=0
 │   │   ├── Text scope=1:52..1:52 anchor=null attributes={} literal=" " children=0
 │   │   └── Cite scope=1:53..1:65 anchor=null attributes={} children=1
@@ -28,4 +28,5 @@ Document scope=1:1..10:26 anchor=null attributes={} children=2
 │       │   └── Comment scope=3:18..3:27 anchor=null attributes={} literal="hidden" children=0
 │       └── Paragraph scope=4:5..4:10 anchor=null attributes={} children=1
 │           └── Text scope=4:5..4:10 anchor=null attributes={} literal="nested" children=0
-└── Callout scope=8:1..8:9 anchor=null attributes={} variant="note" collapsed=null children=0
+├── Callout scope=8:1..8:9 anchor=null attributes={} variant="note" collapsed=null children=0
+└── Reference scope=10:1..10:26 anchor=null attributes={} label="ref" dest=url("/target") title="reference" children=0

@@ -29,6 +29,7 @@ import {
     parseUpstreamXml,
     projectHtmlComments,
     render,
+    resolveReferences,
     unknownKinds
 } from "../shared/upstream-cmark.mjs";
 
@@ -131,7 +132,11 @@ function compare(input) {
     // `footnote-resolution-model` is applied before `normalize`, which keeps
     // only the compared fields and so drops the labels the model reads.
     const ourTree = liftFootnotes(
-        normalize(applyUpstreamFootnoteModel(parseCanonicalDump(runOurs(input)), fired), "ours", fired),
+        normalize(
+            applyUpstreamFootnoteModel(resolveReferences(parseCanonicalDump(runOurs(input)), input, fired), fired),
+            "ours",
+            fired
+        ),
         fired
     );
     const unmapped = new Set([...unknownKinds(upstreamTree), ...unknownKinds(ourTree)]);
@@ -158,7 +163,8 @@ const PROJECTED_DELTAS = new Set([
     "footnote-resolution-model",
     "empty-text-node",
     "task-marker-completion",
-    "table-row-groups"
+    "table-row-groups",
+    "reference-definition-node"
 ]);
 for (const delta of policy.deltas) {
     if (!PROJECTED_DELTAS.has(delta.id) && !(policy.expectedDivergences ?? []).some((e) => e.id === delta.id)) {

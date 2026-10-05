@@ -155,8 +155,9 @@ static void check_null_and_empty(void) {
         {"[a](/u \"t\")\n", MARKDOWN_CORE_KIND_LINK, "/u", true, "t"},
         {"![a]()\n", MARKDOWN_CORE_KIND_EMBEDDED, "", false, ""},
         {"![a](/s \"\")\n", MARKDOWN_CORE_KIND_EMBEDDED, "/s", true, ""},
-        /* M2: a resolved reference answers what its definition stated,
-         * through the same accessors, and the definition is not a node. */
+        /* M2: a resolved reference names its definition by label, and the
+         * Reference the document resolves it to answers what the definition
+         * stated, through the same accessors. */
         {"[a]: <>\n\n[a]\n", MARKDOWN_CORE_KIND_LINK, "", false, ""},
         {"[a]: <> \"\"\n\n[a][]\n", MARKDOWN_CORE_KIND_LINK, "", true, ""},
         {"[a]: /u \"t\"\n\n[x][a]\n", MARKDOWN_CORE_KIND_LINK, "/u", true, "t"},
@@ -185,16 +186,32 @@ static void check_null_and_empty(void) {
             continue;
         }
         node = markdown_core_node_get_first_child(markdown_core_document_root(document));
+        if (markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_REFERENCE) {
+            node = markdown_core_node_get_next_sibling(node);
+        }
         node = markdown_core_node_get_first_child(node);
         check(markdown_core_node_get_kind(node) == CASES[index].kind, "requirement 14 case has the expected kind");
-        /* M1: a link or image answers the tagged `Destination`, and every one
-         * the inherited grammar produces is the `url` branch, with the other
-         * branch's fields zeroed rather than left over. */
         ok(markdown_core_node_destination(node, &tagged), "a link or image answers its destination");
-        ok(markdown_core_node_title(node, &title), "a link or image answers its title");
-        check(tagged.kind == MARKDOWN_CORE_DESTINATION_URL, "a link or image destination is the url branch");
-        check(tagged.path.data == NULL && tagged.path.length == 0 && !tagged.anchor.has_value,
-              "the cross branch's fields are zeroed on a url destination");
+        if (tagged.kind == MARKDOWN_CORE_DESTINATION_REFERENCE) {
+            ok(markdown_core_node_title(node, &title), "a reference occurrence answers its title");
+            check(!title.has_value, "a reference occurrence writes no title");
+            node = markdown_core_document_reference_for(document, tagged.label);
+            check(node && markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_REFERENCE,
+                  "the label resolves to the Reference");
+            if (!node) {
+                markdown_core_document_free(document);
+                continue;
+            }
+            ok(markdown_core_node_destination(node, &tagged), "a Reference answers its destination");
+        }
+        /* M1: a direct link or image, and a Reference, answer the tagged
+         * `Destination`'s `url` branch, with the other branches' fields
+         * zeroed rather than left over. */
+        ok(markdown_core_node_title(node, &title), "a link, image or Reference answers its title");
+        check(tagged.kind == MARKDOWN_CORE_DESTINATION_URL, "the destination is the url branch");
+        check(tagged.path.data == NULL && tagged.path.length == 0 && !tagged.anchor.has_value &&
+                  tagged.label.data == NULL && tagged.label.length == 0,
+              "the other branches' fields are zeroed on a url destination");
         destination = tagged.url;
         /* A DESTINATION IS NEVER ABSENT. There is no `has_value` to test,
          * because the type does not offer one -- that IS the assertion. */
@@ -246,7 +263,6 @@ static void check_image_dimensions(void) {
         return;
     }
     const markdown_core_node *paragraph = markdown_core_node_get_first_child(markdown_core_document_root(document));
-    const markdown_core_resource *shared = NULL;
     int index = 0;
     for (const markdown_core_node *node = markdown_core_node_get_first_child(paragraph); node;
          node = markdown_core_node_get_next_sibling(node)) {
@@ -254,9 +270,9 @@ static void check_image_dimensions(void) {
             continue;
         }
         const markdown_core_dimensions *dimensions = NULL;
-        const markdown_core_resource *resource = NULL;
+        markdown_core_destination destination;
         ok(markdown_core_node_dimensions(node, &dimensions), "an image answers its dimensions");
-        ok(markdown_core_node_resource(node, &resource), "an image answers its resource");
+        ok(markdown_core_node_destination(node, &destination), "an image answers its destination");
         check((dimensions != NULL) == (index < 2), "dimension presence is per image");
         if (dimensions) {
             check(dimensions->width == (index == 0 ? INT32_MAX : 3), "parsed width is exact");
@@ -264,9 +280,10 @@ static void check_image_dimensions(void) {
         }
         if (index == 0) {
             check(dimensions && dimensions->height.value == 2, "parsed height is exact");
-            shared = resource;
         }
-        check(shared == resource, "dimensions never split a shared destination");
+        check(destination.kind == MARKDOWN_CORE_DESTINATION_REFERENCE && destination.label.length == 1 &&
+                  destination.label.data[0] == 'r',
+              "dimensions never change the label an image names");
         if (index == 1) {
             check(markdown_core_node_get_first_child(node) == NULL, "numeric-only alt has no children");
         }
@@ -276,24 +293,25 @@ static void check_image_dimensions(void) {
     markdown_core_document_free(document);
 }
 
-/* M2: every occurrence that resolved through one definition shares one
- * resource, and the identity says so; a direct link, a direct image and an
- * autolink each own one. */
-static void check_resource_identity(void) {
-    static const char source[] = "[a][r] [r][] [r] ![i][r] [d](/r) <https://x.y> [none]\n\n[r]: /r\n";
+/* M2: every reference occurrence names its definition by label, and the
+ * document resolves the label to the Reference; a direct link, a direct
+ * image and an autolink each state their own destination. */
+static void check_reference_resolution(void) {
+    static const char source[] = "[a][r] [r][] [R] ![i][r] [d](/r) <https://x.y> [none]\n\n[r]: /r \"t\"\n";
     markdown_core_document *document = parse(source, strlen(source));
     const markdown_core_node *paragraph;
     const markdown_core_node *child;
-    const markdown_core_resource *shared = NULL;
-    const markdown_core_resource *direct = NULL;
-    const markdown_core_resource *autolink = NULL;
+    const markdown_core_node *reference;
     int occurrences = 0;
     int others = 0;
     if (!document) {
-        check(false, "resource identity corpus parses");
+        check(false, "reference corpus parses");
         return;
     }
     paragraph = markdown_core_node_get_first_child(markdown_core_document_root(document));
+    reference = markdown_core_node_get_next_sibling(paragraph);
+    check(markdown_core_node_get_kind(reference) == MARKDOWN_CORE_KIND_REFERENCE, "the definition is a Reference");
+    check(markdown_core_document_reference_count(document) == 1, "the document lists its one Reference");
     for (child = markdown_core_node_get_first_child(paragraph); child;
          child = markdown_core_node_get_next_sibling(child)) {
         markdown_core_node_kind kind = markdown_core_node_get_kind(child);
@@ -301,22 +319,18 @@ static void check_resource_identity(void) {
             others++;
             continue;
         }
-        const markdown_core_resource *resource = NULL;
-        ok(markdown_core_node_resource(child, &resource), "a link or image answers its resource");
-        check(resource != NULL, "every link and image answers a resource");
+        markdown_core_destination destination;
+        markdown_core_optional_string title;
+        ok(markdown_core_node_destination(child, &destination), "a link or image answers its destination");
+        ok(markdown_core_node_title(child, &title), "a link or image answers its title");
         if (occurrences < 4) {
             /* The three link forms and the image reference name one
-             * definition and share one resource. */
-            if (occurrences == 0) {
-                shared = resource;
-            }
-            check(resource == shared, "every occurrence of one definition shares its resource");
-        } else if (occurrences == 4) {
-            direct = resource;
-            check(direct != shared, "a direct link owns a resource of its own");
+             * definition. */
+            check(destination.kind == MARKDOWN_CORE_DESTINATION_REFERENCE && !title.has_value &&
+                      markdown_core_document_reference_for(document, destination.label) == reference,
+                  "every occurrence of one definition names it and resolves to it");
         } else {
-            autolink = resource;
-            check(autolink != shared && autolink != direct, "an autolink owns a resource of its own");
+            check(destination.kind == MARKDOWN_CORE_DESTINATION_URL, "a direct link or autolink states its URL");
         }
         occurrences++;
     }
@@ -655,9 +669,7 @@ static void check_kind_boundary(void) {
     const markdown_core_node *paragraph = markdown_core_node_get_first_child(markdown_core_document_root(document));
     const markdown_core_node *node = paragraph;
     const markdown_core_definition_body *body = NULL;
-    const markdown_core_attribute_value *attributes = NULL;
     const markdown_core_dimensions *dimensions = NULL;
-    const markdown_core_resource *resource = NULL;
     const markdown_core_metadata_value *value = NULL;
     markdown_core_list_flavor flavor;
     markdown_core_optional_i64 start = {true, 7};
@@ -690,7 +702,6 @@ static void check_kind_boundary(void) {
         markdown_core_node_definition_compact(paragraph, &flag),
         markdown_core_node_definition_term(paragraph, &node),
         markdown_core_node_definition_bodies(paragraph, &body),
-        markdown_core_node_inherited_attributes(paragraph, &attributes),
         markdown_core_node_dimensions(paragraph, &dimensions),
         markdown_core_node_directive_label(paragraph, &node),
         markdown_core_node_callout_properties(paragraph, &optional, &optional_bool),
@@ -698,7 +709,7 @@ static void check_kind_boundary(void) {
         markdown_core_node_destination(paragraph, &destination),
         markdown_core_node_cross_label(paragraph, &optional),
         markdown_core_node_title(paragraph, &optional),
-        markdown_core_node_resource(paragraph, &resource),
+        markdown_core_reference_label(paragraph, &string),
         markdown_core_node_cite_citations(paragraph, &node),
         markdown_core_citation_referent(paragraph, &referent),
         markdown_core_citation_prefix(paragraph, &node),
@@ -722,8 +733,8 @@ static void check_kind_boundary(void) {
     for (size_t index = 0; index < sizeof(statuses) / sizeof(*statuses); index++) {
         check(statuses[index] == MARKDOWN_CORE_KIND_MISMATCH, "a kind accessor refuses a node of another kind");
     }
-    check(node == paragraph && !body && !attributes && !dimensions && !resource && !value && level == 7 &&
-              start.value == 7 && optional.value.length == 7 && string.length == 7,
+    check(node == paragraph && !body && !dimensions && !value && level == 7 && start.value == 7 &&
+              optional.value.length == 7 && string.length == 7,
           "a refused accessor writes none of its out-parameters");
     /* The kind is the node's own, not its neighbour's: a Text answers the
      * literal its Paragraph does not. */
@@ -782,11 +793,16 @@ static void check_index_boundary(void) {
               markdown_core_node_attribute_class_at(table, 0, &text) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
               name.length == 7 && text.length == 7,
           "a class or record at the count is out of bounds, a node with none included");
-    const markdown_core_attribute_value *primary = markdown_core_node_primary_attributes(directive);
-    check(markdown_core_attribute_value_class_at(primary, 1, &text) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
-              markdown_core_attribute_value_record_at(primary, 1, &name, &text) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
+    const markdown_core_attribute_value *attributes = markdown_core_node_attributes(directive);
+    check(markdown_core_attribute_value_class_at(attributes, 1, &text) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
+              markdown_core_attribute_value_record_at(attributes, 1, &name, &text) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
               text.length == 7,
-          "a contribution's class or record at the count is out of bounds");
+          "an attribute value's class or record at the count is out of bounds");
+    const markdown_core_node *target = root;
+    check(markdown_core_document_reference_at(document, 0, &target) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
+              markdown_core_document_reference_label_at(document, 0, &text, &target) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
+              target == root && text.length == 7,
+          "a Reference or reference label at the count is out of bounds");
 
     const markdown_core_node *metadata =
         field(markdown_core_document_root(metadata_document), markdown_core_node_document_metadata);
@@ -813,12 +829,12 @@ static void check_index_boundary(void) {
     }
 
     const char *kind_name = NULL;
-    for (int kind = MARKDOWN_CORE_KIND_NONE; kind <= MARKDOWN_CORE_KIND_METADATA; kind++) {
+    for (int kind = MARKDOWN_CORE_KIND_NONE; kind <= MARKDOWN_CORE_KIND_REFERENCE; kind++) {
         check(markdown_core_node_kind_name((markdown_core_node_kind)kind, &kind_name) == MARKDOWN_CORE_OK && kind_name,
               "every kind has a name");
     }
     kind_name = NULL;
-    check(markdown_core_node_kind_name((markdown_core_node_kind)(MARKDOWN_CORE_KIND_METADATA + 1), &kind_name) ==
+    check(markdown_core_node_kind_name((markdown_core_node_kind)(MARKDOWN_CORE_KIND_REFERENCE + 1), &kind_name) ==
                   MARKDOWN_CORE_OUT_OF_BOUNDS &&
               markdown_core_node_kind_name((markdown_core_node_kind)-1, &kind_name) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
               kind_name == NULL,
@@ -912,7 +928,7 @@ int main(int argc, char **argv) {
     check_dialect_is_whole();
     check_native_coordinate_contract();
     check_null_and_empty();
-    check_resource_identity();
+    check_reference_resolution();
     check_image_dimensions();
     check_callout_fields();
     check_callout_source_boundaries();

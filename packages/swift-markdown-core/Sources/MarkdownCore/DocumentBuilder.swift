@@ -25,8 +25,9 @@ struct DocumentBuilder {
     private var queue: [OpaquePointer] = []
     private var relations: [Relations] = []
     private var records: [MarkupRecord?] = []
+    /// The records the document's tables may name: every footnote, specimen
+    /// and reference, and every heading a label may resolve to.
     private var definitions: [OpaquePointer: MarkupRecord] = [:]
-    private var resources: [Int: SharedResource] = [:]
 
     init(document: OpaquePointer, root: OpaquePointer, unit: TextUnit) {
         self.document = document
@@ -44,9 +45,11 @@ struct DocumentBuilder {
         records = Array(repeating: nil, count: queue.count)
         for index in queue.indices.reversed() {
             let built = record(from: queue[index], relations: relations[index])
-            let kind = markdown_core_node_get_kind(queue[index])
-            if kind == MARKDOWN_CORE_KIND_FOOTNOTE || kind == MARKDOWN_CORE_KIND_SPECIMEN {
+            switch markdown_core_node_get_kind(queue[index]) {
+            case MARKDOWN_CORE_KIND_FOOTNOTE, MARKDOWN_CORE_KIND_SPECIMEN, MARKDOWN_CORE_KIND_REFERENCE,
+                MARKDOWN_CORE_KIND_HEADING:
                 definitions[queue[index]] = built
+            default: break
             }
             records[index] = built
         }
@@ -133,6 +136,22 @@ struct DocumentBuilder {
         // swift-format-ignore: NeverForceUnwrap
         (0..<count).map { unsafeDowncast(definitions[entry($0)!]!, to: Node.self) }
     }
+
+    /// Each label that resolves, keyed by its UTF-8 bytes, with the reference
+    /// or heading the document's label table names for it. The engine
+    /// normalizes and resolves labels; the binding only copies its answer.
+    private func referenceLabels() -> [[UInt8]: MarkupRecord] {
+        var labels: [[UInt8]: MarkupRecord] = [:]
+        for index in 0..<markdown_core_document_reference_label_count(document) {
+            var label = markdown_core_string()
+            var node: OpaquePointer?
+            answered(markdown_core_document_reference_label_at(document, index, &label, &node))
+            // The table names only references and headings of the tree.
+            // swift-format-ignore: NeverForceUnwrap
+            labels[Array(UnsafeBufferPointer(start: label.data, count: label.length))] = definitions[node!]!
+        }
+        return labels
+    }
 }
 
 extension DocumentBuilder {
@@ -158,7 +177,13 @@ extension DocumentBuilder {
                     count: markdown_core_document_specimen_count(document),
                     at: { index in answer { markdown_core_document_specimen_at(document, index, $0) } },
                     as: SpecimenRecord.self
-                )
+                ),
+                references: table(
+                    count: markdown_core_document_reference_count(document),
+                    at: { index in answer { markdown_core_document_reference_at(document, index, $0) } },
+                    as: ReferenceRecord.self
+                ),
+                referenceLabels: referenceLabels()
             )
         case MARKDOWN_CORE_KIND_CITATION:
             return CitationRecord(
@@ -170,6 +195,7 @@ extension DocumentBuilder {
         case MARKDOWN_CORE_KIND_FOOTNOTE: return FootnoteRecord(from: node, content: children)
         case MARKDOWN_CORE_KIND_SPECIMEN: return SpecimenRecord(from: node, content: children)
         case MARKDOWN_CORE_KIND_METADATA: return MetadataRecord(from: node)
+        case MARKDOWN_CORE_KIND_REFERENCE: return ReferenceRecord(from: node)
         case MARKDOWN_CORE_KIND_CALLOUT:
             return CalloutRecord(from: node, title: take(relations.title), content: children)
         case MARKDOWN_CORE_KIND_DEFINITION_LIST: return DefinitionListRecord(from: node, definitions: children)
@@ -211,8 +237,8 @@ extension DocumentBuilder {
         case MARKDOWN_CORE_KIND_SPAN: return SpanRecord(from: node, content: children)
         case MARKDOWN_CORE_KIND_SUPERSCRIPT: return SuperscriptRecord(from: node, content: children)
         case MARKDOWN_CORE_KIND_SUBSCRIPT: return SubscriptRecord(from: node, content: children)
-        case MARKDOWN_CORE_KIND_LINK: return LinkRecord(from: node, content: children, resources: &resources)
-        case MARKDOWN_CORE_KIND_EMBEDDED: return EmbeddedRecord(from: node, content: children, resources: &resources)
+        case MARKDOWN_CORE_KIND_LINK: return LinkRecord(from: node, content: children)
+        case MARKDOWN_CORE_KIND_EMBEDDED: return EmbeddedRecord(from: node, content: children)
         case MARKDOWN_CORE_KIND_DIRECTIVE:
             return DirectiveRecord(from: node, label: take(relations.label, as: DirectiveLabelRecord.self))
         case MARKDOWN_CORE_KIND_CITE: return CiteRecord(from: node, citations: take(relations.citations))

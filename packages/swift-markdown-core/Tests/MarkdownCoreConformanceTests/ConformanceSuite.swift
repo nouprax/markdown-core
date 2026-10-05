@@ -35,7 +35,7 @@ private typealias Comment = Testing.Comment
             "Code", "HTML", "Comment", "CrossLink", "CrossEmbedded", "Formula", "Emphasis", "Strong",
             "Strikethrough", "Mark", "Insertion", "Span", "Superscript", "Subscript", "DefinitionList", "Definition",
             "Link", "Embedded", "Directive",
-            "Cite", "Citation", "Footnote", "Specimen", "Metadata",
+            "Cite", "Citation", "Footnote", "Specimen", "Metadata", "Reference",
             "TableRow", "TableCell", "TableCaption",
         ]
         #expect(kinds == expected)
@@ -199,4 +199,5 @@ private struct IdentifierVisitor: MarkupVisitor {
     mutating func visit(_ node: Footnote, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Specimen, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Metadata, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Reference, phase: MarkupVisitPhase) { record(node, phase) }
 }

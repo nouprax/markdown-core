@@ -953,37 +953,16 @@ static int case_reference_collisions(pc_context *context) {
     return 0;
 }
 
-/* A resolved reference SHARES its definition's resource instead of copying the
- * destination and title into every use (M2). This fixed-shape regression checks
- * the resulting storage invariant directly, around resource identity: every
- * link or image is counted once per DISTINCT resource, the resource and
- * association payload so counted must stay within the source bytes, and every
- * occurrence of the one definition must answer the one identity. No
- * elapsed-time sample participates in the assertion. */
+/* A resolved reference NAMES its definition by label instead of copying the
+ * destination, title and attributes into every use (M2). This fixed-shape
+ * regression checks the resulting storage invariant directly: every node's
+ * own payload -- a destination, a title, a label, its attributes -- counted
+ * once per node, stays within the source bytes. No elapsed-time sample
+ * participates in the assertion. */
 typedef struct pc_reference_payload {
     size_t bytes;
     size_t occurrences;
-    size_t distinct;
-    /* Open addressing over resource identities. */
-    const void **seen;
-    size_t capacity;
 } pc_reference_payload;
-
-/* Records `identity`; answers 1 when it was already recorded. */
-static int pc_payload_seen(pc_reference_payload *total, const void *identity) {
-    size_t position = ((size_t)(uintptr_t)identity >> 4) & (total->capacity - 1);
-    for (;;) {
-        if (total->seen[position] == identity) {
-            return 1;
-        }
-        if (total->seen[position] == NULL) {
-            total->seen[position] = identity;
-            total->distinct++;
-            return 0;
-        }
-        position = (position + 1) & (total->capacity - 1);
-    }
-}
 
 static size_t pc_attribute_bytes(const markdown_core_attribute_value *attributes) {
     size_t bytes = markdown_core_attribute_value_anchor(attributes).value.length;
@@ -1006,25 +985,19 @@ static int pc_reference_payload_visit(const markdown_core_node *node, ts_ast_ran
     markdown_core_destination dest;
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     (void)range;
-    if (kind == MARKDOWN_CORE_KIND_LINK || kind == MARKDOWN_CORE_KIND_EMBEDDED) {
-        const markdown_core_resource *identity;
-        const markdown_core_attribute_value *inherited;
-        TS_OK(markdown_core_node_resource(node, &identity));
-        total->occurrences++;
-        total->bytes += pc_attribute_bytes(markdown_core_node_primary_attributes(node));
-        if (total->distinct * 2 >= total->capacity) {
-            fprintf(stderr, "more distinct resources than the case can record\n");
-            return -1;
-        }
-        if (pc_payload_seen(total, identity)) {
-            return 0;
-        }
-        TS_OK(markdown_core_node_inherited_attributes(node, &inherited));
-        total->bytes += pc_attribute_bytes(inherited);
+    total->bytes += pc_attribute_bytes(markdown_core_node_attributes(node));
+    if (kind == MARKDOWN_CORE_KIND_LINK || kind == MARKDOWN_CORE_KIND_EMBEDDED ||
+        kind == MARKDOWN_CORE_KIND_REFERENCE) {
         TS_OK(markdown_core_node_destination(node, &dest));
         TS_OK(markdown_core_node_title(node, &title));
+        total->occurrences += dest.kind == MARKDOWN_CORE_DESTINATION_REFERENCE;
         total->bytes += dest.url.length + dest.path.length + (dest.anchor.has_value ? dest.anchor.value.length : 0) +
-                        (title.has_value ? title.value.length : 0);
+                        dest.label.length + (title.has_value ? title.value.length : 0);
+        if (kind == MARKDOWN_CORE_KIND_REFERENCE) {
+            markdown_core_string label;
+            TS_OK(markdown_core_reference_label(node, &label));
+            total->bytes += label.length;
+        }
     } else if (kind == MARKDOWN_CORE_KIND_CITE) {
         /* A call's payload is its referent (M4). */
         const markdown_core_node *item;
@@ -1039,10 +1012,10 @@ static int pc_reference_payload_visit(const markdown_core_node *node, ts_ast_ran
 }
 
 static int case_reference_expansion_bound(pc_context *context) {
-    enum { DESTINATION_LENGTH = 1024, REFERENCE_COUNT = 131072, IDENTITIES = 1024 };
-    /* Decoding never lengthens a destination or a title, and a resource is
-     * stored once however often it is named, so the payload never exceeds
-     * the source. */
+    enum { DESTINATION_LENGTH = 1024, REFERENCE_COUNT = 131072 };
+    /* Decoding never lengthens a destination or a title, and an occurrence
+     * holds only the label it names and its own attributes, so the payload
+     * never exceeds the source. */
     static const double MAX_PAYLOAD_RATIO = 1.0;
     size_t capacity = DESTINATION_LENGTH * 8 + 128 + REFERENCE_COUNT * 24;
     size_t written = 0;
@@ -1074,23 +1047,12 @@ static int case_reference_expansion_bound(pc_context *context) {
     }
     context->input_length = written;
 
-    total.capacity = IDENTITIES;
-    total.seen = (const void **)calloc(IDENTITIES, sizeof(*total.seen));
-    if (!total.seen) {
-        return -1;
-    }
     if (pc_parse(context) != 0 ||
         ts_ast_walk(markdown_core_document_root(context->document), pc_reference_payload_visit, &total) != 0) {
-        free(total.seen);
         return -1;
     }
-    free(total.seen);
     if (total.occurrences != REFERENCE_COUNT) {
         fprintf(stderr, "%zu of %d references resolved\n", total.occurrences, REFERENCE_COUNT);
-        result = -1;
-    }
-    if (total.distinct != 1) {
-        fprintf(stderr, "%zu distinct resources for one definition\n", total.distinct);
         result = -1;
     }
     ratio = (double)total.bytes / (double)context->input_length;
