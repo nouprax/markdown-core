@@ -15,6 +15,7 @@
  */
 
 import { Buffer } from "node:buffer";
+import fs from "node:fs";
 
 /** cmark-gfm XML element -> canonical node kind. */
 const XML_KIND = {
@@ -555,6 +556,44 @@ export function applyUpstreamFootnoteModel(root, fired) {
 }
 
 /**
+ * The engine's full case fold, read from its own fold data
+ * (`core/case_fold.inc`): code point -> its fold's image.
+ */
+let caseFolds;
+function caseFold() {
+    if (caseFolds) return caseFolds;
+    const data = fs.readFileSync(new URL("../../packages/markdown-core/core/case_fold.inc", import.meta.url), "utf8");
+    const numbers = (name) =>
+        new RegExp(`${name}\\[\\d+\\] = \\{([^}]*)\\}`, "u")
+            .exec(data)[1]
+            .split(",")
+            .map((value) => value.trim())
+            .filter(Boolean)
+            .map(Number);
+    const replacements = Buffer.from(numbers("cf_repl"));
+    caseFolds = new Map(
+        numbers("cf_table").map((entry) => {
+            const at = ((entry >>> 17) & 0xfff) * 2;
+            return [entry & 0x1ffff, replacements.subarray(at, at + (entry >>> 29)).toString("utf8")];
+        })
+    );
+    return caseFolds;
+}
+
+/**
+ * A label under the reference-label normalization: runs of spaces, tabs and
+ * line ends become one space, the ends are trimmed, and each character takes
+ * its full case fold.
+ */
+function normalizeLabel(label) {
+    const folds = caseFold();
+    return Array.from(label.replace(/[ \t\r\n]+/gu, " ").replace(/^ | $/gu, ""), (character) => {
+        const code = character.codePointAt(0);
+        return code < 0x80 ? character.toLowerCase() : (folds.get(code) ?? character);
+    }).join("");
+}
+
+/**
  * Registered delta `reference-definition-node`: upstream consumes a link
  * reference definition and copies it into every `Link` or `Embedded` that
  * resolves to it, while this repository keeps the definition as a
@@ -574,9 +613,10 @@ export function applyUpstreamFootnoteModel(root, fired) {
  * under the reference-label normalization.
  */
 export function resolveReferences(root, source, fired) {
+    // Lines end at LF, CR, or CRLF, as the parser's do.
     const lines = Buffer.from(source, "utf8")
         .toString("latin1")
-        .split("\n")
+        .split(/\r\n|\r|\n/u)
         .map((line) => Buffer.from(line, "latin1"));
     const point = (text) => text.split(":").map(Number);
     // The bytes from the start of `first` to the end of `last`, both scopes.
@@ -592,12 +632,7 @@ export function resolveReferences(root, source, fired) {
         }
         return parts.join("\n");
     };
-    const fold = (label) =>
-        label
-            .trim()
-            .replace(/[ \t\r\n]+/g, " ")
-            .toUpperCase()
-            .toLowerCase();
+    const fold = (label) => normalizeLabel(label);
     const definitions = new Map();
     const headings = new Map();
     const survey = (node) => {
