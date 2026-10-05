@@ -1118,7 +1118,8 @@ static bool content_images_read(publish_walk *walk, const markdown_core_runs *ru
                     break;
                 }
                 const uint32_t old_first = from + (uint32_t)(first - shift - start);
-                if (!content_image_add(images, (content_image){old_first, old_first + (last - first), image, follows})) {
+                if (!content_image_add(images,
+                                       (content_image){old_first, old_first + (last - first), image, follows})) {
                     return false;
                 }
             }
@@ -1166,8 +1167,8 @@ static bool content_anchor(publish_walk *walk, uint32_t start, uint32_t end, uin
  * one in hand, stepping past every old node whose anchor's image lies before
  * `node`'s end. An old node stepped past without being matched makes the
  * owner differ. */
-static markdown_core_node *publish_match(publish_walk *walk, publish_match_frame *owner,
-                                         const markdown_core_node *node, uint32_t *old_start) {
+static markdown_core_node *publish_match(publish_walk *walk, publish_match_frame *owner, const markdown_core_node *node,
+                                         uint32_t *old_start) {
     markdown_core_place place = node->where.place;
     markdown_core_node *match = NULL;
     while (owner->old_item != owner->old_end) {
