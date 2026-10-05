@@ -75,17 +75,9 @@ struct CanonicalWalk {
         }
         while !frames.isEmpty {
             let top = frames.count - 1
-            if frames[top].relation == nil {
-                guard let relation = frames[top].record.relation(at: frames[top].step) else {
-                    frames.removeLast()
-                    continue
-                }
-                frames[top].step += 1
-                frames[top].relation = relation
-                frames[top].index = relation.indices.lowerBound
-                // A root's first relation is its content, which runs from 0.
-                frames[top].anchor = frames[top].root ? 0 : frames[top].start
-                frames[top].named = relation.name != nil
+            if frames[top].relation == nil && !open(top) {
+                frames.removeLast()
+                continue
             }
             let frame = frames[top]
             guard let relation = frame.relation else { continue }
@@ -130,6 +122,18 @@ struct CanonicalWalk {
         return nil
     }
 
+    /// Starts the next relation of the frame at `top`; false when it has none.
+    private mutating func open(_ top: Int) -> Bool {
+        guard let relation = frames[top].record.relation(at: frames[top].step) else { return false }
+        frames[top].step += 1
+        frames[top].relation = relation
+        frames[top].index = relation.indices.lowerBound
+        // A root's first relation is its content, which runs from 0.
+        frames[top].anchor = frames[top].root ? 0 : frames[top].start
+        frames[top].named = relation.name != nil
+        return true
+    }
+
     /// The source ranges of `item`, the node the walk returned last, in
     /// source order, in place of what `places` held: the source its content
     /// range was read from, its pieces, or its one range.
@@ -139,11 +143,11 @@ struct CanonicalWalk {
         if item.content {
             read(from: item.start, to: item.end, into: &places)
         } else if !pieces.isEmpty {
-            var at = item.start
+            var cursor = item.start
             for piece in pieces {
-                let start = at + Int(piece.lead)
-                at = start + Int(piece.span)
-                places.append((start, at))
+                let start = cursor + Int(piece.lead)
+                cursor = start + Int(piece.span)
+                places.append((start, cursor))
             }
         } else {
             places.append((item.start, item.end))
@@ -175,11 +179,11 @@ struct CanonicalWalk {
     private mutating func hold(_ runs: [Run], from start: Int) {
         self.runs.removeAll(keepingCapacity: true)
         var content = 0
-        var at = start
+        var cursor = start
         for run in runs {
-            let start = at + Int(run.lead)
-            at = start + Int(run.span)
-            self.runs.append(SourceRun(content: content, size: Int(run.length), start: start, end: at))
+            let start = cursor + Int(run.lead)
+            cursor = start + Int(run.span)
+            self.runs.append(SourceRun(content: content, size: Int(run.length), start: start, end: cursor))
             content += Int(run.length)
         }
     }
@@ -189,20 +193,20 @@ struct CanonicalWalk {
     /// range is one empty range where its offset is read from.
     private func read(from start: Int, to end: Int, into places: inout [(start: Int, end: Int)]) {
         if end <= start {
-            let at = place(of: start)
-            places.append((at, at))
+            let spot = place(of: start)
+            places.append((spot, spot))
             return
         }
         var index = self.run(at: start)
         while index < runs.count && runs[index].content < end {
             let run = runs[index]
             index += 1
-            let from = max(start, run.content)
-            let to = min(end, run.content + run.size)
-            if from >= to { continue }
+            let lower = max(start, run.content)
+            let upper = min(end, run.content + run.size)
+            if lower >= upper { continue }
             let part =
                 run.copied
-                ? (start: run.start + (from - run.content), end: run.start + (to - run.content))
+                ? (start: run.start + (lower - run.content), end: run.start + (upper - run.content))
                 : (start: run.start, end: run.end)
             if let last = places.last, last.end == part.start {
                 places[places.count - 1].end = part.end

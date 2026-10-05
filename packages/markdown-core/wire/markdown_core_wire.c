@@ -373,6 +373,7 @@ static size_t node_edges(const markdown_core_node *node, markdown_core_node_kind
     case MARKDOWN_CORE_KIND_CROSS_LINK:
     case MARKDOWN_CORE_KIND_CROSS_EMBEDDED:
     case MARKDOWN_CORE_KIND_METADATA:
+    case MARKDOWN_CORE_KIND_REFERENCE:
         return 0;
     case MARKDOWN_CORE_KIND_PARAGRAPH:
     case MARKDOWN_CORE_KIND_HEADING:
