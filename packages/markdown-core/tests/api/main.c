@@ -229,12 +229,24 @@ static void test_remember_field(const markdown_core_node *field, const markdown_
     test_parses[test_parse_count++ % TEST_PARSES] = parse;
 }
 
+/* The bounds of a node's scopes, which it releases: the first one's start
+ * and the last one's end. */
+static markdown_core_scope scope_bounds(markdown_core_scope *scopes, size_t count) {
+    markdown_core_scope scope = {{0, 0}, {0, 0}};
+    if (count) {
+        scope = (markdown_core_scope){scopes[0].start, scopes[count - 1].end};
+    }
+    markdown_core_scopes_free(scopes);
+    return scope;
+}
+
 static markdown_core_scope test_node_scope(const markdown_core_node *node) {
     test_parse parse = test_parse_of(node);
-    markdown_core_scope scope = {{0, 0}, {0, 0}};
+    markdown_core_scope *scopes = NULL;
+    size_t count = 0;
     markdown_core_tree_scope(parse.root, node, (const uint8_t *)parse.source, parse.length,
-                             MARKDOWN_CORE_TEXT_UNIT_UTF8, &scope);
-    return scope;
+                             MARKDOWN_CORE_TEXT_UNIT_UTF8, &scopes, &count);
+    return scope_bounds(scopes, count);
 }
 
 #define SCOPE(node) test_node_scope(node)
@@ -247,9 +259,10 @@ static markdown_core_scope test_node_scope(const markdown_core_node *node) {
  * over the document and the source it was parsed from. */
 static markdown_core_scope document_scope_of(const markdown_core_document *document, const markdown_core_node *node,
                                              const char *source) {
-    markdown_core_scope scope = {{0, 0}, {0, 0}};
-    EXPECT_OK(markdown_core_document_scope(document, node, (const uint8_t *)source, strlen(source), &scope));
-    return scope;
+    markdown_core_scope *scopes = NULL;
+    size_t count = 0;
+    EXPECT_OK(markdown_core_document_scope(document, node, (const uint8_t *)source, strlen(source), &scopes, &count));
+    return scope_bounds(scopes, count);
 }
 
 /* Literal access for engine tests goes through the installed facade, which
@@ -2430,12 +2443,12 @@ static void source_pos(test_batch_runner *runner) {
         "    └── List scope=6:3..10:20 anchor=null attributes={} flavor=ordered start=1 variant=decimal "
         "delimiter=period tight=false children=2\n"
         "        ├── ListItem scope=6:3..8:1 anchor=null attributes={} marker=null children=1\n"
-        "        │   └── Paragraph scope=6:6..7:10 anchor=null attributes={} children=3\n"
+        "        │   └── Paragraph scope=6:6..7:0,7:6..7:10 anchor=null attributes={} children=3\n"
         "        │       ├── Text scope=6:6..6:10 anchor=null attributes={} literal=\"Okay.\" children=0\n"
         "        │       ├── SoftBreak scope=6:11..7:0 anchor=null attributes={} children=0\n"
         "        │       └── Text scope=7:6..7:10 anchor=null attributes={} literal=\"Sure.\" children=0\n"
         "        └── ListItem scope=9:3..10:20 anchor=null attributes={} marker=null children=1\n"
-        "            └── Paragraph scope=9:6..10:20 anchor=null attributes={} children=3\n"
+        "            └── Paragraph scope=9:6..10:0,10:6..10:20 anchor=null attributes={} children=3\n"
         "                ├── Text scope=9:6..9:15 anchor=null attributes={} literal=\"Yes, okay.\" children=0\n"
         "                ├── SoftBreak scope=9:16..10:0 anchor=null attributes={} children=0\n"
         "                └── Embedded scope=10:6..10:20 anchor=null attributes={} dest=url(\"hi\") title=\"yes\" "
@@ -2523,14 +2536,10 @@ static void citation_and_footnote_values(test_batch_runner *runner) {
        facade_field(item, markdown_core_citation_prefix) == NULL &&
            facade_field(item, markdown_core_citation_suffix) == NULL,
        "an inherited call has empty affixes");
-    OK(runner,
-       (markdown_core_document_scope(document, cite, (const uint8_t *)markdown, length, &scope) == MARKDOWN_CORE_OK),
-       "the cite has a scope");
+    OK(runner, ((scope = document_scope_of(document, cite, markdown)).start.line > 0), "the cite has a scope");
     OK(runner, scope.start.line == 1 && scope.start.column == 1 && scope.end.line == 1 && scope.end.column == 7,
        "the cite covers the brackets");
-    OK(runner,
-       (markdown_core_document_scope(document, item, (const uint8_t *)markdown, length, &scope) == MARKDOWN_CORE_OK),
-       "the item has a scope");
+    OK(runner, ((scope = document_scope_of(document, item, markdown)).start.line > 0), "the item has a scope");
     OK(runner, scope.start.line == 1 && scope.start.column == 2 && scope.end.line == 1 && scope.end.column == 6,
        "the item covers the caret and the label");
 
@@ -2546,9 +2555,7 @@ static void citation_and_footnote_values(test_batch_runner *runner) {
                memcmp(label.value.data, labels[count], label.value.length) == 0,
            "footnote %zu carries the expected label", count);
         OK(runner,
-           count < 4 &&
-               (markdown_core_document_scope(document, footnote, (const uint8_t *)markdown, length, &scope) ==
-                MARKDOWN_CORE_OK) &&
+           count < 4 && ((scope = document_scope_of(document, footnote, markdown)).start.line > 0) &&
                scope.start.line == lines[count] && scope.start.column == 1,
            "footnote %zu starts where it was written", count);
         count++;
@@ -8516,7 +8523,7 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
 }
 
 static void short_line_storage_is_bounded(test_batch_runner *runner) {
-    INT_EQ(runner, sizeof(markdown_core_input_line), 12, "ordinary physical geometry occupies twelve bytes");
+    INT_EQ(runner, sizeof(markdown_core_input_line), 16, "ordinary physical geometry occupies sixteen bytes");
     for (size_t count = 8; count <= 65537; count = count == 8 ? 1025 : count * 64 - 63) {
         for (int shape = 0; shape < 3; shape++) {
             markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
@@ -9155,19 +9162,14 @@ static void scope_queries_count_in_the_document_unit(test_batch_runner *runner) 
         }
         const markdown_core_node *paragraph = markdown_core_node_get_first_child(markdown_core_document_root(document));
         const markdown_core_node *text = markdown_core_node_get_first_child(paragraph);
-        markdown_core_scope scope = {{0, 0}, {0, 0}};
+        markdown_core_scope scope = document_scope_of(document, text, source);
         OK(runner,
-           (markdown_core_document_scope(document, text, (const uint8_t *)source, length, &scope) ==
-            MARKDOWN_CORE_OK) &&
-               scope.start.line == 1 && scope.start.column == 1 && scope.end.line == 1 &&
+           scope.start.line == 1 && scope.start.column == 1 && scope.end.line == 1 &&
                scope.end.column == units[u].text_end,
            "unit=%zu the first line's text ends at column %d: %d:%d..%d:%d", u, units[u].text_end, scope.start.line,
            scope.start.column, scope.end.line, scope.end.column);
-        OK(runner,
-           (markdown_core_document_scope(document, paragraph, (const uint8_t *)source, length, &scope) ==
-            MARKDOWN_CORE_OK) &&
-               scope.end.line == 2 && scope.end.column == 1,
-           "unit=%zu a CR LF ends one line", u);
+        scope = document_scope_of(document, paragraph, source);
+        OK(runner, scope.end.line == 2 && scope.end.column == 1, "unit=%zu a CR LF ends one line", u);
         OK(runner,
            facade_node_at(document, (markdown_core_position){1, units[u].rocket}, (const uint8_t *)source, length) ==
                    text &&
@@ -9183,11 +9185,11 @@ static void scope_queries_count_in_the_document_unit(test_batch_runner *runner) 
         markdown_core_document *document =
             facade_parse_in((const uint8_t *)empty[i], strlen(empty[i]), MARKDOWN_CORE_TEXT_UNIT_UTF16);
         markdown_core_scope scope = {{0, 0}, {0, 0}};
+        if (document) {
+            scope = document_scope_of(document, markdown_core_document_root(document), empty[i]);
+        }
         OK(runner,
-           document &&
-               (markdown_core_document_scope(document, markdown_core_document_root(document), (const uint8_t *)empty[i],
-                                             strlen(empty[i]), &scope) == MARKDOWN_CORE_OK) &&
-               scope.start.line == 1 && scope.start.column == 1 && scope.end.line == 1 && scope.end.column == 0,
+           document && scope.start.line == 1 && scope.start.column == 1 && scope.end.line == 1 && scope.end.column == 0,
            "an empty document %zu is 1:1..1:0: %d:%d..%d:%d", i, scope.start.line, scope.start.column, scope.end.line,
            scope.end.column);
         markdown_core_document_free(document);

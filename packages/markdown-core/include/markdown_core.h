@@ -37,8 +37,8 @@
  * its answer out through out-parameters, which it writes only when it returns
  * MARKDOWN_CORE_OK. A call that cannot fail returns its answer. Nothing a
  * failure reports is allocated, so an allocation failure is reported like any
- * other. Dump buffers are owned by the caller and released with
- * markdown_core_dump_free.
+ * other. Dump buffers and scope arrays are owned by the caller and released
+ * with markdown_core_dump_free and markdown_core_scopes_free.
  *
  * Calls: every argument is the caller's to get right, and a call that would
  * read or write memory it does not own for a wrong one reports it instead.
@@ -124,28 +124,58 @@ typedef struct markdown_core_position {
     int32_t column;
 } markdown_core_position;
 
-/** A node's editor source coordinates, computed on request from its extent
- * and the source (markdown_core_document_scope). `start` is the position of
- * the node's first byte, where a line terminator is the column after its
+/** Editor source coordinates of one source range of a node, computed on
+ * request from the extents and the source (markdown_core_document_scope).
+ * `start` is the position of the range's first byte, where a line terminator is the column after its
  * line's last character. `end` is the line holding the byte just past the
- * node's last byte and the column count from that line's start to it, so a
- * node that ends right after a line terminator ends at `L:0` of the next
+ * range's last byte and the column count from that line's start to it, so a
+ * range that ends right after a line terminator ends at `L:0` of the next
  * line, and a zero-byte document is `1:1..1:0`. */
 typedef struct markdown_core_scope {
     markdown_core_position start;
     markdown_core_position end;
 } markdown_core_scope;
 
-/** WHERE A NODE IS, in bytes of the UTF-8 source. `lead` is the signed
- * distance from the end of the previous node in the same relation -- or from
- * the owner's start, for the first node of a relation -- to this node's
- * start, and `span` the length of its source range. */
+/** WHERE A NODE IS, in bytes of the input of the parser that produced it:
+ * the UTF-8 source for a block, and its inline root's content for an inline
+ * node. `lead` is the signed distance from the end of the previous node in
+ * the same relation -- or from the owner's start, for the first node of a
+ * relation -- to this node's start, and `span` the length of its range. An
+ * inline root's content starts at 0. */
 #ifndef MARKDOWN_CORE_EXTENT_TYPEDEF
 #define MARKDOWN_CORE_EXTENT_TYPEDEF
 typedef struct markdown_core_extent {
     int32_t lead;
     uint32_t span;
 } markdown_core_extent;
+#endif
+
+/** A PIECE of a node's range: a block inside a container, or a table cell,
+ * whose lines bytes that are not its own separate, lies in one piece per
+ * line. `lead` is the signed distance from the end of the previous piece, or
+ * from the node's start for the first, to the piece's start, and `span` its
+ * length. */
+#ifndef MARKDOWN_CORE_PIECE_TYPEDEF
+#define MARKDOWN_CORE_PIECE_TYPEDEF
+typedef struct markdown_core_piece {
+    int32_t lead;
+    uint32_t span;
+} markdown_core_piece;
+#endif
+
+/** A RUN of an inline root's content: `length` content bytes read from the
+ * source bytes `span` long, `lead` from the end of the previous run, or from
+ * the start of the node whose content it is for the first. A run whose span
+ * is its length reads each content byte from one source byte; any other reads
+ * all of its content from all of its source. The runs cover the content in
+ * order. */
+#ifndef MARKDOWN_CORE_RUN_TYPEDEF
+#define MARKDOWN_CORE_RUN_TYPEDEF
+typedef struct markdown_core_run {
+    int32_t lead;
+    uint32_t span;
+    uint32_t length;
+} markdown_core_run;
 #endif
 
 /** Metadata is a leaf node owned by Document.metadata.
@@ -442,20 +472,33 @@ MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_root(const ma
 MARKDOWN_CORE_API uint64_t markdown_core_node_id(const markdown_core_node *node);
 /** The node's extent (markdown_core_extent). */
 MARKDOWN_CORE_API markdown_core_extent markdown_core_node_extent(const markdown_core_node *node);
+/** The node's pieces (markdown_core_piece), and their count in `*count`;
+ * none when its range is one piece. They borrow from the document. */
+MARKDOWN_CORE_API const markdown_core_piece *markdown_core_node_pieces(const markdown_core_node *node, size_t *count);
+/** The runs its first relation's nodes are placed by (markdown_core_run),
+ * and their count in `*count`: those of the node's inline content when that
+ * relation is an inline root's content, and none otherwise. They borrow from
+ * the document. */
+MARKDOWN_CORE_API const markdown_core_run *markdown_core_node_runs(const markdown_core_node *node, size_t *count);
 
 /** SCOPE QUERIES. Each takes the source the document was parsed from and
- * computes absolute positions from the extents in one walk of the document,
- * with columns in the document's text unit. Each answers ALLOCATION_FAILED
- * when it cannot allocate.
+ * computes absolute positions from the extents, pieces and runs in one walk
+ * of the document, with columns in the document's text unit. Each answers
+ * ALLOCATION_FAILED when it cannot allocate.
  *
- * `markdown_core_document_scope` computes the scope of `node`, a node of the
- * document. OUT_OF_BOUNDS when `length` ends before the node does. */
+ * `markdown_core_document_scope` computes the scopes of `node`, a node of the
+ * document: one per source range, in source order. A node's source ranges
+ * are its pieces, the source its content range was read from when it is in
+ * an inline root's content, or else its one range. `*scopes` receives a new
+ * array, which markdown_core_scopes_free releases, and `*count` its length.
+ * OUT_OF_BOUNDS when `length` ends before the node does. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_document_scope(const markdown_core_document *document,
                                                                     const markdown_core_node *node,
                                                                     const uint8_t *source, size_t length,
-                                                                    markdown_core_scope *scope);
-/** `*node` receives the last node in canonical walk order whose source range
- * holds the byte at `position`, or NULL when no node holds it or the position
+                                                                    markdown_core_scope **scopes, size_t *count);
+MARKDOWN_CORE_API void markdown_core_scopes_free(markdown_core_scope *scopes);
+/** `*node` receives the last node in canonical walk order one of whose
+ * source ranges holds the byte at `position`, or NULL when no node holds it or the position
  * names no byte of the source. OUT_OF_BOUNDS when the line or the column is
  * below 1. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_document_node_at(const markdown_core_document *document,
@@ -757,8 +800,8 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_specimen_content(const mark
  * with scopes computed from `source`, the source the document was parsed
  * from, always in UTF-8 columns. `*output` and `*length` receive the dump,
  * which markdown_core_dump_free releases. ALLOCATION_FAILED when an
- * allocation fails; OUT_OF_BOUNDS when `source_length` ends before the node
- * does. */
+ * allocation fails; OUT_OF_BOUNDS when `source_length` ends before a node of
+ * the tree does. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_document_dump(const markdown_core_document *document,
                                                                    const markdown_core_node *node,
                                                                    const uint8_t *source, size_t source_length,

@@ -13,7 +13,9 @@ import {
     type Dimensions,
     type Extent,
     type FootnoteTarget,
+    type Piece,
     type Position,
+    type Run,
     type Scope,
     type TextUnit,
     type ErrorCode,
@@ -59,7 +61,9 @@ document.dump();
 void [unit, dump, explicitDump, nodeDump, explicitNodeDump, edited, appended, sessionText, sessionUnit];
 const id: number = document.id;
 const extent: Extent = document.extent;
-const scope: Scope = document.scope(document.content[0]!, "# typed");
+const pieces: readonly Piece[] = document.pieces;
+const runs: readonly Run[] = document.content[0]!.runs;
+const scope: readonly Scope[] = document.scope(document.content[0]!, "# typed");
 const position: Position = { line: 1, column: 3 };
 const hit: Markup | null = document.nodeAt(position, "# typed");
 try {
@@ -87,6 +91,7 @@ const target: Reference | Heading | null = document.reference("label");
 // @ts-expect-error a label names a Reference or a Heading, nothing else
 const footnoteTarget: Footnote | null = document.reference("label");
 void [id, extent, scope, hit, equal, footnotes, specimens, footnote, specimen, references, target, footnoteTarget];
+void [pieces, runs];
 const visitor: MarkupVisitor = {
     citation: (node) => {
         void node.kind;
@@ -352,6 +357,8 @@ void [omittedCitation, missingCitation];
 document.content[0] = document;
 // @ts-expect-error readonly extent values cannot be mutated
 document.extent.lead = 2;
+// @ts-expect-error runs are recursively readonly
+document.runs[0]!.length = 2;
 // @ts-expect-error ids are readonly
 document.id = 2;
 // @ts-expect-error dump methods cannot be replaced
@@ -394,6 +401,8 @@ const metadata: Metadata = {
     kind: "metadata",
     id: 2,
     extent: { lead: 0, span: 0 },
+    pieces: [],
+    runs: [],
     anchor: null,
     attributes: empty,
     name: metadataValue,

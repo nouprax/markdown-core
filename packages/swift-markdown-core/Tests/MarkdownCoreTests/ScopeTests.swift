@@ -80,9 +80,50 @@ import Testing
         let covering = "a\n\nb\u{E9}"
         #expect(
             try document.scope(of: last, in: covering)
-                == Scope(start: Position(line: 3, column: 1), end: Position(line: 3, column: 2))
+                == [Scope(start: Position(line: 3, column: 1), end: Position(line: 3, column: 2))]
         )
         #expect(try document.dump(in: covering) == document.dump(in: source))
+    }
+
+    @Test("a node in an inline root's content has a scope per source range its content was read from")
+    func contentSources() throws {
+        let source = "> a *b\n> c* d\n"
+        let document = try Document.parse(source)
+        let callout = try #require(document.content.first as? Callout)
+        let block = try #require(callout.content.first as? Paragraph)
+        let emphasis = try #require(block.content[1] as? Emphasis)
+        func place(_ start: (Int32, Int32), _ end: (Int32, Int32)) -> Scope {
+            Scope(start: Position(line: start.0, column: start.1), end: Position(line: end.0, column: end.1))
+        }
+        // The paragraph's own bytes are a piece per line, and its content
+        // reads them in two copied runs; the second quote marker is neither.
+        #expect(block.pieces == [Piece(lead: 0, span: 5), Piece(lead: 2, span: 4)])
+        #expect(block.runs == [Run(lead: 0, span: 5, length: 5), Run(lead: 2, span: 4, length: 4)])
+        #expect(try document.scope(of: block, in: source) == [place((1, 3), (2, 0)), place((2, 3), (2, 6))])
+        // The emphasis is at offset 2 of the content "a *b\nc* d", and its
+        // source skips the marker too.
+        #expect(emphasis.extent == Extent(lead: 0, span: 5))
+        #expect(emphasis.pieces.isEmpty && emphasis.runs.isEmpty)
+        #expect(try document.scope(of: emphasis, in: source) == [place((1, 5), (2, 0)), place((2, 3), (2, 4))])
+        #expect(try document.node(at: Position(line: 2, column: 1), in: source)?.isEqual(callout) == true)
+        #expect(try document.node(at: Position(line: 2, column: 4), in: source)?.isEqual(emphasis) == true)
+        // A subtree's dump places it in its root's content and draws it from
+        // its own level.
+        #expect(
+            try document.dump(emphasis, in: source)
+                == "Emphasis scope=1:5..2:0,2:3..2:4 anchor=null attributes={} children=3\n"
+                + "├── Text scope=1:6..1:6 anchor=null attributes={} literal=\"b\" children=0\n"
+                + "├── SoftBreak scope=1:7..2:0 anchor=null attributes={} children=0\n"
+                + "└── Text scope=2:3..2:3 anchor=null attributes={} literal=\"c\" children=0\n"
+        )
+        // Another quote prefix moves the paragraph's pieces and runs, never
+        // what its content holds.
+        let wider = try Document.parse("> a *b\n>  c* d\n")
+        let moved = try #require((wider.content.first as? Callout)?.content.first as? Paragraph)
+        #expect(moved.pieces == [Piece(lead: 0, span: 5), Piece(lead: 2, span: 5)])
+        #expect(moved.runs == [Run(lead: 0, span: 5, length: 5), Run(lead: 3, span: 4, length: 4)])
+        #expect(moved != block)
+        #expect(moved.content[1].isEqual(emphasis))
     }
 
     @Test("an empty document and a lone line terminator are 1:1..1:0 and hold no byte", arguments: ["", "\n"])

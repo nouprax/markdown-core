@@ -13,7 +13,7 @@ import Testing
         #expect(try document.dump(heading, in: source).hasPrefix("Heading scope=1:1..1:11 "))
         #expect(
             try document.scope(of: heading, in: source)
-                == Scope(start: Position(line: 1, column: 1), end: Position(line: 1, column: 11))
+                == [Scope(start: Position(line: 1, column: 1), end: Position(line: 1, column: 11))]
         )
         #expect(try document.node(at: Position(line: 1, column: 4), in: source)?.isEqual(heading.content[0]) == true)
         #expect(document.content.count == 1)

@@ -131,7 +131,13 @@ class ApiTest {
         assertEquals("title", reference.title)
         val alt = assertIs<Emphasis>(images[0].content.single())
         assertEquals("alt", assertIs<Text>(alt.content.single()).literal)
-        assertEquals(7, document.scope(alt, source).end.column)
+        assertEquals(
+            7,
+            document
+                .scope(alt, source)
+                .single()
+                .end.column,
+        )
         assertTrue(images[1].content.isEmpty())
         assertEquals("bad|01", assertIs<Text>(images[2].content.single()).literal)
         val visitor = RecordingWalkingVisitor()
@@ -165,8 +171,20 @@ class ApiTest {
             ),
             listOf(metadata.name, metadata.`abstract`, metadata.comment),
         )
-        assertEquals(14, document.scope(metadata, source).end.line)
-        assertEquals(15, document.scope(document.content[0], source).start.line)
+        assertEquals(
+            14,
+            document
+                .scope(metadata, source)
+                .single()
+                .end.line,
+        )
+        assertEquals(
+            15,
+            document
+                .scope(document.content[0], source)
+                .single()
+                .start.line,
+        )
         val empty = assertNotNull(Document.parse("---\nunknown: 1\nfree text\n---").metadata)
         assertTrue(
             listOf(
@@ -263,7 +281,7 @@ class ApiTest {
         )
         assertEquals(2, mark.content.size)
         assertEquals("b", ((mark.content[1] as Emphasis).content.first() as Text).literal)
-        assertEquals(Scope(Position(1, 1), Position(1, 9)), document.scope(mark, "==a *b*=="))
+        assertEquals(listOf(Scope(Position(1, 1), Position(1, 9))), document.scope(mark, "==a *b*=="))
     }
 
     @Test
@@ -288,7 +306,7 @@ class ApiTest {
         )
         assertEquals(2, insertion.content.size)
         assertEquals("b", ((insertion.content[1] as Emphasis).content.first() as Text).literal)
-        assertEquals(Scope(Position(1, 1), Position(1, 9)), document.scope(insertion, "++a *b*++"))
+        assertEquals(listOf(Scope(Position(1, 1), Position(1, 9))), document.scope(insertion, "++a *b*++"))
     }
 
     @Test
@@ -313,7 +331,7 @@ class ApiTest {
         )
         assertEquals(2, span.content.size)
         assertEquals("b", ((span.content[1] as Emphasis).content.first() as Text).literal)
-        assertEquals(Scope(Position(1, 1), Position(1, 9)), document.scope(span, "[a *b*]{}"))
+        assertEquals(listOf(Scope(Position(1, 1), Position(1, 9))), document.scope(span, "[a *b*]{}"))
     }
 
     @Test
@@ -338,7 +356,7 @@ class ApiTest {
         )
         assertEquals(2, superscript.content.size)
         assertEquals("b", ((superscript.content[1] as Emphasis).content.first() as Text).literal)
-        assertEquals(Scope(Position(1, 1), Position(1, 6)), document.scope(superscript, "^a*b*^"))
+        assertEquals(listOf(Scope(Position(1, 1), Position(1, 6))), document.scope(superscript, "^a*b*^"))
     }
 
     @Test
@@ -363,7 +381,7 @@ class ApiTest {
         )
         assertEquals(2, subscript.content.size)
         assertEquals("b", ((subscript.content[1] as Emphasis).content.first() as Text).literal)
-        assertEquals(Scope(Position(1, 1), Position(1, 6)), document.scope(subscript, "~a*b*~"))
+        assertEquals(listOf(Scope(Position(1, 1), Position(1, 6))), document.scope(subscript, "~a*b*~"))
     }
 
     @Test
@@ -414,9 +432,9 @@ class ErrorsTest {
     @Test
     fun emptyInputIsAValidDocument() {
         val empty = Document.parse("")
-        assertEquals(Scope(Position(1, 1), Position(1, 0)), empty.scope(empty, ""))
+        assertEquals(listOf(Scope(Position(1, 1), Position(1, 0))), empty.scope(empty, ""))
         val accented = Document.parse("é")
-        assertEquals(Scope(Position(1, 1), Position(1, 1)), accented.scope(accented, "é"))
+        assertEquals(listOf(Scope(Position(1, 1), Position(1, 1))), accented.scope(accented, "é"))
         assertTrue(
             Document
                 .parse("")
@@ -633,10 +651,10 @@ class BindingMappingTest {
         assertEquals(listOf("a", "a"), document.footnotes.map { it.label })
         val footnote = document.footnotes.first()
         assertSame(footnote, document.footnote("a"))
-        assertEquals(Scope(Position(3, 1), Position(4, 0)), document.scope(footnote, source))
+        assertEquals(listOf(Scope(Position(3, 1), Position(4, 0))), document.scope(footnote, source))
         assertEquals("once", assertIs<Text>(assertIs<Paragraph>(footnote.content.single()).content.single()).literal)
         val later = document.footnotes.last()
-        assertEquals(Scope(Position(5, 1), Position(5, 11)), document.scope(later, source))
+        assertEquals(listOf(Scope(Position(5, 1), Position(5, 11))), document.scope(later, source))
         assertEquals("twice", assertIs<Text>(assertIs<Paragraph>(later.content.single()).content.single()).literal)
         assertTrue(
             document.dump(source).endsWith(
@@ -876,7 +894,13 @@ class RobustnessTest {
         val link = assertIs<Link>(paragraph.content[2])
         val image = assertIs<Embedded>(paragraph.content[4])
         assertEquals(listOf("code"), code.attributes.classes)
-        assertEquals(10, document.scope(code, source).end.column)
+        assertEquals(
+            10,
+            document
+                .scope(code, source)
+                .single()
+                .end.column,
+        )
         assertEquals("own", link.anchor)
         assertEquals(listOf("same"), link.attributes.classes)
         assertEquals(listOf("2"), link.attributes.records.map { it.value })
@@ -887,8 +911,20 @@ class RobustnessTest {
         assertEquals("definition", reference.anchor)
         assertEquals(listOf("same"), reference.attributes.classes)
         assertEquals(listOf("1", "1"), reference.attributes.records.map { it.value })
-        assertEquals(3, document.scope(link, source).end.line)
-        assertEquals(3, document.scope(image, source).end.line)
+        assertEquals(
+            3,
+            document
+                .scope(link, source)
+                .single()
+                .end.line,
+        )
+        assertEquals(
+            3,
+            document
+                .scope(image, source)
+                .single()
+                .end.line,
+        )
     }
 }
 

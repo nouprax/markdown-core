@@ -71,8 +71,9 @@ void ts_require_ok(markdown_core_status status, const char *call);
 typedef markdown_core_status (*ts_node_field)(const markdown_core_node *node, const markdown_core_node **field);
 const markdown_core_node *ts_field(const markdown_core_node *node, ts_node_field accessor);
 
-/* A node's absolute source range in bytes, resolved from the extents by the
- * walk itself rather than by the facade's scope query. */
+/* A node's range in bytes of its input, resolved from the extents by the
+ * walk itself rather than by the facade's scope query: in the source, or in
+ * the content of the inline root that holds it. */
 typedef struct {
     int64_t start, end;
 } ts_ast_range;
@@ -88,11 +89,15 @@ int ts_ast_walk(const markdown_core_node *root, ts_ast_visit_fn visit, void *con
 
 /* Where the walk found a node: its range, the node whose relation holds it
  * (NULL for the root) and that relation's place among the owner's relations
- * in canonical field order, counting absent and empty ones. */
+ * in canonical field order, counting absent and empty ones, and the inline
+ * root whose content the range is in, with that root's source start (NULL
+ * and 0 for a range in the source). */
 typedef struct {
     ts_ast_range range;
     const markdown_core_node *owner;
     size_t relation;
+    const markdown_core_node *root;
+    int64_t root_start;
 } ts_ast_place;
 
 typedef int (*ts_ast_owned_visit_fn)(const markdown_core_node *node, ts_ast_place place, void *context);
@@ -100,8 +105,8 @@ typedef int (*ts_ast_owned_visit_fn)(const markdown_core_node *node, ts_ast_plac
 /* `ts_ast_walk`, telling each node's owner and relation. */
 int ts_ast_walk_owned(const markdown_core_node *root, ts_ast_owned_visit_fn visit, void *context);
 
-/* THE FIRST NODE WHOSE RANGE LEAVES ITS SOURCE under `root`, or NULL when
- * every range lies in `[0, length]`.
+/* THE FIRST NODE WHOSE RANGE LEAVES ITS INPUT under `root`, or NULL when
+ * every range lies in `[0, length]`, or within its inline root's content.
  *
  * A scan that reads past its line but stays inside the parser's own buffer is
  * invisible to a sanitizer; the range it leaves behind is what shows it. The

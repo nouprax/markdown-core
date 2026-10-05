@@ -40,7 +40,7 @@ private typealias Comment = Testing.Comment
         ]
         #expect(kinds == expected)
         for (document, source) in zip(documents, sources) {
-            #expect(try document.scope(of: document, in: source).start == Position(line: 1, column: 1))
+            #expect(try document.scope(of: document, in: source).first?.start == Position(line: 1, column: 1))
         }
     }
 

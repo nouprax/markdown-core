@@ -104,20 +104,27 @@ the engine's session; the documents it returned stay complete values.
 Every node has an `id: MarkupID`, unique within its document across every
 owned relation and numbered from 1 in walk order by a parse, so two parses of
 one text are equal, ids included. Ids suit Compose `key` in lazy lists.
-`equals` is deep value equality: the same kind, id, scalar fields, extent and
-pairwise equal children in every relation, compared with an explicit work
+`equals` is deep value equality: the same kind, id, scalar fields, extent,
+pieces, runs and pairwise equal children in every relation, compared with an explicit work
 stack after a reference check. `hashCode` reads the id alone.
 
 A node stores no line or column. Its `extent: Extent(lead, span)` is the raw
-UTF-8 byte range the engine keeps: `lead` is signed, from the end of the
-previous node in the same relation (or the owner's start) to the node's start,
-and `span` is its length. Scopes are computed on request from the extents and
-the source the document was parsed from:
+byte range the engine keeps, a block's in the UTF-8 source and an inline
+node's in its inline root's content, which starts at 0: `lead` is signed, from
+the end of the previous node in the same relation (or the owner's start) to
+the node's start, and `span` is its length. A leaf block inside a container,
+or a grid or multiline table cell, also has `pieces`, the part of each of its
+lines that is its own, and a node whose first relation is inline content has
+`runs`, where in the source that content was read from. A node's source
+ranges are its pieces, the source its content range was read from through its
+root's runs, or its one range. Scopes, one per source range in source order,
+are computed on request from those and the source the document was parsed
+from:
 
 ```kotlin
 val document = Document.parse(source)            // TextUnit.UTF16 by default
-val scope = document.scope(node, source)         // Scope, columns in document.unit
-val hit = document.node(Position(3, 7), source)  // the last node in walk order holding that scalar
+val scopes = document.scope(node, source)        // [Scope], columns in document.unit
+val hit = document.node(Position(3, 7), source)  // the last node in walk order one of whose ranges holds that scalar
 ```
 
 `Document.parse(source, unit)` chooses how those queries count columns:
@@ -134,7 +141,7 @@ why:
   allocate, or the text exceeds 1 GiB of UTF-8, or its tree exceeds a byte
   array's capacity.
 - `ErrorCode.OUT_OF_BOUNDS`: `scope` or `dump` got a source that ends before
-  the node does, or `node` got a position whose line or column is below 1. A
+  a node's last range does, or `node` got a position whose line or column is below 1. A
   position past the source, or one no node holds, answers `null`. A session
   edit whose range starts after its end, ends past the text or overlaps
   another edit of its batch is `OUT_OF_BOUNDS` too.

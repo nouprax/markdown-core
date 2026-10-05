@@ -1924,7 +1924,7 @@ bbb
 .
 Document scope=1:1..4:3 anchor=null attributes={} children=2
 ├── Callout scope=1:1..2:5 anchor=null attributes={} variant=null collapsed=null children=1
-│   └── CodeBlock scope=1:3..2:5 anchor=null attributes={} info=null language=null literal="aaa\n" fenced=true closed=false children=0
+│   └── CodeBlock scope=1:3..2:0,2:3..2:5 anchor=null attributes={} info=null language=null literal="aaa\n" fenced=true closed=false children=0
 └── Paragraph scope=4:1..4:3 anchor=null attributes={} children=1
     └── Text scope=4:1..4:3 anchor=null attributes={} literal="bbb" children=0
 ````````````````````````````````
@@ -2631,7 +2631,7 @@ bar
 .
 Document scope=1:1..4:3 anchor=null attributes={} children=2
 ├── Callout scope=1:1..2:5 anchor=null attributes={} variant=null collapsed=null children=1
-│   └── HTMLBlock scope=1:3..2:5 anchor=null attributes={} literal="<div>\nfoo\n" children=0
+│   └── HTMLBlock scope=1:3..2:0,2:3..2:5 anchor=null attributes={} literal="<div>\nfoo\n" children=0
 └── Paragraph scope=4:1..4:3 anchor=null attributes={} children=1
     └── Text scope=4:1..4:3 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
@@ -3863,7 +3863,7 @@ Document scope=1:1..3:5 anchor=null attributes={} children=1
 └── Callout scope=1:1..3:5 anchor=null attributes={} variant=null collapsed=null children=2
     ├── Heading scope=1:3..1:7 anchor="foo" attributes={} level=1 children=1
     │   └── Text scope=1:5..1:7 anchor=null attributes={} literal="Foo" children=0
-    └── Paragraph scope=2:3..3:5 anchor=null attributes={} children=3
+    └── Paragraph scope=2:3..3:0,3:3..3:5 anchor=null attributes={} children=3
         ├── Text scope=2:3..2:5 anchor=null attributes={} literal="bar" children=0
         ├── SoftBreak scope=2:6..3:0 anchor=null attributes={} children=0
         └── Text scope=3:3..3:5 anchor=null attributes={} literal="baz" children=0
@@ -3881,7 +3881,7 @@ Document scope=1:1..3:5 anchor=null attributes={} children=1
 └── Callout scope=1:1..3:5 anchor=null attributes={} variant=null collapsed=null children=2
     ├── Heading scope=1:2..1:6 anchor="foo" attributes={} level=1 children=1
     │   └── Text scope=1:4..1:6 anchor=null attributes={} literal="Foo" children=0
-    └── Paragraph scope=2:2..3:5 anchor=null attributes={} children=3
+    └── Paragraph scope=2:2..3:0,3:3..3:5 anchor=null attributes={} children=3
         ├── Text scope=2:2..2:4 anchor=null attributes={} literal="bar" children=0
         ├── SoftBreak scope=2:5..3:0 anchor=null attributes={} children=0
         └── Text scope=3:3..3:5 anchor=null attributes={} literal="baz" children=0
@@ -3899,7 +3899,7 @@ Document scope=1:1..3:6 anchor=null attributes={} children=1
 └── Callout scope=1:4..3:6 anchor=null attributes={} variant=null collapsed=null children=2
     ├── Heading scope=1:6..1:10 anchor="foo" attributes={} level=1 children=1
     │   └── Text scope=1:8..1:10 anchor=null attributes={} literal="Foo" children=0
-    └── Paragraph scope=2:6..3:6 anchor=null attributes={} children=3
+    └── Paragraph scope=2:6..3:0,3:4..3:6 anchor=null attributes={} children=3
         ├── Text scope=2:6..2:8 anchor=null attributes={} literal="bar" children=0
         ├── SoftBreak scope=2:9..3:0 anchor=null attributes={} children=0
         └── Text scope=3:4..3:6 anchor=null attributes={} literal="baz" children=0
@@ -3947,7 +3947,7 @@ baz
 .
 Document scope=1:1..3:5 anchor=null attributes={} children=1
 └── Callout scope=1:1..3:5 anchor=null attributes={} variant=null collapsed=null children=1
-    └── Paragraph scope=1:3..3:5 anchor=null attributes={} children=5
+    └── Paragraph scope=1:3..3:0,3:3..3:5 anchor=null attributes={} children=5
         ├── Text scope=1:3..1:5 anchor=null attributes={} literal="bar" children=0
         ├── SoftBreak scope=1:6..2:0 anchor=null attributes={} children=0
         ├── Text scope=2:1..2:3 anchor=null attributes={} literal="baz" children=0
@@ -4125,7 +4125,7 @@ we get a single block quote:
 .
 Document scope=1:1..2:5 anchor=null attributes={} children=1
 └── Callout scope=1:1..2:5 anchor=null attributes={} variant=null collapsed=null children=1
-    └── Paragraph scope=1:3..2:5 anchor=null attributes={} children=3
+    └── Paragraph scope=1:3..2:0,2:3..2:5 anchor=null attributes={} children=3
         ├── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
         ├── SoftBreak scope=1:6..2:0 anchor=null attributes={} children=0
         └── Text scope=2:3..2:5 anchor=null attributes={} literal="bar" children=0
@@ -4254,7 +4254,7 @@ Document scope=1:1..3:5 anchor=null attributes={} children=1
 └── Callout scope=1:1..3:5 anchor=null attributes={} variant=null collapsed=null children=1
     └── Callout scope=1:2..3:5 anchor=null attributes={} variant=null collapsed=null children=1
         └── Callout scope=1:3..3:5 anchor=null attributes={} variant=null collapsed=null children=1
-            └── Paragraph scope=1:5..3:5 anchor=null attributes={} children=5
+            └── Paragraph scope=1:5..2:0,2:3..3:0,3:3..3:5 anchor=null attributes={} children=5
                 ├── Text scope=1:5..1:7 anchor=null attributes={} literal="foo" children=0
                 ├── SoftBreak scope=1:8..2:0 anchor=null attributes={} children=0
                 ├── Text scope=2:3..2:5 anchor=null attributes={} literal="bar" children=0
@@ -4356,7 +4356,7 @@ and the same contents as *Ls*:
 Document scope=1:1..6:20 anchor=null attributes={} children=1
 └── List scope=1:1..6:20 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=false children=1
     └── ListItem scope=1:1..6:20 anchor=null attributes={} marker=null children=3
-        ├── Paragraph scope=1:5..2:19 anchor=null attributes={} children=3
+        ├── Paragraph scope=1:5..2:0,2:5..2:19 anchor=null attributes={} children=3
         │   ├── Text scope=1:5..1:15 anchor=null attributes={} literal="A paragraph" children=0
         │   ├── SoftBreak scope=1:16..2:0 anchor=null attributes={} children=0
         │   └── Text scope=2:5..2:19 anchor=null attributes={} literal="with two lines." children=0
@@ -4541,7 +4541,7 @@ Document scope=1:1..9:9 anchor=null attributes={} children=1
     └── ListItem scope=1:1..9:9 anchor=null attributes={} marker=null children=4
         ├── Paragraph scope=1:5..1:7 anchor=null attributes={} children=1
         │   └── Text scope=1:5..1:7 anchor=null attributes={} literal="foo" children=0
-        ├── CodeBlock scope=3:5..5:7 anchor=null attributes={} info=null language=null literal="bar\n" fenced=true closed=true children=0
+        ├── CodeBlock scope=3:5..4:0,4:5..5:0,5:5..5:7 anchor=null attributes={} info=null language=null literal="bar\n" fenced=true closed=true children=0
         ├── Paragraph scope=7:5..7:7 anchor=null attributes={} children=1
         │   └── Text scope=7:5..7:7 anchor=null attributes={} literal="baz" children=0
         └── Callout scope=9:5..9:9 anchor=null attributes={} variant=null collapsed=null children=1
@@ -4566,7 +4566,7 @@ Document scope=1:1..6:9 anchor=null attributes={} children=1
     └── ListItem scope=1:1..6:9 anchor=null attributes={} marker=null children=2
         ├── Paragraph scope=1:3..1:5 anchor=null attributes={} children=1
         │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="Foo" children=0
-        └── CodeBlock scope=3:7..6:9 anchor=null attributes={} info=null language=null literal="bar\n\n\nbaz\n" fenced=false closed=true children=0
+        └── CodeBlock scope=3:7..6:0,6:3..6:9 anchor=null attributes={} info=null language=null literal="bar\n\n\nbaz\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 Note that ordered list start numbers must be nine digits or less:
@@ -4814,7 +4814,7 @@ Document scope=1:1..8:9 anchor=null attributes={} children=1
     │   └── Paragraph scope=2:3..2:5 anchor=null attributes={} children=1
     │       └── Text scope=2:3..2:5 anchor=null attributes={} literal="foo" children=0
     ├── ListItem scope=3:1..6:5 anchor=null attributes={} marker=null children=1
-    │   └── CodeBlock scope=4:3..6:5 anchor=null attributes={} info=null language=null literal="bar\n" fenced=true closed=true children=0
+    │   └── CodeBlock scope=4:3..5:0,5:3..6:0,6:3..6:5 anchor=null attributes={} info=null language=null literal="bar\n" fenced=true closed=true children=0
     └── ListItem scope=7:1..8:9 anchor=null attributes={} marker=null children=1
         └── CodeBlock scope=8:7..8:9 anchor=null attributes={} info=null language=null literal="baz\n" fenced=false closed=true children=0
 ````````````````````````````````
@@ -4958,7 +4958,7 @@ Indented one space:
 Document scope=1:1..6:21 anchor=null attributes={} children=1
 └── List scope=1:2..6:21 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=false children=1
     └── ListItem scope=1:2..6:21 anchor=null attributes={} marker=null children=3
-        ├── Paragraph scope=1:6..2:20 anchor=null attributes={} children=3
+        ├── Paragraph scope=1:6..2:0,2:6..2:20 anchor=null attributes={} children=3
         │   ├── Text scope=1:6..1:16 anchor=null attributes={} literal="A paragraph" children=0
         │   ├── SoftBreak scope=1:17..2:0 anchor=null attributes={} children=0
         │   └── Text scope=2:6..2:20 anchor=null attributes={} literal="with two lines." children=0
@@ -4982,7 +4982,7 @@ Indented two spaces:
 Document scope=1:1..6:22 anchor=null attributes={} children=1
 └── List scope=1:3..6:22 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=false children=1
     └── ListItem scope=1:3..6:22 anchor=null attributes={} marker=null children=3
-        ├── Paragraph scope=1:7..2:21 anchor=null attributes={} children=3
+        ├── Paragraph scope=1:7..2:0,2:7..2:21 anchor=null attributes={} children=3
         │   ├── Text scope=1:7..1:17 anchor=null attributes={} literal="A paragraph" children=0
         │   ├── SoftBreak scope=1:18..2:0 anchor=null attributes={} children=0
         │   └── Text scope=2:7..2:21 anchor=null attributes={} literal="with two lines." children=0
@@ -5006,7 +5006,7 @@ Indented three spaces:
 Document scope=1:1..6:23 anchor=null attributes={} children=1
 └── List scope=1:4..6:23 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=false children=1
     └── ListItem scope=1:4..6:23 anchor=null attributes={} marker=null children=3
-        ├── Paragraph scope=1:8..2:22 anchor=null attributes={} children=3
+        ├── Paragraph scope=1:8..2:0,2:8..2:22 anchor=null attributes={} children=3
         │   ├── Text scope=1:8..1:18 anchor=null attributes={} literal="A paragraph" children=0
         │   ├── SoftBreak scope=1:19..2:0 anchor=null attributes={} children=0
         │   └── Text scope=2:8..2:22 anchor=null attributes={} literal="with two lines." children=0
@@ -5109,7 +5109,7 @@ Document scope=1:1..2:17 anchor=null attributes={} children=1
     └── List scope=1:3..2:17 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=true children=1
         └── ListItem scope=1:3..2:17 anchor=null attributes={} marker=null children=1
             └── Callout scope=1:6..2:17 anchor=null attributes={} variant=null collapsed=null children=1
-                └── Paragraph scope=1:8..2:17 anchor=null attributes={} children=3
+                └── Paragraph scope=1:8..2:0,2:3..2:17 anchor=null attributes={} children=3
                     ├── Text scope=1:8..1:17 anchor=null attributes={} literal="Blockquote" children=0
                     ├── SoftBreak scope=1:18..2:0 anchor=null attributes={} children=0
                     └── Text scope=2:3..2:17 anchor=null attributes={} literal="continued here." children=0
@@ -5256,7 +5256,7 @@ Document scope=1:1..4:5 anchor=null attributes={} children=1
     │   └── Heading scope=1:3..1:7 anchor="foo" attributes={} level=1 children=1
     │       └── Text scope=1:5..1:7 anchor=null attributes={} literal="Foo" children=0
     └── ListItem scope=2:1..4:5 anchor=null attributes={} marker=null children=2
-        ├── Heading scope=2:3..3:5 anchor="bar" attributes={} level=2 children=1
+        ├── Heading scope=2:3..3:0,3:3..3:5 anchor="bar" attributes={} level=2 children=1
         │   └── Text scope=2:3..2:5 anchor=null attributes={} literal="Bar" children=0
         └── Paragraph scope=4:3..4:5 anchor=null attributes={} children=1
             └── Text scope=4:3..4:5 anchor=null attributes={} literal="baz" children=0
@@ -6022,7 +6022,7 @@ Document scope=1:1..7:3 anchor=null attributes={} children=1
     │   └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
     │       └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
     ├── ListItem scope=2:1..6:5 anchor=null attributes={} marker=null children=1
-    │   └── CodeBlock scope=2:3..6:5 anchor=null attributes={} info=null language=null literal="b\n\n\n" fenced=true closed=true children=0
+    │   └── CodeBlock scope=2:3..3:0,3:3..6:0,6:3..6:5 anchor=null attributes={} info=null language=null literal="b\n\n\n" fenced=true closed=true children=0
     └── ListItem scope=7:1..7:3 anchor=null attributes={} marker=null children=1
         └── Paragraph scope=7:3..7:3 anchor=null attributes={} children=1
             └── Text scope=7:3..7:3 anchor=null attributes={} literal="c" children=0
@@ -6099,7 +6099,7 @@ Document scope=1:1..6:3 anchor=null attributes={} children=1
     │   ├── Callout scope=2:3..2:5 anchor=null attributes={} variant=null collapsed=null children=1
     │   │   └── Paragraph scope=2:5..2:5 anchor=null attributes={} children=1
     │   │       └── Text scope=2:5..2:5 anchor=null attributes={} literal="b" children=0
-    │   └── CodeBlock scope=3:3..5:5 anchor=null attributes={} info=null language=null literal="c\n" fenced=true closed=true children=0
+    │   └── CodeBlock scope=3:3..4:0,4:3..5:0,5:3..5:5 anchor=null attributes={} info=null language=null literal="c\n" fenced=true closed=true children=0
     └── ListItem scope=6:1..6:3 anchor=null attributes={} marker=null children=1
         └── Paragraph scope=6:3..6:3 anchor=null attributes={} children=1
             └── Text scope=6:3..6:3 anchor=null attributes={} literal="d" children=0
@@ -6148,7 +6148,7 @@ two block elements in the list item:
 Document scope=1:1..5:6 anchor=null attributes={} children=1
 └── List scope=1:1..5:6 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=false children=1
     └── ListItem scope=1:1..5:6 anchor=null attributes={} marker=null children=2
-        ├── CodeBlock scope=1:4..3:6 anchor=null attributes={} info=null language=null literal="foo\n" fenced=true closed=true children=0
+        ├── CodeBlock scope=1:4..2:0,2:4..3:0,3:4..3:6 anchor=null attributes={} info=null language=null literal="foo\n" fenced=true closed=true children=0
         └── Paragraph scope=5:4..5:6 anchor=null attributes={} children=1
             └── Text scope=5:4..5:6 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
@@ -9237,7 +9237,7 @@ the same way in inline links and link reference definitions.)
 .
 Document scope=1:1..2:12 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:12 anchor=null attributes={} children=1
-    └── Link scope=1:1..2:12 anchor=null attributes={} dest=url("/uri") title="title" children=1
+    └── Link scope=1:1..2:0,2:3..2:12 anchor=null attributes={} dest=url("/uri") title="title" children=1
         └── Text scope=1:2..1:5 anchor=null attributes={} literal="link" children=0
 ````````````````````````````````
 

@@ -892,7 +892,7 @@ append:
     return 1;
 }
 
-void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_core_node *parent,
+void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_core_node *parent, bool root,
                                         markdown_core_map *refmap, markdown_core_inline_state *inline_state) {
     markdown_core_chunk content = {parent->content.ptr, parent->content.size, 0};
     /* EVERY content-bearing block has a map by the time its inlines are parsed.
@@ -906,15 +906,22 @@ void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_c
         markdown_core_parser_mark_content(parser, parent, 0, parent->where.place.start + parent->internal_offset);
     }
     markdown_core_inline_state_from_buf(parser, inline_state, &content, refmap);
-    inline_state->owner = parent;
-    inline_state->owner_structure = markdown_core_parser_structure(parser, parent);
-    inline_state->mark_cursor = parent->content_map.first;
-    markdown_core_inline_seat_cursor(inline_state);
     /* Block buffers include their terminating line ending. An inline field
      * ends at its owner's delimiter: its trailing spaces are body content. */
     if (!MARKDOWN_CORE_NODE_TYPE_INLINE_P(parent->kind)) {
         markdown_core_chunk_rtrim(&inline_state->input);
     }
+    /* A root's nodes are placed in its content: the bytes this parse reads
+     * keep their map to the source as the root's runs. A field's nodes are
+     * placed in the content of the root it was cut from, which its map is a
+     * slice of. */
+    if (root) {
+        markdown_core_parser_read_content(parser, parent, inline_state->input.len);
+    }
+    inline_state->owner = parent;
+    inline_state->owner_structure = markdown_core_parser_structure(parser, parent);
+    inline_state->mark_cursor = parent->content_map.first;
+    markdown_core_inline_seat_cursor(inline_state);
 
     const markdown_core_element_instance *structure = inline_state->owner_structure;
     if (structure && structure->element->begin_inline && S_inline_run_began(inline_state)) {
@@ -968,9 +975,10 @@ bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_
     return whitespace;
 }
 
-bool markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, markdown_core_map *refmap) {
+bool markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, bool root,
+                                 markdown_core_map *refmap) {
     markdown_core_inline_state inline_state;
-    markdown_core_inline_start_inlines(parser, parent, refmap, &inline_state);
+    markdown_core_inline_start_inlines(parser, parent, root, refmap, &inline_state);
     return markdown_core_inline_finish_inlines(parser, &inline_state);
 }
 

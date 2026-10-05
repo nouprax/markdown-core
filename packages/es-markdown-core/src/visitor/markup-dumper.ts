@@ -12,8 +12,8 @@ import type {
     OrderedListVariant,
     Scope
 } from "../markup/values.js";
-import { placeOf } from "./document-queries.js";
-import { walkWithPlaces } from "./markup-walker.js";
+import { dispatch, traverse } from "./markup-walker.js";
+import { placesOf } from "./source-places.js";
 import type { MarkupVisitor } from "./markup-visitor.js";
 
 /** Produces the canonical debug tree for immutable Markdown markup. */
@@ -22,22 +22,17 @@ export class MarkupDumper {
 
     /** Returns the canonical debug dump of `document`, with scopes computed
      * from `source`, the text it was parsed from, in UTF-8 columns. Throws
-     * `MarkdownCoreError` `outOfBounds` when `source` ends before the
-     * document does. */
+     * `MarkdownCoreError` `outOfBounds` when `source` ends before a node of
+     * the document does. */
     static dump(document: Document, source: string): string;
     /** Returns the canonical debug dump of `node`, a node of `document`, and
      * its owned markup. Throws `MarkdownCoreError` `outOfBounds` when `source`
-     * ends before the node does. */
+     * ends before a node of the tree does. */
     static dump(document: Document, node: Markup, source: string): string;
     static dump(document: Document, nodeOrSource: Markup | string, source?: string): string {
-        const root = typeof nodeOrSource === "string" ? document : nodeOrSource;
-        const place = placeOf(document, root);
-        const lines = new SourceLines(typeof nodeOrSource === "string" ? nodeOrSource : source!);
-        if (place.end > lines.bytes.length) throw new MarkdownCoreError("outOfBounds");
-        const state = new State(lines);
-        // A node's walk starts at its own extent, which is relative to the
-        // anchor its relation had where it was written.
-        state.dump(root, place.start - root.extent.lead);
+        const target = typeof nodeOrSource === "string" ? document : nodeOrSource;
+        const state = new State(new SourceLines(typeof nodeOrSource === "string" ? nodeOrSource : source!));
+        state.dump(document, target);
         return state.result();
     }
 }
@@ -50,8 +45,8 @@ class State {
     private readonly frames: OutputFrame[] = [];
     private readonly remainingNodes: number[] = [];
     private readonly lines: string[] = [];
-    /** The scope of the node being entered, set before its callback runs. */
-    private at!: Scope;
+    /** The scopes of the node being entered, set before its callback runs. */
+    private at!: readonly Scope[];
 
     constructor(private readonly source: SourceLines) {}
 
@@ -506,9 +501,24 @@ class State {
         }
     };
 
-    dump(root: Markup, anchor: number): void {
-        walkWithPlaces(root, anchor, this.visitor, (start, end) => {
-            this.at = this.source.scope(start, end, "utf8");
+    /**
+     * Draws `target`'s tree. Where a node is depends on the content it is in,
+     * so the walk is the document's, and only the target's tree is drawn,
+     * from its own level.
+     */
+    dump(document: Document, target: Markup): void {
+        let inside = false;
+        traverse(document, (node, phase, start, end, content) => {
+            if (!inside && node !== target) return;
+            inside = !(node === target && phase === "exit");
+            if (phase === "enter") {
+                const places = placesOf(node, start, end, content);
+                if (places[places.length - 1]!.end > this.source.bytes.length) {
+                    throw new MarkdownCoreError("outOfBounds");
+                }
+                this.at = places.map((place) => this.source.scope(place.start, place.end, "utf8"));
+            }
+            dispatch(this.visitor, node, phase);
         });
     }
 
@@ -538,7 +548,7 @@ class State {
     }
 
     /** A value line prints like a node line: scope, fields, `children`. */
-    private value(kind: string, at: Scope, fields: readonly string[], children: number): void {
+    private value(kind: string, at: readonly Scope[], fields: readonly string[], children: number): void {
         const fieldText = fields.length === 0 ? "" : ` ${fields.join(" ")}`;
         this.emit(`${kind} ${scope(at)}${fieldText} children=${children}`);
     }
@@ -594,8 +604,9 @@ class State {
     }
 }
 
-function scope(value: Scope): string {
-    return `scope=${value.start.line}:${value.start.column}..${value.end.line}:${value.end.column}`;
+/** Every scope of a node, joined by commas. */
+function scope(scopes: readonly Scope[]): string {
+    return `scope=${scopes.map(({ start, end }) => `${start.line}:${start.column}..${end.line}:${end.column}`).join(",")}`;
 }
 
 function optional(value: string | null): string {

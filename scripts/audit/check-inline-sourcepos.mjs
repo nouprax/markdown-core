@@ -40,7 +40,7 @@ import { parseCanonicalDump, parseUpstreamXml, projectHtmlComments } from "../sh
 import {
     formatScope,
     loadLedger,
-    readScope,
+    readScopes,
     reconcileLedger,
     requireBinary,
     runBinary,
@@ -86,11 +86,12 @@ for (const example of readExamples(root, ledger.corpus)) {
     const findings = [];
     for (const [index, { node, nodePath }] of mine.entries()) {
         scanned += 1;
-        const scope = readScope(node);
+        const scopes = readScopes(node);
         const theirScope = UPSTREAM_SOURCEPOS.exec(theirs[index].node.fields.sourcepos ?? "");
-        if (scope === null || theirScope === null)
+        if (scopes === null || theirScope === null)
             throw new Error(`${example.source}: a ${node.kind} carries no readable position on one of the two sides.`);
-        const here = formatScope(scope);
+        // Upstream gives one span from the node's first byte to its last.
+        const here = formatScope({ start: scopes[0].start, end: scopes[scopes.length - 1].end });
         const there = `${theirScope[1]}:${theirScope[2]}..${theirScope[3]}:${theirScope[4]}`;
         if (here !== there) findings.push({ nodePath, kind: node.kind, ours: here, upstream: there });
     }

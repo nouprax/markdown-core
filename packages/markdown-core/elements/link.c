@@ -22,9 +22,10 @@ static bufsize_t markdown_core_inline_manual_scan_link_url(markdown_core_chunk *
                                                            markdown_core_chunk *output);
 /* Reads the link reference definition at the front of `input`, its bytes
  * `before` past the front of `b`'s content, into a Reference node put in
- * `b`'s parent before `b`. Its length, 0 when there is none. */
+ * `b`'s parent before `b`, which starts on input line `*line` or later and
+ * leaves `*line` the line it ends on. Its length, 0 when there is none. */
 static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_node *b, markdown_core_chunk *input,
-                                  markdown_core_attribute_parser *attributes, bufsize_t before);
+                                  markdown_core_attribute_parser *attributes, bufsize_t before, int *line);
 
 bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b) {
     bufsize_t pos;
@@ -32,8 +33,10 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
     markdown_core_chunk chunk = {node_content->ptr, node_content->size, 0};
     markdown_core_attribute_parser attributes = {
         .data = chunk.data, .length = chunk.len, .scratch = &parser->attribute_scratch};
+    /* The definitions follow each other down the block's lines. */
+    int line = chunk.len && chunk.data[0] == '[' ? markdown_core_parser_start_line(parser, b) : 0;
     while (chunk.len && chunk.data[0] == '[' && !parser->error) {
-        pos = S_read_reference(parser, b, &chunk, &attributes, (bufsize_t)(chunk.data - node_content->ptr));
+        pos = S_read_reference(parser, b, &chunk, &attributes, (bufsize_t)(chunk.data - node_content->ptr), &line);
         if (!pos) {
             break;
         }
@@ -51,7 +54,7 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
     if (!(b->flags & MARKDOWN_CORE_NODE__REFERENCE_PREFIX)) {
         return !markdown_core_block_is_blank(node_content, 0);
     }
-    int line;
+    int ignored;
     bufsize_t source;
     markdown_core_block_rebase_content_marks(parser, b, dropped, chunk.len);
     markdown_core_strbuf_drop(node_content, dropped);
@@ -63,7 +66,7 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
      * the answer from the surviving run rather than from the size of the cut
      * is what makes both arrivals give the same result. On a block with no
      * definitions in front of it this is what the block already said. */
-    if (markdown_core_parser_content_place(parser, &b->content_map, 0, &line, &source)) {
+    if (markdown_core_parser_content_place(parser, &b->content_map, 0, &ignored, &source)) {
         b->where.place.start = (uint32_t)source;
     }
     return !markdown_core_block_is_blank(&b->content, 0);
@@ -356,7 +359,7 @@ bufsize_t markdown_core_reference_definition_length(markdown_core_chunk *input,
 }
 
 static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_node *b, markdown_core_chunk *input,
-                                  markdown_core_attribute_parser *attributes, bufsize_t before) {
+                                  markdown_core_attribute_parser *attributes, bufsize_t before, int *line) {
     reference_definition definition;
     bufsize_t length = S_reference_definition(input, attributes, &definition);
     if (!length) {
@@ -397,11 +400,12 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_no
     while (end > before && (b->content.ptr[end - 1] == '\n' || b->content.ptr[end - 1] == '\r')) {
         end--;
     }
-    int line;
+    int ignored;
     bufsize_t start = b->where.place.start, stop = b->where.place.start;
-    markdown_core_parser_content_place(parser, &b->content_map, before, &line, &start);
-    markdown_core_parser_content_end_place(parser, &b->content_map, end - 1, &line, &stop);
+    markdown_core_parser_content_place(parser, &b->content_map, before, &ignored, &start);
+    markdown_core_parser_content_end_place(parser, &b->content_map, end - 1, &ignored, &stop);
     reference->where.place = (markdown_core_place){(uint32_t)start, (uint32_t)stop};
+    markdown_core_parser_place_pieces(parser, reference, line);
     markdown_core_node_attach_validated(b->parent, reference, b);
     return length;
 }

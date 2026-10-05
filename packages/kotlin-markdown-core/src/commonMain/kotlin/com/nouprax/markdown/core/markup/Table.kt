@@ -14,6 +14,8 @@ public class TableCell internal constructor(
     public val content: kotlin.collections.List<Markup>,
     override val id: MarkupID,
     override val extent: Extent,
+    override val pieces: kotlin.collections.List<Piece>,
+    override val runs: kotlin.collections.List<Run>,
     override val anchor: String?,
     override val attributes: Attributes,
 ) : Markup()
@@ -22,6 +24,8 @@ public class TableRow internal constructor(
     public val cells: kotlin.collections.List<TableCell>,
     override val id: MarkupID,
     override val extent: Extent,
+    override val pieces: kotlin.collections.List<Piece>,
+    override val runs: kotlin.collections.List<Run>,
     override val anchor: String?,
     override val attributes: Attributes,
 ) : Markup()
@@ -34,6 +38,8 @@ public class Table internal constructor(
     public val foot: kotlin.collections.List<TableRow>,
     override val id: MarkupID,
     override val extent: Extent,
+    override val pieces: kotlin.collections.List<Piece>,
+    override val runs: kotlin.collections.List<Run>,
     override val anchor: String?,
     override val attributes: Attributes,
 ) : Markup()
@@ -43,6 +49,8 @@ public class TableCaption internal constructor(
     public val content: kotlin.collections.List<Markup>,
     override val id: MarkupID,
     override val extent: Extent,
+    override val pieces: kotlin.collections.List<Piece>,
+    override val runs: kotlin.collections.List<Run>,
     override val anchor: String?,
     override val attributes: Attributes,
 ) : Markup()

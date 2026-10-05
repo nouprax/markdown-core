@@ -28,7 +28,7 @@ test("ast: dimensions belong to each image occurrence while each one names its R
     assert.equal(reference.title, "title");
     assert.equal(images[0].content[0].kind, "emphasis");
     assert.equal(images[0].content[0].content[0].literal, "alt");
-    assert.equal(document.scope(images[0].content[0], source).end.column, 7);
+    assert.equal(document.scope(images[0].content[0], source)[0].end.column, 7);
     assert.deepEqual(images[1].content, []);
     assert.equal(images[2].content[0].literal, "bad|01");
     const events = [];
@@ -129,7 +129,7 @@ test("api: walking dispatch is typed and preserves owned-field semantics", () =>
         table,
         walkingVisitor((node, phase) => {
             if (phase === "enter" && node.kind === "tableRow")
-                tableRowKinds.push(document.scope(node, source).start.line);
+                tableRowKinds.push(document.scope(node, source)[0].start.line);
         })
     );
     assert.deepEqual(tableRowKinds, [1, 3]);
@@ -162,7 +162,9 @@ test("ast: marks retain typed content and walk both phases after native release"
         "exit:mark"
     ]);
     assert.equal(mark.content[1].content[0].literal, "b");
-    assert.deepEqual(document.scope(mark, "==a *b*=="), { start: { line: 1, column: 1 }, end: { line: 1, column: 9 } });
+    assert.deepEqual(document.scope(mark, "==a *b*=="), [
+        { start: { line: 1, column: 1 }, end: { line: 1, column: 9 } }
+    ]);
 });
 
 test("ast: insertions retain typed content and walk both phases after native release", () => {
@@ -192,10 +194,12 @@ test("ast: insertions retain typed content and walk both phases after native rel
         "exit:insertion"
     ]);
     assert.equal(insertion.content[1].content[0].literal, "b");
-    assert.deepEqual(document.scope(insertion, "++a *b*++"), {
-        start: { line: 1, column: 1 },
-        end: { line: 1, column: 9 }
-    });
+    assert.deepEqual(document.scope(insertion, "++a *b*++"), [
+        {
+            start: { line: 1, column: 1 },
+            end: { line: 1, column: 9 }
+        }
+    ]);
 });
 
 test("ast: spans retain typed content and walk both phases after native release", () => {
@@ -225,7 +229,9 @@ test("ast: spans retain typed content and walk both phases after native release"
         "exit:span"
     ]);
     assert.equal(span.content[1].content[0].literal, "b");
-    assert.deepEqual(document.scope(span, "[a *b*]{}"), { start: { line: 1, column: 1 }, end: { line: 1, column: 9 } });
+    assert.deepEqual(document.scope(span, "[a *b*]{}"), [
+        { start: { line: 1, column: 1 }, end: { line: 1, column: 9 } }
+    ]);
 });
 
 test("ast: superscripts retain typed content and walk both phases after native release", () => {
@@ -255,10 +261,12 @@ test("ast: superscripts retain typed content and walk both phases after native r
         "exit:superscript"
     ]);
     assert.equal(superscript.content[1].content[0].literal, "b");
-    assert.deepEqual(document.scope(superscript, "^a*b*^"), {
-        start: { line: 1, column: 1 },
-        end: { line: 1, column: 6 }
-    });
+    assert.deepEqual(document.scope(superscript, "^a*b*^"), [
+        {
+            start: { line: 1, column: 1 },
+            end: { line: 1, column: 6 }
+        }
+    ]);
 });
 
 test("ast: subscripts retain typed content and walk both phases after native release", () => {
@@ -288,10 +296,12 @@ test("ast: subscripts retain typed content and walk both phases after native rel
         "exit:subscript"
     ]);
     assert.equal(subscript.content[1].content[0].literal, "b");
-    assert.deepEqual(document.scope(subscript, "~a*b*~"), {
-        start: { line: 1, column: 1 },
-        end: { line: 1, column: 6 }
-    });
+    assert.deepEqual(document.scope(subscript, "~a*b*~"), [
+        {
+            start: { line: 1, column: 1 },
+            end: { line: 1, column: 6 }
+        }
+    ]);
 });
 
 test("api: the dialect has no switches, so a plain parse recognizes every feature", () => {
@@ -328,10 +338,12 @@ test("ast: captions and sparse rows survive native release and walk in ownership
         })
     );
     assert.deepEqual(events.slice(0, 4), ["table", "tableCaption", "text", "tableRow"]);
-    assert.deepEqual(document.scope(table.caption, source), {
-        start: { line: 1, column: 1 },
-        end: { line: 1, column: 9 }
-    });
+    assert.deepEqual(document.scope(table.caption, source), [
+        {
+            start: { line: 1, column: 1 },
+            end: { line: 1, column: 9 }
+        }
+    ]);
 });
 
 test("ast: typed fields are copied from the native result", () => {
@@ -352,11 +364,23 @@ test("ast: the document dumps itself and any of its nodes from the source", () =
     assert.equal(document.dump(document.content[0], source), MarkupDumper.dump(document, document.content[0], source));
     // Only the contract's fields are enumerable; the unit, the tables and the
     // queries are the document's.
-    assert.deepEqual(Object.keys(document), ["kind", "id", "extent", "anchor", "attributes", "content", "metadata"]);
+    assert.deepEqual(Object.keys(document), [
+        "kind",
+        "id",
+        "extent",
+        "pieces",
+        "runs",
+        "anchor",
+        "attributes",
+        "content",
+        "metadata"
+    ]);
     assert.deepEqual(Object.keys(document.content[0]), [
         "kind",
         "id",
         "extent",
+        "pieces",
+        "runs",
         "anchor",
         "attributes",
         "level",
@@ -374,9 +398,9 @@ test("unicode: UTF-8 survives native document release", () => {
 test("errors: empty input is valid", () => {
     assert.deepEqual(Document.parse("").content, []);
     const empty = Document.parse("");
-    assert.deepEqual(empty.scope(empty, ""), { start: { line: 1, column: 1 }, end: { line: 1, column: 0 } });
+    assert.deepEqual(empty.scope(empty, ""), [{ start: { line: 1, column: 1 }, end: { line: 1, column: 0 } }]);
     const accent = Document.parse("é", { unit: "utf8" });
-    assert.deepEqual(accent.scope(accent, "é"), { start: { line: 1, column: 1 }, end: { line: 1, column: 2 } });
+    assert.deepEqual(accent.scope(accent, "é"), [{ start: { line: 1, column: 1 }, end: { line: 1, column: 2 } }]);
 });
 
 test("errors: allocation failure is terminal across the WASM boundary", () => {
@@ -540,20 +564,21 @@ test("ast: a title is decoded before the content and dumped as a group", () => {
     // The title is a node-valued field written before the content, whose
     // count is present exactly when a title was authored. This message is
     // written by hand: a document holding one collapsed `note` callout whose
-    // title is the text `T` and whose content is empty. The title's first
-    // node leads from the callout's start.
+    // title is the text `T` and whose content is empty. The title is an
+    // inline root's content: its first node leads from 0, and the callout's
+    // run reads it from the source byte 11 past the callout's start.
     const bytes = new MessageWriter()
-        .text("T", { extent: [9, 1] })
-        .record("callout", { extent: [0, 8] })
+        .text("T", { extent: [0, 1] })
+        .record("callout", { extent: [0, 12], runs: [[11, 1, 1]] })
         .optional("note", MessageWriter.prototype.string)
         .optional(true, MessageWriter.prototype.bool)
         .optional(1, MessageWriter.prototype.u32)
         .u32(0)
-        .root(1, { extent: [0, 8] })
+        .root(1, { extent: [0, 12] })
         .document();
 
     const document = decoder(bytes).decode();
-    const source = "> [!note]-T";
+    const source = "> [!note]- T";
     const [callout] = document.content;
     assert.equal(callout.kind, "callout");
     assert.equal(callout.variant, "note");
@@ -565,11 +590,15 @@ test("ast: a title is decoded before the content and dumped as a group", () => {
     assert.deepEqual(callout.content, []);
     assert.equal(
         MarkupDumper.dump(document, source),
-        "Document scope=1:1..1:8 anchor=null attributes={} children=1\n" +
-            '└── Callout scope=1:1..1:8 anchor=null attributes={} variant="note" collapsed=true children=0\n' +
+        "Document scope=1:1..1:12 anchor=null attributes={} children=1\n" +
+            '└── Callout scope=1:1..1:12 anchor=null attributes={} variant="note" collapsed=true children=0\n' +
             "    └── Title children=1\n" +
-            '        └── Text scope=1:10..1:10 anchor=null attributes={} literal="T" children=0\n'
+            '        └── Text scope=1:12..1:12 anchor=null attributes={} literal="T" children=0\n'
     );
+    assert.deepEqual(callout.runs, [{ lead: 11, span: 1, length: 1 }]);
+    assert.deepEqual(document.scope(callout.title[0], source), [
+        { start: { line: 1, column: 12 }, end: { line: 1, column: 12 } }
+    ]);
     const events = [];
     walk(
         callout,
@@ -656,10 +685,12 @@ test("robustness: a session continues a deep document", () => {
         const leaf = node.content[0];
         assert.equal(leaf.literal, "lean");
         const column = depth * 2 + 1;
-        assert.deepEqual(edited.scope(leaf, session.text), {
-            start: { line: 1, column },
-            end: { line: 1, column: column + 3 }
-        });
+        assert.deepEqual(edited.scope(leaf, session.text), [
+            {
+                start: { line: 1, column },
+                end: { line: 1, column: column + 3 }
+            }
+        ]);
         assert.equal(edited.nodeAt({ line: 1, column }, session.text), leaf);
     } finally {
         session.dispose();
@@ -745,8 +776,10 @@ test("ast: inline notes are owned by their referents and definitions stay where 
     // A note covers `^[...]` while its citation covers only the content, so
     // its lead from the citation's start is negative.
     assert.deepEqual(outer.extent, { lead: -2, span: 7 });
-    assert.deepEqual(document.scope(outer, source), { start: { line: 1, column: 1 }, end: { line: 1, column: 7 } });
-    assert.deepEqual(document.scope(citation, source), { start: { line: 1, column: 3 }, end: { line: 1, column: 6 } });
+    assert.deepEqual(document.scope(outer, source), [{ start: { line: 1, column: 1 }, end: { line: 1, column: 7 } }]);
+    assert.deepEqual(document.scope(citation, source), [
+        { start: { line: 1, column: 3 }, end: { line: 1, column: 6 } }
+    ]);
 });
 
 test("ast: repeated calls name one definition by label, and definitions are content", () => {
@@ -761,10 +794,12 @@ test("ast: repeated calls name one definition by label, and definitions are cont
     assert.deepEqual(cite.citations[0].referent, { kind: "footnote", target: { kind: "label", value: "a" } });
     assert.deepEqual(cite.citations[0].prefix, []);
     assert.deepEqual(cite.citations[0].suffix, []);
-    assert.deepEqual(document.scope(cite.citations[0], source), {
-        start: { line: 1, column: 2 },
-        end: { line: 1, column: 3 }
-    });
+    assert.deepEqual(document.scope(cite.citations[0], source), [
+        {
+            start: { line: 1, column: 2 },
+            end: { line: 1, column: 3 }
+        }
+    ]);
     assert.deepEqual([once.kind, once.label, twice.kind, twice.label], ["footnote", "a", "footnote", "a"]);
     assert.deepEqual(document.footnotes, [once, twice]);
     assert.equal(document.footnote("a"), once);
@@ -929,13 +964,17 @@ test("errors: scope and dump reject a source that ends before the node", () => {
     assert.throws(() => MarkupDumper.dump(document, heading, short), outOfBounds);
     assert.throws(() => document.scope(heading, ""), outOfBounds);
     const covering = source.slice(0, 6);
-    assert.deepEqual(document.scope(heading, covering), { start: { line: 3, column: 1 }, end: { line: 3, column: 3 } });
+    assert.deepEqual(document.scope(heading, covering), [
+        { start: { line: 3, column: 1 }, end: { line: 3, column: 3 } }
+    ]);
     assert.match(document.dump(heading, covering), /^Heading scope=3:1..3:3 /);
     // A node that ends where the short source does is still covered.
-    assert.deepEqual(document.scope(document.content[0], "a"), {
-        start: { line: 1, column: 1 },
-        end: { line: 1, column: 1 }
-    });
+    assert.deepEqual(document.scope(document.content[0], "a"), [
+        {
+            start: { line: 1, column: 1 },
+            end: { line: 1, column: 1 }
+        }
+    ]);
 });
 
 test("errors: nodeAt rejects a line or column that is not an integer of at least 1", () => {
@@ -1427,8 +1466,8 @@ test("ast: Properties keep recognized fields and literal prose after native rele
         ],
         ["9007199254740993", "first\n\nsecond\n", "# prose\n"]
     );
-    assert.equal(document.scope(document.content[0], source).start.line, 15);
-    assert.equal(document.scope(document.metadata, source).end.line, 14);
+    assert.equal(document.scope(document.content[0], source)[0].start.line, 15);
+    assert.equal(document.scope(document.metadata, source)[0].end.line, 14);
     const events = [];
     walk(
         document,
@@ -1441,7 +1480,8 @@ test("ast: Properties keep recognized fields and literal prose after native rele
     assert.ok(empty);
     assert.ok(
         Object.entries(empty).every(
-            ([key, value]) => ["kind", "id", "extent", "anchor", "attributes"].includes(key) || value === null
+            ([key, value]) =>
+                ["kind", "id", "extent", "pieces", "runs", "anchor", "attributes"].includes(key) || value === null
         )
     );
     assert.equal(Document.parse("---\nname: 1\n").metadata, null);
@@ -1465,7 +1505,7 @@ test("ast: P2 attributes preserve native arrays, ownership, dimensions and occur
     const [code, link, image] = document.content[1].content.filter((value) => value.kind !== "text");
     assert.deepEqual(code.attributes.classes, ["code"]);
     assert.equal(code.literal, "x");
-    assert.equal(document.scope(code, source).end.column, 10);
+    assert.equal(document.scope(code, source)[0].end.column, 10);
     // Each occurrence holds only the attributes it wrote; the definition's
     // stay on its Reference.
     assert.equal(link.anchor, "own");
@@ -1489,9 +1529,9 @@ test("ast: P2 attributes preserve native arrays, ownership, dimensions and occur
             { name: "k", value: "1" }
         ]
     });
-    assert.equal(document.scope(link, source).end.line, 3);
-    assert.equal(document.scope(image, source).end.line, 3);
-    assert.equal(document.scope(reference, source).start.line, 5);
+    assert.equal(document.scope(link, source)[0].end.line, 3);
+    assert.equal(document.scope(image, source)[0].end.line, 3);
+    assert.equal(document.scope(reference, source)[0].start.line, 5);
     assert.ok(Array.isArray(link.attributes.classes));
     assert.ok(document.dump(source).includes('Reference scope=5:1..5:35 anchor="definition"'));
 });
@@ -1612,10 +1652,9 @@ test("api: owned elements are Markup with finite walks and preserved labels", ()
 });
 
 test("api: scope queries count columns in the document's unit from the extents and the source", () => {
-    const scope = (startLine, startColumn, endLine, endColumn) => ({
-        start: { line: startLine, column: startColumn },
-        end: { line: endLine, column: endColumn }
-    });
+    const scope = (startLine, startColumn, endLine, endColumn) => [
+        { start: { line: startLine, column: startColumn }, end: { line: endLine, column: endColumn } }
+    ];
     const scopes = (source, unit) => {
         const document = Document.parse(source, { unit });
         assert.equal(document.unit, unit);
@@ -1672,6 +1711,81 @@ test("api: scope queries count columns in the document's unit from the extents a
     ]);
     // The default unit is UTF-16.
     assert.equal(Document.parse("é🚀x\n").unit, "utf16");
+});
+
+test("api: a node's scopes are its source ranges, through its pieces or its inline root's runs", () => {
+    const scope = (startLine, startColumn, endLine, endColumn) => ({
+        start: { line: startLine, column: startColumn },
+        end: { line: endLine, column: endColumn }
+    });
+    // A paragraph inside a block quote owns its lines past the `> ` prefixes:
+    // one piece per line, and its content is read through one run per line.
+    const source = "> a *b\n> c* d\n";
+    const document = Document.parse(source, { unit: "utf8" });
+    const [quote] = document.content;
+    const [paragraph] = quote.content;
+    const [, emphasis] = paragraph.content;
+    const c = emphasis.content[2];
+    assert.deepEqual(paragraph.pieces, [
+        { lead: 0, span: 5 },
+        { lead: 2, span: 4 }
+    ]);
+    assert.deepEqual(paragraph.runs, [
+        { lead: 0, span: 5, length: 5 },
+        { lead: 2, span: 4, length: 4 }
+    ]);
+    assert.deepEqual(document.scope(paragraph, source), [scope(1, 3, 2, 0), scope(2, 3, 2, 6)]);
+    // Inline extents are offsets in the content, which starts at 0: `c` is
+    // content byte 7 and source byte 9.
+    assert.deepEqual(emphasis.extent, { lead: 0, span: 5 });
+    assert.deepEqual(c.extent, { lead: 0, span: 1 });
+    assert.deepEqual(document.scope(emphasis, source), [scope(1, 5, 2, 0), scope(2, 3, 2, 4)]);
+    assert.deepEqual(document.scope(c, source), [scope(2, 3, 2, 3)]);
+    // A prefix byte belongs to the quote alone; a byte of a range to the last
+    // node in walk order whose ranges hold it.
+    assert.equal(document.nodeAt({ line: 2, column: 1 }, source), quote);
+    assert.equal(document.nodeAt({ line: 2, column: 3 }, source), c);
+    assert.equal(document.nodeAt({ line: 2, column: 4 }, source), emphasis);
+    // A subtree's dump places its nodes in the content they are in, and its
+    // levels count from the node.
+    assert.equal(
+        document.dump(emphasis, source),
+        "Emphasis scope=1:5..2:0,2:3..2:4 anchor=null attributes={} children=3\n" +
+            '├── Text scope=1:6..1:6 anchor=null attributes={} literal="b" children=0\n' +
+            "├── SoftBreak scope=1:7..2:0 anchor=null attributes={} children=0\n" +
+            '└── Text scope=2:3..2:3 anchor=null attributes={} literal="c" children=0\n'
+    );
+    assert.ok(document.dump(source).includes("Paragraph scope=1:3..2:0,2:3..2:6 "));
+    assert.throws(
+        () => document.scope(c, source.slice(0, 9)),
+        (error) => error.code === "outOfBounds"
+    );
+
+    // A callout's title is its content, and its later relations are back in
+    // source coordinates.
+    const titled = "> [!note] T *u*\n> body\n";
+    const callout = Document.parse(titled, { unit: "utf8" });
+    const [note] = callout.content;
+    assert.deepEqual(note.runs, [{ lead: 10, span: 5, length: 5 }]);
+    assert.deepEqual(callout.scope(note.title[1].content[0], titled), [scope(1, 14, 1, 14)]);
+    assert.deepEqual(note.content[0].extent, { lead: 18, span: 4 });
+    assert.deepEqual(callout.scope(note.content[0], titled), [scope(2, 3, 2, 6)]);
+});
+
+test("api: pieces and runs take part in value equality", () => {
+    const message = (inherited) =>
+        decoder(
+            new MessageWriter()
+                .text("a", { id: 2, extent: [0, 1] })
+                .record("paragraph", { id: 3, extent: [0, 1], ...inherited })
+                .u32(1)
+                .root(1, { id: 1, extent: [0, 1] })
+                .document()
+        ).decode();
+    const plain = message({ runs: [[0, 1, 1]] });
+    assert.ok(markupEquals(plain, message({ runs: [[0, 1, 1]] })));
+    assert.equal(markupEquals(plain, message({ runs: [[0, 2, 1]] })), false);
+    assert.equal(markupEquals(plain, message({ runs: [[0, 1, 1]], pieces: [[0, 1]] })), false);
 });
 
 test("api: nodeAt finds the last node in walk order holding the byte at a position", () => {
@@ -1807,7 +1921,7 @@ test("robustness: deep trees are released, compared, walked and queried with a s
             const leaf = deepest(left).items[0].content[0].content[0];
             const column = depth * 2 + 1;
             const scope = { start: { line: 1, column }, end: { line: 1, column: column + 3 } };
-            assert.deepEqual(left.scope(leaf, source), scope);
+            assert.deepEqual(left.scope(leaf, source), [scope]);
             assert.equal(left.nodeAt({ line: 1, column }, source), leaf);
             assert.equal(
                 left.dump(leaf, source),

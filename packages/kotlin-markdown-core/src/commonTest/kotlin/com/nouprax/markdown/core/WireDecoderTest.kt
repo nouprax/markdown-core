@@ -70,11 +70,17 @@ private class MessageWriter {
         id: Long = next,
         lead: Int = 0,
         span: Long = 0,
+        pieces: kotlin.collections.List<Piece> = emptyList(),
+        runs: kotlin.collections.List<Run> = emptyList(),
     ) = apply {
         next = id + 1
         u8(ordinal)
         int(id)
         u32(lead).u32(span)
+        u32(pieces.size)
+        pieces.forEach { u32(it.lead).u32(it.span.toLong()) }
+        u32(runs.size)
+        runs.forEach { u32(it.lead).u32(it.span.toLong()).u32(it.length.toLong()) }
         optional(anchor) { string(it) }
         attributes(classes)
     }
@@ -304,18 +310,26 @@ class WireDecoderTest {
     }
 
     @Test
-    fun recordsCarryTheirIdAndTheirSignedExtentVerbatim() {
+    fun recordsCarryTheirIdAndTheirSignedExtentPiecesAndRunsVerbatim() {
+        val pieces = listOf(Piece(-1, UInt.MAX_VALUE), Piece(Int.MAX_VALUE, 0u))
+        val runs = listOf(Run(Int.MIN_VALUE, 0u, UInt.MAX_VALUE), Run(3, 2u, 2u))
         val document =
             decode(
                 MessageWriter()
                     .record(WireNodeKind.TEXT.rawValue, id = 7, lead = -2, span = 0xffff_ffffL)
                     .string("t")
+                    .record(WireNodeKind.PARAGRAPH.rawValue, pieces = pieces, runs = runs)
+                    .u32(1)
                     .root(1),
             )
-        val text = document.content.single()
+        val paragraph = assertIs<Paragraph>(document.content.single())
+        val text = paragraph.content.single()
         assertEquals(MarkupID(7), text.id)
         assertEquals(Extent(-2, UInt.MAX_VALUE), text.extent)
-        assertEquals(MarkupID(8), document.id)
+        assertTrue(text.pieces.isEmpty() && text.runs.isEmpty())
+        assertEquals(pieces, paragraph.pieces)
+        assertEquals(runs, paragraph.runs)
+        assertEquals(MarkupID(9), document.id)
     }
 
     @Test

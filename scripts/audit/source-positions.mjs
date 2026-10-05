@@ -170,21 +170,32 @@ export function lineLengths(input) {
 
 const SCOPE = /^(-?\d+):(-?\d+)\.\.(-?\d+):(-?\d+)$/;
 
-/** `scope=L:C..L:C` -> `{ start: [line, column], end: [line, column] }`. */
-export function readScope(node) {
-    const match = SCOPE.exec(node.fields.scope ?? "");
-    if (match === null) return null;
-    const [startLine, startColumn, endLine, endColumn] = match.slice(1).map(Number);
-    return { start: [startLine, startColumn], end: [endLine, endColumn] };
+/**
+ * `scope=L:C..L:C,L:C..L:C` -> one `{ start: [line, column], end: [line, column] }`
+ * per source range, in source order. A node has several when it owns
+ * stretches of source split by container prefixes.
+ */
+export function readScopes(node) {
+    if (node.fields.scope === undefined) return null;
+    const scopes = [];
+    for (const text of node.fields.scope.split(",")) {
+        const match = SCOPE.exec(text);
+        if (match === null) return null;
+        const [startLine, startColumn, endLine, endColumn] = match.slice(1).map(Number);
+        scopes.push({ start: [startLine, startColumn], end: [endLine, endColumn] });
+    }
+    return scopes;
 }
 
 export const formatScope = (scope) => `${scope.start[0]}:${scope.start[1]}..${scope.end[0]}:${scope.end[1]}`;
+
+export const formatScopes = (scopes) => scopes.map(formatScope).join(",");
 
 /** Document order on two coordinates. */
 export const before = (left, right) => left[0] < right[0] || (left[0] === right[0] && left[1] < right[1]);
 
 /** A coordinate on line zero cannot participate in geometry comparisons. */
-export const onLineZero = (scope) => scope.start[0] === 0 || scope.end[0] === 0;
+export const onLineZero = (scopes) => scopes.some((scope) => scope.start[0] === 0 || scope.end[0] === 0);
 
 /**
  * Preorder walk yielding the index chain from the root, so a finding names a

@@ -2,23 +2,45 @@
 /// or named relation, as the C dump does. The walk's frames are the tree's
 /// depth; the call stack stays constant.
 enum MarkupDumper {
-    /// The canonical dump of `root`, whose extent is relative to the absolute
-    /// offset `anchor`, with scopes in UTF-8 columns of `bytes`.
+    /// The canonical dump of `node`, a node of the tree `root`, with scopes in
+    /// UTF-8 columns of `bytes`; `nil` when a node of it ends past them.
+    ///
+    /// It draws the canonical walk of `root` from `node` up to the next line
+    /// outside its tree, each line at its level below `node`.
     static func render(
-        _ root: MarkupRecord,
-        anchor: Int,
+        _ node: MarkupRecord,
+        in root: MarkupRecord,
         bytes: UnsafeBufferPointer<UInt8>,
         lines: SourceLines
-    ) -> String {
+    ) -> String? {
         var output = ""
         // `more[n]` says whether the latest line at level `n + 1` has a later
         // sibling; `segments[n]` is the prefix segment lines below it draw.
         var more: [Bool] = []
         var segments: [String] = []
-        var walk = CanonicalWalk(root: root, anchor: anchor)
+        var places: [(start: Int, end: Int)] = []
+        // The level `node`'s line is drawn at in the walk, once it is reached.
+        var base: Int?
+        var walk = CanonicalWalk(root: root)
         while let item = walk.next() {
-            if item.level > 0 {
-                let depth = item.level - 1
+            if base == nil, item.record === node { base = item.level }
+            guard let level = base.map({ item.level - $0 }) else { continue }
+            // The first line at `node`'s level or above after it is outside
+            // its tree.
+            if level <= 0, item.record !== node { break }
+            let text: String
+            if let record = item.record {
+                walk.places(of: item, into: &places)
+                guard (places.last?.end ?? 0) <= bytes.count else { return nil }
+                let scopes = places.map { lines.scope(from: $0.start, to: $0.end, in: bytes, unit: .utf8) }
+                var visitor = LineVisitor(place: dump(scopes: scopes))
+                dispatch(record.markup, to: &visitor, phase: .enter)
+                text = visitor.text
+            } else {
+                text = "\(item.name ?? "") children=\(item.count)"
+            }
+            if level > 0 {
+                let depth = level - 1
                 if more.count <= depth { more.append(contentsOf: repeatElement(false, count: depth + 1 - more.count)) }
                 more[depth] = item.hasNext
                 if depth > 0 {
@@ -30,15 +52,7 @@ enum MarkupDumper {
                 output += segments[..<depth].joined()
                 output += item.hasNext ? "├── " : "└── "
             }
-            if let record = item.record {
-                let scope = lines.scope(from: item.start, to: item.end, in: bytes, unit: .utf8)
-                var visitor = LineVisitor(place: dump(scope: scope))
-                dispatch(record.markup, to: &visitor, phase: .enter)
-                output += visitor.text
-            } else if let name = item.name {
-                output += "\(name) children=\(item.count)"
-            }
-            output += "\n"
+            output += text + "\n"
         }
         return output
     }
@@ -327,8 +341,11 @@ private func dump(columns value: [TableColumn]) -> String {
 }
 
 // Canonical spellings for values in the debug dump.
-private func dump(scope value: Scope) -> String {
-    "scope=\(value.start.line):\(value.start.column)..\(value.end.line):\(value.end.column)"
+/// One scope per source range, joined by commas.
+private func dump(scopes value: [Scope]) -> String {
+    "scope="
+        + value.map { "\($0.start.line):\($0.start.column)..\($0.end.line):\($0.end.column)" }
+        .joined(separator: ",")
 }
 
 private func dump(boolean value: Bool) -> String { value ? "true" : "false" }

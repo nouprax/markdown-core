@@ -62,7 +62,7 @@ test("conformance: public node schema is reachable", () => {
     );
     assert.ok(
         documents.every((document, index) => {
-            const scope = document.scope(document, sources[index]);
+            const [scope] = document.scope(document, sources[index]);
             return scope.start.line === 1 && scope.start.column === 1;
         })
     );

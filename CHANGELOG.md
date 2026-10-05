@@ -6,6 +6,23 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Give every extent one rule: it is a byte offset in the input of the parser
+  that produced the node. Block extents stay source offsets; an inline
+  node's extent is now an offset in its inline root's content, which starts
+  at 0. Every `Markup` gains `pieces: [Piece]` and `runs: [Run]` after
+  `extent`, both part of equality. A leaf block inside a container and a
+  grid or multiline cell carry one `Piece(lead, span)` per stretch of source
+  they own between container prefixes; containers, tables and rows carry
+  none. An inline root carries the `Run(lead, span, length)`s that map its
+  content to the source: a run whose span equals its length is copied byte
+  for byte, any other run maps as a whole. `document.scope(of:in:)` returns
+  `[Scope]`, one per source range in source order, and `node(at:in:)` and
+  the dumps read every range (`scope=` joins them with `,`). The C facade
+  adds `markdown_core_node_pieces`, `markdown_core_node_runs` and
+  `markdown_core_scopes_free`, and `markdown_core_document_scope` writes an
+  array and its count. MCB3 writes each record's pieces and runs after its
+  extent.
+
 - Make each link reference definition a `Reference(label, dest, title)`
   leaf block where it was written, with the anchor and attributes the
   definition states; a paragraph of only definitions is its References.

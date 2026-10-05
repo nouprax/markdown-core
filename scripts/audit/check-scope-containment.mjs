@@ -4,8 +4,10 @@
  *
  * Two invariants, over every example in every spec fixture:
  *
- *   CONTAINMENT   a child's extent lies inside its parent's.
- *   NO OVERLAP    two siblings never claim the same byte.
+ *   CONTAINMENT   each of a child's source ranges lies inside one of its
+ *                 parent's.
+ *   NO OVERLAP    two siblings never claim the same byte, and each starts
+ *                 after the one before it starts.
  *
  * The second half is the one that earns this file. Containment alone cannot
  * see the emphasis defect at all — `***a**` yields a `Text "*"` spanning
@@ -34,10 +36,10 @@ import { parseCanonicalDump } from "../shared/upstream-cmark.mjs";
 import {
     before,
     fixtureCorpus,
-    formatScope,
+    formatScopes,
     loadLedger,
     onLineZero,
-    readScope,
+    readScopes,
     reconcileLedger,
     requireBinary,
     runBinary,
@@ -57,11 +59,18 @@ const ours = requireBinary(root, "build/cmake/packages/markdown-core/core/markdo
 function* positionedChildren(node, nodePath) {
     for (const [index, child] of node.children.entries()) {
         const childPath = `${nodePath}.${String(index)}`;
-        const scope = readScope(child);
-        if (scope === null) yield* positionedChildren(child, childPath);
-        else if (!onLineZero(scope)) yield { child, childPath, scope };
+        const scopes = readScopes(child);
+        if (scopes === null) yield* positionedChildren(child, childPath);
+        else if (!onLineZero(scopes)) yield { child, childPath, scopes };
     }
 }
+
+// Closed byte intervals; an empty range (its end before its start) names a
+// place, not a byte.
+const holds = (outer, inner) => !before(inner.start, outer.start) && !before(outer.end, inner.end);
+const empty = (scope) => before(scope.end, scope.start);
+const share = (left, right) =>
+    !empty(left) && !empty(right) && !before(left.end, right.start) && !before(right.end, left.start);
 
 const measured = [];
 let scanned = 0;
@@ -70,22 +79,22 @@ for (const example of fixtureCorpus(root)) {
     const tree = parseCanonicalDump(runBinary(ours, [], example.input));
     const findings = [];
     for (const { node, nodePath } of walkWithPath(tree)) {
-        const parent = readScope(node);
+        const parent = readScopes(node);
         if (parent === null) continue;
 
         const children = [...positionedChildren(node, nodePath)];
 
         if (!onLineZero(parent))
-            for (const { child, childPath, scope } of children) {
+            for (const { child, childPath, scopes } of children) {
                 scanned += 1;
-                if (before(scope.start, parent.start) || before(parent.end, scope.end))
+                if (!scopes.every((scope) => parent.some((outer) => holds(outer, scope))))
                     findings.push({
                         nodePath: childPath,
                         violation: "containment",
                         kind: child.kind,
-                        scope: formatScope(scope),
+                        scope: formatScopes(scopes),
                         parentKind: node.kind,
-                        parentScope: formatScope(parent)
+                        parentScope: formatScopes(parent)
                     });
             }
         else skipped += children.length;
@@ -109,16 +118,17 @@ for (const example of fixtureCorpus(root)) {
                 const left = siblings[index - 1];
                 const right = siblings[index];
                 scanned += 1;
-                // Closed byte intervals: adjacent siblings end and start one column
-                // apart, so anything short of strictly-before shares a byte.
-                if (!before(left.scope.end, right.scope.start))
+                if (
+                    !before(left.scopes[0].start, right.scopes[0].start) ||
+                    left.scopes.some((scope) => right.scopes.some((other) => share(scope, other)))
+                )
                     findings.push({
                         nodePath: right.childPath,
                         violation: "sibling-overlap",
                         kind: right.child.kind,
-                        scope: formatScope(right.scope),
+                        scope: formatScopes(right.scopes),
                         previousKind: left.child.kind,
-                        previousScope: formatScope(left.scope)
+                        previousScope: formatScopes(left.scopes)
                     });
             }
     }

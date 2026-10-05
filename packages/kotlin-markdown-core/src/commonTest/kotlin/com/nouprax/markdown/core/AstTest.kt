@@ -85,6 +85,8 @@ class AstTest {
                     emptyList(),
                     MarkupID(2),
                     Extent(0, 1u),
+                    emptyList(),
+                    emptyList(),
                     null,
                     Attributes.empty,
                 )
@@ -98,9 +100,23 @@ class AstTest {
         val rows =
             documents.map {
                 TableRow(
-                    listOf(TableCell(1, 2, it.content, MarkupID(4), Extent(0, 0u), null, Attributes.empty)),
+                    listOf(
+                        TableCell(
+                            1,
+                            2,
+                            it.content,
+                            MarkupID(4),
+                            Extent(0, 0u),
+                            emptyList(),
+                            emptyList(),
+                            null,
+                            Attributes.empty,
+                        ),
+                    ),
                     MarkupID(3),
                     Extent(0, 0u),
+                    emptyList(),
+                    emptyList(),
                     null,
                     Attributes.empty,
                 )
@@ -114,6 +130,8 @@ class AstTest {
                 listOf(rows[2]),
                 MarkupID(2),
                 Extent(0, 6u),
+                emptyList(),
+                emptyList(),
                 null,
                 Attributes.empty,
             )
@@ -191,7 +209,7 @@ class AstTest {
         )
         assertTrue(
             documents.zip(sources).all { (document, source) ->
-                document.scope(document, source).start == Position(1, 1)
+                document.scope(document, source).single().start == Position(1, 1)
             },
         )
     }
@@ -218,7 +236,8 @@ class AstTest {
                         .cells
                         .single(),
                     source,
-                ).start
+                ).single()
+                .start
                 .line,
         )
         val paragraph = document.content[3] as Paragraph
@@ -264,6 +283,8 @@ private fun holding(table: Table): Document =
         emptyMap(),
         MarkupID(1),
         table.extent,
+        emptyList(),
+        emptyList(),
         null,
         Attributes.empty,
     )

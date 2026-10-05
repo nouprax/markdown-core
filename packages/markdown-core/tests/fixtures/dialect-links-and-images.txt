@@ -676,8 +676,8 @@ Document scope=1:1..5:31 anchor=null attributes={} children=3
 .
 Document scope=1:1..11:7 anchor=null attributes={} children=4
 ├── Callout scope=1:1..2:32 anchor=null attributes={} variant=null collapsed=null children=1
-│   └── Paragraph scope=1:3..2:32 anchor=null attributes={} children=2
-│       ├── Embedded scope=1:3..2:26 anchor=null attributes={} dest=url("/i") title="t" dimensions=(width=200,height=300) children=3
+│   └── Paragraph scope=1:3..2:0,2:3..2:32 anchor=null attributes={} children=2
+│       ├── Embedded scope=1:3..2:0,2:3..2:26 anchor=null attributes={} dest=url("/i") title="t" dimensions=(width=200,height=300) children=3
 │       │   ├── Text scope=1:5..1:6 anchor=null attributes={} literal="é" children=0
 │       │   ├── SoftBreak scope=1:7..2:0 anchor=null attributes={} children=0
 │       │   └── Strong scope=2:3..2:9 anchor=null attributes={} children=1

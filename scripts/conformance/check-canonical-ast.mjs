@@ -114,7 +114,7 @@ const allCoveredStates = new Set();
 const allCoveredOrders = new Set();
 const allObservedFields = new Set();
 const treeLine =
-    /^(?:(?:│ {3}| {4})*(?:├──|└──) )?([A-Z][A-Za-z]+) scope=-?\d+:-?\d+\.\.-?\d+:-?\d+(?: .+)? children=\d+$/;
+    /^(?:(?:│ {3}| {4})*(?:├──|└──) )?([A-Z][A-Za-z]+) scope=-?\d+:-?\d+\.\.-?\d+:-?\d+(?:,-?\d+:-?\d+\.\.-?\d+:-?\d+)*(?: .+)? children=\d+$/;
 // A group line nests a node-valued list under its owner with no scope and no
 // fields; the names are the dump grammar's.
 const groupLine = /^(?:(?:│ {3}| {4})*(?:├──|└──) )([A-Z][A-Za-z]+) children=\d+$/;

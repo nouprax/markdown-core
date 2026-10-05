@@ -6,7 +6,7 @@
     "corpus": "every example in packages/markdown-core/tests/fixtures/*.txt",
     "expected": [
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-anchors.txt:926",
+            "source": "packages/markdown-core/tests/fixtures/dialect-anchors.txt:931",
             "input": ":n[[Target]]\n\n> [!note] [Target]\n> body\n\n^[inline [Target]]\n\n[^f]: [Target]\n\n# Target\n",
             "findings": [
                 {
@@ -21,7 +21,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-anchors.txt:1058",
+            "source": "packages/markdown-core/tests/fixtures/dialect-anchors.txt:1063",
             "input": "# Shared\n\n^[a [declaration]{#shared}]\n\n:d[[decl]{#shared-1}]\n",
             "findings": [
                 {
@@ -36,7 +36,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-bracketed-spans.txt:225",
+            "source": "packages/markdown-core/tests/fixtures/dialect-bracketed-spans.txt:229",
             "input": "[^n]{.x} [^[note]]{.x} ^[note]{.x}\n\n[^n]: note\n",
             "findings": [
                 {
@@ -60,7 +60,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-callouts.txt:756",
+            "source": "packages/markdown-core/tests/fixtures/dialect-callouts.txt:757",
             "input": "> [!Mixed]- **bold** *em* ~~strike~~ ==mark== `code` $x$ [[Note|label]] ![[Pic]] [ref] ![alt](/img) :tag[==marked==] ^[inline] [^n]\n> body [ref]\n\n[ref]: /u \"title\"\n[^n]: definition\n",
             "findings": [
                 {
@@ -75,7 +75,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-citations.txt:569",
+            "source": "packages/markdown-core/tests/fixtures/dialect-citations.txt:571",
             "input": "^[@a a\\ b]^ ^[@a a b]^ [@a `; @x` <i title=\"; @x\"> ; @b]\n",
             "findings": [
                 {
@@ -99,7 +99,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-citations.txt:729",
+            "source": "packages/markdown-core/tests/fixtures/dialect-citations.txt:731",
             "input": "[@a x\\ ] [\\ @a] ^[@a\\ ]^\n",
             "findings": [
                 {
@@ -114,7 +114,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-citations.txt:1195",
+            "source": "packages/markdown-core/tests/fixtures/dialect-citations.txt:1198",
             "input": "![alt [@a;]](/u) :d[[@a;]] ^[[@a;]]\n",
             "findings": [
                 {
@@ -426,7 +426,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:622",
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:623",
             "input": "`^[code]` $^[formula]$ <!-- ^[html] --> <i data-x=\"^[token]\">^[live]</i> %%^[comment]%% [[^[wiki]]] ![[^[embed]]]\n",
             "findings": [
                 {
@@ -459,7 +459,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:662",
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:663",
             "input": "^[==mark== %%comment%% `code` $math$ [[Note]] www.example.com user@example.com]\n",
             "findings": [
                 {
@@ -474,7 +474,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:692",
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:693",
             "input": "^[a %%]%% b `]` c $]$ d <i data-x=\"]\"> e]\n",
             "findings": [
                 {
@@ -489,7 +489,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:715",
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:716",
             "input": "| x | y |\n| - | - |\n| ^[a\\|b] | ^[中 *文*] |\n",
             "findings": [
                 {
@@ -513,31 +513,31 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:751",
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:752",
             "input": "> before^[first\n> second] after\n\n- ^[list\n  continued]\n",
             "findings": [
                 {
                     "nodePath": "0.0.0.1.0.0",
                     "violation": "containment",
                     "kind": "Footnote",
-                    "scope": "1:9..2:9",
+                    "scope": "1:9..2:0,2:3..2:9",
                     "parentKind": "Citation",
-                    "parentScope": "1:11..2:8",
-                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                    "parentScope": "1:11..2:0,2:3..2:8",
+                    "closedBy": "unassigned"
                 },
                 {
                     "nodePath": "0.1.0.0.0.0.0",
                     "violation": "containment",
                     "kind": "Footnote",
-                    "scope": "4:3..5:12",
+                    "scope": "4:3..5:0,5:3..5:12",
                     "parentKind": "Citation",
-                    "parentScope": "4:5..5:11",
-                    "closedBy": "4.5: an inline note's Footnote covers ^[content] while its owning Citation covers only the content inside the brackets (canonical-ast.md), so the note begins two bytes before its owner."
+                    "parentScope": "4:5..5:0,5:3..5:11",
+                    "closedBy": "unassigned"
                 }
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:786",
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:787",
             "input": ":a[^[first]] ^[second]\n\n:::note[^[third]]\n^[fourth]\n:::\n",
             "findings": [
                 {
@@ -579,7 +579,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:829",
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:830",
             "input": "^[unclosed ^[closed]\n",
             "findings": [
                 {
@@ -594,7 +594,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:845",
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:846",
             "input": "^[\n] ^[&#32;] ^[\\ ]\n",
             "findings": [
                 {
@@ -627,7 +627,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:875",
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:876",
             "input": "^[[[note]]] ^[[x]]\n",
             "findings": [
                 {
@@ -651,7 +651,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:897",
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:898",
             "input": "^[see http://example.com] ^[https://example.com/a?q=1] ^[ftp://example.com/a] ^[www.example.com/a]\n",
             "findings": [
                 {
@@ -693,7 +693,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:938",
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:939",
             "input": "^[http://example.com/a\\]b] http://example.com/a] ^[http://example.com/a\\\\] tail\n",
             "findings": [
                 {
@@ -717,7 +717,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:966",
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:967",
             "input": "^[before ^[http://example.com] after] :d[^[www.example.com]]\n",
             "findings": [
                 {
@@ -750,7 +750,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:999",
+            "source": "packages/markdown-core/tests/fixtures/dialect-footnotes.txt:1000",
             "input": "^^^^text^^word^^^[note]^^end^\n",
             "findings": [
                 {
@@ -972,121 +972,181 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:697",
+            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:703",
             "input": "----------------\nLeft       Right\n------- --------\na       b\nc\n\nd       e\n----------------\n",
             "findings": [
                 {
-                    "nodePath": "0.0.1.0.1",
-                    "violation": "sibling-overlap",
-                    "kind": "TableCell",
-                    "scope": "4:9..4:9",
-                    "previousKind": "TableCell",
-                    "previousScope": "4:1..5:1",
-                    "closedBy": "P11: a cell scope bounds its authored rectangle. Multiline rectangles can overlap as linear source intervals; rowspan cells extend below their owning source row. Sparse ownership and original endpoints are retained."
+                    "nodePath": "0.0.1.0.0.0.1",
+                    "violation": "containment",
+                    "kind": "SoftBreak",
+                    "scope": "4:10..5:0",
+                    "parentKind": "Paragraph",
+                    "parentScope": "4:1..4:1,5:1..5:1",
+                    "closedBy": "unassigned"
                 }
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:762",
+            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:768",
             "input": "+-------+-------+\n| first | - i   |\n| again +-------+\n|       | x     |\n+-------+-------+\n",
             "findings": [
                 {
                     "nodePath": "0.0.1.0.0",
                     "violation": "containment",
                     "kind": "TableCell",
-                    "scope": "2:2..4:8",
+                    "scope": "2:2..2:8,3:2..3:8,4:2..4:8",
                     "parentKind": "TableRow",
                     "parentScope": "2:1..3:17",
-                    "closedBy": "P11: a cell scope bounds its authored rectangle. Multiline rectangles can overlap as linear source intervals; rowspan cells extend below their owning source row. Sparse ownership and original endpoints are retained."
+                    "closedBy": "unassigned"
                 },
                 {
-                    "nodePath": "0.0.1.0.1",
-                    "violation": "sibling-overlap",
-                    "kind": "TableCell",
-                    "scope": "2:10..2:16",
-                    "previousKind": "TableCell",
-                    "previousScope": "2:2..4:8",
-                    "closedBy": "P11: a cell scope bounds its authored rectangle. Multiline rectangles can overlap as linear source intervals; rowspan cells extend below their owning source row. Sparse ownership and original endpoints are retained."
+                    "nodePath": "0.0.1.0.0.0.1",
+                    "violation": "containment",
+                    "kind": "SoftBreak",
+                    "scope": "2:18..3:0",
+                    "parentKind": "Paragraph",
+                    "parentScope": "2:3..2:7,3:3..3:7",
+                    "closedBy": "unassigned"
                 }
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1087",
+            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:860",
+            "input": "+---+---+\n| a | b |\n| c     |\n+---+---+\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1.0.0.0.1",
+                    "violation": "containment",
+                    "kind": "SoftBreak",
+                    "scope": "2:10..3:0",
+                    "parentKind": "Paragraph",
+                    "parentScope": "2:3..2:7,3:3..3:3",
+                    "closedBy": "unassigned"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:879",
+            "input": "+---+---+\n| a     |\n| c | d |\n+---+---+\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1.0.0.0.1",
+                    "violation": "containment",
+                    "kind": "SoftBreak",
+                    "scope": "2:10..3:0",
+                    "parentKind": "Paragraph",
+                    "parentScope": "2:3..2:3,3:3..3:7",
+                    "closedBy": "unassigned"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1067",
+            "input": "+---------------+\n| | h |         |\n| |---|         |\n| | v |         |\n+---------------+\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1.0.0.0",
+                    "violation": "containment",
+                    "kind": "Table",
+                    "scope": "2:3..4:7",
+                    "parentKind": "TableCell",
+                    "parentScope": "2:2..2:16,3:2..3:16,4:2..4:16",
+                    "closedBy": "unassigned"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1093",
             "input": "-------------------------------------------------------------\n Centered   Default           Right Left\n  Header    Aligned         Aligned Aligned\n----------- ------- --------------- -------------------------\n   First    row                12.0 Example of a row that\n                                    spans multiple lines.\n\n  Second    row                 5.0 Here's another one.\n-------------------------------------------------------------\n\nTable: Here's the caption.\n",
             "findings": [
                 {
-                    "nodePath": "0.0.1.0.1",
-                    "violation": "sibling-overlap",
-                    "kind": "TableCell",
-                    "scope": "2:13..3:20",
-                    "previousKind": "TableCell",
-                    "previousScope": "2:1..3:12",
-                    "closedBy": "P11: a cell scope bounds its authored rectangle. Multiline rectangles can overlap as linear source intervals; rowspan cells extend below their owning source row. Sparse ownership and original endpoints are retained."
+                    "nodePath": "0.0.1.0.0.0.1",
+                    "violation": "containment",
+                    "kind": "SoftBreak",
+                    "scope": "2:41..3:0",
+                    "parentKind": "Paragraph",
+                    "parentScope": "2:2..2:9,3:2..3:8",
+                    "closedBy": "unassigned"
                 },
                 {
-                    "nodePath": "0.0.1.0.2",
-                    "violation": "sibling-overlap",
-                    "kind": "TableCell",
-                    "scope": "2:21..3:36",
-                    "previousKind": "TableCell",
-                    "previousScope": "2:13..3:20",
-                    "closedBy": "P11: a cell scope bounds its authored rectangle. Multiline rectangles can overlap as linear source intervals; rowspan cells extend below their owning source row. Sparse ownership and original endpoints are retained."
+                    "nodePath": "0.0.1.0.1.0.1",
+                    "violation": "containment",
+                    "kind": "SoftBreak",
+                    "scope": "2:41..3:0",
+                    "parentKind": "Paragraph",
+                    "parentScope": "2:13..2:19,3:13..3:19",
+                    "closedBy": "unassigned"
                 },
                 {
-                    "nodePath": "0.0.1.0.3",
-                    "violation": "sibling-overlap",
-                    "kind": "TableCell",
-                    "scope": "2:37..3:43",
-                    "previousKind": "TableCell",
-                    "previousScope": "2:21..3:36",
-                    "closedBy": "P11: a cell scope bounds its authored rectangle. Multiline rectangles can overlap as linear source intervals; rowspan cells extend below their owning source row. Sparse ownership and original endpoints are retained."
+                    "nodePath": "0.0.1.0.2.0.1",
+                    "violation": "containment",
+                    "kind": "SoftBreak",
+                    "scope": "2:41..3:0",
+                    "parentKind": "Paragraph",
+                    "parentScope": "2:31..2:35,3:29..3:35",
+                    "closedBy": "unassigned"
                 },
                 {
-                    "nodePath": "0.0.2.0.1",
-                    "violation": "sibling-overlap",
-                    "kind": "TableCell",
-                    "scope": "5:13..6:20",
-                    "previousKind": "TableCell",
-                    "previousScope": "5:1..6:12",
-                    "closedBy": "P11: a cell scope bounds its authored rectangle. Multiline rectangles can overlap as linear source intervals; rowspan cells extend below their owning source row. Sparse ownership and original endpoints are retained."
+                    "nodePath": "0.0.1.0.3.0.1",
+                    "violation": "containment",
+                    "kind": "SoftBreak",
+                    "scope": "2:41..3:0",
+                    "parentKind": "Paragraph",
+                    "parentScope": "2:37..2:40,3:37..3:43",
+                    "closedBy": "unassigned"
                 },
                 {
-                    "nodePath": "0.0.2.0.2",
-                    "violation": "sibling-overlap",
-                    "kind": "TableCell",
-                    "scope": "5:21..6:36",
-                    "previousKind": "TableCell",
-                    "previousScope": "5:13..6:20",
-                    "closedBy": "P11: a cell scope bounds its authored rectangle. Multiline rectangles can overlap as linear source intervals; rowspan cells extend below their owning source row. Sparse ownership and original endpoints are retained."
-                },
-                {
-                    "nodePath": "0.0.2.0.3",
-                    "violation": "sibling-overlap",
-                    "kind": "TableCell",
-                    "scope": "5:37..6:57",
-                    "previousKind": "TableCell",
-                    "previousScope": "5:21..6:36",
-                    "closedBy": "P11: a cell scope bounds its authored rectangle. Multiline rectangles can overlap as linear source intervals; rowspan cells extend below their owning source row. Sparse ownership and original endpoints are retained."
+                    "nodePath": "0.0.2.0.3.0.1",
+                    "violation": "containment",
+                    "kind": "SoftBreak",
+                    "scope": "5:58..6:0",
+                    "parentKind": "Paragraph",
+                    "parentScope": "5:37..5:57,6:37..6:57",
+                    "closedBy": "unassigned"
                 }
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1278",
+            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1284",
             "input": "-----------------------------\nLeft            Right\n--------------- -------------\n  - one         b\n    - two       c\n\n-----------------------------\n",
             "findings": [
                 {
-                    "nodePath": "0.0.1.0.1",
-                    "violation": "sibling-overlap",
-                    "kind": "TableCell",
-                    "scope": "4:17..5:17",
-                    "previousKind": "TableCell",
-                    "previousScope": "4:1..5:16",
-                    "closedBy": "P11: a cell scope bounds its authored rectangle. Multiline rectangles can overlap as linear source intervals; rowspan cells extend below their owning source row. Sparse ownership and original endpoints are retained."
+                    "nodePath": "0.0.1.0.0.0",
+                    "violation": "containment",
+                    "kind": "List",
+                    "scope": "4:3..5:9",
+                    "parentKind": "TableCell",
+                    "parentScope": "4:1..4:16,5:1..5:16",
+                    "closedBy": "unassigned"
+                },
+                {
+                    "nodePath": "0.0.1.0.1.0.1",
+                    "violation": "containment",
+                    "kind": "SoftBreak",
+                    "scope": "4:18..5:0",
+                    "parentKind": "Paragraph",
+                    "parentScope": "4:17..4:17,5:17..5:17",
+                    "closedBy": "unassigned"
                 }
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1498",
+            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1322",
+            "input": "+------------+\n| Term       |\n| :          |\n+------------+\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1.0.0.0",
+                    "violation": "containment",
+                    "kind": "DefinitionList",
+                    "scope": "2:3..3:3",
+                    "parentKind": "TableCell",
+                    "parentScope": "2:2..2:13,3:2..3:13",
+                    "closedBy": "unassigned"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1504",
             "input": "| a | b |\n| - | - |\n:badge[short]\n| first | second | ignored |\n\n> | a | b | c |\n> | - | - | - |\n> short\n> | first | second | third | ignored |\n",
             "findings": [
                 {
@@ -1110,55 +1170,190 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1549",
+            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1555",
             "input": "+---+---+\n| a     |\n+   +---+\n| b | c |\n+   +   +\n| d     |\n+---+---+\n",
             "findings": [
                 {
                     "nodePath": "0.0.1.0.0",
                     "violation": "containment",
                     "kind": "TableCell",
-                    "scope": "2:2..6:8",
+                    "scope": "2:2..2:8,3:2..3:8,4:2..4:8,5:2..5:8,6:2..6:8",
                     "parentKind": "TableRow",
                     "parentScope": "2:1..3:9",
-                    "closedBy": "P11: a cell scope bounds its authored rectangle and extends below the source row owning its anchor; later source-defined rows retain empty cells arrays."
+                    "closedBy": "unassigned"
+                },
+                {
+                    "nodePath": "0.0.1.0.0.0.1",
+                    "violation": "containment",
+                    "kind": "SoftBreak",
+                    "scope": "2:10..3:0",
+                    "parentKind": "Paragraph",
+                    "parentScope": "2:3..2:3,3:3..3:8,4:3..4:7,5:3..5:5,6:3..6:3",
+                    "closedBy": "unassigned"
+                },
+                {
+                    "nodePath": "0.0.1.0.0.0.3",
+                    "violation": "containment",
+                    "kind": "SoftBreak",
+                    "scope": "3:10..4:0",
+                    "parentKind": "Paragraph",
+                    "parentScope": "2:3..2:3,3:3..3:8,4:3..4:7,5:3..5:5,6:3..6:3",
+                    "closedBy": "unassigned"
+                },
+                {
+                    "nodePath": "0.0.1.0.0.0.5",
+                    "violation": "containment",
+                    "kind": "SoftBreak",
+                    "scope": "4:10..5:0",
+                    "parentKind": "Paragraph",
+                    "parentScope": "2:3..2:3,3:3..3:8,4:3..4:7,5:3..5:5,6:3..6:3",
+                    "closedBy": "unassigned"
+                },
+                {
+                    "nodePath": "0.0.1.0.0.0.7",
+                    "violation": "containment",
+                    "kind": "SoftBreak",
+                    "scope": "5:10..6:0",
+                    "parentKind": "Paragraph",
+                    "parentScope": "2:3..2:3,3:3..3:8,4:3..4:7,5:3..5:5,6:3..6:3",
+                    "closedBy": "unassigned"
                 }
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1890",
+            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1858",
+            "input": "+---+---+\n| a + b |\n| cd    |\n+---+---+\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1.0.0.0.1",
+                    "violation": "containment",
+                    "kind": "SoftBreak",
+                    "scope": "2:10..3:0",
+                    "parentKind": "Paragraph",
+                    "parentScope": "2:3..2:7,3:3..3:4",
+                    "closedBy": "unassigned"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1877",
+            "input": "+---+---+\n| cd    |\n| a + b |\n+---+---+\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1.0.0.0.1",
+                    "violation": "containment",
+                    "kind": "SoftBreak",
+                    "scope": "2:10..3:0",
+                    "parentKind": "Paragraph",
+                    "parentScope": "2:3..2:4,3:3..3:7",
+                    "closedBy": "unassigned"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1896",
             "input": "+---+---+\n| a + b |\n| c | d |\n+---+---+\n",
             "findings": [
                 {
                     "nodePath": "0.0.1.0.0",
                     "violation": "containment",
                     "kind": "TableCell",
-                    "scope": "2:2..3:4",
+                    "scope": "2:2..2:4,3:2..3:4",
                     "parentKind": "TableRow",
                     "parentScope": "2:1..2:9",
-                    "closedBy": "P11 grid-plus control: complete vertical edges retain sparse rows and rowspan cells. Authored cell rectangles extend below their starting row and overlap as linear intervals; this is the existing grid scope model, independently confirmed by the native Pandoc ownership canary."
+                    "closedBy": "unassigned"
                 },
                 {
                     "nodePath": "0.0.1.0.1",
                     "violation": "containment",
                     "kind": "TableCell",
-                    "scope": "2:6..3:8",
+                    "scope": "2:6..2:8,3:6..3:8",
                     "parentKind": "TableRow",
                     "parentScope": "2:1..2:9",
-                    "closedBy": "P11 grid-plus control: complete vertical edges retain sparse rows and rowspan cells. Authored cell rectangles extend below their starting row and overlap as linear intervals; this is the existing grid scope model, independently confirmed by the native Pandoc ownership canary."
+                    "closedBy": "unassigned"
                 },
                 {
-                    "nodePath": "0.0.1.0.1",
-                    "violation": "sibling-overlap",
-                    "kind": "TableCell",
-                    "scope": "2:6..3:8",
-                    "previousKind": "TableCell",
-                    "previousScope": "2:2..3:4",
-                    "closedBy": "P11 grid-plus control: complete vertical edges retain sparse rows and rowspan cells. Authored cell rectangles extend below their starting row and overlap as linear intervals; this is the existing grid scope model, independently confirmed by the native Pandoc ownership canary."
+                    "nodePath": "0.0.1.0.0.0.1",
+                    "violation": "containment",
+                    "kind": "SoftBreak",
+                    "scope": "2:10..3:0",
+                    "parentKind": "Paragraph",
+                    "parentScope": "2:3..2:3,3:3..3:3",
+                    "closedBy": "unassigned"
+                },
+                {
+                    "nodePath": "0.0.1.0.1.0.1",
+                    "violation": "containment",
+                    "kind": "SoftBreak",
+                    "scope": "2:10..3:0",
+                    "parentKind": "Paragraph",
+                    "parentScope": "2:7..2:7,3:7..3:7",
+                    "closedBy": "unassigned"
                 }
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:2556",
+            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1921",
+            "input": "+---+---+\n| a + b |\n| cd    |\n+---+---+\n| e | f |\n+---+---+\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1.0.0.0.1",
+                    "violation": "containment",
+                    "kind": "SoftBreak",
+                    "scope": "2:10..3:0",
+                    "parentKind": "Paragraph",
+                    "parentScope": "2:3..2:7,3:3..3:4",
+                    "closedBy": "unassigned"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1949",
+            "input": "+---+---+\n| a + b |\n| cd    |\n+===+===+\n| e | f |\n+---+---+\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.0.0.0.0.1",
+                    "violation": "containment",
+                    "kind": "SoftBreak",
+                    "scope": "2:10..3:0",
+                    "parentKind": "Paragraph",
+                    "parentScope": "2:3..2:7,3:3..3:4",
+                    "closedBy": "unassigned"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:1977",
+            "input": "+---+---+\n| e | f |\n+===+===+\n| a + b |\n| cd    |\n+===+===+\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.2.0.0.0.1",
+                    "violation": "containment",
+                    "kind": "SoftBreak",
+                    "scope": "4:10..5:0",
+                    "parentKind": "Paragraph",
+                    "parentScope": "4:3..4:7,5:3..5:4",
+                    "closedBy": "unassigned"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:2005",
+            "input": "+---+---+\n| h | j |\n+===+===+\n| a + b |\n| cd    |\n+===+===+\n| e | f |\n+===+===+\n",
+            "findings": [
+                {
+                    "nodePath": "0.0.1.0.0.0.1",
+                    "violation": "containment",
+                    "kind": "SoftBreak",
+                    "scope": "4:10..5:0",
+                    "parentKind": "Paragraph",
+                    "parentScope": "4:3..4:7,5:3..5:4",
+                    "closedBy": "unassigned"
+                }
+            ]
+        },
+        {
+            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:2562",
             "input": " Name\tCount\n ----    -----\n ab\t4\n",
             "findings": [
                 {
@@ -1230,7 +1425,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/spec.txt:3684",
+            "source": "packages/markdown-core/tests/fixtures/spec.txt:3708",
             "input": "| abc | def |\n| --- | --- |\n| bar | baz |\nbar\n\nbar\n",
             "findings": [
                 {

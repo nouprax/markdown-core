@@ -1,26 +1,32 @@
 extension Document {
-    /// The editor scope of `node`, computed from the extents and `source`, with
-    /// columns in the document's ``unit``.
+    /// The editor scopes of `node`, one per source range in source order,
+    /// computed from the extents, pieces and runs and `source`, with columns
+    /// in the document's ``unit``.
     ///
-    /// Each call walks the document once to place the node and reads the
-    /// source for its lines; nothing is cached.
+    /// A node's source ranges are its pieces; for a node in an inline root's
+    /// content, the source its content range was read from through the root's
+    /// runs, touching parts joined; and otherwise its one range. Each call
+    /// walks the document once to place the node and reads the source for its
+    /// lines; nothing is cached.
     ///
     /// - Parameters:
     ///   - node: a node of this document.
     ///   - source: the source the document was parsed from.
     /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/outOfBounds`` when
     ///   `source` ends before `node` does.
-    public func scope(of node: some Markup, in source: String) throws -> Scope {
-        let range = place(of: MarkupRecord.of(node))
+    public func scope(of node: some Markup, in source: String) throws -> [Scope] {
+        let places = self.places(of: MarkupRecord.of(node))
         var text = source
         return try text.withUTF8 { bytes in
-            guard range.end <= bytes.count else { throw MarkdownCoreError(code: .outOfBounds) }
-            return SourceLines(bytes).scope(from: range.start, to: range.end, in: bytes, unit: unit)
+            guard (places.last?.end ?? 0) <= bytes.count else { throw MarkdownCoreError(code: .outOfBounds) }
+            let lines = SourceLines(bytes)
+            return places.map { lines.scope(from: $0.start, to: $0.end, in: bytes, unit: unit) }
         }
     }
 
-    /// The last node in canonical walk order whose source range holds the
-    /// byte at `position`, with the column counted in the document's ``unit``.
+    /// The last node in canonical walk order one of whose source ranges holds
+    /// the byte at `position`, with the column counted in the document's
+    /// ``unit``.
     ///
     /// - Parameters:
     ///   - position: a line and column of `source`.
@@ -34,10 +40,13 @@ extension Document {
         var text = source
         return text.withUTF8 { bytes in
             guard let offset = SourceLines(bytes).offset(of: position, in: bytes, unit: unit) else { return nil }
-            var walk = CanonicalWalk(root: record, anchor: 0)
+            var walk = CanonicalWalk(root: record)
+            var places: [(start: Int, end: Int)] = []
             var found: MarkupRecord?
             while let item = walk.next() {
-                if let node = item.record, item.start <= offset, offset < item.end { found = node }
+                guard let node = item.record else { continue }
+                walk.places(of: item, into: &places)
+                if places.contains(where: { $0.start <= offset && offset < $0.end }) { found = node }
             }
             return found?.markup
         }
@@ -47,7 +56,7 @@ extension Document {
     /// the source the document was parsed from, in UTF-8 columns.
     ///
     /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/outOfBounds`` when
-    ///   `source` ends before the document does.
+    ///   `source` ends before a node of the document does.
     public func dump(in source: String) throws -> String {
         try dump(self, in: source)
     }
@@ -57,35 +66,31 @@ extension Document {
     /// UTF-8 columns.
     ///
     /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/outOfBounds`` when
-    ///   `source` ends before `node` does.
+    ///   `source` ends before a node of the tree does.
     public func dump(_ node: some Markup, in source: String) throws -> String {
-        let target = MarkupRecord.of(node)
-        let range = place(of: target)
+        let top = MarkupRecord.of(node)
         var text = source
         return try text.withUTF8 { bytes in
-            guard range.end <= bytes.count else { throw MarkdownCoreError(code: .outOfBounds) }
-            // A node's walk starts at its own extent, which is relative to the
-            // anchor its relation had where it was written.
-            return MarkupDumper.render(
-                target,
-                anchor: range.start - Int(target.extent.lead),
-                bytes: bytes,
-                lines: SourceLines(bytes)
-            )
+            // A node's source ranges depend on the inline root it is in, so
+            // the walk starts at the document's root.
+            guard let output = MarkupDumper.render(top, in: record, bytes: bytes, lines: SourceLines(bytes)) else {
+                throw MarkdownCoreError(code: .outOfBounds)
+            }
+            return output
         }
     }
 
-    /// The absolute byte range of `target`, found by one canonical walk.
-    private func place(of target: MarkupRecord) -> (start: Int, end: Int) {
-        var walk = CanonicalWalk(root: record, anchor: 0)
-        var range = (start: 0, end: 0)
+    /// The source ranges of `node`, found by one canonical walk.
+    private func places(of node: MarkupRecord) -> [(start: Int, end: Int)] {
+        var walk = CanonicalWalk(root: record)
+        var places: [(start: Int, end: Int)] = []
         while let item = walk.next() {
-            if item.record === target {
-                range = (item.start, item.end)
+            if item.record === node {
+                walk.places(of: item, into: &places)
                 break
             }
         }
-        return range
+        return places
     }
 }
 

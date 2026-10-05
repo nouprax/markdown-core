@@ -29,6 +29,10 @@ public struct Table: Markup {
     public var foot: MarkupCollection<TableRow> { record.collection(record.foot) }
     /// Authored source extent. See ``Extent``.
     public var extent: Extent { record.extent }
+    /// The parts of its range that are its own, one per line. See ``Piece``.
+    public var pieces: [Piece] { record.pieces }
+    /// Where its first relation's content was read from. See ``Run``.
+    public var runs: [Run] { record.runs }
     /// The explicit anchor, absent when none was attached.
     public var anchor: String? { record.anchor }
     /// Ordered classes and records, including duplicates.
@@ -120,6 +124,10 @@ public struct TableRow: Markup {
     public var cells: MarkupCollection<TableCell> { record.collection(record.children.indices) }
     /// Authored source extent. See ``Extent``.
     public var extent: Extent { record.extent }
+    /// The parts of its range that are its own, one per line. See ``Piece``.
+    public var pieces: [Piece] { record.pieces }
+    /// Where its first relation's content was read from. See ``Run``.
+    public var runs: [Run] { record.runs }
     /// The explicit anchor, absent when none was attached.
     public var anchor: String? { record.anchor }
     /// Ordered classes and records, including duplicates.
@@ -154,6 +162,10 @@ public struct TableCell: Markup {
     public var content: MarkupCollection<any Markup> { record.collection(record.children.indices) }
     /// Authored source extent. See ``Extent``.
     public var extent: Extent { record.extent }
+    /// The parts of its range that are its own, one per line. See ``Piece``.
+    public var pieces: [Piece] { record.pieces }
+    /// Where its first relation's content was read from. See ``Run``.
+    public var runs: [Run] { record.runs }
     /// The explicit anchor, absent when none was attached.
     public var anchor: String? { record.anchor }
     /// Ordered classes and records, including duplicates.
@@ -201,6 +213,10 @@ public struct TableCaption: Markup {
     public var content: MarkupCollection<any Markup> { record.collection(record.children.indices) }
     /// Authored source extent, including the caption marker.
     public var extent: Extent { record.extent }
+    /// The parts of its range that are its own, one per line. See ``Piece``.
+    public var pieces: [Piece] { record.pieces }
+    /// Where its first relation's content was read from. See ``Run``.
+    public var runs: [Run] { record.runs }
     /// The explicit anchor, absent when none was attached.
     public var anchor: String? { record.anchor }
     /// Ordered classes and records, including duplicates.

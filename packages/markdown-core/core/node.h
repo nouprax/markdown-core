@@ -215,6 +215,57 @@ typedef struct {
     uint32_t start, end;
 } markdown_core_place;
 
+/* A piece of a node's source range (markdown_core.h): `lead` from the end of
+ * the previous piece, or from the node's start for the first, to its start,
+ * and `span` its length. */
+#ifndef MARKDOWN_CORE_PIECE_TYPEDEF
+#define MARKDOWN_CORE_PIECE_TYPEDEF
+typedef struct markdown_core_piece {
+    int32_t lead;
+    uint32_t span;
+} markdown_core_piece;
+#endif
+
+/* A run of an inline root's content (markdown_core.h): `length` content
+ * bytes read from the source bytes `span` long, `lead` from the end of the
+ * previous run, or from the start of the node that holds the runs. */
+#ifndef MARKDOWN_CORE_RUN_TYPEDEF
+#define MARKDOWN_CORE_RUN_TYPEDEF
+typedef struct markdown_core_run {
+    int32_t lead;
+    uint32_t span;
+    uint32_t length;
+} markdown_core_run;
+#endif
+
+/* WHERE A NODE'S BYTES LIE when its extent alone does not say: the pieces of
+ * its range, one per line where bytes that are not its own separate its
+ * lines, and the runs its inline content was read from. While a parse builds
+ * the tree each holds an absolute source range, as a node's place does;
+ * publishing rewrites them relative, as it rewrites the place as the extent.
+ * Each list is one owned allocation, NULL when the node has none. */
+typedef union {
+    markdown_core_place place;
+    markdown_core_piece piece;
+} markdown_core_piece_where;
+
+typedef union {
+    struct {
+        uint32_t start, end, length;
+    } place;
+    markdown_core_run run;
+} markdown_core_run_where;
+
+typedef struct markdown_core_pieces {
+    uint32_t count;
+    markdown_core_piece_where items[];
+} markdown_core_pieces;
+
+typedef struct markdown_core_runs {
+    uint32_t count;
+    markdown_core_run_where items[];
+} markdown_core_runs;
+
 /* WHERE A NODE IS, in bytes of the UTF-8 source, and never in lines or
  * columns. While a parse builds the tree every node holds its absolute
  * `place`. Publishing the document (markdown_core_publish_tree) rewrites
@@ -325,6 +376,10 @@ struct markdown_core_node {
     /* This node's slice of parser-owned content-to-source runs. Zero count
      * means there is no mapped content (for example, an empty cell). */
     markdown_core_content_map content_map;
+    /* Its pieces and the runs of its inline content (markdown_core_pieces,
+     * markdown_core_runs). */
+    markdown_core_pieces *pieces;
+    markdown_core_runs *runs;
     uint16_t kind;
     markdown_core_node_internal_flags flags;
 

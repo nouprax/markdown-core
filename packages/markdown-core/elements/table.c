@@ -2358,6 +2358,36 @@ static markdown_core_node *table_child(markdown_core_parser *parser, markdown_co
     return node;
 }
 
+/* A cell of a grid or multiline table lies in its columns on each of its
+ * lines: one piece per line, from its left column to its right one or the
+ * line's end. */
+static void table_cell_pieces(table_source *source, markdown_core_node *node, const table_source_cell *cell) {
+    markdown_core_parser *parser = source->parser;
+    if (cell->last <= cell->first) {
+        return;
+    }
+    uint32_t count = (uint32_t)(cell->last - cell->first + 1);
+    markdown_core_pieces *pieces =
+        markdown_core_alloc(1, sizeof(*pieces) + (size_t)count * sizeof(markdown_core_piece_where));
+    if (!pieces) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return;
+    }
+    pieces->count = count;
+    for (uint32_t i = 0; i < count; i++) {
+        const table_source_line *line = &source->lines[cell->first + i];
+        int right = cell->right < line->columns ? cell->right : line->columns;
+        int left = cell->left < right ? cell->left : right;
+        bufsize_t start = left < right
+                              ? markdown_core_parser_source_offset(parser, line->line, table_byte(line, left) + 1)
+                              : markdown_core_parser_source_end(parser, line->line, table_byte(line, left));
+        bufsize_t end = markdown_core_parser_source_end(parser, line->line, table_byte(line, right));
+        pieces->items[i].place = (markdown_core_place){(uint32_t)start, (uint32_t)end};
+    }
+    markdown_core_free(node->pieces);
+    node->pieces = pieces;
+}
+
 static markdown_core_node *table_build(table_source *source, markdown_core_node *parent, table_candidate *candidate) {
     markdown_core_parser *parser = source->parser;
     table_source_line *first = &source->lines[candidate->first], *last = &source->lines[candidate->last];
@@ -2411,6 +2441,7 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
             cell_node->as.table_cell->rowspan = cell->rowspan;
             cell_node->as.table_cell->colspan = cell->colspan;
             if (!candidate->pipe) {
+                table_cell_pieces(source, cell_node, cell);
                 table_fill_cell(source, cell_node, cell, candidate->block_content, candidate->padding_limit);
             }
         }
@@ -2428,6 +2459,8 @@ static markdown_core_node *table_caption_build(table_source *source, size_t last
     if (!node) {
         return NULL;
     }
+    int from = first->line;
+    markdown_core_parser_place_pieces(source->parser, node, &from);
     for (size_t i = 0; i <= last && !source->parser->error; i++) {
         if (!table_source_columns(source, i)) {
             break;

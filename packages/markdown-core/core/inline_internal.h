@@ -214,7 +214,7 @@ delimiter *markdown_core_inline_push_delimiter_entry(markdown_core_inline_state 
 void markdown_core_inline_process_delimiters(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
                                              bufsize_t stack_bottom, delimiter *after);
 int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_core_inline_state *inline_state);
-void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_core_node *parent,
+void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_core_node *parent, bool root,
                                         markdown_core_map *refmap, markdown_core_inline_state *inline_state);
 void markdown_core_inline_clear_inlines(markdown_core_inline_state *inline_state);
 bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_core_inline_state *inline_state);

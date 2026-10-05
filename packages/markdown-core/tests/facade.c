@@ -39,12 +39,19 @@ static const markdown_core_node *field(const markdown_core_node *node, node_fiel
     return value;
 }
 
-/* The scope of `node`, computed from the source its document was parsed from. */
+/* The scope of `node`, a node in one piece, computed from the source its
+ * document was parsed from. */
 static markdown_core_scope scope_in(const markdown_core_document *document, const markdown_core_node *node,
                                     const void *source, size_t length) {
-    markdown_core_scope scope = {{-1, -1}, {-1, -1}};
-    ok(markdown_core_document_scope(document, node, (const uint8_t *)source, length, &scope),
+    markdown_core_scope scope = {{-1, -1}, {-1, -1}}, *scopes = NULL;
+    size_t count = 0;
+    ok(markdown_core_document_scope(document, node, (const uint8_t *)source, length, &scopes, &count),
        "the scope query answers for a node of the document");
+    check(count == 1, "a node in one piece has one scope");
+    if (count) {
+        scope = scopes[0];
+    }
+    markdown_core_scopes_free(scopes);
     return scope;
 }
 
@@ -403,10 +410,16 @@ static void check_callout_inherited_setext_scope(void) {
     }
     const markdown_core_node *callout = markdown_core_node_get_first_child(markdown_core_document_root(document));
     const markdown_core_node *heading = markdown_core_node_get_first_child(callout);
-    markdown_core_scope scope = scope_in(document, heading, source, sizeof(source) - 1);
-    check(markdown_core_node_get_kind(heading) == MARKDOWN_CORE_KIND_HEADING && scope.start.line == 2 &&
-              scope.start.column == 3 && scope.end.line == 3 && scope.end.column == 5,
-          "callout Setext scope ends on the underline before a following blank line");
+    markdown_core_scope *scopes = NULL;
+    size_t count = 0;
+    ok(markdown_core_document_scope(document, heading, (const uint8_t *)source, sizeof(source) - 1, &scopes, &count),
+       "the scope query answers for the heading");
+    check(markdown_core_node_get_kind(heading) == MARKDOWN_CORE_KIND_HEADING && count == 2 &&
+              scopes[0].start.line == 2 && scopes[0].start.column == 3 && scopes[0].end.line == 3 &&
+              scopes[0].end.column == 0 && scopes[1].start.line == 3 && scopes[1].start.column == 3 &&
+              scopes[1].end.line == 3 && scopes[1].end.column == 5,
+          "callout Setext scope is a piece per line, ending on the underline before a following blank line");
+    markdown_core_scopes_free(scopes);
     markdown_core_document_free(document);
 }
 
@@ -857,23 +870,25 @@ static void check_source_boundary(void) {
     const markdown_core_node *last = markdown_core_node_get_next_sibling(markdown_core_node_get_first_child(root));
     const markdown_core_node *text = markdown_core_node_get_first_child(last);
     const markdown_core_node *found = root;
-    markdown_core_scope scope = {{-1, -1}, {-1, -1}};
+    markdown_core_scope *scopes = NULL;
+    size_t count = 0;
     uint8_t *dump = NULL;
     size_t dump_length = 7;
 
-    check(markdown_core_document_scope(document, last, (const uint8_t *)source, 3, &scope) ==
+    check(markdown_core_document_scope(document, last, (const uint8_t *)source, 3, &scopes, &count) ==
                   MARKDOWN_CORE_OUT_OF_BOUNDS &&
-              scope.start.line == -1,
+              scopes == NULL && count == 0,
           "a source that ends before the node is out of bounds");
     /* The document ends before its last line terminator, and its last
      * scalar ends one byte before that. */
-    check(markdown_core_document_scope(document, root, (const uint8_t *)source, length - 2, &scope) ==
+    check(markdown_core_document_scope(document, root, (const uint8_t *)source, length - 2, &scopes, &count) ==
               MARKDOWN_CORE_OUT_OF_BOUNDS,
           "one byte short is out of bounds");
-    check(markdown_core_document_scope(document, text, (const uint8_t *)source, length - 1, &scope) ==
+    check(markdown_core_document_scope(document, text, (const uint8_t *)source, length - 1, &scopes, &count) ==
                   MARKDOWN_CORE_OK &&
-              scope.start.line == 3 && scope.start.column == 1 && scope.end.column == 2,
+              count == 1 && scopes[0].start.line == 3 && scopes[0].start.column == 1 && scopes[0].end.column == 2,
           "a source that reaches the node's end answers");
+    markdown_core_scopes_free(scopes);
     check(markdown_core_document_dump(document, root, (const uint8_t *)source, length - 2, &dump, &dump_length) ==
                   MARKDOWN_CORE_OUT_OF_BOUNDS &&
               dump == NULL && dump_length == 7,

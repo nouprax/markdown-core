@@ -339,8 +339,8 @@ Document scope=1:1..19:7 anchor=null attributes={} children=8
 │       └── Link scope=13:13..13:21 anchor=null attributes={} dest=url("/u") title=null children=1
 │           └── Text scope=13:14..13:16 anchor=null attributes={} literal="==a" children=0
 ├── Callout scope=15:1..16:13 anchor=null attributes={} variant=null collapsed=null children=1
-│   └── Paragraph scope=15:3..16:13 anchor=null attributes={} children=1
-│       └── Mark scope=15:3..16:13 anchor=null attributes={} children=3
+│   └── Paragraph scope=15:3..16:0,16:3..16:13 anchor=null attributes={} children=1
+│       └── Mark scope=15:3..16:0,16:3..16:13 anchor=null attributes={} children=3
 │           ├── Text scope=15:5..15:9 anchor=null attributes={} literal="quote" children=0
 │           ├── SoftBreak scope=15:10..16:0 anchor=null attributes={} children=0
 │           └── Text scope=16:3..16:11 anchor=null attributes={} literal="continues" children=0

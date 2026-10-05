@@ -19,7 +19,14 @@ extension APISuite {
         #expect(try scope(of: metadata, in: document, source: source).end.line == 14)
         #expect(try scope(of: document.content[0], in: document, source: source).start.line == 15)
         let empty = try #require(Document.parse("---\nunknown: 1\nfree text\n---").metadata)
-        let bare = InheritedFields(id: empty.id, extent: empty.extent, anchor: nil, attributes: .empty)
+        let bare = InheritedFields(
+            id: empty.id,
+            extent: empty.extent,
+            pieces: empty.pieces,
+            runs: empty.runs,
+            anchor: nil,
+            attributes: .empty
+        )
         #expect(empty == Metadata(record: MetadataRecord(bare)))
         #expect(try Document.parse("---\nname: 1\n").metadata == nil)
     }

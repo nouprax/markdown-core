@@ -6,7 +6,7 @@ record holds a native pointer, a container view, or a reference to its parent.
 
 Every Markup kind is a struct holding `let record`, a final class of the kind
 that inherits the internal base `MarkupRecord`. The base holds what every kind
-has (`id`, `extent`, `anchor`, `attributes`) and every owned child record, in
+has (`id`, `extent`, `pieces`, `runs`, `anchor`, `attributes`) and every owned child record, in
 one array in canonical walk order across the node's relations. A kind adds
 only `let` scalars and says how its relations partition that array
 (`relation(at:)`): a table's caption, head, body and foot; a citation's inline
@@ -33,9 +33,9 @@ references, which is why records are `@unchecked Sendable`; the invariant is
 stated on `MarkupRecord`, and each subclass restates the conformance as
 Swift requires.
 
-Equality is deep value equality: kind, id, extent, anchor, attributes, the
-kind's scalars and pairwise-equal children in every relation, checked from a
-stack of record pairs with an identity shortcut. Hashing reads only the id.
+Equality is deep value equality: kind, id, extent, pieces, runs, anchor,
+attributes, the kind's scalars and pairwise-equal children in every relation,
+checked from a stack of record pairs with an identity shortcut. Hashing reads only the id.
 Every kind is `Hashable` and `Identifiable`; `isEqual(_:)` compares two
 `any Markup`. `description` is the kind and id; `dump(in:)` draws a tree.
 
@@ -55,9 +55,11 @@ A label is never compared under Unicode equivalence. There is no lazy cache
 and no lock.
 
 Scopes are not stored. `scope(of:in:)` walks the document once to the node's
-absolute byte range, and converts it with the source's line starts to lines
-and columns in the document's unit; `node(at:in:)` converts the position to a
-byte offset and returns the last node in walk order that holds it. Both
+source ranges, mapping a node inside an inline root's content through the
+root's runs and a node with pieces through its pieces, and converts each range
+with the source's line starts to lines and columns in the document's unit;
+`node(at:in:)` converts the position to a byte offset and returns the last
+node in walk order one of whose ranges holds it. Both
 mirror the C engine's rule exactly. The dump computes its scopes the same
 way, always in UTF-8 columns. Each checks its argument once, at the public
 function, and throws `MarkdownCoreError` with `.outOfBounds` as C does: a

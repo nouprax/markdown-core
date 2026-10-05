@@ -300,7 +300,7 @@ void markdown_core_headings_finish(const markdown_core_element_instance *self, m
 void markdown_core_prepare_heading(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                    markdown_core_heading_parse *heading) {
     markdown_core_inline_state inline_state;
-    markdown_core_inline_start_inlines(parser, heading->node, parser->refmap, &inline_state);
+    markdown_core_inline_start_inlines(parser, heading->node, true, parser->refmap, &inline_state);
     while (!parser->error && !inline_state.error) {
         unsigned char c = markdown_core_inline_peek_char(&inline_state);
         /* Attribute ownership and opaque tokens are decided by the same

@@ -142,12 +142,22 @@ func dumped(_ source: String) throws -> String {
     try Document.parse(source).dump(in: source)
 }
 
-/// The scope of `node` in `document`, parsed from `source`.
+/// The scope of `node` in `document`, parsed from `source`, whose source
+/// range is one.
 func scope(of node: any Markup, in document: Document, source: String) throws -> Scope {
-    try document.scope(of: node, in: source)
+    let scopes = try document.scope(of: node, in: source)
+    try #require(scopes.count == 1)
+    return scopes[0]
 }
 
 /// A hand-built record's inherited fields: no source range and no attributes.
 func fields(_ id: UInt64) -> InheritedFields {
-    InheritedFields(id: MarkupID(id), extent: Extent(lead: 0, span: 0), anchor: nil, attributes: .empty)
+    InheritedFields(
+        id: MarkupID(id),
+        extent: Extent(lead: 0, span: 0),
+        pieces: [],
+        runs: [],
+        anchor: nil,
+        attributes: .empty
+    )
 }

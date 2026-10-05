@@ -96,9 +96,10 @@ only dump syntax; it never changes the stored class or the attribute grammar.
   as `dest=reference("...")` with the normalized label.
 - Every optional and default-bearing field is printed; fields are never
   omitted because they are null, empty, false, or default.
-- The inherited fields lead: `scope`, the node's scope computed from its
-  `extent` and the source, then `anchor` and `attributes`. `id` is not
-  printed.
+- The inherited fields lead: `scope`, the node's scopes computed from its
+  `extent`, `pieces` and `runs` and the source, one per source range in source
+  order joined by `,` (`scope=1:3..2:0,2:3..2:7`), then `anchor` and
+  `attributes`. `id`, `pieces` and `runs` are not printed.
   Kind-specific scalar fields follow; `children` is last.
 
 The dump is a scope query: it takes the source the document was parsed from

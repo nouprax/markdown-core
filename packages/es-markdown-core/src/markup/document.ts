@@ -37,25 +37,29 @@ export interface Document extends MarkupBase<"document"> {
      */
     readonly reference: (label: string) => Reference | Heading | null;
     /**
-     * The scope of `node`, computed from the extents and `source`, the text
-     * the document was parsed from, with columns in the document's unit.
-     * `node` is a node of this document. Throws `MarkdownCoreError`
-     * `outOfBounds` when `source` ends before the node does.
+     * The scopes of `node`, one per source range in source order, computed
+     * from the extents, pieces, runs and `source`, the text the document was
+     * parsed from, with columns in the document's unit. A node's source
+     * ranges are its pieces; the source its content range was read from, when
+     * it is in an inline root's content; or else its one range. `node` is a
+     * node of this document. Throws `MarkdownCoreError` `outOfBounds` when
+     * `source` ends before the node does.
      */
-    readonly scope: (node: Markup, source: string) => Scope;
+    readonly scope: (node: Markup, source: string) => readonly Scope[];
     /**
-     * The last node in canonical walk order whose source range holds the byte
-     * at `position` of `source`, the text the document was parsed from, or
-     * null when no node holds it or the position names no byte of `source` or
-     * does not fall on a scalar boundary. Throws `MarkdownCoreError`
-     * `outOfBounds` unless the line and column are integers of at least 1.
+     * The last node in canonical walk order one of whose source ranges holds
+     * the byte at `position` of `source`, the text the document was parsed
+     * from, or null when no node holds it or the position names no byte of
+     * `source` or does not fall on a scalar boundary. Throws
+     * `MarkdownCoreError` `outOfBounds` unless the line and column are
+     * integers of at least 1.
      */
     readonly nodeAt: (position: Position, source: string) => Markup | null;
     /**
      * The canonical debug dump of the document, or of `node`, a node of this
      * document, with scopes computed from `source` in UTF-8 columns whatever
      * the document's unit. Throws `MarkdownCoreError` `outOfBounds` when
-     * `source` ends before the dumped node does.
+     * `source` ends before a node of the dumped tree does.
      */
     readonly dump: {
         (source: string): string;

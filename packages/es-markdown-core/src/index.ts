@@ -51,8 +51,10 @@ export type {
     ListFlavor,
     OrderedListDelimiter,
     OrderedListVariant,
+    Piece,
     Placement,
     Position,
+    Run,
     Scope,
     TextUnit
 } from "./markup/values.js";

@@ -5,7 +5,7 @@ internal class MarkupWalker(
     private val visitor: MarkupVisitor,
 ) {
     fun walk(root: Markup) {
-        val traversal = MarkupTraversal(root, 0)
+        val traversal = MarkupTraversal(root)
         while (traversal.next()) {
             val node = traversal.node ?: continue
             val entered = traversal.step == MarkupTraversal.Step.ENTER
