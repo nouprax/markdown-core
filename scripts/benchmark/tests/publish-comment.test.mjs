@@ -150,26 +150,26 @@ test("the edit table reports the R and S columns by family and size, pooled over
 });
 
 test("PR tables report the two stages, their sum and source regressions, and nothing outside them", () => {
-    const body = stageSection(stageReport(103), stageReport(100));
+    const body = stageSection(stageReport(112), stageReport(100));
     assert.match(body, /2\/4 passed/);
-    assert.match(body, /\| Source → buffer \| 200 \| 206 \| 1.0300× \|/);
+    assert.match(body, /\| Source → buffer \| 200 \| 224 \| 1.1200× \|/);
     assert.match(body, /\| Buffer → AST \| 100 \| 100 \| 1.0000× \|/);
-    assert.match(body, /\| Both stages \| 300 \| 306 \| 1.0200× \|/);
+    assert.match(body, /\| Both stages \| 300 \| 324 \| 1.0800× \|/);
     assert.doesNotMatch(body, /parse path|Outside/i);
     assert.match(body, /inline-links-paired-common/);
     assert.match(body, /Required when CI inputs require execution/);
-    assert.match(body, /inline-links-grammar-v2 \| ASCII \| whole \| 1 \| 32\/32 \| 1.0000× \| 2.0400× \| 2.0400×/);
+    assert.match(body, /inline-links-grammar-v2 \| ASCII \| whole \| 1 \| 32\/32 \| 1.0000× \| 2.1600× \| 2.1600×/);
     assert.match(body, /Grammar:/);
     assert.match(attributeSection(attributes()), /2.0000×/);
 });
 
 test("an AST-stage regression fails its document even when the source stage holds", () => {
     const current = stageReport(100);
-    for (const row of current.cases) row.engines["markdown-core"].stages.buffer_to_ast.cost.Ir = 53;
+    for (const row of current.cases) row.engines["markdown-core"].stages.buffer_to_ast.cost.Ir = 56;
     const body = stageSection(current, stageReport(100));
     assert.match(body, /2 document workloads/);
     assert.match(body, /\*\*2\/4 passed\*\*, 2 exceeded/);
-    assert.match(body, /\| inline-links-paired-dialect \| Buffer → AST \| 50 \| 53 \| 1.0600× \|/);
+    assert.match(body, /\| inline-links-paired-dialect \| Buffer → AST \| 50 \| 56 \| 1.1200× \|/);
 });
 
 test("Core-only rejections are reported against their control, apart from reference comparisons", () => {
@@ -180,7 +180,7 @@ test("Core-only rejections are reported against their control, apart from refere
     assert.doesNotMatch(equivalences, /inline-marks/);
     assert.match(body, /<summary>Rejection of constructs only Core implements/);
     assert.match(body, /\| inline-marks-grammar-v2 \| ASCII \| mark \| 1 \| 1\.4854× \| 50 \|/);
-    assert.doesNotMatch(stageSection(stageReport(103), stageReport(100)), /Rejection of constructs/);
+    assert.doesNotMatch(stageSection(stageReport(112), stageReport(100)), /Rejection of constructs/);
     for (const mutate of [
         (r) => {
             r.grammarCorpus.certificates[1].rejects = "@everyone";
@@ -410,7 +410,7 @@ function fixture() {
                 if (bytes.toString() === "102") return [state.inputs];
                 if (bytes.toString() === "2") return [state.original?.inputs ?? state.inputs];
                 if (bytes.toString() === "3") return [edits()];
-                return bytes.toString() === "0" ? [stageReport(103), stageReport(100)] : [attributes()];
+                return bytes.toString() === "0" ? [stageReport(112), stageReport(100)] : [attributes()];
             }
         });
     return state;

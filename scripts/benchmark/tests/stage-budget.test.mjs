@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { STAGES, stageBudget } from "../stage-budget.mjs";
+import { ONESHOT_IR_LIMIT, STAGES, stageBudget } from "../stage-budget.mjs";
 
 const row = (name, source, ast = 100, sha256 = "same-input") => ({
     case: name,
@@ -12,29 +12,28 @@ const row = (name, source, ast = 100, sha256 = "same-input") => ({
         }
     }
 });
+/* One instruction past the limit on a base of 1000. */
+const over = Math.round(1000 * ONESHOT_IR_LIMIT) + 1;
 const verdicts = (rows) => rows.map((entry) => `${entry.case} ${entry.stage} ${entry.passed}`);
 
 test("the budget covers both parse stages", () => {
     assert.deepEqual(STAGES, ["source_to_buffer", "buffer_to_ast"]);
 });
 test("one source regression fails even when the aggregate improves", () => {
-    assert.deepEqual(verdicts(stageBudget([row("a", 103, 50), row("b", 50, 50)], [row("a", 100), row("b", 100)])), [
-        "a source_to_buffer false",
-        "a buffer_to_ast true",
-        "b source_to_buffer true",
-        "b buffer_to_ast true"
-    ]);
+    assert.deepEqual(
+        verdicts(stageBudget([row("a", over, 500), row("b", 500, 500)], [row("a", 1000, 1000), row("b", 1000, 1000)])),
+        ["a source_to_buffer false", "a buffer_to_ast true", "b source_to_buffer true", "b buffer_to_ast true"]
+    );
 });
 test("one AST regression fails even when the source stage and the aggregate improve", () => {
-    assert.deepEqual(verdicts(stageBudget([row("a", 50, 103), row("b", 50, 50)], [row("a", 100), row("b", 100)])), [
-        "a source_to_buffer true",
-        "a buffer_to_ast false",
-        "b source_to_buffer true",
-        "b buffer_to_ast true"
-    ]);
+    assert.deepEqual(
+        verdicts(stageBudget([row("a", 500, over), row("b", 500, 500)], [row("a", 1000, 1000), row("b", 1000, 1000)])),
+        ["a source_to_buffer true", "a buffer_to_ast false", "b source_to_buffer true", "b buffer_to_ast true"]
+    );
 });
 test("a stage exactly at the limit passes", () => {
-    assert.ok(stageBudget([row("a", 102, 102)], [row("a", 100)]).every((entry) => entry.passed));
+    const at = Math.round(1000 * ONESHOT_IR_LIMIT);
+    assert.ok(stageBudget([row("a", at, at)], [row("a", 1000, 1000)]).every((entry) => entry.passed));
 });
 test("the stage budget refuses mismatched, missing and duplicate workloads", () => {
     assert.throws(() => stageBudget([row("a", 100, 100, "changed")], [row("a", 100)]), /input mismatch/u);
