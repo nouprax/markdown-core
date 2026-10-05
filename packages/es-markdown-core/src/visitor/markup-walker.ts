@@ -7,6 +7,25 @@ export function walk(root: Markup, visitor: MarkupVisitor): void {
     traverse(root, (node, phase) => dispatch(visitor, node, phase));
 }
 
+/** The walk the dumper drives: the document's walk, which places every node
+ * in the content it is in, with only `target`'s tree reported to `visitor`;
+ * `place` hears each of those nodes' range and content before the visitor
+ * enters it. */
+export function walkTree(
+    document: Markup,
+    target: Markup,
+    visitor: MarkupVisitor,
+    place: (node: Markup, start: number, end: number, content: SourceRuns | null) => void
+): void {
+    let inside = false;
+    traverse(document, (node, phase, start, end, content) => {
+        if (!inside && node !== target) return;
+        inside = !(node === target && phase === "exit");
+        if (phase === "enter") place(node, start, end, content);
+        dispatch(visitor, node, phase);
+    });
+}
+
 /** One visit of the canonical walk: the node's phase, its absolute range, and
  * the runs of the inline root content that range is in, or null when it is in
  * the source. */
@@ -87,7 +106,7 @@ export function traverse(root: Markup, each: Visit): void {
 
 /** Calls the visitor's method for the node's kind. The mapped union keeps
  * the kind and its node correlated during indexed dispatch. */
-export function dispatch<Kind extends Markup["kind"]>(
+function dispatch<Kind extends Markup["kind"]>(
     visitor: MarkupVisitor,
     node: { [Key in Kind]: Extract<Markup, { kind: Key }> }[Kind],
     phase: MarkupVisitPhase

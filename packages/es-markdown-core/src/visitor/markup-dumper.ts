@@ -12,7 +12,7 @@ import type {
     OrderedListVariant,
     Scope
 } from "../markup/values.js";
-import { dispatch, traverse } from "./markup-walker.js";
+import { walkTree } from "./markup-walker.js";
 import { placesOf } from "./source-places.js";
 import type { MarkupVisitor } from "./markup-visitor.js";
 
@@ -507,18 +507,12 @@ class State {
      * from its own level.
      */
     dump(document: Document, target: Markup): void {
-        let inside = false;
-        traverse(document, (node, phase, start, end, content) => {
-            if (!inside && node !== target) return;
-            inside = !(node === target && phase === "exit");
-            if (phase === "enter") {
-                const places = placesOf(node, start, end, content);
-                if (places[places.length - 1]!.end > this.source.bytes.length) {
-                    throw new MarkdownCoreError("outOfBounds");
-                }
-                this.at = places.map((place) => this.source.scope(place.start, place.end, "utf8"));
+        walkTree(document, target, this.visitor, (node, start, end, content) => {
+            const places = placesOf(node, start, end, content);
+            if (places[places.length - 1]!.end > this.source.bytes.length) {
+                throw new MarkdownCoreError("outOfBounds");
             }
-            dispatch(this.visitor, node, phase);
+            this.at = places.map((place) => this.source.scope(place.start, place.end, "utf8"));
         });
     }
 
