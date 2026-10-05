@@ -1914,8 +1914,9 @@ static markdown_core_node *check_open_blocks(markdown_core_parser *parser, markd
     *all_matched = false;
     markdown_core_node *container = parser->block_root;
     markdown_core_node *closing = NULL;
-    markdown_core_input_line *line = markdown_core_parser_visited_line(parser, parser->line_number);
-    line->own = (uint32_t)parser->offset;
+    /* Each claim names the line by number: matching a container can read
+     * lines ahead, which can move the line table. */
+    markdown_core_parser_visited_line(parser, parser->line_number)->own = (uint32_t)parser->offset;
 
     while (S_last_child_is_open(container)) {
         container = container->last_child;
@@ -1950,7 +1951,7 @@ static markdown_core_node *check_open_blocks(markdown_core_parser *parser, markd
          * list item. One claim per container, walking down the spine. What
          * a block that takes lines matched is its own. */
         if (!S_kind_takes_text(kind, container)) {
-            line->own = (uint32_t)parser->offset;
+            markdown_core_parser_visited_line(parser, parser->line_number)->own = (uint32_t)parser->offset;
         }
     }
 
