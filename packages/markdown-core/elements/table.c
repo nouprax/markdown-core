@@ -11,12 +11,8 @@
 
 #include "strikethrough.h"
 #include "table.h"
-#include "paragraph.h"
+#include "block_internal.h"
 #include "markdown-core-elements.h"
-
-/* The elements whose state this element reads, as `self->peers` holds them. */
-enum { TABLE_PARAGRAPH };
-static const markdown_core_element *const TABLE_PEERS[] = {[TABLE_PARAGRAPH] = &MARKDOWN_CORE_ELEMENT_PARAGRAPH, NULL};
 
 // Limit to prevent a malicious input from causing a denial of service.
 #define MAX_AUTOCOMPLETED_CELLS 0x80000
@@ -207,8 +203,7 @@ static void S_place_content_span(markdown_core_parser *parser, markdown_core_nod
     }
 }
 
-static void try_inserting_table_header_paragraph(const markdown_core_element_instance *paragraph_element,
-                                                 markdown_core_parser *parser, markdown_core_node *parent_container,
+static void try_inserting_table_header_paragraph(markdown_core_parser *parser, markdown_core_node *parent_container,
                                                  unsigned char *parent_string, int paragraph_offset) {
     markdown_core_node *paragraph;
     bufsize_t first = 0;
@@ -271,8 +266,9 @@ static void try_inserting_table_header_paragraph(const markdown_core_element_ins
     markdown_core_node_attach_validated(parent_container->parent, paragraph, parent_container);
 
     /* A table split completes this paragraph just as a later block start
-     * would: reference definitions and anchor attachment share finalization. */
-    markdown_core_paragraph_finalize(paragraph_element, parser, paragraph);
+     * would: reference definitions, anchor attachment and pieces share
+     * finalization. */
+    markdown_core_block_settle(parser, paragraph);
 }
 
 /* Return NULL when the syntax does not match or the parent rejects the table
@@ -328,8 +324,8 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
     }
 
     if (header_row.paragraph_offset) {
-        try_inserting_table_header_paragraph(self->peers[TABLE_PARAGRAPH], parser, parent_container,
-                                             (unsigned char *)parent_string, header_row.paragraph_offset);
+        try_inserting_table_header_paragraph(parser, parent_container, (unsigned char *)parent_string,
+                                             header_row.paragraph_offset);
         /* The table starts where its HEADER ROW was written, not where the
          * paragraph it was split out of did. Taken before the row and cells
          * below read start_column, because they are placed against it. */
@@ -2668,7 +2664,6 @@ static void dispose_parser(const markdown_core_element_instance *self, markdown_
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
-    .peers = TABLE_PEERS,
     .dispose_parser = dispose_parser,
     .state_size = sizeof(table_workspace),
 

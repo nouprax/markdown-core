@@ -7163,8 +7163,7 @@ static markdown_core_node *observe_definition_before_anchor(const markdown_core_
     (void)indented;
     if (length - parser->first_nonspace >= 6 && memcmp(input + parser->first_nonspace, "#list#", 6) == 0) {
         markdown_core_node *previous = parent->last_child;
-        *(bool *)parser->context = previous && previous->kind == MARKDOWN_CORE_NODE_PARAGRAPH &&
-                                   !(previous->flags & MARKDOWN_CORE_NODE__OPEN) && previous->content.size == 0;
+        *(bool *)parser->context = previous && previous->kind == MARKDOWN_CORE_NODE_REFERENCE;
     }
     return NULL;
 }

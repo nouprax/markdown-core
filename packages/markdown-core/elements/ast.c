@@ -113,23 +113,27 @@ typedef struct {
 } label_entry;
 
 static label_entry label_entry_of(const uint8_t *label, size_t length, const markdown_core_node *node) {
+    const size_t bytes = length < 8 ? length : 8;
     uint64_t head = 0;
-    for (size_t i = 0; i < 8; i++) {
-        head = head << 8 | (i < length ? label[i] : 0);
+    for (size_t i = 0; i < bytes; i++) {
+        head = head << 8 | label[i];
     }
-    return (label_entry){head, label, length, node};
+    /* The padding: a shift by 64 is undefined, and no bytes is a zero head. */
+    return (label_entry){bytes ? head << 8 * (8 - bytes) : 0, label, length, node};
+}
+
+/* The labels of two entries with equal heads in byte order: a label no
+ * longer than eight bytes is all in its head, so it is a prefix of the other
+ * label, and the shorter is first. */
+static int label_tie_compare(const label_entry *a, const label_entry *b) {
+    if (a->length <= 8 || b->length <= 8) {
+        return (a->length > b->length) - (a->length < b->length);
+    }
+    return label_compare(a->label + 8, a->length - 8, b->label + 8, b->length - 8);
 }
 
 static inline bool label_before(const label_entry *a, const label_entry *b) {
-    if (a->head != b->head) {
-        return a->head < b->head;
-    }
-    /* Equal heads hold all of two labels no longer than eight bytes: the
-     * shorter is first. */
-    if (a->length <= 8 && b->length <= 8) {
-        return a->length < b->length;
-    }
-    return label_compare(a->label, a->length, b->label, b->length) < 0;
+    return a->head != b->head ? a->head < b->head : label_tie_compare(a, b) < 0;
 }
 
 /* Sorts `count` entries by label, keeping the order of equal labels: the
@@ -168,73 +172,80 @@ static label_entry *label_sort(label_entry *entries, label_entry *spare, size_t 
     return entries;
 }
 
-/* The labeled ones of `count` nodes in label order, keeping their order
- * among equal labels, into `labeled`; `*labels` says how many. False when
- * the sort could not be done. */
-static bool label_order(const markdown_core_node *const *nodes, size_t count, const markdown_core_node **labeled,
-                        size_t *labels) {
-    /* The entries, the spare array the merges write into, and the ends of
-     * the runs, in one allocation. */
-    label_entry *entries = markdown_core_realloc(NULL, count * (2 * sizeof(*entries) + sizeof(size_t)));
-    if (!entries) {
-        return false;
-    }
-    size_t *ends = (size_t *)(entries + 2 * count);
-    size_t taken = 0;
-    for (size_t i = 0; i < count; i++) {
-        markdown_core_chunk label;
-        if (definition_label(nodes[i], &label)) {
-            entries[taken++] = label_entry_of(label.data, (size_t)label.len, nodes[i]);
-        }
-    }
-    const label_entry *sorted = label_sort(entries, entries + taken, ends, taken);
-    for (size_t i = 0; i < taken; i++) {
-        labeled[i] = sorted[i].node;
-    }
-    *labels = taken;
-    markdown_core_free(entries);
-    return true;
+/* Whether two entries hold the same label. */
+static inline bool label_same(const label_entry *a, const label_entry *b) {
+    return a->head == b->head && label_tie_compare(a, b) == 0;
+}
+
+/* Room for the entries of `count` labels, the spare array their sort merges
+ * into, and the ends of its runs, in one allocation the caller frees. */
+static label_entry *label_room(size_t count) {
+    return markdown_core_realloc(NULL, count * (2 * sizeof(label_entry) + sizeof(size_t)));
+}
+
+/* The first `taken` entries of the room `label_room` made for `count`, in
+ * label order and in their order among equal labels. */
+static const label_entry *label_order(label_entry *entries, size_t taken, size_t count) {
+    return label_sort(entries, entries + taken, (size_t *)(entries + 2 * count), taken);
 }
 
 /* The table's nodes in source order, as node handles the document borrows,
  * into `*nodes`. */
-static bool table_nodes(definition_table *table, markdown_core_source_order *order, const markdown_core_node ***nodes) {
+static bool table_nodes(markdown_core_parser *parser, definition_table *table, const markdown_core_node ***nodes) {
     *nodes = NULL;
     if (!table->count) {
         return true;
     }
-    if (!markdown_core_order_source_entries(order, table->values, table->count, sizeof(*table->values),
+    if (!markdown_core_order_source_entries(&parser->source_order, table->values, table->count, sizeof(*table->values),
                                             definition_key)) {
         return false;
     }
-    *nodes = markdown_core_alloc(table->count, sizeof(**nodes));
-    if (!*nodes) {
-        return false;
-    }
+    /* The handles take the entries' place: each is smaller than an entry, so
+     * the one written lands on entries already read. Byte copies, as the
+     * storage changes what it holds. The document owns it from here. */
+    unsigned char *storage = (unsigned char *)table->values;
     for (size_t i = 0; i < table->count; i++) {
-        (*nodes)[i] = table->values[i].node;
+        const markdown_core_node *node;
+        memcpy(&node, storage + i * sizeof(definition_entry) + offsetof(definition_entry, node), sizeof(node));
+        memcpy(storage + i * sizeof(node), &node, sizeof(node));
     }
+    *nodes = (const markdown_core_node **)storage;
+    table->values = NULL;
+    table->capacity = 0;
     return true;
 }
 
 /* The table in source order, and its labeled definitions in label order, as
  * node handles the document borrows. */
-static bool table_seal(definition_table *table, markdown_core_source_order *order, markdown_core_definitions *out) {
+static bool table_seal(markdown_core_parser *parser, definition_table *table, markdown_core_definitions *out) {
     *out = (markdown_core_definitions){0};
     const markdown_core_node **nodes;
-    if (!table_nodes(table, order, &nodes)) {
+    if (!table_nodes(parser, table, &nodes)) {
         return false;
     }
     if (!nodes) {
         return true;
     }
     const markdown_core_node **labeled = markdown_core_alloc(table->count, sizeof(*labeled));
-    size_t labels = 0;
-    if (!labeled || !label_order(nodes, table->count, labeled, &labels)) {
+    label_entry *entries = label_room(table->count);
+    if (!labeled || !entries) {
         markdown_core_free((void *)nodes);
         markdown_core_free((void *)labeled);
+        markdown_core_free(entries);
         return false;
     }
+    size_t labels = 0;
+    for (size_t i = 0; i < table->count; i++) {
+        markdown_core_chunk label;
+        if (definition_label(nodes[i], &label)) {
+            entries[labels++] = label_entry_of(label.data, (size_t)label.len, nodes[i]);
+        }
+    }
+    const label_entry *sorted = label_order(entries, labels, table->count);
+    for (size_t i = 0; i < labels; i++) {
+        labeled[i] = sorted[i].node;
+    }
+    markdown_core_free(entries);
     *out = (markdown_core_definitions){nodes, table->count, labeled, labels};
     return true;
 }
@@ -1442,45 +1453,55 @@ static void publish_continue(markdown_core_parser *parser, const publish_identit
     markdown_core_node_pool_release(parser->pool, previous);
 }
 
+/* Takes `node` into the `*taken` entries when its label is not empty. */
+static inline void label_take(label_entry *entries, size_t *taken, markdown_core_chunk label,
+                              const markdown_core_node *node) {
+    if (label.len > 0) {
+        entries[(*taken)++] = label_entry_of(label.data, (size_t)label.len, node);
+    }
+}
+
 /* The node each label a reference occurrence can name resolves to, in label
  * order: the first Reference declaring it, or, when none does, the first
  * Heading whose text declares it. The References in source order, then the
  * Headings in source order, sorted by label keeping that order among equal
  * labels, put each label's target first among its own. */
-static bool reference_targets(markdown_core_document_value *value, definition_table *headings,
-                              markdown_core_source_order *order) {
+static bool reference_targets(markdown_core_parser *parser, markdown_core_document_value *value,
+                              definition_table *headings) {
     value->reference_targets = NULL;
     value->reference_target_count = 0;
-    if (headings->count && !markdown_core_order_source_entries(order, headings->values, headings->count,
+    if (headings->count && !markdown_core_order_source_entries(&parser->source_order, headings->values, headings->count,
                                                                sizeof(*headings->values), definition_key)) {
         return false;
     }
     const size_t total = value->references.count + headings->count;
-    const markdown_core_node **declared = total ? markdown_core_alloc(total, sizeof(*declared)) : NULL;
-    if (total && !declared) {
+    if (!total) {
+        return true;
+    }
+    const markdown_core_node **declared = markdown_core_alloc(total, sizeof(*declared));
+    label_entry *entries = label_room(total);
+    if (!declared || !entries) {
+        markdown_core_free((void *)declared);
+        markdown_core_free(entries);
         return false;
-    }
-    for (size_t i = 0; i < value->references.count; i++) {
-        declared[i] = value->references.nodes[i];
-    }
-    for (size_t i = 0; i < headings->count; i++) {
-        declared[value->references.count + i] = headings->values[i].node;
     }
     size_t labels = 0;
-    if (total && !label_order(declared, total, declared, &labels)) {
-        markdown_core_free((void *)declared);
-        return false;
+    for (size_t i = 0; i < value->references.count; i++) {
+        const markdown_core_node *node = value->references.nodes[i];
+        label_take(entries, &labels, node->as.reference->label, node);
     }
+    for (size_t i = 0; i < headings->count; i++) {
+        const markdown_core_node *node = headings->values[i].node;
+        label_take(entries, &labels, node->as.heading->label, node);
+    }
+    const label_entry *sorted = label_order(entries, labels, total);
     size_t count = 0;
-    markdown_core_chunk last = {0}, label;
     for (size_t i = 0; i < labels; i++) {
-        definition_label(declared[i], &label);
-        if (count && label_compare(last.data, (size_t)last.len, label.data, (size_t)label.len) == 0) {
-            continue;
+        if (!i || !label_same(&sorted[i], &sorted[i - 1])) {
+            declared[count++] = sorted[i].node;
         }
-        declared[count++] = declared[i];
-        last = label;
     }
+    markdown_core_free(entries);
     if (!count) {
         markdown_core_free((void *)declared);
         return true;
@@ -1516,11 +1537,11 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
     if (ok && !same) {
         definition_table *references = &walk.tables[TABLE_REFERENCES];
         value->references = (markdown_core_definitions){0};
-        ok = table_seal(&walk.tables[TABLE_FOOTNOTES], &parser->source_order, &value->footnotes) &&
-             table_seal(&walk.tables[TABLE_SPECIMENS], &parser->source_order, &value->specimens) &&
-             table_nodes(references, &parser->source_order, &value->references.nodes);
+        ok = table_seal(parser, &walk.tables[TABLE_FOOTNOTES], &value->footnotes) &&
+             table_seal(parser, &walk.tables[TABLE_SPECIMENS], &value->specimens) &&
+             table_nodes(parser, references, &value->references.nodes);
         value->references.count = ok ? references->count : 0;
-        ok = ok && reference_targets(value, &walk.tables[TABLE_HEADINGS], &parser->source_order);
+        ok = ok && reference_targets(parser, value, &walk.tables[TABLE_HEADINGS]);
     }
     /* Nothing below can fail: the result is committed. */
     if (ok && previous) {

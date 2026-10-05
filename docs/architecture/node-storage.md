@@ -180,16 +180,15 @@ slab freed by the last of its slots after the pool is gone. Platform builds veri
 native alignment, and sanitizer suites exercise the same ownership paths.
 
 Link reference definitions are recognized during block parsing so paragraph
-content and Setext classification can use the remaining text. A finalized
-paragraph containing only definitions stays in its parent's child chain with
-the internal `REFERENCE_DEFINITION_ONLY` flag. Later block identifiers see
-that paragraph in source order and cannot attach across it. After all block
-syntax and anchor decisions finish, one iterative postorder pass discards
-these paragraphs and derives list layout from the cleaned semantic children,
-before inline parsing. The document owns them through their parents,
-including on parse failure. An intentionally empty anchored list-item
-paragraph is not a definition and survives this cleanup. No definition node
-reaches the public AST.
+content and Setext classification can use the remaining text. Each definition
+becomes a `Reference` node in its parent's child chain where it was written,
+before what remains of the paragraph. A paragraph that held only definitions
+is released when it is finalized; its References stay, so later block
+identifiers see them in source order and cannot attach across them. The
+blank-line facts skip References, and list layout, derived at each list's
+exit in the finish walk, reads the semantic children around them. An
+intentionally empty anchored list-item paragraph is not a definition and
+stays.
 
 Inline footnotes use the existing Footnote data record and one-item Cite.
 A successful close moves the parsed inline body into a Footnote that the
