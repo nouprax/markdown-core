@@ -602,8 +602,7 @@ static size_t edit_after(const publish_identity *identity, uint32_t x) {
  * when every byte of it was replaced (5.2). */
 static bool anchor_mapped(const publish_identity *identity, uint32_t start, uint32_t end, uint32_t *mapped) {
     const markdown_core_byte_edit *edits = identity->edits;
-    size_t lo = edit_after(identity, start);
-    uint32_t x = start;
+    size_t lo = edit_after(identity, start), x = start;
     while (lo < identity->count && edits[lo].start <= x) {
         if (x < edits[lo].end) {
             x = edits[lo].end;
@@ -1092,10 +1091,10 @@ static bool content_images_read(publish_walk *walk, const markdown_core_runs *ru
                 edit++;
             }
             if (edit < identity->count && edits[edit].start <= x) {
-                x = edits[edit].end;
+                x = (uint32_t)edits[edit].end;
                 continue;
             }
-            const uint32_t stop = edit < identity->count && edits[edit].start < end ? edits[edit].start : end;
+            const uint32_t stop = edit < identity->count && edits[edit].start < end ? (uint32_t)edits[edit].start : end;
             const int64_t shift = identity->shift[edit];
             const uint32_t low = (uint32_t)(x + shift), high = (uint32_t)(stop + shift);
             while (next < fresh->count && fresh->runs[next].end <= low) {
