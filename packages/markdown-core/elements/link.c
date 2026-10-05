@@ -22,8 +22,8 @@ static bufsize_t markdown_core_inline_manual_scan_link_url(markdown_core_chunk *
                                                            markdown_core_chunk *output);
 /* Reads the link reference definition at the front of `input`, its bytes
  * `before` past the front of `b`'s content, into a Reference node put in
- * `b`'s parent before `b`, which starts on input line `*line` or later and
- * leaves `*line` the line it ends on. Its length, 0 when there is none. */
+ * `b`'s parent before `b`, which starts on input line `*line`, an earlier
+ * one or a later one, and leaves `*line` the line it ends on. Its length, 0 when there is none. */
 static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_node *b, markdown_core_chunk *input,
                                   markdown_core_attribute_parser *attributes, bufsize_t before, int *line);
 
@@ -34,7 +34,7 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
     markdown_core_attribute_parser attributes = {
         .data = chunk.data, .length = chunk.len, .scratch = &parser->attribute_scratch};
     /* The definitions follow each other down the block's lines. */
-    int line = chunk.len && chunk.data[0] == '[' ? markdown_core_parser_start_line(parser, b) : 0;
+    int line = parser->line_number;
     while (chunk.len && chunk.data[0] == '[' && !parser->error) {
         pos = S_read_reference(parser, b, &chunk, &attributes, (bufsize_t)(chunk.data - node_content->ptr), &line);
         if (!pos) {
@@ -370,7 +370,10 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_no
     int lost = 0;
     markdown_core_chunk clean_url = markdown_core_clean_url(&definition.url, &lost);
     markdown_core_optional_chunk clean_title = markdown_core_clean_title(&definition.title, &lost);
-    unsigned char *label = normalize_map_label(&definition.label, &lost);
+    markdown_core_chunk label;
+    if (!markdown_core_label_normalize(parser->refmap, parser->pool, &definition.label, &label)) {
+        lost = 1;
+    }
     markdown_core_resource *resource = lost ? NULL : markdown_core_resource_new(parser->pool, clean_url, clean_title);
     markdown_core_node *reference =
         resource
@@ -383,14 +386,15 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_no
             markdown_core_chunk_free(&clean_url);
             markdown_core_optional_chunk_free(&clean_title);
         }
-        markdown_core_free(label);
+        if (label.len) {
+            markdown_core_node_pool_bytes_free(parser->pool, label.data);
+        }
         markdown_core_attributes_free(&definition.value);
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return length;
     }
     reference->as.reference->resource = resource;
-    reference->as.reference->label =
-        label ? (markdown_core_chunk){label, (bufsize_t)strlen((char *)label), 1} : markdown_core_chunk_literal("");
+    reference->as.reference->label = label;
     reference->attributes = definition.value;
     reference->flags |= MARKDOWN_CORE_NODE__BLANK_TRANSPARENT;
     markdown_core_label_declare(parser->refmap, &reference->as.reference->label);
@@ -405,7 +409,7 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_no
     markdown_core_parser_content_place(parser, &b->content_map, before, &ignored, &start);
     markdown_core_parser_content_end_place(parser, &b->content_map, end - 1, &ignored, &stop);
     reference->where.place = (markdown_core_place){(uint32_t)start, (uint32_t)stop};
-    markdown_core_parser_place_pieces(parser, reference, line);
+    markdown_core_parser_place_pieces(parser, reference, b->parent, line);
     markdown_core_node_attach_validated(b->parent, reference, b);
     return length;
 }
@@ -526,8 +530,13 @@ bool markdown_core_link_commit(const markdown_core_element_instance *link, markd
          * Embedded holds its own copy of the normalized label, and its
          * destination and title are those of the node the document finds by
          * that label. The occurrence keeps its own scope and attributes. */
-        inl->as.link->label = candidate->label;
-        if (!markdown_core_chunk_to_cstr(&inl->as.link->label)) {
+        const bufsize_t length = candidate->label.len;
+        unsigned char *label = markdown_core_node_pool_bytes(parser->pool, (size_t)length + 1);
+        if (label) {
+            memcpy(label, candidate->label.data, (size_t)length);
+            label[length] = '\0';
+            inl->as.link->label = (markdown_core_chunk){label, length, 0};
+        } else {
             markdown_core_parser_release_node(parser, inl);
             inl = NULL;
         }

@@ -335,13 +335,10 @@ void markdown_core_prepare_heading(const markdown_core_element_instance *self, m
          * when no Reference declares it. */
         if (label.len > 0 && label.len <= MAX_LINK_LABEL_LENGTH &&
             markdown_core_inline_reference_label_length(label.data, label.len) == label.len) {
-            int lost = 0;
-            unsigned char *normalized = normalize_map_label(&label, &lost);
-            if (lost) {
+            markdown_core_chunk *declared = &heading->node->as.heading->label;
+            if (!markdown_core_label_normalize(parser->refmap, parser->pool, &label, declared)) {
                 markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            } else if (normalized) {
-                markdown_core_chunk *declared = &heading->node->as.heading->label;
-                *declared = (markdown_core_chunk){normalized, (bufsize_t)strlen((char *)normalized), 1};
+            } else {
                 markdown_core_label_declare(parser->refmap, declared);
             }
         }

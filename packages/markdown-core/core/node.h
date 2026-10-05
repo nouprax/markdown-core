@@ -44,8 +44,9 @@ typedef struct {
 } markdown_core_code;
 
 /* A heading's `label` is the normalized reference label its text declares,
- * the one a reference occurrence names when no Reference declares it; empty
- * when its text declares none. */
+ * the one a reference occurrence names when no Reference declares it, in
+ * storage the node owns (markdown_core_node_pool_bytes); empty when its text
+ * declares none. */
 typedef struct {
     int level;
     bool setext;
@@ -81,7 +82,8 @@ typedef struct {
 /* A LINK OR EMBEDDED names its destination one of two ways (4.5): a direct
  * one states it, in `resource`; a reference names the definition it resolves
  * to by its normalized label, in `label`, as a citation names a footnote, and
- * has no resource. */
+ * has no resource. The label is in storage the node owns
+ * (markdown_core_node_pool_bytes). */
 typedef struct {
     markdown_core_resource *resource;
     markdown_core_chunk label;
@@ -156,8 +158,9 @@ typedef struct {
 } markdown_core_specimen_value;
 
 /* A REFERENCE: a link reference definition where it was written. `label` is
- * its normalized label, the one a reference occurrence names; `resource` is
- * the destination and title it states. The attributes it supplies are the
+ * its normalized label, the one a reference occurrence names, in storage the
+ * node owns (markdown_core_node_pool_bytes); `resource` is the destination
+ * and title it states. The attributes it supplies are the
  * node's own. */
 typedef struct {
     markdown_core_chunk label;
@@ -181,7 +184,9 @@ typedef struct markdown_core_definitions {
     /* Every definition of the kind, in source order. */
     const struct markdown_core_node **nodes;
     size_t count;
-    /* The labeled ones by label, in source order among equal labels. */
+    /* The labeled ones by label, in source order among equal labels: the
+     * Footnotes and Specimens a lookup by label answers from. A label a
+     * reference occurrence names resolves through the reference targets. */
     const struct markdown_core_node **labeled;
     size_t labeled_count;
 } markdown_core_definitions;
@@ -522,8 +527,10 @@ size_t markdown_core_node_release(markdown_core_node *node);
 /* WHERE A NODE'S STORAGE COMES FROM, and where it goes back to.
  *
  * A node lives in a SLOT (slab.h) holding the node and room for its kind's
- * record, and the resources links read through live in slots of their own.
- * A pool holds the slabs of both. A parse takes every slot from the pool its
+ * record, the resources links read through live in slots of their own, and
+ * what else a node owns of its own size -- its pieces, its runs, a label it
+ * declares -- in storage of that size. A pool holds the slabs of all
+ * three. A parse takes every slot from the pool its
  * caller lends it -- a session's, which outlives each of its edits, or one
  * the caller makes for a single parse -- and a caller with no pool takes one
  * slot from the allocator. A slot released into a pool goes back to it for
@@ -540,7 +547,16 @@ size_t markdown_core_node_release(markdown_core_node *node);
 typedef struct markdown_core_node_pool {
     markdown_core_slab_pool nodes;
     markdown_core_slab_pool resources;
+    markdown_core_bytes_pool bytes;
 } markdown_core_node_pool;
+
+/* Uninitialized storage of `bytes` a node owns -- its pieces, its runs, a
+ * label it declares -- from the pool's slabs, or from the allocator with no
+ * pool; NULL when none can be had. The node releases it with itself. */
+void *markdown_core_node_pool_bytes(markdown_core_node_pool *pool, size_t bytes);
+/* Gives back storage `markdown_core_node_pool_bytes` took, into `pool` for
+ * reuse; a NULL pool is the plain release. */
+void markdown_core_node_pool_bytes_free(markdown_core_node_pool *pool, void *storage);
 
 /* `markdown_core_node_new_with_ext` from a pool's slots. A NULL pool is the
  * allocator's own slot, which is what the parser-less constructor takes. */

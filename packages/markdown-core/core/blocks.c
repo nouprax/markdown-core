@@ -653,8 +653,10 @@ static bool S_line_piece(markdown_core_parser *parser, int line, markdown_core_p
     return true;
 }
 
-/* The pieces of `node`, which spans input lines `first` to `last`. */
-static void S_line_pieces(markdown_core_parser *parser, markdown_core_node *node, int first, int last) {
+/* The pieces of `node`, which spans input lines `first` to `last`, more
+ * than one. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_line_pieces(markdown_core_parser *parser, markdown_core_node *node,
+                                                              int first, int last) {
     markdown_core_place piece, joined = {0, 0};
     uint32_t count = 0;
     for (int line = first; line <= last; line++) {
@@ -667,8 +669,8 @@ static void S_line_pieces(markdown_core_parser *parser, markdown_core_node *node
     if (count < 2) {
         return;
     }
-    markdown_core_pieces *pieces =
-        markdown_core_alloc(1, sizeof(*pieces) + (size_t)count * sizeof(markdown_core_piece_where));
+    markdown_core_pieces *pieces = markdown_core_node_pool_bytes(
+        parser->pool, sizeof(*pieces) + (size_t)count * sizeof(markdown_core_piece_where));
     if (!pieces) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
@@ -676,7 +678,7 @@ static void S_line_pieces(markdown_core_parser *parser, markdown_core_node *node
     pieces->count = 0;
     for (int line = first; line <= last; line++) {
         if (!S_line_piece(parser, line, &piece)) {
-            markdown_core_free(pieces);
+            markdown_core_node_pool_bytes_free(parser->pool, pieces);
             return;
         }
         if (pieces->count && pieces->items[pieces->count - 1].place.end == piece.start) {
@@ -685,27 +687,38 @@ static void S_line_pieces(markdown_core_parser *parser, markdown_core_node *node
             pieces->items[pieces->count++].place = piece;
         }
     }
-    markdown_core_free(node->pieces);
+    if (node->pieces) {
+        markdown_core_node_pool_bytes_free(parser->pool, node->pieces);
+    }
     node->pieces = pieces;
 }
 
-int markdown_core_parser_start_line(markdown_core_parser *parser, const markdown_core_node *node) {
-    int line = parser->line_number;
-    while (line > parser->input_first_line && (uint32_t)S_line_offset(parser, line) > node->where.place.start) {
-        line--;
+void markdown_core_parser_place_pieces(markdown_core_parser *parser, markdown_core_node *node,
+                                       const markdown_core_node *container, int *line) {
+    /* A block of the document itself lies on whole lines of the source: its
+     * range is one piece. */
+    if (container == parser->root) {
+        return;
     }
-    return line;
-}
-
-void markdown_core_parser_place_pieces(markdown_core_parser *parser, markdown_core_node *node, int *line) {
     const int visited = parser->input_first_line + (int)parser->input_line_count - 1;
-    int first = *line, last;
-    while (first < visited && (uint32_t)S_line_offset(parser, first + 1) <= node->where.place.start) {
-        first++;
+    const uint32_t start = node->where.place.start, end = node->where.place.end;
+    int first = *line;
+    while (first > parser->input_first_line && (uint32_t)S_line_offset(parser, first) > start) {
+        first--;
     }
-    last = first;
-    while (last < visited && (uint32_t)S_line_offset(parser, last + 1) < node->where.place.end) {
+    /* Down the lines from there: one that begins at or before the start is
+     * the first so far, and the node ends on the last that begins before
+     * its end. */
+    int last = first;
+    while (last < visited) {
+        const uint32_t next = (uint32_t)S_line_offset(parser, last + 1);
+        if (next > start && next >= end) {
+            break;
+        }
         last++;
+        if (next <= start) {
+            first = last;
+        }
     }
     if (first < last) {
         S_line_pieces(parser, node, first, last);
@@ -865,8 +878,8 @@ void markdown_core_parser_read_content(markdown_core_parser *parser, markdown_co
     }
     const int first = markdown_core_block_content_mark_at(parser, &map, map.offset);
     const int last = markdown_core_block_content_mark_at(parser, &map, map.offset + length - 1);
-    markdown_core_runs *runs =
-        markdown_core_alloc(1, sizeof(*runs) + (size_t)(last - first + 1) * sizeof(markdown_core_run_where));
+    markdown_core_runs *runs = markdown_core_node_pool_bytes(
+        parser->pool, sizeof(*runs) + (size_t)(last - first + 1) * sizeof(markdown_core_run_where));
     if (!runs) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
@@ -897,7 +910,9 @@ void markdown_core_parser_read_content(markdown_core_parser *parser, markdown_co
         count++;
     }
     runs->count = count;
-    markdown_core_free(node->runs);
+    if (node->runs) {
+        markdown_core_node_pool_bytes_free(parser->pool, node->runs);
+    }
     node->runs = runs;
 }
 
@@ -963,7 +978,10 @@ markdown_core_node *markdown_core_block_finalize(markdown_core_parser *parser, m
     parent = b->parent;
     assert(b->flags & MARKDOWN_CORE_NODE__OPEN); // shouldn't call markdown_core_block_finalize on closed blocks
     b->flags &= ~MARKDOWN_CORE_NODE__OPEN;
-    const bool text = S_kind_takes_text(markdown_core_parser_kind(parser, b), b);
+    /* A block that takes text lines in a container has a piece on each of
+     * its lines, whatever its close hook makes of it; one of the document
+     * itself lies on whole lines, in one piece. */
+    const bool pieces = parent != parser->root && S_kind_takes_text(markdown_core_parser_kind(parser, b), b);
 
     if (parser->curline.size == 0) {
         // end of input - line number has not been incremented
@@ -1002,10 +1020,9 @@ markdown_core_node *markdown_core_block_finalize(markdown_core_parser *parser, m
     if (structure && structure->element->finalize_block) {
         structure->element->finalize_block(structure, parser, b);
     }
-    /* A block that takes text lines has a piece on each of its lines. */
-    if (text) {
-        int line = markdown_core_parser_start_line(parser, b);
-        markdown_core_parser_place_pieces(parser, b, &line);
+    if (pieces) {
+        int line = parser->line_number;
+        markdown_core_parser_place_pieces(parser, b, parent, &line);
     }
 
     return parent;
@@ -1914,11 +1931,15 @@ static markdown_core_node *check_open_blocks(markdown_core_parser *parser, markd
     *all_matched = false;
     markdown_core_node *container = parser->block_root;
     markdown_core_node *closing = NULL;
-    /* Each claim names the line by number: matching a container can read
-     * lines ahead, which can move the line table. */
-    markdown_core_parser_visited_line(parser, parser->line_number)->own = (uint32_t)parser->offset;
 
     while (S_last_child_is_open(container)) {
+        /* Whatever a container's prefix consumed is that container's
+         * MARKER: `> ` belongs to the block quote, the item's indent to the
+         * list item. So the bytes of the block below begin where the
+         * prefixes above it end: one claim per block, walking down the
+         * spine, each naming the line by number, as matching a container can
+         * read lines ahead, which can move the line table. */
+        markdown_core_parser_visited_line(parser, parser->line_number)->own = (uint32_t)parser->offset;
         container = container->last_child;
 
         markdown_core_block_find_first_nonspace(parser, input);
@@ -1944,14 +1965,6 @@ static markdown_core_node *check_open_blocks(markdown_core_parser *parser, markd
                 }
                 return NULL;
             }
-        }
-
-        /* Whatever this container's prefix consumed is that container's
-         * MARKER: `> ` belongs to the block quote, the item's indent to the
-         * list item. One claim per container, walking down the spine. What
-         * a block that takes lines matched is its own. */
-        if (!S_kind_takes_text(kind, container)) {
-            markdown_core_parser_visited_line(parser, parser->line_number)->own = (uint32_t)parser->offset;
         }
     }
 

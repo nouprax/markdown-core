@@ -23,6 +23,12 @@ markdown_core_map *markdown_core_footnote_definition_map_new(void);
  * map turns `oom`, and a NULL map, which parser construction left poisoned,
  * declares nothing. */
 void markdown_core_label_declare(markdown_core_map *map, const markdown_core_chunk *label);
+/* `label` normalized, read through `map`'s scratch, into `*normalized`: in
+ * storage from `pool` the node that holds it owns
+ * (markdown_core_node_pool_bytes), NUL-terminated; empty when the label
+ * normalizes to nothing. False when storage could not be had. */
+bool markdown_core_label_normalize(markdown_core_map *map, markdown_core_node_pool *pool,
+                                   const markdown_core_chunk *label, markdown_core_chunk *normalized);
 
 #ifdef __cplusplus
 }

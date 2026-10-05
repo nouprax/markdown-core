@@ -166,6 +166,17 @@ static void S_slot_release(markdown_core_node_pool *pool, markdown_core_node *no
 void markdown_core_node_pool_dispose(markdown_core_node_pool *pool) {
     markdown_core_slab_pool_dispose(&pool->nodes);
     markdown_core_slab_pool_dispose(&pool->resources);
+    markdown_core_bytes_pool_dispose(&pool->bytes);
+}
+
+#define MARKDOWN_CORE_BYTES_SLAB_BYTES ((size_t)16 * 1024)
+
+void *markdown_core_node_pool_bytes(markdown_core_node_pool *pool, size_t bytes) {
+    return markdown_core_bytes_take(pool ? &pool->bytes : NULL, bytes, MARKDOWN_CORE_BYTES_SLAB_BYTES);
+}
+
+void markdown_core_node_pool_bytes_free(markdown_core_node_pool *pool, void *storage) {
+    markdown_core_bytes_release(pool ? &pool->bytes : NULL, storage);
 }
 
 /* RECORD SIZE IS A PROPERTY OF THE KIND, so it is an array index.
@@ -334,7 +345,8 @@ markdown_core_node *markdown_core_node_new(markdown_core_node_type type) {
     return markdown_core_node_pool_new(NULL, type, NULL);
 }
 
-static void free_node_as(markdown_core_slab_pool *resources, markdown_core_node *node) {
+static void free_node_as(markdown_core_node_pool *pool, markdown_core_node *node) {
+    markdown_core_slab_pool *resources = pool ? &pool->resources : NULL;
     switch (node->kind) {
     case MARKDOWN_CORE_NODE_CALLOUT:
         markdown_core_optional_chunk_free(&node->as.callout->variant);
@@ -382,7 +394,9 @@ static void free_node_as(markdown_core_slab_pool *resources, markdown_core_node 
         markdown_core_free((void *)node->as.document->reference_targets);
         break;
     case MARKDOWN_CORE_NODE_HEADING:
-        markdown_core_chunk_free(&node->as.heading->label);
+        if (node->as.heading->label.len) {
+            markdown_core_node_pool_bytes_free(pool, node->as.heading->label.data);
+        }
         break;
     case MARKDOWN_CORE_NODE_SPECIMEN:
         markdown_core_optional_chunk_free(&node->as.specimen->label);
@@ -394,12 +408,16 @@ static void free_node_as(markdown_core_slab_pool *resources, markdown_core_node 
     case MARKDOWN_CORE_NODE_EMBEDDED:
         markdown_core_resource_free(resources, node->as.link->resource);
         node->as.link->resource = NULL;
-        markdown_core_chunk_free(&node->as.link->label);
+        if (node->as.link->label.len) {
+            markdown_core_node_pool_bytes_free(pool, node->as.link->label.data);
+        }
         break;
     case MARKDOWN_CORE_NODE_REFERENCE:
         markdown_core_resource_free(resources, node->as.reference->resource);
         node->as.reference->resource = NULL;
-        markdown_core_chunk_free(&node->as.reference->label);
+        if (node->as.reference->label.len) {
+            markdown_core_node_pool_bytes_free(pool, node->as.reference->label.data);
+        }
         break;
     default:
         break;
@@ -466,7 +484,6 @@ static int S_visit_fields(markdown_core_node *node, markdown_core_owned_subtree_
 }
 
 static size_t S_free_nodes(markdown_core_node_pool *pool, markdown_core_node *e) {
-    markdown_core_slab_pool *resources = pool ? &pool->resources : NULL;
     markdown_core_node *next;
     size_t released = 0;
     while (e != NULL) {
@@ -482,10 +499,10 @@ static size_t S_free_nodes(markdown_core_node_pool *pool, markdown_core_node *e)
             markdown_core_strbuf_free(&e->content);
         }
         if (e->pieces) {
-            markdown_core_free(e->pieces);
+            markdown_core_node_pool_bytes_free(pool, e->pieces);
         }
         if (e->runs) {
-            markdown_core_free(e->runs);
+            markdown_core_node_pool_bytes_free(pool, e->runs);
         }
 
         /* The node-valued fields join the same iterative free walk as
@@ -494,7 +511,7 @@ static size_t S_free_nodes(markdown_core_node_pool *pool, markdown_core_node *e)
         if (e->opaque && e->element && e->element->opaque_free_func) {
             e->element->opaque_free_func(e->element, e);
         }
-        free_node_as(resources, e);
+        free_node_as(pool, e);
 
         if (e->last_child) {
             // Splice children into list

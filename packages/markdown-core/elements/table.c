@@ -2367,8 +2367,8 @@ static void table_cell_pieces(table_source *source, markdown_core_node *node, co
         return;
     }
     uint32_t count = (uint32_t)(cell->last - cell->first + 1);
-    markdown_core_pieces *pieces =
-        markdown_core_alloc(1, sizeof(*pieces) + (size_t)count * sizeof(markdown_core_piece_where));
+    markdown_core_pieces *pieces = markdown_core_node_pool_bytes(
+        parser->pool, sizeof(*pieces) + (size_t)count * sizeof(markdown_core_piece_where));
     if (!pieces) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
@@ -2384,7 +2384,9 @@ static void table_cell_pieces(table_source *source, markdown_core_node *node, co
         bufsize_t end = markdown_core_parser_source_end(parser, line->line, table_byte(line, right));
         pieces->items[i].place = (markdown_core_place){(uint32_t)start, (uint32_t)end};
     }
-    markdown_core_free(node->pieces);
+    if (node->pieces) {
+        markdown_core_node_pool_bytes_free(parser->pool, node->pieces);
+    }
     node->pieces = pieces;
 }
 
@@ -2452,7 +2454,8 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
     return node;
 }
 
-static markdown_core_node *table_caption_build(table_source *source, size_t last, int content) {
+static markdown_core_node *table_caption_build(table_source *source, const markdown_core_node *container, size_t last,
+                                               int content) {
     table_source_line *first = &source->lines[0], *end = &source->lines[last];
     markdown_core_node *node = table_child(source->parser, NULL, MARKDOWN_CORE_NODE_TABLE_CAPTION, first->line,
                                            first->first + 1, end->line, end->length);
@@ -2460,7 +2463,7 @@ static markdown_core_node *table_caption_build(table_source *source, size_t last
         return NULL;
     }
     int from = first->line;
-    markdown_core_parser_place_pieces(source->parser, node, &from);
+    markdown_core_parser_place_pieces(source->parser, node, container, &from);
     for (size_t i = 0; i <= last && !source->parser->error; i++) {
         if (!table_source_columns(source, i)) {
             break;
@@ -2598,7 +2601,7 @@ static markdown_core_node *table_try_open(table_workspace *workspace, markdown_c
     if (trailing) {
         result = preceding;
         table_candidate_reset(candidate);
-        ((markdown_core_table *)result->opaque)->caption = table_caption_build(&source, caption_last, caption);
+        ((markdown_core_table *)result->opaque)->caption = table_caption_build(&source, parent, caption_last, caption);
         result->where.place.end = (uint32_t)markdown_core_parser_source_end(parser, source.lines[caption_last].line,
                                                                             source.lines[caption_last].length);
         parser->claimed_cursor = source.lines[caption_last].after;
@@ -2607,7 +2610,8 @@ static markdown_core_node *table_try_open(table_workspace *workspace, markdown_c
     } else {
         result = table_build(&source, parent, candidate);
         if (result && result->opaque && caption >= 0) {
-            ((markdown_core_table *)result->opaque)->caption = table_caption_build(&source, caption_last, caption);
+            ((markdown_core_table *)result->opaque)->caption =
+                table_caption_build(&source, parent, caption_last, caption);
             result->where.place.start =
                 (uint32_t)markdown_core_parser_source_offset(parser, source.lines[0].line, source.lines[0].first + 1);
         }
