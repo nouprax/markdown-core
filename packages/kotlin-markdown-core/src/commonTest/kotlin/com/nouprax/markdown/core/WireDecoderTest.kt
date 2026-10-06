@@ -308,7 +308,12 @@ class WireDecoderTest {
 
     @Test
     fun recordsCarryTheirIdAndTheirSignedExtentAndRunsVerbatim() {
-        val runs = listOf(Run(Int.MIN_VALUE, 0u, UInt.MAX_VALUE), Run(3, 2u, 2u), Run(Int.MAX_VALUE, UInt.MAX_VALUE, 0u))
+        val runs =
+            listOf(
+                Run(Int.MIN_VALUE, 0u, UInt.MAX_VALUE),
+                Run(3, 2u, 2u),
+                Run(Int.MAX_VALUE, UInt.MAX_VALUE, 0u),
+            )
         val document =
             decode(
                 MessageWriter()
