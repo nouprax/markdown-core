@@ -434,10 +434,11 @@ its numbers are reported with the `reparse` subject.
 | 1 Model | 4.2 for fresh parses; deep equality and 4.9 on fresh documents | One-shot budget for the model change (G1), then 1.02 per PR |
 | 2 Sessions, whole-document restart | 4.1–4.11 on the correctness set, every platform, both units | 6.3 on every workload, which sets the session baseline for 6.4 (G4) |
 | 3 Reference nodes, pieces and content runs | Unchanged | One-shot budget for the step (G5), then 1.02 per PR |
-| 4 Shared subtrees | Unchanged | One-shot budget for steps 4 to 7 (G9) |
-| 5 Block reuse | Unchanged | 6.2 for the local edit families on the shapes without declarations: `list`, `table` and the 10,000-item list |
-| 6 Session registries | Unchanged | 6.2 for the local edit families on every remaining scale shape (`prose`, `quote`, `refs`, `flat`) and for the local steps of `declarations` |
-| 7 Inline reuse | Unchanged | 6.2 for `tokens` and `rows` |
+| 4 Shared subtrees | Unchanged | Reported; no benchmark rule blocks the pull request (G9) |
+| 5 Block reuse | Unchanged | Reported, as step 4 |
+| 6 Session registries | Unchanged | Reported, as step 4 |
+| 7 Inline reuse | Unchanged | Reported, as step 4 |
+| 8 Performance | Unchanged | 6.2 for every local edit family on every scale shape and for the local steps of `declarations`, 6.2 for `tokens` and `rows`, 6.3 on every workload, and 6.4 against the revision before step 4; then 1.02 per PR |
 
 From step 2 on, the one-shot benchmark measures `Document.parse` through the
 session path it becomes (plan 4.4), so the one-shot gate also guards what the
@@ -550,7 +551,8 @@ their own pull requests.
   registries step.**
   `flat` has a heading in every section, and headings are declarations
   (plan 5.1, 5.7), so its 6.2 gate turns on with the session registries in
-  step 6 beside `prose`, `quote` and `refs` (section 7).
+  step 6 beside `prose`, `quote` and `refs` (section 7). Revised
+  2026-10-06: `flat` and every other 6.2 gate turn on in step 8 (G9).
 - **G7 Ids of nodes taken into a new owner. Decided 2026-10-04: they keep
   their ids.** The cursor finds old nodes by position (plan 5.3), so a list
   split by an inserted line takes the items after the split whole into the
@@ -562,9 +564,10 @@ their own pull requests.
   to the whole construct (plan 7.2). The local families place their edits in
   paragraph, list item and pipe cell text (3.2); `markers`, `declarations`
   and `random` edit those other places, under 6.1 and 6.3.
-- **G9 One-shot budget for steps 4 to 7. Open.** Steps 4 to 7 land in one
-  pull request (plan 9). With them, every fresh parse stores its tree as
-  shared subtrees, records the entries and reaches of its blocks, lines and
-  inline tokens, and registers its declarations as facts (plan 5.1, 5.3,
-  5.6, 5.7, 5.11). 6.4 holds each one-shot stage to 1.02 per pull request.
-  The 1.10 decided on 2026-10-04 for these records went to step 3 (G5).
+- **G9 Benchmarks for steps 4 to 7. Decided 2026-10-06: reported, not
+  gating; a performance step follows.** Steps 4 to 7 pass every correctness
+  gate, and their benchmarks are reported without blocking a pull request.
+  Step 8 is one performance refactor after step 7: it turns on 6.2 for every
+  local edit family, `tokens` and `rows`, 6.3, and 6.4 for the one-shot and
+  session subjects against the revision before step 4. After step 8, 6.4 is
+  at 1.02 per pull request.

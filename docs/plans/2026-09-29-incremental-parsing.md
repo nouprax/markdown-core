@@ -1160,7 +1160,8 @@ Each step leaves `main` releasable and must pass the gates that
 [Gates for incremental parsing](2026-09-29-incremental-gates.md#7-activation-by-rollout-step)
 activates for it. Steps 0 to 3 were one pull request each. Steps 4 to 7 land
 in one pull request, because their costs are measured once block and inline
-reuse both exist.
+reuse both exist. Steps 4 to 7 report their benchmarks without gating on
+them, and step 8 makes the whole engine meet the benchmark gates.
 
 - [x] **Step 0: Gates.** The edit and stream workloads, the correctness
    harness with the `reparse` subject and its faulty-subject self-tests, and
@@ -1205,6 +1206,11 @@ reuse both exist.
 - [ ] **Step 7: Inline reuse.** Inline entries and reaches, content edits
    through content runs, the cursor over old inline trees (5.6), and
    completion over read nodes (5.8).
+- [ ] **Step 8: Performance.** One refactor of the shared algorithms and
+   data structures of steps 4 to 7 until every benchmark gate passes:
+   flatness for the edit and stream families, never worse than reparsing,
+   and the one-shot and session regression rules against the revision
+   before step 4.
 
 ## 10. Decisions for the owner
 
