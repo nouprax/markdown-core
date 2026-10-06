@@ -34,9 +34,9 @@ struct markdown_core_iter {
     markdown_core_iter_state next;
 };
 
-/* THE ITERATOR'S STEP, IN THE HEADER. The finish walk takes one per event of
- * every node of every root, and it keeps its iterators in its own frames
- * rather than behind an allocation, so the step is here, where the walk can
+/* THE ITERATOR'S STEP, IN THE HEADER. An inline root's completion takes one
+ * per event of every node of its tree, and it keeps its iterators in its own
+ * frames rather than behind an allocation, so the step is here, where it can
  * keep the state in registers instead of calling across a translation unit
  * for it: `markdown_core_iter_next` is this behind the public call, and
  * `markdown_core_iter_new` is `markdown_core_iter_init` on a heap iterator. */
@@ -116,18 +116,18 @@ static inline bool markdown_core_text_needs_consolidation(const markdown_core_no
  *
  * CONSUMED when `cur` was freed, FAILED on allocation failure (the tree is
  * consistent: every absorbed operand was unlinked before it was freed), and
- * CONTINUE otherwise. The engine's finish walk runs this before any element
- * step at a Text's EXIT, on the walk's own iterator, which is what keeps an
- * absorbed sibling's events from ever reaching a step.
+ * CONTINUE otherwise. An inline root's completion runs this before any
+ * element step at a Text's EXIT, on the pass's own iterator, which is what
+ * keeps an absorbed sibling's events from ever reaching a step.
  *
  * `complete`, when given, is applied to each sibling before it is absorbed,
- * with `depth` as its word-delimiter depth: the walk completes a node at its
+ * with `depth` as its word-delimiter depth: the pass completes a node at its
  * ENTER, and an absorbed sibling's ENTER is stepped over here, so this is
  * where its completion happens. The public entry point passes none. */
 typedef void (*markdown_core_complete_node_func)(struct markdown_core_parser *, markdown_core_node *, int);
-markdown_core_finish_result markdown_core_consolidate_text_step(struct markdown_core_parser *parser,
-                                                                markdown_core_iter *iter, markdown_core_node *cur,
-                                                                markdown_core_complete_node_func complete, int depth);
+markdown_core_complete_result markdown_core_consolidate_text_step(struct markdown_core_parser *parser,
+                                                                  markdown_core_iter *iter, markdown_core_node *cur,
+                                                                  markdown_core_complete_node_func complete, int depth);
 
 /* The step applied at every Text EXIT of a walk over `root`. */
 int markdown_core_consolidate_text_nodes_with_parser(struct markdown_core_parser *parser, markdown_core_node *root);

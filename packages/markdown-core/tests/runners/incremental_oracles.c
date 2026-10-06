@@ -871,7 +871,9 @@ done:
     free(cursor);
 }
 
-/* A lineage's first document: a fresh parse, numbered from 1 in walk order. */
+/* A lineage's first document: a fresh parse, whose ids are 1 through its node
+ * count in completion order, the document, which completes last, holding the
+ * last. */
 static void history_open(run *state, const char *where, history *ids, const view *opened) {
     size_t index;
     if (!history_reserve(ids, opened->count + 1)) {
@@ -879,13 +881,18 @@ static void history_open(run *state, const char *where, history *ids, const view
         return;
     }
     for (index = 0; index < opened->count; index++) {
-        if (opened->nodes[index].id != index + 1) {
-            fail(state, "4.2", "%s: node %zu of the opened document's walk has id %llu", where, index + 1,
-                 (unsigned long long)opened->nodes[index].id);
+        const uint64_t id = opened->nodes[index].id;
+        if (id < 1 || id > opened->count || ids->state[id]) {
+            fail(state, "4.2", "%s: node %zu of the opened document's walk has id %llu of %zu nodes", where, index + 1,
+                 (unsigned long long)id, opened->count);
             return;
         }
-        ids->state[index + 1] = 1;
-        ids->kinds[index + 1] = opened->nodes[index].kind;
+        ids->state[id] = 1;
+        ids->kinds[id] = opened->nodes[index].kind;
+    }
+    if (opened->count && opened->nodes[0].id != opened->count) {
+        fail(state, "4.2", "%s: the opened document has id %llu of %zu nodes", where,
+             (unsigned long long)opened->nodes[0].id, opened->count);
     }
 }
 

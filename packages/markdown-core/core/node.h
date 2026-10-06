@@ -297,10 +297,19 @@ enum markdown_core_node__internal_flags {
      * around it. */
     MARKDOWN_CORE_NODE__BLANK_TRANSPARENT = (1 << 8),
 
+    /* A private node a group of its owner's relations hangs from -- a
+     * callout's title, a definition's term or body, a citation's affix. It is
+     * no node of the document: its owner numbers the group's nodes. */
+    MARKDOWN_CORE_NODE__GROUP = (1 << 9),
+
+    /* A block that closed while the last block it holds was still open: it
+     * settles as that block does (markdown_core_block_finalize). */
+    MARKDOWN_CORE_NODE__AWAITS_CHILD = (1 << 10),
+
     // The first bit an element may claim. Element flags are compile-time
     // constants owned by the element that uses them; there is no runtime
     // registration and no allocator to run out of bits.
-    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 9),
+    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 11),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;
@@ -314,6 +323,9 @@ typedef struct {
 
 typedef struct {
     int64_t rowspan, colspan;
+    /* Whether the cell's content is read as blocks (a block input) rather
+     * than as inline content. */
+    bool blocks;
 } markdown_core_table_cell;
 
 /* Every arm points to the kind's ordinary typed record. Construction places

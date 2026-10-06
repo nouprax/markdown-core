@@ -509,7 +509,7 @@ static markdown_core_node *address_match(markdown_core_parser *parser, markdown_
     if (at == 1 || at >= size || data[at] != '@') {
         return NULL;
     }
-    /* The domain, as `postprocess_text` scans it. */
+    /* The domain, as `link_text_addresses` scans it. */
     for (end = at + 1; end < size; end++) {
         uint8_t c = data[end];
         if (markdown_core_isalnum(c)) {
@@ -547,7 +547,7 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
 
     if (c == ':') {
         /* No link forms inside a bracket, but the colon is still fenced off
-         * there: `postprocess_text` skips the text of a link, so
+         * there: `link_text_addresses` skips the text of a link, so
          * `[mailto:x@y.z](u)` keeps its plain text as cmark-gfm does, and a
          * bracket that never closes still gets its link. */
         markdown_core_node *node = in_bracket ? NULL : url_match(self, parser, parent, inline_state);
@@ -615,7 +615,7 @@ static markdown_core_node *email_text_fragment(markdown_core_parser *parser,
  * A Text that is nothing but addresses is freed once its splits are in place;
  * the return value says so, because the caller's event names a node that is
  * then gone. Sets parser->error on failure and leaves the tree consistent. */
-static markdown_core_finish_result postprocess_text(markdown_core_parser *parser, markdown_core_node *text) {
+static markdown_core_complete_result link_text_addresses(markdown_core_parser *parser, markdown_core_node *text) {
     size_t start = 0;
     size_t offset = 0;
     markdown_core_content_map source_map = text->content_map;
@@ -766,59 +766,62 @@ static markdown_core_finish_result postprocess_text(markdown_core_parser *parser
             markdown_core_node_attach_validated(text->parent, prefix, text);
         }
         markdown_core_node_attach_validated(text->parent, link_node, text);
+        /* The pass has left the place it is inserted at: the link completes
+         * here. */
+        markdown_core_parser_complete_node(parser, link_node);
         start = post_start;
         remaining = source.len - start;
         offset = 0;
     }
 
     if (parser->error) {
-        return MARKDOWN_CORE_FINISH_FAILED;
+        return MARKDOWN_CORE_COMPLETE_FAILED;
     }
     if (!start) {
-        return MARKDOWN_CORE_FINISH_CONTINUE;
+        return MARKDOWN_CORE_COMPLETE_CONTINUE;
     }
     if (!remaining) {
         markdown_core_parser_release_node(parser, text);
-        return MARKDOWN_CORE_FINISH_CONSUMED;
+        return MARKDOWN_CORE_COMPLETE_CONSUMED;
     }
     markdown_core_chunk tail = markdown_core_chunk_dup(&source, (bufsize_t)start, (bufsize_t)remaining);
     if (!markdown_core_chunk_to_cstr(&tail)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return MARKDOWN_CORE_FINISH_FAILED;
+        return MARKDOWN_CORE_COMPLETE_FAILED;
     }
     set_sourcepos_from_range(parser, text, &source_map, start, remaining);
     *text->as.literal = tail;
     markdown_core_chunk_free(&source);
-    return MARKDOWN_CORE_FINISH_CONTINUE;
+    return MARKDOWN_CORE_COMPLETE_CONTINUE;
 }
 
-/* The email scan is a finish STEP: it is asked, from inside the one finish
- * walk, at a Text's EXIT (the kind it acts on) and at a Link's ENTER and EXIT
- * (the kind whose extent it tracks). The Link events set and clear the
- * per-root state word -- a Text inside a Link is never scanned, an address
- * there is already a link's text -- and a Text's EXIT outside a Link is
- * scanned. The walk has already consolidated that Text with the siblings that
- * followed it when this is asked, so the scan sees the whole run, and the
- * EXIT's lookahead already names the following survivor, so the splits
- * inserted before the Text are never visited and the Text itself may be
- * freed. */
-static markdown_core_finish_result finish_step(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                               markdown_core_node *node, markdown_core_event_type event, int is_root,
-                                               void **state) {
+/* The email scan is a completion STEP: it is asked, from inside an inline
+ * root's completion, at a Text's EXIT (the kind it acts on) and at a Link's
+ * ENTER and EXIT (the kind whose extent it tracks). The Link events set and
+ * clear the per-root state word -- a Text inside a Link is never scanned, an
+ * address there is already a link's text -- and a Text's EXIT outside a Link
+ * is scanned. The pass has already consolidated that Text with the siblings
+ * that followed it when this is asked, so the scan sees the whole run, and
+ * the EXIT's lookahead already names the following survivor, so the splits
+ * inserted before the Text are never visited, the links among them complete
+ * as they are inserted, and the Text itself may be freed. */
+static markdown_core_complete_result complete_step(const markdown_core_element_instance *self,
+                                                   markdown_core_parser *parser, markdown_core_node *node,
+                                                   markdown_core_event_type event, int is_root, void **state) {
     (void)self;
     (void)is_root;
     if (node->kind == MARKDOWN_CORE_NODE_LINK) {
         *state = event == MARKDOWN_CORE_EVENT_ENTER ? node : NULL;
-        return MARKDOWN_CORE_FINISH_CONTINUE;
+        return MARKDOWN_CORE_COMPLETE_CONTINUE;
     }
     assert(event == MARKDOWN_CORE_EVENT_EXIT);
     if (*state) {
-        return MARKDOWN_CORE_FINISH_CONTINUE;
+        return MARKDOWN_CORE_COMPLETE_CONTINUE;
     }
-    return postprocess_text(parser, node);
+    return link_text_addresses(parser, node);
 }
 
-static const markdown_core_node_type AUTOLINK_FINISH_KINDS[] = {MARKDOWN_CORE_NODE_TEXT, MARKDOWN_CORE_NODE_NONE};
+static const markdown_core_node_type AUTOLINK_TEXT_KINDS[] = {MARKDOWN_CORE_NODE_TEXT, MARKDOWN_CORE_NODE_NONE};
 static const markdown_core_node_type AUTOLINK_SCOPE_KINDS[] = {MARKDOWN_CORE_NODE_LINK, MARKDOWN_CORE_NODE_NONE};
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_AUTOLINK = {
@@ -827,13 +830,13 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_AUTOLINK = {
     .state_size = sizeof(markdown_core_autolink_work),
     .run_state_size = sizeof(autolink_run),
     .match_inline = match,
-    .finish_step = finish_step,
+    .complete_step = complete_step,
     /* The step rewrites a Text -- the kind it acts on and the kind it is asked
      * at are the same -- and reads a Link's ENTER and EXIT to know when a
      * Text is inside one. */
-    .finish_acts_on_kinds = AUTOLINK_FINISH_KINDS,
-    .finish_exit_kinds = AUTOLINK_FINISH_KINDS,
-    .finish_scope_kinds = AUTOLINK_SCOPE_KINDS,
+    .complete_acts_on_kinds = AUTOLINK_TEXT_KINDS,
+    .complete_exit_kinds = AUTOLINK_TEXT_KINDS,
+    .complete_scope_kinds = AUTOLINK_SCOPE_KINDS,
     .terminates_text = "<:w",
     .dispatch = "<:w",
 };

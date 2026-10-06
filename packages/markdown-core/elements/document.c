@@ -14,8 +14,15 @@ static const markdown_core_element *const DOCUMENT_PEERS[] = {[DOCUMENT_HEADING]
                                                               [DOCUMENT_SPECIMEN] = &MARKDOWN_CORE_ELEMENT_SPECIMEN,
                                                               NULL};
 
+/* THE DOCUMENT'S PARSE RECORD: the properties grammar's work, and what the
+ * parse publishes as its nodes complete. */
+typedef struct {
+    markdown_core_properties_work properties;
+    markdown_core_publication publication;
+} document_state;
+
 /* THE DOCUMENT LIFECYCLE. The document element drives it and owns only the
- * reference map and the properties grammar's work, its parse record; the
+ * reference map and its parse record; the
  * headings, footnotes and specimens it finalizes are the state of their own
  * elements, its peers, which it asks through their lifecycle calls. An
  * element the dialect does not hold has nothing to finalize. */
@@ -42,6 +49,7 @@ static void dispose_document(const markdown_core_element_instance *self, markdow
     if (specimens) {
         markdown_core_specimen_dispose(specimens);
     }
+    markdown_core_publication_dispose(&((document_state *)self->state)->publication);
     if (parser->refmap) {
         markdown_core_map_free(parser->refmap);
         parser->refmap = NULL;
@@ -60,11 +68,14 @@ static void prepare_document(const markdown_core_element_instance *self, markdow
         markdown_core_headings_prepare(headings, parser);
     }
 }
-static void observe_inline(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                           markdown_core_node *node) {
+/* A node is complete: it numbers the nodes it holds, and the headings note
+ * the explicit anchors among them. */
+static void complete_node(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                          markdown_core_node *node, uint32_t start) {
     const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
-    if (headings) {
-        markdown_core_headings_observe(headings, parser, node);
+    if (!markdown_core_complete_node(parser, &((document_state *)self->state)->publication, node, start,
+                                     headings ? markdown_core_headings_observe : NULL, headings)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
 }
 static void finish_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
@@ -85,19 +96,20 @@ static void finish_document(const markdown_core_element_instance *self, markdown
     }
 }
 static void publish_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    (void)self;
-    if (!markdown_core_publish_tree(parser)) {
+    markdown_core_publication *publication = &((document_state *)self->state)->publication;
+    if (!markdown_core_publish_tree(parser, publication)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
+    markdown_core_publication_dispose(publication);
 }
 static size_t read_document_prefix(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                    const unsigned char *source, size_t length) {
-    return markdown_core_properties_parse(self->state, parser, source, length);
+    return markdown_core_properties_parse(&((document_state *)self->state)->properties, parser, source, length);
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
     .peers = DOCUMENT_PEERS,
-    .state_size = sizeof(markdown_core_properties_work),
+    .state_size = sizeof(document_state),
     .name = "document",
     .init_document = init_document,
     .dispose_document = dispose_document,
@@ -105,5 +117,5 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
     .prepare_document = prepare_document,
     .finish_document = finish_document,
     .publish_document = publish_document,
-    .observe_inline = observe_inline,
+    .complete_node = complete_node,
 };

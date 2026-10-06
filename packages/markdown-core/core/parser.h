@@ -31,14 +31,14 @@ typedef enum {
  * text it was parsed from into the text this parse reads, in its
  * coordinates: disjoint, in source order. The published tree continues it
  * (docs/plans/2026-09-29-incremental-parsing.md, 5.9): every node matched to
- * an old node takes its id, every other node takes the next id after
- * `last_id`, and a matched node equal to its old node as a value is that old
+ * an old node takes its id, every other node keeps the id it took after
+ * `last_id` as it was completed, and a matched node equal to its old node as a value is that old
  * node. On success the parse owns `previous`: it is the returned root, or it
  * is released into `pool` with every other node it retires, and `last_id` is
  * the last id issued. `node_count` is the number of nodes in `previous`,
  * and on success the number in the published tree. A fresh parse continues
- * nothing: `previous` is NULL and `last_id` is 0, so its root is 1 and every
- * node is numbered in canonical walk order.
+ * nothing: `previous` is NULL and `last_id` is 0, and every node is
+ * numbered in the order nodes complete, the document last.
  *
  * `pool` lends the parse every node and resource slot it takes (node.h); it
  * outlives the parse, and its owner disposes it. */
@@ -103,11 +103,20 @@ typedef struct {
     bool has_start, has_end;
 } markdown_core_content_span;
 
+/* A NODE AND THE SOURCE BYTE IT BEGINS AT, read as the node registers, while
+ * its place is still in the source: once it is numbered, its place is its
+ * extent (5.8). A collection of them orders by source with
+ * markdown_core_source_key. */
+typedef struct {
+    struct markdown_core_node *node;
+    uint32_t start;
+} markdown_core_source_entry;
+
 /* The specimen definitions of one parse, in the order they were committed,
  * for the index citations resolve against. Every definition is owned by the
  * block tree; the collection only borrows it until the document finishes. */
 typedef struct {
-    struct markdown_core_node **values;
+    markdown_core_source_entry *values;
     size_t count;
     size_t capacity;
 } markdown_core_definition_collection;
@@ -123,16 +132,47 @@ typedef struct {
     size_t work;
 } markdown_core_source_order;
 
+/* AN INLINE ROOT WAITING FOR ITS PARSE (docs/plans/2026-09-29-incremental-
+ * parsing.md, 5.8): the node whose first relation is the content and whose
+ * runs read it; the node the content is parsed into, the node itself or the
+ * private node its title or term hangs from; where the node lies in the
+ * source, recorded when it was numbered, since a numbered node holds only
+ * its extent; and whether that holder is a field, which belongs to its owner
+ * and is never replaced. */
+typedef struct markdown_core_inline_root {
+    struct markdown_core_node *node, *holder;
+    markdown_core_place place;
+    bool field;
+} markdown_core_inline_root;
+
+/* A CELL WHOSE CONTENT IS READ AS BLOCKS once the document's own lines are,
+ * and where it starts, recorded when it was queued. */
+typedef struct markdown_core_block_input {
+    struct markdown_core_node *cell;
+    uint32_t start;
+} markdown_core_block_input;
+
 struct markdown_core_parser {
     /* A hashtable of urls in the current document for cross-references */
     struct markdown_core_map *refmap;
     markdown_core_source_order source_order;
-    /* The stack the finish stage's tree walks borrow in turn, the finish
-     * walk's frames and then publishing's: each grows it to what it needs
-     * (markdown_core_parser_walk_stack) and leaves it to the next, and the
-     * stage releases it when it ends. */
+    /* The stack the parse's passes over a tree borrow in turn -- each inline
+     * root's completion, then publishing's comparison with the previous tree
+     * -- each growing it to what it needs (markdown_core_parser_walk_stack)
+     * and leaving it to the next; the parse releases it when it ends. */
     void *walk_stack;
     size_t walk_stack_size;
+    /* THE INLINE ROOTS, in the order the nodes holding them were numbered
+     * (docs/plans/2026-09-29-incremental-parsing.md, 5.8): each is parsed
+     * and completes its own tree once every block is complete and the
+     * document is prepared. */
+    struct markdown_core_inline_root *inline_roots;
+    size_t inline_root_count, inline_root_capacity;
+    /* The root whose content is being completed, or NULL: the nodes numbered
+     * meanwhile lie in its content. */
+    const struct markdown_core_inline_root *completing;
+    /* The last id issued: a node takes the next when its owner completes. */
+    uint64_t last_id;
     /* Run records released by finished runs, kept for the next run
      * (markdown_core_inline_state_from_buf); linked through their first word
      * and released with the parser. Each is the dialect's `run_state_size`. */
@@ -150,7 +190,7 @@ struct markdown_core_parser {
      * the AST; the queue only borrows them until their block content is read. */
     struct markdown_core_node *block_root;
     struct markdown_core_node *matched_container;
-    struct markdown_core_node **block_inputs;
+    struct markdown_core_block_input *block_inputs;
     size_t block_input_count, block_input_capacity, block_input_cursor;
     /* Geometry and grammar facts for the active immutable input. The driver
      * and lookahead extend one index; a source byte is scanned for line
@@ -236,73 +276,12 @@ struct markdown_core_parser {
      * scanning every attached element would build the identical tree. So the
      * invariant is asserted on this counter rather than on output. */
     size_t inline_hook_work;
-    /* THE FINISH STAGE'S TRAVERSAL COUNT, in numbers the output cannot show.
-     * The stage's whole claim is that it walks each owned root ONCE and runs
-     * inline completion, consolidation and every finish step from inside that
-     * one walk; a stage that walked a root once per hook would build the
-     * identical tree, so the claim is asserted on these rather than on a dump.
-     *
-     * `finish_walk_events` is every iterator step the finish stage took: the
-     * walk's own ENTER, EXIT and DONE events, plus the ENTER and EXIT that
-     * consolidation advances over when it absorbs a following Text sibling
-     * (those nodes are visited -- by consolidation, which completes and frees
-     * them -- and counted as visited). Repositioning the cursor back to the
-     * survivor's EXIT is not a step: that event was already delivered.
-     * `finish_nodes_entered` is the ENTER events among them, absorbed siblings
-     * included; `finish_walk_roots` is the DONE events, one per root walked.
-     *
-     * The denominator is taken without a traversal, at the two seams where
-     * nodes come and go. `nodes_created` counts every node a parse makes, at
-     * the same operation that records the node's kind, so the audit that
-     * holds one holds the other; `nodes_freed` counts every node a parse
-     * releases through `markdown_core_parser_release_node`, which the finish
-     * stage's every free takes -- consolidation's, and each step's, which the
-     * finish-hook audit holds -- and which counts the descendants and field
-     * roots that go with a node, since the release loop visits each of them.
-     * The walk notes both in `..._before_finish` as it starts. The finished
-     * tree holds every node that existed when the walk started, plus those
-     * the walk's inline parsing handed it (`finish_nodes_parsed`, which the
-     * walk enters), less those the stage freed, plus those its steps made
-     * (which it never enters), so one traversal per root is exactly
-     *
-     *   finish_nodes_entered == nodes in the finished tree
-     *                           + (nodes_freed - nodes_freed_before_finish)
-     *                           - (nodes_created - nodes_created_before_finish)
-     *                           + finish_nodes_parsed
-     *
-     * where the finished tree is counted by whoever holds it (the api test
-     * walks it with the public iterator and the owned-subtree visitors), and
-     * a stage that walked each root k times, counting as the engine's walks
-     * count, would enter k times as many. `finish_walk_events == 2 *
-     * finish_nodes_entered + finish_walk_roots` then says that every step
-     * taken was one of those events. A whole-root consolidation driven through
-     * the public entry point with a parser adds exactly one traversal of that
-     * root to the events, the entered and the roots.
-     *
-     * The count sees only the walks that report themselves: the engine's
-     * finish walk and that public entry point. A traversal that keeps no count
-     * -- an iterator a step opened over its node's subtree -- is invisible
-     * here, so the other half of the invariant is held on the source:
-     * scripts/audit/check-finish-hook-shapes.mjs refuses a translation unit that
-     * declares a finish step and opens an iterator. */
-    size_t nodes_created, nodes_created_before_finish;
-    size_t nodes_freed, nodes_freed_before_finish;
     /* What the parse continues, and the storage it borrows from its caller
      * (the revision's pool): every node it makes and every resource a
      * definition, a link or a heading's implicit reference states is a slot
      * of this pool's slabs, and every one it releases goes back here. */
     markdown_core_revision *revision;
     markdown_core_node_pool *pool;
-    /* The nodes the walk's own inline parsing handed it, at the ENTER of each
-     * container it parsed: what the parse made less what it discarded before
-     * returning (a bracket's opener text, a token that failed to close), which
-     * is why every parse-time release is counted (the kind-record audit holds
-     * that). Made after the walk started, so the identity above adds them
-     * back. */
-    size_t finish_nodes_parsed;
-    size_t finish_walk_events;
-    size_t finish_nodes_entered;
-    size_t finish_walk_roots;
     /* The lines the block-start lookahead visited plus the prefix bytes each
      * visit matched itself, for its linearity gate. */
     size_t block_lookahead_work;
@@ -336,13 +315,11 @@ struct markdown_core_parser {
     /* WHICH KINDS THIS PARSE PRODUCED, recorded where they are produced.
      *
      * Every node creation and every `set_kind` that a parse performs writes
-     * here, so the gate on a finish hook is read from a record rather than
-     * gathered by a walk: a pass is selected once the finish walk -- which
-     * parses the inline content -- has completed, and a step reads it at
-     * each event it is asked at (markdown_core_finish_step_entry). Gathering
-     * it by a walk instead is what forced the finish stage to traverse the
-     * document twice. See the gate in `S_finish_parse` for what the set
-     * over-approximates and why that is sound.
+     * here, so the gate on a completion step is read from a record rather
+     * than gathered by a walk: a step reads it at each event it is asked at
+     * (markdown_core_complete_step_entry). See
+     * `markdown_core_parser_note_kind` for what the set over-approximates and
+     * why that is sound.
      *
      * Every production creation site goes through `markdown_core_parser_note_kind`;
      * `scripts/audit/check-parser-kind-record.mjs` holds that. */
@@ -467,8 +444,8 @@ static MARKDOWN_CORE_INLINE int markdown_core_parser_content_span(markdown_core_
 
 /* THE PARSE'S NODE OPERATIONS, WHICH RECORD THE KIND THEY PRODUCE.
  *
- * `kinds_created` decides which finish hooks run -- a global pass, a step at
- * every event it was projected to -- so a production site that writes a kind
+ * `kinds_created` decides which completion steps run at the events they were
+ * projected to, so a production site that writes a kind
  * without recording it does not fail a build or a test: it makes the gate skip
  * a hook some document needed, and the defect surfaces
  * as a missing rewrite far from the line that caused it. That is a bad thing
@@ -484,8 +461,8 @@ static MARKDOWN_CORE_INLINE int markdown_core_parser_content_span(markdown_core_
  * node. Making it exact would mean observing REMOVAL, and the only way to do
  * that is another walk of the whole tree -- which is the cost this record
  * exists to avoid. Over-approximating can only make the gate skip fewer
- * passes, never miss one, because a kind in the finished tree was necessarily
- * created; and a pass that runs over a tree holding none of its declared kinds
+ * steps, never miss one, because a kind in the finished tree was necessarily
+ * created; and a step asked at a tree holding none of its declared kinds
  * finds nothing to do. */
 static inline void markdown_core_parser_fail(markdown_core_parser *parser, markdown_core_parse_error error) {
     if (!parser->error) {
@@ -499,42 +476,30 @@ static inline void markdown_core_parser_note_kind(markdown_core_parser *parser, 
     }
 }
 
-/* A creation records the kind and counts the node: the count is the finish
- * stage's denominator (the traversal counters above). */
-static inline void markdown_core_parser_note_node(markdown_core_parser *parser, markdown_core_node_type kind) {
-    if (parser) {
-        markdown_core_node_kind_set_add(&parser->kinds_created, kind);
-        parser->nodes_created++;
-    }
-}
-
-/* A release counts what it freed, for the same denominator; a caller with no
- * parse frees as the public function does. */
+/* A release gives the node's slots back to the parse's pool; a caller with
+ * no parse frees as the public function does. */
 static inline void markdown_core_parser_release_node(markdown_core_parser *parser, markdown_core_node *node) {
-    size_t released = markdown_core_node_pool_release(parser ? parser->pool : NULL, node);
-    if (parser) {
-        parser->nodes_freed += released;
-    }
+    markdown_core_node_pool_release(parser ? parser->pool : NULL, node);
 }
 
-/* Whether the walk asks `entry`'s step at the event it is projected to: its
+/* Whether the pass asks `entry`'s step at the event it is projected to: its
  * gate, read against the kinds the parse has produced so far. */
-static inline bool markdown_core_finish_step_admitted(const markdown_core_finish_step_entry *entry,
-                                                      const markdown_core_parser *parser) {
+static inline bool markdown_core_complete_step_admitted(const markdown_core_complete_step_entry *entry,
+                                                        const markdown_core_parser *parser) {
     return !entry->gated || (entry->acts_on.blocks & parser->kinds_created.blocks) ||
            (entry->acts_on.inlines & parser->kinds_created.inlines);
 }
 
 static inline markdown_core_node *markdown_core_parser_make_node(markdown_core_parser *parser,
                                                                  markdown_core_node_type type) {
-    markdown_core_parser_note_node(parser, type);
+    markdown_core_parser_note_kind(parser, type);
     return markdown_core_node_pool_new(parser ? parser->pool : NULL, type, NULL);
 }
 
 static inline markdown_core_node *markdown_core_parser_make_node_with_ext(markdown_core_parser *parser,
                                                                           markdown_core_node_type type,
                                                                           const markdown_core_element *element) {
-    markdown_core_parser_note_node(parser, type);
+    markdown_core_parser_note_kind(parser, type);
     return markdown_core_node_pool_new(parser ? parser->pool : NULL, type, element);
 }
 
@@ -694,6 +659,12 @@ bool markdown_core_parser_has_block_start(markdown_core_parser *parser, markdown
  * parser. No nested parse transaction, document, dialect or C recursion. */
 void markdown_core_parser_finalize_unmatched_blocks(markdown_core_parser *parser);
 bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdown_core_node *owner);
+/* Whether `node` holds inline content (its kind's record, dialect.h). */
+bool markdown_core_parser_contains_inlines(markdown_core_parser *parser, markdown_core_node *node);
+/* Puts an inline root on the parser's list (markdown_core_inline_root).
+ * False when the list could not grow. */
+bool markdown_core_parser_hold_inline_root(markdown_core_parser *parser, markdown_core_node *node,
+                                           markdown_core_node *holder, markdown_core_place place, bool field);
 /* WHERE A BYTE OF THE ACTIVE INPUT WAS WRITTEN, as a byte offset of the
  * document source. `line` is a line of the active input and `column` a byte
  * column of that line as the block parser reads it, counted from 1: the

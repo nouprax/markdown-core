@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-/** `parser->kinds_created` decides which finish hooks run -- a postprocess
- * pass, or a finish step at every event it was projected to. A production
+/** `parser->kinds_created` decides which completion steps run -- a step at
+ * every event it was projected to, when its gate is open. A production
  * site that produces a node kind without recording it does not fail a build or
  * a test: it makes the gate skip a hook some document needed, and the defect
  * surfaces as a missing rewrite far from the line that caused it.
@@ -17,14 +17,12 @@
  * of names rather than a proximity check over call sites, and a new creation
  * site cannot quietly opt out of it.
  *
- * THE SAME RULE HOLDS FOR A RELEASE. `parser->nodes_freed` is the other half
- * of the finish stage's traversal count (parser.h): the walk parses inline
- * content as it goes, so a node the inline parser makes and discards is made
- * after the walk noted its starting point, and the count is only right when
- * the discard is counted where the creation was. Production code releases a
- * node through `markdown_core_parser_release_node`; the parser-less
- * `markdown_core_node_free` is for a caller with no parse, which in the
- * library is the two teardowns -- a document's, and a parser's own root.
+ * THE SAME RULE HOLDS FOR A RELEASE. A node the parse made lives in the
+ * parse's pool, and a node it discards gives its slots back to that pool.
+ * Production code releases a node through `markdown_core_parser_release_node`;
+ * the parser-less `markdown_core_node_free` is for a caller with no parse,
+ * which in the library is the two teardowns -- a document's, and a parser's
+ * own root.
  */
 
 import fs from "node:fs";
@@ -88,7 +86,7 @@ for (const file of librarySources()) {
         if (TEARDOWNS.has(`${file}:${owner}`)) continue;
         const line = stripped.slice(0, match.index).split("\n").length;
         failures.push(
-            `${file}:${line}: ${owner} releases a node through markdown_core_node_free, which does not count it; ` +
+            `${file}:${line}: ${owner} releases a node through markdown_core_node_free, outside the parse's pool; ` +
                 `use markdown_core_parser_release_node`
         );
     }
@@ -98,7 +96,7 @@ if (!recordingSites) {
     failures.push("found no recording creation sites; the audit is not reaching the sources");
 }
 if (!countedReleases) {
-    failures.push("found no counted release sites; the audit is not reaching the sources");
+    failures.push("found no release sites through the parse; the audit is not reaching the sources");
 }
 
 if (failures.length) {
@@ -109,5 +107,5 @@ if (failures.length) {
 }
 console.log(
     `audit-parser-kind-record: ${recordingSites} node-kind writes, every one through a recording operation; ` +
-        `${countedReleases} releases, every one counted`
+        `${countedReleases} releases, every one through the parse`
 );

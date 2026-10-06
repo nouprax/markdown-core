@@ -295,21 +295,15 @@ static bool continue_container(const markdown_core_element_instance *self, markd
     (void)self;
     return markdown_core_list_continue(parser, node, input, joining, taken);
 }
-/* A LIST IS LAID OUT AT ITS EXIT, from inside the one finish walk: tight or
- * loose is read off its items and their children, which are complete
- * there. */
-static markdown_core_finish_result finish_step(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                               markdown_core_node *node, markdown_core_event_type event, int is_root,
-                                               void **state) {
+/* A LIST IS LAID OUT AS IT CLOSES: tight or loose is read off its items and
+ * their children, which closed before it. */
+static void finalize_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                           markdown_core_node *node) {
     (void)self;
-    (void)event;
-    (void)is_root;
-    (void)state;
-    assert(event == MARKDOWN_CORE_EVENT_EXIT && node->kind == MARKDOWN_CORE_NODE_LIST);
-    markdown_core_block_finalize_list(parser, node);
-    return MARKDOWN_CORE_FINISH_CONTINUE;
+    if (node->kind == MARKDOWN_CORE_NODE_LIST) {
+        markdown_core_block_finalize_list(parser, node);
+    }
 }
-static const markdown_core_node_type LIST_EXIT_KINDS[] = {MARKDOWN_CORE_NODE_LIST, MARKDOWN_CORE_NODE_NONE};
 static bool blank_line(const markdown_core_element_instance *self, markdown_core_parser *parser,
                        markdown_core_node *node) {
     (void)self;
@@ -319,8 +313,7 @@ static bool blank_line(const markdown_core_element_instance *self, markdown_core
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
     .state_size = sizeof(markdown_core_list_work),
-    .finish_step = finish_step,
-    .finish_exit_kinds = LIST_EXIT_KINDS,
+    .finalize_block = finalize_block,
     .blank_line = blank_line,
     .speculative_flags = MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK,
 

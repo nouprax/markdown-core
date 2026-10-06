@@ -2,6 +2,12 @@
 #include "code_block.h"
 #include "block_internal.h"
 #include "attributes.h"
+#include "formula.h"
+
+/* The elements whose state this element reads, as `self->peers` holds them. */
+enum { CODE_BLOCK_FORMULA };
+static const markdown_core_element *const CODE_BLOCK_PEERS[] = {[CODE_BLOCK_FORMULA] = &MARKDOWN_CORE_ELEMENT_FORMULA,
+                                                                NULL};
 #define peek_at(input, at) ((input)->data[(at)])
 
 static void remove_trailing_blank_lines(markdown_core_strbuf *ln) {
@@ -77,7 +83,6 @@ static int continue_code(const markdown_core_element_instance *self, markdown_co
 
 static void finalize_code(const markdown_core_element_instance *self, markdown_core_parser *parser,
                           markdown_core_node *b) {
-    (void)self;
     bufsize_t pos;
     markdown_core_strbuf *node_content = &b->content;
 
@@ -144,6 +149,9 @@ static void finalize_code(const markdown_core_element_instance *self, markdown_c
     b->as.code->literal = markdown_core_chunk_buf_detach(node_content);
     if (!b->as.code->literal.data) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+    if (!parser->error && self->peers[CODE_BLOCK_FORMULA]) {
+        markdown_core_formula_take_code(self->peers[CODE_BLOCK_FORMULA], parser, b);
     }
 }
 static bool open_fenced(const markdown_core_element_instance *self, markdown_core_parser *parser,
@@ -215,6 +223,7 @@ static bool blank_line(const markdown_core_element_instance *self, markdown_core
     return !node->as.code->fenced;
 }
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE_BLOCK = {
+    .peers = CODE_BLOCK_PEERS,
     .name = "code_block",
     .maximum_block_indent = INT_MAX,
     .scan_block_start = scan_code,

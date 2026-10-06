@@ -117,8 +117,8 @@ import Testing
     @Test("a node describes its kind and id without reading its descendants")
     func describes() throws {
         let document = try Document.parse("# x\n")
-        #expect(document.description == "Document(id=1)")
-        #expect(String(describing: document.content[0]) == "Heading(id=2)")
+        #expect(document.description == "Document(id=3)")
+        #expect(String(describing: document.content[0]) == "Heading(id=1)")
     }
 }
 
@@ -164,8 +164,8 @@ private func deepTreeFailures(depth: Int) -> [String] {
         (try? document.node(at: Position(line: 1, column: column + 1), in: source)?.isEqual(leaf)) == true,
         "hit test"
     )
-    check(document.description == "Document(id=1)", "description")
-    check(leaf.description == "Text(id=\(depth * 2 + 3))", "leaf description")
+    check(document.description == "Document(id=\(depth * 2 + 3))", "description")
+    check(leaf.description == "Text(id=\(depth * 2 + 2))", "leaf description")
     return failures + deepReleaseFailures(source: source)
 }
 
@@ -215,7 +215,7 @@ private func deepSessionFailures(depth: Int) -> [String] {
         (try? document.node(at: Position(line: 1, column: column), in: text)?.isEqual(leaf)) == true,
         "hit test"
     )
-    check(document.description == "Document(id=1)", "description")
+    check(document.description == "Document(id=\(depth * 2 + 3))", "description")
     return failures
 }
 

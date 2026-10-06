@@ -79,6 +79,7 @@ static bool markdown_core_block_parse_callout_metadata(markdown_core_callout_wor
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return true;
         }
+        title->flags |= MARKDOWN_CORE_NODE__GROUP;
         node->as.callout->title = title;
         title->where.place =
             (markdown_core_place){(uint32_t)markdown_core_parser_source_offset(parser, parser->line_number, pos + 1),

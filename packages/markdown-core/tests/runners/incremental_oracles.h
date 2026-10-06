@@ -12,7 +12,7 @@
  *        stream too, 4.6)
  *   4.2  ids are unique; over the lineage an id keeps its kind and a retired
  *        id never returns; a fresh parse numbers its nodes from 1 in
- *        canonical walk order
+ *        completion order, the document last
  *   4.3  a node deep equal to the node of the previous document with its id
  *        is that node's object, and every other node is a new object
  *   4.4  each node has the id of the old node the matching rule says it

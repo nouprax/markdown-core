@@ -18,6 +18,7 @@
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
 #endif
 
+/* The source start of an entry that begins with a markdown_core_source_entry. */
 uint64_t markdown_core_source_key(const void *entry);
 bool markdown_core_block_last_line_blank(const markdown_core_node *node);
 markdown_core_node_type markdown_core_block_type(const markdown_core_node *node);
@@ -32,8 +33,9 @@ markdown_core_node *markdown_core_block_next_seen(const markdown_core_node *node
 markdown_core_node *markdown_core_block_finalize(markdown_core_parser *parser, markdown_core_node *b);
 /* A FINISHED BLOCK'S LAST WORD, once its range is settled: its element reads
  * it as a finished thing, a paragraph that held only reference definitions
- * leaves the tree to the References before it, and a block that takes text
- * lines in a container takes the runs of its own lines. */
+ * leaves the tree to the References before it, a block that takes text
+ * lines in a container takes the runs of its own lines, and the block
+ * completes. */
 void markdown_core_block_settle(markdown_core_parser *parser, markdown_core_node *b);
 void markdown_core_block_advance_offset(markdown_core_parser *parser, markdown_core_chunk *input, bufsize_t count,
                                         bool columns);

@@ -8,7 +8,7 @@
  * Pending holds the ordinary inline cursor at its declaration dependency;
  * nodes remain owned by the tree. */
 typedef struct {
-    markdown_core_node *node;
+    markdown_core_source_entry source;
     markdown_core_inline_state *pending;
 } markdown_core_heading_parse;
 
@@ -22,11 +22,14 @@ typedef struct {
 } anchor_registry;
 
 /* THE HEADINGS OF ONE PARSE (the heading element's parse record): each
- * heading as its block closed, the anchors the document reserves and assigns
- * once the tree is complete, and the projection and registry work that
+ * heading as its block closed, the explicit anchors of the document's nodes
+ * as each node was numbered, the anchors the document reserves and assigns
+ * once every node is complete, and the projection and registry work that
  * assignment did, for its complexity gate. */
 typedef struct {
     markdown_core_heading_collection headings;
+    markdown_core_chunk *explicit_anchors;
+    size_t explicit_count, explicit_capacity;
     anchor_registry anchors;
     size_t anchor_work;
 } markdown_core_heading_state;

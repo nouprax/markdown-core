@@ -417,6 +417,7 @@ static void take_citation_affix(const markdown_core_element_instance *self, mark
                 if (!*slot) {
                     return;
                 }
+                (*slot)->flags |= MARKDOWN_CORE_NODE__GROUP;
                 markdown_core_inline_state_place(inline_state, *slot, start, end - 1);
             }
             markdown_core_node_unlink(first);

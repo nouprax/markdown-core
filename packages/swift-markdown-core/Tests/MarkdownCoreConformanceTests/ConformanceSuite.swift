@@ -107,7 +107,7 @@ private typealias Comment = Testing.Comment
         }
     }
 
-    @Test("a fresh parse numbers its nodes from 1 in canonical walk order, and two parses are equal")
+    @Test("a fresh parse numbers its nodes from 1 in completion order, and two parses are equal")
     func freshIdentifiers() throws {
         let resource = try #require(
             Bundle.module.url(forResource: "canonical-ast-fixtures", withExtension: "json")
@@ -117,8 +117,13 @@ private typealias Comment = Testing.Comment
             let document = try Document.parse(testCase.source)
             var visitor = IdentifierVisitor()
             document.walk(with: &visitor)
-            // Every owned relation is walked, so 1...n in order is also uniqueness.
-            #expect(visitor.ids == Array(1...UInt64(visitor.ids.count)), Testing.Comment(rawValue: testCase.name))
+            // Every owned relation is walked, so 1...n is also uniqueness; the
+            // document completes last.
+            #expect(
+                visitor.ids.sorted() == Array(1...UInt64(visitor.ids.count)),
+                Testing.Comment(rawValue: testCase.name)
+            )
+            #expect(document.id.value == UInt64(visitor.ids.count), Testing.Comment(rawValue: testCase.name))
             let again = try Document.parse(testCase.source)
             #expect(document == again, Testing.Comment(rawValue: testCase.name))
             #expect(document.hashValue == again.hashValue, Testing.Comment(rawValue: testCase.name))

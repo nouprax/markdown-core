@@ -196,7 +196,7 @@ Sealing projects every table once:
 - the container prefix;
 - the inline-content families;
 - the inline byte tables and the precedence-ordered dispatch;
-- the finish-step dispatch and its per-kind records;
+- the completion-step dispatch and its per-kind records;
 - the text, document and delimiter owners.
 
 The parser holds only a `const` pointer to the sealed dialect. Nothing
@@ -221,7 +221,9 @@ parser. An element declares two record sizes in its descriptor:
 
 - `state_size`: one record per parse, laid out by sealing in the parser's own
   allocation and zeroed before each parse transaction. The element releases
-  what the record points to from its own lifecycle hook.
+  what the record points to from its own `dispose_parser`. Elements are
+  disposed in the reverse of the order they were attached, so an element
+  still reads the state of the elements it was attached after.
 - `run_state_size`: one record per inline run, zeroed when the run begins. The
   run takes every element's run record as one block from a pool the parser
   keeps and gives the block back after the run's dispose hooks.

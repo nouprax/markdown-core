@@ -162,12 +162,9 @@ cmake --build --preset debug --parallel
 ctest --preset correctness-debug
 ```
 
-The engine runs it once per owned root when that root's finish walk completes
--- inline completion, text consolidation and every element finish step run
-from inside that one walk, so a break one of them introduced is attributed to
-the root's walk -- and
-again after each global postprocess pass, so a break a pass introduced is
-attributed to that pass. A configuration
+The engine runs it once, after every inline root has completed and before
+the document finishes, so it reads every node that close steps, completion
+steps, consolidation and numbering produced. A configuration
 that does not define the macro is indistinguishable from one where the check
 passes, which is how it stayed dead for the whole of its life: the define was
 set in `core/`, where `set()` cannot reach the sibling directory that builds the

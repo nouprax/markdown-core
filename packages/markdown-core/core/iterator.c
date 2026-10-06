@@ -35,21 +35,6 @@ void markdown_core_iter_reset(markdown_core_iter *iter, markdown_core_node *curr
 
 markdown_core_node *markdown_core_iter_get_node(markdown_core_iter *iter) { return iter->cur.node; }
 
-/* Every iterator step a finish-stage consolidation takes is counted on the
- * parser when there is one, so the traversal count the finish stage claims
- * can be checked (see the counters in parser.h). */
-static void S_count_step(markdown_core_parser *parser, markdown_core_event_type event) {
-    if (!parser) {
-        return;
-    }
-    parser->finish_walk_events++;
-    if (event == MARKDOWN_CORE_EVENT_ENTER) {
-        parser->finish_nodes_entered++;
-    } else if (event == MARKDOWN_CORE_EVENT_DONE) {
-        parser->finish_walk_roots++;
-    }
-}
-
 /* The surviving Text owns the concatenated literal and a concatenation of
  * its operands' source runs. A caller outside a parse has no parser-owned
  * map to retain and uses the public entry point with NULL.
@@ -58,9 +43,10 @@ static void S_count_step(markdown_core_parser *parser, markdown_core_event_type 
  * may free is the one whose EXIT is current. `TEXT` was in the old
  * `S_is_leaf` list, so its EXIT was suppressed and freeing at ENTER
  * happened to be safe; with the contract total it is a use-after-free. */
-markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_parser *parser, markdown_core_iter *iter,
-                                                                markdown_core_node *cur,
-                                                                markdown_core_complete_node_func complete, int depth) {
+markdown_core_complete_result markdown_core_consolidate_text_step(markdown_core_parser *parser,
+                                                                  markdown_core_iter *iter, markdown_core_node *cur,
+                                                                  markdown_core_complete_node_func complete,
+                                                                  int depth) {
     markdown_core_node *tmp, *next;
 
     assert(iter->cur.node == cur && iter->cur.ev_type == MARKDOWN_CORE_EVENT_EXIT);
@@ -100,7 +86,7 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
         }
         /* The bound every literal buffer shares. */
         if (length > (size_t)MARKDOWN_CORE_STRBUF_LIMIT) {
-            return MARKDOWN_CORE_FINISH_FAILED;
+            return MARKDOWN_CORE_COMPLETE_FAILED;
         }
         if (view) {
             combined_map.first = cur->content_map.first;
@@ -108,11 +94,11 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
             combined_map.offset = cur->content_map.offset;
         } else if (parser && !markdown_core_parser_append_content_marks(parser, &cur->content_map, &combined_map, 0,
                                                                         cur->as.literal->len, 0)) {
-            return MARKDOWN_CORE_FINISH_FAILED;
+            return MARKDOWN_CORE_COMPLETE_FAILED;
         }
         unsigned char *merged = markdown_core_realloc(NULL, length + 1);
         if (!merged) {
-            return MARKDOWN_CORE_FINISH_FAILED;
+            return MARKDOWN_CORE_COMPLETE_FAILED;
         }
         bufsize_t at = cur->as.literal->len;
         if (at) {
@@ -124,8 +110,8 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
              * where a suppressed EXIT used to make one enough. They are steps
              * of the walk this is part of, taken HERE so that no step after
              * this one is ever handed a node this one is about to free. */
-            S_count_step(parser, markdown_core_iter_next(iter)); /* tmp ENTER */
-            S_count_step(parser, markdown_core_iter_next(iter)); /* tmp EXIT  */
+            markdown_core_iter_next(iter); /* tmp ENTER */
+            markdown_core_iter_next(iter); /* tmp EXIT  */
             if (complete) {
                 complete(parser, tmp, depth);
             }
@@ -133,7 +119,7 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
                 !markdown_core_parser_append_content_marks(parser, &tmp->content_map, &combined_map, 0,
                                                            tmp->as.literal->len, at)) {
                 markdown_core_free(merged);
-                return MARKDOWN_CORE_FINISH_FAILED;
+                return MARKDOWN_CORE_COMPLETE_FAILED;
             }
             if (tmp->as.literal->len) {
                 memcpy(merged + at, tmp->as.literal->data, (size_t)tmp->as.literal->len);
@@ -155,8 +141,8 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
          * unlinked, so the cursor sits at the last one's EXIT. Re-establish
          * `cur`'s EXIT: it recomputes the lookahead from the siblings that
          * survived, and it is what makes the drop below legal under the
-         * rule rather than merely safe. It is not a step of the walk -- the
-         * event it re-delivers was delivered already -- so it is not counted. */
+         * rule rather than merely safe. It is not a step of the walk: the
+         * event it re-delivers was delivered already. */
         if (parser) {
             cur->content_map = combined_map;
         }
@@ -180,15 +166,14 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
     if (cur->as.literal->len == 0) {
         markdown_core_chunk_free(cur->as.literal);
         markdown_core_parser_release_node(parser, cur);
-        return MARKDOWN_CORE_FINISH_CONSUMED;
+        return MARKDOWN_CORE_COMPLETE_CONSUMED;
     }
-    return MARKDOWN_CORE_FINISH_CONTINUE;
+    return MARKDOWN_CORE_COMPLETE_CONTINUE;
 }
 
-/* The same step, driven by a walk of its own. Inside a parse the finish walk
- * runs the step itself and never comes here; this is the entry point for a
- * tree built or rewritten outside a parse, and a pass that calls it with a
- * parser pays -- and is counted for -- one more traversal of the root. */
+/* The same step, driven by a walk of its own. Inside a parse an inline
+ * root's completion runs the step itself and never comes here; this is the
+ * entry point for a tree built or rewritten outside a parse. */
 int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parser, markdown_core_node *root) {
     if (root == NULL) {
         return 1;
@@ -203,19 +188,14 @@ int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parse
 
     while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         markdown_core_node *cur = markdown_core_iter_get_node(iter);
-        S_count_step(parser, ev_type);
         if (ev_type != MARKDOWN_CORE_EVENT_EXIT || cur->kind != MARKDOWN_CORE_NODE_TEXT) {
             continue;
         }
-        if (markdown_core_consolidate_text_step(parser, iter, cur, NULL, 0) == MARKDOWN_CORE_FINISH_FAILED) {
+        if (markdown_core_consolidate_text_step(parser, iter, cur, NULL, 0) == MARKDOWN_CORE_COMPLETE_FAILED) {
             ok = 0;
             break;
         }
     }
-    if (ok) {
-        S_count_step(parser, MARKDOWN_CORE_EVENT_DONE);
-    }
-
     markdown_core_iter_free(iter);
     return ok;
 }

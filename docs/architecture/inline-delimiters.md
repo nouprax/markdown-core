@@ -128,24 +128,21 @@ Allocation failure frees continuations independently of the AST they borrow.
 
 Each populated affix owns a private inline root, exposed through the public
 Citation's prefix/suffix collections. Source trimming only changes raw edge
-whitespace; nested markup keeps its authored scope. The finish stage
-traverses all owned inline roots using one explicit stack, and walks each root
-exactly once: a container's inline content is parsed at the container's ENTER
-(the walk then continues into the children that parse produced), inline
-completion (the element's `complete_inline`, the document's anchor
-reservation) runs at each node's ENTER, text consolidation and every element
-finish step (a reference-only paragraph's removal, a list's layout, autolink's
-email scan, formula's block promotion) run at the events of that one walk, and
-a global postprocess pass receives the root after its walk completes. A step
-that declares the kinds it acts on reads that gate at each event it is asked
-at, since a kind's first node may be made by the walk itself. A Text sibling that consolidation
-absorbs is completed by consolidation before it is read, since its ENTER is
-stepped over. Both paths use the parser's projected finish-kind completion
-plan, with kind completion before document observation at the inherited word
-depth; consolidation does not reinterpret the absorbed Text's element.
-The document's finalization -- footnote and specimen ownership,
-heading anchors -- follows the walk and reads the finished tree. Field order and inherited script depth are retained,
-and a phase rewrites each root in place: a field root is the node its owner put
+whitespace; nested markup keeps its authored scope. After block parsing the
+document is prepared; then each inline root, in the order it was queued,
+parses its content and completes its tree in one pass on one explicit stack:
+text consolidation, the completion steps (autolink's email scan, formula's
+standalone formula), Text completion (the kind's `complete_inline`), and each
+node numbering what it holds at its EXIT; the root completes last. An
+element's `complete_step` is asked at the ENTER/EXIT events of the kinds it
+declares. A step that declares the kinds it acts on reads that gate at each
+event it is asked at, since a kind's first node may be made by the pass
+itself. A Text sibling that consolidation absorbs is completed by
+consolidation before it is read, since its ENTER is stepped over. Both paths
+use the kind's projected completion record at the inherited word depth;
+consolidation does not reinterpret the absorbed Text's element. The document
+finishes after every inline root has completed. Field order and inherited
+script depth are retained, and a phase rewrites each root in place: a field root is the node its owner put
 there and no phase substitutes another for it. Definition families start
 independent contexts. Disposal splices the same owned roots into the existing
 iterative node release path.
@@ -167,12 +164,12 @@ retain their ordinary/deferred grammar contract; they are not selected by input
 size or benchmark frequency. Body decoding, padding, markers and source placement
 are shared by both construction paths.
 
-Formula block promotion reserves its destination before touching the old owner.
-An inline formula transfers its opaque payload and literal together; a code
-fence transfers its owned literal into a newly initialized formula payload.
-Trimming compacts an owned buffer in place and restores NUL termination, while a
-borrowed chunk obtains independent storage before mutation. Direct formula
-blocks detach their accumulated content buffer. Failure before commitment keeps
-the old owner intact; commitment clears the donor slot before releasing the old
-subtree. The finish walk still reports the old node as consumed, preserving
-observer and iterator ordering.
+A fenced code block whose info string is `formula` becomes a FormulaBlock in
+place as it closes; its owned literal moves into a newly initialized formula
+payload. A paragraph holding only a standalone formula becomes a FormulaBlock
+in place at its EXIT in its root's completion (formula's completion step),
+keeping its id; the inline Formula it consumes transfers its opaque payload and
+literal together and was never numbered. Trimming compacts an owned buffer in
+place and restores NUL termination, while a borrowed chunk obtains independent
+storage before mutation. Direct formula blocks detach their accumulated content
+buffer.

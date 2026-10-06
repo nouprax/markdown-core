@@ -185,8 +185,8 @@ becomes a `Reference` node in its parent's child chain where it was written,
 before what remains of the paragraph. A paragraph that held only definitions
 is released when it is finalized; its References stay, so later block
 identifiers see them in source order and cannot attach across them. The
-blank-line facts skip References, and list layout, derived at each list's
-exit in the finish walk, reads the semantic children around them. An
+blank-line facts skip References, and list layout, the list's close step,
+reads the semantic children around them. An
 intentionally empty anchored list-item paragraph is not a definition and
 stays.
 
@@ -197,14 +197,30 @@ definitions are Footnote and Specimen blocks in the tree where they were
 read. In both cases the tree owns the node, including on parse failure.
 
 Calls resolve through the parser's label maps while parsing; a footnote label
-map and a specimen key index hold the first definition of each label. The
-finish stage visits definitions where they are, like any other node.
+map and a specimen key index hold the first definition of each label. A
+definition is numbered where it is, like any other node.
 
-Publishing is one canonical walk. It numbers every node from 1, rewrites the
-parse-time source place as the node's extent, and collects every Footnote and
-Specimen into the document's two definition tables, which it orders by first
-source byte with the stable linear source ordering below and indexes by
-label. Nothing reads a place after publishing.
+A node is complete when it is made. A block settles as it closes: its
+element's `finalize_block` runs, its runs are placed, and it completes. A
+block settles once every block it holds has settled; one that closes while the
+last block under it is still open (a new list closes the old one before its
+items) settles as that block does. Completing a node numbers each node it holds
+that is not numbered yet, in canonical field order: the next id, and its
+extent, measured from the end of the node before it in its relation or from
+the owner's start. Its parse-time place becomes its extent. A Footnote,
+Specimen, Reference or Heading enters the document's definition tables at its
+source start as it is numbered, and a node holding inline content is queued as
+an inline root. Completion is idempotent: a node that gains a node later (a
+table gaining a trailing caption) completes again and numbers only the new
+one.
+
+After block parsing the document is prepared; then each inline root, in the
+order it was queued, parses its content and completes its tree in one pass,
+and the root completes last. The document numbers itself last when the tree is
+published, so a fresh parse's ids are 1 through its node count in completion
+order and the document holds the last id. A numbered node holds only its
+extent, so headings and specimen definitions record their source start when
+they register (`markdown_core_source_entry`) and are ordered by that start.
 
 The bracket scanner tracks the most recent non-SP/TAB byte over disjoint
 consumed token ranges, so rejecting empty bodies never rescans nested bodies.

@@ -867,7 +867,7 @@ parse.
   their definitions' facts in tree order.
 
 A fresh parse is the block parse, the inline parse of each root, and resolution.
-`check-finish-hook-shapes.mjs` becomes the audit of these hooks: a close step
+`check-completion-hooks.mjs` is the audit of these hooks: a close step
 reads its block and the block's children, and a completion reads one inline
 root.
 
@@ -878,12 +878,12 @@ Text before and after each read run, which consolidation may merge with them.
 ### 5.9 Identity matching and value deduplication
 
 A taken node is the old node (5.11), so it and its whole subtree keep their
-ids wherever the parse puts them. Each node that was read is matched to an
-old node. This is the one comparison of the old and new trees, the
-counterpart of tree-sitter's `ts_tree_get_changed_ranges`: it walks the new
-tree and the edited old tree (5.2) together, both in the coordinates of the
-new text, and steps over every subtree they share by reference, so it visits
-only what the parse read.
+ids wherever the parse puts them. Each node that was read takes its id when
+it completes (5.8): the reuse cursor (5.3) holds, at that node's place, the
+old nodes of the relation it is in, in the coordinates of the new text
+(5.2), and the rule below matches the node to one of them or to none. The
+API publishes whole documents, so no comparison of the old and new trees
+follows the parse.
 
 - Matching runs per owner relation between a new owner and the old node it
   matched, starting from the two document roots. A definition's bodies are
@@ -917,16 +917,15 @@ only what the parse read.
     id; the second retires.
   - Bytes between the edits of a batch keep their own exact images, so nodes
     there match as if each edit were alone.
-- A read node took a new id when it was completed (5.8). A matched node takes
-  its old node's id instead. Read children of an unmatched owner keep their
-  new ids. A paragraph that moves
+- A matched node takes its old node's id as it completes; an unmatched one
+  takes a new id. Read children of an unmatched owner take new ids. A paragraph that moves
   into a new blockquote is read again, because its entry changed, and is a
   new node, as it is to every UI framework.
 
-Then, in post-order, each matched read node `N` is compared with its `O`:
-equal kind, equal scalars, equal extent, and every child relation holding the
-same objects. If they are equal, `N` is released and `O` is shared in its
-place. Within the C session, a node that differs from its predecessor as an
+As a matched read node `N` completes, after its children, it is compared
+with its `O`: equal kind, equal scalars, equal extent, and every child
+relation holding the same objects. If they are equal, `N` is released and `O`
+is shared in its place. Within the C session, a node that differs from its predecessor as an
 object therefore differs as a value, which is what R3 measures.
 
 ### 5.10 Why the result equals a fresh parse
@@ -1198,8 +1197,8 @@ them, and step 8 makes the whole engine meet the benchmark gates.
    carry their path on explicit stacks. The parser reads the text tree a line
    at a time (5.1). Nodes are complete when they are made (5.8): the finish
    walk, the pass walks and the numbering walk are removed, fresh-parse ids
-   are numbered in completion order (4.1), and identity matching is the one
-   comparison of the old and new trees (5.9). Every line is still read again,
+   are numbered in completion order (4.1), and a read node takes its id and
+   is shared with an equal old node as it completes (5.9). Every line is still read again,
    as in step 2.
 - [ ] **Step 5: Block reuse.** Entries and reaches and the high-water mark
    (5.1), the edit pass (5.2), the cursor's take and descend (5.3), E1–E5

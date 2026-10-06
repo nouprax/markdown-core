@@ -7,7 +7,7 @@ package com.nouprax.markdown.core
  * consistent with that equality in O(1).
  */
 public sealed class Markup {
-    /** Unique within its document, and numbered from 1 in canonical walk order by a parse. */
+    /** Unique within its document, and numbered from 1 by a parse in the order its nodes complete, document last. */
     public abstract val id: MarkupID
 
     /** Where the node is, relative to the node before it; [Document.scope] turns it into editor coordinates. */

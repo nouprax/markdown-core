@@ -56,8 +56,10 @@ Kotlin as `@JvmInline value class MarkupID(val value: Long)`; ECMAScript as
 `readonly id: number`; C answers `markdown_core_node_id(node)` as `uint64_t`.
 
 - Ids are unique within a document, across every owned relation.
-- `Document.parse` numbers nodes from 1 in canonical walk order, so two
-  fresh parses of the same text are equal, ids included.
+- `Document.parse` numbers nodes from 1 in completion order: a node's owner
+  numbers the nodes it holds as it completes, and the document, which
+  completes last, numbers itself last. Two fresh parses of the same text are
+  equal, ids included.
 - An id denotes one kind for its whole life.
 - Ids from different parses are not comparable.
 

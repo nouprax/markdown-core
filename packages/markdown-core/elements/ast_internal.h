@@ -22,15 +22,6 @@ struct markdown_core_document {
     markdown_core_text_unit unit;
 };
 
-/* PUBLISHING, the last step of the parse transaction: the one canonical walk
- * that gives every node its id, rewrites its parse-time place as its extent
- * and records the definition tables it finds on the way in the root,
- * continuing the tree the parser's revision names (parser.h): a fresh parse
- * numbers every node from 1 in walk order. The parser's root is the result.
- * It works in the parser's scratch. False, having changed neither tree's
- * structure, when an allocation failed. Nothing reads a place after this. */
-bool markdown_core_publish_tree(markdown_core_parser *parser);
-
 /* The scopes of `node` in the published tree `root` parsed from `source`,
  * with columns in `unit`, in a new array markdown_core_scopes_free frees;
  * markdown_core_document_scope is this query over a document's tree and
@@ -51,6 +42,10 @@ typedef struct markdown_core_relation {
     const char *group;
     const markdown_core_node *first;
     const markdown_core_node *end;
+    /* Whether the relation is a field holding one node of its own (a
+     * document's metadata, a table's caption, a directive's label, a
+     * citation's note), rather than a list. */
+    bool field;
 } markdown_core_relation;
 
 /* How many nodes `relation` holds. */
@@ -159,6 +154,70 @@ bool markdown_core_walk_ranges(markdown_core_walk *walk, const markdown_core_wal
  * under the same owner, which is how the canonical dump draws its branches. */
 bool markdown_core_walk_has_next(const markdown_core_walk *walk);
 void markdown_core_walk_end(markdown_core_walk *walk);
+
+/* Where a Footnote, Specimen, Reference or Heading was written, for the
+ * definition tables. */
+typedef struct {
+    uint64_t start;
+    const markdown_core_node *node;
+} markdown_core_definition_entry;
+
+typedef struct {
+    markdown_core_definition_entry *values;
+    size_t count, capacity;
+} markdown_core_definition_table;
+
+/* THE DEFINITION TABLES a parse fills, one per kind of node the document
+ * finds by label. Every Heading enters its table; the ones whose text
+ * declares a reference label are the labeled ones. */
+typedef enum {
+    MARKDOWN_CORE_TABLE_FOOTNOTES,
+    MARKDOWN_CORE_TABLE_SPECIMENS,
+    MARKDOWN_CORE_TABLE_REFERENCES,
+    MARKDOWN_CORE_TABLE_HEADINGS,
+    MARKDOWN_CORE_TABLE_COUNT
+} markdown_core_definition_kind;
+
+/* WHAT ONE PARSE PUBLISHES AS ITS NODES COMPLETE (docs/plans/2026-09-29-
+ * incremental-parsing.md, 5.8): each definition as its owner numbers it, at
+ * its source start, and the runs of the inline root being completed, in
+ * absolute offsets, read when a definition in its content first asks where
+ * it was written. The document element holds it for the parse. */
+typedef struct markdown_core_publication {
+    markdown_core_definition_table tables[MARKDOWN_CORE_TABLE_COUNT];
+    markdown_core_source_runs runs;
+    const markdown_core_inline_root *runs_root;
+} markdown_core_publication;
+
+/* COMPLETING `node`, which begins at `start`: each node it holds that is not
+ * numbered yet, in canonical field order, takes the next id and its extent,
+ * measured from the end of the node before it in its relation or from where
+ * the relation is measured, and its runs when they are not an inline root's;
+ * a definition enters its table; `observe` sees each; and a node holding
+ * inline content waits on the parser's list of inline roots. A node that
+ * gains a node later completes again and numbers only that one. A node that
+ * holds only a group of its owner numbers nothing (MARKDOWN_CORE_NODE__GROUP):
+ * its owner numbers the group. The inline root being completed (parser.h,
+ * `completing`) also completes its own runs, from where it recorded its
+ * holder lies, and the document numbers itself last. False when an
+ * allocation failed. */
+bool markdown_core_complete_node(markdown_core_parser *parser, markdown_core_publication *publication,
+                                 markdown_core_node *node, uint32_t start,
+                                 void (*observe)(const markdown_core_element_instance *, markdown_core_parser *,
+                                                 markdown_core_node *),
+                                 const markdown_core_element_instance *observer);
+
+/* PUBLISHING, the last step of the parse transaction: the definition tables
+ * the parse filled are sealed into the root, and the tree continues the one
+ * the parser's revision names (parser.h): each node the parse read is matched
+ * to the old node it continues and takes its id, and every subtree equal to
+ * its old one is the old one. The parser's root is the result. It works in
+ * the parser's scratch. False, having changed neither tree's structure, when
+ * an allocation failed. */
+bool markdown_core_publish_tree(markdown_core_parser *parser, markdown_core_publication *publication);
+
+/* Releases what the publication holds. */
+void markdown_core_publication_dispose(markdown_core_publication *publication);
 
 #ifdef __cplusplus
 }

@@ -50,9 +50,11 @@ static void init_cell(markdown_core_node *node) {
     node->as.table_cell->colspan = 1;
 }
 
+/* A pipe cell takes no lines: it is closed as its row makes it. */
 static markdown_core_node *new_cell(markdown_core_parser *parser, markdown_core_node *row, int column) {
     markdown_core_node *cell = markdown_core_parser_add_child(parser, row, MARKDOWN_CORE_NODE_TABLE_CELL, column);
     if (cell) {
+        cell->flags &= ~MARKDOWN_CORE_NODE__OPEN;
         init_cell(cell);
         markdown_core_node_set_element(cell, &MARKDOWN_CORE_ELEMENT_TABLE);
     }
@@ -366,6 +368,9 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
 
         return parent_container;
     }
+    /* The header row takes no further line: it is closed as it is made, and
+     * completes with its table. */
+    table_header->flags &= ~MARKDOWN_CORE_NODE__OPEN;
     markdown_core_node_set_element(table_header, self->element);
     /* The header row and its cells are RECOVERED from the paragraph's content
      * buffer, and every offset below is an offset into that buffer. Adding one
@@ -547,13 +552,23 @@ static const markdown_core_node_type containment_kinds[] = {MARKDOWN_CORE_NODE_T
                                                             MARKDOWN_CORE_NODE_TABLE_CELL, MARKDOWN_CORE_NODE_NONE};
 
 static int contains_inlines(const markdown_core_element *element, markdown_core_node *node) {
-    /* Block inputs have consumed their source before the inline phase. Their
-     * children, rather than the cell wrapper, own the remaining inline text. */
-    if (node->kind == MARKDOWN_CORE_NODE_TABLE_CAPTION) {
-        return true;
-    }
+    /* A cell whose content is read as blocks holds those blocks, which own
+     * its inline text. */
     return node->kind == MARKDOWN_CORE_NODE_TABLE_CAPTION ||
-           (node->kind == MARKDOWN_CORE_NODE_TABLE_CELL && node->content.size > 0);
+           (node->kind == MARKDOWN_CORE_NODE_TABLE_CELL && node->content.size > 0 && !node->as.table_cell->blocks);
+}
+
+/* A TABLE COMPLETES ITS ROWS AS IT CLOSES: each numbers its cells, and the
+ * table, completing next, its rows and its caption. */
+static void finalize_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                           markdown_core_node *node) {
+    (void)self;
+    if (node->kind != MARKDOWN_CORE_NODE_TABLE) {
+        return;
+    }
+    for (markdown_core_node *row = node->first_child; row && !parser->error; row = row->next) {
+        markdown_core_parser_complete_node(parser, row);
+    }
 }
 
 static void opaque_alloc(const markdown_core_element *self, markdown_core_node *node) {
@@ -2311,6 +2326,7 @@ static void table_fill_cell(table_source *source, markdown_core_node *node, cons
         table_append_newline(source, node, i);
     }
     if (blocks && !source->parser->error) {
+        node->as.table_cell->blocks = true;
         markdown_core_parser_queue_block_input(source->parser, node);
     }
 }
@@ -2601,6 +2617,11 @@ static markdown_core_node *table_try_open(table_workspace *workspace, markdown_c
         ((markdown_core_table *)result->opaque)->caption = table_caption_build(&source, parent, caption_last, caption);
         result->where.place.end = (uint32_t)markdown_core_parser_source_end(parser, source.lines[caption_last].line,
                                                                             source.lines[caption_last].length);
+        /* The table completed as it closed; it completes again for the
+         * caption it gains. */
+        if (!parser->error) {
+            markdown_core_parser_complete_node(parser, result);
+        }
         parser->claimed_cursor = source.lines[caption_last].after;
         parser->claimed_line = source.lines[caption_last].line;
         parser->claimed_last_end = result->where.place.end;
@@ -2617,6 +2638,11 @@ static markdown_core_node *table_try_open(table_workspace *workspace, markdown_c
             parser->claimed_line = source.lines[candidate->last].line;
             parser->claimed_last_end =
                 markdown_core_parser_source_end(parser, parser->claimed_line, source.lines[candidate->last].length);
+        }
+        /* A grid or multiline table is whole once it is built, caption and
+         * all: it closes here, where a pipe table closes as its lines end. */
+        if (result && !(result->flags & MARKDOWN_CORE_NODE__OPEN) && !parser->error) {
+            markdown_core_block_settle(parser, result);
         }
     }
 done:
@@ -2678,6 +2704,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .try_opening_block = try_opening_table_block,
     .containment_kinds = containment_kinds,
     .contains_inlines_func = contains_inlines,
+    .finalize_block = finalize_block,
     .opaque_alloc_func = opaque_alloc,
     .opaque_free_func = opaque_free,
     .visit_owned_subtrees_func = visit_owned_subtrees,
