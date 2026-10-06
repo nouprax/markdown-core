@@ -811,17 +811,20 @@ it is listed (5.8), so its inline facts are labeled in tree order too.
     not parse is parsed again in place. The
     document is a snapshot of the session (4.4), and its node is the
     session's own once the old root is released, so the node is updated in
-    place. Its extent and runs stay the same.
+    place. Its extent and runs stay the same. The root leaves the reverse
+    indexes of the keys it asked before and joins those of the keys this
+    parse asks, which are answered at once from the registry.
   - **Anchors by family.** Each marked family is assigned again in tree
     order, with the same reservation and suffix-cursor algorithm as a
     fresh parse. A heading whose anchor changes takes its new anchor in
     place.
 
 An inline parse in resolution changes only what its root read from the
-registry. Its content, inline anchors and keys asked stay the same. So each
-stage runs once per edit. A definition's destination, title or anchor
-changes only the definition node and the document's tables, never an
-occurrence. Definitions stay in the tree, so nothing is spliced into the
+registry. Its content and inline anchors stay the same, and the keys it asks
+are answered from definitions that are complete after the release, so no
+root is parsed twice and each stage runs once per edit. A definition's
+destination, title or anchor changes only the definition node and the
+document's tables, never an occurrence. Definitions stay in the tree, so nothing is spliced into the
 document and no ordinal is recomputed.
 
 ### 5.8 Nodes are complete when they are made
