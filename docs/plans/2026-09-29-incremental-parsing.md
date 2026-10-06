@@ -464,8 +464,8 @@ and nothing else survives a parse. Every block node records two things when
 it is built, the counterparts of tree-sitter's `parse_state` and
 `lookahead_bytes`:
 
-- its **entry**: the carried state (E3) of its parent at the start of its
-  lead, where its previous sibling ended;
+- its **entry**: the carried state (E3) of its parent at its start, after
+  its lead, where the line machine asks the cursor for it (5.3);
 - its **reach**: how far past its end any decision about it read, including
   lookahead, claimed ranges, the line that closed it and every later line
   that wrote into it (E2). A container's reach covers its children's, as a
@@ -580,12 +580,12 @@ for a reusable node before it lexes:
   unchanged siblings after it, the container folds the run's combined
   summary (E4) into its carried state, and the parse continues after the run
   without reading any line of it. The rest of the run needs no comparison:
-  equal state before a node and identical bytes through its reach give equal
-  state after it, which is its next sibling's entry. A run ends only at a
-  node after which the parse reads the next lines as the old one did: not at
-  one whose closing line refused a block start because it was open, not at
-  one that was open over blank lines after its end, and not at one a later
-  line may still write into (E2).
+  equal state at a node's start and identical bytes through its reach and
+  its next sibling's lead give equal state at that sibling's start, which is
+  its entry. A run ends only at a node after which the parse reads the next
+  lines as the old one did: not at one whose closing line refused a block
+  start because it was open, not at one that was open over blank lines after
+  its end, and not at one a later line may still write into (E2).
 - **Descend.** Otherwise the cursor moves to the node's first child, as
   tree-sitter breaks a changed node down, and the line machine reads the line
   with `S_process_line`, as a fresh parse does. A changed container is built
@@ -704,8 +704,9 @@ edits through the content runs of the two roots:
   The old root's runs give the source byte each old content byte was read
   from, the step's edits (5.2) give that byte's image, and the new root's
   runs give the new content offset read from the image. A run that reads all
-  of its content from all of its source continues whole when every byte of
-  its source survives, and is replaced otherwise.
+  of its content from all of its source continues whole when its source
+  survives as one contiguous stretch no edit cuts, and is replaced
+  otherwise.
 - The content bytes that do not continue are the root's edits: disjoint
   replacements in the old content's offsets, a batch like a source batch.
 
