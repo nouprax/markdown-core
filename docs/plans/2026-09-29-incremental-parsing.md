@@ -757,11 +757,12 @@ that node. It is made when its node is made, and it is removed when its node
 is released (5.11). A taken node keeps its facts, because it is the old node.
 The registry stores no positions.
 
-The **key index** maps each key to two lists:
+The **key index** maps each key to two collections:
 
-- the key's declaring facts, in tree order;
-- the inline roots that looked the key up, hit or miss. This is the key's
-  reverse index.
+- the key's declaring facts, as a balanced tree: `Reference` facts before
+  heading targets, and each in tree order by their order labels;
+- the inline roots that looked the key up, hit or miss, as a doubly linked
+  list. This is the key's reverse index.
 
 A key is a group and a label:
 
@@ -773,9 +774,14 @@ A key is a group and a label:
   trailing `-N` groups. Explicit anchors reserve spellings in it, and
   headings take their anchors from it.
 
-A key's winner is its first fact in tree order, with `Reference` nodes
-before heading targets. Both lists are doubly linked, so adding or removing
-an entry is O(1).
+A key's winner is the leftmost fact of its tree: its first fact in tree
+order, with `Reference` nodes before heading targets. A fact is inserted at
+its place by comparing order labels down the key's tree, and removed from
+it, in O(log k) for a key with k facts, wherever the fact lies among them. A
+fresh parse declares facts in tree order, so each lands at the right end of
+its key's tree and is appended there, as a children tree is built (5.1). A
+lookup joins or leaves the reverse index in O(1), because the reverse index
+is read whole and needs no order.
 
 **Tree order without positions.** Facts carry order labels (Dietz and
 Sleator's order maintenance), so two facts compare in O(1). The parse visits
@@ -1135,8 +1141,9 @@ which also says at which rollout step each one becomes a gate.
   line at the top of a long document (only the Document and the edited
   paragraph are new values), and changing a reference's destination or a heading anchor that Links
   target (only the definition and the Document are new values).
-- **Definition queries.** After every edit, `footnotes`, `specimens` and
-  `footnote(for:)` and `specimen(for:)` for every label in the text equal
+- **Definition queries.** After every edit, `footnotes`, `specimens`,
+  `references`, `footnote(for:)`, `specimen(for:)` and `reference(for:)` for
+  every label in the text equal
   those of a fresh parse, and fixtures with nested, duplicate, anonymous and
   unreferenced definitions check each binding's answers against the winners
   of the C registries, since the canonical dump does not call the queries.

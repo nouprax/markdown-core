@@ -195,9 +195,12 @@ answer at the same position. The fresh parse's own answers are checked once
 against the scopes the canonical dump prints, which are UTF-8 columns, and in
 UTF-16 against the same scopes converted through the model text.
 
-`Document.footnotes`, `Document.specimens`, `footnote(for:)` and
-`specimen(for:)` for every label in the text return the nodes corresponding
-to the fresh parse's answers, in the same order (plan 8).
+`Document.footnotes`, `Document.specimens`, `Document.references`,
+`footnote(for:)`, `specimen(for:)` and `reference(for:)` for every label in
+the text return the nodes corresponding to the fresh parse's answers, in the
+same order (plan 8). The labels include duplicate reference labels and
+reference labels that a heading's text also declares, so the winner of each
+is compared.
 
 ### 4.2 Identifier
 
@@ -235,8 +238,9 @@ accept an implementation that gives a surviving node a new id and so loses its
 view state. The plan states which old node each new node continues (5.9) in
 terms the harness evaluates from the public model alone: the image of each
 position under the step's edits (plan 5.2), the absolute scopes of the snapshot and of
-`scope(of:in:)` on the new document, kinds and owner relations. The harness
-computes the expected matching itself, for every node of every step:
+`scope(of:in:)` on the new document, kinds, values and owner relations. The
+harness computes the expected id itself for every node of every step, and for
+a node the parse may have taken whole it computes the two ids it accepts:
 
 - The new document continues the old document (plan 5.9 starts matching
   from the two document roots).
@@ -247,10 +251,12 @@ computes the expected matching itself, for every node of every step:
   earliest such sibling.
 - A new node that continues an old node has the old node's id.
 - A node the parse took whole keeps its id wherever it lands, under a
-  matched owner or a new one (plan 5.9, decision G7): it has the kind and
-  the value of the old node of that id, only its lead may differ, and its
-  items are that old node's items, each taken whole with its value and
-  lead.
+  matched owner or a new one (plan 5.9, decision G7). Whether a node was
+  taken is the engine's choice and not part of the public model, so a new
+  node that no rule above continues is accepted with either id: the id of
+  an old node whose kind and value it has, only its lead differing, with
+  each of its items carrying that old node's item's id, kind, value and
+  lead in turn; or an id the lineage has never seen. Every other id fails.
 - Every other new node has an id the lineage has never seen. An old node
   that nothing continues or keeps is retired.
 
@@ -446,6 +452,7 @@ named oracle:
 | Faulty subject | Must fail |
 | --- | --- |
 | Returns the previous document for one step | 4.1 |
+| Answers `reference(for:)` with the last declaration of a label instead of the first | 4.1 |
 | Renumbers every id on every step (a fresh parse with fresh ids) | 4.2 lineage, 4.4, 4.5 |
 | Rewrites every node with the same ids | 4.3 |
 | Gives an edited heading a new id | 4.4 |
