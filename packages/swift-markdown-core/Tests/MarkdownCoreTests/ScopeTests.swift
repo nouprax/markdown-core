@@ -115,11 +115,12 @@ import Testing
                 + "├── SoftBreak scope=1:7..2:0 anchor=null attributes={} children=0\n"
                 + "└── Text scope=2:3..2:3 anchor=null attributes={} literal=\"c\" children=0\n"
         )
-        // Another quote prefix moves the paragraph's runs, never what its
-        // content holds.
+        // A continuation indent moves the paragraph's runs, never what its
+        // content holds: the stripped space is its own source without content.
         let wider = try Document.parse("> a *b\n>  c* d\n")
         let moved = try #require((wider.content.first as? Callout)?.content.first as? Paragraph)
-        #expect(moved.runs == [Run(lead: 0, span: 5, length: 5), Run(lead: 3, span: 4, length: 4)])
+        let runs = [Run(lead: 0, span: 5, length: 5), Run(lead: 2, span: 1, length: 0), Run(lead: 0, span: 4, length: 4)]
+        #expect(moved.runs == runs)
         #expect(moved != block)
         #expect(moved.content[1].isEqual(emphasis))
     }
