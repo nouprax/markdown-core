@@ -71,6 +71,12 @@ void ts_require_ok(markdown_core_status status, const char *call);
 typedef markdown_core_status (*ts_node_field)(const markdown_core_node *node, const markdown_core_node **field);
 const markdown_core_node *ts_field(const markdown_core_node *node, ts_node_field accessor);
 
+/* The `index`th node a cursor reads in `field` of `node` (any field when
+ * `field` is 0), from 0, or NULL when there are fewer; and how many there
+ * are. */
+const markdown_core_node *ts_child(const markdown_core_node *node, markdown_core_field field, size_t index);
+size_t ts_child_count(const markdown_core_node *node, markdown_core_field field);
+
 /* A node's range in bytes of its input, resolved from the extents by the
  * walk itself rather than by the facade's scope query: in the source, or in
  * the content of the inline root that holds it. */
@@ -88,8 +94,9 @@ typedef int (*ts_ast_visit_fn)(const markdown_core_node *node, ts_ast_range rang
 int ts_ast_walk(const markdown_core_node *root, ts_ast_visit_fn visit, void *context);
 
 /* Where the walk found a node: its range, the node whose relation holds it
- * (NULL for the root) and that relation's place among the owner's relations
- * in canonical field order, counting absent and empty ones, and the inline
+ * (NULL for the root) and a number that orders that owner's relations in
+ * canonical field order, the same whether or not the ones before it are
+ * present, and the inline
  * root whose content the range is in, with that root's source start (NULL
  * and 0 for a range in the source). */
 typedef struct {

@@ -94,6 +94,41 @@ static const markdown_core_node *facade_field(const markdown_core_node *node, fa
     return value;
 }
 
+/* The nodes a cursor reads in `field` of `node`, or in any field when it is
+ * 0: the `index`th, or NULL when there are fewer, and how many were read up
+ * to it. */
+static const markdown_core_node *facade_children(const markdown_core_node *node, markdown_core_field field,
+                                                 size_t index, size_t *count) {
+    markdown_core_cursor *cursor;
+    const markdown_core_node *found = NULL;
+    bool moved;
+    *count = 0;
+    EXPECT_OK(markdown_core_cursor_new(node, &cursor));
+    EXPECT_OK(markdown_core_cursor_child(cursor, &moved));
+    for (; moved; moved = markdown_core_cursor_next(cursor)) {
+        if (field && markdown_core_cursor_field(cursor) != field) {
+            continue;
+        }
+        if ((*count)++ == index) {
+            found = markdown_core_cursor_node(cursor);
+            break;
+        }
+    }
+    markdown_core_cursor_free(cursor);
+    return found;
+}
+
+static const markdown_core_node *facade_child(const markdown_core_node *node, markdown_core_field field, size_t index) {
+    size_t count;
+    return facade_children(node, field, index, &count);
+}
+
+static size_t facade_child_count(const markdown_core_node *node, markdown_core_field field) {
+    size_t count;
+    facade_children(node, field, SIZE_MAX, &count);
+    return count;
+}
+
 static const markdown_core_metadata_value *facade_metadata(const markdown_core_node *node,
                                                            facade_metadata_field accessor) {
     const markdown_core_metadata_value *value;
@@ -2463,13 +2498,13 @@ static void citation_and_footnote_values(test_batch_runner *runner) {
     }
     root = markdown_core_document_root(document);
     INT_EQ(runner, (int)markdown_core_node_child_count(root), 5, "every definition is a block where it was written");
-    paragraph = markdown_core_node_get_first_child(root);
-    cite = markdown_core_node_get_first_child(paragraph);
+    paragraph = facade_child(root, MARKDOWN_CORE_FIELD_CONTENT, 0);
+    cite = facade_child(paragraph, MARKDOWN_CORE_FIELD_CONTENT, 0);
     INT_EQ(runner, markdown_core_node_get_kind(cite), MARKDOWN_CORE_KIND_CITE, "a defined call is a Cite");
     INT_EQ(runner, (int)markdown_core_node_child_count(cite), 0, "a cite has no children");
-    item = facade_field(cite, markdown_core_node_cite_citations);
+    item = facade_child(cite, MARKDOWN_CORE_FIELD_CITATIONS, 0);
     OK(runner, item != NULL, "a cite holds an item");
-    OK(runner, item != NULL && markdown_core_node_get_next_sibling(item) == NULL,
+    OK(runner, item != NULL && facade_child_count(cite, MARKDOWN_CORE_FIELD_CITATIONS) == 1,
        "an inherited call holds exactly one item");
     referent = facade_referent(item);
     INT_EQ(runner, referent.kind, MARKDOWN_CORE_REFERENT_FOOTNOTE, "an inherited call names a footnote");
@@ -2478,8 +2513,8 @@ static void citation_and_footnote_values(test_batch_runner *runner) {
     OK(runner, referent.key.length == 0 && referent.key.data == NULL && referent.mode == 0,
        "the footnote branch zeroes the bib fields");
     OK(runner,
-       facade_field(item, markdown_core_citation_prefix) == NULL &&
-           facade_field(item, markdown_core_citation_suffix) == NULL,
+       facade_child(item, MARKDOWN_CORE_FIELD_PREFIX, 0) == NULL &&
+           facade_child(item, MARKDOWN_CORE_FIELD_SUFFIX, 0) == NULL,
        "an inherited call has empty affixes");
     OK(runner, ((scope = document_scope_of(document, cite, markdown)).start.line > 0), "the cite has a scope");
     OK(runner, scope.start.line == 1 && scope.start.column == 1 && scope.end.line == 1 && scope.end.column == 7,
@@ -2490,8 +2525,15 @@ static void citation_and_footnote_values(test_batch_runner *runner) {
 
     INT_EQ(runner, (int)markdown_core_document_footnote_count(document), 4,
            "the winner, its duplicate, the referenced, and the unreferenced definitions are footnotes");
-    for (footnote = markdown_core_node_get_next_sibling(paragraph); footnote;
-         footnote = markdown_core_node_get_next_sibling(footnote)) {
+    markdown_core_cursor *cursor;
+    bool moved;
+    EXPECT_OK(markdown_core_cursor_new(root, &cursor));
+    EXPECT_OK(markdown_core_cursor_child(cursor, &moved));
+    while (moved && markdown_core_cursor_node(cursor) != paragraph) {
+        moved = markdown_core_cursor_next(cursor);
+    }
+    while (moved && markdown_core_cursor_next(cursor)) {
+        footnote = markdown_core_cursor_node(cursor);
         OK(runner, count < 4 && facade_footnote_at(document, count) == footnote,
            "the document lists footnote %zu in source order", count);
         label = facade_footnote_label(footnote);
@@ -2505,15 +2547,16 @@ static void citation_and_footnote_values(test_batch_runner *runner) {
            "footnote %zu starts where it was written", count);
         count++;
     }
+    markdown_core_cursor_free(cursor);
     INT_EQ(runner, (int)count, 4, "four footnotes follow the paragraph");
-    footnote = markdown_core_node_get_next_sibling(paragraph);
+    footnote = facade_child(root, MARKDOWN_CORE_FIELD_CONTENT, 1);
     OK(runner,
        markdown_core_document_footnote_for(document, referent.label) == footnote &&
            markdown_core_document_footnote_for(document, (markdown_core_string){(const uint8_t *)"missing", 7}) == NULL,
        "a label finds the first definition in source order, and no other");
     OK(runner,
-       facade_field(footnote, markdown_core_footnote_content) != NULL &&
-           markdown_core_node_get_kind(facade_field(footnote, markdown_core_footnote_content)) ==
+       facade_child(footnote, MARKDOWN_CORE_FIELD_CONTENT, 0) != NULL &&
+           markdown_core_node_get_kind(facade_child(footnote, MARKDOWN_CORE_FIELD_CONTENT, 0)) ==
                MARKDOWN_CORE_KIND_PARAGRAPH,
        "a footnote's content is its block content");
     markdown_core_document_free(document);
@@ -3873,16 +3916,16 @@ static void specimen_values(test_batch_runner *runner) {
         return;
     }
     const markdown_core_node *root = markdown_core_document_root(document);
-    const markdown_core_node *value = markdown_core_node_get_first_child(root);
+    const markdown_core_node *value = facade_child(root, MARKDOWN_CORE_FIELD_CONTENT, 0);
     INT_EQ(runner, markdown_core_node_get_kind(value), MARKDOWN_CORE_KIND_SPECIMEN, "a definition is content");
     EXPECT_OK(markdown_core_specimen_properties(value, &label, &start));
     OK(runner, label.has_value && label.value.length == 6 && memcmp(label.value.data, "étude", 6) == 0,
        "specimen label retains owned UTF-8 bytes");
     OK(runner, start.has_value && start.value == 5, "specimen retains effective reset");
     OK(runner,
-       markdown_core_node_get_kind(facade_field(value, markdown_core_specimen_content)) == MARKDOWN_CORE_KIND_PARAGRAPH,
+       markdown_core_node_get_kind(facade_child(value, MARKDOWN_CORE_FIELD_CONTENT, 0)) == MARKDOWN_CORE_KIND_PARAGRAPH,
        "specimen retains its content relation");
-    const markdown_core_node *anonymous = markdown_core_node_get_next_sibling(value);
+    const markdown_core_node *anonymous = facade_child(root, MARKDOWN_CORE_FIELD_CONTENT, 1);
     OK(runner, anonymous != NULL, "anonymous definition remains present");
     EXPECT_OK(markdown_core_specimen_properties(anonymous, &label, &start));
     OK(runner, !label.has_value && !start.has_value, "anonymous label and absent reset remain absent");
@@ -3890,8 +3933,8 @@ static void specimen_values(test_batch_runner *runner) {
     OK(runner, facade_specimen_at(document, 0) == value && facade_specimen_at(document, 1) == anonymous,
        "the list is in source order");
     const markdown_core_node *citation =
-        facade_field(markdown_core_node_get_first_child(markdown_core_node_get_next_sibling(anonymous)),
-                     markdown_core_node_cite_citations);
+        facade_child(facade_child(facade_child(root, MARKDOWN_CORE_FIELD_CONTENT, 2), MARKDOWN_CORE_FIELD_CONTENT, 0),
+                     MARKDOWN_CORE_FIELD_CITATIONS, 0);
     markdown_core_referent referent = facade_referent(citation);
     OK(runner,
        referent.kind == MARKDOWN_CORE_REFERENT_SPECIMEN && referent.label.length == 6 && referent.key.data == NULL &&
@@ -4235,8 +4278,8 @@ static void properties_values(test_batch_runner *runner) {
            scalar.value.string.length == 9 && !memcmp(scalar.value.string.data, "one\n\ntwo\n", 9),
        "literal prose keeps internal newlines and a clipped final newline");
     INT_EQ(runner, document_scope_of(document, metadata, source).end.line, 20, "metadata ends at the closing fence");
-    INT_EQ(runner, document_scope_of(document, markdown_core_node_get_first_child(root), source).start.line, 21,
-           "body stays outside metadata");
+    INT_EQ(runner, document_scope_of(document, facade_child(root, MARKDOWN_CORE_FIELD_CONTENT, 0), source).start.line,
+           21, "body stays outside metadata");
     markdown_core_document_free(document);
 }
 
@@ -4354,7 +4397,7 @@ static void properties_source_boundaries(test_batch_runner *runner) {
                                      value.value.string.length == 5 && !memcmp(value.value.string.data, "ready", 5)
                                : state == NULL,
            "only a closed bracketed member allows the next independent field");
-        INT_EQ(runner, document_scope_of(doc, markdown_core_node_get_first_child(root), source).start.line,
+        INT_EQ(runner, document_scope_of(doc, facade_child(root, MARKDOWN_CORE_FIELD_CONTENT, 0), source).start.line,
                document_scope_of(doc, metadata, source).end.line + 1, "the closing fence always separates the body");
         markdown_core_document_free(doc);
     }
@@ -5817,8 +5860,9 @@ static void cross_link_fields(test_batch_runner *runner) {
     const char *source = "[[ Note ]] [[Note|]] ![[#^block|raw *label*]]";
     markdown_core_document *doc = facade_parse((const uint8_t *)source, strlen(source));
     OK(runner, doc != NULL, "cross links parse through facade");
-    const markdown_core_node *node = markdown_core_node_get_first_child(markdown_core_document_root(doc));
-    node = markdown_core_node_get_first_child(node);
+    const markdown_core_node *paragraph =
+        facade_child(markdown_core_document_root(doc), MARKDOWN_CORE_FIELD_CONTENT, 0);
+    const markdown_core_node *node = facade_child(paragraph, MARKDOWN_CORE_FIELD_CONTENT, 0);
     markdown_core_destination dest = facade_destination(node);
     markdown_core_optional_string label = facade_cross_label(node);
     OK(runner, dest.kind == MARKDOWN_CORE_DESTINATION_CROSS, "cross links produce the cross destination branch");
@@ -5826,11 +5870,11 @@ static void cross_link_fields(test_batch_runner *runner) {
        "path bytes are preserved and anchor is absent");
     OK(runner, markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_CROSS_LINK && !label.has_value,
        "no separator means absent label");
-    OK(runner, markdown_core_node_get_first_child(node) == NULL, "a cross link is an occurrence-owned leaf");
-    node = markdown_core_node_get_next_sibling(markdown_core_node_get_next_sibling(node));
+    OK(runner, facade_child(node, 0, 0) == NULL, "a cross link is an occurrence-owned leaf");
+    node = facade_child(paragraph, MARKDOWN_CORE_FIELD_CONTENT, 2);
     label = facade_cross_label(node);
     OK(runner, label.has_value && label.value.length == 0, "an authored empty label remains present");
-    node = markdown_core_node_get_next_sibling(markdown_core_node_get_next_sibling(node));
+    node = facade_child(paragraph, MARKDOWN_CORE_FIELD_CONTENT, 4);
     OK(runner, markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_CROSS_EMBEDDED, "transclusion has its own kind");
     OK(runner,
        strcmp(facade_kind_name(MARKDOWN_CORE_KIND_CROSS_EMBEDDED), "CrossEmbedded") == 0 &&
@@ -8870,8 +8914,9 @@ static void scope_queries_count_in_the_document_unit(test_batch_runner *runner) 
         if (!document) {
             continue;
         }
-        const markdown_core_node *paragraph = markdown_core_node_get_first_child(markdown_core_document_root(document));
-        const markdown_core_node *text = markdown_core_node_get_first_child(paragraph);
+        const markdown_core_node *paragraph =
+            facade_child(markdown_core_document_root(document), MARKDOWN_CORE_FIELD_CONTENT, 0);
+        const markdown_core_node *text = facade_child(paragraph, MARKDOWN_CORE_FIELD_CONTENT, 0);
         markdown_core_scope scope = document_scope_of(document, text, source);
         OK(runner,
            scope.start.line == 1 && scope.start.column == 1 && scope.end.line == 1 &&
@@ -10513,7 +10558,8 @@ static void session_edits_and_spans(test_batch_runner *runner) {
         return;
     }
     document = markdown_core_session_document(session);
-    const markdown_core_node *first = markdown_core_node_get_first_child(markdown_core_document_root(document));
+    const markdown_core_node *first =
+        facade_child(markdown_core_document_root(document), MARKDOWN_CORE_FIELD_CONTENT, 0);
     size_t units = 12;
     static const struct {
         size_t start, end, start2, end2, count;
@@ -10536,7 +10582,7 @@ static void session_edits_and_spans(test_batch_runner *runner) {
     markdown_core_text_edit edit = {units - 1, units - 1, (const uint8_t *)"s", 1};
     OK(runner,
        markdown_core_session_edit(session, &edit, 1, &document) == MARKDOWN_CORE_OK &&
-           markdown_core_node_get_first_child(markdown_core_document_root(document)) == first,
+           facade_child(markdown_core_document_root(document), MARKDOWN_CORE_FIELD_CONTENT, 0) == first,
        "an edit of the second paragraph keeps the first's object");
     OK(runner,
        markdown_core_session_append(session, (const uint8_t *)"\xe4\xb8", 2, &document) == MARKDOWN_CORE_OK &&

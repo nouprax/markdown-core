@@ -237,13 +237,14 @@ static bool table_seal(markdown_core_parser *parser, markdown_core_definition_ta
     return true;
 }
 
-static bool relation_chain(markdown_core_relation *relation, const char *group, const markdown_core_node *first) {
-    *relation = (markdown_core_relation){group, first, NULL, false};
+static bool relation_chain(markdown_core_relation *relation, const char *group, markdown_core_field name,
+                           const markdown_core_node *first) {
+    *relation = (markdown_core_relation){group, first, NULL, name, 0, false};
     return true;
 }
 
-static bool relation_one(markdown_core_relation *relation, const markdown_core_node *node) {
-    *relation = (markdown_core_relation){NULL, node, node->next, true};
+static bool relation_one(markdown_core_relation *relation, markdown_core_field name, const markdown_core_node *node) {
+    *relation = (markdown_core_relation){NULL, node, node->next, name, 0, true};
     return true;
 }
 
@@ -339,6 +340,14 @@ static bool fields_empty(const markdown_core_node *node, relation_shape shape) {
     return false;
 }
 
+/* The field a kind's children are: a DefinitionList's definitions and a
+ * TableRow's cells, and every other kind's content. */
+static inline markdown_core_field children_field(const markdown_core_node *node) {
+    return node->kind == MARKDOWN_CORE_NODE_DEFINITION_LIST ? MARKDOWN_CORE_FIELD_DEFINITIONS
+           : node->kind == MARKDOWN_CORE_NODE_TABLE_ROW     ? MARKDOWN_CORE_FIELD_CELLS
+                                                            : MARKDOWN_CORE_FIELD_CONTENT;
+}
+
 void markdown_core_relations_begin(markdown_core_relation_cursor *cursor, const markdown_core_node *owner) {
     *cursor = (markdown_core_relation_cursor){owner, (uint8_t)shape_of(owner), 0, NULL};
 }
@@ -348,6 +357,8 @@ void markdown_core_relations_begin(markdown_core_relation_cursor *cursor, const 
  * when it is empty. `more` says whether stepping again may find another. */
 static inline bool relations_next(markdown_core_relation_cursor *cursor, markdown_core_relation *relation, bool *more) {
     static const char *const table_groups[] = {"TableHead", "TableBody", "TableFoot"};
+    static const markdown_core_field table_fields[] = {MARKDOWN_CORE_FIELD_HEAD, MARKDOWN_CORE_FIELD_CONTENT,
+                                                       MARKDOWN_CORE_FIELD_FOOT};
     const markdown_core_node *node = cursor->owner;
     int step = cursor->step++;
     /* An absent optional field steps on to the next relation at once. */
@@ -356,19 +367,19 @@ static inline bool relations_next(markdown_core_relation_cursor *cursor, markdow
         if (step == 0) {
             if (node->as.document->metadata) {
                 *more = true;
-                return relation_one(relation, node->as.document->metadata);
+                return relation_one(relation, MARKDOWN_CORE_FIELD_METADATA, node->as.document->metadata);
             }
             step = cursor->step++;
         }
         *more = false;
-        return step == 1 && relation_chain(relation, NULL, node->first_child);
+        return step == 1 && relation_chain(relation, NULL, MARKDOWN_CORE_FIELD_CONTENT, node->first_child);
     case SHAPE_TABLE: {
         const markdown_core_table *table = node->opaque;
         if (step == 0) {
             cursor->next = node->first_child;
             if (table->caption) {
                 *more = true;
-                return relation_one(relation, table->caption);
+                return relation_one(relation, MARKDOWN_CORE_FIELD_CAPTION, table->caption);
             }
             step = cursor->step++;
         }
@@ -381,7 +392,7 @@ static inline bool relations_next(markdown_core_relation_cursor *cursor, markdow
             end = end->next;
         }
         cursor->next = end;
-        *relation = (markdown_core_relation){table_groups[step - 1], first, end, false};
+        *relation = (markdown_core_relation){table_groups[step - 1], first, end, table_fields[step - 1], 0, false};
         *more = step < 3;
         return true;
     }
@@ -390,46 +401,49 @@ static inline bool relations_next(markdown_core_relation_cursor *cursor, markdow
             const markdown_core_node *label = markdown_core_directive_label(node);
             if (label) {
                 *more = true;
-                return relation_one(relation, label);
+                return relation_one(relation, MARKDOWN_CORE_FIELD_LABEL, label);
             }
             step = cursor->step++;
         }
         *more = false;
-        return step == 1 && relation_chain(relation, NULL, node->first_child);
+        return step == 1 && relation_chain(relation, NULL, MARKDOWN_CORE_FIELD_CONTENT, node->first_child);
     case SHAPE_CALLOUT:
         if (step == 0) {
             if (node->as.callout->title) {
                 *more = true;
-                return relation_chain(relation, "Title", node->as.callout->title->first_child);
+                return relation_chain(relation, "Title", MARKDOWN_CORE_FIELD_TITLE,
+                                      node->as.callout->title->first_child);
             }
             step = cursor->step++;
         }
         *more = false;
-        return step == 1 && relation_chain(relation, NULL, node->first_child);
+        return step == 1 && relation_chain(relation, NULL, MARKDOWN_CORE_FIELD_CONTENT, node->first_child);
     case SHAPE_CITE:
         *more = false;
-        return step == 0 && relation_chain(relation, NULL, node->as.cite->citations);
+        return step == 0 && relation_chain(relation, NULL, MARKDOWN_CORE_FIELD_CITATIONS, node->as.cite->citations);
     case SHAPE_CITATION: {
         const markdown_core_citation_item *citation = node->as.citation;
         *more = true;
         if (step == 0) {
             if (citation->note) {
-                return relation_one(relation, citation->note);
+                return relation_one(relation, MARKDOWN_CORE_FIELD_NOTE, citation->note);
             }
             step = cursor->step++;
         }
         if (step == 1) {
-            return relation_chain(relation, "CitationPrefix", citation->prefix ? citation->prefix->first_child : NULL);
+            return relation_chain(relation, "CitationPrefix", MARKDOWN_CORE_FIELD_PREFIX,
+                                  citation->prefix ? citation->prefix->first_child : NULL);
         }
         *more = false;
-        return step == 2 &&
-               relation_chain(relation, "CitationSuffix", citation->suffix ? citation->suffix->first_child : NULL);
+        return step == 2 && relation_chain(relation, "CitationSuffix", MARKDOWN_CORE_FIELD_SUFFIX,
+                                           citation->suffix ? citation->suffix->first_child : NULL);
     }
     case SHAPE_DEFINITION: {
         if (step == 0) {
             cursor->next = node->first_child;
             *more = cursor->next != NULL;
-            return relation_chain(relation, "DefinitionTerm", node->as.definition->term->first_child);
+            return relation_chain(relation, "DefinitionTerm", MARKDOWN_CORE_FIELD_TERM,
+                                  node->as.definition->term->first_child);
         }
         const markdown_core_node *body = cursor->next;
         if (!body) {
@@ -437,11 +451,13 @@ static inline bool relations_next(markdown_core_relation_cursor *cursor, markdow
         }
         cursor->next = body->next;
         *more = cursor->next != NULL;
-        return relation_chain(relation, "DefinitionBody", body->first_child);
+        relation_chain(relation, "DefinitionBody", MARKDOWN_CORE_FIELD_CONTENT, body->first_child);
+        relation->list = (uint32_t)(step - 1);
+        return true;
     }
     case SHAPE_CHILDREN:
         *more = false;
-        return step == 0 && relation_chain(relation, NULL, node->first_child);
+        return step == 0 && relation_chain(relation, NULL, children_field(node), node->first_child);
     }
     return false;
 }
@@ -1809,14 +1825,6 @@ const markdown_core_run *markdown_core_node_runs(const markdown_core_node *node,
     return runs ? &runs->items[0].run : NULL;
 }
 
-static size_t chain_length(const markdown_core_node *first) {
-    size_t count = 0;
-    for (; first; first = first->next) {
-        count++;
-    }
-    return count;
-}
-
 void markdown_core_walk_begin(markdown_core_walk *walk, const markdown_core_node *root) {
     *walk = (markdown_core_walk){.root = root};
 }
@@ -2194,14 +2202,125 @@ markdown_core_status markdown_core_document_node_at(const markdown_core_document
     return MARKDOWN_CORE_OK;
 }
 
-const markdown_core_node *markdown_core_node_get_first_child(const markdown_core_node *node) {
-    return node->kind != MARKDOWN_CORE_NODE_DEFINITION ? node->first_child : NULL;
+/* A TREE CURSOR (markdown_core.h): its path from the start node, one frame
+ * per node on it. Each frame below the top holds where its node's children
+ * are read: the relation in hand and the cursor over the rest. */
+typedef struct {
+    const markdown_core_node *node;
+    markdown_core_relation_cursor relations;
+    markdown_core_relation relation;
+} cursor_frame;
+
+struct markdown_core_cursor {
+    cursor_frame *frames;
+    size_t count, capacity;
+};
+
+markdown_core_status markdown_core_cursor_new(const markdown_core_node *node, markdown_core_cursor **cursor) {
+    markdown_core_cursor *made = markdown_core_alloc(1, sizeof(*made));
+    if (!made || !(made->frames = markdown_core_alloc(8, sizeof(*made->frames)))) {
+        markdown_core_free(made);
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    made->capacity = 8;
+    markdown_core_cursor_reset(made, node);
+    *cursor = made;
+    return MARKDOWN_CORE_OK;
 }
 
-const markdown_core_node *markdown_core_node_get_next_sibling(const markdown_core_node *node) { return node->next; }
+void markdown_core_cursor_free(markdown_core_cursor *cursor) {
+    if (cursor) {
+        markdown_core_free(cursor->frames);
+        markdown_core_free(cursor);
+    }
+}
+
+void markdown_core_cursor_reset(markdown_core_cursor *cursor, const markdown_core_node *node) {
+    cursor->frames[0] = (cursor_frame){.node = node};
+    cursor->count = 1;
+}
+
+const markdown_core_node *markdown_core_cursor_node(const markdown_core_cursor *cursor) {
+    return cursor->frames[cursor->count - 1].node;
+}
+
+markdown_core_field markdown_core_cursor_field(const markdown_core_cursor *cursor) {
+    return cursor->count > 1 ? cursor->frames[cursor->count - 2].relation.name : (markdown_core_field)0;
+}
+
+size_t markdown_core_cursor_list(const markdown_core_cursor *cursor) {
+    return cursor->count > 1 ? cursor->frames[cursor->count - 2].relation.list : 0;
+}
+
+size_t markdown_core_cursor_depth(const markdown_core_cursor *cursor) { return cursor->count - 1; }
+
+/* The first node of the next relation of `frame` that holds one, or NULL. */
+static const markdown_core_node *cursor_relation(cursor_frame *frame) {
+    while (markdown_core_relations_next(&frame->relations, &frame->relation)) {
+        if (frame->relation.first != frame->relation.end) {
+            return frame->relation.first;
+        }
+    }
+    return NULL;
+}
+
+markdown_core_status markdown_core_cursor_child(markdown_core_cursor *cursor, bool *moved) {
+    *moved = false;
+    if (cursor->count == cursor->capacity) {
+        cursor_frame *frames =
+            markdown_core_reserve(cursor->frames, &cursor->capacity, cursor->count + 1, sizeof(*frames));
+        if (!frames) {
+            return MARKDOWN_CORE_ALLOCATION_FAILED;
+        }
+        cursor->frames = frames;
+    }
+    cursor_frame *frame = &cursor->frames[cursor->count - 1];
+    markdown_core_relations_begin(&frame->relations, frame->node);
+    const markdown_core_node *child = cursor_relation(frame);
+    if (child) {
+        cursor->frames[cursor->count++] = (cursor_frame){.node = child};
+        *moved = true;
+    }
+    return MARKDOWN_CORE_OK;
+}
+
+bool markdown_core_cursor_next(markdown_core_cursor *cursor) {
+    if (cursor->count < 2) {
+        return false;
+    }
+    cursor_frame *owner = &cursor->frames[cursor->count - 2], *frame = &cursor->frames[cursor->count - 1];
+    const markdown_core_node *next = frame->node->next;
+    if (next == owner->relation.end) {
+        /* The relation in hand ends here; the owner's later ones are read on
+         * a copy, so a cursor at the last child stays where it is. */
+        cursor_frame rest = *owner;
+        if (!(next = cursor_relation(&rest))) {
+            return false;
+        }
+        *owner = rest;
+    }
+    *frame = (cursor_frame){.node = next};
+    return true;
+}
+
+bool markdown_core_cursor_parent(markdown_core_cursor *cursor) {
+    if (cursor->count < 2) {
+        return false;
+    }
+    cursor->count--;
+    return true;
+}
+
+static size_t chain_count(const markdown_core_node *first) {
+    size_t count = 0;
+    for (; first; first = first->next) {
+        count++;
+    }
+    return count;
+}
 
 size_t markdown_core_node_child_count(const markdown_core_node *node) {
-    return chain_length(markdown_core_node_get_first_child(node));
+    return node->kind != MARKDOWN_CORE_NODE_DEFINITION ? chain_count(node->first_child) : 0;
 }
 
 /* THE READERS. Each reads a field of the kind it is named for, and the
@@ -2755,26 +2874,10 @@ markdown_core_status markdown_core_node_definition_compact(const markdown_core_n
     return MARKDOWN_CORE_OK;
 }
 
-markdown_core_status markdown_core_node_definition_term(const markdown_core_node *node,
-                                                        const markdown_core_node **term) {
+markdown_core_status markdown_core_node_definition_bodies(const markdown_core_node *node, size_t *count) {
     REQUIRE_KIND(node, KIND_BIT(MARKDOWN_CORE_KIND_DEFINITION));
-    *term = node->as.definition->term->first_child;
+    *count = chain_count(node->first_child);
     return MARKDOWN_CORE_OK;
-}
-
-markdown_core_status markdown_core_node_definition_bodies(const markdown_core_node *node,
-                                                          const markdown_core_definition_body **bodies) {
-    REQUIRE_KIND(node, KIND_BIT(MARKDOWN_CORE_KIND_DEFINITION));
-    *bodies = (const markdown_core_definition_body *)node->first_child;
-    return MARKDOWN_CORE_OK;
-}
-
-const markdown_core_definition_body *markdown_core_definition_body_next(const markdown_core_definition_body *body) {
-    return (const markdown_core_definition_body *)((const markdown_core_node *)body)->next;
-}
-
-const markdown_core_node *markdown_core_definition_body_content(const markdown_core_definition_body *body) {
-    return ((const markdown_core_node *)body)->first_child;
 }
 
 const markdown_core_attribute_value *markdown_core_node_attributes(const markdown_core_node *node) {
@@ -2973,13 +3076,6 @@ markdown_core_status markdown_core_node_callout_properties(const markdown_core_n
     return MARKDOWN_CORE_OK;
 }
 
-markdown_core_status markdown_core_node_callout_title(const markdown_core_node *node,
-                                                      const markdown_core_node **title) {
-    REQUIRE_KIND(node, KIND_BIT(MARKDOWN_CORE_KIND_CALLOUT));
-    *title = node->as.callout->title ? node->as.callout->title->first_child : NULL;
-    return MARKDOWN_CORE_OK;
-}
-
 markdown_core_status markdown_core_node_destination(const markdown_core_node *node,
                                                     markdown_core_destination *destination) {
     REQUIRE_KIND(node, RESOURCE_KINDS | CROSS_KINDS);
@@ -3000,31 +3096,10 @@ markdown_core_status markdown_core_node_title(const markdown_core_node *node, ma
     return MARKDOWN_CORE_OK;
 }
 
-markdown_core_status markdown_core_node_cite_citations(const markdown_core_node *node,
-                                                       const markdown_core_node **citations) {
-    REQUIRE_KIND(node, KIND_BIT(MARKDOWN_CORE_KIND_CITE));
-    *citations = node->as.cite->citations;
-    return MARKDOWN_CORE_OK;
-}
-
 markdown_core_status markdown_core_citation_referent(const markdown_core_node *citation,
                                                      markdown_core_referent *referent) {
     REQUIRE_KIND(citation, KIND_BIT(MARKDOWN_CORE_KIND_CITATION));
     *referent = citation_referent(citation);
-    return MARKDOWN_CORE_OK;
-}
-
-markdown_core_status markdown_core_citation_prefix(const markdown_core_node *citation,
-                                                   const markdown_core_node **prefix) {
-    REQUIRE_KIND(citation, KIND_BIT(MARKDOWN_CORE_KIND_CITATION));
-    *prefix = citation->as.citation->prefix ? citation->as.citation->prefix->first_child : NULL;
-    return MARKDOWN_CORE_OK;
-}
-
-markdown_core_status markdown_core_citation_suffix(const markdown_core_node *citation,
-                                                   const markdown_core_node **suffix) {
-    REQUIRE_KIND(citation, KIND_BIT(MARKDOWN_CORE_KIND_CITATION));
-    *suffix = citation->as.citation->suffix ? citation->as.citation->suffix->first_child : NULL;
     return MARKDOWN_CORE_OK;
 }
 
@@ -3103,13 +3178,6 @@ markdown_core_status markdown_core_footnote_label(const markdown_core_node *foot
     return MARKDOWN_CORE_OK;
 }
 
-markdown_core_status markdown_core_footnote_content(const markdown_core_node *footnote,
-                                                    const markdown_core_node **content) {
-    REQUIRE_KIND(footnote, KIND_BIT(MARKDOWN_CORE_KIND_FOOTNOTE));
-    *content = footnote->first_child;
-    return MARKDOWN_CORE_OK;
-}
-
 size_t markdown_core_document_reference_count(const markdown_core_document *document) {
     return document->root->as.document->references.count;
 }
@@ -3154,13 +3222,6 @@ markdown_core_status markdown_core_specimen_properties(const markdown_core_node 
                                                        markdown_core_optional_i64 *start) {
     REQUIRE_KIND(specimen, KIND_BIT(MARKDOWN_CORE_KIND_SPECIMEN));
     specimen_properties(specimen, label, start);
-    return MARKDOWN_CORE_OK;
-}
-
-markdown_core_status markdown_core_specimen_content(const markdown_core_node *specimen,
-                                                    const markdown_core_node **content) {
-    REQUIRE_KIND(specimen, KIND_BIT(MARKDOWN_CORE_KIND_SPECIMEN));
-    *content = specimen->first_child;
     return MARKDOWN_CORE_OK;
 }
 
@@ -3771,8 +3832,8 @@ static void dump_node(dump_buffer *buffer, const markdown_core_node *node, const
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     /* `children` counts structural children: a cite's are its items and a
      * definition's its bodies. */
-    size_t child_count = kind == MARKDOWN_CORE_KIND_CITE         ? chain_length(node->as.cite->citations)
-                         : kind == MARKDOWN_CORE_KIND_DEFINITION ? chain_length(node->first_child)
+    size_t child_count = kind == MARKDOWN_CORE_KIND_CITE         ? chain_count(node->as.cite->citations)
+                         : kind == MARKDOWN_CORE_KIND_DEFINITION ? chain_count(node->first_child)
                                                                  : markdown_core_node_child_count(node);
     dump_prefix(buffer, depth);
     buffer_cstr(buffer, S_kind_name[kind]);

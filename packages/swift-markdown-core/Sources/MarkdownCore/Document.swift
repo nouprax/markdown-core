@@ -107,15 +107,17 @@ public struct Document: Markup {
         guard status == MARKDOWN_CORE_OK, let document else { throw MarkdownCoreError(status) }
         defer { markdown_core_document_free(document) }
 
-        return Document(native: document, unit: unit)
+        return try Document(native: document, unit: unit)
     }
 }
 
 extension Document {
     /// The value copy of a native document, from a parse or a session. It
     /// borrows nothing from `native`, which may be released right after.
-    init(native: OpaquePointer, unit: TextUnit) {
-        var builder = DocumentBuilder(document: native, root: markdown_core_document_root(native), unit: unit)
+    /// Throws ``MarkdownCoreError`` with ``ErrorCode/allocationFailed`` when
+    /// an allocation fails.
+    init(native: OpaquePointer, unit: TextUnit) throws {
+        var builder = try DocumentBuilder(document: native, root: markdown_core_document_root(native), unit: unit)
         self.init(record: builder.build())
     }
 }

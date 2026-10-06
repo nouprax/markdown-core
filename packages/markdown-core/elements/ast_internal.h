@@ -42,6 +42,10 @@ typedef struct markdown_core_relation {
     const char *group;
     const markdown_core_node *first;
     const markdown_core_node *end;
+    /* The canonical field the relation is, and which of its lists when it
+     * is a list of lists (a definition's bodies). */
+    markdown_core_field name;
+    uint32_t list;
     /* Whether the relation is a field holding one node of its own (a
      * document's metadata, a table's caption, a directive's label, a
      * citation's note), rather than a list. */

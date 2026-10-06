@@ -284,14 +284,14 @@ static int case_hard_link_emph(pc_context *context) {
     }
 
     root = markdown_core_document_root(context->document);
-    paragraph = markdown_core_node_get_first_child(root);
-    text = markdown_core_node_get_first_child(paragraph);
+    paragraph = ts_child(root, MARKDOWN_CORE_FIELD_CONTENT, 0);
+    text = ts_child(paragraph, MARKDOWN_CORE_FIELD_CONTENT, 0);
     TS_OK(markdown_core_node_literal(text, &value));
     if (value.length != 4 || memcmp(value.data, "**x ", 4) != 0) {
         fprintf(stderr, "leading text is not the literal '**x '\n");
         return -1;
     }
-    link = markdown_core_node_get_next_sibling(text);
+    link = ts_child(paragraph, MARKDOWN_CORE_FIELD_CONTENT, 1);
     if (markdown_core_node_get_kind(link) != MARKDOWN_CORE_KIND_LINK) {
         fprintf(stderr, "second inline is not a Link\n");
         return -1;
@@ -301,7 +301,7 @@ static int case_hard_link_emph(pc_context *context) {
         fprintf(stderr, "link destination is not 'd'\n");
         return -1;
     }
-    emphasis = markdown_core_node_get_next_sibling(markdown_core_node_get_first_child(link));
+    emphasis = ts_child(link, MARKDOWN_CORE_FIELD_CONTENT, 1);
     if (markdown_core_node_get_kind(emphasis) != MARKDOWN_CORE_KIND_EMPHASIS) {
         fprintf(stderr, "emphasis is not inside the link\n");
         return -1;
@@ -839,12 +839,12 @@ static int case_tables(pc_context *context) {
         return -1;
     }
     root = markdown_core_document_root(context->document);
-    paragraph = markdown_core_node_get_first_child(root);
+    paragraph = ts_child(root, MARKDOWN_CORE_FIELD_CONTENT, 0);
     if (markdown_core_node_get_kind(paragraph) != MARKDOWN_CORE_KIND_PARAGRAPH) {
         fprintf(stderr, "leading block is not a paragraph\n");
         return -1;
     }
-    TS_OK(markdown_core_node_literal(markdown_core_node_get_first_child(paragraph), &value));
+    TS_OK(markdown_core_node_literal(ts_child(paragraph, MARKDOWN_CORE_FIELD_CONTENT, 0), &value));
     if (value.length != 3 || memcmp(value.data, "aaa", 3) != 0) {
         fprintf(stderr, "leading paragraph is not the literal 'aaa'\n");
         return -1;
@@ -1000,13 +1000,16 @@ static int pc_reference_payload_visit(const markdown_core_node *node, ts_ast_ran
         }
     } else if (kind == MARKDOWN_CORE_KIND_CITE) {
         /* A call's payload is its referent (M4). */
-        const markdown_core_node *item;
-        for (item = ts_field(node, markdown_core_node_cite_citations); item;
-             item = markdown_core_node_get_next_sibling(item)) {
+        markdown_core_cursor *cursor;
+        bool moved;
+        TS_OK(markdown_core_cursor_new(node, &cursor));
+        TS_OK(markdown_core_cursor_child(cursor, &moved));
+        for (; moved; moved = markdown_core_cursor_next(cursor)) {
             markdown_core_referent referent;
-            TS_OK(markdown_core_citation_referent(item, &referent));
+            TS_OK(markdown_core_citation_referent(markdown_core_cursor_node(cursor), &referent));
             total->bytes += referent.label.length + referent.key.length;
         }
+        markdown_core_cursor_free(cursor);
     }
     return 0;
 }
@@ -1120,8 +1123,8 @@ static int case_directive_colon_pairs(pc_context *context) { return pc_directive
 
 static const markdown_core_node *pc_first_directive(const pc_context *context) {
     const markdown_core_node *root = markdown_core_document_root(context->document);
-    const markdown_core_node *paragraph = markdown_core_node_get_first_child(root);
-    return markdown_core_node_get_first_child(paragraph);
+    const markdown_core_node *paragraph = ts_child(root, MARKDOWN_CORE_FIELD_CONTENT, 0);
+    return ts_child(paragraph, MARKDOWN_CORE_FIELD_CONTENT, 0);
 }
 
 static int case_directive_long_label(pc_context *context) {
@@ -1154,12 +1157,12 @@ static int case_directive_long_label(pc_context *context) {
     }
     label = ts_field(directive, markdown_core_node_directive_label);
     if (!label || markdown_core_node_get_kind(label) != MARKDOWN_CORE_KIND_DIRECTIVE_LABEL ||
-        markdown_core_node_get_first_child(directive) != NULL || markdown_core_node_child_count(directive) != 0 ||
-        markdown_core_node_get_next_sibling(label) != NULL) {
+        ts_child(directive, MARKDOWN_CORE_FIELD_CONTENT, 0) != NULL || markdown_core_node_child_count(directive) != 0 ||
+        ts_child_count(directive, MARKDOWN_CORE_FIELD_LABEL) != 1) {
         fprintf(stderr, "a directive label is Markup in a field, not directive content\n");
         return -1;
     }
-    label_child = markdown_core_node_get_first_child(label);
+    label_child = ts_child(label, MARKDOWN_CORE_FIELD_CONTENT, 0);
     expected = ts_repeat("a", 1500, NULL);
     if (!expected) {
         return -1;
@@ -1237,8 +1240,8 @@ static int pc_formula_case(pc_context *context, const char *prefix, const char *
     }
     if (expected_literal) {
         const markdown_core_node *root = markdown_core_document_root(context->document);
-        const markdown_core_node *paragraph = markdown_core_node_get_first_child(root);
-        const markdown_core_node *formula = markdown_core_node_get_first_child(paragraph);
+        const markdown_core_node *paragraph = ts_child(root, MARKDOWN_CORE_FIELD_CONTENT, 0);
+        const markdown_core_node *formula = ts_child(paragraph, MARKDOWN_CORE_FIELD_CONTENT, 0);
         markdown_core_placement mode;
         markdown_core_string literal;
         size_t expected_length = strlen(expected_literal);
@@ -1329,8 +1332,8 @@ static int case_task_marker_runs(pc_context *unused) {
             }
             if (result == 0) {
                 const markdown_core_node *list =
-                    markdown_core_node_get_first_child(markdown_core_document_root(context.document));
-                const markdown_core_node *item = markdown_core_node_get_first_child(list);
+                    ts_child(markdown_core_document_root(context.document), MARKDOWN_CORE_FIELD_CONTENT, 0);
+                const markdown_core_node *item = ts_child(list, MARKDOWN_CORE_FIELD_CONTENT, 0);
                 markdown_core_optional_string marker;
                 TS_OK(markdown_core_node_list_item_marker(item, &marker));
                 if (marker.has_value || pc_expect_count(&context, MARKDOWN_CORE_KIND_LIST_ITEM, 1, "ListItem") != 0 ||

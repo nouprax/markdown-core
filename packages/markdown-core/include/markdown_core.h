@@ -501,14 +501,64 @@ MARKDOWN_CORE_API markdown_core_node_kind markdown_core_node_get_kind(const mark
  * not a markdown_core_node_kind. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_kind_name(markdown_core_node_kind kind, const char **name);
 
-/** A directive's `label` is a separate node-valued field and is not part of
- * its child sequence. For a `DirectiveBlock`, these functions traverse only
- * block `content`; an inline `Directive` has no children. Read its label with
- * `markdown_core_node_directive_label`. DefinitionList exposes its Definition
- * members here. Definition has no generic children: its term and ordered body
- * collections are read through the definition accessors below. */
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_first_child(const markdown_core_node *node);
-MARKDOWN_CORE_API const markdown_core_node *markdown_core_node_get_next_sibling(const markdown_core_node *node);
+/** THE NODE-VALUED FIELDS of the canonical AST (canonical-ast.json), which a
+ * cursor names as it reads a node in one. A Table's rows are in `HEAD`,
+ * `CONTENT` and `FOOT`; a Definition's `CONTENT` is a list of lists, its
+ * bodies, and markdown_core_cursor_list says which body a node is in. */
+typedef enum markdown_core_field {
+    MARKDOWN_CORE_FIELD_CONTENT = 1,
+    MARKDOWN_CORE_FIELD_METADATA = 2,
+    MARKDOWN_CORE_FIELD_TITLE = 3,
+    MARKDOWN_CORE_FIELD_CAPTION = 4,
+    MARKDOWN_CORE_FIELD_HEAD = 5,
+    MARKDOWN_CORE_FIELD_FOOT = 6,
+    MARKDOWN_CORE_FIELD_CELLS = 7,
+    MARKDOWN_CORE_FIELD_LABEL = 8,
+    MARKDOWN_CORE_FIELD_DEFINITIONS = 9,
+    MARKDOWN_CORE_FIELD_TERM = 10,
+    MARKDOWN_CORE_FIELD_CITATIONS = 11,
+    MARKDOWN_CORE_FIELD_NOTE = 12,
+    MARKDOWN_CORE_FIELD_PREFIX = 13,
+    MARKDOWN_CORE_FIELD_SUFFIX = 14,
+} markdown_core_field;
+
+/** A TREE CURSOR walks the tree below the node it starts at, as tree-sitter's
+ * TSTreeCursor does: nodes hold no link to their owner or their siblings, and
+ * the cursor holds its path from its start node on a stack of its own. A
+ * node's children, for the cursor, are the nodes of its node-valued fields in
+ * canonical traversal order (canonical-ast.json, `walk`), each in stored
+ * order; the cursor names the field each is read in. The cursor borrows the
+ * nodes, which live as long as their document. */
+typedef struct markdown_core_cursor markdown_core_cursor;
+/** A new cursor at `node`. ALLOCATION_FAILED when it cannot allocate. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_cursor_new(const markdown_core_node *node,
+                                                                markdown_core_cursor **cursor);
+MARKDOWN_CORE_API void markdown_core_cursor_free(markdown_core_cursor *cursor);
+/** Starts the cursor again, at `node`. */
+MARKDOWN_CORE_API void markdown_core_cursor_reset(markdown_core_cursor *cursor, const markdown_core_node *node);
+/** The node the cursor is at. */
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_cursor_node(const markdown_core_cursor *cursor);
+/** The field of its owner the node is read in; 0 at the start node. */
+MARKDOWN_CORE_API markdown_core_field markdown_core_cursor_field(const markdown_core_cursor *cursor);
+/** Which list of a field of lists the node is in, from 0; 0 in any other
+ * field. */
+MARKDOWN_CORE_API size_t markdown_core_cursor_list(const markdown_core_cursor *cursor);
+/** How many nodes the cursor's path holds below its start node. */
+MARKDOWN_CORE_API size_t markdown_core_cursor_depth(const markdown_core_cursor *cursor);
+/** Moves to the node's first child. `*moved` is false, and the cursor stays,
+ * when the node has none. ALLOCATION_FAILED, the cursor staying, when its
+ * path cannot grow. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_cursor_child(markdown_core_cursor *cursor, bool *moved);
+/** Moves to the next child of the node's owner, in the same field or a later
+ * one; false, the cursor staying, at the last child or at the start node. */
+MARKDOWN_CORE_API bool markdown_core_cursor_next(markdown_core_cursor *cursor);
+/** Moves to the node's owner; false, the cursor staying, at the start node. */
+MARKDOWN_CORE_API bool markdown_core_cursor_parent(markdown_core_cursor *cursor);
+
+/** How many nodes the node's first list field holds: a DefinitionList's
+ * definitions, a Table's rows, a TableRow's cells, and the content of any
+ * other kind that has content; 0 for a Definition and a Cite, whose lists are
+ * their bodies and their citations. */
 MARKDOWN_CORE_API size_t markdown_core_node_child_count(const markdown_core_node *node);
 
 /** KIND ACCESSORS. Each reads the fields of the kinds it names and answers
@@ -564,20 +614,12 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_node_table_cell_spans(const
  * implied by the kind and four surfaces had to keep a constant in step (Q29). */
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_directive_properties(const markdown_core_node *node,
                                                                                markdown_core_optional_string *name);
-/** A `Definition`. Definition collections preserve the term/body boundary.
- * Body cursors are borrowed collection roots, not Markup nodes. All pointers
- * live with Document. */
-typedef struct markdown_core_definition_body markdown_core_definition_body;
+/** A `Definition`; a cursor reads its term and its bodies, and `*count`
+ * receives how many bodies it has, an empty one included. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_definition_compact(const markdown_core_node *node,
                                                                              bool *compact);
-MARKDOWN_CORE_API markdown_core_status markdown_core_node_definition_term(const markdown_core_node *node,
-                                                                          const markdown_core_node **term);
-MARKDOWN_CORE_API markdown_core_status
-markdown_core_node_definition_bodies(const markdown_core_node *node, const markdown_core_definition_body **bodies);
-MARKDOWN_CORE_API const markdown_core_definition_body *
-markdown_core_definition_body_next(const markdown_core_definition_body *body);
-MARKDOWN_CORE_API const markdown_core_node *
-markdown_core_definition_body_content(const markdown_core_definition_body *body);
+MARKDOWN_CORE_API markdown_core_status markdown_core_node_definition_bodies(const markdown_core_node *node,
+                                                                            size_t *count);
 /** Universal fields. Classes and records retain source order and duplicates;
  * absent attributes have zero counts. An `_at` accessor answers OUT_OF_BOUNDS
  * for an index at or past its count. */
@@ -622,11 +664,6 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_node_directive_label(const 
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_callout_properties(const markdown_core_node *node,
                                                                              markdown_core_optional_string *variant,
                                                                              markdown_core_optional_bool *collapsed);
-/** The first node of a `Callout`'s `title`: a node-valued field whose inline
- * nodes follow by `markdown_core_node_get_next_sibling` and are never callout
- * children. A present title holds at least one node, so NULL means no title. */
-MARKDOWN_CORE_API markdown_core_status markdown_core_node_callout_title(const markdown_core_node *node,
-                                                                        const markdown_core_node **title);
 /** The tagged `Destination` value of a `Link`, `Embedded`, `Reference`,
  * `CrossLink`, or `CrossEmbedded`: a value, not a node, so it has no scope
  * and no children, and a branch's fields exist only in that branch; the
@@ -672,8 +709,8 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_node_cross_label(const mark
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_title(const markdown_core_node *node,
                                                                 markdown_core_optional_string *title);
 
-/** Citation items and document definitions are Markup nodes reached through
- * their typed owning relations. The accessors below read kind-specific fields. */
+/** Citation items and document definitions are Markup nodes a cursor reads
+ * in their owners' fields. The accessors below read kind-specific fields. */
 
 /** How a bibliographic citation is to be rendered (M4): `[@key]` is normal,
  * `@key` in running text names the author in text, and `-@key` suppresses
@@ -703,20 +740,9 @@ typedef struct markdown_core_referent {
     const markdown_core_node *note;
 } markdown_core_referent;
 
-/** The first item of a `Cite`; a cite holds at least one item, and the items
- * follow by `markdown_core_node_get_next_sibling` in source order. */
-MARKDOWN_CORE_API markdown_core_status markdown_core_node_cite_citations(const markdown_core_node *node,
-                                                                         const markdown_core_node **citations);
 /** A `Citation`'s referent. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_citation_referent(const markdown_core_node *citation,
                                                                        markdown_core_referent *referent);
-/** The first node of an item's `prefix` or `suffix`, the inline nodes
- * following by `markdown_core_node_get_next_sibling`, or NULL when the affix
- * is empty. */
-MARKDOWN_CORE_API markdown_core_status markdown_core_citation_prefix(const markdown_core_node *citation,
-                                                                     const markdown_core_node **prefix);
-MARKDOWN_CORE_API markdown_core_status markdown_core_citation_suffix(const markdown_core_node *citation,
-                                                                     const markdown_core_node **suffix);
 
 /** THE DOCUMENT'S DEFINITION TABLES. Every `Footnote` -- a definition or an
  * inline note -- and every `Specimen` stays in the tree where it was written;
@@ -745,10 +771,6 @@ MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_specimen_for(
  * in a language map whose equality has an opinion about Unicode. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_footnote_label(const markdown_core_node *footnote,
                                                                     markdown_core_optional_string *label);
-/** The first node of a `Footnote`'s block content, the rest following by
- * `markdown_core_node_get_next_sibling`, or NULL when the content is empty. */
-MARKDOWN_CORE_API markdown_core_status markdown_core_footnote_content(const markdown_core_node *footnote,
-                                                                      const markdown_core_node **content);
 
 /** THE DOCUMENT'S REFERENCES. Every `Reference` stays in the tree where it
  * was written; the document lists them in source order. `_at` answers
@@ -784,8 +806,6 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_reference_label(const markd
 MARKDOWN_CORE_API markdown_core_status markdown_core_specimen_properties(const markdown_core_node *specimen,
                                                                          markdown_core_optional_string *label,
                                                                          markdown_core_optional_i64 *start);
-MARKDOWN_CORE_API markdown_core_status markdown_core_specimen_content(const markdown_core_node *specimen,
-                                                                      const markdown_core_node **content);
 
 /** Allocates the canonical file-tree dump of `node`, a node of `document`,
  * with scopes computed from `source`, the source the document was parsed
