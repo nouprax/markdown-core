@@ -9,19 +9,21 @@ promised to remain compatible between releases.
 - Give every extent one rule: it is a byte offset in the input of the parser
   that produced the node. Block extents stay source offsets; an inline
   node's extent is now an offset in its inline root's content, which starts
-  at 0. Every `Markup` gains `pieces: [Piece]` and `runs: [Run]` after
-  `extent`, both part of equality. A leaf block inside a container and a
-  grid or multiline cell carry one `Piece(lead, span)` per stretch of source
-  they own between container prefixes; containers, tables and rows carry
-  none. An inline root carries the `Run(lead, span, length)`s that map its
-  content to the source: a run whose span equals its length is copied byte
-  for byte, any other run maps as a whole. `document.scope(of:in:)` returns
-  `[Scope]`, one per source range in source order, and `node(at:in:)` and
+  at 0. Every `Markup` gains `runs: [Run]` after `extent`, part of
+  equality. A `Run(lead, span, length)` is a stretch of the node's own
+  source: a run whose span equals its length is copied byte for byte into
+  its content, a run of length 0 is source without content (a fence line,
+  an underline, a continuation indent, a cell's column slice), and any other
+  run maps as a whole. Between its first and last run, the runs cover
+  exactly the node's own source; the bytes between them belong to its
+  containers. A node is an inline root when its runs read content.
+  `document.scope(of:in:)` returns `[Scope]`, one per source range in source
+  order: a block's range less the gaps between its runs, and an inline
+  node's content window mapped through its root's runs. `node(at:in:)` and
   the dumps read every range (`scope=` joins them with `,`). The C facade
-  adds `markdown_core_node_pieces`, `markdown_core_node_runs` and
-  `markdown_core_scopes_free`, and `markdown_core_document_scope` writes an
-  array and its count. MCB3 writes each record's pieces and runs after its
-  extent.
+  adds `markdown_core_node_runs` and `markdown_core_scopes_free`, and
+  `markdown_core_document_scope` writes an array and its count. MCB3 writes
+  each record's runs after its extent.
 
 - Make each link reference definition a `Reference(label, dest, title)`
   leaf block where it was written, with the anchor and attributes the

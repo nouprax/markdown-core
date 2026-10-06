@@ -529,8 +529,8 @@ Document scope=1:1..1:46 anchor=null attributes={} children=1
 .
 Document scope=1:1..4:10 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..2:45 anchor=null attributes={} children=12
-│   ├── Cite scope=1:1..2:0,2:2..2:7 anchor=null attributes={} children=1
-│   │   └── Citation scope=1:1..2:0,2:2..2:6 anchor=null attributes={} referent=bib(key="a",mode=authorInText) children=0
+│   ├── Cite scope=1:1..2:7 anchor=null attributes={} children=1
+│   │   └── Citation scope=1:1..2:6 anchor=null attributes={} referent=bib(key="a",mode=authorInText) children=0
 │   │       ├── CitationPrefix children=0
 │   │       └── CitationSuffix children=1
 │   │           └── Text scope=2:3..2:6 anchor=null attributes={} literal="tail" children=0

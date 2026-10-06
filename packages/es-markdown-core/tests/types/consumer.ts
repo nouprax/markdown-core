@@ -13,7 +13,6 @@ import {
     type Dimensions,
     type Extent,
     type FootnoteTarget,
-    type Piece,
     type Position,
     type Run,
     type Scope,
@@ -61,7 +60,6 @@ document.dump();
 void [unit, dump, explicitDump, nodeDump, explicitNodeDump, edited, appended, sessionText, sessionUnit];
 const id: number = document.id;
 const extent: Extent = document.extent;
-const pieces: readonly Piece[] = document.pieces;
 const runs: readonly Run[] = document.content[0]!.runs;
 const scope: readonly Scope[] = document.scope(document.content[0]!, "# typed");
 const position: Position = { line: 1, column: 3 };
@@ -91,7 +89,7 @@ const target: Reference | Heading | null = document.reference("label");
 // @ts-expect-error a label names a Reference or a Heading, nothing else
 const footnoteTarget: Footnote | null = document.reference("label");
 void [id, extent, scope, hit, equal, footnotes, specimens, footnote, specimen, references, target, footnoteTarget];
-void [pieces, runs];
+void [runs];
 const visitor: MarkupVisitor = {
     citation: (node) => {
         void node.kind;
@@ -401,7 +399,6 @@ const metadata: Metadata = {
     kind: "metadata",
     id: 2,
     extent: { lead: 0, span: 0 },
-    pieces: [],
     runs: [],
     anchor: null,
     attributes: empty,

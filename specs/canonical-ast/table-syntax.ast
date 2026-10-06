@@ -66,12 +66,12 @@ Document scope=1:1..44:7 anchor=null attributes={} children=8
 │   ├── TableBody children=2
 │   │   ├── TableRow scope=31:1..32:5 anchor=null attributes={} children=2
 │   │   │   ├── TableCell scope=31:1..31:4,32:1..32:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │   │   │   └── Paragraph scope=31:1..31:1,32:1..32:1 anchor=null attributes={} children=3
+│   │   │   │   └── Paragraph scope=31:1..31:1,31:6..32:1 anchor=null attributes={} children=3
 │   │   │   │       ├── Text scope=31:1..31:1 anchor=null attributes={} literal="a" children=0
 │   │   │   │       ├── SoftBreak scope=31:6..32:0 anchor=null attributes={} children=0
 │   │   │   │       └── Text scope=32:1..32:1 anchor=null attributes={} literal="c" children=0
 │   │   │   └── TableCell scope=31:5..31:5,32:5..32:5 anchor=null attributes={} rowspan=1 colspan=1 children=1
-│   │   │       └── Paragraph scope=31:5..31:5,32:5..32:5 anchor=null attributes={} children=3
+│   │   │       └── Paragraph scope=31:5..32:0,32:5..32:5 anchor=null attributes={} children=3
 │   │   │           ├── Text scope=31:5..31:5 anchor=null attributes={} literal="b" children=0
 │   │   │           ├── SoftBreak scope=31:6..32:0 anchor=null attributes={} children=0
 │   │   │           └── Text scope=32:5..32:5 anchor=null attributes={} literal="d" children=0

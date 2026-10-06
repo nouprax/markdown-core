@@ -51,7 +51,6 @@ export type {
     ListFlavor,
     OrderedListDelimiter,
     OrderedListVariant,
-    Piece,
     Placement,
     Position,
     Run,

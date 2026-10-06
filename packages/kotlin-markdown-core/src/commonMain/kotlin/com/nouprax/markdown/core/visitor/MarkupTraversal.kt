@@ -19,10 +19,10 @@ internal class Relation(
  * It also places every node it enters: a relation's first node starts
  * `lead` bytes after its owner's start and every later one `lead` bytes after
  * the end of the node before it. The root starts `lead` bytes after 0. A node
- * with runs is an inline root: its first relation is its content, which
- * starts at 0, and every node anywhere in it is placed in that content; the
- * walk holds the root's runs to read the content's source from. The root's
- * later relations are back in source offsets. Roots never nest.
+ * whose runs read content is an inline root: its first relation is its
+ * content, which starts at 0, and every node anywhere in it is placed in that
+ * content; the walk holds the root's runs to read the content's source from.
+ * The root's later relations are back in source offsets. Roots never nest.
  */
 internal class MarkupTraversal(
     root: Markup,
@@ -40,7 +40,7 @@ internal class MarkupTraversal(
         val relations = node.relations()
 
         /** Whether the node is an inline root, whose first relation is its content. */
-        val root = node.runs.isNotEmpty()
+        val root = SourceRuns.readContent(node.runs)
 
         /** Whether the relation in hand is in an inline root's content. */
         var content = outer
@@ -58,6 +58,9 @@ internal class MarkupTraversal(
 
     /** The runs of the inline root whose content the walk is in, or was last. */
     private val runs = SourceRuns()
+
+    /** The runs of the last node outside inline content asked for its places. */
+    private val own = SourceRuns()
     private val places = SourcePlaces()
 
     lateinit var step: Step
@@ -156,29 +159,24 @@ internal class MarkupTraversal(
         end = start + child.extent.span.toLong()
         this.content = content
         // A root is never in content, so its start is a source offset.
-        if (child.runs.isNotEmpty()) runs.read(child.runs, start)
+        if (SourceRuns.readContent(child.runs)) runs.read(child.runs, start)
         frames += Frame(child, level, start, end, content)
     }
 
     /**
      * The source ranges of the node entered or exited, valid until the next
-     * call: in content, the source its content range was read from through
-     * the root's runs; else its pieces, when it has them; else its one range.
+     * call: a window less the gaps between the runs that place it. In
+     * content, the window is the source its content range was read from
+     * through the root's runs; else it is its range, cut by its own runs.
      */
     fun places(): SourcePlaces {
         val node = node!!
         places.clear()
         if (content) {
-            runs.places(start, end, places)
-        } else if (node.pieces.isNotEmpty()) {
-            var at = start
-            for (piece in node.pieces) {
-                val from = at + piece.lead
-                at = from + piece.span.toLong()
-                places.add(from, at)
-            }
+            runs.content(start, end, places)
         } else {
-            places.add(start, end)
+            own.read(node.runs, start)
+            own.cut(start, end, places)
         }
         return places
     }

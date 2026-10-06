@@ -80,9 +80,8 @@ A value type of the contract encodes structurally from its declaration:
 - A value with `fields` writes each field in order.
 - A value with `branches` writes a `u8` branch index -- the branch's position
   in the declaration, from 0 -- and then that branch's fields.
-- `Extent` is `i32` lead and `u32` span, `Piece` is `i32` lead and `u32`
-  span, and `Run` is `i32` lead, `u32` span and `u32` length, in bytes as the
-  contract measures them.
+- `Extent` is `i32` lead and `u32` span, and `Run` is `i32` lead, `u32` span
+  and `u32` length, in bytes as the contract measures them.
 
 A field of type `T` writes `T`. `T?` writes a `u8` presence, 0 or 1, and `T`
 when present. `[T]` writes a `u32` count and that many `T`.
@@ -92,7 +91,7 @@ when present. `[T]` writes a `u32` count and that many `T`.
 A record is:
 
 ```
-u8 kind ordinal   u64 id   Extent   pieces: [Piece]   runs: [Run]   anchor: String?   attributes: Attributes   fields
+u8 kind ordinal   u64 id   Extent   runs: [Run]   anchor: String?   attributes: Attributes   fields
 ```
 
 followed by the kind's fields in the contract's order. A **node-valued**
@@ -142,8 +141,8 @@ destination resolves, in byte order of the label. The id names the
 an id that names no node of one of those kinds is invalid. A reader answers
 a document's reference lookup from this table.
 
-Scopes are not on the wire. A binding computes them from the extents, pieces,
-runs and the source, as the facade's scope query does.
+Scopes are not on the wire. A binding computes them from the extents, runs
+and the source, as the facade's scope query does.
 
 ## What a reader checks
 

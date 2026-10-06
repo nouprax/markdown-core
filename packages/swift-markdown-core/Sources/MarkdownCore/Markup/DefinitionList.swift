@@ -8,9 +8,7 @@ public struct DefinitionList: Markup {
     public var id: MarkupID { record.id }
     /// The authored source range, including the term and all bodies.
     public var extent: Extent { record.extent }
-    /// The parts of its range that are its own, one per line. See ``Piece``.
-    public var pieces: [Piece] { record.pieces }
-    /// Where its first relation's content was read from. See ``Run``.
+    /// The source it read, and where its content was read from. See ``Run``.
     public var runs: [Run] { record.runs }
     /// The explicit anchor, absent when none was attached.
     public var anchor: String? { record.anchor }

@@ -73,17 +73,16 @@ class IdentityTest {
         assertEquals(utf8, utf16)
         assertEquals(utf8.hashCode(), utf16.hashCode())
 
-        // Pieces and runs are values too; inline extents are offsets in the
-        // root's content, so content read from other source bytes is equal.
-        fun paragraph(
-            pieces: kotlin.collections.List<Piece>,
-            runs: kotlin.collections.List<Run>,
-        ) = Paragraph(emptyList(), MarkupID(1), Extent(0, 3u), pieces, runs, null, Attributes.empty)
-        val pieces = listOf(Piece(0, 1u), Piece(1, 1u))
+        // Runs are values too, a run that reads no content included; inline
+        // extents are offsets in the root's content, so content read from
+        // other source bytes is equal.
+        fun paragraph(runs: kotlin.collections.List<Run>) =
+            Paragraph(emptyList(), MarkupID(1), Extent(0, 3u), runs, null, Attributes.empty)
         val runs = listOf(Run(0, 1u, 1u), Run(1, 1u, 1u))
-        assertEquals(paragraph(pieces, runs), paragraph(pieces, runs))
-        assertNotEquals(paragraph(pieces, runs), paragraph(emptyList(), runs))
-        assertNotEquals(paragraph(pieces, runs), paragraph(pieces, listOf(Run(0, 1u, 1u), Run(1, 1u, 0u))))
+        assertEquals(paragraph(runs), paragraph(runs))
+        assertNotEquals(paragraph(runs), paragraph(emptyList()))
+        assertNotEquals(paragraph(runs), paragraph(listOf(Run(0, 1u, 1u), Run(1, 1u, 0u))))
+        assertNotEquals(paragraph(runs), paragraph(runs + Run(0, 1u, 0u)))
 
         fun quoted(source: String) =
             assertIs<Paragraph>(assertIs<Callout>(Document.parse(source).content.single()).content.single())
@@ -186,11 +185,10 @@ class ScopeTest {
         val paragraph = assertIs<Paragraph>(item.content.single())
         val emphasis = assertIs<Emphasis>(paragraph.content[2])
         // A leaf block inside a container owns each line from where the
-        // container's prefix ends: its pieces, and the runs its content was
-        // read from, one per line.
-        assertEquals(listOf(Piece(0, 2u), Piece(2, 3u), Piece(2, 2u)), paragraph.pieces)
+        // container's prefix ends: the runs its content was read from, one
+        // per line, and the source between them is not its own.
         assertEquals(listOf(Run(0, 2u, 2u), Run(2, 3u, 3u), Run(2, 2u, 2u)), paragraph.runs)
-        assertTrue(item.pieces.isEmpty() && item.runs.isEmpty() && emphasis.runs.isEmpty())
+        assertTrue(item.runs.isEmpty() && emphasis.runs.isEmpty())
         assertEquals(
             listOf(
                 Scope(Position(1, 3), Position(2, 0)),
@@ -220,6 +218,47 @@ class ScopeTest {
         // The source must cover the last range.
         val failure = assertFailsWith<MarkdownCoreException> { document.scope(emphasis, source.dropLast(2)) }
         assertEquals(ErrorCode.OUT_OF_BOUNDS, failure.code)
+    }
+
+    @Test
+    fun theSourceBetweenRunsIsCutFromEveryNodeTheyPlace() {
+        val source = "> a *b\n> c* d\n"
+        val document = Document.parse(source)
+        val callout = assertIs<Callout>(document.content.single())
+        val paragraph = assertIs<Paragraph>(callout.content.single())
+        val emphasis = assertIs<Emphasis>(paragraph.content[1])
+        // One run per line; the quote marker between them is the callout's.
+        assertEquals(listOf(Run(0, 5u, 5u), Run(2, 4u, 4u)), paragraph.runs)
+        assertEquals(
+            listOf(Scope(Position(1, 3), Position(2, 0)), Scope(Position(2, 3), Position(2, 6))),
+            document.scope(paragraph, source),
+        )
+        assertEquals(
+            listOf(Scope(Position(1, 5), Position(2, 0)), Scope(Position(2, 3), Position(2, 4))),
+            document.scope(emphasis, source),
+        )
+        assertSame(callout, document.node(Position(2, 1), source))
+    }
+
+    @Test
+    fun runsThatReadNoContentPlaceABlockThatIsNoInlineRoot() {
+        val source = "> ```\n> x\n> ```\n"
+        val document = Document.parse(source)
+        val callout = assertIs<Callout>(document.content.single())
+        val code = assertIs<CodeBlock>(callout.content.single())
+        // A code block's literal is no inline content: its runs only say
+        // which source is its own, so the quote markers are the callout's.
+        assertTrue(code.runs.isNotEmpty() && code.runs.all { it.length == 0u })
+        assertEquals(
+            listOf(
+                Scope(Position(1, 3), Position(2, 0)),
+                Scope(Position(2, 3), Position(3, 0)),
+                Scope(Position(3, 3), Position(3, 5)),
+            ),
+            document.scope(code, source),
+        )
+        assertSame(callout, document.node(Position(2, 1), source))
+        assertSame(code, document.node(Position(2, 3), source))
     }
 
     @Test

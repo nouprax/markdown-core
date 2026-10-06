@@ -639,57 +639,59 @@ bool markdown_core_parser_starts_on_line(markdown_core_parser *parser, const mar
 /* The source of input line `line` from where its own bytes begin to where it
  * ends, through its terminator on a line of the document itself. False when
  * the line's content could not be read. */
-static bool S_line_piece(markdown_core_parser *parser, int line, markdown_core_place *piece) {
+static bool S_line_own(markdown_core_parser *parser, int line, markdown_core_place *own_place) {
     bufsize_t length;
     if (!S_input_line_content(parser, markdown_core_parser_visited_line(parser, line), &length)) {
         return false;
     }
     const markdown_core_input_line *geometry = markdown_core_parser_visited_line(parser, line);
     const bufsize_t own = (bufsize_t)geometry->own;
-    piece->start = (uint32_t)(own < length ? markdown_core_parser_source_offset(parser, line, own + 1)
-                                           : markdown_core_parser_source_end(parser, line, own));
-    piece->end = parser->block_root == parser->root ? (uint32_t)markdown_core_input_line_next(parser, geometry)
-                                                    : (uint32_t)markdown_core_parser_source_end(parser, line, length);
+    own_place->start = (uint32_t)(own < length ? markdown_core_parser_source_offset(parser, line, own + 1)
+                                               : markdown_core_parser_source_end(parser, line, own));
+    own_place->end = parser->block_root == parser->root
+                         ? (uint32_t)markdown_core_input_line_next(parser, geometry)
+                         : (uint32_t)markdown_core_parser_source_end(parser, line, length);
     return true;
 }
 
-/* The pieces of `node`, which spans input lines `first` to `last`, more
- * than one. */
-static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_line_pieces(markdown_core_parser *parser, markdown_core_node *node,
-                                                              int first, int last) {
-    markdown_core_pieces *pieces = markdown_core_node_pool_bytes(
-        parser->pool, sizeof(*pieces) + (size_t)(last - first + 1) * sizeof(markdown_core_piece_where));
-    if (!pieces) {
+/* The runs of `node`, which spans input lines `first` to `last`, more than
+ * one: the own source of each line, a run of length 0, those that touch
+ * joined. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_line_runs(markdown_core_parser *parser, markdown_core_node *node,
+                                                            int first, int last) {
+    markdown_core_runs *runs = markdown_core_node_pool_bytes(
+        parser->pool, sizeof(*runs) + (size_t)(last - first + 1) * sizeof(markdown_core_run_where));
+    if (!runs) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
-    pieces->count = 0;
-    markdown_core_place piece;
+    runs->count = runs->content = 0;
+    markdown_core_place own;
     for (int line = first; line <= last; line++) {
-        if (!S_line_piece(parser, line, &piece)) {
-            markdown_core_node_pool_bytes_free(parser->pool, pieces);
+        if (!S_line_own(parser, line, &own)) {
+            markdown_core_node_pool_bytes_free(parser->pool, runs);
             return;
         }
-        if (pieces->count && pieces->items[pieces->count - 1].place.end == piece.start) {
-            pieces->items[pieces->count - 1].place.end = piece.end;
+        if (runs->count && runs->items[runs->count - 1].place.end == own.start) {
+            runs->items[runs->count - 1].place.end = own.end;
         } else {
-            pieces->items[pieces->count++].place = piece;
+            runs->items[runs->count++].place = (markdown_core_run_place){own.start, own.end, 0};
         }
     }
-    if (pieces->count < 2) {
-        markdown_core_node_pool_bytes_free(parser->pool, pieces);
+    if (runs->count < 2) {
+        markdown_core_node_pool_bytes_free(parser->pool, runs);
         return;
     }
-    if (node->pieces) {
-        markdown_core_node_pool_bytes_free(parser->pool, node->pieces);
+    if (node->runs) {
+        markdown_core_node_pool_bytes_free(parser->pool, node->runs);
     }
-    node->pieces = pieces;
+    node->runs = runs;
 }
 
-void markdown_core_parser_place_pieces(markdown_core_parser *parser, markdown_core_node *node,
-                                       const markdown_core_node *container, int *line) {
+void markdown_core_parser_place_runs(markdown_core_parser *parser, markdown_core_node *node,
+                                     const markdown_core_node *container, int *line) {
     /* A block of the document itself lies on whole lines of the source: its
-     * range is one piece. */
+     * own source is its range. */
     if (container == parser->root) {
         return;
     }
@@ -714,7 +716,7 @@ void markdown_core_parser_place_pieces(markdown_core_parser *parser, markdown_co
         }
     }
     if (first < last) {
-        S_line_pieces(parser, node, first, last);
+        S_line_runs(parser, node, first, last);
     }
     *line = last;
 }
@@ -853,16 +855,33 @@ int markdown_core_parser_content_end_place(markdown_core_parser *parser, const m
     return S_content_place(parser, map, offset, true, line, end);
 }
 
+/* Appends to `runs` a run of length 0 over `start` to `end`, joined to a run
+ * of length 0 it touches. */
+static inline void S_runs_add_own(markdown_core_runs *runs, uint32_t start, uint32_t end) {
+    if (start >= end) {
+        return;
+    }
+    markdown_core_run_place *previous = runs->count ? &runs->items[runs->count - 1].place : NULL;
+    if (previous && !previous->length && previous->end == start) {
+        previous->end = end;
+    } else {
+        runs->items[runs->count++].place = (markdown_core_run_place){start, end, 0};
+    }
+}
+
 /* AN INLINE ROOT'S CONTENT BECOMES THE INPUT ITS NODES ARE PLACED IN
  * (markdown_core_inline_start_inlines). The `length` bytes its parse reads
- * keep their map to the source as the root's runs: one run per run of the
+ * keep their map to the source in the root's runs: one run per run of the
  * map, the bytes it reads from where it reads them, copied runs that touch
  * in the source joined into one, and a run that reads source the run before
  * read joined to it, so the runs' source ranges are in order and apart or
- * touching. A copied run reads each content byte
- * from one source byte; any other reads all of its content from all of its
- * source. The root's map becomes the identity, so the parse places its nodes
- * at offsets of the content. */
+ * touching. A copied run reads each content byte from one source byte; any
+ * other reads all of its content from all of its source. The root's own
+ * source that gives no content lies in runs of length 0 between them: the
+ * rest of each line its runs of length 0 cover (markdown_core_parser_place_runs),
+ * or, when it has none, all of the source between its content runs. The
+ * root's map becomes the identity, so the parse places its nodes at offsets
+ * of the content. */
 void markdown_core_parser_read_content(markdown_core_parser *parser, markdown_core_node *node, bufsize_t length) {
     const markdown_core_content_map map = node->content_map;
     node->content_map = (markdown_core_content_map){MARKDOWN_CORE_IDENTITY_MARK, 1, 0};
@@ -873,40 +892,62 @@ void markdown_core_parser_read_content(markdown_core_parser *parser, markdown_co
     const markdown_core_line_mark *mark =
         &parser->line_marks[markdown_core_block_content_mark_at(parser, &map, map.offset)];
     const markdown_core_line_mark *const past = &parser->line_marks[map.first + map.count];
-    /* At most one run per mark from the first to the end of the map. */
+    /* The node's own lines, when it has runs of them; one line without. */
+    markdown_core_runs *const lines = node->runs;
+    const uint32_t line_count = lines ? lines->count : 0;
+    /* At most one content run per mark from the first to the end of the map,
+     * one run of length 0 before each and one after each line. */
     markdown_core_runs *runs = markdown_core_node_pool_bytes(
-        parser->pool, sizeof(*runs) + (size_t)(past - mark) * sizeof(markdown_core_run_where));
+        parser->pool, sizeof(*runs) + ((size_t)(past - mark) * 2 + line_count + 1) * sizeof(markdown_core_run_where));
     if (!runs) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
-    uint32_t count = 0;
+    runs->count = 0;
+    runs->content = (uint32_t)length;
+    uint32_t line = 0, at = 0;
     for (bufsize_t from = map.offset; from < end; mark++) {
         const bufsize_t to = mark + 1 < past && mark[1].content_offset < end ? mark[1].content_offset : end;
         const uint32_t start = (uint32_t)(mark->source + (from - mark->content_offset) * mark->source_step);
         const uint32_t stop = start + (uint32_t)((to - from - 1) * mark->source_step + mark->source_width);
         const uint32_t size = (uint32_t)(to - from);
-        markdown_core_run_where *previous = count ? &runs->items[count - 1] : NULL;
+        from = to;
+        markdown_core_run_place *previous =
+            runs->count && runs->items[runs->count - 1].place.length ? &runs->items[runs->count - 1].place : NULL;
         /* A copied slice that continues a copied run extends it, and one
          * that reads source the run already read, as an expanded tab's
          * columns read one tab, joins it: the run reads all of its content
          * from all of its source. */
-        const bool continues = previous && previous->place.end == start && stop - start == size &&
-                               previous->place.end - previous->place.start == previous->place.length;
-        if (continues || (previous && start < previous->place.end)) {
-            previous->place.end = stop > previous->place.end ? stop : previous->place.end;
-            previous->place.length += size;
-        } else {
-            runs->items[count].place.start = start;
-            runs->items[count].place.end = stop;
-            runs->items[count].place.length = size;
-            count++;
+        const bool continues = previous && previous->end == start && stop - start == size &&
+                               previous->end - previous->start == previous->length;
+        if (continues || (previous && start < previous->end)) {
+            previous->end = stop > previous->end ? stop : previous->end;
+            previous->length += size;
+            at = previous->end;
+            continue;
         }
-        from = to;
+        /* The own source before the slice: the rest of each line it passes,
+         * and its own line up to it; with no lines, all of the source since
+         * the run before. */
+        for (; line < line_count && lines->items[line].place.end <= start; line++) {
+            const markdown_core_run_place own = lines->items[line].place;
+            S_runs_add_own(runs, at > own.start ? at : own.start, own.end);
+        }
+        if (line < line_count && lines->items[line].place.start <= start) {
+            const uint32_t first = lines->items[line].place.start;
+            S_runs_add_own(runs, at > first ? at : first, start);
+        } else if (!lines && runs->count) {
+            S_runs_add_own(runs, at, start);
+        }
+        runs->items[runs->count++].place = (markdown_core_run_place){start, stop, size};
+        at = stop;
     }
-    runs->count = count;
-    if (node->runs) {
-        markdown_core_node_pool_bytes_free(parser->pool, node->runs);
+    for (; line < line_count; line++) {
+        const markdown_core_run_place own = lines->items[line].place;
+        S_runs_add_own(runs, at > own.start ? at : own.start, own.end);
+    }
+    if (lines) {
+        markdown_core_node_pool_bytes_free(parser->pool, lines);
     }
     node->runs = runs;
 }
@@ -1013,10 +1054,10 @@ markdown_core_node *markdown_core_block_finalize(markdown_core_parser *parser, m
 
 void markdown_core_block_settle(markdown_core_parser *parser, markdown_core_node *b) {
     markdown_core_node *parent = b->parent;
-    /* A block that takes text lines in a container has a piece on each of
-     * its lines, whatever its close hook makes of it; one of the document
-     * itself lies on whole lines, in one piece. */
-    const bool pieces = parent != parser->root && S_kind_takes_text(markdown_core_parser_kind(parser, b), b);
+    /* A block that takes text lines in a container has a run of its own
+     * source on each of its lines, whatever its close hook makes of it; one
+     * of the document itself lies on whole lines, its own source its range. */
+    const bool lines = parent != parser->root && S_kind_takes_text(markdown_core_parser_kind(parser, b), b);
     const markdown_core_element_instance *structure = markdown_core_parser_structure(parser, b);
     if (structure && structure->element->finalize_block) {
         structure->element->finalize_block(structure, parser, b);
@@ -1028,9 +1069,9 @@ void markdown_core_block_settle(markdown_core_parser *parser, markdown_core_node
         markdown_core_parser_release_node(parser, b);
         return;
     }
-    if (pieces) {
+    if (lines) {
         int line = parser->line_number;
-        markdown_core_parser_place_pieces(parser, b, parent, &line);
+        markdown_core_parser_place_runs(parser, b, parent, &line);
     }
 }
 

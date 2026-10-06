@@ -22,7 +22,6 @@ extension APISuite {
         let bare = InheritedFields(
             id: empty.id,
             extent: empty.extent,
-            pieces: empty.pieces,
             runs: empty.runs,
             anchor: nil,
             attributes: .empty

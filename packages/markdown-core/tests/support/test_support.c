@@ -377,15 +377,17 @@ static const markdown_core_node *ts_chain_skip(const markdown_core_node *first, 
     return first;
 }
 
+static int64_t ts_content_length(const markdown_core_node *root);
+
 /* A node's relations in canonical field order, read through the public
  * facade alone: each relation's first node leads from the owner's start. A
- * node with runs is an inline root, and its first relation is its content,
- * which leads from 0; `entry` is where the node itself is. */
+ * node whose runs read content is an inline root, and its first relation is
+ * its content, which leads from 0; `entry` is where the node itself is. */
 static void ts_walk_relations(ts_walk_stack *stack, const markdown_core_node *node, int64_t start,
                               const ts_walk_entry *entry) {
     ts_walk_stack relations = {0};
-    size_t relation = 0, runs = 0;
-    (void)markdown_core_node_runs(node, &runs);
+    size_t relation = 0;
+    const bool runs = ts_content_length(node) > 0;
 #define TS_RELATION(first_, count_)                                                                                    \
     do {                                                                                                               \
         const markdown_core_node *relation_first = (first_);                                                           \
@@ -513,19 +515,8 @@ static int64_t ts_content_length(const markdown_core_node *root) {
     return length;
 }
 
-/* Whether the source ranges pieces or runs lead to from `at`, each from the
- * end of the one before, lie in `[0, length]`. */
-static bool ts_pieces_inside(const markdown_core_piece *pieces, size_t count, int64_t at, int64_t length) {
-    for (size_t index = 0; index < count; index++) {
-        int64_t start = at + pieces[index].lead;
-        at = start + (int64_t)pieces[index].span;
-        if (start < 0 || at > length) {
-            return false;
-        }
-    }
-    return true;
-}
-
+/* Whether the source ranges runs lead to from `at`, each from the end of the
+ * one before, lie in `[0, length]`. */
 static bool ts_runs_inside(const markdown_core_run *runs, size_t count, int64_t at, int64_t length) {
     for (size_t index = 0; index < count; index++) {
         int64_t start = at + runs[index].lead;
@@ -541,11 +532,9 @@ static int ts_range_visit(const markdown_core_node *node, ts_ast_place place, vo
     ts_range_check *check = context;
     int64_t length = place.root ? ts_content_length(place.root) : check->length;
     bool inside = place.range.start >= 0 && place.range.end >= place.range.start && place.range.end <= length;
-    size_t pieces = 0, runs = 0;
-    const markdown_core_piece *piece = markdown_core_node_pieces(node, &pieces);
+    size_t runs = 0;
     const markdown_core_run *run = markdown_core_node_runs(node, &runs);
-    inside = inside && ts_pieces_inside(piece, pieces, place.range.start, check->length) &&
-             ts_runs_inside(run, runs, place.range.start, check->length);
+    inside = inside && ts_runs_inside(run, runs, place.range.start, check->length);
     if (!inside) {
         check->outside = node;
         return 1;

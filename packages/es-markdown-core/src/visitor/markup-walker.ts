@@ -59,7 +59,7 @@ interface Frame {
  * holds one frame per level, so depth is data, not call stack. Each node's
  * absolute range follows from its extent: the first node of a relation leads
  * from its owner's start, every later one from the end of the node before it.
- * A node with runs is an inline root: its first relation is its content,
+ * A node whose runs read content is an inline root: its first relation is its content,
  * which starts at 0 and is read from the source through its runs, and every
  * node below that relation is placed in that content; its later relations are
  * back in the coordinates it is in. Roots never nest. Places are absolute
@@ -70,7 +70,7 @@ export function traverse(root: Markup, each: Visit): void {
     const enter = (node: Markup, start: number, within: SourceRuns | null): number => {
         const end = start + node.extent.span;
         each(node, "enter", start, end, within);
-        const content = node.runs.length === 0 ? null : new SourceRuns(node.runs, start);
+        const content = SourceRuns.readContent(node.runs) ? new SourceRuns(node.runs, start) : null;
         frames.push({
             node,
             start,

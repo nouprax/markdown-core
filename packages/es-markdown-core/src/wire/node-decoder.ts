@@ -25,7 +25,6 @@ import type {
     ListFlavor,
     OrderedListDelimiter,
     OrderedListVariant,
-    Piece,
     Placement,
     Position,
     Run,
@@ -122,11 +121,10 @@ export class Decoder {
         const kind = kinds[this.u8()] as NativeKind;
         const id = this.id();
         const extent = this.extent();
-        const pieces = this.sparse((): Piece => ({ lead: this.i32(), span: this.u32() }));
         const runs = this.sparse((): Run => ({ lead: this.i32(), span: this.u32(), length: this.u32() }));
         const anchor = this.optional(() => this.string());
         const attributes = this.attributes();
-        const node = this.fields(kind, { kind, id, extent, pieces, runs, anchor, attributes }) as Markup;
+        const node = this.fields(kind, { kind, id, extent, runs, anchor, attributes }) as Markup;
         if (
             node.kind === "footnote" ||
             node.kind === "specimen" ||

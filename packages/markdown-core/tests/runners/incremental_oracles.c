@@ -184,7 +184,7 @@ static bool source_content(const view *taken, size_t root, int64_t source, int64
             hi = mid;
         }
     }
-    if (lo == taken->nodes[root].run_count || runs[lo].start > source) {
+    if (lo == taken->nodes[root].run_count || runs[lo].start > source || !runs[lo].length) {
         return false;
     }
     *offset = run_copied(&runs[lo]) ? runs[lo].content + (source - runs[lo].start) : runs[lo].content;
@@ -247,9 +247,10 @@ static int view_visit(const markdown_core_node *node, ts_ast_place place, void *
             taken->runs[taken->run_count++] = (view_run){content, runs[index].length, start, at};
             content += runs[index].length;
         }
-    }
-    if (run_count) {
-        taken->root = taken->count;
+        /* A node whose runs read content is an inline root. */
+        if (content) {
+            taken->root = taken->count;
+        }
     }
     taken->count++;
     return 0;
@@ -285,11 +286,10 @@ static const char *line_node(const char *line, const char *end) {
  * scope. */
 static bool view_values(view *taken, const uint8_t *dump, size_t dump_length) {
     const char *cursor = (const char *)dump, *end = cursor + dump_length;
-    size_t index = 0, capacity = dump_length + taken->count * 64 + 1, pieces;
-    /* Room for each node's pieces and runs. */
+    size_t index = 0, capacity = dump_length + taken->count * 64 + 1;
+    /* Room for each node's runs. */
     for (index = 0; index < taken->count; index++) {
-        (void)markdown_core_node_pieces(taken->nodes[index].object, &pieces);
-        capacity += pieces * 24 + taken->nodes[index].run_count * 36;
+        capacity += taken->nodes[index].run_count * 36;
     }
     index = 0;
     taken->values = (char *)malloc(capacity);
@@ -327,14 +327,7 @@ static bool view_values(view *taken, const uint8_t *dump, size_t dump_length) {
                                    (unsigned)entry->extent.span);
             {
                 size_t count, item;
-                const markdown_core_piece *piece = markdown_core_node_pieces(entry->object, &count);
-                const markdown_core_run *run;
-                at += (size_t)snprintf(taken->values + at, capacity - at, " pieces=");
-                for (item = 0; item < count; item++) {
-                    at += (size_t)snprintf(taken->values + at, capacity - at, "%d,%u;", (int)piece[item].lead,
-                                           (unsigned)piece[item].span);
-                }
-                run = markdown_core_node_runs(entry->object, &count);
+                const markdown_core_run *run = markdown_core_node_runs(entry->object, &count);
                 at += (size_t)snprintf(taken->values + at, capacity - at, " runs=");
                 for (item = 0; item < count; item++) {
                     at += (size_t)snprintf(taken->values + at, capacity - at, "%d,%u,%u;", (int)run[item].lead,

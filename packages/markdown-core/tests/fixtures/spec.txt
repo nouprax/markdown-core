@@ -9237,7 +9237,7 @@ the same way in inline links and link reference definitions.)
 .
 Document scope=1:1..2:12 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:12 anchor=null attributes={} children=1
-    └── Link scope=1:1..2:0,2:3..2:12 anchor=null attributes={} dest=url("/uri") title="title" children=1
+    └── Link scope=1:1..2:12 anchor=null attributes={} dest=url("/uri") title="title" children=1
         └── Text scope=1:2..1:5 anchor=null attributes={} literal="link" children=0
 ````````````````````````````````
 

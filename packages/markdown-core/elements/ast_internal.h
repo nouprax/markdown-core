@@ -70,12 +70,13 @@ typedef struct markdown_core_relation_cursor {
 void markdown_core_relations_begin(markdown_core_relation_cursor *cursor, const markdown_core_node *owner);
 bool markdown_core_relations_next(markdown_core_relation_cursor *cursor, markdown_core_relation *relation);
 
-/* AN INLINE ROOT'S RUNS IN ABSOLUTE OFFSETS (node.h, markdown_core_runs): the
+/* A NODE'S RUNS IN ABSOLUTE OFFSETS (node.h, markdown_core_runs): the
  * content offset each run's bytes start at, how many there are, and the
  * source range they were read from. A copied run, whose source is as long as
  * its content, reads each content byte from one source byte; any other reads
- * all of its content from all of its source. Content and source both
- * increase along the runs. */
+ * all of its content from all of its source, and a run of length 0 reads
+ * none. Content and source both increase along the runs, and the source
+ * between two runs is not the node's. */
 typedef struct {
     uint32_t content, length, start, end;
 } markdown_core_source_run;
@@ -88,11 +89,14 @@ typedef struct {
 /* Reads the published `runs`, measured from `origin`, into `table`, whose
  * storage it reuses. False when it could not grow. */
 bool markdown_core_source_runs_read(markdown_core_source_runs *table, const markdown_core_runs *runs, uint32_t origin);
-/* The source ranges of the content range `place`: the parts of the runs it
- * covers, touching parts joined, in source order; an empty range is one
- * empty range where its offset is read from. Writes at most `capacity` and
- * returns how many there are. */
-size_t markdown_core_source_runs_ranges(const markdown_core_source_runs *table, markdown_core_place place,
+/* The source window of the content range `place`: from where its first
+ * byte is read to where its last is; an empty range is the empty window
+ * where its offset is read from. */
+markdown_core_place markdown_core_source_runs_window(const markdown_core_source_runs *table, markdown_core_place place);
+/* The source ranges of `window` less the gaps between the runs of `table`,
+ * in source order; an empty window is one empty range. Writes at most
+ * `capacity` and returns how many there are. */
+size_t markdown_core_source_runs_ranges(const markdown_core_source_runs *table, markdown_core_place window,
                                         markdown_core_place *ranges, size_t capacity);
 
 /* THE CANONICAL WALK: every node of a published document's tree in canonical
@@ -134,9 +138,10 @@ typedef struct markdown_core_walk {
     /* The frame of the owner of the item returned last, counted from 1; 0 for
      * the root. */
     size_t owner;
-    /* The runs of the inline root whose content the walk is in, and the
-     * source ranges markdown_core_walk_ranges answers with. */
-    markdown_core_source_runs runs;
+    /* The runs of the inline root whose content the walk is in, those of
+     * the block whose ranges are asked for, and the source ranges
+     * markdown_core_walk_ranges answers with. */
+    markdown_core_source_runs runs, own;
     markdown_core_place *ranges;
     size_t range_capacity;
 } markdown_core_walk;
@@ -146,9 +151,8 @@ void markdown_core_walk_begin(markdown_core_walk *walk, const markdown_core_node
  * (`failed`). */
 bool markdown_core_walk_next(markdown_core_walk *walk, markdown_core_walk_item *item);
 /* The source ranges of `item`, the node the walk returned last, in source
- * order: its pieces, the source its content range was read from, or its one
- * range. They live in the walk until its next call. False, with the walk
- * `failed`, when they could not be allocated. */
+ * order: its window less the gaps between the runs that place it (ast.c). They live in the walk until its next call.
+ * False, with the walk `failed`, when they could not be allocated. */
 bool markdown_core_walk_ranges(markdown_core_walk *walk, const markdown_core_walk_item *item,
                                const markdown_core_place **ranges, size_t *count);
 /* Whether another line follows the item the walk returned last at its level

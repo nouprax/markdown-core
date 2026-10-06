@@ -2,8 +2,8 @@ package com.nouprax.markdown.core
 
 /**
  * Every node of the AST. A node is a value: two nodes are equal when they
- * have the same kind, [id], scalar fields, [extent], [pieces], [runs] and
- * pairwise equal children in every relation, and a hash reads the [id] alone, so it is
+ * have the same kind, [id], scalar fields, [extent], [runs] and pairwise
+ * equal children in every relation, and a hash reads the [id] alone, so it is
  * consistent with that equality in O(1).
  */
 public sealed class Markup {
@@ -13,10 +13,11 @@ public sealed class Markup {
     /** Where the node is, relative to the node before it; [Document.scope] turns it into editor coordinates. */
     public abstract val extent: Extent
 
-    /** The parts of the node's range that are its own, one per line, when it has more than one. */
-    public abstract val pieces: kotlin.collections.List<Piece>
-
-    /** Where in the source the inline content its first relation is was read from, when it is an inline root's. */
+    /**
+     * The source the node reads, when its range is not all its own, and where
+     * the inline content its first relation is was read from, when they read
+     * content: the node is an inline root.
+     */
     public abstract val runs: kotlin.collections.List<Run>
     public abstract val anchor: String?
     public abstract val attributes: Attributes
@@ -202,7 +203,7 @@ public sealed class Markup {
 
     /** The inherited fields and the kind's scalar fields; relations are compared by [equals]. */
     private fun sameFields(other: Markup): Boolean {
-        if (id != other.id || extent != other.extent || pieces != other.pieces || runs != other.runs) return false
+        if (id != other.id || extent != other.extent || runs != other.runs) return false
         if (anchor != other.anchor || attributes != other.attributes) return false
         return when (this) {
             // The unit only chooses how scopes are counted; it is not a field of the contract.
