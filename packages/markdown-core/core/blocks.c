@@ -57,8 +57,11 @@ static void S_set_last_line_blank(markdown_core_node *node, bool markdown_core_b
 
 static void S_set_last_line_checked(markdown_core_node *node) { node->flags |= MARKDOWN_CORE_NODE__LAST_LINE_CHECKED; }
 
-static void S_parse_source(markdown_core_parser *parser, const unsigned char *source, size_t length);
-static markdown_core_node *S_finish_parse(markdown_core_parser *parser);
+/* The two parse stages stay out of line: the benchmark measures each one as
+ * the cost of its call (scripts/benchmark/run.mjs). */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_parse_source(markdown_core_parser *parser,
+                                                               const unsigned char *source, size_t length);
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_node *S_finish_parse(markdown_core_parser *parser);
 static void S_complete_node(markdown_core_parser *parser, markdown_core_node *node, uint32_t start);
 static inline bool S_starts_on_line(markdown_core_parser *parser, const markdown_core_node *node, int line);
 static inline int S_append_input_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
@@ -1685,7 +1688,8 @@ markdown_core_line_facts *markdown_core_parser_extend_line_facts(markdown_core_p
     return entry;
 }
 
-static void S_parse_source(markdown_core_parser *parser, const unsigned char *source, size_t length) {
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_parse_source(markdown_core_parser *parser,
+                                                               const unsigned char *source, size_t length) {
     assert(length <= MARKDOWN_CORE_SOURCE_CAPACITY);
     S_clear_normalized_lines(parser);
     parser->input_source = source;
@@ -2844,7 +2848,7 @@ int markdown_core_block_order_definitions(markdown_core_parser *parser,
  * numbered wait on the parser's list. Once the document is prepared, each
  * root, in the order it was numbered, is parsed and completes its tree; the
  * document is finished, and it is published. */
-static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     markdown_core_node *res;
 
     if (parser->root == NULL || parser->error) {
