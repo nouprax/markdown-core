@@ -138,18 +138,23 @@ script tests both units.
 
 | Family | Steps | Positions |
 | --- | --- | --- |
-| `typing` | One scalar per step, 64 steps, with runs of backspace | Inside a paragraph, a list item at depth 3, a table cell, a heading, a code block, a quote leaf, a footnote body |
-| `lines` | Enter inside a paragraph; insert and delete a blank line between blocks; join two lines; merge two paragraphs | Beginning, middle and end of the document |
+| `typing` | One scalar per step, 64 steps, with runs of backspace | Inside a paragraph, a list item at depth 3, a pipe table cell, a heading, a code block, a quote leaf, a footnote body |
+| `lines` | Enter inside a paragraph; insert and delete a blank line between blocks; join two lines of a paragraph; merge two paragraphs | Beginning, middle and end of the document |
 | `markers` | Add and remove `> `, `- `, `1. `, `# `, four spaces, a fence opener, a Setext underline, a table delimiter row, a definition term marker | Each block kind of the shape |
 | `ranges` | Paste a 2 KB section; delete a section; select a paragraph's whole text and type a replacement | Middle of the document |
-| `far` | Alternate single-scalar edits at the first and last line, 64 steps | Both ends |
+| `far` | Alternate single-scalar edits at the end of the first and the last text, 64 steps | Both ends |
 | `batch` | 16 disjoint edits in one `edit`, as multi-cursor typing, listed in a seeded shuffled order | Spread across the document |
 | `declarations` | Change a reference destination; add and remove a duplicate reference label; add and remove a heading whose label collides; add and remove a footnote definition and an inline note | Declaration sites of `refs` and `prose` |
 | `undo` | Each `typing` to `declarations` step followed by its inverse | As the original step |
 | `random` | Seeded mixture of inserts, deletes and replacements at line and byte granularity, including CR/LF splits and NUL | Uniform over the text |
 
 `typing`, `lines`, `ranges`, `far` and `batch` are **local**: the language
-itself limits their effect to a bounded neighbourhood. `markers`,
+itself limits their effect to a bounded neighbourhood. Their positions are in
+text the language keeps an edit inside: the text of a paragraph, a list item
+or a pipe table cell, and, for `ranges`, the boundaries of a shape's
+repeated sections (decision G8). A generated document repeats one section,
+so a position at a fraction of the document is the same place of the section
+at that fraction, and every size applies the same edit there. `markers`,
 `declarations` and `random` contain steps whose effect the language may spread
 (plan 7.2); the gates treat them differently (section 6).
 
@@ -199,8 +204,11 @@ to the fresh parse's answers, in the same order (plan 8).
 - Ids are unique within the document, across every owned relation.
 - Over the whole lineage, the harness keeps a map from id to kind and a set of
   retired ids. An id never changes kind, and a retired id never appears again.
-- A fresh parse numbers its nodes from 1 in canonical walk order (plan 4.1),
-  so two fresh parses of the same text are equal, ids included.
+- A fresh parse numbers its nodes from 1: in canonical walk order through
+  step 3, and from step 4 in completion order, where each node's owner
+  numbers the nodes it holds when it completes and the root numbers itself
+  when it completes (plan 4.1, 5.8). Its ids are 1 through its node count, and two fresh parses of
+  the same text are equal, ids included.
 
 ### 4.3 Minimal AST mutation
 
@@ -225,27 +233,32 @@ part of the value; the absolute scope serves only the matching of 4.4.
 4.3 classifies nodes by the ids the subject assigned, so on its own it would
 accept an implementation that gives a surviving node a new id and so loses its
 view state. The plan states which old node each new node continues (5.9) in
-terms the harness evaluates from the public model alone: the position mapping
-of the step (plan 5.2), the absolute scopes of the snapshot and of
+terms the harness evaluates from the public model alone: the image of each
+position under the step's edits (plan 5.2), the absolute scopes of the snapshot and of
 `scope(of:in:)` on the new document, kinds and owner relations. The harness
 computes the expected matching itself, for every node of every step:
 
 - The new document continues the old document (plan 5.9 starts matching
-  from the reopened spine, whose root is the document).
+  from the two document roots).
 - An old node's anchor is its first byte that survived the step. A node none
   of whose bytes survived has no anchor.
 - Within the relation of a matched owner, a new node of the same kind whose
   source range contains the image of an old sibling's anchor continues the
   earliest such sibling.
-- A new node that continues an old node has the old node's id. Every other
-  new node, including every child of an unmatched owner, has an id the
-  lineage has never seen. An old node that nothing continues is retired.
+- A new node that continues an old node has the old node's id.
+- A node the parse took whole keeps its id wherever it lands, under a
+  matched owner or a new one (plan 5.9, decision G7): it has the kind and
+  the value of the old node of that id, only its lead may differ, and its
+  items are that old node's items, each taken whole with its value and
+  lead.
+- Every other new node has an id the lineage has never seen. An old node
+  that nothing continues or keeps is retired.
 
 A continued node whose value equals its predecessor's is unchanged and outside
 `N` (4.3). Extents are relative, so text that moves a node without touching it
-leaves its value unchanged, except that the first continued node after a
-changed or inserted sibling in the same relation may get a new `lead` (plan
-5.3). The oracle predicts that `lead` from the fresh parse.
+leaves its value unchanged, except that a continued node whose lead holds an
+edit, or that follows a changed or inserted sibling in the same relation,
+may get a new `lead`. The oracle predicts that `lead` from the fresh parse.
 
 ### 4.5 Scripted identity
 
@@ -414,9 +427,11 @@ its numbers are reported with the `reparse` subject.
 | 0 Harness (this plan) | Scripts and text model self-tests; 4.1 with `reparse` | Edit and stream runners report the R column; one-shot adds the `buffer_to_ast` rule (6.4) |
 | 1 Model | 4.2 for fresh parses; deep equality and 4.9 on fresh documents | One-shot budget for the model change (G1), then 1.02 per PR |
 | 2 Sessions, whole-document restart | 4.1–4.11 on the correctness set, every platform, both units | 6.3 on every workload, which sets the session baseline for 6.4 (G4) |
-| 3 Block restart and convergence | Unchanged | 6.2 for the local edit families on shapes without declarations; one-shot budget for the step (G5), then 1.02 per PR |
-| 4 Session registries | Unchanged | 6.2 for the local edit families on every remaining scale shape (`prose`, `quote`, `refs`) and for the local steps of `declarations` |
-| 5 Frontier and inline restart | Unchanged | 6.2 for `tokens` and `rows` |
+| 3 Reference nodes, pieces and content runs | Unchanged | One-shot budget for the step (G5), then 1.02 per PR |
+| 4 Shared subtrees | Unchanged | One-shot budget for steps 4 to 7 (G9) |
+| 5 Block reuse | Unchanged | 6.2 for the local edit families on the shapes without declarations: `list`, `table` and the 10,000-item list |
+| 6 Session registries | Unchanged | 6.2 for the local edit families on every remaining scale shape (`prose`, `quote`, `refs`, `flat`) and for the local steps of `declarations` |
+| 7 Inline reuse | Unchanged | 6.2 for `tokens` and `rows` |
 
 From step 2 on, the one-shot benchmark measures `Document.parse` through the
 session path it becomes (plan 4.4), so the one-shot gate also guards what the
@@ -524,3 +539,25 @@ their own pull requests.
   `source_to_buffer` and `buffer_to_ast` Ir up to 1.10 times the pre-step
   baseline per document. After step 3, both stages are at 1.02 per pull
   request.
+- **G6 `flat` with the registries. Decided 2026-10-01: move to the session
+  registries step.**
+  `flat` has a heading in every section, and headings are declarations
+  (plan 5.1, 5.7), so its 6.2 gate turns on with the session registries in
+  step 6 beside `prose`, `quote` and `refs` (section 7).
+- **G7 Ids of nodes taken into a new owner. Decided 2026-10-04: they keep
+  their ids.** The cursor finds old nodes by position (plan 5.3), so a list
+  split by an inserted line takes the items after the split whole into the
+  new list. They keep their ids there, as plan 5.9 states for every taken
+  node (4.4).
+- **G8 Positions of the local families. Decided 2026-10-04: text the
+  language keeps local.** A grid table row, a table's header or border, a
+  definition referenced from every section and a fence line spread an edit
+  to the whole construct (plan 7.2). The local families place their edits in
+  paragraph, list item and pipe cell text (3.2); `markers`, `declarations`
+  and `random` edit those other places, under 6.1 and 6.3.
+- **G9 One-shot budget for steps 4 to 7. Open.** Steps 4 to 7 land in one
+  pull request (plan 9). With them, every fresh parse stores its tree as
+  shared subtrees, records the entries and reaches of its blocks, lines and
+  inline tokens, and registers its declarations as facts (plan 5.1, 5.3,
+  5.6, 5.7, 5.11). 6.4 holds each one-shot stage to 1.02 per pull request.
+  The 1.10 decided on 2026-10-04 for these records went to step 3 (G5).
