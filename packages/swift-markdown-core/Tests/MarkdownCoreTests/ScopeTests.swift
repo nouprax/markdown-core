@@ -95,15 +95,14 @@ import Testing
         func place(_ start: (Int32, Int32), _ end: (Int32, Int32)) -> Scope {
             Scope(start: Position(line: start.0, column: start.1), end: Position(line: end.0, column: end.1))
         }
-        // The paragraph's own bytes are a piece per line, and its content
-        // reads them in two copied runs; the second quote marker is neither.
-        #expect(block.pieces == [Piece(lead: 0, span: 5), Piece(lead: 2, span: 4)])
+        // The paragraph reads its own bytes, one line each, in two copied runs;
+        // the second quote marker between them is not its own.
         #expect(block.runs == [Run(lead: 0, span: 5, length: 5), Run(lead: 2, span: 4, length: 4)])
         #expect(try document.scope(of: block, in: source) == [place((1, 3), (2, 0)), place((2, 3), (2, 6))])
         // The emphasis is at offset 2 of the content "a *b\nc* d", and its
         // source skips the marker too.
         #expect(emphasis.extent == Extent(lead: 0, span: 5))
-        #expect(emphasis.pieces.isEmpty && emphasis.runs.isEmpty)
+        #expect(emphasis.runs.isEmpty)
         #expect(try document.scope(of: emphasis, in: source) == [place((1, 5), (2, 0)), place((2, 3), (2, 4))])
         #expect(try document.node(at: Position(line: 2, column: 1), in: source)?.isEqual(callout) == true)
         #expect(try document.node(at: Position(line: 2, column: 4), in: source)?.isEqual(emphasis) == true)
@@ -116,14 +115,38 @@ import Testing
                 + "├── SoftBreak scope=1:7..2:0 anchor=null attributes={} children=0\n"
                 + "└── Text scope=2:3..2:3 anchor=null attributes={} literal=\"c\" children=0\n"
         )
-        // Another quote prefix moves the paragraph's pieces and runs, never
-        // what its content holds.
+        // Another quote prefix moves the paragraph's runs, never what its
+        // content holds.
         let wider = try Document.parse("> a *b\n>  c* d\n")
         let moved = try #require((wider.content.first as? Callout)?.content.first as? Paragraph)
-        #expect(moved.pieces == [Piece(lead: 0, span: 5), Piece(lead: 2, span: 5)])
         #expect(moved.runs == [Run(lead: 0, span: 5, length: 5), Run(lead: 3, span: 4, length: 4)])
         #expect(moved != block)
         #expect(moved.content[1].isEqual(emphasis))
+    }
+
+    @Test("a block whose runs read no content is no inline root, and its runs cut its range")
+    func sourceWithoutContent() throws {
+        let source = "> ```\n> x\n> ```\n"
+        let document = try Document.parse(source)
+        let callout = try #require(document.content.first as? Callout)
+        let code = try #require(callout.content.first as? CodeBlock)
+        func place(_ start: (Int32, Int32), _ end: (Int32, Int32)) -> Scope {
+            Scope(start: Position(line: start.0, column: start.1), end: Position(line: end.0, column: end.1))
+        }
+        // The code block reads its lines without content, so the quote
+        // markers between them are not its own.
+        #expect(code.literal == "x\n")
+        #expect(
+            code.runs == [
+                Run(lead: 0, span: 4, length: 0), Run(lead: 2, span: 2, length: 0), Run(lead: 2, span: 3, length: 0),
+            ]
+        )
+        #expect(
+            try document.scope(of: code, in: source)
+                == [place((1, 3), (2, 0)), place((2, 3), (3, 0)), place((3, 3), (3, 5))]
+        )
+        #expect(try document.node(at: Position(line: 2, column: 1), in: source)?.isEqual(callout) == true)
+        #expect(try document.node(at: Position(line: 2, column: 3), in: source)?.isEqual(code) == true)
     }
 
     @Test("an empty document and a lone line terminator are 1:1..1:0 and hold no byte", arguments: ["", "\n"])

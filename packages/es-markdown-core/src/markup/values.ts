@@ -14,7 +14,7 @@ export interface Position {
 
 /**
  * Editor coordinates of one source range of a node, computed on request from
- * the extents, pieces, runs and the source (`Document.scope`). `start` is the
+ * the extents, runs and the source (`Document.scope`). `start` is the
  * position of the range's first byte, where a line terminator is the column
  * after its line's last character. `end` is the line holding the byte just
  * past the range's last byte and the column count from that line's start to
@@ -34,7 +34,7 @@ export interface Scope {
  * previous node in the same relation -- or from the owner's start, for the
  * first node of a relation -- to this node's start, and `span` the length of
  * its range. Neither changes when text before the node shifts; scopes are
- * computed from extents, pieces, runs and the source on request.
+ * computed from extents, runs and the source on request.
  */
 export interface Extent {
     readonly lead: number;
@@ -42,24 +42,13 @@ export interface Extent {
 }
 
 /**
- * One line's part of a node's range that is its own: a leaf block inside a
- * container, or a grid or multiline table cell, lies in one piece per line.
- * `lead` is the signed distance from the end of the previous piece, or from
- * the node's start for the first, to this piece's start, and `span` its
- * length. A node whose range is one piece has none.
- */
-export interface Piece {
-    readonly lead: number;
-    readonly span: number;
-}
-
-/**
- * A run of the inline root content a node's first relation is: `length`
- * content bytes read from `span` source bytes, `lead` from the end of the
- * previous run, or from the node's start for the first. A run whose span is
- * its length reads each content byte from one source byte; any other reads
- * all of its content from all of its source. The runs cover the content in
- * order.
+ * A run of the source a node read: `length` content bytes read from `span`
+ * source bytes, `lead` from the end of the previous run, or from the node's
+ * start for the first. A run whose span is its length reads each content
+ * byte from one source byte; any other reads all of its content from all of
+ * its source, and a run of length 0 gives no content. Between the first run
+ * and the last the runs cover exactly the node's own source, so the source
+ * between two runs is not the node's.
  */
 export interface Run {
     readonly lead: number;

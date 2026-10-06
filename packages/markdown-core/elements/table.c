@@ -266,8 +266,8 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
     markdown_core_node_attach_validated(parent_container->parent, paragraph, parent_container);
 
     /* A table split completes this paragraph just as a later block start
-     * would: reference definitions, anchor attachment and pieces share
-     * finalization. */
+     * would: reference definitions, anchor attachment and the runs of its
+     * own lines share finalization. */
     markdown_core_block_settle(parser, paragraph);
 }
 
@@ -2355,21 +2355,22 @@ static markdown_core_node *table_child(markdown_core_parser *parser, markdown_co
 }
 
 /* A cell of a grid or multiline table lies in its columns on each of its
- * lines: one piece per line, from its left column to its right one or the
- * line's end. */
-static void table_cell_pieces(table_source *source, markdown_core_node *node, const table_source_cell *cell) {
+ * lines: one run of length 0 per line, from its left column to its right one
+ * or the line's end. */
+static void table_cell_runs(table_source *source, markdown_core_node *node, const table_source_cell *cell) {
     markdown_core_parser *parser = source->parser;
     if (cell->last <= cell->first) {
         return;
     }
     uint32_t count = (uint32_t)(cell->last - cell->first + 1);
-    markdown_core_pieces *pieces = markdown_core_node_pool_bytes(
-        parser->pool, sizeof(*pieces) + (size_t)count * sizeof(markdown_core_piece_where));
-    if (!pieces) {
+    markdown_core_runs *runs =
+        markdown_core_node_pool_bytes(parser->pool, sizeof(*runs) + (size_t)count * sizeof(markdown_core_run_where));
+    if (!runs) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
-    pieces->count = count;
+    runs->count = count;
+    runs->content = 0;
     for (uint32_t i = 0; i < count; i++) {
         const table_source_line *line = &source->lines[cell->first + i];
         int right = cell->right < line->columns ? cell->right : line->columns;
@@ -2378,12 +2379,12 @@ static void table_cell_pieces(table_source *source, markdown_core_node *node, co
                               ? markdown_core_parser_source_offset(parser, line->line, table_byte(line, left) + 1)
                               : markdown_core_parser_source_end(parser, line->line, table_byte(line, left));
         bufsize_t end = markdown_core_parser_source_end(parser, line->line, table_byte(line, right));
-        pieces->items[i].place = (markdown_core_place){(uint32_t)start, (uint32_t)end};
+        runs->items[i].place = (markdown_core_run_place){(uint32_t)start, (uint32_t)end, 0};
     }
-    if (node->pieces) {
-        markdown_core_node_pool_bytes_free(parser->pool, node->pieces);
+    if (node->runs) {
+        markdown_core_node_pool_bytes_free(parser->pool, node->runs);
     }
-    node->pieces = pieces;
+    node->runs = runs;
 }
 
 static markdown_core_node *table_build(table_source *source, markdown_core_node *parent, table_candidate *candidate) {
@@ -2439,7 +2440,7 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
             cell_node->as.table_cell->rowspan = cell->rowspan;
             cell_node->as.table_cell->colspan = cell->colspan;
             if (!candidate->pipe) {
-                table_cell_pieces(source, cell_node, cell);
+                table_cell_runs(source, cell_node, cell);
                 table_fill_cell(source, cell_node, cell, candidate->block_content, candidate->padding_limit);
             }
         }
@@ -2459,7 +2460,7 @@ static markdown_core_node *table_caption_build(table_source *source, const markd
         return NULL;
     }
     int from = first->line;
-    markdown_core_parser_place_pieces(source->parser, node, container, &from);
+    markdown_core_parser_place_runs(source->parser, node, container, &from);
     for (size_t i = 0; i <= last && !source->parser->error; i++) {
         if (!table_source_columns(source, i)) {
             break;

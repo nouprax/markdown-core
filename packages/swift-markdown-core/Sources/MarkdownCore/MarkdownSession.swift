@@ -72,8 +72,8 @@ public final class MarkdownSession {
         // Every replacement's bytes, end to end, so one buffer outlives the
         // single native call.
         var bytes: [UInt8] = []
-        var pieces: [(bounds: Range<Int>, text: Range<Int>)] = []
-        pieces.reserveCapacity(edits.count)
+        var replacements: [(bounds: Range<Int>, text: Range<Int>)] = []
+        replacements.reserveCapacity(edits.count)
         for edit in edits {
             let bounds: Range<Int>
             switch edit.location {
@@ -82,16 +82,16 @@ public final class MarkdownSession {
             }
             let start = bytes.count
             bytes.append(contentsOf: edit.text.utf8)
-            pieces.append((bounds: bounds, text: start..<bytes.count))
+            replacements.append((bounds: bounds, text: start..<bytes.count))
         }
         var native: OpaquePointer?
         let status = bytes.withUnsafeBufferPointer { buffer in
-            let natives = pieces.map { piece in
+            let natives = replacements.map { replacement in
                 markdown_core_text_edit(
-                    start: piece.bounds.lowerBound,
-                    end: piece.bounds.upperBound,
-                    text: buffer.baseAddress.map { $0 + piece.text.lowerBound },
-                    size: piece.text.count
+                    start: replacement.bounds.lowerBound,
+                    end: replacement.bounds.upperBound,
+                    text: buffer.baseAddress.map { $0 + replacement.text.lowerBound },
+                    size: replacement.text.count
                 )
             }
             return markdown_core_session_edit(session, natives, natives.count, &native)

@@ -221,10 +221,6 @@ Extent(lead: Int32, span: UInt32)       offsets in the parser's input
     lead:   signed, from the end of the previous node in the same relation
             (or the owner's start, for the first node) to this node's start
     span:   of this node's range
-Piece(lead: Int32, span: UInt32)        offsets in the block parser's input
-    lead:   from the end of the previous piece (or the node's start, for
-            the first piece) to this piece's start
-    span:   of this piece
 Run(lead: Int32, span: UInt32, length: UInt32)
                                         offsets in the source
     lead:   from the end of the previous run (or the node's start, for the
@@ -239,26 +235,29 @@ Run(lead: Int32, span: UInt32, length: UInt32)
   content, which starts at offset 0, so an inline node's extent is an offset
   in that content. Each parser, its reuse (5.3, 5.6) and identity matching
   (5.9) work in the offsets of their own input and need no mapping.
-- **Pieces.** A block whose source is not one contiguous range also carries
-  `pieces`, one per line where bytes that are not its own separate its lines:
-  - a leaf block's lines (E5) inside a blockquote, callout or list item,
-    without the container prefixes between them;
-  - a grid or multiline table cell, whose pieces are its column slice on each
-    line it covers.
-
-  Pieces that touch are one piece, so a paragraph at the top level, whose
-  lines touch, has none. Containers have no pieces.
-- **Content runs.** A node whose first relation is an inline root's content
-  (a block's inline content, a callout's title, a definition's term) carries
-  `runs`: where in the source that content was read from, in order. Each run
-  is `length` content bytes read from `span` source bytes. A run whose span is
-  its length reads each content byte from one source byte; any other reads
-  all of its content from all of its source, as `\|` in a table cell is two
-  source bytes and one content byte, and a tab in a grid cell is one source
-  byte and the spaces it becomes. The element that builds the content
-  records the runs as it reads, so no other code knows how an element turns
-  source into content.
-- The engine stores extents, pieces and runs on every C node, and the
+- **Runs.** A node whose source is not one contiguous range, or whose first
+  relation is an inline root's content (a block's inline content, a
+  callout's title, a definition's term), carries `runs`: the source it read,
+  in order. Each run is `length` content bytes read from `span` source
+  bytes.
+  - A run whose span is its length reads each content byte from one source
+    byte; any other reads all of its content from all of its source, as
+    `\|` in a table cell is two source bytes and one content byte, and a tab
+    in a grid cell is one source byte and the spaces it becomes.
+  - A run of length 0 is source the node reads that gives no content: an
+    opening fence, a heading's underline, the indentation of a paragraph's
+    later lines, or a whole line of a node without inline content.
+  - Between the first run and the last, the runs cover exactly the node's
+    own source, so the source between two runs is not the node's: the
+    container prefixes between a leaf block's lines (E5) inside a
+    blockquote, callout or list item, and the other columns between a grid
+    or multiline table cell's lines.
+  - A run of length 0 at either end of the list has a gap beside it, so a
+    node of the document itself without inline content, such as a fenced
+    code block, has no runs, and containers have none of their own.
+  - The element that reads the source records the runs as it reads, so no
+    other code knows how an element turns source into content.
+- The engine stores extents and runs on every C node, and the
   bindings copy them verbatim, like any other field. No unit conversion and no line counting
   happens while parsing or publishing.
 - `lead` is signed because a relative offset between two ranges has no sign
@@ -270,7 +269,7 @@ Run(lead: Int32, span: UInt32, length: UInt32)
 - Neither number changes when text before the node shifts. An edit inside a
   node changes its own `span` (it is a new value anyway). An edit in the gap
   before a node, such as an added blank line, changes that node's `lead`.
-  Every other node keeps its value. Extents, pieces and runs are part of
+  Every other node keeps its value. Extents and runs are part of
   equality (4.2), so a reused node's extent is always the right one.
 - **Scopes.** `document.scope(of: node, in: source) -> [Scope]` returns the
   source ranges of the node, which is what an editor draws as the node's
@@ -279,12 +278,13 @@ Run(lead: Int32, span: UInt32, length: UInt32)
   parsed from, which the side-by-side editor already holds (`session.text`
   for a session's current document). They return today's editor line and
   column conventions and sentinels, in the session's coordinate unit (4.4).
-  - A block's ranges are its pieces, or its one range when it has none, from
-    one walk over the extents from the root.
-  - An inline node's ranges are the source its content range was read from
-    through its root's runs, touching parts joined. Every binding maps them
-    with the one generic walk over the runs, so no binding repeats an
-    element's syntax (closing sequences, cell padding, column geometry).
+  - A node's ranges are one window of source less the gaps between the runs
+    that place it. A block's window is its range, and the runs are its own.
+    An inline node's window runs from where its first content byte was read
+    to where its last was, and the runs are its root's.
+  - Every binding computes them with this one walk over the runs, so no
+    binding repeats an element's syntax (closing sequences, cell padding,
+    column geometry).
   - The line and unit conversion scans the source. This cost is paid only by
     the query.
 - Walker callbacks no longer carry a scope.
@@ -292,7 +292,7 @@ Run(lead: Int32, span: UInt32, length: UInt32)
   ending right after line `L-1`'s terminator ends at `L:0`. So `SoftBreak`,
   `LineBreak` and a `Citation` that end on a line terminator end there too,
   and a zero-byte document is `1:1..1:0`, as a document of one newline is. A
-  grid or multiline cell's piece on a line where its part is blank is empty
+  grid or multiline cell's run on a line where its part is blank is empty
   there, and `canonical-ast.md` drops the cell-local sentinel.
 - The canonical dump prints the ranges by this rule, so it is a scope query
   and takes the source like one: `document.dump(in: source)` and
@@ -454,7 +454,7 @@ definitions and their fixtures, and every binding (D2).
 | State | Contents | Size |
 | --- | --- | --- |
 | Text tree | The source as a balanced tree of bounded byte chunks; each subtree records its byte, line-terminator and UTF-16 counts | O(source) |
-| Tree | The document as shared immutable nodes (5.11); each node holds its id, its extent, pieces and runs (4.3) and its parse record | O(nodes) |
+| Tree | The document as shared immutable nodes (5.11); each node holds its id, its extent and runs (4.3) and its parse record | O(nodes) |
 | Registry | Facts of every kind, each held by the node that declares it, with its order label (5.7) | O(declarations + lookups) |
 | Key index | Each key → its declaring facts in tree order and its reverse index, the inline roots that looked it up, hit or miss | O(declarations + lookups) |
 
@@ -810,7 +810,7 @@ it is listed (5.8), so its inline facts are labeled in tree order too.
     not parse is parsed again in place. The
     document is a snapshot of the session (4.4), and its node is the
     session's own once the old root is released, so the node is updated in
-    place. Its extent, pieces and runs stay the same.
+    place. Its extent and runs stay the same.
   - **Anchors by family.** Each marked family is assigned again in tree
     order, with the same reservation and suffix-cursor algorithm as a
     fresh parse. A heading whose anchor changes takes its new anchor in
@@ -1001,7 +1001,7 @@ Compose and React reconcile.
 Kotlin and ECMAScript receive a parse as one message. MCB3 extends MCB2
 (`docs/architecture/wire-format.md`) and keeps its post-order stack model.
 Every node record adds `u64 id`, the node's `Extent` in place of `Scope`,
-its pieces and its runs (4.3). The message ends with the footnote, specimen
+and its runs (4.3). The message ends with the footnote, specimen
 and `Reference` tables and the reference label table, each label with the id
 of the node it resolves to (4.5).
 Every message is a whole document. The magic becomes `MCB3` because the
@@ -1186,6 +1186,8 @@ them, and step 8 makes the whole engine meet the benchmark gates.
    content, leaf blocks in containers and grid and multiline cells carry
    pieces, inline roots carry content runs, scope queries answer `[Scope]`,
    and MCB3 carries pieces, runs and the reference tables (4.3, 6.2).
+   Revised after the step: runs replace pieces as the one record of where
+   a node's source lies (D1).
 - [ ] **Step 4: Shared subtrees.** The C tree becomes shared immutable nodes
    with reference counts, children trees, builders for open blocks, copy on
    write and iterative release, with no parent or sibling links (5.11). Walks
@@ -1232,6 +1234,10 @@ them, and step 8 makes the whole engine meet the benchmark gates.
   every binding maps an inline node's range to the source with one walk
   (4.3), and an inline root finds its edit from the step's source edits
   through them (5.6).
+  Revised 2026-10-06: runs are the one record of where a node's source lies.
+  A run of length 0 is source that gives no content, and the source between
+  two runs is not the node's, so pieces are removed and every scope is a
+  window less the gaps between runs (4.3).
 - **D2 Definitions. Decided 2026-09-29: definitions stay where written.**
   Footnote and specimen definitions remain in the tree where they were
   written, an inline note's `Footnote` is owned at its call site, and the

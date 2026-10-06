@@ -17,10 +17,11 @@ interface SourceRun {
 }
 
 /**
- * THE RUNS OF AN INLINE ROOT'S CONTENT, in absolute offsets: where in the
- * source each part of the content was read from. A copied run, whose span is
- * its length, reads each content byte from one source byte; any other reads
- * all of its content from all of its source. A walk holds one per root it
+ * A NODE'S RUNS, in absolute offsets: the source it read and what each part
+ * of its content was read from. A copied run, whose span is its length,
+ * reads each content byte from one source byte; any other reads all of its
+ * content from all of its source, and a run of length 0 reads none. The
+ * source between two runs is not the node's. A walk holds one per root it
  * enters, so they are made absolute when a place is first asked for.
  */
 export class SourceRuns {
@@ -31,6 +32,11 @@ export class SourceRuns {
         private readonly stored: readonly Run[],
         private readonly start: number
     ) {}
+
+    /** Whether the runs read content: the node is an inline root. */
+    static readContent(runs: readonly Run[]): boolean {
+        return runs.some((run) => run.length > 0);
+    }
 
     /** Each run starts `lead` past the end of the run before, or past the
      * node's start for the first. */
@@ -48,38 +54,44 @@ export class SourceRuns {
     }
 
     /**
-     * The source ranges the content range [start, end) was read from, in
-     * source order: each run's part of it, a copied run's byte for byte and
-     * any other's whole, with touching parts joined. An empty range is one
-     * empty range where its offset is read from.
+     * The source window of the content range [start, end): from where its
+     * first byte is read to where its last is. An empty range is the empty
+     * window where its offset is read from.
      */
-    places(start: number, end: number): Place[] {
+    window(start: number, end: number): Place {
+        const from = this.place(start);
+        return { start: from, end: end > start ? this.placeEnd(end) : from };
+    }
+
+    /**
+     * The source ranges of `window` less the gaps between the runs, in source
+     * order. An empty window is one empty range.
+     */
+    cut(window: Place): Place[] {
+        if (window.end <= window.start) return [{ start: window.start, end: window.start }];
         const runs = this.runs;
-        if (runs.length === 0) return [];
-        if (end <= start) {
-            const at = this.place(start);
-            return [{ start: at, end: at }];
+        let lower = 0;
+        let upper = runs.length;
+        while (lower < upper) {
+            const middle = lower + ((upper - lower) >> 1);
+            if (runs[middle]!.end <= window.start) lower = middle + 1;
+            else upper = middle;
         }
-        const places: { start: number; end: number }[] = [];
-        for (let index = this.at(start); index < runs.length && runs[index]!.content < end; index += 1) {
-            const run = runs[index]!;
-            const from = Math.max(start, run.content);
-            const to = Math.min(end, run.content + run.length);
-            if (from >= to) continue;
-            const copied = copiedRun(run);
-            const part = {
-                start: copied ? run.start + (from - run.content) : run.start,
-                end: copied ? run.start + (to - run.content) : run.end
-            };
-            const last = places[places.length - 1];
-            if (last !== undefined && last.end === part.start) last.end = part.end;
-            else places.push(part);
+        const places: Place[] = [];
+        let from = window.start;
+        for (let index = lower; index + 1 < runs.length && runs[index]!.end < window.end; index += 1) {
+            const gap = runs[index]!.end;
+            const past = runs[index + 1]!.start;
+            if (past <= gap) continue;
+            if (gap > from) places.push({ start: from, end: gap });
+            from = Math.max(from, past);
         }
+        if (from < window.end) places.push({ start: from, end: window.end });
         return places;
     }
 
-    /** The index of the run content offset `offset` is in: the last that
-     * starts at or before it. */
+    /** The index of the content run content offset `offset` is in: the last
+     * that starts at or before it and reads content, or the first run. */
     private at(offset: number): number {
         let lower = 0;
         const runs = this.runs;
@@ -89,6 +101,7 @@ export class SourceRuns {
             if (runs[middle]!.content <= offset) lower = middle;
             else upper = middle;
         }
+        while (lower > 0 && runs[lower]!.length === 0) lower -= 1;
         return lower;
     }
 
@@ -100,6 +113,14 @@ export class SourceRuns {
         if (offset >= run.content + run.length) return run.end;
         return copiedRun(run) ? run.start + (offset - run.content) : run.start;
     }
+
+    /** Where the content byte before `offset` is read to: past its source
+     * byte, or the end of the run that reads it whole. */
+    private placeEnd(offset: number): number {
+        const run = this.runs[this.at(offset - 1)]!;
+        if (offset - 1 >= run.content + run.length || !copiedRun(run)) return run.end;
+        return run.start + (offset - run.content);
+    }
 }
 
 function copiedRun(run: SourceRun): boolean {
@@ -108,18 +129,12 @@ function copiedRun(run: SourceRun): boolean {
 
 /**
  * A node's source ranges, in source order, from its range as the canonical
- * walk places it: the source its content range was read from when it is in
- * an inline root's content, whose runs are `content`; else its pieces, each
- * leading from the end of the one before or from the node's start; else its
- * one range.
+ * walk places it: a window less the gaps between the runs that place it.
+ * In an inline root's content, whose runs are `content`, the window is the
+ * source its content range was read from; else it is its range, cut by its
+ * own runs.
  */
 export function placesOf(node: Markup, start: number, end: number, content: SourceRuns | null): Place[] {
-    if (content !== null) return content.places(start, end);
-    if (node.pieces.length === 0) return [{ start, end }];
-    let at = start;
-    return node.pieces.map(({ lead, span }) => {
-        const piece = { start: at + lead, end: at + lead + span };
-        at = piece.end;
-        return piece;
-    });
+    if (content !== null) return content.cut(content.window(start, end));
+    return new SourceRuns(node.runs, start).cut({ start, end });
 }

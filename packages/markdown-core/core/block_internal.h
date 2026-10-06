@@ -33,7 +33,7 @@ markdown_core_node *markdown_core_block_finalize(markdown_core_parser *parser, m
 /* A FINISHED BLOCK'S LAST WORD, once its range is settled: its element reads
  * it as a finished thing, a paragraph that held only reference definitions
  * leaves the tree to the References before it, and a block that takes text
- * lines in a container takes its pieces. */
+ * lines in a container takes the runs of its own lines. */
 void markdown_core_block_settle(markdown_core_parser *parser, markdown_core_node *b);
 void markdown_core_block_advance_offset(markdown_core_parser *parser, markdown_core_chunk *input, bufsize_t count,
                                         bool columns);

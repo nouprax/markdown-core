@@ -25,24 +25,14 @@ public data class Extent(
 )
 
 /**
- * One line's part of a node's range that is its own, for a leaf block inside
- * a container or a grid or multiline table cell: [lead] is the signed
- * distance from the end of the previous piece, or from the node's start for
- * the first, to this piece's start, and [span] is its length. Pieces that
- * touch are one, and a node whose range is one piece has none.
- */
-public data class Piece(
-    public val lead: Int,
-    public val span: UInt,
-)
-
-/**
- * A run of the inline root content a node's first relation is: [length]
- * content bytes read from [span] source bytes, [lead] signed from the end of
- * the previous run, or from the node's start for the first. A run whose span
- * is its length reads each content byte from one source byte; any other reads
- * all of its content from all of its source. The runs cover the content in
- * order.
+ * A run of the source a node reads: [length] content bytes read from [span]
+ * source bytes, [lead] signed from the end of the previous run, or from the
+ * node's start for the first. A run whose span is its length reads each
+ * content byte from one source byte; any other reads all of its content from
+ * all of its source, and a run of length 0 is source the node reads without
+ * content. Between its first run and its last, a node's runs cover exactly its
+ * own source: the source between two runs is not the node's. A node whose runs
+ * read content is an inline root, and they cover its content in order.
  */
 public data class Run(
     public val lead: Int,

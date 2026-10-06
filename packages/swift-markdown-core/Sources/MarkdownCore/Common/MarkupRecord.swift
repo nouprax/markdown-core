@@ -31,7 +31,6 @@ struct Relation {
 class MarkupRecord: @unchecked Sendable, Hashable {
     let id: MarkupID
     let extent: Extent
-    let pieces: [Piece]
     let runs: [Run]
     let anchor: String?
     let attributes: Attributes
@@ -41,7 +40,6 @@ class MarkupRecord: @unchecked Sendable, Hashable {
     init(_ fields: InheritedFields, children: [MarkupRecord]) {
         id = fields.id
         extent = fields.extent
-        pieces = fields.pieces
         runs = fields.runs
         anchor = fields.anchor
         attributes = fields.attributes
@@ -89,7 +87,6 @@ class MarkupRecord: @unchecked Sendable, Hashable {
             guard ObjectIdentifier(type(of: one)) == ObjectIdentifier(type(of: other)),
                 one.id == other.id,
                 one.extent == other.extent,
-                one.pieces == other.pieces,
                 one.runs == other.runs,
                 one.anchor == other.anchor,
                 one.attributes == other.attributes,
@@ -127,7 +124,6 @@ extension MarkupRecord {
 struct InheritedFields {
     let id: MarkupID
     let extent: Extent
-    let pieces: [Piece]
     let runs: [Run]
     let anchor: String?
     let attributes: Attributes
@@ -136,14 +132,11 @@ struct InheritedFields {
 extension InheritedFields {
     /// The fields as the native node states them.
     init(from node: OpaquePointer) {
-        var pieceCount = 0
-        let pieces = markdown_core_node_pieces(node, &pieceCount)
         var runCount = 0
         let runs = markdown_core_node_runs(node, &runCount)
         self.init(
             id: MarkupID(markdown_core_node_id(node)),
             extent: Extent(markdown_core_node_extent(node)),
-            pieces: UnsafeBufferPointer(start: pieces, count: pieceCount).map { Piece($0) },
             runs: UnsafeBufferPointer(start: runs, count: runCount).map { Run($0) },
             anchor: markdown_core_node_anchor(node).string,
             attributes: Attributes(from: node)
@@ -154,12 +147,6 @@ extension InheritedFields {
 extension Extent {
     init(_ extent: markdown_core_extent) {
         self.init(lead: extent.lead, span: extent.span)
-    }
-}
-
-extension Piece {
-    init(_ piece: markdown_core_piece) {
-        self.init(lead: piece.lead, span: piece.span)
     }
 }
 

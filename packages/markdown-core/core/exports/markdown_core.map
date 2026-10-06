@@ -77,7 +77,6 @@ MARKDOWN_CORE_1.0 {
     markdown_core_node_list_item_marker;
     markdown_core_node_list_properties;
     markdown_core_node_literal;
-    markdown_core_node_pieces;
     markdown_core_node_runs;
     markdown_core_node_table_caption;
     markdown_core_node_table_cell_spans;

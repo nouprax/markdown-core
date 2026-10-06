@@ -22,7 +22,6 @@ public class Document internal constructor(
     private val labels: Map<String, Markup>,
     override val id: MarkupID,
     override val extent: Extent,
-    override val pieces: kotlin.collections.List<Piece>,
     override val runs: kotlin.collections.List<Run>,
     override val anchor: String?,
     override val attributes: Attributes,
@@ -59,7 +58,7 @@ public class Document internal constructor(
 
     /**
      * The editor coordinates of [node]'s source ranges, one scope per range in
-     * source order, computed from the extents, pieces and runs and [source],
+     * source order, computed from the extents and runs and [source],
      * the text this document was parsed from, with columns in the document's
      * [unit]. [node] is a node of this document, found by reference.
      *

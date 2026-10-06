@@ -155,7 +155,6 @@ func fields(_ id: UInt64) -> InheritedFields {
     InheritedFields(
         id: MarkupID(id),
         extent: Extent(lead: 0, span: 0),
-        pieces: [],
         runs: [],
         anchor: nil,
         attributes: .empty

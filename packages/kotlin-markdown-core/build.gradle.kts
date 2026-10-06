@@ -108,7 +108,7 @@ abstract class GenerateCanonicalAstFixtures : DefaultTask() {
     }
 
     /**
-     * Split [value] into pieces of at most [size] UTF-16 units, never between a
+     * Split [value] into chunks of at most [size] UTF-16 units, never between a
      * surrogate pair.
      *
      * `String.chunked` indexes by UTF-16 unit, so a supplementary character

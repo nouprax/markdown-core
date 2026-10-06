@@ -138,17 +138,6 @@ static void put_extent(wire_buffer *buffer, markdown_core_extent extent) {
     put_u32(buffer, extent.span);
 }
 
-/* pieces: [Piece { lead: Int32, span: UInt32 }]. */
-static void put_pieces(wire_buffer *buffer, const markdown_core_node *node) {
-    size_t count;
-    const markdown_core_piece *pieces = markdown_core_node_pieces(node, &count);
-    put_count(buffer, count);
-    for (size_t i = 0; i < count; i++) {
-        put_i32(buffer, pieces[i].lead);
-        put_u32(buffer, pieces[i].span);
-    }
-}
-
 /* runs: [Run { lead: Int32, span: UInt32, length: UInt32 }]. */
 static void put_runs(wire_buffer *buffer, const markdown_core_node *node) {
     size_t count;
@@ -518,7 +507,6 @@ static void put_record(wire_buffer *buffer, const markdown_core_node *node) {
     put_u8(buffer, (uint8_t)kind);
     put_u64(buffer, markdown_core_node_id(node));
     put_extent(buffer, markdown_core_node_extent(node));
-    put_pieces(buffer, node);
     put_runs(buffer, node);
     put_attributes(buffer, markdown_core_node_attributes(node));
 

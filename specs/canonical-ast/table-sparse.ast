@@ -68,7 +68,7 @@ Document scope=1:1..36:9 anchor=null attributes={} children=5
     ├── TableBody children=3
     │   ├── TableRow scope=31:1..32:9 anchor=null attributes={} children=1
     │   │   └── TableCell scope=31:2..31:8,32:2..32:8,33:2..33:8,34:2..34:8,35:2..35:8 anchor=null attributes={} rowspan=3 colspan=2 children=1
-    │   │       └── Paragraph scope=31:3..31:3,32:3..32:8,33:3..33:7,34:3..34:5,35:3..35:3 anchor=null attributes={} children=9
+    │   │       └── Paragraph scope=31:3..31:3,31:10..32:0,32:3..32:8,32:10..33:0,33:3..33:7,33:10..34:0,34:3..34:5,34:10..35:0,35:3..35:3 anchor=null attributes={} children=9
     │   │           ├── Text scope=31:3..31:3 anchor=null attributes={} literal="a" children=0
     │   │           ├── SoftBreak scope=31:10..32:0 anchor=null attributes={} children=0
     │   │           ├── Text scope=32:5..32:8 anchor=null attributes={} literal="+---" children=0

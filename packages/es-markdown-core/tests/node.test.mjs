@@ -368,7 +368,6 @@ test("ast: the document dumps itself and any of its nodes from the source", () =
         "kind",
         "id",
         "extent",
-        "pieces",
         "runs",
         "anchor",
         "attributes",
@@ -379,7 +378,6 @@ test("ast: the document dumps itself and any of its nodes from the source", () =
         "kind",
         "id",
         "extent",
-        "pieces",
         "runs",
         "anchor",
         "attributes",
@@ -1480,8 +1478,7 @@ test("ast: Properties keep recognized fields and literal prose after native rele
     assert.ok(empty);
     assert.ok(
         Object.entries(empty).every(
-            ([key, value]) =>
-                ["kind", "id", "extent", "pieces", "runs", "anchor", "attributes"].includes(key) || value === null
+            ([key, value]) => ["kind", "id", "extent", "runs", "anchor", "attributes"].includes(key) || value === null
         )
     );
     assert.equal(Document.parse("---\nname: 1\n").metadata, null);
@@ -1713,23 +1710,20 @@ test("api: scope queries count columns in the document's unit from the extents a
     assert.equal(Document.parse("é🚀x\n").unit, "utf16");
 });
 
-test("api: a node's scopes are its source ranges, through its pieces or its inline root's runs", () => {
+test("api: a node's scopes are its source ranges, cut by its own runs or its inline root's runs", () => {
     const scope = (startLine, startColumn, endLine, endColumn) => ({
         start: { line: startLine, column: startColumn },
         end: { line: endLine, column: endColumn }
     });
     // A paragraph inside a block quote owns its lines past the `> ` prefixes:
-    // one piece per line, and its content is read through one run per line.
+    // its content is read through one run per line, and the prefix between
+    // them is not its own.
     const source = "> a *b\n> c* d\n";
     const document = Document.parse(source, { unit: "utf8" });
     const [quote] = document.content;
     const [paragraph] = quote.content;
     const [, emphasis] = paragraph.content;
     const c = emphasis.content[2];
-    assert.deepEqual(paragraph.pieces, [
-        { lead: 0, span: 5 },
-        { lead: 2, span: 4 }
-    ]);
     assert.deepEqual(paragraph.runs, [
         { lead: 0, span: 5, length: 5 },
         { lead: 2, span: 4, length: 4 }
@@ -1772,7 +1766,7 @@ test("api: a node's scopes are its source ranges, through its pieces or its inli
     assert.deepEqual(callout.scope(note.content[0], titled), [scope(2, 3, 2, 6)]);
 });
 
-test("api: pieces and runs take part in value equality", () => {
+test("api: runs take part in value equality", () => {
     const message = (inherited) =>
         decoder(
             new MessageWriter()
@@ -1785,7 +1779,18 @@ test("api: pieces and runs take part in value equality", () => {
     const plain = message({ runs: [[0, 1, 1]] });
     assert.ok(markupEquals(plain, message({ runs: [[0, 1, 1]] })));
     assert.equal(markupEquals(plain, message({ runs: [[0, 2, 1]] })), false);
-    assert.equal(markupEquals(plain, message({ runs: [[0, 1, 1]], pieces: [[0, 1]] })), false);
+    assert.equal(
+        markupEquals(
+            plain,
+            message({
+                runs: [
+                    [0, 1, 1],
+                    [1, 1, 0]
+                ]
+            })
+        ),
+        false
+    );
 });
 
 test("api: nodeAt finds the last node in walk order holding the byte at a position", () => {

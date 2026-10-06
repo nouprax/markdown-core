@@ -570,7 +570,7 @@ typedef struct markdown_core_input_line {
     /* Where the line's own bytes begin: the offset in the line where the
      * bytes of the last open block the line reached begin, past the
      * prefixes of the containers above it, as the block parser or a
-     * lookahead last matched them (markdown_core_parser_place_pieces). */
+     * lookahead last matched them (markdown_core_parser_place_runs). */
     uint32_t own;
 } markdown_core_input_line;
 
@@ -737,23 +737,26 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bufsize_t
  * begin in increasing source order, so a node began on `line` or later when
  * its start is at least this offset. */
 bufsize_t markdown_core_parser_line_offset(markdown_core_parser *parser, int line);
-/* THE PIECES OF `node`, a block of `container`, which starts on input line
- * `*line`, an earlier one or a later one of the lines visited: on each line
- * its place spans, the source from where the line's own bytes begin to where
- * the line ends, through its terminator on a line of the document itself,
- * those that touch joined. A node with fewer than two pieces keeps none, and
- * a block of the document itself, which lies on whole lines of the source,
- * has one. Its pieces hold absolute source ranges, which publishing clips to
- * its place (node.h). `*line` becomes the line the node ends on, where a
- * later node can start the search. */
-void markdown_core_parser_place_pieces(markdown_core_parser *parser, markdown_core_node *node,
-                                       const markdown_core_node *container, int *line);
+/* THE RUNS OF THE OWN LINES OF `node`, a block of `container`, which starts
+ * on input line `*line`, an earlier one or a later one of the lines visited:
+ * on each line its place spans, a run of length 0 over the source from where
+ * the line's own bytes begin to where the line ends, through its terminator
+ * on a line of the document itself, those that touch joined. A node whose
+ * lines join into one run keeps none, and a block of the document itself,
+ * which lies on whole lines of the source, has none. The runs hold absolute
+ * source ranges, which reading the node's content fills with its content
+ * runs (markdown_core_parser_read_content) and publishing clips to its place
+ * (node.h). `*line` becomes the line the node ends on, where a later node can
+ * start the search. */
+void markdown_core_parser_place_runs(markdown_core_parser *parser, markdown_core_node *node,
+                                     const markdown_core_node *container, int *line);
 /* Whether `node` begins on input line `line`, a line of the active input the
  * driver has reached. */
 bool markdown_core_parser_starts_on_line(markdown_core_parser *parser, const markdown_core_node *node, int line);
 /* An inline root's content, `length` bytes of it read, becomes the input its
- * nodes are placed in: its map to the source is kept as its runs, and its map
- * becomes the identity (blocks.c). */
+ * nodes are placed in: its map to the source is kept in its runs, among the
+ * runs of length 0 of its own source, and its map becomes the identity
+ * (blocks.c). */
 void markdown_core_parser_read_content(markdown_core_parser *parser, markdown_core_node *node, bufsize_t length);
 int markdown_core_parser_append_source_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
                                              int column, bufsize_t length, bufsize_t offset);

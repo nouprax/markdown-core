@@ -220,20 +220,9 @@ typedef struct {
     uint32_t start, end;
 } markdown_core_place;
 
-/* A piece of a node's source range (markdown_core.h): `lead` from the end of
- * the previous piece, or from the node's start for the first, to its start,
- * and `span` its length. */
-#ifndef MARKDOWN_CORE_PIECE_TYPEDEF
-#define MARKDOWN_CORE_PIECE_TYPEDEF
-typedef struct markdown_core_piece {
-    int32_t lead;
-    uint32_t span;
-} markdown_core_piece;
-#endif
-
-/* A run of an inline root's content (markdown_core.h): `length` content
- * bytes read from the source bytes `span` long, `lead` from the end of the
- * previous run, or from the start of the node that holds the runs. */
+/* A run of a node's source (markdown_core.h): `length` content bytes read
+ * from the source bytes `span` long, `lead` from the end of the previous run,
+ * or from the start of the node that holds the runs. */
 #ifndef MARKDOWN_CORE_RUN_TYPEDEF
 #define MARKDOWN_CORE_RUN_TYPEDEF
 typedef struct markdown_core_run {
@@ -243,31 +232,26 @@ typedef struct markdown_core_run {
 } markdown_core_run;
 #endif
 
-/* WHERE A NODE'S BYTES LIE when its extent alone does not say: the pieces of
- * its range, one per line where bytes that are not its own separate its
- * lines, and the runs its inline content was read from. While a parse builds
- * the tree each holds an absolute source range, as a node's place does;
- * publishing rewrites them relative, as it rewrites the place as the extent.
- * Each list is one owned allocation, NULL when the node has none. */
-typedef union {
-    markdown_core_place place;
-    markdown_core_piece piece;
-} markdown_core_piece_where;
+/* WHERE A NODE'S BYTES LIE when its extent alone does not say: the runs of
+ * source it read, those its inline content was read from and, with length
+ * 0, those that gave no content, with the source that is not its own between
+ * them. While a parse builds the tree each holds an absolute source range,
+ * as a node's place does; publishing rewrites them relative, as it rewrites
+ * the place as the extent. The list is one owned allocation, NULL when the
+ * node has none. */
+typedef struct {
+    uint32_t start, end, length;
+} markdown_core_run_place;
 
 typedef union {
-    struct {
-        uint32_t start, end, length;
-    } place;
+    markdown_core_run_place place;
     markdown_core_run run;
 } markdown_core_run_where;
 
-typedef struct markdown_core_pieces {
-    uint32_t count;
-    markdown_core_piece_where items[];
-} markdown_core_pieces;
-
 typedef struct markdown_core_runs {
-    uint32_t count;
+    /* How many runs there are, and the content bytes they read: 0 for a
+     * node without inline content, whose runs all have length 0. */
+    uint32_t count, content;
     markdown_core_run_where items[];
 } markdown_core_runs;
 
@@ -381,9 +365,7 @@ struct markdown_core_node {
     /* This node's slice of parser-owned content-to-source runs. Zero count
      * means there is no mapped content (for example, an empty cell). */
     markdown_core_content_map content_map;
-    /* Its pieces and the runs of its inline content (markdown_core_pieces,
-     * markdown_core_runs). */
-    markdown_core_pieces *pieces;
+    /* The runs of its source (markdown_core_runs). */
     markdown_core_runs *runs;
     uint16_t kind;
     markdown_core_node_internal_flags flags;
@@ -528,7 +510,7 @@ size_t markdown_core_node_release(markdown_core_node *node);
  *
  * A node lives in a SLOT (slab.h) holding the node and room for its kind's
  * record, the resources links read through live in slots of their own, and
- * what else a node owns of its own size -- its pieces, its runs, a label it
+ * what else a node owns of its own size -- its runs, a label it
  * declares -- in storage of that size. A pool holds the slabs of all
  * three. A parse takes every slot from the pool its
  * caller lends it -- a session's, which outlives each of its edits, or one
@@ -550,7 +532,7 @@ typedef struct markdown_core_node_pool {
     markdown_core_bytes_pool bytes;
 } markdown_core_node_pool;
 
-/* Uninitialized storage of `bytes` a node owns -- its pieces, its runs, a
+/* Uninitialized storage of `bytes` a node owns -- its runs, a
  * label it declares -- from the pool's slabs, or from the allocator with no
  * pool; NULL when none can be had. The node releases it with itself. */
 #define MARKDOWN_CORE_NODE_BYTES_SLAB_BYTES ((size_t)16 * 1024)

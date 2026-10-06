@@ -1,5 +1,5 @@
 import type { Attributes } from "./attributes.js";
-import type { Extent, Piece, Run } from "./values.js";
+import type { Extent, Run } from "./values.js";
 
 export interface MarkupBase<Kind extends string> {
     readonly kind: Kind;
@@ -8,11 +8,10 @@ export interface MarkupBase<Kind extends string> {
      * an exact number, usable directly as a list key. */
     readonly id: number;
     readonly extent: Extent;
-    /** The node's own parts of its range, one per line, when other bytes
-     * separate them; none when its range is one piece. */
-    readonly pieces: readonly Piece[];
-    /** Where its first relation was read from when that relation is an
-     * inline root's content; none otherwise. */
+    /** The source it read: the runs its first relation was read from when
+     * that relation is an inline root's content, and runs of length 0 of its
+     * own source between which lies source that is not its own. None when
+     * its own source is its range and it has no inline content. */
     readonly runs: readonly Run[];
     readonly anchor: string | null;
     readonly attributes: Attributes;

@@ -1,13 +1,15 @@
 extension Document {
     /// The editor scopes of `node`, one per source range in source order,
-    /// computed from the extents, pieces and runs and `source`, with columns
-    /// in the document's ``unit``.
+    /// computed from the extents and runs and `source`, with columns in the
+    /// document's ``unit``.
     ///
-    /// A node's source ranges are its pieces; for a node in an inline root's
-    /// content, the source its content range was read from through the root's
-    /// runs, touching parts joined; and otherwise its one range. Each call
-    /// walks the document once to place the node and reads the source for its
-    /// lines; nothing is cached.
+    /// A node's source ranges are a window less the gaps between the runs
+    /// that place it. A block's window is its range and its runs are its own;
+    /// a node in an inline root's content has as its window the source from
+    /// where its first content byte was read to where its last was, and the
+    /// root's runs. An empty window is one empty range. Each call walks the
+    /// document once to place the node and reads the source for its lines;
+    /// nothing is cached.
     ///
     /// - Parameters:
     ///   - node: a node of this document.

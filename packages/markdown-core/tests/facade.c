@@ -39,7 +39,7 @@ static const markdown_core_node *field(const markdown_core_node *node, node_fiel
     return value;
 }
 
-/* The scope of `node`, a node in one piece, computed from the source its
+/* The scope of `node`, a node of one source range, computed from the source its
  * document was parsed from. */
 static markdown_core_scope scope_in(const markdown_core_document *document, const markdown_core_node *node,
                                     const void *source, size_t length) {
@@ -47,7 +47,7 @@ static markdown_core_scope scope_in(const markdown_core_document *document, cons
     size_t count = 0;
     ok(markdown_core_document_scope(document, node, (const uint8_t *)source, length, &scopes, &count),
        "the scope query answers for a node of the document");
-    check(count == 1, "a node in one piece has one scope");
+    check(count == 1, "a node of one source range has one scope");
     if (count) {
         scope = scopes[0];
     }
@@ -418,7 +418,7 @@ static void check_callout_inherited_setext_scope(void) {
               scopes[0].start.line == 2 && scopes[0].start.column == 3 && scopes[0].end.line == 3 &&
               scopes[0].end.column == 0 && scopes[1].start.line == 3 && scopes[1].start.column == 3 &&
               scopes[1].end.line == 3 && scopes[1].end.column == 5,
-          "callout Setext scope is a piece per line, ending on the underline before a following blank line");
+          "callout Setext scope is a source range per line, ending on the underline before a following blank line");
     markdown_core_scopes_free(scopes);
     markdown_core_document_free(document);
 }

@@ -463,23 +463,33 @@ bool markdown_core_relations_next(markdown_core_relation_cursor *cursor, markdow
     return relations_next(cursor, relation, &more);
 }
 
-/* THE RUNS OF A NODE'S INLINE CONTENT, which is its first relation when it
- * is an inline root's: the runs of the node itself, or of the private node a
- * callout's title or a definition's term hangs from; NULL when that relation
- * is not an inline root's content. Its places are offsets in that content,
- * and every place below them is too. Roots never nest. */
-static inline markdown_core_runs *shape_runs(const markdown_core_node *node, relation_shape shape) {
+/* WHERE A NODE'S RUNS ARE HELD: by the node itself, or by the private node
+ * a callout's title or a definition's term hangs from, whose runs are the
+ * callout's or the definition's; NULL for a callout without a title. */
+static inline markdown_core_runs **shape_runs_at(const markdown_core_node *node, relation_shape shape) {
     switch (shape) {
     case SHAPE_CALLOUT:
-        return node->as.callout->title ? node->as.callout->title->runs : NULL;
+        return node->as.callout->title ? &node->as.callout->title->runs : NULL;
     case SHAPE_DEFINITION:
-        return node->as.definition->term->runs;
+        return &node->as.definition->term->runs;
     default:
-        return node->runs;
+        return (markdown_core_runs **)&node->runs;
     }
 }
 
-static markdown_core_runs *content_runs(const markdown_core_node *node) { return shape_runs(node, shape_of(node)); }
+static inline markdown_core_runs *shape_runs(const markdown_core_node *node, relation_shape shape) {
+    markdown_core_runs **runs = shape_runs_at(node, shape);
+    return runs ? *runs : NULL;
+}
+
+/* THE RUNS OF A NODE'S INLINE CONTENT, which is its first relation when it
+ * is an inline root's: its runs when they read content, and NULL otherwise.
+ * Its first relation's places are offsets in that content, and every place
+ * below them is too. Roots never nest. */
+static markdown_core_runs *content_runs(const markdown_core_node *node) {
+    markdown_core_runs *runs = shape_runs(node, shape_of(node));
+    return runs && runs->content ? runs : NULL;
+}
 
 bool markdown_core_source_runs_read(markdown_core_source_runs *table, const markdown_core_runs *runs, uint32_t origin) {
     markdown_core_source_run *grown =
@@ -505,8 +515,8 @@ static inline bool source_run_copied(const markdown_core_source_run *run) {
     return run->end - run->start == run->length;
 }
 
-/* The run content offset `offset` is in: the last that starts at or before
- * it. */
+/* The content run content offset `offset` is in: the last that starts at or
+ * before it and reads content, or the first run. */
 static size_t source_run_at(const markdown_core_source_runs *table, uint32_t offset) {
     size_t lo = 0, hi = table->count;
     while (hi - lo > 1) {
@@ -516,6 +526,9 @@ static size_t source_run_at(const markdown_core_source_runs *table, uint32_t off
         } else {
             hi = mid;
         }
+    }
+    while (lo > 0 && !table->runs[lo].length) {
+        lo--;
     }
     return lo;
 }
@@ -531,40 +544,59 @@ static uint32_t source_run_place(const markdown_core_source_runs *table, uint32_
     return source_run_copied(run) ? run->start + (offset - run->content) : run->start;
 }
 
-size_t markdown_core_source_runs_ranges(const markdown_core_source_runs *table, markdown_core_place place,
-                                        markdown_core_place *ranges, size_t capacity) {
-    if (!table->count) {
-        return 0;
+/* Where the content byte before `offset` is read to: past its source byte,
+ * or the end of the run that reads it whole. */
+static uint32_t source_run_end(const markdown_core_source_runs *table, uint32_t offset) {
+    const markdown_core_source_run *run = &table->runs[source_run_at(table, offset - 1)];
+    if (offset - 1 >= run->content + run->length || !source_run_copied(run)) {
+        return run->end;
     }
-    if (place.end <= place.start) {
+    return run->start + (offset - run->content);
+}
+
+markdown_core_place markdown_core_source_runs_window(const markdown_core_source_runs *table,
+                                                     markdown_core_place place) {
+    const uint32_t start = source_run_place(table, place.start);
+    return (markdown_core_place){start, place.end > place.start ? source_run_end(table, place.end) : start};
+}
+
+size_t markdown_core_source_runs_ranges(const markdown_core_source_runs *table, markdown_core_place window,
+                                        markdown_core_place *ranges, size_t capacity) {
+    if (window.end <= window.start) {
         if (capacity) {
-            uint32_t at = source_run_place(table, place.start);
-            ranges[0] = (markdown_core_place){at, at};
+            ranges[0] = window;
         }
         return 1;
     }
+    /* The first run that ends past the window's start; the gaps from there
+     * that lie in the window cut it. */
+    size_t lo = 0, hi = table->count;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (table->runs[mid].end <= window.start) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
     size_t count = 0;
-    markdown_core_place last = {0, 0};
-    for (size_t i = source_run_at(table, place.start); i < table->count && table->runs[i].content < place.end; i++) {
-        const markdown_core_source_run *run = &table->runs[i];
-        const uint32_t from = place.start > run->content ? place.start : run->content;
-        const uint32_t to = place.end < run->content + run->length ? place.end : run->content + run->length;
-        if (from >= to) {
+    uint32_t from = window.start;
+    for (size_t i = lo; i + 1 < table->count && table->runs[i].end < window.end; i++) {
+        const uint32_t gap = table->runs[i].end, past = table->runs[i + 1].start;
+        if (past <= gap) {
             continue;
         }
-        markdown_core_place part = source_run_copied(run) ? (markdown_core_place){run->start + (from - run->content),
-                                                                                  run->start + (to - run->content)}
-                                                          : (markdown_core_place){run->start, run->end};
-        if (count && last.end == part.start) {
-            last.end = part.end;
-            if (count <= capacity) {
-                ranges[count - 1] = last;
+        if (gap > from) {
+            if (count < capacity) {
+                ranges[count] = (markdown_core_place){from, gap};
             }
-            continue;
+            count++;
         }
-        last = part;
+        from = past > from ? past : from;
+    }
+    if (from < window.end) {
         if (count < capacity) {
-            ranges[count] = part;
+            ranges[count] = (markdown_core_place){from, window.end};
         }
         count++;
     }
@@ -855,69 +887,67 @@ static bool publish_runs_read(publish_walk *walk) {
     return true;
 }
 
-/* A node's pieces as it is published (node.h): each within its place, those
- * that touch joined into one, and measured from the end of the piece before,
- * or from the node's start. A node whose range is one piece has none. */
-static void publish_pieces(markdown_core_node_pool *pool, markdown_core_node *node, markdown_core_place place) {
-    markdown_core_pieces *pieces = node->pieces;
+/* A node's runs as they are published (node.h): each run of length 0
+ * within its place, those that touch joined, and the runs of length 0 at
+ * either end without a gap beside them dropped, the rest measured from the
+ * end of the run before, or from the node's start. A node that has no runs
+ * left has none. */
+static void publish_runs(markdown_core_node_pool *pool, markdown_core_runs **at, markdown_core_place place) {
+    markdown_core_runs *runs = *at;
+    markdown_core_run_where *items = runs->items;
     uint32_t count = 0;
-    for (uint32_t i = 0; i < pieces->count; i++) {
-        markdown_core_place piece = pieces->items[i].place;
-        uint32_t start = piece.start > place.start ? piece.start : place.start;
-        uint32_t end = piece.end < place.end ? piece.end : place.end;
-        if (start >= end) {
-            continue;
+    for (uint32_t i = 0; i < runs->count; i++) {
+        markdown_core_run_place run = items[i].place;
+        if (!run.length) {
+            run.start = run.start > place.start ? run.start : place.start;
+            run.end = run.end < place.end ? run.end : place.end;
+            if (run.start >= run.end) {
+                continue;
+            }
+            if (count && !items[count - 1].place.length && items[count - 1].place.end == run.start) {
+                items[count - 1].place.end = run.end;
+                continue;
+            }
         }
-        if (count && pieces->items[count - 1].place.end == start) {
-            pieces->items[count - 1].place.end = end;
-            continue;
-        }
-        pieces->items[count++].place = (markdown_core_place){start, end};
+        items[count++].place = run;
     }
-    if (count < 2) {
-        markdown_core_node_pool_bytes_free(pool, pieces);
-        node->pieces = NULL;
+    uint32_t first = 0;
+    while (first < count && !items[first].place.length &&
+           (first + 1 == count || items[first].place.end == items[first + 1].place.start)) {
+        first++;
+    }
+    while (count > first && !items[count - 1].place.length &&
+           (count - 1 == first || items[count - 2].place.end == items[count - 1].place.start)) {
+        count--;
+    }
+    if (first == count) {
+        markdown_core_node_pool_bytes_free(pool, runs);
+        *at = NULL;
         return;
     }
     uint32_t anchor = place.start;
-    for (uint32_t i = 0; i < count; i++) {
-        markdown_core_place piece = pieces->items[i].place;
-        pieces->items[i].piece =
-            (markdown_core_piece){(int32_t)((int64_t)piece.start - anchor), piece.end - piece.start};
-        anchor = piece.end;
+    for (uint32_t i = first; i < count; i++) {
+        const markdown_core_run_place run = items[i].place;
+        items[i - first].run =
+            (markdown_core_run){(int32_t)((int64_t)run.start - anchor), run.end - run.start, run.length};
+        anchor = run.end;
     }
-    pieces->count = count;
+    runs->count = count - first;
 }
 
-/* An inline root's runs as their holder is published (node.h): each
- * measured from the end of the run before, or from `start`, where the node
- * whose content they are starts. */
-static void publish_runs(markdown_core_runs *runs, uint32_t start) {
-    uint32_t anchor = start;
-    for (uint32_t i = 0; i < runs->count; i++) {
-        const uint32_t from = runs->items[i].place.start, to = runs->items[i].place.end,
-                       length = runs->items[i].place.length;
-        runs->items[i].run = (markdown_core_run){(int32_t)((int64_t)from - anchor), to - from, length};
-        anchor = to;
-    }
-}
-
-/* Gives `node` its id and its extent against `anchor`, its pieces and the
- * runs of its content, `runs`, and records it in its lookup table when its
- * slot says the tables find it, at its source start: its place is in the
- * content of the root whose runs the walk holds when `content` says so.
- * Returns where it ended. */
-static inline bool publish_node(publish_walk *walk, markdown_core_node *node, unsigned slot, markdown_core_runs *runs,
+/* Gives `node` its id and its extent against `anchor`, and its runs, held
+ * at `runs`, and records it in its lookup table when its slot says the
+ * tables find it, at its source start: its place is in the content of the
+ * root whose runs the walk holds when `content` says so. Returns where it
+ * ended. */
+static inline bool publish_node(publish_walk *walk, markdown_core_node *node, unsigned slot, markdown_core_runs **runs,
                                 uint32_t anchor, uint64_t id, bool content, markdown_core_place *place) {
     *place = node->where.place;
     node->id = id;
     node->where.extent =
         (markdown_core_extent){(int32_t)((int64_t)place->start - (int64_t)anchor), place->end - place->start};
-    if (node->pieces) {
-        publish_pieces(walk->stack.parser->pool, node, *place);
-    }
-    if (runs) {
-        publish_runs(runs, place->start);
+    if (runs && *runs) {
+        publish_runs(walk->stack.parser->pool, runs, *place);
     }
     if (!SLOT_TABLE(slot)) {
         return true;
@@ -974,7 +1004,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_fresh(publis
     publish_frame *frame = &stack->frames[count++];
     *frame = (publish_frame){.cursor = cursor, .start = start, .more = more};
     hand = (publish_relation){first.item, first.end, start};
-    publish_enter(walk, shape_runs(node, shape), frame, &hand, content);
+    publish_enter(walk, content_runs(node), frame, &hand, content);
     while (count > base) {
         if (hand.item == hand.end) {
             markdown_core_relation relation;
@@ -994,7 +1024,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_fresh(publis
         hand.item = child->next;
         unsigned slot = slot_of(child);
         relation_shape child_shape = (relation_shape)(slot & SLOT_SHAPE);
-        markdown_core_runs *runs = shape_runs(child, child_shape);
+        markdown_core_runs **runs = shape_runs_at(child, child_shape);
         content = frame->content;
         if (!publish_node(walk, child, slot, runs, hand.anchor, ++next_id, content, &place)) {
             return false;
@@ -1024,7 +1054,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_fresh(publis
             frame->cursor = cursor;
         }
         hand = (publish_relation){first.item, first.end, place.start};
-        publish_enter(walk, runs, frame, &hand, content);
+        publish_enter(walk, runs && *runs && (*runs)->content ? *runs : NULL, frame, &hand, content);
     }
     walk->next_id = next_id;
     return true;
@@ -1133,6 +1163,9 @@ static bool content_images_read(publish_walk *walk, const markdown_core_runs *ru
             }
             for (size_t j = next; j < fresh->count && fresh->runs[j].start < high; j++) {
                 const markdown_core_source_run *read = &fresh->runs[j];
+                if (!read->length) {
+                    continue;
+                }
                 const uint32_t first = low > read->start ? low : read->start;
                 const uint32_t last = high < read->end ? high : read->end;
                 if (first >= last) {
@@ -1227,21 +1260,6 @@ static markdown_core_node *publish_match(publish_walk *walk, publish_match_frame
 
 static bool scalars_equal(const markdown_core_node *a, const markdown_core_node *b);
 
-static bool pieces_equal(const markdown_core_pieces *a, const markdown_core_pieces *b) {
-    if (!a || !b) {
-        return a == b;
-    }
-    if (a->count != b->count) {
-        return false;
-    }
-    for (uint32_t i = 0; i < a->count; i++) {
-        if (a->items[i].piece.lead != b->items[i].piece.lead || a->items[i].piece.span != b->items[i].piece.span) {
-            return false;
-        }
-    }
-    return true;
-}
-
 static bool runs_equal(const markdown_core_runs *a, const markdown_core_runs *b) {
     if (!a || !b) {
         return a == b;
@@ -1262,8 +1280,7 @@ static bool runs_equal(const markdown_core_runs *a, const markdown_core_runs *b)
  * relations are compared. */
 static bool publish_same(const markdown_core_node *node, const markdown_core_node *old) {
     return node->where.extent.lead == old->where.extent.lead && node->where.extent.span == old->where.extent.span &&
-           pieces_equal(node->pieces, old->pieces) && runs_equal(content_runs(node), content_runs(old)) &&
-           scalars_equal(node, old);
+           runs_equal(shape_runs(node, shape_of(node)), shape_runs(old, shape_of(old))) && scalars_equal(node, old);
 }
 
 /* A matched node's verdict, once its relations are published: a same node
@@ -1314,7 +1331,7 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, markdo
     bool more, old_more, ok = true;
     unsigned slot = slot_of(root);
     relation_shape shape = (relation_shape)(slot & SLOT_SHAPE);
-    if (!publish_node(walk, root, slot, shape_runs(root, shape), 0, previous->id, false, &place)) {
+    if (!publish_node(walk, root, slot, shape_runs_at(root, shape), 0, previous->id, false, &place)) {
         return false;
     }
     walk->matched++;
@@ -1395,7 +1412,7 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, markdo
             shape = (relation_shape)(slot & SLOT_SHAPE);
             markdown_core_node *match = publish_match(walk, frame, child, &old_start);
             content = frame->walk.content;
-            ok = publish_node(walk, child, slot, shape_runs(child, shape), hand.anchor,
+            ok = publish_node(walk, child, slot, shape_runs_at(child, shape), hand.anchor,
                               match ? match->id : ++walk->next_id, content, &place);
             hand.anchor = place.end;
             if (!ok) {
@@ -1530,8 +1547,8 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
         ok = publish_prepare(&walk.identity, revision->node_count) && publish_matched(&walk, root, previous, &same);
     } else {
         unsigned slot = slot_of(root);
-        ok = publish_node(&walk, root, slot, shape_runs(root, (relation_shape)(slot & SLOT_SHAPE)), 0, ++walk.next_id,
-                          false, &place) &&
+        ok = publish_node(&walk, root, slot, shape_runs_at(root, (relation_shape)(slot & SLOT_SHAPE)), 0,
+                          ++walk.next_id, false, &place) &&
              publish_fresh(&walk, root, (relation_shape)(slot & SLOT_SHAPE), place.start, false);
     }
     if (ok && !same) {
@@ -1713,13 +1730,8 @@ uint64_t markdown_core_node_id(const markdown_core_node *node) { return node->id
 
 markdown_core_extent markdown_core_node_extent(const markdown_core_node *node) { return node->where.extent; }
 
-const markdown_core_piece *markdown_core_node_pieces(const markdown_core_node *node, size_t *count) {
-    *count = node->pieces ? node->pieces->count : 0;
-    return node->pieces ? &node->pieces->items[0].piece : NULL;
-}
-
 const markdown_core_run *markdown_core_node_runs(const markdown_core_node *node, size_t *count) {
-    const markdown_core_runs *runs = content_runs(node);
+    const markdown_core_runs *runs = shape_runs(node, shape_of(node));
     *count = runs ? runs->count : 0;
     return runs ? &runs->items[0].run : NULL;
 }
@@ -1739,6 +1751,7 @@ void markdown_core_walk_begin(markdown_core_walk *walk, const markdown_core_node
 void markdown_core_walk_end(markdown_core_walk *walk) {
     markdown_core_free(walk->frames);
     markdown_core_free(walk->runs.runs);
+    markdown_core_free(walk->own.runs);
     markdown_core_free(walk->ranges);
     *walk = (markdown_core_walk){.root = walk->root, .failed = walk->failed};
 }
@@ -1875,35 +1888,29 @@ static bool walk_reserve(markdown_core_walk *walk, size_t count) {
 
 bool markdown_core_walk_ranges(markdown_core_walk *walk, const markdown_core_walk_item *item,
                                const markdown_core_place **ranges, size_t *count) {
-    const markdown_core_pieces *pieces = item->node->pieces;
+    /* An inline node's window is the source its content range was read
+     * from, cut by its root's runs; a block's is its range, cut by its own. */
+    const markdown_core_source_runs *table = &walk->runs;
+    markdown_core_place window = item->place;
     if (item->content) {
-        size_t needed = markdown_core_source_runs_ranges(&walk->runs, item->place, walk->ranges, walk->range_capacity);
-        if (needed > walk->range_capacity) {
-            if (!walk_reserve(walk, needed)) {
-                return false;
-            }
-            markdown_core_source_runs_ranges(&walk->runs, item->place, walk->ranges, walk->range_capacity);
-        }
-        *count = needed;
-    } else if (pieces) {
-        if (!walk_reserve(walk, pieces->count)) {
-            return false;
-        }
-        int64_t at = item->place.start;
-        for (uint32_t i = 0; i < pieces->count; i++) {
-            const markdown_core_piece piece = pieces->items[i].piece;
-            const uint32_t start = (uint32_t)(at + piece.lead);
-            walk->ranges[i] = (markdown_core_place){start, start + piece.span};
-            at = start + piece.span;
-        }
-        *count = pieces->count;
+        window = markdown_core_source_runs_window(table, item->place);
     } else {
-        if (!walk_reserve(walk, 1)) {
+        const markdown_core_runs *runs = shape_runs(item->node, shape_of(item->node));
+        walk->own.count = 0;
+        if (runs && !markdown_core_source_runs_read(&walk->own, runs, item->place.start)) {
+            walk->failed = true;
             return false;
         }
-        walk->ranges[0] = item->place;
-        *count = 1;
+        table = &walk->own;
     }
+    size_t needed = markdown_core_source_runs_ranges(table, window, walk->ranges, walk->range_capacity);
+    if (needed > walk->range_capacity) {
+        if (!walk_reserve(walk, needed)) {
+            return false;
+        }
+        markdown_core_source_runs_ranges(table, window, walk->ranges, walk->range_capacity);
+    }
+    *count = needed;
     *ranges = walk->ranges;
     return true;
 }

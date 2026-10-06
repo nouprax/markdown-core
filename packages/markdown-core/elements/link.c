@@ -409,7 +409,7 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_no
     markdown_core_parser_content_place(parser, &b->content_map, before, &ignored, &start);
     markdown_core_parser_content_end_place(parser, &b->content_map, end - 1, &ignored, &stop);
     reference->where.place = (markdown_core_place){(uint32_t)start, (uint32_t)stop};
-    markdown_core_parser_place_pieces(parser, reference, b->parent, line);
+    markdown_core_parser_place_runs(parser, reference, b->parent, line);
     markdown_core_node_attach_validated(b->parent, reference, b);
     return length;
 }

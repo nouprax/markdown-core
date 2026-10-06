@@ -158,13 +158,14 @@ deep value equality including ids, the comparator for
 
 A node stores its `extent`, `{ lead, span }` in bytes, never a line or
 column: a block's in the UTF-8 source, an inline node's in the content of its
-inline root, which starts at 0. A block inside a container whose lines other
-bytes separate also has `pieces`, its own part of each line, and a node whose
-first relation is inline content has `runs`, where in the source that content
-was read from. `document.scope(node, source)` answers one scope per source
+inline root, which starts at 0. A node whose first relation is inline
+content has `runs`, where in the source that content was read from, and a
+node whose range holds bytes that are not its own, such as a block inside a
+container, has runs of length 0 over its own source, so the bytes between
+two runs are not the node's. `document.scope(node, source)` answers one scope per source
 range of the node, in source order, and `document.nodeAt(position, source)`
 the last node one of whose ranges holds the position; both compute them on
-request from the extents, pieces, runs and the source the document was parsed
+request from the extents, runs and the source the document was parsed
 from, with columns in the document's unit.
 
 ## Sessions
