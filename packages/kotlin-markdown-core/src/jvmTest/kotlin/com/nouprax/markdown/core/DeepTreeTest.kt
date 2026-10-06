@@ -42,7 +42,7 @@ class DeepTreeTest {
 
         // Scope queries and hit testing walk the whole document.
         val column = depth * 2 + 1
-        assertEquals(Scope(Position(1, column), Position(1, column + 3)), document.scope(leaf, source))
+        assertEquals(listOf(Scope(Position(1, column), Position(1, column + 3))), document.scope(leaf, source))
         assertSame(leaf, document.node(Position(1, column), source))
         assertNull(document.node(Position(2, 1), source))
 
@@ -81,7 +81,7 @@ class DeepTreeTest {
             val leaf = assertIs<Text>(visitor.nodes.last())
             assertEquals("lean", leaf.literal)
             val column = depth * 2 + 1
-            assertEquals(Scope(Position(1, column), Position(1, column + 3)), edited.scope(leaf, text))
+            assertEquals(listOf(Scope(Position(1, column), Position(1, column + 3))), edited.scope(leaf, text))
             assertSame(leaf, edited.node(Position(1, column), text))
             assertEquals("Document(id=1)", edited.toString())
         }

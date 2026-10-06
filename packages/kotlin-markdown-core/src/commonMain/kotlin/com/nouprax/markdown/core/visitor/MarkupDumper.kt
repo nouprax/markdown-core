@@ -17,27 +17,21 @@ public object MarkupDumper {
      * markup, with scopes computed from [source], the text the document was
      * parsed from, always in UTF-8 columns whatever the document's unit.
      *
-     * @throws MarkdownCoreException [ErrorCode.OUT_OF_BOUNDS] when [source] ends before [node] does.
+     * @throws MarkdownCoreException [ErrorCode.OUT_OF_BOUNDS] when [source] ends before a node of the tree does.
      */
     public fun dump(
         document: Document,
         node: Markup,
         source: String,
-    ): String {
-        val lines = SourceLines(source)
-        val place = document.place(node)
-        // Owned markup lies within its owner, so covering the node covers every line.
-        if (place.end > lines.bytes.size) throw MarkdownCoreException(ErrorCode.OUT_OF_BOUNDS)
-        // A node's walk starts at its own extent, which is relative to the
-        // anchor its relation had where it was written.
-        return Tree(lines).dump(node, place.start - node.extent.lead)
-    }
+    ): String = Tree(SourceLines(source)).dump(document, node)
 }
 
 /**
  * Draws one line per item of the canonical walk: a node's line, or a group
  * line naming a node-valued list. The walk's stack is the tree's depth, never
- * the call stack's.
+ * the call stack's. A node is placed by the relations above it, its content's
+ * through its inline root's runs, so the walk starts at the document even for
+ * a node below it.
  */
 private class Tree(
     private val lines: SourceLines,
@@ -49,14 +43,23 @@ private class Tree(
     private val more = ArrayList<Boolean>()
     private val ends = ArrayList<Int>()
 
+    /** Draws the tree under [root], a node of [document], each line at its level below [root]. */
     fun dump(
+        document: Document,
         root: Markup,
-        anchor: Long,
     ): String {
-        val traversal = MarkupTraversal(root, anchor)
+        val traversal = MarkupTraversal(document)
+        // The level of [root] once the walk is at it, and nothing before.
+        var base = -1
         while (traversal.next()) {
+            if (base < 0) {
+                if (traversal.step != MarkupTraversal.Step.ENTER || traversal.node !== root) continue
+                base = traversal.level
+            } else if (traversal.level <= base) {
+                break
+            }
             if (traversal.step == MarkupTraversal.Step.EXIT) continue
-            connect(traversal.level, traversal.more)
+            connect(traversal.level - base, traversal.more)
             val node = traversal.node
             if (node == null) {
                 output
@@ -65,7 +68,7 @@ private class Tree(
                     .append(traversal.count)
                     .append('\n')
             } else {
-                node(node, traversal.start, traversal.end)
+                node(node, traversal.places())
             }
         }
         return output.toString()
@@ -91,16 +94,19 @@ private class Tree(
         ends[depth] = prefix.length
     }
 
+    /** A node's line, with a scope for each of its source ranges, which [lines] must cover. */
     private fun node(
         node: Markup,
-        start: Long,
-        end: Long,
+        places: SourcePlaces,
     ) {
+        if (places.end(places.count - 1) > lines.bytes.size) throw MarkdownCoreException(ErrorCode.OUT_OF_BOUNDS)
         val line = describe(node)
+        output.append(line.kind).append(" scope=")
+        for (index in 0 until places.count) {
+            if (index > 0) output.append(',')
+            output.append(scope(lines.scope(places.start(index).toInt(), places.end(index).toInt(), TextUnit.UTF8)))
+        }
         output
-            .append(line.kind)
-            .append(' ')
-            .append(scope(lines.scope(start.toInt(), end.toInt(), TextUnit.UTF8)))
             .append(" anchor=")
             .append(optional(node.anchor))
             .append(" attributes=")
@@ -344,6 +350,18 @@ private fun describe(node: Markup): Line =
             )
         }
 
+        is Reference -> {
+            Line(
+                "Reference",
+                0,
+                listOf(
+                    "label=${escaped(node.label)}",
+                    "dest=${destination(node.dest)}",
+                    "title=${optional(node.title)}",
+                ),
+            )
+        }
+
         is Directive -> {
             Line("Directive", 0, listOf("name=${escaped(node.name)}"))
         }
@@ -358,7 +376,7 @@ private fun describe(node: Markup): Line =
     }
 
 private fun scope(value: Scope): String =
-    "scope=${value.start.line}:${value.start.column}..${value.end.line}:${value.end.column}"
+    "${value.start.line}:${value.start.column}..${value.end.line}:${value.end.column}"
 
 private fun optional(value: String?): String = value?.let(::escaped) ?: "null"
 
@@ -367,6 +385,7 @@ private fun destination(value: Destination): String =
     when (value) {
         is Destination.Url -> "url(${escaped(value.value)})"
         is Destination.Cross -> "cross(path=${escaped(value.path)},anchor=${optional(value.anchor)})"
+        is Destination.Reference -> "reference(${escaped(value.label)})"
     }
 
 private fun referent(value: CitationReferent): String =

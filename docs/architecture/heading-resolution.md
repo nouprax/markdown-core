@@ -1,8 +1,8 @@
 # Heading resolution
 
 The [anchors module](../specs/dialect/anchors.md) owns the language contract.
-Parsing establishes heading labels before reference lookup, then fills their
-shared targets after every explicit anchor is known. Consumers and element
+Parsing establishes heading labels before reference lookup, then gives each
+heading its anchor after every explicit anchor is known. Consumers and element
 postprocessors receive only the completed document.
 
 ## Declaration order and inline ownership
@@ -10,20 +10,15 @@ postprocessors receive only the completed document.
 Block finalization registers headings in source order, including headings in
 footnote definitions. A heading is a leaf block, so closure order is source
 order. The parser keeps borrowed node pointers in that order; no final tree
-search or sorting is needed. Explicit reference definitions are already in the
-ordinary reference map before heading declarations are added. The map's
-first-definition rule therefore gives explicit definitions priority and selects
-the first duplicate heading. Both authored and heading definitions use the
-same declaration function and create an ordinary shared resource there;
-reference parsing needs no heading-specific case.
+search or sorting is needed. Each heading whose text is a writable label keeps
+that label, normalized, and declares it in the ordinary reference map, as each
+`Reference` declares its own. Reference parsing asks the map only whether a
+label is declared, so it needs no heading-specific case. The published
+document resolves a `reference` destination: to the first `Reference` that
+declares the label or, when none does, to the first heading.
 
-Each writable heading creates its own implicit reference definition, including
-duplicate labels. Ordinary reference lookup selects the first definition using
-the existing map; heading parsing does not deduplicate declarations or create
-a separate resolution path. Normalization uses map-owned scratch, while every
-declaration owns its label in the same allocation as its record. This changes
-storage only: duplicate records and resources remain distinct, and the map's
-existing first-definition selection runs when references are resolved.
+Each writable heading declares its label, duplicates included. Every
+declaration owns its label in the same allocation as its record.
 
 A heading label uses authored source, not projected display text. Its endpoint
 depends on whether the normal inline cursor actually claims trailing heading
@@ -66,25 +61,12 @@ caches and delimiter/bracket stacks. Backtick caches allocate lazily, bounded
 by the input length and the inherited backtick limit; a pending heading does
 not retain a maximum-sized cache for source that never needs one.
 
-## Final anchors and shared resources
+## Final anchors
 
-Each writable heading declaration creates an ordinary reference resource with
-an initially empty URL, no title, and empty attributes. Occurrences retain that
-resource through the existing reference algorithm. No occurrence copies or
-interprets its provisional URL during parsing. Finalization writes `#anchor`
-to the resource once; bindings encode and decode that resource once, just as
-they do for an explicit reference definition. The heading's attributes do not
-become inherited reference attributes.
-
-A computed anchor is stored once: the resource owns `#anchor`, the heading's
-anchor borrows the bytes after the `#`, and the heading's attribute value holds
-the resource beside that borrow. The hold belongs to the attribute value, not
-to the heading record, because the anchor is a universal attribute: a kind
-conversion keeps the value and releases only the old kind's record, so a
-heading converted to another kind keeps an anchor it can read. A heading whose
-text cannot be a label has no resource and owns its computed anchor. An
-authored anchor stays the attribute value's, and the destination is a copy of
-it after the `#`.
+Each heading without an authored anchor takes its computed anchor, a copy it
+owns. A reference occurrence holds only the label it names; the anchor it
+leads to is the heading's own, and the heading's attributes stay the
+heading's.
 
 The finish walk reserves effective explicit anchors at each node's ENTER,
 while it discovers owned label/title fields. The walk parses each container's
@@ -97,12 +79,9 @@ container's, from inside the walk -- and the walk visits those roots before
 the content tree and again after it, until none is new. Block footnotes are
 still attached to the content tree during this walk; the document's
 finalization, which follows it, moves them into their chains and then gives
-the headings their anchors. No anchor-specific whole-tree traversal is needed. The
-registry and C facade use one effective-anchor accessor for local-over-inherited
-precedence. A reference resource's inherited anchor
-is hashed only on its first emitted inheriting occurrence. This identity index
-is necessary to avoid repeatedly hashing a long definition anchor for every
-short reference; unreferenced or fully overridden definitions reserve nothing.
+the headings their anchors. No anchor-specific whole-tree traversal is needed.
+Every node's explicit anchor is its own, a `Reference`'s included, so each is
+reserved once, at its node.
 
 The same walk resolves contextual script-space escape tokens after
 bracket/delimiter ownership is final, before consolidation merges the token's
@@ -138,27 +117,24 @@ suffix 1 for each heading. Decimal suffixes are appended directly with bounded
 stack storage and no general format-string processing.
 
 Projection and target construction reuse a single scratch buffer and a single
-projection stack; the final string is one exact-size owned copy, shared by the
-anchor and the destination as above. Scratch capacity is retained across
+projection stack; the final string is one exact-size copy the heading owns. Scratch capacity is retained across
 headings rather than discarded when a value is attached.
 
 ## Lifetime and bounds
 
 The heading collection and anchor indices borrow nodes and strings only until
 finalization completes. Pending inline states own their temporary parser state.
-The reference map, the declaring heading's attribute value and occurrences
-own resources through existing reference counts; freeing the heading or document does not
-invalidate a detached Link.
+Each heading owns its computed anchor and its label, and a reference
+occurrence owns its label, so freeing a heading or a document invalidates no
+other node.
 Every failure joins the parser's terminal allocation-failure transaction and
 disposes pending inline states before their nodes. Parse-time indices are discarded
 before consolidation or element postprocessing can replace nodes.
 
 Expected work is proportional to parsed input, visited nodes, and produced
-anchor/target bytes, using the shared hash index's normal bounds. Memory is
-proportional to headings, unique reserved anchors and inherited resources, plus
-live inline state. Tests measure node/string/candidate work, rather than using
+anchor bytes, using the shared hash index's normal bounds. Memory is
+proportional to headings and unique reserved anchors, plus live inline state. Tests measure node/string/candidate work, rather than using
 timing to assert linearity. They include dense suffix reservations, nested live
-delimiters at suspension, long shared anchors with thousands of references,
-source-order headings inside footnotes, detached resource lifetime, and strict
-allocation-failure sweeps. Canonical fixtures and Swift, Kotlin, and ES tests
+delimiters at suspension, long targets with thousands of references,
+source-order headings inside footnotes, and strict allocation-failure sweeps. Canonical fixtures and Swift, Kotlin, and ES tests
 verify that the same completed facts cross every binding boundary.

@@ -26,7 +26,15 @@ bool markdown_core_block_is_blank(markdown_core_strbuf *s, bufsize_t offset);
 void markdown_core_block_rebase_content_marks(markdown_core_parser *parser, markdown_core_node *node, bufsize_t dropped,
                                               bufsize_t remaining);
 bool markdown_core_block_ends_with_blank_line(const markdown_core_parser *parser, markdown_core_node *node);
+/* The sibling after `node` the blank-line facts see: the next one that is
+ * not MARKDOWN_CORE_NODE__BLANK_TRANSPARENT, or NULL. */
+markdown_core_node *markdown_core_block_next_seen(const markdown_core_node *node);
 markdown_core_node *markdown_core_block_finalize(markdown_core_parser *parser, markdown_core_node *b);
+/* A FINISHED BLOCK'S LAST WORD, once its range is settled: its element reads
+ * it as a finished thing, a paragraph that held only reference definitions
+ * leaves the tree to the References before it, and a block that takes text
+ * lines in a container takes its pieces. */
+void markdown_core_block_settle(markdown_core_parser *parser, markdown_core_node *b);
 void markdown_core_block_advance_offset(markdown_core_parser *parser, markdown_core_chunk *input, bufsize_t count,
                                         bool columns);
 int markdown_core_block_order_definitions(markdown_core_parser *parser,

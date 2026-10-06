@@ -44,7 +44,8 @@ export type NativeKind =
     | "citation"
     | "footnote"
     | "specimen"
-    | "metadata";
+    | "metadata"
+    | "reference";
 
 /** Indexed by wire ordinal. */
 export const kinds: readonly (NativeKind | "none")[] = [
@@ -91,7 +92,8 @@ export const kinds: readonly (NativeKind | "none")[] = [
     "citation",
     "footnote",
     "specimen",
-    "metadata"
+    "metadata",
+    "reference"
 ];
 
 type Exactly<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;

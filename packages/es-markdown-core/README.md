@@ -106,6 +106,15 @@ inline notes included, in source order, and `document.footnote(label)`
 returns the first one with that label; `Document.specimens` and
 `document.specimen(label)` do the same for specimens.
 
+A link reference definition `[r]: /u "t"` is a `Reference` block where it was
+written, with its normalized `label`, its `url` destination and its `title`.
+A reference link or image `[text][r]`, `[r]` or `![alt][r]` has the
+destination `{ kind: "reference", label: "r" }` and a null title.
+`Document.references` lists every `Reference` in source order, and
+`document.reference(label)` returns the node a label names: the first
+`Reference` with that label, else the first `Heading` whose text declares it,
+else null.
+
 `%%comment%%` produces `Comment`, the kind an HTML comment already produces,
 inline or as a block when both `%%` fences stand on lines of their own under
 the same container prefixes. The body is opaque and stored as written, nothing
@@ -147,11 +156,16 @@ text are equal, ids included. Use it as a list key. `markupEquals(a, b)` is
 deep value equality including ids, the comparator for
 `React.memo(component, (a, b) => markupEquals(a.node, b.node))`.
 
-A node stores its `extent`, `{ lead, span }` in bytes of UTF-8 source, never a
-line or column. `document.scope(node, source)` and
-`document.nodeAt(position, source)` compute them on request from the extents
-and the source the document was parsed from, with columns in the document's
-unit.
+A node stores its `extent`, `{ lead, span }` in bytes, never a line or
+column: a block's in the UTF-8 source, an inline node's in the content of its
+inline root, which starts at 0. A block inside a container whose lines other
+bytes separate also has `pieces`, its own part of each line, and a node whose
+first relation is inline content has `runs`, where in the source that content
+was read from. `document.scope(node, source)` answers one scope per source
+range of the node, in source order, and `document.nodeAt(position, source)`
+the last node one of whose ranges holds the position; both compute them on
+request from the extents, pieces, runs and the source the document was parsed
+from, with columns in the document's unit.
 
 ## Sessions
 
@@ -252,20 +266,21 @@ with no starting cells retain `cells=[]`; an authored empty cell retains
 and spans.
 
 Attributes attach to inline code (``x`{.code}`), ATX and Setext headings,
-fenced code, direct links/media, resolved references and angle autolinks.
-Reference definitions can supply an anchor, classes and records. An occurrence's
-nonempty anchor wins; its classes and records follow inherited declarations,
-including duplicates. Image dimension suffixes and dimension attribute records
+fenced code, direct links/media, resolved references, reference definitions
+and angle autolinks. Each node has the attributes written on it: a `Reference`
+has the anchor, classes and records its definition states, and a reference
+occurrence has its own. Image dimension suffixes and dimension attribute records
 remain independent. All returned values use the binding's native collections
 and remain usable after parsing finishes.
 
 Parsed headings receive automatic anchors: `# Hello World` declares
 `hello-world`, with `-1`, `-2`, and later suffixes for collisions. Explicit
 anchors anywhere in the document are reserved first. `[Hello World]`,
-`[Hello World][]`, and `[go][Hello World]` resolve to `#hello-world`, including
-before the heading; an explicit reference definition takes priority. Labels
-use authored heading text, so `# *Title*` is referenced by `[*Title*]`.
-Heading attributes stay on the heading, and generated targets add no scope.
+`[Hello World][]`, and `[go][Hello World]` name the label `hello world`, which
+`document.reference` resolves to the heading, including before the heading; an
+explicit reference definition takes priority. Labels use authored heading
+text, so `# *Title*` is referenced by `[*Title*]`. Heading attributes stay on
+the heading, and generated targets add no scope.
 
 ### Pandoc-derived syntax
 

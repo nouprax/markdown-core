@@ -63,6 +63,7 @@ func dispatch<V: MarkupVisitor>(_ node: any Markup, to visitor: inout V, phase: 
     case let node as Comment: visitor.visit(node, phase: phase)
     case let node as Formula: visitor.visit(node, phase: phase)
     case let node as Metadata: visitor.visit(node, phase: phase)
+    case let node as Reference: visitor.visit(node, phase: phase)
     default: break
     }
 }

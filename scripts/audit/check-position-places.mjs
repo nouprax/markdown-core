@@ -20,7 +20,7 @@ import {
     formatScope,
     lineLengths,
     loadLedger,
-    readScope,
+    readScopes,
     reconcileLedger,
     requireBinary,
     runBinary,
@@ -62,32 +62,34 @@ for (const example of corpus) {
     const lengths = lineLengths(example.input);
     const findings = [];
     for (const { node, nodePath } of walkWithPath(tree)) {
-        const scope = readScope(node);
-        if (scope === null) continue;
+        const scopes = readScopes(node);
+        if (scopes === null) continue;
         surveyed[INLINE_KINDS.has(node.kind) ? "inline" : "block"] += 1;
-        scanned += 1;
-        if (
-            example.input === "" &&
-            node.kind === "Document" &&
-            scope.start[0] === 1 &&
-            scope.start[1] === 1 &&
-            scope.end[0] === 1 &&
-            scope.end[1] === 0
-        )
-            continue;
-        const start = fault(scope.start, lengths, false);
-        const end = fault(scope.end, lengths, true);
-        const order = before(scope.end, scope.start) ? "reversed" : "ordered";
-        if (start === "place" && end === "place" && order === "ordered") continue;
-        findings.push({
-            nodePath,
-            kind: node.kind,
-            phase: INLINE_KINDS.has(node.kind) ? "inline" : "block",
-            scope: formatScope(scope),
-            start,
-            end,
-            order
-        });
+        for (const scope of scopes) {
+            scanned += 1;
+            if (
+                example.input === "" &&
+                node.kind === "Document" &&
+                scope.start[0] === 1 &&
+                scope.start[1] === 1 &&
+                scope.end[0] === 1 &&
+                scope.end[1] === 0
+            )
+                continue;
+            const start = fault(scope.start, lengths, false);
+            const end = fault(scope.end, lengths, true);
+            const order = before(scope.end, scope.start) ? "reversed" : "ordered";
+            if (start === "place" && end === "place" && order === "ordered") continue;
+            findings.push({
+                nodePath,
+                kind: node.kind,
+                phase: INLINE_KINDS.has(node.kind) ? "inline" : "block",
+                scope: formatScope(scope),
+                start,
+                end,
+                order
+            });
+        }
     }
     if (findings.length > 0) measured.push({ source: example.source, input: example.input, findings });
 }

@@ -3,14 +3,14 @@ Document scope=1:1..36:9 anchor=null attributes={} children=5
 │   ├── TableHead children=0
 │   ├── TableBody children=3
 │   │   ├── TableRow scope=2:1..3:9 anchor=null attributes={} children=2
-│   │   │   ├── TableCell scope=2:2..6:4 anchor=null attributes={} rowspan=3 colspan=1 children=3
+│   │   │   ├── TableCell scope=2:2..2:4,3:2..3:4,4:2..4:4,5:2..5:4,6:2..6:4 anchor=null attributes={} rowspan=3 colspan=1 children=3
 │   │   │   │   ├── Paragraph scope=2:3..2:3 anchor=null attributes={} children=1
 │   │   │   │   │   └── Text scope=2:3..2:3 anchor=null attributes={} literal="a" children=0
 │   │   │   │   ├── Paragraph scope=4:3..4:3 anchor=null attributes={} children=1
 │   │   │   │   │   └── Text scope=4:3..4:3 anchor=null attributes={} literal="c" children=0
 │   │   │   │   └── Paragraph scope=6:3..6:3 anchor=null attributes={} children=1
 │   │   │   │       └── Text scope=6:3..6:3 anchor=null attributes={} literal="e" children=0
-│   │   │   └── TableCell scope=2:6..6:8 anchor=null attributes={} rowspan=3 colspan=1 children=3
+│   │   │   └── TableCell scope=2:6..2:8,3:6..3:8,4:6..4:8,5:6..5:8,6:6..6:8 anchor=null attributes={} rowspan=3 colspan=1 children=3
 │   │   │       ├── Paragraph scope=2:7..2:7 anchor=null attributes={} children=1
 │   │   │       │   └── Text scope=2:7..2:7 anchor=null attributes={} literal="b" children=0
 │   │   │       ├── Paragraph scope=4:7..4:7 anchor=null attributes={} children=1
@@ -49,7 +49,7 @@ Document scope=1:1..36:9 anchor=null attributes={} children=5
 │   │   │   ├── TableCell scope=19:2..19:4 anchor=null attributes={} rowspan=1 colspan=1 children=1
 │   │   │   │   └── Paragraph scope=19:3..19:3 anchor=null attributes={} children=1
 │   │   │   │       └── Text scope=19:3..19:3 anchor=null attributes={} literal="a" children=0
-│   │   │   └── TableCell scope=19:6..21:8 anchor=null attributes={} rowspan=2 colspan=1 children=2
+│   │   │   └── TableCell scope=19:6..19:8,20:6..20:8,21:6..21:8 anchor=null attributes={} rowspan=2 colspan=1 children=2
 │   │   │       ├── Paragraph scope=19:7..19:7 anchor=null attributes={} children=1
 │   │   │       │   └── Text scope=19:7..19:7 anchor=null attributes={} literal="b" children=0
 │   │   │       └── Paragraph scope=21:7..21:7 anchor=null attributes={} children=1
@@ -67,8 +67,8 @@ Document scope=1:1..36:9 anchor=null attributes={} children=5
     ├── TableHead children=0
     ├── TableBody children=3
     │   ├── TableRow scope=31:1..32:9 anchor=null attributes={} children=1
-    │   │   └── TableCell scope=31:2..35:8 anchor=null attributes={} rowspan=3 colspan=2 children=1
-    │   │       └── Paragraph scope=31:3..35:3 anchor=null attributes={} children=9
+    │   │   └── TableCell scope=31:2..31:8,32:2..32:8,33:2..33:8,34:2..34:8,35:2..35:8 anchor=null attributes={} rowspan=3 colspan=2 children=1
+    │   │       └── Paragraph scope=31:3..31:3,32:3..32:8,33:3..33:7,34:3..34:5,35:3..35:3 anchor=null attributes={} children=9
     │   │           ├── Text scope=31:3..31:3 anchor=null attributes={} literal="a" children=0
     │   │           ├── SoftBreak scope=31:10..32:0 anchor=null attributes={} children=0
     │   │           ├── Text scope=32:5..32:8 anchor=null attributes={} literal="+---" children=0

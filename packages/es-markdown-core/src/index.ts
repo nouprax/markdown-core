@@ -15,6 +15,7 @@ export type { Emphasis } from "./markup/emphasis.js";
 export type { DefinitionList, Definition } from "./markup/definition-list.js";
 export type { Specimen } from "./markup/specimen.js";
 export type { Footnote } from "./markup/footnote.js";
+export type { Reference } from "./markup/reference.js";
 export type { FormulaBlock } from "./markup/formula-block.js";
 export type { Formula } from "./markup/formula.js";
 export type { Heading } from "./markup/heading.js";
@@ -50,8 +51,10 @@ export type {
     ListFlavor,
     OrderedListDelimiter,
     OrderedListVariant,
+    Piece,
     Placement,
     Position,
+    Run,
     Scope,
     TextUnit
 } from "./markup/values.js";

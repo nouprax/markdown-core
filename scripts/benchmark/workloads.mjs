@@ -1035,13 +1035,15 @@ export function identityScripts() {
                 .expect("only")
         );
     }
-    /* The links resolve through the heading's label, so they carry its
-     * anchor as their destination. */
+    /* The links name the heading's label, which the document resolves to
+     * the heading, so a new anchor changes only the heading and the
+     * Document. */
     add("heading-anchor-targets", "# Target {#one}\n\nsee [a][Target] and [b][Target]\n", (s) =>
         s
             .edit([{ start: 11, end: 14, text: "two" }])
-            .expect("changed", "Link", 21)
-            .expect("changed", "Link", 37)
+            .expect("changed", "Document", 0)
+            .expect("changed", "Heading", 0)
+            .expect("only")
     );
     {
         const paragraphs = Array.from({ length: 1000 }, (_, i) => `${word(i * 3 + 1)} ${word(i * 3 + 2)}\n\n`);

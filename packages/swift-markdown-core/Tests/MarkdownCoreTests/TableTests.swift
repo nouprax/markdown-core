@@ -69,6 +69,15 @@ extension APISuite {
 /// A hand-built document holding `content`, with no source range.
 func document(holding content: [MarkupRecord]) -> Document {
     Document(
-        record: DocumentRecord(fields(1), unit: .utf16, metadata: nil, content: content, footnotes: [], specimens: [])
+        record: DocumentRecord(
+            fields(1),
+            unit: .utf16,
+            metadata: nil,
+            content: content,
+            footnotes: [],
+            specimens: [],
+            references: [],
+            referenceLabels: [:]
+        )
     )
 }

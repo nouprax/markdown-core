@@ -104,20 +104,27 @@ the engine's session; the documents it returned stay complete values.
 Every node has an `id: MarkupID`, unique within its document across every
 owned relation and numbered from 1 in walk order by a parse, so two parses of
 one text are equal, ids included. Ids suit Compose `key` in lazy lists.
-`equals` is deep value equality: the same kind, id, scalar fields, extent and
-pairwise equal children in every relation, compared with an explicit work
+`equals` is deep value equality: the same kind, id, scalar fields, extent,
+pieces, runs and pairwise equal children in every relation, compared with an explicit work
 stack after a reference check. `hashCode` reads the id alone.
 
 A node stores no line or column. Its `extent: Extent(lead, span)` is the raw
-UTF-8 byte range the engine keeps: `lead` is signed, from the end of the
-previous node in the same relation (or the owner's start) to the node's start,
-and `span` is its length. Scopes are computed on request from the extents and
-the source the document was parsed from:
+byte range the engine keeps, a block's in the UTF-8 source and an inline
+node's in its inline root's content, which starts at 0: `lead` is signed, from
+the end of the previous node in the same relation (or the owner's start) to
+the node's start, and `span` is its length. A leaf block inside a container,
+or a grid or multiline table cell, also has `pieces`, the part of each of its
+lines that is its own, and a node whose first relation is inline content has
+`runs`, where in the source that content was read from. A node's source
+ranges are its pieces, the source its content range was read from through its
+root's runs, or its one range. Scopes, one per source range in source order,
+are computed on request from those and the source the document was parsed
+from:
 
 ```kotlin
 val document = Document.parse(source)            // TextUnit.UTF16 by default
-val scope = document.scope(node, source)         // Scope, columns in document.unit
-val hit = document.node(Position(3, 7), source)  // the last node in walk order holding that scalar
+val scopes = document.scope(node, source)        // [Scope], columns in document.unit
+val hit = document.node(Position(3, 7), source)  // the last node in walk order one of whose ranges holds that scalar
 ```
 
 `Document.parse(source, unit)` chooses how those queries count columns:
@@ -134,7 +141,7 @@ why:
   allocate, or the text exceeds 1 GiB of UTF-8, or its tree exceeds a byte
   array's capacity.
 - `ErrorCode.OUT_OF_BOUNDS`: `scope` or `dump` got a source that ends before
-  the node does, or `node` got a position whose line or column is below 1. A
+  a node's last range does, or `node` got a position whose line or column is below 1. A
   position past the source, or one no node holds, answers `null`. A session
   edit whose range starts after its end, ends past the text or overlaps
   another edit of its batch is `OUT_OF_BOUNDS` too.
@@ -203,6 +210,15 @@ before the citation's prefix and suffix. `Document.footnotes` and
 order, and `document.footnote(label)` and `document.specimen(label)` return the
 first one whose label equals the referent's; an inline note is never found by
 label.
+
+A link reference definition `[label]: /url "title"` is a `Reference` block where
+it was written, with its normalized `label`, a `Destination.Url` `dest`, its
+`title`, and the anchor and attributes it states. A reference occurrence --
+`[text][label]`, `[label][]`, `[label]` or `![alt][label]` -- is a `Link` or
+`Embedded` whose `dest` is `Destination.Reference(label)` with a null title.
+`Document.references` lists every definition in source order, and
+`document.reference(label)` returns the node the label resolves to: the first
+`Reference` with that label, else the first `Heading` whose text declares it.
 
 `%%comment%%` produces `Comment`, the kind an HTML comment already produces,
 inline or as a block when both `%%` fences stand on lines of their own under
@@ -275,18 +291,19 @@ with no starting cells retain `cells=[]`; an authored empty cell retains
 and spans.
 
 Attributes attach to inline code (``x`{.code}`), ATX and Setext headings,
-fenced code, direct links/media, resolved references and angle autolinks.
-Reference definitions can supply an anchor, classes and records. An occurrence's
-nonempty anchor wins; its classes and records follow inherited declarations,
-including duplicates. Image dimension suffixes and dimension attribute records
+fenced code, links/media, reference definitions and angle autolinks. Each node
+holds the anchor, classes and records written on it, including duplicates: a
+reference occurrence holds its own, and the `Reference` it names holds the
+definition's. Image dimension suffixes and dimension attribute records
 remain independent. All returned values use the binding's native collections
 and remain usable after parsing finishes.
 
 Parsed headings receive automatic anchors: `# Hello World` declares
 `hello-world`, with `-1`, `-2`, and later suffixes for collisions. Explicit
 anchors anywhere in the document are reserved first. `[Hello World]`,
-`[Hello World][]`, and `[go][Hello World]` resolve to `#hello-world`, including
-before the heading; an explicit reference definition takes priority. Labels
+`[Hello World][]`, and `[go][Hello World]` name `reference("hello world")`, and
+`document.reference("hello world")` answers the heading, including before the
+heading; an explicit reference definition takes priority. Labels
 use authored heading text, so `# *Title*` is referenced by `[*Title*]`.
 Heading attributes stay on the heading, and generated targets add no scope.
 

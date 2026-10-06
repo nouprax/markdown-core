@@ -209,6 +209,8 @@ void markdown_core_parser_destroy(markdown_core_parser *parser) {
     markdown_core_free((markdown_core_instance *)parser);
 }
 
+static bool S_reserve_content_marks(markdown_core_parser *parser, bufsize_t count);
+
 /* Begins a transaction that continues `revision` and borrows its pool. */
 static void S_parse_begin(markdown_core_parser *parser, markdown_core_revision *revision) {
     markdown_core_node *document;
@@ -221,6 +223,12 @@ static void S_parse_begin(markdown_core_parser *parser, markdown_core_revision *
      * initial capacity before any input; inputs reset length, never
      * ownership. */
     parser->input_lines = markdown_core_reserve(NULL, &parser->input_line_capacity, 1, sizeof(*parser->input_lines));
+    /* The first run of the content map is the identity an inline root's
+     * parse places on (parser.h, MARKDOWN_CORE_IDENTITY_MARK): first, so that
+     * no map appended after it ends with it. */
+    if (S_reserve_content_marks(parser, 1)) {
+        parser->line_marks[parser->line_marks_size++] = (markdown_core_line_mark){0, 0, 0, 1, 1, 0};
+    }
 
     document = make_document(parser);
     parser->root = document;
@@ -278,6 +286,10 @@ static bool S_kind_accepts_lines(const markdown_core_kind_record *kind, markdown
     return (kind->flags & MARKDOWN_CORE_KIND_LINES) ||
            ((kind->flags & MARKDOWN_CORE_KIND_LINES_ASK) &&
             kind->structure->element->accepts_lines_func(kind->structure->element, node));
+}
+/* Whether a node of `kind` takes a text line: as its content, or as prose. */
+static bool S_kind_takes_text(const markdown_core_kind_record *kind, markdown_core_node *node) {
+    return S_kind_accepts_lines(kind, node) || (kind->flags & MARKDOWN_CORE_KIND_PROSE);
 }
 static bool S_kind_contains_inlines(const markdown_core_kind_record *kind, markdown_core_node *node) {
     return (kind->flags & MARKDOWN_CORE_KIND_INLINES) ||
@@ -624,6 +636,89 @@ bool markdown_core_parser_starts_on_line(markdown_core_parser *parser, const mar
     return S_starts_on_line(parser, node, line);
 }
 
+/* The source of input line `line` from where its own bytes begin to where it
+ * ends, through its terminator on a line of the document itself. False when
+ * the line's content could not be read. */
+static bool S_line_piece(markdown_core_parser *parser, int line, markdown_core_place *piece) {
+    bufsize_t length;
+    if (!S_input_line_content(parser, markdown_core_parser_visited_line(parser, line), &length)) {
+        return false;
+    }
+    const markdown_core_input_line *geometry = markdown_core_parser_visited_line(parser, line);
+    const bufsize_t own = (bufsize_t)geometry->own;
+    piece->start = (uint32_t)(own < length ? markdown_core_parser_source_offset(parser, line, own + 1)
+                                           : markdown_core_parser_source_end(parser, line, own));
+    piece->end = parser->block_root == parser->root ? (uint32_t)markdown_core_input_line_next(parser, geometry)
+                                                    : (uint32_t)markdown_core_parser_source_end(parser, line, length);
+    return true;
+}
+
+/* The pieces of `node`, which spans input lines `first` to `last`, more
+ * than one. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_line_pieces(markdown_core_parser *parser, markdown_core_node *node,
+                                                              int first, int last) {
+    markdown_core_pieces *pieces = markdown_core_node_pool_bytes(
+        parser->pool, sizeof(*pieces) + (size_t)(last - first + 1) * sizeof(markdown_core_piece_where));
+    if (!pieces) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return;
+    }
+    pieces->count = 0;
+    markdown_core_place piece;
+    for (int line = first; line <= last; line++) {
+        if (!S_line_piece(parser, line, &piece)) {
+            markdown_core_node_pool_bytes_free(parser->pool, pieces);
+            return;
+        }
+        if (pieces->count && pieces->items[pieces->count - 1].place.end == piece.start) {
+            pieces->items[pieces->count - 1].place.end = piece.end;
+        } else {
+            pieces->items[pieces->count++].place = piece;
+        }
+    }
+    if (pieces->count < 2) {
+        markdown_core_node_pool_bytes_free(parser->pool, pieces);
+        return;
+    }
+    if (node->pieces) {
+        markdown_core_node_pool_bytes_free(parser->pool, node->pieces);
+    }
+    node->pieces = pieces;
+}
+
+void markdown_core_parser_place_pieces(markdown_core_parser *parser, markdown_core_node *node,
+                                       const markdown_core_node *container, int *line) {
+    /* A block of the document itself lies on whole lines of the source: its
+     * range is one piece. */
+    if (container == parser->root) {
+        return;
+    }
+    const int visited = parser->input_first_line + (int)parser->input_line_count - 1;
+    const uint32_t start = node->where.place.start, end = node->where.place.end;
+    int first = *line;
+    while (first > parser->input_first_line && (uint32_t)S_line_offset(parser, first) > start) {
+        first--;
+    }
+    /* Down the lines from there: one that begins at or before the start is
+     * the first so far, and the node ends on the last that begins before
+     * its end. */
+    int last = first;
+    while (last < visited) {
+        const uint32_t next = (uint32_t)S_line_offset(parser, last + 1);
+        if (next > start && next >= end) {
+            break;
+        }
+        last++;
+        if (next <= start) {
+            first = last;
+        }
+    }
+    if (first < last) {
+        S_line_pieces(parser, node, first, last);
+    }
+    *line = last;
+}
+
 /* One copied run of a document line. */
 static inline int S_append_copied_mark(markdown_core_parser *parser, markdown_core_node *node, int line,
                                        bufsize_t source, bufsize_t offset) {
@@ -758,6 +853,64 @@ int markdown_core_parser_content_end_place(markdown_core_parser *parser, const m
     return S_content_place(parser, map, offset, true, line, end);
 }
 
+/* AN INLINE ROOT'S CONTENT BECOMES THE INPUT ITS NODES ARE PLACED IN
+ * (markdown_core_inline_start_inlines). The `length` bytes its parse reads
+ * keep their map to the source as the root's runs: one run per run of the
+ * map, the bytes it reads from where it reads them, copied runs that touch
+ * in the source joined into one, and a run that reads source the run before
+ * read joined to it, so the runs' source ranges are in order and apart or
+ * touching. A copied run reads each content byte
+ * from one source byte; any other reads all of its content from all of its
+ * source. The root's map becomes the identity, so the parse places its nodes
+ * at offsets of the content. */
+void markdown_core_parser_read_content(markdown_core_parser *parser, markdown_core_node *node, bufsize_t length) {
+    const markdown_core_content_map map = node->content_map;
+    node->content_map = (markdown_core_content_map){MARKDOWN_CORE_IDENTITY_MARK, 1, 0};
+    if (length <= 0 || map.count <= 0) {
+        return;
+    }
+    const bufsize_t end = map.offset + length;
+    const markdown_core_line_mark *mark =
+        &parser->line_marks[markdown_core_block_content_mark_at(parser, &map, map.offset)];
+    const markdown_core_line_mark *const past = &parser->line_marks[map.first + map.count];
+    /* At most one run per mark from the first to the end of the map. */
+    markdown_core_runs *runs = markdown_core_node_pool_bytes(
+        parser->pool, sizeof(*runs) + (size_t)(past - mark) * sizeof(markdown_core_run_where));
+    if (!runs) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return;
+    }
+    uint32_t count = 0;
+    for (bufsize_t from = map.offset; from < end; mark++) {
+        const bufsize_t to = mark + 1 < past && mark[1].content_offset < end ? mark[1].content_offset : end;
+        const uint32_t start = (uint32_t)(mark->source + (from - mark->content_offset) * mark->source_step);
+        const uint32_t stop = start + (uint32_t)((to - from - 1) * mark->source_step + mark->source_width);
+        const uint32_t size = (uint32_t)(to - from);
+        markdown_core_run_where *previous = count ? &runs->items[count - 1] : NULL;
+        /* A copied slice that continues a copied run extends it, and one
+         * that reads source the run already read, as an expanded tab's
+         * columns read one tab, joins it: the run reads all of its content
+         * from all of its source. */
+        const bool continues = previous && previous->place.end == start && stop - start == size &&
+                               previous->place.end - previous->place.start == previous->place.length;
+        if (continues || (previous && start < previous->place.end)) {
+            previous->place.end = stop > previous->place.end ? stop : previous->place.end;
+            previous->place.length += size;
+        } else {
+            runs->items[count].place.start = start;
+            runs->items[count].place.end = stop;
+            runs->items[count].place.length = size;
+            count++;
+        }
+        from = to;
+    }
+    runs->count = count;
+    if (node->runs) {
+        markdown_core_node_pool_bytes_free(parser->pool, node->runs);
+    }
+    node->runs = runs;
+}
+
 /* Drop `dropped` bytes off the FRONT of `node`'s content, leaving `remaining`
  * bytes, and keep the map describing what is left. The marks stay where they are in the vector: the
  * run's head moves past the slices that went away, and the slice the cut
@@ -775,13 +928,31 @@ void markdown_core_block_rebase_content_marks(markdown_core_parser *parser, mark
     markdown_core_parser_adopt_content_marks(parser, &node->content_map, &node->content_map, dropped, remaining);
 }
 
+markdown_core_node *markdown_core_block_next_seen(const markdown_core_node *node) {
+    markdown_core_node *next = node->next;
+    while (next && (next->flags & MARKDOWN_CORE_NODE__BLANK_TRANSPARENT)) {
+        next = next->next;
+    }
+    return next;
+}
+
+/* The last child of `node` the blank-line facts see, or NULL. */
+static markdown_core_node *S_last_seen_child(const markdown_core_node *node) {
+    markdown_core_node *last = node->last_child;
+    while (last && (last->flags & MARKDOWN_CORE_NODE__BLANK_TRANSPARENT)) {
+        last = last->prev;
+    }
+    return last;
+}
+
 // Check to see if a node ends with a blank line, descending
 // if needed into lists and sublists.
 bool markdown_core_block_ends_with_blank_line(const markdown_core_parser *parser, markdown_core_node *node) {
     markdown_core_node *last = node;
     while (!S_last_line_checked(last) &&
-           (markdown_core_parser_kind(parser, last)->flags & MARKDOWN_CORE_KIND_BLANK_PROPAGATES) && last->last_child) {
-        last = last->last_child;
+           (markdown_core_parser_kind(parser, last)->flags & MARKDOWN_CORE_KIND_BLANK_PROPAGATES) &&
+           S_last_seen_child(last)) {
+        last = S_last_seen_child(last);
     }
     bool blank = markdown_core_block_last_line_blank(last);
     /* Cache the answer as well as the fact that it was checked. Both list
@@ -836,12 +1007,31 @@ markdown_core_node *markdown_core_block_finalize(markdown_core_parser *parser, m
      * Placed after the scope is settled and before the switch, because what a
      * close hook has to say is about the whole block. */
 
+    markdown_core_block_settle(parser, b);
+    return parent;
+}
+
+void markdown_core_block_settle(markdown_core_parser *parser, markdown_core_node *b) {
+    markdown_core_node *parent = b->parent;
+    /* A block that takes text lines in a container has a piece on each of
+     * its lines, whatever its close hook makes of it; one of the document
+     * itself lies on whole lines, in one piece. */
+    const bool pieces = parent != parser->root && S_kind_takes_text(markdown_core_parser_kind(parser, b), b);
     const markdown_core_element_instance *structure = markdown_core_parser_structure(parser, b);
     if (structure && structure->element->finalize_block) {
         structure->element->finalize_block(structure, parser, b);
     }
-
-    return parent;
+    /* A paragraph that held only reference definitions left them References
+     * before it and nothing of its own: it has no place in the tree. The
+     * References are the definitions' siblings from here, in source order. */
+    if (b->flags & MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY) {
+        markdown_core_parser_release_node(parser, b);
+        return;
+    }
+    if (pieces) {
+        int line = parser->line_number;
+        markdown_core_parser_place_pieces(parser, b, parent, &line);
+    }
 }
 
 /* Finalize to the container that will own the next block-level construct,
@@ -928,7 +1118,7 @@ static bool process_inline_tree(markdown_core_parser *parser, markdown_core_node
             const markdown_core_kind_record *kind = markdown_core_parser_kind(parser, cur);
             if (S_kind_contains_inlines(kind, cur)) {
                 if (!(kind->flags & MARKDOWN_CORE_KIND_DEFERRED)) {
-                    whitespace |= markdown_core_parse_inlines(parser, cur, refmap);
+                    whitespace |= markdown_core_parse_inlines(parser, cur, false, refmap);
                 }
                 markdown_core_iter_reset(iter, cur, MARKDOWN_CORE_EVENT_EXIT);
             }
@@ -1261,7 +1451,7 @@ static int walk_owned_trees(markdown_core_parser *parser, markdown_core_node *ro
                      * -- a bracket's opener text, a token that failed -- is
                      * what it handed the walk (parser.h). */
                     size_t made = parser->nodes_created, discarded = parser->nodes_freed;
-                    markdown_core_parse_inlines(parser, node, parser->refmap);
+                    markdown_core_parse_inlines(parser, node, true, parser->refmap);
                     parser->finish_nodes_parsed += (parser->nodes_created - made) - (parser->nodes_freed - discarded);
                     if (parser->error) {
                         break;
@@ -1749,6 +1939,13 @@ static markdown_core_node *check_open_blocks(markdown_core_parser *parser, markd
     markdown_core_node *closing = NULL;
 
     while (S_last_child_is_open(container)) {
+        /* Whatever a container's prefix consumed is that container's
+         * MARKER: `> ` belongs to the block quote, the item's indent to the
+         * list item. So the bytes of the block below begin where the
+         * prefixes above it end: one claim per block, walking down the
+         * spine, each naming the line by number, as matching a container can
+         * read lines ahead, which can move the line table. */
+        markdown_core_parser_visited_line(parser, parser->line_number)->own = (uint32_t)parser->offset;
         container = container->last_child;
 
         markdown_core_block_find_first_nonspace(parser, input);
@@ -1775,10 +1972,6 @@ static markdown_core_node *check_open_blocks(markdown_core_parser *parser, markd
                 return NULL;
             }
         }
-
-        /* Whatever this container's prefix consumed is that container's
-         * MARKER: `> ` belongs to the block quote, the item's indent to the
-         * list item. One claim per container, walking down the spine. */
     }
 
     *all_matched = true;
@@ -2061,6 +2254,7 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
          * A run an earlier scan recorded from this line stays until this scan
          * closes its own, which ends where that one did. */
         if (entry) {
+            markdown_core_parser_visited_line(parser, this_line)->own = (uint32_t)parser->offset;
             entry->container = lookahead->parent;
             entry->depth = lookahead->depth - 1;
             entry->offset = parser->offset;
@@ -2349,7 +2543,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
          * opened -- and before a block that takes the text line breaks out. */
 
         kind = markdown_core_parser_kind(parser, *container);
-        if (S_kind_accepts_lines(kind, *container) || (kind->flags & MARKDOWN_CORE_KIND_PROSE)) {
+        if (S_kind_takes_text(kind, *container)) {
             // if it's a line container, it can't contain other containers
             break;
         }

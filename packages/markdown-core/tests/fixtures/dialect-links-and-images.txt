@@ -59,17 +59,18 @@ brackets:
 
 [r]: /url "title"
 .
-Document scope=1:1..3:17 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:32 anchor=null attributes={} children=6
-    ├── Link scope=1:1..1:9 anchor=null attributes={} dest=url("/url") title="title" children=1
-    │   └── Text scope=1:2..1:5 anchor=null attributes={} literal="text" children=0
-    ├── Text scope=1:10..1:10 anchor=null attributes={} literal=" " children=0
-    ├── Link scope=1:11..1:15 anchor=null attributes={} dest=url("/url") title="title" children=1
-    │   └── Text scope=1:12..1:12 anchor=null attributes={} literal="r" children=0
-    ├── Text scope=1:16..1:16 anchor=null attributes={} literal=" " children=0
-    ├── Link scope=1:17..1:19 anchor=null attributes={} dest=url("/url") title="title" children=1
-    │   └── Text scope=1:18..1:18 anchor=null attributes={} literal="r" children=0
-    └── Text scope=1:20..1:32 anchor=null attributes={} literal=" [text][none]" children=0
+Document scope=1:1..3:17 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:32 anchor=null attributes={} children=6
+│   ├── Link scope=1:1..1:9 anchor=null attributes={} dest=reference("r") title=null children=1
+│   │   └── Text scope=1:2..1:5 anchor=null attributes={} literal="text" children=0
+│   ├── Text scope=1:10..1:10 anchor=null attributes={} literal=" " children=0
+│   ├── Link scope=1:11..1:15 anchor=null attributes={} dest=reference("r") title=null children=1
+│   │   └── Text scope=1:12..1:12 anchor=null attributes={} literal="r" children=0
+│   ├── Text scope=1:16..1:16 anchor=null attributes={} literal=" " children=0
+│   ├── Link scope=1:17..1:19 anchor=null attributes={} dest=reference("r") title=null children=1
+│   │   └── Text scope=1:18..1:18 anchor=null attributes={} literal="r" children=0
+│   └── Text scope=1:20..1:32 anchor=null attributes={} literal=" [text][none]" children=0
+└── Reference scope=3:1..3:17 anchor=null attributes={} label="r" dest=url("/url") title="title" children=0
 ````````````````````````````````
 
 The first definition of a label in source order wins among duplicates:
@@ -80,10 +81,12 @@ The first definition of a label in source order wins among duplicates:
 [r]: /first
 [r]: /second
 .
-Document scope=1:1..4:12 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:3 anchor=null attributes={} children=1
-    └── Link scope=1:1..1:3 anchor=null attributes={} dest=url("/first") title=null children=1
-        └── Text scope=1:2..1:2 anchor=null attributes={} literal="r" children=0
+Document scope=1:1..4:12 anchor=null attributes={} children=3
+├── Paragraph scope=1:1..1:3 anchor=null attributes={} children=1
+│   └── Link scope=1:1..1:3 anchor=null attributes={} dest=reference("r") title=null children=1
+│       └── Text scope=1:2..1:2 anchor=null attributes={} literal="r" children=0
+├── Reference scope=3:1..3:11 anchor=null attributes={} label="r" dest=url("/first") title=null children=0
+└── Reference scope=4:1..4:12 anchor=null attributes={} label="r" dest=url("/second") title=null children=0
 ````````````````````````````````
 
 ## Autolinks (extension)
@@ -273,10 +276,11 @@ The rule applies to direct and resolved reference images alike:
 
 [r]: /i.png
 .
-Document scope=1:1..3:11 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:13 anchor=null attributes={} children=1
-    └── Embedded scope=1:1..1:13 anchor=null attributes={} dest=url("/i.png") title=null dimensions=(width=100,height=null) children=1
-        └── Text scope=1:3..1:5 anchor=null attributes={} literal="alt" children=0
+Document scope=1:1..3:11 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:13 anchor=null attributes={} children=1
+│   └── Embedded scope=1:1..1:13 anchor=null attributes={} dest=reference("r") title=null dimensions=(width=100,height=null) children=1
+│       └── Text scope=1:3..1:5 anchor=null attributes={} literal="alt" children=0
+└── Reference scope=3:1..3:11 anchor=null attributes={} label="r" dest=url("/i.png") title=null children=0
 ````````````````````````````````
 
 A `width` or `height` attribute record is independent:
@@ -601,17 +605,20 @@ Document scope=1:1..33:32 anchor=null attributes={} children=17
 [40]: /same
 [50]: /same
 .
-Document scope=1:1..5:11 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:57 anchor=null attributes={} children=8
-    ├── Embedded scope=1:1..1:12 anchor=null attributes={} dest=url("/same") title="title" dimensions=(width=10,height=null) children=1
-    │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="alt" children=0
-    ├── Text scope=1:13..1:13 anchor=null attributes={} literal=" " children=0
-    ├── Embedded scope=1:14..1:24 anchor=null attributes={} dest=url("/same") title="title" dimensions=(width=20,height=30) children=0
-    ├── Text scope=1:25..1:25 anchor=null attributes={} literal=" " children=0
-    ├── Embedded scope=1:26..1:32 anchor=null attributes={} dest=url("/same") title=null dimensions=(width=40,height=null) children=0
-    ├── Text scope=1:33..1:33 anchor=null attributes={} literal=" " children=0
-    ├── Embedded scope=1:34..1:38 anchor=null attributes={} dest=url("/same") title=null dimensions=(width=50,height=null) children=0
-    └── Text scope=1:39..1:57 anchor=null attributes={} literal=" ![alt|60][missing]" children=0
+Document scope=1:1..5:11 anchor=null attributes={} children=4
+├── Paragraph scope=1:1..1:57 anchor=null attributes={} children=8
+│   ├── Embedded scope=1:1..1:12 anchor=null attributes={} dest=reference("r") title=null dimensions=(width=10,height=null) children=1
+│   │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="alt" children=0
+│   ├── Text scope=1:13..1:13 anchor=null attributes={} literal=" " children=0
+│   ├── Embedded scope=1:14..1:24 anchor=null attributes={} dest=reference("r") title=null dimensions=(width=20,height=30) children=0
+│   ├── Text scope=1:25..1:25 anchor=null attributes={} literal=" " children=0
+│   ├── Embedded scope=1:26..1:32 anchor=null attributes={} dest=reference("40") title=null dimensions=(width=40,height=null) children=0
+│   ├── Text scope=1:33..1:33 anchor=null attributes={} literal=" " children=0
+│   ├── Embedded scope=1:34..1:38 anchor=null attributes={} dest=reference("50") title=null dimensions=(width=50,height=null) children=0
+│   └── Text scope=1:39..1:57 anchor=null attributes={} literal=" ![alt|60][missing]" children=0
+├── Reference scope=3:1..3:18 anchor=null attributes={} label="r" dest=url("/same") title="title" children=0
+├── Reference scope=4:1..4:11 anchor=null attributes={} label="40" dest=url("/same") title=null children=0
+└── Reference scope=5:1..5:11 anchor=null attributes={} label="50" dest=url("/same") title=null children=0
 ````````````````````````````````
 
 ## Opacity outside and inside alt content
@@ -667,10 +674,10 @@ Document scope=1:1..5:31 anchor=null attributes={} children=3
 
 [r]: /i
 .
-Document scope=1:1..11:7 anchor=null attributes={} children=3
+Document scope=1:1..11:7 anchor=null attributes={} children=4
 ├── Callout scope=1:1..2:32 anchor=null attributes={} variant=null collapsed=null children=1
-│   └── Paragraph scope=1:3..2:32 anchor=null attributes={} children=2
-│       ├── Embedded scope=1:3..2:26 anchor=null attributes={} dest=url("/i") title="t" dimensions=(width=200,height=300) children=3
+│   └── Paragraph scope=1:3..2:0,2:3..2:32 anchor=null attributes={} children=2
+│       ├── Embedded scope=1:3..2:0,2:3..2:26 anchor=null attributes={} dest=url("/i") title="t" dimensions=(width=200,height=300) children=3
 │       │   ├── Text scope=1:5..1:6 anchor=null attributes={} literal="é" children=0
 │       │   ├── SoftBreak scope=1:7..2:0 anchor=null attributes={} children=0
 │       │   └── Strong scope=2:3..2:9 anchor=null attributes={} children=1
@@ -679,29 +686,30 @@ Document scope=1:1..11:7 anchor=null attributes={} children=3
 ├── List scope=4:1..5:0 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
 │   └── ListItem scope=4:1..5:0 anchor=null attributes={} marker=null children=1
 │       └── Paragraph scope=4:3..4:19 anchor=null attributes={} children=1
-│           └── Embedded scope=4:3..4:19 anchor=null attributes={} dest=url("/i") title=null dimensions=(width=100,height=null) children=1
+│           └── Embedded scope=4:3..4:19 anchor=null attributes={} dest=reference("r") title=null dimensions=(width=100,height=null) children=1
 │               └── Text scope=4:5..4:11 anchor=null attributes={} literal="é&" children=0
-└── Table scope=6:1..9:36 anchor=null attributes={} columns=[none:null,none:null] children=3
-    ├── TableHead children=1
-    │   └── TableRow scope=6:1..6:16 anchor=null attributes={} children=2
-    │       ├── TableCell scope=6:2..6:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── Text scope=6:3..6:7 anchor=null attributes={} literal="image" children=0
-    │       └── TableCell scope=6:10..6:15 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── Text scope=6:11..6:14 anchor=null attributes={} literal="next" children=0
-    ├── TableBody children=2
-    │   ├── TableRow scope=8:1..8:34 anchor=null attributes={} children=2
-    │   │   ├── TableCell scope=8:2..8:17 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │   │   │   └── Embedded scope=8:3..8:16 anchor=null attributes={} dest=url("/i") title=null dimensions=(width=100,height=null) children=1
-    │   │   │       └── Text scope=8:5..8:6 anchor=null attributes={} literal="é" children=0
-    │   │   └── TableCell scope=8:19..8:33 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │   │       └── Embedded scope=8:20..8:32 anchor=null attributes={} dest=url("/i") title=null dimensions=(width=200,height=300) children=0
-    │   └── TableRow scope=9:1..9:36 anchor=null attributes={} children=2
-    │       ├── TableCell scope=9:2..9:17 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │       │   └── Embedded scope=9:3..9:16 anchor=null attributes={} dest=url("/i") title=null dimensions=null children=1
-    │       │       └── Text scope=9:5..9:11 anchor=null attributes={} literal="a|100" children=0
-    │       └── TableCell scope=9:19..9:35 anchor=null attributes={} rowspan=1 colspan=1 children=1
-    │           └── CrossEmbedded scope=9:20..9:34 anchor=null attributes={} dest=cross(path="image",anchor=null) label="" dimensions=(width=100,height=null) children=0
-    └── TableFoot children=0
+├── Table scope=6:1..9:36 anchor=null attributes={} columns=[none:null,none:null] children=3
+│   ├── TableHead children=1
+│   │   └── TableRow scope=6:1..6:16 anchor=null attributes={} children=2
+│   │       ├── TableCell scope=6:2..6:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       │   └── Text scope=6:3..6:7 anchor=null attributes={} literal="image" children=0
+│   │       └── TableCell scope=6:10..6:15 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── Text scope=6:11..6:14 anchor=null attributes={} literal="next" children=0
+│   ├── TableBody children=2
+│   │   ├── TableRow scope=8:1..8:34 anchor=null attributes={} children=2
+│   │   │   ├── TableCell scope=8:2..8:17 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │   │   │   └── Embedded scope=8:3..8:16 anchor=null attributes={} dest=url("/i") title=null dimensions=(width=100,height=null) children=1
+│   │   │   │       └── Text scope=8:5..8:6 anchor=null attributes={} literal="é" children=0
+│   │   │   └── TableCell scope=8:19..8:33 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │   │       └── Embedded scope=8:20..8:32 anchor=null attributes={} dest=reference("r") title=null dimensions=(width=200,height=300) children=0
+│   │   └── TableRow scope=9:1..9:36 anchor=null attributes={} children=2
+│   │       ├── TableCell scope=9:2..9:17 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │       │   └── Embedded scope=9:3..9:16 anchor=null attributes={} dest=url("/i") title=null dimensions=null children=1
+│   │       │       └── Text scope=9:5..9:11 anchor=null attributes={} literal="a|100" children=0
+│   │       └── TableCell scope=9:19..9:35 anchor=null attributes={} rowspan=1 colspan=1 children=1
+│   │           └── CrossEmbedded scope=9:20..9:34 anchor=null attributes={} dest=cross(path="image",anchor=null) label="" dimensions=(width=100,height=null) children=0
+│   └── TableFoot children=0
+└── Reference scope=11:1..11:7 anchor=null attributes={} label="r" dest=url("/i") title=null children=0
 ````````````````````````````````
 
 ## Nested images keep independent dimensions

@@ -24,7 +24,8 @@ public struct Position: Sendable, Hashable {
 /// A SCOPE IS A PAIR OF BOUNDARIES, NOT A BYTE RANGE. It tells an editor which
 /// range of the source an element covers; it does not name a substring, and no
 /// substring can be taken with it. A node stores no scope: ``Document`` computes
-/// one from the node's ``Extent`` and the source when it is asked.
+/// one for each of the node's source ranges from the extents, pieces and runs
+/// and the source when it is asked.
 public struct Scope: Sendable, Hashable {
     /// The position of the element's first byte.
     public let start: Position
@@ -65,12 +66,14 @@ public struct MarkupID: Hashable, Sendable {
     }
 }
 
-/// Where a node is, in bytes of the UTF-8 source, relative to its neighbours.
+/// Where a node is, relative to its neighbours, in bytes of the input of the
+/// parser that produced it: a block's in the UTF-8 source, and an inline
+/// node's in its inline root's content, which starts at 0.
 ///
 /// `lead` is the signed distance from the end of the previous node in the same
 /// relation (or from the owner's start, for the first node of a relation) to
-/// this node's start, and `span` the length of its source range. Neither
-/// changes when text before the node moves. Scopes are computed from extents
+/// this node's start, and `span` the length of its range. Neither changes when
+/// text before the node moves. Scopes are computed from extents, pieces, runs
 /// and the source on request; see ``Document/scope(of:in:)``.
 public struct Extent: Sendable, Hashable {
     /// The signed byte distance from the node's anchor to its start.
@@ -85,6 +88,53 @@ public struct Extent: Sendable, Hashable {
     }
 }
 
+/// One line's part of a node's range that is its own, in bytes of the UTF-8
+/// source.
+///
+/// A leaf block inside a container, and a cell of a grid or multiline table,
+/// has one per line: from where the line's container prefixes end, or from the
+/// cell's left column, to where the line ends, its terminator included when it
+/// follows. `lead` is the signed distance from the end of the previous piece
+/// (or from the node's start, for the first) to this piece's start, and `span`
+/// its length. Pieces that touch are one, and a node whose range is one piece
+/// has none.
+public struct Piece: Sendable, Hashable {
+    /// The signed byte distance from the previous piece's end to its start.
+    public let lead: Int32
+    /// The piece's length in bytes.
+    public let span: UInt32
+
+    /// Creates a piece. Neither number is validated.
+    public init(lead: Int32, span: UInt32) {
+        self.lead = lead
+        self.span = span
+    }
+}
+
+/// A run of the inline root content a node's first relation is: `length`
+/// content bytes read from `span` source bytes.
+///
+/// `lead` is the signed distance from the end of the previous run (or from the
+/// node's start, for the first) to the run's source start. A run whose span is
+/// its length reads each content byte from one source byte; any other reads
+/// all of its content from all of its source. The runs cover the content in
+/// order.
+public struct Run: Sendable, Hashable {
+    /// The signed byte distance from the previous run's end to its start.
+    public let lead: Int32
+    /// The source bytes the run reads.
+    public let span: UInt32
+    /// The content bytes the run reads them as.
+    public let length: UInt32
+
+    /// Creates a run. No number is validated.
+    public init(lead: Int32, span: UInt32, length: UInt32) {
+        self.lead = lead
+        self.span = span
+        self.length = length
+    }
+}
+
 /// One node of the parsed document.
 ///
 /// Every kind is an immutable value and every kind is `Sendable`: the native
@@ -93,9 +143,9 @@ public struct Extent: Sendable, Hashable {
 /// boundary unchanged.
 ///
 /// Equality is deep value equality including ``id``: two nodes are equal when
-/// they have the same kind, id, fields, extent and pairwise equal children in
-/// every relation. Hashing reads only the id. For two existentials, use
-/// ``isEqual(_:)``.
+/// they have the same kind, id, fields, extent, pieces, runs and pairwise
+/// equal children in every relation. Hashing reads only the id. For two
+/// existentials, use ``isEqual(_:)``.
 ///
 /// The set of conforming kinds is closed. ``MarkupVisitor`` names all of them,
 /// making traversal callbacks exhaustive at compile time.
@@ -104,6 +154,10 @@ public protocol Markup: Hashable, Identifiable, Sendable, CustomStringConvertibl
     var id: MarkupID { get }
     /// Where the node is, relative to its neighbours. See ``Extent``.
     var extent: Extent { get }
+    /// The parts of its range that are its own, one per line. See ``Piece``.
+    var pieces: [Piece] { get }
+    /// Where its first relation's content was read from. See ``Run``.
+    var runs: [Run] { get }
     var anchor: String? { get }
     var attributes: Attributes { get }
 }

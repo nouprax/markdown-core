@@ -4,10 +4,15 @@
 #include "bracket_state.h"
 bufsize_t markdown_core_inline_reference_label_length(const unsigned char *data, bufsize_t length);
 int markdown_core_inline_link_label(markdown_core_inline_state *inline_state, markdown_core_chunk *raw_label);
+/* Reads the link reference definitions at the front of `b`'s content into
+ * Reference nodes, put in `b`'s parent before `b` in source order, and drops
+ * their bytes from the content. Whether any content is left that is not
+ * blank. */
 bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b);
 typedef enum { LINK_UNMATCHED, LINK_SHORTCUT, LINK_EXPLICIT } markdown_core_link_match;
 typedef struct {
-    markdown_core_map_record *record;
+    /* The normalized label a reference names; empty for a direct link. */
+    markdown_core_chunk label;
     markdown_core_chunk url;
     markdown_core_optional_chunk title;
     bool explicit_tail;
@@ -22,15 +27,10 @@ extern const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK;
 markdown_core_chunk markdown_core_clean_url(markdown_core_chunk *url, int *lost);
 markdown_core_optional_chunk markdown_core_clean_title(markdown_core_chunk *title, int *lost);
 
-/* Reads ONE link reference definition off the front of `input`, registers its
- * label and the resource it states in `refmap`, and returns the number of
- * bytes it consumed -- 0 if the front of `input` is not a definition. The
- * definition produces no node (M2): it is consumed, and every reference that
- * resolves to it is the `Link` or `Embedded` it names. A NULL refmap performs the
- * same recognition without registering or allocating a definition resource. */
-bufsize_t markdown_core_parse_reference_inline(markdown_core_parser *parser, markdown_core_chunk *input,
-                                               markdown_core_map *refmap, markdown_core_attribute_parser *attributes,
-                                               uint64_t source_key);
+/* The length of the link reference definition at the front of `input`, 0
+ * when there is none. */
+bufsize_t markdown_core_reference_definition_length(markdown_core_chunk *input,
+                                                    markdown_core_attribute_parser *attributes);
 
 void markdown_core_inline_pop_bracket(const markdown_core_element_instance *link,
                                       markdown_core_inline_state *inline_state);

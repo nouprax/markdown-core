@@ -6,6 +6,12 @@
  * figure sees parser creation: work moved there passes it without making
  * parsing cheaper. Such a move is caught in review, not here. */
 export const STAGE_IR_LIMIT = 1.02;
+/* The limit this gate holds each stage to. Decision G5 of the incremental
+ * gates plan (docs/plans/2026-09-29-incremental-gates.md) gives the pull
+ * request of rollout step 3, whose parses record Reference nodes, pieces and
+ * content runs, a one-shot budget of 1.10 in both stages. After step 3 both
+ * stages are at STAGE_IR_LIMIT again. */
+export const ONESHOT_IR_LIMIT = 1.1;
 /* The measured parse stages, in order; the budget holds for every one. */
 export const STAGES = Object.freeze(["source_to_buffer", "buffer_to_ast"]);
 
@@ -34,7 +40,7 @@ export function stageBudget(current, baseline) {
                 before,
                 after,
                 ratio: after / before,
-                passed: after <= before * STAGE_IR_LIMIT
+                passed: after <= before * ONESHOT_IR_LIMIT
             };
         });
     });

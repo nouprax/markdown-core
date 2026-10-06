@@ -38,7 +38,7 @@ bool markdown_core_footnotes_lost(const markdown_core_element_instance *self) {
 void markdown_core_footnotes_dispose(const markdown_core_element_instance *self) {
     markdown_core_footnote_state *state = self->state;
     if (state->labels) {
-        markdown_core_map_free(NULL, state->labels);
+        markdown_core_map_free(state->labels);
         state->labels = NULL;
     }
 }
@@ -336,7 +336,7 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
      * one was freed with everything written in it (D11). A set of
      * labels owns no node and picks no winner, so order decides
      * nothing left to get wrong. */
-    markdown_core_footnote_definition_create(state->labels, &label->value);
+    markdown_core_label_declare(state->labels, &label->value);
     markdown_core_chunk_free(&c);
 
     (*container)->internal_offset = matched;

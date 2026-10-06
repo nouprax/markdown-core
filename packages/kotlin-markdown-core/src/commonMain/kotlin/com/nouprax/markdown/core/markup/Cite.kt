@@ -6,6 +6,8 @@ public class Cite internal constructor(
     public val citations: kotlin.collections.List<Citation>,
     override val id: MarkupID,
     override val extent: Extent,
+    override val pieces: kotlin.collections.List<Piece>,
+    override val runs: kotlin.collections.List<Run>,
     override val anchor: String?,
     override val attributes: Attributes,
 ) : Markup()
@@ -22,6 +24,8 @@ public class Citation internal constructor(
     public val suffix: kotlin.collections.List<Markup>,
     override val id: MarkupID,
     override val extent: Extent,
+    override val pieces: kotlin.collections.List<Piece>,
+    override val runs: kotlin.collections.List<Run>,
     override val anchor: String?,
     override val attributes: Attributes,
 ) : Markup()

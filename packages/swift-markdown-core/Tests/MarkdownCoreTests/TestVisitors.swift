@@ -13,6 +13,7 @@ struct KindVisitor: MarkupVisitor {
     mutating func visit(_ node: Footnote, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
     mutating func visit(_ node: Specimen, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
     mutating func visit(_ node: Metadata, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
+    mutating func visit(_ node: Reference, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
 
     mutating func visit(_ node: Document, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
     mutating func visit(_ node: Callout, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
@@ -66,6 +67,7 @@ func kindName(_ node: any Markup) -> String {
 
 struct RecordingWalkingVisitor: MarkupVisitor {
     mutating func visit(_ node: Metadata, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Reference, phase: MarkupVisitPhase) { record(node, phase) }
     private let recordEvents: Bool
     var events: [String] = []
     var rows: [MarkupID] = []
@@ -140,12 +142,22 @@ func dumped(_ source: String) throws -> String {
     try Document.parse(source).dump(in: source)
 }
 
-/// The scope of `node` in `document`, parsed from `source`.
+/// The scope of `node` in `document`, parsed from `source`, whose source
+/// range is one.
 func scope(of node: any Markup, in document: Document, source: String) throws -> Scope {
-    try document.scope(of: node, in: source)
+    let scopes = try document.scope(of: node, in: source)
+    try #require(scopes.count == 1)
+    return scopes[0]
 }
 
 /// A hand-built record's inherited fields: no source range and no attributes.
 func fields(_ id: UInt64) -> InheritedFields {
-    InheritedFields(id: MarkupID(id), extent: Extent(lead: 0, span: 0), anchor: nil, attributes: .empty)
+    InheritedFields(
+        id: MarkupID(id),
+        extent: Extent(lead: 0, span: 0),
+        pieces: [],
+        runs: [],
+        anchor: nil,
+        attributes: .empty
+    )
 }

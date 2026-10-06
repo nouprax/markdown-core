@@ -122,15 +122,22 @@ class ApiTest {
     fun imageDimensionsBelongToOccurrencesWithSharedDestinations() {
         val source = "![*alt*|2147483647x2][r] ![3][r] ![bad|01][r]\n\n[r]: /shared \"title\"\n"
         val document = Document.parse(source)
-        val images = assertIs<Paragraph>(document.content.single()).content.filterIsInstance<Embedded>()
+        val images = assertIs<Paragraph>(document.content.first()).content.filterIsInstance<Embedded>()
         assertEquals(listOf(Dimensions(2147483647, 2), Dimensions(3), null), images.map { it.dimensions })
         assertEquals(1, setOf(Dimensions(640, 480), Dimensions(640, 480)).size)
-        assertSame(images[0].dest, images[1].dest)
-        assertSame(images[1].dest, images[2].dest)
-        assertEquals("title", images[0].title)
+        assertTrue(images.all { it.dest == Destination.Reference("r") && it.title == null })
+        val reference = assertIs<Reference>(document.content.last())
+        assertSame<Markup?>(reference, document.reference("r"))
+        assertEquals("title", reference.title)
         val alt = assertIs<Emphasis>(images[0].content.single())
         assertEquals("alt", assertIs<Text>(alt.content.single()).literal)
-        assertEquals(7, document.scope(alt, source).end.column)
+        assertEquals(
+            7,
+            document
+                .scope(alt, source)
+                .single()
+                .end.column,
+        )
         assertTrue(images[1].content.isEmpty())
         assertEquals("bad|01", assertIs<Text>(images[2].content.single()).literal)
         val visitor = RecordingWalkingVisitor()
@@ -164,8 +171,20 @@ class ApiTest {
             ),
             listOf(metadata.name, metadata.`abstract`, metadata.comment),
         )
-        assertEquals(14, document.scope(metadata, source).end.line)
-        assertEquals(15, document.scope(document.content[0], source).start.line)
+        assertEquals(
+            14,
+            document
+                .scope(metadata, source)
+                .single()
+                .end.line,
+        )
+        assertEquals(
+            15,
+            document
+                .scope(document.content[0], source)
+                .single()
+                .start.line,
+        )
         val empty = assertNotNull(Document.parse("---\nunknown: 1\nfree text\n---").metadata)
         assertTrue(
             listOf(
@@ -262,7 +281,7 @@ class ApiTest {
         )
         assertEquals(2, mark.content.size)
         assertEquals("b", ((mark.content[1] as Emphasis).content.first() as Text).literal)
-        assertEquals(Scope(Position(1, 1), Position(1, 9)), document.scope(mark, "==a *b*=="))
+        assertEquals(listOf(Scope(Position(1, 1), Position(1, 9))), document.scope(mark, "==a *b*=="))
     }
 
     @Test
@@ -287,7 +306,7 @@ class ApiTest {
         )
         assertEquals(2, insertion.content.size)
         assertEquals("b", ((insertion.content[1] as Emphasis).content.first() as Text).literal)
-        assertEquals(Scope(Position(1, 1), Position(1, 9)), document.scope(insertion, "++a *b*++"))
+        assertEquals(listOf(Scope(Position(1, 1), Position(1, 9))), document.scope(insertion, "++a *b*++"))
     }
 
     @Test
@@ -312,7 +331,7 @@ class ApiTest {
         )
         assertEquals(2, span.content.size)
         assertEquals("b", ((span.content[1] as Emphasis).content.first() as Text).literal)
-        assertEquals(Scope(Position(1, 1), Position(1, 9)), document.scope(span, "[a *b*]{}"))
+        assertEquals(listOf(Scope(Position(1, 1), Position(1, 9))), document.scope(span, "[a *b*]{}"))
     }
 
     @Test
@@ -337,7 +356,7 @@ class ApiTest {
         )
         assertEquals(2, superscript.content.size)
         assertEquals("b", ((superscript.content[1] as Emphasis).content.first() as Text).literal)
-        assertEquals(Scope(Position(1, 1), Position(1, 6)), document.scope(superscript, "^a*b*^"))
+        assertEquals(listOf(Scope(Position(1, 1), Position(1, 6))), document.scope(superscript, "^a*b*^"))
     }
 
     @Test
@@ -362,7 +381,7 @@ class ApiTest {
         )
         assertEquals(2, subscript.content.size)
         assertEquals("b", ((subscript.content[1] as Emphasis).content.first() as Text).literal)
-        assertEquals(Scope(Position(1, 1), Position(1, 6)), document.scope(subscript, "~a*b*~"))
+        assertEquals(listOf(Scope(Position(1, 1), Position(1, 6))), document.scope(subscript, "~a*b*~"))
     }
 
     @Test
@@ -413,9 +432,9 @@ class ErrorsTest {
     @Test
     fun emptyInputIsAValidDocument() {
         val empty = Document.parse("")
-        assertEquals(Scope(Position(1, 1), Position(1, 0)), empty.scope(empty, ""))
+        assertEquals(listOf(Scope(Position(1, 1), Position(1, 0))), empty.scope(empty, ""))
         val accented = Document.parse("é")
-        assertEquals(Scope(Position(1, 1), Position(1, 1)), accented.scope(accented, "é"))
+        assertEquals(listOf(Scope(Position(1, 1), Position(1, 1))), accented.scope(accented, "é"))
         assertTrue(
             Document
                 .parse("")
@@ -502,10 +521,16 @@ class BindingMappingTest {
             ).joinToString("\n")
         val document = Document.parse(source)
 
-        // M2: the definition produces no node, and every reference form is
-        // the Link or Embedded it names, with the definition's destination and
-        // title.
-        val block = assertIs<DirectiveBlock>(document.content[0])
+        // The definition is a Reference where it was written, and every
+        // reference form is a Link or Embedded naming its label.
+        val reference = assertIs<Reference>(document.content[0])
+        assertEquals("foo", reference.label)
+        assertEquals(Destination.Url("/url"), reference.dest)
+        assertEquals("t", reference.title)
+        assertEquals(listOf(reference), document.references)
+        assertSame<Markup?>(reference, document.reference("foo"))
+
+        val block = assertIs<DirectiveBlock>(document.content[1])
         assertIs<DirectiveLabel>(assertNotNull(block.label))
         assertEquals(1, block.content.size)
         assertIs<Paragraph>(block.content.single())
@@ -516,25 +541,24 @@ class BindingMappingTest {
                 .name,
         )
 
-        val inlines = assertIs<Paragraph>(document.content[1]).content
+        val inlines = assertIs<Paragraph>(document.content[2]).content
         val links = inlines.filterIsInstance<Link>()
         assertEquals(2, links.size)
         for (link in links) {
-            assertEquals("/url", assertIs<Destination.Url>(link.dest).value)
-            assertEquals("t", link.title)
+            assertEquals("foo", assertIs<Destination.Reference>(link.dest).label)
+            assertNull(link.title)
         }
-        assertSame(links[0].dest, links[1].dest, "one definition materializes one resource")
         val image = inlines.filterIsInstance<Embedded>().single()
-        assertEquals("/url", assertIs<Destination.Url>(image.dest).value)
-        assertSame(links[0].dest, image.dest, "an image reference shares the definition's resource too")
+        assertEquals(Destination.Reference("foo"), image.dest)
+        assertNull(image.title)
         assertEquals(Placement.STANDALONE, inlines.filterIsInstance<Formula>().single().mode)
 
         // Fully qualified: the model's `List` shadows `kotlin.collections.List`.
-        val list = assertIs<com.nouprax.markdown.core.List>(document.content[2])
+        val list = assertIs<com.nouprax.markdown.core.List>(document.content[3])
         assertEquals(ListFlavor.ORDERED, list.flavor)
         assertEquals(3, list.start)
 
-        val table = assertIs<Table>(document.content[3])
+        val table = assertIs<Table>(document.content[4])
         assertEquals(
             listOf(
                 Flow.LEFT,
@@ -548,7 +572,7 @@ class BindingMappingTest {
         // The owning node keeps its label field separate from block content;
         // the per-node dumper deliberately emits both relations.
         val dump = document.dump(source)
-        for (fragment in listOf("Link scope=", "Embedded scope=", "DirectiveLabel")) {
+        for (fragment in listOf("Reference scope=", "dest=reference(\"foo\")", "Embedded scope=", "DirectiveLabel")) {
             assertTrue(dump.contains(fragment), "dump is missing $fragment")
         }
         assertEquals(listOf("Paragraph"), block.content.map { it::class.simpleName })
@@ -627,10 +651,10 @@ class BindingMappingTest {
         assertEquals(listOf("a", "a"), document.footnotes.map { it.label })
         val footnote = document.footnotes.first()
         assertSame(footnote, document.footnote("a"))
-        assertEquals(Scope(Position(3, 1), Position(4, 0)), document.scope(footnote, source))
+        assertEquals(listOf(Scope(Position(3, 1), Position(4, 0))), document.scope(footnote, source))
         assertEquals("once", assertIs<Text>(assertIs<Paragraph>(footnote.content.single()).content.single()).literal)
         val later = document.footnotes.last()
-        assertEquals(Scope(Position(5, 1), Position(5, 11)), document.scope(later, source))
+        assertEquals(listOf(Scope(Position(5, 1), Position(5, 11))), document.scope(later, source))
         assertEquals("twice", assertIs<Text>(assertIs<Paragraph>(later.content.single()).content.single()).literal)
         assertTrue(
             document.dump(source).endsWith(
@@ -797,16 +821,17 @@ class RobustnessTest {
     }
 
     @Test
-    fun forwardHeadingReferencesShareFinalTargetAfterNativeRelease() {
+    fun forwardReferencesResolveToTheLaterSectionTitleAfterNativeRelease() {
         val anchor = "a".repeat(1024)
         val count = 5_000
         val document = Document.parse("[Target]\n\n".repeat(count) + "# Target {#$anchor .heading k=1}\n")
         val links = document.content.take(count).map { assertIs<Link>(assertIs<Paragraph>(it).content.single()) }
-        assertEquals(anchor, document.content[count].anchor)
-        val destination = links.first().dest
-        assertEquals("#$anchor", assertIs<Destination.Url>(destination).value)
+        val declared = assertIs<Heading>(document.content[count])
+        assertEquals(anchor, declared.anchor)
+        assertTrue(document.references.isEmpty())
+        assertSame<Markup?>(declared, document.reference("target"))
         for (link in links) {
-            assertSame(destination, link.dest)
+            assertEquals(Destination.Reference("target"), link.dest)
             assertEquals(null, link.anchor)
             assertEquals(null, link.title)
             assertTrue(link.attributes.classes.isEmpty())
@@ -815,24 +840,46 @@ class RobustnessTest {
     }
 
     @Test
-    fun everyOccurrenceOfOneDefinitionMaterializesOneResource() {
-        // M2: the C tree shares one resource across every occurrence of a
-        // definition, the JNI payload sends it once, and both decoders reuse
-        // the one value they built for it.
-        val destination = "/" + "u".repeat(1024)
-        val count = 5_000
-        val anchor = "a".repeat(1024)
-        val classes = " .c".repeat(1024)
-        val document =
-            Document.parse("[a]: $destination {#$anchor$classes k=$destination}\n\n" + "[a]\n\n".repeat(count))
-        val links = document.content.map { assertIs<Link>(assertIs<Paragraph>(it).content.single()) }
-        assertEquals(count, links.size)
-        assertEquals(anchor, links[0].anchor)
-        assertEquals(1024, links[0].attributes.classes.size)
-        assertTrue(links.all { it.attributes === links[0].attributes })
-        val first = links.first().dest
-        assertEquals(destination, assertIs<Destination.Url>(first).value)
-        assertTrue(links.all { it.dest === first }, "every occurrence materializes the one resource")
+    fun aReferenceHoldsWhatItsDefinitionStatesAndAnOccurrenceOnlyItsOwn() {
+        // The definition's destination, title, anchor and attributes are the
+        // Reference's; each occurrence names the label and holds the
+        // attributes written on it.
+        val source = "[Doc]: </u v> \"t\" {#def .shared k=1}\n\n[one][doc]{.mine} [doc][] [DOC]\n"
+        val document = Document.parse(source)
+        val reference = assertIs<Reference>(document.content[0])
+        assertEquals("doc", reference.label)
+        assertEquals(Destination.Url("/u v"), reference.dest)
+        assertEquals("t", reference.title)
+        assertEquals("def", reference.anchor)
+        assertEquals(listOf("shared"), reference.attributes.classes)
+        assertEquals(listOf(Record("k", "1")), reference.attributes.records)
+        assertTrue(document.dump(source).contains("label=\"doc\" dest=url(\"/u v\") title=\"t\" children=0"))
+
+        val links = assertIs<Paragraph>(document.content[1]).content.filterIsInstance<Link>()
+        assertEquals(3, links.size)
+        for (link in links) {
+            assertEquals(Destination.Reference("doc"), link.dest)
+            assertNull(link.title)
+            assertNull(link.anchor)
+            assertTrue(link.attributes.records.isEmpty())
+        }
+        assertEquals(listOf(listOf("mine"), emptyList(), emptyList()), links.map { it.attributes.classes })
+        assertSame<Markup?>(reference, document.reference("doc"))
+        assertNull(document.reference("Doc"), "a lookup takes the normalized label")
+    }
+
+    @Test
+    fun theFirstDefinitionOfALabelWinsOverLaterDefinitionsAndOverASectionTitle() {
+        val source = "# Topic\n\n[topic]: /first\n\n[TOPIC]: /second\n\n[topic] [Topic]\n"
+        val document = Document.parse(source)
+        val references = document.content.filterIsInstance<Reference>()
+        assertEquals(references, document.references)
+        assertEquals(listOf("/first", "/second"), references.map { assertIs<Destination.Url>(it.dest).value })
+        assertEquals(listOf("topic", "topic"), references.map { it.label })
+        assertSame<Markup?>(references.first(), document.reference("topic"))
+        assertNull(document.reference("absent"))
+        val walked = NodeVisitor().also { document.walk(it) }.nodes
+        assertTrue(document.references.all { reference -> walked.any { it === reference } })
     }
 
     @Test
@@ -847,20 +894,37 @@ class RobustnessTest {
         val link = assertIs<Link>(paragraph.content[2])
         val image = assertIs<Embedded>(paragraph.content[4])
         assertEquals(listOf("code"), code.attributes.classes)
-        assertEquals(10, document.scope(code, source).end.column)
-        assertEquals("own", link.anchor)
-        assertEquals(listOf("same", "same"), link.attributes.classes)
-        assertEquals(listOf("1", "1", "2"), link.attributes.records.map { it.value })
-        assertEquals("definition", image.anchor)
-        assertEquals(Dimensions(20, 30), image.dimensions)
         assertEquals(
-            listOf("50%", "2in"),
-            image.attributes.records
-                .takeLast(2)
-                .map { it.value },
+            10,
+            document
+                .scope(code, source)
+                .single()
+                .end.column,
         )
-        assertEquals(3, document.scope(link, source).end.line)
-        assertEquals(3, document.scope(image, source).end.line)
+        assertEquals("own", link.anchor)
+        assertEquals(listOf("same"), link.attributes.classes)
+        assertEquals(listOf("2"), link.attributes.records.map { it.value })
+        assertNull(image.anchor)
+        assertEquals(Dimensions(20, 30), image.dimensions)
+        assertEquals(listOf("50%", "2in"), image.attributes.records.map { it.value })
+        val reference = assertIs<Reference>(document.content[2])
+        assertEquals("definition", reference.anchor)
+        assertEquals(listOf("same"), reference.attributes.classes)
+        assertEquals(listOf("1", "1"), reference.attributes.records.map { it.value })
+        assertEquals(
+            3,
+            document
+                .scope(link, source)
+                .single()
+                .end.line,
+        )
+        assertEquals(
+            3,
+            document
+                .scope(image, source)
+                .single()
+                .end.line,
+        )
     }
 }
 

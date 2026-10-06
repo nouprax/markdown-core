@@ -14,7 +14,7 @@ Document scope=1:1..17:3 anchor=null attributes={} children=4
 │   │               │       ├── CitationPrefix children=0
 │   │               │       └── CitationSuffix children=0
 │   │               ├── Text scope=5:17..5:21 anchor=null attributes={} literal=" and " children=0
-│   │               └── Link scope=5:22..5:31 anchor=null attributes={} dest=url("#reserved-1") title=null children=1
+│   │               └── Link scope=5:22..5:31 anchor=null attributes={} dest=reference("reserved") title=null children=1
 │   │                   └── Text scope=5:23..5:30 anchor=null attributes={} literal="Reserved" children=0
 │   └── DirectiveBlock scope=7:1..9:4 anchor=null attributes={} name="named" children=1
 │       ├── DirectiveLabel scope=7:10..7:16 anchor=null attributes={} children=1

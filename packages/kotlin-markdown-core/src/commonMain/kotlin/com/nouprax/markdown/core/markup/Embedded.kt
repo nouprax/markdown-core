@@ -1,7 +1,7 @@
 package com.nouprax.markdown.core
 
 /**
- * An inline embed from direct or resolved Markdown image syntax. The target type is not inferred.
+ * An inline embed from direct or reference Markdown image syntax. The target type is not inferred.
  * Complete `W`, `WxH`, `alt|W` and `alt|WxH` labels
  * supply positive 32-bit dimensions without leading zeros.
  */
@@ -15,6 +15,8 @@ public class Embedded internal constructor(
     public val content: kotlin.collections.List<Markup>,
     override val id: MarkupID,
     override val extent: Extent,
+    override val pieces: kotlin.collections.List<Piece>,
+    override val runs: kotlin.collections.List<Run>,
     override val anchor: String?,
     override val attributes: Attributes,
 ) : Markup()

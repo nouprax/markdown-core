@@ -27,7 +27,7 @@ import remarkMath from "remark-math";
 
 import { readExamples } from "../shared/fixture-corpus.mjs";
 import { dropEmptyText, fromMdast, projectMdastComparison } from "./mdast-oracle.mjs";
-import { parseCanonicalDump, render } from "../shared/upstream-cmark.mjs";
+import { parseCanonicalDump, render, resolveReferences } from "../shared/upstream-cmark.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const policyPath = "specs/oracles/remark/deltas.json";
@@ -53,7 +53,7 @@ function unknownKinds(node, found = new Set()) {
 function compare(input) {
     const theirs = projectMdastComparison(dropEmptyText(fromMdast(processor.parse(input))));
     const mine = projectMdastComparison(
-        dropEmptyText(parseCanonicalDump(execFileSync(ours, [], { input, encoding: "utf8" })))
+        dropEmptyText(resolveReferences(parseCanonicalDump(execFileSync(ours, [], { input, encoding: "utf8" })), input))
     );
     return {
         remark: render(theirs),

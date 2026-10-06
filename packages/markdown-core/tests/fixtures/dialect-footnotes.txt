@@ -108,7 +108,7 @@ Document scope=1:1..6:20 anchor=null attributes={} children=2
 │           ├── CitationPrefix children=0
 │           └── CitationSuffix children=0
 └── Footnote scope=3:1..6:20 anchor=null attributes={} label="a" children=2
-    ├── Paragraph scope=3:7..4:13 anchor=null attributes={} children=3
+    ├── Paragraph scope=3:7..4:0,4:5..4:13 anchor=null attributes={} children=3
     │   ├── Text scope=3:7..3:21 anchor=null attributes={} literal="first paragraph" children=0
     │   ├── SoftBreak scope=3:22..4:0 anchor=null attributes={} children=0
     │   └── Text scope=4:5..4:13 anchor=null attributes={} literal="continued" children=0
@@ -573,7 +573,7 @@ Footnote tail is text and bracket bodies take precedence:
 [ref]: /r
 [^a]: note
 .
-Document scope=1:1..4:10 anchor=null attributes={} children=2
+Document scope=1:1..4:10 anchor=null attributes={} children=3
 ├── Paragraph scope=1:1..1:42 anchor=null attributes={} children=10
 │   ├── Cite scope=1:1..1:4 anchor=null attributes={} children=1
 │   │   └── Citation scope=1:3..1:3 anchor=null attributes={} referent=footnote(note) children=0
@@ -588,7 +588,7 @@ Document scope=1:1..4:10 anchor=null attributes={} children=2
 │   │       │   └── Text scope=1:11..1:11 anchor=null attributes={} literal="a" children=0
 │   │       ├── CitationPrefix children=0
 │   │       └── CitationSuffix children=0
-│   ├── Link scope=1:13..1:17 anchor=null attributes={} dest=url("/r") title=null children=1
+│   ├── Link scope=1:13..1:17 anchor=null attributes={} dest=reference("ref") title=null children=1
 │   │   └── Text scope=1:14..1:16 anchor=null attributes={} literal="ref" children=0
 │   ├── Text scope=1:18..1:18 anchor=null attributes={} literal=" " children=0
 │   ├── Cite scope=1:19..1:22 anchor=null attributes={} children=1
@@ -612,6 +612,7 @@ Document scope=1:1..4:10 anchor=null attributes={} children=2
 │           │       └── Text scope=1:37..1:37 anchor=null attributes={} literal="x" children=0
 │           ├── CitationPrefix children=0
 │           └── CitationSuffix children=0
+├── Reference scope=3:1..3:9 anchor=null attributes={} label="ref" dest=url("/r") title=null children=0
 └── Footnote scope=4:1..4:10 anchor=null attributes={} label="a" children=1
     └── Paragraph scope=4:7..4:10 anchor=null attributes={} children=1
         └── Text scope=4:7..4:10 anchor=null attributes={} literal="note" children=0
@@ -757,11 +758,11 @@ Multiline bodies use container source positions:
 .
 Document scope=1:1..5:12 anchor=null attributes={} children=2
 ├── Callout scope=1:1..2:15 anchor=null attributes={} variant=null collapsed=null children=1
-│   └── Paragraph scope=1:3..2:15 anchor=null attributes={} children=3
+│   └── Paragraph scope=1:3..2:0,2:3..2:15 anchor=null attributes={} children=3
 │       ├── Text scope=1:3..1:8 anchor=null attributes={} literal="before" children=0
-│       ├── Cite scope=1:9..2:9 anchor=null attributes={} children=1
-│       │   └── Citation scope=1:11..2:8 anchor=null attributes={} referent=footnote(note) children=0
-│       │       ├── Footnote scope=1:9..2:9 anchor=null attributes={} label=null children=3
+│       ├── Cite scope=1:9..2:0,2:3..2:9 anchor=null attributes={} children=1
+│       │   └── Citation scope=1:11..2:0,2:3..2:8 anchor=null attributes={} referent=footnote(note) children=0
+│       │       ├── Footnote scope=1:9..2:0,2:3..2:9 anchor=null attributes={} label=null children=3
 │       │       │   ├── Text scope=1:11..1:15 anchor=null attributes={} literal="first" children=0
 │       │       │   ├── SoftBreak scope=1:16..2:0 anchor=null attributes={} children=0
 │       │       │   └── Text scope=2:3..2:8 anchor=null attributes={} literal="second" children=0
@@ -770,10 +771,10 @@ Document scope=1:1..5:12 anchor=null attributes={} children=2
 │       └── Text scope=2:10..2:15 anchor=null attributes={} literal=" after" children=0
 └── List scope=4:1..5:12 anchor=null attributes={} flavor=bullet start=null variant=null delimiter=null tight=true children=1
     └── ListItem scope=4:1..5:12 anchor=null attributes={} marker=null children=1
-        └── Paragraph scope=4:3..5:12 anchor=null attributes={} children=1
-            └── Cite scope=4:3..5:12 anchor=null attributes={} children=1
-                └── Citation scope=4:5..5:11 anchor=null attributes={} referent=footnote(note) children=0
-                    ├── Footnote scope=4:3..5:12 anchor=null attributes={} label=null children=3
+        └── Paragraph scope=4:3..5:0,5:3..5:12 anchor=null attributes={} children=1
+            └── Cite scope=4:3..5:0,5:3..5:12 anchor=null attributes={} children=1
+                └── Citation scope=4:5..5:0,5:3..5:11 anchor=null attributes={} referent=footnote(note) children=0
+                    ├── Footnote scope=4:3..5:0,5:3..5:12 anchor=null attributes={} label=null children=3
                     │   ├── Text scope=4:5..4:8 anchor=null attributes={} literal="list" children=0
                     │   ├── SoftBreak scope=4:9..5:0 anchor=null attributes={} children=0
                     │   └── Text scope=5:3..5:11 anchor=null attributes={} literal="continued" children=0

@@ -13,14 +13,41 @@ public value class MarkupID(
 )
 
 /**
- * The source range a node covers, in bytes of UTF-8 source: [lead] is the
- * signed distance from the end of the previous node in the same relation, or
- * from the owner's start for the first node, to this node's start, and [span]
- * is the length of its range.
+ * The range a node covers, in bytes of the input of the parser that produced
+ * it: a block's in the UTF-8 source, an inline node's in its inline root's
+ * content, which starts at 0. [lead] is the signed distance from the end of
+ * the previous node in the same relation, or from the owner's start for the
+ * first node, to this node's start, and [span] is the length of its range.
  */
 public data class Extent(
     public val lead: Int,
     public val span: UInt,
+)
+
+/**
+ * One line's part of a node's range that is its own, for a leaf block inside
+ * a container or a grid or multiline table cell: [lead] is the signed
+ * distance from the end of the previous piece, or from the node's start for
+ * the first, to this piece's start, and [span] is its length. Pieces that
+ * touch are one, and a node whose range is one piece has none.
+ */
+public data class Piece(
+    public val lead: Int,
+    public val span: UInt,
+)
+
+/**
+ * A run of the inline root content a node's first relation is: [length]
+ * content bytes read from [span] source bytes, [lead] signed from the end of
+ * the previous run, or from the node's start for the first. A run whose span
+ * is its length reads each content byte from one source byte; any other reads
+ * all of its content from all of its source. The runs cover the content in
+ * order.
+ */
+public data class Run(
+    public val lead: Int,
+    public val span: UInt,
+    public val length: UInt,
 )
 
 /** How a document counts the columns of its scope queries: UTF-8 bytes or UTF-16 code units. */
@@ -33,11 +60,11 @@ public data class Position(
 )
 
 /**
- * A node's editor coordinates, computed on request by [Document.scope]:
- * [start] is the position of the node's first byte, and [end] the line
- * holding the byte just past its last byte with the column count from that
- * line's start to it, so a node that ends right after a line terminator ends
- * at `L:0`, and a zero-byte document is `1:1..1:0`.
+ * The editor coordinates of one of a node's source ranges, computed on
+ * request by [Document.scope]: [start] is the position of the range's first
+ * byte, and [end] the line holding the byte just past its last byte with the
+ * column count from that line's start to it, so a range that ends right after
+ * a line terminator ends at `L:0`, and a zero-byte document is `1:1..1:0`.
  */
 public data class Scope(
     public val start: Position,

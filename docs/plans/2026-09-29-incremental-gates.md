@@ -259,7 +259,7 @@ paragraph that becomes a Setext heading is a new node; a paragraph moved into
 a new quote is a new node; unwrapping a nested inline note makes the inner note
 a new node; inserting a line at the top of a long document changes only the
 Document and the edited paragraph; changing a heading anchor that Links target
-changes every such Link. Typing in paragraph 5 of 1,000 changes exactly that
+changes only the Document and the heading. Typing in paragraph 5 of 1,000 changes exactly that
 paragraph, its Text nodes on the edited line and the Document.
 
 ### 4.6 Streaming
@@ -414,7 +414,7 @@ its numbers are reported with the `reparse` subject.
 | 0 Harness (this plan) | Scripts and text model self-tests; 4.1 with `reparse` | Edit and stream runners report the R column; one-shot adds the `buffer_to_ast` rule (6.4) |
 | 1 Model | 4.2 for fresh parses; deep equality and 4.9 on fresh documents | One-shot budget for the model change (G1), then 1.02 per PR |
 | 2 Sessions, whole-document restart | 4.1–4.11 on the correctness set, every platform, both units | 6.3 on every workload, which sets the session baseline for 6.4 (G4) |
-| 3 Block restart and convergence | Unchanged | 6.2 for the local edit families on shapes without declarations |
+| 3 Block restart and convergence | Unchanged | 6.2 for the local edit families on shapes without declarations; one-shot budget for the step (G5), then 1.02 per PR |
 | 4 Session registries | Unchanged | 6.2 for the local edit families on every remaining scale shape (`prose`, `quote`, `refs`) and for the local steps of `declarations` |
 | 5 Frontier and inline restart | Unchanged | 6.2 for `tokens` and `rows` |
 
@@ -518,3 +518,9 @@ their own pull requests.
 - **G4 The session baseline. Decided 2026-09-29: as proposed.** Proposed: the step 2 pull request sets the
   session baseline under 6.3, and the 1.02 regression rules apply to
   the session from then on (6.4).
+- **G5 One-shot budget for step 3. Decided 2026-10-05: 1.10.** Step 3 makes
+  every parse record Reference nodes, the pieces of leaf blocks in
+  containers and the content runs of inline roots. Its pull request may raise
+  `source_to_buffer` and `buffer_to_ast` Ir up to 1.10 times the pre-step
+  baseline per document. After step 3, both stages are at 1.02 per pull
+  request.

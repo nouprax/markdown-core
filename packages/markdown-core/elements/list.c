@@ -205,7 +205,11 @@ void markdown_core_block_finalize_list(const markdown_core_parser *parser, markd
             return;
         }
         for (markdown_core_node *child = item->first_child; child; child = child->next) {
-            if ((item->next || child->next) && markdown_core_block_ends_with_blank_line(parser, child)) {
+            if (child->flags & MARKDOWN_CORE_NODE__BLANK_TRANSPARENT) {
+                continue;
+            }
+            if ((item->next || markdown_core_block_next_seen(child)) &&
+                markdown_core_block_ends_with_blank_line(parser, child)) {
                 list->as.list->tight = false;
                 return;
             }
@@ -292,9 +296,8 @@ static bool continue_container(const markdown_core_element_instance *self, markd
     return markdown_core_list_continue(parser, node, input, joining, taken);
 }
 /* A LIST IS LAID OUT AT ITS EXIT, from inside the one finish walk: tight or
- * loose is read off its items and their children, which are complete there
- * -- a paragraph that was only definitions has been released at its own
- * EXIT, before this. */
+ * loose is read off its items and their children, which are complete
+ * there. */
 static markdown_core_finish_result finish_step(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                                markdown_core_node *node, markdown_core_event_type event, int is_root,
                                                void **state) {

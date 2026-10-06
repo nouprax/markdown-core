@@ -29,7 +29,8 @@ maintaining the contract and comparison policies.
 
 - `Markup` is the only abstract AST node type.
 - Every `Markup` has the ordered inherited fields `id: MarkupID`,
-  `extent: Extent`, `anchor: String?`, and non-null `attributes: Attributes`.
+  `extent: Extent`, `pieces: [Piece]`, `runs: [Run]`, `anchor: String?`, and
+  non-null `attributes: Attributes`.
 - AST values are immutable after construction and own their strings and
   collections. No value retains a C node, document, allocator, or WASM handle.
 - Collections are ordered and read-only. Their order is source order unless a
@@ -61,8 +62,8 @@ Kotlin as `@JvmInline value class MarkupID(val value: Long)`; ECMAScript as
 - Ids from different parses are not comparable.
 
 Equality is deep value equality including `id`: two nodes are equal when they
-have the same kind, id, scalar fields, extent and pairwise equal children in
-every relation. Hashing uses `id` only. Swift: every kind is `Hashable`, and
+have the same kind, id, scalar fields, extent, pieces, runs and pairwise equal
+children in every relation. Hashing uses `id` only. Swift: every kind is `Hashable`, and
 `any Markup` has `isEqual(_:)`. Kotlin: `equals` and `hashCode` on every kind.
 ECMAScript exports `markupEquals(a, b)`.
 
@@ -70,6 +71,8 @@ ECMAScript exports `markupEquals(a, b)`.
 
 ```text
 Extent(lead: Int32, span: UInt32)
+Piece(lead: Int32, span: UInt32)
+Run(lead: Int32, span: UInt32, length: UInt32)
 Position(line: integer, column: integer)
 Scope(start: Position, end: Position)
 ```
@@ -79,21 +82,44 @@ bytes are read as they are: Markdown Core has no validation or repair mode, and
 a malformed sequence is parsed like any other input. Swift, Kotlin, and
 ECMAScript strings are encoded as UTF-8 before entering that same parse path.
 
-Every node stores its `extent` in bytes of the UTF-8 source. `lead` runs
-from the end of the previous node in the same relation, or from the owner's
-start for a relation's first node, to this node's start; `span` is the length
-of this node's source range. Each typed field of an owner, each table row
-group and each definition body is a relation of its own. `lead` is signed,
-because ranges may overlap or nest as the rules below define. No node stores
-a line, a column or an absolute offset, and bindings copy extents verbatim.
+Every node stores its `extent` in bytes of the input of the parser that
+produced it: a block's in the UTF-8 source, and an inline node's in the
+content of its inline root, which starts at 0. `lead` runs from the end of
+the previous node in the same relation, or from the owner's start for a
+relation's first node, to this node's start; `span` is the length of this
+node's range. Each typed field of an owner, each table row group and each
+definition body is a relation of its own. `lead` is signed, because ranges may
+overlap or nest as the rules below define. No node stores a line, a column or
+an absolute offset, and bindings copy extents, pieces and runs verbatim.
 
-A scope is computed on request from the extents and the source the document
-was parsed from: `document.scope(of: node, in: source)` in the bindings and
-`markdown_core_document_scope` in C. `document.node(at: position, in: source)`
+A leaf block inside a container, and a cell of a grid or multiline table, has
+`pieces`: one per line, the part of its range on that line that is its own,
+from where the line's container prefixes end, or for a cell from its left
+column, to where the line ends, its terminator included when it follows. A
+piece's `lead` runs from the end of the previous piece, or from the node's
+start for the first, and pieces that touch are one. A node whose range is one
+piece has none.
+
+A node's `runs` map its first relation. When that relation is an inline
+root's content -- the inline content of a block, a callout's title, a
+definition's term -- the runs say where in the source the content was read
+from, in order: each run is `length` content bytes read from `span` source
+bytes, its `lead` from the end of the previous run, or from the node's start
+for the first. A run whose span is its length reads each content byte from one
+source byte; any other reads all of its content from all of its source. Every
+other node has none.
+
+A node's source ranges are its pieces; for a node in an inline root's
+content, the source its content range was read from through the root's runs,
+touching parts joined; and otherwise its one range. A scope is computed on
+request for each of them from the extents, pieces, runs and the source the
+document was parsed from: `document.scope(of: node, in: source)` in the
+bindings and `markdown_core_document_scope` in C answer `[Scope]`, in source
+order. `document.node(at: position, in: source)`
 (`markdown_core_document_node_at`) answers the last node in canonical walk
-order whose source range holds the byte at `position`, or none when no node
-holds it or the position names no byte of the source. A source that ends
-before the node's range does is `OUT_OF_BOUNDS` for a scope and for the dump,
+order one of whose source ranges holds the byte at `position`, or none when no
+node holds it or the position names no byte of the source. A source that ends
+before a node's range does is `OUT_OF_BOUNDS` for a scope and for the dump,
 and so is a position whose line or column is below 1.
 
 A scope is a function of the byte range alone. Its start is the line holding
@@ -118,16 +144,16 @@ can occupy segments on lines shared with other cells. A spanning grid cell can
 reach beyond its starting row. These positions describe editor locations,
 not a partition of the source into independently sliceable substrings.
 
-Every binding computes scopes with this one rule from the extents the C
-parser produced; none rescans, normalizes, expands, rejects, or otherwise
+Every binding computes scopes with this one rule from the extents, pieces and
+runs the C parser produced; none rescans, normalizes, expands, rejects, or otherwise
 reinterprets particular ranges.
 
-A node's scope is the source-faithful, contiguous editor cursor range of that
-node's own lexical occurrence. It never becomes an expanded or composite range
+A node's scopes are the source-faithful editor cursor ranges of that node's
+own lexical occurrence. They never become an expanded or composite range
 of every source location that contributed semantic values to the node.
 Reference resolution, metadata inheritance, normalization, synthesis, and
 other finalization operations may populate fields on an occurrence, but they
-must not copy, union, substitute, or otherwise change its scope. In particular,
+must not copy, union, substitute, or otherwise change its scopes. In particular,
 a resolved reference occurrence does not acquire the separate definition's
 range, and a generated value has no fictional source position.
 
@@ -139,8 +165,8 @@ table boundaries do not discard source information.
 The following rules describe authored editor positions, not independently
 sliceable string ranges. They refine the general coordinate contract. A syntax's
 punctuation can be inside its owner's scope without appearing in visible
-content. Unscoped semantic fields, including generated anchors and inherited
-resources, never gain a range of their own.
+content. Unscoped semantic fields, including generated anchors, never gain a
+range of their own.
 
 | Syntax | Range |
 | --- | --- |
@@ -190,10 +216,9 @@ Multiline rows cover their lines from the margin. Grid rows cover the lines
 following their opening boundary through the line before the next row begins,
 excluding the final table border. A row without physical content lines uses its
 closing boundary. Multiline/grid cells span their first through last line
-segments, clipped to each line's end; a cell without physical content lines
-uses the corresponding closing-boundary segment. Joined-segment soft breaks
-cover the original line ending and may therefore include other columns' bytes
-in the contiguous range. A row-spanning grid cell can end below its owning row,
+segments, one piece per line, clipped to each line's end; a cell without
+physical content lines uses the corresponding closing-boundary segment.
+Joined-segment soft breaks cover the original line ending. A row-spanning grid cell can end below its owning row,
 as the containment exception above permits.
 
 ## Shared value types
@@ -217,26 +242,27 @@ its placement determined by the owning relation rather than a stored mode.
 ### Universal attributes and metadata
 
 Every Markup carries the ordered inherited fields `id: MarkupID`,
-`extent: Extent`, `anchor: String?`, and `attributes: Attributes`. The
+`extent: Extent`, `pieces: [Piece]`, `runs: [Run]`, `anchor: String?`, and
+`attributes: Attributes`. The
 [attributes module](dialect/attributes.md) owns the single grammar,
 normalization, and attachment operation. `Attributes(classes: [String],
 records: [Record])` is never null. `Record(name: String, value: String)`
 retains every assignment occurrence; classes retain every word occurrence.
 The last identifier wins and an empty final `id=` clears the anchor.
 
-Inline code, ATX/Setext headings, fenced code, and completed link/image
-occurrences attach the same normalized attribute grammar. Reference definitions
-supply inherited attributes; local anchors take precedence and local classes and
-records follow inherited declarations without deduplication. Each binding keeps its native collection types and owns all
+Inline code, ATX/Setext headings, fenced code, completed link/image
+occurrences, and reference definitions attach the same normalized attribute
+grammar. Every node's anchor and attributes are the ones written on it: a
+`Reference` has the definition's, and a reference occurrence has its own. Each binding keeps its native collection types and owns all
 returned values after the native document is released.
 
 Parsed headings always have a nonempty anchor: an explicit identifier wins,
 otherwise the [anchors module](dialect/anchors.md) derives one from parsed
 content after reserving every emitted explicit anchor. Generated anchors add
-no source range. Writable authored heading labels also define ordinary
-reference targets, including forward references. These use `Destination.url`
-with the final `#anchor`, no title, and no inherited heading attributes; all
-occurrences share the existing reference resource. Explicit definitions win.
+no source range. Writable authored heading labels also declare reference
+labels, including for forward references: a `reference` destination whose
+label no `Reference` states resolves to the first such `Heading`, whose
+anchor is the target. Explicit definitions win.
 `Document.metadata: Metadata?` holds ten named optional values defined by the
 [properties grammar](dialect/properties.md). Metadata is a leaf `Markup` node
 produced by the leading properties envelope. It receives ordinary visitor and
@@ -256,16 +282,21 @@ The value is independent of a destination's shared identity and attribute record
 ### Destination
 
 ```text
-Destination = url(String) | cross(path: String, anchor: String?)
+Destination = url(String) | cross(path: String, anchor: String?) | reference(label: String)
 ```
 
 `Destination` is a tagged value, not a node: it has no id, extent, children,
 anchor, or attributes, and a branch's fields exist only in that branch. It is
-the `dest` of every `Link` and `Embedded`, which own the `url` branch: the
+the `dest` of every `Link`, `Embedded` and `Reference`. A direct `Link` or
+`Embedded` and every `Reference` own the `url` branch: the
 complete semantic destination the inherited grammar produced, the bytes
 between angle brackets or the bare destination with backslash escapes and
 character references decoded and no percent-encoding, normalization, or
-resolution, and possibly empty. The `cross` branch is the workspace address of
+resolution, and possibly empty. A reference `Link` or `Embedded` owns the
+`reference` branch: the normalized label it names, which resolves to the
+first `Reference` in document source order whose label is equal, or, when
+none is, the first `Heading` in document source order whose text declares
+it. The `cross` branch is the workspace address of
 the [cross links](dialect/cross-links.md) module and is stored by
 `CrossLink` and `CrossEmbedded`. The parser fetches no URL, opens no file, tests no
 existence, and infers no media type; no such result is a field or a branch.
@@ -325,13 +356,18 @@ order; neither definitions nor references store that derived state. See
 [specimens](dialect/specimens.md) for definition and reference syntax.
 Ordinary lists have no specimen variant or label field.
 
-`Document` carries the parser's footnote and specimen tables.
-`document.footnotes` and `document.specimens` list every definition in source
-order, inline notes included, and `document.footnote(for: label)` and
-`document.specimen(for: label)` return the first one whose stored label equals
-the referent's. The C facade answers them through
-`markdown_core_document_footnote_count`, `_footnote_at`, `_footnote_for` and
-the specimen equivalents, and exposes the nodes through `markdown_core_node`
+`Document` carries the parser's footnote, specimen and reference tables.
+`document.footnotes`, `document.specimens` and `document.references` list
+every definition in source order, inline notes included, and
+`document.footnote(for: label)` and `document.specimen(for: label)` return the
+first one whose stored label equals the referent's.
+`document.reference(for: label)` returns the node a `reference` destination
+with that label resolves to: the first `Reference` whose label equals it, or,
+when none does, the first `Heading` whose text declares it. The C facade
+answers them through `markdown_core_document_footnote_count`, `_footnote_at`,
+`_footnote_for`, the specimen and reference equivalents, and
+`_reference_label_count` and `_reference_label_at`, which list each label that
+resolves with its node, and exposes the nodes through `markdown_core_node`
 and typed field accessors. Swift, Kotlin, and ECMAScript include them in
 `Markup`. `CitationReferent` and `FootnoteTarget` are modeled as
 `Destination` is modeled: a Swift enum with associated values, a Kotlin sealed
@@ -379,8 +415,8 @@ them without checking.
 | `Span` | `content: [Markup]` | inline content; may be empty |
 | `Superscript` | `content: [Markup]` | inline content; empty bodies are retained |
 | `Subscript` | `content: [Markup]` | inline content; non-empty body |
-| `Link` | `dest: Destination`, `title: String?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url("")`; a reference occurrence answers the destination its definition stated, and an unresolved reference is the inherited literal text; every `Link` owns the `url` branch; absent and empty title remain distinct; inline content |
-| `Embedded` | `dest: Destination`, `title: String?`, `dimensions: Dimensions?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; every `Embedded` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content |
+| `Link` | `dest: Destination`, `title: String?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url("")`; a direct link owns the `url` branch; a reference occurrence owns the `reference` branch with the normalized label it names, and an unresolved reference is the inherited literal text; absent and empty title remain distinct; inline content |
+| `Embedded` | `dest: Destination`, `title: String?`, `dimensions: Dimensions?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; a direct image owns the `url` branch and a reference image the `reference` branch; absent and empty title remain distinct; content is parsed alt-text inline content |
 | `Directive` | `name: String`, `label: DirectiveLabel?` | letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; leaf |
 | `Cite` | `citations: [Citation]` | one or more items in source order; every item has exactly one referent and one cite never mixes referent families; an inherited `[^label]` call is one item with a `footnote(label)` referent whose value is the normalized label without the caret and with empty affixes; its items are owned Citation nodes in the citations field; ordinary content remains empty |
 | `DefinitionList` | `definitions: [Definition]` | non-empty ordered associations |
@@ -389,15 +425,17 @@ them without checking.
 | `Footnote` | `label: String?`, `content: [Markup]` | A definition where it was written, or an inline note owned by its `Citation`'s referent. A referenced definition keeps its normalized label and block content; an inline note has a null label and direct inline content. Duplicate and unused definitions remain. |
 | `Specimen` | `label: String?`, `start: Int?`, `content: [Markup]` | A definition where it was written, including duplicates and anonymous definitions. label is the authored label or null; start is an explicit effective counter reset or null. Display numbers are derived. |
 | `Metadata` | `name: MetadataValue?`, `title: MetadataValue?`, `subtitle: MetadataValue?`, `time: MetadataValue?`, `date: MetadataValue?`, `authors: MetadataValue?`, `keywords: MetadataValue?`, `abstract: MetadataValue?`, `state: MetadataValue?`, `comment: MetadataValue?` | A leaf Markup node owned by Document.metadata. Field absence differs from explicit null. Its scope covers the authored properties block; unsupported attribute syntax yields null anchor and empty attributes. |
+| `Reference` | `label: String`, `dest: Destination`, `title: String?` | A link reference definition where it was written: a leaf block with its normalized label, the `url` destination it states, and its title, absent and empty remaining distinct. Its anchor and attributes are the ones the definition states. Duplicates and unused definitions remain. |
 
 Every row also has the ordered inherited fields `id: MarkupID`,
-`extent: Extent`, `anchor: String?`, and `attributes: Attributes`; they are not repeated in the table. The `url` of a `Link` or `Embedded` destination, and
+`extent: Extent`, `pieces: [Piece]`, `runs: [Run]`, `anchor: String?`, and `attributes: Attributes`; they are not repeated in the table. The `url` of a `Link` or `Embedded` destination, and
 every `title`, are the CommonMark-unescaped values with angle-bracket
 wrappers removed and no percent-encoding or normalization. A link reference
-definition produces no node: the parser consumes it, and every successful
-full, collapsed, shortcut, or autolink form is the `Link` or `Embedded` it names,
-with the definition's destination and title and its own occurrence scope. An
-unresolved reference is the inherited literal text with its brackets.
+definition is a `Reference` block where it was written, and every successful
+full, collapsed or shortcut form is a `Link` or `Embedded` whose `reference`
+destination names the definition's label, with no title and its own
+occurrence scope. An unresolved reference is the inherited literal text with
+its brackets.
 
 ### Typed table ownership
 

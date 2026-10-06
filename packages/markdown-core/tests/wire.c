@@ -133,6 +133,46 @@ static void check_shared_resource(void) {
 /* The status a message carries: 0 for a document, the failure's otherwise. */
 static uint32_t message_status(const uint8_t *message) { return message[8] == 0 ? 0 : read_u32(message + 9); }
 
+/* A resource is a value, so the message names each value once whatever
+ * storage its occurrences hold: after an append, the Link taken whole from
+ * the previous document and the new occurrence of the same definition share
+ * one resource ordinal, and the long definition crosses once. */
+static void check_session_shared_resource(void) {
+    const size_t size = 4096;
+    char *source = (char *)malloc(size + 32);
+    markdown_core_session *session;
+    uint8_t *message;
+    uint32_t before = 0, after = 0;
+    size_t length = 0, index;
+    if (source == NULL) {
+        check(0, "the session source allocates");
+        return;
+    }
+    length += (size_t)snprintf(source, size + 32, "[a]: /");
+    for (index = 0; index < size; ++index) {
+        source[length++] = 'u';
+    }
+    length += (size_t)snprintf(source + length, size + 32 - length, "\n\n[a]\n");
+    message = markdown_core_wire_session_new((const uint8_t *)source, length, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session);
+    free(source);
+    if (message != NULL && message_status(message) == 0) {
+        before = message_length(message);
+    }
+    markdown_core_wire_free(message);
+    if (session == NULL) {
+        check(0, "a session starts with a document");
+        return;
+    }
+    message = markdown_core_wire_session_append(session, (const uint8_t *)"\n[a]\n", 5);
+    if (message != NULL && message_status(message) == 0) {
+        after = message_length(message);
+    }
+    markdown_core_wire_free(message);
+    markdown_core_session_free(session);
+    check(before != 0 && after > before && after - before < size,
+          "a session's new occurrence of a definition shares the resource of the occurrence it took");
+}
+
 /* A session's steps each answer with the message of the document they
  * published or of their failure, and the session's text follows the edits,
  * which a batch packs as sizes and one run of texts. */
@@ -179,6 +219,7 @@ int main(int argc, char **argv) {
     }
     check_shared_resource();
     check_session();
+    check_session_shared_resource();
     check_document((const uint8_t *)"", 0, "the empty document");
     check_document(NULL, 0, "the empty document from a NULL source");
     for (i = 3; i < argc; i++) {

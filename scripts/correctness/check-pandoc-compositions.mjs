@@ -5,7 +5,7 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 import { compositionEvidenceCases, compositionFuzzCases, compareCompositions } from "./pandoc-compositions.mjs";
 import { root, source, withOracle, fromPandoc, fromCanonical, assertCanaries } from "./pandoc-oracle.mjs";
-import { parseCanonicalDump } from "../shared/upstream-cmark.mjs";
+import { parseCanonicalDump, resolveReferences } from "../shared/upstream-cmark.mjs";
 
 const { values } = parseArgs({
     options: {
@@ -25,7 +25,10 @@ withOracle((run) => {
     const report = compareCompositions(
         cases,
         (input, from) => fromPandoc(run(input, from)),
-        (input) => fromCanonical(parseCanonicalDump(execFileSync(cli, [], { input, encoding: "utf8" })))
+        (input) =>
+            fromCanonical(
+                resolveReferences(parseCanonicalDump(execFileSync(cli, [], { input, encoding: "utf8" })), input)
+            )
     );
     const output = path.resolve(root, values.output);
     fs.mkdirSync(path.dirname(output), { recursive: true });

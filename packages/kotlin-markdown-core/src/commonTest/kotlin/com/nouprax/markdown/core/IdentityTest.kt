@@ -72,6 +72,25 @@ class IdentityTest {
         val utf16 = Document.parse("é🚀\n", TextUnit.UTF16)
         assertEquals(utf8, utf16)
         assertEquals(utf8.hashCode(), utf16.hashCode())
+
+        // Pieces and runs are values too; inline extents are offsets in the
+        // root's content, so content read from other source bytes is equal.
+        fun paragraph(
+            pieces: kotlin.collections.List<Piece>,
+            runs: kotlin.collections.List<Run>,
+        ) = Paragraph(emptyList(), MarkupID(1), Extent(0, 3u), pieces, runs, null, Attributes.empty)
+        val pieces = listOf(Piece(0, 1u), Piece(1, 1u))
+        val runs = listOf(Run(0, 1u, 1u), Run(1, 1u, 1u))
+        assertEquals(paragraph(pieces, runs), paragraph(pieces, runs))
+        assertNotEquals(paragraph(pieces, runs), paragraph(emptyList(), runs))
+        assertNotEquals(paragraph(pieces, runs), paragraph(pieces, listOf(Run(0, 1u, 1u), Run(1, 1u, 0u))))
+
+        fun quoted(source: String) =
+            assertIs<Paragraph>(assertIs<Callout>(Document.parse(source).content.single()).content.single())
+        val near = quoted("> a\n> b\n")
+        val far = quoted("> a\n>  b\n")
+        assertNotEquals(near.runs, far.runs)
+        assertEquals(near.content, far.content)
         // Inline notes compare through their citation's relation.
         assertEquals(Document.parse("x^[*n*]\n"), Document.parse("x^[*n*]\n"))
         assertNotEquals(Document.parse("x^[*n*]\n"), Document.parse("x^[*m*]\n"))
@@ -124,10 +143,10 @@ class ScopeTest {
             assertEquals(unit, document.unit)
             val paragraph = assertIs<Paragraph>(document.content.single())
             val (first, _, second) = paragraph.content
-            assertEquals(Scope(Position(1, 1), Position(1, end)), document.scope(first, source))
+            assertEquals(listOf(Scope(Position(1, 1), Position(1, end))), document.scope(first, source))
             // A CRLF is one line terminator.
-            assertEquals(Scope(Position(2, 1), Position(2, 1)), document.scope(second, source))
-            assertEquals(Scope(Position(1, 1), Position(2, 1)), document.scope(paragraph, source))
+            assertEquals(listOf(Scope(Position(2, 1), Position(2, 1))), document.scope(second, source))
+            assertEquals(listOf(Scope(Position(1, 1), Position(2, 1))), document.scope(paragraph, source))
         }
     }
 
@@ -135,13 +154,16 @@ class ScopeTest {
     fun scopesFollowTheBytesAtTheEdgesOfTheSource() {
         for (source in listOf("", "\n")) {
             val document = Document.parse(source)
-            assertEquals(Scope(Position(1, 1), Position(1, 0)), document.scope(document, source))
+            assertEquals(listOf(Scope(Position(1, 1), Position(1, 0))), document.scope(document, source))
         }
         // A node that ends right after a line terminator ends at `L:0`, in either unit.
         val source = "[^é]\n\n[^é]: 🚀\n\n[^é]: twice\n"
         for (unit in TextUnit.entries) {
             val document = Document.parse(source, unit)
-            assertEquals(Scope(Position(3, 1), Position(4, 0)), document.scope(document.footnotes.first(), source))
+            assertEquals(
+                listOf(Scope(Position(3, 1), Position(4, 0))),
+                document.scope(document.footnotes.first(), source),
+            )
         }
     }
 
@@ -152,8 +174,52 @@ class ScopeTest {
         val citation = assertIs<Cite>(assertIs<Paragraph>(document.content.single()).content[1]).citations.single()
         val note = assertIs<FootnoteTarget.Note>(assertIs<CitationReferent.Footnote>(citation.referent).target)
         assertEquals(-2, note.footnote.extent.lead)
-        assertEquals(Scope(Position(1, 2), Position(1, 8)), document.scope(note.footnote, source))
-        assertEquals(Scope(Position(1, 4), Position(1, 7)), document.scope(citation, source))
+        assertEquals(listOf(Scope(Position(1, 2), Position(1, 8))), document.scope(note.footnote, source))
+        assertEquals(listOf(Scope(Position(1, 4), Position(1, 7))), document.scope(citation, source))
+    }
+
+    @Test
+    fun aNodeHasAScopeForEachOfItsSourceRanges() {
+        val source = "- a\n  *b\n  c*\n"
+        val document = Document.parse(source)
+        val item = assertIs<List>(document.content.single()).items.single()
+        val paragraph = assertIs<Paragraph>(item.content.single())
+        val emphasis = assertIs<Emphasis>(paragraph.content[2])
+        // A leaf block inside a container owns each line from where the
+        // container's prefix ends: its pieces, and the runs its content was
+        // read from, one per line.
+        assertEquals(listOf(Piece(0, 2u), Piece(2, 3u), Piece(2, 2u)), paragraph.pieces)
+        assertEquals(listOf(Run(0, 2u, 2u), Run(2, 3u, 3u), Run(2, 2u, 2u)), paragraph.runs)
+        assertTrue(item.pieces.isEmpty() && item.runs.isEmpty() && emphasis.runs.isEmpty())
+        assertEquals(
+            listOf(
+                Scope(Position(1, 3), Position(2, 0)),
+                Scope(Position(2, 3), Position(3, 0)),
+                Scope(Position(3, 3), Position(3, 4)),
+            ),
+            document.scope(paragraph, source),
+        )
+        // An inline node's extent is in its root's content, whose runs map
+        // it to the source: the indentation between its lines is not its own.
+        assertEquals(
+            listOf(Scope(Position(2, 3), Position(3, 0)), Scope(Position(3, 3), Position(3, 4))),
+            document.scope(emphasis, source),
+        )
+        // A byte between a node's ranges is not the node's: the indentation is the item's.
+        assertSame(item, document.node(Position(3, 1), source))
+        assertSame(emphasis, document.node(Position(3, 4), source))
+        assertSame(emphasis.content.last(), document.node(Position(3, 3), source))
+        // A subtree dump places a node in content through its root's runs.
+        assertEquals(
+            "Emphasis scope=2:3..3:0,3:3..3:4 anchor=null attributes={} children=3\n" +
+                "├── Text scope=2:4..2:4 anchor=null attributes={} literal=\"b\" children=0\n" +
+                "├── SoftBreak scope=2:5..3:0 anchor=null attributes={} children=0\n" +
+                "└── Text scope=3:3..3:3 anchor=null attributes={} literal=\"c\" children=0\n",
+            document.dump(emphasis, source),
+        )
+        // The source must cover the last range.
+        val failure = assertFailsWith<MarkdownCoreException> { document.scope(emphasis, source.dropLast(2)) }
+        assertEquals(ErrorCode.OUT_OF_BOUNDS, failure.code)
     }
 
     @Test
@@ -200,7 +266,7 @@ class ScopeTest {
             outOfBounds { MarkupDumper.dump(document, short) }
             outOfBounds { MarkupDumper.dump(document, paragraph, short) }
             // A source that covers the node's end is enough, and the node's end is exclusive.
-            assertEquals(Scope(Position(1, 1), Position(1, end)), document.scope(paragraph, source.dropLast(1)))
+            assertEquals(listOf(Scope(Position(1, 1), Position(1, end))), document.scope(paragraph, source.dropLast(1)))
         }
     }
 

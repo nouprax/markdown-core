@@ -43,7 +43,7 @@ static void dispose_document(const markdown_core_element_instance *self, markdow
         markdown_core_specimen_dispose(specimens);
     }
     if (parser->refmap) {
-        markdown_core_map_free(&parser->pool->resources, parser->refmap);
+        markdown_core_map_free(parser->refmap);
         parser->refmap = NULL;
     }
 }

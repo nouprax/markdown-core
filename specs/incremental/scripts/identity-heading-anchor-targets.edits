@@ -1,5 +1,6 @@
 markdown-core edit script 1
 script heading-anchor-targets identity
 edit 11 14 74776f
-expect changed Link 21
-expect changed Link 37
+expect changed Document 0
+expect changed Heading 0
+expect only

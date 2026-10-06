@@ -9,7 +9,7 @@
         {
             "feature": "anchors",
             "specification": "docs/specs/dialect/anchors.md",
-            "sha256": "a6ecf37cf3123d298b6775840392e5887af485eb99d2233e24a1e8a51d5183d3",
+            "sha256": "92903a855ac3b469e4b0c4ecf1bb7c192e7ca89ac5d9785d5465bf218fee4160",
             "sections": [
                 {
                     "title": "Anchors",
@@ -45,7 +45,7 @@
                     "title": "Implicit heading references",
                     "line": 68,
                     "level": 2,
-                    "sha256": "266130a2f201a102389d619c93f10bbaf2bd195951fdd8c98f06d1a0fc6c257b",
+                    "sha256": "fd61397ac9a428ca5e8708e80975ce194ee52f99444229be3d21991b38bfb45a",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["heading-reference"]
@@ -53,12 +53,12 @@
                 },
                 {
                     "title": "Anchor ownership",
-                    "line": 89,
+                    "line": 90,
                     "level": 2,
-                    "sha256": "9862eff4bc06026120ab178339a9022066c0c8571f426699c721aa42eacf9653",
+                    "sha256": "ec1c2cbd1daffbd35360623fd3817a9c31adcba60fc983db7bf7369bdc64c7b9",
                     "disposition": {
                         "kind": "context",
-                        "reason": "Anchor ownership, inheritance and application matching are output/resolution contracts. Authored forms are covered by explicit/implicit anchor sections and attribute-reference."
+                        "reason": "Anchor ownership and application matching are output/resolution contracts. Authored forms are covered by explicit/implicit anchor sections and attribute-reference."
                     }
                 }
             ],
@@ -93,7 +93,7 @@
         {
             "feature": "attributes",
             "specification": "docs/specs/dialect/attributes.md",
-            "sha256": "13919e39afc553126f1f1e3cd209e00b51db17ca586d2dd57b8eb5c09ff25c1d",
+            "sha256": "9e65cfb068267af864b8f5919437204f3dce1a04393c6eac7a01a45dcdc70499",
             "sections": [
                 {
                     "title": "Attributes",
@@ -181,10 +181,10 @@
                     }
                 },
                 {
-                    "title": "Links, images, and inherited attributes",
+                    "title": "Links, images, and reference definitions",
                     "line": 133,
                     "level": 3,
-                    "sha256": "8f4da662eb55bd3fbc4f5636c51a342b894a03f6584f711373cfe93ad4266cb6",
+                    "sha256": "f950183b8b78fcbc5a57ae278bf506dec25188fe981216987900436c5175a966",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -1970,7 +1970,7 @@
         {
             "feature": "links-and-images",
             "specification": "docs/specs/dialect/links-and-images.md",
-            "sha256": "52a3a84d7e129ee8f191c28dc252045ee964bfdd15822b5b2879033554a4646b",
+            "sha256": "7ca98eeb97e29134a7b2f06ed0a35689aa60dee76dd6a1523c565cc67c63afdd",
             "sections": [
                 {
                     "title": "Links and images",
@@ -1986,7 +1986,7 @@
                     "title": "Reference links",
                     "line": 24,
                     "level": 2,
-                    "sha256": "4763d68ee6893c17b99d043791f715e5174cbeee412dba3f3834e838a67b0839",
+                    "sha256": "2e65950ee9e252beed11beca33642cb8e9a970fea4907b7a341f1751cefe85d9",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -2000,7 +2000,7 @@
                 },
                 {
                     "title": "Automatic links",
-                    "line": 44,
+                    "line": 46,
                     "level": 2,
                     "sha256": "d59eb6198c16cc12f2b8864cd7f571759fa1f0d9343d4d672476d3e2edb3d33a",
                     "disposition": {
@@ -2010,7 +2010,7 @@
                 },
                 {
                     "title": "Images",
-                    "line": 67,
+                    "line": 69,
                     "level": 2,
                     "sha256": "f9623a4e7f25415d66a333eaefb375b84f6aaac17a43c65824d0b4b5979d7479",
                     "disposition": {
@@ -2020,7 +2020,7 @@
                 },
                 {
                     "title": "Image dimensions",
-                    "line": 84,
+                    "line": 86,
                     "level": 2,
                     "sha256": "9cb0c1985b899643145d48bba0f04522fc98563589be9b4fc22178306a37d55a",
                     "disposition": {
@@ -2030,9 +2030,9 @@
                 },
                 {
                     "title": "Attributes",
-                    "line": 106,
+                    "line": 108,
                     "level": 2,
-                    "sha256": "ba141aee0d55e7ad85605d9104a1ee8d5b10c1cab5951abec9244ccbe7e1af38",
+                    "sha256": "3830830b4c3b73c51a14980ac41145a2e32112228b82cfe0f27dcfd829446165",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["attribute-link", "attribute-image", "attribute-reference"]
@@ -2040,7 +2040,7 @@
                 },
                 {
                     "title": "Bracket precedence",
-                    "line": 122,
+                    "line": 125,
                     "level": 2,
                     "sha256": "a46dc676a5297e220204661ee1d6883e2539e6cc110b6c59ec4dcff0e9749a44",
                     "disposition": {

@@ -1,69 +1,37 @@
 import MarkdownCoreC
 
-/// The target of a ``Link`` or ``Embedded``: a tagged value, not a node, so it
-/// has no id, no extent and no children, and a branch's fields exist only in that
-/// branch.
+/// The target of a ``Link``, ``Embedded`` or ``Reference``: a tagged value, not
+/// a node, so it has no id, no extent and no children, and a branch's fields
+/// exist only in that branch.
 public enum Destination: Sendable, Hashable {
     /// The complete semantic destination the inherited grammar produced: the
     /// bytes between angle brackets or the bare destination, with backslash
     /// escapes and character references decoded and no percent-encoding,
     /// normalization, or resolution. `[a]()` and `[a](<>)` wrote one and wrote
-    /// nothing in it, so they answer `.url("")`. Every link and image owns
-    /// this branch.
+    /// nothing in it, so they answer `.url("")`. A direct link or image and
+    /// every reference definition own this branch.
     case url(String)
     /// The workspace address a cross link produces: a path that may be empty
     /// when an anchor addresses the current document, and the anchor or `nil`.
     case cross(path: String, anchor: String?)
-}
-
-/// The destination and title a link or image reads through its resource.
-///
-/// Every occurrence of one reference definition shares one resource in the C
-/// tree, and its identity keys one materialization here, so a long destination
-/// referenced many times is decoded once however often it is named.
-struct SharedResource {
-    let dest: Destination
-    let title: String?
-    let anchor: String?
-    let attributes: Attributes
-
-    static func shared(
-        by node: OpaquePointer,
-        in resources: inout [Int: SharedResource]
-    ) -> SharedResource {
-        let key = Int(bitPattern: answer { markdown_core_node_resource(node, $0) })
-        if let known = resources[key] { return known }
-        let inherited = answer { markdown_core_node_inherited_attributes(node, $0) }
-        let resource = SharedResource(
-            dest: Destination(from: node),
-            title: answer(markdown_core_optional_string()) { markdown_core_node_title(node, $0) }.string,
-            anchor: markdown_core_attribute_value_anchor(inherited).string,
-            attributes: Attributes(from: inherited)
-        )
-        resources[key] = resource
-        return resource
-    }
-
-    /// An occurrence's inherited fields: its own anchor before the resource's,
-    /// and the resource's classes and records before its own.
-    func fields(of node: OpaquePointer) -> InheritedFields {
-        InheritedFields(
-            id: MarkupID(markdown_core_node_id(node)),
-            extent: Extent(markdown_core_node_extent(node)),
-            anchor: markdown_core_attribute_value_anchor(markdown_core_node_primary_attributes(node)).string
-                ?? anchor,
-            attributes: Attributes(from: node).inheriting(attributes)
-        )
-    }
+    /// The normalized label a reference occurrence — `[t][l]`, `[l][]` or
+    /// `[l]` — names. ``Document/reference(for:)`` finds the node it resolves
+    /// to.
+    case reference(label: String)
 }
 
 extension Destination {
     init(from node: OpaquePointer) {
         let destination = answer(markdown_core_destination()) { markdown_core_node_destination(node, $0) }
-        if destination.kind == MARKDOWN_CORE_DESTINATION_URL {
+        switch destination.kind {
+        case MARKDOWN_CORE_DESTINATION_URL:
             self = .url(destination.url.required)
-        } else {
+        case MARKDOWN_CORE_DESTINATION_CROSS:
             self = .cross(path: destination.path.required, anchor: destination.anchor.string)
+        // A C enum switch is never exhaustive in Swift; the one kind
+        // left is MARKDOWN_CORE_DESTINATION_REFERENCE.
+        default:
+            self = .reference(label: destination.label.required)
         }
     }
 }

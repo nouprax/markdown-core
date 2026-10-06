@@ -6,7 +6,7 @@ record holds a native pointer, a container view, or a reference to its parent.
 
 Every Markup kind is a struct holding `let record`, a final class of the kind
 that inherits the internal base `MarkupRecord`. The base holds what every kind
-has (`id`, `extent`, `anchor`, `attributes`) and every owned child record, in
+has (`id`, `extent`, `pieces`, `runs`, `anchor`, `attributes`) and every owned child record, in
 one array in canonical walk order across the node's relations. A kind adds
 only `let` scalars and says how its relations partition that array
 (`relation(at:)`): a table's caption, head, body and foot; a citation's inline
@@ -33,28 +33,33 @@ references, which is why records are `@unchecked Sendable`; the invariant is
 stated on `MarkupRecord`, and each subclass restates the conformance as
 Swift requires.
 
-Equality is deep value equality: kind, id, extent, anchor, attributes, the
-kind's scalars and pairwise-equal children in every relation, checked from a
-stack of record pairs with an identity shortcut. Hashing reads only the id.
+Equality is deep value equality: kind, id, extent, pieces, runs, anchor,
+attributes, the kind's scalars and pairwise-equal children in every relation,
+checked from a stack of record pairs with an identity shortcut. Hashing reads only the id.
 Every kind is `Hashable` and `Identifiable`; `isEqual(_:)` compares two
 `any Markup`. `description` is the kind and id; `dump(in:)` draws a tree.
 
 The conversion queues native nodes breadth first, so each node's children
 follow it, and builds records from the last queued node back to the root; no
 partially built node is ever visible. Only Markup nodes enter the queue.
-Reference resources are copied once per native identity and shared across
-occurrences.
+Each node's fields, attributes included, are the ones written on it, read
+from that node alone.
 
 A document stores its text unit and its definition tables: every footnote
-(definitions and inline notes) and every specimen in source order, as records
-of the tree, and a map from each label's UTF-8 bytes to its first definition,
-built with the document. A label is never compared under Unicode
-equivalence. There is no lazy cache and no lock.
+(definitions and inline notes), every specimen and every reference in source
+order, as records of the tree, and a map from each label's UTF-8 bytes to its
+first definition, built with the document. The reference map is copied from
+the engine's label table, so each resolving label names the `Reference` or
+`Heading` record the engine resolves it to; the binding normalizes no label.
+A label is never compared under Unicode equivalence. There is no lazy cache
+and no lock.
 
 Scopes are not stored. `scope(of:in:)` walks the document once to the node's
-absolute byte range, and converts it with the source's line starts to lines
-and columns in the document's unit; `node(at:in:)` converts the position to a
-byte offset and returns the last node in walk order that holds it. Both
+source ranges, mapping a node inside an inline root's content through the
+root's runs and a node with pieces through its pieces, and converts each range
+with the source's line starts to lines and columns in the document's unit;
+`node(at:in:)` converts the position to a byte offset and returns the last
+node in walk order one of whose ranges holds it. Both
 mirror the C engine's rule exactly. The dump computes its scopes the same
 way, always in UTF-8 columns. Each checks its argument once, at the public
 function, and throws `MarkdownCoreError` with `.outOfBounds` as C does: a
@@ -64,7 +69,7 @@ check.
 
 Tests cover canonical dumps, fresh-parse ids numbered 1 through n in walk
 order, deep equality, both units' scopes and hit testing, the definition
-tables, shared-resource identity, concurrent reads, and the last release of
+tables and reference resolution, concurrent reads, and the last release of
 retained groups. The 30,000 and 65,536-level trees run on a thread with a
 512 KiB stack: release while a view holds a subtree, equality at the deepest
 leaf, walking, scope lookup, hit testing and `description`.

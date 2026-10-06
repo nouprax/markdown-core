@@ -29,11 +29,9 @@ public struct Attributes: Sendable, Hashable {
 }
 
 extension Attributes {
+    /// The attributes written on the native node.
     init(from node: OpaquePointer) {
-        self.init(from: markdown_core_node_primary_attributes(node))
-    }
-
-    init(from value: OpaquePointer?) {
+        let value = markdown_core_node_attributes(node)
         self.init(
             classes: (0..<markdown_core_attribute_value_class_count(value)).map { index in
                 answer(markdown_core_string()) { markdown_core_attribute_value_class_at(value, index, $0) }.required
@@ -44,17 +42,6 @@ extension Attributes {
                 answered(markdown_core_attribute_value_record_at(value, index, &name, &string))
                 return Record(name: name.required, value: string.required)
             }
-        )
-    }
-}
-
-extension Attributes {
-    /// Native arrays keep Swift value semantics and copy-on-write storage. Only
-    /// a nonempty occurrence sequence needs a new array when it is appended.
-    func inheriting(_ inherited: Attributes) -> Attributes {
-        Attributes(
-            classes: classes.isEmpty ? inherited.classes : inherited.classes + classes,
-            records: records.isEmpty ? inherited.records : inherited.records + records
         )
     }
 }

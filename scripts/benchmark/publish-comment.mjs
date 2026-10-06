@@ -6,7 +6,7 @@ import path from "node:path";
 import { inputVersion, sameInputs, validationSource } from "../shared/ci-inputs.mjs";
 import { groupWindows } from "./edit-gates.mjs";
 import { grammarComparisons } from "./report.mjs";
-import { stageBudget, STAGE_IR_LIMIT } from "./stage-budget.mjs";
+import { stageBudget, ONESHOT_IR_LIMIT } from "./stage-budget.mjs";
 
 const marker = "<!-- markdown-core-benchmark -->";
 const STAGE_NAMES = { source_to_buffer: "Source → buffer", buffer_to_ast: "Buffer → AST" };
@@ -114,7 +114,7 @@ export function stageSection(current, baseline) {
         "Totals sum this finite workload; they are not elapsed time or a general speedup claim. " +
             "Parser creation and release are not parsing and are in no figure here.",
         "",
-        `Stage budget (+${((STAGE_IR_LIMIT - 1) * 100).toFixed(0)}% per document and stage): **${number(rows.length - failures.length)}/${number(rows.length)} passed**, ${number(failures.length)} exceeded. Required when CI inputs require execution.`,
+        `Stage budget (+${((ONESHOT_IR_LIMIT - 1) * 100).toFixed(0)}% per document and stage): **${number(rows.length - failures.length)}/${number(rows.length)} passed**, ${number(failures.length)} exceeded. Required when CI inputs require execution.`,
         "",
         "<details><summary>Largest stage ratios (up to 10 document stages)</summary>",
         "",

@@ -15,7 +15,7 @@ Document scope=1:1..17:6 anchor=null attributes={} children=9
 │   └── Span scope=3:1..3:28 anchor="rich-title-a-b-h2o" attributes={} children=1
 │       └── Text scope=3:2..3:6 anchor=null attributes={} literal="owner" children=0
 ├── Paragraph scope=5:1..5:7 anchor=null attributes={} children=1
-│   └── Link scope=5:1..5:7 anchor=null attributes={} dest=url("#210") title=null children=2
+│   └── Link scope=5:1..5:7 anchor=null attributes={} dest=reference("2^10^") title=null children=2
 │       ├── Text scope=5:2..5:2 anchor=null attributes={} literal="2" children=0
 │       └── Superscript scope=5:3..5:6 anchor=null attributes={} children=1
 │           └── Text scope=5:4..5:5 anchor=null attributes={} literal="10" children=0
@@ -40,7 +40,7 @@ Document scope=1:1..17:6 anchor=null attributes={} children=9
 │   └── Superscript scope=11:3..11:15 anchor=null attributes={} children=1
 │       └── Directive scope=11:4..11:14 anchor=null attributes={} name="d" children=0
 │           └── DirectiveLabel scope=11:6..11:14 anchor=null attributes={} children=1
-│               └── Link scope=11:7..11:13 anchor=null attributes={} dest=url("#later-1") title=null children=1
+│               └── Link scope=11:7..11:13 anchor=null attributes={} dest=reference("later") title=null children=1
 │                   └── Text scope=11:8..11:12 anchor=null attributes={} literal="Later" children=0
 ├── Heading scope=13:1..13:7 anchor="later-1" attributes={} level=1 children=1
 │   └── Text scope=13:3..13:7 anchor=null attributes={} literal="Later" children=0

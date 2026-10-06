@@ -6,8 +6,9 @@ and node storage. Scratch never becomes an AST field.
 
 ## One physical input index
 
-`markdown_core_input_line` records the raw start, content end, and optional-fact
-index of one physical line. The next-line offset is derived from the following record or the scan
+`markdown_core_input_line` records the raw start, content end, optional-fact
+index, and the offset where the line's own bytes begin past the prefixes of
+the containers it continues, of one physical line. The next-line offset is derived from the following record or the scan
 frontier; NUL counts live only in the optional record. Container-prefix lookahead and
 table-search facts are addressed through that same entry. Compact geometry
 is stored for each line; a separate grow-only vector holds optional facts only
@@ -17,13 +18,13 @@ driver, speculative
 readers, properties envelope, and mapped cell driver extend and consult one
 index. There is no eager mapped-input scan followed by a second driver scan.
 
-Geometry is **12 bytes per visited line** on the supported ABIs, down from
-20. Parser initialization reserves eight entries (96 bytes), including for an
+Geometry is **16 bytes per visited line** on the supported ABIs. Parser
+initialization reserves eight entries (128 bytes), including for an
 empty document, alongside the current-line buffer. For L > 0 lines its vector
 reserves C = max(8, next_power_of_two(L))
-entries, or 12C resident bytes. Thus for L >= 8 the geometry alone occupies
-[12L, 24L) bytes: for one-byte LF-only lines it is 12–24 times input size;
-for two-byte `x\n` lines it is 6–12 times input size. This excludes the source,
+entries, or 16C resident bytes. Thus for L >= 8 the geometry alone occupies
+[16L, 32L) bytes: for one-byte LF-only lines it is 16–32 times input size;
+for two-byte `x\n` lines it is 8–16 times input size. This excludes the source,
 AST, allocator headers, optional facts and normalized payloads. It is a linear
 space bound with a substantial short-line constant, not a constant-space claim.
 The optional record is 64 bytes on LP64/LLP64 and is reserved only for queried
@@ -33,8 +34,8 @@ any active input during the parse, not just the final input's length.
 For N NUL-bearing lines, normalized views additionally retain one pointer-sized
 header per line plus its raw content length, two extra bytes per NUL, and LF/NUL
 terminators. On LP64/LLP64, repeated `\0\n` therefore requests
-12C + 64C + 13L bytes for geometry, facts and normalized views: for L >= 8,
-[89L, 165L), or 44.5–82.5 times that two-byte-per-line input. This excludes
+16C + 64C + 13L bytes for geometry, facts and normalized views: for L >= 8,
+[93L, 173L), or 46.5–86.5 times that two-byte-per-line input. This excludes
 other parser workspaces, the AST and allocator overhead; neither this bound
 nor the LF-only geometry bound is a bound on total parse memory or process RSS.
 Tests use empty, one-character and NUL-bearing lines across capacity boundaries

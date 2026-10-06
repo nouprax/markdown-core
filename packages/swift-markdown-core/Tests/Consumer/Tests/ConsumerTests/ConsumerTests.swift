@@ -13,7 +13,7 @@ import Testing
         #expect(try document.dump(heading, in: source).hasPrefix("Heading scope=1:1..1:11 "))
         #expect(
             try document.scope(of: heading, in: source)
-                == Scope(start: Position(line: 1, column: 1), end: Position(line: 1, column: 11))
+                == [Scope(start: Position(line: 1, column: 1), end: Position(line: 1, column: 11))]
         )
         #expect(try document.node(at: Position(line: 1, column: 4), in: source)?.isEqual(heading.content[0]) == true)
         #expect(document.content.count == 1)
@@ -34,5 +34,16 @@ import Testing
         #expect(((groups.reversed().first?.first as? Paragraph)?.content.first as? Text)?.literal == "three")
         let bodies: [MarkupCollection<any Markup>] = Array(groups)
         #expect(bodies.map(\.count) == [1, 0, 1])
+    }
+
+    @Test("reference definitions are public leaf blocks that a reference link names")
+    func referenceDefinitions() throws {
+        let document = try Document.parse("[Text][Label]\n\n[label]: /u \"t\"\n")
+        let link = try #require((document.content.first as? Paragraph)?.content.first as? Link)
+        let reference = try #require(document.content.last as? Reference)
+        #expect(link.dest == .reference(label: "label") && link.title == nil)
+        #expect(reference.label == "label" && reference.dest == .url("/u") && reference.title == "t")
+        #expect(Array(document.references) == [reference])
+        #expect((document.reference(for: "label") as? Reference) == reference)
     }
 }

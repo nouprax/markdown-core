@@ -1924,7 +1924,7 @@ bbb
 .
 Document scope=1:1..4:3 anchor=null attributes={} children=2
 ├── Callout scope=1:1..2:5 anchor=null attributes={} variant=null collapsed=null children=1
-│   └── CodeBlock scope=1:3..2:5 anchor=null attributes={} info=null language=null literal="aaa\n" fenced=true closed=false children=0
+│   └── CodeBlock scope=1:3..2:0,2:3..2:5 anchor=null attributes={} info=null language=null literal="aaa\n" fenced=true closed=false children=0
 └── Paragraph scope=4:1..4:3 anchor=null attributes={} children=1
     └── Text scope=4:1..4:3 anchor=null attributes={} literal="bbb" children=0
 ````````````````````````````````
@@ -2631,7 +2631,7 @@ bar
 .
 Document scope=1:1..4:3 anchor=null attributes={} children=2
 ├── Callout scope=1:1..2:5 anchor=null attributes={} variant=null collapsed=null children=1
-│   └── HTMLBlock scope=1:3..2:5 anchor=null attributes={} literal="<div>\nfoo\n" children=0
+│   └── HTMLBlock scope=1:3..2:0,2:3..2:5 anchor=null attributes={} literal="<div>\nfoo\n" children=0
 └── Paragraph scope=4:1..4:3 anchor=null attributes={} children=1
     └── Text scope=4:1..4:3 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
@@ -2975,9 +2975,10 @@ them.
 
 [foo]
 .
-Document scope=1:1..3:5 anchor=null attributes={} children=1
+Document scope=1:1..3:5 anchor=null attributes={} children=2
+├── Reference scope=1:1..1:19 anchor=null attributes={} label="foo" dest=url("/url") title="title" children=0
 └── Paragraph scope=3:1..3:5 anchor=null attributes={} children=1
-    └── Link scope=3:1..3:5 anchor=null attributes={} dest=url("/url") title="title" children=1
+    └── Link scope=3:1..3:5 anchor=null attributes={} dest=reference("foo") title=null children=1
         └── Text scope=3:2..3:4 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
 
@@ -2989,9 +2990,10 @@ Document scope=1:1..3:5 anchor=null attributes={} children=1
 
 [foo]
 .
-Document scope=1:1..5:5 anchor=null attributes={} children=1
+Document scope=1:1..5:5 anchor=null attributes={} children=2
+├── Reference scope=1:4..3:24 anchor=null attributes={} label="foo" dest=url("/url") title="the title" children=0
 └── Paragraph scope=5:1..5:5 anchor=null attributes={} children=1
-    └── Link scope=5:1..5:5 anchor=null attributes={} dest=url("/url") title="the title" children=1
+    └── Link scope=5:1..5:5 anchor=null attributes={} dest=reference("foo") title=null children=1
         └── Text scope=5:2..5:4 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
 
@@ -3001,9 +3003,10 @@ Document scope=1:1..5:5 anchor=null attributes={} children=1
 
 [Foo*bar\]]
 .
-Document scope=1:1..3:11 anchor=null attributes={} children=1
+Document scope=1:1..3:11 anchor=null attributes={} children=2
+├── Reference scope=1:1..1:42 anchor=null attributes={} label="foo*bar\\]" dest=url("my_(url)") title="title (with parens)" children=0
 └── Paragraph scope=3:1..3:11 anchor=null attributes={} children=1
-    └── Link scope=3:1..3:11 anchor=null attributes={} dest=url("my_(url)") title="title (with parens)" children=1
+    └── Link scope=3:1..3:11 anchor=null attributes={} dest=reference("foo*bar\\]") title=null children=1
         └── Text scope=3:2..3:10 anchor=null attributes={} literal="Foo*bar]" children=0
 ````````````````````````````````
 
@@ -3015,9 +3018,10 @@ Document scope=1:1..3:11 anchor=null attributes={} children=1
 
 [Foo bar]
 .
-Document scope=1:1..5:9 anchor=null attributes={} children=1
+Document scope=1:1..5:9 anchor=null attributes={} children=2
+├── Reference scope=1:1..3:7 anchor=null attributes={} label="foo bar" dest=url("my url") title="title" children=0
 └── Paragraph scope=5:1..5:9 anchor=null attributes={} children=1
-    └── Link scope=5:1..5:9 anchor=null attributes={} dest=url("my url") title="title" children=1
+    └── Link scope=5:1..5:9 anchor=null attributes={} dest=reference("foo bar") title=null children=1
         └── Text scope=5:2..5:8 anchor=null attributes={} literal="Foo bar" children=0
 ````````````````````````````````
 
@@ -3033,9 +3037,10 @@ line2
 
 [foo]
 .
-Document scope=1:1..7:5 anchor=null attributes={} children=1
+Document scope=1:1..7:5 anchor=null attributes={} children=2
+├── Reference scope=1:1..5:1 anchor=null attributes={} label="foo" dest=url("/url") title="\ntitle\nline1\nline2\n" children=0
 └── Paragraph scope=7:1..7:5 anchor=null attributes={} children=1
-    └── Link scope=7:1..7:5 anchor=null attributes={} dest=url("/url") title="\ntitle\nline1\nline2\n" children=1
+    └── Link scope=7:1..7:5 anchor=null attributes={} dest=reference("foo") title=null children=1
         └── Text scope=7:2..7:4 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
 
@@ -3067,9 +3072,10 @@ The title may be omitted:
 
 [foo]
 .
-Document scope=1:1..4:5 anchor=null attributes={} children=1
+Document scope=1:1..4:5 anchor=null attributes={} children=2
+├── Reference scope=1:1..2:4 anchor=null attributes={} label="foo" dest=url("/url") title=null children=0
 └── Paragraph scope=4:1..4:5 anchor=null attributes={} children=1
-    └── Link scope=4:1..4:5 anchor=null attributes={} dest=url("/url") title=null children=1
+    └── Link scope=4:1..4:5 anchor=null attributes={} dest=reference("foo") title=null children=1
         └── Text scope=4:2..4:4 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
 
@@ -3096,9 +3102,10 @@ Document scope=1:1..3:5 anchor=null attributes={} children=2
 
 [foo]
 .
-Document scope=1:1..3:5 anchor=null attributes={} children=1
+Document scope=1:1..3:5 anchor=null attributes={} children=2
+├── Reference scope=1:1..1:9 anchor=null attributes={} label="foo" dest=url("") title=null children=0
 └── Paragraph scope=3:1..3:5 anchor=null attributes={} children=1
-    └── Link scope=3:1..3:5 anchor=null attributes={} dest=url("") title=null children=1
+    └── Link scope=3:1..3:5 anchor=null attributes={} dest=reference("foo") title=null children=1
         └── Text scope=3:2..3:4 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
 
@@ -3128,9 +3135,10 @@ and literal backslashes:
 
 [foo]
 .
-Document scope=1:1..3:5 anchor=null attributes={} children=1
+Document scope=1:1..3:5 anchor=null attributes={} children=2
+├── Reference scope=1:1..1:35 anchor=null attributes={} label="foo" dest=url("/url\\bar*baz") title="foo\"bar\\baz" children=0
 └── Paragraph scope=3:1..3:5 anchor=null attributes={} children=1
-    └── Link scope=3:1..3:5 anchor=null attributes={} dest=url("/url\\bar*baz") title="foo\"bar\\baz" children=1
+    └── Link scope=3:1..3:5 anchor=null attributes={} dest=reference("foo") title=null children=1
         └── Text scope=3:2..3:4 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
 
@@ -3142,10 +3150,11 @@ A link can come before its corresponding definition:
 
 [foo]: url
 .
-Document scope=1:1..3:10 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
-    └── Link scope=1:1..1:5 anchor=null attributes={} dest=url("url") title=null children=1
-        └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+Document scope=1:1..3:10 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
+│   └── Link scope=1:1..1:5 anchor=null attributes={} dest=reference("foo") title=null children=1
+│       └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+└── Reference scope=3:1..3:10 anchor=null attributes={} label="foo" dest=url("url") title=null children=0
 ````````````````````````````````
 
 
@@ -3158,10 +3167,12 @@ precedence:
 [foo]: first
 [foo]: second
 .
-Document scope=1:1..4:13 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
-    └── Link scope=1:1..1:5 anchor=null attributes={} dest=url("first") title=null children=1
-        └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+Document scope=1:1..4:13 anchor=null attributes={} children=3
+├── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
+│   └── Link scope=1:1..1:5 anchor=null attributes={} dest=reference("foo") title=null children=1
+│       └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+├── Reference scope=3:1..3:12 anchor=null attributes={} label="foo" dest=url("first") title=null children=0
+└── Reference scope=4:1..4:13 anchor=null attributes={} label="foo" dest=url("second") title=null children=0
 ````````````````````````````````
 
 
@@ -3173,9 +3184,10 @@ case-insensitive (see [matches]).
 
 [Foo]
 .
-Document scope=1:1..3:5 anchor=null attributes={} children=1
+Document scope=1:1..3:5 anchor=null attributes={} children=2
+├── Reference scope=1:1..1:11 anchor=null attributes={} label="foo" dest=url("/url") title=null children=0
 └── Paragraph scope=3:1..3:5 anchor=null attributes={} children=1
-    └── Link scope=3:1..3:5 anchor=null attributes={} dest=url("/url") title=null children=1
+    └── Link scope=3:1..3:5 anchor=null attributes={} dest=reference("foo") title=null children=1
         └── Text scope=3:2..3:4 anchor=null attributes={} literal="Foo" children=0
 ````````````````````````````````
 
@@ -3185,9 +3197,10 @@ Document scope=1:1..3:5 anchor=null attributes={} children=1
 
 [αγω]
 .
-Document scope=1:1..3:8 anchor=null attributes={} children=1
+Document scope=1:1..3:8 anchor=null attributes={} children=2
+├── Reference scope=1:1..1:17 anchor=null attributes={} label="αγω" dest=url("/φου") title=null children=0
 └── Paragraph scope=3:1..3:8 anchor=null attributes={} children=1
-    └── Link scope=3:1..3:8 anchor=null attributes={} dest=url("/φου") title=null children=1
+    └── Link scope=3:1..3:8 anchor=null attributes={} dest=reference("αγω") title=null children=1
         └── Text scope=3:2..3:7 anchor=null attributes={} literal="αγω" children=0
 ````````````````````````````````
 
@@ -3198,7 +3211,8 @@ It contributes nothing to the document.
 ```````````````````````````````` example
 [foo]: /url
 .
-Document scope=1:1..1:11 anchor=null attributes={} children=0
+Document scope=1:1..1:11 anchor=null attributes={} children=1
+└── Reference scope=1:1..1:11 anchor=null attributes={} label="foo" dest=url("/url") title=null children=0
 ````````````````````````````````
 
 
@@ -3210,7 +3224,8 @@ foo
 ]: /url
 bar
 .
-Document scope=1:1..4:3 anchor=null attributes={} children=1
+Document scope=1:1..4:3 anchor=null attributes={} children=2
+├── Reference scope=1:1..3:7 anchor=null attributes={} label="foo" dest=url("/url") title=null children=0
 └── Paragraph scope=4:1..4:3 anchor=null attributes={} children=1
     └── Text scope=4:1..4:3 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
@@ -3234,7 +3249,8 @@ This is a link reference definition, but it has no title:
 [foo]: /url
 "title" ok
 .
-Document scope=1:1..2:10 anchor=null attributes={} children=1
+Document scope=1:1..2:10 anchor=null attributes={} children=2
+├── Reference scope=1:1..1:11 anchor=null attributes={} label="foo" dest=url("/url") title=null children=0
 └── Paragraph scope=2:1..2:10 anchor=null attributes={} children=1
     └── Text scope=2:1..2:10 anchor=null attributes={} literal="\"title\" ok" children=0
 ````````````````````````````````
@@ -3298,10 +3314,11 @@ and thematic breaks, and it need not be followed by a blank line.
 [foo]: /url
 > bar
 .
-Document scope=1:1..3:5 anchor=null attributes={} children=2
+Document scope=1:1..3:5 anchor=null attributes={} children=3
 ├── Heading scope=1:1..1:7 anchor="foo" attributes={} level=1 children=1
-│   └── Link scope=1:3..1:7 anchor=null attributes={} dest=url("/url") title=null children=1
+│   └── Link scope=1:3..1:7 anchor=null attributes={} dest=reference("foo") title=null children=1
 │       └── Text scope=1:4..1:6 anchor=null attributes={} literal="Foo" children=0
+├── Reference scope=2:1..2:11 anchor=null attributes={} label="foo" dest=url("/url") title=null children=0
 └── Callout scope=3:1..3:5 anchor=null attributes={} variant=null collapsed=null children=1
     └── Paragraph scope=3:3..3:5 anchor=null attributes={} children=1
         └── Text scope=3:3..3:5 anchor=null attributes={} literal="bar" children=0
@@ -3313,11 +3330,12 @@ bar
 ===
 [foo]
 .
-Document scope=1:1..4:5 anchor=null attributes={} children=2
+Document scope=1:1..4:5 anchor=null attributes={} children=3
+├── Reference scope=1:1..1:11 anchor=null attributes={} label="foo" dest=url("/url") title=null children=0
 ├── Heading scope=2:1..3:3 anchor="bar" attributes={} level=1 children=1
 │   └── Text scope=2:1..2:3 anchor=null attributes={} literal="bar" children=0
 └── Paragraph scope=4:1..4:5 anchor=null attributes={} children=1
-    └── Link scope=4:1..4:5 anchor=null attributes={} dest=url("/url") title=null children=1
+    └── Link scope=4:1..4:5 anchor=null attributes={} dest=reference("foo") title=null children=1
         └── Text scope=4:2..4:4 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
 
@@ -3326,11 +3344,12 @@ Document scope=1:1..4:5 anchor=null attributes={} children=2
 ===
 [foo]
 .
-Document scope=1:1..3:5 anchor=null attributes={} children=1
+Document scope=1:1..3:5 anchor=null attributes={} children=2
+├── Reference scope=1:1..1:11 anchor=null attributes={} label="foo" dest=url("/url") title=null children=0
 └── Paragraph scope=2:1..3:5 anchor=null attributes={} children=3
     ├── Text scope=2:1..2:3 anchor=null attributes={} literal="===" children=0
     ├── SoftBreak scope=2:4..3:0 anchor=null attributes={} children=0
-    └── Link scope=3:1..3:5 anchor=null attributes={} dest=url("/url") title=null children=1
+    └── Link scope=3:1..3:5 anchor=null attributes={} dest=reference("foo") title=null children=1
         └── Text scope=3:2..3:4 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
 
@@ -3348,17 +3367,20 @@ can occur one after another, without intervening blank lines.
 [bar],
 [baz]
 .
-Document scope=1:1..8:5 anchor=null attributes={} children=1
+Document scope=1:1..8:5 anchor=null attributes={} children=4
+├── Reference scope=1:1..1:21 anchor=null attributes={} label="foo" dest=url("/foo-url") title="foo" children=0
+├── Reference scope=2:1..3:7 anchor=null attributes={} label="bar" dest=url("/bar-url") title="bar" children=0
+├── Reference scope=4:1..4:15 anchor=null attributes={} label="baz" dest=url("/baz-url") title=null children=0
 └── Paragraph scope=6:1..8:5 anchor=null attributes={} children=7
-    ├── Link scope=6:1..6:5 anchor=null attributes={} dest=url("/foo-url") title="foo" children=1
+    ├── Link scope=6:1..6:5 anchor=null attributes={} dest=reference("foo") title=null children=1
     │   └── Text scope=6:2..6:4 anchor=null attributes={} literal="foo" children=0
     ├── Text scope=6:6..6:6 anchor=null attributes={} literal="," children=0
     ├── SoftBreak scope=6:7..7:0 anchor=null attributes={} children=0
-    ├── Link scope=7:1..7:5 anchor=null attributes={} dest=url("/bar-url") title="bar" children=1
+    ├── Link scope=7:1..7:5 anchor=null attributes={} dest=reference("bar") title=null children=1
     │   └── Text scope=7:2..7:4 anchor=null attributes={} literal="bar" children=0
     ├── Text scope=7:6..7:6 anchor=null attributes={} literal="," children=0
     ├── SoftBreak scope=7:7..8:0 anchor=null attributes={} children=0
-    └── Link scope=8:1..8:5 anchor=null attributes={} dest=url("/baz-url") title=null children=1
+    └── Link scope=8:1..8:5 anchor=null attributes={} dest=reference("baz") title=null children=1
         └── Text scope=8:2..8:4 anchor=null attributes={} literal="baz" children=0
 ````````````````````````````````
 
@@ -3375,9 +3397,10 @@ are defined:
 .
 Document scope=1:1..3:13 anchor=null attributes={} children=2
 ├── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
-│   └── Link scope=1:1..1:5 anchor=null attributes={} dest=url("/url") title=null children=1
+│   └── Link scope=1:1..1:5 anchor=null attributes={} dest=reference("foo") title=null children=1
 │       └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
-└── Callout scope=3:1..3:13 anchor=null attributes={} variant=null collapsed=null children=0
+└── Callout scope=3:1..3:13 anchor=null attributes={} variant=null collapsed=null children=1
+    └── Reference scope=3:3..3:13 anchor=null attributes={} label="foo" dest=url("/url") title=null children=0
 ````````````````````````````````
 
 
@@ -3390,7 +3413,8 @@ no visible content:
 ```````````````````````````````` example
 [foo]: /url
 .
-Document scope=1:1..1:11 anchor=null attributes={} children=0
+Document scope=1:1..1:11 anchor=null attributes={} children=1
+└── Reference scope=1:1..1:11 anchor=null attributes={} label="foo" dest=url("/url") title=null children=0
 ````````````````````````````````
 
 
@@ -3839,7 +3863,7 @@ Document scope=1:1..3:5 anchor=null attributes={} children=1
 └── Callout scope=1:1..3:5 anchor=null attributes={} variant=null collapsed=null children=2
     ├── Heading scope=1:3..1:7 anchor="foo" attributes={} level=1 children=1
     │   └── Text scope=1:5..1:7 anchor=null attributes={} literal="Foo" children=0
-    └── Paragraph scope=2:3..3:5 anchor=null attributes={} children=3
+    └── Paragraph scope=2:3..3:0,3:3..3:5 anchor=null attributes={} children=3
         ├── Text scope=2:3..2:5 anchor=null attributes={} literal="bar" children=0
         ├── SoftBreak scope=2:6..3:0 anchor=null attributes={} children=0
         └── Text scope=3:3..3:5 anchor=null attributes={} literal="baz" children=0
@@ -3857,7 +3881,7 @@ Document scope=1:1..3:5 anchor=null attributes={} children=1
 └── Callout scope=1:1..3:5 anchor=null attributes={} variant=null collapsed=null children=2
     ├── Heading scope=1:2..1:6 anchor="foo" attributes={} level=1 children=1
     │   └── Text scope=1:4..1:6 anchor=null attributes={} literal="Foo" children=0
-    └── Paragraph scope=2:2..3:5 anchor=null attributes={} children=3
+    └── Paragraph scope=2:2..3:0,3:3..3:5 anchor=null attributes={} children=3
         ├── Text scope=2:2..2:4 anchor=null attributes={} literal="bar" children=0
         ├── SoftBreak scope=2:5..3:0 anchor=null attributes={} children=0
         └── Text scope=3:3..3:5 anchor=null attributes={} literal="baz" children=0
@@ -3875,7 +3899,7 @@ Document scope=1:1..3:6 anchor=null attributes={} children=1
 └── Callout scope=1:4..3:6 anchor=null attributes={} variant=null collapsed=null children=2
     ├── Heading scope=1:6..1:10 anchor="foo" attributes={} level=1 children=1
     │   └── Text scope=1:8..1:10 anchor=null attributes={} literal="Foo" children=0
-    └── Paragraph scope=2:6..3:6 anchor=null attributes={} children=3
+    └── Paragraph scope=2:6..3:0,3:4..3:6 anchor=null attributes={} children=3
         ├── Text scope=2:6..2:8 anchor=null attributes={} literal="bar" children=0
         ├── SoftBreak scope=2:9..3:0 anchor=null attributes={} children=0
         └── Text scope=3:4..3:6 anchor=null attributes={} literal="baz" children=0
@@ -3923,7 +3947,7 @@ baz
 .
 Document scope=1:1..3:5 anchor=null attributes={} children=1
 └── Callout scope=1:1..3:5 anchor=null attributes={} variant=null collapsed=null children=1
-    └── Paragraph scope=1:3..3:5 anchor=null attributes={} children=5
+    └── Paragraph scope=1:3..3:0,3:3..3:5 anchor=null attributes={} children=5
         ├── Text scope=1:3..1:5 anchor=null attributes={} literal="bar" children=0
         ├── SoftBreak scope=1:6..2:0 anchor=null attributes={} children=0
         ├── Text scope=2:1..2:3 anchor=null attributes={} literal="baz" children=0
@@ -4101,7 +4125,7 @@ we get a single block quote:
 .
 Document scope=1:1..2:5 anchor=null attributes={} children=1
 └── Callout scope=1:1..2:5 anchor=null attributes={} variant=null collapsed=null children=1
-    └── Paragraph scope=1:3..2:5 anchor=null attributes={} children=3
+    └── Paragraph scope=1:3..2:0,2:3..2:5 anchor=null attributes={} children=3
         ├── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
         ├── SoftBreak scope=1:6..2:0 anchor=null attributes={} children=0
         └── Text scope=2:3..2:5 anchor=null attributes={} literal="bar" children=0
@@ -4230,7 +4254,7 @@ Document scope=1:1..3:5 anchor=null attributes={} children=1
 └── Callout scope=1:1..3:5 anchor=null attributes={} variant=null collapsed=null children=1
     └── Callout scope=1:2..3:5 anchor=null attributes={} variant=null collapsed=null children=1
         └── Callout scope=1:3..3:5 anchor=null attributes={} variant=null collapsed=null children=1
-            └── Paragraph scope=1:5..3:5 anchor=null attributes={} children=5
+            └── Paragraph scope=1:5..2:0,2:3..3:0,3:3..3:5 anchor=null attributes={} children=5
                 ├── Text scope=1:5..1:7 anchor=null attributes={} literal="foo" children=0
                 ├── SoftBreak scope=1:8..2:0 anchor=null attributes={} children=0
                 ├── Text scope=2:3..2:5 anchor=null attributes={} literal="bar" children=0
@@ -4332,7 +4356,7 @@ and the same contents as *Ls*:
 Document scope=1:1..6:20 anchor=null attributes={} children=1
 └── List scope=1:1..6:20 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=false children=1
     └── ListItem scope=1:1..6:20 anchor=null attributes={} marker=null children=3
-        ├── Paragraph scope=1:5..2:19 anchor=null attributes={} children=3
+        ├── Paragraph scope=1:5..2:0,2:5..2:19 anchor=null attributes={} children=3
         │   ├── Text scope=1:5..1:15 anchor=null attributes={} literal="A paragraph" children=0
         │   ├── SoftBreak scope=1:16..2:0 anchor=null attributes={} children=0
         │   └── Text scope=2:5..2:19 anchor=null attributes={} literal="with two lines." children=0
@@ -4517,7 +4541,7 @@ Document scope=1:1..9:9 anchor=null attributes={} children=1
     └── ListItem scope=1:1..9:9 anchor=null attributes={} marker=null children=4
         ├── Paragraph scope=1:5..1:7 anchor=null attributes={} children=1
         │   └── Text scope=1:5..1:7 anchor=null attributes={} literal="foo" children=0
-        ├── CodeBlock scope=3:5..5:7 anchor=null attributes={} info=null language=null literal="bar\n" fenced=true closed=true children=0
+        ├── CodeBlock scope=3:5..4:0,4:5..5:0,5:5..5:7 anchor=null attributes={} info=null language=null literal="bar\n" fenced=true closed=true children=0
         ├── Paragraph scope=7:5..7:7 anchor=null attributes={} children=1
         │   └── Text scope=7:5..7:7 anchor=null attributes={} literal="baz" children=0
         └── Callout scope=9:5..9:9 anchor=null attributes={} variant=null collapsed=null children=1
@@ -4542,7 +4566,7 @@ Document scope=1:1..6:9 anchor=null attributes={} children=1
     └── ListItem scope=1:1..6:9 anchor=null attributes={} marker=null children=2
         ├── Paragraph scope=1:3..1:5 anchor=null attributes={} children=1
         │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="Foo" children=0
-        └── CodeBlock scope=3:7..6:9 anchor=null attributes={} info=null language=null literal="bar\n\n\nbaz\n" fenced=false closed=true children=0
+        └── CodeBlock scope=3:7..6:0,6:3..6:9 anchor=null attributes={} info=null language=null literal="bar\n\n\nbaz\n" fenced=false closed=true children=0
 ````````````````````````````````
 
 Note that ordered list start numbers must be nine digits or less:
@@ -4790,7 +4814,7 @@ Document scope=1:1..8:9 anchor=null attributes={} children=1
     │   └── Paragraph scope=2:3..2:5 anchor=null attributes={} children=1
     │       └── Text scope=2:3..2:5 anchor=null attributes={} literal="foo" children=0
     ├── ListItem scope=3:1..6:5 anchor=null attributes={} marker=null children=1
-    │   └── CodeBlock scope=4:3..6:5 anchor=null attributes={} info=null language=null literal="bar\n" fenced=true closed=true children=0
+    │   └── CodeBlock scope=4:3..5:0,5:3..6:0,6:3..6:5 anchor=null attributes={} info=null language=null literal="bar\n" fenced=true closed=true children=0
     └── ListItem scope=7:1..8:9 anchor=null attributes={} marker=null children=1
         └── CodeBlock scope=8:7..8:9 anchor=null attributes={} info=null language=null literal="baz\n" fenced=false closed=true children=0
 ````````````````````````````````
@@ -4934,7 +4958,7 @@ Indented one space:
 Document scope=1:1..6:21 anchor=null attributes={} children=1
 └── List scope=1:2..6:21 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=false children=1
     └── ListItem scope=1:2..6:21 anchor=null attributes={} marker=null children=3
-        ├── Paragraph scope=1:6..2:20 anchor=null attributes={} children=3
+        ├── Paragraph scope=1:6..2:0,2:6..2:20 anchor=null attributes={} children=3
         │   ├── Text scope=1:6..1:16 anchor=null attributes={} literal="A paragraph" children=0
         │   ├── SoftBreak scope=1:17..2:0 anchor=null attributes={} children=0
         │   └── Text scope=2:6..2:20 anchor=null attributes={} literal="with two lines." children=0
@@ -4958,7 +4982,7 @@ Indented two spaces:
 Document scope=1:1..6:22 anchor=null attributes={} children=1
 └── List scope=1:3..6:22 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=false children=1
     └── ListItem scope=1:3..6:22 anchor=null attributes={} marker=null children=3
-        ├── Paragraph scope=1:7..2:21 anchor=null attributes={} children=3
+        ├── Paragraph scope=1:7..2:0,2:7..2:21 anchor=null attributes={} children=3
         │   ├── Text scope=1:7..1:17 anchor=null attributes={} literal="A paragraph" children=0
         │   ├── SoftBreak scope=1:18..2:0 anchor=null attributes={} children=0
         │   └── Text scope=2:7..2:21 anchor=null attributes={} literal="with two lines." children=0
@@ -4982,7 +5006,7 @@ Indented three spaces:
 Document scope=1:1..6:23 anchor=null attributes={} children=1
 └── List scope=1:4..6:23 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=false children=1
     └── ListItem scope=1:4..6:23 anchor=null attributes={} marker=null children=3
-        ├── Paragraph scope=1:8..2:22 anchor=null attributes={} children=3
+        ├── Paragraph scope=1:8..2:0,2:8..2:22 anchor=null attributes={} children=3
         │   ├── Text scope=1:8..1:18 anchor=null attributes={} literal="A paragraph" children=0
         │   ├── SoftBreak scope=1:19..2:0 anchor=null attributes={} children=0
         │   └── Text scope=2:8..2:22 anchor=null attributes={} literal="with two lines." children=0
@@ -5085,7 +5109,7 @@ Document scope=1:1..2:17 anchor=null attributes={} children=1
     └── List scope=1:3..2:17 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=true children=1
         └── ListItem scope=1:3..2:17 anchor=null attributes={} marker=null children=1
             └── Callout scope=1:6..2:17 anchor=null attributes={} variant=null collapsed=null children=1
-                └── Paragraph scope=1:8..2:17 anchor=null attributes={} children=3
+                └── Paragraph scope=1:8..2:0,2:3..2:17 anchor=null attributes={} children=3
                     ├── Text scope=1:8..1:17 anchor=null attributes={} literal="Blockquote" children=0
                     ├── SoftBreak scope=1:18..2:0 anchor=null attributes={} children=0
                     └── Text scope=2:3..2:17 anchor=null attributes={} literal="continued here." children=0
@@ -5232,7 +5256,7 @@ Document scope=1:1..4:5 anchor=null attributes={} children=1
     │   └── Heading scope=1:3..1:7 anchor="foo" attributes={} level=1 children=1
     │       └── Text scope=1:5..1:7 anchor=null attributes={} literal="Foo" children=0
     └── ListItem scope=2:1..4:5 anchor=null attributes={} marker=null children=2
-        ├── Heading scope=2:3..3:5 anchor="bar" attributes={} level=2 children=1
+        ├── Heading scope=2:3..3:0,3:3..3:5 anchor="bar" attributes={} level=2 children=1
         │   └── Text scope=2:3..2:5 anchor=null attributes={} literal="Bar" children=0
         └── Paragraph scope=4:3..4:5 anchor=null attributes={} children=1
             └── Text scope=4:3..4:5 anchor=null attributes={} literal="baz" children=0
@@ -5971,9 +5995,10 @@ Document scope=1:1..5:3 anchor=null attributes={} children=1
     ├── ListItem scope=1:1..1:3 anchor=null attributes={} marker=null children=1
     │   └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
     │       └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
-    ├── ListItem scope=2:1..4:13 anchor=null attributes={} marker=null children=1
-    │   └── Paragraph scope=2:3..2:3 anchor=null attributes={} children=1
-    │       └── Text scope=2:3..2:3 anchor=null attributes={} literal="b" children=0
+    ├── ListItem scope=2:1..4:13 anchor=null attributes={} marker=null children=2
+    │   ├── Paragraph scope=2:3..2:3 anchor=null attributes={} children=1
+    │   │   └── Text scope=2:3..2:3 anchor=null attributes={} literal="b" children=0
+    │   └── Reference scope=4:3..4:13 anchor=null attributes={} label="ref" dest=url("/url") title=null children=0
     └── ListItem scope=5:1..5:3 anchor=null attributes={} marker=null children=1
         └── Paragraph scope=5:3..5:3 anchor=null attributes={} children=1
             └── Text scope=5:3..5:3 anchor=null attributes={} literal="d" children=0
@@ -5997,7 +6022,7 @@ Document scope=1:1..7:3 anchor=null attributes={} children=1
     │   └── Paragraph scope=1:3..1:3 anchor=null attributes={} children=1
     │       └── Text scope=1:3..1:3 anchor=null attributes={} literal="a" children=0
     ├── ListItem scope=2:1..6:5 anchor=null attributes={} marker=null children=1
-    │   └── CodeBlock scope=2:3..6:5 anchor=null attributes={} info=null language=null literal="b\n\n\n" fenced=true closed=true children=0
+    │   └── CodeBlock scope=2:3..3:0,3:3..6:0,6:3..6:5 anchor=null attributes={} info=null language=null literal="b\n\n\n" fenced=true closed=true children=0
     └── ListItem scope=7:1..7:3 anchor=null attributes={} marker=null children=1
         └── Paragraph scope=7:3..7:3 anchor=null attributes={} children=1
             └── Text scope=7:3..7:3 anchor=null attributes={} literal="c" children=0
@@ -6074,7 +6099,7 @@ Document scope=1:1..6:3 anchor=null attributes={} children=1
     │   ├── Callout scope=2:3..2:5 anchor=null attributes={} variant=null collapsed=null children=1
     │   │   └── Paragraph scope=2:5..2:5 anchor=null attributes={} children=1
     │   │       └── Text scope=2:5..2:5 anchor=null attributes={} literal="b" children=0
-    │   └── CodeBlock scope=3:3..5:5 anchor=null attributes={} info=null language=null literal="c\n" fenced=true closed=true children=0
+    │   └── CodeBlock scope=3:3..4:0,4:3..5:0,5:3..5:5 anchor=null attributes={} info=null language=null literal="c\n" fenced=true closed=true children=0
     └── ListItem scope=6:1..6:3 anchor=null attributes={} marker=null children=1
         └── Paragraph scope=6:3..6:3 anchor=null attributes={} children=1
             └── Text scope=6:3..6:3 anchor=null attributes={} literal="d" children=0
@@ -6123,7 +6148,7 @@ two block elements in the list item:
 Document scope=1:1..5:6 anchor=null attributes={} children=1
 └── List scope=1:1..5:6 anchor=null attributes={} flavor=ordered start=1 variant=decimal delimiter=period tight=false children=1
     └── ListItem scope=1:1..5:6 anchor=null attributes={} marker=null children=2
-        ├── CodeBlock scope=1:4..3:6 anchor=null attributes={} info=null language=null literal="foo\n" fenced=true closed=true children=0
+        ├── CodeBlock scope=1:4..2:0,2:4..3:0,3:4..3:6 anchor=null attributes={} info=null language=null literal="foo\n" fenced=true closed=true children=0
         └── Paragraph scope=5:4..5:6 anchor=null attributes={} children=1
             └── Text scope=5:4..5:6 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
@@ -6358,10 +6383,11 @@ Document scope=1:1..1:23 anchor=null attributes={} children=1
 
 [foo]: /bar\* "ti\*tle"
 .
-Document scope=1:1..3:23 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
-    └── Link scope=1:1..1:5 anchor=null attributes={} dest=url("/bar*") title="ti*tle" children=1
-        └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+Document scope=1:1..3:23 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
+│   └── Link scope=1:1..1:5 anchor=null attributes={} dest=reference("foo") title=null children=1
+│       └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+└── Reference scope=3:1..3:23 anchor=null attributes={} label="foo" dest=url("/bar*") title="ti*tle" children=0
 ````````````````````````````````
 
 
@@ -6521,10 +6547,11 @@ Document scope=1:1..1:37 anchor=null attributes={} children=1
 
 [foo]: /f&ouml;&ouml; "f&ouml;&ouml;"
 .
-Document scope=1:1..3:37 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
-    └── Link scope=1:1..1:5 anchor=null attributes={} dest=url("/föö") title="föö" children=1
-        └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+Document scope=1:1..3:37 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
+│   └── Link scope=1:1..1:5 anchor=null attributes={} dest=reference("foo") title=null children=1
+│       └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+└── Reference scope=3:1..3:37 anchor=null attributes={} label="foo" dest=url("/föö") title="föö" children=0
 ````````````````````````````````
 
 
@@ -9210,7 +9237,7 @@ the same way in inline links and link reference definitions.)
 .
 Document scope=1:1..2:12 anchor=null attributes={} children=1
 └── Paragraph scope=1:1..2:12 anchor=null attributes={} children=1
-    └── Link scope=1:1..2:12 anchor=null attributes={} dest=url("/uri") title="title" children=1
+    └── Link scope=1:1..2:0,2:3..2:12 anchor=null attributes={} dest=url("/uri") title="title" children=1
         └── Text scope=1:2..1:5 anchor=null attributes={} literal="link" children=0
 ````````````````````````````````
 
@@ -9449,10 +9476,11 @@ Here is a simple example:
 
 [bar]: /url "title"
 .
-Document scope=1:1..3:19 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=1
-    └── Link scope=1:1..1:10 anchor=null attributes={} dest=url("/url") title="title" children=1
-        └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+Document scope=1:1..3:19 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:10 anchor=null attributes={} children=1
+│   └── Link scope=1:1..1:10 anchor=null attributes={} dest=reference("bar") title=null children=1
+│       └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+└── Reference scope=3:1..3:19 anchor=null attributes={} label="bar" dest=url("/url") title="title" children=0
 ````````````````````````````````
 
 
@@ -9467,10 +9495,11 @@ unless they are escaped:
 
 [ref]: /uri
 .
-Document scope=1:1..3:11 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:23 anchor=null attributes={} children=1
-    └── Link scope=1:1..1:23 anchor=null attributes={} dest=url("/uri") title=null children=1
-        └── Text scope=1:2..1:17 anchor=null attributes={} literal="link [foo [bar]]" children=0
+Document scope=1:1..3:11 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:23 anchor=null attributes={} children=1
+│   └── Link scope=1:1..1:23 anchor=null attributes={} dest=reference("ref") title=null children=1
+│       └── Text scope=1:2..1:17 anchor=null attributes={} literal="link [foo [bar]]" children=0
+└── Reference scope=3:1..3:11 anchor=null attributes={} label="ref" dest=url("/uri") title=null children=0
 ````````````````````````````````
 
 
@@ -9479,10 +9508,11 @@ Document scope=1:1..3:11 anchor=null attributes={} children=1
 
 [ref]: /uri
 .
-Document scope=1:1..3:11 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:17 anchor=null attributes={} children=1
-    └── Link scope=1:1..1:17 anchor=null attributes={} dest=url("/uri") title=null children=1
-        └── Text scope=1:2..1:11 anchor=null attributes={} literal="link [bar" children=0
+Document scope=1:1..3:11 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:17 anchor=null attributes={} children=1
+│   └── Link scope=1:1..1:17 anchor=null attributes={} dest=reference("ref") title=null children=1
+│       └── Text scope=1:2..1:11 anchor=null attributes={} literal="link [bar" children=0
+└── Reference scope=3:1..3:11 anchor=null attributes={} label="ref" dest=url("/uri") title=null children=0
 ````````````````````````````````
 
 
@@ -9493,16 +9523,17 @@ The link text may contain inline content:
 
 [ref]: /uri
 .
-Document scope=1:1..3:11 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:29 anchor=null attributes={} children=1
-    └── Link scope=1:1..1:29 anchor=null attributes={} dest=url("/uri") title=null children=2
-        ├── Text scope=1:2..1:6 anchor=null attributes={} literal="link " children=0
-        └── Emphasis scope=1:7..1:23 anchor=null attributes={} children=4
-            ├── Text scope=1:8..1:11 anchor=null attributes={} literal="foo " children=0
-            ├── Strong scope=1:12..1:18 anchor=null attributes={} children=1
-            │   └── Text scope=1:14..1:16 anchor=null attributes={} literal="bar" children=0
-            ├── Text scope=1:19..1:19 anchor=null attributes={} literal=" " children=0
-            └── Code scope=1:20..1:22 anchor=null attributes={} literal="#" children=0
+Document scope=1:1..3:11 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:29 anchor=null attributes={} children=1
+│   └── Link scope=1:1..1:29 anchor=null attributes={} dest=reference("ref") title=null children=2
+│       ├── Text scope=1:2..1:6 anchor=null attributes={} literal="link " children=0
+│       └── Emphasis scope=1:7..1:23 anchor=null attributes={} children=4
+│           ├── Text scope=1:8..1:11 anchor=null attributes={} literal="foo " children=0
+│           ├── Strong scope=1:12..1:18 anchor=null attributes={} children=1
+│           │   └── Text scope=1:14..1:16 anchor=null attributes={} literal="bar" children=0
+│           ├── Text scope=1:19..1:19 anchor=null attributes={} literal=" " children=0
+│           └── Code scope=1:20..1:22 anchor=null attributes={} literal="#" children=0
+└── Reference scope=3:1..3:11 anchor=null attributes={} label="ref" dest=url("/uri") title=null children=0
 ````````````````````````````````
 
 
@@ -9511,11 +9542,12 @@ Document scope=1:1..3:11 anchor=null attributes={} children=1
 
 [ref]: /uri
 .
-Document scope=1:1..3:11 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:24 anchor=null attributes={} children=1
-    └── Link scope=1:1..1:24 anchor=null attributes={} dest=url("/uri") title=null children=1
-        └── Embedded scope=1:2..1:18 anchor=null attributes={} dest=url("moon.jpg") title=null dimensions=null children=1
-            └── Text scope=1:4..1:7 anchor=null attributes={} literal="moon" children=0
+Document scope=1:1..3:11 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:24 anchor=null attributes={} children=1
+│   └── Link scope=1:1..1:24 anchor=null attributes={} dest=reference("ref") title=null children=1
+│       └── Embedded scope=1:2..1:18 anchor=null attributes={} dest=url("moon.jpg") title=null dimensions=null children=1
+│           └── Text scope=1:4..1:7 anchor=null attributes={} literal="moon" children=0
+└── Reference scope=3:1..3:11 anchor=null attributes={} label="ref" dest=url("/uri") title=null children=0
 ````````````````````````````````
 
 
@@ -9526,14 +9558,15 @@ However, links may not contain other links, at any level of nesting.
 
 [ref]: /uri
 .
-Document scope=1:1..3:11 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:22 anchor=null attributes={} children=4
-    ├── Text scope=1:1..1:5 anchor=null attributes={} literal="[foo " children=0
-    ├── Link scope=1:6..1:16 anchor=null attributes={} dest=url("/uri") title=null children=1
-    │   └── Text scope=1:7..1:9 anchor=null attributes={} literal="bar" children=0
-    ├── Text scope=1:17..1:17 anchor=null attributes={} literal="]" children=0
-    └── Link scope=1:18..1:22 anchor=null attributes={} dest=url("/uri") title=null children=1
-        └── Text scope=1:19..1:21 anchor=null attributes={} literal="ref" children=0
+Document scope=1:1..3:11 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:22 anchor=null attributes={} children=4
+│   ├── Text scope=1:1..1:5 anchor=null attributes={} literal="[foo " children=0
+│   ├── Link scope=1:6..1:16 anchor=null attributes={} dest=url("/uri") title=null children=1
+│   │   └── Text scope=1:7..1:9 anchor=null attributes={} literal="bar" children=0
+│   ├── Text scope=1:17..1:17 anchor=null attributes={} literal="]" children=0
+│   └── Link scope=1:18..1:22 anchor=null attributes={} dest=reference("ref") title=null children=1
+│       └── Text scope=1:19..1:21 anchor=null attributes={} literal="ref" children=0
+└── Reference scope=3:1..3:11 anchor=null attributes={} label="ref" dest=url("/uri") title=null children=0
 ````````````````````````````````
 
 
@@ -9542,16 +9575,17 @@ Document scope=1:1..3:11 anchor=null attributes={} children=1
 
 [ref]: /uri
 .
-Document scope=1:1..3:11 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:27 anchor=null attributes={} children=4
-    ├── Text scope=1:1..1:5 anchor=null attributes={} literal="[foo " children=0
-    ├── Emphasis scope=1:6..1:21 anchor=null attributes={} children=2
-    │   ├── Text scope=1:7..1:10 anchor=null attributes={} literal="bar " children=0
-    │   └── Link scope=1:11..1:20 anchor=null attributes={} dest=url("/uri") title=null children=1
-    │       └── Text scope=1:12..1:14 anchor=null attributes={} literal="baz" children=0
-    ├── Text scope=1:22..1:22 anchor=null attributes={} literal="]" children=0
-    └── Link scope=1:23..1:27 anchor=null attributes={} dest=url("/uri") title=null children=1
-        └── Text scope=1:24..1:26 anchor=null attributes={} literal="ref" children=0
+Document scope=1:1..3:11 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:27 anchor=null attributes={} children=4
+│   ├── Text scope=1:1..1:5 anchor=null attributes={} literal="[foo " children=0
+│   ├── Emphasis scope=1:6..1:21 anchor=null attributes={} children=2
+│   │   ├── Text scope=1:7..1:10 anchor=null attributes={} literal="bar " children=0
+│   │   └── Link scope=1:11..1:20 anchor=null attributes={} dest=reference("ref") title=null children=1
+│   │       └── Text scope=1:12..1:14 anchor=null attributes={} literal="baz" children=0
+│   ├── Text scope=1:22..1:22 anchor=null attributes={} literal="]" children=0
+│   └── Link scope=1:23..1:27 anchor=null attributes={} dest=reference("ref") title=null children=1
+│       └── Text scope=1:24..1:26 anchor=null attributes={} literal="ref" children=0
+└── Reference scope=3:1..3:11 anchor=null attributes={} label="ref" dest=url("/uri") title=null children=0
 ````````````````````````````````
 
 
@@ -9566,11 +9600,12 @@ emphasis grouping:
 
 [ref]: /uri
 .
-Document scope=1:1..3:11 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:12 anchor=null attributes={} children=2
-    ├── Text scope=1:1..1:1 anchor=null attributes={} literal="*" children=0
-    └── Link scope=1:2..1:12 anchor=null attributes={} dest=url("/uri") title=null children=1
-        └── Text scope=1:3..1:6 anchor=null attributes={} literal="foo*" children=0
+Document scope=1:1..3:11 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:12 anchor=null attributes={} children=2
+│   ├── Text scope=1:1..1:1 anchor=null attributes={} literal="*" children=0
+│   └── Link scope=1:2..1:12 anchor=null attributes={} dest=reference("ref") title=null children=1
+│       └── Text scope=1:3..1:6 anchor=null attributes={} literal="foo*" children=0
+└── Reference scope=3:1..3:11 anchor=null attributes={} label="ref" dest=url("/uri") title=null children=0
 ````````````````````````````````
 
 
@@ -9579,10 +9614,11 @@ Document scope=1:1..3:11 anchor=null attributes={} children=1
 
 [ref]: /uri
 .
-Document scope=1:1..3:11 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:15 anchor=null attributes={} children=1
-    └── Link scope=1:1..1:15 anchor=null attributes={} dest=url("/uri") title=null children=1
-        └── Text scope=1:2..1:9 anchor=null attributes={} literal="foo *bar" children=0
+Document scope=1:1..3:11 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:15 anchor=null attributes={} children=1
+│   └── Link scope=1:1..1:15 anchor=null attributes={} dest=reference("ref") title=null children=1
+│       └── Text scope=1:2..1:9 anchor=null attributes={} literal="foo *bar" children=0
+└── Reference scope=3:1..3:11 anchor=null attributes={} label="ref" dest=url("/uri") title=null children=0
 ````````````````````````````````
 
 
@@ -9594,10 +9630,11 @@ and autolinks over link grouping:
 
 [ref]: /uri
 .
-Document scope=1:1..3:11 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:24 anchor=null attributes={} children=2
-    ├── Text scope=1:1..1:5 anchor=null attributes={} literal="[foo " children=0
-    └── HTML scope=1:6..1:24 anchor=null attributes={} literal="<bar attr=\"][ref]\">" children=0
+Document scope=1:1..3:11 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:24 anchor=null attributes={} children=2
+│   ├── Text scope=1:1..1:5 anchor=null attributes={} literal="[foo " children=0
+│   └── HTML scope=1:6..1:24 anchor=null attributes={} literal="<bar attr=\"][ref]\">" children=0
+└── Reference scope=3:1..3:11 anchor=null attributes={} label="ref" dest=url("/uri") title=null children=0
 ````````````````````````````````
 
 
@@ -9606,10 +9643,11 @@ Document scope=1:1..3:11 anchor=null attributes={} children=1
 
 [ref]: /uri
 .
-Document scope=1:1..3:11 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:12 anchor=null attributes={} children=2
-    ├── Text scope=1:1..1:4 anchor=null attributes={} literal="[foo" children=0
-    └── Code scope=1:5..1:12 anchor=null attributes={} literal="][ref]" children=0
+Document scope=1:1..3:11 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:12 anchor=null attributes={} children=2
+│   ├── Text scope=1:1..1:4 anchor=null attributes={} literal="[foo" children=0
+│   └── Code scope=1:5..1:12 anchor=null attributes={} literal="][ref]" children=0
+└── Reference scope=3:1..3:11 anchor=null attributes={} label="ref" dest=url("/uri") title=null children=0
 ````````````````````````````````
 
 
@@ -9618,11 +9656,12 @@ Document scope=1:1..3:11 anchor=null attributes={} children=1
 
 [ref]: /uri
 .
-Document scope=1:1..3:11 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:39 anchor=null attributes={} children=2
-    ├── Text scope=1:1..1:4 anchor=null attributes={} literal="[foo" children=0
-    └── Link scope=1:5..1:39 anchor=null attributes={} dest=url("http://example.com/?search=][ref]") title=null children=1
-        └── Text scope=1:6..1:38 anchor=null attributes={} literal="http://example.com/?search=][ref]" children=0
+Document scope=1:1..3:11 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:39 anchor=null attributes={} children=2
+│   ├── Text scope=1:1..1:4 anchor=null attributes={} literal="[foo" children=0
+│   └── Link scope=1:5..1:39 anchor=null attributes={} dest=url("http://example.com/?search=][ref]") title=null children=1
+│       └── Text scope=1:6..1:38 anchor=null attributes={} literal="http://example.com/?search=][ref]" children=0
+└── Reference scope=3:1..3:11 anchor=null attributes={} label="ref" dest=url("/uri") title=null children=0
 ````````````````````````````````
 
 
@@ -9633,10 +9672,11 @@ Matching is case-insensitive:
 
 [bar]: /url "title"
 .
-Document scope=1:1..3:19 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=1
-    └── Link scope=1:1..1:10 anchor=null attributes={} dest=url("/url") title="title" children=1
-        └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+Document scope=1:1..3:19 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:10 anchor=null attributes={} children=1
+│   └── Link scope=1:1..1:10 anchor=null attributes={} dest=reference("bar") title=null children=1
+│       └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+└── Reference scope=3:1..3:19 anchor=null attributes={} label="bar" dest=url("/url") title="title" children=0
 ````````````````````````````````
 
 
@@ -9647,11 +9687,12 @@ Unicode case fold is used:
 
 [ТОЛПОЙ]: /url
 .
-Document scope=1:1..3:20 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:47 anchor=null attributes={} children=2
-    ├── Link scope=1:1..1:28 anchor=null attributes={} dest=url("/url") title=null children=1
-    │   └── Text scope=1:2..1:13 anchor=null attributes={} literal="Толпой" children=0
-    └── Text scope=1:29..1:47 anchor=null attributes={} literal=" is a Russian word." children=0
+Document scope=1:1..3:20 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:47 anchor=null attributes={} children=2
+│   ├── Link scope=1:1..1:28 anchor=null attributes={} dest=reference("толпой") title=null children=1
+│   │   └── Text scope=1:2..1:13 anchor=null attributes={} literal="Толпой" children=0
+│   └── Text scope=1:29..1:47 anchor=null attributes={} literal=" is a Russian word." children=0
+└── Reference scope=3:1..3:20 anchor=null attributes={} label="толпой" dest=url("/url") title=null children=0
 ````````````````````````````````
 
 
@@ -9664,9 +9705,10 @@ purposes of determining matching:
 
 [Baz][Foo bar]
 .
-Document scope=1:1..4:14 anchor=null attributes={} children=1
+Document scope=1:1..4:14 anchor=null attributes={} children=2
+├── Reference scope=1:1..2:12 anchor=null attributes={} label="foo bar" dest=url("/url") title=null children=0
 └── Paragraph scope=4:1..4:14 anchor=null attributes={} children=1
-    └── Link scope=4:1..4:14 anchor=null attributes={} dest=url("/url") title=null children=1
+    └── Link scope=4:1..4:14 anchor=null attributes={} dest=reference("foo bar") title=null children=1
         └── Text scope=4:2..4:4 anchor=null attributes={} literal="Baz" children=0
 ````````````````````````````````
 
@@ -9679,11 +9721,12 @@ No [whitespace] is allowed between the [link text] and the
 
 [bar]: /url "title"
 .
-Document scope=1:1..3:19 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:11 anchor=null attributes={} children=2
-    ├── Text scope=1:1..1:6 anchor=null attributes={} literal="[foo] " children=0
-    └── Link scope=1:7..1:11 anchor=null attributes={} dest=url("/url") title="title" children=1
-        └── Text scope=1:8..1:10 anchor=null attributes={} literal="bar" children=0
+Document scope=1:1..3:19 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:11 anchor=null attributes={} children=2
+│   ├── Text scope=1:1..1:6 anchor=null attributes={} literal="[foo] " children=0
+│   └── Link scope=1:7..1:11 anchor=null attributes={} dest=reference("bar") title=null children=1
+│       └── Text scope=1:8..1:10 anchor=null attributes={} literal="bar" children=0
+└── Reference scope=3:1..3:19 anchor=null attributes={} label="bar" dest=url("/url") title="title" children=0
 ````````````````````````````````
 
 
@@ -9693,12 +9736,13 @@ Document scope=1:1..3:19 anchor=null attributes={} children=1
 
 [bar]: /url "title"
 .
-Document scope=1:1..4:19 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..2:5 anchor=null attributes={} children=3
-    ├── Text scope=1:1..1:5 anchor=null attributes={} literal="[foo]" children=0
-    ├── SoftBreak scope=1:6..2:0 anchor=null attributes={} children=0
-    └── Link scope=2:1..2:5 anchor=null attributes={} dest=url("/url") title="title" children=1
-        └── Text scope=2:2..2:4 anchor=null attributes={} literal="bar" children=0
+Document scope=1:1..4:19 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..2:5 anchor=null attributes={} children=3
+│   ├── Text scope=1:1..1:5 anchor=null attributes={} literal="[foo]" children=0
+│   ├── SoftBreak scope=1:6..2:0 anchor=null attributes={} children=0
+│   └── Link scope=2:1..2:5 anchor=null attributes={} dest=reference("bar") title=null children=1
+│       └── Text scope=2:2..2:4 anchor=null attributes={} literal="bar" children=0
+└── Reference scope=4:1..4:19 anchor=null attributes={} label="bar" dest=url("/url") title="title" children=0
 ````````````````````````````````
 
 
@@ -9739,9 +9783,11 @@ the first is used:
 
 [bar][foo]
 .
-Document scope=1:1..5:10 anchor=null attributes={} children=1
+Document scope=1:1..5:10 anchor=null attributes={} children=3
+├── Reference scope=1:1..1:12 anchor=null attributes={} label="foo" dest=url("/url1") title=null children=0
+├── Reference scope=3:1..3:12 anchor=null attributes={} label="foo" dest=url("/url2") title=null children=0
 └── Paragraph scope=5:1..5:10 anchor=null attributes={} children=1
-    └── Link scope=5:1..5:10 anchor=null attributes={} dest=url("/url1") title=null children=1
+    └── Link scope=5:1..5:10 anchor=null attributes={} dest=reference("foo") title=null children=1
         └── Text scope=5:2..5:4 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
 
@@ -9755,9 +9801,10 @@ labels define equivalent inline content:
 
 [foo!]: /url
 .
-Document scope=1:1..3:12 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:12 anchor=null attributes={} children=1
-    └── Text scope=1:1..1:12 anchor=null attributes={} literal="[bar][foo!]" children=0
+Document scope=1:1..3:12 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:12 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:12 anchor=null attributes={} literal="[bar][foo!]" children=0
+└── Reference scope=3:1..3:12 anchor=null attributes={} label="foo!" dest=url("/url") title=null children=0
 ````````````````````````````````
 
 
@@ -9812,10 +9859,11 @@ Document scope=1:1..3:15 anchor=null attributes={} children=2
 
 [ref\[]: /uri
 .
-Document scope=1:1..3:13 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:12 anchor=null attributes={} children=1
-    └── Link scope=1:1..1:12 anchor=null attributes={} dest=url("/uri") title=null children=1
-        └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+Document scope=1:1..3:13 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:12 anchor=null attributes={} children=1
+│   └── Link scope=1:1..1:12 anchor=null attributes={} dest=reference("ref\\[") title=null children=1
+│       └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+└── Reference scope=3:1..3:13 anchor=null attributes={} label="ref\\[" dest=url("/uri") title=null children=0
 ````````````````````````````````
 
 
@@ -9826,9 +9874,10 @@ Note that in this example `]` is not backslash-escaped:
 
 [bar\\]
 .
-Document scope=1:1..3:7 anchor=null attributes={} children=1
+Document scope=1:1..3:7 anchor=null attributes={} children=2
+├── Reference scope=1:1..1:13 anchor=null attributes={} label="bar\\\\" dest=url("/uri") title=null children=0
 └── Paragraph scope=3:1..3:7 anchor=null attributes={} children=1
-    └── Link scope=3:1..3:7 anchor=null attributes={} dest=url("/uri") title=null children=1
+    └── Link scope=3:1..3:7 anchor=null attributes={} dest=reference("bar\\\\") title=null children=1
         └── Text scope=3:2..3:6 anchor=null attributes={} literal="bar\\" children=0
 ````````````````````````````````
 
@@ -9881,10 +9930,11 @@ provided by the matching reference link definition.  Thus,
 
 [foo]: /url "title"
 .
-Document scope=1:1..3:19 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:7 anchor=null attributes={} children=1
-    └── Link scope=1:1..1:7 anchor=null attributes={} dest=url("/url") title="title" children=1
-        └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+Document scope=1:1..3:19 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:7 anchor=null attributes={} children=1
+│   └── Link scope=1:1..1:7 anchor=null attributes={} dest=reference("foo") title=null children=1
+│       └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+└── Reference scope=3:1..3:19 anchor=null attributes={} label="foo" dest=url("/url") title="title" children=0
 ````````````````````````````````
 
 
@@ -9893,12 +9943,13 @@ Document scope=1:1..3:19 anchor=null attributes={} children=1
 
 [*foo* bar]: /url "title"
 .
-Document scope=1:1..3:25 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:13 anchor=null attributes={} children=1
-    └── Link scope=1:1..1:13 anchor=null attributes={} dest=url("/url") title="title" children=2
-        ├── Emphasis scope=1:2..1:6 anchor=null attributes={} children=1
-        │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
-        └── Text scope=1:7..1:10 anchor=null attributes={} literal=" bar" children=0
+Document scope=1:1..3:25 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:13 anchor=null attributes={} children=1
+│   └── Link scope=1:1..1:13 anchor=null attributes={} dest=reference("*foo* bar") title=null children=2
+│       ├── Emphasis scope=1:2..1:6 anchor=null attributes={} children=1
+│       │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
+│       └── Text scope=1:7..1:10 anchor=null attributes={} literal=" bar" children=0
+└── Reference scope=3:1..3:25 anchor=null attributes={} label="*foo* bar" dest=url("/url") title="title" children=0
 ````````````````````````````````
 
 
@@ -9909,10 +9960,11 @@ The link labels are case-insensitive:
 
 [foo]: /url "title"
 .
-Document scope=1:1..3:19 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:7 anchor=null attributes={} children=1
-    └── Link scope=1:1..1:7 anchor=null attributes={} dest=url("/url") title="title" children=1
-        └── Text scope=1:2..1:4 anchor=null attributes={} literal="Foo" children=0
+Document scope=1:1..3:19 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:7 anchor=null attributes={} children=1
+│   └── Link scope=1:1..1:7 anchor=null attributes={} dest=reference("foo") title=null children=1
+│       └── Text scope=1:2..1:4 anchor=null attributes={} literal="Foo" children=0
+└── Reference scope=3:1..3:19 anchor=null attributes={} label="foo" dest=url("/url") title="title" children=0
 ````````````````````````````````
 
 
@@ -9926,12 +9978,13 @@ allowed between the two sets of brackets:
 
 [foo]: /url "title"
 .
-Document scope=1:1..4:19 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..2:2 anchor=null attributes={} children=3
-    ├── Link scope=1:1..1:5 anchor=null attributes={} dest=url("/url") title="title" children=1
-    │   └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
-    ├── SoftBreak scope=1:7..2:0 anchor=null attributes={} children=0
-    └── Text scope=2:1..2:2 anchor=null attributes={} literal="[]" children=0
+Document scope=1:1..4:19 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..2:2 anchor=null attributes={} children=3
+│   ├── Link scope=1:1..1:5 anchor=null attributes={} dest=reference("foo") title=null children=1
+│   │   └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+│   ├── SoftBreak scope=1:7..2:0 anchor=null attributes={} children=0
+│   └── Text scope=2:1..2:2 anchor=null attributes={} literal="[]" children=0
+└── Reference scope=4:1..4:19 anchor=null attributes={} label="foo" dest=url("/url") title="title" children=0
 ````````````````````````````````
 
 
@@ -9949,10 +10002,11 @@ Thus, `[foo]` is equivalent to `[foo][]`.
 
 [foo]: /url "title"
 .
-Document scope=1:1..3:19 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
-    └── Link scope=1:1..1:5 anchor=null attributes={} dest=url("/url") title="title" children=1
-        └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+Document scope=1:1..3:19 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
+│   └── Link scope=1:1..1:5 anchor=null attributes={} dest=reference("foo") title=null children=1
+│       └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+└── Reference scope=3:1..3:19 anchor=null attributes={} label="foo" dest=url("/url") title="title" children=0
 ````````````````````````````````
 
 
@@ -9961,12 +10015,13 @@ Document scope=1:1..3:19 anchor=null attributes={} children=1
 
 [*foo* bar]: /url "title"
 .
-Document scope=1:1..3:25 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:11 anchor=null attributes={} children=1
-    └── Link scope=1:1..1:11 anchor=null attributes={} dest=url("/url") title="title" children=2
-        ├── Emphasis scope=1:2..1:6 anchor=null attributes={} children=1
-        │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
-        └── Text scope=1:7..1:10 anchor=null attributes={} literal=" bar" children=0
+Document scope=1:1..3:25 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:11 anchor=null attributes={} children=1
+│   └── Link scope=1:1..1:11 anchor=null attributes={} dest=reference("*foo* bar") title=null children=2
+│       ├── Emphasis scope=1:2..1:6 anchor=null attributes={} children=1
+│       │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
+│       └── Text scope=1:7..1:10 anchor=null attributes={} literal=" bar" children=0
+└── Reference scope=3:1..3:25 anchor=null attributes={} label="*foo* bar" dest=url("/url") title="title" children=0
 ````````````````````````````````
 
 
@@ -9975,9 +10030,10 @@ Document scope=1:1..3:25 anchor=null attributes={} children=1
 
 [*foo* bar]: /url "title"
 .
-Document scope=1:1..3:25 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:13 anchor=null attributes={} children=1
-    └── CrossLink scope=1:1..1:13 anchor=null attributes={} dest=cross(path="*foo* bar",anchor=null) label=null children=0
+Document scope=1:1..3:25 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:13 anchor=null attributes={} children=1
+│   └── CrossLink scope=1:1..1:13 anchor=null attributes={} dest=cross(path="*foo* bar",anchor=null) label=null children=0
+└── Reference scope=3:1..3:25 anchor=null attributes={} label="*foo* bar" dest=url("/url") title="title" children=0
 ````````````````````````````````
 
 
@@ -9986,11 +10042,12 @@ Document scope=1:1..3:25 anchor=null attributes={} children=1
 
 [foo]: /url
 .
-Document scope=1:1..3:11 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:11 anchor=null attributes={} children=2
-    ├── Text scope=1:1..1:6 anchor=null attributes={} literal="[[bar " children=0
-    └── Link scope=1:7..1:11 anchor=null attributes={} dest=url("/url") title=null children=1
-        └── Text scope=1:8..1:10 anchor=null attributes={} literal="foo" children=0
+Document scope=1:1..3:11 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:11 anchor=null attributes={} children=2
+│   ├── Text scope=1:1..1:6 anchor=null attributes={} literal="[[bar " children=0
+│   └── Link scope=1:7..1:11 anchor=null attributes={} dest=reference("foo") title=null children=1
+│       └── Text scope=1:8..1:10 anchor=null attributes={} literal="foo" children=0
+└── Reference scope=3:1..3:11 anchor=null attributes={} label="foo" dest=url("/url") title=null children=0
 ````````````````````````````````
 
 
@@ -10001,10 +10058,11 @@ The link labels are case-insensitive:
 
 [foo]: /url "title"
 .
-Document scope=1:1..3:19 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
-    └── Link scope=1:1..1:5 anchor=null attributes={} dest=url("/url") title="title" children=1
-        └── Text scope=1:2..1:4 anchor=null attributes={} literal="Foo" children=0
+Document scope=1:1..3:19 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
+│   └── Link scope=1:1..1:5 anchor=null attributes={} dest=reference("foo") title=null children=1
+│       └── Text scope=1:2..1:4 anchor=null attributes={} literal="Foo" children=0
+└── Reference scope=3:1..3:19 anchor=null attributes={} label="foo" dest=url("/url") title="title" children=0
 ````````````````````````````````
 
 
@@ -10015,11 +10073,12 @@ A space after the link text should be preserved:
 
 [foo]: /url
 .
-Document scope=1:1..3:11 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:9 anchor=null attributes={} children=2
-    ├── Link scope=1:1..1:5 anchor=null attributes={} dest=url("/url") title=null children=1
-    │   └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
-    └── Text scope=1:6..1:9 anchor=null attributes={} literal=" bar" children=0
+Document scope=1:1..3:11 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:9 anchor=null attributes={} children=2
+│   ├── Link scope=1:1..1:5 anchor=null attributes={} dest=reference("foo") title=null children=1
+│   │   └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+│   └── Text scope=1:6..1:9 anchor=null attributes={} literal=" bar" children=0
+└── Reference scope=3:1..3:11 anchor=null attributes={} label="foo" dest=url("/url") title=null children=0
 ````````````````````````````````
 
 
@@ -10031,9 +10090,10 @@ opening bracket to avoid links:
 
 [foo]: /url "title"
 .
-Document scope=1:1..3:19 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:6 anchor=null attributes={} children=1
-    └── Text scope=1:1..1:6 anchor=null attributes={} literal="[foo]" children=0
+Document scope=1:1..3:19 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:6 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:6 anchor=null attributes={} literal="[foo]" children=0
+└── Reference scope=3:1..3:19 anchor=null attributes={} label="foo" dest=url("/url") title="title" children=0
 ````````````````````````````````
 
 
@@ -10045,10 +10105,11 @@ following closing bracket:
 
 *[foo*]
 .
-Document scope=1:1..3:7 anchor=null attributes={} children=1
+Document scope=1:1..3:7 anchor=null attributes={} children=2
+├── Reference scope=1:1..1:12 anchor=null attributes={} label="foo*" dest=url("/url") title=null children=0
 └── Paragraph scope=3:1..3:7 anchor=null attributes={} children=2
     ├── Text scope=3:1..3:1 anchor=null attributes={} literal="*" children=0
-    └── Link scope=3:2..3:7 anchor=null attributes={} dest=url("/url") title=null children=1
+    └── Link scope=3:2..3:7 anchor=null attributes={} dest=reference("foo*") title=null children=1
         └── Text scope=3:3..3:6 anchor=null attributes={} literal="foo*" children=0
 ````````````````````````````````
 
@@ -10062,10 +10123,12 @@ references:
 [foo]: /url1
 [bar]: /url2
 .
-Document scope=1:1..4:12 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:10 anchor=null attributes={} children=1
-    └── Link scope=1:1..1:10 anchor=null attributes={} dest=url("/url2") title=null children=1
-        └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+Document scope=1:1..4:12 anchor=null attributes={} children=3
+├── Paragraph scope=1:1..1:10 anchor=null attributes={} children=1
+│   └── Link scope=1:1..1:10 anchor=null attributes={} dest=reference("bar") title=null children=1
+│       └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+├── Reference scope=3:1..3:12 anchor=null attributes={} label="foo" dest=url("/url1") title=null children=0
+└── Reference scope=4:1..4:12 anchor=null attributes={} label="bar" dest=url("/url2") title=null children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -10073,10 +10136,11 @@ Document scope=1:1..4:12 anchor=null attributes={} children=1
 
 [foo]: /url1
 .
-Document scope=1:1..3:12 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:7 anchor=null attributes={} children=1
-    └── Link scope=1:1..1:7 anchor=null attributes={} dest=url("/url1") title=null children=1
-        └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+Document scope=1:1..3:12 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:7 anchor=null attributes={} children=1
+│   └── Link scope=1:1..1:7 anchor=null attributes={} dest=reference("foo") title=null children=1
+│       └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+└── Reference scope=3:1..3:12 anchor=null attributes={} label="foo" dest=url("/url1") title=null children=0
 ````````````````````````````````
 
 Inline links also take precedence:
@@ -10086,10 +10150,11 @@ Inline links also take precedence:
 
 [foo]: /url1
 .
-Document scope=1:1..3:12 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:7 anchor=null attributes={} children=1
-    └── Link scope=1:1..1:7 anchor=null attributes={} dest=url("") title=null children=1
-        └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+Document scope=1:1..3:12 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:7 anchor=null attributes={} children=1
+│   └── Link scope=1:1..1:7 anchor=null attributes={} dest=url("") title=null children=1
+│       └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+└── Reference scope=3:1..3:12 anchor=null attributes={} label="foo" dest=url("/url1") title=null children=0
 ````````````````````````````````
 
 ```````````````````````````````` example
@@ -10097,11 +10162,12 @@ Document scope=1:1..3:12 anchor=null attributes={} children=1
 
 [foo]: /url1
 .
-Document scope=1:1..3:12 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:17 anchor=null attributes={} children=2
-    ├── Link scope=1:1..1:5 anchor=null attributes={} dest=url("/url1") title=null children=1
-    │   └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
-    └── Text scope=1:6..1:17 anchor=null attributes={} literal="(not a link)" children=0
+Document scope=1:1..3:12 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:17 anchor=null attributes={} children=2
+│   ├── Link scope=1:1..1:5 anchor=null attributes={} dest=reference("foo") title=null children=1
+│   │   └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+│   └── Text scope=1:6..1:17 anchor=null attributes={} literal="(not a link)" children=0
+└── Reference scope=3:1..3:12 anchor=null attributes={} label="foo" dest=url("/url1") title=null children=0
 ````````````````````````````````
 
 In the following case `[bar][baz]` is parsed as a reference,
@@ -10112,11 +10178,12 @@ In the following case `[bar][baz]` is parsed as a reference,
 
 [baz]: /url
 .
-Document scope=1:1..3:11 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:15 anchor=null attributes={} children=2
-    ├── Text scope=1:1..1:5 anchor=null attributes={} literal="[foo]" children=0
-    └── Link scope=1:6..1:15 anchor=null attributes={} dest=url("/url") title=null children=1
-        └── Text scope=1:7..1:9 anchor=null attributes={} literal="bar" children=0
+Document scope=1:1..3:11 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:15 anchor=null attributes={} children=2
+│   ├── Text scope=1:1..1:5 anchor=null attributes={} literal="[foo]" children=0
+│   └── Link scope=1:6..1:15 anchor=null attributes={} dest=reference("baz") title=null children=1
+│       └── Text scope=1:7..1:9 anchor=null attributes={} literal="bar" children=0
+└── Reference scope=3:1..3:11 anchor=null attributes={} label="baz" dest=url("/url") title=null children=0
 ````````````````````````````````
 
 
@@ -10129,12 +10196,14 @@ Here, though, `[foo][bar]` is parsed as a reference, since
 [baz]: /url1
 [bar]: /url2
 .
-Document scope=1:1..4:12 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:15 anchor=null attributes={} children=2
-    ├── Link scope=1:1..1:10 anchor=null attributes={} dest=url("/url2") title=null children=1
-    │   └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
-    └── Link scope=1:11..1:15 anchor=null attributes={} dest=url("/url1") title=null children=1
-        └── Text scope=1:12..1:14 anchor=null attributes={} literal="baz" children=0
+Document scope=1:1..4:12 anchor=null attributes={} children=3
+├── Paragraph scope=1:1..1:15 anchor=null attributes={} children=2
+│   ├── Link scope=1:1..1:10 anchor=null attributes={} dest=reference("bar") title=null children=1
+│   │   └── Text scope=1:2..1:4 anchor=null attributes={} literal="foo" children=0
+│   └── Link scope=1:11..1:15 anchor=null attributes={} dest=reference("baz") title=null children=1
+│       └── Text scope=1:12..1:14 anchor=null attributes={} literal="baz" children=0
+├── Reference scope=3:1..3:12 anchor=null attributes={} label="baz" dest=url("/url1") title=null children=0
+└── Reference scope=4:1..4:12 anchor=null attributes={} label="bar" dest=url("/url2") title=null children=0
 ````````````````````````````````
 
 
@@ -10147,11 +10216,13 @@ is followed by a link label (even though `[bar]` is not defined):
 [baz]: /url1
 [foo]: /url2
 .
-Document scope=1:1..4:12 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:15 anchor=null attributes={} children=2
-    ├── Text scope=1:1..1:5 anchor=null attributes={} literal="[foo]" children=0
-    └── Link scope=1:6..1:15 anchor=null attributes={} dest=url("/url1") title=null children=1
-        └── Text scope=1:7..1:9 anchor=null attributes={} literal="bar" children=0
+Document scope=1:1..4:12 anchor=null attributes={} children=3
+├── Paragraph scope=1:1..1:15 anchor=null attributes={} children=2
+│   ├── Text scope=1:1..1:5 anchor=null attributes={} literal="[foo]" children=0
+│   └── Link scope=1:6..1:15 anchor=null attributes={} dest=reference("baz") title=null children=1
+│       └── Text scope=1:7..1:9 anchor=null attributes={} literal="bar" children=0
+├── Reference scope=3:1..3:12 anchor=null attributes={} label="baz" dest=url("/url1") title=null children=0
+└── Reference scope=4:1..4:12 anchor=null attributes={} label="foo" dest=url("/url2") title=null children=0
 ````````````````````````````````
 
 
@@ -10183,12 +10254,13 @@ Document scope=1:1..1:20 anchor=null attributes={} children=1
 
 [foo *bar*]: train.jpg "train & tracks"
 .
-Document scope=1:1..3:39 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:12 anchor=null attributes={} children=1
-    └── Embedded scope=1:1..1:12 anchor=null attributes={} dest=url("train.jpg") title="train & tracks" dimensions=null children=2
-        ├── Text scope=1:3..1:6 anchor=null attributes={} literal="foo " children=0
-        └── Emphasis scope=1:7..1:11 anchor=null attributes={} children=1
-            └── Text scope=1:8..1:10 anchor=null attributes={} literal="bar" children=0
+Document scope=1:1..3:39 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:12 anchor=null attributes={} children=1
+│   └── Embedded scope=1:1..1:12 anchor=null attributes={} dest=reference("foo *bar*") title=null dimensions=null children=2
+│       ├── Text scope=1:3..1:6 anchor=null attributes={} literal="foo " children=0
+│       └── Emphasis scope=1:7..1:11 anchor=null attributes={} children=1
+│           └── Text scope=1:8..1:10 anchor=null attributes={} literal="bar" children=0
+└── Reference scope=3:1..3:39 anchor=null attributes={} label="foo *bar*" dest=url("train.jpg") title="train & tracks" children=0
 ````````````````````````````````
 
 
@@ -10228,12 +10300,13 @@ content is rendered, without formatting.
 
 [foo *bar*]: train.jpg "train & tracks"
 .
-Document scope=1:1..3:39 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:14 anchor=null attributes={} children=1
-    └── Embedded scope=1:1..1:14 anchor=null attributes={} dest=url("train.jpg") title="train & tracks" dimensions=null children=2
-        ├── Text scope=1:3..1:6 anchor=null attributes={} literal="foo " children=0
-        └── Emphasis scope=1:7..1:11 anchor=null attributes={} children=1
-            └── Text scope=1:8..1:10 anchor=null attributes={} literal="bar" children=0
+Document scope=1:1..3:39 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:14 anchor=null attributes={} children=1
+│   └── Embedded scope=1:1..1:14 anchor=null attributes={} dest=reference("foo *bar*") title=null dimensions=null children=2
+│       ├── Text scope=1:3..1:6 anchor=null attributes={} literal="foo " children=0
+│       └── Emphasis scope=1:7..1:11 anchor=null attributes={} children=1
+│           └── Text scope=1:8..1:10 anchor=null attributes={} literal="bar" children=0
+└── Reference scope=3:1..3:39 anchor=null attributes={} label="foo *bar*" dest=url("train.jpg") title="train & tracks" children=0
 ````````````````````````````````
 
 
@@ -10242,12 +10315,13 @@ Document scope=1:1..3:39 anchor=null attributes={} children=1
 
 [FOOBAR]: train.jpg "train & tracks"
 .
-Document scope=1:1..3:36 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:20 anchor=null attributes={} children=1
-    └── Embedded scope=1:1..1:20 anchor=null attributes={} dest=url("train.jpg") title="train & tracks" dimensions=null children=2
-        ├── Text scope=1:3..1:6 anchor=null attributes={} literal="foo " children=0
-        └── Emphasis scope=1:7..1:11 anchor=null attributes={} children=1
-            └── Text scope=1:8..1:10 anchor=null attributes={} literal="bar" children=0
+Document scope=1:1..3:36 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:20 anchor=null attributes={} children=1
+│   └── Embedded scope=1:1..1:20 anchor=null attributes={} dest=reference("foobar") title=null dimensions=null children=2
+│       ├── Text scope=1:3..1:6 anchor=null attributes={} literal="foo " children=0
+│       └── Emphasis scope=1:7..1:11 anchor=null attributes={} children=1
+│           └── Text scope=1:8..1:10 anchor=null attributes={} literal="bar" children=0
+└── Reference scope=3:1..3:36 anchor=null attributes={} label="foobar" dest=url("train.jpg") title="train & tracks" children=0
 ````````````````````````````````
 
 
@@ -10298,10 +10372,11 @@ Reference-style:
 
 [bar]: /url
 .
-Document scope=1:1..3:11 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:11 anchor=null attributes={} children=1
-    └── Embedded scope=1:1..1:11 anchor=null attributes={} dest=url("/url") title=null dimensions=null children=1
-        └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
+Document scope=1:1..3:11 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:11 anchor=null attributes={} children=1
+│   └── Embedded scope=1:1..1:11 anchor=null attributes={} dest=reference("bar") title=null dimensions=null children=1
+│       └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
+└── Reference scope=3:1..3:11 anchor=null attributes={} label="bar" dest=url("/url") title=null children=0
 ````````````````````````````````
 
 
@@ -10310,10 +10385,11 @@ Document scope=1:1..3:11 anchor=null attributes={} children=1
 
 [BAR]: /url
 .
-Document scope=1:1..3:11 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:11 anchor=null attributes={} children=1
-    └── Embedded scope=1:1..1:11 anchor=null attributes={} dest=url("/url") title=null dimensions=null children=1
-        └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
+Document scope=1:1..3:11 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:11 anchor=null attributes={} children=1
+│   └── Embedded scope=1:1..1:11 anchor=null attributes={} dest=reference("bar") title=null dimensions=null children=1
+│       └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
+└── Reference scope=3:1..3:11 anchor=null attributes={} label="bar" dest=url("/url") title=null children=0
 ````````````````````````````````
 
 
@@ -10324,10 +10400,11 @@ Collapsed:
 
 [foo]: /url "title"
 .
-Document scope=1:1..3:19 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:8 anchor=null attributes={} children=1
-    └── Embedded scope=1:1..1:8 anchor=null attributes={} dest=url("/url") title="title" dimensions=null children=1
-        └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
+Document scope=1:1..3:19 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:8 anchor=null attributes={} children=1
+│   └── Embedded scope=1:1..1:8 anchor=null attributes={} dest=reference("foo") title=null dimensions=null children=1
+│       └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
+└── Reference scope=3:1..3:19 anchor=null attributes={} label="foo" dest=url("/url") title="title" children=0
 ````````````````````````````````
 
 
@@ -10336,12 +10413,13 @@ Document scope=1:1..3:19 anchor=null attributes={} children=1
 
 [*foo* bar]: /url "title"
 .
-Document scope=1:1..3:25 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:14 anchor=null attributes={} children=1
-    └── Embedded scope=1:1..1:14 anchor=null attributes={} dest=url("/url") title="title" dimensions=null children=2
-        ├── Emphasis scope=1:3..1:7 anchor=null attributes={} children=1
-        │   └── Text scope=1:4..1:6 anchor=null attributes={} literal="foo" children=0
-        └── Text scope=1:8..1:11 anchor=null attributes={} literal=" bar" children=0
+Document scope=1:1..3:25 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:14 anchor=null attributes={} children=1
+│   └── Embedded scope=1:1..1:14 anchor=null attributes={} dest=reference("*foo* bar") title=null dimensions=null children=2
+│       ├── Emphasis scope=1:3..1:7 anchor=null attributes={} children=1
+│       │   └── Text scope=1:4..1:6 anchor=null attributes={} literal="foo" children=0
+│       └── Text scope=1:8..1:11 anchor=null attributes={} literal=" bar" children=0
+└── Reference scope=3:1..3:25 anchor=null attributes={} label="*foo* bar" dest=url("/url") title="title" children=0
 ````````````````````````````````
 
 
@@ -10352,10 +10430,11 @@ The labels are case-insensitive:
 
 [foo]: /url "title"
 .
-Document scope=1:1..3:19 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:8 anchor=null attributes={} children=1
-    └── Embedded scope=1:1..1:8 anchor=null attributes={} dest=url("/url") title="title" dimensions=null children=1
-        └── Text scope=1:3..1:5 anchor=null attributes={} literal="Foo" children=0
+Document scope=1:1..3:19 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:8 anchor=null attributes={} children=1
+│   └── Embedded scope=1:1..1:8 anchor=null attributes={} dest=reference("foo") title=null dimensions=null children=1
+│       └── Text scope=1:3..1:5 anchor=null attributes={} literal="Foo" children=0
+└── Reference scope=3:1..3:19 anchor=null attributes={} label="foo" dest=url("/url") title="title" children=0
 ````````````````````````````````
 
 
@@ -10368,12 +10447,13 @@ between the two sets of brackets:
 
 [foo]: /url "title"
 .
-Document scope=1:1..4:19 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..2:2 anchor=null attributes={} children=3
-    ├── Embedded scope=1:1..1:6 anchor=null attributes={} dest=url("/url") title="title" dimensions=null children=1
-    │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
-    ├── SoftBreak scope=1:8..2:0 anchor=null attributes={} children=0
-    └── Text scope=2:1..2:2 anchor=null attributes={} literal="[]" children=0
+Document scope=1:1..4:19 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..2:2 anchor=null attributes={} children=3
+│   ├── Embedded scope=1:1..1:6 anchor=null attributes={} dest=reference("foo") title=null dimensions=null children=1
+│   │   └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
+│   ├── SoftBreak scope=1:8..2:0 anchor=null attributes={} children=0
+│   └── Text scope=2:1..2:2 anchor=null attributes={} literal="[]" children=0
+└── Reference scope=4:1..4:19 anchor=null attributes={} label="foo" dest=url("/url") title="title" children=0
 ````````````````````````````````
 
 
@@ -10384,10 +10464,11 @@ Shortcut:
 
 [foo]: /url "title"
 .
-Document scope=1:1..3:19 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:6 anchor=null attributes={} children=1
-    └── Embedded scope=1:1..1:6 anchor=null attributes={} dest=url("/url") title="title" dimensions=null children=1
-        └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
+Document scope=1:1..3:19 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:6 anchor=null attributes={} children=1
+│   └── Embedded scope=1:1..1:6 anchor=null attributes={} dest=reference("foo") title=null dimensions=null children=1
+│       └── Text scope=1:3..1:5 anchor=null attributes={} literal="foo" children=0
+└── Reference scope=3:1..3:19 anchor=null attributes={} label="foo" dest=url("/url") title="title" children=0
 ````````````````````````````````
 
 
@@ -10396,12 +10477,13 @@ Document scope=1:1..3:19 anchor=null attributes={} children=1
 
 [*foo* bar]: /url "title"
 .
-Document scope=1:1..3:25 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:12 anchor=null attributes={} children=1
-    └── Embedded scope=1:1..1:12 anchor=null attributes={} dest=url("/url") title="title" dimensions=null children=2
-        ├── Emphasis scope=1:3..1:7 anchor=null attributes={} children=1
-        │   └── Text scope=1:4..1:6 anchor=null attributes={} literal="foo" children=0
-        └── Text scope=1:8..1:11 anchor=null attributes={} literal=" bar" children=0
+Document scope=1:1..3:25 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:12 anchor=null attributes={} children=1
+│   └── Embedded scope=1:1..1:12 anchor=null attributes={} dest=reference("*foo* bar") title=null dimensions=null children=2
+│       ├── Emphasis scope=1:3..1:7 anchor=null attributes={} children=1
+│       │   └── Text scope=1:4..1:6 anchor=null attributes={} literal="foo" children=0
+│       └── Text scope=1:8..1:11 anchor=null attributes={} literal=" bar" children=0
+└── Reference scope=3:1..3:25 anchor=null attributes={} label="*foo* bar" dest=url("/url") title="title" children=0
 ````````````````````````````````
 
 
@@ -10428,10 +10510,11 @@ The link labels are case-insensitive:
 
 [foo]: /url "title"
 .
-Document scope=1:1..3:19 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:6 anchor=null attributes={} children=1
-    └── Embedded scope=1:1..1:6 anchor=null attributes={} dest=url("/url") title="title" dimensions=null children=1
-        └── Text scope=1:3..1:5 anchor=null attributes={} literal="Foo" children=0
+Document scope=1:1..3:19 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:6 anchor=null attributes={} children=1
+│   └── Embedded scope=1:1..1:6 anchor=null attributes={} dest=reference("foo") title=null dimensions=null children=1
+│       └── Text scope=1:3..1:5 anchor=null attributes={} literal="Foo" children=0
+└── Reference scope=3:1..3:19 anchor=null attributes={} label="foo" dest=url("/url") title="title" children=0
 ````````````````````````````````
 
 
@@ -10443,9 +10526,10 @@ backslash-escape the opening `[`:
 
 [foo]: /url "title"
 .
-Document scope=1:1..3:19 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:7 anchor=null attributes={} children=1
-    └── Text scope=1:1..1:7 anchor=null attributes={} literal="![foo]" children=0
+Document scope=1:1..3:19 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:7 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:7 anchor=null attributes={} literal="![foo]" children=0
+└── Reference scope=3:1..3:19 anchor=null attributes={} label="foo" dest=url("/url") title="title" children=0
 ````````````````````````````````
 
 
@@ -10457,11 +10541,12 @@ If you want a link after a literal `!`, backslash-escape the
 
 [foo]: /url "title"
 .
-Document scope=1:1..3:19 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:7 anchor=null attributes={} children=2
-    ├── Text scope=1:1..1:2 anchor=null attributes={} literal="!" children=0
-    └── Link scope=1:3..1:7 anchor=null attributes={} dest=url("/url") title="title" children=1
-        └── Text scope=1:4..1:6 anchor=null attributes={} literal="foo" children=0
+Document scope=1:1..3:19 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:7 anchor=null attributes={} children=2
+│   ├── Text scope=1:1..1:2 anchor=null attributes={} literal="!" children=0
+│   └── Link scope=1:3..1:7 anchor=null attributes={} dest=reference("foo") title=null children=1
+│       └── Text scope=1:4..1:6 anchor=null attributes={} literal="foo" children=0
+└── Reference scope=3:1..3:19 anchor=null attributes={} label="foo" dest=url("/url") title="title" children=0
 ````````````````````````````````
 
 

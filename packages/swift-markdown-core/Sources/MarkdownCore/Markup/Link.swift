@@ -3,8 +3,9 @@ import MarkdownCoreC
 /// A link — `[text](destination)`, any of the three reference forms, or an
 /// autolink.
 ///
-/// A reference occurrence is the link its definition names: it answers the
-/// definition's destination and title and keeps its own extent.
+/// A reference occurrence names its definition by label: it answers the
+/// ``Destination/reference(label:)`` branch, no title, and its own extent,
+/// anchor and attributes. The ``Reference`` it names states the rest.
 public struct Link: Markup {
     let record: LinkRecord
 
@@ -12,6 +13,10 @@ public struct Link: Markup {
     public var id: MarkupID { record.id }
     /// Where it is, brackets and parentheses included. See ``Extent``.
     public var extent: Extent { record.extent }
+    /// The parts of its range that are its own, one per line. See ``Piece``.
+    public var pieces: [Piece] { record.pieces }
+    /// Where its first relation's content was read from. See ``Run``.
+    public var runs: [Run] { record.runs }
     /// The explicit anchor, absent when none was attached.
     public var anchor: String? { record.anchor }
     /// Ordered classes and records, including duplicates.
@@ -20,9 +25,10 @@ public struct Link: Markup {
     public var content: MarkupCollection<any Markup> { record.collection(record.children.indices) }
     /// Required: `[a]()` and `[a](<>)` wrote a destination and wrote nothing
     /// in it, so they answer `.url("")`; a reference occurrence answers the
-    /// destination its definition stated.
+    /// label it names.
     public var dest: Destination { record.dest }
     /// Optional: `[a](/u)` wrote no title and `[a](/u "")` wrote an empty one.
+    /// A reference occurrence writes none.
     public var title: String? { record.title }
 }
 
@@ -45,16 +51,11 @@ final class LinkRecord: MarkupRecord, @unchecked Sendable {
 }
 
 extension LinkRecord {
-    convenience init(
-        from node: OpaquePointer,
-        content: [MarkupRecord],
-        resources: inout [Int: SharedResource]
-    ) {
-        let resource = SharedResource.shared(by: node, in: &resources)
+    convenience init(from node: OpaquePointer, content: [MarkupRecord]) {
         self.init(
-            resource.fields(of: node),
-            dest: resource.dest,
-            title: resource.title,
+            InheritedFields(from: node),
+            dest: Destination(from: node),
+            title: answer(markdown_core_optional_string()) { markdown_core_node_title(node, $0) }.string,
             content: content
         )
     }

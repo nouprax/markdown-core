@@ -7,21 +7,9 @@
 extern "C" {
 #endif
 
-struct markdown_core_resource;
-struct markdown_core_slab_pool;
-
-/* A record is a normalized LABEL and, for a link reference definition, the
- * RESOURCE the definition stated -- destination and title -- owned once, here,
- * and shared by every occurrence that resolves to it (M2). It used to carry a
- * `size`, which was the number of bytes resolving against it copied into a
- * node -- the quantity D9's expansion budget charged. A reference that shares
- * its definition's resource copies nothing, so there is nothing to charge and
- * no field to carry it. A footnote definition's record has no resource. */
+/* A record is a normalized LABEL a definition or a heading declares. */
 struct markdown_core_map_record {
     struct markdown_core_map_record *next;
-    struct markdown_core_resource *resource;
-    uint64_t source_key;
-    bool implicit;
     /* The normalized label and its length; the bytes are NUL-terminated. */
     bufsize_t label_len;
     unsigned char label[];
@@ -83,10 +71,8 @@ markdown_core_map *markdown_core_map_new(void);
 /* `size` bytes of storage aligned for any record, owned by the map, or NULL
  * when it cannot be allocated. */
 void *markdown_core_map_carve(markdown_core_map *map, size_t size);
-/* Frees the map, its holds on the resources its records keep going back to
- * `resources` (a pool's resource slabs, node.h), or dropping their slab holds
- * when that is NULL. */
-void markdown_core_map_free(struct markdown_core_slab_pool *resources, markdown_core_map *map);
+/* Frees the map and its records. */
+void markdown_core_map_free(markdown_core_map *map);
 markdown_core_map_record *markdown_core_map_lookup(markdown_core_map *map, markdown_core_chunk *label);
 
 #ifdef __cplusplus

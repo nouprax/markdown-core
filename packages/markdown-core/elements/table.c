@@ -11,12 +11,8 @@
 
 #include "strikethrough.h"
 #include "table.h"
-#include "paragraph.h"
+#include "block_internal.h"
 #include "markdown-core-elements.h"
-
-/* The elements whose state this element reads, as `self->peers` holds them. */
-enum { TABLE_PARAGRAPH };
-static const markdown_core_element *const TABLE_PEERS[] = {[TABLE_PARAGRAPH] = &MARKDOWN_CORE_ELEMENT_PARAGRAPH, NULL};
 
 // Limit to prevent a malicious input from causing a denial of service.
 #define MAX_AUTOCOMPLETED_CELLS 0x80000
@@ -207,8 +203,7 @@ static void S_place_content_span(markdown_core_parser *parser, markdown_core_nod
     }
 }
 
-static void try_inserting_table_header_paragraph(const markdown_core_element_instance *paragraph_element,
-                                                 markdown_core_parser *parser, markdown_core_node *parent_container,
+static void try_inserting_table_header_paragraph(markdown_core_parser *parser, markdown_core_node *parent_container,
                                                  unsigned char *parent_string, int paragraph_offset) {
     markdown_core_node *paragraph;
     bufsize_t first = 0;
@@ -271,8 +266,9 @@ static void try_inserting_table_header_paragraph(const markdown_core_element_ins
     markdown_core_node_attach_validated(parent_container->parent, paragraph, parent_container);
 
     /* A table split completes this paragraph just as a later block start
-     * would: reference definitions and anchor attachment share finalization. */
-    markdown_core_paragraph_finalize(paragraph_element, parser, paragraph);
+     * would: reference definitions, anchor attachment and pieces share
+     * finalization. */
+    markdown_core_block_settle(parser, paragraph);
 }
 
 /* Return NULL when the syntax does not match or the parent rejects the table
@@ -328,8 +324,8 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
     }
 
     if (header_row.paragraph_offset) {
-        try_inserting_table_header_paragraph(self->peers[TABLE_PARAGRAPH], parser, parent_container,
-                                             (unsigned char *)parent_string, header_row.paragraph_offset);
+        try_inserting_table_header_paragraph(parser, parent_container, (unsigned char *)parent_string,
+                                             header_row.paragraph_offset);
         /* The table starts where its HEADER ROW was written, not where the
          * paragraph it was split out of did. Taken before the row and cells
          * below read start_column, because they are placed against it. */
@@ -2358,6 +2354,38 @@ static markdown_core_node *table_child(markdown_core_parser *parser, markdown_co
     return node;
 }
 
+/* A cell of a grid or multiline table lies in its columns on each of its
+ * lines: one piece per line, from its left column to its right one or the
+ * line's end. */
+static void table_cell_pieces(table_source *source, markdown_core_node *node, const table_source_cell *cell) {
+    markdown_core_parser *parser = source->parser;
+    if (cell->last <= cell->first) {
+        return;
+    }
+    uint32_t count = (uint32_t)(cell->last - cell->first + 1);
+    markdown_core_pieces *pieces = markdown_core_node_pool_bytes(
+        parser->pool, sizeof(*pieces) + (size_t)count * sizeof(markdown_core_piece_where));
+    if (!pieces) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return;
+    }
+    pieces->count = count;
+    for (uint32_t i = 0; i < count; i++) {
+        const table_source_line *line = &source->lines[cell->first + i];
+        int right = cell->right < line->columns ? cell->right : line->columns;
+        int left = cell->left < right ? cell->left : right;
+        bufsize_t start = left < right
+                              ? markdown_core_parser_source_offset(parser, line->line, table_byte(line, left) + 1)
+                              : markdown_core_parser_source_end(parser, line->line, table_byte(line, left));
+        bufsize_t end = markdown_core_parser_source_end(parser, line->line, table_byte(line, right));
+        pieces->items[i].place = (markdown_core_place){(uint32_t)start, (uint32_t)end};
+    }
+    if (node->pieces) {
+        markdown_core_node_pool_bytes_free(parser->pool, node->pieces);
+    }
+    node->pieces = pieces;
+}
+
 static markdown_core_node *table_build(table_source *source, markdown_core_node *parent, table_candidate *candidate) {
     markdown_core_parser *parser = source->parser;
     table_source_line *first = &source->lines[candidate->first], *last = &source->lines[candidate->last];
@@ -2411,6 +2439,7 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
             cell_node->as.table_cell->rowspan = cell->rowspan;
             cell_node->as.table_cell->colspan = cell->colspan;
             if (!candidate->pipe) {
+                table_cell_pieces(source, cell_node, cell);
                 table_fill_cell(source, cell_node, cell, candidate->block_content, candidate->padding_limit);
             }
         }
@@ -2421,13 +2450,16 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
     return node;
 }
 
-static markdown_core_node *table_caption_build(table_source *source, size_t last, int content) {
+static markdown_core_node *table_caption_build(table_source *source, const markdown_core_node *container, size_t last,
+                                               int content) {
     table_source_line *first = &source->lines[0], *end = &source->lines[last];
     markdown_core_node *node = table_child(source->parser, NULL, MARKDOWN_CORE_NODE_TABLE_CAPTION, first->line,
                                            first->first + 1, end->line, end->length);
     if (!node) {
         return NULL;
     }
+    int from = first->line;
+    markdown_core_parser_place_pieces(source->parser, node, container, &from);
     for (size_t i = 0; i <= last && !source->parser->error; i++) {
         if (!table_source_columns(source, i)) {
             break;
@@ -2565,7 +2597,7 @@ static markdown_core_node *table_try_open(table_workspace *workspace, markdown_c
     if (trailing) {
         result = preceding;
         table_candidate_reset(candidate);
-        ((markdown_core_table *)result->opaque)->caption = table_caption_build(&source, caption_last, caption);
+        ((markdown_core_table *)result->opaque)->caption = table_caption_build(&source, parent, caption_last, caption);
         result->where.place.end = (uint32_t)markdown_core_parser_source_end(parser, source.lines[caption_last].line,
                                                                             source.lines[caption_last].length);
         parser->claimed_cursor = source.lines[caption_last].after;
@@ -2574,7 +2606,8 @@ static markdown_core_node *table_try_open(table_workspace *workspace, markdown_c
     } else {
         result = table_build(&source, parent, candidate);
         if (result && result->opaque && caption >= 0) {
-            ((markdown_core_table *)result->opaque)->caption = table_caption_build(&source, caption_last, caption);
+            ((markdown_core_table *)result->opaque)->caption =
+                table_caption_build(&source, parent, caption_last, caption);
             result->where.place.start =
                 (uint32_t)markdown_core_parser_source_offset(parser, source.lines[0].line, source.lines[0].first + 1);
         }
@@ -2631,7 +2664,6 @@ static void dispose_parser(const markdown_core_element_instance *self, markdown_
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
-    .peers = TABLE_PEERS,
     .dispose_parser = dispose_parser,
     .state_size = sizeof(table_workspace),
 

@@ -82,7 +82,7 @@ struct markdown_core_inline_state {
     unsigned char *run_state;
     /* The owning parser's sealed dialect, which the scan reads its byte
      * tables and delimiter owners from. NULL with no parser: that state is a
-     * reference definition's cursor (markdown_core_parse_reference_inline),
+     * reference definition's cursor (link.c, S_reference_definition),
      * which reads no table, as it pushes no delimiter. */
     const markdown_core_dialect *dialect;
     /* Sticky allocation-failure flag, copied to the parser after the inline
@@ -214,7 +214,7 @@ delimiter *markdown_core_inline_push_delimiter_entry(markdown_core_inline_state 
 void markdown_core_inline_process_delimiters(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
                                              bufsize_t stack_bottom, delimiter *after);
 int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_core_inline_state *inline_state);
-void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_core_node *parent,
+void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_core_node *parent, bool root,
                                         markdown_core_map *refmap, markdown_core_inline_state *inline_state);
 void markdown_core_inline_clear_inlines(markdown_core_inline_state *inline_state);
 bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_core_inline_state *inline_state);

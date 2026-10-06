@@ -8,6 +8,10 @@ public struct CrossEmbedded: Markup {
     public var id: MarkupID { record.id }
     /// The full authored extent, including the delimiters.
     public var extent: Extent { record.extent }
+    /// The parts of its range that are its own, one per line. See ``Piece``.
+    public var pieces: [Piece] { record.pieces }
+    /// Where its first relation's content was read from. See ``Run``.
+    public var runs: [Run] { record.runs }
     /// The declaration-side anchor, independent of the reference destination.
     public var anchor: String? { record.anchor }
     /// Ordered attached classes and records.

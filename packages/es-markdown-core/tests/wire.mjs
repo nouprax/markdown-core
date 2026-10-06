@@ -90,14 +90,18 @@ export class MessageWriter {
 
     /**
      * A record's kind and inherited fields; its own fields follow. Records
-     * take the writer's next id unless one is given; an extent is
-     * `[lead, span]`.
+     * take the writer's next id unless one is given; an extent and a piece
+     * are `[lead, span]`, and a run `[lead, span, length]`.
      */
-    record(kind, { id = this.#next, extent = [0, 0], anchor = null, attributes } = {}) {
+    record(kind, { id = this.#next, extent = [0, 0], pieces = [], runs = [], anchor = null, attributes } = {}) {
         const ordinal = typeof kind === "number" ? kind : kinds.indexOf(kind);
         assert.ok(ordinal >= 0, `unknown kind ${kind}`);
         this.#next = typeof id === "bigint" ? this.#next : Math.max(this.#next, id + 1);
         this.u8(ordinal).id(id).i32(extent[0]).u32(extent[1]);
+        this.u32(pieces.length);
+        for (const [lead, span] of pieces) this.i32(lead).u32(span);
+        this.u32(runs.length);
+        for (const [lead, span, length] of runs) this.i32(lead).u32(span).u32(length);
         this.optional(anchor, this.string);
         return this.attributes(attributes);
     }
@@ -107,16 +111,24 @@ export class MessageWriter {
     }
 
     /** A document record over the `content` nodes written before it, then
-     * its definition tables, which name footnote and specimen ids. */
-    root(content, { metadata = false, footnotes = [], specimens = [], id, extent } = {}) {
+     * its definition tables, which name footnote, specimen and Reference ids,
+     * and its reference label table, `[label, id]` pairs in byte order. */
+    root(content, { metadata = false, footnotes = [], specimens = [], references = [], labels = [], id, extent } = {}) {
         this.record("document", { id, extent }).u32(content).bool(metadata);
-        return this.table(footnotes).table(specimens);
+        return this.table(footnotes).table(specimens).table(references).labels(labels);
     }
 
     /** A definition table: a count, then that many ids. */
     table(ids) {
         this.u32(ids.length);
         for (const id of ids) this.id(id);
+        return this;
+    }
+
+    /** The reference label table: a count, then each label and its target's id. */
+    labels(entries) {
+        this.u32(entries.length);
+        for (const [label, id] of entries) this.string(label).id(id);
         return this;
     }
 

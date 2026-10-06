@@ -157,7 +157,7 @@ private func deepTreeFailures(depth: Int) -> [String] {
     let column = Int32(depth * 2 + 1)
     let scope = try? document.scope(of: leaf, in: source)
     check(
-        scope == Scope(start: Position(line: 1, column: column), end: Position(line: 1, column: column + 3)),
+        scope == [Scope(start: Position(line: 1, column: column), end: Position(line: 1, column: column + 3))],
         "leaf scope"
     )
     check(
@@ -208,7 +208,7 @@ private func deepSessionFailures(depth: Int) -> [String] {
     let column = Int32(depth * 2 + 1)
     let scope = try? document.scope(of: leaf, in: text)
     check(
-        scope == Scope(start: Position(line: 1, column: column), end: Position(line: 1, column: column + 3)),
+        scope == [Scope(start: Position(line: 1, column: column), end: Position(line: 1, column: column + 3))],
         "leaf scope"
     )
     check(

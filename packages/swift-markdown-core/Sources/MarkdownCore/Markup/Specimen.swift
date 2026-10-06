@@ -12,6 +12,10 @@ public struct Specimen: Markup {
     public var id: MarkupID { record.id }
     /// The source range of the definition.
     public var extent: Extent { record.extent }
+    /// The parts of its range that are its own, one per line. See ``Piece``.
+    public var pieces: [Piece] { record.pieces }
+    /// Where its first relation's content was read from. See ``Run``.
+    public var runs: [Run] { record.runs }
     /// The optional anchor attached to this node.
     public var anchor: String? { record.anchor }
     /// The ordered attributes attached to this node.

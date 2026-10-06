@@ -548,7 +548,7 @@
                     "optional": false
                 }
             ],
-            "invariants": "`dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url(\"\")`; a reference occurrence answers the destination its definition stated, and an unresolved reference is the inherited literal text; every `Link` owns the `url` branch; absent and empty title remain distinct; inline content"
+            "invariants": "`dest` is the tagged `Destination` value and is never absent: `[a]()` and `[a](<>)` wrote one and wrote nothing in it, so it is `url(\"\")`; a direct link owns the `url` branch; a reference occurrence owns the `reference` branch with the normalized label it names, and an unresolved reference is the inherited literal text; absent and empty title remain distinct; inline content"
         },
         {
             "name": "Embedded",
@@ -575,7 +575,7 @@
                     "optional": false
                 }
             ],
-            "invariants": "`dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; every `Embedded` owns the `url` branch; absent and empty title remain distinct; content is parsed alt-text inline content"
+            "invariants": "`dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; a direct image owns the `url` branch and a reference image the `reference` branch; absent and empty title remain distinct; content is parsed alt-text inline content"
         },
         {
             "name": "Directive",
@@ -757,11 +757,33 @@
                 }
             ],
             "invariants": "A leaf Markup node owned by Document.metadata. Field absence differs from explicit null. Its scope covers the authored properties block; unsupported attribute syntax yields null anchor and empty attributes."
+        },
+        {
+            "name": "Reference",
+            "ordinal": 44,
+            "fields": [
+                {
+                    "name": "label",
+                    "type": "String",
+                    "optional": false
+                },
+                {
+                    "name": "dest",
+                    "type": "Destination",
+                    "optional": false
+                },
+                {
+                    "name": "title",
+                    "type": "String",
+                    "optional": true
+                }
+            ],
+            "invariants": "A link reference definition where it was written: a leaf block with its normalized label, the `url` destination it states, and its title, absent and empty remaining distinct. Its anchor and attributes are the ones the definition states. Duplicates and unused definitions remain."
         }
     ],
     "values": {
         "Destination": {
-            "purpose": "A tagged value, not a node: it has no id, extent, children, anchor, or attributes, and a branch's fields exist only in that branch. Every Link and Embedded owns the url branch; the cross branch is the workspace address CrossLink and CrossEmbedded produce.",
+            "purpose": "A tagged value, not a node: it has no id, extent, children, anchor, or attributes, and a branch's fields exist only in that branch. A direct Link or Embedded and every Reference own the url branch; a reference Link or Embedded owns the reference branch, the normalized label it names: the first Reference in document source order whose label is equal, or, when none is, the first Heading in document source order whose text declares it; the cross branch is the workspace address CrossLink and CrossEmbedded produce.",
             "branches": {
                 "url": [
                     {
@@ -781,9 +803,16 @@
                         "type": "String",
                         "optional": true
                     }
+                ],
+                "reference": [
+                    {
+                        "name": "label",
+                        "type": "String",
+                        "optional": false
+                    }
                 ]
             },
-            "dump": "url(\"...\") or cross(path=\"...\",anchor=null)"
+            "dump": "url(\"...\"), cross(path=\"...\",anchor=null) or reference(\"...\")"
         },
         "CitationReferent": {
             "purpose": "A tagged value, not a node: it has no id or extent, and a branch's fields exist only in that branch. The bib branch is produced by bibliography citations; every referenced or inline footnote call produces the footnote branch. Its label target names the first Footnote in document source order whose label is equal, and its note target owns an inline note's Footnote. The specimen branch names the first Specimen in document source order whose label is equal.",
@@ -1055,7 +1084,7 @@
             "dump": "(width=100,height=null) or (width=100,height=145); an optional absent value prints null"
         },
         "Extent": {
-            "purpose": "The source range a node covers, in bytes of UTF-8 source. lead is signed, from the end of the previous node in the same relation (or the owner's start, for the first node) to this node's start; span is the length of the node's range. Scopes are computed from extents and the source on request.",
+            "purpose": "The range a node covers, in bytes of the input of the parser that produced it: a block's in the UTF-8 source, an inline node's in its inline root's content, which starts at 0. lead is signed, from the end of the previous node in the same relation (or the owner's start, for the first node) to this node's start; span is the length of the node's range. Scopes are computed from extents, pieces, runs and the source on request.",
             "fields": [
                 {
                     "name": "lead",
@@ -1069,6 +1098,43 @@
                 }
             ],
             "dump": "never printed; the dump prints the scope computed from it"
+        },
+        "Piece": {
+            "purpose": "One line's part of a node's range that is its own, for a leaf block inside a container or a grid or multiline table cell, whose lines bytes that are not its own separate: from where the line's container prefixes end, or from the cell's left column, to where the line ends, its terminator included when it follows. lead is signed, from the end of the previous piece (or the node's start, for the first) to this piece's start; span is its length. Pieces that touch are one, and a node whose range is one piece has none.",
+            "fields": [
+                {
+                    "name": "lead",
+                    "type": "Int32",
+                    "optional": false
+                },
+                {
+                    "name": "span",
+                    "type": "UInt32",
+                    "optional": false
+                }
+            ],
+            "dump": "never printed; the dump prints a scope per source range"
+        },
+        "Run": {
+            "purpose": "A run of the inline root content a node's first relation is: length content bytes read from span source bytes, lead signed from the end of the previous run (or the node's start, for the first). A run whose span is its length reads each content byte from one source byte; any other reads all of its content from all of its source. The runs cover the content in order.",
+            "fields": [
+                {
+                    "name": "lead",
+                    "type": "Int32",
+                    "optional": false
+                },
+                {
+                    "name": "span",
+                    "type": "UInt32",
+                    "optional": false
+                },
+                {
+                    "name": "length",
+                    "type": "UInt32",
+                    "optional": false
+                }
+            ],
+            "dump": "never printed; the dump prints a scope per source range"
         }
     },
     "inheritedFields": [
@@ -1083,6 +1149,18 @@
             "type": "Extent",
             "optional": false,
             "dumpAs": "scope"
+        },
+        {
+            "name": "pieces",
+            "type": "[Piece]",
+            "optional": false,
+            "dumpAs": null
+        },
+        {
+            "name": "runs",
+            "type": "[Run]",
+            "optional": false,
+            "dumpAs": null
         },
         {
             "name": "anchor",

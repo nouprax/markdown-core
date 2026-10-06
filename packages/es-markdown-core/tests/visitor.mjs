@@ -41,5 +41,6 @@ export const emptyVisitor = {
     citation: () => {},
     footnote: () => {},
     specimen: () => {},
+    reference: () => {},
     metadata: () => {}
 };

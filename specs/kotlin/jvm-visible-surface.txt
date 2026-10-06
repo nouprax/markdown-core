@@ -33,12 +33,6 @@ WireDecoder
 WireNodeKind
 WireNodeKind$Companion
 
-# P2's reference-definition resource and shared attribute merge operations are
-# consumed by the wire reader. Their internal Kotlin model
-# was already present before P5/P6; this audit records its JVM lowering.
-AttributesKt
-DefinitionResource
-
 # The canonical walk and the scope rule are shared by the walker, the dumper,
 # equality and Document's scope queries across files, so these internal classes
 # lower to public bytecode. None of them is reachable from the Kotlin API.

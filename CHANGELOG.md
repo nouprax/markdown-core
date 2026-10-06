@@ -6,6 +6,43 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Give every extent one rule: it is a byte offset in the input of the parser
+  that produced the node. Block extents stay source offsets; an inline
+  node's extent is now an offset in its inline root's content, which starts
+  at 0. Every `Markup` gains `pieces: [Piece]` and `runs: [Run]` after
+  `extent`, both part of equality. A leaf block inside a container and a
+  grid or multiline cell carry one `Piece(lead, span)` per stretch of source
+  they own between container prefixes; containers, tables and rows carry
+  none. An inline root carries the `Run(lead, span, length)`s that map its
+  content to the source: a run whose span equals its length is copied byte
+  for byte, any other run maps as a whole. `document.scope(of:in:)` returns
+  `[Scope]`, one per source range in source order, and `node(at:in:)` and
+  the dumps read every range (`scope=` joins them with `,`). The C facade
+  adds `markdown_core_node_pieces`, `markdown_core_node_runs` and
+  `markdown_core_scopes_free`, and `markdown_core_document_scope` writes an
+  array and its count. MCB3 writes each record's pieces and runs after its
+  extent.
+
+- Make each link reference definition a `Reference(label, dest, title)`
+  leaf block where it was written, with the anchor and attributes the
+  definition states; a paragraph of only definitions is its References.
+  A reference `Link` or `Embedded` now holds `dest: .reference(label)`, the
+  normalized label it names, no title and only its own anchor and
+  attributes: definition attributes are no longer merged into occurrences.
+  `document.references` lists the definitions in source order and
+  `document.reference(for:)` resolves a label to the first `Reference` that
+  states it or, when none does, the first `Heading` whose text declares it.
+  A `Reference`'s explicit anchor reserves its name, so a heading that would
+  compute the same anchor takes the next suffix. The C facade replaces
+  `markdown_core_node_primary_attributes`,
+  `markdown_core_node_inherited_attributes` and `markdown_core_node_resource`
+  with `markdown_core_node_attributes`, and adds
+  `markdown_core_document_reference_count`, `_at`, `_for`,
+  `_reference_label_count`, `_reference_label_at` and
+  `markdown_core_reference_label`. MCB3 drops resource ordinals, writes a
+  `Link`'s and `Embedded`'s `dest` and `title` directly, and appends the
+  Reference table and the reference label table to the definition tables.
+
 - Give every public call one error model. A C call that can fail returns a
   `markdown_core_status` -- `MARKDOWN_CORE_OK`, `ALLOCATION_FAILED`,
   `OUT_OF_BOUNDS`, `KIND_MISMATCH` or `INSIDE_SCALAR` -- and writes its result through

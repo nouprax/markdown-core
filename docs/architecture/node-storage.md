@@ -40,14 +40,13 @@ Why: a node's chunk was larger than the C library's fast-path size classes, so
 every release of one walked the allocator's merge path, and releasing the
 finished tree cost more than a third of parsing it.
 
-Resources are slots too. A resource is the destination, title and definition
-attributes a `Link` or `Embedded` reads, shared by every occurrence that
-resolves to one definition. It is taken from a second pool of the parse, and
-`slab.h` is the one mechanism both pools use. The last of its holders releases
-it: the map record, the attribute value of the heading that declares it, or
-an occurrence. Released into a pool, its slot goes back to that pool's
-resource slabs; released with none, it drops its slab hold. So the tree keeps
-its resource slabs as it keeps its node slabs.
+Resources are slots too. A resource is the destination and title a direct
+`Link` or `Embedded` or a `Reference` states, owned by that one node; a
+reference occurrence holds its label and no resource. It is taken from a
+second pool of the parse, and `slab.h` is the one mechanism both pools use.
+Its node releases it: into a pool, its slot goes back to that pool's resource
+slabs; with none, it drops its slab hold. So the tree keeps its resource slabs
+as it keeps its node slabs.
 
 ## A node's place and its value
 
@@ -105,10 +104,8 @@ embedded flag in either record.
 
 Only `Embedded` and `CrossEmbedded` expose `Dimensions(width, height?)`. The
 optional value is stored inline in the occurrence's typed record, without a
-separate allocation, and its lifetime ends with that record. A `Embedded` node
-retains its own dimensions even when its destination and title come from a
-resource shared with other resolved references. Cross references own their raw
-destination fields directly and do not share a resource with a definition.
+separate allocation, and its lifetime ends with that record. Cross references
+own their raw destination fields directly.
 
 Parser construction transfers a detached, independently owned subtree. The
 caller establishes disjoint ownership by creating the subtree or detaching it
@@ -160,9 +157,7 @@ for allocation failure. Either failure leaves the original kind and all owned
 values intact. A successful conversion releases node-valued fields through the
 same iterative destruction walk used for ordinary tree destruction. The
 element's opaque state belongs to the node and element, so it survives a
-kind conversion. So does the attribute value, with everything it holds: an
-anchor that borrows a resource's destination keeps the resource through the
-value, never through the record the conversion releases.
+kind conversion. So does the attribute value.
 
 HTML blocks keep their recognition state and eventual literal in distinct
 fields of one data record throughout parsing. Converting a closed HTML comment
@@ -185,16 +180,15 @@ slab freed by the last of its slots after the pool is gone. Platform builds veri
 native alignment, and sanitizer suites exercise the same ownership paths.
 
 Link reference definitions are recognized during block parsing so paragraph
-content and Setext classification can use the remaining text. A finalized
-paragraph containing only definitions stays in its parent's child chain with
-the internal `REFERENCE_DEFINITION_ONLY` flag. Later block identifiers see
-that paragraph in source order and cannot attach across it. After all block
-syntax and anchor decisions finish, one iterative postorder pass discards
-these paragraphs and derives list layout from the cleaned semantic children,
-before inline parsing. The document owns them through their parents,
-including on parse failure. An intentionally empty anchored list-item
-paragraph is not a definition and survives this cleanup. No definition node
-reaches the public AST.
+content and Setext classification can use the remaining text. Each definition
+becomes a `Reference` node in its parent's child chain where it was written,
+before what remains of the paragraph. A paragraph that held only definitions
+is released when it is finalized; its References stay, so later block
+identifiers see them in source order and cannot attach across them. The
+blank-line facts skip References, and list layout, derived at each list's
+exit in the finish walk, reads the semantic children around them. An
+intentionally empty anchored list-item paragraph is not a definition and
+stays.
 
 Inline footnotes use the existing Footnote data record and one-item Cite.
 A successful close moves the parsed inline body into a Footnote that the

@@ -57,7 +57,8 @@ typedef union {
 typedef struct markdown_core_slab_pool {
     /* The slab slots are being taken from, held by the pool. */
     markdown_core_slab *current;
-    /* Slots of `current` already taken, from its start. */
+    /* Slots of `current` already taken, from its start; bytes, for the slabs
+     * of a pool of varied sizes. */
     size_t taken;
     /* Storage of slots released into the pool, linked through its first
      * bytes, reused before another slot is taken from a slab. */
@@ -128,6 +129,85 @@ static inline void markdown_core_slab_release(markdown_core_slab_pool *pool, voi
         markdown_core_slab_drop(slot->slab);
     }
 }
+
+/* STORAGE OF VARIED SIZES, for the objects a parse makes many of whose
+ * sizes differ. A size is rounded up to a CLASS, a multiple of
+ * MARKDOWN_CORE_BYTES_CLASS bytes, and storage of each class is a slot like
+ * any other: taken from a slab, and released into the pool to be handed out
+ * again for that class before a slab is cut further. Storage larger than the
+ * largest class is a slot of its own from the allocator, as it is with no
+ * pool. A slot's header names its slab and its class. */
+#define MARKDOWN_CORE_BYTES_CLASS ((size_t)16)
+#define MARKDOWN_CORE_BYTES_CLASSES 32
+
+typedef union {
+    struct {
+        markdown_core_slab *slab;
+        size_t size_class;
+    } owner;
+    long double alignment;
+    int64_t integer_alignment;
+} markdown_core_bytes_header;
+
+typedef struct markdown_core_bytes_pool {
+    /* The slab storage is cut from, and how many bytes of it are cut. */
+    markdown_core_slab_pool slabs;
+    /* Released storage of each class, linked through its first bytes. */
+    void *released[MARKDOWN_CORE_BYTES_CLASSES];
+} markdown_core_bytes_pool;
+
+/* Uninitialized storage of `bytes`, from the pool's released storage of its
+ * class, then its current slab, then a new slab of `slab_bytes`; or a slot
+ * of its own from the allocator. NULL when none can be had. */
+static inline void *markdown_core_bytes_take(markdown_core_bytes_pool *pool, size_t bytes, size_t slab_bytes) {
+    const size_t size_class = (bytes + MARKDOWN_CORE_BYTES_CLASS - 1) / MARKDOWN_CORE_BYTES_CLASS;
+    markdown_core_bytes_header *header;
+    if (!pool || !size_class || size_class > MARKDOWN_CORE_BYTES_CLASSES) {
+        header = (markdown_core_bytes_header *)markdown_core_realloc(NULL, sizeof(*header) + bytes);
+        if (!header) {
+            return NULL;
+        }
+        header->owner.slab = NULL;
+        return header + 1;
+    }
+    void **released = &pool->released[size_class - 1];
+    if (*released) {
+        void *storage = *released;
+        memcpy(released, storage, sizeof(*released));
+        return storage;
+    }
+    const size_t stride = sizeof(*header) + size_class * MARKDOWN_CORE_BYTES_CLASS;
+    markdown_core_slab_pool *slabs = &pool->slabs;
+    if ((!slabs->current || slab_bytes - sizeof(markdown_core_slab) - slabs->taken < stride) &&
+        !markdown_core_slab_pool_grow(slabs, slab_bytes)) {
+        return NULL;
+    }
+    header = (markdown_core_bytes_header *)((unsigned char *)(slabs->current + 1) + slabs->taken);
+    slabs->taken += stride;
+    header->owner.slab = slabs->current;
+    header->owner.size_class = size_class;
+    slabs->current->head.holds++;
+    return header + 1;
+}
+
+/* Gives back storage `markdown_core_bytes_take` took: into the pool for
+ * reuse, or, with no pool, dropping its slab hold. A slot from the allocator
+ * is freed. */
+static inline void markdown_core_bytes_release(markdown_core_bytes_pool *pool, void *storage) {
+    markdown_core_bytes_header *header = (markdown_core_bytes_header *)storage - 1;
+    if (!header->owner.slab) {
+        markdown_core_free(header);
+    } else if (pool) {
+        void **released = &pool->released[header->owner.size_class - 1];
+        memcpy(storage, released, sizeof(*released));
+        *released = storage;
+    } else {
+        markdown_core_slab_drop(header->owner.slab);
+    }
+}
+
+/* Drops what the pool holds: its released storage and its current slab. */
+void markdown_core_bytes_pool_dispose(markdown_core_bytes_pool *pool);
 
 #ifdef __cplusplus
 }

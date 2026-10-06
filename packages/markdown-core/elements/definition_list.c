@@ -120,7 +120,7 @@ static bool markdown_core_block_definition_prefix(const markdown_core_element_in
         counts->work += term.len;
         markdown_core_attribute_parser attributes = {
             .data = term.data, .length = term.len, .scratch = &parser->attribute_scratch};
-        bool reference = markdown_core_parse_reference_inline(parser, &term, NULL, &attributes, 0) != 0;
+        bool reference = markdown_core_reference_definition_length(&term, &attributes) != 0;
         if (attributes.oom) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }

@@ -752,9 +752,9 @@ this repository stays green, which is why this example exists.
 .
 Document scope=1:1..2:6 anchor=null attributes={} children=1
 └── Callout scope=1:1..2:6 anchor=null attributes={} variant=null collapsed=null children=1
-    └── Paragraph scope=1:3..2:6 anchor=null attributes={} children=3
+    └── Paragraph scope=1:3..2:0,2:3..2:6 anchor=null attributes={} children=3
         ├── Text scope=1:3..1:4 anchor=null attributes={} literal="a " children=0
-        ├── Code scope=1:5..2:4 anchor=null attributes={} literal="x y" children=0
+        ├── Code scope=1:5..2:0,2:3..2:4 anchor=null attributes={} literal="x y" children=0
         └── Text scope=2:5..2:6 anchor=null attributes={} literal=" b" children=0
 ````````````````````````````````
 
@@ -782,11 +782,12 @@ had to be written because no existing one could tell the two rules apart.
 
 [foo]
 .
-Document scope=1:1..4:5 anchor=null attributes={} children=2
+Document scope=1:1..4:5 anchor=null attributes={} children=3
+├── Reference scope=1:1..1:11 anchor=null attributes={} label="foo" dest=url("/url") title=null children=0
 ├── Paragraph scope=2:1..2:10 anchor=null attributes={} children=1
 │   └── Text scope=2:1..2:10 anchor=null attributes={} literal="\"title\" ok" children=0
 └── Paragraph scope=4:1..4:5 anchor=null attributes={} children=1
-    └── Link scope=4:1..4:5 anchor=null attributes={} dest=url("/url") title=null children=1
+    └── Link scope=4:1..4:5 anchor=null attributes={} dest=reference("foo") title=null children=1
         └── Text scope=4:2..4:4 anchor=null attributes={} literal="foo" children=0
 ````````````````````````````````
 
@@ -827,7 +828,8 @@ endings and leaving the column alone.
 bar
 .
 Document scope=1:1..2:3 anchor=null attributes={} children=1
-└── Callout scope=1:1..2:3 anchor=null attributes={} variant=null collapsed=null children=1
+└── Callout scope=1:1..2:3 anchor=null attributes={} variant=null collapsed=null children=2
+    ├── Reference scope=1:3..1:9 anchor=null attributes={} label="a" dest=url("/x") title=null children=0
     └── Paragraph scope=2:1..2:3 anchor=null attributes={} children=1
         └── Text scope=2:1..2:3 anchor=null attributes={} literal="bar" children=0
 ````````````````````````````````
@@ -846,7 +848,9 @@ one indented.
   [a]: /1
   [b]: /2
 .
-Document scope=1:1..2:9 anchor=null attributes={} children=0
+Document scope=1:1..2:9 anchor=null attributes={} children=2
+├── Reference scope=1:3..1:9 anchor=null attributes={} label="a" dest=url("/1") title=null children=0
+└── Reference scope=2:3..2:9 anchor=null attributes={} label="b" dest=url("/2") title=null children=0
 ````````````````````````````````
 
 Three link reference definitions and a paragraph, all in ONE region. Regions
@@ -865,7 +869,10 @@ indent breaks the merge.
 [c]: /3
 x
 .
-Document scope=1:1..4:1 anchor=null attributes={} children=1
+Document scope=1:1..4:1 anchor=null attributes={} children=4
+├── Reference scope=1:1..1:7 anchor=null attributes={} label="a" dest=url("/1") title=null children=0
+├── Reference scope=2:1..2:7 anchor=null attributes={} label="b" dest=url("/2") title=null children=0
+├── Reference scope=3:1..3:7 anchor=null attributes={} label="c" dest=url("/3") title=null children=0
 └── Paragraph scope=4:1..4:1 anchor=null attributes={} children=1
     └── Text scope=4:1..4:1 anchor=null attributes={} literal="x" children=0
 ````````````````````````````````
@@ -883,9 +890,11 @@ cannot displace the winner.
 
 [a]
 .
-Document scope=1:1..4:3 anchor=null attributes={} children=1
+Document scope=1:1..4:3 anchor=null attributes={} children=3
+├── Reference scope=1:1..1:7 anchor=null attributes={} label="a" dest=url("/1") title=null children=0
+├── Reference scope=2:1..2:7 anchor=null attributes={} label="a" dest=url("/2") title=null children=0
 └── Paragraph scope=4:1..4:3 anchor=null attributes={} children=1
-    └── Link scope=4:1..4:3 anchor=null attributes={} dest=url("/1") title=null children=1
+    └── Link scope=4:1..4:3 anchor=null attributes={} dest=reference("a") title=null children=1
         └── Text scope=4:2..4:2 anchor=null attributes={} literal="a" children=0
 ````````````````````````````````
 
@@ -929,7 +938,7 @@ these rows are the only gate there is.
 [k]: <> ""
 [l]: /u "t"
 .
-Document scope=1:1..7:11 anchor=null attributes={} children=2
+Document scope=1:1..7:11 anchor=null attributes={} children=5
 ├── Paragraph scope=1:1..1:44 anchor=null attributes={} children=9
 │   ├── Link scope=1:1..1:5 anchor=null attributes={} dest=url("") title=null children=1
 │   │   └── Text scope=1:2..1:2 anchor=null attributes={} literal="a" children=0
@@ -945,18 +954,21 @@ Document scope=1:1..7:11 anchor=null attributes={} children=2
 │   ├── Text scope=1:33..1:33 anchor=null attributes={} literal=" " children=0
 │   └── Link scope=1:34..1:44 anchor=null attributes={} dest=url("/u") title="t" children=1
 │       └── Text scope=1:35..1:35 anchor=null attributes={} literal="e" children=0
-└── Paragraph scope=3:1..3:40 anchor=null attributes={} children=7
-    ├── Embedded scope=3:1..3:6 anchor=null attributes={} dest=url("") title=null dimensions=null children=1
-    │   └── Text scope=3:3..3:3 anchor=null attributes={} literal="f" children=0
-    ├── Text scope=3:7..3:7 anchor=null attributes={} literal=" " children=0
-    ├── Embedded scope=3:8..3:15 anchor=null attributes={} dest=url("") title=null dimensions=null children=1
-    │   └── Text scope=3:10..3:10 anchor=null attributes={} literal="g" children=0
-    ├── Text scope=3:16..3:16 anchor=null attributes={} literal=" " children=0
-    ├── Embedded scope=3:17..3:27 anchor=null attributes={} dest=url("/s") title="" dimensions=null children=1
-    │   └── Text scope=3:19..3:19 anchor=null attributes={} literal="h" children=0
-    ├── Text scope=3:28..3:28 anchor=null attributes={} literal=" " children=0
-    └── Embedded scope=3:29..3:40 anchor=null attributes={} dest=url("/s") title="t" dimensions=null children=1
-        └── Text scope=3:31..3:31 anchor=null attributes={} literal="i" children=0
+├── Paragraph scope=3:1..3:40 anchor=null attributes={} children=7
+│   ├── Embedded scope=3:1..3:6 anchor=null attributes={} dest=url("") title=null dimensions=null children=1
+│   │   └── Text scope=3:3..3:3 anchor=null attributes={} literal="f" children=0
+│   ├── Text scope=3:7..3:7 anchor=null attributes={} literal=" " children=0
+│   ├── Embedded scope=3:8..3:15 anchor=null attributes={} dest=url("") title=null dimensions=null children=1
+│   │   └── Text scope=3:10..3:10 anchor=null attributes={} literal="g" children=0
+│   ├── Text scope=3:16..3:16 anchor=null attributes={} literal=" " children=0
+│   ├── Embedded scope=3:17..3:27 anchor=null attributes={} dest=url("/s") title="" dimensions=null children=1
+│   │   └── Text scope=3:19..3:19 anchor=null attributes={} literal="h" children=0
+│   ├── Text scope=3:28..3:28 anchor=null attributes={} literal=" " children=0
+│   └── Embedded scope=3:29..3:40 anchor=null attributes={} dest=url("/s") title="t" dimensions=null children=1
+│       └── Text scope=3:31..3:31 anchor=null attributes={} literal="i" children=0
+├── Reference scope=5:1..5:7 anchor=null attributes={} label="j" dest=url("") title=null children=0
+├── Reference scope=6:1..6:10 anchor=null attributes={} label="k" dest=url("") title="" children=0
+└── Reference scope=7:1..7:11 anchor=null attributes={} label="l" dest=url("/u") title="t" children=0
 ````````````````````````````````
 
 The autolink scanner owns a colon that an address follows, so the text
@@ -1061,9 +1073,10 @@ A vertical tab does not collapse into a label's whitespace.
 
 [a b]: /u
 .
-Document scope=1:1..3:9 anchor=null attributes={} children=1
-└── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
-    └── Text scope=1:1..1:5 anchor=null attributes={} literal="[a\u000bb]" children=0
+Document scope=1:1..3:9 anchor=null attributes={} children=2
+├── Paragraph scope=1:1..1:5 anchor=null attributes={} children=1
+│   └── Text scope=1:1..1:5 anchor=null attributes={} literal="[a\u000bb]" children=0
+└── Reference scope=3:1..3:9 anchor=null attributes={} label="a b" dest=url("/u") title=null children=0
 ````````````````````````````````
 
 A list marker must be followed by a space, a tab or the end of the line.

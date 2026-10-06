@@ -8,37 +8,27 @@
 extern "C" {
 #endif
 
-/* THE DEFINITION SETS. Both maps hold normalized labels; the reference map
- * also holds, per label, THE RESOURCE its winning definition stated (M2).
- *
- * The reference map answers TWO questions -- is this label defined, and what
- * destination and title does it name -- and it is the only thing that can
- * answer them while the inline phase is running. The resource lives here ONCE,
- * and every occurrence that resolves to the label shares it, which is what
- * deletes D9: resolving a reference used to COPY the definition's destination
- * and title into the node, so one definition with a long destination
- * referenced many times turned a small document into a large tree, and the
- * running expansion budget that bounded it made WHETHER A REFERENCE RESOLVES
- * depend on how many resolved before it. A reference that SHARES its
- * definition's resource costs nothing to resolve, so there is nothing to
- * charge and no budget to break resolution.
- *
- * Neither map holds a NODE: a map that owns a node is how a definition nested
- * inside another came to be freed while the tree still pointed at it (D11).
- * Two definitions of one label are two records, and indexing keeps the first
- * in source order, which is the inherited rule; the loser's resource is freed
- * with the map, unshared. The footnote map holds labels and nothing else. */
+/* THE DEFINITION SETS: the normalized labels a parse declares. The reference
+ * map holds every link reference definition's label and every label a
+ * heading's text declares, which is what the inline phase asks while it runs:
+ * whether a label is defined, so an occurrence naming it resolves. What it
+ * resolves to the published document answers (markdown_core_document_
+ * reference_for). Neither map holds a node. The footnote map holds the
+ * footnote labels. */
 markdown_core_map *markdown_core_reference_map_new(void);
-/* Takes ownership of `resource` -- one holder -- and keeps it on the record
- * for `label`, or releases it when the label defines nothing or the record
- * could not be made. `mem` frees it on those paths, since `map` may be NULL
- * once parser construction has poisoned the parse. */
-markdown_core_map_record *markdown_core_reference_create(markdown_core_map *map, markdown_core_chunk *label,
-                                                         struct markdown_core_resource *resource);
 markdown_core_map *markdown_core_footnote_definition_map_new(void);
-/* Declares the footnote label whose normal form is `id`: the definition has
- * already normalized it to name itself, and the set is keyed by that value. */
-void markdown_core_footnote_definition_create(markdown_core_map *map, const markdown_core_chunk *id);
+/* Declares the label whose normal form is `label` in `map`: the declaring
+ * node has already normalized it to name itself, and the set is keyed by that
+ * value. An empty label declares nothing. When the record cannot be made the
+ * map turns `oom`, and a NULL map, which parser construction left poisoned,
+ * declares nothing. */
+void markdown_core_label_declare(markdown_core_map *map, const markdown_core_chunk *label);
+/* `label` normalized, read through `map`'s scratch, into `*normalized`: in
+ * storage from `pool` the node that holds it owns
+ * (markdown_core_node_pool_bytes), NUL-terminated; empty when the label
+ * normalizes to nothing. False when storage could not be had. */
+bool markdown_core_label_normalize(markdown_core_map *map, markdown_core_node_pool *pool,
+                                   const markdown_core_chunk *label, markdown_core_chunk *normalized);
 
 #ifdef __cplusplus
 }

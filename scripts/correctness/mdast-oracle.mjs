@@ -21,14 +21,18 @@ import {
  *     as a `DirectiveLabel` field. The comparison tree nests node-valued
  *     fields, so both are compared by their content without changing AST
  *     ownership semantics.
- *   - mdast keeps a link reference definition as a node and its references
- *     unresolved; Markdown Core consumes the definition into the parser's map
- *     and resolves every successful reference into the `Link` or `Embedded` it
- *     names, as cmark does (M2, registered delta `reference-resolution-model`).
- *     This module resolves mdast's references against mdast's own definitions
- *     -- the first definition of an identifier wins in both grammars -- so a
- *     reference that resolved to the wrong definition, or to none, still shows
- *     up as a difference.
+ *   - mdast keeps a link reference definition as a `definition` node and its
+ *     references as `linkReference` and `imageReference` carrying mdast's
+ *     identifier; Markdown Core keeps it as a `Reference` node and has each
+ *     reference name its label under the full case fold (registered delta
+ *     `reference-resolution-model`). The two label normalizations differ, so
+ *     both sides are resolved into the `Link` or `Embedded` each reference
+ *     names, carrying the definition's destination and title, and the
+ *     definitions leave the tree: this module resolves mdast's references
+ *     against mdast's own definitions, and `resolveReferences` this side's --
+ *     the first definition of a label wins in both grammars -- so a reference
+ *     that resolved to the wrong definition, or to none, still shows up as a
+ *     difference.
  */
 
 import { citationItem, urlDestination } from "../shared/upstream-cmark.mjs";
@@ -105,10 +109,10 @@ function blockCommentBody(literal) {
 function convert(node, definitions, parentType = "root") {
     if (node.type === "text") return splitSoftBreaks(node.value);
 
-    // Registered shape delta `reference-resolution-model`: a definition is
-    // consumed and produces no node, and a reference that resolves is the
-    // `Link` or `Embedded` it names, carrying the definition's destination and
-    // title -- the shape this repository's parser, like cmark, produces (M2).
+    // Registered shape delta `reference-resolution-model`: a definition
+    // leaves the tree, and a reference that resolves is the `Link` or
+    // `Embedded` it names, carrying the definition's destination and title --
+    // the shape `resolveReferences` projects this repository's tree onto.
     if (node.type === "definition") return [];
     if (node.type === "linkReference" || node.type === "imageReference") {
         // An undefined label is not a reference in either model: a bare

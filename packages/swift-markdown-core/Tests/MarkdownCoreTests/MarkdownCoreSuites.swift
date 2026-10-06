@@ -28,7 +28,9 @@ import Testing
                 metadata: nil,
                 content: [paragraph, footnote, named, anonymous],
                 footnotes: [footnote],
-                specimens: [named, anonymous]
+                specimens: [named, anonymous],
+                references: [],
+                referenceLabels: [:]
             )
         )
         #expect(document.specimens[0].start == 5)

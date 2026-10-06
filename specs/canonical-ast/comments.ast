@@ -20,4 +20,4 @@ Document scope=1:1..22:4 anchor=null attributes={} children=7
 │   └── Comment scope=12:41..13:3 anchor=null attributes={} literal="x\ny" children=0
 ├── Comment scope=15:1..18:2 anchor=null attributes={} literal="block\ncomment\n" children=0
 └── Callout scope=20:1..22:4 anchor=null attributes={} variant=null collapsed=null children=1
-    └── Comment scope=20:3..22:4 anchor=null attributes={} literal="quoted\n" children=0
+    └── Comment scope=20:3..21:0,21:3..22:0,22:3..22:4 anchor=null attributes={} literal="quoted\n" children=0

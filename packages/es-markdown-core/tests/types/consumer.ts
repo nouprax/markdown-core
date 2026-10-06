@@ -9,10 +9,13 @@ import {
     type Embedded,
     type CrossLink,
     type CrossEmbedded,
+    type Destination,
     type Dimensions,
     type Extent,
     type FootnoteTarget,
+    type Piece,
     type Position,
+    type Run,
     type Scope,
     type TextUnit,
     type ErrorCode,
@@ -26,6 +29,7 @@ import {
     type CitationReferent,
     type Footnote,
     type Specimen,
+    type Reference,
     type Heading,
     type Markup,
     type Table,
@@ -57,7 +61,9 @@ document.dump();
 void [unit, dump, explicitDump, nodeDump, explicitNodeDump, edited, appended, sessionText, sessionUnit];
 const id: number = document.id;
 const extent: Extent = document.extent;
-const scope: Scope = document.scope(document.content[0]!, "# typed");
+const pieces: readonly Piece[] = document.pieces;
+const runs: readonly Run[] = document.content[0]!.runs;
+const scope: readonly Scope[] = document.scope(document.content[0]!, "# typed");
 const position: Position = { line: 1, column: 3 };
 const hit: Markup | null = document.nodeAt(position, "# typed");
 try {
@@ -80,7 +86,12 @@ const footnotes: readonly Footnote[] = document.footnotes;
 const specimens: readonly Specimen[] = document.specimens;
 const footnote: Footnote | null = document.footnote("label");
 const specimen: Specimen | null = document.specimen("label");
-void [id, extent, scope, hit, equal, footnotes, specimens, footnote, specimen];
+const references: readonly Reference[] = document.references;
+const target: Reference | Heading | null = document.reference("label");
+// @ts-expect-error a label names a Reference or a Heading, nothing else
+const footnoteTarget: Footnote | null = document.reference("label");
+void [id, extent, scope, hit, equal, footnotes, specimens, footnote, specimen, references, target, footnoteTarget];
+void [pieces, runs];
 const visitor: MarkupVisitor = {
     citation: (node) => {
         void node.kind;
@@ -92,6 +103,9 @@ const visitor: MarkupVisitor = {
         void node.kind;
     },
     metadata: (node) => {
+        void node.kind;
+    },
+    reference: (node) => {
         void node.kind;
     },
 
@@ -202,6 +216,13 @@ const visitor: MarkupVisitor = {
     link(link) {
         // @ts-expect-error the inferred Link parameter has no dimensions
         void link.dimensions;
+        const dest: Destination = link.dest;
+        if (dest.kind === "reference") {
+            const label: string = dest.label;
+            // @ts-expect-error the reference branch has no url value
+            void dest.value;
+            void label;
+        }
         void link.kind;
     },
     embedded(embedded) {
@@ -305,6 +326,16 @@ const walkingVisitor: MarkupVisitor = {
         const inferredPhase: MarkupVisitPhase = phase;
         void [inferred, inferredPhase];
     },
+    reference(reference, phase) {
+        const inferred: Reference = reference;
+        const label: string = inferred.label;
+        const dest: Destination = inferred.dest;
+        const title: string | null = inferred.title;
+        // @ts-expect-error a Reference is a leaf and owns no content
+        void inferred.content;
+        const inferredPhase: MarkupVisitPhase = phase;
+        void [label, dest, title, inferredPhase];
+    },
     footnote(footnote, phase) {
         const inferred: Footnote = footnote;
         const inferredPhase: MarkupVisitPhase = phase;
@@ -326,6 +357,8 @@ void [omittedCitation, missingCitation];
 document.content[0] = document;
 // @ts-expect-error readonly extent values cannot be mutated
 document.extent.lead = 2;
+// @ts-expect-error runs are recursively readonly
+document.runs[0]!.length = 2;
 // @ts-expect-error ids are readonly
 document.id = 2;
 // @ts-expect-error dump methods cannot be replaced
@@ -368,6 +401,8 @@ const metadata: Metadata = {
     kind: "metadata",
     id: 2,
     extent: { lead: 0, span: 0 },
+    pieces: [],
+    runs: [],
     anchor: null,
     attributes: empty,
     name: metadataValue,
@@ -394,7 +429,7 @@ const sizeNode: Markup = standaloneSize;
 void [heightOnly, sizeNode];
 // @ts-expect-error dimensions are immutable
 standaloneSize.width = 800;
-// @ts-expect-error inherited attributes are recursively readonly
+// @ts-expect-error attributes are recursively readonly
 attributes.classes[0] = "replacement";
 // @ts-expect-error metadata fields are readonly
 metadata.name = metadataValue;

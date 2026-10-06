@@ -80,7 +80,9 @@ A value type of the contract encodes structurally from its declaration:
 - A value with `fields` writes each field in order.
 - A value with `branches` writes a `u8` branch index -- the branch's position
   in the declaration, from 0 -- and then that branch's fields.
-- `Extent` is `i32` lead and `u32` span, in bytes of UTF-8 source.
+- `Extent` is `i32` lead and `u32` span, `Piece` is `i32` lead and `u32`
+  span, and `Run` is `i32` lead, `u32` span and `u32` length, in bytes as the
+  contract measures them.
 
 A field of type `T` writes `T`. `T?` writes a `u8` presence, 0 or 1, and `T`
 when present. `[T]` writes a `u32` count and that many `T`.
@@ -90,7 +92,7 @@ when present. `[T]` writes a `u32` count and that many `T`.
 A record is:
 
 ```
-u8 kind ordinal   u64 id   Extent   anchor: String?   attributes: Attributes   fields
+u8 kind ordinal   u64 id   Extent   pieces: [Piece]   runs: [Run]   anchor: String?   attributes: Attributes   fields
 ```
 
 followed by the kind's fields in the contract's order. A **node-valued**
@@ -127,39 +129,27 @@ pass, and the encoder never needs to know a subtree's size before writing it.
 ## Definition tables
 
 After the `Document` record, the message writes the document's footnote
-table and then its specimen table. Each is a `u32` count and that many `u64`
-ids: every `Footnote`, inline notes included, and every `Specimen` of the
-document, in source order. A reader resolves each id to the node it built
-with that id; an id that names no node of that kind is invalid.
+table, its specimen table and its Reference table. Each is a `u32` count and
+that many `u64` ids: every `Footnote`, inline notes included, every
+`Specimen` and every `Reference` of the document, in source order. A reader
+resolves each id to the node it built with that id; an id that names no node
+of that kind is invalid.
 
-Scopes are not on the wire. A binding computes them from the extents and the
-source, as the facade's scope query does.
+The reference label table follows: a `u32` count and that many entries, each
+a label `String` and a `u64` id, one per normalized label a `reference`
+destination resolves, in byte order of the label. The id names the
+`Reference` or `Heading` the label resolves to, as `Destination` defines it;
+an id that names no node of one of those kinds is invalid. A reader answers
+a document's reference lookup from this table.
 
-## Shared resources
-
-Every occurrence of a reference definition reads its destination, title and
-definition attributes through one shared resource (the facade's
-`markdown_core_node_resource`). The wire keeps that sharing, so a definition
-referenced many times crosses the boundary once and a reader materializes it
-once:
-
-- A `Link` or `Embedded` record writes a `u32` **resource ordinal** in place
-  of its `dest` field and writes nothing for `title`.
-- Resources are numbered from 0 in the order the message first names them.
-  An ordinal equal to the number named so far defines the next resource and
-  is followed by its `Destination`, its title `String?`, its anchor `String?`
-  and its `Attributes`. A smaller ordinal refers to one already defined; a
-  larger one is invalid.
-- The record's own anchor and attributes are the occurrence's primary
-  contribution. The node's anchor is the primary anchor when present and the
-  resource's otherwise; its classes and records are the resource's followed
-  by the primary ones, as the facade's merge defines.
+Scopes are not on the wire. A binding computes them from the extents, pieces,
+runs and the source, as the facade's scope query does.
 
 ## What a reader checks
 
 A reader validates the *encoding*: the header, lengths, counts against the
 bytes and the stack, kinds against the fields that take them, `Bool` and enum
-and branch ranges, resource ordinals, definition table ids, and integers that
+and branch ranges, definition table ids, reference label ids, and integers that
 its own model cannot represent. The semantic invariants of the AST (heading levels, table spans,
 list facts) are the parser's to keep and the C suites' to test; a reader does
 not re-derive them.

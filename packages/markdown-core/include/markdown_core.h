@@ -37,8 +37,8 @@
  * its answer out through out-parameters, which it writes only when it returns
  * MARKDOWN_CORE_OK. A call that cannot fail returns its answer. Nothing a
  * failure reports is allocated, so an allocation failure is reported like any
- * other. Dump buffers are owned by the caller and released with
- * markdown_core_dump_free.
+ * other. Dump buffers and scope arrays are owned by the caller and released
+ * with markdown_core_dump_free and markdown_core_scopes_free.
  *
  * Calls: every argument is the caller's to get right, and a call that would
  * read or write memory it does not own for a wrong one reports it instead.
@@ -124,28 +124,58 @@ typedef struct markdown_core_position {
     int32_t column;
 } markdown_core_position;
 
-/** A node's editor source coordinates, computed on request from its extent
- * and the source (markdown_core_document_scope). `start` is the position of
- * the node's first byte, where a line terminator is the column after its
+/** Editor source coordinates of one source range of a node, computed on
+ * request from the extents and the source (markdown_core_document_scope).
+ * `start` is the position of the range's first byte, where a line terminator is the column after its
  * line's last character. `end` is the line holding the byte just past the
- * node's last byte and the column count from that line's start to it, so a
- * node that ends right after a line terminator ends at `L:0` of the next
+ * range's last byte and the column count from that line's start to it, so a
+ * range that ends right after a line terminator ends at `L:0` of the next
  * line, and a zero-byte document is `1:1..1:0`. */
 typedef struct markdown_core_scope {
     markdown_core_position start;
     markdown_core_position end;
 } markdown_core_scope;
 
-/** WHERE A NODE IS, in bytes of the UTF-8 source. `lead` is the signed
- * distance from the end of the previous node in the same relation -- or from
- * the owner's start, for the first node of a relation -- to this node's
- * start, and `span` the length of its source range. */
+/** WHERE A NODE IS, in bytes of the input of the parser that produced it:
+ * the UTF-8 source for a block, and its inline root's content for an inline
+ * node. `lead` is the signed distance from the end of the previous node in
+ * the same relation -- or from the owner's start, for the first node of a
+ * relation -- to this node's start, and `span` the length of its range. An
+ * inline root's content starts at 0. */
 #ifndef MARKDOWN_CORE_EXTENT_TYPEDEF
 #define MARKDOWN_CORE_EXTENT_TYPEDEF
 typedef struct markdown_core_extent {
     int32_t lead;
     uint32_t span;
 } markdown_core_extent;
+#endif
+
+/** A PIECE of a node's range: a block inside a container, or a table cell,
+ * whose lines bytes that are not its own separate, lies in one piece per
+ * line. `lead` is the signed distance from the end of the previous piece, or
+ * from the node's start for the first, to the piece's start, and `span` its
+ * length. */
+#ifndef MARKDOWN_CORE_PIECE_TYPEDEF
+#define MARKDOWN_CORE_PIECE_TYPEDEF
+typedef struct markdown_core_piece {
+    int32_t lead;
+    uint32_t span;
+} markdown_core_piece;
+#endif
+
+/** A RUN of an inline root's content: `length` content bytes read from the
+ * source bytes `span` long, `lead` from the end of the previous run, or from
+ * the start of the node whose content it is for the first. A run whose span
+ * is its length reads each content byte from one source byte; any other reads
+ * all of its content from all of its source. The runs cover the content in
+ * order. */
+#ifndef MARKDOWN_CORE_RUN_TYPEDEF
+#define MARKDOWN_CORE_RUN_TYPEDEF
+typedef struct markdown_core_run {
+    int32_t lead;
+    uint32_t span;
+    uint32_t length;
+} markdown_core_run;
 #endif
 
 /** Metadata is a leaf node owned by Document.metadata.
@@ -273,6 +303,7 @@ typedef enum markdown_core_node_kind {
     MARKDOWN_CORE_KIND_FOOTNOTE = 41,
     MARKDOWN_CORE_KIND_SPECIMEN = 42,
     MARKDOWN_CORE_KIND_METADATA = 43,
+    MARKDOWN_CORE_KIND_REFERENCE = 44,
     /* END GENERATED */
 } markdown_core_node_kind;
 
@@ -441,20 +472,33 @@ MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_root(const ma
 MARKDOWN_CORE_API uint64_t markdown_core_node_id(const markdown_core_node *node);
 /** The node's extent (markdown_core_extent). */
 MARKDOWN_CORE_API markdown_core_extent markdown_core_node_extent(const markdown_core_node *node);
+/** The node's pieces (markdown_core_piece), and their count in `*count`;
+ * none when its range is one piece. They borrow from the document. */
+MARKDOWN_CORE_API const markdown_core_piece *markdown_core_node_pieces(const markdown_core_node *node, size_t *count);
+/** The runs its first relation's nodes are placed by (markdown_core_run),
+ * and their count in `*count`: those of the node's inline content when that
+ * relation is an inline root's content, and none otherwise. They borrow from
+ * the document. */
+MARKDOWN_CORE_API const markdown_core_run *markdown_core_node_runs(const markdown_core_node *node, size_t *count);
 
 /** SCOPE QUERIES. Each takes the source the document was parsed from and
- * computes absolute positions from the extents in one walk of the document,
- * with columns in the document's text unit. Each answers ALLOCATION_FAILED
- * when it cannot allocate.
+ * computes absolute positions from the extents, pieces and runs in one walk
+ * of the document, with columns in the document's text unit. Each answers
+ * ALLOCATION_FAILED when it cannot allocate.
  *
- * `markdown_core_document_scope` computes the scope of `node`, a node of the
- * document. OUT_OF_BOUNDS when `length` ends before the node does. */
+ * `markdown_core_document_scope` computes the scopes of `node`, a node of the
+ * document: one per source range, in source order. A node's source ranges
+ * are its pieces, the source its content range was read from when it is in
+ * an inline root's content, or else its one range. `*scopes` receives a new
+ * array, which markdown_core_scopes_free releases, and `*count` its length.
+ * OUT_OF_BOUNDS when `length` ends before the node does. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_document_scope(const markdown_core_document *document,
                                                                     const markdown_core_node *node,
                                                                     const uint8_t *source, size_t length,
-                                                                    markdown_core_scope *scope);
-/** `*node` receives the last node in canonical walk order whose source range
- * holds the byte at `position`, or NULL when no node holds it or the position
+                                                                    markdown_core_scope **scopes, size_t *count);
+MARKDOWN_CORE_API void markdown_core_scopes_free(markdown_core_scope *scopes);
+/** `*node` receives the last node in canonical walk order one of whose
+ * source ranges holds the byte at `position`, or NULL when no node holds it or the position
  * names no byte of the source. OUT_OF_BOUNDS when the line or the column is
  * below 1. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_document_node_at(const markdown_core_document *document,
@@ -554,21 +598,12 @@ MARKDOWN_CORE_API size_t markdown_core_node_attribute_record_count(const markdow
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_attribute_record_at(const markdown_core_node *node,
                                                                               size_t index, markdown_core_string *name,
                                                                               markdown_core_string *value);
-/** Immutable normalized merge inputs, borrowed for the document lifetime.
- * The primary contribution comes from the occurrence, and the inherited
- * contribution of a `Link` or `Embedded` from its resource; the inherited
- * accessor answers KIND_MISMATCH for any other kind. An empty contribution
- * does not distinguish direct syntax from a reference occurrence.
- * Their identities let a binding decode each value once using its own native
- * ownership and collection conventions.
- * Node accessors above read merge(primary, inherited): primary nonempty anchor
- * first; inherited classes/records followed by primary, retaining duplicates;
- * a node of any other kind inherits nothing. */
+/** A node's attributes as one immutable value, borrowed for the document
+ * lifetime: what the node accessors above read. Each node's are the ones
+ * written on it; a reference occurrence's are its own, and the `Reference`
+ * it names has the ones the definition states. */
 typedef struct markdown_core_attribute_value markdown_core_attribute_value;
-MARKDOWN_CORE_API const markdown_core_attribute_value *
-markdown_core_node_primary_attributes(const markdown_core_node *node);
-MARKDOWN_CORE_API markdown_core_status markdown_core_node_inherited_attributes(
-    const markdown_core_node *node, const markdown_core_attribute_value **attributes);
+MARKDOWN_CORE_API const markdown_core_attribute_value *markdown_core_node_attributes(const markdown_core_node *node);
 MARKDOWN_CORE_API markdown_core_optional_string
 markdown_core_attribute_value_anchor(const markdown_core_attribute_value *attributes);
 MARKDOWN_CORE_API size_t markdown_core_attribute_value_class_count(const markdown_core_attribute_value *attributes);
@@ -601,23 +636,27 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_node_callout_properties(con
  * children. A present title holds at least one node, so NULL means no title. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_callout_title(const markdown_core_node *node,
                                                                         const markdown_core_node **title);
-/** The tagged `Destination` value of a `Link`, `Embedded`, `CrossLink`, or `CrossEmbedded`: a value, not
- * a node, so it has no scope and no children, and a branch's fields exist
- * only in that branch. `MARKDOWN_CORE_DESTINATION_URL` fills `url` and zeroes
- * `path` and `anchor`; `MARKDOWN_CORE_DESTINATION_CROSS`, the workspace
- * address a cross link produces, fills `path` and `anchor`
- * and zeroes `url`. Every `Link` and `Embedded` answers the `url` branch.
+/** The tagged `Destination` value of a `Link`, `Embedded`, `Reference`,
+ * `CrossLink`, or `CrossEmbedded`: a value, not a node, so it has no scope
+ * and no children, and a branch's fields exist only in that branch; the
+ * fields a branch does not use are zero. `MARKDOWN_CORE_DESTINATION_URL`
+ * fills `url`: a direct `Link` or `Embedded` and every `Reference` answer
+ * it. `MARKDOWN_CORE_DESTINATION_CROSS`, the workspace address a cross link
+ * produces, fills `path` and `anchor`. `MARKDOWN_CORE_DESTINATION_REFERENCE`
+ * fills `label`: a reference occurrence -- `[t][l]`, `[l][]` or `[l]` --
+ * names the definition it resolves to by its normalized label, which
+ * `markdown_core_document_reference_for` finds.
  *
  * A destination is REQUIRED (Q26, requirement 14): `[a]()` and `[a](<>)`
- * wrote one and wrote nothing in it, so `url` is the empty string, and a
- * reference occurrence answers the destination its definition stated (M2).
- * `url` holds the complete semantic destination the inherited grammar
- * produced -- the bytes between angle brackets or the bare destination, with
- * backslash escapes and character references decoded and no percent-encoding,
+ * wrote one and wrote nothing in it, so `url` is the empty string. `url`
+ * holds the complete semantic destination the inherited grammar produced --
+ * the bytes between angle brackets or the bare destination, with backslash
+ * escapes and character references decoded and no percent-encoding,
  * normalization, or resolution. */
 typedef enum markdown_core_destination_kind {
     MARKDOWN_CORE_DESTINATION_URL = 1,
-    MARKDOWN_CORE_DESTINATION_CROSS = 2
+    MARKDOWN_CORE_DESTINATION_CROSS = 2,
+    MARKDOWN_CORE_DESTINATION_REFERENCE = 3
 } markdown_core_destination_kind;
 
 typedef struct markdown_core_destination {
@@ -625,6 +664,7 @@ typedef struct markdown_core_destination {
     markdown_core_string url;
     markdown_core_string path;
     markdown_core_optional_string anchor;
+    markdown_core_string label;
 } markdown_core_destination;
 
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_destination(const markdown_core_node *node,
@@ -635,28 +675,12 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_node_destination(const mark
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_cross_label(const markdown_core_node *node,
                                                                       markdown_core_optional_string *label);
 
-/** The OPTIONAL title of a `Link` or `Embedded`: `[a](/u)` wrote no title and
- * `[a](/u "")` wrote an empty one. */
+/** The OPTIONAL title of a `Link`, `Embedded` or `Reference`: `[a](/u)`
+ * wrote no title and `[a](/u "")` wrote an empty one. A reference
+ * occurrence writes none; the `Reference` it names states its own. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_title(const markdown_core_node *node,
                                                                 markdown_core_optional_string *title);
 
-/** The resource a `Link` or `Embedded` reads its destination and title from, as
- * an opaque identity (M2). Two nodes answer the same pointer exactly when they
- * share one resource: every occurrence that resolved through one link
- * reference definition does -- `[t][l]`, `[l][]` and `[l]` alike -- and a
- * direct link, a direct image and an autolink never do.
- *
- * The sharing is what bounds a document: one definition with a long
- * destination referenced many times stores that destination once, however
- * many occurrences name it. A consumer that materializes a destination once
- * per distinct resource keys on this pointer. Nothing else about it is
- * stated, and it is valid only while the document is. */
-#ifndef MARKDOWN_CORE_RESOURCE_TYPEDEF
-#define MARKDOWN_CORE_RESOURCE_TYPEDEF
-typedef struct markdown_core_resource markdown_core_resource;
-#endif
-MARKDOWN_CORE_API markdown_core_status markdown_core_node_resource(const markdown_core_node *node,
-                                                                   const markdown_core_resource **resource);
 /** Citation items and document definitions are Markup nodes reached through
  * their typed owning relations. The accessors below read kind-specific fields. */
 
@@ -735,6 +759,34 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_footnote_label(const markdo
 MARKDOWN_CORE_API markdown_core_status markdown_core_footnote_content(const markdown_core_node *footnote,
                                                                       const markdown_core_node **content);
 
+/** THE DOCUMENT'S REFERENCES. Every `Reference` stays in the tree where it
+ * was written; the document lists them in source order. `_at` answers
+ * OUT_OF_BOUNDS for an index at or past the count. `_for` returns the node a
+ * reference occurrence naming `label`, a normalized label, resolves to,
+ * byte for byte, or NULL: the first `Reference` in source order whose label
+ * equals it, or, when none does, the first `Heading` in source order whose
+ * text declares it. The label table lists each label that resolves, in
+ * byte order, with that node. */
+MARKDOWN_CORE_API size_t markdown_core_document_reference_count(const markdown_core_document *document);
+MARKDOWN_CORE_API markdown_core_status markdown_core_document_reference_at(const markdown_core_document *document,
+                                                                           size_t index,
+                                                                           const markdown_core_node **reference);
+MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_reference_for(const markdown_core_document *document,
+                                                                                 markdown_core_string label);
+MARKDOWN_CORE_API size_t markdown_core_document_reference_label_count(const markdown_core_document *document);
+MARKDOWN_CORE_API markdown_core_status markdown_core_document_reference_label_at(const markdown_core_document *document,
+                                                                                 size_t index,
+                                                                                 markdown_core_string *label,
+                                                                                 const markdown_core_node **target);
+/** A `Reference`'s label, under the reference-label normalization -- full
+ * Unicode case fold, trimmed, internal whitespace collapsed -- exactly the
+ * `label` of every `reference` destination that names it. Its destination
+ * and title are read with `markdown_core_node_destination` and
+ * `markdown_core_node_title`; its attributes are its own. Compared as the
+ * `Footnote` label is. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_reference_label(const markdown_core_node *reference,
+                                                                     markdown_core_string *label);
+
 /** A `Specimen` is a block where it was written. An anonymous definition has
  * no label, and an absent start means no explicit counter reset. Display
  * numbers are not stored in the AST. */
@@ -748,8 +800,8 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_specimen_content(const mark
  * with scopes computed from `source`, the source the document was parsed
  * from, always in UTF-8 columns. `*output` and `*length` receive the dump,
  * which markdown_core_dump_free releases. ALLOCATION_FAILED when an
- * allocation fails; OUT_OF_BOUNDS when `source_length` ends before the node
- * does. */
+ * allocation fails; OUT_OF_BOUNDS when `source_length` ends before a node of
+ * the tree does. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_document_dump(const markdown_core_document *document,
                                                                    const markdown_core_node *node,
                                                                    const uint8_t *source, size_t source_length,

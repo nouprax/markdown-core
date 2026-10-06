@@ -11,9 +11,6 @@ typedef struct {
     markdown_core_chunk value;
 } markdown_core_record;
 
-struct markdown_core_resource;
-struct markdown_core_slab_pool;
-
 /* One normalized value. Empty anchor bytes mean no anchor. The lists retain
  * every occurrence.
  *
@@ -23,13 +20,7 @@ struct markdown_core_slab_pool;
  * anything of its own. The anchor is the one member a consumer may replace
  * with a string it made (a chunk with `alloc` set), and the release frees
  * such an anchor beside `storage`. Every string in `storage` is
- * NUL-terminated.
- *
- * An anchor the parser computed for a heading that declares an implicit
- * reference is instead the bytes after the `#` of that reference's
- * destination (node.h), and the value holds the resource they belong to in
- * `anchor_owner`. The hold is the value's, like `storage`, so the anchor lives
- * exactly as long as the value does, whatever kind the node carrying it is. */
+ * NUL-terminated. */
 typedef struct markdown_core_attribute_value {
     markdown_core_chunk anchor;
     markdown_core_chunk *classes;
@@ -39,7 +30,6 @@ typedef struct markdown_core_attribute_value {
     uint32_t class_count;
     uint32_t record_count;
     void *storage;
-    struct markdown_core_resource *anchor_owner;
 } markdown_core_attributes;
 
 /* THE WORKSPACE A CONTAINER IS READ INTO before it is laid out as a value
@@ -84,20 +74,15 @@ typedef struct {
     int oom;
 } markdown_core_attribute_parser;
 
-/* Whether a value owns anything a release must free. Everything it can own
- * is its block or hangs off its anchor -- a string of its own, or the hold on
- * the resource it borrows from -- so a value with neither owns nothing.
+/* Whether a value owns anything a release must free: its block, or an anchor
+ * string of its own, so a value with neither owns nothing.
  * Almost every value is empty -- every node carries one and no Text has
  * attributes -- so this is the first test a release makes, shared with the
  * node release that makes it in place before calling. */
 static MARKDOWN_CORE_INLINE bool markdown_core_attributes_owns(const markdown_core_attributes *value) {
     return value->storage || value->anchor.data;
 }
-/* Releases what the value owns, its hold on the resource its anchor borrows
- * from going back to `resources` (a pool's resource slabs, node.h) or, when
- * that is NULL, dropping its slab hold. */
-void markdown_core_attributes_release(struct markdown_core_slab_pool *resources, markdown_core_attributes *value);
-/* `markdown_core_attributes_release` with no pool. */
+/* Releases what the value owns, leaving it empty. */
 void markdown_core_attributes_free(markdown_core_attributes *value);
 /* A value holding one class, `bytes`, and nothing else: the value an element
  * makes when its syntax names a class without an attribute container. The
