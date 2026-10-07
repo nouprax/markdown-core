@@ -695,7 +695,8 @@ struct markdown_core_member {
      * from the document to this one carried the state its old node's parent
      * carried where that node began, so that the old children may be taken. */
     const markdown_core_node *scan;
-    uint32_t scan_start, scan_next, scan_at;
+    uint32_t scan_start, scan_at;
+    size_t scan_next;
     bool scan_equal;
     uint32_t asks, index, slot, source, waits, candidates, last_candidate;
     bool held, field, inner, decided, identified, paired, asked, numbered, counted;
