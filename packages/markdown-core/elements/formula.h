@@ -21,7 +21,7 @@ extern const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA;
  * the code block element asks this of each of its blocks once it has read
  * the info string. */
 void markdown_core_formula_take_code(const markdown_core_element_instance *formula, markdown_core_parser *parser,
-                                     markdown_core_node *node);
+                                     markdown_core_member *member);
 
 #ifdef __cplusplus
 }

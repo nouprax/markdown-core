@@ -31,17 +31,18 @@ bool markdown_core_tree_scope(const markdown_core_node *root, const markdown_cor
                               size_t length, markdown_core_text_unit unit, markdown_core_scope **scopes, size_t *count);
 
 /* ONE RELATION of a node: a node-valued field of the canonical AST, in the
- * canonical field order. `first` is its first node and the rest follow by
- * `next` up to `end`, the node after its last (NULL at a chain's end; a
- * table's row groups share one chain). `group` names the list when the
+ * canonical field order. Its nodes are the `count` nodes of `stem` from
+ * `index` on (a table's row groups are runs of one stem), or, for a field
+ * holding one node of its own, `node`. `group` names the list when the
  * canonical dump draws it as a group line (`Title`, `CitationPrefix`, a
  * table's row groups, a definition's term and bodies), and is NULL when its
  * nodes are drawn directly under the owner. A node's extent is relative to
  * the previous node of its relation, or to the owner's start. */
 typedef struct markdown_core_relation {
     const char *group;
-    const markdown_core_node *first;
-    const markdown_core_node *end;
+    const markdown_core_stem *stem;
+    size_t index, count;
+    const markdown_core_node *node;
     /* The canonical field the relation is, and which of its lists when it
      * is a list of lists (a definition's bodies). */
     markdown_core_field name;
@@ -52,8 +53,19 @@ typedef struct markdown_core_relation {
     bool field;
 } markdown_core_relation;
 
-/* How many nodes `relation` holds. */
-size_t markdown_core_relation_count(const markdown_core_relation *relation);
+/* THE NODES OF A RELATION, one at a time, in order. */
+typedef struct markdown_core_relation_walk {
+    markdown_core_stem_walk stem;
+    const markdown_core_node *node;
+} markdown_core_relation_walk;
+
+void markdown_core_relation_walk_begin(markdown_core_relation_walk *walk, const markdown_core_relation *relation);
+/* The next node, or NULL once the walk has read them all. */
+const markdown_core_node *markdown_core_relation_walk_next(markdown_core_relation_walk *walk);
+/* Whether the walk has a node left to read. */
+static inline bool markdown_core_relation_walk_more(const markdown_core_relation_walk *walk) {
+    return walk->node || walk->stem.left;
+}
 
 /* The relations of one node, one at a time. This is the one place that knows
  * which fields each kind owns and in what order: publishing, scope queries
@@ -63,7 +75,8 @@ typedef struct markdown_core_relation_cursor {
     /* The owner kind's shape of relations (ast.c), read once. */
     uint8_t shape;
     int step;
-    const markdown_core_node *next;
+    /* Where a relation that is a run of the owner's children starts next. */
+    size_t next;
 } markdown_core_relation_cursor;
 
 void markdown_core_relations_begin(markdown_core_relation_cursor *cursor, const markdown_core_node *owner);
@@ -125,7 +138,7 @@ typedef struct markdown_core_walk_frame {
     /* Whether the relation in hand is in an inline root's content, and
      * whether the frame's node is that root. */
     bool content, root;
-    const markdown_core_node *next;
+    markdown_core_relation_walk nodes;
     uint32_t owner_start, anchor;
 } markdown_core_walk_frame;
 
@@ -211,13 +224,9 @@ bool markdown_core_complete_node(markdown_core_parser *parser, markdown_core_pub
                                                  markdown_core_node *),
                                  const markdown_core_element_instance *observer);
 
-/* PUBLISHING, the last step of the parse transaction: the definition tables
- * the parse filled are sealed into the root, and the tree continues the one
- * the parser's revision names (parser.h): each node the parse read is matched
- * to the old node it continues and takes its id, and every subtree equal to
- * its old one is the old one. The parser's root is the result. It works in
- * the parser's scratch. False, having changed neither tree's structure, when
- * an allocation failed. */
+/* PUBLISHING, the last step of the parse transaction: the document numbers
+ * itself and the definition tables the parse filled are sealed into it. The
+ * parser's root is the result. False when an allocation failed. */
 bool markdown_core_publish_tree(markdown_core_parser *parser, markdown_core_publication *publication);
 
 /* Releases what the publication holds. */

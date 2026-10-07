@@ -43,7 +43,7 @@ static markdown_core_node *handle_backslash(const markdown_core_element_instance
             end++;
         }
         counts->whitespace += (size_t)(end - inline_state->pos);
-        if ((end == inline_state->input.len && !MARKDOWN_CORE_NODE_TYPE_INLINE_P(inline_state->owner->kind)) ||
+        if ((end == inline_state->input.len && !MARKDOWN_CORE_NODE_TYPE_INLINE_P(inline_state->owner->node->kind)) ||
             (end < inline_state->input.len &&
              markdown_core_is_line_end(markdown_core_inline_peek_at(inline_state, end)))) {
             return make_str(inline_state, start, start, markdown_core_chunk_dup(&inline_state->input, start, 1));
@@ -141,19 +141,19 @@ static markdown_core_node *handle_entity(markdown_core_inline_state *inline_stat
                     markdown_core_chunk_buf_detach(&ent));
 }
 
-static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 markdown_core_node *parent, unsigned char character,
-                                 markdown_core_inline_state *inline_state) {
+static markdown_core_member *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                   markdown_core_member *parent, unsigned char character,
+                                   markdown_core_inline_state *inline_state) {
     if (character == '\\') {
-        return handle_backslash(self, parser, inline_state);
+        return markdown_core_inline_state_append(inline_state, handle_backslash(self, parser, inline_state));
     }
     if (character == '&') {
-        return handle_entity(inline_state);
+        return markdown_core_inline_state_append(inline_state, handle_entity(inline_state));
     }
     return NULL;
 }
-markdown_core_node *markdown_core_text_parse(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                             markdown_core_inline_state *inline_state, bufsize_t endpos) {
+markdown_core_member *markdown_core_text_parse(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                               markdown_core_inline_state *inline_state, bufsize_t endpos) {
     markdown_core_text_work *counts = self->state;
     markdown_core_chunk contents;
     bufsize_t startpos;
@@ -200,7 +200,7 @@ markdown_core_node *markdown_core_text_parse(const markdown_core_element_instanc
      * run's, in the role a byte kept nowhere has. Giving them to the block
      * instead left the node covering eight columns and owning three, which
      * is what L5 measures. */
-    return new_inl;
+    return markdown_core_inline_state_append(inline_state, new_inl);
 }
 static void complete_inline(const markdown_core_element_instance *self, markdown_core_parser *parser,
                             markdown_core_node *node, int word_depth) {

@@ -27,22 +27,25 @@ bool markdown_core_block_is_blank(markdown_core_strbuf *s, bufsize_t offset);
 void markdown_core_block_rebase_content_marks(markdown_core_parser *parser, markdown_core_node *node, bufsize_t dropped,
                                               bufsize_t remaining);
 bool markdown_core_block_ends_with_blank_line(const markdown_core_parser *parser, markdown_core_node *node);
-/* The sibling after `node` the blank-line facts see: the next one that is
+/* The sibling after `member` the blank-line facts see: the next one that is
  * not MARKDOWN_CORE_NODE__BLANK_TRANSPARENT, or NULL. */
-markdown_core_node *markdown_core_block_next_seen(const markdown_core_node *node);
-markdown_core_node *markdown_core_block_finalize(markdown_core_parser *parser, markdown_core_node *b);
+markdown_core_member *markdown_core_block_next_seen(const markdown_core_member *member);
+/* Whether a node the blank-line facts see follows the one at `index` of
+ * `stem`. */
+bool markdown_core_block_seen_after(const markdown_core_stem *stem, size_t index);
+markdown_core_member *markdown_core_block_finalize(markdown_core_parser *parser, markdown_core_member *b);
 /* A FINISHED BLOCK'S LAST WORD, once its range is settled: its element reads
  * it as a finished thing, a paragraph that held only reference definitions
  * leaves the tree to the References before it, a block that takes text
  * lines in a container takes the runs of its own lines, and the block
  * completes. */
-void markdown_core_block_settle(markdown_core_parser *parser, markdown_core_node *b);
+void markdown_core_block_settle(markdown_core_parser *parser, markdown_core_member *b);
 void markdown_core_block_advance_offset(markdown_core_parser *parser, markdown_core_chunk *input, bufsize_t count,
                                         bool columns);
 int markdown_core_block_order_definitions(markdown_core_parser *parser,
                                           markdown_core_definition_collection *collection);
 typedef struct markdown_core_block_start_context {
-    markdown_core_node *container;
+    markdown_core_member *container;
     markdown_core_chunk *input;
     int first, column, indent;
     /* `paragraph`: the container is a paragraph the line would continue.
@@ -60,7 +63,7 @@ typedef struct markdown_core_block_start_context {
 typedef struct markdown_core_block_start {
     /* The claiming owner's open, and the owner itself, which the dispatcher
      * records and hands `open` as its `self`. */
-    bool (*open)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node **,
+    bool (*open)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member **,
                  markdown_core_chunk *, struct markdown_core_block_start *);
     const markdown_core_element_instance *owner;
     markdown_core_node_type kind;
@@ -73,9 +76,10 @@ void markdown_core_block_find_first_nonspace(markdown_core_parser *parser, markd
 bool markdown_core_block_continue_indented(markdown_core_parser *parser, markdown_core_chunk *input, int continuation,
                                            bool has_content);
 void markdown_core_block_add_line(markdown_core_node *node, markdown_core_chunk *input, markdown_core_parser *parser);
-markdown_core_node *markdown_core_block_parent_for(markdown_core_parser *parser, markdown_core_node *parent,
-                                                   markdown_core_node_type kind);
+markdown_core_member *markdown_core_block_parent_for(markdown_core_parser *parser, markdown_core_member *parent,
+                                                     markdown_core_node_type kind);
 /* Commit a parent selected by block_parent_for without repeating its policy. */
-markdown_core_node *markdown_core_parser_add_child_validated(markdown_core_parser *parser, markdown_core_node *parent,
-                                                             markdown_core_node_type kind, int start_column);
+markdown_core_member *markdown_core_parser_add_child_validated(markdown_core_parser *parser,
+                                                               markdown_core_member *parent,
+                                                               markdown_core_node_type kind, int start_column);
 #endif

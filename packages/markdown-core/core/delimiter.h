@@ -35,8 +35,9 @@ typedef struct {
 struct delimiter {
     struct delimiter *previous;
     struct delimiter *next;
-    /* Borrowed marker Text or field owner; NULL for a content boundary. */
-    markdown_core_node *node;
+    /* The member of the marker Text or of the token whose fields wait for
+     * their parse; NULL for a content boundary. */
+    markdown_core_member *member;
     /** The instance of the element that pushed it, or NULL for a core rule.
      *  One load. */
     const markdown_core_element_instance *owner;

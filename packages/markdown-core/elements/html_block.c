@@ -5,9 +5,9 @@
 
 #include "comment.h"
 static int continue_html(const markdown_core_element_instance *self, markdown_core_parser *parser, unsigned char *data,
-                         int length, markdown_core_node *container) {
+                         int length, markdown_core_member *container) {
     bool res = false;
-    int html_block_type = container->as.html_block->block_type;
+    int html_block_type = container->node->as.html_block->block_type;
 
     assert(html_block_type >= 1 && html_block_type <= 7);
     switch (html_block_type) {
@@ -29,8 +29,9 @@ static int continue_html(const markdown_core_element_instance *self, markdown_co
 }
 
 static void finalize_html(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_node *b) {
+                          markdown_core_member *member) {
     (void)self;
+    markdown_core_node *b = member->node;
     markdown_core_strbuf *node_content = &b->content;
 
     int html_block_type = b->as.html_block->block_type;
@@ -40,11 +41,11 @@ static void finalize_html(const markdown_core_element_instance *self, markdown_c
         return;
     }
     if (html_block_type == 2 && (b->flags & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION) != 0) {
-        markdown_core_block_convert_comment_block(parser, b);
+        markdown_core_block_convert_comment_block(parser, member);
     }
 }
 static bool open_html(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                      markdown_core_node **container, markdown_core_chunk *input, block_start *start) {
+                      markdown_core_member **container, markdown_core_chunk *input, block_start *start) {
     (void)self;
     bufsize_t matched = start->matched;
 
@@ -53,7 +54,7 @@ static bool open_html(const markdown_core_element_instance *self, markdown_core_
     if (!*container) {
         return false;
     }
-    (*container)->as.html_block->block_type = matched;
+    (*container)->node->as.html_block->block_type = matched;
     // note, we don't adjust parser->offset because the tag is part of the
     // text
 
@@ -72,9 +73,9 @@ static bool scan_html(const markdown_core_element_instance *self, markdown_core_
     return true;
 }
 static bool ends_html(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                      markdown_core_node *container, markdown_core_chunk *input) {
+                      markdown_core_member *container, markdown_core_chunk *input) {
     (void)self;
-    switch (container->as.html_block->block_type) {
+    switch (container->node->as.html_block->block_type) {
     case 1:
         return scan_html_block_end_1(input->data, input->len, parser->first_nonspace);
     case 2:
@@ -90,7 +91,7 @@ static bool ends_html(const markdown_core_element_instance *self, markdown_core_
     }
 }
 static bool blank_line(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                       markdown_core_node *node) {
+                       markdown_core_member *node) {
     (void)self;
     return true;
 }

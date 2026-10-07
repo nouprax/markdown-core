@@ -30,7 +30,7 @@ static int S_scan_thematic_break(markdown_core_chunk *input, bufsize_t offset, b
 }
 
 static bool open_thematic(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_node **container, markdown_core_chunk *input, block_start *start) {
+                          markdown_core_member **container, markdown_core_chunk *input, block_start *start) {
     (void)self;
 
     // it's only now that we know the line is not part of a setext heading:

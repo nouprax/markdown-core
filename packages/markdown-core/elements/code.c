@@ -171,10 +171,11 @@ static markdown_core_node *handle_backticks(const markdown_core_element_instance
     }
 }
 
-static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 markdown_core_node *parent, unsigned char character,
-                                 markdown_core_inline_state *inline_state) {
-    return character == '`' ? handle_backticks(self, inline_state) : NULL;
+static markdown_core_member *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                   markdown_core_member *parent, unsigned char character,
+                                   markdown_core_inline_state *inline_state) {
+    return character == '`' ? markdown_core_inline_state_append(inline_state, handle_backticks(self, inline_state))
+                            : NULL;
 }
 static void dispose_inline(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state) {
     code_backticks *backticks = markdown_core_run_state(inline_state, self);

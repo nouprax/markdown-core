@@ -102,13 +102,6 @@ typedef struct {
     markdown_core_optional_dimensions dimensions;
 } markdown_core_cross_embedded;
 
-/* THE CITE (M4): a `Cite` owns its items as a chain of CITATION nodes beside
- * its children, which it never has. The chain is a node-valued field, not
- * content: the items are scoped values, not `Markup`. */
-typedef struct {
-    struct markdown_core_node *citations;
-} markdown_core_cite;
-
 /* THE REFERENT of one citation (M4): a tagged value. A `bib` referent, which
  * the citations module first produces with P7, carries a key and a mode; a
  * `footnote` referent carries the label of the `Footnote` it names, or owns
@@ -119,16 +112,16 @@ typedef enum {
     MARKDOWN_CORE_NODE_REFERENT_SPECIMEN = 3
 } markdown_core_node_referent_kind;
 
-/* ONE ITEM of a cite (M4): the referent, and the item's owned fields: the
- * inline note a `footnote(note)` referent owns, then the two affix chains.
- * Each populated affix uses the same private inline root as other owned
- * fields; the facade exposes its children. `value` is the referent's key or
+/* ONE ITEM of a cite (M4), and one of its children: the referent, and the
+ * item's owned fields: the inline note a `footnote(note)` referent owns, then
+ * the two affixes. Each populated affix is a private group node whose
+ * children are the affix's nodes; the facade exposes its children. `value` is the referent's key or
  * label: for a footnote referent that names a definition it is the label
  * under the map's own normalization WITHOUT the caret, which is the
  * `Footnote.label` it names, computed once per occurrence. NORMATIVE: a label
  * is compared with memcmp over its bytes and is never case mapped,
  * renormalized, or re-encoded. `note` is NULL unless the item is an inline
- * note, whose `Footnote` it owns. A chain is NULL when the affix is empty. */
+ * note, whose `Footnote` it owns. An affix is NULL when it is empty. */
 typedef struct {
     markdown_core_node_referent_kind referent;
     markdown_core_chunk value;
@@ -342,7 +335,6 @@ typedef union {
     markdown_core_link *link;
     markdown_core_cross_reference *cross_link;
     markdown_core_cross_embedded *cross_embedded;
-    markdown_core_cite *cite;
     markdown_core_citation_item *citation;
     markdown_core_footnote_value *footnote;
     markdown_core_specimen_value *specimen;
@@ -355,18 +347,47 @@ typedef union {
     markdown_core_table_cell *table_cell;
 } markdown_core_node_data;
 
-struct markdown_core_node {
-    /* The node's PLACE: its links and its id. Every field after `id` is its
-     * value (markdown_core_node_swap_values). */
-    struct markdown_core_node *next;
-    struct markdown_core_node *prev;
-    struct markdown_core_node *parent;
-    /* Intrusive list of content children. */
-    struct markdown_core_node *first_child;
-    struct markdown_core_node *last_child;
+/* A NODE'S CHILDREN TREE (docs/plans/2026-09-29-incremental-parsing.md,
+ * 5.11): an immutable, balanced tree of the node's children in order, like
+ * the children array of a tree-sitter subtree. A stem of height 0 holds
+ * nodes; a higher one holds the stems below it, all of one height. Each holds
+ * between 1 and MARKDOWN_CORE_STEM_WIDTH entries and counts the nodes under
+ * it. A stem is a value shared by reference: every node or stem that holds
+ * it counts one reference, and an entry it holds counts one reference of
+ * that entry's. */
+#define MARKDOWN_CORE_STEM_WIDTH 32
+#define MARKDOWN_CORE_STEM_HEIGHT 8
 
-    /* The node's identifier, unique within its document; 0 until the
-     * document is published (markdown_core_publish_tree). */
+typedef struct markdown_core_stem markdown_core_stem;
+
+typedef union {
+    struct markdown_core_node *node;
+    markdown_core_stem *stem;
+} markdown_core_stem_entry;
+
+struct markdown_core_stem {
+    uint32_t refs;
+    uint32_t count;
+    uint8_t height;
+    uint8_t width;
+    markdown_core_stem_entry entries[];
+};
+
+/* A NODE is a shared immutable value (5.11): one subtree may sit in the old
+ * tree and the new one at once, so a node has no parent and no siblings, and
+ * its children are its stem. `refs` counts the stems, fields and builders
+ * (markdown_core_member) that hold it; a node held once may change in place,
+ * and one held more often is copied before it changes. */
+struct markdown_core_node {
+    uint32_t refs;
+    uint16_t kind;
+    markdown_core_node_internal_flags flags;
+    /* The node's children, or NULL when it has none. */
+    markdown_core_stem *children;
+
+    /* The node's identifier, unique within its document; 0 until the node
+     * that holds it completes (docs/plans/2026-09-29-incremental-parsing.md,
+     * 5.8). */
     uint64_t id;
 
     markdown_core_attributes attributes;
@@ -379,8 +400,6 @@ struct markdown_core_node {
     markdown_core_content_map content_map;
     /* The runs of its source (markdown_core_runs). */
     markdown_core_runs *runs;
-    uint16_t kind;
-    markdown_core_node_internal_flags flags;
 
     const markdown_core_element *element;
     /* Element-owned data, allocated by opaque_alloc_func and released by
@@ -434,12 +453,12 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
 
 typedef int (*markdown_core_owned_subtree_visitor)(markdown_core_node **root_slot, void *context);
 
-/* Commit an exclusively owned, detached subtree after the caller has proved
- * containment and disjointness. No callbacks, allocation, or rejection occurs
- * after ownership starts to move. Debug/ASan checks the pointer links and
- * pure built-in containment; stateful callbacks are never re-evaluated. */
-void markdown_core_node_attach_validated(markdown_core_node *parent, markdown_core_node *child,
-                                         markdown_core_node *before);
+/* Visits each node-valued field slot of `node`, those of its kind's record
+ * and those its element owns (element.h, `visit_owned_subtrees_func`), in
+ * canonical field order, whether or not it holds a node; stops, answering 0,
+ * when the visitor does. */
+int markdown_core_node_visit_fields(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor,
+                                    void *context);
 
 /* The bit a BLOCK kind occupies in a container-kind set, or zero for an inline
  * kind or none at all. Block kind values are small and dense, so a set of the
@@ -498,24 +517,25 @@ bool markdown_core_node_kind_set_intersects(const markdown_core_node_kind_set *a
 markdown_core_node *markdown_core_node_new(markdown_core_node_type type);
 markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type, const markdown_core_element *element);
 
-/* Releases `node`, its descendants and every node-valued field under them. */
+/* Drops one reference to `node`; at the last, releases it and drops its
+ * references to its children and fields in turn (markdown_core_node_release). */
 void markdown_core_node_free(markdown_core_node *node);
 
-/* Detaches `node` from its parent and siblings without releasing it. */
-void markdown_core_node_unlink(markdown_core_node *node);
-
-/* Moves `child` to the end of `node`'s children. Returns 0, having moved
- * nothing, when `node` cannot contain `child`. */
-int markdown_core_node_append_child(markdown_core_node *node, markdown_core_node *child);
+/* Takes one more reference to `node`, and returns it. */
+static inline markdown_core_node *markdown_core_node_retain(markdown_core_node *node) {
+    node->refs++;
+    return node;
+}
 
 /* The internal type's name, for diagnostics: "<unknown>" for a value no
  * class defines. Internal types the facade folds together (COMMENT_BLOCK and
  * COMMENT) keep their own names here. */
 const char *markdown_core_node_get_type_string(markdown_core_node *node);
 
-/* `markdown_core_node_free`, reporting how many nodes it released: the node,
- * its descendants and every owned field root under them. The parse's own
- * free (parser.h) counts this, so removal is observed where it is done. */
+/* `markdown_core_node_free`, reporting how many nodes it released: those
+ * whose last reference it dropped. RELEASE IS ITERATIVE (5.11): a released
+ * node or stem is linked into the pending list through storage it no longer
+ * needs, so nothing recurses and nothing allocates. */
 size_t markdown_core_node_release(markdown_core_node *node);
 
 /* WHERE A NODE'S STORAGE COMES FROM, and where it goes back to.
@@ -541,6 +561,7 @@ size_t markdown_core_node_release(markdown_core_node *node);
 typedef struct markdown_core_node_pool {
     markdown_core_slab_pool nodes;
     markdown_core_slab_pool resources;
+    markdown_core_slab_pool members;
     markdown_core_bytes_pool bytes;
 } markdown_core_node_pool;
 
@@ -559,11 +580,6 @@ void markdown_core_node_pool_bytes_free(markdown_core_node_pool *pool, void *sto
  * allocator's own slot, which is what the parser-less constructor takes. */
 markdown_core_node *markdown_core_node_pool_new(markdown_core_node_pool *pool, markdown_core_node_type type,
                                                 const markdown_core_element *element);
-/* Exchanges the values of two nodes of one kind with the same node-valued
- * fields: everything but their places, which are their links, their ids and
- * the nodes their fields hold. Each value keeps the storage it borrows from,
- * so a node takes the other's value with the other's storage. */
-void markdown_core_node_swap_values(markdown_core_node *a, markdown_core_node *b);
 /* `markdown_core_node_release` into a pool: the node slots and the slots of
  * the resources the nodes held last go back to it for reuse rather than
  * dropping their slabs. A NULL pool is the plain release. */
@@ -571,6 +587,80 @@ size_t markdown_core_node_pool_release(markdown_core_node_pool *pool, markdown_c
 /* Drops what the pool holds: its released slots and its current slabs. Slots
  * still in use keep their slabs alive after this. */
 void markdown_core_node_pool_dispose(markdown_core_node_pool *pool);
+
+/* THE CHILDREN TREE'S OPERATIONS. */
+
+/* A stem of the `count` nodes at `nodes`, in order, balanced: it takes the
+ * reference to each node the caller held. NULL, having taken nothing, when
+ * `count` is 0 or an allocation failed (`*failed`). */
+markdown_core_stem *markdown_core_stem_make(markdown_core_node_pool *pool, markdown_core_node *const *nodes,
+                                            size_t count, bool *failed);
+
+static inline size_t markdown_core_stem_count(const markdown_core_stem *stem) { return stem ? stem->count : 0; }
+
+/* The node at `index` of the stem, which holds more than `index`. */
+markdown_core_node *markdown_core_stem_at(const markdown_core_stem *stem, size_t index);
+
+/* A WALK OVER A RUN OF A STEM'S NODES, in order: the path from the stem to
+ * the node it is at. */
+typedef struct {
+    const markdown_core_stem *path[MARKDOWN_CORE_STEM_HEIGHT];
+    uint8_t at[MARKDOWN_CORE_STEM_HEIGHT];
+    /* How many nodes are left, the one it is at included. */
+    size_t left;
+} markdown_core_stem_walk;
+
+/* Begins at the node at `index` of `stem` (which may be NULL), to read
+ * `count` nodes. */
+void markdown_core_stem_walk_begin(markdown_core_stem_walk *walk, const markdown_core_stem *stem, size_t index,
+                                   size_t count);
+/* The node the walk is at, and moves past it; NULL once it has read them all. */
+markdown_core_node *markdown_core_stem_walk_next(markdown_core_stem_walk *walk);
+
+/* A NODE BEING BUILT (5.11, open blocks are builders): while the parser
+ * builds a node, the node's place among the nodes being built is this
+ * record's, not the node's. Its owner, its siblings and its children are the
+ * members of the nodes beside it. `fields` are the members of the node's
+ * field roots that are being built with it, in canonical field order and
+ * linked through `next`: a citation's note and affixes, which the inline parse
+ * fills as it makes the citation. `held` says whether the member holds the
+ * node's reference: a child member does, and its owner's freeze hands the
+ * reference to the owner's stem; a root, whose node a stem or the parser
+ * holds, and a field root, whose node its owner's field holds, do not. A
+ * builder lives for one parse and its storage is the pool's. */
+struct markdown_core_member {
+    markdown_core_node *node;
+    struct markdown_core_member *owner;
+    struct markdown_core_member *prev, *next;
+    struct markdown_core_member *first, *last;
+    struct markdown_core_member *fields;
+    bool held, field;
+};
+
+/* A member for `node`, linked to nothing; it holds the node's reference when
+ * `held`. NULL when it could not be allocated. */
+markdown_core_member *markdown_core_member_new(markdown_core_node_pool *pool, markdown_core_node *node, bool held);
+
+/* Links the detached `child` under `owner`, before `before` (a child of
+ * `owner`) or last. The caller has proved containment. */
+void markdown_core_member_attach(markdown_core_member *owner, markdown_core_member *child,
+                                 markdown_core_member *before);
+
+/* Links the detached `field` as the last field root `owner` builds. */
+void markdown_core_member_attach_field(markdown_core_member *owner, markdown_core_member *field);
+
+/* Detaches `member` from its owner and siblings, keeping its subtree. */
+void markdown_core_member_unlink(markdown_core_member *member);
+
+/* COMPLETES A BUILDER'S STRUCTURE: the nodes of `member`'s children become
+ * its node's stem, which takes their references, and the children's members
+ * and its field roots' members are released; each of them was frozen first.
+ * False, changing nothing, when the stem could not be allocated. */
+bool markdown_core_member_freeze(markdown_core_node_pool *pool, markdown_core_member *member);
+
+/* Releases `member`, every member below it, and the references they hold;
+ * `member` was detached first, or is a root. */
+void markdown_core_member_release(markdown_core_node_pool *pool, markdown_core_member *member);
 
 #ifdef __cplusplus
 }

@@ -38,7 +38,7 @@ struct markdown_core_inline_state {
      * inline state built straight out of a chunk -- the reference-definition
      * parser -- and the map is then simply not consulted. */
     markdown_core_parser *owner_parser;
-    markdown_core_node *owner;
+    markdown_core_member *owner;
     /* The instance of `owner`'s structure element, resolved once. The projection is a pure
      * function of `owner->kind`, `owner` does not change across a run, and a
      * run's owner does not change kind during it -- so asking per token was
@@ -109,7 +109,7 @@ static inline void *markdown_core_run_state(const markdown_core_inline_state *in
  * on; it is asserted here rather than tested per placement. */
 static inline void markdown_core_inline_seat_cursor(markdown_core_inline_state *inline_state) {
     markdown_core_parser *parser = inline_state->owner_parser;
-    markdown_core_node *owner = inline_state->owner;
+    const markdown_core_node *owner = inline_state->owner ? inline_state->owner->node : NULL;
     inline_state->mapped = parser && owner && owner->content_map.count > 0;
     if (!inline_state->mapped) {
         return;
@@ -142,7 +142,7 @@ static inline void markdown_core_inline_map_text(markdown_core_inline_state *inl
          memcmp(literal->data, inline_state->input.data + from, (size_t)literal->len) == 0)) {
         node->content_map.first = first;
         node->content_map.count = last - first + 1;
-        node->content_map.offset = from + inline_state->owner->content_map.offset;
+        node->content_map.offset = from + inline_state->owner->node->content_map.offset;
     } else {
         node->content_map.count = 0;
         node->content_map.offset = 0;
@@ -174,7 +174,7 @@ static inline void markdown_core_inline_place(markdown_core_inline_state *inline
     if (!inline_state->mapped) {
         return;
     }
-    bufsize_t base = inline_state->owner->content_map.offset;
+    bufsize_t base = inline_state->owner->node->content_map.offset;
     bufsize_t from_offset = from + base, to_offset = to + base;
     inline_state->owner_parser->content_mark_queries++;
     if (from < 0 || to < 0 || from_offset < inline_state->mark_run_start || to_offset < inline_state->mark_run_start ||
@@ -214,12 +214,12 @@ delimiter *markdown_core_inline_push_delimiter_entry(markdown_core_inline_state 
 void markdown_core_inline_process_delimiters(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
                                              bufsize_t stack_bottom, delimiter *after);
 int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_core_inline_state *inline_state);
-void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_core_node *parent, bool root,
+void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_core_member *parent, bool root,
                                         markdown_core_map *refmap, markdown_core_inline_state *inline_state);
 void markdown_core_inline_clear_inlines(markdown_core_inline_state *inline_state);
 bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_core_inline_state *inline_state);
-markdown_core_node *markdown_core_inline_match_delimiter(const markdown_core_element_instance *self,
-                                                         markdown_core_inline_state *inline_state);
+markdown_core_member *markdown_core_inline_match_delimiter(const markdown_core_element_instance *self,
+                                                           markdown_core_inline_state *inline_state);
 int markdown_core_byte_set_has(const char *set, unsigned char character);
 void markdown_core_inline_push_boundary(markdown_core_inline_state *inline_state, bufsize_t position);
 #endif

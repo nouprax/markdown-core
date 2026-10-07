@@ -13,8 +13,8 @@
 /* A SESSION: the text, the parser instance that reads it, the document
  * parsed from it, the storage its nodes live in, the last id it issued and
  * the document's node count. Each edit parses the whole text again as a
- * revision of the document (parser.h), so the new document continues the old
- * one and the old one's nodes go back to the session's pool. */
+ * revision of the document (parser.h), and the old document's reference to
+ * its tree goes back to the session's pool. */
 struct markdown_core_session {
     markdown_core_text_tree text;
     markdown_core_parser *parser;
@@ -41,6 +41,9 @@ static markdown_core_status session_parse(markdown_core_session *session, const 
         markdown_core_parser_parse(session->parser, (const char *)(size ? source : empty), size, &revision);
     if (!root) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    if (revision.previous) {
+        markdown_core_node_pool_release(&session->pool, revision.previous);
     }
     session->document.root = root;
     session->last_id = revision.last_id;

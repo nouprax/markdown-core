@@ -269,9 +269,6 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
             }
             record.complete = structure->complete_inline;
         }
-        if (markdown_core_kind_owns_fields(kind)) {
-            record.flags |= MARKDOWN_CORE_KIND_FIELDS;
-        }
         dialect->kinds[index] = record;
     }
     /* The out-of-table index answers nothing; the storage is zeroed. */

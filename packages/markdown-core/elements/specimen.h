@@ -3,7 +3,7 @@
 #include "inlines.h"
 #include "block_internal.h"
 void markdown_core_block_prepare_specimens(const markdown_core_element_instance *self, markdown_core_parser *parser);
-bool markdown_core_specimen_continue(markdown_core_parser *parser, markdown_core_node *container,
+bool markdown_core_specimen_continue(markdown_core_parser *parser, markdown_core_member *container,
                                      markdown_core_chunk *input);
 extern const markdown_core_element MARKDOWN_CORE_ELEMENT_SPECIMEN;
 void markdown_core_specimen_dispose(const markdown_core_element_instance *self);

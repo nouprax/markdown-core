@@ -29,16 +29,12 @@ typedef enum {
  *
  * `previous` is the root of a tree a parse published, and `edits` turn the
  * text it was parsed from into the text this parse reads, in its
- * coordinates: disjoint, in source order. The published tree continues it
- * (docs/plans/2026-09-29-incremental-parsing.md, 5.9): every node matched to
- * an old node takes its id, every other node keeps the id it took after
- * `last_id` as it was completed, and a matched node equal to its old node as a value is that old
- * node. On success the parse owns `previous`: it is the returned root, or it
- * is released into `pool` with every other node it retires, and `last_id` is
- * the last id issued. `node_count` is the number of nodes in `previous`,
- * and on success the number in the published tree. A fresh parse continues
- * nothing: `previous` is NULL and `last_id` is 0, and every node is
- * numbered in the order nodes complete, the document last.
+ * coordinates: disjoint, in source order. The caller holds `previous`. Every
+ * node the parse makes takes the next id after `last_id` as it completes,
+ * the document last; on success `last_id` is the last id issued.
+ * `node_count` is the number of nodes in `previous`, and on success the
+ * number in the published tree. A fresh parse continues nothing: `previous`
+ * is NULL and `last_id` is 0.
  *
  * `pool` lends the parse every node and resource slot it takes (node.h); it
  * outlives the parse, and its owner disposes it. */
@@ -135,14 +131,17 @@ typedef struct {
 /* AN INLINE ROOT WAITING FOR ITS PARSE (docs/plans/2026-09-29-incremental-
  * parsing.md, 5.8): the node whose first relation is the content and whose
  * runs read it; the node the content is parsed into, the node itself or the
- * private node its title or term hangs from; where the node lies in the
- * source, recorded when it was numbered, since a numbered node holds only
- * its extent; and whether that holder is a field, which belongs to its owner
- * and is never replaced. */
+ * private node its title or term hangs from; the node that holds the root,
+ * which numbered it; where the node lies in the source, recorded when it was
+ * numbered, since a numbered node holds only its extent; whether that
+ * holder is a field, which belongs to its owner and is never replaced; and
+ * the builder the content is parsed into, a member of the holder that does
+ * not hold it, from when the root is held until it completes. */
 typedef struct markdown_core_inline_root {
-    struct markdown_core_node *node, *holder;
+    struct markdown_core_node *node, *holder, *owner;
     markdown_core_place place;
     bool field;
+    struct markdown_core_member *builder;
 } markdown_core_inline_root;
 
 /* A CELL WHOSE CONTENT IS READ AS BLOCKS once the document's own lines are,
@@ -170,7 +169,7 @@ struct markdown_core_parser {
     size_t inline_root_count, inline_root_capacity;
     /* The root whose content is being completed, or NULL: the nodes numbered
      * meanwhile lie in its content. */
-    const struct markdown_core_inline_root *completing;
+    struct markdown_core_inline_root *completing;
     /* The last id issued: a node takes the next when its owner completes. */
     uint64_t last_id;
     /* Run records released by finished runs, kept for the next run
@@ -183,13 +182,15 @@ struct markdown_core_parser {
      * engine only carries it to element hooks. */
     const markdown_core_dialect *dialect;
     void *context;
-    /* The root node of the parser, always a MARKDOWN_CORE_NODE_DOCUMENT */
-    struct markdown_core_node *root;
-    /* The active block grammar boundary. The document and mapped cell inputs
+    /* The builder of the document (node.h, markdown_core_member), which
+     * holds the document's reference until the parse returns it. */
+    struct markdown_core_member *root;
+    /* The active block grammar boundary: the document's builder, or a mapped
+     * cell's while its content is read. The document and mapped cell inputs
      * share this parser and all document registries. Input roots stay owned by
      * the AST; the queue only borrows them until their block content is read. */
-    struct markdown_core_node *block_root;
-    struct markdown_core_node *matched_container;
+    struct markdown_core_member *block_root;
+    struct markdown_core_member *matched_container;
     struct markdown_core_block_input *block_inputs;
     size_t block_input_count, block_input_capacity, block_input_cursor;
     /* Geometry and grammar facts for the active immutable input. The driver
@@ -215,7 +216,7 @@ struct markdown_core_parser {
     int claimed_line;
     bufsize_t claimed_last_end;
     /* The last open block after a line is fully processed */
-    struct markdown_core_node *current;
+    struct markdown_core_member *current;
     /* See the documentation for markdown_core_parser_get_line_number() in markdown_core.h */
     int line_number;
     /* See the documentation for markdown_core_parser_get_offset() in markdown_core.h */
@@ -302,7 +303,7 @@ struct markdown_core_parser {
     /* The open containers a lookahead matches, root first, with the flags they
      * had when it began; and the per-line resume cache. Both are owned by the
      * parser so a document with many candidates allocates them once. */
-    struct markdown_core_node **lookahead_chain;
+    struct markdown_core_member **lookahead_chain;
     markdown_core_node_internal_flags *lookahead_chain_flags;
     int lookahead_chain_alloc;
     /* Delimiter entries removed from an inline parse, kept for the next push
@@ -482,6 +483,17 @@ static inline void markdown_core_parser_release_node(markdown_core_parser *parse
     markdown_core_node_pool_release(parser ? parser->pool : NULL, node);
 }
 
+/* A member for `node` from the parse's pool (node.h); NULL, with the parse
+ * failed, when it could not be allocated. */
+static inline markdown_core_member *markdown_core_parser_member(markdown_core_parser *parser, markdown_core_node *node,
+                                                                bool held) {
+    markdown_core_member *member = markdown_core_member_new(parser->pool, node, held);
+    if (!member) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+    return member;
+}
+
 /* Whether the pass asks `entry`'s step at the event it is projected to: its
  * gate, read against the kinds the parse has produced so far. */
 static inline bool markdown_core_complete_step_admitted(const markdown_core_complete_step_entry *entry,
@@ -504,10 +516,10 @@ static inline markdown_core_node *markdown_core_parser_make_node_with_ext(markdo
 }
 
 static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_kind(markdown_core_parser *parser,
-                                                                                    markdown_core_node *node,
+                                                                                    markdown_core_member *member,
                                                                                     markdown_core_node_type kind) {
     markdown_core_parser_note_kind(parser, kind);
-    return markdown_core_node_set_kind(node, kind);
+    return markdown_core_node_set_kind(member->node, markdown_core_parser_owner(parser, member), kind);
 }
 
 /* The instance of the structure element of `node`'s kind (dialect.h,
@@ -542,7 +554,7 @@ typedef struct markdown_core_input_line {
 typedef struct markdown_core_line_facts {
     struct markdown_core_normalized_line *normalized;
     /* Table grammar search facts under one matched container prefix. */
-    const struct markdown_core_node *table_container;
+    const struct markdown_core_member *table_container;
     int table_offset;
     unsigned table_absent;
     /* A candidate matches open-container prefixes on every line it visits.
@@ -550,7 +562,7 @@ typedef struct markdown_core_line_facts {
      * so each resumes from the deepest match already recorded. Each
      * (container, line) prefix is matched at most once per parse. NULL means
      * that no scan has recorded a prefix. */
-    const struct markdown_core_node *container;
+    const struct markdown_core_member *container;
     /* Its distance from the document root: chain[depth] == container. */
     int depth;
     /* The line state after that container's prefix: what S_advance_offset left. */
@@ -624,7 +636,7 @@ static inline markdown_core_line_facts *markdown_core_parser_get_line_facts(mark
  * false only when an allocation failed, and has then marked the parse lost. */
 typedef struct {
     markdown_core_parser *parser;
-    struct markdown_core_node *parent;
+    struct markdown_core_member *parent;
     int depth;
     const unsigned char *cursor;
     int line;
@@ -651,7 +663,7 @@ struct markdown_core_block_reader;
 /* Query the ordinary block-start rules before the table slot. Paragraph
  * continuation uses its real interruption rules (notably list starts, type-7
  * HTML and indentation); following lines come from the caller's source view. */
-bool markdown_core_parser_has_block_start(markdown_core_parser *parser, markdown_core_node *parent,
+bool markdown_core_parser_has_block_start(markdown_core_parser *parser, markdown_core_member *parent,
                                           markdown_core_chunk *input, int first, int column, int indent, bool paragraph,
                                           struct markdown_core_block_reader *reader);
 
@@ -661,10 +673,12 @@ void markdown_core_parser_finalize_unmatched_blocks(markdown_core_parser *parser
 bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdown_core_node *owner);
 /* Whether `node` holds inline content (its kind's record, dialect.h). */
 bool markdown_core_parser_contains_inlines(markdown_core_parser *parser, markdown_core_node *node);
-/* Puts an inline root on the parser's list (markdown_core_inline_root).
- * False when the list could not grow. */
+/* Puts an inline root on the parser's list (markdown_core_inline_root),
+ * with its builder. False when the list or the builder could not be
+ * allocated. */
 bool markdown_core_parser_hold_inline_root(markdown_core_parser *parser, markdown_core_node *node,
-                                           markdown_core_node *holder, markdown_core_place place, bool field);
+                                           markdown_core_node *holder, markdown_core_node *owner,
+                                           markdown_core_place place, bool field);
 /* WHERE A BYTE OF THE ACTIVE INPUT WAS WRITTEN, as a byte offset of the
  * document source. `line` is a line of the active input and `column` a byte
  * column of that line as the block parser reads it, counted from 1: the
@@ -720,7 +734,7 @@ bufsize_t markdown_core_parser_line_offset(markdown_core_parser *parser, int lin
  * (node.h). `*line` becomes the line the node ends on, where a later node can
  * start the search. */
 void markdown_core_parser_place_runs(markdown_core_parser *parser, markdown_core_node *node,
-                                     const markdown_core_node *container, int *line);
+                                     const markdown_core_member *container, int *line);
 /* Whether `node` begins on input line `line`, a line of the active input the
  * driver has reached. */
 bool markdown_core_parser_starts_on_line(markdown_core_parser *parser, const markdown_core_node *node, int line);
@@ -740,7 +754,7 @@ static inline bufsize_t markdown_core_parser_line_start(const markdown_core_pars
 int markdown_core_parser_append_line_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
                                            bufsize_t line_start, int column, bufsize_t length, bufsize_t offset);
 
-bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, struct markdown_core_node *parent_container,
+bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, struct markdown_core_member *parent_container,
                                           markdown_core_node_type child, markdown_core_block_lookahead *lookahead);
 /* The next non-blank line that carries the prefixes: its bytes through its
  * line ending, the index of its first non-space byte, its indentation after

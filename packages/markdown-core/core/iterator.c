@@ -10,30 +10,12 @@
 #include "parser.h"
 #include "iterator.h"
 
-markdown_core_iter *markdown_core_iter_new(markdown_core_node *root) {
-    if (root == NULL) {
-        return NULL;
-    }
-    markdown_core_iter *iter = (markdown_core_iter *)markdown_core_alloc(1, sizeof(markdown_core_iter));
-    if (!iter) {
-        return NULL;
-    }
-    markdown_core_iter_init(iter, root);
-    return iter;
-}
-
-void markdown_core_iter_free(markdown_core_iter *iter) { markdown_core_free(iter); }
-
-markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter) { return markdown_core_iter_step(iter); }
-
-void markdown_core_iter_reset(markdown_core_iter *iter, markdown_core_node *current,
+void markdown_core_iter_reset(markdown_core_iter *iter, markdown_core_member *current,
                               markdown_core_event_type event_type) {
     iter->next.ev_type = event_type;
-    iter->next.node = current;
+    iter->next.member = current;
     markdown_core_iter_step(iter);
 }
-
-markdown_core_node *markdown_core_iter_get_node(markdown_core_iter *iter) { return iter->cur.node; }
 
 /* The surviving Text owns the concatenated literal and a concatenation of
  * its operands' source runs. A caller outside a parse has no parser-owned
@@ -44,15 +26,16 @@ markdown_core_node *markdown_core_iter_get_node(markdown_core_iter *iter) { retu
  * `S_is_leaf` list, so its EXIT was suppressed and freeing at ENTER
  * happened to be safe; with the contract total it is a use-after-free. */
 markdown_core_complete_result markdown_core_consolidate_text_step(markdown_core_parser *parser,
-                                                                  markdown_core_iter *iter, markdown_core_node *cur,
+                                                                  markdown_core_iter *iter, markdown_core_member *text,
                                                                   markdown_core_complete_node_func complete,
                                                                   int depth) {
-    markdown_core_node *tmp, *next;
+    markdown_core_member *member, *next;
+    markdown_core_node *cur = text->node, *tmp;
 
-    assert(iter->cur.node == cur && iter->cur.ev_type == MARKDOWN_CORE_EVENT_EXIT);
+    assert(iter->cur.member == text && iter->cur.ev_type == MARKDOWN_CORE_EVENT_EXIT);
     assert(cur->kind == MARKDOWN_CORE_NODE_TEXT);
 
-    if (cur->next && cur->next->kind == MARKDOWN_CORE_NODE_TEXT) {
+    if (text->next && text->next->node->kind == MARKDOWN_CORE_NODE_TEXT) {
         /* THE MERGED TEXT'S MAP IS A VIEW WHEN ITS OPERANDS ARE. A Text that
          * is a verbatim copy of its source holds a slice of its container's
          * runs (markdown_core_inline_map_text), and the siblings absorbed
@@ -74,7 +57,8 @@ markdown_core_complete_result markdown_core_consolidate_text_step(markdown_core_
          * taken here, and each operand is copied to its place: no buffer
          * grows, and none is handed over and grown again for the next run. */
         size_t length = (size_t)cur->as.literal->len;
-        for (tmp = cur->next; tmp && tmp->kind == MARKDOWN_CORE_NODE_TEXT; tmp = tmp->next) {
+        for (member = text->next; member && member->node->kind == MARKDOWN_CORE_NODE_TEXT; member = member->next) {
+            tmp = member->node;
             length += (size_t)tmp->as.literal->len;
             if (!view) {
                 continue;
@@ -104,14 +88,15 @@ markdown_core_complete_result markdown_core_consolidate_text_step(markdown_core_
         if (at) {
             memcpy(merged, cur->as.literal->data, (size_t)at);
         }
-        tmp = cur->next;
-        while (tmp && tmp->kind == MARKDOWN_CORE_NODE_TEXT) {
+        member = text->next;
+        while (member && member->node->kind == MARKDOWN_CORE_NODE_TEXT) {
+            tmp = member->node;
             /* Bring `tmp` to its own EXIT before freeing it: two events now,
              * where a suppressed EXIT used to make one enough. They are steps
              * of the walk this is part of, taken HERE so that no step after
              * this one is ever handed a node this one is about to free. */
-            markdown_core_iter_next(iter); /* tmp ENTER */
-            markdown_core_iter_next(iter); /* tmp EXIT  */
+            markdown_core_iter_step(iter); /* ENTER */
+            markdown_core_iter_step(iter); /* EXIT  */
             if (complete) {
                 complete(parser, tmp, depth);
             }
@@ -133,9 +118,10 @@ markdown_core_complete_result markdown_core_consolidate_text_step(markdown_core_
             if (tmp->as.literal->len > 0) {
                 cur->where.place.end = tmp->where.place.end;
             }
-            next = tmp->next;
-            markdown_core_parser_release_node(parser, tmp);
-            tmp = next;
+            next = member->next;
+            markdown_core_member_unlink(member);
+            markdown_core_parser_release_member(parser, member);
+            member = next;
         }
         /* Every node the loop freed was ahead of the cursor and is now
          * unlinked, so the cursor sits at the last one's EXIT. Re-establish
@@ -146,7 +132,7 @@ markdown_core_complete_result markdown_core_consolidate_text_step(markdown_core_
         if (parser) {
             cur->content_map = combined_map;
         }
-        markdown_core_iter_reset(iter, cur, MARKDOWN_CORE_EVENT_EXIT);
+        markdown_core_iter_reset(iter, text, MARKDOWN_CORE_EVENT_EXIT);
         markdown_core_chunk_free(cur->as.literal);
         merged[at] = '\0';
         *cur->as.literal = (markdown_core_chunk){merged, at, 1};
@@ -164,38 +150,9 @@ markdown_core_complete_result markdown_core_consolidate_text_step(markdown_core_
     // one's subtree. The caller learns that `cur` is gone and hands this
     // event to nothing else.
     if (cur->as.literal->len == 0) {
-        markdown_core_chunk_free(cur->as.literal);
-        markdown_core_parser_release_node(parser, cur);
+        markdown_core_member_unlink(text);
+        markdown_core_parser_release_member(parser, text);
         return MARKDOWN_CORE_COMPLETE_CONSUMED;
     }
     return MARKDOWN_CORE_COMPLETE_CONTINUE;
-}
-
-/* The same step, driven by a walk of its own. Inside a parse an inline
- * root's completion runs the step itself and never comes here; this is the
- * entry point for a tree built or rewritten outside a parse. */
-int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parser, markdown_core_node *root) {
-    if (root == NULL) {
-        return 1;
-    }
-    markdown_core_iter *iter = markdown_core_iter_new(root);
-    markdown_core_event_type ev_type;
-    int ok = 1;
-
-    if (!iter) {
-        return 0;
-    }
-
-    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *cur = markdown_core_iter_get_node(iter);
-        if (ev_type != MARKDOWN_CORE_EVENT_EXIT || cur->kind != MARKDOWN_CORE_NODE_TEXT) {
-            continue;
-        }
-        if (markdown_core_consolidate_text_step(parser, iter, cur, NULL, 0) == MARKDOWN_CORE_COMPLETE_FAILED) {
-            ok = 0;
-            break;
-        }
-    }
-    markdown_core_iter_free(iter);
-    return ok;
 }

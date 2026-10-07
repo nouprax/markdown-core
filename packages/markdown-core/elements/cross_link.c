@@ -10,9 +10,9 @@
  * nest or share a suffix: at most the ![[ and [[ attempts inspect the same body.
  * Recognition inspects each byte at most twice, including failed and unclosed
  * forms. A successful embed then inspects only its bounded numeric suffix. */
-static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 markdown_core_node *parent, unsigned char character,
-                                 markdown_core_inline_state *inline_state) {
+static markdown_core_member *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                   markdown_core_member *parent, unsigned char character,
+                                   markdown_core_inline_state *inline_state) {
     markdown_core_chunk *input = markdown_core_inline_state_get_chunk(inline_state);
     const unsigned char *s = input->data;
     bufsize_t start = markdown_core_inline_state_get_offset(inline_state);
@@ -119,11 +119,11 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     }
     int line;
     bufsize_t first, last;
-    markdown_core_parser_content_place(parser, &parent->content_map, start, &line, &first);
-    markdown_core_parser_content_end_place(parser, &parent->content_map, i + 1, &line, &last);
+    markdown_core_parser_content_place(parser, &parent->node->content_map, start, &line, &first);
+    markdown_core_parser_content_end_place(parser, &parent->node->content_map, i + 1, &line, &last);
     node->where.place = (markdown_core_place){(uint32_t)first, (uint32_t)last};
     markdown_core_inline_state_set_offset(inline_state, i + 2);
-    return node;
+    return markdown_core_inline_state_append(inline_state, node);
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CROSS_LINK = {

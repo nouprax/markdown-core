@@ -106,13 +106,13 @@ struct markdown_core_element {
      * A byte's owners are asked in ascending precedence -- any value, not only
      * the named ones -- and equal precedences in descriptor order. */
     markdown_core_inline_precedence inline_precedence;
-    markdown_core_node *(*parse_text)(const markdown_core_element_instance *, markdown_core_parser *,
-                                      markdown_core_inline_state *, bufsize_t);
+    markdown_core_member *(*parse_text)(const markdown_core_element_instance *, markdown_core_parser *,
+                                        markdown_core_inline_state *, bufsize_t);
     void (*init_inline)(const markdown_core_element_instance *, markdown_core_inline_state *);
     void (*begin_inline)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_inline_state *,
-                         markdown_core_node *);
+                         markdown_core_member *);
     bool (*claim_inline_tail)(const markdown_core_element_instance *, markdown_core_inline_state *,
-                              markdown_core_node *);
+                              markdown_core_member *);
     void (*finish_inline)(const markdown_core_element_instance *, markdown_core_inline_state *);
     void (*dispose_inline)(const markdown_core_element_instance *, markdown_core_inline_state *);
     void (*complete_inline)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *, int);
@@ -126,9 +126,9 @@ struct markdown_core_element {
      * accepts the line takes it as a paragraph takes a lazy line: the starts
      * that refuse a lazy line (`block_start_context`) open no block on it, so
      * the line is lazy exactly when it would be after a paragraph's line. */
-    markdown_core_node *(*open_lazy)(const markdown_core_element_instance *, markdown_core_parser *,
-                                     markdown_core_node *, markdown_core_chunk *);
-    bool (*accepts_lazy)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
+    markdown_core_member *(*open_lazy)(const markdown_core_element_instance *, markdown_core_parser *,
+                                       markdown_core_member *, markdown_core_chunk *);
+    bool (*accepts_lazy)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *);
     unsigned speculative_flags;
     markdown_core_content_mode content_mode;
     bool inline_content, deferred_inlines, paragraph, blank_opaque, blank_runs, propagates_child_blank, pending_close;
@@ -149,14 +149,14 @@ struct markdown_core_element {
     /* The last step of the parse: every node is complete, and the owner
      * publishes the document (identity, definition tables). */
     void (*publish_document)(const markdown_core_element_instance *, markdown_core_parser *);
-    markdown_core_node *(*open_text_block)(const markdown_core_element_instance *, markdown_core_parser *,
-                                           markdown_core_node *, markdown_core_chunk *);
-    markdown_core_node *(*try_interrupting_block)(const markdown_core_element_instance *, markdown_core_parser *,
-                                                  markdown_core_node *, markdown_core_chunk *, bool);
+    markdown_core_member *(*open_text_block)(const markdown_core_element_instance *, markdown_core_parser *,
+                                             markdown_core_member *, markdown_core_chunk *);
+    markdown_core_member *(*try_interrupting_block)(const markdown_core_element_instance *, markdown_core_parser *,
+                                                    markdown_core_member *, markdown_core_chunk *, bool);
     bool interrupts_paragraph;
 
-    bool (*continue_container)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                               markdown_core_chunk *, const markdown_core_node *, bool *);
+    bool (*continue_container)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *,
+                               markdown_core_chunk *, const markdown_core_member *, bool *);
     /* The bytes `continue_container` can strip from a line besides
      * indentation: the COMPLETE set, as a gate's is, and NULL when it strips
      * indentation only. A block-start question asked of a LATER line from raw
@@ -169,11 +169,11 @@ struct markdown_core_element {
      * from that marker in raw source, so the key hands such a line to the
      * lookahead rather than walking over it. */
     const char *container_prefix_bytes;
-    bool (*accepts_blank)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
-    bool (*blank_line)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
-    bool (*ends_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+    bool (*accepts_blank)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *);
+    bool (*blank_line)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *);
+    bool (*ends_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *,
                        markdown_core_chunk *);
-    void (*finalize_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
+    void (*finalize_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *);
 
     bool (*scan_block_start)(const markdown_core_element_instance *, markdown_core_parser *,
                              struct markdown_core_block_start_context *, struct markdown_core_block_start *);
@@ -293,55 +293,5 @@ struct markdown_core_element {
      * Sealing resolves them, in this order, into the instance's `peers`. */
     const markdown_core_element *const *peers;
 };
-
-/* Defined here rather than in node.c because the ANSWER IS NO for almost every
- * node, and the question was costing a cross-translation-unit call to find that
- * out. `walk_owned_trees` asks it once per node of every tree it walks --
- * 2,981,851 times over the 65 same-job benchmark documents, of which 136,500
- * reach an element hook and about 26,800 visit anything at all. Inlined, the
- * common answer is a compare against `kind` and a NULL test on a pointer.
- *
- * It lives in element.h, not beside its declaration in node.h, because it
- * reads through `markdown_core_element`, which node.h only forward-declares.
- *
- * Kept as ONE definition rather than a cheap predicate placed beside the real
- * one: a second copy of "which kinds can own a subtree" drifts from the list
- * below the first time a kind is added to it. */
-/* WHICH KINDS CAN OWN A SUBTREE THROUGH THEIR OWN RECORD: the one predicate,
- * read by the visitor below and projected into the completion pass's per-kind
- * record (dialect.h, MARKDOWN_CORE_KIND_FIELDS), so the pass asks it
- * once per parse per kind rather than three compares per node. An element
- * that owns subtrees through `visit_owned_subtrees_func` is found through
- * the node's `element`, which the pass tests beside the flag. */
-static inline bool markdown_core_kind_owns_fields(markdown_core_node_type kind) {
-    return kind == MARKDOWN_CORE_NODE_DEFINITION || kind == MARKDOWN_CORE_NODE_CALLOUT ||
-           kind == MARKDOWN_CORE_NODE_CITE;
-}
-
-static inline int markdown_core_visit_inline_subtrees(markdown_core_node *node,
-                                                      markdown_core_owned_subtree_visitor visitor, void *context) {
-    if (markdown_core_kind_owns_fields((markdown_core_node_type)node->kind)) {
-        if (node->kind == MARKDOWN_CORE_NODE_DEFINITION && node->as.definition->term &&
-            !visitor(&node->as.definition->term, context)) {
-            return 0;
-        }
-        if (node->kind == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->title &&
-            !visitor(&node->as.callout->title, context)) {
-            return 0;
-        }
-        if (node->kind == MARKDOWN_CORE_NODE_CITE) {
-            for (markdown_core_node *item = node->as.cite->citations; item; item = item->next) {
-                if ((item->as.citation->note && !visitor(&item->as.citation->note, context)) ||
-                    (item->as.citation->prefix && !visitor(&item->as.citation->prefix, context)) ||
-                    (item->as.citation->suffix && !visitor(&item->as.citation->suffix, context))) {
-                    return 0;
-                }
-            }
-        }
-    }
-    const markdown_core_element *element = node->element;
-    return !element || !element->visit_owned_subtrees_func ||
-           element->visit_owned_subtrees_func(element, node, visitor, context);
-}
 
 #endif

@@ -81,7 +81,7 @@ void markdown_core_block_prepare_specimens(const markdown_core_element_instance 
 }
 
 static bool markdown_core_specimen_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                        markdown_core_node **container, markdown_core_chunk *input,
+                                        markdown_core_member **container, markdown_core_chunk *input,
                                         block_start *start) {
     bufsize_t matched = start->matched;
     markdown_core_specimen_value specimen = start->specimen;
@@ -96,13 +96,13 @@ static bool markdown_core_specimen_open(const markdown_core_element_instance *se
         markdown_core_optional_chunk_free(&specimen.label);
         return false;
     }
-    if ((*container)->prev && (*container)->prev->kind == MARKDOWN_CORE_NODE_SPECIMEN) {
+    if ((*container)->prev && (*container)->prev->node->kind == MARKDOWN_CORE_NODE_SPECIMEN) {
         specimen.has_start = false;
         specimen.start = 0;
     }
-    *(*container)->as.specimen = specimen;
+    *(*container)->node->as.specimen = specimen;
     markdown_core_specimen_state *state = self->state;
-    if (!markdown_core_parser_register_definition(parser, &state->definitions, *container)) {
+    if (!markdown_core_parser_register_definition(parser, &state->definitions, (*container)->node)) {
         return false;
     }
     markdown_core_block_advance_offset(parser, input, parser->first_nonspace + matched - parser->offset, false);
@@ -127,14 +127,14 @@ static bool markdown_core_specimen_scan(const markdown_core_element_instance *se
     return true;
 }
 
-bool markdown_core_specimen_continue(markdown_core_parser *parser, markdown_core_node *container,
+bool markdown_core_specimen_continue(markdown_core_parser *parser, markdown_core_member *container,
                                      markdown_core_chunk *input) {
     return markdown_core_block_continue_indented(parser, input, 4, true);
 }
 
 static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                               markdown_core_node *node, markdown_core_chunk *input, const markdown_core_node *joining,
-                               bool *taken) {
+                               markdown_core_member *node, markdown_core_chunk *input,
+                               const markdown_core_member *joining, bool *taken) {
     (void)self;
     return markdown_core_specimen_continue(parser, node, input);
 }

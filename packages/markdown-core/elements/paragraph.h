@@ -8,6 +8,6 @@ extern const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH;
  * paragraphs stay attached until the block phase finishes processing
  * identifiers. */
 void markdown_core_paragraph_finalize(const markdown_core_element_instance *paragraph, markdown_core_parser *parser,
-                                      markdown_core_node *node);
+                                      markdown_core_member *member);
 
 #endif

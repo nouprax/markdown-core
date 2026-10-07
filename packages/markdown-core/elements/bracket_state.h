@@ -10,7 +10,8 @@ typedef enum { BRACKET_LINK, BRACKET_IMAGE, BRACKET_FOOTNOTE } bracket_kind;
 
 typedef struct bracket {
     struct bracket *previous;
-    markdown_core_node *inl_text;
+    /* The member of the opening bracket's literal. */
+    markdown_core_member *inl_text;
     bufsize_t position;
     /* Last pipe read as ordinary text at this bracket's depth. Opaque tokens,
      * escapes and nested brackets never update the enclosing image. */
@@ -25,7 +26,7 @@ typedef struct bracket {
     citation_token *author;
     /* A tail waits for its key's enclosing owner. All token nodes stay in the
      * AST; this parser-owned continuation borrows the exact bounded range. */
-    markdown_core_node *close_text;
+    markdown_core_member *close_text;
     delimiter *delim_end;
     bufsize_t close_position;
     bool pending_no_link_openers;

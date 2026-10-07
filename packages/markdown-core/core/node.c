@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -7,8 +8,6 @@
 #include "node.h"
 #include "references.h"
 #include "element.h"
-
-static void S_node_unlink(markdown_core_node *node);
 
 /* These kinds are owned roots/fields, never ordinary child edges, even under
  * a dynamic policy. Both decision paths share this structural boundary. */
@@ -100,26 +99,6 @@ bool markdown_core_node_can_contain_type(markdown_core_node *node, markdown_core
     return markdown_core_node_can_contain_builtin(node, child_type);
 }
 
-static bool S_can_contain(markdown_core_node *node, markdown_core_node *child) {
-    if (node == NULL || child == NULL) {
-        return false;
-    }
-    /* Arbitrary reparenting must reject cycles. Parser construction instead
-     * proves containment and transfers a disjoint subtree through
-     * attach_validated. */
-    {
-        markdown_core_node *cur = node;
-        do {
-            if (cur == child) {
-                return false;
-            }
-            cur = cur->parent;
-        } while (cur != NULL);
-    }
-
-    return markdown_core_node_can_contain_type(node, (markdown_core_node_type)child->kind);
-}
-
 /* A NODE'S SLOT STORAGE (slab.h): the node, then room for its kind's record.
  * A C99 union aligns the node and the record space after it for ordinary
  * scalar fields, as the slot header before them is; the node sits at one
@@ -166,6 +145,7 @@ static void S_slot_release(markdown_core_node_pool *pool, markdown_core_node *no
 void markdown_core_node_pool_dispose(markdown_core_node_pool *pool) {
     markdown_core_slab_pool_dispose(&pool->nodes);
     markdown_core_slab_pool_dispose(&pool->resources);
+    markdown_core_slab_pool_dispose(&pool->members);
     markdown_core_bytes_pool_dispose(&pool->bytes);
 }
 
@@ -210,7 +190,6 @@ static const size_t S_inline_payload_size[MARKDOWN_CORE_NODE_KIND_COUNT] = {
     [MARKDOWN_CORE_NODE_HTML & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_chunk),
     [MARKDOWN_CORE_NODE_LINK & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_link),
     [MARKDOWN_CORE_NODE_EMBEDDED & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_link),
-    [MARKDOWN_CORE_NODE_CITE & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_cite),
     [MARKDOWN_CORE_NODE_COMMENT & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_chunk),
     [MARKDOWN_CORE_NODE_CITATION & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_citation_item),
     [MARKDOWN_CORE_NODE_CROSS_LINK & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_cross_reference),
@@ -319,6 +298,7 @@ markdown_core_node *markdown_core_node_pool_new(markdown_core_node_pool *pool, m
         node->as.data = payload_size ? slot->record : NULL;
     }
     markdown_core_strbuf_init_zeroed(&node->content);
+    node->refs = 1;
     node->kind = (uint16_t)type;
     node->element = element;
     S_init_node_as(type, &node->as);
@@ -374,8 +354,8 @@ static void free_node_as(markdown_core_node_pool *pool, markdown_core_node *node
         break;
     }
     case MARKDOWN_CORE_NODE_CITATION:
-        /* The affix chains are freed by the walk in `S_free_nodes`, spliced
-         * in beside the children; only the referent's bytes are the arm's. */
+        /* The note and the affixes are fields, which the release drops;
+         * only the referent's bytes are the arm's. */
         markdown_core_chunk_free(&node->as.citation->value);
         break;
     case MARKDOWN_CORE_NODE_DOCUMENT:
@@ -428,39 +408,15 @@ static void free_node_as(markdown_core_node_pool *pool, markdown_core_node *node
     node->as.data = NULL;
 }
 
-// Free a markdown_core_node list and any children.
-/* Splices `first`'s sibling chain into the free walk right after `e`, so the
- * walk frees it as it frees children: without recursion. */
-static void S_splice_after(markdown_core_node *e, markdown_core_node *first) {
-    markdown_core_node *last;
-    if (first == NULL) {
-        return;
-    }
-    last = first;
-    while (last->next != NULL) {
-        last = last->next;
-    }
-    last->next = e->next;
-    e->next = first;
-}
-
-static int S_release_owned_subtree(markdown_core_node **slot, void *context) {
-    S_splice_after(context, *slot);
-    *slot = NULL;
-    return 1;
-}
-
 /* THE NODE-VALUED FIELDS OF A NODE'S RECORD, each slot visited whether or
  * not it holds a node. An element's own are visited by its
- * `visit_owned_subtrees_func`; `S_visit_fields` visits both. */
+ * `visit_owned_subtrees_func`; `markdown_core_node_visit_fields` visits both. */
 static int S_visit_record_fields(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor, void *context) {
     switch (node->kind) {
     case MARKDOWN_CORE_NODE_DEFINITION:
         return visitor(&node->as.definition->term, context);
     case MARKDOWN_CORE_NODE_CALLOUT:
         return visitor(&node->as.callout->title, context);
-    case MARKDOWN_CORE_NODE_CITE:
-        return visitor(&node->as.cite->citations, context);
     case MARKDOWN_CORE_NODE_CITATION:
         return visitor(&node->as.citation->note, context) && visitor(&node->as.citation->prefix, context) &&
                visitor(&node->as.citation->suffix, context);
@@ -471,117 +427,419 @@ static int S_visit_record_fields(markdown_core_node *node, markdown_core_owned_s
     }
 }
 
-static int S_visit_fields(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor, void *context) {
+int markdown_core_node_visit_fields(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor,
+                                    void *context) {
     return S_visit_record_fields(node, visitor, context) &&
            (!node->element || !node->element->visit_owned_subtrees_func ||
             node->element->visit_owned_subtrees_func(node->element, node, visitor, context));
 }
 
-static size_t S_free_nodes(markdown_core_node_pool *pool, markdown_core_node *e) {
-    markdown_core_node *next;
+/* THE PENDING LISTS OF A RELEASE. A node whose last reference was dropped is
+ * linked through its id, and a stem through its first word, neither of which
+ * anything reads again. */
+typedef struct {
+    markdown_core_node *nodes;
+    markdown_core_stem *stems;
+} S_release_lists;
+
+static void S_drop_node(S_release_lists *lists, markdown_core_node *node) {
+    if (node && --node->refs == 0) {
+        memcpy(&node->id, &lists->nodes, sizeof(lists->nodes));
+        lists->nodes = node;
+    }
+}
+
+/* The first word of a stem, its count of references and of nodes, holds a
+ * pointer once it is released. */
+typedef char S_stem_link_fits[sizeof(markdown_core_stem *) <= offsetof(markdown_core_stem, height) ? 1 : -1];
+
+static void S_link_stem(S_release_lists *lists, markdown_core_stem *stem) {
+    memcpy(stem, &lists->stems, sizeof(lists->stems));
+    lists->stems = stem;
+}
+
+static void S_drop_stem(S_release_lists *lists, markdown_core_stem *stem) {
+    if (stem && --stem->refs == 0) {
+        S_link_stem(lists, stem);
+    }
+}
+
+static int S_drop_field(markdown_core_node **slot, void *context) {
+    S_drop_node(context, *slot);
+    *slot = NULL;
+    return 1;
+}
+
+/* Releases the node's own storage: everything but its children and fields,
+ * which the caller dropped. */
+static void S_release_value(markdown_core_node_pool *pool, markdown_core_node *e) {
+    /* Almost no node owns an attribute value or a content buffer: the test
+     * each releaser makes first -- its own predicate, defined once beside it
+     * -- is made here, so a node that owns neither pays the compares and no
+     * call. */
+    if (markdown_core_attributes_owns(&e->attributes)) {
+        markdown_core_attributes_free(&e->attributes);
+    }
+    if (markdown_core_strbuf_owns(&e->content)) {
+        markdown_core_strbuf_free(&e->content);
+    }
+    if (e->runs) {
+        markdown_core_node_pool_bytes_free(pool, e->runs);
+    }
+    if (e->opaque && e->element && e->element->opaque_free_func) {
+        e->element->opaque_free_func(e->element, e);
+    }
+    free_node_as(pool, e);
+}
+
+static size_t S_release(markdown_core_node_pool *pool, S_release_lists *lists) {
     size_t released = 0;
-    while (e != NULL) {
+    while (lists->nodes || lists->stems) {
+        if (lists->stems) {
+            markdown_core_stem *stem = lists->stems;
+            memcpy(&lists->stems, stem, sizeof(lists->stems));
+            for (uint8_t i = 0; i < stem->width; i++) {
+                if (stem->height) {
+                    S_drop_stem(lists, stem->entries[i].stem);
+                } else {
+                    S_drop_node(lists, stem->entries[i].node);
+                }
+            }
+            markdown_core_node_pool_bytes_free(pool, stem);
+            continue;
+        }
+        markdown_core_node *node = lists->nodes;
+        memcpy(&lists->nodes, &node->id, sizeof(lists->nodes));
         released++;
-        /* Almost no node owns an attribute value or a content buffer: the
-         * test each releaser makes first -- its own predicate, defined once
-         * beside it -- is made here, so a node that owns neither pays the
-         * compares and no call. */
-        if (markdown_core_attributes_owns(&e->attributes)) {
-            markdown_core_attributes_free(&e->attributes);
-        }
-        if (markdown_core_strbuf_owns(&e->content)) {
-            markdown_core_strbuf_free(&e->content);
-        }
-        if (e->runs) {
-            markdown_core_node_pool_bytes_free(pool, e->runs);
-        }
-
-        /* The node-valued fields join the same iterative free walk as
-         * content. */
-        S_visit_fields(e, S_release_owned_subtree, e);
-        if (e->opaque && e->element && e->element->opaque_free_func) {
-            e->element->opaque_free_func(e->element, e);
-        }
-        free_node_as(pool, e);
-
-        if (e->last_child) {
-            // Splice children into list
-            e->last_child->next = e->next;
-            e->next = e->first_child;
-        }
-        next = e->next;
-        S_slot_release(pool, e);
-        e = next;
+        markdown_core_node_visit_fields(node, S_drop_field, lists);
+        S_drop_stem(lists, node->children);
+        node->children = NULL;
+        S_release_value(pool, node);
+        S_slot_release(pool, node);
     }
     return released;
 }
 
 size_t markdown_core_node_pool_release(markdown_core_node_pool *pool, markdown_core_node *node) {
-    S_node_unlink(node);
-    node->next = NULL;
-    return S_free_nodes(pool, node);
+    S_release_lists lists = {NULL, NULL};
+    S_drop_node(&lists, node);
+    return S_release(pool, &lists);
 }
 
 size_t markdown_core_node_release(markdown_core_node *node) { return markdown_core_node_pool_release(NULL, node); }
 
 void markdown_core_node_free(markdown_core_node *node) { (void)markdown_core_node_release(node); }
 
-/* A visit of one node's fields that exchanges each with the field of
- * `other` in the same place: fields of one kind sit at one offset from the
- * storage that holds them, the record or the element's payload. */
-typedef struct {
-    const unsigned char *storage;
-    unsigned char *other;
-} S_field_pair;
+/* THE CHILDREN TREE. */
 
-static int S_field_swap(markdown_core_node **slot, void *context) {
-    S_field_pair *pair = context;
-    markdown_core_node **at = (markdown_core_node **)(pair->other + ((const unsigned char *)slot - pair->storage));
-    markdown_core_node *held = *slot;
-    *slot = *at;
-    *at = held;
-    return 1;
+static markdown_core_stem *S_stem_new(markdown_core_node_pool *pool, uint8_t height, size_t width) {
+    markdown_core_stem *stem = markdown_core_node_pool_bytes(pool, offsetof(markdown_core_stem, entries) +
+                                                                       width * sizeof(markdown_core_stem_entry));
+    if (stem) {
+        stem->refs = 1;
+        stem->count = 0;
+        stem->height = height;
+        stem->width = (uint8_t)width;
+    }
+    return stem;
 }
 
-/* Exchanges `size` bytes at `a` and `b`, through a buffer of `capacity`. */
-#define S_SWAP_BYTES(a, b, capacity)                                                                                   \
-    do {                                                                                                               \
-        unsigned char held[capacity];                                                                                  \
-        memcpy(held, (a), sizeof(held));                                                                               \
-        memcpy((a), (b), sizeof(held));                                                                                \
-        memcpy((b), held, sizeof(held));                                                                               \
-    } while (0)
+/* `count` entries, split as evenly as stems of at most the width allow, so a
+ * level of `count` entries has the fewest stems and every stem of it holds
+ * within one entry of every other. */
+static size_t S_stem_level_width(size_t count) {
+    return (count + MARKDOWN_CORE_STEM_WIDTH - 1) / MARKDOWN_CORE_STEM_WIDTH;
+}
 
-#define S_NODE_VALUE_OFFSET offsetof(markdown_core_node, attributes)
-
-void markdown_core_node_swap_values(markdown_core_node *a, markdown_core_node *b) {
-    S_SWAP_BYTES((unsigned char *)a + S_NODE_VALUE_OFFSET, (unsigned char *)b + S_NODE_VALUE_OFFSET,
-                 sizeof(markdown_core_node) - S_NODE_VALUE_OFFSET);
-    /* A record in the slot stays in the slot: the bytes move, not the view.
-     * The kind is the same, so either both records are in their slots or
-     * neither is. */
-    if (a->as.data && !a->node_data_allocation) {
-        unsigned char *p = S_slot_of(a)->record, *q = S_slot_of(b)->record;
-        S_SWAP_BYTES(p, q, MARKDOWN_CORE_NODE_SLOT_RECORD_BYTES);
-        a->as.data = p;
-        b->as.data = q;
+markdown_core_stem *markdown_core_stem_make(markdown_core_node_pool *pool, markdown_core_node *const *nodes,
+                                            size_t count, bool *failed) {
+    *failed = false;
+    if (!count) {
+        return NULL;
     }
-    /* The node-valued fields are places: each node takes its own back. */
-    S_field_pair pair = {a->as.data, b->as.data};
-    S_visit_record_fields(a, S_field_swap, &pair);
-    if (a->element && a->element->visit_owned_subtrees_func) {
-        pair = (S_field_pair){a->opaque, b->opaque};
-        a->element->visit_owned_subtrees_func(a->element, a, S_field_swap, &pair);
+    /* The levels are built bottom up, each level's stems written over the
+     * front of one array: a level never has more stems than entries below. */
+    size_t stems = S_stem_level_width(count);
+    markdown_core_stem **level = markdown_core_alloc(stems, sizeof(*level));
+    if (!level) {
+        *failed = true;
+        return NULL;
+    }
+    size_t built = 0;
+    for (size_t i = 0, from = 0; i < stems; i++) {
+        size_t width = (count - from) / (stems - i);
+        markdown_core_stem *leaf = S_stem_new(pool, 0, width);
+        if (!leaf) {
+            goto failed;
+        }
+        for (size_t j = 0; j < width; j++) {
+            leaf->entries[j].node = nodes[from + j];
+        }
+        leaf->count = (uint32_t)width;
+        level[built++] = leaf;
+        from += width;
+    }
+    for (uint8_t height = 1; built > 1; height++) {
+        size_t above = S_stem_level_width(built);
+        size_t made = 0;
+        for (size_t i = 0, from = 0; i < above; i++) {
+            size_t width = (built - from) / (above - i);
+            markdown_core_stem *stem = S_stem_new(pool, height, width);
+            if (!stem) {
+                /* The stems not yet taken into this level are released
+                 * below, after the ones it made. */
+                for (size_t j = from; j < built; j++) {
+                    level[made + j - from] = level[j];
+                }
+                built = made + built - from;
+                goto failed;
+            }
+            for (size_t j = 0; j < width; j++) {
+                stem->entries[j].stem = level[from + j];
+                stem->count += level[from + j]->count;
+            }
+            level[made++] = stem;
+            from += width;
+        }
+        built = made;
+    }
+    markdown_core_stem *root = level[0];
+    markdown_core_free(level);
+    return root;
+
+failed:
+    /* Nothing was taken: the stems built so far go, and the nodes stay the
+     * caller's. */
+    {
+        S_release_lists lists = {NULL, NULL};
+        for (size_t i = 0; i < built; i++) {
+            S_link_stem(&lists, level[i]);
+        }
+        while (lists.stems) {
+            markdown_core_stem *stem = lists.stems;
+            memcpy(&lists.stems, stem, sizeof(lists.stems));
+            for (uint8_t j = 0; stem->height && j < stem->width; j++) {
+                S_link_stem(&lists, stem->entries[j].stem);
+            }
+            markdown_core_node_pool_bytes_free(pool, stem);
+        }
+    }
+    markdown_core_free(level);
+    *failed = true;
+    return NULL;
+}
+
+markdown_core_node *markdown_core_stem_at(const markdown_core_stem *stem, size_t index) {
+    while (stem->height) {
+        uint8_t i = 0;
+        while (index >= stem->entries[i].stem->count) {
+            index -= stem->entries[i].stem->count;
+            i++;
+        }
+        stem = stem->entries[i].stem;
+    }
+    return stem->entries[index].node;
+}
+
+void markdown_core_stem_walk_begin(markdown_core_stem_walk *walk, const markdown_core_stem *stem, size_t index,
+                                   size_t count) {
+    walk->left = stem ? count : 0;
+    if (!walk->left) {
+        return;
+    }
+    for (;;) {
+        uint8_t level = stem->height;
+        walk->path[level] = stem;
+        if (!level) {
+            walk->at[0] = (uint8_t)index;
+            return;
+        }
+        uint8_t i = 0;
+        while (index >= stem->entries[i].stem->count) {
+            index -= stem->entries[i].stem->count;
+            i++;
+        }
+        walk->at[level] = i;
+        stem = stem->entries[i].stem;
     }
 }
 
-markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_node *node, markdown_core_node_type kind) {
+markdown_core_node *markdown_core_stem_walk_next(markdown_core_stem_walk *walk) {
+    if (!walk->left) {
+        return NULL;
+    }
+    markdown_core_node *node = walk->path[0]->entries[walk->at[0]].node;
+    if (--walk->left) {
+        /* Up to the lowest stem with an entry after the path's, then down
+         * its first entries to a leaf. */
+        uint8_t level = 0;
+        while (walk->at[level] + 1 == walk->path[level]->width) {
+            level++;
+        }
+        walk->at[level]++;
+        while (level) {
+            const markdown_core_stem *below = walk->path[level]->entries[walk->at[level]].stem;
+            level--;
+            walk->path[level] = below;
+            walk->at[level] = 0;
+        }
+    }
+    return node;
+}
+
+/* THE BUILDERS. */
+
+#define MARKDOWN_CORE_MEMBER_SLAB_BYTES ((size_t)16 * 1024)
+
+markdown_core_member *markdown_core_member_new(markdown_core_node_pool *pool, markdown_core_node *node, bool held) {
+    markdown_core_member *member =
+        markdown_core_slab_take(pool ? &pool->members : NULL, sizeof(*member), MARKDOWN_CORE_MEMBER_SLAB_BYTES);
+    if (member) {
+        *member = (markdown_core_member){.node = node, .held = held};
+    }
+    return member;
+}
+
+void markdown_core_member_attach(markdown_core_member *owner, markdown_core_member *child,
+                                 markdown_core_member *before) {
+    assert(owner && child && owner != child);
+    assert(!child->owner && !child->prev && !child->next);
+    assert(!before || before->owner == owner);
+    /* Built-in containment is pure and shares its rules with checked
+     * construction. Dynamic policies were decided before; never replay them. */
+    assert((owner->node->element && owner->node->element->can_contain_func) ||
+           markdown_core_node_can_contain_builtin(owner->node, (markdown_core_node_type)child->node->kind));
+    markdown_core_member *previous = before ? before->prev : owner->last;
+    child->owner = owner;
+    child->prev = previous;
+    child->next = before;
+    if (previous) {
+        previous->next = child;
+    } else {
+        owner->first = child;
+    }
+    if (before) {
+        before->prev = child;
+    } else {
+        owner->last = child;
+    }
+}
+
+void markdown_core_member_attach_field(markdown_core_member *owner, markdown_core_member *field) {
+    assert(!field->owner && !field->next);
+    field->owner = owner;
+    field->field = true;
+    markdown_core_member **at = &owner->fields;
+    while (*at) {
+        at = &(*at)->next;
+    }
+    *at = field;
+}
+
+void markdown_core_member_unlink(markdown_core_member *member) {
+    markdown_core_member *owner = member->owner;
+    if (member->field) {
+        markdown_core_member **at = &owner->fields;
+        while (*at != member) {
+            at = &(*at)->next;
+        }
+        *at = member->next;
+        member->field = false;
+    } else {
+        if (member->prev) {
+            member->prev->next = member->next;
+        } else if (owner) {
+            owner->first = member->next;
+        }
+        if (member->next) {
+            member->next->prev = member->prev;
+        } else if (owner) {
+            owner->last = member->prev;
+        }
+    }
+    member->owner = member->prev = member->next = NULL;
+}
+
+static void S_member_free(markdown_core_node_pool *pool, markdown_core_member *member) {
+    markdown_core_slab_release(pool ? &pool->members : NULL, member);
+}
+
+bool markdown_core_member_freeze(markdown_core_node_pool *pool, markdown_core_member *member) {
+    size_t count = 0;
+    for (const markdown_core_member *child = member->first; child; child = child->next) {
+        assert(!child->first && !child->fields && child->held);
+        count++;
+    }
+    markdown_core_node *node = member->node;
+    assert(!node->children || !count);
+    if (count) {
+        markdown_core_node *small[MARKDOWN_CORE_STEM_WIDTH];
+        markdown_core_node **nodes =
+            count <= MARKDOWN_CORE_STEM_WIDTH ? small : markdown_core_alloc(count, sizeof(*nodes));
+        if (!nodes) {
+            return false;
+        }
+        size_t i = 0;
+        for (const markdown_core_member *child = member->first; child; child = child->next) {
+            nodes[i++] = child->node;
+        }
+        bool failed;
+        node->children = markdown_core_stem_make(pool, nodes, count, &failed);
+        if (nodes != small) {
+            markdown_core_free(nodes);
+        }
+        if (failed) {
+            return false;
+        }
+    }
+    for (markdown_core_member *child = member->first, *next; child; child = next) {
+        next = child->next;
+        S_member_free(pool, child);
+    }
+    for (markdown_core_member *field = member->fields, *next; field; field = next) {
+        assert(!field->first && !field->fields);
+        next = field->next;
+        S_member_free(pool, field);
+    }
+    member->first = member->last = member->fields = NULL;
+    return true;
+}
+
+void markdown_core_member_release(markdown_core_node_pool *pool, markdown_core_member *member) {
+    assert(!member->owner);
+    /* A pending list threaded through `next`: each member taken from it puts
+     * its children and its field roots on it before it goes. */
+    member->next = NULL;
+    markdown_core_member *pending = member;
+    while (pending) {
+        markdown_core_member *taken = pending;
+        pending = taken->next;
+        if (taken->first) {
+            taken->last->next = pending;
+            pending = taken->first;
+        }
+        if (taken->fields) {
+            markdown_core_member *tail = taken->fields;
+            while (tail->next) {
+                tail = tail->next;
+            }
+            tail->next = pending;
+            pending = taken->fields;
+        }
+        if (taken->held) {
+            markdown_core_node_pool_release(pool, taken->node);
+        }
+        S_member_free(pool, taken);
+    }
+}
+
+markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_node *node, markdown_core_node *owner,
+                                                               markdown_core_node_type kind) {
     markdown_core_node_type initial_kind = (markdown_core_node_type)node->kind;
     if (kind == initial_kind) {
         return MARKDOWN_CORE_NODE_SET_KIND_OK;
     }
-    /* Conversion preserves every tree edge, so it cannot introduce a cycle. */
-    if (!node->parent || !markdown_core_node_can_contain_type(node->parent, kind)) {
+    if (!owner || !markdown_core_node_can_contain_type(owner, kind)) {
         return MARKDOWN_CORE_NODE_SET_KIND_REJECTED;
     }
 
@@ -594,11 +852,10 @@ markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_nod
     if (size > MARKDOWN_CORE_NODE_SLOT_RECORD_BYTES && !allocation) {
         return MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED;
     }
-    /* Kind conversion keeps the element's fields; the record's are freed
-     * by a separate walk so the node's siblings remain untouched. */
-    markdown_core_node fields = {0};
-    S_visit_record_fields(node, S_release_owned_subtree, &fields);
-    S_free_nodes(NULL, fields.next);
+    /* Kind conversion keeps the element's fields; the record's are dropped. */
+    S_release_lists lists = {NULL, NULL};
+    S_visit_record_fields(node, S_drop_field, &lists);
+    S_release(NULL, &lists);
     free_node_as(NULL, node);
     node->as.data = allocation ? allocation : size ? S_slot_of(node)->record : NULL;
     node->node_data_allocation = allocation;
@@ -675,75 +932,6 @@ int markdown_core_node_set_element(markdown_core_node *node, const markdown_core
     return 1;
 }
 
-// Unlink a node without adjusting its next, prev, and parent pointers.
-static void S_node_unlink(markdown_core_node *node) {
-    if (node == NULL) {
-        return;
-    }
-
-    if (node->prev) {
-        node->prev->next = node->next;
-    }
-    if (node->next) {
-        node->next->prev = node->prev;
-    }
-
-    // Adjust first_child and last_child of parent.
-    markdown_core_node *parent = node->parent;
-    if (parent) {
-        if (parent->first_child == node) {
-            parent->first_child = node->next;
-        }
-        if (parent->last_child == node) {
-            parent->last_child = node->prev;
-        }
-    }
-}
-
-void markdown_core_node_unlink(markdown_core_node *node) {
-    S_node_unlink(node);
-
-    node->next = NULL;
-    node->prev = NULL;
-    node->parent = NULL;
-}
-
-/* Commit a validated, detached subtree. No callbacks or rejecting checks may
- * run here: public mutations have already detached the child from its owner. */
-void markdown_core_node_attach_validated(markdown_core_node *parent, markdown_core_node *child,
-                                         markdown_core_node *before) {
-    assert(parent && child && parent != child);
-    assert(!child->parent && !child->prev && !child->next);
-    assert(!before || before->parent == parent);
-    /* Built-in containment is pure and shares its rules with checked mutation.
-     * Dynamic policies were decided before ownership moved; never replay them. */
-    assert((parent->element && parent->element->can_contain_func) ||
-           markdown_core_node_can_contain_builtin(parent, (markdown_core_node_type)child->kind));
-    markdown_core_node *previous = before ? before->prev : parent->last_child;
-    child->parent = parent;
-    child->prev = previous;
-    child->next = before;
-    if (previous) {
-        previous->next = child;
-    } else {
-        parent->first_child = child;
-    }
-    if (before) {
-        before->prev = child;
-    } else {
-        parent->last_child = child;
-    }
-}
-
-int markdown_core_node_append_child(markdown_core_node *node, markdown_core_node *child) {
-    if (!S_can_contain(node, child)) {
-        return 0;
-    }
-    markdown_core_node_unlink(child);
-    markdown_core_node_attach_validated(node, child, NULL);
-    return 1;
-}
-
 static void S_print_error(FILE *out, markdown_core_node *node, const char *elem) {
     if (out == NULL) {
         return;
@@ -752,59 +940,95 @@ static void S_print_error(FILE *out, markdown_core_node *node, const char *elem)
             (unsigned long long)node->id);
 }
 
-int markdown_core_node_check(markdown_core_node *node, FILE *out) {
-    markdown_core_node *cur;
+/* The errors of a node's stem: a stem that holds no entry or no reference,
+ * one whose entries are not all one height below it, and one that miscounts
+ * the nodes under it. The walk's path is no deeper than the stem's height. */
+static int S_check_stem(const markdown_core_node *owner, const markdown_core_stem *stem, FILE *out) {
+    const markdown_core_stem *path[MARKDOWN_CORE_STEM_HEIGHT + 1];
+    uint8_t at[MARKDOWN_CORE_STEM_HEIGHT + 1];
     int errors = 0;
+    if (stem->height >= MARKDOWN_CORE_STEM_HEIGHT) {
+        S_print_error(out, (markdown_core_node *)owner, "stem height");
+        return 1;
+    }
+    size_t depth = 0;
+    path[0] = stem;
+    at[0] = 0;
+    for (;;) {
+        const markdown_core_stem *top = path[depth];
+        if (at[depth] == 0) {
+            size_t count = 0;
+            if (!top->width || !top->refs) {
+                S_print_error(out, (markdown_core_node *)owner, "stem");
+                return errors + 1;
+            }
+            for (uint8_t i = 0; i < top->width; i++) {
+                if (top->height) {
+                    if (top->entries[i].stem->height + 1 != top->height) {
+                        S_print_error(out, (markdown_core_node *)owner, "stem balance");
+                        return errors + 1;
+                    }
+                    count += top->entries[i].stem->count;
+                } else {
+                    count++;
+                }
+            }
+            if (count != top->count) {
+                S_print_error(out, (markdown_core_node *)owner, "stem count");
+                errors++;
+            }
+        }
+        if (!top->height || at[depth] == top->width) {
+            if (!depth) {
+                return errors;
+            }
+            depth--;
+            continue;
+        }
+        path[depth + 1] = top->entries[at[depth]++].stem;
+        at[++depth] = 0;
+    }
+}
 
+/* THE STRUCTURAL SELF-CHECK of a tree: every stem sound and every node held. */
+int markdown_core_node_check(markdown_core_node *node, FILE *out) {
+    int errors = 0;
     if (!node) {
         return 0;
     }
-
-    cur = node;
-    for (;;) {
-        if (cur->first_child) {
-            if (cur->first_child->prev != NULL) {
-                S_print_error(out, cur->first_child, "prev");
-                cur->first_child->prev = NULL;
-                ++errors;
-            }
-            if (cur->first_child->parent != cur) {
-                S_print_error(out, cur->first_child, "parent");
-                cur->first_child->parent = cur;
-                ++errors;
-            }
-            cur = cur->first_child;
-            continue;
-        }
-
-    next_sibling:
-        if (cur == node) {
-            break;
-        }
-        if (cur->next) {
-            if (cur->next->prev != cur) {
-                S_print_error(out, cur->next, "prev");
-                cur->next->prev = cur;
-                ++errors;
-            }
-            if (cur->next->parent != cur->parent) {
-                S_print_error(out, cur->next, "parent");
-                cur->next->parent = cur->parent;
-                ++errors;
-            }
-            cur = cur->next;
-            continue;
-        }
-
-        if (cur->parent->last_child != cur) {
-            S_print_error(out, cur->parent, "last_child");
-            cur->parent->last_child = cur;
-            ++errors;
-        }
-        cur = cur->parent;
-        goto next_sibling;
+    size_t capacity = 64, count = 0;
+    markdown_core_node **pending = markdown_core_alloc(capacity, sizeof(*pending));
+    if (!pending) {
+        return 0;
     }
-
+    pending[count++] = node;
+    while (count) {
+        markdown_core_node *current = pending[--count];
+        if (!current->children) {
+            continue;
+        }
+        errors += S_check_stem(current, current->children, out);
+        size_t total = current->children->count;
+        if (count + total > capacity) {
+            size_t grown = (count + total) * 2;
+            markdown_core_node **more = markdown_core_realloc(pending, grown * sizeof(*pending));
+            if (!more) {
+                break;
+            }
+            pending = more;
+            capacity = grown;
+        }
+        markdown_core_stem_walk walk;
+        markdown_core_stem_walk_begin(&walk, current->children, 0, total);
+        for (markdown_core_node *child; (child = markdown_core_stem_walk_next(&walk));) {
+            if (!child->refs) {
+                S_print_error(out, child, "refs");
+                errors++;
+            }
+            pending[count++] = child;
+        }
+    }
+    markdown_core_free(pending);
     return errors;
 }
 

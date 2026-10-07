@@ -77,8 +77,7 @@ typedef enum {
     MARKDOWN_CORE_NODE_STRONG = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0007,
     MARKDOWN_CORE_NODE_LINK = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0008,
     MARKDOWN_CORE_NODE_EMBEDDED = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0009,
-    /* A citation cluster, whose items are a chain of CITATION nodes it owns
-     * beside its children, which it never has. */
+    /* A citation cluster: its children are its CITATION items. */
     MARKDOWN_CORE_NODE_CITE = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000a,
     MARKDOWN_CORE_NODE_STRIKETHROUGH = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000b,
     /* Its payload comes from the formula element's opaque_alloc_func. */
@@ -88,9 +87,9 @@ typedef enum {
     MARKDOWN_CORE_NODE_DIRECTIVE_LABEL = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000e,
     /* An inline HTML comment token: <!-- ... -->, <!--> or <!--->. */
     MARKDOWN_CORE_NODE_COMMENT = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x000f,
-    /* One item of a Cite: a scoped value, never a child of anything, owning a
-     * prefix chain and a suffix chain of inline nodes beside its referent.
-     * Inline-classed because it lives in inline content. */
+    /* One item of a Cite, and a child of it: a scoped value owning a prefix and
+     * a suffix of inline nodes beside its referent. Inline-classed because it
+     * lives in inline content. */
     MARKDOWN_CORE_NODE_CITATION = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0010,
     MARKDOWN_CORE_NODE_CROSS_LINK = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0011,
     MARKDOWN_CORE_NODE_MARK = MARKDOWN_CORE_NODE_TYPE_INLINE | 0x0012,

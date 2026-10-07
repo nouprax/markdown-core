@@ -4,34 +4,34 @@
 #include "link.h"
 #include "block_identifier.h"
 void markdown_core_paragraph_finalize(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                      markdown_core_node *paragraph) {
+                                      markdown_core_member *paragraph) {
     if (!markdown_core_block_resolve_reference_link_definitions(parser, paragraph)) {
-        paragraph->flags |= MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY;
+        paragraph->node->flags |= MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY;
         return;
     }
     markdown_core_block_attach_paragraph_identifier(self->state, parser, paragraph);
 }
 
 static int continue_paragraph(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                              unsigned char *data, int length, markdown_core_node *container) {
+                              unsigned char *data, int length, markdown_core_member *container) {
     return !parser->blank;
 }
 static bool accepts_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                         markdown_core_node *node) {
+                         markdown_core_member *node) {
     (void)self;
     (void)parser;
     (void)node;
     return true;
 }
-static markdown_core_node *open_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                     markdown_core_node *node, markdown_core_chunk *input) {
+static markdown_core_member *open_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                       markdown_core_member *node, markdown_core_chunk *input) {
     (void)self;
     return node;
 }
 
 /* A text line no block claims opens a paragraph: the dialect's text block. */
-static markdown_core_node *open_text(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                     markdown_core_node *container, markdown_core_chunk *input) {
+static markdown_core_member *open_text(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                       markdown_core_member *container, markdown_core_chunk *input) {
     container = markdown_core_block_parent_for(parser, container, MARKDOWN_CORE_NODE_PARAGRAPH);
     if (!container) {
         return NULL;

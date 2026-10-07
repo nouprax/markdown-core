@@ -13,7 +13,7 @@ markdown_core_bracket_match markdown_core_span_close(const markdown_core_element
         markdown_core_attributes attributes = {0};
         bufsize_t end;
         if (markdown_core_inline_state_attributes(inline_state, initial_pos, &attributes, &end)) {
-            if (!markdown_core_node_can_contain_type(opener->inl_text->parent, MARKDOWN_CORE_NODE_SPAN)) {
+            if (!markdown_core_node_can_contain_type(opener->inl_text->owner->node, MARKDOWN_CORE_NODE_SPAN)) {
                 markdown_core_attributes_free(&attributes);
                 return BRACKET_REJECTED;
             }
@@ -28,8 +28,11 @@ markdown_core_bracket_match markdown_core_span_close(const markdown_core_element
             markdown_core_inline_state_place(inline_state, inl, opener->position - 1, end - 1);
             markdown_core_inline_finish_citation_tokens(citation, inline_state, &opener->citations);
             markdown_core_inline_process_delimiters(parser, inline_state, opener->position, opener->delim_end);
-            markdown_core_inline_take_bracket_content(link, parser, opener, inl);
-            markdown_core_inline_replace_bracket_opener(inline_state, opener, inl);
+            markdown_core_member *span = markdown_core_inline_insert_at_opener(inline_state, opener, inl);
+            if (span) {
+                markdown_core_inline_take_bracket_content(link, parser, opener, span);
+                markdown_core_parser_release_member(parser, opener->inl_text);
+            }
             markdown_core_inline_pop_bracket(link, inline_state);
             return BRACKET_MATCHED;
         }

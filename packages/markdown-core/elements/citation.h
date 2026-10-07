@@ -5,8 +5,9 @@
 struct bracket;
 void markdown_core_inline_free_citation_tokens(markdown_core_inline_state *inline_state, citation_tokens *tokens);
 markdown_core_node *markdown_core_inline_new_cite(markdown_core_inline_state *inline_state);
-markdown_core_node *markdown_core_inline_new_citation(markdown_core_inline_state *inline_state,
-                                                      markdown_core_node *cite, markdown_core_node *last);
+/* A new Citation, appended to `cite`'s children; its member. */
+markdown_core_member *markdown_core_inline_new_citation(markdown_core_inline_state *inline_state,
+                                                        markdown_core_member *cite);
 extern const markdown_core_element MARKDOWN_CORE_ELEMENT_CITATION;
 /* The citation grammar's calls from the bracket algorithm, with `citation`
  * the citation element's instance. Tokens exist only where that element read
@@ -21,7 +22,7 @@ bool markdown_core_inline_close_bibliography(const markdown_core_element_instanc
                                              struct bracket *opener);
 bool markdown_core_citation_defer_tail(const markdown_core_element_instance *citation,
                                        markdown_core_inline_state *inline_state, struct bracket *opener,
-                                       markdown_core_node **result);
+                                       markdown_core_member **result);
 void markdown_core_citation_open_bracket(const markdown_core_element_instance *citation,
                                          markdown_core_inline_state *inline_state, struct bracket *b);
 #endif

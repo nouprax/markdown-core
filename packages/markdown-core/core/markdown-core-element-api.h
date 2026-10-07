@@ -11,6 +11,8 @@ extern "C" {
 
 typedef struct markdown_core_parser markdown_core_parser;
 typedef struct markdown_core_element markdown_core_element;
+/* A node being built, and its place among the nodes being built (node.h). */
+typedef struct markdown_core_member markdown_core_member;
 
 /* Where a depth-first walk stands on a node: every node yields one ENTER and
  * one EXIT, and DONE follows the root's EXIT (iterator.h). Element completion
@@ -129,8 +131,8 @@ typedef enum {
  */
 typedef struct delimiter delimiter;
 
-/** The literal text node the delimiter was pushed for. */
-markdown_core_node *markdown_core_delimiter_node(const delimiter *delim);
+/** The member of the literal text node the delimiter was pushed for. */
+markdown_core_member *markdown_core_delimiter_member(const delimiter *delim);
 
 markdown_core_delimiter_rule markdown_core_delimiter_rule_of(const delimiter *delim);
 
@@ -148,18 +150,20 @@ int markdown_core_delimiter_can_close(const delimiter *delim);
  * 'input' matches a syntax rule for that block type. It is allowed
  * to modify the type of 'parent_container'.
  *
- * Should return the newly created block if there is one, or
+ * Should return the newly created block's member if there is one, or
  * 'parent_container' if its type was modified, or NULL.
  */
-typedef markdown_core_node *(*markdown_core_open_block_func)(const markdown_core_element_instance *self, int indented,
-                                                             markdown_core_parser *parser,
-                                                             markdown_core_node *parent_container, unsigned char *input,
-                                                             int len);
+typedef markdown_core_member *(*markdown_core_open_block_func)(const markdown_core_element_instance *self, int indented,
+                                                               markdown_core_parser *parser,
+                                                               markdown_core_member *parent_container,
+                                                               unsigned char *input, int len);
 
-typedef markdown_core_node *(*markdown_core_match_inline_func)(const markdown_core_element_instance *self,
-                                                               markdown_core_parser *parser, markdown_core_node *parent,
-                                                               unsigned char character,
-                                                               markdown_core_inline_state *inline_state);
+/** Returns the member of the token it appended to 'parent' with
+ * markdown_core_inline_state_append, or NULL. */
+typedef markdown_core_member *(*markdown_core_match_inline_func)(const markdown_core_element_instance *self,
+                                                                 markdown_core_parser *parser,
+                                                                 markdown_core_member *parent, unsigned char character,
+                                                                 markdown_core_inline_state *inline_state);
 
 /* Builds the opaque AST value only. The matcher owns all delimiter removal,
  * including the matched endpoints, on success and failure alike. */
@@ -193,7 +197,7 @@ typedef void (*markdown_core_inline_from_delim_func)(const markdown_core_element
  *  MARKDOWN_CORE_BLOCK_PENDING_CLOSE until descendant ownership is known.
  */
 typedef int (*markdown_core_match_block_func)(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                              unsigned char *input, int len, markdown_core_node *container);
+                                              unsigned char *input, int len, markdown_core_member *container);
 
 /** Whether 'input' would continue 'container', asked AHEAD OF TIME.
  *
@@ -211,7 +215,7 @@ typedef int (*markdown_core_match_block_func)(const markdown_core_element_instan
  */
 typedef int (*markdown_core_continues_block_func)(const markdown_core_element_instance *self,
                                                   markdown_core_parser *parser, const unsigned char *input, int len,
-                                                  markdown_core_node *container);
+                                                  markdown_core_member *container);
 
 typedef int (*markdown_core_can_contain_func)(const markdown_core_element *element, markdown_core_node *node,
                                               markdown_core_node_type child);
@@ -275,7 +279,7 @@ typedef enum {
  */
 typedef markdown_core_complete_result (*markdown_core_complete_step_func)(const markdown_core_element_instance *self,
                                                                           markdown_core_parser *parser,
-                                                                          markdown_core_node *node,
+                                                                          markdown_core_member *node,
                                                                           markdown_core_event_type event, int is_root,
                                                                           void **state);
 
@@ -533,23 +537,47 @@ int markdown_core_parser_has_partially_consumed_tab(markdown_core_parser *parser
  */
 bufsize_t markdown_core_parser_get_last_line_end(markdown_core_parser *parser);
 
-/** Add a child to 'parent' during the parsing process.
+/** Add a child to 'parent' during the parsing process, and return its
+ * member.
  *
  * If 'parent' isn't the kind of node that can accept this child,
  * this function will back up till it hits a node that can, closing
  * blocks as appropriate.
  */
-markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser, markdown_core_node *parent,
-                                                   markdown_core_node_type block_type, int start_column);
+markdown_core_member *markdown_core_parser_add_child(markdown_core_parser *parser, markdown_core_member *parent,
+                                                     markdown_core_node_type block_type, int start_column);
 
-/** Complete 'node' (docs/plans/2026-09-29-incremental-parsing.md, 5.8): it
- * numbers each node it holds that is not numbered yet, measured from where
- * 'node' starts. The engine completes every block as it closes and every
- * node of an inline root's content as the root's completion leaves it; an
- * element completes what it makes outside both, such as the nodes a
- * completion step inserts, or a node it gives a later field.
+/** A member for the detached `node`, holding its reference, linked under
+ * `owner` before `before` or last; NULL, with the parse failed and the node
+ * released, when it could not be allocated. The caller has proved
+ * containment. */
+markdown_core_member *markdown_core_parser_attach(markdown_core_parser *parser, markdown_core_member *owner,
+                                                  markdown_core_node *node, markdown_core_member *before);
+
+/** A member for the field root `node`, which `owner`'s node holds, linked as
+ * the last field root `owner` builds; NULL, with the parse failed, when it
+ * could not be allocated. */
+markdown_core_member *markdown_core_parser_attach_field(markdown_core_parser *parser, markdown_core_member *owner,
+                                                        markdown_core_node *node);
+
+/** The node that holds `member`'s node: its owner's, or, for the builder of
+ * the inline root being completed, the node that holds its holder. NULL for
+ * a root. */
+markdown_core_node *markdown_core_parser_owner(const markdown_core_parser *parser, const markdown_core_member *member);
+
+/** Detaches `member` from its owner and siblings when it has them, and
+ * releases it, its subtree and the references they hold into the parse's
+ * pool. */
+void markdown_core_parser_release_member(markdown_core_parser *parser, markdown_core_member *member);
+
+/** Complete 'member''s node (docs/plans/2026-09-29-incremental-parsing.md,
+ * 5.8): its children, each complete, become its stem, and it numbers each
+ * node it holds that is not numbered yet, measured from where it starts. The
+ * engine completes every block as it closes and every node of an inline
+ * root's content as the root's completion leaves it; an element completes
+ * what it makes outside both, such as the nodes a completion step inserts.
  */
-void markdown_core_parser_complete_node(markdown_core_parser *parser, markdown_core_node *node);
+void markdown_core_parser_complete_node(markdown_core_parser *parser, markdown_core_member *member);
 
 /** Advance the 'offset' of the parser in the current line.
  *
@@ -587,9 +615,9 @@ typedef enum {
     MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED,
 } markdown_core_node_set_kind_result;
 
-/** Change 'node' to the internal kind encoded by 'kind'.
+/** Change 'node', held by 'owner', to the internal kind encoded by 'kind'.
  *
- * Return OK on success, REJECTED when parent containment disallows the change,
+ * Return OK on success, REJECTED when the owner's containment disallows it,
  * or ALLOCATION_FAILED when replacement node data cannot be allocated.
  * Either failure preserves the original kind, data, and tree links.
  *
@@ -598,7 +626,8 @@ typedef enum {
  * A record that fits the node's existing cell needs no allocation.
  * Setting the current kind succeeds without allocating or changing its data.
  */
-markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_node *node, markdown_core_node_type kind);
+markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_node *node, markdown_core_node *owner,
+                                                               markdown_core_node_type kind);
 
 /** Return the string content for all types of 'node'.
  *  The pointer stays valid as long as 'node' isn't freed.
@@ -640,11 +669,10 @@ void markdown_core_inline_state_set_offset(markdown_core_inline_state *inline_st
  */
 struct markdown_core_chunk *markdown_core_inline_state_get_chunk(markdown_core_inline_state *inline_state);
 
-/** Remove the last n characters from the last child of the given node.
- * This only works where all n characters are in the single last child, and the last
- * child is MARKDOWN_CORE_NODE_TEXT.
+/** Remove the last n characters from the last children of the given member,
+ * while they are MARKDOWN_CORE_NODE_TEXT.
  */
-void markdown_core_node_unput(markdown_core_parser *parser, markdown_core_node *node, int n);
+void markdown_core_node_unput(markdown_core_parser *parser, markdown_core_member *member, int n);
 
 /** Get the character located at the current inline parsing offset
  */
@@ -682,7 +710,7 @@ int markdown_core_inline_state_find_opaque_close(markdown_core_inline_state *inl
 void markdown_core_inline_state_push_delimiter(markdown_core_inline_state *inline_state,
                                                const markdown_core_element_instance *owner,
                                                markdown_core_delimiter_rule rule, int can_open, int can_close,
-                                               markdown_core_node *inl_text);
+                                               markdown_core_member *inl_text);
 
 /** Whether the delimiters of `rule` on the stack that can open outnumber
  * those that can close. The counts are kept at every push and removal, so the
@@ -698,6 +726,15 @@ void markdown_core_inline_state_push_delimiter(markdown_core_inline_state *inlin
  */
 int markdown_core_inline_state_has_unmatched_opener(markdown_core_inline_state *inline_state,
                                                     markdown_core_delimiter_rule rule);
+
+/** Appends the detached `token` to the content the inline state builds and
+ * returns its member, which holds the token's reference. Each field root the
+ * token holds is built with it, and a field root with content of its own is
+ * parsed before the next token is read. NULL, with the token released and
+ * the parse failed, when the owner's policy refuses the token or a member
+ * could not be allocated. */
+markdown_core_member *markdown_core_inline_state_append(markdown_core_inline_state *inline_state,
+                                                        markdown_core_node *token);
 
 /** Make the Text node a delimiter run stands as: its literal is the bytes
  * [from, to] of the block's content and its position is a projection of that

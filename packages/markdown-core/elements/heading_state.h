@@ -3,12 +3,14 @@
 #include "references.h"
 #include "inline_internal.h"
 
-/* A heading is registered once when its block closes. Source order is settled
- * before resolution, independently of the order in which mapped inputs close.
- * Pending holds the ordinary inline cursor at its declaration dependency;
- * nodes remain owned by the tree. */
+/* A heading is taken from the parser's inline roots as the document is
+ * prepared, with the builder of its root, which its content is parsed into.
+ * Source order is settled before resolution, independently of the order in
+ * which mapped inputs close. Pending holds the ordinary inline cursor at its
+ * declaration dependency. */
 typedef struct {
     markdown_core_source_entry source;
+    markdown_core_member *builder;
     markdown_core_inline_state *pending;
 } markdown_core_heading_parse;
 

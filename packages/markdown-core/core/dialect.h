@@ -155,10 +155,7 @@ typedef struct markdown_core_complete_step_entry {
  *   `content_mode` / `accepts_lines_func`; PROSE, a PROSE `content_mode`, it
  *   takes a text line as prose; IS_PARAGRAPH, `paragraph`;
  * - BLANK_OPAQUE, BLANK_ASK (`blank_line`), BLANK_RUNS and BLANK_PROPAGATES
- *   (`propagates_child_blank`): what a blank line means inside it;
- * - FIELDS: the kind can own a field root through its own record
- *   (`markdown_core_kind_owns_fields`, element.h -- a subtree an element owns
- *   is found through the node's `element`, which the pass tests beside this).
+ *   (`propagates_child_blank`): what a blank line means inside it.
  *
  * `complete` is the structure's `complete_inline`, NULL when it declares
  * none, which inline completion calls at every ENTER. The out-of-table index answers
@@ -168,7 +165,6 @@ enum {
     MARKDOWN_CORE_KIND_INLINES_ASK = 1u << 1,
     MARKDOWN_CORE_KIND_PARSES = MARKDOWN_CORE_KIND_INLINES | MARKDOWN_CORE_KIND_INLINES_ASK,
     MARKDOWN_CORE_KIND_DEFERRED = 1u << 2,
-    MARKDOWN_CORE_KIND_FIELDS = 1u << 3,
     MARKDOWN_CORE_KIND_LINES = 1u << 4,
     MARKDOWN_CORE_KIND_LINES_ASK = 1u << 5,
     MARKDOWN_CORE_KIND_PROSE = 1u << 6,

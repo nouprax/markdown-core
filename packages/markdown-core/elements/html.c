@@ -83,10 +83,10 @@ static markdown_core_node *handle_pointy_brace(markdown_core_inline_state *inlin
                     markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
 }
 
-static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 markdown_core_node *parent, unsigned char character,
-                                 markdown_core_inline_state *inline_state) {
-    return character == '<' ? handle_pointy_brace(inline_state) : NULL;
+static markdown_core_member *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                   markdown_core_member *parent, unsigned char character,
+                                   markdown_core_inline_state *inline_state) {
+    return character == '<' ? markdown_core_inline_state_append(inline_state, handle_pointy_brace(inline_state)) : NULL;
 }
 const markdown_core_element MARKDOWN_CORE_ELEMENT_HTML = {
     .name = "html",

@@ -13,47 +13,47 @@ extern "C" {
 #include "buffer.h"
 #include "node.h"
 
-/* A depth-first walk over a subtree: every node yields exactly one ENTER and
- * one EXIT, with its descendants' events between them, and DONE follows the
- * root's EXIT. Node-valued fields are independent roots and are never
- * discovered by this traversal. While walking, the only node that may be freed
- * is the one whose EXIT is current: that is the one moment the lookahead names
- * something outside the node's own subtree. `markdown_core_iter_reset(iter,
- * node, MARKDOWN_CORE_EVENT_EXIT)` brings a node back under that rule after
+/* A depth-first walk over a subtree being built (node.h,
+ * markdown_core_member): every member yields exactly one ENTER and one EXIT,
+ * with its descendants' events between them, and DONE follows the root's
+ * EXIT. Field roots are independent roots and are never discovered by this
+ * traversal. While walking, the only member that may be released is the one
+ * whose EXIT is current: that is the one moment the lookahead names something
+ * outside its own subtree. `markdown_core_iter_reset(iter, member,
+ * MARKDOWN_CORE_EVENT_EXIT)` brings a member back under that rule after
  * mutating around it. */
 typedef struct markdown_core_iter markdown_core_iter;
 
 typedef struct {
     markdown_core_event_type ev_type;
-    markdown_core_node *node;
+    markdown_core_member *member;
 } markdown_core_iter_state;
 
 struct markdown_core_iter {
-    markdown_core_node *root;
+    markdown_core_member *root;
     markdown_core_iter_state cur;
     markdown_core_iter_state next;
 };
 
 /* THE ITERATOR'S STEP, IN THE HEADER. An inline root's completion takes one
- * per event of every node of its tree, and it keeps its iterators in its own
- * frames rather than behind an allocation, so the step is here, where it can
- * keep the state in registers instead of calling across a translation unit
- * for it: `markdown_core_iter_next` is this behind the public call, and
- * `markdown_core_iter_new` is `markdown_core_iter_init` on a heap iterator. */
-static inline void markdown_core_iter_init(markdown_core_iter *iter, markdown_core_node *root) {
+ * per event of every member of its tree, and it keeps its iterators in its
+ * own frames rather than behind an allocation, so the step is here, where it
+ * can keep the state in registers instead of calling across a translation
+ * unit for it. */
+static inline void markdown_core_iter_init(markdown_core_iter *iter, markdown_core_member *root) {
     iter->root = root;
     iter->cur.ev_type = MARKDOWN_CORE_EVENT_NONE;
-    iter->cur.node = NULL;
+    iter->cur.member = NULL;
     iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
-    iter->next.node = root;
+    iter->next.member = root;
 }
 
 static inline markdown_core_event_type markdown_core_iter_step(markdown_core_iter *iter) {
     markdown_core_event_type ev_type = iter->next.ev_type;
-    markdown_core_node *node = iter->next.node;
+    markdown_core_member *member = iter->next.member;
 
     iter->cur.ev_type = ev_type;
-    iter->cur.node = node;
+    iter->cur.member = member;
 
     if (ev_type == MARKDOWN_CORE_EVENT_DONE) {
         return ev_type;
@@ -61,46 +61,39 @@ static inline markdown_core_event_type markdown_core_iter_step(markdown_core_ite
 
     /* roll forward to next item, setting both fields */
     if (ev_type == MARKDOWN_CORE_EVENT_ENTER) {
-        if (node->first_child == NULL) {
-            /* stay on this node but exit */
+        if (member->first == NULL) {
+            /* stay on this member but exit */
             iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;
         } else {
             iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
-            iter->next.node = node->first_child;
+            iter->next.member = member->first;
         }
-    } else if (node == iter->root) {
+    } else if (member == iter->root) {
         /* don't move past root */
         iter->next.ev_type = MARKDOWN_CORE_EVENT_DONE;
-        iter->next.node = NULL;
-    } else if (node->next) {
+        iter->next.member = NULL;
+    } else if (member->next) {
         iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
-        iter->next.node = node->next;
-    } else if (node->parent) {
-        iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;
-        iter->next.node = node->parent;
+        iter->next.member = member->next;
     } else {
-        assert(false);
-        iter->next.ev_type = MARKDOWN_CORE_EVENT_DONE;
-        iter->next.node = NULL;
+        assert(member->owner);
+        iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;
+        iter->next.member = member->owner;
     }
 
     return ev_type;
 }
 
-markdown_core_iter *markdown_core_iter_new(markdown_core_node *root);
-void markdown_core_iter_free(markdown_core_iter *iter);
-markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter);
-markdown_core_node *markdown_core_iter_get_node(markdown_core_iter *iter);
-/* The new current node must be `root` or one of its descendants. */
-void markdown_core_iter_reset(markdown_core_iter *iter, markdown_core_node *current,
+/* The new current member must be `root` or one of its descendants. */
+void markdown_core_iter_reset(markdown_core_iter *iter, markdown_core_member *current,
                               markdown_core_event_type event_type);
 
 /* Whether consolidation has anything to do at `text`'s EXIT: a Text sibling
  * to absorb, or no bytes of its own to keep. The step below answers the same
  * two questions itself; this is what lets the walk ask them in place and
  * enter the step only when one holds. */
-static inline bool markdown_core_text_needs_consolidation(const markdown_core_node *text) {
-    return (text->next && text->next->kind == MARKDOWN_CORE_NODE_TEXT) || text->as.literal->len == 0;
+static inline bool markdown_core_text_needs_consolidation(const markdown_core_member *text) {
+    return (text->next && text->next->node->kind == MARKDOWN_CORE_NODE_TEXT) || text->node->as.literal->len == 0;
 }
 
 /* TEXT CONSOLIDATION IS ONE STEP OF A WALK, not a walk of its own.
@@ -126,11 +119,8 @@ static inline bool markdown_core_text_needs_consolidation(const markdown_core_no
  * where its completion happens. The public entry point passes none. */
 typedef void (*markdown_core_complete_node_func)(struct markdown_core_parser *, markdown_core_node *, int);
 markdown_core_complete_result markdown_core_consolidate_text_step(struct markdown_core_parser *parser,
-                                                                  markdown_core_iter *iter, markdown_core_node *cur,
+                                                                  markdown_core_iter *iter, markdown_core_member *cur,
                                                                   markdown_core_complete_node_func complete, int depth);
-
-/* The step applied at every Text EXIT of a walk over `root`. */
-int markdown_core_consolidate_text_nodes_with_parser(struct markdown_core_parser *parser, markdown_core_node *root);
 
 #ifdef __cplusplus
 }

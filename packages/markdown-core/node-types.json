@@ -207,9 +207,9 @@
         {
             "name": "CITE",
             "kind": "Cite",
-            "record": "markdown_core_cite",
+            "record": null,
             "structure": "CITATION",
-            "note": "A citation cluster, whose items are a chain of CITATION nodes it owns beside its children, which it never has."
+            "note": "A citation cluster: its children are its CITATION items."
         },
         {
             "name": "STRIKETHROUGH",
@@ -249,7 +249,7 @@
             "kind": "Citation",
             "record": "markdown_core_citation_item",
             "structure": "CITATION",
-            "note": "One item of a Cite: a scoped value, never a child of anything, owning a prefix chain and a suffix chain of inline nodes beside its referent. Inline-classed because it lives in inline content."
+            "note": "One item of a Cite, and a child of it: a scoped value owning a prefix and a suffix of inline nodes beside its referent. Inline-classed because it lives in inline content."
         },
         {
             "name": "CROSS_LINK",
