@@ -678,11 +678,12 @@ static inline markdown_core_node_kind public_kind(const markdown_core_node *node
  * node numbers each node it holds that is not numbered yet, in canonical
  * field order -- a node that gains one later, as a table gains a trailing
  * caption, completes again. Numbering a node passes the reuse cursor over
- * its range, collecting the old nodes it may continue. A numbered node
- * settles once it waits on nothing, its kind final: it continues the first of
- * those old nodes of its kind, which gives it its id, or takes the next id;
- * equal to the old node it continues, it is that node. A descendant that asks
- * which old node a node continues has it decided then. */
+ * its range, collecting the old nodes it may continue. A node continues the first of
+ * those old nodes of its kind, which gives it its id, or none, and takes the
+ * next id; it decides as soon as that cannot change (number_id), at the latest
+ * as it settles, once it waits on nothing, its kind and range final. Equal to
+ * the old node it continues, it is that node. A descendant that asks which
+ * old node a node continues has it decided then. */
 
 /* The node a node's inline content is parsed into: the node itself, or the
  * private node its title or term hangs from, which holds the runs that read
@@ -1167,11 +1168,12 @@ static bool field_search(markdown_core_parser *parser, markdown_core_publication
     if (failed) {
         return false;
     }
-    if (anchored && image >= reach) {
+    if (anchored && image >= reach && !passed_whole(member, reach)) {
         member->reach = reach;
         return true;
     }
-    if (anchored && image >= member_place(member).start && public_kind(old) == public_kind(member->node)) {
+    if (anchored && image >= member_place(member).start && image < reach &&
+        public_kind(old) == public_kind(member->node)) {
         member->old = old;
         member->old_start = start;
     }
@@ -1298,6 +1300,43 @@ static bool search(markdown_core_parser *parser, markdown_core_publication *publ
     return true;
 }
 
+/* `member` takes the id of the old node it continues, or the next id. */
+static void identify(markdown_core_parser *parser, markdown_core_member *member) {
+    member->identified = true;
+    if (!(member->node->flags & MARKDOWN_CORE_NODE__GROUP)) {
+        member->node->id = member->old ? member->old->id : ++parser->last_id;
+    }
+}
+
+/* `member`'s node is numbered. It decides, and takes its id, as soon as that
+ * cannot change: now when the nearest of its owners that decided -- the
+ * document, above members not attached yet -- continues nothing, as then it
+ * and every owner on the way continue nothing whatever they become, or when
+ * it waits on nothing, its kind and range final; otherwise as it settles,
+ * when they are. False when an allocation failed. */
+static bool number_id(markdown_core_parser *parser, markdown_core_publication *publication,
+                      markdown_core_member *member) {
+    markdown_core_member *above = member->owner;
+    while (above && !above->decided) {
+        above = above->owner;
+    }
+    /* Members not attached yet lie under the document all the same. */
+    const markdown_core_member *decided = above ? above : parser->root;
+    if (!decided->old) {
+        for (markdown_core_member *at = member; at && at != above; at = at->owner) {
+            at->decided = true;
+        }
+    } else if (member->waits) {
+        return true;
+    }
+    if (!search(parser, publication, member, member->place.end)) {
+        return false;
+    }
+    assert(member->decided);
+    identify(parser, member);
+    return true;
+}
+
 /* Numbers `member`'s node, which `owner` holds, lies at its place, is
  * measured from `anchor` and fills `slot` of its relation: it holds its
  * strings and keeps its place, and takes its extent and its runs when they
@@ -1341,6 +1380,9 @@ static bool complete_number(const complete_context *context, markdown_core_membe
     }
     member->numbered = true;
     member->slot = slot;
+    if (!number_id(parser, context->publication, member)) {
+        return false;
+    }
     if (member->waits) {
         member->counted = true;
         member->owner->waits++;
@@ -1568,15 +1610,17 @@ void markdown_core_settle_member(markdown_core_parser *parser, markdown_core_pub
                                  markdown_core_member *member) {
     for (;;) {
         markdown_core_node *node = member->node;
-        /* Settled, its kind and its range are final, and so is its owner's
-         * range: the search decides it. */
+        /* Settled, its kind and its range are final: the search decides it,
+         * unless it decided already. */
         if (!search(parser, publication, member, member->place.end)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return;
         }
         assert(member->decided);
+        if (!member->identified) {
+            identify(parser, member);
+        }
         if (!(node->flags & MARKDOWN_CORE_NODE__GROUP)) {
-            node->id = member->old ? member->old->id : ++parser->last_id;
             if (member->old && node_same(node, member->old)) {
                 if (!settle_old(parser, publication, member, member->old)) {
                     markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -1707,6 +1751,9 @@ bool markdown_core_publish_tree(markdown_core_parser *parser, markdown_core_publ
     assert(!member->waits);
     member->place = place;
     member->numbered = true;
+    if (!number_id(parser, publication, member)) {
+        return false;
+    }
     markdown_core_settle_member(parser, publication, member);
     if (parser->error) {
         return false;

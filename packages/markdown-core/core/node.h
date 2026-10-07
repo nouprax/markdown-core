@@ -646,7 +646,8 @@ markdown_core_node *markdown_core_stem_walk_next(markdown_core_stem_walk *walk);
  *
  * A member also carries what the node continues
  * (docs/plans/2026-09-29-incremental-parsing.md, 5.9): `old`, the node of
- * the previous tree it continues once `decided`, where that node starts in
+ * the previous tree it continues once `decided`, whether its node has taken
+ * its id (`identified`), where that node starts in
  * its old coordinates, `reach`, the image up to which its owner's cursor
  * has passed for it, and its `candidates` to `last_candidate`, the old nodes
  * whose images lie in its range (ast_internal.h), among which
@@ -674,7 +675,7 @@ struct markdown_core_member {
     markdown_core_place place;
     uint32_t old_start, reach, pair_anchor, pair_name;
     uint32_t asks, index, slot, source, waits, candidates, last_candidate;
-    bool held, field, inner, decided, paired, asked, numbered, counted;
+    bool held, field, inner, decided, identified, paired, asked, numbered, counted;
 };
 
 /* A member for `node`, linked to nothing; it holds the node's reference when

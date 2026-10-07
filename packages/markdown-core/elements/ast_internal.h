@@ -261,10 +261,10 @@ bool markdown_core_complete_node(markdown_core_parser *parser, markdown_core_pub
                                                  markdown_core_node *),
                                  const markdown_core_element_instance *observer);
 
-/* A NUMBERED NODE SETTLES once it waits on nothing (5.9), its kind final: it
- * decides the old node it continues, unless a descendant's request decided
- * it already, and takes that node's id or the next one; when it equals the
- * old node it continues -- its kind, extent, runs and scalars, and every
+/* A NUMBERED NODE SETTLES once it waits on nothing (5.9), its kind and range
+ * final: it decides the old node it continues, unless it decided already,
+ * and takes that node's id or the next one, unless it took it already; when
+ * it equals the old node it continues -- its kind, extent, runs and scalars, and every
  * relation holding the same nodes -- the old node takes its place in its
  * owner, or as the document; a definition enters its table; its member goes,
  * and an owner that waited only on it settles in turn. */

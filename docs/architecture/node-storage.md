@@ -76,8 +76,10 @@ and a resource copies a borrowed destination or title, so a node the next
 revision shares reads nothing another node owns.
 
 A session's parse continues the previous document (5.9). Each node decides
-which old node it continues, and takes that node's id or the next, as it
-settles, when its kind and its range are final. When it equals that old
+which old node it continues, and takes that node's id or the next, as soon as
+that cannot change: as it is numbered when the nearest owner that decided
+continues nothing, or when it waits on nothing; otherwise as it settles, when
+its kind and its range are final. When it equals that old
 node -- kind, scalars, extent, runs, and every relation holding the same
 objects -- the old node takes its place in its owner and the new node is
 released, so an unchanged subtree is the old object.
@@ -214,8 +216,7 @@ items) settles as that block does. Completing a node numbers each node it holds
 that is not numbered yet, in canonical field order: its extent, measured from
 the end of the node before it in its relation or from the owner's start. A
 numbered node settles once nothing it waits on is pending -- its inline root,
-its block input, its anchor, the nodes it holds -- and takes its id as it
-settles. Its parse-time place becomes its extent. A Footnote,
+its block input, its anchor, the nodes it holds. Its parse-time place becomes its extent. A Footnote,
 Specimen, Reference or Heading enters the document's definition tables at its
 source start as it is numbered, and a node holding inline content is queued as
 an inline root. Completion is idempotent: a node that gains a node later (a
@@ -225,8 +226,9 @@ one.
 After block parsing the document is prepared; then each inline root, in the
 order it was queued, parses its content and completes its tree in one pass,
 and the root completes last. The document settles last when the tree is
-published, so a fresh parse's ids are 1 through its node count in the order
-its nodes settle and the document holds the last id. A numbered node holds only its
+published. A fresh parse continues nothing, so each node takes its id as it
+is numbered: its ids are 1 through its node count in the order its nodes are
+numbered, and the document holds the last id. A numbered node holds only its
 extent, so headings and specimen definitions record their source start when
 they register (`markdown_core_source_entry`) and are ordered by that start.
 
