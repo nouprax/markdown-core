@@ -132,7 +132,6 @@ bool markdown_core_block_attach_identifier_line(markdown_core_block_identifier_w
     if (!followed_by_boundary || parser->error || !S_attach_block_identifier(parser, owner, &candidate)) {
         return false;
     }
-    markdown_core_block_set_end_to_current_line(parser, owner);
-    markdown_core_parser_record(parser, parent->last, true);
+    markdown_core_parser_write_closed(parser, parent, parser->line_end);
     return true;
 }

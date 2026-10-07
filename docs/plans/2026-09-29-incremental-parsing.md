@@ -371,10 +371,9 @@ C views borrow from the session until its next edit.
   and the conformance fixtures stay in UTF-8 columns.
 - **Batches.** `edit` takes disjoint edits in the coordinates of the text
   before the batch and parses once, for multi-cursor edits and bulk
-  replacements. The edit pass applies each edit of the batch on its own
+  replacements. Each edit of the batch has its own image
   (5.2), so bytes between two edits stay surviving bytes with their own
-  shift. One edit pass and one parse cover every edit of the batch (5.2,
-  5.3).
+  shift. One parse covers every edit of the batch (5.2, 5.3).
 - **`Document.parse`** keeps its signature apart from the unit parameter. It
   is a session that inserts the whole source once and is then discarded.
 
@@ -519,7 +518,7 @@ mechanism that already provides normalized views for NUL-bearing lines, so no
 scanner sees a chunk boundary. The view lives for the edit, like other
 scratch. An edit reads only the lines it reads again.
 
-### 5.2 The edit pass
+### 5.2 Edits are applied to the old tree on demand
 
 An edit replaces bytes `[a, b)` of the old text with `n` bytes. A byte at old
 offset `x` survives when it is not inside a replaced range, and its image is
@@ -536,36 +535,30 @@ its offset plus the sum of the length changes of the replacements before it.
 Inserted bytes are the preimage of nothing. This mapping defines identity
 (5.9).
 
-Before the parse, the session applies the batch to the old tree, as
-`ts_tree_edit` applies an edit to a tree-sitter tree. The pass descends from
-the root along every node whose range, from the start of its lead to its end
-plus its reach, meets or touches a replaced range, and for each such node:
+The old tree stays as it was published: no pass over it precedes the parse,
+and no node of it is marked or copied. The edits are the record of the
+step, kept as their length changes in order, and every position the parse
+asks of the old tree is computed from them when the cursor (5.3) asks:
 
-- it shifts the node's own extent: an edit inside the lead shortens or
-  lengthens the lead, an edit that starts in the lead and reaches into the
-  span moves the start to the edit's end, and an edit inside the span
-  changes the span, exactly as `ts_subtree_edit` adjusts padding and size;
-- an empty node, which has no byte, takes the image of its start;
-- it marks the node **changed**;
-- it copies the node first when it is shared (5.11), so the published old
-  document is unchanged and only the root-to-edit paths are copied.
+- an old node's start is the image of its first byte, the end of its lead;
+- an old node is **touched** when an edit replaces bytes in the range from
+  its start to its end plus its reach, or inserts at a position after its
+  start and no further than that end. A node that is not touched has the bytes of its old
+  parse at the image of its start, through its reach;
+- an old node's anchor (5.9) is its first byte that survived the step.
 
-Inline extents are content offsets (4.3), so the pass stops at inline
-roots: a root it meets is read again, and its inline parse finds its edit
-from the source edits through its content runs (5.6). Nodes after an edit keep their extents, which are
-relative, and are not visited. A container's children tree finds the children whose range plus
-reach meets an edit in O(log children) from the reaches its internal nodes
-hold (5.1). The edited old tree is in the coordinates of the new text, so the
-cursor (5.3) and identity matching (5.9) read positions from it directly, and
-an old node's start in it is the image of its first surviving byte.
-Line boundaries need no rule of their own: the reading of a line terminator
-is part of a node's reach.
+Extents are relative (4.3), so an old node that is taken has the extents
+the new tree needs, and a touched node is never taken. Inline extents are
+content offsets, so an inline root that is read again finds its edits from
+the source edits through its content runs (5.6). Line boundaries need no
+rule of their own: the reading of a line terminator is part of a node's
+reach.
 
 ### 5.3 Blocks: re-parse against the old tree
 
 An edit parses the new text from its start with the ordinary line machine and
-a cursor over the edited old tree (5.2), as tree-sitter re-parses a file
-against its edited old tree. Wherever a node can be reused, it is taken whole
+a cursor over the old tree read through the step's edits (5.2), as
+tree-sitter re-parses a file against its edited old tree. Wherever a node can be reused, it is taken whole
 instead of read.
 
 **The cursor.** The cursor is a stack of (old node, child position, offset),
@@ -575,9 +568,9 @@ been matched and no block is open below the innermost open container, it asks
 the cursor for the old node that starts at that position, as tree-sitter asks
 for a reusable node before it lexes:
 
-- **Take.** The node is not changed and its entry equals the carried state
+- **Take.** The node is not touched (5.2) and its entry equals the carried state
   of the live innermost container. The node is taken whole, with the run of
-  unchanged siblings after it, the container folds the run's combined
+  untouched siblings after it, the container folds the run's combined
   summary (E4) into its carried state, and the parse continues after the run
   without reading any line of it. The rest of the run needs no comparison:
   equal state at a node's start and identical bytes through its reach and
@@ -588,10 +581,10 @@ for a reusable node before it lexes:
   its end, and not at one a later line may still write into (E2).
 - **Descend.** Otherwise the cursor moves to the node's first child, as
   tree-sitter breaks a changed node down, and the line machine reads the line
-  with `S_process_line`, as a fresh parse does. A changed container is built
-  again by the line machine: its opening line is read, and its unchanged
-  children are taken when the parse reaches their starts. A changed leaf
-  block takes its unchanged lines the same way (E5). The cursor skips old
+  with `S_process_line`, as a fresh parse does. A touched container is built
+  again by the line machine: its opening line is read, and its untouched
+  children are taken when the parse reaches their starts. A touched leaf
+  block takes its untouched lines the same way (E5). The cursor skips old
   nodes that start before the parse position, like tree-sitter's reusable
   node.
 
@@ -604,7 +597,7 @@ Grid and multiline tables decide their geometry from all of their lines,
 which is a fold (E5), and each of their rows records that geometry as its
 entry. Cells are internal inputs of the table's transaction, as now.
 
-**Several edits.** A batch (4.4) is one edit pass and one parse. The nodes
+**Several edits.** A batch (4.4) is one parse. The nodes
 between two edits are taken like any others.
 
 **Degenerate cases are the same algorithm.** A fresh parse has no old tree,
@@ -664,9 +657,9 @@ are requirements on every element, each checked by an audit script in
   combined summary, made when the leaf closes: a paragraph's content and its
   consumed reference-definition prefix, a code block's literal and its
   trailing-blank trimming as a length, and the column geometry of a grid or
-  multiline table, whose rows record that geometry as their entry. A changed
-  leaf is descended like a container: its unchanged lines are taken in runs,
-  its changed lines are read, and the content of the taken lines is copied
+  multiline table, whose rows record that geometry as their entry. A touched
+  leaf is descended like a container: its untouched lines are taken in runs,
+  its touched lines are read, and the content of the taken lines is copied
   back into the leaf's content, in O(copied bytes), with no decision made
   again. A line on which a decision read the leaf's content before it (a
   table header or setext underline tried against the paragraph so far) is
@@ -678,7 +671,7 @@ are requirements on every element, each checked by an audit script in
 
 An append inserts at the end of the text. A node that was open when the
 input ended read to the end, so its reach touches the insertion, and the
-changed nodes are exactly the open spine. The parse reads each container of
+touched nodes are exactly the open spine. The parse reads each container of
 the spine again from its opening line, takes its closed children in runs,
 and descends into the last open leaf, whose lines before the last are taken
 (E5). An append therefore costs the opening lines of the spine, the last
@@ -710,8 +703,8 @@ edits through the content runs of the two roots:
 - The content bytes that do not continue are the root's edits: disjoint
   replacements in the old content's offsets, a batch like a source batch.
 
-The edit pass (5.2) applies those edits to the old inline tree as it applies
-source edits to blocks, and the same cursor takes or descends. Identity
+The old inline tree is read through those edits as the old block tree is
+read through the source edits (5.2), and the same cursor takes or descends. Identity
 matching (5.9) reads inline anchors through the same mapping, so reuse and
 identity share one model. Each
 inline node records its **entry**, the
@@ -890,8 +883,8 @@ follows the parse.
   each a relation of it, so the cursor (5.3) continues a body only from the
   old body at its place.
 - Each old node has an **anchor byte**: the first byte of its source range
-  that survived the edit. Its image is the node's start in the edited old
-  tree. A node none of whose bytes survived has an empty span there, has no
+  that survived the edit. Its image is the node's start in the new text
+  (5.2). A node none of whose bytes survived has an empty span there, has no
   anchor and cannot be matched; its id retires.
 - An old node `O` can match a new node `N` when their kinds are equal and
   `N`'s source range contains the image of `O`'s anchor byte (5.2).
@@ -1201,7 +1194,7 @@ them, and step 8 makes the whole engine meet the benchmark gates.
    is shared with an equal old node as it completes (5.9). Every line is still read again,
    as in step 2.
 - [ ] **Step 5: Block reuse.** Entries and reaches and the high-water mark
-   (5.1), the edit pass (5.2), the cursor's take and descend (5.3), E1–E5
+   (5.1), positions read through the edits (5.2), the cursor's take and descend (5.3), E1–E5
    and their audits, summaries in children trees, streaming as an edit at
    the end (5.5), and session-held registrations with every inline root
    depending on every key.

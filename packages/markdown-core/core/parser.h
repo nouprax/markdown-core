@@ -665,13 +665,22 @@ bool markdown_core_parser_source_anchor(const markdown_core_parser *parser, uint
  * (5.3, E3): the word its element saves, the kind of the child before, and
  * its blank-line flags. A block records it as its `entry`. */
 uint64_t markdown_core_parser_carry(const markdown_core_parser *parser, const markdown_core_member *parent,
-                                    const markdown_core_member *previous);
+                                    const markdown_core_node *previous);
 
-/* THE PARSE RECORD OF `member`, a block the line being processed closes or
- * writes into (5.1, 5.3, E2): its reach and its parent's cover what the line
- * has read, and with `holds` it holds the next block, so that no run of taken
- * blocks ends at it. A taken block keeps the record the old parse wrote. */
-void markdown_core_parser_record(markdown_core_parser *parser, markdown_core_member *member, bool holds);
+/* A BLOCK READ OFF THE FRONT OF `whole` (5.3): a Reference a paragraph's
+ * definition gives, or the lead paragraph a table splits off. `piece` is
+ * attached before `whole`. It begins where `whole` began, so it takes its
+ * entry and its reach, and it holds the next block, the rest of `whole`,
+ * which begins after it with the state its parent carries there. NULL when
+ * it could not be attached. */
+markdown_core_member *markdown_core_parser_attach_split(markdown_core_parser *parser, markdown_core_member *whole,
+                                                        markdown_core_node *piece);
+
+/* A LATER LINE WRITES INTO THE CLOSED LAST CHILD OF `parent` (5.4, E2), a
+ * separate-line block identifier or a table's trailing caption: the child
+ * ends at `end`, its reach and its parent's cover what the line has read,
+ * and it holds the next block, so that no run of taken blocks ends at it. */
+void markdown_core_parser_write_closed(markdown_core_parser *parser, markdown_core_member *parent, bufsize_t end);
 
 /* Line `line` of the input, read: a decision that reads a line reads it
  * whole, through its terminator, which raises the high-water mark of the

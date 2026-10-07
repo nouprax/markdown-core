@@ -278,8 +278,8 @@ bool markdown_core_complete_node(markdown_core_parser *parser, markdown_core_pub
  * had made them, and `visit` sees each with the source offset where it was
  * written. False when an allocation failed. */
 bool markdown_core_publication_take(markdown_core_publication *publication, const markdown_core_node *node,
-                                    uint32_t start,
-                                    void (*visit)(void *, const markdown_core_node *, uint32_t), void *context);
+                                    uint32_t start, void (*visit)(void *, const markdown_core_node *, uint32_t),
+                                    void *context);
 /* Whether the labels `document` defines in each table are those `old`
  * defined: then every lookup of a label is answered as it was. */
 bool markdown_core_document_labels_same(const markdown_core_node *document, const markdown_core_node *old);

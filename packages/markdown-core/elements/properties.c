@@ -41,7 +41,7 @@ typedef struct {
 /* Decode a pre-indexed envelope. Return geometry by value so a later parser
  * operation cannot invalidate a decoder's line reference. */
 static source_line property_line(const properties *p, size_t line) {
-    return p->parser->input_lines[p->first_line + line];
+    return *markdown_core_parser_visited_line(p->parser, (int)(p->first_line + line));
 }
 
 static bool plain_start(const unsigned char *s, size_t start, size_t end) {
@@ -775,7 +775,7 @@ void markdown_core_properties_parse(markdown_core_properties_work *work, markdow
     }
     properties p = {.parser = parser, .work = work, .source = source};
     p.count = (size_t)number - 2;
-    p.first_line = 1;
+    p.first_line = 2;
     markdown_core_node *node = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_METADATA);
     if (!node) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);

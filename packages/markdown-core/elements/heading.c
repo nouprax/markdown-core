@@ -311,7 +311,8 @@ void markdown_core_headings_finish(const markdown_core_element_instance *self, m
         return;
     }
     for (size_t i = 0; i < state->explicit_count + headings->count && !parser->error; i++) {
-        const markdown_core_node *heading = i < state->explicit_count ? NULL : headings->values[i - state->explicit_count].source.node;
+        const markdown_core_node *heading =
+            i < state->explicit_count ? NULL : headings->values[i - state->explicit_count].source.node;
         const markdown_core_chunk anchor = heading ? heading->attributes.anchor : state->explicit_anchors[i];
         if (!anchor.len || (heading && (heading->flags & HEADING_ANCHOR_COMPUTED))) {
             continue;

@@ -266,25 +266,17 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
     markdown_core_parser_adopt_content_marks(parser, &table->content_map, &paragraph->content_map, first,
                                              content_end - first);
 
-    /* The lead is the table's sibling before it; the caller proved that the
-     * table's owner holds a paragraph. */
-    markdown_core_member *lead =
-        markdown_core_parser_attach(parser, parent_container->owner, paragraph, parent_container);
+    /* The lead is the table's sibling before it, read off its front; the
+     * caller proved that the table's owner holds a paragraph. */
+    markdown_core_member *lead = markdown_core_parser_attach_split(parser, parent_container, paragraph);
     if (!lead) {
         return;
     }
 
-    /* The lead begins where the paragraph began and so carries its entry;
-     * the table now begins after the lead. The delimiter line, read with the
-     * paragraph as its context, closed the lead (5.1, 5.3). */
-    paragraph->entry = table->entry;
-    parent_container->node->entry = markdown_core_parser_carry(parser, parent_container->owner, lead);
-    markdown_core_parser_record(parser, lead, true);
-
-    /* A table split completes this paragraph just as a later block start
-     * would: reference definitions, anchor attachment and the runs of its
-     * own lines share finalization. */
-    markdown_core_block_settle(parser, lead);
+    /* The delimiter line, read with the paragraph as its context, closes the
+     * lead just as a later block start would: reference definitions, anchor
+     * attachment and the runs of its own lines share finalization. */
+    markdown_core_block_close(parser, lead, true);
 }
 
 /* Return NULL when the syntax does not match or the parent rejects the table
@@ -2646,9 +2638,9 @@ static markdown_core_member *table_try_open(table_workspace *workspace, markdown
         markdown_core_node *table = result->node;
         table_candidate_reset(candidate);
         ((markdown_core_table *)table->opaque)->caption = table_caption_build(&source, parent, caption_last, caption);
-        table->where.place.end = (uint32_t)markdown_core_parser_source_end(parser, source.lines[caption_last].line,
-                                                                           source.lines[caption_last].length);
-        markdown_core_parser_record(parser, result, true);
+        markdown_core_parser_write_closed(parser, parent,
+                                          markdown_core_parser_source_end(parser, source.lines[caption_last].line,
+                                                                          source.lines[caption_last].length));
         /* The table completed as it closed; it completes again for the
          * caption it gains. */
         if (!parser->error) {
@@ -2674,8 +2666,7 @@ static markdown_core_member *table_try_open(table_workspace *workspace, markdown
         /* A grid or multiline table is whole once it is built, caption and
          * all: it closes here, where a pipe table closes as its lines end. */
         if (result && !(result->node->flags & MARKDOWN_CORE_NODE__OPEN) && !parser->error) {
-            markdown_core_parser_record(parser, result, false);
-            markdown_core_block_settle(parser, result);
+            markdown_core_block_close(parser, result, false);
         }
     }
 done:
