@@ -498,8 +498,15 @@ static void S_drop_node(S_release_lists *lists, markdown_core_node *node) {
  * pointer once it is released. */
 typedef char S_stem_link_fits[sizeof(markdown_core_stem *) <= offsetof(markdown_core_stem, height) ? 1 : -1];
 
+/* The link a released stem holds in its first word. */
+static markdown_core_stem *S_stem_link(const markdown_core_stem *stem) {
+    markdown_core_stem *next;
+    memcpy(&next, (const void *)stem, sizeof(next));
+    return next;
+}
+
 static void S_link_stem(S_release_lists *lists, markdown_core_stem *stem) {
-    memcpy(stem, &lists->stems, sizeof(lists->stems));
+    memcpy((void *)stem, &lists->stems, sizeof(lists->stems));
     lists->stems = stem;
 }
 
@@ -542,7 +549,7 @@ static size_t S_release(markdown_core_node_pool *pool, S_release_lists *lists) {
     while (lists->nodes || lists->stems) {
         if (lists->stems) {
             markdown_core_stem *stem = lists->stems;
-            memcpy(&lists->stems, stem, sizeof(lists->stems));
+            lists->stems = S_stem_link(stem);
             for (uint8_t i = 0; i < stem->width; i++) {
                 if (stem->height) {
                     S_drop_stem(lists, stem->entries[i].stem);
@@ -662,7 +669,7 @@ failed:
         }
         while (lists.stems) {
             markdown_core_stem *stem = lists.stems;
-            memcpy(&lists.stems, stem, sizeof(lists.stems));
+            lists.stems = S_stem_link(stem);
             for (uint8_t j = 0; stem->height && j < stem->width; j++) {
                 S_link_stem(&lists, stem->entries[j].stem);
             }
