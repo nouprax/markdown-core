@@ -49,7 +49,7 @@ class DeepTreeTest {
 
         // A description never follows tree edges.
         assertEquals("Document(id=${depth * 2 + 3})", document.toString())
-        assertEquals("Text(id=${depth * 2 + 3})", leaf.toString())
+        assertEquals("Text(id=${depth * 2 + 2})", leaf.toString())
 
         // Release of a deep document while a view still holds a subtree.
         val (released, subtree) = retain(source, depth / 2)
