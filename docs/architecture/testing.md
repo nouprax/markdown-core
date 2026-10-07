@@ -163,8 +163,9 @@ cmake --build --preset debug --parallel
 ctest --preset correctness-debug
 ```
 
-The engine runs it once, after the root completes, so it reads every node the
-parse made or shared. A configuration
+The engine runs it once, after every inline root has completed, and a parse
+whose check cannot allocate its work stack fails as any allocation failure
+does. A configuration
 that does not define the macro is indistinguishable from one where the check
 passes, which is how it stayed dead for the whole of its life: the define was
 set in `core/`, where `set()` cannot reach the sibling directory that builds the

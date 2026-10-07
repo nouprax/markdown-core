@@ -1815,7 +1815,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
         /* Scan spans ending at a line boundary or a normalization boundary,
          * chunk by chunk. The NUL count changes only at the latter, not on
          * every source byte. */
-        for (;;) {
+        while (at < parser->input_length) {
             if (!S_input_seek(parser, at)) {
                 return NULL;
             }
@@ -1823,9 +1823,6 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
             const unsigned char *end = chunk + parser->input_chunk_size - (at - parser->input_chunk_start);
             const unsigned char *cursor = S_source_span_end(chunk, end);
             at += (size_t)(cursor - chunk);
-            if (at == parser->input_length) {
-                break;
-            }
             if (cursor == end) {
                 continue;
             }
@@ -3051,19 +3048,23 @@ int markdown_core_block_order_definitions(markdown_core_parser *parser,
 }
 
 /* `markdown_core_node_check` is the one structural self-check this tree has.
- * It checks every stem of the finished tree and that every node in it is
- * held, once the root completes. This is compiled in only when
+ * It checks every stem of the tree and that every node in it is held, after
+ * every inline root has completed; when it cannot allocate its work stack the
+ * parse fails as any allocation failure does. This is compiled in only when
  * `MARKDOWN_CORE_DEBUG_NODES` is defined, which no shipping configuration
  * defines. */
 #if MARKDOWN_CORE_DEBUG_NODES
-#define MARKDOWN_CORE_CHECK_TREE(root)                                                                                 \
+#define MARKDOWN_CORE_CHECK_TREE(parser, root)                                                                         \
     do {                                                                                                               \
-        if (markdown_core_node_check((root), stderr) != 0) {                                                           \
+        int faults = markdown_core_node_check((root), stderr);                                                         \
+        if (faults < 0) {                                                                                              \
+            markdown_core_parser_fail((parser), MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);                                \
+        } else if (faults) {                                                                                           \
             abort();                                                                                                   \
         }                                                                                                              \
     } while (0)
 #else
-#define MARKDOWN_CORE_CHECK_TREE(root) ((void)0)
+#define MARKDOWN_CORE_CHECK_TREE(parser, root) ((void)0)
 #endif
 
 /* THE PARSE ENDS AS ITS NODES COMPLETE (docs/plans/2026-09-29-incremental-
@@ -3091,7 +3092,9 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_node *S_finish_parse(ma
     }
     markdown_core_free(pass.states);
     if (!parser->error) {
-        MARKDOWN_CORE_CHECK_TREE(parser->root->node);
+        MARKDOWN_CORE_CHECK_TREE(parser, parser->root->node);
+    }
+    if (!parser->error) {
         document->element->finish_document(document, parser);
     }
     /* Last, the finished tree is published: nothing changes it after this. */

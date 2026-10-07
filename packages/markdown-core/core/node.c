@@ -51,6 +51,8 @@ bool markdown_core_node_can_contain_builtin(const markdown_core_node *node, mark
         return child_type == MARKDOWN_CORE_NODE_DEFINITION_BODY;
     case MARKDOWN_CORE_NODE_LIST:
         return child_type == MARKDOWN_CORE_NODE_LIST_ITEM;
+    case MARKDOWN_CORE_NODE_CITE:
+        return child_type == MARKDOWN_CORE_NODE_CITATION;
 
     case MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK:
         return node->element && node->element->containment_kinds && MARKDOWN_CORE_NODE_TYPE_BLOCK_P(child_type) &&
@@ -1065,7 +1067,9 @@ static int S_check_stem(const markdown_core_node *owner, const markdown_core_ste
     }
 }
 
-/* THE STRUCTURAL SELF-CHECK of a tree: every stem sound and every node held. */
+/* THE STRUCTURAL SELF-CHECK of a tree: every stem sound and every node held.
+ * The count of faults it found, or -1 when its work stack could not be
+ * allocated. */
 int markdown_core_node_check(markdown_core_node *node, FILE *out) {
     int errors = 0;
     if (!node) {
@@ -1074,7 +1078,7 @@ int markdown_core_node_check(markdown_core_node *node, FILE *out) {
     size_t capacity = 64, count = 0;
     markdown_core_node **pending = markdown_core_alloc(capacity, sizeof(*pending));
     if (!pending) {
-        return 0;
+        return -1;
     }
     pending[count++] = node;
     while (count) {
@@ -1088,7 +1092,8 @@ int markdown_core_node_check(markdown_core_node *node, FILE *out) {
             size_t grown = (count + total) * 2;
             markdown_core_node **more = markdown_core_realloc(pending, grown * sizeof(*pending));
             if (!more) {
-                break;
+                markdown_core_free(pending);
+                return -1;
             }
             pending = more;
             capacity = grown;
