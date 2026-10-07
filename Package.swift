@@ -24,7 +24,7 @@ let package = Package(
                 "core/inlines.c",
                 "core/utf8.c",
                 "core/buffer.c",
-                "core/references.c",
+                "core/registry.c",
                 "core/map.c",
                 "core/text_tree.c",
                 "core/houdini_html_u.c",

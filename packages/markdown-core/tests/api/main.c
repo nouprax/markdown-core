@@ -3399,33 +3399,54 @@ static void whitespace_is_space_tab_and_line_ending(test_batch_runner *runner) {
     }
 }
 
-/* A MAP'S RECORDS ARE CARVED FROM BLOCKS IT OWNS: a run of definitions is a
- * few block allocations rather than one each, and the blocks go with the map. */
-static void map_records_are_carved_from_its_blocks(test_batch_runner *runner) {
-    enum { COUNT = 400 };
+/* A FACT LIVES AS LONG AS ITS NODE (registry.h): a declaration defines its
+ * key while its node is held, a question joins the key's reverse index, a
+ * released node takes its facts with it and marks what it declared, and a
+ * key no fact holds goes once the edit settles. */
+static void registry_facts_live_with_their_nodes(test_batch_runner *runner) {
     payload_probe_arm();
-    markdown_core_map *map = markdown_core_reference_map_new();
-    OK(runner, map != NULL, "a map is made");
-    if (!map) {
+    markdown_core_node_pool pool = {0};
+    markdown_core_registry *registry = &pool.registry;
+    markdown_core_registry_begin(registry);
+    markdown_core_node *reference = markdown_core_node_pool_new(&pool, MARKDOWN_CORE_NODE_PARAGRAPH, NULL);
+    markdown_core_node *root = markdown_core_node_pool_new(&pool, MARKDOWN_CORE_NODE_PARAGRAPH, NULL);
+    OK(runner, reference && root, "the nodes are made");
+    if (!reference || !root) {
         payload_probe_disarm();
         return;
     }
-    size_t before = payload_allocations;
-    char label[32];
-    for (size_t i = 0; i < COUNT; i++) {
-        snprintf(label, sizeof(label), "label %zu", i);
-        markdown_core_chunk chunk = {(unsigned char *)label, (bufsize_t)strlen(label), 0};
-        markdown_core_label_declare(map, &chunk);
-        OK(runner, !map->oom && map->records && map->records->label_len == chunk.len, "record %zu is carved", i);
-    }
-    /* Only the blocks the records are carved from. */
-    size_t blocks = payload_allocations - before;
-    OK(runner, blocks <= 8, "%d records took %zu blocks", COUNT, blocks);
-    markdown_core_chunk lookup = {(unsigned char *)"LABEL 399", 9, 0};
-    markdown_core_map_record *found = markdown_core_map_lookup(map, &lookup);
-    OK(runner, found && found->label_len == 9 && !memcmp(found->label, "label 399", 9), "a carved record is found");
-    markdown_core_map_free(map);
-    INT_EQ(runner, payload_live, 0, "the map's blocks and index are all released");
+    OK(runner,
+       markdown_core_registry_declare(registry, reference, MARKDOWN_CORE_KEY_REFERENCE, MARKDOWN_CORE_FACT_DECLARE,
+                                      (const unsigned char *)"a", 1, NULL, 0) != NULL,
+       "a node declares a label");
+    OK(runner, registry->marked && !registry->marked->was && markdown_core_key_defined(registry->marked),
+       "the declaration marks its key, undefined before");
+    const markdown_core_key *key = NULL;
+    bool failed = false;
+    OK(runner,
+       markdown_core_registry_ask(registry, root, MARKDOWN_CORE_KEY_REFERENCE, (const unsigned char *)"a", 1, &key,
+                                  &failed),
+       "a root finds it defined");
+    OK(runner,
+       !markdown_core_registry_ask(registry, root, MARKDOWN_CORE_KEY_FOOTNOTE, (const unsigned char *)"a", 1, &key,
+                                   &failed) &&
+           !failed,
+       "and the same label in another group undefined");
+    markdown_core_registry_settle(registry);
+    INT_EQ(runner, registry->count, 2, "both keys stay while a root asks them");
+
+    markdown_core_registry_begin(registry);
+    markdown_core_node_pool_release(&pool, reference);
+    OK(runner, registry->marked && registry->marked->was && !markdown_core_key_defined(registry->marked),
+       "the released declaration marks its key, defined before and undefined now");
+    OK(runner, registry->marked->lookups && registry->marked->lookups->node == root,
+       "the key's reverse index names the root that asked it");
+    markdown_core_registry_settle(registry);
+    markdown_core_node_pool_release(&pool, root);
+    markdown_core_registry_settle(registry);
+    INT_EQ(runner, registry->count, 0, "a key no fact holds goes");
+    markdown_core_node_pool_dispose(&pool);
+    INT_EQ(runner, payload_live, 0, "the registry's keys and facts are all released");
     payload_probe_disarm();
 }
 
@@ -4882,7 +4903,7 @@ static void universal_values(test_batch_runner *runner) {
 typedef struct {
     size_t autolink_domains;
     size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body, block_identifier, callout, dimensions;
-    size_t registered_definitions, definition_lists, citation_brace_bytes, tables, table_frontier;
+    size_t definition_lists, citation_brace_bytes, tables, table_frontier;
     size_t table_workspace_growth, table_geometry_lines, table_separator_scans, table_horizontal_work;
     size_t physical_lines, physical_capacity, physical_facts, physical_fact_capacity, normalized_lines;
     bool heading_collection_disposed;
@@ -4959,13 +4980,15 @@ static void record_inline_work(const markdown_core_element_instance *self, markd
         ELEMENT_STATE(parser, markdown_core_cross_link_work, MARKDOWN_CORE_ELEMENT_CROSS_LINK)->dimensions;
     work->attributes = parser->attribute_scratch.work;
     work->anchors = headings->anchor_work;
+    /* The reference labels the parse declared: each a fact (registry.h). */
     work->definitions = 0;
-    for (markdown_core_map_record *record = parser->refmap->records; record; record = record->next) {
-        work->definitions++;
+    for (size_t i = 0; i < parser->registry->capacity; i++) {
+        for (const markdown_core_key *key = parser->registry->buckets[i]; key; key = key->chain) {
+            work->definitions += key->group == MARKDOWN_CORE_KEY_REFERENCE ? key->declared : 0;
+        }
     }
     work->heading_collection_disposed = headings->headings.values == NULL && headings->headings.count == 0;
     work->footnote_body = parser->footnote_body_work;
-    work->registered_definitions = parser->definition_registration_work;
     work->definition_lists =
         ELEMENT_STATE(parser, markdown_core_definition_list_work, MARKDOWN_CORE_ELEMENT_DEFINITION_LIST)->work;
 }
@@ -10883,7 +10906,7 @@ int main(void) {
     unicode_classes_are_total(runner);
     anchor_images_only_scalars(runner);
     whitespace_is_space_tab_and_line_ending(runner);
-    map_records_are_carved_from_its_blocks(runner);
+    registry_facts_live_with_their_nodes(runner);
     properties_values(runner);
     properties_source_boundaries(runner);
     properties_member_work(runner);

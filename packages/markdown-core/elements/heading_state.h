@@ -1,6 +1,6 @@
 #ifndef MARKDOWN_CORE_HEADING_STATE_H
 #define MARKDOWN_CORE_HEADING_STATE_H
-#include "references.h"
+#include "map.h"
 #include "inline_internal.h"
 
 /* A heading is taken from the parser's inline roots as the document is
@@ -19,20 +19,11 @@ typedef struct {
     size_t count, capacity;
 } markdown_core_heading_collection;
 
-typedef struct {
-    markdown_core_key_index index;
-} anchor_registry;
-
 /* THE HEADINGS OF ONE PARSE (the heading element's parse record): each
- * heading as its block closed, the explicit anchors of the document's nodes
- * as each node was numbered, the anchors the document reserves and assigns
- * once every node is complete, and the projection and registry work that
- * assignment did, for its complexity gate. */
+ * heading the parse made, as its block closed, and the projection and family
+ * work their anchors took, for its complexity gate. */
 typedef struct {
     markdown_core_heading_collection headings;
-    markdown_core_chunk *explicit_anchors;
-    size_t explicit_count, explicit_capacity;
-    anchor_registry anchors;
     size_t anchor_work;
 } markdown_core_heading_state;
 

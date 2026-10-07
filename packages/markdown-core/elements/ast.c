@@ -1537,6 +1537,9 @@ static bool settle_old(markdown_core_parser *parser, markdown_core_publication *
     kept->entry = node->entry;
     kept->reach = node->reach;
     kept->flags = node->flags;
+    /* And it declares what the new node declared: an equal node declares
+     * the same, and these facts are this parse's (5.7). */
+    markdown_core_registry_move(node, kept);
     if (!owner) {
         member->node = kept;
     } else if (member->field) {
@@ -1692,50 +1695,6 @@ bool markdown_core_publication_take(markdown_core_publication *publication, cons
     ok = ok && !walk.failed;
     markdown_core_walk_end(&walk);
     return ok;
-}
-
-/* The next distinct label of `nodes`, which are in label order, from `*at`
- * on; false after the last. */
-static bool next_label(const markdown_core_node *const *nodes, size_t count, size_t *at, markdown_core_chunk *label) {
-    if (*at == count) {
-        return false;
-    }
-    definition_label(nodes[(*at)++], label);
-    markdown_core_chunk next;
-    while (*at < count && definition_label(nodes[*at], &next) &&
-           !label_compare(next.data, (size_t)next.len, label->data, (size_t)label->len)) {
-        (*at)++;
-    }
-    return true;
-}
-
-/* Whether the distinct labels of `nodes` and of `old`, each in label order,
- * are the same. */
-static bool labels_same(const markdown_core_node *const *nodes, size_t count, const markdown_core_node *const *old,
-                        size_t old_count) {
-    size_t i = 0, j = 0;
-    for (markdown_core_chunk a, b;;) {
-        const bool more = next_label(nodes, count, &i, &a);
-        if (more != next_label(old, old_count, &j, &b)) {
-            return false;
-        }
-        if (!more) {
-            return true;
-        }
-        if (label_compare(a.data, (size_t)a.len, b.data, (size_t)b.len)) {
-            return false;
-        }
-    }
-}
-
-bool markdown_core_document_labels_same(const markdown_core_node *document, const markdown_core_node *old) {
-    const markdown_core_document_value *value = document->as.document, *before = old->as.document;
-    return labels_same(value->footnotes.labeled, value->footnotes.labeled_count, before->footnotes.labeled,
-                       before->footnotes.labeled_count) &&
-           labels_same(value->specimens.labeled, value->specimens.labeled_count, before->specimens.labeled,
-                       before->specimens.labeled_count) &&
-           labels_same(value->reference_targets, value->reference_target_count, before->reference_targets,
-                       before->reference_target_count);
 }
 
 bool markdown_core_publish_tree(markdown_core_parser *parser, markdown_core_publication *publication) {

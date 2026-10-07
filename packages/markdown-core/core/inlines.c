@@ -8,7 +8,7 @@
 #include "config.h"
 #include "node.h"
 #include "parser.h"
-#include "references.h"
+#include "registry.h"
 #include "map.h"
 #include "node_type.h"
 #include "buffer.h"
@@ -150,11 +150,10 @@ static bool S_inline_run_began(const markdown_core_inline_state *inline_state) {
 }
 
 void markdown_core_inline_state_from_buf(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
-                                         markdown_core_chunk *chunk, markdown_core_map *refmap) {
+                                         markdown_core_chunk *chunk) {
     memset(inline_state, 0, sizeof(*inline_state));
     inline_state->input = *chunk;
     inline_state->owner_parser = parser;
-    inline_state->refmap = refmap;
     inline_state->text_end = -1;
     if (parser) {
         inline_state->dialect = parser->dialect;
@@ -453,7 +452,7 @@ static void complete_inline_token(markdown_core_parser *parser, markdown_core_in
     if (!entry || entry->kind != DELIMITER_FIELD) {
         return;
     }
-    bool whitespace = markdown_core_parse_inline_subtrees(parser, entry->member, inline_state->refmap);
+    bool whitespace = markdown_core_parse_inline_subtrees(parser, entry->member);
     if (whitespace) {
         entry->kind = DELIMITER_BOUNDARY;
         entry->member = NULL;
@@ -922,8 +921,36 @@ append:
     return inline_state->error != MARKDOWN_CORE_PARSE_CONTAINMENT_REJECTED;
 }
 
+const markdown_core_key *markdown_core_inline_ask(markdown_core_inline_state *inline_state,
+                                                  markdown_core_key_group group, const markdown_core_chunk *label,
+                                                  bool normalize) {
+    markdown_core_parser *parser = inline_state->owner_parser;
+    markdown_core_registry *registry = parser->registry;
+    const unsigned char *bytes = label->data;
+    uint32_t length = (uint32_t)label->len;
+    bool failed = false;
+    if (normalize) {
+        if (label->len < 1 || label->len > MAX_LINK_LABEL_LENGTH) {
+            return NULL;
+        }
+        const markdown_core_strbuf *read = markdown_core_registry_normalize(registry, label, &failed);
+        if (!read) {
+            inline_state->error = failed ? MARKDOWN_CORE_PARSE_ALLOCATION_FAILED : inline_state->error;
+            return NULL;
+        }
+        bytes = read->ptr;
+        length = (uint32_t)read->size;
+    }
+    const markdown_core_key *key;
+    const bool defined = markdown_core_registry_ask(registry, parser->asker, group, bytes, length, &key, &failed);
+    if (failed) {
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
+    }
+    return defined ? key : NULL;
+}
+
 void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_core_member *owner, bool root,
-                                        markdown_core_map *refmap, markdown_core_inline_state *inline_state) {
+                                        markdown_core_inline_state *inline_state) {
     markdown_core_node *parent = owner->node;
     markdown_core_chunk content = {parent->content.ptr, parent->content.size, 0};
     /* EVERY content-bearing block has a map by the time its inlines are parsed.
@@ -936,7 +963,7 @@ void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_c
     if (parent->content_map.count == 0) {
         markdown_core_parser_mark_content(parser, parent, 0, parent->where.place.start + parent->internal_offset);
     }
-    markdown_core_inline_state_from_buf(parser, inline_state, &content, refmap);
+    markdown_core_inline_state_from_buf(parser, inline_state, &content);
     /* Block buffers include their terminating line ending. An inline field
      * ends at its owner's delimiter: its trailing spaces are body content. */
     if (!MARKDOWN_CORE_NODE_TYPE_INLINE_P(parent->kind)) {
@@ -1006,10 +1033,9 @@ bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_
     return whitespace;
 }
 
-bool markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_member *parent, bool root,
-                                 markdown_core_map *refmap) {
+bool markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_member *parent, bool root) {
     markdown_core_inline_state inline_state;
-    markdown_core_inline_start_inlines(parser, parent, root, refmap, &inline_state);
+    markdown_core_inline_start_inlines(parser, parent, root, &inline_state);
     return markdown_core_inline_finish_inlines(parser, &inline_state);
 }
 

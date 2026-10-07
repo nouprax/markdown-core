@@ -490,11 +490,11 @@ static void materialize_citation_key(const markdown_core_element_instance *self,
         return;
     }
     markdown_core_node *item = member->node;
-    const markdown_core_element_instance *specimen_element = self->peers[CITATION_SPECIMEN];
-    const markdown_core_specimen_state *specimens = specimen_element ? specimen_element->state : NULL;
+    /* A key a specimen definition declares names that specimen, in a dialect
+     * that has them. */
     bool specimen =
-        !token->suppress && token->key_start == token->start + 1 && specimens &&
-        markdown_core_key_index_lookup(&specimens->ids, item->as.citation->value.data, item->as.citation->value.len);
+        !token->suppress && token->key_start == token->start + 1 && self->peers[CITATION_SPECIMEN] &&
+        markdown_core_inline_ask(inline_state, MARKDOWN_CORE_KEY_SPECIMEN, &item->as.citation->value, false);
     if (specimen) {
         item->as.citation->referent = MARKDOWN_CORE_NODE_REFERENT_SPECIMEN;
         item->as.citation->mode = 0;

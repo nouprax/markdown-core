@@ -15,6 +15,7 @@ extern "C" {
 #include "attributes.h"
 #include "slab.h"
 #include "metadata.h"
+#include "registry.h"
 
 typedef struct {
     markdown_core_list_flavor flavor;
@@ -404,6 +405,9 @@ struct markdown_core_node {
      * then. Both are 0 for a node no line machine made. */
     uint64_t entry;
     uint32_t reach;
+    /* The facts the node declares to the document, and the questions an
+     * inline root it holds asked of it (registry.h), or NULL. */
+    struct markdown_core_fact *facts;
 
     markdown_core_attributes attributes;
     markdown_core_strbuf content;
@@ -586,6 +590,8 @@ typedef struct markdown_core_node_pool {
     markdown_core_slab_pool resources;
     markdown_core_slab_pool members;
     markdown_core_bytes_pool bytes;
+    /* The facts of the nodes the pool's parses made (registry.h). */
+    markdown_core_registry registry;
 } markdown_core_node_pool;
 
 /* Uninitialized storage of `bytes` a node owns -- its runs, a

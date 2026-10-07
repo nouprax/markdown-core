@@ -3,7 +3,7 @@
 
 #include <assert.h>
 #include <stdint.h>
-#include "references.h"
+#include "registry.h"
 #include "node.h"
 #include "buffer.h"
 #include "dialect.h"
@@ -106,14 +106,11 @@ typedef struct {
     uint32_t start;
 } markdown_core_source_entry;
 
-/* The specimen definitions of one parse, in the order they were committed,
- * for the index citations resolve against. Every definition is owned by the
- * block tree; the collection only borrows it until the document finishes. */
+/* Source offsets, in order. */
 typedef struct {
-    markdown_core_source_entry *values;
-    size_t count;
-    size_t capacity;
-} markdown_core_definition_collection;
+    uint32_t *values;
+    size_t count, capacity;
+} markdown_core_offsets;
 
 /* Sequential source-order operations share scratch, such as an element's
  * deferred registrations or a table's regions. Space depends on entries, never on the
@@ -172,8 +169,11 @@ typedef struct markdown_core_block_input {
 } markdown_core_block_input;
 
 struct markdown_core_parser {
-    /* A hashtable of urls in the current document for cross-references */
-    struct markdown_core_map *refmap;
+    /* The registry of the revision's pool (registry.h), which the facts of
+     * the nodes the parse makes join, and the node of the inline root whose
+     * content is being parsed, which asks it every question its runs ask. */
+    markdown_core_registry *registry;
+    struct markdown_core_node *asker;
     markdown_core_source_order source_order;
     /* The stack each inline root's completion borrows in turn, growing it
      * to what it needs (markdown_core_parser_walk_stack) and leaving it to
@@ -261,17 +261,19 @@ struct markdown_core_parser {
     size_t resume;
     bufsize_t resume_last_end;
     /* Every node the parse took, with the offset where it begins now: the
-     * document lists their declarations (5.7). `takes` says whether the
-     * parse may take nodes at all; publishing sets `retake` when a label the
-     * document defines is not one the old document defined, or the other
-     * way round, so that a taken node may have read a lookup that is
-     * answered differently now, and the parse runs again without taking. */
+     * document lists their declarations (5.7). */
     struct markdown_core_took {
         const struct markdown_core_node *node;
         uint32_t start;
     } *took;
     size_t took_count, took_capacity;
-    bool takes, retake;
+    /* THE NODES THE EDIT READS AGAIN (5.7), which the edit's parses share:
+     * where each begins in the new source, the first `reread_from` in order,
+     * found by the parses before this one. `reread` says that this parse
+     * found more and ends, for the edit to be parsed again. */
+    markdown_core_offsets *rereads;
+    size_t reread_from;
+    bool reread;
     /* The last open block after a line is fully processed */
     struct markdown_core_member *current;
     /* See the documentation for markdown_core_parser_get_line_number() in markdown_core.h */
@@ -314,7 +316,6 @@ struct markdown_core_parser {
      * element counts its own work in its own state record. */
     size_t opaque_scan_work;
     size_t footnote_body_work;
-    size_t definition_registration_work;
     /* Run bytes, opener comparisons, and child moves in the shared delimiter algorithm. */
     size_t delimiter_work;
     /* Delimiter entries pushed, against which the pool's growth is measured. */
@@ -543,6 +544,23 @@ static inline markdown_core_member *markdown_core_parser_member(markdown_core_pa
     return member;
 }
 
+/* THE PARSE'S DECLARATIONS (registry.h). `node` declares `label`, already in
+ * its normal form, in `group`: a Reference its label, a definition its own.
+ * An empty label declares nothing. The parse fails when the fact could not
+ * be made. */
+static inline void markdown_core_parser_declare(markdown_core_parser *parser, markdown_core_node *node,
+                                                markdown_core_key_group group, const markdown_core_chunk *label) {
+    if (label->len > 0 && !markdown_core_registry_declare(parser->registry, node, group, MARKDOWN_CORE_FACT_DECLARE,
+                                                          label->data, (uint32_t)label->len, NULL, 0)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+}
+/* `label` in its normal form, in storage from the parse's pool the node that
+ * declares it owns (markdown_core_node_pool_bytes), NUL-terminated; empty when
+ * it normalizes to nothing. False when storage could not be had. */
+bool markdown_core_parser_normalize_label(markdown_core_parser *parser, const markdown_core_chunk *label,
+                                          markdown_core_chunk *normalized);
+
 /* Whether the pass asks `entry`'s step at the event it is projected to: its
  * gate, read against the kinds the parse has produced so far. */
 static inline bool markdown_core_complete_step_admitted(const markdown_core_complete_step_entry *entry,
@@ -660,6 +678,13 @@ uint32_t markdown_core_parser_image(const markdown_core_parser *parser, uint32_t
 bool markdown_core_parser_touched(const markdown_core_parser *parser, uint32_t from, uint32_t to);
 bool markdown_core_parser_source_anchor(const markdown_core_parser *parser, uint32_t start, uint32_t end,
                                         uint32_t *image);
+
+/* A NODE THE PARSE TOOK IS READ AGAIN (docs/plans/2026-09-29-incremental-
+ * parsing.md, 5.7) when what it read of the document is answered otherwise
+ * now: the node that begins at `start` in the new source. This parse ends,
+ * and the edit is parsed again from its start, whose cursor reads every
+ * node that holds `start` as it reads a node an edit meets. */
+void markdown_core_parser_reread(markdown_core_parser *parser, uint32_t start);
 
 /* THE STATE `parent` CARRIES where a child of it begins after `previous`
  * (5.3, E3): the word its element saves, the kind of the child before, and
@@ -882,12 +907,6 @@ bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, struct m
 int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead, markdown_core_chunk *line,
                                         int *first_nonspace, int *indent, int *blank_lines);
 void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead);
-
-/* Register an element's committed definition in its borrowed parse index.
- * The block tree keeps ownership. Allocation failure aborts the transaction. */
-bool markdown_core_parser_register_definition(markdown_core_parser *parser,
-                                              markdown_core_definition_collection *collection,
-                                              markdown_core_node *definition);
 
 /* THE LONGEST SOURCE A PARSE TAKES: offsets are int32, and every buffer
  * derived from the source stays under half of that. The public parse entry

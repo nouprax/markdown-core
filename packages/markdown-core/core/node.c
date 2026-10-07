@@ -6,7 +6,7 @@
 #include "alloc.h"
 #include "config.h"
 #include "node.h"
-#include "references.h"
+#include "registry.h"
 #include "element.h"
 
 /* These kinds are owned roots/fields, never ordinary child edges, even under
@@ -149,6 +149,7 @@ void markdown_core_node_pool_dispose(markdown_core_node_pool *pool) {
     markdown_core_slab_pool_dispose(&pool->resources);
     markdown_core_slab_pool_dispose(&pool->members);
     markdown_core_bytes_pool_dispose(&pool->bytes);
+    markdown_core_registry_dispose(&pool->registry);
 }
 
 void markdown_core_node_pool_bytes_free(markdown_core_node_pool *pool, void *storage) {
@@ -527,6 +528,9 @@ static int S_drop_field(markdown_core_node **slot, void *context) {
 /* Releases the node's own storage: everything but its children and fields,
  * which the caller dropped. */
 static void S_release_value(markdown_core_node_pool *pool, markdown_core_node *e) {
+    if (e->facts) {
+        markdown_core_registry_unlink(e);
+    }
     /* Almost no node owns an attribute value or a content buffer: the test
      * each releaser makes first -- its own predicate, defined once beside it
      * -- is made here, so a node that owns neither pays the compares and no

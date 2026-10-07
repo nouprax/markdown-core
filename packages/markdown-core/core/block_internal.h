@@ -41,8 +41,6 @@ markdown_core_member *markdown_core_block_finalize(markdown_core_parser *parser,
 void markdown_core_block_close(markdown_core_parser *parser, markdown_core_member *b, bool holds);
 void markdown_core_block_advance_offset(markdown_core_parser *parser, markdown_core_chunk *input, bufsize_t count,
                                         bool columns);
-int markdown_core_block_order_definitions(markdown_core_parser *parser,
-                                          markdown_core_definition_collection *collection);
 typedef struct markdown_core_block_start_context {
     markdown_core_member *container;
     markdown_core_chunk *input;

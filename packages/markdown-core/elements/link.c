@@ -293,7 +293,7 @@ static bufsize_t S_reference_definition(markdown_core_chunk *input, markdown_cor
     bufsize_t beforetitle;
     *definition = (reference_definition){0};
 
-    markdown_core_inline_state_from_buf(NULL, &inline_state, input, NULL);
+    markdown_core_inline_state_from_buf(NULL, &inline_state, input);
 
     // parse label:
     if (!markdown_core_inline_link_label(&inline_state, &definition->label) || definition->label.len == 0) {
@@ -376,7 +376,7 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_me
     markdown_core_chunk clean_url = markdown_core_clean_url(&definition.url, &lost);
     markdown_core_optional_chunk clean_title = markdown_core_clean_title(&definition.title, &lost);
     markdown_core_chunk label;
-    if (!markdown_core_label_normalize(parser->refmap, parser->pool, &definition.label, &label)) {
+    if (!markdown_core_parser_normalize_label(parser, &definition.label, &label)) {
         lost = 1;
     }
     markdown_core_resource *resource = lost ? NULL : markdown_core_resource_new(parser->pool, clean_url, clean_title);
@@ -402,7 +402,7 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_me
     reference->as.reference->label = label;
     reference->attributes = definition.value;
     reference->flags |= MARKDOWN_CORE_NODE__BLANK_TRANSPARENT;
-    markdown_core_label_declare(parser->refmap, &reference->as.reference->label);
+    markdown_core_parser_declare(parser, reference, MARKDOWN_CORE_KEY_REFERENCE, &reference->as.reference->label);
     /* It spans its definition, through the end of its last line's content:
      * the line ending after it belongs to no block. */
     bufsize_t end = before + length;
@@ -427,7 +427,7 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
     markdown_core_chunk url_chunk, title_chunk, raw_label;
     markdown_core_chunk url = MARKDOWN_CORE_CHUNK_EMPTY;
     markdown_core_optional_chunk title = {MARKDOWN_CORE_CHUNK_EMPTY, false};
-    markdown_core_map_record *record = NULL;
+    const markdown_core_key *record = NULL;
     int found_label;
     bool explicit_tail = false;
     // If we got here, we matched a potential link/image text.
@@ -482,7 +482,7 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
         }
     }
 
-    // Next, look for a following [link label] that matches in refmap.
+    // Next, look for a following [link label] that a definition declares.
     // skip spaces
     raw_label = markdown_core_chunk_literal("");
     found_label = markdown_core_inline_link_label(inline_state, &raw_label);
@@ -504,11 +504,11 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
      * three spellings the author wrote, and nothing downstream can recover it
      * -- the module states one node for every successful form. */
     if (link_allowed && found_label) {
-        record = markdown_core_map_lookup(inline_state->refmap, &raw_label);
+        record = markdown_core_inline_ask(inline_state, MARKDOWN_CORE_KEY_REFERENCE, &raw_label, true);
     }
     markdown_core_chunk_free(&raw_label);
-    candidate->label =
-        record ? (markdown_core_chunk){record->label, record->label_len, 0} : markdown_core_chunk_literal("");
+    candidate->label = record ? (markdown_core_chunk){(unsigned char *)record->label, (bufsize_t)record->length, 0}
+                              : markdown_core_chunk_literal("");
     candidate->explicit_tail = explicit_tail;
     return record ? (explicit_tail ? LINK_EXPLICIT : LINK_SHORTCUT) : LINK_UNMATCHED;
 }

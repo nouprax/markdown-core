@@ -20,7 +20,7 @@
 #include "parser.h"
 #include "node_type.h"
 #include "node.h"
-#include "references.h"
+#include "registry.h"
 #include "utf8.h"
 #include "inlines.h"
 #include "houdini.h"
@@ -230,6 +230,7 @@ static void S_parse_begin(markdown_core_parser *parser, markdown_core_revision *
 
     parser->revision = revision;
     parser->pool = revision->pool;
+    parser->registry = &revision->pool->registry;
     parser->last_id = revision->last_id;
     markdown_core_strbuf_init(&parser->curline, 256);
     markdown_core_strbuf_init(&parser->lookahead_last_line, 0);
@@ -1330,6 +1331,51 @@ markdown_core_member *markdown_core_parser_add_child(markdown_core_parser *parse
     return parent ? markdown_core_parser_add_child_validated(parser, parent, block_type, start_column) : NULL;
 }
 
+/* The first of the `count` offsets of `values` at or after `start`. */
+static size_t S_offsets_from(const uint32_t *values, size_t count, uint32_t start) {
+    size_t lo = 0, hi = count;
+    while (lo < hi) {
+        const size_t mid = lo + (hi - lo) / 2;
+        if (values[mid] < start) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    return lo;
+}
+
+void markdown_core_parser_reread(markdown_core_parser *parser, uint32_t start) {
+    markdown_core_offsets *rereads = parser->rereads;
+    /* The parse reads none of the nodes earlier parses of the edit found
+     * again: their cursor did not take them. Those this parse finds follow
+     * them unordered, and are put in order before the next parse. */
+#ifndef NDEBUG
+    const size_t found = S_offsets_from(rereads->values, parser->reread_from, start);
+    assert(found == parser->reread_from || rereads->values[found] != start);
+#endif
+    uint32_t *values =
+        markdown_core_reserve(rereads->values, &rereads->capacity, rereads->count + 1, sizeof(*rereads->values));
+    if (!values) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return;
+    }
+    values[rereads->count++] = start;
+    rereads->values = values;
+    parser->reread = true;
+}
+
+/* Whether the old range [from, to) holds a node the edit reads again. */
+static bool S_rereads(const markdown_core_parser *parser, uint32_t from, uint32_t to) {
+    const markdown_core_offsets *rereads = parser->rereads;
+    if (!rereads->count) {
+        return false;
+    }
+    const uint32_t start = markdown_core_parser_image(parser, from), end = start + (to - from);
+    const size_t at = S_offsets_from(rereads->values, rereads->count, start);
+    return at < rereads->count && rereads->values[at] < end;
+}
+
 /* Whether `member` is `held` or holds it. */
 static bool S_holds(const markdown_core_member *member, const markdown_core_member *held) {
     while (held && held != member) {
@@ -1388,7 +1434,8 @@ static bool S_take(markdown_core_parser *parser, markdown_core_member *parent, m
         const markdown_core_node *child = markdown_core_stem_at(children, i);
         const uint32_t child_end = (uint32_t)((int64_t)at + child->where.extent.lead) + child->where.extent.span;
         if ((child->flags & MARKDOWN_CORE_NODE__GROUP) ||
-            markdown_core_parser_touched(parser, at, child_end + child->reach)) {
+            markdown_core_parser_touched(parser, at, child_end + child->reach) ||
+            S_rereads(parser, child_end - child->where.extent.span, child_end)) {
             break;
         }
         at = child_end;
@@ -1487,7 +1534,7 @@ markdown_core_member *markdown_core_parser_add_child_validated(markdown_core_par
     const markdown_core_node *descend = NULL;
     uint32_t descend_start = 0;
     /* A container's opening line is read whole (5.3). */
-    if (records && parent->scan && parser->takes &&
+    if (records && parent->scan &&
         (parent == parser->root || !S_starts_on_line(parser, parent->node, parser->line_number)) &&
         S_take(parser, parent, block_type, (uint32_t)start, carry, &descend, &descend_start)) {
         return NULL;
@@ -1559,7 +1606,7 @@ void markdown_core_parser_release_member(markdown_core_parser *parser, markdown_
  * begins (S_complete_inline_root), which parses nothing below it. Inline
  * parsing completes fields at their owning token; the structural walk here
  * therefore skips the emitted inline tree. */
-static bool process_inline_tree(markdown_core_parser *parser, markdown_core_member *root, markdown_core_map *refmap) {
+static bool process_inline_tree(markdown_core_parser *parser, markdown_core_member *root) {
     markdown_core_iter iter;
     markdown_core_event_type ev_type;
     bool whitespace = false;
@@ -1571,21 +1618,20 @@ static bool process_inline_tree(markdown_core_parser *parser, markdown_core_memb
             const markdown_core_kind_record *kind = markdown_core_parser_kind(parser, cur->node);
             if (S_kind_contains_inlines(kind, cur->node)) {
                 if (!(kind->flags & MARKDOWN_CORE_KIND_DEFERRED)) {
-                    whitespace |= markdown_core_parse_inlines(parser, cur, false, refmap);
+                    whitespace |= markdown_core_parse_inlines(parser, cur, false);
                 }
                 markdown_core_iter_reset(&iter, cur, MARKDOWN_CORE_EVENT_EXIT);
             }
-            whitespace |= markdown_core_parse_inline_subtrees(parser, cur, refmap);
+            whitespace |= markdown_core_parse_inline_subtrees(parser, cur);
         }
     }
     return whitespace;
 }
 
-bool markdown_core_parse_inline_subtrees(markdown_core_parser *parser, markdown_core_member *member,
-                                         markdown_core_map *refmap) {
+bool markdown_core_parse_inline_subtrees(markdown_core_parser *parser, markdown_core_member *member) {
     bool whitespace = false;
     for (markdown_core_member *field = member->fields; field && !parser->error; field = field->next) {
-        whitespace |= process_inline_tree(parser, field, refmap);
+        whitespace |= process_inline_tree(parser, field);
     }
     return whitespace;
 }
@@ -1766,8 +1812,9 @@ static void S_complete_inline_root(markdown_core_parser *parser, markdown_core_i
     const markdown_core_complete_step_entry *const *const dispatch = parser->dialect->complete_dispatch;
     markdown_core_member *holder = root->builder;
     parser->completing = root;
+    parser->asker = root->node;
     if (!(markdown_core_parser_kind(parser, holder->node)->flags & MARKDOWN_CORE_KIND_DEFERRED)) {
-        markdown_core_parse_inlines(parser, holder, true, parser->refmap);
+        markdown_core_parse_inlines(parser, holder, true);
     }
     pass->script_depth = 0;
     if (!parser->error) {
@@ -1876,7 +1923,13 @@ static void S_complete_inline_root(markdown_core_parser *parser, markdown_core_i
     }
     pass->count = 0;
     parser->completing = NULL;
+    parser->asker = NULL;
     root->builder = NULL;
+    /* The questions the root asked, and what it declares, learn where it
+     * begins (5.7). */
+    for (markdown_core_fact *fact = root->node->facts; fact; fact = fact->sibling) {
+        fact->start = root->place.start;
+    }
     /* The node that holds the root waits on it no more. */
     if (!parser->error) {
         markdown_core_parser_release_wait(parser, root->member);
@@ -1941,27 +1994,40 @@ markdown_core_input markdown_core_input_buffer(const unsigned char *bytes, size_
     return (markdown_core_input){S_read_buffer, bytes, size};
 }
 
+static int S_offset_order(const void *left, const void *right) {
+    const uint32_t a = *(const uint32_t *)left, b = *(const uint32_t *)right;
+    return (a > b) - (a < b);
+}
+
 markdown_core_node *markdown_core_parser_parse(markdown_core_parser *parser, const markdown_core_input *input,
                                                markdown_core_revision *revision) {
-    const uint64_t last_id = revision->last_id;
-    for (bool takes = true;;) {
+    /* The edit's parses are one edit of the registry, and share the nodes
+     * it reads again. */
+    markdown_core_registry_begin(&revision->pool->registry);
+    markdown_core_offsets rereads = {0};
+    for (;;) {
         markdown_core_node *document = NULL;
         S_parse_begin(parser, revision);
-        parser->takes = takes;
+        parser->rereads = &rereads;
+        parser->reread_from = rereads.count;
         if (!parser->error) {
             S_parse_source(parser, input);
             document = S_finish_parse(parser);
         }
-        const bool retake = parser->retake;
+        const bool reread = parser->reread && !parser->error;
         S_parse_end(parser);
-        if (!document || !retake) {
+        if (!reread) {
+            markdown_core_free(rereads.values);
             return document;
         }
-        /* A taken node may have read a lookup answered differently now. The
-         * ids the released document took were never published. */
-        markdown_core_node_pool_release(revision->pool, document);
-        revision->last_id = last_id;
-        takes = false;
+        qsort(rereads.values, rereads.count, sizeof(*rereads.values), S_offset_order);
+        size_t kept = 0;
+        for (size_t i = 0; i < rereads.count; i++) {
+            if (!kept || rereads.values[kept - 1] != rereads.values[i]) {
+                rereads.values[kept++] = rereads.values[i];
+            }
+        }
+        rereads.count = kept;
     }
 }
 
@@ -3281,28 +3347,21 @@ finished:
     markdown_core_strbuf_clear(&parser->curline);
 }
 
-bool markdown_core_parser_register_definition(markdown_core_parser *parser,
-                                              markdown_core_definition_collection *collection,
-                                              markdown_core_node *definition) {
-    assert(definition && collection);
-    if (collection->count == collection->capacity) {
-        size_t capacity = collection->capacity ? collection->capacity * 2 : 8;
-        markdown_core_source_entry *values;
-        if (capacity > SIZE_MAX / sizeof(*values)) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            return false;
-        }
-        values = markdown_core_realloc(collection->values, capacity * sizeof(*values));
-        if (!values) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            return false;
-        }
-        collection->values = values;
-        collection->capacity = capacity;
+bool markdown_core_parser_normalize_label(markdown_core_parser *parser, const markdown_core_chunk *label,
+                                          markdown_core_chunk *normalized) {
+    *normalized = (markdown_core_chunk){0};
+    bool failed = false;
+    const markdown_core_strbuf *read = markdown_core_registry_normalize(parser->registry, label, &failed);
+    if (!read) {
+        return !failed;
     }
-    collection->values[collection->count++] =
-        (markdown_core_source_entry){definition, (uint32_t)definition->where.place.start};
-    parser->definition_registration_work++;
+    unsigned char *stored = markdown_core_node_pool_bytes(parser->pool, (size_t)read->size + 1);
+    if (!stored) {
+        return false;
+    }
+    memcpy(stored, read->ptr, (size_t)read->size);
+    stored[read->size] = '\0';
+    *normalized = (markdown_core_chunk){stored, read->size, 0};
     return true;
 }
 
@@ -3413,12 +3472,6 @@ int markdown_core_order_source_entries(markdown_core_source_order *workspace, vo
     return 1;
 }
 
-int markdown_core_block_order_definitions(markdown_core_parser *parser,
-                                          markdown_core_definition_collection *collection) {
-    return markdown_core_order_source_entries(&parser->source_order, collection->values, collection->count,
-                                              sizeof(*collection->values), markdown_core_source_key);
-}
-
 /* `markdown_core_node_check` is the one structural self-check this tree has.
  * It checks every stem of the tree and that every node in it is held, after
  * every inline root has completed; when it cannot allocate its work stack the
@@ -3454,29 +3507,36 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_node *S_finish_parse(ma
 
     finalize_document(parser);
     S_parse_block_inputs(parser);
+    /* Every block is complete: the old nodes the parse did not take are no
+     * longer the document's, and their facts leave the registry (5.7) before
+     * any inline root asks it. The nodes go when their tree is released. */
+    if (!parser->error && parser->revision->previous && !markdown_core_registry_retire(parser->revision->previous)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
     const markdown_core_element_instance *document = parser->dialect->document_structure;
     if (!parser->error) {
         document->element->prepare_document(document, parser);
     }
+    /* A parse that reads a node again (5.7) ends where it found it. */
     complete_pass pass = {.parser = parser, .slots = parser->dialect->complete_step_slots};
-    for (size_t i = 0; i < parser->inline_root_count && !parser->error; i++) {
+    for (size_t i = 0; i < parser->inline_root_count && !parser->error && !parser->reread; i++) {
         S_complete_inline_root(parser, &parser->inline_roots[i], &pass);
     }
     markdown_core_free(pass.states);
-    if (!parser->error) {
+    if (!parser->error && !parser->reread) {
         MARKDOWN_CORE_CHECK_TREE(parser, parser->root->node);
     }
-    if (!parser->error) {
+    if (!parser->error && !parser->reread) {
         document->element->finish_document(document, parser);
     }
     /* Last, the finished tree is published: nothing changes it after this. */
-    if (!parser->error) {
+    if (!parser->error && !parser->reread) {
         document->element->publish_document(document, parser);
     }
     markdown_core_free(parser->walk_stack);
     parser->walk_stack = NULL;
     parser->walk_stack_size = 0;
-    if (parser->error) {
+    if (parser->error || parser->reread) {
         goto failed;
     }
 
