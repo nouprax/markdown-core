@@ -1067,48 +1067,67 @@ static int S_check_stem(const markdown_core_node *owner, const markdown_core_ste
     }
 }
 
-/* THE STRUCTURAL SELF-CHECK of a tree: every stem sound and every node held.
- * The count of faults it found, or -1 when its work stack could not be
- * allocated. */
+/* THE WORK STACK of the self-check: the nodes it has still to check. */
+typedef struct {
+    markdown_core_node **nodes;
+    size_t count, capacity;
+} S_check_stack;
+
+static bool S_check_push(S_check_stack *stack, markdown_core_node *node) {
+    if (stack->count == stack->capacity) {
+        size_t grown = stack->capacity * 2;
+        markdown_core_node **more = markdown_core_realloc(stack->nodes, grown * sizeof(*more));
+        if (!more) {
+            return false;
+        }
+        stack->nodes = more;
+        stack->capacity = grown;
+    }
+    stack->nodes[stack->count++] = node;
+    return true;
+}
+
+static int S_check_field(markdown_core_node **root_slot, void *context) {
+    return !*root_slot || S_check_push(context, *root_slot);
+}
+
+/* THE STRUCTURAL SELF-CHECK of a tree: every stem sound and every node held,
+ * through its children and its node-valued fields alike. The count of faults
+ * it found, or -1 when its work stack could not be allocated. */
 int markdown_core_node_check(markdown_core_node *node, FILE *out) {
     int errors = 0;
     if (!node) {
         return 0;
     }
-    size_t capacity = 64, count = 0;
-    markdown_core_node **pending = markdown_core_alloc(capacity, sizeof(*pending));
-    if (!pending) {
+    S_check_stack stack = {markdown_core_alloc(64, sizeof(markdown_core_node *)), 0, 64};
+    if (!stack.nodes || !S_check_push(&stack, node)) {
+        markdown_core_free(stack.nodes);
         return -1;
     }
-    pending[count++] = node;
-    while (count) {
-        markdown_core_node *current = pending[--count];
+    while (stack.count) {
+        markdown_core_node *current = stack.nodes[--stack.count];
+        if (!current->refs) {
+            S_print_error(out, current, "refs");
+            errors++;
+        }
+        if (!markdown_core_node_visit_fields(current, S_check_field, &stack)) {
+            markdown_core_free(stack.nodes);
+            return -1;
+        }
         if (!current->children) {
             continue;
         }
         errors += S_check_stem(current, current->children, out);
-        size_t total = current->children->count;
-        if (count + total > capacity) {
-            size_t grown = (count + total) * 2;
-            markdown_core_node **more = markdown_core_realloc(pending, grown * sizeof(*pending));
-            if (!more) {
-                markdown_core_free(pending);
+        markdown_core_stem_walk walk;
+        markdown_core_stem_walk_begin(&walk, current->children, 0, current->children->count);
+        for (markdown_core_node *child; (child = markdown_core_stem_walk_next(&walk));) {
+            if (!S_check_push(&stack, child)) {
+                markdown_core_free(stack.nodes);
                 return -1;
             }
-            pending = more;
-            capacity = grown;
-        }
-        markdown_core_stem_walk walk;
-        markdown_core_stem_walk_begin(&walk, current->children, 0, total);
-        for (markdown_core_node *child; (child = markdown_core_stem_walk_next(&walk));) {
-            if (!child->refs) {
-                S_print_error(out, child, "refs");
-                errors++;
-            }
-            pending[count++] = child;
         }
     }
-    markdown_core_free(pending);
+    markdown_core_free(stack.nodes);
     return errors;
 }
 

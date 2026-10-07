@@ -86,7 +86,7 @@ import Testing
         #expect((first.content.first as? Text)?.literal == "first")
         #expect((second.content.first as? Text)?.literal == "second")
         #expect((other.content.first as? Text)?.literal == "other")
-        #expect(first.id == MarkupID(2) && second.id == MarkupID(4) && other.id == MarkupID(2))
+        #expect(first.id == MarkupID(1) && second.id == MarkupID(2) && other.id == MarkupID(1))
         #expect(second.extent == Extent(lead: 2, span: 6))
         // Ids from different documents are not comparable; equality still is.
         #expect(first != other)

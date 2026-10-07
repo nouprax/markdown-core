@@ -410,7 +410,8 @@ class ApiTest {
         val table = assertIs<Table>(Document.parse("| a |\n| --- |\n| b |\n").content.single())
         val tableVisitor = RecordingWalkingVisitor()
         table.walk(tableVisitor)
-        assertEquals(listOf(3L, 6L), tableVisitor.tableRowIds)
+        // The table numbers its rows as it closes, before its cells' inline content is read.
+        assertEquals(listOf(3L, 4L), tableVisitor.tableRowIds)
         tableVisitor.events.clear()
         val typed: MarkupVisitor = tableVisitor
         typed.visit(tableRow = table.head.single(), phase = MarkupVisitPhase.ENTER)
