@@ -332,7 +332,7 @@ static const markdown_core_node *ts_children(const markdown_core_node *node, mar
     const markdown_core_node *found = NULL;
     bool moved;
     *count = 0;
-    TS_OK(markdown_core_cursor_new(node, &cursor));
+    TS_OK(markdown_core_cursor_open(node, &cursor));
     TS_OK(markdown_core_cursor_child(cursor, &moved));
     for (; moved; moved = markdown_core_cursor_next(cursor)) {
         if (field && markdown_core_cursor_field(cursor) != field) {
@@ -431,7 +431,7 @@ int ts_ast_walk_owned(const markdown_core_node *root, ts_ast_owned_visit_fn visi
     ts_walk_frame *frames = NULL;
     size_t depth = 0, capacity = 0;
     int result = 0;
-    if (markdown_core_cursor_new(root, &cursor) != MARKDOWN_CORE_OK) {
+    if (markdown_core_cursor_open(root, &cursor) != MARKDOWN_CORE_OK) {
         return -1;
     }
     markdown_core_extent extent = markdown_core_node_extent(root);

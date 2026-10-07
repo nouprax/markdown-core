@@ -49,7 +49,7 @@ static void dispose_document(const markdown_core_element_instance *self, markdow
     if (specimens) {
         markdown_core_specimen_dispose(specimens);
     }
-    markdown_core_publication_dispose(&((document_state *)self->state)->publication);
+    markdown_core_publication_dispose(&((document_state *)self->state)->publication, parser->pool);
     if (parser->refmap) {
         markdown_core_map_free(parser->refmap);
         parser->refmap = NULL;
@@ -71,12 +71,17 @@ static void prepare_document(const markdown_core_element_instance *self, markdow
 /* A node is complete: it numbers the nodes it holds, and the headings note
  * the explicit anchors among them. */
 static void complete_node(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_node *node, uint32_t start) {
+                          markdown_core_member *member, uint32_t start) {
     const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
-    if (!markdown_core_complete_node(parser, &((document_state *)self->state)->publication, node, start,
+    if (!markdown_core_complete_node(parser, &((document_state *)self->state)->publication, member, start,
                                      headings ? markdown_core_headings_observe : NULL, headings)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
+}
+/* A numbered node waits on nothing any more: it settles. */
+static void settle_member(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                          markdown_core_member *member) {
+    markdown_core_settle_member(parser, &((document_state *)self->state)->publication, member);
 }
 static void finish_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
@@ -100,7 +105,7 @@ static void publish_document(const markdown_core_element_instance *self, markdow
     if (!markdown_core_publish_tree(parser, publication)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
-    markdown_core_publication_dispose(publication);
+    markdown_core_publication_dispose(publication, parser->pool);
 }
 static size_t read_document_prefix(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                    const unsigned char *source, size_t length) {
@@ -118,4 +123,5 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
     .finish_document = finish_document,
     .publish_document = publish_document,
     .complete_node = complete_node,
+    .settle_member = settle_member,
 };

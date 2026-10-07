@@ -140,12 +140,16 @@ struct markdown_core_element {
                                    const unsigned char *, size_t);
     void (*prepare_document)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*finish_document)(const markdown_core_element_instance *, markdown_core_parser *);
-    /* A node is complete: it numbers the nodes it holds that are not
-     * numbered yet, in canonical field order, and gives each its extent,
+    /* The node a member builds is complete: it numbers the nodes it holds
+     * that are not numbered yet, in canonical field order, and gives each
+     * the id of the old node it continues or the next, and its extent,
      * measured from `start`, where the node begins
-     * (docs/plans/2026-09-29-incremental-parsing.md, 5.8). */
-    void (*complete_node)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+     * (docs/plans/2026-09-29-incremental-parsing.md, 5.8, 5.9). */
+    void (*complete_node)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *,
                           uint32_t start);
+    /* A numbered node waits on nothing any more: it settles, as the old
+     * node it continues when it equals it (5.9). */
+    void (*settle_member)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *);
     /* The last step of the parse: every node is complete, and the owner
      * publishes the document (identity, definition tables). */
     void (*publish_document)(const markdown_core_element_instance *, markdown_core_parser *);

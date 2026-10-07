@@ -420,6 +420,8 @@ static inline markdown_core_cross_reference *markdown_core_node_cross_reference(
 
 /* Takes ownership of `url` and `title` and answers a resource, or NULL
  * having taken nothing -- the caller still owns both chunks and frees them.
+ * A string that views bytes it does not own is copied: the resource holds
+ * what it reads.
  * The resource's slot comes from `pool`'s resource slabs, or from the
  * allocator when it is NULL (slab.h). */
 markdown_core_resource *markdown_core_resource_new(struct markdown_core_node_pool *pool, markdown_core_chunk url,
@@ -521,6 +523,12 @@ markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type
  * references to its children and fields in turn (markdown_core_node_release). */
 void markdown_core_node_free(markdown_core_node *node);
 
+/* Makes every byte string `node`'s record holds its own, copying a view of
+ * the input a parse read. Completion calls it, so a node that a later
+ * revision shares reads nothing another node owns. False when a copy could
+ * not be allocated. */
+bool markdown_core_node_hold_strings(markdown_core_node *node);
+
 /* Takes one more reference to `node`, and returns it. */
 static inline markdown_core_node *markdown_core_node_retain(markdown_core_node *node) {
     node->refs++;
@@ -601,6 +609,11 @@ static inline size_t markdown_core_stem_count(const markdown_core_stem *stem) { 
 /* The node at `index` of the stem, which holds more than `index`. */
 markdown_core_node *markdown_core_stem_at(const markdown_core_stem *stem, size_t index);
 
+/* Puts `node` at `index` of `stem`, which no one else holds, and returns the
+ * node it held there; the stem takes the caller's reference to `node` and
+ * gives the caller its reference to the one it returns. */
+markdown_core_node *markdown_core_stem_put(markdown_core_stem *stem, size_t index, markdown_core_node *node);
+
 /* A WALK OVER A RUN OF A STEM'S NODES, in order: the path from the stem to
  * the node it is at. */
 typedef struct {
@@ -624,17 +637,44 @@ markdown_core_node *markdown_core_stem_walk_next(markdown_core_stem_walk *walk);
  * field roots that are being built with it, in canonical field order and
  * linked through `next`: a citation's note and affixes, which the inline parse
  * fills as it makes the citation. `held` says whether the member holds the
- * node's reference: a child member does, and its owner's freeze hands the
+ * node's reference: a child member does until its owner's freeze hands the
  * reference to the owner's stem; a root, whose node a stem or the parser
  * holds, and a field root, whose node its owner's field holds, do not. A
- * builder lives for one parse and its storage is the pool's. */
+ * builder lives for one parse and its storage is the pool's. A member is
+ * `inner` when the members it holds lie in the content of an inline root:
+ * the builder of the root's content is, and so is every member under it.
+ *
+ * A member also carries what the node continues
+ * (docs/plans/2026-09-29-incremental-parsing.md, 5.9): `old`, the node of
+ * the previous tree it continues once `decided`, where that node starts in
+ * its old coordinates, `reach`, the image up to which its owner's cursor
+ * has passed for it, and its `candidates` to `last_candidate`, the old nodes
+ * whose images lie in its range (ast_internal.h), among which
+ * it decides. As an owner it pairs the members it holds with the old node's
+ * relation `pair_name`: the old nodes `pair_next` to `pair_end`
+ * of `pair_stem` not yet passed, and the end of the one passed last. `asks`
+ * counts the members it holds that have `asked` for their old node, each of
+ * which took its `index` among them as it asked.
+ *
+ * A node is final when everything it waits on is: `waits` counts the inline
+ * root, block input or late value it waits on and the members it holds that
+ * were numbered while they still waited (`counted`). Once numbered and with
+ * nothing to wait on, it settles (ast.c): its `slot` is where its owner's
+ * stem holds it, `place` where the node lay, its own `where` now holding its
+ * extent, and `source` where a definition was written. */
 struct markdown_core_member {
     markdown_core_node *node;
     struct markdown_core_member *owner;
     struct markdown_core_member *prev, *next;
     struct markdown_core_member *first, *last;
     struct markdown_core_member *fields;
-    bool held, field;
+    const markdown_core_node *old;
+    const markdown_core_stem *pair_stem;
+    size_t pair_next, pair_end;
+    markdown_core_place place;
+    uint32_t old_start, reach, pair_anchor, pair_name;
+    uint32_t asks, index, slot, source, waits, candidates, last_candidate;
+    bool held, field, inner, decided, paired, asked, numbered, counted;
 };
 
 /* A member for `node`, linked to nothing; it holds the node's reference when
@@ -642,20 +682,22 @@ struct markdown_core_member {
 markdown_core_member *markdown_core_member_new(markdown_core_node_pool *pool, markdown_core_node *node, bool held);
 
 /* Links the detached `child` under `owner`, before `before` (a child of
- * `owner`) or last. The caller has proved containment. */
+ * `owner`) or last; it is inner when `owner` is. The caller has proved
+ * containment. */
 void markdown_core_member_attach(markdown_core_member *owner, markdown_core_member *child,
                                  markdown_core_member *before);
 
-/* Links the detached `field` as the last field root `owner` builds. */
+/* Links the detached `field` as the last field root `owner` builds; it is
+ * inner when `owner` is. */
 void markdown_core_member_attach_field(markdown_core_member *owner, markdown_core_member *field);
 
 /* Detaches `member` from its owner and siblings, keeping its subtree. */
 void markdown_core_member_unlink(markdown_core_member *member);
 
 /* COMPLETES A BUILDER'S STRUCTURE: the nodes of `member`'s children become
- * its node's stem, which takes their references, and the children's members
- * and its field roots' members are released; each of them was frozen first.
- * False, changing nothing, when the stem could not be allocated. */
+ * its node's stem, which takes the references their members held; the
+ * members stay, for the node's numbering. False, changing nothing, when the
+ * stem could not be allocated. */
 bool markdown_core_member_freeze(markdown_core_node_pool *pool, markdown_core_member *member);
 
 /* Releases `member`, every member below it, and the references they hold;

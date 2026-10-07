@@ -2315,8 +2315,9 @@ static void table_append_newline(table_source *source, markdown_core_node *node,
     }
 }
 
-static void table_fill_cell(table_source *source, markdown_core_node *node, const table_source_cell *cell, bool blocks,
-                            int padding_limit) {
+static void table_fill_cell(table_source *source, markdown_core_member *member, const table_source_cell *cell,
+                            bool blocks, int padding_limit) {
+    markdown_core_node *node = member->node;
     int padding = padding_limit;
     for (size_t i = cell->first; i <= cell->last; i++) {
         table_source_line *line = &source->lines[i];
@@ -2340,7 +2341,7 @@ static void table_fill_cell(table_source *source, markdown_core_node *node, cons
     }
     if (blocks && !source->parser->error) {
         node->as.table_cell->blocks = true;
-        markdown_core_parser_queue_block_input(source->parser, node);
+        markdown_core_parser_queue_block_input(source->parser, member);
     }
 }
 
@@ -2482,7 +2483,7 @@ static markdown_core_member *table_build(table_source *source, markdown_core_mem
             cell_node->as.table_cell->colspan = cell->colspan;
             if (!candidate->pipe) {
                 table_cell_runs(source, cell_node, cell);
-                table_fill_cell(source, cell_node, cell, candidate->block_content, candidate->padding_limit);
+                table_fill_cell(source, cell_member, cell, candidate->block_content, candidate->padding_limit);
             }
         }
         if (candidate->pipe && !parser->error) {

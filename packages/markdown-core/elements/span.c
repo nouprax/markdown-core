@@ -31,7 +31,18 @@ markdown_core_bracket_match markdown_core_span_close(const markdown_core_element
             markdown_core_member *span = markdown_core_inline_insert_at_opener(inline_state, opener, inl);
             if (span) {
                 markdown_core_inline_take_bracket_content(link, parser, opener, span);
-                markdown_core_parser_release_member(parser, opener->inl_text);
+                markdown_core_member *text = opener->inl_text;
+                if (opener->kind == BRACKET_IMAGE) {
+                    /* An image's bang stays the text before the span. */
+                    text->node->as.literal->len = 1;
+                    markdown_core_inline_state_place(inline_state, text->node, opener->position - 2,
+                                                     opener->position - 2);
+                    markdown_core_member *owner = text->owner;
+                    markdown_core_member_unlink(text);
+                    markdown_core_member_attach(owner, text, span);
+                } else {
+                    markdown_core_parser_release_member(parser, text);
+                }
             }
             markdown_core_inline_pop_bracket(link, inline_state);
             return BRACKET_MATCHED;

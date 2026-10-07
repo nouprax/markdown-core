@@ -1002,7 +1002,7 @@ static int pc_reference_payload_visit(const markdown_core_node *node, ts_ast_ran
         /* A call's payload is its referent (M4). */
         markdown_core_cursor *cursor;
         bool moved;
-        TS_OK(markdown_core_cursor_new(node, &cursor));
+        TS_OK(markdown_core_cursor_open(node, &cursor));
         TS_OK(markdown_core_cursor_child(cursor, &moved));
         for (; moved; moved = markdown_core_cursor_next(cursor)) {
             markdown_core_referent referent;

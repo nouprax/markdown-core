@@ -225,8 +225,8 @@ static size_t traverse(const markdown_core_node *root) {
     markdown_core_cursor *scan = NULL;
     size_t visited = 0;
     bool done = false;
-    if (markdown_core_cursor_new(root, &walk) != MARKDOWN_CORE_OK ||
-        markdown_core_cursor_new(root, &scan) != MARKDOWN_CORE_OK) {
+    if (markdown_core_cursor_open(root, &walk) != MARKDOWN_CORE_OK ||
+        markdown_core_cursor_open(root, &scan) != MARKDOWN_CORE_OK) {
         done = true;
     }
     while (!done) {

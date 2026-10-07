@@ -11,9 +11,9 @@ MARKDOWN_CORE_1.0 {
     markdown_core_cursor_field;
     markdown_core_cursor_free;
     markdown_core_cursor_list;
-    markdown_core_cursor_new;
     markdown_core_cursor_next;
     markdown_core_cursor_node;
+    markdown_core_cursor_open;
     markdown_core_cursor_parent;
     markdown_core_cursor_reset;
     markdown_core_document_dump;

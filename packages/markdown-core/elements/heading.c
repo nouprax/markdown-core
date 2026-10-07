@@ -25,7 +25,9 @@ typedef struct {
     anchor_projection *values;
     size_t count, capacity;
 } anchor_projection_stack;
-/* The headings of the parse: the inline roots a Heading holds. */
+/* The headings of the parse: the inline roots a Heading holds. A heading
+ * waits on its anchor, which the headings give it last
+ * (markdown_core_headings_finish). */
 static void take_headings(markdown_core_heading_collection *headings, markdown_core_parser *parser) {
     for (size_t i = 0; i < parser->inline_root_count; i++) {
         const markdown_core_inline_root *root = &parser->inline_roots[i];
@@ -41,6 +43,7 @@ static void take_headings(markdown_core_heading_collection *headings, markdown_c
         headings->values = values;
         values[headings->count++] =
             (markdown_core_heading_parse){.source = {root->holder, root->place.start}, .builder = root->builder};
+        root->member->waits++;
     }
 }
 
@@ -341,6 +344,10 @@ void markdown_core_headings_finish(const markdown_core_element_instance *self, m
     }
     markdown_core_free(stack.values);
     markdown_core_strbuf_free(&base);
+    /* Each heading has its anchor: it waits on nothing of the headings'. */
+    for (size_t i = 0; i < headings->count && !parser->error; i++) {
+        markdown_core_parser_release_wait(parser, headings->values[i].builder);
+    }
 }
 
 void markdown_core_prepare_heading(const markdown_core_element_instance *self, markdown_core_parser *parser,

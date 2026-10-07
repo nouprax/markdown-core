@@ -560,9 +560,8 @@ markdown_core_member *markdown_core_parser_attach(markdown_core_parser *parser, 
 markdown_core_member *markdown_core_parser_attach_field(markdown_core_parser *parser, markdown_core_member *owner,
                                                         markdown_core_node *node);
 
-/** The node that holds `member`'s node: its owner's, or, for the builder of
- * the inline root being completed, the node that holds its holder. NULL for
- * a root. */
+/** The node that holds `member`'s node: its owner's. NULL for the
+ * document. */
 markdown_core_node *markdown_core_parser_owner(const markdown_core_parser *parser, const markdown_core_member *member);
 
 /** Detaches `member` from its owner and siblings when it has them, and

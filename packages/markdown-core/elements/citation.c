@@ -502,10 +502,12 @@ static void materialize_citation_key(const markdown_core_element_instance *self,
     bufsize_t start = token->start, end = token->end;
     if (specimen && start && markdown_core_inline_peek_at(inline_state, start - 1) == '(' &&
         markdown_core_inline_peek_at(inline_state, end) == ')') {
-        if (!source_escaped(self, inline_state, start - 1, 0) && token->node->prev && token->node->next &&
-            token->node->prev->node->kind == MARKDOWN_CORE_NODE_TEXT &&
+        /* The cite stands before the token it replaces: the texts around
+         * the two hold the parentheses. */
+        if (!source_escaped(self, inline_state, start - 1, 0) && cite->prev && token->node->next &&
+            cite->prev->node->kind == MARKDOWN_CORE_NODE_TEXT &&
             token->node->next->node->kind == MARKDOWN_CORE_NODE_TEXT) {
-            remove_specimen_parenthesis(inline_state, token->node->prev, false);
+            remove_specimen_parenthesis(inline_state, cite->prev, false);
             remove_specimen_parenthesis(inline_state, token->node->next, true);
             start--;
             end++;

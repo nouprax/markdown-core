@@ -48,7 +48,7 @@ static const markdown_core_node *children(const markdown_core_node *node, markdo
     const markdown_core_node *found = NULL;
     bool moved = false;
     *count = 0;
-    if (!ok(markdown_core_cursor_new(node, &cursor), "a cursor opens at a node")) {
+    if (!ok(markdown_core_cursor_open(node, &cursor), "a cursor opens at a node")) {
         return NULL;
     }
     ok(markdown_core_cursor_child(cursor, &moved), "a cursor moves to a node's first child");
@@ -310,7 +310,7 @@ static void check_image_dimensions(void) {
     markdown_core_cursor *cursor = NULL;
     bool moved = false;
     int index = 0;
-    if (!ok(markdown_core_cursor_new(paragraph, &cursor), "a cursor opens at the paragraph")) {
+    if (!ok(markdown_core_cursor_open(paragraph, &cursor), "a cursor opens at the paragraph")) {
         markdown_core_document_free(document);
         return;
     }
@@ -365,7 +365,7 @@ static void check_reference_resolution(void) {
     check(markdown_core_document_reference_count(document) == 1, "the document lists its one Reference");
     markdown_core_cursor *cursor = NULL;
     bool moved = false;
-    if (!ok(markdown_core_cursor_new(paragraph, &cursor), "a cursor opens at the paragraph")) {
+    if (!ok(markdown_core_cursor_open(paragraph, &cursor), "a cursor opens at the paragraph")) {
         markdown_core_document_free(document);
         return;
     }
@@ -673,7 +673,7 @@ static void check_table_model(void) {
     markdown_core_cursor *cursor = NULL;
     bool moved = false;
     size_t rows = 0;
-    if (!ok(markdown_core_cursor_new(table, &cursor), "a cursor opens at the table")) {
+    if (!ok(markdown_core_cursor_open(table, &cursor), "a cursor opens at the table")) {
         markdown_core_document_free(document);
         return;
     }
@@ -741,7 +741,7 @@ static void check_definition_model(void) {
     size_t first = 0, second = 0;
     markdown_core_cursor *cursor = NULL;
     bool moved = false;
-    if (ok(markdown_core_cursor_new(definition, &cursor), "a cursor opens at the definition")) {
+    if (ok(markdown_core_cursor_open(definition, &cursor), "a cursor opens at the definition")) {
         ok(markdown_core_cursor_child(cursor, &moved), "a cursor moves to the definition's first child");
         for (; moved; moved = markdown_core_cursor_next(cursor)) {
             if (markdown_core_cursor_field(cursor) != MARKDOWN_CORE_FIELD_CONTENT) {

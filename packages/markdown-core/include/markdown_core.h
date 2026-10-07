@@ -501,10 +501,10 @@ MARKDOWN_CORE_API markdown_core_node_kind markdown_core_node_get_kind(const mark
  * not a markdown_core_node_kind. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_kind_name(markdown_core_node_kind kind, const char **name);
 
-/** THE NODE-VALUED FIELDS of the canonical AST (canonical-ast.json), which a
- * cursor names as it reads a node in one. A Table's rows are in `HEAD`,
- * `CONTENT` and `FOOT`; a Definition's `CONTENT` is a list of lists, its
- * bodies, and markdown_core_cursor_list says which body a node is in. */
+/** THE NODE-VALUED FIELDS of the canonical AST, which a cursor names as it
+ * reads a node in one. A Table's rows are in `HEAD`, `CONTENT` and `FOOT`; a
+ * Definition's `CONTENT` is a list of lists, its bodies, and
+ * markdown_core_cursor_list says which body a node is in. */
 typedef enum markdown_core_field {
     MARKDOWN_CORE_FIELD_CONTENT = 1,
     MARKDOWN_CORE_FIELD_METADATA = 2,
@@ -526,13 +526,13 @@ typedef enum markdown_core_field {
  * TSTreeCursor does: nodes hold no link to their owner or their siblings, and
  * the cursor holds its path from its start node on a stack of its own. A
  * node's children, for the cursor, are the nodes of its node-valued fields in
- * canonical traversal order (canonical-ast.json, `walk`), each in stored
- * order; the cursor names the field each is read in. The cursor borrows the
- * nodes, which live as long as their document. */
+ * canonical traversal order, each in stored order; the cursor names the field
+ * each is read in. The cursor borrows the nodes, which live as long as their
+ * document. */
 typedef struct markdown_core_cursor markdown_core_cursor;
 /** A new cursor at `node`. ALLOCATION_FAILED when it cannot allocate. */
-MARKDOWN_CORE_API markdown_core_status markdown_core_cursor_new(const markdown_core_node *node,
-                                                                markdown_core_cursor **cursor);
+MARKDOWN_CORE_API markdown_core_status markdown_core_cursor_open(const markdown_core_node *node,
+                                                                 markdown_core_cursor **cursor);
 MARKDOWN_CORE_API void markdown_core_cursor_free(markdown_core_cursor *cursor);
 /** Starts the cursor again, at `node`. */
 MARKDOWN_CORE_API void markdown_core_cursor_reset(markdown_core_cursor *cursor, const markdown_core_node *node);

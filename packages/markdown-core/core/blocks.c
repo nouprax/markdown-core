@@ -128,11 +128,6 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     dialect->document_structure->element->dispose_document(dialect->document_structure, parser);
     markdown_core_source_order_dispose(&parser->source_order);
     markdown_core_free(parser->walk_stack);
-    for (size_t i = 0; i < parser->inline_root_count; i++) {
-        if (parser->inline_roots[i].builder) {
-            markdown_core_member_release(parser->pool, parser->inline_roots[i].builder);
-        }
-    }
     markdown_core_free(parser->inline_roots);
     markdown_core_free(parser->block_inputs);
     S_clear_normalized_lines(parser);
@@ -250,6 +245,12 @@ static void S_parse_begin(markdown_core_parser *parser, markdown_core_revision *
         parser->root = markdown_core_parser_member(parser, document, true);
         if (!parser->root) {
             markdown_core_parser_release_node(parser, document);
+        } else {
+            /* The document continues the previous one (5.9). */
+            markdown_core_node *previous = revision->previous;
+            parser->root->decided = true;
+            parser->root->old = previous;
+            parser->root->old_start = previous ? (uint32_t)previous->where.extent.lead : 0;
         }
     }
     parser->block_root = parser->root;
@@ -819,7 +820,8 @@ int markdown_core_parser_append_source_marks(markdown_core_parser *parser, markd
                                 column, length, offset);
 }
 
-bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdown_core_node *owner) {
+bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdown_core_member *member) {
+    markdown_core_node *owner = member->node;
     if (!owner->content.size) {
         return true;
     }
@@ -840,7 +842,8 @@ bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdo
     }
     /* Its row numbers the cell before its blocks are read, so where it
      * starts is kept here. */
-    parser->block_inputs[parser->block_input_count++] = (markdown_core_block_input){owner, owner->where.place.start};
+    parser->block_inputs[parser->block_input_count++] = (markdown_core_block_input){member, owner->where.place.start};
+    member->waits++;
     return true;
 }
 
@@ -1376,7 +1379,7 @@ static void S_complete_node(markdown_core_parser *parser, markdown_core_member *
         return;
     }
     const markdown_core_element_instance *document = parser->dialect->document_structure;
-    document->element->complete_node(document, parser, member->node, start);
+    document->element->complete_node(document, parser, member, start);
 }
 
 void markdown_core_parser_complete_node(markdown_core_parser *parser, markdown_core_member *member) {
@@ -1387,29 +1390,37 @@ bool markdown_core_parser_contains_inlines(markdown_core_parser *parser, markdow
     return S_kind_contains_inlines(markdown_core_parser_kind(parser, node), node);
 }
 
-bool markdown_core_parser_hold_inline_root(markdown_core_parser *parser, markdown_core_node *node,
-                                           markdown_core_node *holder, markdown_core_node *owner,
-                                           markdown_core_place place, bool field) {
+bool markdown_core_parser_hold_inline_root(markdown_core_parser *parser, markdown_core_member *member,
+                                           markdown_core_node *holder, markdown_core_place place, bool field) {
     markdown_core_inline_root *roots = markdown_core_reserve(parser->inline_roots, &parser->inline_root_capacity,
                                                              parser->inline_root_count + 1, sizeof(*roots));
     if (!roots) {
         return false;
     }
     parser->inline_roots = roots;
-    markdown_core_member *builder = markdown_core_parser_member(parser, holder, false);
+    markdown_core_member *builder =
+        holder == member->node ? member : markdown_core_parser_attach_field(parser, member, holder);
     if (!builder) {
         return false;
     }
-    roots[parser->inline_root_count++] = (markdown_core_inline_root){node, holder, owner, place, field, builder};
+    builder->inner = true;
+    member->waits++;
+    roots[parser->inline_root_count++] =
+        (markdown_core_inline_root){member->node, holder, member, builder, place, field};
     return true;
 }
 
-markdown_core_node *markdown_core_parser_owner(const markdown_core_parser *parser, const markdown_core_member *member) {
-    if (member->owner) {
-        return member->owner->node;
+void markdown_core_parser_release_wait(markdown_core_parser *parser, markdown_core_member *member) {
+    if (--member->waits || !member->numbered || parser->error) {
+        return;
     }
-    const markdown_core_inline_root *root = parser->completing;
-    return root && member == root->builder ? (root->holder == root->node ? root->owner : root->node) : NULL;
+    const markdown_core_element_instance *document = parser->dialect->document_structure;
+    document->element->settle_member(document, parser, member);
+}
+
+markdown_core_node *markdown_core_parser_owner(const markdown_core_parser *parser, const markdown_core_member *member) {
+    (void)parser;
+    return member->owner ? member->owner->node : NULL;
 }
 
 /* AN INLINE ROOT COMPLETES ITS OWN TREE (docs/plans/2026-09-29-incremental-
@@ -1494,7 +1505,7 @@ static void S_complete_inline_root(markdown_core_parser *parser, markdown_core_i
                             break;
                         }
                         const markdown_core_element_instance *document = parser->dialect->document_structure;
-                        document->element->complete_node(document, parser, root->node, root->place.start);
+                        document->element->complete_node(document, parser, root->member, root->place.start);
                     } else {
                         S_complete_node(parser, member, node->where.place.start);
                     }
@@ -1545,7 +1556,10 @@ static void S_complete_inline_root(markdown_core_parser *parser, markdown_core_i
     pass->count = 0;
     parser->completing = NULL;
     root->builder = NULL;
-    markdown_core_parser_release_member(parser, holder);
+    /* The node that holds the root waits on it no more. */
+    if (!parser->error) {
+        markdown_core_parser_release_wait(parser, root->member);
+    }
 }
 
 static void finalize_document(markdown_core_parser *parser) {
@@ -1563,11 +1577,8 @@ static void finalize_document(markdown_core_parser *parser) {
 static void S_parse_block_inputs(markdown_core_parser *parser) {
     while (parser->block_input_cursor < parser->block_input_count && !parser->error) {
         const markdown_core_block_input input = parser->block_inputs[parser->block_input_cursor++];
-        markdown_core_node *cell = input.cell;
-        markdown_core_member *owner = markdown_core_parser_member(parser, cell, false);
-        if (!owner) {
-            break;
-        }
+        markdown_core_member *owner = input.cell;
+        markdown_core_node *cell = owner->node;
         parser->block_root = owner;
         parser->current = owner;
         parser->input_line_count = 0;
@@ -1589,7 +1600,9 @@ static void S_parse_block_inputs(markdown_core_parser *parser) {
         }
         parser->block_root = parser->root;
         parser->current = parser->root;
-        markdown_core_parser_release_member(parser, owner);
+        if (!parser->error) {
+            markdown_core_parser_release_wait(parser, owner);
+        }
     }
     parser->block_root = parser->root;
     parser->current = parser->root;

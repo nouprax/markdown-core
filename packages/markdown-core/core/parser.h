@@ -30,11 +30,10 @@ typedef enum {
  * `previous` is the root of a tree a parse published, and `edits` turn the
  * text it was parsed from into the text this parse reads, in its
  * coordinates: disjoint, in source order. The caller holds `previous`. Every
- * node the parse makes takes the next id after `last_id` as it completes,
- * the document last; on success `last_id` is the last id issued.
- * `node_count` is the number of nodes in `previous`, and on success the
- * number in the published tree. A fresh parse continues nothing: `previous`
- * is NULL and `last_id` is 0.
+ * node the parse makes that continues no node of `previous` takes the next id
+ * after `last_id` as its owner completes, the document last; on success
+ * `last_id` is the last id issued. A fresh parse continues nothing:
+ * `previous` is NULL and `last_id` is 0.
  *
  * `pool` lends the parse every node and resource slot it takes (node.h); it
  * outlives the parse, and its owner disposes it. */
@@ -44,7 +43,6 @@ typedef struct markdown_core_revision {
     const markdown_core_byte_edit *edits;
     size_t edit_count;
     uint64_t last_id;
-    size_t node_count;
 } markdown_core_revision;
 
 /* Immutable runs map logical content bytes to authored byte intervals.
@@ -130,24 +128,24 @@ typedef struct {
 
 /* AN INLINE ROOT WAITING FOR ITS PARSE (docs/plans/2026-09-29-incremental-
  * parsing.md, 5.8): the node whose first relation is the content and whose
- * runs read it; the node the content is parsed into, the node itself or the
- * private node its title or term hangs from; the node that holds the root,
- * which numbered it; where the node lies in the source, recorded when it was
- * numbered, since a numbered node holds only its extent; whether that
- * holder is a field, which belongs to its owner and is never replaced; and
- * the builder the content is parsed into, a member of the holder that does
- * not hold it, from when the root is held until it completes. */
+ * runs read it, and its member, which waits on the root; the node the content
+ * is parsed into, the node itself or the private node its title or term hangs
+ * from, and the builder the content is parsed into, that node's member;
+ * where the node lies in the source, recorded when it was numbered, since a
+ * numbered node holds only its extent; and whether the holder is a field,
+ * which belongs to its owner and is never replaced. */
 typedef struct markdown_core_inline_root {
-    struct markdown_core_node *node, *holder, *owner;
+    struct markdown_core_node *node, *holder;
+    struct markdown_core_member *member, *builder;
     markdown_core_place place;
     bool field;
-    struct markdown_core_member *builder;
 } markdown_core_inline_root;
 
-/* A CELL WHOSE CONTENT IS READ AS BLOCKS once the document's own lines are,
- * and where it starts, recorded when it was queued. */
+/* A CELL WHOSE CONTENT IS READ AS BLOCKS once the document's own lines are:
+ * its member, which waits on the input and builds its blocks, and where the
+ * cell starts, recorded when it was queued. */
 typedef struct markdown_core_block_input {
-    struct markdown_core_node *cell;
+    struct markdown_core_member *cell;
     uint32_t start;
 } markdown_core_block_input;
 
@@ -670,15 +668,22 @@ bool markdown_core_parser_has_block_start(markdown_core_parser *parser, markdown
 /* Schedule an already owned node's mapped content for the ordinary block
  * parser. No nested parse transaction, document, dialect or C recursion. */
 void markdown_core_parser_finalize_unmatched_blocks(markdown_core_parser *parser);
-bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdown_core_node *owner);
+/* Queues the content of the cell `member` builds, which waits on it. */
+bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdown_core_member *member);
 /* Whether `node` holds inline content (its kind's record, dialect.h). */
 bool markdown_core_parser_contains_inlines(markdown_core_parser *parser, markdown_core_node *node);
-/* Puts an inline root on the parser's list (markdown_core_inline_root),
- * with its builder. False when the list or the builder could not be
- * allocated. */
-bool markdown_core_parser_hold_inline_root(markdown_core_parser *parser, markdown_core_node *node,
-                                           markdown_core_node *holder, markdown_core_node *owner,
-                                           markdown_core_place place, bool field);
+/* Puts the inline root `member`'s node holds on the parser's list
+ * (markdown_core_inline_root), and the member waits on it. Its builder is
+ * the member, or one made for `holder` as a field root of the member's. False
+ * when the list or the builder could not be allocated. */
+bool markdown_core_parser_hold_inline_root(markdown_core_parser *parser, markdown_core_member *member,
+                                           markdown_core_node *holder, markdown_core_place place, bool field);
+/* `member` waits on one thing less -- an inline root, a block input, a value
+ * an element gives it late -- and settles when it was numbered and waits on
+ * nothing more (docs/plans/2026-09-29-incremental-parsing.md, 5.9). An
+ * element that gives a numbered node a value late makes its member wait by
+ * counting one more in `waits` first. */
+void markdown_core_parser_release_wait(markdown_core_parser *parser, markdown_core_member *member);
 /* WHERE A BYTE OF THE ACTIVE INPUT WAS WRITTEN, as a byte offset of the
  * document source. `line` is a line of the active input and `column` a byte
  * column of that line as the block parser reads it, counted from 1: the

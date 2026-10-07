@@ -674,7 +674,7 @@ static void push_children(wire_buffer *buffer, wire_stack *stack, markdown_core_
 static void put_tree(wire_buffer *buffer, const markdown_core_node *root) {
     wire_stack stack = {0};
     markdown_core_cursor *cursor;
-    if (markdown_core_cursor_new(root, &cursor) != MARKDOWN_CORE_OK) {
+    if (markdown_core_cursor_open(root, &cursor) != MARKDOWN_CORE_OK) {
         buffer->failed = true;
         return;
     }

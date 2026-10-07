@@ -195,42 +195,90 @@ typedef enum {
     MARKDOWN_CORE_TABLE_COUNT
 } markdown_core_definition_kind;
 
+/* THE IMAGES OF AN OLD ROOT'S CONTENT in the new root's (5.2): for each part
+ * of the old content whose bytes the new root reads too, in content order,
+ * the new content offset its first byte is read at, and whether the rest
+ * follow it byte for byte. An old copied run's part reads each content byte
+ * from one source byte that no edit replaced and the new root reads; any
+ * other old run is one part, imaged where the new root reads the first of
+ * its source bytes it still reads. */
+typedef struct {
+    uint32_t from, to, at;
+    bool copied;
+} markdown_core_content_image;
+
 /* WHAT ONE PARSE PUBLISHES AS ITS NODES COMPLETE (docs/plans/2026-09-29-
- * incremental-parsing.md, 5.8): each definition as its owner numbers it, at
- * its source start, and the runs of the inline root being completed, in
+ * incremental-parsing.md, 5.8, 5.9): each definition as it settles, at its
+ * source start, and the runs of the inline root being completed, in
  * absolute offsets, read when a definition in its content first asks where
- * it was written. The document element holds it for the parse. */
+ * it was written or an old node first asks where its content lies now. For
+ * the reuse cursor it keeps the length change before each edit, the images
+ * of the old content of the root being completed (`hint` is where the last
+ * lookup ended), the members a search climbs through, the old nodes each
+ * child's range holds, and the nodes the parse made that settled as old
+ * nodes, which go when the parse does. The document element holds it for
+ * the parse. */
+/* An old node a child's range holds, starting at `start` in its old
+ * coordinates; `next` is the next one the child holds, plus one, or 0. */
+typedef struct markdown_core_candidate {
+    const markdown_core_node *old;
+    uint32_t start, next;
+} markdown_core_candidate;
+
 typedef struct markdown_core_publication {
     markdown_core_definition_table tables[MARKDOWN_CORE_TABLE_COUNT];
     markdown_core_source_runs runs;
     const markdown_core_inline_root *runs_root;
+    int64_t *shift;
+    markdown_core_content_image *images;
+    size_t image_count, image_capacity, hint;
+    const markdown_core_inline_root *images_root;
+    markdown_core_member **climb;
+    size_t climb_capacity;
+    markdown_core_candidate *candidates;
+    size_t candidate_count, candidate_capacity;
+    markdown_core_node **replaced;
+    size_t replaced_count, replaced_capacity;
 } markdown_core_publication;
 
-/* COMPLETING `node`, which begins at `start`: each node it holds that is not
- * numbered yet, in canonical field order, takes the next id and its extent,
- * measured from the end of the node before it in its relation or from where
- * the relation is measured, and its runs when they are not an inline root's;
- * a definition enters its table; `observe` sees each; and a node holding
- * inline content waits on the parser's list of inline roots. A node that
- * gains a node later completes again and numbers only that one. A node that
- * holds only a group of its owner numbers nothing (MARKDOWN_CORE_NODE__GROUP):
- * its owner numbers the group. The inline root being completed (parser.h,
- * `completing`) also completes its own runs, from where it recorded its
- * holder lies, and the document numbers itself last. False when an
- * allocation failed. */
+/* COMPLETING the node `member` builds, which begins at `start`: each node it
+ * holds that is not numbered yet, in canonical field order, is numbered. It
+ * collects the old nodes it may continue (5.9), and takes its extent,
+ * measured from the end of the node before it in its
+ * relation or from where the relation is measured, and its runs when they
+ * are not an inline root's; `observe` sees it; a node holding inline content
+ * waits on the parser's list of inline roots. A node that waits on nothing
+ * settles at once (markdown_core_settle_member), and one that waits keeps
+ * its member, and its owner waits on it. A node that gains a node later
+ * completes again and numbers only that one. A node that holds only a group
+ * of its owner numbers nothing (MARKDOWN_CORE_NODE__GROUP): its owner numbers
+ * the group. The inline root being completed (parser.h, `completing`) also
+ * completes its own runs, from where it recorded its holder lies. False
+ * when an allocation failed. */
 bool markdown_core_complete_node(markdown_core_parser *parser, markdown_core_publication *publication,
-                                 markdown_core_node *node, uint32_t start,
+                                 markdown_core_member *member, uint32_t start,
                                  void (*observe)(const markdown_core_element_instance *, markdown_core_parser *,
                                                  markdown_core_node *),
                                  const markdown_core_element_instance *observer);
 
+/* A NUMBERED NODE SETTLES once it waits on nothing (5.9), its kind final: it
+ * decides the old node it continues, unless a descendant's request decided
+ * it already, and takes that node's id or the next one; when it equals the
+ * old node it continues -- its kind, extent, runs and scalars, and every
+ * relation holding the same nodes -- the old node takes its place in its
+ * owner, or as the document; a definition enters its table; its member goes,
+ * and an owner that waited only on it settles in turn. */
+void markdown_core_settle_member(markdown_core_parser *parser, markdown_core_publication *publication,
+                                 markdown_core_member *member);
+
 /* PUBLISHING, the last step of the parse transaction: the document numbers
- * itself and the definition tables the parse filled are sealed into it. The
- * parser's root is the result. False when an allocation failed. */
+ * itself, the definition tables the parse filled are sealed into it, and it
+ * settles. The parser's root is the result. False when an allocation
+ * failed. */
 bool markdown_core_publish_tree(markdown_core_parser *parser, markdown_core_publication *publication);
 
-/* Releases what the publication holds. */
-void markdown_core_publication_dispose(markdown_core_publication *publication);
+/* Releases what the publication holds, the nodes it keeps into `pool`. */
+void markdown_core_publication_dispose(markdown_core_publication *publication, markdown_core_node_pool *pool);
 
 #ifdef __cplusplus
 }

@@ -319,44 +319,95 @@ markdown_core_node *markdown_core_node_new(markdown_core_node_type type) {
     return markdown_core_node_pool_new(NULL, type, NULL);
 }
 
-static void free_node_as(markdown_core_node_pool *pool, markdown_core_node *node) {
-    markdown_core_slab_pool *resources = pool ? &pool->resources : NULL;
+/* THE BYTE STRINGS A NODE'S RECORD HOLDS, by kind, into `strings`; their
+ * count. A resource holds its own (markdown_core_resource_new). */
+#define NODE_STRING_LIMIT 3
+static int node_strings(markdown_core_node *node, markdown_core_chunk *strings[NODE_STRING_LIMIT]) {
     switch (node->kind) {
     case MARKDOWN_CORE_NODE_CALLOUT:
-        markdown_core_optional_chunk_free(&node->as.callout->variant);
-        break;
-    case MARKDOWN_CORE_NODE_METADATA:
-        markdown_core_metadata_fields_free(node->as.metadata);
-        break;
+        strings[0] = &node->as.callout->variant.value;
+        return 1;
     case MARKDOWN_CORE_NODE_LIST_ITEM:
-        markdown_core_optional_chunk_free(&node->as.list->task_marker);
-        break;
+        strings[0] = &node->as.list->task_marker.value;
+        return 1;
     case MARKDOWN_CORE_NODE_CODE_BLOCK:
-        markdown_core_optional_chunk_free(&node->as.code->info);
-        markdown_core_chunk_free(&node->as.code->literal);
-        break;
+        strings[0] = &node->as.code->info.value;
+        strings[1] = &node->as.code->literal;
+        return 2;
     case MARKDOWN_CORE_NODE_TEXT:
     case MARKDOWN_CORE_NODE_HTML:
     case MARKDOWN_CORE_NODE_CODE:
     case MARKDOWN_CORE_NODE_COMMENT:
     case MARKDOWN_CORE_NODE_COMMENT_BLOCK:
-        markdown_core_chunk_free(node->as.literal);
-        break;
+        strings[0] = node->as.literal;
+        return 1;
     case MARKDOWN_CORE_NODE_HTML_BLOCK:
-        markdown_core_chunk_free(&node->as.html_block->literal);
-        break;
+        strings[0] = &node->as.html_block->literal;
+        return 1;
     case MARKDOWN_CORE_NODE_CROSS_LINK:
     case MARKDOWN_CORE_NODE_CROSS_EMBEDDED: {
         markdown_core_cross_reference *cross = markdown_core_node_cross_reference(node);
-        markdown_core_chunk_free(&cross->path);
-        markdown_core_optional_chunk_free(&cross->anchor);
-        markdown_core_optional_chunk_free(&cross->label);
-        break;
+        strings[0] = &cross->path;
+        strings[1] = &cross->anchor.value;
+        strings[2] = &cross->label.value;
+        return 3;
     }
     case MARKDOWN_CORE_NODE_CITATION:
         /* The note and the affixes are fields, which the release drops;
          * only the referent's bytes are the arm's. */
-        markdown_core_chunk_free(&node->as.citation->value);
+        strings[0] = &node->as.citation->value;
+        return 1;
+    case MARKDOWN_CORE_NODE_SPECIMEN:
+        strings[0] = &node->as.specimen->label.value;
+        return 1;
+    case MARKDOWN_CORE_NODE_FOOTNOTE:
+        strings[0] = &node->as.footnote->label.value;
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+/* A string a parse built may view the bytes of the input it read: a
+ * content buffer, or a line. A node outlives that input once a later
+ * revision shares it, so what a completed node reads is its own: a viewed
+ * string becomes a copy, and an empty view the empty literal; an absent one
+ * stays absent. False when the
+ * copy could not be allocated, the view left as it was. */
+static bool hold_string(markdown_core_chunk *string) {
+    if (string->alloc) {
+        return true;
+    }
+    if (!string->len) {
+        if (string->data) {
+            string->data = (unsigned char *)"";
+        }
+        return true;
+    }
+    return markdown_core_chunk_to_cstr(string) != NULL;
+}
+
+bool markdown_core_node_hold_strings(markdown_core_node *node) {
+    markdown_core_chunk *strings[NODE_STRING_LIMIT];
+    const int count = node_strings(node, strings);
+    for (int i = 0; i < count; i++) {
+        if (!hold_string(strings[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void free_node_as(markdown_core_node_pool *pool, markdown_core_node *node) {
+    markdown_core_slab_pool *resources = pool ? &pool->resources : NULL;
+    markdown_core_chunk *strings[NODE_STRING_LIMIT];
+    const int count = node_strings(node, strings);
+    for (int i = 0; i < count; i++) {
+        markdown_core_chunk_free(strings[i]);
+    }
+    switch (node->kind) {
+    case MARKDOWN_CORE_NODE_METADATA:
+        markdown_core_metadata_fields_free(node->as.metadata);
         break;
     case MARKDOWN_CORE_NODE_DOCUMENT:
         markdown_core_free((void *)node->as.document->footnotes.nodes);
@@ -371,12 +422,6 @@ static void free_node_as(markdown_core_node_pool *pool, markdown_core_node *node
         if (node->as.heading->label.len) {
             markdown_core_node_pool_bytes_free(pool, node->as.heading->label.data);
         }
-        break;
-    case MARKDOWN_CORE_NODE_SPECIMEN:
-        markdown_core_optional_chunk_free(&node->as.specimen->label);
-        break;
-    case MARKDOWN_CORE_NODE_FOOTNOTE:
-        markdown_core_optional_chunk_free(&node->as.footnote->label);
         break;
     case MARKDOWN_CORE_NODE_LINK:
     case MARKDOWN_CORE_NODE_EMBEDDED:
@@ -641,6 +686,22 @@ markdown_core_node *markdown_core_stem_at(const markdown_core_stem *stem, size_t
     return stem->entries[index].node;
 }
 
+markdown_core_node *markdown_core_stem_put(markdown_core_stem *stem, size_t index, markdown_core_node *node) {
+    assert(stem->refs == 1);
+    while (stem->height) {
+        uint8_t i = 0;
+        while (index >= stem->entries[i].stem->count) {
+            index -= stem->entries[i].stem->count;
+            i++;
+        }
+        stem = stem->entries[i].stem;
+        assert(stem->refs == 1);
+    }
+    markdown_core_node *held = stem->entries[index].node;
+    stem->entries[index].node = node;
+    return held;
+}
+
 void markdown_core_stem_walk_begin(markdown_core_stem_walk *walk, const markdown_core_stem *stem, size_t index,
                                    size_t count) {
     walk->left = stem ? count : 0;
@@ -711,6 +772,7 @@ void markdown_core_member_attach(markdown_core_member *owner, markdown_core_memb
            markdown_core_node_can_contain_builtin(owner->node, (markdown_core_node_type)child->node->kind));
     markdown_core_member *previous = before ? before->prev : owner->last;
     child->owner = owner;
+    child->inner = owner->inner;
     child->prev = previous;
     child->next = before;
     if (previous) {
@@ -729,6 +791,7 @@ void markdown_core_member_attach_field(markdown_core_member *owner, markdown_cor
     assert(!field->owner && !field->next);
     field->owner = owner;
     field->field = true;
+    field->inner = owner->inner;
     markdown_core_member **at = &owner->fields;
     while (*at) {
         at = &(*at)->next;
@@ -767,41 +830,35 @@ static void S_member_free(markdown_core_node_pool *pool, markdown_core_member *m
 bool markdown_core_member_freeze(markdown_core_node_pool *pool, markdown_core_member *member) {
     size_t count = 0;
     for (const markdown_core_member *child = member->first; child; child = child->next) {
-        assert(!child->first && !child->fields && child->held);
-        count++;
+        count += child->held;
     }
     markdown_core_node *node = member->node;
     assert(!node->children || !count);
-    if (count) {
-        markdown_core_node *small[MARKDOWN_CORE_STEM_WIDTH];
-        markdown_core_node **nodes =
-            count <= MARKDOWN_CORE_STEM_WIDTH ? small : markdown_core_alloc(count, sizeof(*nodes));
-        if (!nodes) {
-            return false;
-        }
-        size_t i = 0;
-        for (const markdown_core_member *child = member->first; child; child = child->next) {
+    if (!count) {
+        return true;
+    }
+    markdown_core_node *small[MARKDOWN_CORE_STEM_WIDTH];
+    markdown_core_node **nodes = count <= MARKDOWN_CORE_STEM_WIDTH ? small : markdown_core_alloc(count, sizeof(*nodes));
+    if (!nodes) {
+        return false;
+    }
+    size_t i = 0;
+    for (const markdown_core_member *child = member->first; child; child = child->next) {
+        if (child->held) {
             nodes[i++] = child->node;
         }
-        bool failed;
-        node->children = markdown_core_stem_make(pool, nodes, count, &failed);
-        if (nodes != small) {
-            markdown_core_free(nodes);
-        }
-        if (failed) {
-            return false;
-        }
     }
-    for (markdown_core_member *child = member->first, *next; child; child = next) {
-        next = child->next;
-        S_member_free(pool, child);
+    bool failed;
+    node->children = markdown_core_stem_make(pool, nodes, count, &failed);
+    if (nodes != small) {
+        markdown_core_free(nodes);
     }
-    for (markdown_core_member *field = member->fields, *next; field; field = next) {
-        assert(!field->first && !field->fields);
-        next = field->next;
-        S_member_free(pool, field);
+    if (failed) {
+        return false;
     }
-    member->first = member->last = member->fields = NULL;
+    for (markdown_core_member *child = member->first; child; child = child->next) {
+        child->held = false;
+    }
     return true;
 }
 
@@ -909,9 +966,20 @@ markdown_core_resource *markdown_core_resource_new(markdown_core_node_pool *pool
     if (!resource) {
         return NULL;
     }
+    /* The resource holds what it reads (hold_string). */
+    markdown_core_chunk held = url;
+    markdown_core_chunk held_title = title.value;
+    if (!hold_string(&held) || !hold_string(&held_title)) {
+        if (held.alloc && !url.alloc) {
+            markdown_core_chunk_free(&held);
+        }
+        markdown_core_slab_release(pool ? &pool->resources : NULL, resource);
+        return NULL;
+    }
     memset(resource, 0, sizeof(*resource));
-    resource->url = url;
+    resource->url = held;
     resource->title = title;
+    resource->title.value = held_title;
     return resource;
 }
 
