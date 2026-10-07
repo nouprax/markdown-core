@@ -260,10 +260,18 @@ static void finalize_block(const markdown_core_element_instance *self, markdown_
     (void)parser;
     markdown_core_node *node = member->node;
     if (member->last) {
-        node->where.place.end = member->last->node->where.place.end;
+        node->where.place.end = markdown_core_member_place(member->last).end;
     } else if (node->kind == MARKDOWN_CORE_NODE_DEFINITION_BODY) {
         node->where.place.end = (uint32_t)node->internal_offset;
     }
+}
+
+/* What a definition body carries (E3): the indentation its later lines
+ * continue by. A list and a definition carry nothing. */
+static uint32_t carry_save(const markdown_core_element_instance *self, const markdown_core_member *member) {
+    (void)self;
+    const markdown_core_node *node = member->node;
+    return node->kind == MARKDOWN_CORE_NODE_DEFINITION_BODY ? (uint32_t)node->as.definition_body->continuation : 0;
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
@@ -275,6 +283,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
 
     .name = "definition_list",
     .continue_container = continue_container,
+    .carry_save = carry_save,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_definition_list_scan,
     .scan_block_gate = {.bytes = ":~"},

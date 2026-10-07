@@ -133,5 +133,6 @@ bool markdown_core_block_attach_identifier_line(markdown_core_block_identifier_w
         return false;
     }
     markdown_core_block_set_end_to_current_line(parser, owner);
+    markdown_core_parser_record(parser, parent->last, true);
     return true;
 }

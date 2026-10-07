@@ -144,6 +144,8 @@ typedef struct markdown_core_walk_frame {
 
 typedef struct markdown_core_walk {
     const markdown_core_node *root;
+    /* The offset the root's extent is measured from. */
+    uint32_t anchor;
     bool started, failed, at_group;
     markdown_core_walk_frame *frames;
     size_t count, capacity;
@@ -159,6 +161,9 @@ typedef struct markdown_core_walk {
 } markdown_core_walk;
 
 void markdown_core_walk_begin(markdown_core_walk *walk, const markdown_core_node *root);
+/* Begins at `root`, a node of a tree whose extent is measured from
+ * `anchor`. */
+void markdown_core_walk_begin_at(markdown_core_walk *walk, const markdown_core_node *root, uint32_t anchor);
 /* The next item, or false at the end or when the walk could not allocate
  * (`failed`). */
 bool markdown_core_walk_next(markdown_core_walk *walk, markdown_core_walk_item *item);
@@ -212,7 +217,7 @@ typedef struct {
  * source start, and the runs of the inline root being completed, in
  * absolute offsets, read when a definition in its content first asks where
  * it was written or an old node first asks where its content lies now. For
- * the reuse cursor it keeps the length change before each edit, the images
+ * the reuse cursor it keeps the images
  * of the old content of the root being completed (`hint` is where the last
  * lookup ended), the members a search climbs through, the old nodes each
  * child's range holds, and the nodes the parse made that settled as old
@@ -229,7 +234,6 @@ typedef struct markdown_core_publication {
     markdown_core_definition_table tables[MARKDOWN_CORE_TABLE_COUNT];
     markdown_core_source_runs runs;
     const markdown_core_inline_root *runs_root;
-    int64_t *shift;
     markdown_core_content_image *images;
     size_t image_count, image_capacity, hint;
     const markdown_core_inline_root *images_root;
@@ -268,6 +272,17 @@ bool markdown_core_complete_node(markdown_core_parser *parser, markdown_core_pub
  * relation holding the same nodes -- the old node takes its place in its
  * owner, or as the document; a definition enters its table; its member goes,
  * and an owner that waited only on it settles in turn. */
+/* THE DECLARATIONS OF A TAKEN SUBTREE (docs/plans/2026-09-29-incremental-
+ * parsing.md, 5.3, 5.7): `node`, which a parse took whole at `start`, and
+ * every node under it are listed in the definition tables as if the parse
+ * had made them, and `visit` sees each with the source offset where it was
+ * written. False when an allocation failed. */
+bool markdown_core_publication_take(markdown_core_publication *publication, const markdown_core_node *node,
+                                    uint32_t start,
+                                    void (*visit)(void *, const markdown_core_node *, uint32_t), void *context);
+/* Whether the labels `document` defines in each table are those `old`
+ * defined: then every lookup of a label is answered as it was. */
+bool markdown_core_document_labels_same(const markdown_core_node *document, const markdown_core_node *old);
 void markdown_core_settle_member(markdown_core_parser *parser, markdown_core_publication *publication,
                                  markdown_core_member *member);
 

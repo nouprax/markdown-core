@@ -322,6 +322,19 @@ static bool blank_line(const markdown_core_element_instance *self, markdown_core
              markdown_core_parser_starts_on_line(parser, member->node, parser->line_number));
 }
 
+/* What a list or an item carries (E3): an item the indentation its later
+ * lines continue by, and a list the facts an item must match to join it. */
+static uint32_t carry_save(const markdown_core_element_instance *self, const markdown_core_member *member) {
+    (void)self;
+    const markdown_core_list *list = member->node->as.list;
+    if (member->node->kind == MARKDOWN_CORE_NODE_LIST_ITEM) {
+        return (uint32_t)list->marker_offset | (uint32_t)list->padding << 16;
+    }
+    return (uint32_t)list->flavor | (uint32_t)list->bullet_char << 2 | (uint32_t)list->variant.kind << 10 |
+           (uint32_t)list->variant.lowercased << 13 | (uint32_t)list->delimiter.kind << 14 |
+           (uint32_t)list->delimiter.closed << 16;
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
     .state_size = sizeof(markdown_core_list_work),
     .finalize_block = finalize_block,
@@ -331,6 +344,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
     .name = "list",
     .continue_container = continue_container,
     .propagates_child_blank = true,
+    .carry_save = carry_save,
     .blank_runs = true,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_list_scan,

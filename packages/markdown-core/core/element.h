@@ -158,6 +158,13 @@ struct markdown_core_element {
                                                     markdown_core_member *, markdown_core_chunk *, bool);
     bool interrupts_paragraph;
 
+    /* THE STATE A CONTAINER CARRIES where a child of it can begin
+     * (docs/plans/2026-09-29-incremental-parsing.md, 5.4, E3): the word its
+     * opening line decided, which its later lines read. An element whose
+     * blocks hold blocks that a later parse may take declares it; the cursor
+     * reads the old children of such a block again (5.3), and reads a block
+     * of an element without it whole. */
+    uint32_t (*carry_save)(const markdown_core_element_instance *, const markdown_core_member *);
     bool (*continue_container)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *,
                                markdown_core_chunk *, const markdown_core_member *, bool *);
     /* The bytes `continue_container` can strip from a line besides

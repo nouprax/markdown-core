@@ -704,6 +704,63 @@ static size_t view_at(const view *taken, const char *kind, size_t at) {
     return SIZE_MAX;
 }
 
+/* The value of `node` without its lead: the bytes before ` extent=` and
+ * from the span on. */
+static void value_parts(const view *taken, const view_node *node, const char **head, size_t *head_length,
+                        const char **tail, size_t *tail_length) {
+    const char *value = taken->values + node->value, *end = value + node->value_length, *at = value;
+    while (at + 8 <= end && memcmp(at, " extent=", 8) != 0) {
+        at++;
+    }
+    *head = value;
+    *head_length = (size_t)(at - value);
+    at = at < end ? (const char *)memchr(at, ',', (size_t)(end - at)) : end;
+    *tail = at ? at : end;
+    *tail_length = (size_t)(end - *tail);
+}
+
+/* 4.4 for a node no rule continues: `node` of `after` has the kind and the
+ * value of old node `old`, only its lead differing, and its items carry the
+ * ids, kinds, values and leads of the old node's items in turn, down the
+ * whole subtree. */
+static bool kept_whole(const view *before, size_t old, const view *after, size_t node) {
+    const char *head[2], *tail[2];
+    size_t head_length[2], tail_length[2], *stack, depth = 0;
+    bool same;
+    value_parts(before, &before->nodes[old], &head[0], &head_length[0], &tail[0], &tail_length[0]);
+    value_parts(after, &after->nodes[node], &head[1], &head_length[1], &tail[1], &tail_length[1]);
+    if (before->nodes[old].kind != after->nodes[node].kind || head_length[0] != head_length[1] ||
+        tail_length[0] != tail_length[1] || memcmp(head[0], head[1], head_length[0]) != 0 ||
+        memcmp(tail[0], tail[1], tail_length[0]) != 0) {
+        return false;
+    }
+    stack = (size_t *)malloc(2 * after->count * sizeof(*stack));
+    if (!stack) {
+        return false;
+    }
+    stack[depth++] = old;
+    stack[depth++] = node;
+    same = true;
+    while (same && depth) {
+        const view_node *mine = &after->nodes[stack[--depth]], *theirs = &before->nodes[stack[--depth]];
+        size_t item;
+        same = mine->item_count == theirs->item_count;
+        for (item = 0; same && item < mine->item_count; item++) {
+            const view_node *a = &after->nodes[after->items[mine->items + item]];
+            const view_node *b = &before->nodes[before->items[theirs->items + item]];
+            same = a->id == b->id && a->kind == b->kind && a->relation == b->relation &&
+                   a->value_length == b->value_length &&
+                   memcmp(after->values + a->value, before->values + b->value, a->value_length) == 0;
+            if (same && depth + 2 <= 2 * after->count) {
+                stack[depth++] = before->items[theirs->items + item];
+                stack[depth++] = after->items[mine->items + item];
+            }
+        }
+    }
+    free(stack);
+    return same;
+}
+
 /* 4.2 to 4.5 for one step from `before` to `after`, then the lineage takes
  * the step. `edits` are the step's edits in UTF-8 bytes, ascending. */
 static void check_identity(run *state, const char *where, size_t step, history *ids, const view *before,
@@ -764,7 +821,10 @@ static void check_identity(run *state, const char *where, size_t step, history *
             }
         }
         continues[index] = match;
-        if (match != SIZE_MAX ? node->id != before->nodes[match].id : ids->state[node->id] != 0) {
+        if (match != SIZE_MAX
+                ? node->id != before->nodes[match].id
+                : ids->state[node->id] != 0 && (id_lookup(&old_ids, node->id) == SIZE_MAX ||
+                                                !kept_whole(before, id_lookup(&old_ids, node->id), after, index))) {
             fail(state, "4.4", "%s step %zu: node %zu (%llu) %s", where, step, index + 1, (unsigned long long)node->id,
                  match != SIZE_MAX ? "does not have the id of the node it continues"
                                    : "continues nothing but has an id the lineage has issued");

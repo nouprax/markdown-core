@@ -11,6 +11,10 @@
 enum { HEADING_CITATION };
 static const markdown_core_element *const HEADING_PEERS[] = {[HEADING_CITATION] = &MARKDOWN_CORE_ELEMENT_CITATION,
                                                              NULL};
+/* A heading whose anchor the headings computed (markdown_core_headings_finish)
+ * rather than one its text declared. */
+enum { HEADING_ANCHOR_COMPUTED = MARKDOWN_CORE_NODE__ELEMENT_FIRST };
+
 typedef enum { ANCHOR_CONTENT, ANCHOR_CITATIONS, ANCHOR_KEY } anchor_projection_kind;
 /* The nodes left to project at one level: those of `stem` from `index` on,
  * or, for a key, the citation `node`. */
@@ -78,6 +82,22 @@ void markdown_core_headings_observe(const markdown_core_element_instance *self, 
     state->explicit_anchors[state->explicit_count++] = *anchor;
 }
 
+/* A heading a parse took whole (5.3), at `start`: complete, with its label
+ * declared as it is, and its anchor, when computed, computed again. */
+void markdown_core_headings_take(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                 const markdown_core_node *node, uint32_t start) {
+    markdown_core_heading_collection *headings = &((markdown_core_heading_state *)self->state)->headings;
+    markdown_core_heading_parse *values =
+        markdown_core_reserve(headings->values, &headings->capacity, headings->count + 1, sizeof(*values));
+    if (!values) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return;
+    }
+    headings->values = values;
+    values[headings->count++] =
+        (markdown_core_heading_parse){.source = {(markdown_core_node *)node, start}, .builder = NULL};
+}
+
 /* Every heading's inlines up to its declaration dependency, and the implicit
  * reference each declares, in source order; then the anchor registry sized
  * for them. */
@@ -96,7 +116,12 @@ void markdown_core_headings_prepare(const markdown_core_element_instance *self, 
     /* The reference map compares explicitness and original source positions,
      * independently of mapped-input scheduling and declaration closure order. */
     for (size_t i = 0; i < headings->count && !parser->error; i++) {
-        markdown_core_prepare_heading(self, parser, &headings->values[i]);
+        markdown_core_heading_parse *heading = &headings->values[i];
+        if (heading->builder) {
+            markdown_core_prepare_heading(self, parser, heading);
+        } else if (heading->source.node->as.heading->label.len) {
+            markdown_core_label_declare(parser->refmap, &heading->source.node->as.heading->label);
+        }
         if (parser->refmap->oom) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
@@ -286,10 +311,9 @@ void markdown_core_headings_finish(const markdown_core_element_instance *self, m
         return;
     }
     for (size_t i = 0; i < state->explicit_count + headings->count && !parser->error; i++) {
-        const markdown_core_chunk anchor =
-            i < state->explicit_count ? state->explicit_anchors[i]
-                                      : headings->values[i - state->explicit_count].source.node->attributes.anchor;
-        if (!anchor.len) {
+        const markdown_core_node *heading = i < state->explicit_count ? NULL : headings->values[i - state->explicit_count].source.node;
+        const markdown_core_chunk anchor = heading ? heading->attributes.anchor : state->explicit_anchors[i];
+        if (!anchor.len || (heading && (heading->flags & HEADING_ANCHOR_COMPUTED))) {
             continue;
         }
         state->anchor_work++;
@@ -304,7 +328,9 @@ void markdown_core_headings_finish(const markdown_core_element_instance *self, m
     for (size_t i = 0; i < headings->count && !parser->error; i++) {
         markdown_core_node *node = headings->values[i].source.node;
         markdown_core_chunk *anchor = &node->attributes.anchor;
-        if (anchor->len) {
+        /* A taken heading's computed anchor is computed again. */
+        const bool taken = !headings->values[i].builder;
+        if (anchor->len && !(taken && (node->flags & HEADING_ANCHOR_COMPUTED))) {
             continue;
         }
         markdown_core_strbuf_clear(&base);
@@ -332,6 +358,16 @@ void markdown_core_headings_finish(const markdown_core_element_instance *self, m
         if (parser->error) {
             break;
         }
+        /* A taken heading is the old node, which keeps its anchor: when the
+         * anchor computed now differs, the parse runs again without taking. */
+        if (taken) {
+            if (anchor->len != base.size || memcmp(anchor->data, base.ptr, (size_t)base.size)) {
+                parser->retake = true;
+            }
+            markdown_core_key_index_commit(&registry->index, candidate, anchor->data);
+            candidate->value.counter = 1;
+            continue;
+        }
         markdown_core_chunk_free(anchor);
         *anchor = (markdown_core_chunk){base.ptr, base.size, 0};
         if (!markdown_core_chunk_to_cstr(anchor)) {
@@ -341,12 +377,15 @@ void markdown_core_headings_finish(const markdown_core_element_instance *self, m
         }
         markdown_core_key_index_commit(&registry->index, candidate, anchor->data);
         candidate->value.counter = 1;
+        node->flags |= HEADING_ANCHOR_COMPUTED;
     }
     markdown_core_free(stack.values);
     markdown_core_strbuf_free(&base);
     /* Each heading has its anchor: it waits on nothing of the headings'. */
     for (size_t i = 0; i < headings->count && !parser->error; i++) {
-        markdown_core_parser_release_wait(parser, headings->values[i].builder);
+        if (headings->values[i].builder) {
+            markdown_core_parser_release_wait(parser, headings->values[i].builder);
+        }
     }
 }
 

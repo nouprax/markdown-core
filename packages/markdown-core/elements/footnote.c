@@ -33,6 +33,15 @@ bool markdown_core_footnotes_lost(const markdown_core_element_instance *self) {
     return state->labels && state->labels->oom;
 }
 
+/* A footnote definition a parse took whole (5.3) defines its label. */
+void markdown_core_footnotes_take(const markdown_core_element_instance *self, const markdown_core_node *node) {
+    markdown_core_footnote_state *state = self->state;
+    const markdown_core_optional_chunk *label = &node->as.footnote->label;
+    if (label->has_value) {
+        markdown_core_label_declare(state->labels, &label->value);
+    }
+}
+
 void markdown_core_footnotes_dispose(const markdown_core_element_instance *self) {
     markdown_core_footnote_state *state = self->state;
     if (state->labels) {
@@ -141,11 +150,18 @@ static bool continue_container(const markdown_core_element_instance *self, markd
     (void)self;
     return markdown_core_footnote_continue(parser, node, input);
 }
+/* A footnote definition carries nothing its lines read (E3). */
+static uint32_t carry_save(const markdown_core_element_instance *self, const markdown_core_member *member) {
+    (void)self;
+    (void)member;
+    return 0;
+}
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
     .peers = FOOTNOTE_PEERS,
     .name = "footnote",
     .state_size = sizeof(markdown_core_footnote_state),
     .continue_container = continue_container,
+    .carry_save = carry_save,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_footnote_scan,
     .scan_block_gate = {.bytes = "["},

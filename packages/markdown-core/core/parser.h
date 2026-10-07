@@ -138,9 +138,10 @@ typedef struct markdown_core_input {
     size_t size;
 } markdown_core_input;
 
-/* A chunk the parse has read: where it starts in the input and its bytes. */
+/* A chunk the parse has read: where it starts in the input, its bytes and
+ * how many. */
 typedef struct markdown_core_input_chunk {
-    size_t start;
+    size_t start, size;
     const unsigned char *bytes;
 } markdown_core_input_chunk;
 
@@ -215,12 +216,13 @@ struct markdown_core_parser {
      * and lookahead extend one index; a source byte is scanned for line
      * geometry once, whether the input is the document or a mapped cell. The
      * scan reads the input a chunk at a time, each chunk once: `input_chunks`
-     * holds the chunks read so far, in order, which cover the input up to
-     * `input_read`, and `input_chunk` is the one read last or asked for last,
+     * holds the chunks read so far, in order of their starts, which cover
+     * what the parse read of the input and leave out what it took without
+     * reading (5.3), and `input_chunk` is the one read last or asked for last,
      * holding `input_chunk_size` bytes from `input_chunk_start` on. */
     markdown_core_input input;
     struct markdown_core_input_chunk *input_chunks;
-    size_t input_chunk_count, input_chunk_capacity, input_read;
+    size_t input_chunk_count, input_chunk_capacity;
     const unsigned char *input_chunk;
     size_t input_chunk_start, input_chunk_size;
     size_t input_length, input_scanned;
@@ -241,6 +243,35 @@ struct markdown_core_parser {
     bool claimed;
     int claimed_line;
     bufsize_t claimed_last_end;
+    /* THE PARSE'S READING OF ITS OLD TREE (docs/plans/2026-09-29-incremental-
+     * parsing.md, 5.1-5.3). `line_reach` is the high-water mark of the line
+     * being processed: the end of the furthest line any decision on it read,
+     * through its terminator, as markdown_core_parser_source_line raises it.
+     * `line_context` says whether the line was read with an open paragraph
+     * as its context, which may refuse a start it would take after a closed
+     * block, and `previous_blank` whether the line before it was blank past
+     * its prefixes: a block closed by such a line holds the next
+     * (MARKDOWN_CORE_NODE__HOLDS_NEXT). `edit_shift` is the length change
+     * before each of the revision's edits. A take (markdown_core_parser_add_
+     * child) sets `taken`: the line ends there, and the next one read begins
+     * at `resume`, after a line whose content ended at `resume_last_end`. */
+    uint32_t line_reach;
+    bool line_context, previous_blank, taken;
+    int64_t *edit_shift;
+    size_t resume;
+    bufsize_t resume_last_end;
+    /* Every node the parse took, with the offset where it begins now: the
+     * document lists their declarations (5.7). `takes` says whether the
+     * parse may take nodes at all; publishing sets `retake` when a label the
+     * document defines is not one the old document defined, or the other
+     * way round, so that a taken node may have read a lookup that is
+     * answered differently now, and the parse runs again without taking. */
+    struct markdown_core_took {
+        const struct markdown_core_node *node;
+        uint32_t start;
+    } *took;
+    size_t took_count, took_capacity;
+    bool takes, retake;
     /* The last open block after a line is fully processed */
     struct markdown_core_member *current;
     /* See the documentation for markdown_core_parser_get_line_number() in markdown_core.h */
@@ -615,13 +646,49 @@ static inline size_t markdown_core_input_line_next(const markdown_core_parser *p
  * index. Keep line numbers or copies across such a request. */
 markdown_core_input_line *markdown_core_parser_extend_source_lines(markdown_core_parser *parser, size_t index);
 
+/* THE EDIT MAPPING (docs/plans/2026-09-29-incremental-parsing.md, 5.2) of
+ * a parse that continues a tree. `markdown_core_parser_edit_after` is the
+ * first edit that ends after old byte `x`: every one before it ends at or
+ * before x. `markdown_core_parser_image` is where the boundary at old offset
+ * `x` lies now: inside a replaced range it lies where the replacement ends.
+ * `markdown_core_parser_touched` says whether an edit meets or touches the
+ * old range [from, to], both ends included. `markdown_core_parser_source_
+ * anchor` gives the image of the first byte of the old range [start, end)
+ * that no edit replaced, false when every byte of it was replaced. */
+size_t markdown_core_parser_edit_after(const markdown_core_parser *parser, uint32_t x);
+uint32_t markdown_core_parser_image(const markdown_core_parser *parser, uint32_t x);
+bool markdown_core_parser_touched(const markdown_core_parser *parser, uint32_t from, uint32_t to);
+bool markdown_core_parser_source_anchor(const markdown_core_parser *parser, uint32_t start, uint32_t end,
+                                        uint32_t *image);
+
+/* THE STATE `parent` CARRIES where a child of it begins after `previous`
+ * (5.3, E3): the word its element saves, the kind of the child before, and
+ * its blank-line flags. A block records it as its `entry`. */
+uint64_t markdown_core_parser_carry(const markdown_core_parser *parser, const markdown_core_member *parent,
+                                    const markdown_core_member *previous);
+
+/* THE PARSE RECORD OF `member`, a block the line being processed closes or
+ * writes into (5.1, 5.3, E2): its reach and its parent's cover what the line
+ * has read, and with `holds` it holds the next block, so that no run of taken
+ * blocks ends at it. A taken block keeps the record the old parse wrote. */
+void markdown_core_parser_record(markdown_core_parser *parser, markdown_core_member *member, bool holds);
+
+/* Line `line` of the input, read: a decision that reads a line reads it
+ * whole, through its terminator, which raises the high-water mark of the
+ * line being processed (parser.h, `line_reach`). */
 static inline markdown_core_input_line *markdown_core_parser_source_line(markdown_core_parser *parser, int line) {
     if (line < parser->input_first_line || parser->error) {
         return NULL;
     }
     size_t index = (size_t)(line - parser->input_first_line);
-    return index < parser->input_line_count ? &parser->input_lines[index]
-                                            : markdown_core_parser_extend_source_lines(parser, index);
+    markdown_core_input_line *read = index < parser->input_line_count
+                                         ? &parser->input_lines[index]
+                                         : markdown_core_parser_extend_source_lines(parser, index);
+    if (read) {
+        const uint32_t next = (uint32_t)markdown_core_input_line_next(parser, read);
+        parser->line_reach = next > parser->line_reach ? next : parser->line_reach;
+    }
+    return read;
 }
 
 /* The bytes of `line` through its terminator, contiguous: borrowed from the

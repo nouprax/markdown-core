@@ -155,6 +155,13 @@ static markdown_core_member *open_lazy(const markdown_core_element_instance *sel
     return text_block->element->open_text_block(text_block, parser, node, input);
 }
 
+/* What a quote carries (E3): whether it is a callout, whose marker line
+ * decides how the line after it is read. */
+static uint32_t carry_save(const markdown_core_element_instance *self, const markdown_core_member *member) {
+    (void)self;
+    return member->node->as.callout->variant.has_value;
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CALLOUT = {
     .state_size = sizeof(markdown_core_callout_work),
     .accepts_lazy = accepts_lazy,
@@ -163,6 +170,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_CALLOUT = {
     .name = "callout",
     .continue_container = continue_container,
     .container_prefix_bytes = ">",
+    .carry_save = carry_save,
     .blank_opaque = true,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_callout_scan,

@@ -768,58 +768,6 @@ static bool completing_source(markdown_core_parser *parser, markdown_core_public
  * owner. It finds the same old node the whole range would, and asks again as
  * far as it needs. */
 
-/* The length change before each edit, read once per parse. False when it
- * could not be allocated. */
-static bool shift_ready(const markdown_core_revision *revision, markdown_core_publication *publication) {
-    if (publication->shift) {
-        return true;
-    }
-    publication->shift = markdown_core_alloc(revision->edit_count + 1, sizeof(*publication->shift));
-    if (!publication->shift) {
-        return false;
-    }
-    for (size_t i = 0; i < revision->edit_count; i++) {
-        const markdown_core_byte_edit *edit = &revision->edits[i];
-        publication->shift[i + 1] = publication->shift[i] + (int64_t)edit->size - (int64_t)(edit->end - edit->start);
-    }
-    return true;
-}
-
-/* The first edit that ends after old byte `x`: every one before it ends at
- * or before x, so x is past it and shifted by it. */
-static size_t edit_after(const markdown_core_revision *revision, uint32_t x) {
-    const markdown_core_byte_edit *edits = revision->edits;
-    size_t lo = 0, hi = revision->edit_count;
-    while (lo < hi) {
-        size_t mid = lo + (hi - lo) / 2;
-        if (edits[mid].end <= x) {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-    return lo;
-}
-
-/* The image of the first byte of the old source range [start, end) that no
- * edit replaced, or false when every byte of it was replaced (5.2). */
-static bool source_anchor(const markdown_core_revision *revision, const markdown_core_publication *publication,
-                          uint32_t start, uint32_t end, uint32_t *image) {
-    const markdown_core_byte_edit *edits = revision->edits;
-    size_t lo = edit_after(revision, start), x = start;
-    while (lo < revision->edit_count && edits[lo].start <= x) {
-        if (x < edits[lo].end) {
-            x = edits[lo].end;
-        }
-        lo++;
-    }
-    if (x >= end) {
-        return false;
-    }
-    *image = (uint32_t)((int64_t)x + publication->shift[lo]);
-    return true;
-}
-
 static bool content_image_add(markdown_core_publication *publication, markdown_core_content_image image) {
     markdown_core_content_image *grown = markdown_core_reserve(publication->images, &publication->image_capacity,
                                                                publication->image_count + 1, sizeof(*grown));
@@ -835,9 +783,10 @@ static bool content_image_add(markdown_core_publication *publication, markdown_c
  * measured from `origin`, against the new root's runs `fresh`. The old runs,
  * the edits and the new runs all increase in source, so one pass over each
  * pairs them. False when the table could not grow. */
-static bool content_images_read(const markdown_core_revision *revision, markdown_core_publication *publication,
+static bool content_images_read(const markdown_core_parser *parser, markdown_core_publication *publication,
                                 const markdown_core_runs *runs, uint32_t origin,
                                 const markdown_core_source_runs *fresh) {
+    const markdown_core_revision *revision = parser->revision;
     const markdown_core_byte_edit *edits = revision->edits;
     publication->image_count = publication->hint = 0;
     if (!runs || !runs->count || !fresh) {
@@ -845,7 +794,7 @@ static bool content_images_read(const markdown_core_revision *revision, markdown
     }
     int64_t at = origin;
     uint32_t content = 0;
-    size_t edit = edit_after(revision, (uint32_t)(at + runs->items[0].run.lead)), next = 0;
+    size_t edit = markdown_core_parser_edit_after(parser, (uint32_t)(at + runs->items[0].run.lead)), next = 0;
     for (uint32_t i = 0; i < runs->count; i++) {
         const markdown_core_run run = runs->items[i].run;
         const uint32_t start = (uint32_t)(at + run.lead), end = start + run.span, from = content;
@@ -867,7 +816,7 @@ static bool content_images_read(const markdown_core_revision *revision, markdown
             }
             const uint32_t stop =
                 edit < revision->edit_count && edits[edit].start < end ? (uint32_t)edits[edit].start : end;
-            const int64_t shift = publication->shift[edit];
+            const int64_t shift = parser->edit_shift[edit];
             const uint32_t low = (uint32_t)(x + shift), high = (uint32_t)(stop + shift);
             while (next < fresh->count && fresh->runs[next].end <= low) {
                 next++;
@@ -915,7 +864,7 @@ static bool images_ready(markdown_core_parser *parser, markdown_core_publication
     const markdown_core_member *member = root->member;
     bool failed;
     const markdown_core_source_runs *fresh = completing_runs(parser, publication, &failed);
-    if (failed || !content_images_read(parser->revision, publication, shape_runs(member->old, shape_of(member->old)),
+    if (failed || !content_images_read(parser, publication, shape_runs(member->old, shape_of(member->old)),
                                        member->old_start, fresh)) {
         return false;
     }
@@ -1015,24 +964,14 @@ static void pair_open(const markdown_core_parser *parser, markdown_core_member *
  * images could not be read. */
 static bool old_image(markdown_core_parser *parser, markdown_core_publication *publication,
                       const markdown_core_member *member, uint32_t start, uint32_t end, uint32_t *image, bool *failed) {
-    if (!shift_ready(parser->revision, publication)) {
-        *failed = true;
-        return false;
-    }
     if (!member->owner->inner) {
-        return source_anchor(parser->revision, publication, start, end, image);
+        return markdown_core_parser_source_anchor(parser, start, end, image);
     }
     if (!images_ready(parser, publication)) {
         *failed = true;
         return false;
     }
     return content_anchor(publication, start, end, image);
-}
-
-/* Where `member`'s node lies: its place, which numbering keeps in the member
- * as the node takes its extent. */
-static inline markdown_core_place member_place(const markdown_core_member *member) {
-    return member->numbered ? member->place : member->node->where.place;
 }
 
 /* Whether `member`'s range is final: numbered, or a closed block's. */
@@ -1052,7 +991,7 @@ static bool pair_search(markdown_core_parser *parser, markdown_core_publication 
     if (!owner->paired || owner->pair_name != (uint32_t)name) {
         pair_open(parser, owner, name);
     }
-    const uint32_t from = member_place(member).start;
+    const uint32_t from = markdown_core_member_place(member).start;
     bool failed = false;
     while (owner->pair_next < owner->pair_end) {
         const markdown_core_node *old = markdown_core_stem_at(owner->pair_stem, owner->pair_next);
@@ -1086,13 +1025,13 @@ static bool pair_search(markdown_core_parser *parser, markdown_core_publication 
             member->last_candidate = taken;
         }
     }
-    member->reach = reach;
+    member->passed = reach;
     return true;
 }
 
 /* Whether `member`'s range is final and `reach` passes all of it. */
 static bool passed_whole(const markdown_core_member *member, uint32_t reach) {
-    return range_final(member) && reach >= member_place(member).end;
+    return range_final(member) && reach >= markdown_core_member_place(member).end;
 }
 
 /* `member`, a child of a node that continues an old node, continues its first
@@ -1169,10 +1108,10 @@ static bool field_search(markdown_core_parser *parser, markdown_core_publication
         return false;
     }
     if (anchored && image >= reach && !passed_whole(member, reach)) {
-        member->reach = reach;
+        member->passed = reach;
         return true;
     }
-    if (anchored && image >= member_place(member).start && image < reach &&
+    if (anchored && image >= markdown_core_member_place(member).start && image < reach &&
         public_kind(old) == public_kind(member->node)) {
         member->old = old;
         member->old_start = start;
@@ -1204,8 +1143,8 @@ static void ask_in_order(markdown_core_member *owner, markdown_core_member *memb
 static bool pass_range(markdown_core_parser *parser, markdown_core_publication *publication,
                        markdown_core_member *member) {
     markdown_core_member *owner = member->owner;
-    const uint32_t end = member_place(member).end;
-    if ((member->node->flags & MARKDOWN_CORE_NODE__GROUP) || !owner->decided || !owner->old || member->reach >= end) {
+    const uint32_t end = markdown_core_member_place(member).end;
+    if ((member->node->flags & MARKDOWN_CORE_NODE__GROUP) || !owner->decided || !owner->old || member->passed >= end) {
         return true;
     }
     return pair_search(parser, publication, owner, member, end);
@@ -1232,7 +1171,7 @@ static bool pair_ask(markdown_core_parser *parser, markdown_core_publication *pu
             }
         }
     }
-    return (member->node->flags & MARKDOWN_CORE_NODE__GROUP) || member->reach >= reach ||
+    return (member->node->flags & MARKDOWN_CORE_NODE__GROUP) || member->passed >= reach ||
            pair_search(parser, publication, owner, member, reach);
 }
 
@@ -1260,14 +1199,14 @@ static bool search_step(markdown_core_parser *parser, markdown_core_publication 
         member->decided = true;
         return true;
     }
-    choose(publication, member, passed_whole(member, member->reach));
+    choose(publication, member, passed_whole(member, member->passed));
     return true;
 }
 
 /* `reach`, or the end of `member`'s range when that comes first; an open
  * block's range has no end yet. */
 static uint32_t within(const markdown_core_member *member, uint32_t reach) {
-    const uint32_t end = member_place(member).end;
+    const uint32_t end = markdown_core_member_place(member).end;
     return !range_final(member) || reach < end ? reach : end;
 }
 
@@ -1293,7 +1232,7 @@ static bool search(markdown_core_parser *parser, markdown_core_publication *publ
     while (count) {
         markdown_core_member *at = publication->climb[--count];
         const bool across = at->owner->inner != member->owner->inner;
-        if (!search_step(parser, publication, at, across ? member_place(at).end : within(at, reach))) {
+        if (!search_step(parser, publication, at, across ? markdown_core_member_place(at).end : within(at, reach))) {
             return false;
         }
     }
@@ -1358,6 +1297,8 @@ static bool complete_number(const complete_context *context, markdown_core_membe
     member->place = place;
     item->where.extent =
         (markdown_core_extent){(int32_t)((int64_t)place.start - (int64_t)anchor), place.end - place.start};
+    /* Its reach is measured past its end from here (5.1). */
+    item->reach = item->reach > place.end ? item->reach - place.end : 0;
     *end = place.end;
     markdown_core_node *holder = parser->completing ? NULL : content_holder(item, shape);
     if (holder && markdown_core_parser_contains_inlines(parser, holder)) {
@@ -1591,6 +1532,11 @@ static bool settle_old(markdown_core_parser *parser, markdown_core_publication *
     publication->replaced = replaced;
     markdown_core_node *node = member->node, *kept = markdown_core_node_retain((markdown_core_node *)old);
     markdown_core_member *owner = member->owner;
+    /* The old node is the record of this parse now (5.1): its entry, its
+     * reach and its flags are the new node's. */
+    kept->entry = node->entry;
+    kept->reach = node->reach;
+    kept->flags = node->flags;
     if (!owner) {
         member->node = kept;
     } else if (member->field) {
@@ -1657,7 +1603,6 @@ void markdown_core_publication_dispose(markdown_core_publication *publication, m
         markdown_core_free(publication->tables[table].values);
     }
     markdown_core_free(publication->runs.runs);
-    markdown_core_free(publication->shift);
     markdown_core_free(publication->images);
     markdown_core_free(publication->climb);
     markdown_core_free(publication->candidates);
@@ -1724,6 +1669,73 @@ static bool reference_targets(markdown_core_parser *parser, markdown_core_docume
     value->reference_targets = declared;
     value->reference_target_count = count;
     return true;
+}
+
+bool markdown_core_publication_take(markdown_core_publication *publication, const markdown_core_node *node,
+                                    uint32_t start, void (*visit)(void *, const markdown_core_node *, uint32_t),
+                                    void *context) {
+    markdown_core_walk walk;
+    markdown_core_walk_item item;
+    markdown_core_walk_begin_at(&walk, node, (uint32_t)((int64_t)start - node->where.extent.lead));
+    bool ok = true;
+    while (ok && markdown_core_walk_next(&walk, &item)) {
+        if (!item.node) {
+            continue;
+        }
+        const uint32_t source = item.content ? source_run_place(&walk.runs, item.place.start) : item.place.start;
+        const unsigned slots = slot_of(item.node);
+        if (SLOT_TABLE(slots)) {
+            ok = table_add(&publication->tables[SLOT_TABLE(slots) - 1], item.node, source);
+        }
+        visit(context, item.node, source);
+    }
+    ok = ok && !walk.failed;
+    markdown_core_walk_end(&walk);
+    return ok;
+}
+
+/* The next distinct label of `nodes`, which are in label order, from `*at`
+ * on; false after the last. */
+static bool next_label(const markdown_core_node *const *nodes, size_t count, size_t *at, markdown_core_chunk *label) {
+    if (*at == count) {
+        return false;
+    }
+    definition_label(nodes[(*at)++], label);
+    markdown_core_chunk next;
+    while (*at < count && definition_label(nodes[*at], &next) &&
+           !label_compare(next.data, (size_t)next.len, label->data, (size_t)label->len)) {
+        (*at)++;
+    }
+    return true;
+}
+
+/* Whether the distinct labels of `nodes` and of `old`, each in label order,
+ * are the same. */
+static bool labels_same(const markdown_core_node *const *nodes, size_t count, const markdown_core_node *const *old,
+                        size_t old_count) {
+    size_t i = 0, j = 0;
+    for (markdown_core_chunk a, b;;) {
+        const bool more = next_label(nodes, count, &i, &a);
+        if (more != next_label(old, old_count, &j, &b)) {
+            return false;
+        }
+        if (!more) {
+            return true;
+        }
+        if (label_compare(a.data, (size_t)a.len, b.data, (size_t)b.len)) {
+            return false;
+        }
+    }
+}
+
+bool markdown_core_document_labels_same(const markdown_core_node *document, const markdown_core_node *old) {
+    const markdown_core_document_value *value = document->as.document, *before = old->as.document;
+    return labels_same(value->footnotes.labeled, value->footnotes.labeled_count, before->footnotes.labeled,
+                       before->footnotes.labeled_count) &&
+           labels_same(value->specimens.labeled, value->specimens.labeled_count, before->specimens.labeled,
+                       before->specimens.labeled_count) &&
+           labels_same(value->reference_targets, value->reference_target_count, before->reference_targets,
+                       before->reference_target_count);
 }
 
 bool markdown_core_publish_tree(markdown_core_parser *parser, markdown_core_publication *publication) {
@@ -1922,12 +1934,16 @@ void markdown_core_walk_begin(markdown_core_walk *walk, const markdown_core_node
     *walk = (markdown_core_walk){.root = root};
 }
 
+void markdown_core_walk_begin_at(markdown_core_walk *walk, const markdown_core_node *root, uint32_t anchor) {
+    *walk = (markdown_core_walk){.root = root, .anchor = anchor};
+}
+
 void markdown_core_walk_end(markdown_core_walk *walk) {
     markdown_core_free(walk->frames);
     markdown_core_free(walk->runs.runs);
     markdown_core_free(walk->own.runs);
     markdown_core_free(walk->ranges);
-    *walk = (markdown_core_walk){.root = walk->root, .failed = walk->failed};
+    *walk = (markdown_core_walk){.root = walk->root, .anchor = walk->anchor, .failed = walk->failed};
 }
 
 /* Where `node` is, given the offset its extent is relative to. */
@@ -1991,7 +2007,7 @@ bool markdown_core_walk_next(markdown_core_walk *walk, markdown_core_walk_item *
     }
     if (!walk->started) {
         walk->started = true;
-        markdown_core_place place = walk_place(walk->root, 0);
+        markdown_core_place place = walk_place(walk->root, walk->anchor);
         *item = (markdown_core_walk_item){walk->root, place, NULL, 0, 0, false};
         return walk_push(walk, walk->root, 0, place.start, false);
     }

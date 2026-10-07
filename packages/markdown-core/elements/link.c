@@ -401,7 +401,12 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_me
     reference->as.reference->resource = resource;
     reference->as.reference->label = label;
     reference->attributes = definition.value;
-    reference->flags |= MARKDOWN_CORE_NODE__BLANK_TRANSPARENT;
+    /* Its parse record is the paragraph's (5.3): the cursor offers it where
+     * the paragraph begins, and it holds the next, a run of taken blocks
+     * ending only after the paragraph's last definition. */
+    reference->flags |= MARKDOWN_CORE_NODE__BLANK_TRANSPARENT | MARKDOWN_CORE_NODE__HOLDS_NEXT;
+    reference->entry = b->entry;
+    reference->reach = b->reach;
     markdown_core_label_declare(parser->refmap, &reference->as.reference->label);
     /* It spans its definition, through the end of its last line's content:
      * the line ending after it belongs to no block. */

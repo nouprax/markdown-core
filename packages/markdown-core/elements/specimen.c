@@ -138,14 +138,32 @@ static bool continue_container(const markdown_core_element_instance *self, markd
     (void)self;
     return markdown_core_specimen_continue(parser, node, input);
 }
+/* A specimen carries nothing its lines read (E3). */
+static uint32_t carry_save(const markdown_core_element_instance *self, const markdown_core_member *member) {
+    (void)self;
+    (void)member;
+    return 0;
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_SPECIMEN = {
     .name = "specimen",
     .state_size = sizeof(markdown_core_specimen_state),
     .continue_container = continue_container,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_specimen_scan,
+    .carry_save = carry_save,
     .scan_block_gate = {.bytes = "("},
 };
+
+/* A specimen a parse took whole (5.3), at `start`, is a definition of the
+ * document as the one it made would be. */
+void markdown_core_specimens_take(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                  const markdown_core_node *node, uint32_t start) {
+    markdown_core_specimen_state *state = self->state;
+    if (markdown_core_parser_register_definition(parser, &state->definitions, (markdown_core_node *)node)) {
+        state->definitions.values[state->definitions.count - 1].start = start;
+    }
+}
 
 /* Release the parse index. The definitions stay owned by the tree. */
 void markdown_core_specimen_dispose(const markdown_core_element_instance *self) {

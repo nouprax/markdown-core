@@ -16,6 +16,7 @@ bool markdown_core_footnote_continue(markdown_core_parser *parser, markdown_core
 /* The footnote lifecycle the document element drives (document.c). */
 void markdown_core_footnotes_begin(const markdown_core_element_instance *self, markdown_core_parser *parser);
 bool markdown_core_footnotes_lost(const markdown_core_element_instance *self);
+void markdown_core_footnotes_take(const markdown_core_element_instance *self, const markdown_core_node *node);
 void markdown_core_footnotes_dispose(const markdown_core_element_instance *self);
 
 /* THE FOOTNOTES OF ONE PARSE (the footnote element's parse record): the

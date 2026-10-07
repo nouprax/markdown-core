@@ -7,6 +7,8 @@
 void markdown_core_headings_prepare(const markdown_core_element_instance *self, markdown_core_parser *parser);
 void markdown_core_headings_observe(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                     markdown_core_node *node);
+void markdown_core_headings_take(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                 const markdown_core_node *node, uint32_t start);
 void markdown_core_headings_finish(const markdown_core_element_instance *self, markdown_core_parser *parser);
 void markdown_core_headings_dispose(const markdown_core_element_instance *self);
 void markdown_core_heading_begin_inlines(const markdown_core_element_instance *self, markdown_core_parser *parser,

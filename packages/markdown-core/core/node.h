@@ -299,10 +299,17 @@ enum markdown_core_node__internal_flags {
      * settles as that block does (markdown_core_block_finalize). */
     MARKDOWN_CORE_NODE__AWAITS_CHILD = (1 << 10),
 
+    /* Part of the block's parse record (docs/plans/2026-09-29-incremental-
+     * parsing.md, 5.3): a run of taken blocks does not end at it, because
+     * the line after it was not read as it would be with the block closed
+     * before that line (markdown_core_block_finalize), or a later line wrote
+     * into it (markdown_core_parser_record). */
+    MARKDOWN_CORE_NODE__HOLDS_NEXT = (1 << 11),
+
     // The first bit an element may claim. Element flags are compile-time
     // constants owned by the element that uses them; there is no runtime
     // registration and no allocator to run out of bits.
-    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 11),
+    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 12),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;
@@ -389,6 +396,14 @@ struct markdown_core_node {
      * that holds it completes (docs/plans/2026-09-29-incremental-parsing.md,
      * 5.8). */
     uint64_t id;
+    /* THE BLOCK'S PARSE RECORD (5.1), which the next parse of its session
+     * reads, and no value of the document includes: its `entry`, the state
+     * its parent carried where it began (markdown_core_parser_carry), and
+     * its `reach`, how far past its end the decisions about it read, in
+     * bytes once it is numbered and an absolute offset of the source until
+     * then. Both are 0 for a node no line machine made. */
+    uint64_t entry;
+    uint32_t reach;
 
     markdown_core_attributes attributes;
     markdown_core_strbuf content;
@@ -648,7 +663,7 @@ markdown_core_node *markdown_core_stem_walk_next(markdown_core_stem_walk *walk);
  * (docs/plans/2026-09-29-incremental-parsing.md, 5.9): `old`, the node of
  * the previous tree it continues once `decided`, whether its node has taken
  * its id (`identified`), where that node starts in
- * its old coordinates, `reach`, the image up to which its owner's cursor
+ * its old coordinates, `passed`, the image up to which its owner's cursor
  * has passed for it, and its `candidates` to `last_candidate`, the old nodes
  * whose images lie in its range (ast_internal.h), among which
  * it decides. As an owner it pairs the members it holds with the old node's
@@ -673,10 +688,24 @@ struct markdown_core_member {
     const markdown_core_stem *pair_stem;
     size_t pair_next, pair_end;
     markdown_core_place place;
-    uint32_t old_start, reach, pair_anchor, pair_name;
+    uint32_t old_start, passed, pair_anchor, pair_name;
+    /* The old node an open block reads again (5.3), the old offset where it
+     * starts, which of its children the block's cursor is at and the old
+     * offset where the child before that one ends; and whether every block
+     * from the document to this one carried the state its old node's parent
+     * carried where that node began, so that the old children may be taken. */
+    const markdown_core_node *scan;
+    uint32_t scan_start, scan_next, scan_at;
+    bool scan_equal;
     uint32_t asks, index, slot, source, waits, candidates, last_candidate;
     bool held, field, inner, decided, identified, paired, asked, numbered, counted;
 };
+
+/* Where `member`'s node lies: its place, which numbering keeps in the member
+ * as the node takes its extent. */
+static inline markdown_core_place markdown_core_member_place(const markdown_core_member *member) {
+    return member->numbered ? member->place : member->node->where.place;
+}
 
 /* A member for `node`, linked to nothing; it holds the node's reference when
  * `held`. NULL when it could not be allocated. */

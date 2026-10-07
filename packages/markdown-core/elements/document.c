@@ -55,9 +55,61 @@ static void dispose_document(const markdown_core_element_instance *self, markdow
         parser->refmap = NULL;
     }
 }
+/* What one node of a taken subtree declares, as the parse that made it
+ * declared it (5.7): a Reference its label, a footnote or specimen
+ * definition itself, a heading itself, and any node its explicit anchor. */
+typedef struct {
+    const markdown_core_element_instance *self;
+    markdown_core_parser *parser;
+} take_context;
+
+static void take_declaration(void *context, const markdown_core_node *node, uint32_t start) {
+    const take_context *take = context;
+    const markdown_core_element_instance *self = take->self;
+    markdown_core_parser *parser = take->parser;
+    const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
+    const markdown_core_element_instance *footnotes = self->peers[DOCUMENT_FOOTNOTE];
+    const markdown_core_element_instance *specimens = self->peers[DOCUMENT_SPECIMEN];
+    switch (node->kind) {
+    case MARKDOWN_CORE_NODE_REFERENCE:
+        markdown_core_label_declare(parser->refmap, &node->as.reference->label);
+        break;
+    case MARKDOWN_CORE_NODE_FOOTNOTE:
+        if (footnotes) {
+            markdown_core_footnotes_take(footnotes, node);
+        }
+        break;
+    case MARKDOWN_CORE_NODE_SPECIMEN:
+        if (specimens) {
+            markdown_core_specimens_take(specimens, parser, node, start);
+        }
+        break;
+    case MARKDOWN_CORE_NODE_HEADING:
+        if (headings) {
+            markdown_core_headings_take(headings, parser, node, start);
+        }
+        break;
+    default:
+        break;
+    }
+    if (headings) {
+        markdown_core_headings_observe(headings, parser, (markdown_core_node *)node);
+    }
+}
+
 static void prepare_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
     const markdown_core_element_instance *specimens = self->peers[DOCUMENT_SPECIMEN];
+    take_context take = {self, parser};
+    for (size_t i = 0; i < parser->took_count && !parser->error; i++) {
+        if (!markdown_core_publication_take(&((document_state *)self->state)->publication, parser->took[i].node,
+                                            parser->took[i].start, take_declaration, &take)) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        }
+    }
+    if (parser->error) {
+        return;
+    }
     if (specimens) {
         markdown_core_block_prepare_specimens(specimens, parser);
     }
@@ -104,6 +156,9 @@ static void publish_document(const markdown_core_element_instance *self, markdow
     markdown_core_publication *publication = &((document_state *)self->state)->publication;
     if (!markdown_core_publish_tree(parser, publication)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    } else if (parser->took_count &&
+               !markdown_core_document_labels_same(parser->root->node, parser->revision->previous)) {
+        parser->retake = true;
     }
     markdown_core_publication_dispose(publication, parser->pool);
 }

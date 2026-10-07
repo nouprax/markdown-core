@@ -646,6 +646,14 @@ static int visit_owned_subtrees(const markdown_core_element *element, markdown_c
 /* The opener consumes the complete token; the shared inline parser parses its
  * owned label before continuing beyond it. No close-bracket dispatch exists. */
 
+/* What a directive block carries (E3): its fence, which a closer must
+ * match. */
+static uint32_t carry_save(const markdown_core_element_instance *self, const markdown_core_member *member) {
+    (void)self;
+    const node_directive *directive = member->node->opaque;
+    return directive ? (uint32_t)directive->fence_length : 0;
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
     .interrupts_paragraph = true,
 
@@ -655,6 +663,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
     .match_inline = match,
     .last_block_matches = directive_block_matches,
     .continues_block = directive_block_continues,
+    .carry_save = carry_save,
     .maximum_block_indent = 3,
     .try_opening_block = open_directive_block,
     /* `scan_directive_block` needs at least two leading colons, so a line that

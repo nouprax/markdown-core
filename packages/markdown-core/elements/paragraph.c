@@ -7,6 +7,12 @@ void markdown_core_paragraph_finalize(const markdown_core_element_instance *self
                                       markdown_core_member *paragraph) {
     if (!markdown_core_block_resolve_reference_link_definitions(parser, paragraph)) {
         paragraph->node->flags |= MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY;
+        /* The last definition ends the paragraph: it holds the next as the
+         * paragraph did (5.3). */
+        if (paragraph->prev && paragraph->prev->node->kind == MARKDOWN_CORE_NODE_REFERENCE &&
+            !(paragraph->node->flags & MARKDOWN_CORE_NODE__HOLDS_NEXT)) {
+            paragraph->prev->node->flags &= ~MARKDOWN_CORE_NODE__HOLDS_NEXT;
+        }
         return;
     }
     markdown_core_block_attach_paragraph_identifier(self->state, parser, paragraph);
