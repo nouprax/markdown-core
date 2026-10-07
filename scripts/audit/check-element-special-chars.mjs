@@ -98,7 +98,7 @@ const spell = (byte) => (byte < 0x20 ? `0x${byte.toString(16).padStart(2, "0")}`
 function matchBody(source, descriptor, file) {
     const hook = HOOK.exec(descriptor);
     if (hook === null) return null;
-    const start = source.search(new RegExp(`^static markdown_core_node \\*${hook[1]}\\(`, "m"));
+    const start = source.search(new RegExp(`^static \\w+ \\*${hook[1]}\\(`, "m"));
     if (start < 0) throw new Error(`${file}: match_inline hook \`${hook[1]}\` is named but not defined here.`);
     const end = source.indexOf("\n}\n", start);
     return source.slice(start, end < 0 ? source.length : end);
