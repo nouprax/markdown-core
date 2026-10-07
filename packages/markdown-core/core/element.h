@@ -136,8 +136,7 @@ struct markdown_core_element {
     void (*init_document)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*dispose_parser)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*dispose_document)(const markdown_core_element_instance *, markdown_core_parser *);
-    size_t (*read_document_prefix)(const markdown_core_element_instance *, markdown_core_parser *,
-                                   const unsigned char *, size_t);
+    void (*read_document_prefix)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*prepare_document)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*finish_document)(const markdown_core_element_instance *, markdown_core_parser *);
     /* The node a member builds is complete: it numbers the nodes it holds

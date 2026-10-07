@@ -126,6 +126,27 @@ typedef struct {
     size_t work;
 } markdown_core_source_order;
 
+/* THE INPUT A PARSE READS (docs/plans/2026-09-29-incremental-parsing.md,
+ * 5.1), as tree-sitter's TSInput: `read` returns the input's bytes from
+ * `offset`, which is less than `size`, to the end of the chunk that holds
+ * them, with their count; `payload` is what it reads. The chunks stay put
+ * for the parse. A session reads its text tree a piece at a time; a buffer
+ * is one chunk. */
+typedef struct markdown_core_input {
+    const unsigned char *(*read)(const struct markdown_core_input *input, size_t offset, size_t *size);
+    const void *payload;
+    size_t size;
+} markdown_core_input;
+
+/* A chunk the parse has read: where it starts in the input and its bytes. */
+typedef struct markdown_core_input_chunk {
+    size_t start;
+    const unsigned char *bytes;
+} markdown_core_input_chunk;
+
+/* The input that reads `size` bytes at `bytes` as one chunk. */
+markdown_core_input markdown_core_input_buffer(const unsigned char *bytes, size_t size);
+
 /* AN INLINE ROOT WAITING FOR ITS PARSE (docs/plans/2026-09-29-incremental-
  * parsing.md, 5.8): the node whose first relation is the content and whose
  * runs read it, and its member, which waits on the root; the node the content
@@ -153,10 +174,9 @@ struct markdown_core_parser {
     /* A hashtable of urls in the current document for cross-references */
     struct markdown_core_map *refmap;
     markdown_core_source_order source_order;
-    /* The stack the parse's passes over a tree borrow in turn -- each inline
-     * root's completion, then publishing's comparison with the previous tree
-     * -- each growing it to what it needs (markdown_core_parser_walk_stack)
-     * and leaving it to the next; the parse releases it when it ends. */
+    /* The stack each inline root's completion borrows in turn, growing it
+     * to what it needs (markdown_core_parser_walk_stack) and leaving it to
+     * the next; the parse releases it when it ends. */
     void *walk_stack;
     size_t walk_stack_size;
     /* THE INLINE ROOTS, in the order the nodes holding them were numbered
@@ -193,8 +213,16 @@ struct markdown_core_parser {
     size_t block_input_count, block_input_capacity, block_input_cursor;
     /* Geometry and grammar facts for the active immutable input. The driver
      * and lookahead extend one index; a source byte is scanned for line
-     * geometry once, whether the input is the document or a mapped cell. */
-    const unsigned char *input_source;
+     * geometry once, whether the input is the document or a mapped cell. The
+     * scan reads the input a chunk at a time, each chunk once: `input_chunks`
+     * holds the chunks read so far, in order, which cover the input up to
+     * `input_read`, and `input_chunk` is the one read last or asked for last,
+     * holding `input_chunk_size` bytes from `input_chunk_start` on. */
+    markdown_core_input input;
+    struct markdown_core_input_chunk *input_chunks;
+    size_t input_chunk_count, input_chunk_capacity, input_read;
+    const unsigned char *input_chunk;
+    size_t input_chunk_start, input_chunk_size;
     size_t input_length, input_scanned;
     struct markdown_core_input_line *input_lines;
     struct markdown_core_normalized_line *normalized_lines;
@@ -208,9 +236,9 @@ struct markdown_core_parser {
     bool input_mapped;
     int input_first_line;
     size_t input_line_work;
-    /* A complete candidate may consume through a later source boundary. The
-     * source driver advances to it after the current line has finished. */
-    const unsigned char *claimed_cursor;
+    /* A complete candidate may consume through a later line, `claimed_line`.
+     * The source driver advances to it after the current line has finished. */
+    bool claimed;
     int claimed_line;
     bufsize_t claimed_last_end;
     /* The last open block after a line is fully processed */
@@ -284,14 +312,6 @@ struct markdown_core_parser {
     /* The lines the block-start lookahead visited plus the prefix bytes each
      * visit matched itself, for its linearity gate. */
     size_t block_lookahead_work;
-    /* THE SOURCE AFTER THE LINE BEING PROCESSED. `S_parse_source` sets the
-     * cursor to the first byte of the next raw line before it hands each line
-     * to `S_process_line`, so a block start whose grammar needs a later line --
-     * the `%%` block comment's closer -- can look ahead without consuming
-     * anything (see markdown_core_parser_lookahead_begin). NULL until the
-     * first line is processed; `cursor == end` once the input has run out. */
-    const unsigned char *lookahead_cursor;
-    const unsigned char *lookahead_end;
     /* The input's last line as the block parser will see it, normalized once
      * and reused by every lookahead that reaches it: it has no terminator of
      * its own in the source, and a line handed to the prefix matchers must
@@ -573,12 +593,14 @@ typedef struct markdown_core_line_facts {
     /* Blank after the recorded container's prefix. */
     bool blank;
     /* On the first line of a run of blank lines: the number of the first line
-     * after the run and where it begins, so a later scan whose extra containers
-     * accept every blank line steps over the run at once. 0 when not a run. */
+     * after the run, so a later scan whose extra containers accept every
+     * blank line steps over the run at once. 0 when not a run. */
     int run_end;
     /* Only NUL-bearing lines need this count; it occupies former padding. */
     uint32_t nul_count;
-    const unsigned char *run_end_cursor;
+    /* The bytes of a line that spans chunks, terminator included, joined into
+     * one view the first time they are read (blocks.c). */
+    const unsigned char *joined;
 } markdown_core_line_facts;
 /* The index is a contiguous prefix. Its next record already owns this line's
  * continuation; at the frontier the scanner owns it. No newline bytes need
@@ -600,6 +622,23 @@ static inline markdown_core_input_line *markdown_core_parser_source_line(markdow
     size_t index = (size_t)(line - parser->input_first_line);
     return index < parser->input_line_count ? &parser->input_lines[index]
                                             : markdown_core_parser_extend_source_lines(parser, index);
+}
+
+/* The bytes of `line` through its terminator, contiguous: borrowed from the
+ * input's chunk, or, for a line that spans chunks, joined once for the input
+ * and kept in the line's facts. NULL, with the parse failed, when an
+ * allocation failed. */
+const unsigned char *markdown_core_parser_line_bytes(markdown_core_parser *parser, markdown_core_input_line *line);
+
+/* The bytes of input lines `first` to `last`, terminators included, as one
+ * view: borrowed when they lie in one chunk, else joined for the input. NULL,
+ * with the parse failed, when the view could not be allocated. */
+const unsigned char *markdown_core_parser_input_view(markdown_core_parser *parser, int first, int last);
+
+/* Whether the input holds a line after the line being processed: a block
+ * start whose grammar needs a later line looks ahead only when it does. */
+static inline bool markdown_core_parser_input_continues(markdown_core_parser *parser) {
+    return markdown_core_parser_source_line(parser, parser->line_number + 1) != NULL;
 }
 
 /* Optional state is sparse within the input index: properties and ordinary
@@ -636,7 +675,6 @@ typedef struct {
     markdown_core_parser *parser;
     struct markdown_core_member *parent;
     int depth;
-    const unsigned char *cursor;
     int line;
     int run_start;
     bufsize_t saved_offset;
@@ -793,12 +831,12 @@ bool markdown_core_parser_register_definition(markdown_core_parser *parser,
  * could not be allocated. */
 markdown_core_parser *markdown_core_parser_create(const markdown_core_element *const *elements, size_t count,
                                                   markdown_core_parser_setup_func setup, void *context);
-/* One parse transaction: reads `source` as what `revision` says the parse
+/* One parse transaction: reads `input` as what `revision` says the parse
  * continues, with the storage it lends (above), and returns the published
  * tree, or NULL when the transaction fails. The transaction's state is
  * released before it returns, so an instance runs any number of them, one
  * at a time, each as the first. */
-markdown_core_node *markdown_core_parser_parse(markdown_core_parser *parser, const char *source, size_t length,
+markdown_core_node *markdown_core_parser_parse(markdown_core_parser *parser, const markdown_core_input *input,
                                                markdown_core_revision *revision);
 void markdown_core_parser_destroy(markdown_core_parser *parser);
 

@@ -66,6 +66,12 @@ typedef struct markdown_core_byte_edit {
 bool markdown_core_text_tree_replace(markdown_core_text_tree *text, const markdown_core_byte_edit *edits,
                                      const uint8_t *const *texts, size_t count);
 
+/* The bytes from `offset`, which is less than the text's size, to the end of
+ * the piece that holds it, and their count in `*size`: the text read a piece
+ * at a time, as a parser reads its input. The bytes live until the text
+ * changes. */
+const uint8_t *markdown_core_text_tree_read(const markdown_core_text_tree *text, size_t offset, size_t *size);
+
 /* Copies the whole text into `bytes`, which holds its size. */
 void markdown_core_text_tree_copy(const markdown_core_text_tree *text, uint8_t *bytes);
 

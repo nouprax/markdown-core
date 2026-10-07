@@ -1,7 +1,8 @@
 # Node storage and lifetime
 
-The engine node contains its tree links, source mapping, attributes, element
-state, and a union of typed node data pointers. Every union arm is a pointer;
+The engine node contains its reference count, its children tree, its id,
+source mapping, attributes, element state, and a union of typed node data
+pointers. Every union arm is a pointer;
 adding fields to one kind cannot enlarge the common node. A kind with no
 kind-specific fields has no data record. Field-bearing kinds own a
 record containing their ordinary typed fields. Construction places the node
@@ -48,24 +49,38 @@ Its node releases it: into a pool, its slot goes back to that pool's resource
 slabs; with none, it drops its slab hold. So the tree keeps its resource slabs
 as it keeps its node slabs.
 
-## A node's place and its value
+## Shared immutable nodes
 
-A node's fields are its PLACE -- its links (`next`, `prev`, `parent`,
-`first_child`, `last_child`) and its `id` -- and its VALUE, everything after
-them: attributes, content, extent, kind, flags, element state, the record and
-the storage all of these borrow. Inline literals are slices of their block's
-content buffer, so a value borrows from the parse that made it.
+A node is a shared immutable value (docs/plans/
+2026-09-29-incremental-parsing.md, 5.11), as a tree-sitter subtree is: one
+subtree may sit in the old tree and the new one at once, so a node has no
+parent and no siblings. Its children are its children tree, a stem: a
+balanced tree of at most 32 entries per stem, each stem counting the nodes
+under it. Walks, the canonical dump and the bindings see the children in
+order, and the C API reads them through a tree cursor that holds its path
+on a stack of its own. A node or a stem counts the stems, fields and
+builders that hold it. A node held once may change in place; one held more
+often is copied before it changes. Releasing a tree walks it on an explicit
+stack and frees each node and stem whose count reaches zero, so a subtree
+another tree still holds stays.
 
-A session's parse continues the previous document (docs/plans/
-2026-09-29-incremental-parsing.md, 5.9). When a new node equals the old node
-it continues, the old node is the one the new document holds, and it must
-hold the new parse's storage, since the old parse's is released with the old
-tree. `markdown_core_node_swap_values` exchanges the values of such a
-pair in one block copy of the value fields and one of the slot's record
-space, and then gives each node back the node-valued fields its record holds,
-which are places. After the exchanges the new tree holds only the new
-parse's storage and the retired tree only the old, and each is released as a
-whole.
+While the parser builds a node, its place among the nodes being built is a
+builder's (`markdown_core_member`): its owner, its siblings, its children and
+the field roots it builds. Once the node's structure is complete the builder
+freezes: the nodes of its children become the node's stem, which takes the
+references their builders held. Builders live for one parse, in its pool.
+
+A completed node holds every byte string it reads: numbering copies the
+views its record borrows from the parse (`markdown_core_node_hold_strings`),
+and a resource copies a borrowed destination or title, so a node the next
+revision shares reads nothing another node owns.
+
+A session's parse continues the previous document (5.9). Each node decides
+which old node it continues, and takes that node's id or the next, as it
+settles, when its kind and its range are final. When it equals that old
+node -- kind, scalars, extent, runs, and every relation holding the same
+objects -- the old node takes its place in its owner and the new node is
+released, so an unchanged subtree is the old object.
 
 Reference-map records are not slots. Every record lives exactly as long as
 its map, so records are carved from blocks the map owns and freed with it,
@@ -107,24 +122,16 @@ optional value is stored inline in the occurrence's typed record, without a
 separate allocation, and its lifetime ends with that record. Cross references
 own their raw destination fields directly.
 
-Parser construction transfers a detached, independently owned subtree. The
-caller establishes disjoint ownership by creating the subtree or detaching it
-from a known separate owner; merely having no parent is not proof of
-disjointness. `markdown_core_node_attach_validated` is the one non-failing
-splice for callers with an established containment decision. The unused
-checked-detached wrapper has been removed; unproven trees use checked mutation.
-It asserts local links and the pure built-in containment rule in Debug/ASan.
-Checked mutation and assertions share that rule. Built-in elements declare the
-parent-kind domain retained by their payload across conversion; an unrelated
-kind cannot silently inherit a different containment policy. Dynamic callbacks
-remain decision operations and are never replayed by an assertion.
-Internal inline constructors must return a detached token admitted by their
-fixed grammar owner. The private element API states this obligation; arbitrary
-third-party descriptors are not an installed or supported extension surface.
-The arbitrary mutation API checks ancestry and containment once before
-unlinking, then commits through the same splice. A custom predicate therefore
-observes the original tree and is never called again after detachment.
-Rejection leaves both trees unchanged. Optional rewrites, including formula
+Parser construction links a detached builder under its owner
+(`markdown_core_member_attach`) once the containment decision is made; it
+asserts the pure built-in containment rule in Debug/ASan. Built-in elements
+declare the parent-kind domain retained by their payload across conversion;
+an unrelated kind cannot silently inherit a different containment policy.
+Dynamic callbacks remain decision operations and are never replayed by an
+assertion. Internal inline constructors must return a detached token
+admitted by their fixed grammar owner. The private element API states this
+obligation; arbitrary third-party descriptors are not an installed or
+supported extension surface. Rejection leaves both trees unchanged. Optional rewrites, including formula
 promotion and email splitting, validate before allocating or consuming the
 old node; rejection preserves the authored content. A constructed inline
 token rejected by its destination remains owned by the parser and is released
@@ -136,10 +143,9 @@ checks acceptance before conversion, so a refused optional split preserves the
 complete original paragraph. There is no per-node allocator identity to check.
 Kind conversion changes no edges and checks only containment.
 There is no safety mode, ancestry cache, or separate inline splice algorithm.
-A source-boundary audit keeps arbitrary reparenting out of parser construction;
-regression inputs vary nesting depth and autolink count independently.
+Regression inputs vary nesting depth and autolink count independently.
 
-Kind conversion preserves node identity and tree links. After containment
+Kind conversion preserves node identity and children. After containment
 validation, it reserves an external replacement before releasing the old
 fields if the new record exceeds slot capacity. A record that fits already
 has storage: the conversion releases the old fields, zeroes the new active
@@ -205,9 +211,11 @@ element's `finalize_block` runs, its runs are placed, and it completes. A
 block settles once every block it holds has settled; one that closes while the
 last block under it is still open (a new list closes the old one before its
 items) settles as that block does. Completing a node numbers each node it holds
-that is not numbered yet, in canonical field order: the next id, and its
-extent, measured from the end of the node before it in its relation or from
-the owner's start. Its parse-time place becomes its extent. A Footnote,
+that is not numbered yet, in canonical field order: its extent, measured from
+the end of the node before it in its relation or from the owner's start. A
+numbered node settles once nothing it waits on is pending -- its inline root,
+its block input, its anchor, the nodes it holds -- and takes its id as it
+settles. Its parse-time place becomes its extent. A Footnote,
 Specimen, Reference or Heading enters the document's definition tables at its
 source start as it is numbered, and a node holding inline content is queued as
 an inline root. Completion is idempotent: a node that gains a node later (a
@@ -216,9 +224,9 @@ one.
 
 After block parsing the document is prepared; then each inline root, in the
 order it was queued, parses its content and completes its tree in one pass,
-and the root completes last. The document numbers itself last when the tree is
-published, so a fresh parse's ids are 1 through its node count in completion
-order and the document holds the last id. A numbered node holds only its
+and the root completes last. The document settles last when the tree is
+published, so a fresh parse's ids are 1 through its node count in the order
+its nodes settle and the document holds the last id. A numbered node holds only its
 extent, so headings and specimen definitions record their source start when
 they register (`markdown_core_source_entry`) and are ordered by that start.
 

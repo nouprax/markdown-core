@@ -107,9 +107,8 @@ static void publish_document(const markdown_core_element_instance *self, markdow
     }
     markdown_core_publication_dispose(publication, parser->pool);
 }
-static size_t read_document_prefix(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                   const unsigned char *source, size_t length) {
-    return markdown_core_properties_parse(&((document_state *)self->state)->properties, parser, source, length);
+static void read_document_prefix(const markdown_core_element_instance *self, markdown_core_parser *parser) {
+    markdown_core_properties_parse(&((document_state *)self->state)->properties, parser);
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {

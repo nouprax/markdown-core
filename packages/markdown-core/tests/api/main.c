@@ -8397,7 +8397,7 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
             bytes[position] = (unsigned char)value;
             bytes[sizeof(bytes) - 1] = '\n';
             markdown_core_parser input = {0};
-            input.input_source = bytes;
+            input.input = markdown_core_input_buffer(bytes, sizeof(bytes));
             input.input_length = sizeof(bytes);
             input.input_first_line = 1;
             markdown_core_input_line *first = markdown_core_parser_source_line(&input, 1);
@@ -8414,11 +8414,12 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
             INT_EQ(runner, input.input_line_work, sizeof(bytes), "span search advances the frontier exactly once");
             markdown_core_free(input.input_facts);
             markdown_core_free(input.input_lines);
+            markdown_core_free(input.input_chunks);
         }
     }
     static const unsigned char source[] = "a\0b\r\nc\rd\nlast";
     markdown_core_parser parser = {0};
-    parser.input_source = source;
+    parser.input = markdown_core_input_buffer(source, sizeof(source) - 1);
     parser.input_length = sizeof(source) - 1;
     parser.input_first_line = 7;
     static const size_t starts[] = {0, 5, 7, 9}, ends[] = {3, 6, 8, 13}, next[] = {5, 7, 9, 13};
@@ -8449,6 +8450,65 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
     INT_EQ(runner, parser.input_line_work, sizeof(source) - 1, "facts do not rediscover geometry");
     markdown_core_free(parser.input_facts);
     markdown_core_free(parser.input_lines);
+    markdown_core_free(parser.input_chunks);
+}
+
+/* An input read in chunks of `chunk` bytes, the last one shorter. */
+typedef struct {
+    const unsigned char *bytes;
+    size_t chunk;
+} chunked_source;
+
+static const unsigned char *read_chunked(const markdown_core_input *input, size_t offset, size_t *size) {
+    const chunked_source *source = input->payload;
+    *size = source->chunk < input->size - offset ? source->chunk : input->size - offset;
+    return source->bytes + offset;
+}
+
+/* The canonical dump of `source` parsed from `input`; NULL when it fails. */
+static uint8_t *dump_of_input(const markdown_core_input *input, const char *source, size_t length) {
+    markdown_core_parser *parser = markdown_core_core_parser(NULL, NULL);
+    markdown_core_node_pool pool = {0};
+    markdown_core_revision revision = {.pool = &pool};
+    markdown_core_document document = {markdown_core_parser_parse(parser, input, &revision),
+                                       MARKDOWN_CORE_TEXT_UNIT_UTF8};
+    uint8_t *dump = NULL;
+    size_t dump_length = 0;
+    if (document.root && markdown_core_document_dump(&document, document.root, (const uint8_t *)source, length, &dump,
+                                                     &dump_length) != MARKDOWN_CORE_OK) {
+        dump = NULL;
+    }
+    markdown_core_node_pool_release(&pool, document.root);
+    markdown_core_parser_destroy(parser);
+    markdown_core_node_pool_dispose(&pool);
+    return dump;
+}
+
+/* The parser reads its input a chunk at a time (5.1): however the input is
+ * cut, each line reads as one, CR LF split across chunks included, and the
+ * tree is the one a single chunk gives. */
+static void chunked_input_parses_as_one(test_batch_runner *runner) {
+    static const char source[] =
+        "---\r\ntitle: \"Chunks\"\r\nkeywords:\r\n  - a\r\n  - b\r\n---\r\n"
+        "# Heading {#anchor}\r\n\r\nA paragraph with *emphasis*, `code`\0 and a [link](/u \"t\").\r\n"
+        "Term\n: Definition\n\n> quote\n> - item\n>   continued\n\n"
+        "+---+---+\n| a | b |\n+===+===+\n| c | d |\n+---+---+\n\nTable: *Caption*\n\n"
+        "| x | y |\n| - | - |\n| 1 | 2 |\n\n%%\ncomment\n%%\n\n```\nfence\n```\r"
+        "last line without a terminator";
+    const size_t length = sizeof(source) - 1;
+    const markdown_core_input whole = markdown_core_input_buffer((const unsigned char *)source, length);
+    uint8_t *expected = dump_of_input(&whole, source, length);
+    OK(runner, expected != NULL, "the input parses as one chunk");
+    static const size_t chunks[] = {1, 2, 3, 5, 7, 64};
+    for (size_t i = 0; expected && i < sizeof(chunks) / sizeof(*chunks); i++) {
+        chunked_source cut = {(const unsigned char *)source, chunks[i]};
+        const markdown_core_input input = {read_chunked, &cut, length};
+        uint8_t *dump = dump_of_input(&input, source, length);
+        OK(runner, dump && !strcmp((const char *)dump, (const char *)expected),
+           "chunks of %zu bytes give the tree one chunk gives", chunks[i]);
+        markdown_core_dump_free(dump);
+    }
+    markdown_core_dump_free(expected);
 }
 
 static void short_line_storage_is_bounded(test_batch_runner *runner) {
@@ -10935,6 +10995,7 @@ int main(void) {
     properties_envelope_derives_each_line_once(runner);
     properties_rejected_members_borrow_source(runner);
     source_line_geometry_is_shared(runner);
+    chunked_input_parses_as_one(runner);
     short_line_storage_is_bounded(runner);
     growth_preserves_input_views(runner);
     construction_checks_containment(runner);

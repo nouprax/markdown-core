@@ -252,6 +252,14 @@ static void copy_span(const markdown_core_text_tree *text, size_t start, size_t 
     }
 }
 
+const uint8_t *markdown_core_text_tree_read(const markdown_core_text_tree *text, size_t offset, size_t *size) {
+    text_cursor cursor;
+    size_t rank, begin;
+    const markdown_core_text_piece *piece = cursor_seek(&cursor, text, offset, &rank, &begin);
+    *size = piece->size - (offset - begin);
+    return piece->bytes + (offset - begin);
+}
+
 bool markdown_core_text_tree_init(markdown_core_text_tree *text, const uint8_t *bytes, size_t size) {
     markdown_core_byte_edit edit = {0, 0, size};
     text->root = NULL;

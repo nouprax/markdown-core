@@ -4,6 +4,21 @@ The parse transaction owns input geometry, content mapping runs, reusable
 workspaces, and the node pool. A completed document retains only its AST values
 and node storage. Scratch never becomes an AST field.
 
+## The input is read a chunk at a time
+
+A parse reads its input through `markdown_core_input`, as tree-sitter's
+`TSInput`: a `read` function returns the bytes from an offset to the end of
+the chunk that holds it. A session reads its text tree a piece at a time; a
+buffer, such as a mapped cell's content, is one chunk. The scanner reads
+each chunk once, at the frontier, and the parser keeps the chunks read so
+far in order, so a later reader finds the chunk of any scanned byte without
+reading the input again. A line inside one chunk borrows its bytes from it.
+A line that spans chunks, its terminator included, is joined into one view
+the first time it is read, kept in its optional facts record and released
+with the other views when the input ends, so no reader of a line sees a
+chunk boundary. The properties envelope is read as one view of its lines in
+the same way.
+
 ## One physical input index
 
 `markdown_core_input_line` records the raw start, content end, optional-fact
@@ -50,7 +65,8 @@ NUL boundary updates the normalization count. One bounded span scanner probes
 whole machine words for these three bytes and resolves a matching word or tail
 bytewise. Unsigned zero-byte tests are endian-independent, and fixed-width
 `memcpy` avoids alignment and aliasing assumptions. Every probe stays within
-the input; no padding or sentinel is required. Geometry excludes
+its chunk; no padding or sentinel is required. A CR at the end of one chunk
+and the LF that starts the next terminate one line. Geometry excludes
 physical terminators, so the grammar's mutable content/LF/NUL line is built
 with one reservation and copy, without testing and appending the terminator
 as a second buffer operation. All 256 byte values at every position across
@@ -86,7 +102,7 @@ A line containing NUL owns one immutable UTF-8 replacement view through its
 optional facts record, shared by the driver and lookahead. Its storage stays
 stable while the index grows or
 another line is normalized, and is released when that input ends. Ordinary
-lines borrow the source. A separate ownership chain visits only allocated
+lines borrow their chunk. A separate ownership chain visits only allocated
 views during disposal. The native cmark byte-column convention is preserved.
 Properties still validates its authored source bytes; normalization does not
 make an invalid metadata member valid.
@@ -97,9 +113,9 @@ driver expand bytes a second time, invalidating the content-to-source map.
 Both paths now construct cells from the same normalized lines.
 
 `input_line_work` counts bytes consumed by the physical geometry frontier,
-excluding bounded word lookahead. The independent
-properties closing-fence search is counted by `properties_line_work`; it does
-not derive line geometry. Metadata's one-token classification cache retains
+excluding bounded word lookahead. The properties closing-fence search reads
+at most four bytes of each line of the index and is counted by
+`properties_line_work`. Metadata's one-token classification cache retains
 the boundary line's key classification for the next field. Plain keys borrow
 source spans; quoted keys own decoded strings. Unknown and duplicate fields
 are rejected before value validation or decoding.
