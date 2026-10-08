@@ -13,7 +13,6 @@ import type {
     Scope
 } from "../markup/values.js";
 import { walkTree } from "./markup-walker.js";
-import { placesOf } from "./source-places.js";
 import type { MarkupVisitor } from "./markup-visitor.js";
 
 /** Produces the canonical debug tree for immutable Markdown markup. */
@@ -507,8 +506,7 @@ class State {
      * from its own level.
      */
     dump(document: Document, target: Markup): void {
-        walkTree(document, target, this.visitor, (node, source) => {
-            const places = placesOf(node, source);
+        walkTree(document, target, this.visitor, (places) => {
             if (places[places.length - 1]!.end > this.source.bytes.length) {
                 throw new MarkdownCoreError("outOfBounds");
             }

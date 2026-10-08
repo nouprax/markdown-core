@@ -113,16 +113,15 @@ byte range the engine keeps, a block's in the UTF-8 source and an inline
 node's in its inline root's content, which starts at 0: `lead` is signed, from
 the end of the previous node in the same relation (or the owner's start) to
 the node's start, and `span` is its length. Its `runs` are its own source
-ranges in source order: `Run(source)`, a source extent. The first run's lead
-is from the end of the source of the previous node in the same relation, or
-from the start of the owner's source for a relation's first node; every other
-run's lead is from the end of the run before. A node's source starts where its
-first run starts and ends where its last ends, and the source between two runs
-is not the node's. Every inline node has runs; a block whose own source is its
-range has none, and its source is its range. A node's source ranges are its
-runs, with touching runs one range, or its range when it has none. Scopes, one
-per source range in source order, are computed on request from those and the
-source the document was parsed from:
+ranges in source order, each `Run(lead, span)` in bytes, and every node has at
+least one. The first run's lead is from the end of the source of the previous
+node in the same relation, or from the start of the owner's source for a
+relation's first node; every other run's lead is from the end of the run
+before. A node's source starts where its first run starts and ends where its
+last ends, and the source between two runs is not the node's; runs that touch
+are one run, so a block whose own source is its range has exactly one run, its
+range. Scopes, one per run in source order, are computed on request from the
+runs and the source the document was parsed from:
 
 ```kotlin
 val document = Document.parse(source)            // TextUnit.UTF16 by default

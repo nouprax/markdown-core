@@ -38,11 +38,9 @@ export interface Document extends MarkupBase<"document"> {
     readonly reference: (label: string) => Reference | Heading | null;
     /**
      * The scopes of `node`, one per source range in source order, computed
-     * from the extents, runs and `source`, the text the document was parsed
-     * from, with columns in the document's unit. A node's source ranges are
-     * its runs, with touching runs one range, or its range when it has no
-     * runs. `node` is a
-     * node of this document. Throws `MarkdownCoreError` `outOfBounds` when
+     * from the runs and `source`, the text the document was parsed from, with
+     * columns in the document's unit. A node's source ranges are its runs.
+     * `node` is a node of this document. Throws `MarkdownCoreError` `outOfBounds` when
      * `source` ends before the node does.
      */
     readonly scope: (node: Markup, source: string) => readonly Scope[];

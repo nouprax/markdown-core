@@ -70,14 +70,15 @@ private class MessageWriter {
         id: Long = next,
         lead: Int = 0,
         span: Long = 0,
-        runs: kotlin.collections.List<Run> = emptyList(),
+        // Every node has a run: the extent's one unless given.
+        runs: kotlin.collections.List<Run> = listOf(Run(lead, span.toUInt())),
     ) = apply {
         next = id + 1
         u8(ordinal)
         int(id)
         u32(lead).u32(span)
         u32(runs.size)
-        runs.forEach { u32(it.source.lead).u32(it.source.span.toLong()) }
+        runs.forEach { u32(it.lead).u32(it.span.toLong()) }
         optional(anchor) { string(it) }
         attributes(classes)
     }
@@ -310,9 +311,9 @@ class WireDecoderTest {
     fun recordsCarryTheirIdAndTheirSignedExtentAndRunsVerbatim() {
         val runs =
             listOf(
-                Run(Extent(Int.MIN_VALUE, 0u)),
-                Run(Extent(3, 2u)),
-                Run(Extent(Int.MAX_VALUE, UInt.MAX_VALUE)),
+                Run(Int.MIN_VALUE, 0u),
+                Run(3, 2u),
+                Run(Int.MAX_VALUE, UInt.MAX_VALUE),
             )
         val document =
             decode(
@@ -327,7 +328,7 @@ class WireDecoderTest {
         val text = paragraph.content.single()
         assertEquals(MarkupID(7), text.id)
         assertEquals(Extent(-2, UInt.MAX_VALUE), text.extent)
-        assertTrue(text.runs.isEmpty())
+        assertEquals(listOf(Run(-2, UInt.MAX_VALUE)), text.runs)
         assertEquals(runs, paragraph.runs)
         assertEquals(MarkupID(9), document.id)
     }

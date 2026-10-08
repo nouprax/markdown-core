@@ -25,17 +25,17 @@ public data class Extent(
 )
 
 /**
- * A run of a node's own source: the [source] range, whose lead is signed from
+ * A run of a node's own source: a source range whose [lead] is signed from
  * the end of the run before, or, for the first run, from the end of the source
  * of the previous node in the same relation (or from the start of the owner's
- * source, for a relation's first node), and whose span is its length in bytes.
- * A node's source starts where its first run starts and ends where its last
- * ends; between them its runs cover exactly its own source, so the source
- * between two runs is not the node's. A block whose own source is its range
- * has no runs, and every inline node has runs.
+ * source, for a relation's first node), and whose [span] is its length in
+ * bytes. A node's source starts where its first run starts and ends where its
+ * last ends; between them its runs cover exactly its own source, so the source
+ * between two runs is not the node's. Every node has at least one run.
  */
 public data class Run(
-    public val source: Extent,
+    public val lead: Int,
+    public val span: UInt,
 )
 
 /** How a document counts the columns of its scope queries: UTF-8 bytes or UTF-16 code units. */

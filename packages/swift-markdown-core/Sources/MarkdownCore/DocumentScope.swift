@@ -1,11 +1,10 @@
 extension Document {
-    /// The editor scopes of `node`, one per source range in source order,
-    /// computed from the extents and runs and `source`, with columns in the
-    /// document's ``unit``.
+    /// The editor scopes of `node`, one per run in source order, computed
+    /// from the runs and `source`, with columns in the document's ``unit``.
     ///
-    /// A node's source ranges are its runs, with touching runs one range, or
-    /// its range when it has no runs. Each call walks the document once to
-    /// place the node and reads the source for its lines; nothing is cached.
+    /// A node's source ranges are its runs. Each call walks the document once
+    /// to place the node and reads the source for its lines; nothing is
+    /// cached.
     ///
     /// - Parameters:
     ///   - node: a node of this document.

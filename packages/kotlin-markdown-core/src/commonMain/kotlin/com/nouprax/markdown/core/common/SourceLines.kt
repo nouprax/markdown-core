@@ -111,7 +111,7 @@ internal class SourceLines(
 
 /**
  * A NODE'S SOURCE RANGES, absolute byte ranges of the source in source order,
- * each [start] inclusive and [end] exclusive, with touching ranges one range.
+ * each [start] inclusive and [end] exclusive: its runs.
  * A walk refills one for each node it is asked about.
  */
 internal class SourcePlaces {
@@ -129,15 +129,11 @@ internal class SourcePlaces {
         count = 0
     }
 
-    /** Adds the range [start, end), joined to the last when they touch. */
+    /** Adds the range [start, end). */
     fun add(
         start: Long,
         end: Long,
     ) {
-        if (count > 0 && ends[count - 1] == start) {
-            ends[count - 1] = end
-            return
-        }
         if (count == starts.size) {
             starts = starts.copyOf(count * 2)
             ends = ends.copyOf(count * 2)

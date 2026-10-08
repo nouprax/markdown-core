@@ -24,8 +24,8 @@ public struct Position: Sendable, Hashable {
 /// A SCOPE IS A PAIR OF BOUNDARIES, NOT A BYTE RANGE. It tells an editor which
 /// range of the source an element covers; it does not name a substring, and no
 /// substring can be taken with it. A node stores no scope: ``Document`` computes
-/// one for each of the node's source ranges from the extents and runs and the
-/// source when it is asked.
+/// one for each of the node's runs from the runs and the source when it is
+/// asked.
 public struct Scope: Sendable, Hashable {
     /// The position of the element's first byte.
     public let start: Position
@@ -74,8 +74,8 @@ public struct MarkupID: Hashable, Sendable {
 /// `lead` is the signed distance from the end of the previous node in the same
 /// relation (or from the owner's start, for the first node of a relation) to
 /// this node's start, and `span` the length of its range. Neither changes when
-/// text before the node moves. Scopes are computed from extents, runs and the
-/// source on request; see ``Document/scope(of:in:)``.
+/// text before the node moves. Scopes are computed from runs and the source
+/// on request; see ``Document/scope(of:in:)``.
 public struct Extent: Sendable, Hashable {
     /// The signed byte distance from the node's anchor to its start.
     public let lead: Int32
@@ -89,7 +89,7 @@ public struct Extent: Sendable, Hashable {
     }
 }
 
-/// A run of a node's own source: the `source` range.
+/// A run of a node's own source: a source range.
 ///
 /// The first run's `lead` is the signed distance from the end of the source of
 /// the previous node in the same relation (or from the start of the owner's
@@ -97,15 +97,18 @@ public struct Extent: Sendable, Hashable {
 /// from the end of the run before. Its `span` is its length in bytes. A node's
 /// source starts where its first run starts and ends where its last ends;
 /// between them its runs cover exactly its own source, so the source between
-/// two runs is not the node's. A block whose own source is its range has no
-/// runs, and every inline node has runs.
+/// two runs is not the node's. Every node has at least one run.
 public struct Run: Sendable, Hashable {
-    /// The source range, its lead measured from the end of the run before.
-    public let source: Extent
+    /// The signed byte distance from the end of the run before, or the
+    /// first run's anchor, to the run's start.
+    public let lead: Int32
+    /// The run's length in bytes.
+    public let span: UInt32
 
-    /// Creates a run. No number is validated.
-    public init(source: Extent) {
-        self.source = source
+    /// Creates a run. Neither number is validated.
+    public init(lead: Int32, span: UInt32) {
+        self.lead = lead
+        self.span = span
     }
 }
 
@@ -128,7 +131,7 @@ public protocol Markup: Hashable, Identifiable, Sendable, CustomStringConvertibl
     var id: MarkupID { get }
     /// Where the node is, relative to its neighbours. See ``Extent``.
     var extent: Extent { get }
-    /// Its own source ranges, in source order. See ``Run``.
+    /// Its own source ranges, in source order, at least one. See ``Run``.
     var runs: [Run] { get }
     var anchor: String? { get }
     var attributes: Attributes { get }

@@ -221,11 +221,11 @@ Extent(lead: Int32, span: UInt32)       offsets in the parser's input
     lead:   signed, from the end of the previous node in the same relation
             (or the owner's start, for the first node) to this node's start
     span:   of this node's range
-Run(source: Extent)                     offsets in the source
-    source: a range of the node's own source, its lead from the end of the
-            previous run's (or, for the first run, from the end of the
-            previous node's source in the same relation, or the start of
-            the owner's source for the first node)
+Run(lead: Int32, span: UInt32)          offsets in the source
+    lead:   signed, from the end of the previous run (or, for the first
+            run, from the end of the previous node's source in the same
+            relation, or the start of the owner's source for the first node)
+    span:   of this run, a range of the node's own source
 ```
 
 - **One rule.** Every extent is a byte offset in the input of the parser
@@ -235,18 +235,17 @@ Run(source: Extent)                     offsets in the source
   in that content. Each parser and its reuse (5.3, 5.6) work in the offsets
   of their own input and need no mapping; identity matching (5.9) works in
   source windows.
-- **Runs.** A node's runs are its own source, in source order. Every node
-  computes them at its completion: a block from the lines it read, an
-  inline node from its content range and its root's runs. Bindings read a
-  node's scope from its runs, or from its extent when it has none.
+- **Runs.** A node's runs are its own source, in source order, and every
+  node has at least one. Every node computes them at its completion: a
+  block from the lines it read, an inline node from its content range and
+  its root's runs. Bindings read a node's scope from its runs.
   - Between the first run and the last, the runs cover exactly the node's
     own source, so the source between two runs is not the node's: the
     container prefixes between a leaf block's lines (E5) inside a
     blockquote, callout or list item, and the other columns between a grid
     or multiline table cell's lines. Runs that touch are one run.
   - A block's runs start where it starts and end where it ends, so a block's
-    source and its extent are measured from one anchor. A block whose own
-    source is its range has none.
+    source and its extent are measured from one anchor.
   - Every inline node has runs: its window of the source less the gaps
     between its root's runs. Its window runs from where its root read its
     first content byte to where it read its last.
@@ -281,8 +280,7 @@ Run(source: Extent)                     offsets in the source
   parsed from, which the side-by-side editor already holds (`session.text`
   for a session's current document). They return today's editor line and
   column conventions and sentinels, in the session's coordinate unit (4.4).
-  - A node's ranges are its own runs, joined where they touch, or its range
-    when it has none.
+  - A node's ranges are its own runs.
   - Every binding computes them with this one walk over the runs, so no
     binding repeats an element's syntax (closing sequences, cell padding,
     column geometry).
@@ -1235,10 +1233,11 @@ them, and step 8 makes the whole engine meet the benchmark gates.
   run that decodes 0 bytes is source that gives no content, and the source
   between two runs is not the node's, so pieces are removed and every scope is
   a window less the gaps between runs (4.3).
-  Revised 2026-10-08: every node carries its own source runs, an inline node
-  computing them at its completion, so a binding reads a node's scope from its
-  own runs. A run is its source range only; how many content bytes an inline
-  root's runs decode stays inside the engine (4.3).
+  Revised 2026-10-08: every node, block or inline, carries its own source
+  runs, at least one, an inline node computing them at its completion, so a
+  binding reads a node's scope from its own runs. A run is `lead` and `span`
+  of its source range only; how many content bytes an inline root's runs
+  decode stays inside the engine (4.3).
 - **D2 Definitions. Decided 2026-09-29: definitions stay where written.**
   Footnote and specimen definitions remain in the tree where they were
   written, an inline note's `Footnote` is owned at its call site, and the

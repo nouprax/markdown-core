@@ -1100,11 +1100,16 @@
             "dump": "never printed; the dump prints the scope computed from it"
         },
         "Run": {
-            "purpose": "A run of a node's own source: the source range, whose lead is signed from the end of the run before, or, for the first run, from the end of the source of the previous node in the same relation (or the start of the owner's source, for a relation's first node). Between the first run and the last, the runs cover exactly the node's own source, so the source between two runs is not the node's, and runs that touch are one run. A block whose own source is its range has none; every inline node has runs: its window of the source less the gaps between its root's runs.",
+            "purpose": "A run of a node's own source, a source range: lead is signed, from the end of the run before, or, for the first run, from the end of the source of the previous node in the same relation (or the start of the owner's source, for a relation's first node); span is the run's length. Every node has at least one run. Between the first run and the last, the runs cover exactly the node's own source, so the source between two runs is not the node's, and runs that touch are one run. A block's runs run from its start to its end; an inline node's runs are its window of the source less the gaps between its root's runs.",
             "fields": [
                 {
-                    "name": "source",
-                    "type": "Extent",
+                    "name": "lead",
+                    "type": "Int32",
+                    "optional": false
+                },
+                {
+                    "name": "span",
+                    "type": "UInt32",
                     "optional": false
                 }
             ],

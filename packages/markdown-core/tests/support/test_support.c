@@ -389,20 +389,16 @@ typedef struct {
 } ts_walk_frame;
 
 /* The source window of `node`, measured from `anchor`: from where its first
- * run begins to where its last ends, or its extent when it has no runs. */
+ * run begins to where its last ends. */
 static ts_ast_range ts_source_window(const markdown_core_node *node, int64_t anchor) {
     size_t count = 0;
     const markdown_core_run *runs = markdown_core_node_runs(node, &count);
-    if (!count) {
-        markdown_core_extent extent = markdown_core_node_extent(node);
-        return (ts_ast_range){anchor + extent.lead, anchor + extent.lead + (int64_t)extent.span};
-    }
-    ts_ast_range range = {anchor + runs[0].source.lead, 0};
+    ts_ast_range range = {count ? anchor + runs[0].lead : anchor, 0};
     int64_t at = anchor;
     for (size_t index = 0; index < count; index++) {
-        at += runs[index].source.lead + (int64_t)runs[index].source.span;
+        at += runs[index].lead + (int64_t)runs[index].span;
     }
-    range.end = at;
+    range.end = count ? at : range.start;
     return range;
 }
 
@@ -492,8 +488,8 @@ typedef struct {
  * one before, lie in `[0, length]`. */
 static bool ts_runs_inside(const markdown_core_run *runs, size_t count, int64_t at, int64_t length) {
     for (size_t index = 0; index < count; index++) {
-        int64_t start = at + runs[index].source.lead;
-        at = start + (int64_t)runs[index].source.span;
+        int64_t start = at + runs[index].lead;
+        at = start + (int64_t)runs[index].span;
         if (start < 0 || at > length) {
             return false;
         }
@@ -506,7 +502,7 @@ static int ts_range_visit(const markdown_core_node *node, ts_ast_place place, vo
     bool inside = place.range.start >= 0 && place.range.end >= place.range.start && place.range.end <= check->length;
     size_t runs = 0;
     const markdown_core_run *run = markdown_core_node_runs(node, &runs);
-    inside = inside && (!runs || ts_runs_inside(run, runs, place.range.start - run[0].source.lead, check->length));
+    inside = inside && runs && ts_runs_inside(run, runs, place.range.start - run[0].lead, check->length);
     if (!inside) {
         check->outside = node;
         return 1;

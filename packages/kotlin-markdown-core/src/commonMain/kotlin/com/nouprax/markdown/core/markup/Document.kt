@@ -57,10 +57,10 @@ public class Document internal constructor(
     public fun reference(label: String): Markup? = labels[label]
 
     /**
-     * The editor coordinates of [node]'s source ranges, one scope per range in
-     * source order, computed from the extents and runs and [source],
-     * the text this document was parsed from, with columns in the document's
-     * [unit]. [node] is a node of this document, found by reference.
+     * The editor coordinates of [node]'s source ranges, one scope per run in
+     * source order, computed from the runs and [source], the text this
+     * document was parsed from, with columns in the document's [unit]. [node]
+     * is a node of this document, found by reference.
      *
      * @throws MarkdownCoreException [ErrorCode.OUT_OF_BOUNDS] when [source]
      *   ends before [node] does.

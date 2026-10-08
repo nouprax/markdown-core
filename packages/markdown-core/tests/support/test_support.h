@@ -77,9 +77,8 @@ const markdown_core_node *ts_field(const markdown_core_node *node, ts_node_field
 const markdown_core_node *ts_child(const markdown_core_node *node, markdown_core_field field, size_t index);
 size_t ts_child_count(const markdown_core_node *node, markdown_core_field field);
 
-/* A node's source window in bytes, resolved from its runs, or its extent
- * when it has none, by the walk itself rather than by the facade's scope
- * query. */
+/* A node's source window in bytes, resolved from its runs by the walk
+ * itself rather than by the facade's scope query. */
 typedef struct {
     int64_t start, end;
 } ts_ast_range;
@@ -109,7 +108,8 @@ typedef int (*ts_ast_owned_visit_fn)(const markdown_core_node *node, ts_ast_plac
 int ts_ast_walk_owned(const markdown_core_node *root, ts_ast_owned_visit_fn visit, void *context);
 
 /* THE FIRST NODE WHOSE RANGE LEAVES ITS INPUT under `root`, or NULL when
- * every source window and run lies in `[0, length]`.
+ * every node has runs and every source window and run lies in
+ * `[0, length]`.
  *
  * A scan that reads past its line but stays inside the parser's own buffer is
  * invisible to a sanitizer; the range it leaves behind is what shows it. The

@@ -102,8 +102,8 @@ import Testing
         // them is not its own.
         #expect(
             block.runs == [
-                Run(source: Extent(lead: 2, span: 5)),
-                Run(source: Extent(lead: 2, span: 4)),
+                Run(lead: 2, span: 5),
+                Run(lead: 2, span: 4),
             ]
         )
         #expect(try document.scope(of: block, in: source) == [place((1, 3), (2, 0)), place((2, 3), (2, 6))])
@@ -113,8 +113,8 @@ import Testing
         #expect(emphasis.extent == Extent(lead: 0, span: 5))
         #expect(
             emphasis.runs == [
-                Run(source: Extent(lead: 0, span: 3)),
-                Run(source: Extent(lead: 2, span: 2)),
+                Run(lead: 0, span: 3),
+                Run(lead: 2, span: 2),
             ]
         )
         #expect(try document.scope(of: emphasis, in: source) == [place((1, 5), (2, 0)), place((2, 3), (2, 4))])
@@ -135,16 +135,16 @@ import Testing
         let wider = try Document.parse("> a *b\n>  c* d\n")
         let moved = try #require((wider.content.first as? Callout)?.content.first as? Paragraph)
         let runs = [
-            Run(source: Extent(lead: 2, span: 5)),
-            Run(source: Extent(lead: 2, span: 5)),
+            Run(lead: 2, span: 5),
+            Run(lead: 2, span: 5),
         ]
         #expect(moved.runs == runs)
         #expect(moved != block)
         #expect(moved.content[1].extent == emphasis.extent)
         #expect(
             moved.content[1].runs == [
-                Run(source: Extent(lead: 0, span: 3)),
-                Run(source: Extent(lead: 2, span: 3)),
+                Run(lead: 0, span: 3),
+                Run(lead: 2, span: 3),
             ]
         )
         #expect(!moved.content[1].isEqual(emphasis))
@@ -164,9 +164,9 @@ import Testing
         #expect(code.literal == "x\n")
         #expect(
             code.runs == [
-                Run(source: Extent(lead: 2, span: 4)),
-                Run(source: Extent(lead: 2, span: 2)),
-                Run(source: Extent(lead: 2, span: 3)),
+                Run(lead: 2, span: 4),
+                Run(lead: 2, span: 2),
+                Run(lead: 2, span: 3),
             ]
         )
         #expect(
@@ -175,6 +175,45 @@ import Testing
         )
         #expect(try document.node(at: Position(line: 2, column: 1), in: source)?.isEqual(callout) == true)
         #expect(try document.node(at: Position(line: 2, column: 3), in: source)?.isEqual(code) == true)
+    }
+
+    @Test("every node has runs, the first leading from where the source before it ends")
+    func everyNodeHasRuns() throws {
+        let source = "> [!NOTE] Ti*t*le\n> x\n"
+        let document = try Document.parse(source)
+        let callout = try #require(document.content.first as? Callout)
+        // A block whose own source is its range has one run, its range.
+        #expect(document.runs == [Run(lead: 0, span: 21)])
+        #expect(callout.runs == [Run(lead: 0, span: 21)])
+        // The title's nodes lead from the callout's start, then each from
+        // where the source of the one before it ends.
+        let title = try #require(callout.title)
+        let emphasis = try #require(title[1] as? Emphasis)
+        #expect(title[0].runs == [Run(lead: 10, span: 2)])
+        #expect(emphasis.runs == [Run(lead: 0, span: 3)])
+        #expect(emphasis.content[0].runs == [Run(lead: 1, span: 1)])
+        #expect(title[2].runs == [Run(lead: 0, span: 2)])
+        // The content's first node leads from the callout's start too.
+        let paragraph = try #require(callout.content.first as? Paragraph)
+        #expect(paragraph.runs == [Run(lead: 20, span: 1)])
+        #expect(paragraph.content[0].runs == [Run(lead: 0, span: 1)])
+        #expect(
+            try document.scope(of: emphasis, in: source)
+                == [Scope(start: Position(line: 1, column: 13), end: Position(line: 1, column: 15))]
+        )
+
+        // The fence's source ends before its line terminator, which the
+        // thematic break's run leads past.
+        let fenced = "```\nx\n```\n---\n"
+        let blocks = try Document.parse(fenced)
+        let code = try #require(blocks.content[0] as? CodeBlock)
+        let rule = try #require(blocks.content[1] as? ThematicBreak)
+        #expect(code.runs == [Run(lead: 0, span: 9)])
+        #expect(rule.runs == [Run(lead: 1, span: 3)])
+        #expect(
+            try blocks.scope(of: rule, in: fenced)
+                == [Scope(start: Position(line: 4, column: 1), end: Position(line: 4, column: 3))]
+        )
     }
 
     @Test("an empty document and a lone line terminator are 1:1..1:0 and hold no byte", arguments: ["", "\n"])

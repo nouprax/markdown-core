@@ -611,22 +611,23 @@ static void runs_append(markdown_core_runs *runs, uint32_t *count, markdown_core
 /* A node's runs as they are published (node.h): its runs within its place,
  * those that decode nothing clipped to it and joined where they touch, with
  * its own source before the first and after the last a run that decodes
- * nothing, so they run from its start to its end. An inline root's runs then
- * become its pieces, and the runs that touch become one, its own source; the
- * first measured from `anchor`, where its extent is measured from, each
- * other from the end of the run before. A node whose runs are then one run
- * and that decodes nothing has none. The list is made again at its size.
- * False when it could not be allocated. */
+ * nothing, so they run from its start to its end; a node that read no runs
+ * has its place as its one run. An inline root's runs then become its
+ * pieces, and the runs that touch become one, its own source; the first
+ * measured from `anchor`, where its extent is measured from, each other from
+ * the end of the run before. The list is made again at its size. False when
+ * it could not be allocated. */
 static bool publish_runs(markdown_core_node_pool *pool, markdown_core_runs **at, markdown_core_place place,
                          uint32_t anchor) {
     const markdown_core_runs *runs = *at;
-    markdown_core_runs *out = markdown_core_runs_new(pool, runs->count + 2, runs->pieces != 0);
+    const uint32_t read = runs ? runs->count : 0;
+    markdown_core_runs *out = markdown_core_runs_new(pool, read + 2, runs && runs->pieces);
     if (!out) {
         return false;
     }
-    out->decoded = runs->decoded;
+    out->decoded = runs ? runs->decoded : 0;
     uint32_t count = 0;
-    for (uint32_t i = 0; i < runs->count; i++) {
+    for (uint32_t i = 0; i < read; i++) {
         markdown_core_place run = runs->items[i].place;
         const uint32_t size = run_decoded(runs, i);
         if (!size) {
@@ -646,11 +647,8 @@ static bool publish_runs(markdown_core_node_pool *pool, markdown_core_runs **at,
     } else if (out->items[count - 1].place.end < place.end) {
         runs_append(out, &count, (markdown_core_place){out->items[count - 1].place.end, place.end}, 0);
     }
-    markdown_core_node_pool_bytes_free(pool, *at);
-    *at = NULL;
-    if (count == 1 && !out->decoded) {
-        markdown_core_node_pool_bytes_free(pool, out);
-        return true;
+    if (runs) {
+        markdown_core_node_pool_bytes_free(pool, *at);
     }
     assert(out->items[0].place.start == place.start && out->items[count - 1].place.end == place.end);
     /* Each run becomes a piece, and the runs that touch one run, each
@@ -677,7 +675,7 @@ static bool publish_runs(markdown_core_node_pool *pool, markdown_core_runs **at,
     uint32_t from = anchor;
     for (uint32_t i = 0; i < joined; i++) {
         const markdown_core_place run = out->items[i].place;
-        out->items[i].run = (markdown_core_run){{(int32_t)((int64_t)run.start - from), run.end - run.start}};
+        out->items[i].run = (markdown_core_run){(int32_t)((int64_t)run.start - from), run.end - run.start};
         from = run.end;
     }
     *at = out;
@@ -763,22 +761,19 @@ static const markdown_core_source_runs *completing_runs(markdown_core_parser *pa
 
 /* The source window of `node`, measured from `anchor`, where the source of
  * the node before it ends: from where its first run begins to where its last
- * ends, or its extent when it has no runs. */
+ * ends. */
 static markdown_core_place source_place(const markdown_core_node *node, uint32_t anchor) {
     const markdown_core_runs *runs = node->runs;
-    if (!runs) {
-        const uint32_t start = (uint32_t)((int64_t)anchor + node->where.extent.lead);
-        return (markdown_core_place){start, start + node->where.extent.span};
-    }
+    assert(runs && runs->count);
     int64_t at = anchor;
     markdown_core_place place = {0, 0};
     for (uint32_t i = 0; i < runs->count; i++) {
-        const markdown_core_extent source = runs->items[i].run.source;
-        at += source.lead;
+        const markdown_core_run run = runs->items[i].run;
+        at += run.lead;
         if (!i) {
             place.start = (uint32_t)at;
         }
-        at += source.span;
+        at += run.span;
     }
     place.end = (uint32_t)at;
     return place;
@@ -853,7 +848,7 @@ static bool inline_runs(markdown_core_parser *parser, markdown_core_publication 
     uint32_t from = *source;
     for (size_t i = 0; i < count; i++) {
         const markdown_core_place range = publication->ranges[i];
-        runs->items[i].run = (markdown_core_run){{(int32_t)((int64_t)range.start - from), range.end - range.start}};
+        runs->items[i].run = (markdown_core_run){(int32_t)((int64_t)range.start - from), range.end - range.start};
         from = range.end;
     }
     runs->count = (uint32_t)count;
@@ -1258,16 +1253,15 @@ static bool complete_number(const complete_context *context, markdown_core_membe
             return false;
         }
     } else {
+        /* Its own runs, unless they read its inline content, which they do
+         * once that content is complete. */
         markdown_core_node *holder = content_holder(item, shape);
-        if (holder && markdown_core_parser_contains_inlines(parser, holder)) {
-            if (!markdown_core_parser_hold_inline_root(parser, member, holder, place, field || holder != item)) {
-                return false;
-            }
-        } else {
-            markdown_core_runs **runs = shape_runs_at(item, shape);
-            if (runs && *runs && !publish_runs(parser->pool, runs, place, anchor->source)) {
-                return false;
-            }
+        const bool inlines = holder && markdown_core_parser_contains_inlines(parser, holder);
+        if (!(inlines && holder == item) && !publish_runs(parser->pool, &item->runs, place, anchor->source)) {
+            return false;
+        }
+        if (inlines && !markdown_core_parser_hold_inline_root(parser, member, holder, place, field || holder != item)) {
+            return false;
         }
         anchor->source = place.end;
     }
@@ -1337,7 +1331,7 @@ static uint32_t numbered_source_end(const markdown_core_node *node, uint32_t sou
     const markdown_core_runs *runs = node->runs;
     int64_t at = source;
     for (uint32_t i = 0; i < runs->count; i++) {
-        at += runs->items[i].run.source.lead + (int64_t)runs->items[i].run.source.span;
+        at += runs->items[i].run.lead + (int64_t)runs->items[i].run.span;
     }
     return (uint32_t)at;
 }
@@ -1438,7 +1432,7 @@ bool markdown_core_complete_node(markdown_core_parser *parser, markdown_core_pub
     if (completing && completing->node == node) {
         markdown_core_runs **runs = shape_runs_at(node, shape);
         const uint32_t anchor = (uint32_t)((int64_t)completing->place.start - node->where.extent.lead);
-        if (runs && *runs && !publish_runs(parser->pool, runs, completing->place, anchor)) {
+        if (runs && !publish_runs(parser->pool, runs, completing->place, anchor)) {
             return false;
         }
     }
@@ -1456,7 +1450,7 @@ static bool runs_equal(const markdown_core_runs *a, const markdown_core_runs *b)
         return false;
     }
     for (uint32_t i = 0; i < a->count; i++) {
-        const markdown_core_extent x = a->items[i].run.source, y = b->items[i].run.source;
+        const markdown_core_run x = a->items[i].run, y = b->items[i].run;
         if (x.lead != y.lead || x.span != y.span) {
             return false;
         }
@@ -1693,10 +1687,8 @@ bool markdown_core_publish_tree(markdown_core_parser *parser, markdown_core_publ
     /* The document completes last, and numbers itself. */
     const markdown_core_place place = root->where.place;
     root->where.extent = (markdown_core_extent){(int32_t)place.start, place.end - place.start};
-    if (root->runs) {
-        if (!publish_runs(parser->pool, (markdown_core_runs **)&root->runs, place, 0)) {
-            return false;
-        }
+    if (!publish_runs(parser->pool, (markdown_core_runs **)&root->runs, place, 0)) {
+        return false;
     }
     markdown_core_definition_table *tables = publication->tables;
     markdown_core_definition_table *references = &tables[MARKDOWN_CORE_TABLE_REFERENCES];
@@ -1875,11 +1867,6 @@ markdown_core_extent markdown_core_node_extent(const markdown_core_node *node) {
 
 const markdown_core_run *markdown_core_node_runs(const markdown_core_node *node, size_t *count) {
     const markdown_core_runs *runs = node->runs;
-    /* An inline root whose own source is one run keeps it for its pieces;
-     * that run is its range, so its own source is its extent. */
-    if (runs && runs->pieces && runs->count == 1) {
-        runs = NULL;
-    }
     *count = runs ? runs->count : 0;
     return runs ? &runs->items[0].run : NULL;
 }
@@ -1996,30 +1983,23 @@ bool markdown_core_walk_has_next(const markdown_core_walk *walk) {
 bool markdown_core_walk_ranges(markdown_core_walk *walk, const markdown_core_walk_item *item,
                                const markdown_core_place **ranges, size_t *count) {
     const markdown_core_runs *runs = item->node->runs;
-    const size_t needed = runs ? runs->count : 1;
-    if (needed > walk->range_capacity) {
-        markdown_core_place *grown = markdown_core_reserve(walk->ranges, &walk->range_capacity, needed, sizeof(*grown));
+    if (runs->count > walk->range_capacity) {
+        markdown_core_place *grown =
+            markdown_core_reserve(walk->ranges, &walk->range_capacity, runs->count, sizeof(*grown));
         if (!grown) {
             walk->failed = true;
             return false;
         }
         walk->ranges = grown;
     }
+    /* Runs that touch are one run, so each is a range of its own. */
     size_t made = 0;
-    if (!runs) {
-        walk->ranges[made++] = item->place;
-    } else {
-        int64_t at = (int64_t)item->place.start - runs->items[0].run.source.lead;
-        for (uint32_t i = 0; i < runs->count; i++) {
-            const markdown_core_extent source = runs->items[i].run.source;
-            const uint32_t start = (uint32_t)(at + source.lead), end = start + source.span;
-            at = end;
-            if (made && walk->ranges[made - 1].end == start) {
-                walk->ranges[made - 1].end = end;
-            } else {
-                walk->ranges[made++] = (markdown_core_place){start, end};
-            }
-        }
+    int64_t at = (int64_t)item->place.start - runs->items[0].run.lead;
+    for (uint32_t i = 0; i < runs->count; i++) {
+        const markdown_core_run run = runs->items[i].run;
+        const uint32_t start = (uint32_t)(at + run.lead), end = start + run.span;
+        at = end;
+        walk->ranges[made++] = (markdown_core_place){start, end};
     }
     *count = made;
     *ranges = walk->ranges;

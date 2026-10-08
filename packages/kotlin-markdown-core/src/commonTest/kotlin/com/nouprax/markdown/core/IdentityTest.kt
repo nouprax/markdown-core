@@ -80,11 +80,11 @@ class IdentityTest {
         // content read from other source bytes differs in its runs alone.
         fun paragraph(runs: kotlin.collections.List<Run>) =
             Paragraph(emptyList(), MarkupID(1), Extent(0, 3u), runs, null, Attributes.empty)
-        val runs = listOf(Run(Extent(0, 1u)), Run(Extent(1, 1u)))
+        val runs = listOf(Run(0, 1u), Run(1, 1u))
         assertEquals(paragraph(runs), paragraph(runs))
-        assertNotEquals(paragraph(runs), paragraph(emptyList()))
-        assertNotEquals(paragraph(runs), paragraph(listOf(Run(Extent(0, 1u)), Run(Extent(1, 2u)))))
-        assertNotEquals(paragraph(runs), paragraph(runs + Run(Extent(0, 1u))))
+        assertNotEquals(paragraph(runs), paragraph(runs.take(1)))
+        assertNotEquals(paragraph(runs), paragraph(listOf(Run(0, 1u), Run(1, 2u))))
+        assertNotEquals(paragraph(runs), paragraph(runs + Run(0, 1u)))
 
         fun quoted(source: String) =
             assertIs<Paragraph>(assertIs<Callout>(Document.parse(source).content.single()).content.single())
@@ -191,11 +191,12 @@ class ScopeTest {
         // A leaf block inside a container owns each line from where the
         // container's prefix ends: one run per line, and the source between
         // them is not its own.
-        assertEquals(listOf(Run(Extent(2, 2u)), Run(Extent(2, 3u)), Run(Extent(2, 2u))), paragraph.runs)
-        assertTrue(item.runs.isEmpty())
+        assertEquals(listOf(Run(2, 2u), Run(2, 3u), Run(2, 2u)), paragraph.runs)
+        // A container owns its whole range, one run.
+        assertEquals(listOf(Run(0, 13u)), item.runs)
         // An inline node's runs are its own source: the emphasis's first
         // leads from the end of the soft break's.
-        assertEquals(listOf(Run(Extent(2, 3u)), Run(Extent(2, 2u))), emphasis.runs)
+        assertEquals(listOf(Run(2, 3u), Run(2, 2u)), emphasis.runs)
         assertEquals(
             listOf(
                 Scope(Position(1, 3), Position(2, 0)),
@@ -235,7 +236,7 @@ class ScopeTest {
         val paragraph = assertIs<Paragraph>(callout.content.single())
         val emphasis = assertIs<Emphasis>(paragraph.content[1])
         // One run per line; the quote marker between them is the callout's.
-        assertEquals(listOf(Run(Extent(2, 5u)), Run(Extent(2, 4u))), paragraph.runs)
+        assertEquals(listOf(Run(2, 5u), Run(2, 4u)), paragraph.runs)
         assertEquals(
             listOf(Scope(Position(1, 3), Position(2, 0)), Scope(Position(2, 3), Position(2, 6))),
             document.scope(paragraph, source),
@@ -248,6 +249,38 @@ class ScopeTest {
     }
 
     @Test
+    fun everyNodeHasRunsAndTheFirstLeadsFromTheSourceBefore() {
+        val titled = "> [!NOTE] Ti*t*le\n> x\n"
+        val document = Document.parse(titled)
+        val callout = assertIs<Callout>(document.content.single())
+        // A block whose own source is its range has one run, its range.
+        assertEquals(listOf(Run(0, 21u)), document.runs)
+        assertEquals(listOf(Run(0, 21u)), callout.runs)
+        // The title's nodes lead from the callout's start, then each from
+        // where the source of the one before it ends.
+        val title = callout.title!!
+        assertEquals(listOf(Run(10, 2u)), title[0].runs)
+        val emphasis = assertIs<Emphasis>(title[1])
+        assertEquals(listOf(Run(0, 3u)), emphasis.runs)
+        assertEquals(listOf(Run(1, 1u)), emphasis.content.single().runs)
+        assertEquals(listOf(Run(0, 2u)), title[2].runs)
+        // The content's first node leads from the callout's start too.
+        val paragraph = assertIs<Paragraph>(callout.content.single())
+        assertEquals(listOf(Run(20, 1u)), paragraph.runs)
+        assertEquals(listOf(Run(0, 1u)), paragraph.content.single().runs)
+        assertEquals(listOf(Scope(Position(1, 13), Position(1, 15))), document.scope(emphasis, titled))
+
+        val fenced = "```\nx\n```\n---\n"
+        val blocks = Document.parse(fenced)
+        val code = assertIs<CodeBlock>(blocks.content[0])
+        val rule = assertIs<ThematicBreak>(blocks.content[1])
+        assertEquals(listOf(Run(0, 9u)), code.runs)
+        // The fence's source ends before its line terminator.
+        assertEquals(listOf(Run(1, 3u)), rule.runs)
+        assertEquals(listOf(Scope(Position(4, 1), Position(4, 3))), blocks.scope(rule, fenced))
+    }
+
+    @Test
     fun aBlockInAContainerHasItsOwnLinesAsRuns() {
         val source = "> ```\n> x\n> ```\n"
         val document = Document.parse(source)
@@ -255,7 +288,7 @@ class ScopeTest {
         val code = assertIs<CodeBlock>(callout.content.single())
         // A code block's runs say which source is its own, so the quote
         // markers are the callout's.
-        assertEquals(listOf(Run(Extent(2, 4u)), Run(Extent(2, 2u)), Run(Extent(2, 3u))), code.runs)
+        assertEquals(listOf(Run(2, 4u), Run(2, 2u), Run(2, 3u)), code.runs)
         assertEquals(
             listOf(
                 Scope(Position(1, 3), Position(2, 0)),

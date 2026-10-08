@@ -14,9 +14,8 @@ public sealed class Markup {
     public abstract val extent: Extent
 
     /**
-     * Its own source ranges, in source order; touching runs are one run, and
-     * the source between two runs is not its own. None when it is a block
-     * whose own source is its range; every inline node has runs.
+     * Its own source ranges, in source order, at least one; touching runs are
+     * one run, and the source between two runs is not its own.
      */
     public abstract val runs: kotlin.collections.List<Run>
     public abstract val anchor: String?

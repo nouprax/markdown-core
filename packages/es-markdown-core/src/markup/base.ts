@@ -9,9 +9,8 @@ export interface MarkupBase<Kind extends string> {
      * an exact number, usable directly as a list key. */
     readonly id: number;
     readonly extent: Extent;
-    /** Its own source ranges, in source order; touching runs are one run,
-     * and the source between two runs is not its own. None when it is a
-     * block whose own source is its range; every inline node has runs. */
+    /** Its own source ranges, in source order, at least one; touching runs
+     * are one run, and the source between two runs is not its own. */
     readonly runs: readonly Run[];
     readonly anchor: string | null;
     readonly attributes: Attributes;

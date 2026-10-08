@@ -4,16 +4,16 @@ import type { Document } from "../markup/document.js";
 import type { Markup } from "../markup/markup.js";
 import type { Position, Scope } from "../markup/values.js";
 import { traverse } from "./markup-walker.js";
-import { placesOf, type Place } from "./source-places.js";
+import type { Place } from "./source-places.js";
 
 /** The source ranges of `target`, a node of `document`, found by one
  * canonical walk. A node is found by reference. */
-function placesIn(document: Document, target: Markup): Place[] {
-    let places!: Place[];
-    traverse(document, (node, phase, source) => {
-        if (node === target && phase === "enter") places = placesOf(node, source);
+function placesIn(document: Document, target: Markup): readonly Place[] {
+    let found!: readonly Place[];
+    traverse(document, (node, phase, places) => {
+        if (node === target && phase === "enter") found = places;
     });
-    return places;
+    return found;
 }
 
 /** `Document.scope`: one walk for the node's source ranges, then a scan of
@@ -37,9 +37,9 @@ export function nodeAt(document: Document, position: Position, source: string): 
     const offset = new SourceLines(source).offset(position, document.unit);
     if (offset === null) return null;
     let found: Markup | null = null;
-    traverse(document, (node, phase, source) => {
+    traverse(document, (node, phase, places) => {
         if (phase !== "enter") return;
-        if (placesOf(node, source).some((place) => place.start <= offset && offset < place.end)) {
+        if (places.some((place) => place.start <= offset && offset < place.end)) {
             found = node;
         }
     });

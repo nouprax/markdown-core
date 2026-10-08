@@ -91,9 +91,10 @@ export class MessageWriter {
     /**
      * A record's kind and inherited fields; its own fields follow. Records
      * take the writer's next id unless one is given; an extent is
-     * `[lead, span]`, and so is a run's source.
+     * `[lead, span]`, and so is a run. Every node has a run, so the runs are
+     * the extent's one unless given.
      */
-    record(kind, { id = this.#next, extent = [0, 0], runs = [], anchor = null, attributes } = {}) {
+    record(kind, { id = this.#next, extent = [0, 0], runs = [extent], anchor = null, attributes } = {}) {
         const ordinal = typeof kind === "number" ? kind : kinds.indexOf(kind);
         assert.ok(ordinal >= 0, `unknown kind ${kind}`);
         this.#next = typeof id === "bigint" ? this.#next : Math.max(this.#next, id + 1);

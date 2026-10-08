@@ -4475,6 +4475,15 @@ static void autolink_source_pos(test_batch_runner *runner) {
         "email autolink scopes are as expected");
 }
 
+/* A node built by hand into a published tree: every published node has a
+ * run, here the empty one at its start. */
+static markdown_core_node *published_node_new(markdown_core_node_type type) {
+    markdown_core_node *node = markdown_core_node_new(type);
+    node->runs = markdown_core_runs_new(NULL, 1, false);
+    node->runs->items[node->runs->count++].run = (markdown_core_run){0, 0};
+    return node;
+}
+
 static void table_values(test_batch_runner *runner) {
     const char source[] = "| a | b |\n| - | - |\n| c | d |\n| e | f |\n";
     markdown_core_document *document = facade_parse((const uint8_t *)source, sizeof(source) - 1);
@@ -4493,7 +4502,7 @@ static void table_values(test_batch_runner *runner) {
         markdown_core_node *cell = markdown_core_node_retain(child_at(row, 0));
         OK(runner, replace_children(row, &cell, 1), "the row keeps its first cell alone");
         cell->as.table_cell->colspan = 2;
-        markdown_core_node *block = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+        markdown_core_node *block = published_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
         OK(runner, replace_children(cell, &block, 1), "cell owns block content directly");
         int64_t rowspan, colspan;
         EXPECT_OK(markdown_core_node_table_cell_spans(cell, &rowspan, &colspan));
@@ -4956,8 +4965,9 @@ static void universal_values(test_batch_runner *runner) {
     const char *source = "![x](/u) ![y](/u)";
     markdown_core_document *document = facade_parse((const uint8_t *)source, strlen(source));
     markdown_core_node *root = document->root;
-    markdown_core_node *metadata = markdown_core_node_new(MARKDOWN_CORE_NODE_METADATA);
+    markdown_core_node *metadata = published_node_new(MARKDOWN_CORE_NODE_METADATA);
     metadata->where.extent = (markdown_core_extent){0, 4};
+    metadata->runs->items[0].run.span = 4;
     root->as.document->metadata = metadata;
     markdown_core_metadata_value *values[] = {&metadata->as.metadata->name,    &metadata->as.metadata->time,
                                               &metadata->as.metadata->date,    &metadata->as.metadata->title,

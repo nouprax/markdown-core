@@ -150,16 +150,16 @@ typedef struct markdown_core_extent {
 } markdown_core_extent;
 #endif
 
-/** A RUN of the source a node read: its `source` range, whose lead is from
- * the end of the previous run, or, for the first, from where the source of
- * the node before it in its relation ends, or where its owner's begins. A
- * node's source is its runs, or its extent when it has none; the source
- * between two runs is not the node's. A node of an inline root's content,
- * whose extent is in that content, always has runs. */
+/** A RUN of a node's own source: a source range whose `lead` is from the
+ * end of the previous run, or, for the first, from where the source of the
+ * node before it in its relation ends, or where its owner's begins, and whose
+ * `span` is its length. Every node has runs; the source between two runs is
+ * not the node's. */
 #ifndef MARKDOWN_CORE_RUN_TYPEDEF
 #define MARKDOWN_CORE_RUN_TYPEDEF
 typedef struct markdown_core_run {
-    markdown_core_extent source;
+    int32_t lead;
+    uint32_t span;
 } markdown_core_run;
 #endif
 
@@ -461,9 +461,8 @@ MARKDOWN_CORE_API uint64_t markdown_core_node_id(const markdown_core_node *node)
 MARKDOWN_CORE_API markdown_core_extent markdown_core_node_extent(const markdown_core_node *node);
 /** The node's runs (markdown_core_run), and their count in `*count`: its
  * own source, in source order, with the source that is not its own between
- * them. A block's runs run from its start to its end, and a block whose own
- * source is its extent has none; every inline node has runs. They borrow
- * from the document. */
+ * them; a block's runs run from its start to its end. Every node has at least
+ * one. They borrow from the document. */
 MARKDOWN_CORE_API const markdown_core_run *markdown_core_node_runs(const markdown_core_node *node, size_t *count);
 
 /** SCOPE QUERIES. Each takes the source the document was parsed from and

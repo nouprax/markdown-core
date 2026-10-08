@@ -19,8 +19,7 @@ internal class Relation(
  * It also places the source of every node it enters: a relation's first
  * node leads from the start of its owner's source and every later one from
  * the end of the source of the node before it; the root leads from 0. A
- * node's source runs from where its first run starts to where its last ends,
- * or is its range when it has no runs.
+ * node's source runs from where its first run starts to where its last ends.
  */
 internal class MarkupTraversal(
     root: Markup,
@@ -123,7 +122,7 @@ internal class MarkupTraversal(
 
     /**
      * Enters [child], whose source leads from [anchor]: from where its first
-     * run starts to where its last ends, or its range when it has no runs.
+     * run starts to where its last ends.
      */
     private fun enter(
         child: Markup,
@@ -133,37 +132,27 @@ internal class MarkupTraversal(
     ) {
         item(Step.ENTER, child, level, more)
         val runs = child.runs
-        if (runs.isEmpty()) {
-            start = anchor + child.extent.lead
-            end = start + child.extent.span.toLong()
-        } else {
-            var at = anchor
-            for (index in runs.indices) {
-                at += runs[index].source.lead
-                if (index == 0) start = at
-                at += runs[index].source.span.toLong()
-            }
-            end = at
+        var at = anchor
+        for (index in runs.indices) {
+            at += runs[index].lead
+            if (index == 0) start = at
+            at += runs[index].span.toLong()
         }
+        end = at
         frames += Frame(child, level, start, end)
     }
 
     /**
      * The source ranges of the node entered or exited, valid until the next
-     * call: its runs, with touching runs one range, or its source when it has
-     * no runs.
+     * call: its runs.
      */
     fun places(): SourcePlaces {
         val runs = node!!.runs
         places.clear()
-        if (runs.isEmpty()) {
-            places.add(start, end)
-            return places
-        }
-        var at = start - runs[0].source.lead
+        var at = start - runs[0].lead
         for (run in runs) {
-            val from = at + run.source.lead
-            at = from + run.source.span.toLong()
+            val from = at + run.lead
+            at = from + run.span.toLong()
             places.add(from, at)
         }
         return places

@@ -110,8 +110,7 @@ size_t markdown_core_source_runs_ranges(const markdown_core_source_runs *table, 
 
 /* THE CANONICAL WALK: every node of a published document's tree in canonical
  * walk order, each with the source window it lies in, and the group lines of
- * the canonical dump between them, read from the runs, or the extent of a
- * node without runs. An explicit stack of relation cursors, so its depth is
+ * the canonical dump between them, read from the runs. An explicit stack of relation cursors, so its depth is
  * the tree's and never the C stack's. */
 typedef struct markdown_core_walk_item {
     /* The node, or NULL for a group line. */
@@ -157,7 +156,7 @@ void markdown_core_walk_begin_at(markdown_core_walk *walk, const markdown_core_n
  * (`failed`). */
 bool markdown_core_walk_next(markdown_core_walk *walk, markdown_core_walk_item *item);
 /* The source ranges of `item`, the node the walk returned last, in source
- * order: its runs, those that touch joined, or its window when it has none.
+ * order: its runs.
  * They live in the walk until its next call. False, with the walk `failed`,
  * when they could not be allocated. */
 bool markdown_core_walk_ranges(markdown_core_walk *walk, const markdown_core_walk_item *item,

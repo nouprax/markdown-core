@@ -1,6 +1,6 @@
 import type { Markup } from "../markup/markup.js";
 import type { MarkupVisitPhase, MarkupVisitor } from "./markup-visitor.js";
-import { sourceOf, type Place } from "./source-places.js";
+import { placesOf, type Place } from "./source-places.js";
 
 /** Walks markup depth first with an explicit stack, reporting both phases to the visitor. */
 export function walk(root: Markup, visitor: MarkupVisitor): void {
@@ -9,29 +9,31 @@ export function walk(root: Markup, visitor: MarkupVisitor): void {
 
 /** The walk the dumper drives: the document's walk, which places every node
  * in the source, with only `target`'s tree reported to `visitor`; `place`
- * hears each of those nodes' source before the visitor enters it. */
+ * hears each of those nodes' source ranges before the visitor enters it. */
 export function walkTree(
     document: Markup,
     target: Markup,
     visitor: MarkupVisitor,
-    place: (node: Markup, source: Place) => void
+    place: (places: readonly Place[]) => void
 ): void {
     let inside = false;
-    traverse(document, (node, phase, source) => {
+    traverse(document, (node, phase, places) => {
         if (!inside && node !== target) return;
         inside = !(node === target && phase === "exit");
-        if (phase === "enter") place(node, source);
+        if (phase === "enter") place(places);
         dispatch(visitor, node, phase);
     });
 }
 
 /** One visit of the canonical walk: the node's phase and its absolute
- * source. */
-export type Visit = (node: Markup, phase: MarkupVisitPhase, source: Place) => void;
+ * source ranges, its runs, in source order. */
+export type Visit = (node: Markup, phase: MarkupVisitPhase, places: readonly Place[]) => void;
 
 interface Frame {
     readonly node: Markup;
-    readonly source: Place;
+    readonly places: readonly Place[];
+    /** Where its source starts, from its first run. */
+    readonly start: number;
     readonly relations: readonly (readonly Markup[])[];
     relation: number;
     index: number;
@@ -43,25 +45,28 @@ interface Frame {
  * The canonical walk: every node enters, its relations follow in canonical
  * order with each relation in stored order, then it exits. The work stack
  * holds one frame per level, so depth is data, not call stack. Each node's
- * absolute source follows from its runs, or its extent when it has none: the
- * first node of a relation leads from the start of its owner's source, every
- * later one from the end of the source of the node before it. Places are
+ * absolute source ranges are its runs, and its source runs from where its
+ * first run starts to where its last ends: the first node of a relation leads
+ * from the start of its owner's source, every later one from the end of the
+ * source of the node before it. Places are
  * absolute when `root` is a document.
  */
 export function traverse(root: Markup, each: Visit): void {
     const frames: Frame[] = [];
     const enter = (node: Markup, anchor: number): number => {
-        const source = sourceOf(node, anchor);
-        each(node, "enter", source);
+        const places = placesOf(node, anchor);
+        const start = places[0]!.start;
+        each(node, "enter", places);
         frames.push({
             node,
-            source,
+            places,
+            start,
             relations: relations[node.kind](node as never),
             relation: 0,
             index: 0,
-            anchor: source.start
+            anchor: start
         });
-        return source.end;
+        return places[places.length - 1]!.end;
     };
     enter(root, 0);
     while (frames.length > 0) {
@@ -69,7 +74,7 @@ export function traverse(root: Markup, each: Visit): void {
         const relation = frame.relations[frame.relation];
         if (relation === undefined) {
             frames.pop();
-            each(frame.node, "exit", frame.source);
+            each(frame.node, "exit", frame.places);
         } else if (frame.index < relation.length) {
             const node = relation[frame.index]!;
             frame.index += 1;
@@ -77,7 +82,7 @@ export function traverse(root: Markup, each: Visit): void {
         } else {
             frame.relation += 1;
             frame.index = 0;
-            frame.anchor = frame.source.start;
+            frame.anchor = frame.start;
         }
     }
 }

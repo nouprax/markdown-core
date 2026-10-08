@@ -5,8 +5,7 @@
 /// its owner's source and each later node from the end of the source of the
 /// one before it, and a named relation yields a line of its own before its
 /// nodes. A node's source runs from where its first run starts to where its
-/// last ends, or is its range when it has no runs. The frames are the tree's
-/// depth; the call stack stays constant.
+/// last ends. The frames are the tree's depth; the call stack stays constant.
 struct CanonicalWalk {
     /// One line of the walk: a node with its source, or a named relation.
     struct Item {
@@ -100,24 +99,16 @@ struct CanonicalWalk {
     }
 
     /// The source ranges of `item`, the node the walk returned last, in
-    /// source order, in place of what `places` held: its runs, with touching
-    /// runs one range, or its source when it has no runs.
+    /// source order, in place of what `places` held: its runs. A named
+    /// relation's line has none.
     func places(of item: Item, into places: inout [(start: Int, end: Int)]) {
         places.removeAll(keepingCapacity: true)
-        let runs = item.record?.runs ?? []
-        guard let first = runs.first else {
-            places.append((item.start, item.end))
-            return
-        }
-        var cursor = item.start - Int(first.source.lead)
+        guard let runs = item.record?.runs, let first = runs.first else { return }
+        var cursor = item.start - Int(first.lead)
         for run in runs {
-            let start = cursor + Int(run.source.lead)
-            cursor = start + Int(run.source.span)
-            if let last = places.last, last.end == start {
-                places[places.count - 1].end = cursor
-            } else {
-                places.append((start, cursor))
-            }
+            let start = cursor + Int(run.lead)
+            cursor = start + Int(run.span)
+            places.append((start, cursor))
         }
     }
 
@@ -138,20 +129,15 @@ struct CanonicalWalk {
     }
 
     /// The source of `record` whose lead is from `anchor`: from where its
-    /// first run starts to where its last ends, each run's source starting its
-    /// `lead` past the end of the run before, or its range when it has no runs.
+    /// first run starts to where its last ends, each run starting its `lead`
+    /// past the end of the run before.
     private static func source(of record: MarkupRecord, from anchor: Int) -> (start: Int, end: Int) {
-        let runs = record.runs
-        guard !runs.isEmpty else {
-            let start = anchor + Int(record.extent.lead)
-            return (start, start + Int(record.extent.span))
-        }
         var cursor = anchor
         var start = anchor
-        for (index, run) in runs.enumerated() {
-            cursor += Int(run.source.lead)
+        for (index, run) in record.runs.enumerated() {
+            cursor += Int(run.lead)
             if index == 0 { start = cursor }
-            cursor += Int(run.source.span)
+            cursor += Int(run.span)
         }
         return (start, cursor)
     }

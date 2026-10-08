@@ -237,8 +237,8 @@ static bool view_values(view *taken, const uint8_t *dump, size_t dump_length) {
                 const markdown_core_run *run = markdown_core_node_runs(entry->object, &count);
                 at += (size_t)snprintf(taken->values + at, capacity - at, " runs=");
                 for (item = 0; item < count; item++) {
-                    at += (size_t)snprintf(taken->values + at, capacity - at, "%d,%u;", (int)run[item].source.lead,
-                                           (unsigned)run[item].source.span);
+                    at += (size_t)snprintf(taken->values + at, capacity - at, "%d,%u;", (int)run[item].lead,
+                                           (unsigned)run[item].span);
                 }
             }
             entry->value = taken->values_size;
