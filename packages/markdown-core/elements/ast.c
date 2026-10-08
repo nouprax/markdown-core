@@ -358,28 +358,52 @@ markdown_core_place markdown_core_source_runs_window(const markdown_core_source_
     return (markdown_core_place){start, place.end > place.start ? source_run_end(table, place.end) : start};
 }
 
-size_t markdown_core_source_runs_ranges(const markdown_core_source_runs *table, markdown_core_place window,
-                                        markdown_core_place *ranges, size_t capacity) {
-    if (window.end <= window.start) {
+size_t markdown_core_source_runs_read(const markdown_core_source_runs *table, markdown_core_place place,
+                                      markdown_core_place *window, markdown_core_place *ranges, size_t capacity) {
+    /* The run the first byte is read from, then, walking on, the one the
+     * last is: one search, and a step per run the range spans. */
+    const size_t first = source_run_at(table, place.start);
+    const markdown_core_source_run *run = &table->runs[first];
+    window->start = place.start >= run->content + run->decoded ? run->end
+                    : source_run_copied(run)                   ? run->start + (place.start - run->content)
+                                                               : run->start;
+    if (place.end <= place.start) {
+        window->end = window->start;
         if (capacity) {
-            ranges[0] = window;
+            ranges[0] = *window;
+        }
+        return 1;
+    }
+    const uint32_t last = place.end - 1;
+    size_t at = first;
+    while (at + 1 < table->count && table->runs[at + 1].content <= last) {
+        at++;
+    }
+    while (at > 0 && !table->runs[at].decoded) {
+        at--;
+    }
+    run = &table->runs[at];
+    window->end = last >= run->content + run->decoded || !source_run_copied(run)
+                      ? run->end
+                      : run->start + (place.end - run->content);
+    if (window->end <= window->start) {
+        if (capacity) {
+            ranges[0] = *window;
         }
         return 1;
     }
     /* The first run that ends past the window's start; the gaps from there
      * that lie in the window cut it. */
-    size_t lo = 0, hi = table->count;
-    while (lo < hi) {
-        size_t mid = lo + (hi - lo) / 2;
-        if (table->runs[mid].end <= window.start) {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
+    size_t lo = first;
+    while (lo > 0 && table->runs[lo - 1].end > window->start) {
+        lo--;
+    }
+    while (lo < table->count && table->runs[lo].end <= window->start) {
+        lo++;
     }
     size_t count = 0;
-    uint32_t from = window.start;
-    for (size_t i = lo; i + 1 < table->count && table->runs[i].end < window.end; i++) {
+    uint32_t from = window->start;
+    for (size_t i = lo; i + 1 < table->count && table->runs[i].end < window->end; i++) {
         const uint32_t gap = table->runs[i].end, past = table->runs[i + 1].start;
         if (past <= gap) {
             continue;
@@ -392,9 +416,9 @@ size_t markdown_core_source_runs_ranges(const markdown_core_source_runs *table, 
         }
         from = past > from ? past : from;
     }
-    if (from < window.end) {
+    if (from < window->end) {
         if (count < capacity) {
-            ranges[count] = (markdown_core_place){from, window.end};
+            ranges[count] = (markdown_core_place){from, window->end};
         }
         count++;
     }
@@ -550,20 +574,21 @@ static bool source_runs_read_places(markdown_core_source_runs *table, const mark
 /* The runs of the root being completed, still in absolute offsets, in the
  * publication's `runs`, read once for the root's node; NULL when it has none,
  * or, with `*failed`, when they could not be read. */
-static const markdown_core_source_runs *completing_runs(markdown_core_parser *parser,
-                                                        markdown_core_publication *publication, bool *failed) {
-    const markdown_core_node *node = parser->completing->node;
-    *failed = false;
-    if (publication->runs_node != node) {
-        const markdown_core_runs *runs = shape_runs(node, shape_of(node));
-        publication->runs.count = 0;
-        if (runs && runs->count && !source_runs_read_places(&publication->runs, runs)) {
-            *failed = true;
-            return NULL;
-        }
-        publication->runs_node = node;
+static bool completing_runs_read(markdown_core_publication *publication, const markdown_core_node *node) {
+    const markdown_core_runs *runs = shape_runs(node, shape_of(node));
+    publication->runs.count = 0;
+    if (runs && runs->count && !source_runs_read_places(&publication->runs, runs)) {
+        return false;
     }
-    return publication->runs.count ? &publication->runs : NULL;
+    publication->runs_node = node;
+    return true;
+}
+
+static inline const markdown_core_source_runs *completing_runs(markdown_core_parser *parser,
+                                                               markdown_core_publication *publication, bool *failed) {
+    const markdown_core_node *node = parser->completing->node;
+    *failed = publication->runs_node != node && !completing_runs_read(publication, node);
+    return publication->runs.count && !*failed ? &publication->runs : NULL;
 }
 
 /* The source window of `node`, measured from `anchor`, where the source of
@@ -764,7 +789,7 @@ typedef struct {
 
 /* The runs of `item`, a node of the content of the root being completed, at
  * content range `place`: the source its range was read from, its window less
- * the gaps between the root's runs (markdown_core_source_runs_ranges), the
+ * the gaps between the root's runs (markdown_core_source_runs_read), the
  * first measured from `*source`, which becomes where the last ends. `*start`
  * becomes where the first begins. False when an allocation failed. */
 static bool inline_runs(markdown_core_parser *parser, markdown_core_publication *publication, markdown_core_node *item,
@@ -775,8 +800,9 @@ static bool inline_runs(markdown_core_parser *parser, markdown_core_publication 
         return false;
     }
     assert(table && !item->runs);
-    const markdown_core_place window = markdown_core_source_runs_window(table, place);
-    size_t count = markdown_core_source_runs_ranges(table, window, publication->ranges, publication->range_capacity);
+    markdown_core_place window;
+    size_t count =
+        markdown_core_source_runs_read(table, place, &window, publication->ranges, publication->range_capacity);
     if (count > publication->range_capacity) {
         markdown_core_place *ranges =
             markdown_core_reserve(publication->ranges, &publication->range_capacity, count, sizeof(*ranges));
@@ -784,7 +810,7 @@ static bool inline_runs(markdown_core_parser *parser, markdown_core_publication 
             return false;
         }
         publication->ranges = ranges;
-        markdown_core_source_runs_ranges(table, window, ranges, count);
+        markdown_core_source_runs_read(table, place, &window, ranges, count);
     }
     markdown_core_runs *runs = markdown_core_runs_new(parser->pool, (uint32_t)count, false);
     if (!runs) {
@@ -1643,8 +1669,9 @@ void markdown_core_settle_member(markdown_core_parser *parser, markdown_core_pub
         if (!owner) {
             return;
         }
-        /* Its siblings no longer see it, so it passes its whole range now. */
-        if (!member->field && !pass_range(parser, publication, member)) {
+        /* Its siblings no longer see it, so it passes its whole range now:
+         * there is a cursor to pass when its owner continues an old node. */
+        if (!member->field && owner->old && !pass_range(parser, publication, member)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return;
         }

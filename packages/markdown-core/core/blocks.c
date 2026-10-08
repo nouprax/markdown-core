@@ -2059,7 +2059,9 @@ static void S_complete_inline_root(markdown_core_parser *parser, markdown_core_i
                         }
                         const markdown_core_element_instance *document = parser->dialect->document_structure;
                         document->element->complete_node(document, parser, root->member, root->place.start);
-                    } else {
+                    } else if (member->first || member->fields) {
+                        /* A node holding no member holds nothing it has
+                         * not numbered. */
                         S_complete_node(parser, member, node->where.place.start);
                     }
                     if (parser->error) {

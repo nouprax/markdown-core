@@ -102,11 +102,13 @@ typedef struct {
  * byte is read to where its last is; an empty range is the empty window
  * where its offset is read from. */
 markdown_core_place markdown_core_source_runs_window(const markdown_core_source_runs *table, markdown_core_place place);
-/* The source ranges of `window` less the gaps between the runs of `table`,
- * in source order; an empty window is one empty range. Writes at most
- * `capacity` and returns how many there are. */
-size_t markdown_core_source_runs_ranges(const markdown_core_source_runs *table, markdown_core_place window,
-                                        markdown_core_place *ranges, size_t capacity);
+/* The source the content range `place` is read from: its window, as
+ * markdown_core_source_runs_window gives it, into `*window`, and the window
+ * less the gaps between the runs of `table`, in source order, into `ranges`;
+ * an empty window is one empty range. Writes at most `capacity` ranges and
+ * returns how many there are. */
+size_t markdown_core_source_runs_read(const markdown_core_source_runs *table, markdown_core_place place,
+                                      markdown_core_place *window, markdown_core_place *ranges, size_t capacity);
 
 /* THE CANONICAL WALK: every node of a published document's tree in canonical
  * walk order, each with the source window it lies in, and the group lines of
