@@ -32,26 +32,68 @@ static void dispose_document(const markdown_core_element_instance *self, markdow
     }
     markdown_core_publication_dispose(&((document_state *)self->state)->publication, parser->pool);
 }
-/* RESOLUTION OF LOOKUPS (docs/plans/2026-09-29-incremental-parsing.md,
- * 5.7). Every definition is declared once the blocks are complete and the
- * headings the parse made have declared their labels, and the questions
- * asked of the registry then that an earlier parse asked are those of the
- * roots the parse took. A key whose answer, whether it is defined, is not
- * the one it gave the old document has each such root read again, from
- * where it began in the old source. Each parse of the edit finds the same
- * keys and roots, and the first finds them before it moves any fact. */
-static void reread_lookups(markdown_core_parser *parser) {
+/* A ROOT WHOSE LOOKUPS ARE ANSWERED OTHERWISE (docs/plans/2026-09-29-
+ * incremental-parsing.md, 5.7): the node, and where it began in the old
+ * source. */
+typedef struct {
+    const markdown_core_node *node;
+    uint32_t start;
+} again_root;
+
+static int again_order(const void *left, const void *right) {
+    const again_root *a = left, *b = right;
+    if (a->start != b->start) {
+        return (a->start > b->start) - (a->start < b->start);
+    }
+    return ((uintptr_t)a->node > (uintptr_t)b->node) - ((uintptr_t)a->node < (uintptr_t)b->node);
+}
+
+static int address_order(const void *left, const void *right) {
+    const uintptr_t a = (uintptr_t)*(const markdown_core_node *const *)left;
+    const uintptr_t b = (uintptr_t)*(const markdown_core_node *const *)right;
+    return (a > b) - (a < b);
+}
+
+/* RESOLUTION OF LOOKUPS (5.7). Every definition is declared once the blocks
+ * are complete and the headings the parse made have declared their labels,
+ * and the questions asked of the registry then that an earlier parse asked
+ * are those of the roots the parse took. A key whose answer, whether it is
+ * defined, is not the one it gave the old document has each such root
+ * parsed again in place, in source order, each once: into `*roots`, with
+ * their count. False when the list could not grow. */
+static bool lookups_changed(markdown_core_parser *parser, again_root **roots, size_t *count) {
     const markdown_core_registry *registry = parser->registry;
-    for (const markdown_core_key *key = registry->marked; key && !parser->error; key = key->marked_next) {
+    size_t capacity = 0;
+    *roots = NULL;
+    *count = 0;
+    for (const markdown_core_key *key = registry->marked; key; key = key->marked_next) {
         if (key->group == MARKDOWN_CORE_KEY_FAMILY || key->was == markdown_core_key_defined(key)) {
             continue;
         }
-        for (const markdown_core_fact *lookup = key->lookups; lookup && !parser->error; lookup = lookup->next) {
-            if (lookup->edit != registry->edit) {
-                markdown_core_parser_reread(parser, markdown_core_parser_image(parser, lookup->start));
+        for (const markdown_core_fact *lookup = key->lookups; lookup; lookup = lookup->next) {
+            if (lookup->edit == registry->edit) {
+                continue;
             }
+            again_root *grown = markdown_core_reserve(*roots, &capacity, *count + 1, sizeof(*grown));
+            if (!grown) {
+                return false;
+            }
+            *roots = grown;
+            grown[(*count)++] = (again_root){lookup->node, lookup->start};
         }
     }
+    if (!*count) {
+        return true;
+    }
+    qsort(*roots, *count, sizeof(**roots), again_order);
+    size_t kept = 0;
+    for (size_t i = 0; i < *count; i++) {
+        if (!kept || (*roots)[kept - 1].node != (*roots)[i].node) {
+            (*roots)[kept++] = (*roots)[i];
+        }
+    }
+    *count = kept;
+    return true;
 }
 
 /* A node of a subtree the parse took whole keeps its facts (5.7), which
@@ -64,21 +106,44 @@ static void take_facts(void *context, const markdown_core_node *node, uint32_t s
 }
 
 /* The document is prepared: the headings the parse made declare their
- * labels, the roots whose lookups are answered otherwise now are read
- * again, and the subtrees the parse took list their declarations. */
+ * labels; the subtrees the parse took list their declarations but for the
+ * content of the roots whose lookups are answered otherwise now, which are
+ * parsed again in place, their headings with the others. */
 static void prepare_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
+    markdown_core_publication *publication = &((document_state *)self->state)->publication;
     if (headings) {
         markdown_core_headings_prepare(headings, parser);
     }
-    if (!parser->error) {
-        reread_lookups(parser);
+    again_root *roots = NULL;
+    const markdown_core_node **nodes = NULL;
+    size_t count = 0;
+    if (!parser->error && !lookups_changed(parser, &roots, &count)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
-    for (size_t i = 0; i < parser->took_count && !parser->error && !parser->reread; i++) {
-        if (!markdown_core_publication_take(&((document_state *)self->state)->publication, parser->took[i].node,
-                                            parser->took[i].start, take_facts, NULL)) {
+    if (count && !(nodes = markdown_core_alloc(count, sizeof(*nodes)))) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+    if (nodes) {
+        for (size_t i = 0; i < count; i++) {
+            nodes[i] = roots[i].node;
+        }
+        qsort(nodes, count, sizeof(*nodes), address_order);
+    }
+    for (size_t i = 0; i < parser->took_count && !parser->error; i++) {
+        if (!markdown_core_publication_take(publication, parser->took[i].node, parser->took[i].start, nodes,
+                                            nodes ? count : 0, take_facts, NULL)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
+    }
+    for (size_t i = 0; i < count && !parser->error; i++) {
+        markdown_core_parse_again(parser, roots[i].node, roots[i].start,
+                                  markdown_core_parser_image(parser, roots[i].start));
+    }
+    markdown_core_free(roots);
+    markdown_core_free((void *)nodes);
+    if (headings && count && !parser->error) {
+        markdown_core_headings_prepare(headings, parser);
     }
 }
 /* A node is complete: it numbers the nodes it holds, and the headings note
@@ -96,16 +161,32 @@ static void settle_member(const markdown_core_element_instance *self, markdown_c
                           markdown_core_member *member) {
     markdown_core_settle_member(parser, &((document_state *)self->state)->publication, member);
 }
+/* The document is finished: the headings take their anchors, and each node
+ * of a subtree the parse took that it replaces gives its place to the node
+ * replacing it, unless that is itself (5.7). */
 static void finish_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
+    markdown_core_publication *publication = &((document_state *)self->state)->publication;
     if (headings) {
         markdown_core_headings_finish(headings, parser);
         markdown_core_headings_dispose(headings);
     }
-    /* A parse that reads a node again leaves the edit's marks to the next. */
-    if (!parser->reread) {
-        markdown_core_registry_settle(parser->registry);
+    for (size_t i = 0; i < parser->replacement_count && !parser->error; i++) {
+        struct markdown_core_replacement *replacement = &parser->replacements[i];
+        markdown_core_node *node = replacement->node;
+        if (replacement->member) {
+            node = markdown_core_node_retain(replacement->member->node);
+            markdown_core_member_release(parser->pool, replacement->member);
+        }
+        replacement->member = NULL;
+        replacement->node = NULL;
+        if (node == replacement->old) {
+            markdown_core_parser_release_node(parser, node);
+        } else if (!markdown_core_publication_splice(parser, publication, replacement->old, node, replacement->start)) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        }
     }
+    markdown_core_registry_settle(parser->registry);
 }
 static void publish_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     markdown_core_publication *publication = &((document_state *)self->state)->publication;

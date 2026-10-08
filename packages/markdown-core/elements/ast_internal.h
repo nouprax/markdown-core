@@ -218,6 +218,18 @@ typedef struct markdown_core_publication {
     size_t candidate_count, candidate_capacity;
     markdown_core_node **replaced;
     size_t replaced_count, replaced_capacity;
+    /* The nodes of taken subtrees a splice copied, each with its copy, which
+     * takes its place in the definition tables as the document publishes. */
+    struct markdown_core_renamed {
+        const markdown_core_node *old, *node;
+    } *renamed;
+    size_t renamed_count, renamed_capacity;
+    /* A splice's search for the node it replaces: the nodes it reached, and
+     * those it has yet to look into. */
+    struct markdown_core_splice_step *steps;
+    size_t step_capacity;
+    size_t *pending;
+    size_t pending_capacity;
 } markdown_core_publication;
 
 /* COMPLETING the node `member` builds, which begins at `start`: each node it
@@ -244,10 +256,32 @@ bool markdown_core_complete_node(markdown_core_parser *parser, markdown_core_pub
  * parsing.md, 5.3, 5.7): `node`, which a parse took whole at `start`, and
  * every node under it are listed in the definition tables as if the parse
  * had made them, and `visit` sees each with the source offset where it was
- * written. False when an allocation failed. */
+ * written. The content of each of the `count` roots of `again`, in address
+ * order, is the parse's own: it is parsed again (markdown_core_parse_again),
+ * and lists itself as it settles. False when an allocation failed. */
 bool markdown_core_publication_take(markdown_core_publication *publication, const markdown_core_node *node,
-                                    uint32_t start, void (*visit)(void *, const markdown_core_node *, uint32_t),
-                                    void *context);
+                                    uint32_t start, const markdown_core_node *const *again, size_t count,
+                                    void (*visit)(void *, const markdown_core_node *, uint32_t), void *context);
+
+/* AN INLINE ROOT IS PARSED AGAIN IN PLACE (5.7): `root`, a node of a subtree
+ * the parse took, which begins at `start` and began at `old_start` in the
+ * old source, holds content whose lookups are answered otherwise now. Its
+ * copy reads that content again from its runs, as a root the parse made
+ * does, and continues `root`; the facts of `root` and of its content leave
+ * the registry, and the copy's member replaces `root` once it settles
+ * (markdown_core_parser_replace). False, with the parse failed, when an
+ * allocation failed. */
+bool markdown_core_parse_again(markdown_core_parser *parser, const markdown_core_node *root, uint32_t old_start,
+                               uint32_t start);
+
+/* A NODE OF A TAKEN SUBTREE TAKES ITS REPLACEMENT'S PLACE (5.7, 5.11): the
+ * document's path down to `old`, which begins at `start`, is found by source
+ * position, and `node` takes `old`'s place: each node on the path that the
+ * old tree shares is copied, with its facts and its place in the definition
+ * tables, and one that only the new tree holds changes in place. Takes the
+ * reference to `node`. False when an allocation failed. */
+bool markdown_core_publication_splice(markdown_core_parser *parser, markdown_core_publication *publication,
+                                      const markdown_core_node *old, markdown_core_node *node, uint32_t start);
 
 /* A NUMBERED NODE SETTLES once it waits on nothing (5.9), its kind and range
  * final: it decides the old node it continues, unless it decided already,

@@ -137,6 +137,15 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     markdown_core_free(parser->input_chunks);
     markdown_core_free(parser->edit_shift);
     markdown_core_free(parser->took);
+    for (size_t i = 0; i < parser->replacement_count; i++) {
+        struct markdown_core_replacement *replacement = &parser->replacements[i];
+        if (replacement->member) {
+            markdown_core_member_release(parser->pool, replacement->member);
+        } else {
+            markdown_core_node_pool_release(parser->pool, replacement->node);
+        }
+    }
+    markdown_core_free(parser->replacements);
     if (parser->root) {
         markdown_core_member_release(parser->pool, parser->root);
         parser->root = NULL;
@@ -1026,11 +1035,12 @@ static inline void S_runs_add_own(markdown_core_runs *runs, uint32_t start, uint
  * them: the rest of each line its runs that decode nothing cover
  * (markdown_core_parser_place_runs), or, when it has none, all of the source
  * between its content runs. The root's map becomes the identity, so the
- * parse places its nodes at offsets of the content. */
+ * parse places its nodes at offsets of the content. A root whose map is the
+ * identity holds its runs already: one a parse reads again (5.7). */
 void markdown_core_parser_read_content(markdown_core_parser *parser, markdown_core_node *node, bufsize_t length) {
     const markdown_core_content_map map = node->content_map;
     node->content_map = (markdown_core_content_map){MARKDOWN_CORE_IDENTITY_MARK, 1, 0};
-    if (length <= 0 || map.count <= 0) {
+    if (length <= 0 || map.count <= 0 || map.first == MARKDOWN_CORE_IDENTITY_MARK) {
         return;
     }
     const bufsize_t end = map.offset + length;
@@ -1365,49 +1375,22 @@ markdown_core_member *markdown_core_parser_add_child(markdown_core_parser *parse
     return parent ? markdown_core_parser_add_child_validated(parser, parent, block_type, start_column) : NULL;
 }
 
-/* The first of the `count` offsets of `values` at or after `start`. */
-static size_t S_offsets_from(const uint32_t *values, size_t count, uint32_t start) {
-    size_t lo = 0, hi = count;
-    while (lo < hi) {
-        const size_t mid = lo + (hi - lo) / 2;
-        if (values[mid] < start) {
-            lo = mid + 1;
+bool markdown_core_parser_replace(markdown_core_parser *parser, const markdown_core_node *old, markdown_core_node *node,
+                                  markdown_core_member *member, uint32_t start) {
+    struct markdown_core_replacement *replacements = markdown_core_reserve(
+        parser->replacements, &parser->replacement_capacity, parser->replacement_count + 1, sizeof(*replacements));
+    if (!replacements) {
+        if (member) {
+            markdown_core_parser_release_member(parser, member);
         } else {
-            hi = mid;
+            markdown_core_parser_release_node(parser, node);
         }
-    }
-    return lo;
-}
-
-void markdown_core_parser_reread(markdown_core_parser *parser, uint32_t start) {
-    markdown_core_offsets *rereads = parser->rereads;
-    /* The parse reads none of the nodes earlier parses of the edit found
-     * again: their cursor did not take them. Those this parse finds follow
-     * them unordered, and are put in order before the next parse. */
-#ifndef NDEBUG
-    const size_t found = S_offsets_from(rereads->values, parser->reread_from, start);
-    assert(found == parser->reread_from || rereads->values[found] != start);
-#endif
-    uint32_t *values =
-        markdown_core_reserve(rereads->values, &rereads->capacity, rereads->count + 1, sizeof(*rereads->values));
-    if (!values) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return;
-    }
-    values[rereads->count++] = start;
-    rereads->values = values;
-    parser->reread = true;
-}
-
-/* Whether the old range [from, to) holds a node the edit reads again. */
-static bool S_rereads(const markdown_core_parser *parser, uint32_t from, uint32_t to) {
-    const markdown_core_offsets *rereads = parser->rereads;
-    if (!rereads->count) {
         return false;
     }
-    const uint32_t start = markdown_core_parser_image(parser, from), end = start + (to - from);
-    const size_t at = S_offsets_from(rereads->values, rereads->count, start);
-    return at < rereads->count && rereads->values[at] < end;
+    parser->replacements = replacements;
+    replacements[parser->replacement_count++] = (struct markdown_core_replacement){old, node, member, start};
+    return true;
 }
 
 /* Whether `member` is `held` or holds it. */
@@ -1468,8 +1451,7 @@ static bool S_take(markdown_core_parser *parser, markdown_core_member *parent, m
         const markdown_core_node *child = markdown_core_stem_at(children, i);
         const uint32_t child_end = (uint32_t)((int64_t)at + child->where.extent.lead) + child->where.extent.span;
         if ((child->flags & MARKDOWN_CORE_NODE__GROUP) ||
-            markdown_core_parser_touched(parser, at, child_end + child->reach) ||
-            S_rereads(parser, child_end - child->where.extent.span, child_end)) {
+            markdown_core_parser_touched(parser, at, child_end + child->reach)) {
             break;
         }
         at = child_end;
@@ -2028,41 +2010,17 @@ markdown_core_input markdown_core_input_buffer(const unsigned char *bytes, size_
     return (markdown_core_input){S_read_buffer, bytes, size};
 }
 
-static int S_offset_order(const void *left, const void *right) {
-    const uint32_t a = *(const uint32_t *)left, b = *(const uint32_t *)right;
-    return (a > b) - (a < b);
-}
-
 markdown_core_node *markdown_core_parser_parse(markdown_core_parser *parser, const markdown_core_input *input,
                                                markdown_core_revision *revision) {
-    /* The edit's parses are one edit of the registry, and share the nodes
-     * it reads again. */
     markdown_core_registry_begin(&revision->pool->registry);
-    markdown_core_offsets rereads = {0};
-    for (;;) {
-        markdown_core_node *document = NULL;
-        S_parse_begin(parser, revision);
-        parser->rereads = &rereads;
-        parser->reread_from = rereads.count;
-        if (!parser->error) {
-            S_parse_source(parser, input);
-            document = S_finish_parse(parser);
-        }
-        const bool reread = parser->reread && !parser->error;
-        S_parse_end(parser);
-        if (!reread) {
-            markdown_core_free(rereads.values);
-            return document;
-        }
-        qsort(rereads.values, rereads.count, sizeof(*rereads.values), S_offset_order);
-        size_t kept = 0;
-        for (size_t i = 0; i < rereads.count; i++) {
-            if (!kept || rereads.values[kept - 1] != rereads.values[i]) {
-                rereads.values[kept++] = rereads.values[i];
-            }
-        }
-        rereads.count = kept;
+    markdown_core_node *document = NULL;
+    S_parse_begin(parser, revision);
+    if (!parser->error) {
+        S_parse_source(parser, input);
+        document = S_finish_parse(parser);
     }
+    S_parse_end(parser);
+    return document;
 }
 
 /* Materializing a normalized view is an allocation boundary, separate from
@@ -3551,26 +3509,25 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_node *S_finish_parse(ma
     if (!parser->error) {
         document->element->prepare_document(document, parser);
     }
-    /* A parse that reads a node again (5.7) ends where it found it. */
     complete_pass pass = {.parser = parser, .slots = parser->dialect->complete_step_slots};
-    for (size_t i = 0; i < parser->inline_root_count && !parser->error && !parser->reread; i++) {
+    for (size_t i = 0; i < parser->inline_root_count && !parser->error; i++) {
         S_complete_inline_root(parser, &parser->inline_roots[i], &pass);
     }
     markdown_core_free(pass.states);
-    if (!parser->error && !parser->reread) {
+    if (!parser->error) {
         MARKDOWN_CORE_CHECK_TREE(parser, parser->root->node);
     }
-    if (!parser->error && !parser->reread) {
+    if (!parser->error) {
         document->element->finish_document(document, parser);
     }
     /* Last, the finished tree is published: nothing changes it after this. */
-    if (!parser->error && !parser->reread) {
+    if (!parser->error) {
         document->element->publish_document(document, parser);
     }
     markdown_core_free(parser->walk_stack);
     parser->walk_stack = NULL;
     parser->walk_stack_size = 0;
-    if (parser->error || parser->reread) {
+    if (parser->error) {
         goto failed;
     }
 

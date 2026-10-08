@@ -110,12 +110,6 @@ typedef struct {
     uint32_t start;
 } markdown_core_source_entry;
 
-/* Source offsets, in order. */
-typedef struct {
-    uint32_t *values;
-    size_t count, capacity;
-} markdown_core_offsets;
-
 /* Sequential source-order operations share scratch, such as an element's
  * deferred registrations or a table's regions. Space depends on entries, never on the
  * area of a sparse table or the numeric range of source coordinates. */
@@ -271,13 +265,19 @@ struct markdown_core_parser {
         uint32_t start;
     } *took;
     size_t took_count, took_capacity;
-    /* THE NODES THE EDIT READS AGAIN (5.7), which the edit's parses share:
-     * where each begins in the new source, the first `reread_from` in order,
-     * found by the parses before this one. `reread` says that this parse
-     * found more and ends, for the edit to be parsed again. */
-    markdown_core_offsets *rereads;
-    size_t reread_from;
-    bool reread;
+    /* THE NODES OF TAKEN SUBTREES THE PARSE REPLACES (5.7), in the order
+     * found: a root whose lookups are answered otherwise now, parsed again
+     * as `member`, whose node takes its place once it settles, and a heading
+     * whose anchor changes, whose copy `node` takes its place. `start` is
+     * where the old node begins. The document puts each in its place as it
+     * finishes (markdown_core_publication_splice). */
+    struct markdown_core_replacement {
+        const struct markdown_core_node *old;
+        struct markdown_core_node *node;
+        struct markdown_core_member *member;
+        uint32_t start;
+    } *replacements;
+    size_t replacement_count, replacement_capacity;
     /* The last open block after a line is fully processed */
     struct markdown_core_member *current;
     /* See the documentation for markdown_core_parser_get_line_number() in markdown_core.h */
@@ -683,12 +683,12 @@ bool markdown_core_parser_touched(const markdown_core_parser *parser, uint32_t f
 bool markdown_core_parser_source_anchor(const markdown_core_parser *parser, uint32_t start, uint32_t end,
                                         uint32_t *image);
 
-/* A NODE THE PARSE TOOK IS READ AGAIN (docs/plans/2026-09-29-incremental-
- * parsing.md, 5.7) when what it read of the document is answered otherwise
- * now: the node that begins at `start` in the new source. This parse ends,
- * and the edit is parsed again from its start, whose cursor reads every
- * node that holds `start` as it reads a node an edit meets. */
-void markdown_core_parser_reread(markdown_core_parser *parser, uint32_t start);
+/* `old`, a node of a subtree the parse took that begins at `start`, gives
+ * its place to `node`, or to the node of `member` once it settles; the
+ * replacement takes the reference to either. False, with the parse failed
+ * and the reference released, when the list could not grow. */
+bool markdown_core_parser_replace(markdown_core_parser *parser, const markdown_core_node *old, markdown_core_node *node,
+                                  markdown_core_member *member, uint32_t start);
 
 /* THE STATE `parent` CARRIES where a child of it begins after `previous`
  * (5.3, E3): the word its element saves, the kind of the child before, and

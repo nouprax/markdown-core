@@ -125,7 +125,7 @@ typedef struct markdown_core_position {
 } markdown_core_position;
 
 /** Editor source coordinates of one source range of a node, computed on
- * request from the extents and the source (markdown_core_document_scope).
+ * request from the runs and the source (markdown_core_document_scope).
  * `start` is the position of the range's first byte, where a line terminator is the column after its
  * line's last character. `end` is the line holding the byte just past the
  * range's last byte and the column count from that line's start to it, so a
@@ -466,16 +466,12 @@ MARKDOWN_CORE_API markdown_core_extent markdown_core_node_extent(const markdown_
 MARKDOWN_CORE_API const markdown_core_run *markdown_core_node_runs(const markdown_core_node *node, size_t *count);
 
 /** SCOPE QUERIES. Each takes the source the document was parsed from and
- * computes absolute positions from the extents and runs in one walk
+ * computes absolute positions from the runs in one walk
  * of the document, with columns in the document's text unit. Each answers
  * ALLOCATION_FAILED when it cannot allocate.
  *
  * `markdown_core_document_scope` computes the scopes of `node`, a node of the
- * document: one per source range, in source order. A node's source ranges
- * are a window less the gaps between the runs that place it: its range and
- * its own runs, or, when it is in an inline root's content, the source from
- * where its first content byte was read to where its last was, and the
- * root's runs. `*scopes` receives a new
+ * document: one per run of the node, in source order. `*scopes` receives a new
  * array, which markdown_core_scopes_free releases, and `*count` its length.
  * OUT_OF_BOUNDS when `length` ends before the node does. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_document_scope(const markdown_core_document *document,

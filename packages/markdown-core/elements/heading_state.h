@@ -20,10 +20,13 @@ typedef struct {
 } markdown_core_heading_collection;
 
 /* THE HEADINGS OF ONE PARSE (the heading element's parse record): each
- * heading the parse made, as its block closed, and the projection and family
- * work their anchors took, for its complexity gate. */
+ * heading the parse made, as its block closed or as it was parsed again in
+ * place, and the projection and family work their anchors took, for its
+ * complexity gate. */
 typedef struct {
     markdown_core_heading_collection headings;
+    /* How many of the parser's inline roots the headings were taken from. */
+    size_t roots;
     size_t anchor_work;
 } markdown_core_heading_state;
 

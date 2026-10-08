@@ -25,11 +25,12 @@ typedef struct {
     anchor_projection *values;
     size_t count, capacity;
 } anchor_projection_stack;
-/* The headings of the parse: the inline roots a Heading holds. A heading
- * waits on its anchor, which the headings give it last
- * (markdown_core_headings_finish). */
-static void take_headings(markdown_core_heading_collection *headings, markdown_core_parser *parser) {
-    for (size_t i = 0; i < parser->inline_root_count; i++) {
+/* The headings of the parse: the inline roots a Heading holds, those queued
+ * since the headings were last taken. A heading waits on its anchor, which
+ * the headings give it last (markdown_core_headings_finish). */
+static void take_headings(markdown_core_heading_state *state, markdown_core_parser *parser) {
+    markdown_core_heading_collection *headings = &state->headings;
+    for (size_t i = state->roots; i < parser->inline_root_count; i++) {
         const markdown_core_inline_root *root = &parser->inline_roots[i];
         if (root->holder->kind != MARKDOWN_CORE_NODE_HEADING) {
             continue;
@@ -45,6 +46,7 @@ static void take_headings(markdown_core_heading_collection *headings, markdown_c
             (markdown_core_heading_parse){.source = {root->holder, root->place.start}, .builder = root->builder};
         root->member->waits++;
     }
+    state->roots = parser->inline_root_count;
 }
 
 static markdown_core_key_index_slot *anchor_slot(markdown_core_parser *parser, markdown_core_heading_state *state,
@@ -85,26 +87,30 @@ void markdown_core_headings_observe(const markdown_core_element_instance *self, 
     }
 }
 
-/* Every heading the parse made: its inlines up to its declaration
- * dependency, and the reference label it declares, in source order; then the
- * rest of its inlines, once each of their labels is declared. */
+/* Every heading the parse made since the headings were last prepared: its
+ * inlines up to its declaration dependency, and the reference label it
+ * declares, in source order; then the rest of its inlines, once each of
+ * their labels is declared. */
 void markdown_core_headings_prepare(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     markdown_core_heading_state *state = self->state;
     markdown_core_heading_collection *headings = &state->headings;
-    take_headings(headings, parser);
+    const size_t first = headings->count;
+    take_headings(state, parser);
     if (parser->error) {
         return;
     }
-    if (!markdown_core_order_source_entries(&parser->source_order, headings->values, headings->count,
-                                            sizeof(*headings->values), markdown_core_source_key)) {
+    markdown_core_heading_parse *made = headings->values + first;
+    const size_t count = headings->count - first;
+    if (count && !markdown_core_order_source_entries(&parser->source_order, made, count, sizeof(*made),
+                                                     markdown_core_source_key)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
-    for (size_t i = 0; i < headings->count && !parser->error; i++) {
-        markdown_core_prepare_heading(self, parser, &headings->values[i]);
+    for (size_t i = 0; i < count && !parser->error; i++) {
+        markdown_core_prepare_heading(self, parser, &made[i]);
     }
-    for (size_t i = 0; i < headings->count && !parser->error; i++) {
-        markdown_core_finish_heading(parser, &headings->values[i]);
+    for (size_t i = 0; i < count && !parser->error; i++) {
+        markdown_core_finish_heading(parser, &made[i]);
     }
 }
 
@@ -281,13 +287,13 @@ static int base_order(const void *left, const void *right) {
  * base that is free: the base, or the base with the next unused `-N`. A
  * heading's spelling can only meet spellings of its own family, so each
  * family is assigned alone, as one fresh pass over the document would assign
- * it. A heading the parse made takes its anchor; one it took is the old
- * node, and when its anchor changes it is read again (5.7), the family going
- * on with the new spelling. */
+ * it. A heading the parse made takes its anchor; one it took is shared with
+ * the old tree, so when its anchor changes its copy takes the anchor and its
+ * place (5.7, 5.11). */
 static void assign_family(markdown_core_parser *parser, markdown_core_heading_state *state,
                           const markdown_core_key *family, markdown_core_fact ***bases, size_t *capacity,
-                          unsigned char ***spellings, size_t *spellings_capacity, markdown_core_strbuf *base) {
-    size_t count = 0, reserved = 0, spelled = 0;
+                          markdown_core_strbuf *base) {
+    size_t count = 0, reserved = 0;
     for (markdown_core_fact *fact = family->facts; fact; fact = fact->next) {
         if (fact->role == MARKDOWN_CORE_FACT_BASE) {
             markdown_core_fact **grown = markdown_core_reserve(*bases, capacity, count + 1, sizeof(*grown));
@@ -351,21 +357,19 @@ static void assign_family(markdown_core_parser *parser, markdown_core_heading_st
         }
         if (anchor->len == base->size && !memcmp(anchor->data, base->ptr, (size_t)base->size)) {
             markdown_core_key_index_commit(&index, candidate, anchor->data);
-        } else if (fact->edit != parser->registry->edit) {
-            markdown_core_parser_reread(parser, fact->start);
-            unsigned char *spelling = markdown_core_alloc(1, (size_t)base->size + 1);
-            unsigned char **grown =
-                spelling ? markdown_core_reserve(*spellings, spellings_capacity, spelled + 1, sizeof(*grown)) : NULL;
-            if (!grown) {
-                markdown_core_free(spelling);
-                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-                break;
-            }
-            *spellings = grown;
-            (*spellings)[spelled++] = spelling;
-            memcpy(spelling, base->ptr, (size_t)base->size);
-            markdown_core_key_index_commit(&index, candidate, spelling);
         } else {
+            if (fact->edit != parser->registry->edit) {
+                markdown_core_node *copy = markdown_core_node_copy(parser->pool, node);
+                if (!copy) {
+                    markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+                    break;
+                }
+                markdown_core_registry_move(node, copy);
+                if (!markdown_core_parser_replace(parser, node, copy, NULL, fact->start)) {
+                    break;
+                }
+                anchor = &copy->attributes.anchor;
+            }
             markdown_core_chunk_free(anchor);
             *anchor = (markdown_core_chunk){base->ptr, base->size, 0};
             if (!markdown_core_chunk_to_cstr(anchor)) {
@@ -378,9 +382,6 @@ static void assign_family(markdown_core_parser *parser, markdown_core_heading_st
         candidate->value.counter = 1;
     }
     markdown_core_key_index_free(&index);
-    for (size_t i = 0; i < spelled; i++) {
-        markdown_core_free((*spellings)[i]);
-    }
 }
 
 /* Each heading the parse made declares its anchor: the one its text wrote
@@ -413,17 +414,15 @@ void markdown_core_headings_finish(const markdown_core_element_instance *self, m
     }
     markdown_core_free(stack.values);
     markdown_core_fact **bases = NULL;
-    unsigned char **spellings = NULL;
-    size_t capacity = 0, spellings_capacity = 0;
+    size_t capacity = 0;
     for (const markdown_core_key *key = parser->registry->marked; key && !parser->error; key = key->marked_next) {
         if (key->group == MARKDOWN_CORE_KEY_FAMILY) {
-            assign_family(parser, state, key, &bases, &capacity, &spellings, &spellings_capacity, &base);
+            assign_family(parser, state, key, &bases, &capacity, &base);
         }
     }
     markdown_core_free(bases);
-    markdown_core_free(spellings);
     markdown_core_strbuf_free(&base);
-    for (size_t i = 0; i < headings->count && !parser->error && !parser->reread; i++) {
+    for (size_t i = 0; i < headings->count && !parser->error; i++) {
         markdown_core_parser_release_wait(parser, headings->values[i].builder);
     }
 }
@@ -503,6 +502,13 @@ void markdown_core_heading_begin_inlines(const markdown_core_element_instance *s
     markdown_core_heading_run *run = markdown_core_run_state(inline_state, self);
     markdown_core_node *parent = member->node;
     if (parent->kind == MARKDOWN_CORE_NODE_HEADING) {
+        /* A heading's attributes and label are read from its text: a heading
+         * parsed again in place (5.7) reads them again. */
+        markdown_core_attributes_free(&parent->attributes);
+        if (parent->as.heading->label.len) {
+            markdown_core_node_pool_bytes_free(parser->pool, parent->as.heading->label.data);
+        }
+        parent->as.heading->label = (markdown_core_chunk){0};
         bufsize_t line = inline_state->input.len;
         inline_state->attributes = (markdown_core_attribute_parser){
             .data = inline_state->input.data, .length = inline_state->input.len, .scratch = &parser->attribute_scratch};
