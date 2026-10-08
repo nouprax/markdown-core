@@ -374,10 +374,10 @@ static int node_strings(markdown_core_node *node, markdown_core_chunk *strings[N
 /* A string a parse built may view the bytes of the input it read: a
  * content buffer, or a line. A node outlives that input once a later
  * revision shares it, so what a completed node reads is its own: a viewed
- * string becomes a copy, and an empty view the empty literal; an absent one
- * stays absent. False when the
- * copy could not be allocated, the view left as it was. */
-static bool hold_string(markdown_core_chunk *string) {
+ * string becomes a copy in the pool's storage, and an empty view the empty
+ * literal; an absent one stays absent. False when the copy could not be
+ * allocated, the view left as it was. */
+static bool hold_string(markdown_core_node_pool *pool, markdown_core_chunk *string) {
     if (string->alloc) {
         return true;
     }
@@ -387,14 +387,22 @@ static bool hold_string(markdown_core_chunk *string) {
         }
         return true;
     }
-    return markdown_core_chunk_to_cstr(string) != NULL;
+    unsigned char *bytes = markdown_core_node_pool_bytes(pool, (size_t)string->len + 1);
+    if (!bytes) {
+        return false;
+    }
+    memcpy(bytes, string->data, (size_t)string->len);
+    bytes[string->len] = '\0';
+    string->data = bytes;
+    string->alloc = 1;
+    return true;
 }
 
-bool markdown_core_node_hold_strings(markdown_core_node *node) {
+bool markdown_core_node_hold_strings(markdown_core_node_pool *pool, markdown_core_node *node) {
     markdown_core_chunk *strings[NODE_STRING_LIMIT];
     const int count = node_strings(node, strings);
     for (int i = 0; i < count; i++) {
-        if (!hold_string(strings[i])) {
+        if (!hold_string(pool, strings[i])) {
             return false;
         }
     }
@@ -406,7 +414,10 @@ static void free_node_as(markdown_core_node_pool *pool, markdown_core_node *node
     markdown_core_chunk *strings[NODE_STRING_LIMIT];
     const int count = node_strings(node, strings);
     for (int i = 0; i < count; i++) {
-        markdown_core_chunk_free(strings[i]);
+        if (strings[i]->alloc) {
+            markdown_core_node_pool_bytes_free(pool, strings[i]->data);
+        }
+        *strings[i] = (markdown_core_chunk){0};
     }
     switch (node->kind) {
     case MARKDOWN_CORE_NODE_METADATA:
@@ -758,9 +769,8 @@ static void S_stem_measure(markdown_core_stem *stem) {
     stem->first = first;
 }
 
-/* Sets the count and the `summary` word of `stem` from its entries, and
- * what it measures. */
-static void S_stem_sum(markdown_core_stem *stem, const markdown_core_stem_summary *summary) {
+/* Sets the count and the `summary` word of `stem` from its entries. */
+static void S_stem_count(markdown_core_stem *stem, const markdown_core_stem_summary *summary) {
     stem->count = 0;
     for (uint8_t i = 0; i < stem->width; i++) {
         const markdown_core_stem_entry entry = stem->entries[i];
@@ -770,6 +780,12 @@ static void S_stem_sum(markdown_core_stem *stem, const markdown_core_stem_summar
             stem->summary = i ? summary->combine(stem->summary, word) : word;
         }
     }
+}
+
+/* Sets the count and the `summary` word of `stem` from its entries, and
+ * what it measures. */
+static void S_stem_sum(markdown_core_stem *stem, const markdown_core_stem_summary *summary) {
+    S_stem_count(stem, summary);
     S_stem_measure(stem);
 }
 
@@ -815,65 +831,71 @@ markdown_core_stem *markdown_core_stem_make(markdown_core_node_pool *pool, markd
     if (!count) {
         return NULL;
     }
-    /* The levels are built bottom up, each level's stems written over the
-     * front of one array: a level never has more stems than entries below. */
-    size_t stems = S_stem_level_width(count);
-    markdown_core_stem **level = markdown_core_alloc(stems, sizeof(*level));
-    if (!level) {
-        *failed = true;
-        return NULL;
+    /* Level h holds `entries[h]` entries in `stems[h]` stems; the top level
+     * has one. The levels are built bottom up as the nodes come, each with
+     * one open stem, which closes at `width[h]` entries: the `made[h]`th stem of the
+     * level takes an even share of the entries `from[h]` on, so every stem
+     * of a level holds within one entry of every other. */
+    size_t entries[MARKDOWN_CORE_STEM_HEIGHT], stems[MARKDOWN_CORE_STEM_HEIGHT];
+    size_t made[MARKDOWN_CORE_STEM_HEIGHT], from[MARKDOWN_CORE_STEM_HEIGHT];
+    markdown_core_stem *open[MARKDOWN_CORE_STEM_HEIGHT];
+    uint8_t width[MARKDOWN_CORE_STEM_HEIGHT];
+    uint8_t top = 0;
+    entries[0] = count;
+    while ((stems[top] = S_stem_level_width(entries[top])) > 1) {
+        entries[top + 1] = stems[top];
+        top++;
     }
-    size_t built = 0;
-    for (size_t i = 0, from = 0; i < stems; i++) {
-        size_t width = (count - from) / (stems - i);
-        markdown_core_stem *leaf = S_stem_new(pool, 0, width);
-        if (!leaf) {
-            goto failed;
-        }
-        for (size_t j = 0; j < width; j++) {
-            leaf->entries[j].node = nodes[from + j];
-        }
-        /* Its nodes are measured once their owner numbers them. */
-        leaf->marks = MARKDOWN_CORE_STEM_FRESH;
-        S_stem_sum(leaf, summary);
-        level[built++] = leaf;
-        from += width;
+    for (uint8_t h = 0; h <= top; h++) {
+        made[h] = from[h] = 0;
+        open[h] = NULL;
     }
-    for (uint8_t height = 1; built > 1; height++) {
-        size_t above = S_stem_level_width(built);
-        size_t made = 0;
-        for (size_t i = 0, from = 0; i < above; i++) {
-            size_t width = (built - from) / (above - i);
-            markdown_core_stem *stem = S_stem_new(pool, height, width);
+    /* A stem closed but not yet held by the level above. */
+    markdown_core_stem *loose = NULL;
+    for (size_t i = 0; i < count; i++) {
+        markdown_core_stem_entry entry = {.node = nodes[i]};
+        for (uint8_t h = 0;; h++) {
+            markdown_core_stem *stem = open[h];
             if (!stem) {
-                /* The stems not yet taken into this level are released
-                 * below, after the ones it made. */
-                for (size_t j = from; j < built; j++) {
-                    level[made + j - from] = level[j];
+                width[h] = (uint8_t)((entries[h] - from[h]) / (stems[h] - made[h]));
+                stem = open[h] = S_stem_new(pool, h, width[h]);
+                if (!stem) {
+                    loose = h ? entry.stem : NULL;
+                    goto failed;
                 }
-                built = made + built - from;
-                goto failed;
+                /* Its entries are measured once their owner numbers the
+                 * nodes under them. */
+                stem->marks = MARKDOWN_CORE_STEM_FRESH;
+                stem->width = 0;
+                from[h] += width[h];
+                made[h]++;
             }
-            for (size_t j = 0; j < width; j++) {
-                stem->entries[j].stem = level[from + j];
+            stem->entries[stem->width++] = entry;
+            if (stem->width < width[h]) {
+                break;
             }
-            S_stem_sum(stem, summary);
-            level[made++] = stem;
-            from += width;
+            open[h] = NULL;
+            S_stem_count(stem, summary);
+            if (h == top) {
+                return stem;
+            }
+            entry = (markdown_core_stem_entry){.stem = stem};
         }
-        built = made;
     }
-    markdown_core_stem *root = level[0];
-    markdown_core_free(level);
-    return root;
+    assert(false);
 
 failed:
     /* Nothing was taken: the stems built so far go, and the nodes stay the
-     * caller's. */
+     * caller's. An open stem holds the entries filled so far. */
     {
         S_release_lists lists = {NULL, NULL};
-        for (size_t i = 0; i < built; i++) {
-            S_link_stem(&lists, level[i]);
+        for (uint8_t h = 0; h <= top; h++) {
+            if (open[h]) {
+                S_link_stem(&lists, open[h]);
+            }
+        }
+        if (loose) {
+            S_link_stem(&lists, loose);
         }
         while (lists.stems) {
             markdown_core_stem *stem = lists.stems;
@@ -884,7 +906,6 @@ failed:
             markdown_core_node_pool_bytes_free(pool, stem);
         }
     }
-    markdown_core_free(level);
     *failed = true;
     return NULL;
 }
@@ -1611,6 +1632,9 @@ static void S_member_free(markdown_core_node_pool *pool, markdown_core_member *m
 
 bool markdown_core_member_freeze(markdown_core_node_pool *pool, markdown_core_member *member,
                                  const markdown_core_stem_summary *summary) {
+    if (!member->first) {
+        return true;
+    }
     /* The most nodes held between two runs. */
     size_t count = 0, most = 0, runs = 0;
     for (const markdown_core_member *child = member->first; child; child = child->next) {
@@ -1718,7 +1742,9 @@ void markdown_core_member_release(markdown_core_node_pool *pool, markdown_core_m
         if (taken->held) {
             markdown_core_node_pool_release(pool, taken->node);
         }
-        markdown_core_stem_release(pool, taken->run);
+        if (taken->run) {
+            markdown_core_stem_release(pool, taken->run);
+        }
         S_member_free(pool, taken);
     }
 }
@@ -1802,7 +1828,7 @@ markdown_core_resource *markdown_core_resource_new(markdown_core_node_pool *pool
     /* The resource holds what it reads (hold_string). */
     markdown_core_chunk held = url;
     markdown_core_chunk held_title = title.value;
-    if (!hold_string(&held) || !hold_string(&held_title)) {
+    if (!hold_string(pool, &held) || !hold_string(pool, &held_title)) {
         if (held.alloc && !url.alloc) {
             markdown_core_chunk_free(&held);
         }

@@ -7,7 +7,7 @@
 #include <stdbool.h>
 #include <assert.h>
 #include "buffer.h"
-#include "buffer.h"
+#include "slab.h"
 #include "markdown_core_ctype.h"
 
 #define MARKDOWN_CORE_CHUNK_EMPTY {NULL, 0, 0}
@@ -15,7 +15,9 @@
 typedef struct markdown_core_chunk {
     unsigned char *data;
     bufsize_t len;
-    bufsize_t alloc; // also implies a NULL-terminated string
+    /* Nonzero when the chunk owns `data`: bytes storage (slab.h) holding a
+     * NUL-terminated string. */
+    bufsize_t alloc;
 } markdown_core_chunk;
 
 /* AN OPTIONAL CHUNK, and it is a DIFFERENT TYPE from a chunk on purpose.
@@ -62,7 +64,7 @@ static MARKDOWN_CORE_INLINE markdown_core_optional_chunk markdown_core_optional_
 
 static MARKDOWN_CORE_INLINE void markdown_core_chunk_free(markdown_core_chunk *c) {
     if (c->alloc) {
-        markdown_core_free(c->data);
+        markdown_core_bytes_release(NULL, c->data);
     }
 
     c->data = NULL;
@@ -112,7 +114,7 @@ static MARKDOWN_CORE_INLINE const char *markdown_core_chunk_to_cstr(markdown_cor
     if (c->alloc) {
         return (char *)c->data;
     }
-    str = (unsigned char *)markdown_core_alloc(c->len + 1, 1);
+    str = (unsigned char *)markdown_core_bytes_take(NULL, (size_t)c->len + 1, 0);
     /* NULL reports allocation failure; the chunk keeps its borrowed bytes. */
     if (!str) {
         return NULL;
@@ -137,7 +139,7 @@ static MARKDOWN_CORE_INLINE int markdown_core_chunk_set_cstr(markdown_core_chunk
         c->alloc = 0;
     } else {
         bufsize_t len = (bufsize_t)strlen(str);
-        unsigned char *copy = (unsigned char *)markdown_core_alloc((size_t)len + 1, 1);
+        unsigned char *copy = (unsigned char *)markdown_core_bytes_take(NULL, (size_t)len + 1, 0);
         if (!copy) {
             return 0;
         }
@@ -147,7 +149,7 @@ static MARKDOWN_CORE_INLINE int markdown_core_chunk_set_cstr(markdown_core_chunk
         memcpy(c->data, str, (size_t)len + 1);
     }
     if (old != NULL) {
-        markdown_core_free(old);
+        markdown_core_bytes_release(NULL, old);
     }
     return 1;
 }

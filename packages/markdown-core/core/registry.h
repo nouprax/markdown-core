@@ -6,6 +6,7 @@
 
 #include "buffer.h"
 #include "chunk.h"
+#include "slab.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -162,6 +163,10 @@ struct markdown_core_registry {
     markdown_core_strbuf scratch;
     /* The rosters of the document as the session's last parse leaves it. */
     markdown_core_roster *rosters[MARKDOWN_CORE_ROSTER_COUNT];
+    /* The storage of its keys, facts, orders and roster entries (slab.h). A
+     * roster a document holds outlives the registry, and its entries their
+     * slabs' holds keep. */
+    markdown_core_bytes_pool storage;
 };
 
 /* A parse begins: the facts it makes are this edit's. */
@@ -211,7 +216,7 @@ bool markdown_core_registry_move(markdown_core_registry *registry, struct markdo
 bool markdown_core_registry_retire(markdown_core_registry *registry, struct markdown_core_node *root);
 
 /* A new order for `node`, in no list; NULL when it could not be had. */
-markdown_core_order *markdown_core_order_new(struct markdown_core_node *node);
+markdown_core_order *markdown_core_order_new(markdown_core_registry *registry, struct markdown_core_node *node);
 /* `order` leaves its list, if it is in one, and goes, its node out of the
  * rosters. False when a roster could not change; it goes all the same. */
 bool markdown_core_order_leave(markdown_core_registry *registry, markdown_core_order *order);

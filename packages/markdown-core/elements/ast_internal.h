@@ -182,8 +182,10 @@ typedef struct markdown_core_candidate {
 } markdown_core_candidate;
 
 typedef struct markdown_core_publication {
+    /* The runs of the inline root `runs_node` being completed, read as
+     * places (completing_runs in ast.c). */
     markdown_core_source_runs runs;
-    const markdown_core_inline_root *runs_root;
+    const markdown_core_node *runs_node;
     /* The source ranges of the inline node being numbered. */
     markdown_core_place *ranges;
     size_t range_capacity;

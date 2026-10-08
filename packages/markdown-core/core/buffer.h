@@ -81,6 +81,8 @@ bufsize_t markdown_core_strbuf_len(const markdown_core_strbuf *buf);
 
 int markdown_core_strbuf_cmp(const markdown_core_strbuf *a, const markdown_core_strbuf *b);
 
+/* The buffer's storage, which the caller then owns: bytes storage (slab.h),
+ * released with markdown_core_bytes_release. NULL for a poisoned buffer. */
 unsigned char *markdown_core_strbuf_detach(markdown_core_strbuf *buf);
 
 void markdown_core_strbuf_copy_cstr(char *data, bufsize_t datasize, const markdown_core_strbuf *buf);

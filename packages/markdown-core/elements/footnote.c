@@ -202,7 +202,7 @@ bool markdown_core_footnote_close_reference(const markdown_core_element_instance
             }
             /* The call's label is its normal form: the key the lookup
              * matched, copied rather than computed again. */
-            unsigned char *id = markdown_core_alloc(1, (size_t)definition->length + 1);
+            unsigned char *id = markdown_core_bytes_take(NULL, (size_t)definition->length + 1, 0);
             if (!id) {
                 inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
                 markdown_core_inline_pop_bracket(self->peers[FOOTNOTE_LINK], inline_state);

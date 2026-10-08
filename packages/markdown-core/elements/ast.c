@@ -548,24 +548,22 @@ static bool source_runs_read_places(markdown_core_source_runs *table, const mark
 }
 
 /* The runs of the root being completed, still in absolute offsets, in the
- * publication's `runs`; NULL when it has none, or, with `*failed`, when they
- * could not be read. */
+ * publication's `runs`, read once for the root's node; NULL when it has none,
+ * or, with `*failed`, when they could not be read. */
 static const markdown_core_source_runs *completing_runs(markdown_core_parser *parser,
                                                         markdown_core_publication *publication, bool *failed) {
-    const markdown_core_inline_root *root = parser->completing;
-    const markdown_core_runs *runs = shape_runs(root->node, shape_of(root->node));
+    const markdown_core_node *node = parser->completing->node;
     *failed = false;
-    if (!runs || !runs->count) {
-        return NULL;
-    }
-    if (publication->runs_root != root) {
-        if (!source_runs_read_places(&publication->runs, runs)) {
+    if (publication->runs_node != node) {
+        const markdown_core_runs *runs = shape_runs(node, shape_of(node));
+        publication->runs.count = 0;
+        if (runs && runs->count && !source_runs_read_places(&publication->runs, runs)) {
             *failed = true;
             return NULL;
         }
-        publication->runs_root = root;
+        publication->runs_node = node;
     }
-    return &publication->runs;
+    return publication->runs.count ? &publication->runs : NULL;
 }
 
 /* The source window of `node`, measured from `anchor`, where the source of
@@ -661,8 +659,8 @@ static void order_append(markdown_core_member *into, markdown_core_member *from)
 
 /* `node` takes a new order, ahead of the orders `member` holds. False when
  * it could not be had. */
-static bool order_own(markdown_core_member *member, markdown_core_node *node) {
-    markdown_core_order *order = markdown_core_order_new(node);
+static bool order_own(markdown_core_parser *parser, markdown_core_member *member, markdown_core_node *node) {
+    markdown_core_order *order = markdown_core_order_new(parser->registry, node);
     if (!order) {
         return false;
     }
@@ -1129,8 +1127,8 @@ static uint32_t within(const markdown_core_member *member, uint32_t reach) {
  * inline root reaches the whole range of each member it climbs through
  * outside that content, whose range is in the source. False when an
  * allocation failed. */
-static bool search(markdown_core_parser *parser, markdown_core_publication *publication, markdown_core_member *member,
-                   uint32_t reach) {
+static bool climb_search(markdown_core_parser *parser, markdown_core_publication *publication,
+                         markdown_core_member *member, uint32_t reach) {
     size_t count = 0;
     /* No member's range reaches past its end: a descendant's request reaches
      * as far as the member it asks for. */
@@ -1151,6 +1149,12 @@ static bool search(markdown_core_parser *parser, markdown_core_publication *publ
         }
     }
     return true;
+}
+
+/* A decided member searches no further. */
+static inline bool search(markdown_core_parser *parser, markdown_core_publication *publication,
+                          markdown_core_member *member, uint32_t reach) {
+    return member->decided || climb_search(parser, publication, member, reach);
 }
 
 /* `member` takes the id of the old node it continues, or the next id. */
@@ -1206,7 +1210,7 @@ static bool complete_number(const complete_context *context, markdown_core_membe
     const unsigned slots = slot_of(item);
     const relation_shape shape = (relation_shape)(slots & SLOT_SHAPE);
     bool inlines = false;
-    if (!markdown_core_node_hold_strings(item)) {
+    if (!markdown_core_node_hold_strings(parser->pool, item)) {
         return false;
     }
     member->place = place;
@@ -1241,7 +1245,7 @@ static bool complete_number(const complete_context *context, markdown_core_membe
      * old node the parse took into content brings the orders under it. */
     if ((member->taken && item->first && !order_gather(parser, member, item, false)) ||
         ((item->facts || inlines || member->queued || (slots & SLOT_LISTED)) && !item->order &&
-         !order_own(member, item))) {
+         !order_own(parser, member, item))) {
         return false;
     }
     item->first = member->order_head;
@@ -1339,6 +1343,10 @@ static bool order_take(const complete_context *context, markdown_core_member *me
  * own. */
 static bool complete_relations(const complete_context *context, markdown_core_member *member, uint32_t start) {
     markdown_core_node *node = member->node;
+    if (relations_empty(node)) {
+        /* It holds nothing to number. */
+        return true;
+    }
     markdown_core_parser *parser = context->parser;
     const markdown_core_inline_root *completing = parser->completing;
     markdown_core_relation_cursor cursor;
@@ -1422,22 +1430,19 @@ static bool complete_relations(const complete_context *context, markdown_core_me
         }
         if (own) {
             child = at;
-        } else if (group && !group->numbered) {
+        } else if (!group) {
+            /* A group built without a member, as a block's fields are. */
+            markdown_core_stem_measure((markdown_core_stem *)relation.stem);
+        } else if (!group->numbered) {
             /* A group holds the first order of the relation it holds. */
             markdown_core_stem_measure((markdown_core_stem *)relation.stem);
             group->node->first = relation.stem->first;
             group_numbered(parser, context->publication, group);
         }
     }
-    /* Its nodes are numbered: the stems they fill measure them, once every
-     * relation that is a run of one has been numbered. */
-    markdown_core_relations_begin(&cursor, node);
-    while (relations_next(&cursor, &relation, &more)) {
-        if (!relation.field) {
-            markdown_core_stem_measure((markdown_core_stem *)relation.stem);
-        }
-    }
-    /* And its own, when they hold groups. */
+    /* Its nodes are numbered: its own stem measures them, once every relation
+     * that is a run of it has been numbered; a group's stem measured them
+     * above. */
     markdown_core_stem_measure(node->children);
     return true;
 }
@@ -1465,6 +1470,8 @@ bool markdown_core_complete_node(markdown_core_parser *parser, markdown_core_pub
         if (runs && !publish_runs(parser->pool, runs, completing->place, anchor)) {
             return false;
         }
+        /* Its runs are published: what was read of them is stale. */
+        publication->runs_node = NULL;
     }
     if (completing ? completing->node == node : member == parser->root) {
         /* The orders of the document join the list, and it holds the first;

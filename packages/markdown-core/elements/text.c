@@ -70,11 +70,12 @@ static markdown_core_node *handle_backslash(const markdown_core_element_instance
             markdown_core_inline_state_read(inline_state, start, end + 2);
             if (end - start >= 4) {
                 bufsize_t output_len = (end - start) / 2;
-                unsigned char *output = (unsigned char *)markdown_core_alloc((size_t)output_len + 1, 1);
+                unsigned char *output = (unsigned char *)markdown_core_bytes_take(NULL, (size_t)output_len + 1, 0);
                 if (output) {
                     markdown_core_chunk contents = {output, output_len, 1};
                     markdown_core_node *run;
                     memset(output, '\\', (size_t)output_len);
+                    output[output_len] = '\0';
                     inline_state->pos = end;
                     run = make_str(inline_state, start, end - 1, contents);
                     /* One escape per PAIR: the first backslash of each is the

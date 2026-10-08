@@ -206,6 +206,19 @@ static inline void markdown_core_bytes_release(markdown_core_bytes_pool *pool, v
     }
 }
 
+/* Bytes storage of the allocator's of `bytes`, holding what `storage`, the
+ * allocator's bytes storage or NULL, held up to `bytes`: a buffer that grows
+ * in place. NULL, `storage` kept, when it cannot be had. */
+static inline void *markdown_core_bytes_resize(void *storage, size_t bytes) {
+    markdown_core_bytes_header *header = storage ? (markdown_core_bytes_header *)storage - 1 : NULL;
+    header = (markdown_core_bytes_header *)markdown_core_realloc(header, sizeof(*header) + bytes);
+    if (!header) {
+        return NULL;
+    }
+    header->owner.slab = NULL;
+    return header + 1;
+}
+
 /* Drops what the pool holds: its released storage and its current slab. */
 void markdown_core_bytes_pool_dispose(markdown_core_bytes_pool *pool);
 

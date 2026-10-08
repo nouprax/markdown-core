@@ -7,6 +7,22 @@
 #include "map.h"
 
 #define REGISTRY_MIN_CAPACITY 16
+#define REGISTRY_SLAB_BYTES ((size_t)16 * 1024)
+
+/* Storage of `bytes` from the registry's slabs, zeroed. */
+static void *registry_take(markdown_core_registry *registry, size_t bytes) {
+    void *storage = markdown_core_bytes_take(&registry->storage, bytes, REGISTRY_SLAB_BYTES);
+    if (storage) {
+        memset(storage, 0, bytes);
+    }
+    return storage;
+}
+
+/* Gives storage back: into the registry's pool when there is one to take it,
+ * or dropping its slab's hold. */
+static void registry_give(markdown_core_registry *registry, void *storage) {
+    markdown_core_bytes_release(registry ? &registry->storage : NULL, storage);
+}
 /* Every role, to unlink_facts. */
 #define FACT_ANY (-1)
 
@@ -81,7 +97,7 @@ void markdown_core_roster_release(markdown_core_roster *roster) {
             continue;
         }
         markdown_core_roster *right = at->right;
-        markdown_core_free(at);
+        registry_give(NULL, at);
         at = right && --right->refs == 0 ? right : NULL;
     }
 }
@@ -118,12 +134,12 @@ size_t markdown_core_roster_rank(const markdown_core_roster *roster,
 
 /* The node at `*slot` is the edited roster's own: a copy takes the place of
  * one something else holds too. False when the copy could not be had. */
-static bool roster_own(markdown_core_roster **slot) {
+static bool roster_own(markdown_core_registry *registry, markdown_core_roster **slot) {
     markdown_core_roster *held = *slot;
     if (held->refs == 1) {
         return true;
     }
-    markdown_core_roster *copy = markdown_core_alloc(1, sizeof(*copy));
+    markdown_core_roster *copy = registry_take(registry, sizeof(*copy));
     if (!copy) {
         return false;
     }
@@ -158,12 +174,12 @@ static void roster_rotate_left(markdown_core_roster **slot) {
  * other's height, is balanced again. A rotation changes only nodes the
  * edited roster owns; when one could not be owned, the node keeps its shape
  * and its sums, and the answer is false. */
-static bool roster_balance(markdown_core_roster **slot) {
+static bool roster_balance(markdown_core_registry *registry, markdown_core_roster **slot) {
     markdown_core_roster *at = *slot;
     const int balance = (int)roster_height(at->left) - (int)roster_height(at->right);
     if (balance > 1) {
-        if (!roster_own(&at->left) ||
-            (roster_height(at->left->left) < roster_height(at->left->right) && !roster_own(&at->left->right))) {
+        if (!roster_own(registry, &at->left) || (roster_height(at->left->left) < roster_height(at->left->right) &&
+                                                 !roster_own(registry, &at->left->right))) {
             roster_sum(at);
             return false;
         }
@@ -172,8 +188,8 @@ static bool roster_balance(markdown_core_roster **slot) {
         }
         roster_rotate_right(slot);
     } else if (balance < -1) {
-        if (!roster_own(&at->right) ||
-            (roster_height(at->right->right) < roster_height(at->right->left) && !roster_own(&at->right->left))) {
+        if (!roster_own(registry, &at->right) || (roster_height(at->right->right) < roster_height(at->right->left) &&
+                                                  !roster_own(registry, &at->right->left))) {
             roster_sum(at);
             return false;
         }
@@ -189,21 +205,22 @@ static bool roster_balance(markdown_core_roster **slot) {
 
 /* The nodes on the path, from the deepest up, take their sums and are
  * balanced again. */
-static bool roster_rise(markdown_core_roster **path[], size_t depth) {
+static bool roster_rise(markdown_core_registry *registry, markdown_core_roster **path[], size_t depth) {
     bool ok = true;
     while (depth) {
-        ok &= roster_balance(path[--depth]);
+        ok &= roster_balance(registry, path[--depth]);
     }
     return ok;
 }
 
 /* The path from `*root` down to the node at `index`, owned: its slots in
  * `path`, the node's last. Its depth, or 0 when a node could not be owned. */
-static size_t roster_descend(markdown_core_roster **root, size_t index, markdown_core_roster **path[]) {
+static size_t roster_descend(markdown_core_registry *registry, markdown_core_roster **root, size_t index,
+                             markdown_core_roster **path[]) {
     size_t depth = 0;
     markdown_core_roster **slot = root;
     for (;;) {
-        if (!roster_own(slot)) {
+        if (!roster_own(registry, slot)) {
             return 0;
         }
         path[depth++] = slot;
@@ -222,13 +239,13 @@ static size_t roster_descend(markdown_core_roster **root, size_t index, markdown
 }
 
 /* `node` and `order` take place `index` of the roster at `*root`. */
-static bool roster_insert(markdown_core_roster **root, size_t index, const markdown_core_node *node,
-                          const markdown_core_order *order) {
+static bool roster_insert(markdown_core_registry *registry, markdown_core_roster **root, size_t index,
+                          const markdown_core_node *node, const markdown_core_order *order) {
     markdown_core_roster **path[ROSTER_HEIGHT];
     size_t depth = 0;
     markdown_core_roster **slot = root;
     while (*slot) {
-        if (!roster_own(slot)) {
+        if (!roster_own(registry, slot)) {
             return false;
         }
         path[depth++] = slot;
@@ -241,19 +258,19 @@ static bool roster_insert(markdown_core_roster **root, size_t index, const markd
             slot = &at->right;
         }
     }
-    markdown_core_roster *leaf = markdown_core_alloc(1, sizeof(*leaf));
+    markdown_core_roster *leaf = registry_take(registry, sizeof(*leaf));
     if (!leaf) {
         return false;
     }
     *leaf = (markdown_core_roster){1, 1, 1, NULL, NULL, node, order};
     *slot = leaf;
-    return roster_rise(path, depth);
+    return roster_rise(registry, path, depth);
 }
 
 /* The node at `index` leaves the roster at `*root`. */
-static bool roster_remove(markdown_core_roster **root, size_t index) {
+static bool roster_remove(markdown_core_registry *registry, markdown_core_roster **root, size_t index) {
     markdown_core_roster **path[ROSTER_HEIGHT];
-    size_t depth = roster_descend(root, index, path);
+    size_t depth = roster_descend(registry, root, index, path);
     if (!depth) {
         return false;
     }
@@ -263,7 +280,7 @@ static bool roster_remove(markdown_core_roster **root, size_t index) {
          * stead. */
         markdown_core_roster **next = &at->right;
         for (;;) {
-            if (!roster_own(next)) {
+            if (!roster_own(registry, next)) {
                 return false;
             }
             if (!(*next)->left) {
@@ -276,19 +293,19 @@ static bool roster_remove(markdown_core_roster **root, size_t index) {
         at->node = after->node;
         at->order = after->order;
         *next = after->right;
-        markdown_core_free(after);
+        registry_give(registry, after);
     } else {
         *path[--depth] = at->left ? at->left : at->right;
-        markdown_core_free(at);
+        registry_give(registry, at);
     }
-    return roster_rise(path, depth);
+    return roster_rise(registry, path, depth);
 }
 
 /* `node` and `order` take the place of the roster's node at `index`. */
-static bool roster_put(markdown_core_roster **root, size_t index, const markdown_core_node *node,
-                       const markdown_core_order *order) {
+static bool roster_put(markdown_core_registry *registry, markdown_core_roster **root, size_t index,
+                       const markdown_core_node *node, const markdown_core_order *order) {
     markdown_core_roster **path[ROSTER_HEIGHT];
-    const size_t depth = roster_descend(root, index, path);
+    const size_t depth = roster_descend(registry, root, index, path);
     if (!depth) {
         return false;
     }
@@ -323,8 +340,8 @@ static size_t roster_place(const markdown_core_roster *roster, const markdown_co
 /* `order`, just placed, lists its node in its roster. */
 static bool roster_enter(markdown_core_registry *registry, const markdown_core_order *order) {
     const int kind = roster_of(order->node);
-    return kind < 0 ||
-           roster_insert(&registry->rosters[kind], roster_place(registry->rosters[kind], order), order->node, order);
+    return kind < 0 || roster_insert(registry, &registry->rosters[kind], roster_place(registry->rosters[kind], order),
+                                     order->node, order);
 }
 
 /* `order`, still placed, takes its node out of its roster. */
@@ -335,15 +352,15 @@ static bool roster_leave(markdown_core_registry *registry, const markdown_core_o
     }
     const size_t index = roster_place(registry->rosters[kind], order);
     assert(index < markdown_core_roster_count(registry->rosters[kind]));
-    return roster_remove(&registry->rosters[kind], index);
+    return roster_remove(registry, &registry->rosters[kind], index);
 }
 
 /* THE ORDER LIST. Labels lie below ORDER_TOP; the list's head stands for
  * 0 before the first and ORDER_TOP after the last. */
 #define ORDER_TOP (UINT64_C(1) << 62)
 
-markdown_core_order *markdown_core_order_new(markdown_core_node *node) {
-    markdown_core_order *order = markdown_core_alloc(1, sizeof(*order));
+markdown_core_order *markdown_core_order_new(markdown_core_registry *registry, markdown_core_node *node) {
+    markdown_core_order *order = registry_take(registry, sizeof(*order));
     if (order) {
         order->node = node;
     }
@@ -363,7 +380,7 @@ void markdown_core_order_free(markdown_core_order *order) {
     if (markdown_core_order_joined(order)) {
         order_unlink(order);
     }
-    markdown_core_free(order);
+    registry_give(NULL, order);
 }
 
 bool markdown_core_order_unjoin(markdown_core_registry *registry, markdown_core_order *order) {
@@ -374,7 +391,9 @@ bool markdown_core_order_unjoin(markdown_core_registry *registry, markdown_core_
 
 bool markdown_core_order_leave(markdown_core_registry *registry, markdown_core_order *order) {
     const bool ok = !order || !markdown_core_order_joined(order) || markdown_core_order_unjoin(registry, order);
-    markdown_core_free(order);
+    if (order) {
+        registry_give(registry, order);
+    }
     return ok;
 }
 
@@ -456,7 +475,7 @@ void markdown_core_registry_dispose(markdown_core_registry *registry) {
     for (markdown_core_order *order = head->next, *next; order && order != head; order = next) {
         next = order->next;
         order->node->order = NULL;
-        markdown_core_free(order);
+        registry_give(registry, order);
     }
     for (size_t i = 0; i < registry->capacity; i++) {
         for (markdown_core_key *key = registry->buckets[i], *next; key; key = next) {
@@ -466,10 +485,10 @@ void markdown_core_registry_dispose(markdown_core_registry *registry) {
                     after = fact->next;
                     /* The node outlives the registry: it holds no fact now. */
                     fact->node->facts = NULL;
-                    markdown_core_free(fact);
+                    registry_give(registry, fact);
                 }
             }
-            markdown_core_free(key);
+            registry_give(registry, key);
         }
     }
     if (registry->buckets) {
@@ -478,6 +497,7 @@ void markdown_core_registry_dispose(markdown_core_registry *registry) {
     if (registry->scratch.ptr) {
         markdown_core_strbuf_free(&registry->scratch);
     }
+    markdown_core_bytes_pool_dispose(&registry->storage);
     *registry = (markdown_core_registry){0};
 }
 
@@ -517,7 +537,7 @@ static markdown_core_key *key_find(markdown_core_registry *registry, markdown_co
     if (registry->count + 1 > registry->capacity / 4 * 3 && !registry_grow(registry)) {
         return NULL;
     }
-    markdown_core_key *key = markdown_core_alloc(1, sizeof(*key) + length + 1);
+    markdown_core_key *key = registry_take(registry, sizeof(*key) + length + 1);
     if (!key) {
         return NULL;
     }
@@ -568,7 +588,7 @@ markdown_core_fact *markdown_core_registry_declare(markdown_core_registry *regis
                                                    const unsigned char *label, uint32_t length,
                                                    const unsigned char *text, uint32_t text_length) {
     markdown_core_key *key = key_find(registry, group, label, length);
-    markdown_core_fact *fact = key ? markdown_core_alloc(1, sizeof(*fact) + text_length) : NULL;
+    markdown_core_fact *fact = key ? registry_take(registry, sizeof(*fact) + text_length) : NULL;
     if (!fact) {
         return NULL;
     }
@@ -600,7 +620,7 @@ bool markdown_core_registry_ask(markdown_core_registry *registry, markdown_core_
     /* A root asks a key once: the question it asked last is this one. */
     markdown_core_fact *last = key->lookups;
     if (!last || last->node != holder || last->edit != registry->edit) {
-        markdown_core_fact *fact = markdown_core_alloc(1, sizeof(*fact));
+        markdown_core_fact *fact = registry_take(registry, sizeof(*fact));
         if (!fact) {
             *failed = true;
             return false;
@@ -643,7 +663,7 @@ static void unlink_facts(markdown_core_node *node, int role) {
         key_mark(key);
         fact_leave(fact);
         key->declared -= fact->role == MARKDOWN_CORE_FACT_DECLARE;
-        markdown_core_free(fact);
+        registry_give(key->registry, fact);
     }
 }
 
@@ -676,7 +696,7 @@ bool markdown_core_registry_move(markdown_core_registry *registry, markdown_core
     order->node = to;
     const int kind = roster_of(to);
     return !markdown_core_order_joined(order) || kind < 0 ||
-           roster_put(&registry->rosters[kind], roster_place(registry->rosters[kind], order), to, order);
+           roster_put(registry, &registry->rosters[kind], roster_place(registry->rosters[kind], order), to, order);
 }
 
 /* A key's label against the label of the node an entry lists: in byte
@@ -732,9 +752,9 @@ bool markdown_core_registry_resolve(markdown_core_registry *registry) {
         if (winner && listed && markdown_core_roster_at(*roster, index) == winner->node) {
             continue;
         }
-        const bool ok = winner ? listed ? roster_put(roster, index, winner->node, NULL)
-                                        : roster_insert(roster, index, winner->node, NULL)
-                               : !listed || roster_remove(roster, index);
+        const bool ok = winner ? listed ? roster_put(registry, roster, index, winner->node, NULL)
+                                        : roster_insert(registry, roster, index, winner->node, NULL)
+                               : !listed || roster_remove(registry, roster, index);
         if (!ok) {
             return false;
         }
@@ -756,7 +776,7 @@ void markdown_core_registry_settle(markdown_core_registry *registry) {
         }
         *at = key->chain;
         registry->count--;
-        markdown_core_free(key);
+        registry_give(registry, key);
     }
     registry->marked = NULL;
 }

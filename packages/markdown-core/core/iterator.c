@@ -80,7 +80,7 @@ markdown_core_complete_result markdown_core_consolidate_text_step(markdown_core_
                                                                         cur->as.literal->len, 0)) {
             return MARKDOWN_CORE_COMPLETE_FAILED;
         }
-        unsigned char *merged = markdown_core_realloc(NULL, length + 1);
+        unsigned char *merged = markdown_core_bytes_take(NULL, length + 1, 0);
         if (!merged) {
             return MARKDOWN_CORE_COMPLETE_FAILED;
         }
@@ -103,7 +103,7 @@ markdown_core_complete_result markdown_core_consolidate_text_step(markdown_core_
             if (parser && !view &&
                 !markdown_core_parser_append_content_marks(parser, &tmp->content_map, &combined_map, 0,
                                                            tmp->as.literal->len, at)) {
-                markdown_core_free(merged);
+                markdown_core_bytes_release(NULL, merged);
                 return MARKDOWN_CORE_COMPLETE_FAILED;
             }
             if (tmp->as.literal->len) {

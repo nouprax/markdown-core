@@ -2584,10 +2584,10 @@ static void strbuf_growth_preserves_termination(test_batch_runner *runner) {
         OK(runner, !buf.oom && buf.ptr[buf.size] == 0, "clear and empty owned growth remain terminated");
         unsigned char *empty = markdown_core_strbuf_detach(&buf);
         OK(runner, empty && empty[0] == 0, "detaching the empty owned buffer returns an empty string");
-        markdown_core_free(empty);
+        markdown_core_bytes_release(NULL, empty);
         empty = markdown_core_strbuf_detach(&buf);
         OK(runner, empty && empty[0] == 0, "detaching the sentinel returns an owned empty string");
-        markdown_core_free(empty);
+        markdown_core_bytes_release(NULL, empty);
         markdown_core_strbuf_free(&buf);
         payload_fill_fresh = 0;
         INT_EQ(runner, payload_live, 0, "every buffer allocation is released");
@@ -4254,7 +4254,8 @@ static void task_marker_ownership(test_batch_runner *runner) {
     markdown_core_chunk bytes = markdown_core_chunk_literal("🚀");
     OK(runner, markdown_core_chunk_to_cstr(&bytes) != NULL, "custom marker allocates");
     item->as.list->task_marker = markdown_core_optional_chunk_present(bytes);
-    marker_to_free = bytes.data;
+    /* The allocator frees the marker's bytes storage, its header first. */
+    marker_to_free = (markdown_core_bytes_header *)(void *)bytes.data - 1;
     marker_free_count = 0;
     markdown_core_node_free(item);
     INT_EQ(runner, marker_free_count, 1, "destroying an item frees its owned marker exactly once");
@@ -9777,6 +9778,17 @@ static void paragraphs_start_on_their_first_byte(test_batch_runner *runner) {
     }
 }
 
+/* `buf`'s text in storage the caller frees with markdown_core_free; `buf`
+ * goes. NULL when it lost content or the copy could not be allocated. */
+static char *strbuf_text(markdown_core_strbuf *buf) {
+    char *text = buf->oom ? NULL : markdown_core_alloc((size_t)buf->size + 1, 1);
+    if (text) {
+        memcpy(text, buf->ptr, (size_t)buf->size);
+    }
+    markdown_core_strbuf_free(buf);
+    return text;
+}
+
 /* The canonical dump of `source`, with every column on `line` other than the
  * sentinel moved left by `shift`. NULL when the parse or the dump fails. */
 static char *dump_with_line_shifted(const char *source, int line, int shift) {
@@ -9809,7 +9821,7 @@ static char *dump_with_line_shifted(const char *source, int line, int shift) {
         }
     }
     markdown_core_dump_free(dump);
-    return (char *)markdown_core_strbuf_detach(&out);
+    return strbuf_text(&out);
 }
 
 /* A LAZY LINE'S TEXT PARSES AS IT WOULD WITH THE QUOTE'S PREFIX. A lazy line
@@ -9883,7 +9895,7 @@ static char *describe_after_first(markdown_core_node *doc) {
         }
         tree_walk_end(&walk);
     }
-    return (char *)markdown_core_strbuf_detach(&out);
+    return strbuf_text(&out);
 }
 
 /* A CALLOUT'S MARKER LINE TAKES A LAZY LINE AS A PARAGRAPH DOES. A line that
@@ -10303,7 +10315,7 @@ static char *describe_row_on(markdown_core_node *doc, int line) {
         markdown_core_strbuf_putc(&out, '\n');
     }
     tree_walk_end(&walk);
-    return (char *)markdown_core_strbuf_detach(&out);
+    return strbuf_text(&out);
 }
 
 /* A PIPE ROW IS ONE ROW WHEREVER IT IS FOUND. Pipes delimit its cells, and

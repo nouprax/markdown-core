@@ -601,12 +601,6 @@ markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type
  * references to its children and fields in turn (markdown_core_node_release). */
 void markdown_core_node_free(markdown_core_node *node);
 
-/* Makes every byte string `node`'s record holds its own, copying a view of
- * the input a parse read. Completion calls it, so a node that a later
- * revision shares reads nothing another node owns. False when a copy could
- * not be allocated. */
-bool markdown_core_node_hold_strings(markdown_core_node *node);
-
 /* Takes one more reference to `node`, and returns it. */
 static inline markdown_core_node *markdown_core_node_retain(markdown_core_node *node) {
     node->refs++;
@@ -663,6 +657,12 @@ static inline void *markdown_core_node_pool_bytes(markdown_core_node_pool *pool,
 /* Gives back storage `markdown_core_node_pool_bytes` took, into `pool` for
  * reuse; a NULL pool is the plain release. */
 void markdown_core_node_pool_bytes_free(markdown_core_node_pool *pool, void *storage);
+
+/* Makes every byte string `node`'s record holds its own, copying a view of
+ * the input a parse read into `pool`'s storage. Completion calls it, so a
+ * node that a later revision shares reads nothing another node owns. False
+ * when a copy could not be allocated. */
+bool markdown_core_node_hold_strings(markdown_core_node_pool *pool, markdown_core_node *node);
 
 /* The bytes of a list of runs with room for `capacity` and `pieces`. */
 static inline size_t markdown_core_runs_size(uint32_t capacity, uint32_t pieces) {
