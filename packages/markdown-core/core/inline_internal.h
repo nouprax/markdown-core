@@ -76,6 +76,8 @@ struct markdown_core_inline_state {
      * a closer will pair without walking the stack. */
     int delim_openers[MARKDOWN_CORE_DELIM_RULE_COUNT];
     int delim_closers[MARKDOWN_CORE_DELIM_RULE_COUNT];
+    /* The rules that have a delimiter on the stack, one bit per rule. */
+    uint32_t delim_rules;
     /* One past the last consumed byte other than SP/TAB. This lets every
      * inline-note closer test its body's non-empty rule in constant time. */
     bufsize_t nonblank_end;

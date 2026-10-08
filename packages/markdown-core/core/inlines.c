@@ -388,6 +388,9 @@ void markdown_core_inline_remove_delimiter(markdown_core_inline_state *inline_st
     if (delim->can_close) {
         inline_state->delim_closers[delim->rule]--;
     }
+    if (!inline_state->delim_openers[delim->rule] && !inline_state->delim_closers[delim->rule]) {
+        inline_state->delim_rules &= ~(1u << delim->rule);
+    }
     if (delim->stay) {
         inline_state->owner_parser->stays[delim->stay - 1] = inline_state->now;
     }
@@ -538,6 +541,9 @@ static void push_delimiter(markdown_core_inline_state *inline_state, const markd
     }
     if (can_close) {
         inline_state->delim_closers[rule]++;
+    }
+    if (can_open || can_close) {
+        inline_state->delim_rules |= 1u << rule;
     }
     if (inline_state->records) {
         S_stay(inline_state, delim, inl_text);
@@ -980,12 +986,7 @@ markdown_core_member *markdown_core_inline_state_append(markdown_core_inline_sta
  * markdown_core_inline_reads): the rules with entries on it, and HELD when
  * an opaque body runs on past here or an element keeps a token open. */
 static uint32_t S_stack_state(markdown_core_inline_state *inline_state) {
-    uint32_t state = 0;
-    for (int rule = MARKDOWN_CORE_DELIM_RULE_NONE + 1; rule < MARKDOWN_CORE_DELIM_RULE_COUNT; rule++) {
-        if (inline_state->delim_openers[rule] || inline_state->delim_closers[rule]) {
-            state |= 1u << rule;
-        }
-    }
+    const uint32_t state = inline_state->delim_rules;
     if (inline_state->pos < inline_state->opaque_end) {
         return state | MARKDOWN_CORE_INLINE_HELD;
     }
@@ -1268,11 +1269,12 @@ static bool S_take_old(markdown_core_parser *parser, markdown_core_inline_state 
         return false;
     }
     const uint32_t rules = markdown_core_inline_entry_rules(old->entry);
+    if (rules & inline_state->delim_rules) {
+        return false;
+    }
     for (int rule = MARKDOWN_CORE_DELIM_RULE_NONE + 1; rule < MARKDOWN_CORE_DELIM_RULE_COUNT; rule++) {
         const delimiter_rule_spec *spec = delimiter_spec(inline_state, (markdown_core_delimiter_rule)rule);
-        const bool wraps = spec->single_kind == old->kind || spec->double_kind == old->kind;
-        if ((((rules >> rule) & 1u) && (inline_state->delim_openers[rule] || inline_state->delim_closers[rule])) ||
-            (wraps && inline_state->delim_openers[rule])) {
+        if (inline_state->delim_openers[rule] && (spec->single_kind == old->kind || spec->double_kind == old->kind)) {
             return false;
         }
     }
