@@ -82,7 +82,8 @@ void markdown_core_roster_release(markdown_core_roster *roster) {
     }
     /* The nodes only this roster held go, a left child turned up above its
      * parent at a time, so no stack is needed; a child something else holds
-     * loses this reference and stays. */
+     * loses this reference and stays. The parent turned down holds the one
+     * reference its new parent gives it. */
     markdown_core_roster *at = roster;
     while (at) {
         markdown_core_roster *left = at->left;
@@ -92,6 +93,7 @@ void markdown_core_roster_release(markdown_core_roster *roster) {
         }
         if (left) {
             at->left = left->right;
+            at->refs = 1;
             left->right = at;
             at = left;
             continue;
