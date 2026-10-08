@@ -263,13 +263,6 @@ struct markdown_core_parser {
     int64_t *edit_shift;
     size_t resume;
     bufsize_t resume_last_end;
-    /* Every run of nodes the parse took, with the offset its first is
-     * measured from now: the document lists their declarations (5.7). */
-    struct markdown_core_took {
-        const struct markdown_core_stem *run;
-        uint32_t anchor;
-    } *took;
-    size_t took_count, took_capacity;
     /* THE NODES OF TAKEN SUBTREES THE PARSE REPLACES (5.7), in the order
      * found: a root whose lookups are answered otherwise now, parsed again
      * as `member`, whose node takes its place once it settles, and a heading

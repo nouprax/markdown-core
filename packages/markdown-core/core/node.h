@@ -171,32 +171,17 @@ typedef struct {
     int continuation_line;
 } markdown_core_definition_body_value;
 
-/* A DEFINITION TABLE of a published document: every Footnote, every
- * Specimen, or every Reference, in source order, borrowed from the tree. */
-typedef struct markdown_core_definitions {
-    /* Every definition of the kind, in source order. */
-    const struct markdown_core_node **nodes;
-    size_t count;
-    /* The labeled ones by label, in source order among equal labels: the
-     * Footnotes and Specimens a lookup by label answers from. A label a
-     * reference occurrence names resolves through the reference targets. */
-    const struct markdown_core_node **labeled;
-    size_t labeled_count;
-} markdown_core_definitions;
-
 /* THE DOCUMENT's own field: the metadata the properties envelope produced.
  * Footnote, specimen and Reference definitions stay in the tree where they
- * were written; publishing the document records its definition tables here,
- * and the nodes reference occurrences resolve to, by label: for each label,
- * the first Reference declaring it, or, when none does, the first Heading
- * whose text declares it. */
+ * were written; the published document holds the registry's rosters of them
+ * (registry.h) as its parse left them: the Footnotes, Specimens and
+ * References in tree order, and for each footnote, specimen and reference
+ * label the node it resolves to, in label order -- for a reference label, the
+ * first Reference declaring it, or, when none does, the first Heading whose
+ * text declares it. */
 typedef struct {
     struct markdown_core_node *metadata;
-    markdown_core_definitions footnotes;
-    markdown_core_definitions specimens;
-    markdown_core_definitions references;
-    const struct markdown_core_node **reference_targets;
-    size_t reference_target_count;
+    struct markdown_core_roster *rosters[MARKDOWN_CORE_ROSTER_COUNT];
 } markdown_core_document_value;
 
 /* A node's source extent in UTF-8 bytes (the published form of its place). */
@@ -775,6 +760,10 @@ size_t markdown_core_stem_last_free(const markdown_core_stem *stem, size_t index
 /* How far the end of the last of the `count` nodes of `stem` from `index`
  * lies from where the first is measured: their leads and spans. */
 int64_t markdown_core_stem_length(const markdown_core_stem *stem, size_t index, size_t count);
+
+/* Whether a Footnote, Specimen, Reference or Heading has a label, and the
+ * label in `label`. */
+bool markdown_core_definition_label(const struct markdown_core_node *node, markdown_core_chunk *label);
 
 /* The last node of `stem` whose first order (markdown_core_node) lies at
  * `label` or before it: the node whose subtree holds the order labelled

@@ -413,13 +413,9 @@ static void free_node_as(markdown_core_node_pool *pool, markdown_core_node *node
         markdown_core_metadata_fields_free(node->as.metadata);
         break;
     case MARKDOWN_CORE_NODE_DOCUMENT:
-        markdown_core_free((void *)node->as.document->footnotes.nodes);
-        markdown_core_free((void *)node->as.document->footnotes.labeled);
-        markdown_core_free((void *)node->as.document->specimens.nodes);
-        markdown_core_free((void *)node->as.document->specimens.labeled);
-        markdown_core_free((void *)node->as.document->references.nodes);
-        markdown_core_free((void *)node->as.document->references.labeled);
-        markdown_core_free((void *)node->as.document->reference_targets);
+        for (size_t i = 0; i < MARKDOWN_CORE_ROSTER_COUNT; i++) {
+            markdown_core_roster_release(node->as.document->rosters[i]);
+        }
         break;
     case MARKDOWN_CORE_NODE_HEADING:
         if (node->as.heading->label.len) {
@@ -954,8 +950,8 @@ markdown_core_stem *markdown_core_stem_replace(markdown_core_node_pool *pool, co
     markdown_core_stem *below = NULL;
     while (depth--) {
         const markdown_core_stem *old = path[depth];
-        markdown_core_stem *copy = S_stem_hold(pool, old->height, old->entries, old->width, NULL,
-                                                old->marks & MARKDOWN_CORE_STEM_FRESH);
+        markdown_core_stem *copy =
+            S_stem_hold(pool, old->height, old->entries, old->width, NULL, old->marks & MARKDOWN_CORE_STEM_FRESH);
         if (!copy) {
             if (below) {
                 markdown_core_node_retain(node);
@@ -1157,32 +1153,40 @@ markdown_core_stem *markdown_core_stem_join(markdown_core_node_pool *pool, markd
     return out[0];
 }
 
-/* A STEM'S NODES FROM `index`, `count` of them, as the stems that lie wholly
- * among them and the runs of the leaves they cut: a walk in order that
- * hands each to `visit`, with a stem of height 0 for a cut run. The walk
- * keeps the stems it is due to visit on a stack no deeper than the width at each
- * level. */
+/* A STEM'S NODES FROM `index`, `count` of them, as runs of entries of the
+ * stems on the way: a walk in order that hands `visit` each run of one
+ * stem's entries that lie wholly among them, the most it can at once -- a
+ * whole stem, the entries of a stem between the two it goes down into, or
+ * the nodes of a leaf it cuts. A stem the nodes cover in part has at most
+ * two entries covered in part, the first and the last, so the walk visits
+ * at most two runs at each height, and keeps at most three items due at
+ * each. */
 typedef struct {
     const markdown_core_stem *stem;
+    /* Where the stem's nodes begin, or, for a run of its entries, SIZE_MAX. */
     size_t start;
+    uint8_t from, to;
 } S_stem_due;
 
-typedef bool (*S_stem_visit)(void *context, const markdown_core_stem *stem, size_t from, size_t count);
+typedef bool (*S_stem_visit)(void *context, const markdown_core_stem *stem, size_t from, size_t to);
 
 static bool S_stem_cover(const markdown_core_stem *stem, size_t index, size_t count, S_stem_visit visit,
                          void *context) {
-    S_stem_due due[MARKDOWN_CORE_STEM_WIDTH * MARKDOWN_CORE_STEM_HEIGHT];
+    S_stem_due due[3 * MARKDOWN_CORE_STEM_HEIGHT + 1];
     size_t depth = 0;
     const size_t end = index + count;
-    due[depth++] = (S_stem_due){stem, 0};
+    due[depth++] = (S_stem_due){stem, 0, 0, 0};
     while (depth) {
         const S_stem_due top = due[--depth];
-        const size_t top_end = top.start + top.stem->count;
-        if (top_end <= index || top.start >= end) {
+        if (top.start == SIZE_MAX) {
+            if (!visit(context, top.stem, top.from, top.to)) {
+                return false;
+            }
             continue;
         }
+        const size_t top_end = top.start + top.stem->count;
         if (top.start >= index && top_end <= end) {
-            if (!visit(context, top.stem, 0, top.stem->count)) {
+            if (!visit(context, top.stem, 0, top.stem->width)) {
                 return false;
             }
             continue;
@@ -1190,45 +1194,88 @@ static bool S_stem_cover(const markdown_core_stem *stem, size_t index, size_t co
         if (!top.stem->height) {
             const size_t from = index > top.start ? index - top.start : 0;
             const size_t to = (end < top_end ? end : top_end) - top.start;
-            if (!visit(context, top.stem, from, to - from)) {
+            if (!visit(context, top.stem, from, to)) {
                 return false;
             }
             continue;
         }
-        /* Its entries go on in reverse, so the first comes off first. */
-        size_t start = top_end;
-        for (uint8_t i = top.stem->width; i-- > 0;) {
-            const markdown_core_stem *below = top.stem->entries[i].stem;
-            start -= below->count;
-            due[depth++] = (S_stem_due){below, start};
+        /* The entries it covers: those wholly covered are one run, between
+         * the first and the last, which it goes down into when they are
+         * covered in part. */
+        size_t at = top.start;
+        uint8_t first = 0;
+        while (at + top.stem->entries[first].stem->count <= index) {
+            at += top.stem->entries[first++].stem->count;
+        }
+        const size_t first_start = at;
+        uint8_t last = first;
+        size_t last_start = at;
+        while (last + 1 < top.stem->width && at + top.stem->entries[last].stem->count < end) {
+            at += top.stem->entries[last++].stem->count;
+            last_start = at;
+        }
+        const bool first_whole = first_start >= index;
+        const bool last_whole = last_start + top.stem->entries[last].stem->count <= end;
+        const uint8_t from = (uint8_t)(first + !first_whole), to = (uint8_t)(last + last_whole);
+        if (!last_whole && (last != first || first_whole)) {
+            due[depth++] = (S_stem_due){top.stem->entries[last].stem, last_start, 0, 0};
+        }
+        if (from < to) {
+            due[depth++] = (S_stem_due){top.stem, SIZE_MAX, from, to};
+        }
+        if (!first_whole) {
+            due[depth++] = (S_stem_due){top.stem->entries[first].stem, first_start, 0, 0};
         }
     }
     return true;
 }
 
+/* A slice's runs as trees: a run of one entry is the stem it holds, and
+ * any other is a stem of its stem's height holding it. */
 typedef struct {
     markdown_core_node_pool *pool;
     const markdown_core_stem_summary *summary;
-    markdown_core_stem *joined;
+    markdown_core_stem *pieces[2 * MARKDOWN_CORE_STEM_HEIGHT + 1];
+    size_t count;
 } S_stem_cut;
 
-static bool S_stem_cut_visit(void *context, const markdown_core_stem *stem, size_t from, size_t count) {
+static bool S_stem_cut_visit(void *context, const markdown_core_stem *stem, size_t from, size_t to) {
     S_stem_cut *cut = context;
-    markdown_core_stem *piece = from == 0 && count == stem->count
-                                    ? markdown_core_stem_retain((markdown_core_stem *)stem)
-                                    : S_stem_hold(cut->pool, 0, stem->entries + from, count, cut->summary,
-                                                  stem->marks & MARKDOWN_CORE_STEM_FRESH);
+    markdown_core_stem *piece = from == 0 && to == stem->width ? markdown_core_stem_retain((markdown_core_stem *)stem)
+                                : stem->height && to - from == 1
+                                    ? markdown_core_stem_retain(stem->entries[from].stem)
+                                    : S_stem_hold(cut->pool, stem->height, stem->entries + from, to - from,
+                                                  cut->summary, stem->marks & MARKDOWN_CORE_STEM_FRESH);
     if (!piece) {
         return false;
     }
-    bool failed;
-    markdown_core_stem *joined = markdown_core_stem_join(cut->pool, cut->joined, piece, cut->summary, &failed);
-    if (failed) {
-        markdown_core_stem_release(cut->pool, piece);
-        return false;
-    }
-    cut->joined = joined;
+    cut->pieces[cut->count++] = piece;
     return true;
+}
+
+/* The pieces from `first` to `last`, all of them, joined into `*joined`
+ * one at a time, the shorter into the taller, from the end that is
+ * `forward` -- each join meets its piece on its own height, so the joins
+ * cost what the heights climb. Each piece is taken or released. */
+static bool S_stem_fold(S_stem_cut *cut, size_t first, size_t last, bool forward, markdown_core_stem **joined) {
+    bool ok = true;
+    for (size_t i = first; i <= last; i++) {
+        markdown_core_stem *piece = cut->pieces[forward ? i : first + last - i];
+        if (!ok) {
+            markdown_core_stem_release(cut->pool, piece);
+            continue;
+        }
+        bool failed;
+        markdown_core_stem *next = forward ? markdown_core_stem_join(cut->pool, *joined, piece, cut->summary, &failed)
+                                           : markdown_core_stem_join(cut->pool, piece, *joined, cut->summary, &failed);
+        if (failed) {
+            markdown_core_stem_release(cut->pool, piece);
+            ok = false;
+            continue;
+        }
+        *joined = next;
+    }
+    return ok;
 }
 
 markdown_core_stem *markdown_core_stem_slice(markdown_core_node_pool *pool, const markdown_core_stem *stem,
@@ -1238,13 +1285,31 @@ markdown_core_stem *markdown_core_stem_slice(markdown_core_node_pool *pool, cons
     if (!count) {
         return NULL;
     }
-    S_stem_cut cut = {pool, summary, NULL};
+    S_stem_cut cut = {pool, summary, {NULL}, 0};
     if (!S_stem_cover(stem, index, count, S_stem_cut_visit, &cut)) {
-        markdown_core_stem_release(pool, cut.joined);
+        for (size_t i = 0; i < cut.count; i++) {
+            markdown_core_stem_release(pool, cut.pieces[i]);
+        }
         *failed = true;
         return NULL;
     }
-    return cut.joined;
+    /* The pieces climb to the tallest and descend after it: those before it
+     * join from the first, those after it from the last. */
+    size_t peak = 0;
+    for (size_t i = 1; i < cut.count; i++) {
+        peak = cut.pieces[i]->height > cut.pieces[peak]->height ? i : peak;
+    }
+    markdown_core_stem *front = NULL, *back = NULL;
+    const bool front_ok = S_stem_fold(&cut, 0, peak, true, &front);
+    const bool back_ok = peak + 1 >= cut.count || S_stem_fold(&cut, peak + 1, cut.count - 1, false, &back);
+    markdown_core_stem *joined =
+        front_ok && back_ok ? markdown_core_stem_join(pool, front, back, summary, failed) : NULL;
+    if (!joined) {
+        markdown_core_stem_release(pool, front);
+        markdown_core_stem_release(pool, back);
+        *failed = true;
+    }
+    return joined;
 }
 
 typedef struct {
@@ -1258,14 +1323,11 @@ static void S_stem_total_add(S_stem_total *total, uint64_t word) {
     total->any = true;
 }
 
-static bool S_stem_total_visit(void *context, const markdown_core_stem *stem, size_t from, size_t count) {
+static bool S_stem_total_visit(void *context, const markdown_core_stem *stem, size_t from, size_t to) {
     S_stem_total *total = context;
-    if (from == 0 && count == stem->count) {
-        S_stem_total_add(total, stem->summary);
-        return true;
-    }
-    for (size_t i = from; i < from + count; i++) {
-        S_stem_total_add(total, total->summary->of(stem->entries[i].node));
+    for (size_t i = from; i < to; i++) {
+        S_stem_total_add(total,
+                         stem->height ? stem->entries[i].stem->summary : total->summary->of(stem->entries[i].node));
     }
     return true;
 }
@@ -1277,15 +1339,19 @@ uint64_t markdown_core_stem_run_summary(const markdown_core_stem *stem, size_t i
     return total.word;
 }
 
-static bool S_stem_length_visit(void *context, const markdown_core_stem *stem, size_t from, size_t count) {
+static bool S_stem_length_visit(void *context, const markdown_core_stem *stem, size_t from, size_t to) {
     int64_t *length = context;
-    if (from == 0 && count == stem->count) {
+    if (from == 0 && to == stem->width) {
         *length += stem->length;
         return true;
     }
-    for (size_t i = from; i < from + count; i++) {
-        const markdown_core_node *node = stem->entries[i].node;
-        *length += node->where.extent.lead + (int64_t)node->where.extent.span;
+    for (size_t i = from; i < to; i++) {
+        if (stem->height) {
+            *length += stem->entries[i].stem->length;
+        } else {
+            const markdown_core_node *node = stem->entries[i].node;
+            *length += node->where.extent.lead + (int64_t)node->where.extent.span;
+        }
     }
     return true;
 }
@@ -1430,7 +1496,8 @@ size_t markdown_core_stem_find(const markdown_core_stem *stem, uint64_t label) {
         uint8_t chosen = 0;
         size_t before = 0, chosen_before = 0;
         for (uint8_t i = 0; i < stem->width; i++) {
-            const markdown_core_order *first = stem->height ? stem->entries[i].stem->first : stem->entries[i].node->first;
+            const markdown_core_order *first =
+                stem->height ? stem->entries[i].stem->first : stem->entries[i].node->first;
             if (S_order_at_or_before(first, label)) {
                 chosen = i;
                 chosen_before = before;
@@ -1442,6 +1509,24 @@ size_t markdown_core_stem_find(const markdown_core_stem *stem, uint64_t label) {
             return position;
         }
         stem = stem->entries[chosen].stem;
+    }
+}
+
+/* Whether a definition has a label, and the label in `label`. */
+bool markdown_core_definition_label(const markdown_core_node *node, markdown_core_chunk *label) {
+    switch (node->kind) {
+    case MARKDOWN_CORE_NODE_FOOTNOTE:
+        *label = node->as.footnote->label.value;
+        return node->as.footnote->label.has_value;
+    case MARKDOWN_CORE_NODE_SPECIMEN:
+        *label = node->as.specimen->label.value;
+        return node->as.specimen->label.has_value;
+    case MARKDOWN_CORE_NODE_REFERENCE:
+        *label = node->as.reference->label;
+        return label->len > 0;
+    default:
+        *label = node->as.heading->label;
+        return label->len > 0;
     }
 }
 

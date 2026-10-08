@@ -130,7 +130,6 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     markdown_core_free(parser->input_facts);
     markdown_core_free(parser->input_chunks);
     markdown_core_free(parser->edit_shift);
-    markdown_core_free(parser->took);
     for (size_t i = 0; i < parser->replacement_count; i++) {
         struct markdown_core_replacement *replacement = &parser->replacements[i];
         if (replacement->member) {
@@ -1576,8 +1575,9 @@ static bool S_take(markdown_core_parser *parser, markdown_core_member *parent, m
      * last node. */
     bool failed;
     const size_t taken = end - parent->scan_next;
-    markdown_core_stem *run = markdown_core_stem_slice(parser->pool, children, parent->scan_next, taken,
-                                                       markdown_core_parser_kind(parser, parent->node)->summary, &failed);
+    markdown_core_stem *run =
+        markdown_core_stem_slice(parser->pool, children, parent->scan_next, taken,
+                                 markdown_core_parser_kind(parser, parent->node)->summary, &failed);
     markdown_core_node *final_node = markdown_core_stem_at(children, final);
     markdown_core_member *member = failed ? NULL : markdown_core_parser_member(parser, final_node, false);
     if (!member) {
@@ -1588,14 +1588,6 @@ static bool S_take(markdown_core_parser *parser, markdown_core_member *parent, m
     member->run = run;
     member->past = end;
     markdown_core_member_attach(parent, member, NULL);
-    struct markdown_core_took *took =
-        markdown_core_reserve(parser->took, &parser->took_capacity, parser->took_count + 1, sizeof(*took));
-    if (!took) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return false;
-    }
-    parser->took = took;
-    took[parser->took_count++] = (struct markdown_core_took){run, (uint32_t)(parent->scan_at + shift)};
     /* A taken node is complete: it continues itself, with its id. */
     const uint32_t at = run_end;
     member->decided = member->identified = member->numbered = true;
@@ -3793,7 +3785,8 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_node *S_finish_parse(ma
     /* Every block is complete: the old nodes the parse did not take are no
      * longer the document's, and their facts leave the registry (5.7) before
      * any inline root asks it. The nodes go when their tree is released. */
-    if (!parser->error && parser->revision->previous && !markdown_core_registry_retire(parser->revision->previous)) {
+    if (!parser->error && parser->revision->previous &&
+        !markdown_core_registry_retire(parser->registry, parser->revision->previous)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     const markdown_core_element_instance *document = parser->dialect->document_structure;

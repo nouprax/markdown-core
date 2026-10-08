@@ -39,12 +39,6 @@ static int tree_order(const void *left, const void *right) {
     return (a > b) - (a < b);
 }
 
-static int address_order(const void *left, const void *right) {
-    const uintptr_t a = (uintptr_t)*(const markdown_core_node *const *)left;
-    const uintptr_t b = (uintptr_t)*(const markdown_core_node *const *)right;
-    return (a > b) - (a < b);
-}
-
 /* RESOLUTION OF LOOKUPS (5.7). Every definition is declared once the blocks
  * are complete and the headings the parse made have declared their labels,
  * and the questions asked of the registry then that an earlier parse asked
@@ -88,45 +82,23 @@ static bool lookups_changed(markdown_core_parser *parser, const markdown_core_no
 }
 
 /* The document is prepared: the headings the parse made declare their
- * labels; the subtrees the parse took list their declarations but for the
- * content of the roots whose lookups are answered otherwise now, which are
- * parsed again in place, their headings with the others. */
+ * labels, and the roots whose lookups are answered otherwise now are parsed
+ * again in place, their headings with the others. */
 static void prepare_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
     markdown_core_publication *publication = &((document_state *)self->state)->publication;
     if (headings) {
         markdown_core_headings_prepare(headings, parser);
     }
-    const markdown_core_node **roots = NULL, **nodes = NULL;
+    const markdown_core_node **roots = NULL;
     size_t count = 0;
     if (!parser->error && !lookups_changed(parser, &roots, &count)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
-    if (count && !(nodes = markdown_core_alloc(count, sizeof(*nodes)))) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
-    if (nodes) {
-        memcpy((void *)nodes, (const void *)roots, count * sizeof(*nodes));
-        qsort(nodes, count, sizeof(*nodes), address_order);
-    }
-    for (size_t i = 0; i < parser->took_count && !parser->error; i++) {
-        const markdown_core_stem *run = parser->took[i].run;
-        uint32_t anchor = parser->took[i].anchor;
-        markdown_core_stem_walk walk;
-        markdown_core_stem_walk_begin(&walk, run, 0, run->count);
-        for (const markdown_core_node *node; (node = markdown_core_stem_walk_next(&walk)) && !parser->error;) {
-            const uint32_t start = (uint32_t)((int64_t)anchor + node->where.extent.lead);
-            anchor = start + node->where.extent.span;
-            if (!markdown_core_publication_take(publication, node, start, nodes, nodes ? count : 0)) {
-                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            }
-        }
     }
     for (size_t i = 0; i < count && !parser->error; i++) {
         markdown_core_parse_again(parser, publication, roots[i]);
     }
     markdown_core_free((void *)roots);
-    markdown_core_free((void *)nodes);
     if (headings && count && !parser->error) {
         markdown_core_headings_prepare(headings, parser);
     }
@@ -146,9 +118,10 @@ static void settle_member(const markdown_core_element_instance *self, markdown_c
                           markdown_core_member *member) {
     markdown_core_settle_member(parser, &((document_state *)self->state)->publication, member);
 }
-/* The document is finished: the headings take their anchors, and each node
- * of a subtree the parse took that it replaces gives its place to the node
- * replacing it, unless that is itself (5.7). */
+/* The document is finished: the headings take their anchors, each node of a
+ * subtree the parse took that it replaces gives its place to the node
+ * replacing it, unless that is itself, and each label whose key changed
+ * takes its place in its roster (5.7). */
 static void finish_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
     markdown_core_publication *publication = &((document_state *)self->state)->publication;
@@ -170,6 +143,9 @@ static void finish_document(const markdown_core_element_instance *self, markdown
         } else if (!markdown_core_publication_splice(parser, publication, replacement->old, node)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
+    }
+    if (!parser->error && !markdown_core_registry_resolve(parser->registry)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     markdown_core_registry_settle(parser->registry);
 }

@@ -87,6 +87,49 @@ struct markdown_core_fact {
     unsigned char text[];
 };
 
+/* A ROSTER (5.8): a persistent balanced tree of nodes, in the order of its
+ * roster, each with the size of its subtree, so the nodes are counted, and
+ * found by place, in O(log n). A roster is a value: a document holds the
+ * rosters of its parse, an edit makes new ones that share with them all it
+ * did not change, and a roster is changed in place only where nothing else
+ * holds it.
+ *
+ * The registry keeps the document's rosters as its orders and facts change:
+ * the Footnotes, Specimens and References in tree order, each node with its
+ * order, which places it (5.7); and for the footnote, specimen and reference
+ * labels, the node each label's key resolves to, in label order. */
+typedef struct markdown_core_roster {
+    uint32_t refs;
+    uint8_t height;
+    size_t count;
+    struct markdown_core_roster *left, *right;
+    const struct markdown_core_node *node;
+    const markdown_core_order *order;
+} markdown_core_roster;
+
+typedef enum {
+    MARKDOWN_CORE_ROSTER_FOOTNOTES,
+    MARKDOWN_CORE_ROSTER_SPECIMENS,
+    MARKDOWN_CORE_ROSTER_REFERENCES,
+    MARKDOWN_CORE_ROSTER_FOOTNOTE_LABELS,
+    MARKDOWN_CORE_ROSTER_SPECIMEN_LABELS,
+    MARKDOWN_CORE_ROSTER_REFERENCE_LABELS,
+    MARKDOWN_CORE_ROSTER_COUNT
+} markdown_core_roster_kind;
+
+static inline size_t markdown_core_roster_count(const markdown_core_roster *roster) {
+    return roster ? roster->count : 0;
+}
+/* The node at `index`, below the count. */
+const struct markdown_core_node *markdown_core_roster_at(const markdown_core_roster *roster, size_t index);
+/* How many of the roster's nodes come before what `before` says: it answers
+ * whether a node does, and they are the first ones. */
+size_t markdown_core_roster_rank(const markdown_core_roster *roster,
+                                 bool (*before)(const markdown_core_roster *entry, const void *context),
+                                 const void *context);
+markdown_core_roster *markdown_core_roster_retain(const markdown_core_roster *roster);
+void markdown_core_roster_release(markdown_core_roster *roster);
+
 struct markdown_core_key {
     markdown_core_registry *registry;
     /* The next key of its bucket, and of the marked keys. */
@@ -117,6 +160,8 @@ struct markdown_core_registry {
     uint64_t edit;
     /* Where a label is normalized before it is asked or declared. */
     markdown_core_strbuf scratch;
+    /* The rosters of the document as the session's last parse leaves it. */
+    markdown_core_roster *rosters[MARKDOWN_CORE_ROSTER_COUNT];
 };
 
 /* A parse begins: the facts it makes are this edit's. */
@@ -147,26 +192,43 @@ const markdown_core_strbuf *markdown_core_registry_normalize(markdown_core_regis
 
 /* Every fact `node` holds leaves its key, which is marked. */
 void markdown_core_registry_unlink(struct markdown_core_node *node);
+/* For each key marked, the node it resolves to now takes its label's place
+ * in its roster: its first declaring fact in tree order, a Reference before
+ * a heading's target. False when a roster could not grow. */
+bool markdown_core_registry_resolve(markdown_core_registry *registry);
 /* Every question the inline root `node` asked leaves its key's reverse
  * index; the key is marked. */
 void markdown_core_registry_unask(struct markdown_core_node *node);
 /* `to` takes the facts and the order of `from`, the node a parse made equal
- * to it or a copy of it, and drops its own. */
-void markdown_core_registry_move(struct markdown_core_node *from, struct markdown_core_node *to);
-/* The facts of every node of `root` that only the old tree holds leave: the
- * nodes the parse did not take. False when the walk could not allocate its
- * stack. */
-bool markdown_core_registry_retire(struct markdown_core_node *root);
+ * to it or a copy of it, and drops its own; its node takes `from`'s place in
+ * the rosters, and the keys of the facts are marked. False when a roster
+ * could not change. */
+bool markdown_core_registry_move(markdown_core_registry *registry, struct markdown_core_node *from,
+                                 struct markdown_core_node *to);
+/* The facts and orders of every node of `root` that only the old tree holds
+ * leave: the nodes the parse did not take. False when the walk could not
+ * allocate its stack or a roster could not change. */
+bool markdown_core_registry_retire(markdown_core_registry *registry, struct markdown_core_node *root);
 
 /* A new order for `node`, in no list; NULL when it could not be had. */
 markdown_core_order *markdown_core_order_new(struct markdown_core_node *node);
-/* `order` leaves its list, if it is in one, and goes. */
+/* `order` leaves its list, if it is in one, and goes, its node out of the
+ * rosters. False when a roster could not change; it goes all the same. */
+bool markdown_core_order_leave(markdown_core_registry *registry, markdown_core_order *order);
+/* `order` goes; it is in no list, or its node goes with the registry's
+ * rosters. */
 void markdown_core_order_free(markdown_core_order *order);
 /* Whether `order` is in the registry's list. */
 static inline bool markdown_core_order_joined(const markdown_core_order *order) { return order->prev != NULL; }
-/* The sequence of new orders from `first` joins the list: each right
- * before its `before`, and one with none at the end. */
-void markdown_core_order_join(markdown_core_registry *registry, markdown_core_order *first);
+/* `order` leaves the list, and its node the rosters, to join it again
+ * (markdown_core_order_join). False when a roster could not change; it
+ * leaves the list all the same. */
+bool markdown_core_order_unjoin(markdown_core_registry *registry, markdown_core_order *order);
+/* The sequence of orders from `first` joins the list, and the nodes of the
+ * rosters' kinds their rosters: an order right before its `before`, and one
+ * with none right after the one before it, the first right after `after`.
+ * False when a roster could not grow. */
+bool markdown_core_order_join(markdown_core_registry *registry, markdown_core_order *first, markdown_core_order *after);
 
 /* Whether the key is defined: a fact declares it. */
 static inline bool markdown_core_key_defined(const markdown_core_key *key) { return key->declared > 0; }

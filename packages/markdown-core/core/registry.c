@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <string.h>
 
 #include "alloc.h"
@@ -38,6 +39,305 @@ static void key_mark(markdown_core_key *key) {
     key->was = key->declared > 0;
 }
 
+/* THE ROSTERS (registry.h): AVL trees, each node with the size of its
+ * subtree. An AVL tree of fewer than 2^64 nodes is at most 92 high, so a
+ * path down one fits ROSTER_HEIGHT slots. */
+#define ROSTER_HEIGHT 96
+
+static inline uint8_t roster_height(const markdown_core_roster *roster) { return roster ? roster->height : 0; }
+
+static void roster_sum(markdown_core_roster *roster) {
+    const uint8_t left = roster_height(roster->left), right = roster_height(roster->right);
+    roster->height = (uint8_t)(1 + (left > right ? left : right));
+    roster->count = 1 + markdown_core_roster_count(roster->left) + markdown_core_roster_count(roster->right);
+}
+
+markdown_core_roster *markdown_core_roster_retain(const markdown_core_roster *roster) {
+    markdown_core_roster *held = (markdown_core_roster *)roster;
+    if (held) {
+        held->refs++;
+    }
+    return held;
+}
+
+void markdown_core_roster_release(markdown_core_roster *roster) {
+    if (!roster || --roster->refs) {
+        return;
+    }
+    /* The nodes only this roster held go, a left child turned up above its
+     * parent at a time, so no stack is needed; a child something else holds
+     * loses this reference and stays. */
+    markdown_core_roster *at = roster;
+    while (at) {
+        markdown_core_roster *left = at->left;
+        if (left && left->refs > 1) {
+            left->refs--;
+            at->left = left = NULL;
+        }
+        if (left) {
+            at->left = left->right;
+            left->right = at;
+            at = left;
+            continue;
+        }
+        markdown_core_roster *right = at->right;
+        markdown_core_free(at);
+        at = right && --right->refs == 0 ? right : NULL;
+    }
+}
+
+const markdown_core_node *markdown_core_roster_at(const markdown_core_roster *roster, size_t index) {
+    for (;;) {
+        const size_t left = markdown_core_roster_count(roster->left);
+        if (index == left) {
+            return roster->node;
+        }
+        if (index < left) {
+            roster = roster->left;
+        } else {
+            index -= left + 1;
+            roster = roster->right;
+        }
+    }
+}
+
+size_t markdown_core_roster_rank(const markdown_core_roster *roster,
+                                 bool (*before)(const markdown_core_roster *entry, const void *context),
+                                 const void *context) {
+    size_t rank = 0;
+    while (roster) {
+        if (before(roster, context)) {
+            rank += markdown_core_roster_count(roster->left) + 1;
+            roster = roster->right;
+        } else {
+            roster = roster->left;
+        }
+    }
+    return rank;
+}
+
+/* The node at `*slot` is the edited roster's own: a copy takes the place of
+ * one something else holds too. False when the copy could not be had. */
+static bool roster_own(markdown_core_roster **slot) {
+    markdown_core_roster *held = *slot;
+    if (held->refs == 1) {
+        return true;
+    }
+    markdown_core_roster *copy = markdown_core_alloc(1, sizeof(*copy));
+    if (!copy) {
+        return false;
+    }
+    *copy = *held;
+    copy->refs = 1;
+    markdown_core_roster_retain(copy->left);
+    markdown_core_roster_retain(copy->right);
+    held->refs--;
+    *slot = copy;
+    return true;
+}
+
+static void roster_rotate_right(markdown_core_roster **slot) {
+    markdown_core_roster *at = *slot, *left = at->left;
+    at->left = left->right;
+    left->right = at;
+    roster_sum(at);
+    roster_sum(left);
+    *slot = left;
+}
+
+static void roster_rotate_left(markdown_core_roster **slot) {
+    markdown_core_roster *at = *slot, *right = at->right;
+    at->right = right->left;
+    right->left = at;
+    roster_sum(at);
+    roster_sum(right);
+    *slot = right;
+}
+
+/* The node at `*slot`, whose subtrees are balanced and within two of each
+ * other's height, is balanced again. A rotation changes only nodes the
+ * edited roster owns; when one could not be owned, the node keeps its shape
+ * and its sums, and the answer is false. */
+static bool roster_balance(markdown_core_roster **slot) {
+    markdown_core_roster *at = *slot;
+    const int balance = (int)roster_height(at->left) - (int)roster_height(at->right);
+    if (balance > 1) {
+        if (!roster_own(&at->left) ||
+            (roster_height(at->left->left) < roster_height(at->left->right) && !roster_own(&at->left->right))) {
+            roster_sum(at);
+            return false;
+        }
+        if (roster_height(at->left->left) < roster_height(at->left->right)) {
+            roster_rotate_left(&at->left);
+        }
+        roster_rotate_right(slot);
+    } else if (balance < -1) {
+        if (!roster_own(&at->right) ||
+            (roster_height(at->right->right) < roster_height(at->right->left) && !roster_own(&at->right->left))) {
+            roster_sum(at);
+            return false;
+        }
+        if (roster_height(at->right->right) < roster_height(at->right->left)) {
+            roster_rotate_right(&at->right);
+        }
+        roster_rotate_left(slot);
+    } else {
+        roster_sum(at);
+    }
+    return true;
+}
+
+/* The nodes on the path, from the deepest up, take their sums and are
+ * balanced again. */
+static bool roster_rise(markdown_core_roster **path[], size_t depth) {
+    bool ok = true;
+    while (depth) {
+        ok &= roster_balance(path[--depth]);
+    }
+    return ok;
+}
+
+/* The path from `*root` down to the node at `index`, owned: its slots in
+ * `path`, the node's last. Its depth, or 0 when a node could not be owned. */
+static size_t roster_descend(markdown_core_roster **root, size_t index, markdown_core_roster **path[]) {
+    size_t depth = 0;
+    markdown_core_roster **slot = root;
+    for (;;) {
+        if (!roster_own(slot)) {
+            return 0;
+        }
+        path[depth++] = slot;
+        markdown_core_roster *at = *slot;
+        const size_t left = markdown_core_roster_count(at->left);
+        if (index == left) {
+            return depth;
+        }
+        if (index < left) {
+            slot = &at->left;
+        } else {
+            index -= left + 1;
+            slot = &at->right;
+        }
+    }
+}
+
+/* `node` and `order` take place `index` of the roster at `*root`. */
+static bool roster_insert(markdown_core_roster **root, size_t index, const markdown_core_node *node,
+                          const markdown_core_order *order) {
+    markdown_core_roster **path[ROSTER_HEIGHT];
+    size_t depth = 0;
+    markdown_core_roster **slot = root;
+    while (*slot) {
+        if (!roster_own(slot)) {
+            return false;
+        }
+        path[depth++] = slot;
+        markdown_core_roster *at = *slot;
+        const size_t left = markdown_core_roster_count(at->left);
+        if (index <= left) {
+            slot = &at->left;
+        } else {
+            index -= left + 1;
+            slot = &at->right;
+        }
+    }
+    markdown_core_roster *leaf = markdown_core_alloc(1, sizeof(*leaf));
+    if (!leaf) {
+        return false;
+    }
+    *leaf = (markdown_core_roster){1, 1, 1, NULL, NULL, node, order};
+    *slot = leaf;
+    return roster_rise(path, depth);
+}
+
+/* The node at `index` leaves the roster at `*root`. */
+static bool roster_remove(markdown_core_roster **root, size_t index) {
+    markdown_core_roster **path[ROSTER_HEIGHT];
+    size_t depth = roster_descend(root, index, path);
+    if (!depth) {
+        return false;
+    }
+    markdown_core_roster *at = *path[depth - 1];
+    if (at->left && at->right) {
+        /* It takes what the first node after it holds, which goes in its
+         * stead. */
+        markdown_core_roster **next = &at->right;
+        for (;;) {
+            if (!roster_own(next)) {
+                return false;
+            }
+            if (!(*next)->left) {
+                break;
+            }
+            path[depth++] = next;
+            next = &(*next)->left;
+        }
+        markdown_core_roster *after = *next;
+        at->node = after->node;
+        at->order = after->order;
+        *next = after->right;
+        markdown_core_free(after);
+    } else {
+        *path[--depth] = at->left ? at->left : at->right;
+        markdown_core_free(at);
+    }
+    return roster_rise(path, depth);
+}
+
+/* `node` and `order` take the place of the roster's node at `index`. */
+static bool roster_put(markdown_core_roster **root, size_t index, const markdown_core_node *node,
+                       const markdown_core_order *order) {
+    markdown_core_roster **path[ROSTER_HEIGHT];
+    const size_t depth = roster_descend(root, index, path);
+    if (!depth) {
+        return false;
+    }
+    (*path[depth - 1])->node = node;
+    (*path[depth - 1])->order = order;
+    return true;
+}
+
+/* The roster that lists `node` in tree order, or -1. */
+static int roster_of(const markdown_core_node *node) {
+    switch (node->kind) {
+    case MARKDOWN_CORE_NODE_FOOTNOTE:
+        return MARKDOWN_CORE_ROSTER_FOOTNOTES;
+    case MARKDOWN_CORE_NODE_SPECIMEN:
+        return MARKDOWN_CORE_ROSTER_SPECIMENS;
+    case MARKDOWN_CORE_NODE_REFERENCE:
+        return MARKDOWN_CORE_ROSTER_REFERENCES;
+    default:
+        return -1;
+    }
+}
+
+static bool roster_before_label(const markdown_core_roster *entry, const void *context) {
+    return entry->order->label < *(const uint64_t *)context;
+}
+
+/* Where `order`'s node lies in its tree order roster, or is to. */
+static size_t roster_place(const markdown_core_roster *roster, const markdown_core_order *order) {
+    return markdown_core_roster_rank(roster, roster_before_label, &order->label);
+}
+
+/* `order`, just placed, lists its node in its roster. */
+static bool roster_enter(markdown_core_registry *registry, const markdown_core_order *order) {
+    const int kind = roster_of(order->node);
+    return kind < 0 ||
+           roster_insert(&registry->rosters[kind], roster_place(registry->rosters[kind], order), order->node, order);
+}
+
+/* `order`, still placed, takes its node out of its roster. */
+static bool roster_leave(markdown_core_registry *registry, const markdown_core_order *order) {
+    const int kind = roster_of(order->node);
+    if (kind < 0) {
+        return true;
+    }
+    const size_t index = roster_place(registry->rosters[kind], order);
+    assert(index < markdown_core_roster_count(registry->rosters[kind]));
+    return roster_remove(&registry->rosters[kind], index);
+}
+
 /* THE ORDER LIST. Labels lie below ORDER_TOP; the list's head stands for
  * 0 before the first and ORDER_TOP after the last. */
 #define ORDER_TOP (UINT64_C(1) << 62)
@@ -50,15 +350,32 @@ markdown_core_order *markdown_core_order_new(markdown_core_node *node) {
     return order;
 }
 
+static void order_unlink(markdown_core_order *order) {
+    order->prev->next = order->next;
+    order->next->prev = order->prev;
+    order->prev = order->next = NULL;
+}
+
 void markdown_core_order_free(markdown_core_order *order) {
     if (!order) {
         return;
     }
     if (markdown_core_order_joined(order)) {
-        order->prev->next = order->next;
-        order->next->prev = order->prev;
+        order_unlink(order);
     }
     markdown_core_free(order);
+}
+
+bool markdown_core_order_unjoin(markdown_core_registry *registry, markdown_core_order *order) {
+    const bool ok = roster_leave(registry, order);
+    order_unlink(order);
+    return ok;
+}
+
+bool markdown_core_order_leave(markdown_core_registry *registry, markdown_core_order *order) {
+    const bool ok = !order || !markdown_core_order_joined(order) || markdown_core_order_unjoin(registry, order);
+    markdown_core_free(order);
+    return ok;
 }
 
 /* `order` joins the list right after `before`, with a label between theirs;
@@ -110,20 +427,30 @@ static void order_place(markdown_core_registry *registry, markdown_core_order *o
     }
 }
 
-void markdown_core_order_join(markdown_core_registry *registry, markdown_core_order *first) {
+bool markdown_core_order_join(markdown_core_registry *registry, markdown_core_order *first,
+                              markdown_core_order *after) {
     markdown_core_order *const head = &registry->orders;
     if (!head->next) {
         head->next = head->prev = head;
     }
     for (markdown_core_order *order = first, *next; order; order = next) {
         next = order->next;
-        markdown_core_order *const before = order->before ? order->before : head;
+        markdown_core_order *const at = order->before ? order->before->prev : after;
+        assert(at);
         order->before = NULL;
-        order_place(registry, order, before->prev);
+        order_place(registry, order, at);
+        after = order;
+        if (!roster_enter(registry, order)) {
+            return false;
+        }
     }
+    return true;
 }
 
 void markdown_core_registry_dispose(markdown_core_registry *registry) {
+    for (size_t i = 0; i < MARKDOWN_CORE_ROSTER_COUNT; i++) {
+        markdown_core_roster_release(registry->rosters[i]);
+    }
     /* The nodes outlive the registry: they hold no order now. */
     markdown_core_order *const head = &registry->orders;
     for (markdown_core_order *order = head->next, *next; order && order != head; order = next) {
@@ -324,22 +651,95 @@ void markdown_core_registry_unlink(markdown_core_node *node) { unlink_facts(node
 
 void markdown_core_registry_unask(markdown_core_node *node) { unlink_facts(node, MARKDOWN_CORE_FACT_LOOKUP); }
 
-void markdown_core_registry_move(markdown_core_node *from, markdown_core_node *to) {
+bool markdown_core_registry_move(markdown_core_registry *registry, markdown_core_node *from, markdown_core_node *to) {
     markdown_core_registry_unlink(to);
     to->facts = from->facts;
     from->facts = NULL;
     for (markdown_core_fact *fact = to->facts; fact; fact = fact->sibling) {
         fact->node = to;
-    }
-    if (to->order != from->order) {
-        markdown_core_order_free(to->order);
-        to->order = from->order;
-        from->order = NULL;
-        if (to->order) {
-            to->order->node = to;
-        }
+        /* The node its key resolves to may be this one. */
+        key_mark(fact->key);
     }
     to->first = from->first;
+    if (to->order == from->order) {
+        return true;
+    }
+    if (!markdown_core_order_leave(registry, to->order)) {
+        to->order = NULL;
+        return false;
+    }
+    markdown_core_order *order = to->order = from->order;
+    from->order = NULL;
+    if (!order) {
+        return true;
+    }
+    order->node = to;
+    const int kind = roster_of(to);
+    return !markdown_core_order_joined(order) || kind < 0 ||
+           roster_put(&registry->rosters[kind], roster_place(registry->rosters[kind], order), to, order);
+}
+
+/* A key's label against the label of the node an entry lists: in byte
+ * order, the shorter first on a common prefix. */
+static bool label_before(const markdown_core_roster *entry, const void *context) {
+    const markdown_core_key *key = context;
+    markdown_core_chunk label;
+    markdown_core_definition_label(entry->node, &label);
+    const size_t length = (size_t)label.len, common = length < key->length ? length : key->length;
+    const int order = common ? memcmp(label.data, key->label, common) : 0;
+    return order < 0 || (order == 0 && length < key->length);
+}
+
+/* Whether `fact` resolves its key before `winner`: a Reference before a
+ * heading's target, and then the first in tree order. */
+static bool fact_wins(const markdown_core_fact *fact, const markdown_core_fact *winner) {
+    if (!winner) {
+        return true;
+    }
+    const bool heading = fact->node->kind == MARKDOWN_CORE_NODE_HEADING;
+    const bool winner_heading = winner->node->kind == MARKDOWN_CORE_NODE_HEADING;
+    if (heading != winner_heading) {
+        return winner_heading;
+    }
+    return fact->node->order->label < winner->node->order->label;
+}
+
+bool markdown_core_registry_resolve(markdown_core_registry *registry) {
+    static const int labels[] = {
+        [MARKDOWN_CORE_KEY_REFERENCE] = MARKDOWN_CORE_ROSTER_REFERENCE_LABELS,
+        [MARKDOWN_CORE_KEY_FOOTNOTE] = MARKDOWN_CORE_ROSTER_FOOTNOTE_LABELS,
+        [MARKDOWN_CORE_KEY_SPECIMEN] = MARKDOWN_CORE_ROSTER_SPECIMEN_LABELS,
+        [MARKDOWN_CORE_KEY_FAMILY] = -1,
+    };
+    for (const markdown_core_key *key = registry->marked; key; key = key->marked_next) {
+        if (labels[key->group] < 0) {
+            continue;
+        }
+        const markdown_core_fact *winner = NULL;
+        for (const markdown_core_fact *fact = key->facts; fact; fact = fact->next) {
+            if (fact->role == MARKDOWN_CORE_FACT_DECLARE && fact_wins(fact, winner)) {
+                winner = fact;
+            }
+        }
+        markdown_core_roster **roster = &registry->rosters[labels[key->group]];
+        const size_t index = markdown_core_roster_rank(*roster, label_before, key);
+        bool listed = false;
+        if (index < markdown_core_roster_count(*roster)) {
+            markdown_core_chunk label;
+            markdown_core_definition_label(markdown_core_roster_at(*roster, index), &label);
+            listed = (size_t)label.len == key->length && !memcmp(label.data, key->label, key->length);
+        }
+        if (winner && listed && markdown_core_roster_at(*roster, index) == winner->node) {
+            continue;
+        }
+        const bool ok = winner ? listed ? roster_put(roster, index, winner->node, NULL)
+                                        : roster_insert(roster, index, winner->node, NULL)
+                               : !listed || roster_remove(roster, index);
+        if (!ok) {
+            return false;
+        }
+    }
+    return true;
 }
 
 void markdown_core_registry_settle(markdown_core_registry *registry) {
@@ -400,7 +800,7 @@ static int retire_field(markdown_core_node **slot, void *context) {
     return 1;
 }
 
-bool markdown_core_registry_retire(markdown_core_node *root) {
+bool markdown_core_registry_retire(markdown_core_registry *registry, markdown_core_node *root) {
     retire_stack stack = {0};
     retire_push(&stack, (retire_item){.as.node = root});
     while (stack.count && !stack.failed) {
@@ -423,7 +823,9 @@ bool markdown_core_registry_retire(markdown_core_node *root) {
             continue;
         }
         markdown_core_registry_unlink(node);
-        markdown_core_order_free(node->order);
+        if (!markdown_core_order_leave(registry, node->order)) {
+            stack.failed = true;
+        }
         node->order = NULL;
         markdown_core_node_visit_fields(node, retire_field, &stack);
         if (node->children) {

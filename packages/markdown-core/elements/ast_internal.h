@@ -15,7 +15,7 @@ extern "C" {
 #endif
 
 /* A PUBLISHED DOCUMENT: the tree, whose nodes hold ids and extents and whose
- * root holds the definition tables, and the text unit its scope queries count
+ * root holds the rosters of its definitions, and the text unit its scope queries count
  * columns in. */
 struct markdown_core_document {
     markdown_core_node *root;
@@ -166,34 +166,10 @@ bool markdown_core_walk_ranges(markdown_core_walk *walk, const markdown_core_wal
 bool markdown_core_walk_has_next(const markdown_core_walk *walk);
 void markdown_core_walk_end(markdown_core_walk *walk);
 
-/* Where a Footnote, Specimen, Reference or Heading was written, for the
- * definition tables. */
-typedef struct {
-    uint64_t start;
-    const markdown_core_node *node;
-} markdown_core_definition_entry;
-
-typedef struct {
-    markdown_core_definition_entry *values;
-    size_t count, capacity;
-} markdown_core_definition_table;
-
-/* THE DEFINITION TABLES a parse fills, one per kind of node the document
- * finds by label. Every Heading enters its table; the ones whose text
- * declares a reference label are the labeled ones. */
-typedef enum {
-    MARKDOWN_CORE_TABLE_FOOTNOTES,
-    MARKDOWN_CORE_TABLE_SPECIMENS,
-    MARKDOWN_CORE_TABLE_REFERENCES,
-    MARKDOWN_CORE_TABLE_HEADINGS,
-    MARKDOWN_CORE_TABLE_COUNT
-} markdown_core_definition_kind;
-
 /* WHAT ONE PARSE PUBLISHES AS ITS NODES COMPLETE (docs/plans/2026-09-29-
- * incremental-parsing.md, 5.8, 5.9): each definition as it settles, at its
- * source start, and the runs of the inline root being completed, in
- * absolute offsets, read when a definition in its content first asks where
- * it was written or a node of its content first asks where its source lies.
+ * incremental-parsing.md, 5.8, 5.9): the runs of the inline root being
+ * completed, in absolute offsets, read when a node of its content first asks
+ * where its source lies.
  * For the reuse cursor it keeps the members a search climbs through, the old nodes each
  * child's range holds, and the nodes the parse made that settled as old
  * nodes, which go when the parse does. The document element holds it for
@@ -206,7 +182,6 @@ typedef struct markdown_core_candidate {
 } markdown_core_candidate;
 
 typedef struct markdown_core_publication {
-    markdown_core_definition_table tables[MARKDOWN_CORE_TABLE_COUNT];
     markdown_core_source_runs runs;
     const markdown_core_inline_root *runs_root;
     /* The source ranges of the inline node being numbered. */
@@ -218,12 +193,6 @@ typedef struct markdown_core_publication {
     size_t candidate_count, candidate_capacity;
     markdown_core_node **replaced;
     size_t replaced_count, replaced_capacity;
-    /* The nodes of taken subtrees a splice copied, each with its copy, which
-     * takes its place in the definition tables as the document publishes. */
-    struct markdown_core_renamed {
-        const markdown_core_node *old, *node;
-    } *renamed;
-    size_t renamed_count, renamed_capacity;
     /* A splice's search for the node it replaces: the nodes it reached, and
      * those it has yet to look into. */
     struct markdown_core_splice_step *steps;
@@ -252,15 +221,6 @@ bool markdown_core_complete_node(markdown_core_parser *parser, markdown_core_pub
                                                  markdown_core_node *),
                                  const markdown_core_element_instance *observer);
 
-/* THE DECLARATIONS OF A TAKEN SUBTREE (docs/plans/2026-09-29-incremental-
- * parsing.md, 5.3, 5.7): `node`, which a parse took whole at `start`, and
- * every node under it are listed in the definition tables as if the parse
- * had made them. The content of each of the `count` roots of `again`, in address
- * order, is the parse's own: it is parsed again (markdown_core_parse_again),
- * and lists itself as it settles. False when an allocation failed. */
-bool markdown_core_publication_take(markdown_core_publication *publication, const markdown_core_node *node,
-                                    uint32_t start, const markdown_core_node *const *again, size_t count);
-
 /* AN INLINE ROOT IS PARSED AGAIN IN PLACE (5.7): `root`, a node of a subtree
  * the parse took, found where it begins by its order, holds content whose lookups are answered otherwise now. Its
  * copy reads that content again from its runs, as a root the parse made
@@ -273,10 +233,9 @@ bool markdown_core_parse_again(markdown_core_parser *parser, markdown_core_publi
 
 /* A NODE OF A TAKEN SUBTREE TAKES ITS REPLACEMENT'S PLACE (5.7, 5.11): the
  * document's path down to `old` is found by the order `node` took from it,
- * and `node` takes `old`'s place: each node on the path that the
- * old tree shares is copied, with its facts and its place in the definition
- * tables, and one that only the new tree holds changes in place. Takes the
- * reference to `node`. False when an allocation failed. */
+ * and `node` takes `old`'s place: each node on the path that the old tree
+ * shares is copied, with its facts and its order, and one that only the new
+ * tree holds changes in place. Takes the reference to `node`. False when an allocation failed. */
 bool markdown_core_publication_splice(markdown_core_parser *parser, markdown_core_publication *publication,
                                       const markdown_core_node *old, markdown_core_node *node);
 
@@ -285,15 +244,14 @@ bool markdown_core_publication_splice(markdown_core_parser *parser, markdown_cor
  * and takes that node's id or the next one, unless it took it already; when
  * it equals the old node it continues -- its kind, extent, runs and scalars, and every
  * relation holding the same nodes -- the old node takes its place in its
- * owner, or as the document; a definition enters its table; its member goes,
+ * owner, or as the document; its member goes,
  * and an owner that waited only on it settles in turn. */
 void markdown_core_settle_member(markdown_core_parser *parser, markdown_core_publication *publication,
                                  markdown_core_member *member);
 
 /* PUBLISHING, the last step of the parse transaction: the document numbers
- * itself, the definition tables the parse filled are sealed into it, and it
- * settles. The parser's root is the result. False when an allocation
- * failed. */
+ * itself, holds the registry's rosters as they are now, and it settles. The parser's root is the result. False when an
+ * allocation failed. */
 bool markdown_core_publish_tree(markdown_core_parser *parser, markdown_core_publication *publication);
 
 /* Releases what the publication holds, the nodes it keeps into `pool`. */

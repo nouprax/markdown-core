@@ -365,7 +365,11 @@ static void assign_family(markdown_core_parser *parser, markdown_core_heading_st
                     markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
                     break;
                 }
-                markdown_core_registry_move(node, copy);
+                if (!markdown_core_registry_move(parser->registry, node, copy)) {
+                    markdown_core_parser_release_node(parser, copy);
+                    markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+                    break;
+                }
                 if (!markdown_core_parser_replace(parser, node, copy, NULL)) {
                     break;
                 }

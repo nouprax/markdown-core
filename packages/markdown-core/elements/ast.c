@@ -42,201 +42,11 @@ typedef struct dump_buffer {
     size_t line_count;
 } dump_buffer;
 
-static uint64_t definition_key(const void *entry) { return ((const markdown_core_definition_entry *)entry)->start; }
-
-static bool table_add(markdown_core_definition_table *table, const markdown_core_node *node, uint32_t start) {
-    if (table->count == table->capacity) {
-        size_t capacity = table->capacity ? table->capacity * 2 : 8;
-        if (capacity > SIZE_MAX / sizeof(*table->values)) {
-            return false;
-        }
-        markdown_core_definition_entry *values = markdown_core_realloc(table->values, capacity * sizeof(*values));
-        if (!values) {
-            return false;
-        }
-        table->values = values;
-        table->capacity = capacity;
-    }
-    table->values[table->count++] = (markdown_core_definition_entry){start, node};
-    return true;
-}
-
-/* Whether a definition has a label, and the label in `label`. */
-static bool definition_label(const markdown_core_node *node, markdown_core_chunk *label) {
-    switch (node->kind) {
-    case MARKDOWN_CORE_NODE_FOOTNOTE:
-        *label = node->as.footnote->label.value;
-        return node->as.footnote->label.has_value;
-    case MARKDOWN_CORE_NODE_SPECIMEN:
-        *label = node->as.specimen->label.value;
-        return node->as.specimen->label.has_value;
-    case MARKDOWN_CORE_NODE_REFERENCE:
-        *label = node->as.reference->label;
-        return label->len > 0;
-    default:
-        *label = node->as.heading->label;
-        return label->len > 0;
-    }
-}
-
 /* Two labels in byte order, the shorter first on a common prefix. */
 static int label_compare(const uint8_t *a, size_t a_length, const uint8_t *b, size_t b_length) {
     size_t common = a_length < b_length ? a_length : b_length;
     int order = common ? memcmp(a, b, common) : 0;
     return order ? order : (a_length > b_length) - (a_length < b_length);
-}
-
-/* A labeled definition and its label, as the label sort reads them: the
- * label's first eight bytes, big-endian and padded with zero bytes, order two
- * labels whose heads differ there; equal heads leave it to the lengths, or to
- * the bytes past the eighth. */
-typedef struct {
-    uint64_t head;
-    const uint8_t *label;
-    size_t length;
-    const markdown_core_node *node;
-} label_entry;
-
-static label_entry label_entry_of(const uint8_t *label, size_t length, const markdown_core_node *node) {
-    const size_t bytes = length < 8 ? length : 8;
-    uint64_t head = 0;
-    for (size_t i = 0; i < bytes; i++) {
-        head = head << 8 | label[i];
-    }
-    /* The padding: a shift by 64 is undefined, and no bytes is a zero head. */
-    return (label_entry){bytes ? head << 8 * (8 - bytes) : 0, label, length, node};
-}
-
-/* The labels of two entries with equal heads in byte order: a label no
- * longer than eight bytes is all in its head, so it is a prefix of the other
- * label, and the shorter is first. */
-static int label_tie_compare(const label_entry *a, const label_entry *b) {
-    if (a->length <= 8 || b->length <= 8) {
-        return (a->length > b->length) - (a->length < b->length);
-    }
-    return label_compare(a->label + 8, a->length - 8, b->label + 8, b->length - 8);
-}
-
-static inline bool label_before(const label_entry *a, const label_entry *b) {
-    return a->head != b->head ? a->head < b->head : label_tie_compare(a, b) < 0;
-}
-
-/* Sorts `count` entries by label, keeping the order of equal labels: the
- * runs already in order, which end at `ends`, are merged two by two, from one
- * array into the other, until one run holds them all. Returns the array that
- * holds them sorted, `entries` or `spare`. */
-static label_entry *label_sort(label_entry *entries, label_entry *spare, size_t *ends, size_t count) {
-    size_t runs = 0;
-    for (size_t end = 1; end <= count; end++) {
-        if (end == count || label_before(&entries[end], &entries[end - 1])) {
-            ends[runs++] = end;
-        }
-    }
-    while (runs > 1) {
-        size_t merged = 0, low = 0;
-        for (size_t run = 0; run < runs; run += 2) {
-            const size_t middle = ends[run], high = run + 1 < runs ? ends[run + 1] : middle;
-            size_t left = low, right = middle, out = low;
-            while (left < middle && right < high) {
-                spare[out++] = label_before(&entries[right], &entries[left]) ? entries[right++] : entries[left++];
-            }
-            while (left < middle) {
-                spare[out++] = entries[left++];
-            }
-            while (right < high) {
-                spare[out++] = entries[right++];
-            }
-            ends[merged++] = high;
-            low = high;
-        }
-        runs = merged;
-        label_entry *sorted = spare;
-        spare = entries;
-        entries = sorted;
-    }
-    return entries;
-}
-
-/* Whether two entries hold the same label. */
-static inline bool label_same(const label_entry *a, const label_entry *b) {
-    return a->head == b->head && label_tie_compare(a, b) == 0;
-}
-
-/* Room for the entries of `count` labels, the spare array their sort merges
- * into, and the ends of its runs, in one allocation the caller frees. */
-static label_entry *label_room(size_t count) {
-    return markdown_core_realloc(NULL, count * (2 * sizeof(label_entry) + sizeof(size_t)));
-}
-
-/* The first `taken` entries of the room `label_room` made for `count`, in
- * label order and in their order among equal labels. */
-static const label_entry *label_order(label_entry *entries, size_t taken, size_t count) {
-    return label_sort(entries, entries + taken, (size_t *)(entries + 2 * count), taken);
-}
-
-/* The table's nodes in source order, as node handles the document borrows,
- * into `*nodes`. */
-static bool table_nodes(markdown_core_parser *parser, markdown_core_definition_table *table,
-                        const markdown_core_node ***nodes) {
-    *nodes = NULL;
-    if (!table->count) {
-        return true;
-    }
-    if (!markdown_core_order_source_entries(&parser->source_order, table->values, table->count, sizeof(*table->values),
-                                            definition_key)) {
-        return false;
-    }
-    /* The handles take the entries' place: each is smaller than an entry, so
-     * the one written lands on entries already read. Byte copies, as the
-     * storage changes what it holds. The document owns it from here. */
-    unsigned char *storage = (unsigned char *)table->values;
-    for (size_t i = 0; i < table->count; i++) {
-        const markdown_core_node *node;
-        memcpy(&node,
-               storage + i * sizeof(markdown_core_definition_entry) + offsetof(markdown_core_definition_entry, node),
-               sizeof(node));
-        memcpy(storage + i * sizeof(node), &node, sizeof(node));
-    }
-    *nodes = (const markdown_core_node **)storage;
-    table->values = NULL;
-    table->capacity = 0;
-    return true;
-}
-
-/* The table in source order, and its labeled definitions in label order, as
- * node handles the document borrows. */
-static bool table_seal(markdown_core_parser *parser, markdown_core_definition_table *table,
-                       markdown_core_definitions *out) {
-    *out = (markdown_core_definitions){0};
-    const markdown_core_node **nodes;
-    if (!table_nodes(parser, table, &nodes)) {
-        return false;
-    }
-    if (!nodes) {
-        return true;
-    }
-    const markdown_core_node **labeled = markdown_core_alloc(table->count, sizeof(*labeled));
-    label_entry *entries = label_room(table->count);
-    if (!labeled || !entries) {
-        markdown_core_free((void *)nodes);
-        markdown_core_free((void *)labeled);
-        markdown_core_free(entries);
-        return false;
-    }
-    size_t labels = 0;
-    for (size_t i = 0; i < table->count; i++) {
-        markdown_core_chunk label;
-        if (definition_label(nodes[i], &label)) {
-            entries[labels++] = label_entry_of(label.data, (size_t)label.len, nodes[i]);
-        }
-    }
-    const label_entry *sorted = label_order(entries, labels, table->count);
-    for (size_t i = 0; i < labels; i++) {
-        labeled[i] = sorted[i].node;
-    }
-    markdown_core_free(entries);
-    *out = (markdown_core_definitions){nodes, table->count, labeled, labels};
-    return true;
 }
 
 /* A relation of the `count` nodes of `stem` from `index` on. */
@@ -285,13 +95,12 @@ typedef enum {
 } relation_shape;
 
 /* A kind's slot: its value, and one bit for its class. The slot holds the
- * kind's shape and, above it, the definition table that lists nodes of the
- * kind, one more than its index, or 0 when none does. */
+ * kind's shape and, above it, SLOT_LISTED when the registry's rosters list
+ * nodes of the kind, or the labels they declare, by their orders (5.7). */
 #define SHAPE_SLOTS 64
 #define SHAPE_INDEX(kind) ((((kind) >> 9) | (kind)) & 0x3f)
 #define SLOT_SHAPE 0x0f
-#define SLOT_LOOKUP(table) (((table) + 1) << 4)
-#define SLOT_TABLE(slot) ((slot) >> 4)
+#define SLOT_LISTED 0x10
 /* C99 has no _Static_assert: an array of negative size fails the build when a
  * condition is false. */
 typedef char kind_slots_are_distinct[(MARKDOWN_CORE_NODE_KIND_COUNT <= 0x20 &&
@@ -299,8 +108,7 @@ typedef char kind_slots_are_distinct[(MARKDOWN_CORE_NODE_KIND_COUNT <= 0x20 &&
                                       (MARKDOWN_CORE_NODE_TYPE_PRESENT >> 9 & 0x3f) == 0)
                                          ? 1
                                          : -1];
-typedef char
-    shapes_fit_their_slot[SHAPE_DEFINITION <= SLOT_SHAPE && SLOT_LOOKUP(MARKDOWN_CORE_TABLE_COUNT) <= 0xff ? 1 : -1];
+typedef char shapes_fit_their_slot[SHAPE_DEFINITION <= SLOT_SHAPE ? 1 : -1];
 
 static const uint8_t kind_slots[SHAPE_SLOTS] = {
     [SHAPE_INDEX(MARKDOWN_CORE_NODE_DOCUMENT)] = SHAPE_DOCUMENT,
@@ -311,10 +119,10 @@ static const uint8_t kind_slots[SHAPE_SLOTS] = {
     [SHAPE_INDEX(MARKDOWN_CORE_NODE_CITE)] = SHAPE_CITE,
     [SHAPE_INDEX(MARKDOWN_CORE_NODE_CITATION)] = SHAPE_CITATION,
     [SHAPE_INDEX(MARKDOWN_CORE_NODE_DEFINITION)] = SHAPE_DEFINITION,
-    [SHAPE_INDEX(MARKDOWN_CORE_NODE_FOOTNOTE)] = SHAPE_CHILDREN | SLOT_LOOKUP(MARKDOWN_CORE_TABLE_FOOTNOTES),
-    [SHAPE_INDEX(MARKDOWN_CORE_NODE_SPECIMEN)] = SHAPE_CHILDREN | SLOT_LOOKUP(MARKDOWN_CORE_TABLE_SPECIMENS),
-    [SHAPE_INDEX(MARKDOWN_CORE_NODE_REFERENCE)] = SHAPE_CHILDREN | SLOT_LOOKUP(MARKDOWN_CORE_TABLE_REFERENCES),
-    [SHAPE_INDEX(MARKDOWN_CORE_NODE_HEADING)] = SHAPE_CHILDREN | SLOT_LOOKUP(MARKDOWN_CORE_TABLE_HEADINGS),
+    [SHAPE_INDEX(MARKDOWN_CORE_NODE_FOOTNOTE)] = SHAPE_CHILDREN | SLOT_LISTED,
+    [SHAPE_INDEX(MARKDOWN_CORE_NODE_SPECIMEN)] = SHAPE_CHILDREN | SLOT_LISTED,
+    [SHAPE_INDEX(MARKDOWN_CORE_NODE_REFERENCE)] = SHAPE_CHILDREN | SLOT_LISTED,
+    [SHAPE_INDEX(MARKDOWN_CORE_NODE_HEADING)] = SHAPE_CHILDREN | SLOT_LISTED,
 };
 
 static inline unsigned slot_of(const markdown_core_node *node) { return kind_slots[SHAPE_INDEX(node->kind)]; }
@@ -873,15 +681,78 @@ static bool order_own(markdown_core_member *member, markdown_core_node *node) {
     return true;
 }
 
-/* The orders `member` collected join the registry's list: after `after`,
- * an order the list holds, those no old order follows, and all of them at
- * the end when it is NULL. */
-static void order_settle(markdown_core_parser *parser, markdown_core_member *member, markdown_core_order *after) {
-    if (after && after->next != &parser->registry->orders) {
-        order_follow(member, after->next);
+/* The orders `member` collected join the registry's list: the document's,
+ * those no old order follows at the end of the list; the content of a node
+ * whose order the list holds, `after`, all of it right after that order, in
+ * tree order. False when a roster could not grow. */
+static bool order_settle(markdown_core_parser *parser, markdown_core_member *member, markdown_core_order *after) {
+    if (!after) {
+        order_follow(member, &parser->registry->orders);
     }
-    markdown_core_order_join(parser->registry, member->order_first);
+    const bool ok = markdown_core_order_join(parser->registry, member->order_first, after);
     member->order_first = member->order_last = member->order_open = member->order_lead = member->order_head = NULL;
+    return ok;
+}
+
+/* THE ORDERS OF AN OLD SUBTREE IN CONTENT. The content of an inline root
+ * joins the list right after the root's order, with the orders of the old
+ * nodes the parse took into it (5.6): each leaves the list, and its node
+ * the rosters, and `member` collects it again in tree order: the orders
+ * under `node`, and its own when `own`. False when a roster could not
+ * change or the walk could not grow. */
+static bool order_gather(markdown_core_parser *parser, markdown_core_member *member, const markdown_core_node *node,
+                         bool own) {
+    const markdown_core_node **due = NULL;
+    size_t count = 0, capacity = 0;
+    bool ok = true;
+    for (const markdown_core_node *at = node; ok && at; at = count ? due[--count] : NULL) {
+        markdown_core_order *order = at->order;
+        if ((own || at != node) && order) {
+            ok = markdown_core_order_unjoin(parser->registry, order);
+            if (ok) {
+                order->next = NULL;
+                if (member->order_last) {
+                    member->order_last->next = order;
+                } else {
+                    member->order_first = order;
+                }
+                member->order_last = order;
+                if (!member->order_head) {
+                    member->order_head = order;
+                }
+            }
+        }
+        /* What it holds, the last relation first, so the walk takes them in
+         * tree order. */
+        markdown_core_relation_cursor cursor;
+        markdown_core_relation relation;
+        markdown_core_relation_walk nodes;
+        bool more;
+        const size_t mark = count;
+        markdown_core_relations_begin(&cursor, at);
+        while (ok && relations_next(&cursor, &relation, &more)) {
+            markdown_core_relation_walk_begin(&nodes, &relation);
+            for (const markdown_core_node *item; ok && (item = markdown_core_relation_walk_next(&nodes));) {
+                if (!item->first) {
+                    continue;
+                }
+                const markdown_core_node **grown = markdown_core_reserve(due, &capacity, count + 1, sizeof(*due));
+                if (!grown) {
+                    ok = false;
+                    break;
+                }
+                due = grown;
+                due[count++] = item;
+            }
+        }
+        for (size_t low = mark, high = count; low + 1 < high; low++, high--) {
+            const markdown_core_node *swap = due[low];
+            due[low] = due[high - 1];
+            due[high - 1] = swap;
+        }
+    }
+    markdown_core_free((void *)due);
+    return ok;
 }
 
 /* Where the next node of a relation is measured from: its extent from
@@ -1334,6 +1205,7 @@ static bool complete_number(const complete_context *context, markdown_core_membe
     const markdown_core_place place = item->where.place;
     const unsigned slots = slot_of(item);
     const relation_shape shape = (relation_shape)(slots & SLOT_SHAPE);
+    bool inlines = false;
     if (!markdown_core_node_hold_strings(item)) {
         return false;
     }
@@ -1354,7 +1226,7 @@ static bool complete_number(const complete_context *context, markdown_core_membe
         /* Its own runs, unless they read its inline content, which they do
          * once that content is complete. */
         markdown_core_node *holder = content_holder(item, shape);
-        const bool inlines = holder && markdown_core_parser_contains_inlines(parser, holder);
+        inlines = holder && markdown_core_parser_contains_inlines(parser, holder);
         if (!(inlines && holder == item) && !publish_runs(parser->pool, &item->runs, place, anchor->source)) {
             return false;
         }
@@ -1362,15 +1234,18 @@ static bool complete_number(const complete_context *context, markdown_core_membe
             return false;
         }
         anchor->source = place.end;
-        /* A node that declares or asks, an inline root and a cell read as
-         * blocks takes its order, ahead of the orders of what it holds,
-         * which then follow those its owner collected (5.7). */
-        if ((item->facts || inlines || member->queued) && !item->order && !order_own(member, item)) {
-            return false;
-        }
-        item->first = member->order_head;
-        order_append(context->member, member);
     }
+    /* A node that declares or asks, an inline root, a cell read as blocks
+     * and a node its rosters list takes its order, ahead of the orders of
+     * what it holds, which then follow those its owner collected (5.7); an
+     * old node the parse took into content brings the orders under it. */
+    if ((member->taken && item->first && !order_gather(parser, member, item, false)) ||
+        ((item->facts || inlines || member->queued || (slots & SLOT_LISTED)) && !item->order &&
+         !order_own(member, item))) {
+        return false;
+    }
+    item->first = member->order_head;
+    order_append(context->member, member);
     if (context->observe) {
         context->observe(context->observer, parser, item);
     }
@@ -1442,6 +1317,17 @@ static uint32_t numbered_source_end(const markdown_core_node *node, uint32_t sou
     return (uint32_t)at;
 }
 
+/* An old node `member`'s node holds as it was: in blocks, its first order
+ * is the next old one the orders collected so far come before; in the
+ * content of an inline root, its orders are collected again. */
+static bool order_take(const complete_context *context, markdown_core_member *member, const markdown_core_node *item) {
+    if (context->parser->completing) {
+        return order_gather(context->parser, member, item, true);
+    }
+    order_follow(member, item->first);
+    return true;
+}
+
 /* Numbers what `member`'s node, which starts at `start`, holds and has not
  * numbered yet, relation by relation: each node is measured from the end of
  * the one before it in its relation, or from where the relation is measured
@@ -1484,8 +1370,8 @@ static bool complete_relations(const complete_context *context, markdown_core_me
                 if (!field || (!field->numbered && !complete_number(context, field, &anchor, 0, true))) {
                     return false;
                 }
-            } else if (!completing && item->first) {
-                order_follow(member, item->first);
+            } else if (item->first && (!completing || in_content) && !order_take(context, member, item)) {
+                return false;
             }
             continue;
         }
@@ -1496,12 +1382,12 @@ static bool complete_relations(const complete_context *context, markdown_core_me
         uint32_t slot = (uint32_t)relation.index;
         for (markdown_core_node *item; (item = (markdown_core_node *)markdown_core_relation_walk_next(&nodes));
              slot++) {
-            if (at && at->run && item != at->node) {
+            if (at && at->run && item == markdown_core_stem_at(at->run, 0)) {
                 /* The first node of a run the parse took, all of them
                  * numbered: the walk passes the run whole. */
                 const size_t taken = at->run->count;
-                assert(!in_content && item == markdown_core_stem_at(at->run, 0));
-                if (at->run->first) {
+                assert(!in_content);
+                if (at->run->first && !completing) {
                     order_follow(member, at->run->first);
                 }
                 anchor.place = (uint32_t)(anchor.place + at->run->length);
@@ -1513,9 +1399,12 @@ static bool complete_relations(const complete_context *context, markdown_core_me
             }
             if (item->id || (at && at->node == item && at->numbered)) {
                 /* An old node it holds as it was: what it holds comes
-                 * after the orders collected so far. */
-                if (!completing && item->first && !(at && at->node == item)) {
-                    order_follow(member, item->first);
+                 * after the orders collected so far, unless they were
+                 * collected already, as they were outside the content of
+                 * the root being completed. */
+                if (item->first && !(at && at->node == item) && (!completing || in_content) &&
+                    !order_take(context, member, item)) {
+                    return false;
                 }
                 anchor.place = publish_place(item, anchor.place).end;
                 anchor.source = in_content ? numbered_source_end(item, anchor.source) : anchor.place;
@@ -1576,16 +1465,20 @@ bool markdown_core_complete_node(markdown_core_parser *parser, markdown_core_pub
         if (runs && !publish_runs(parser->pool, runs, completing->place, anchor)) {
             return false;
         }
-    } else if (!completing && member == parser->root) {
-        /* The document's orders join the list, those no old order follows
-         * at its end, and it holds the first. */
-        node->first = member->order_head;
-        order_settle(parser, member, NULL);
-    } else if (!completing && node->order && markdown_core_order_joined(node->order)) {
+    }
+    if (completing ? completing->node == node : member == parser->root) {
+        /* The orders of the document join the list, and it holds the first;
+         * those of an inline root's content follow the root's. */
+        if (!completing) {
+            node->first = member->order_head;
+        }
+        return order_settle(parser, member, completing ? node->order : NULL);
+    }
+    if (!completing && node->order && markdown_core_order_joined(node->order)) {
         /* A cell read as blocks, its order in the list: what they hold
          * follows it, all of it new, as a cell's blocks take nothing. */
         assert(!member->order_lead);
-        order_settle(parser, member, node->order);
+        return order_settle(parser, member, node->order);
     }
     return true;
 }
@@ -1670,7 +1563,7 @@ static int fields_trade_visit(markdown_core_node **slot, void *context) {
 
 /* `old` takes the place of `member`'s node in its owner, or as the document,
  * and the node goes when the parse does. False when it could not be kept
- * for that. */
+ * for that, or a roster could not take it. */
 static bool settle_old(markdown_core_parser *parser, markdown_core_publication *publication,
                        markdown_core_member *member, const markdown_core_node *old) {
     markdown_core_node **replaced = markdown_core_reserve(publication->replaced, &publication->replaced_capacity,
@@ -1701,7 +1594,7 @@ static bool settle_old(markdown_core_parser *parser, markdown_core_publication *
     markdown_core_node_visit_fields(kept, fields_trade_visit, &trade);
     /* And it declares what the new node declared: an equal node declares
      * the same, and these facts are this parse's (5.7). */
-    markdown_core_registry_move(node, kept);
+    const bool moved = markdown_core_registry_move(parser->registry, node, kept);
     if (!owner) {
         member->node = kept;
     } else if (member->field) {
@@ -1712,9 +1605,8 @@ static bool settle_old(markdown_core_parser *parser, markdown_core_publication *
         assert(held == node);
         (void)held;
     }
-    (void)parser;
     publication->replaced[publication->replaced_count++] = node;
-    return true;
+    return moved;
 }
 
 void markdown_core_settle_member(markdown_core_parser *parser, markdown_core_publication *publication,
@@ -1739,11 +1631,6 @@ void markdown_core_settle_member(markdown_core_parser *parser, markdown_core_pub
                 }
                 node = member->node == node ? (markdown_core_node *)member->old : member->node;
             }
-            const unsigned slots = slot_of(node);
-            if (SLOT_TABLE(slots) && !table_add(&publication->tables[SLOT_TABLE(slots) - 1], node, member->source)) {
-                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-                return;
-            }
         }
         markdown_core_member *owner = member->owner;
         if (!owner) {
@@ -1764,9 +1651,6 @@ void markdown_core_settle_member(markdown_core_parser *parser, markdown_core_pub
 }
 
 void markdown_core_publication_dispose(markdown_core_publication *publication, markdown_core_node_pool *pool) {
-    for (size_t table = 0; table < MARKDOWN_CORE_TABLE_COUNT; table++) {
-        markdown_core_free(publication->tables[table].values);
-    }
     markdown_core_free(publication->runs.runs);
     markdown_core_free(publication->ranges);
     markdown_core_free(publication->climb);
@@ -1775,134 +1659,9 @@ void markdown_core_publication_dispose(markdown_core_publication *publication, m
         markdown_core_node_pool_release(pool, publication->replaced[i]);
     }
     markdown_core_free(publication->replaced);
-    markdown_core_free(publication->renamed);
     markdown_core_free(publication->steps);
     markdown_core_free(publication->pending);
     *publication = (markdown_core_publication){0};
-}
-
-/* Takes `node` into the `*taken` entries when its label is not empty. */
-static inline void label_take(label_entry *entries, size_t *taken, markdown_core_chunk label,
-                              const markdown_core_node *node) {
-    if (label.len > 0) {
-        entries[(*taken)++] = label_entry_of(label.data, (size_t)label.len, node);
-    }
-}
-
-/* The node each label a reference occurrence can name resolves to, in label
- * order: the first Reference declaring it, or, when none does, the first
- * Heading whose text declares it. The References in source order, then the
- * Headings in source order, sorted by label keeping that order among equal
- * labels, put each label's target first among its own. */
-static bool reference_targets(markdown_core_parser *parser, markdown_core_document_value *value,
-                              markdown_core_definition_table *headings) {
-    value->reference_targets = NULL;
-    value->reference_target_count = 0;
-    if (headings->count && !markdown_core_order_source_entries(&parser->source_order, headings->values, headings->count,
-                                                               sizeof(*headings->values), definition_key)) {
-        return false;
-    }
-    const size_t total = value->references.count + headings->count;
-    if (!total) {
-        return true;
-    }
-    const markdown_core_node **declared = markdown_core_alloc(total, sizeof(*declared));
-    label_entry *entries = label_room(total);
-    if (!declared || !entries) {
-        markdown_core_free((void *)declared);
-        markdown_core_free(entries);
-        return false;
-    }
-    size_t labels = 0;
-    for (size_t i = 0; i < value->references.count; i++) {
-        const markdown_core_node *node = value->references.nodes[i];
-        label_take(entries, &labels, node->as.reference->label, node);
-    }
-    for (size_t i = 0; i < headings->count; i++) {
-        const markdown_core_node *node = headings->values[i].node;
-        label_take(entries, &labels, node->as.heading->label, node);
-    }
-    const label_entry *sorted = label_order(entries, labels, total);
-    size_t count = 0;
-    for (size_t i = 0; i < labels; i++) {
-        if (!i || !label_same(&sorted[i], &sorted[i - 1])) {
-            declared[count++] = sorted[i].node;
-        }
-    }
-    markdown_core_free(entries);
-    if (!count) {
-        markdown_core_free((void *)declared);
-        return true;
-    }
-    value->reference_targets = declared;
-    value->reference_target_count = count;
-    return true;
-}
-
-/* Whether `node` is one of the `count` nodes of `nodes`, in address order. */
-static bool among(const markdown_core_node *const *nodes, size_t count, const markdown_core_node *node) {
-    size_t lo = 0, hi = count;
-    while (lo < hi) {
-        const size_t mid = lo + (hi - lo) / 2;
-        if ((uintptr_t)nodes[mid] < (uintptr_t)node) {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-    return lo < count && nodes[lo] == node;
-}
-
-/* Whether the walk's last item is the content of one of the `count` roots of
- * `again`: such a root when it holds its content itself, or a node of the
- * group that holds a root's content. */
-static bool walk_again(const markdown_core_walk *walk, const markdown_core_walk_item *item,
-                       const markdown_core_node *const *again, size_t count) {
-    if (among(again, count, item->node) &&
-        content_holder((markdown_core_node *)item->node, shape_of(item->node)) == item->node) {
-        return true;
-    }
-    if (!walk->owner) {
-        return false;
-    }
-    const markdown_core_walk_frame *frame = &walk->frames[walk->owner - 1];
-    const markdown_core_node *owner = frame->cursor.owner;
-    if (!among(again, count, owner)) {
-        return false;
-    }
-    const markdown_core_node *holder = content_holder((markdown_core_node *)owner, shape_of(owner));
-    return holder != owner && frame->relation.stem == holder->children;
-}
-
-bool markdown_core_publication_take(markdown_core_publication *publication, const markdown_core_node *node,
-                                    uint32_t start, const markdown_core_node *const *again, size_t count) {
-    markdown_core_walk walk;
-    markdown_core_walk_item item;
-    markdown_core_walk_begin_at(&walk, node, (uint32_t)((int64_t)start - node->where.extent.lead));
-    bool ok = true;
-    /* The level below which the walk is in content parsed again. */
-    size_t skip = SIZE_MAX;
-    while (ok && markdown_core_walk_next(&walk, &item)) {
-        if (item.level > skip) {
-            continue;
-        }
-        skip = SIZE_MAX;
-        if (!item.node) {
-            continue;
-        }
-        if (count && walk_again(&walk, &item, again, count)) {
-            skip = item.level;
-            continue;
-        }
-        const uint32_t source = item.place.start;
-        const unsigned slots = slot_of(item.node);
-        if (SLOT_TABLE(slots)) {
-            ok = table_add(&publication->tables[SLOT_TABLE(slots) - 1], item.node, source);
-        }
-    }
-    ok = ok && !walk.failed;
-    markdown_core_walk_end(&walk);
-    return ok;
 }
 
 /* `runs`, an inline root's runs published from `anchor`, as places again
@@ -2085,22 +1844,19 @@ bool markdown_core_parse_again(markdown_core_parser *parser, markdown_core_publi
     /* What `root` declared and asked leaves with the content its copy reads
      * again, which only `root` holds now; the copy takes its order. */
     markdown_core_registry_unlink((markdown_core_node *)root);
-    markdown_core_registry_move((markdown_core_node *)root, again);
-    bool retired = true;
-    if (held != root) {
-        retired = markdown_core_registry_retire(held);
+    bool retired = markdown_core_registry_move(parser->registry, (markdown_core_node *)root, again);
+    if (retired && held != root) {
+        retired = markdown_core_registry_retire(parser->registry, held);
     } else {
         markdown_core_stem_walk content;
         markdown_core_stem_walk_begin(&content, root->children, 0, markdown_core_stem_count(root->children));
         for (markdown_core_node *node; retired && (node = markdown_core_stem_walk_next(&content));) {
-            retired = markdown_core_registry_retire(node);
+            retired = markdown_core_registry_retire(parser->registry, node);
         }
     }
     markdown_core_member *member = retired ? markdown_core_parser_member(parser, again, true) : NULL;
     if (!member) {
-        if (retired) {
-            markdown_core_node_pool_release(pool, again);
-        }
+        markdown_core_node_pool_release(pool, again);
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
@@ -2137,28 +1893,11 @@ static bool stem_held_once(const markdown_core_stem *stem, size_t index) {
     }
 }
 
-/* Records that `copy` takes `old`'s place in the definition tables. */
-static bool rename_node(markdown_core_publication *publication, const markdown_core_node *old,
-                        const markdown_core_node *copy) {
-    struct markdown_core_renamed *renamed = markdown_core_reserve(publication->renamed, &publication->renamed_capacity,
-                                                                  publication->renamed_count + 1, sizeof(*renamed));
-    if (!renamed) {
-        return false;
-    }
-    publication->renamed = renamed;
-    renamed[publication->renamed_count++] = (struct markdown_core_renamed){old, copy};
-    return true;
-}
-
 bool markdown_core_publication_splice(markdown_core_parser *parser, markdown_core_publication *publication,
                                       const markdown_core_node *old, markdown_core_node *node) {
     markdown_core_node_pool *pool = parser->pool;
     size_t at = splice_find(parser, publication, old, node->order);
     if (at == SIZE_MAX) {
-        markdown_core_node_pool_release(pool, node);
-        return false;
-    }
-    if (SLOT_TABLE(slot_of(old)) && !rename_node(publication, old, node)) {
         markdown_core_node_pool_release(pool, node);
         return false;
     }
@@ -2185,12 +1924,11 @@ bool markdown_core_publication_splice(markdown_core_parser *parser, markdown_cor
         markdown_core_node *owner = steps[step.up].node, *into = owner;
         if (!steps[step.up].own) {
             into = markdown_core_node_copy(pool, owner);
-            if (!into || (SLOT_TABLE(slot_of(owner)) && !rename_node(publication, owner, into))) {
+            if (!into || !markdown_core_registry_move(parser->registry, owner, into)) {
                 markdown_core_node_pool_release(pool, into);
                 markdown_core_node_pool_release(pool, node);
                 return false;
             }
-            markdown_core_registry_move(owner, into);
         }
         if (step.field) {
             markdown_core_node **slot = field_slot_at(into, step.place);
@@ -2218,40 +1956,6 @@ bool markdown_core_publication_splice(markdown_core_parser *parser, markdown_cor
     }
 }
 
-/* The address order of renamed nodes. */
-static int renamed_order(const void *left, const void *right) {
-    const uintptr_t a = (uintptr_t)((const struct markdown_core_renamed *)left)->old;
-    const uintptr_t b = (uintptr_t)((const struct markdown_core_renamed *)right)->old;
-    return (a > b) - (a < b);
-}
-
-/* Each node a splice copied takes its copy's place in the tables. */
-static void tables_rename(markdown_core_publication *publication) {
-    const size_t count = publication->renamed_count;
-    if (!count) {
-        return;
-    }
-    qsort(publication->renamed, count, sizeof(*publication->renamed), renamed_order);
-    for (size_t table = 0; table < MARKDOWN_CORE_TABLE_COUNT; table++) {
-        markdown_core_definition_table *entries = &publication->tables[table];
-        for (size_t i = 0; i < entries->count; i++) {
-            const markdown_core_node *node = entries->values[i].node;
-            size_t lo = 0, hi = count;
-            while (lo < hi) {
-                const size_t mid = lo + (hi - lo) / 2;
-                if ((uintptr_t)publication->renamed[mid].old < (uintptr_t)node) {
-                    lo = mid + 1;
-                } else {
-                    hi = mid;
-                }
-            }
-            if (lo < count && publication->renamed[lo].old == node) {
-                entries->values[i].node = publication->renamed[lo].node;
-            }
-        }
-    }
-}
-
 bool markdown_core_publish_tree(markdown_core_parser *parser, markdown_core_publication *publication) {
     markdown_core_revision *revision = parser->revision;
     markdown_core_member *member = parser->root;
@@ -2263,17 +1967,8 @@ bool markdown_core_publish_tree(markdown_core_parser *parser, markdown_core_publ
     if (!publish_runs(parser->pool, (markdown_core_runs **)&root->runs, place, 0)) {
         return false;
     }
-    tables_rename(publication);
-    markdown_core_definition_table *tables = publication->tables;
-    markdown_core_definition_table *references = &tables[MARKDOWN_CORE_TABLE_REFERENCES];
-    value->references = (markdown_core_definitions){0};
-    bool ok = table_seal(parser, &tables[MARKDOWN_CORE_TABLE_FOOTNOTES], &value->footnotes) &&
-              table_seal(parser, &tables[MARKDOWN_CORE_TABLE_SPECIMENS], &value->specimens) &&
-              table_nodes(parser, references, &value->references.nodes);
-    value->references.count = ok ? references->count : 0;
-    ok = ok && reference_targets(parser, value, &tables[MARKDOWN_CORE_TABLE_HEADINGS]);
-    if (!ok) {
-        return false;
+    for (size_t i = 0; i < MARKDOWN_CORE_ROSTER_COUNT; i++) {
+        value->rosters[i] = markdown_core_roster_retain(parser->registry->rosters[i]);
     }
     assert(!member->waits);
     member->place = place;
@@ -3690,72 +3385,67 @@ markdown_core_status markdown_core_citation_referent(const markdown_core_node *c
     return MARKDOWN_CORE_OK;
 }
 
-/* The definition tables publishing recorded in the document's root. */
-static const markdown_core_definitions *document_footnotes(const markdown_core_document *document) {
-    return &document->root->as.document->footnotes;
+/* The roster of `kind` the document holds (registry.h). */
+static const markdown_core_roster *document_roster(const markdown_core_document *document,
+                                                   markdown_core_roster_kind kind) {
+    return document->root->as.document->rosters[kind];
 }
 
-static const markdown_core_definitions *document_specimens(const markdown_core_document *document) {
-    return &document->root->as.document->specimens;
-}
-
-static markdown_core_status definition_at(const markdown_core_definitions *table, size_t index,
-                                          const markdown_core_node **node) {
-    if (index >= table->count) {
+static markdown_core_status roster_node_at(const markdown_core_roster *roster, size_t index,
+                                           const markdown_core_node **node) {
+    if (index >= markdown_core_roster_count(roster)) {
         return MARKDOWN_CORE_OUT_OF_BOUNDS;
     }
-    *node = table->nodes[index];
+    *node = markdown_core_roster_at(roster, index);
     return MARKDOWN_CORE_OK;
 }
 
 size_t markdown_core_document_footnote_count(const markdown_core_document *document) {
-    return document_footnotes(document)->count;
+    return markdown_core_roster_count(document_roster(document, MARKDOWN_CORE_ROSTER_FOOTNOTES));
 }
 
 markdown_core_status markdown_core_document_footnote_at(const markdown_core_document *document, size_t index,
                                                         const markdown_core_node **footnote) {
-    return definition_at(document_footnotes(document), index, footnote);
+    return roster_node_at(document_roster(document, MARKDOWN_CORE_ROSTER_FOOTNOTES), index, footnote);
 }
 
 size_t markdown_core_document_specimen_count(const markdown_core_document *document) {
-    return document_specimens(document)->count;
+    return markdown_core_roster_count(document_roster(document, MARKDOWN_CORE_ROSTER_SPECIMENS));
 }
 
 markdown_core_status markdown_core_document_specimen_at(const markdown_core_document *document, size_t index,
                                                         const markdown_core_node **specimen) {
-    return definition_at(document_specimens(document), index, specimen);
+    return roster_node_at(document_roster(document, MARKDOWN_CORE_ROSTER_SPECIMENS), index, specimen);
 }
 
-/* The first definition in source order whose label is `label`, byte for
- * byte: the lowest of that label in the label order. */
-static const markdown_core_node *definition_for(const markdown_core_node *const *labeled, size_t count,
-                                                markdown_core_string label) {
-    size_t lo = 0, hi = count;
+/* Whether the label of the node an entry lists comes before `label`. */
+static bool label_entry_before(const markdown_core_roster *entry, const void *context) {
+    const markdown_core_string *label = context;
     markdown_core_chunk candidate;
-    while (lo < hi) {
-        size_t mid = lo + (hi - lo) / 2;
-        definition_label(labeled[mid], &candidate);
-        if (label_compare(candidate.data, (size_t)candidate.len, label.data, label.length) < 0) {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-    if (lo == count) {
+    markdown_core_definition_label(entry->node, &candidate);
+    return label_compare(candidate.data, (size_t)candidate.len, label->data, label->length) < 0;
+}
+
+/* The node a label roster lists for `label`, byte for byte, or NULL. */
+static const markdown_core_node *label_for(const markdown_core_roster *roster, markdown_core_string label) {
+    const size_t index = markdown_core_roster_rank(roster, label_entry_before, &label);
+    if (index == markdown_core_roster_count(roster)) {
         return NULL;
     }
-    definition_label(labeled[lo], &candidate);
-    return label_compare(candidate.data, (size_t)candidate.len, label.data, label.length) == 0 ? labeled[lo] : NULL;
+    const markdown_core_node *node = markdown_core_roster_at(roster, index);
+    markdown_core_chunk candidate;
+    markdown_core_definition_label(node, &candidate);
+    return label_compare(candidate.data, (size_t)candidate.len, label.data, label.length) == 0 ? node : NULL;
 }
 
 const markdown_core_node *markdown_core_document_footnote_for(const markdown_core_document *document,
                                                               markdown_core_string label) {
-    return definition_for(document_footnotes(document)->labeled, document_footnotes(document)->labeled_count, label);
+    return label_for(document_roster(document, MARKDOWN_CORE_ROSTER_FOOTNOTE_LABELS), label);
 }
 
 const markdown_core_node *markdown_core_document_specimen_for(const markdown_core_document *document,
                                                               markdown_core_string label) {
-    return definition_for(document_specimens(document)->labeled, document_specimens(document)->labeled_count, label);
+    return label_for(document_roster(document, MARKDOWN_CORE_ROSTER_SPECIMEN_LABELS), label);
 }
 
 markdown_core_status markdown_core_footnote_label(const markdown_core_node *footnote,
@@ -3766,36 +3456,34 @@ markdown_core_status markdown_core_footnote_label(const markdown_core_node *foot
 }
 
 size_t markdown_core_document_reference_count(const markdown_core_document *document) {
-    return document->root->as.document->references.count;
+    return markdown_core_roster_count(document_roster(document, MARKDOWN_CORE_ROSTER_REFERENCES));
 }
 
 markdown_core_status markdown_core_document_reference_at(const markdown_core_document *document, size_t index,
                                                          const markdown_core_node **reference) {
-    return definition_at(&document->root->as.document->references, index, reference);
+    return roster_node_at(document_roster(document, MARKDOWN_CORE_ROSTER_REFERENCES), index, reference);
 }
 
 const markdown_core_node *markdown_core_document_reference_for(const markdown_core_document *document,
                                                                markdown_core_string label) {
-    const markdown_core_document_value *value = document->root->as.document;
-    return definition_for(value->reference_targets, value->reference_target_count, label);
+    return label_for(document_roster(document, MARKDOWN_CORE_ROSTER_REFERENCE_LABELS), label);
 }
 
 size_t markdown_core_document_reference_label_count(const markdown_core_document *document) {
-    return document->root->as.document->reference_target_count;
+    return markdown_core_roster_count(document_roster(document, MARKDOWN_CORE_ROSTER_REFERENCE_LABELS));
 }
 
 markdown_core_status markdown_core_document_reference_label_at(const markdown_core_document *document, size_t index,
                                                                markdown_core_string *label,
                                                                const markdown_core_node **target) {
-    const markdown_core_document_value *value = document->root->as.document;
-    if (index >= value->reference_target_count) {
-        return MARKDOWN_CORE_OUT_OF_BOUNDS;
+    const markdown_core_status status =
+        roster_node_at(document_roster(document, MARKDOWN_CORE_ROSTER_REFERENCE_LABELS), index, target);
+    if (status == MARKDOWN_CORE_OK) {
+        markdown_core_chunk chunk;
+        markdown_core_definition_label(*target, &chunk);
+        *label = chunk_string(chunk);
     }
-    markdown_core_chunk chunk;
-    definition_label(value->reference_targets[index], &chunk);
-    *label = chunk_string(chunk);
-    *target = value->reference_targets[index];
-    return MARKDOWN_CORE_OK;
+    return status;
 }
 
 markdown_core_status markdown_core_reference_label(const markdown_core_node *reference, markdown_core_string *label) {
