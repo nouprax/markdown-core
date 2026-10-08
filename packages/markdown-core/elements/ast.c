@@ -14,6 +14,7 @@
 #include "strikethrough.h"
 #include "table.h"
 
+#include <block_internal.h>
 #include <node_type.h>
 #include <node.h>
 #include <parser.h>
@@ -2048,8 +2049,8 @@ bool markdown_core_publication_splice(markdown_core_parser *parser, markdown_cor
             *slot = node;
         } else {
             bool failed;
-            markdown_core_stem *stem =
-                markdown_core_stem_replace(pool, into->children, step.place, node, NULL, &failed);
+            markdown_core_stem *stem = markdown_core_stem_replace(
+                pool, into->children, step.place, node, markdown_core_parser_kind(parser, into)->summary, &failed);
             if (!stem) {
                 if (into != owner) {
                     markdown_core_node_pool_release(pool, into);
@@ -2566,11 +2567,13 @@ markdown_core_status markdown_core_document_scope(const markdown_core_document *
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     markdown_core_status status = MARKDOWN_CORE_OK;
+    markdown_core_scope *made = NULL;
     if (ranges[found - 1].end > length) {
         status = MARKDOWN_CORE_OUT_OF_BOUNDS;
-    } else if (!(*scopes = ranges_scopes(source, length, ranges, found, document->unit))) {
+    } else if (!(made = ranges_scopes(source, length, ranges, found, document->unit))) {
         status = MARKDOWN_CORE_ALLOCATION_FAILED;
     } else {
+        *scopes = made;
         *count = found;
     }
     markdown_core_free(ranges);
@@ -2702,7 +2705,6 @@ static const markdown_core_node *cursor_relation(cursor_frame *frame) {
 }
 
 markdown_core_status markdown_core_cursor_child(markdown_core_cursor *cursor, bool *moved) {
-    *moved = false;
     if (cursor->count == cursor->capacity) {
         cursor_frame *frames =
             markdown_core_reserve(cursor->frames, &cursor->capacity, cursor->count + 1, sizeof(*frames));
@@ -2716,8 +2718,8 @@ markdown_core_status markdown_core_cursor_child(markdown_core_cursor *cursor, bo
     const markdown_core_node *child = cursor_relation(frame);
     if (child) {
         cursor->frames[cursor->count++] = (cursor_frame){.node = child};
-        *moved = true;
     }
+    *moved = child != NULL;
     return MARKDOWN_CORE_OK;
 }
 
@@ -2782,7 +2784,7 @@ static void list_properties(const markdown_core_node *node, markdown_core_list_f
     start->value = node->as.list->start;
     *variant = node->as.list->variant;
     *delimiter = node->as.list->delimiter;
-    *tight = node->as.list->tight;
+    *tight = !markdown_core_block_loose(node);
 }
 
 static void code_block_properties(const markdown_core_node *node, markdown_core_optional_string *info,

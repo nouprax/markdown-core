@@ -25,7 +25,6 @@ typedef struct {
     markdown_core_ordered_list_variant variant;
     markdown_core_ordered_list_delimiter delimiter;
     unsigned char bullet_char;
-    bool tight;
     /* The authored UTF-8 task marker, owned by the item; absent on ordinary
      * items. Completion is derived by consumers, not stored by the tree. */
     markdown_core_optional_chunk task_marker;
@@ -278,7 +277,6 @@ typedef union {
 enum markdown_core_node__internal_flags {
     MARKDOWN_CORE_NODE__OPEN = (1 << 0),
     MARKDOWN_CORE_NODE__LAST_LINE_BLANK = (1 << 1),
-    MARKDOWN_CORE_NODE__LAST_LINE_CHECKED = (1 << 2),
     MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK = (1 << 3),
     // An HTML block whose own end condition matched on the line being
     // processed. `finalize` reads it to end the block on that line rather
@@ -823,9 +821,11 @@ void markdown_core_member_unlink(markdown_core_member *member);
 
 /* COMPLETES A BUILDER'S STRUCTURE: the nodes of `member`'s children become
  * its node's stem, which takes the references their members held; the
- * members stay, for the node's numbering. False, changing nothing, when the
- * stem could not be allocated. */
-bool markdown_core_member_freeze(markdown_core_node_pool *pool, markdown_core_member *member);
+ * members stay, for the node's numbering, and the stem keeps the `summary`
+ * of the node's kind (E4), which may be NULL. False, changing nothing, when
+ * the stem could not be allocated. */
+bool markdown_core_member_freeze(markdown_core_node_pool *pool, markdown_core_member *member,
+                                 const markdown_core_stem_summary *summary);
 
 /* Releases `member`, every member below it, and the references they hold;
  * `member` was detached first, or is a root. */

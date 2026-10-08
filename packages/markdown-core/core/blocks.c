@@ -39,10 +39,6 @@ bool markdown_core_block_last_line_blank(const markdown_core_node *node) {
     return (node->flags & MARKDOWN_CORE_NODE__LAST_LINE_BLANK) != 0;
 }
 
-static bool S_last_line_checked(const markdown_core_node *node) {
-    return (node->flags & MARKDOWN_CORE_NODE__LAST_LINE_CHECKED) != 0;
-}
-
 markdown_core_node_type markdown_core_block_type(const markdown_core_node *node) {
     return (markdown_core_node_type)node->kind;
 }
@@ -54,8 +50,6 @@ static void S_set_last_line_blank(markdown_core_node *node, bool markdown_core_b
         node->flags &= ~MARKDOWN_CORE_NODE__LAST_LINE_BLANK;
     }
 }
-
-static void S_set_last_line_checked(markdown_core_node *node) { node->flags |= MARKDOWN_CORE_NODE__LAST_LINE_CHECKED; }
 
 /* The two parse stages stay out of line: the benchmark measures each one as
  * the cost of its call (scripts/benchmark/run.mjs). */
@@ -1175,70 +1169,56 @@ void markdown_core_parser_write_closed(markdown_core_parser *parser, markdown_co
     S_record(parser, parent->last, true);
 }
 
-markdown_core_member *markdown_core_block_next_seen(const markdown_core_member *member) {
-    markdown_core_member *next = member->next;
-    while (next && (next->node->flags & MARKDOWN_CORE_NODE__BLANK_TRANSPARENT)) {
-        next = next->next;
-    }
-    return next;
+/* THE BLANK-LINE SUMMARY (E4) of the children of a kind a child's blank
+ * line propagates out of, a list and its items. A child the facts read
+ * through is no child to them, the word 0. Any other child is SEEN, and says
+ * whether it ENDS with a blank line, whether its own LAST line was blank,
+ * and, through its children, whether a blank line lies BETWEEN two of them.
+ * A run of children ends as its last seen child does; a blank line lies
+ * between two of them when a seen child before another ends with one
+ * (BETWEEN), or ends with one or had a blank last line (AFTER); and a child
+ * whose children have a blank line between them makes the run INSIDE. */
+enum {
+    S_BLANK_SEEN = 1u << 0,
+    S_BLANK_ENDS = 1u << 1,
+    S_BLANK_LAST = 1u << 2,
+    S_BLANK_BETWEEN = 1u << 3,
+    S_BLANK_AFTER = 1u << 4,
+    S_BLANK_INSIDE = 1u << 5
+};
+
+static uint64_t S_blank_summary(const markdown_core_node *node) { return node->children ? node->children->summary : 0; }
+
+bool markdown_core_block_ends_with_blank_line(const markdown_core_node *node) {
+    const uint64_t children = S_blank_summary(node);
+    return children & S_BLANK_SEEN ? (children & S_BLANK_ENDS) != 0 : markdown_core_block_last_line_blank(node);
 }
 
-bool markdown_core_block_seen_after(const markdown_core_stem *stem, size_t index) {
-    markdown_core_stem_walk walk;
-    const size_t count = markdown_core_stem_count(stem);
-    markdown_core_stem_walk_begin(&walk, stem, index + 1, count > index ? count - index - 1 : 0);
-    for (const markdown_core_node *next; (next = markdown_core_stem_walk_next(&walk));) {
-        if (!(next->flags & MARKDOWN_CORE_NODE__BLANK_TRANSPARENT)) {
-            return true;
-        }
-    }
-    return false;
+bool markdown_core_block_loose(const markdown_core_node *node) {
+    return (S_blank_summary(node) & (S_BLANK_AFTER | S_BLANK_INSIDE)) != 0;
 }
 
-/* The last child of `node` the blank-line facts see, or NULL. */
-static markdown_core_node *S_last_seen_child(const markdown_core_node *node) {
-    for (size_t i = markdown_core_stem_count(node->children); i-- > 0;) {
-        markdown_core_node *last = markdown_core_stem_at(node->children, i);
-        if (!(last->flags & MARKDOWN_CORE_NODE__BLANK_TRANSPARENT)) {
-            return last;
-        }
+static uint64_t S_blank_of(const markdown_core_node *node) {
+    if (node->flags & MARKDOWN_CORE_NODE__BLANK_TRANSPARENT) {
+        return 0;
     }
-    return NULL;
+    return S_BLANK_SEEN | (markdown_core_block_ends_with_blank_line(node) ? S_BLANK_ENDS : 0) |
+           (markdown_core_block_last_line_blank(node) ? S_BLANK_LAST : 0) |
+           (S_blank_summary(node) & S_BLANK_BETWEEN ? S_BLANK_INSIDE : 0);
 }
 
-/* The block whose last line the blank-line facts read for `node`: `node`
- * itself, or, through the kinds a child's blank line propagates out of, its
- * last child seen, down to a block whose answer is already cached. */
-static markdown_core_node *S_blank_line_holder(const markdown_core_parser *parser, markdown_core_node *node) {
-    markdown_core_node *last = node;
-    while (!S_last_line_checked(last) &&
-           (markdown_core_parser_kind(parser, last)->flags & MARKDOWN_CORE_KIND_BLANK_PROPAGATES) &&
-           S_last_seen_child(last)) {
-        last = S_last_seen_child(last);
+static uint64_t S_blank_combine(uint64_t front, uint64_t back) {
+    if (!(front & S_BLANK_SEEN) || !(back & S_BLANK_SEEN)) {
+        return front | back;
     }
-    return last;
+    const uint64_t between = front & S_BLANK_ENDS   ? S_BLANK_BETWEEN | S_BLANK_AFTER
+                             : front & S_BLANK_LAST ? S_BLANK_AFTER
+                                                    : 0;
+    return S_BLANK_SEEN | (back & (S_BLANK_ENDS | S_BLANK_LAST)) |
+           ((front | back) & (S_BLANK_BETWEEN | S_BLANK_AFTER | S_BLANK_INSIDE)) | between;
 }
 
-// Check to see if a node ends with a blank line, descending
-// if needed into lists and sublists.
-bool markdown_core_block_ends_with_blank_line(const markdown_core_parser *parser, markdown_core_node *node) {
-    bool blank = markdown_core_block_last_line_blank(S_blank_line_holder(parser, node));
-    /* Cache the answer as well as the fact that it was checked, on every
-     * block of the way down: both list finalization and detached identifiers
-     * ask this of finalized blocks. */
-    for (markdown_core_node *last = node;;) {
-        const bool checked = S_last_line_checked(last);
-        S_set_last_line_blank(last, blank);
-        S_set_last_line_checked(last);
-        if (checked || !(markdown_core_parser_kind(parser, last)->flags & MARKDOWN_CORE_KIND_BLANK_PROPAGATES)) {
-            return blank;
-        }
-        last = S_last_seen_child(last);
-        if (!last) {
-            return blank;
-        }
-    }
-}
+const markdown_core_stem_summary MARKDOWN_CORE_BLANK_SUMMARY = {S_blank_of, S_blank_combine};
 
 static void S_settle(markdown_core_parser *parser, markdown_core_member *member);
 
@@ -1757,7 +1737,7 @@ static markdown_core_complete_result run_complete_steps(markdown_core_parser *pa
  * complete, become its stem, and the document numbers what it holds,
  * measured from `start`. */
 static void S_complete_node(markdown_core_parser *parser, markdown_core_member *member, uint32_t start) {
-    if (!markdown_core_member_freeze(parser->pool, member)) {
+    if (!markdown_core_member_freeze(parser->pool, member, markdown_core_parser_kind(parser, member->node)->summary)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
@@ -1884,7 +1864,8 @@ static void S_complete_inline_root(markdown_core_parser *parser, markdown_core_i
                     if (member == holder) {
                         /* The holder takes its stem, and the root, which
                          * is the holder or its owner, numbers its content. */
-                        if (!markdown_core_member_freeze(parser->pool, member)) {
+                        if (!markdown_core_member_freeze(parser->pool, member,
+                                                         markdown_core_parser_kind(parser, member->node)->summary)) {
                             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
                             break;
                         }

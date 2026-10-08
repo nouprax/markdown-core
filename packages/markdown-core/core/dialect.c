@@ -239,7 +239,7 @@ static void S_resolve_owners(markdown_core_dialect *dialect) {
  * projected after the instance table, which it resolves the structure in. */
 static void S_project_kinds(markdown_core_dialect *dialect) {
     for (size_t index = 0; index < MARKDOWN_CORE_KIND_INDEX_COUNT; index++) {
-        markdown_core_kind_record record = {NULL, NULL, 0};
+        markdown_core_kind_record record = {NULL, NULL, NULL, 0};
         markdown_core_node_type kind =
             index < MARKDOWN_CORE_NODE_KIND_COUNT
                 ? (markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_BLOCK | index)
@@ -261,7 +261,6 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
                 {structure->blank_opaque, MARKDOWN_CORE_KIND_BLANK_OPAQUE},
                 {structure->blank_line != NULL, MARKDOWN_CORE_KIND_BLANK_ASK},
                 {structure->blank_runs, MARKDOWN_CORE_KIND_BLANK_RUNS},
-                {structure->propagates_child_blank, MARKDOWN_CORE_KIND_BLANK_PROPAGATES},
             };
             for (size_t i = 0; i < sizeof(facts) / sizeof(facts[0]); i++) {
                 if (facts[i].fact) {
@@ -269,6 +268,7 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
                 }
             }
             record.complete = structure->complete_inline;
+            record.summary = structure->propagates_child_blank ? &MARKDOWN_CORE_BLANK_SUMMARY : NULL;
         }
         dialect->kinds[index] = record;
     }

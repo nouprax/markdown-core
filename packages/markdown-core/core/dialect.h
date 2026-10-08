@@ -154,12 +154,14 @@ typedef struct markdown_core_complete_step_entry {
  * - LINES / LINES_ASK: the kind takes lines as content, a LITERAL
  *   `content_mode` / `accepts_lines_func`; PROSE, a PROSE `content_mode`, it
  *   takes a text line as prose; IS_PARAGRAPH, `paragraph`;
- * - BLANK_OPAQUE, BLANK_ASK (`blank_line`), BLANK_RUNS and BLANK_PROPAGATES
- *   (`propagates_child_blank`): what a blank line means inside it.
+ * - BLANK_OPAQUE, BLANK_ASK (`blank_line`) and BLANK_RUNS: what a blank
+ *   line means inside it.
  *
- * `complete` is the structure's `complete_inline`, NULL when it declares
- * none, which inline completion calls at every ENTER. The out-of-table index answers
- * nothing. */
+ * `summary` is the summary its children tree keeps (E4): the blank-line
+ * summary when a child's blank line propagates out of the kind
+ * (`propagates_child_blank`), and NULL otherwise. `complete` is the
+ * structure's `complete_inline`, NULL when it declares none, which inline completion calls at every ENTER. The
+ * out-of-table index answers nothing. */
 enum {
     MARKDOWN_CORE_KIND_INLINES = 1u << 0,
     MARKDOWN_CORE_KIND_INLINES_ASK = 1u << 1,
@@ -171,11 +173,11 @@ enum {
     MARKDOWN_CORE_KIND_IS_PARAGRAPH = 1u << 7,
     MARKDOWN_CORE_KIND_BLANK_OPAQUE = 1u << 8,
     MARKDOWN_CORE_KIND_BLANK_ASK = 1u << 9,
-    MARKDOWN_CORE_KIND_BLANK_RUNS = 1u << 10,
-    MARKDOWN_CORE_KIND_BLANK_PROPAGATES = 1u << 11
+    MARKDOWN_CORE_KIND_BLANK_RUNS = 1u << 10
 };
 typedef struct markdown_core_kind_record {
     const markdown_core_element_instance *structure;
+    const markdown_core_stem_summary *summary;
     void (*complete)(const markdown_core_element_instance *, struct markdown_core_parser *, markdown_core_node *, int);
     uint16_t flags;
 } markdown_core_kind_record;

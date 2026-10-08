@@ -25,13 +25,16 @@ markdown_core_node_type markdown_core_block_type(const markdown_core_node *node)
 bool markdown_core_block_is_blank(markdown_core_strbuf *s, bufsize_t offset);
 void markdown_core_block_rebase_content_marks(markdown_core_parser *parser, markdown_core_node *node, bufsize_t dropped,
                                               bufsize_t remaining);
-bool markdown_core_block_ends_with_blank_line(const markdown_core_parser *parser, markdown_core_node *node);
-/* The sibling after `member` the blank-line facts see: the next one that is
- * not MARKDOWN_CORE_NODE__BLANK_TRANSPARENT, or NULL. */
-markdown_core_member *markdown_core_block_next_seen(const markdown_core_member *member);
-/* Whether a node the blank-line facts see follows the one at `index` of
- * `stem`. */
-bool markdown_core_block_seen_after(const markdown_core_stem *stem, size_t index);
+/* Whether `node` ends with a blank line: its last line was blank, or, for a
+ * kind a child's blank line propagates out of, its last child the facts see
+ * ends with one. */
+bool markdown_core_block_ends_with_blank_line(const markdown_core_node *node);
+/* Whether a blank line separates two children of `node`, a list, or two
+ * children of one of them: the list is loose. */
+bool markdown_core_block_loose(const markdown_core_node *node);
+/* The children summary (E4) of a kind a child's blank line propagates out
+ * of. */
+extern const markdown_core_stem_summary MARKDOWN_CORE_BLANK_SUMMARY;
 markdown_core_member *markdown_core_block_finalize(markdown_core_parser *parser, markdown_core_member *b);
 /* A BLOCK AN ELEMENT CLOSES ITSELF, once its range is settled: a table's
  * lead paragraph, which the delimiter line closed and which with `holds`

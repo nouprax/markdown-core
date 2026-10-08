@@ -919,7 +919,6 @@ static void constructor(test_batch_runner *runner) {
         case MARKDOWN_CORE_NODE_LIST:
             INT_EQ(runner, node->as.list->flavor, MARKDOWN_CORE_LIST_FLAVOR_BULLET, "default list flavor is bullet");
             INT_EQ(runner, node->as.list->start, 0, "default list start is 0");
-            INT_EQ(runner, node->as.list->tight, 0, "default list is loose");
             break;
 
         default:
@@ -1489,8 +1488,8 @@ static void create_tree(test_batch_runner *runner) {
     /* Each member freezes once its children have: their nodes become its
      * stem, in the order the members were linked. */
     OK(runner,
-       markdown_core_member_freeze(NULL, emph) && markdown_core_member_freeze(NULL, p) &&
-           markdown_core_member_freeze(NULL, built),
+       markdown_core_member_freeze(NULL, emph, NULL) && markdown_core_member_freeze(NULL, p, NULL) &&
+           markdown_core_member_freeze(NULL, built, NULL),
        "the built tree freezes");
     markdown_core_member_release(NULL, built);
     INT_EQ(runner, markdown_core_node_check(doc, NULL), 0, "built tree consistent");
@@ -4144,7 +4143,7 @@ static bool task_block_node_facts_equal(markdown_core_node *a, markdown_core_nod
             a->as.list->delimiter.kind == b->as.list->delimiter.kind &&
             a->as.list->delimiter.closed == b->as.list->delimiter.closed &&
             a->as.list->variant.kind == b->as.list->variant.kind &&
-            a->as.list->variant.lowercased == b->as.list->variant.lowercased && a->as.list->tight == b->as.list->tight);
+            a->as.list->variant.lowercased == b->as.list->variant.lowercased);
 }
 
 /* The two trees pair node by node, on an explicit stack of pairs. */

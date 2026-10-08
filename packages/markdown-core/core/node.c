@@ -1264,7 +1264,8 @@ static void S_member_free(markdown_core_node_pool *pool, markdown_core_member *m
     markdown_core_slab_release(pool ? &pool->members : NULL, member);
 }
 
-bool markdown_core_member_freeze(markdown_core_node_pool *pool, markdown_core_member *member) {
+bool markdown_core_member_freeze(markdown_core_node_pool *pool, markdown_core_member *member,
+                                 const markdown_core_stem_summary *summary) {
     size_t count = 0;
     for (const markdown_core_member *child = member->first; child; child = child->next) {
         count += child->held;
@@ -1286,7 +1287,7 @@ bool markdown_core_member_freeze(markdown_core_node_pool *pool, markdown_core_me
         }
     }
     bool failed;
-    node->children = markdown_core_stem_make(pool, nodes, count, NULL, &failed);
+    node->children = markdown_core_stem_make(pool, nodes, count, summary, &failed);
     if (nodes != small) {
         markdown_core_free(nodes);
     }

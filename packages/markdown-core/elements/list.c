@@ -199,33 +199,6 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *
     return pos - startpos;
 }
 
-/* The list is settling: its items are still its members, each of them
- * settled, so an item's children are its stem. */
-void markdown_core_block_finalize_list(const markdown_core_parser *parser, markdown_core_member *member) {
-    markdown_core_node *list = member->node;
-    list->as.list->tight = true;
-    for (markdown_core_member *item = member->first; item; item = item->next) {
-        if (markdown_core_block_last_line_blank(item->node) && item->next) {
-            list->as.list->tight = false;
-            return;
-        }
-        const markdown_core_stem *children = item->node->children;
-        markdown_core_stem_walk walk;
-        markdown_core_stem_walk_begin(&walk, children, 0, markdown_core_stem_count(children));
-        size_t index = 0;
-        for (markdown_core_node *child; (child = markdown_core_stem_walk_next(&walk)); index++) {
-            if (child->flags & MARKDOWN_CORE_NODE__BLANK_TRANSPARENT) {
-                continue;
-            }
-            if ((item->next || markdown_core_block_seen_after(children, index)) &&
-                markdown_core_block_ends_with_blank_line(parser, child)) {
-                list->as.list->tight = false;
-                return;
-            }
-        }
-    }
-}
-
 static bool markdown_core_list_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                     markdown_core_member **container, markdown_core_chunk *input, block_start *start) {
     (void)self;
@@ -306,15 +279,6 @@ static bool continue_container(const markdown_core_element_instance *self, markd
     (void)self;
     return markdown_core_list_continue(parser, node, input, joining, taken);
 }
-/* A LIST IS LAID OUT AS IT CLOSES: tight or loose is read off its items and
- * their children, which closed before it. */
-static void finalize_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                           markdown_core_member *node) {
-    (void)self;
-    if (node->node->kind == MARKDOWN_CORE_NODE_LIST) {
-        markdown_core_block_finalize_list(parser, node);
-    }
-}
 static bool blank_line(const markdown_core_element_instance *self, markdown_core_parser *parser,
                        markdown_core_member *member) {
     (void)self;
@@ -337,7 +301,6 @@ static uint32_t carry_save(const markdown_core_element_instance *self, const mar
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
     .state_size = sizeof(markdown_core_list_work),
-    .finalize_block = finalize_block,
     .blank_line = blank_line,
     .speculative_flags = MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK,
 

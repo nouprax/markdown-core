@@ -114,7 +114,7 @@ bool markdown_core_block_attach_identifier_line(markdown_core_block_identifier_w
          markdown_core_block_type(owner) != MARKDOWN_CORE_NODE_TABLE) ||
         !S_scan_block_identifier(work, input->data + parser->first_nonspace, input->len - parser->first_nonspace,
                                  &candidate) ||
-        !candidate.own_line || candidate.content_end || !markdown_core_block_ends_with_blank_line(parser, owner)) {
+        !candidate.own_line || candidate.content_end || !markdown_core_block_ends_with_blank_line(owner)) {
         return false;
     }
     bool followed_by_boundary = !markdown_core_parser_input_continues(parser);
