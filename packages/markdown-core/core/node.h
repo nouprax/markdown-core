@@ -946,8 +946,59 @@ static inline markdown_core_member *markdown_core_member_new(markdown_core_node_
     return member;
 }
 
+/* Whether `member` has decided to continue no old node: then nothing it holds
+ * continues one either, and every member it holds has decided so too (5.9). */
+static inline bool markdown_core_member_continues_nothing(const markdown_core_member *member) {
+    return member->decided && !member->old;
+}
+
+/* The first member `member` holds: its first field root, or its first
+ * child. */
+static inline markdown_core_member *markdown_core_member_first_held(const markdown_core_member *member) {
+    return member->fields ? member->fields : member->first;
+}
+
+/* The member `member`'s owner holds after it: the next field root, then the
+ * first child, then the next child. */
+static inline markdown_core_member *markdown_core_member_held_after(const markdown_core_member *member) {
+    return member->next ? member->next : member->field ? member->owner->first : NULL;
+}
+
+/* `member` decides to continue nothing, and so does every member it holds
+ * that had not decided: they continue nothing whatever they become. */
+static inline void markdown_core_member_continue_nothing(markdown_core_member *member) {
+    member->decided = true;
+    /* A member that had decided continues nothing, and so has everything it
+     * holds, or continues an old node, which what it holds searches. */
+    markdown_core_member *at = markdown_core_member_first_held(member);
+    while (at) {
+        markdown_core_member *below = NULL;
+        if (!at->decided) {
+            at->decided = true;
+            below = markdown_core_member_first_held(at);
+        }
+        if (below) {
+            at = below;
+            continue;
+        }
+        while (at != member && !markdown_core_member_held_after(at)) {
+            at = at->owner;
+        }
+        at = at == member ? NULL : markdown_core_member_held_after(at);
+    }
+}
+
+/* What `member` takes from the `owner` it is linked under: it is inner when
+ * `owner` is, and continues nothing when `owner` does. */
+static inline void markdown_core_member_inherit(const markdown_core_member *owner, markdown_core_member *member) {
+    member->inner = owner->inner;
+    if (!member->decided && markdown_core_member_continues_nothing(owner)) {
+        markdown_core_member_continue_nothing(member);
+    }
+}
+
 /* Links the detached `child` under `owner`, before `before` (a child of
- * `owner`) or last; it is inner when `owner` is. The caller has proved
+ * `owner`) or last, and it inherits from `owner`. The caller has proved
  * containment. */
 static inline void markdown_core_member_attach(markdown_core_member *owner, markdown_core_member *child,
                                                markdown_core_member *before) {
@@ -957,7 +1008,7 @@ static inline void markdown_core_member_attach(markdown_core_member *owner, mark
     assert(markdown_core_member_admits(owner, child));
     markdown_core_member *previous = before ? before->prev : owner->last;
     child->owner = owner;
-    child->inner = owner->inner;
+    markdown_core_member_inherit(owner, child);
     child->prev = previous;
     child->next = before;
     if (previous) {
@@ -972,8 +1023,8 @@ static inline void markdown_core_member_attach(markdown_core_member *owner, mark
     }
 }
 
-/* Links the detached `field` as the last field root `owner` builds; it is
- * inner when `owner` is. */
+/* Links the detached `field` as the last field root `owner` builds, and it
+ * inherits from `owner`. */
 void markdown_core_member_attach_field(markdown_core_member *owner, markdown_core_member *field);
 
 /* Detaches `member` from its owner and siblings, keeping its subtree. */

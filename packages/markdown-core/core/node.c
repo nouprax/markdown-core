@@ -1562,7 +1562,7 @@ void markdown_core_member_attach_field(markdown_core_member *owner, markdown_cor
     assert(!field->owner && !field->next);
     field->owner = owner;
     field->field = true;
-    field->inner = owner->inner;
+    markdown_core_member_inherit(owner, field);
     markdown_core_member **at = &owner->fields;
     while (*at) {
         at = &(*at)->next;

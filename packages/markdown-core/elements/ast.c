@@ -952,6 +952,18 @@ static bool passed_whole(const markdown_core_member *member, uint32_t reach) {
     return range_final(member) && reach >= markdown_core_member_place(member).end;
 }
 
+/* `member` decides: it continues `old`, which starts at `old_start` in the
+ * old source, or nothing. */
+static void decide(markdown_core_member *member, const markdown_core_node *old, uint32_t old_start) {
+    member->old = old;
+    member->old_start = old_start;
+    if (old) {
+        member->decided = true;
+    } else {
+        markdown_core_member_continue_nothing(member);
+    }
+}
+
 /* `member`, a child of a node that continues an old node, continues its first
  * candidate of its kind. With none, it continues nothing once `whole`, its
  * whole range passed; until then it is undecided. Its kind is final when its
@@ -962,13 +974,13 @@ static void choose(const markdown_core_publication *publication, markdown_core_m
     for (uint32_t at = member->candidates; at; at = publication->candidates[at - 1].next) {
         const markdown_core_candidate *candidate = &publication->candidates[at - 1];
         if (public_kind(candidate->old) == kind) {
-            member->old = candidate->old;
-            member->old_start = candidate->start;
-            member->decided = true;
+            decide(member, candidate->old, candidate->start);
             return;
         }
     }
-    member->decided = whole;
+    if (whole) {
+        decide(member, NULL, 0);
+    }
 }
 
 /* The field slot `node` fills among `owner`'s fields, counted in canonical
@@ -1019,9 +1031,7 @@ static bool field_search(markdown_core_parser *parser, markdown_core_publication
     field_slot(owner->node, member->node, &place);
     const markdown_core_node *old = field_at(owner->old, place);
     if (!old || (member->node->flags & MARKDOWN_CORE_NODE__GROUP)) {
-        member->old = old;
-        member->old_start = owner->old_start;
-        member->decided = true;
+        decide(member, old, owner->old_start);
         return true;
     }
     const markdown_core_place source = source_place(old, owner->old_start);
@@ -1035,11 +1045,9 @@ static bool field_search(markdown_core_parser *parser, markdown_core_publication
         member->passed = reach;
         return true;
     }
-    if (anchored && image >= window.start && image < window.end && public_kind(old) == public_kind(member->node)) {
-        member->old = old;
-        member->old_start = source.start;
-    }
-    member->decided = true;
+    const bool continues =
+        anchored && image >= window.start && image < window.end && public_kind(old) == public_kind(member->node);
+    decide(member, continues ? old : NULL, continues ? source.start : 0);
     return true;
 }
 
@@ -1114,15 +1122,19 @@ static bool pair_ask(markdown_core_parser *parser, markdown_core_publication *pu
 }
 
 /* One step of a search: `member`'s owner has searched as far as `reach`. An
- * owner that continues nothing as far as `reach` has no old node in `member`'s
- * range, so `member` continues nothing once its whole range is passed. */
+ * owner still undecided there holds no old node in `member`'s range as far as
+ * `reach`, so `member` continues nothing once its whole range is passed. */
 static bool search_step(markdown_core_parser *parser, markdown_core_publication *publication,
                         markdown_core_member *member, uint32_t reach) {
     markdown_core_member *owner = member->owner;
-    if (!owner->decided || !owner->old) {
-        member->decided = owner->decided || passed_whole(member, reach);
+    if (!owner->decided) {
+        if (passed_whole(member, reach)) {
+            decide(member, NULL, 0);
+        }
         return true;
     }
+    /* An owner that continues nothing decided `member` with it. */
+    assert(owner->old);
     if (member->field) {
         return field_search(parser, publication, owner, member, reach);
     }
@@ -1131,10 +1143,9 @@ static bool search_step(markdown_core_parser *parser, markdown_core_publication 
     }
     if (member->node->flags & MARKDOWN_CORE_NODE__GROUP) {
         const markdown_core_stem *bodies = owner->old->children;
-        member->old =
-            member->index < markdown_core_stem_count(bodies) ? markdown_core_stem_at(bodies, member->index) : NULL;
-        member->old_start = owner->old_start;
-        member->decided = true;
+        decide(member,
+               member->index < markdown_core_stem_count(bodies) ? markdown_core_stem_at(bodies, member->index) : NULL,
+               owner->old_start);
         return true;
     }
     choose(publication, member, passed_whole(member, member->passed));
@@ -1169,6 +1180,10 @@ static bool climb_search(markdown_core_parser *parser, markdown_core_publication
     }
     while (count) {
         markdown_core_member *at = publication->climb[--count];
+        if (at->decided) {
+            /* An owner above decided it as it decided to continue nothing. */
+            continue;
+        }
         const bool across = at->owner->inner != member->owner->inner;
         if (!search_step(parser, publication, at, across ? markdown_core_member_place(at).end : within(at, reach))) {
             return false;
@@ -1192,24 +1207,14 @@ static void identify(markdown_core_parser *parser, markdown_core_member *member)
 }
 
 /* `member`'s node is numbered. It decides, and takes its id, as soon as that
- * cannot change: now when the nearest of its owners that decided -- the
- * document, above members not attached yet -- continues nothing, as then it
- * and every owner on the way continue nothing whatever they become, or when
- * it waits on nothing, its kind and range final; otherwise as it settles,
- * when they are. False when an allocation failed. */
+ * cannot change: now when its owner continues nothing, as then it decided
+ * with its owner to continue nothing whatever it becomes, or when it waits on
+ * nothing, its kind and range final; otherwise as it settles, when they are.
+ * False when an allocation failed. */
 static bool number_id(markdown_core_parser *parser, markdown_core_publication *publication,
                       markdown_core_member *member) {
-    markdown_core_member *above = member->owner;
-    while (above && !above->decided) {
-        above = above->owner;
-    }
-    /* Members not attached yet lie under the document all the same. */
-    const markdown_core_member *decided = above ? above : parser->root;
-    if (!decided->old) {
-        for (markdown_core_member *at = member; at && at != above; at = at->owner) {
-            at->decided = true;
-        }
-    } else if (member->waits) {
+    assert(member->owner || member == parser->root);
+    if (member->waits && !markdown_core_member_continues_nothing(member->owner)) {
         return true;
     }
     if (!search(parser, publication, member, member->place.end)) {

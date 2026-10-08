@@ -1956,9 +1956,11 @@ static void S_settle_taken(markdown_core_member *member) {
          !(node->kind == MARKDOWN_CORE_NODE_TEXT && markdown_core_text_needs_consolidation(member)))) {
         return;
     }
-    member->taken = member->decided = false;
+    member->taken = false;
     member->old = NULL;
     member->old_start = member->passed = 0;
+    /* Under an owner that continues nothing, it has decided so too. */
+    member->decided = markdown_core_member_continues_nothing(member->owner);
     member->node->entry = 0;
     member->node->reach = 0;
 }

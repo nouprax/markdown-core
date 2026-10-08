@@ -802,7 +802,7 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
     inline_member->prev = opener_member;
     inline_member->next = closer_member;
     inline_member->owner = opener_member->owner;
-    inline_member->inner = opener_member->owner->inner;
+    markdown_core_member_inherit(opener_member->owner, inline_member);
 
     /* REQUIREMENT 11b: the delimiters the inline USED are now its markers.
      * They were claimed CONTENT when they were read, because a `*` that matches

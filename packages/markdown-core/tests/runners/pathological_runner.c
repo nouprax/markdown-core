@@ -367,6 +367,57 @@ static int case_nested_block_quotes(pc_context *context) {
     return pc_expect_text(context, "a", 1);
 }
 
+/* A session edits a deep document at its deepest leaf and at its outermost
+ * marker. Every node on the spine continues an old node and waits on the
+ * leaf's inline content, so a numbering that looks up the spine for the
+ * nearest decided owner of each node it numbers is quadratic in the depth. */
+static int pc_expect_session(const markdown_core_document *document, size_t depth, const char *leaf) {
+    size_t counts[TS_KIND_COUNT] = {0};
+    size_t length = 0;
+    char *text;
+    int result = 0;
+    if (ts_ast_count_kinds(markdown_core_document_root(document), counts) != 0) {
+        return -1;
+    }
+    if (counts[MARKDOWN_CORE_KIND_LIST] != depth || counts[MARKDOWN_CORE_KIND_LIST_ITEM] != depth) {
+        fprintf(stderr, "expected %zu lists and items, found %zu and %zu\n", depth, counts[MARKDOWN_CORE_KIND_LIST],
+                counts[MARKDOWN_CORE_KIND_LIST_ITEM]);
+        return -1;
+    }
+    text = ts_ast_concat_text(markdown_core_document_root(document), &length);
+    if (!text) {
+        return -1;
+    }
+    if (length != strlen(leaf) || memcmp(text, leaf, length) != 0) {
+        fprintf(stderr, "the deepest leaf reads %.*s, wanted %s\n", (int)length, text, leaf);
+        result = -1;
+    }
+    free(text);
+    return result;
+}
+
+static int case_session_deep_nesting(pc_context *context) {
+    const size_t depth = 65536;
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document = NULL;
+    const markdown_core_text_edit leaf = {depth * 2, depth * 2 + 4, (const uint8_t *)"lean", 4};
+    const markdown_core_text_edit outer = {0, 1, (const uint8_t *)"*", 1};
+    int result = -1;
+    if (pc_build(context, NULL, "- ", depth, "leaf\n") != 0 ||
+        markdown_core_session_new((const uint8_t *)context->input, context->input_length, MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                  &session) != MARKDOWN_CORE_OK) {
+        return -1;
+    }
+    if (markdown_core_session_edit(session, &leaf, 1, &document) == MARKDOWN_CORE_OK &&
+        pc_expect_session(document, depth, "lean") == 0 &&
+        markdown_core_session_edit(session, &outer, 1, &document) == MARKDOWN_CORE_OK &&
+        pc_expect_session(document, depth, "lean") == 0) {
+        result = 0;
+    }
+    markdown_core_session_free(session);
+    return result;
+}
+
 /* The canonical dump of a deep document, drawn on a deliberately small stack.
  *
  * The dump walks the tree the parser produced, and a walk that recurses per
@@ -1395,6 +1446,7 @@ static const pc_case_entry PC_CASES[] = {
     {"reference_collisions", case_reference_collisions},
     {"reference_expansion_bound", case_reference_expansion_bound},
     {"dump_deep_nesting", case_dump_deep_nesting},
+    {"session_deep_nesting", case_session_deep_nesting},
     {"dump_wide_siblings", case_dump_wide_siblings},
     {"directive_unclosed_labels", case_directive_unclosed_labels},
     {"directive_unclosed_attributes", case_directive_unclosed_attributes},
