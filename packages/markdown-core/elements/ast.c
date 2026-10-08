@@ -494,33 +494,9 @@ static inline markdown_core_runs *shape_runs(const markdown_core_node *node, rel
     return runs ? *runs : NULL;
 }
 
-/* THE RUNS OF A NODE'S INLINE CONTENT, which is its first relation when it
- * is an inline root's: its runs when they read content, and NULL otherwise.
- * Its first relation's places are offsets in that content, and every place
- * below them is too. Roots never nest. */
-static markdown_core_runs *content_runs(const markdown_core_node *node) {
-    markdown_core_runs *runs = shape_runs(node, shape_of(node));
-    return runs && runs->decoded ? runs : NULL;
-}
-
-bool markdown_core_source_runs_read(markdown_core_source_runs *table, const markdown_core_runs *runs, uint32_t origin) {
-    markdown_core_source_run *grown =
-        markdown_core_reserve(table->runs, &table->capacity, runs->count, sizeof(*table->runs));
-    if (!grown) {
-        return false;
-    }
-    table->runs = grown;
-    uint32_t content = 0;
-    int64_t at = origin;
-    for (uint32_t i = 0; i < runs->count; i++) {
-        const markdown_core_run run = runs->items[i].run;
-        const uint32_t start = (uint32_t)(at + run.source.lead);
-        table->runs[i] = (markdown_core_source_run){content, run.decoded, start, start + run.source.span};
-        content += run.decoded;
-        at = start + run.source.span;
-    }
-    table->count = runs->count;
-    return true;
+/* How many content bytes run `index` of `runs`, still places, decodes. */
+static inline uint32_t run_decoded(const markdown_core_runs *runs, uint32_t index) {
+    return runs->pieces ? markdown_core_runs_pieces(runs)[index].decoded : 0;
 }
 
 /* The content run content offset `offset` is in: the last that starts at or
@@ -616,52 +592,96 @@ size_t markdown_core_source_runs_ranges(const markdown_core_source_runs *table, 
     return count;
 }
 
-/* A node's runs as they are published (node.h): each run that decodes
- * nothing within its place, those that touch joined, and those at either end
- * without a gap beside them dropped, the rest measured from the
- * end of the run before, or from the node's start. A node that has no runs
- * left has none. */
-static void publish_runs(markdown_core_node_pool *pool, markdown_core_runs **at, markdown_core_place place) {
-    markdown_core_runs *runs = *at;
-    markdown_core_run_where *items = runs->items;
+/* Appends `run`, which decodes `size` content bytes, to the `*count` runs
+ * of `runs`, joined to the run before it when both decode nothing and they
+ * touch. */
+static void runs_append(markdown_core_runs *runs, uint32_t *count, markdown_core_place run, uint32_t size) {
+    markdown_core_run_piece *const pieces = runs->pieces ? markdown_core_runs_pieces(runs) : NULL;
+    const uint32_t last = *count - 1;
+    if (!size && *count && !(pieces && pieces[last].decoded) && runs->items[last].place.end == run.start) {
+        runs->items[last].place.end = run.end;
+        return;
+    }
+    if (pieces) {
+        pieces[*count].decoded = size;
+    }
+    runs->items[(*count)++].place = run;
+}
+
+/* A node's runs as they are published (node.h): its runs within its place,
+ * those that decode nothing clipped to it and joined where they touch, with
+ * its own source before the first and after the last a run that decodes
+ * nothing, so they run from its start to its end. An inline root's runs then
+ * become its pieces, and the runs that touch become one, its own source; the
+ * first measured from `anchor`, where its extent is measured from, each
+ * other from the end of the run before. A node whose runs are then one run
+ * and that decodes nothing has none. The list is made again at its size.
+ * False when it could not be allocated. */
+static bool publish_runs(markdown_core_node_pool *pool, markdown_core_runs **at, markdown_core_place place,
+                         uint32_t anchor) {
+    const markdown_core_runs *runs = *at;
+    markdown_core_runs *out = markdown_core_runs_new(pool, runs->count + 2, runs->pieces != 0);
+    if (!out) {
+        return false;
+    }
+    out->decoded = runs->decoded;
     uint32_t count = 0;
     for (uint32_t i = 0; i < runs->count; i++) {
-        markdown_core_run_place run = items[i].place;
-        if (!run.decoded) {
+        markdown_core_place run = runs->items[i].place;
+        const uint32_t size = run_decoded(runs, i);
+        if (!size) {
             run.start = run.start > place.start ? run.start : place.start;
             run.end = run.end < place.end ? run.end : place.end;
             if (run.start >= run.end) {
                 continue;
             }
-            if (count && !items[count - 1].place.decoded && items[count - 1].place.end == run.start) {
-                items[count - 1].place.end = run.end;
-                continue;
-            }
         }
-        items[count++].place = run;
+        if (!count && place.start < run.start) {
+            runs_append(out, &count, (markdown_core_place){place.start, run.start}, 0);
+        }
+        runs_append(out, &count, run, size);
     }
-    uint32_t first = 0;
-    while (first < count && !items[first].place.decoded &&
-           (first + 1 == count || items[first].place.end == items[first + 1].place.start)) {
-        first++;
+    if (!count) {
+        runs_append(out, &count, place, 0);
+    } else if (out->items[count - 1].place.end < place.end) {
+        runs_append(out, &count, (markdown_core_place){out->items[count - 1].place.end, place.end}, 0);
     }
-    while (count > first && !items[count - 1].place.decoded &&
-           (count - 1 == first || items[count - 2].place.end == items[count - 1].place.start)) {
-        count--;
+    markdown_core_node_pool_bytes_free(pool, *at);
+    *at = NULL;
+    if (count == 1 && !out->decoded) {
+        markdown_core_node_pool_bytes_free(pool, out);
+        return true;
     }
-    if (first == count) {
-        markdown_core_node_pool_bytes_free(pool, runs);
-        *at = NULL;
-        return;
+    assert(out->items[0].place.start == place.start && out->items[count - 1].place.end == place.end);
+    /* Each run becomes a piece, and the runs that touch one run, each
+     * written over the room of the runs it joins. */
+    markdown_core_run_piece *const pieces = out->pieces ? markdown_core_runs_pieces(out) : NULL;
+    uint32_t joined = 0;
+    for (uint32_t i = 0; i < count; i++) {
+        const markdown_core_place run = out->items[i].place;
+        if (pieces) {
+            pieces[i].span = run.end - run.start;
+        }
+        if (joined && out->items[joined - 1].place.end == run.start) {
+            out->items[joined - 1].place.end = run.end;
+        } else {
+            out->items[joined++].place = run;
+        }
     }
-    uint32_t anchor = place.start;
-    for (uint32_t i = first; i < count; i++) {
-        const markdown_core_run_place run = items[i].place;
-        items[i - first].run =
-            (markdown_core_run){{(int32_t)((int64_t)run.start - anchor), run.end - run.start}, run.decoded};
-        anchor = run.end;
+    /* The list keeps room for its runs only, its pieces right after them. */
+    if (pieces) {
+        memmove(out->items + joined, pieces, count * sizeof(*pieces));
+        out->pieces = count;
     }
-    runs->count = count - first;
+    out->count = out->capacity = joined;
+    uint32_t from = anchor;
+    for (uint32_t i = 0; i < joined; i++) {
+        const markdown_core_place run = out->items[i].place;
+        out->items[i].run = (markdown_core_run){{(int32_t)((int64_t)run.start - from), run.end - run.start}};
+        from = run.end;
+    }
+    *at = out;
+    return true;
 }
 
 /* Where `node`, whose extent is measured from `anchor`, lies: in the content
@@ -711,9 +731,10 @@ static bool source_runs_read_places(markdown_core_source_runs *table, const mark
     table->runs = grown;
     uint32_t content = 0;
     for (uint32_t i = 0; i < runs->count; i++) {
-        const markdown_core_run_place run = runs->items[i].place;
-        table->runs[i] = (markdown_core_source_run){content, run.decoded, run.start, run.end};
-        content += run.decoded;
+        const markdown_core_place run = runs->items[i].place;
+        const uint32_t decoded = run_decoded(runs, i);
+        table->runs[i] = (markdown_core_source_run){content, decoded, run.start, run.end};
+        content += decoded;
     }
     table->count = runs->count;
     return true;
@@ -740,21 +761,36 @@ static const markdown_core_source_runs *completing_runs(markdown_core_parser *pa
     return &publication->runs;
 }
 
-/* Where a definition at content offset `offset` of the root being completed
- * was written. False when the root's runs could not be read. */
-static bool completing_source(markdown_core_parser *parser, markdown_core_publication *publication, uint32_t offset,
-                              uint32_t *source) {
-    bool failed;
-    const markdown_core_source_runs *runs = completing_runs(parser, publication, &failed);
-    *source = runs ? source_run_place(runs, offset) : parser->completing->place.start;
-    return !failed;
+/* The source window of `node`, measured from `anchor`, where the source of
+ * the node before it ends: from where its first run begins to where its last
+ * ends, or its extent when it has no runs. */
+static markdown_core_place source_place(const markdown_core_node *node, uint32_t anchor) {
+    const markdown_core_runs *runs = node->runs;
+    if (!runs) {
+        const uint32_t start = (uint32_t)((int64_t)anchor + node->where.extent.lead);
+        return (markdown_core_place){start, start + node->where.extent.span};
+    }
+    int64_t at = anchor;
+    markdown_core_place place = {0, 0};
+    for (uint32_t i = 0; i < runs->count; i++) {
+        const markdown_core_extent source = runs->items[i].run.source;
+        at += source.lead;
+        if (!i) {
+            place.start = (uint32_t)at;
+        }
+        at += source.span;
+    }
+    place.end = (uint32_t)at;
+    return place;
 }
 
 /* THE REUSE CURSOR (5.9). Every member that is numbered asks for the old node
  * its node continues. The root continues the previous root. Within the
  * relation of an owner that continues an old node, an old node's anchor is
- * the first byte of its range that survived the edits, and a node continues
- * the earliest old sibling of its kind whose anchor's image its range holds.
+ * the first byte of its source window that survived the edits, and a node
+ * continues the earliest old sibling of its kind whose anchor's image its
+ * source window holds. A node of an inline root's content finds its window
+ * through the root's runs.
  * Both relations are in source order, so each owner keeps one cursor into its
  * old node's relation, moving forward as the members it holds ask in order:
  * a member that asks first has every member before it ask. The old nodes the
@@ -769,141 +805,6 @@ static bool completing_source(markdown_core_parser *parser, markdown_core_public
  * owner. It finds the same old node the whole range would, and asks again as
  * far as it needs. */
 
-static bool content_image_add(markdown_core_publication *publication, markdown_core_content_image image) {
-    markdown_core_content_image *grown = markdown_core_reserve(publication->images, &publication->image_capacity,
-                                                               publication->image_count + 1, sizeof(*grown));
-    if (!grown) {
-        return false;
-    }
-    publication->images = grown;
-    publication->images[publication->image_count++] = image;
-    return true;
-}
-
-/* Reads the images of the content of the old root whose runs are `runs`,
- * measured from `origin`, against the new root's runs `fresh`. The old runs,
- * the edits and the new runs all increase in source, so one pass over each
- * pairs them. False when the table could not grow. */
-static bool content_images_read(const markdown_core_parser *parser, markdown_core_publication *publication,
-                                const markdown_core_runs *runs, uint32_t origin,
-                                const markdown_core_source_runs *fresh) {
-    const markdown_core_revision *revision = parser->revision;
-    const markdown_core_byte_edit *edits = revision->edits;
-    publication->image_count = publication->hint = 0;
-    if (!runs || !runs->count || !fresh) {
-        return true;
-    }
-    int64_t at = origin;
-    uint32_t content = 0;
-    size_t edit = markdown_core_parser_edit_after(parser, (uint32_t)(at + runs->items[0].run.source.lead)), next = 0;
-    for (uint32_t i = 0; i < runs->count; i++) {
-        const markdown_core_run run = runs->items[i].run;
-        const uint32_t start = (uint32_t)(at + run.source.lead), end = start + run.source.span, from = content;
-        const bool copied = run.source.span == run.decoded;
-        at = end;
-        content += run.decoded;
-        if (!run.decoded) {
-            continue;
-        }
-        /* Each stretch of the run's source that no edit replaced, and the
-         * parts of its image the new runs read. */
-        for (uint32_t x = start; x < end;) {
-            while (edit < revision->edit_count && edits[edit].end <= x) {
-                edit++;
-            }
-            if (edit < revision->edit_count && edits[edit].start <= x) {
-                x = (uint32_t)edits[edit].end;
-                continue;
-            }
-            const uint32_t stop =
-                edit < revision->edit_count && edits[edit].start < end ? (uint32_t)edits[edit].start : end;
-            const int64_t shift = parser->edit_shift[edit];
-            const uint32_t low = (uint32_t)(x + shift), high = (uint32_t)(stop + shift);
-            while (next < fresh->count && fresh->runs[next].end <= low) {
-                next++;
-            }
-            for (size_t j = next; j < fresh->count && fresh->runs[j].start < high; j++) {
-                const markdown_core_source_run *read = &fresh->runs[j];
-                if (!read->decoded) {
-                    continue;
-                }
-                const uint32_t first = low > read->start ? low : read->start;
-                const uint32_t last = high < read->end ? high : read->end;
-                if (first >= last) {
-                    continue;
-                }
-                const bool follows = source_run_copied(read);
-                const uint32_t image = follows ? read->content + (first - read->start) : read->content;
-                if (!copied) {
-                    if (!content_image_add(publication, (markdown_core_content_image){from, content, image, false})) {
-                        return false;
-                    }
-                    x = end;
-                    break;
-                }
-                const uint32_t old_first = from + (uint32_t)(first - shift - start);
-                if (!content_image_add(publication, (markdown_core_content_image){old_first, old_first + (last - first),
-                                                                                  image, follows})) {
-                    return false;
-                }
-            }
-            if (x < end) {
-                x = stop;
-            }
-        }
-    }
-    return true;
-}
-
-/* The images of the old content of the root being completed, read when an
- * old node in it first asks. False when they could not be read. */
-static bool images_ready(markdown_core_parser *parser, markdown_core_publication *publication) {
-    const markdown_core_inline_root *root = parser->completing;
-    if (publication->images_root == root) {
-        return true;
-    }
-    const markdown_core_member *member = root->member;
-    bool failed;
-    const markdown_core_source_runs *fresh = completing_runs(parser, publication, &failed);
-    if (failed || !content_images_read(parser, publication, shape_runs(member->old, shape_of(member->old)),
-                                       member->old_start, fresh)) {
-        return false;
-    }
-    publication->images_root = root;
-    return true;
-}
-
-/* The image of an old content range [start, end): the content offset at
- * which the new root reads the first source byte that the old root read for
- * the range, that no edit replaced, and that the new root reads too (5.2).
- * False when there is none. Members ask in content order, so the lookup
- * steps on from where the last one ended. */
-static bool content_anchor(markdown_core_publication *publication, uint32_t start, uint32_t end, uint32_t *image) {
-    const markdown_core_content_image *items = publication->images;
-    size_t i = publication->hint;
-    if (i && items[i - 1].to > start) {
-        size_t lo = 0, hi = i;
-        while (lo < hi) {
-            size_t mid = lo + (hi - lo) / 2;
-            if (items[mid].to <= start) {
-                lo = mid + 1;
-            } else {
-                hi = mid;
-            }
-        }
-        i = lo;
-    }
-    while (i < publication->image_count && items[i].to <= start) {
-        i++;
-    }
-    publication->hint = i;
-    if (i == publication->image_count || items[i].from >= end) {
-        return false;
-    }
-    *image = items[i].at + (items[i].copied && start > items[i].from ? start - items[i].from : 0);
-    return true;
-}
-
 /* What completing one node shares with the nodes it holds. */
 typedef struct {
     markdown_core_parser *parser;
@@ -911,6 +812,56 @@ typedef struct {
     void (*observe)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
     const markdown_core_element_instance *observer;
 } complete_context;
+
+/* Where the next node of a relation is measured from: its extent from
+ * `place`, in the input of the parser that made it, and its runs from
+ * `source`. They are one offset for a block; for a node of an inline root's
+ * content, `place` is in the content and `source` is where the source of the
+ * node before it ends, or where its owner's begins. */
+typedef struct {
+    uint32_t place, source;
+} item_anchor;
+
+/* The runs of `item`, a node of the content of the root being completed, at
+ * content range `place`: the source its range was read from, its window less
+ * the gaps between the root's runs (markdown_core_source_runs_ranges), the
+ * first measured from `*source`, which becomes where the last ends. `*start`
+ * becomes where the first begins. False when an allocation failed. */
+static bool inline_runs(markdown_core_parser *parser, markdown_core_publication *publication, markdown_core_node *item,
+                        markdown_core_place place, uint32_t *source, uint32_t *start) {
+    bool failed;
+    const markdown_core_source_runs *table = completing_runs(parser, publication, &failed);
+    if (failed) {
+        return false;
+    }
+    assert(table && !item->runs);
+    const markdown_core_place window = markdown_core_source_runs_window(table, place);
+    size_t count = markdown_core_source_runs_ranges(table, window, publication->ranges, publication->range_capacity);
+    if (count > publication->range_capacity) {
+        markdown_core_place *ranges =
+            markdown_core_reserve(publication->ranges, &publication->range_capacity, count, sizeof(*ranges));
+        if (!ranges) {
+            return false;
+        }
+        publication->ranges = ranges;
+        markdown_core_source_runs_ranges(table, window, ranges, count);
+    }
+    markdown_core_runs *runs = markdown_core_runs_new(parser->pool, (uint32_t)count, false);
+    if (!runs) {
+        return false;
+    }
+    uint32_t from = *source;
+    for (size_t i = 0; i < count; i++) {
+        const markdown_core_place range = publication->ranges[i];
+        runs->items[i].run = (markdown_core_run){{(int32_t)((int64_t)range.start - from), range.end - range.start}};
+        from = range.end;
+    }
+    runs->count = (uint32_t)count;
+    item->runs = runs;
+    *start = window.start;
+    *source = from;
+    return true;
+}
 
 /* The relation of `owner`'s that the member at `index` among the members it
  * holds as children is in: a table's rows are in its head, body or foot by
@@ -934,16 +885,15 @@ static void child_relation(const markdown_core_node *owner, uint32_t index, mark
     }
 }
 
-/* Points `owner`'s cursor at its old node's relation `name`: the relation's
- * first old node is measured from the old node's start, or from 0 when the
- * relation is the content of the root being completed. */
-static void pair_open(const markdown_core_parser *parser, markdown_core_member *owner, markdown_core_field name) {
-    const markdown_core_inline_root *root = parser->completing;
+/* Points `owner`'s cursor at its old node's relation `name`: the source of
+ * the relation's first old node is measured from where the old node's
+ * begins. */
+static void pair_open(markdown_core_member *owner, markdown_core_field name) {
     owner->paired = true;
     owner->pair_name = (uint32_t)name;
     owner->pair_stem = NULL;
     owner->pair_next = owner->pair_end = 0;
-    owner->pair_anchor = root && root->builder == owner ? 0 : owner->old_start;
+    owner->pair_anchor = owner->old_start;
     markdown_core_relation_cursor cursor;
     markdown_core_relation relation;
     bool more;
@@ -958,21 +908,23 @@ static void pair_open(const markdown_core_parser *parser, markdown_core_member *
     }
 }
 
-/* Where an old node beside `member`, starting at `start` and ending at `end`
- * in its old coordinates, lies now: the image of its anchor, in the content
- * of the root being completed when `member`'s owner is inner, else in the
- * source. False when no byte of it survives, or, with `*failed`, when the
- * images could not be read. */
-static bool old_image(markdown_core_parser *parser, markdown_core_publication *publication,
-                      const markdown_core_member *member, uint32_t start, uint32_t end, uint32_t *image, bool *failed) {
+/* The source window `member`'s range from its start up to `reach` covers:
+ * the range itself, or, for a node of an inline root's content, where the
+ * root read it. False when the root's runs could not be read. */
+static bool member_window(markdown_core_parser *parser, markdown_core_publication *publication,
+                          const markdown_core_member *member, uint32_t reach, markdown_core_place *window) {
+    const markdown_core_place place = {markdown_core_member_place(member).start, reach};
     if (!member->owner->inner) {
-        return markdown_core_parser_source_anchor(parser, start, end, image);
+        *window = place;
+        return true;
     }
-    if (!images_ready(parser, publication)) {
-        *failed = true;
+    bool failed;
+    const markdown_core_source_runs *table = completing_runs(parser, publication, &failed);
+    if (failed) {
         return false;
     }
-    return content_anchor(publication, start, end, image);
+    *window = markdown_core_source_runs_window(table, place);
+    return true;
 }
 
 /* Whether `member`'s range is final: numbered, or a closed block's. */
@@ -990,25 +942,24 @@ static bool pair_search(markdown_core_parser *parser, markdown_core_publication 
     markdown_core_field name;
     child_relation(owner->node, member->index, &name);
     if (!owner->paired || owner->pair_name != (uint32_t)name) {
-        pair_open(parser, owner, name);
+        pair_open(owner, name);
     }
-    const uint32_t from = markdown_core_member_place(member).start;
-    bool failed = false;
+    markdown_core_place window;
+    if (!member_window(parser, publication, member, reach, &window)) {
+        return false;
+    }
     while (owner->pair_next < owner->pair_end) {
         const markdown_core_node *old = markdown_core_stem_at(owner->pair_stem, owner->pair_next);
-        const uint32_t start = (uint32_t)((int64_t)owner->pair_anchor + old->where.extent.lead);
-        const uint32_t end = start + old->where.extent.span;
+        const markdown_core_place source = source_place(old, owner->pair_anchor);
+        const uint32_t start = source.start;
         uint32_t image;
-        const bool anchored = old_image(parser, publication, member, start, end, &image, &failed);
-        if (failed) {
-            return false;
-        }
-        if (anchored && image >= reach) {
+        const bool anchored = markdown_core_parser_source_anchor(parser, source.start, source.end, &image);
+        if (anchored && image >= window.end) {
             break;
         }
         owner->pair_next++;
-        owner->pair_anchor = end;
-        if (anchored && image >= from) {
+        owner->pair_anchor = source.end;
+        if (anchored && image >= window.start) {
             markdown_core_candidate *candidates =
                 markdown_core_reserve(publication->candidates, &publication->candidate_capacity,
                                       publication->candidate_count + 1, sizeof(*candidates));
@@ -1100,22 +1051,20 @@ static bool field_search(markdown_core_parser *parser, markdown_core_publication
         member->decided = true;
         return true;
     }
-    const uint32_t start = (uint32_t)((int64_t)owner->old_start + old->where.extent.lead);
-    uint32_t image;
-    bool failed = false;
-    const bool anchored =
-        old_image(parser, publication, member, start, start + old->where.extent.span, &image, &failed);
-    if (failed) {
+    const markdown_core_place source = source_place(old, owner->old_start);
+    markdown_core_place window;
+    if (!member_window(parser, publication, member, reach, &window)) {
         return false;
     }
-    if (anchored && image >= reach && !passed_whole(member, reach)) {
+    uint32_t image;
+    const bool anchored = markdown_core_parser_source_anchor(parser, source.start, source.end, &image);
+    if (anchored && image >= window.end && !passed_whole(member, reach)) {
         member->passed = reach;
         return true;
     }
-    if (anchored && image >= markdown_core_member_place(member).start && image < reach &&
-        public_kind(old) == public_kind(member->node)) {
+    if (anchored && image >= window.start && image < window.end && public_kind(old) == public_kind(member->node)) {
         member->old = old;
-        member->old_start = start;
+        member->old_start = source.start;
     }
     member->decided = true;
     return true;
@@ -1285,8 +1234,8 @@ static bool number_id(markdown_core_parser *parser, markdown_core_publication *p
  * of inline roots, a field's as a field; a definition records where it was
  * written; the observer sees it. It settles now when it waits on nothing.
  * Returns where the item ends, or false when an allocation failed. */
-static bool complete_number(const complete_context *context, markdown_core_member *member, uint32_t anchor,
-                            uint32_t slot, bool field, uint32_t *end) {
+static bool complete_number(const complete_context *context, markdown_core_member *member, item_anchor *anchor,
+                            uint32_t slot, bool field) {
     markdown_core_parser *parser = context->parser;
     markdown_core_node *item = member->node;
     const markdown_core_place place = item->where.place;
@@ -1297,25 +1246,30 @@ static bool complete_number(const complete_context *context, markdown_core_membe
     }
     member->place = place;
     item->where.extent =
-        (markdown_core_extent){(int32_t)((int64_t)place.start - (int64_t)anchor), place.end - place.start};
+        (markdown_core_extent){(int32_t)((int64_t)place.start - (int64_t)anchor->place), place.end - place.start};
     /* Its reach is measured past its end from here (5.1). */
     item->reach = item->reach > place.end ? item->reach - place.end : 0;
-    *end = place.end;
-    markdown_core_node *holder = parser->completing ? NULL : content_holder(item, shape);
-    if (holder && markdown_core_parser_contains_inlines(parser, holder)) {
-        if (!markdown_core_parser_hold_inline_root(parser, member, holder, place, field || holder != item)) {
+    anchor->place = place.end;
+    member->source = place.start;
+    if (parser->completing) {
+        /* A node of the content of the root being completed: its runs are
+         * the source its content range was read from. */
+        if (!inline_runs(parser, context->publication, item, place, &anchor->source, &member->source)) {
             return false;
         }
     } else {
-        markdown_core_runs **runs = shape_runs_at(item, shape);
-        if (runs && *runs) {
-            publish_runs(parser->pool, runs, place);
+        markdown_core_node *holder = content_holder(item, shape);
+        if (holder && markdown_core_parser_contains_inlines(parser, holder)) {
+            if (!markdown_core_parser_hold_inline_root(parser, member, holder, place, field || holder != item)) {
+                return false;
+            }
+        } else {
+            markdown_core_runs **runs = shape_runs_at(item, shape);
+            if (runs && *runs && !publish_runs(parser->pool, runs, place, anchor->source)) {
+                return false;
+            }
         }
-    }
-    member->source = place.start;
-    if (SLOT_TABLE(slots) && parser->completing &&
-        !completing_source(parser, context->publication, place.start, &member->source)) {
-        return false;
+        anchor->source = place.end;
     }
     if (context->observe) {
         context->observe(context->observer, parser, item);
@@ -1377,30 +1331,57 @@ static void group_numbered(markdown_core_parser *parser, markdown_core_publicati
     }
 }
 
+/* Where the source of `node`, a numbered node of an inline root's content,
+ * ends: past its last run, its runs measured from `source`. */
+static uint32_t numbered_source_end(const markdown_core_node *node, uint32_t source) {
+    const markdown_core_runs *runs = node->runs;
+    int64_t at = source;
+    for (uint32_t i = 0; i < runs->count; i++) {
+        at += runs->items[i].run.source.lead + (int64_t)runs->items[i].run.source.span;
+    }
+    return (uint32_t)at;
+}
+
 /* Numbers what `member`'s node, which starts at `start`, holds and has not
  * numbered yet, relation by relation: each node is measured from the end of
  * the one before it in its relation, or from where the relation is measured
  * -- the owner's start, or 0 for the content of the inline root being
- * completed, which is its first relation. The members of a relation's nodes
- * are walked with them: the node's children's, or those of the group that
- * holds the relation, and a field's own. */
+ * completed, which is its first relation -- and its runs from where the
+ * source of the one before it ends, or the owner's begins (item_anchor). The
+ * members of a relation's nodes are walked with them: the node's
+ * children's, or those of the group that holds the relation, and a field's
+ * own. */
 static bool complete_relations(const complete_context *context, markdown_core_member *member, uint32_t start) {
     markdown_core_node *node = member->node;
-    const markdown_core_inline_root *completing = context->parser->completing;
+    markdown_core_parser *parser = context->parser;
+    const markdown_core_inline_root *completing = parser->completing;
     markdown_core_relation_cursor cursor;
     markdown_core_relation relation;
     markdown_core_relation_walk nodes;
     markdown_core_member *child = member->first;
     bool more, content = completing && completing->node == node;
+    /* A node of the root's content begins in the source where its first
+     * content byte was read from. */
+    const bool inside = completing && !content;
+    uint32_t source = start;
+    if (inside) {
+        bool failed;
+        const markdown_core_source_runs *table = completing_runs(parser, context->publication, &failed);
+        if (failed) {
+            return false;
+        }
+        source = markdown_core_source_runs_window(table, (markdown_core_place){start, start}).start;
+    }
     markdown_core_relations_begin(&cursor, node);
     while (relations_next(&cursor, &relation, &more)) {
-        uint32_t anchor = content ? 0 : start;
+        item_anchor anchor = content ? (item_anchor){0, completing->place.start} : (item_anchor){start, source};
+        const bool in_content = inside || content;
         content = false;
         if (relation.field) {
             markdown_core_node *item = (markdown_core_node *)relation.node;
             if (!item->id) {
-                markdown_core_member *field = field_member(context->parser, member, item);
-                if (!field || (!field->numbered && !complete_number(context, field, anchor, 0, true, &anchor))) {
+                markdown_core_member *field = field_member(parser, member, item);
+                if (!field || (!field->numbered && !complete_number(context, field, &anchor, 0, true))) {
                     return false;
                 }
             }
@@ -1414,7 +1395,8 @@ static bool complete_relations(const complete_context *context, markdown_core_me
         for (markdown_core_node *item; (item = (markdown_core_node *)markdown_core_relation_walk_next(&nodes));
              slot++) {
             if (item->id || (at && at->node == item && at->numbered)) {
-                anchor = publish_place(item, anchor).end;
+                anchor.place = publish_place(item, anchor.place).end;
+                anchor.source = in_content ? numbered_source_end(item, anchor.source) : anchor.place;
                 if (at && at->node == item) {
                     at = at->next;
                 }
@@ -1422,7 +1404,7 @@ static bool complete_relations(const complete_context *context, markdown_core_me
             }
             assert(at && at->node == item);
             markdown_core_member *next = at->next;
-            if (!complete_number(context, at, anchor, slot, false, &anchor)) {
+            if (!complete_number(context, at, &anchor, slot, false)) {
                 return false;
             }
             at = next;
@@ -1430,7 +1412,7 @@ static bool complete_relations(const complete_context *context, markdown_core_me
         if (own) {
             child = at;
         } else if (group && !group->numbered) {
-            group_numbered(context->parser, context->publication, group);
+            group_numbered(parser, context->publication, group);
         }
     }
     return true;
@@ -1455,8 +1437,9 @@ bool markdown_core_complete_node(markdown_core_parser *parser, markdown_core_pub
     const markdown_core_inline_root *completing = parser->completing;
     if (completing && completing->node == node) {
         markdown_core_runs **runs = shape_runs_at(node, shape);
-        if (runs && *runs) {
-            publish_runs(parser->pool, runs, completing->place);
+        const uint32_t anchor = (uint32_t)((int64_t)completing->place.start - node->where.extent.lead);
+        if (runs && *runs && !publish_runs(parser->pool, runs, completing->place, anchor)) {
+            return false;
         }
     }
     return true;
@@ -1469,13 +1452,17 @@ static bool runs_equal(const markdown_core_runs *a, const markdown_core_runs *b)
     if (a->count != b->count) {
         return false;
     }
+    if (a->decoded != b->decoded || a->pieces != b->pieces) {
+        return false;
+    }
     for (uint32_t i = 0; i < a->count; i++) {
-        const markdown_core_run x = a->items[i].run, y = b->items[i].run;
-        if (x.source.lead != y.source.lead || x.source.span != y.source.span || x.decoded != y.decoded) {
+        const markdown_core_extent x = a->items[i].run.source, y = b->items[i].run.source;
+        if (x.lead != y.lead || x.span != y.span) {
             return false;
         }
     }
-    return true;
+    return !a->pieces || memcmp(markdown_core_runs_pieces(a), markdown_core_runs_pieces(b),
+                                a->pieces * sizeof(markdown_core_run_piece)) == 0;
 }
 
 static bool scalars_equal(const markdown_core_node *a, const markdown_core_node *b);
@@ -1515,7 +1502,7 @@ static bool relations_same(const markdown_core_node *node, const markdown_core_n
  * scalars, and its relations holding the same nodes. */
 static bool node_same(const markdown_core_node *node, const markdown_core_node *old) {
     return public_kind(node) == public_kind(old) && node->where.extent.lead == old->where.extent.lead &&
-           node->where.extent.span == old->where.extent.span &&
+           node->where.extent.span == old->where.extent.span && runs_equal(node->runs, old->runs) &&
            runs_equal(shape_runs(node, shape_of(node)), shape_runs(old, shape_of(old))) && scalars_equal(node, old) &&
            relations_same(node, old);
 }
@@ -1607,7 +1594,7 @@ void markdown_core_publication_dispose(markdown_core_publication *publication, m
         markdown_core_free(publication->tables[table].values);
     }
     markdown_core_free(publication->runs.runs);
-    markdown_core_free(publication->images);
+    markdown_core_free(publication->ranges);
     markdown_core_free(publication->climb);
     markdown_core_free(publication->candidates);
     for (size_t i = 0; i < publication->replaced_count; i++) {
@@ -1686,7 +1673,7 @@ bool markdown_core_publication_take(markdown_core_publication *publication, cons
         if (!item.node) {
             continue;
         }
-        const uint32_t source = item.content ? source_run_place(&walk.runs, item.place.start) : item.place.start;
+        const uint32_t source = item.place.start;
         const unsigned slots = slot_of(item.node);
         if (SLOT_TABLE(slots)) {
             ok = table_add(&publication->tables[SLOT_TABLE(slots) - 1], item.node, source);
@@ -1707,7 +1694,9 @@ bool markdown_core_publish_tree(markdown_core_parser *parser, markdown_core_publ
     const markdown_core_place place = root->where.place;
     root->where.extent = (markdown_core_extent){(int32_t)place.start, place.end - place.start};
     if (root->runs) {
-        publish_runs(parser->pool, (markdown_core_runs **)&root->runs, place);
+        if (!publish_runs(parser->pool, (markdown_core_runs **)&root->runs, place, 0)) {
+            return false;
+        }
     }
     markdown_core_definition_table *tables = publication->tables;
     markdown_core_definition_table *references = &tables[MARKDOWN_CORE_TABLE_REFERENCES];
@@ -1885,7 +1874,12 @@ uint64_t markdown_core_node_id(const markdown_core_node *node) { return node->id
 markdown_core_extent markdown_core_node_extent(const markdown_core_node *node) { return node->where.extent; }
 
 const markdown_core_run *markdown_core_node_runs(const markdown_core_node *node, size_t *count) {
-    const markdown_core_runs *runs = shape_runs(node, shape_of(node));
+    const markdown_core_runs *runs = node->runs;
+    /* An inline root whose own source is one run keeps it for its pieces;
+     * that run is its range, so its own source is its extent. */
+    if (runs && runs->pieces && runs->count == 1) {
+        runs = NULL;
+    }
     *count = runs ? runs->count : 0;
     return runs ? &runs->items[0].run : NULL;
 }
@@ -1900,32 +1894,14 @@ void markdown_core_walk_begin_at(markdown_core_walk *walk, const markdown_core_n
 
 void markdown_core_walk_end(markdown_core_walk *walk) {
     markdown_core_free(walk->frames);
-    markdown_core_free(walk->runs.runs);
-    markdown_core_free(walk->own.runs);
     markdown_core_free(walk->ranges);
     *walk = (markdown_core_walk){.root = walk->root, .anchor = walk->anchor, .failed = walk->failed};
 }
 
-/* Where `node` is, given the offset its extent is relative to. */
-static markdown_core_place walk_place(const markdown_core_node *node, uint32_t anchor) {
-    markdown_core_extent extent = node->where.extent;
-    markdown_core_place place;
-    place.start = (uint32_t)((int64_t)anchor + extent.lead);
-    place.end = place.start + extent.span;
-    return place;
-}
-
-/* A node whose relations hold nothing takes no frame. An inline root's
- * frame reads its runs, which its first relation's nodes are placed by. */
-static bool walk_push(markdown_core_walk *walk, const markdown_core_node *node, size_t level, uint32_t start,
-                      bool content) {
+/* A node whose relations hold nothing takes no frame. */
+static bool walk_push(markdown_core_walk *walk, const markdown_core_node *node, size_t level, uint32_t start) {
     if (relations_empty(node)) {
         return true;
-    }
-    const markdown_core_runs *runs = content_runs(node);
-    if (runs && !markdown_core_source_runs_read(&walk->runs, runs, start)) {
-        walk->failed = true;
-        return false;
     }
     if (walk->count == walk->capacity) {
         size_t capacity = walk->capacity ? walk->capacity * 2 : 32;
@@ -1941,8 +1917,6 @@ static bool walk_push(markdown_core_walk *walk, const markdown_core_node *node, 
     markdown_core_walk_frame *frame = &walk->frames[walk->count++];
     frame->level = level;
     frame->active = false;
-    frame->root = runs != NULL;
-    frame->content = content || frame->root;
     frame->owner_start = start;
     markdown_core_relations_begin(&frame->cursor, node);
     return true;
@@ -1967,9 +1941,9 @@ bool markdown_core_walk_next(markdown_core_walk *walk, markdown_core_walk_item *
     }
     if (!walk->started) {
         walk->started = true;
-        markdown_core_place place = walk_place(walk->root, walk->anchor);
-        *item = (markdown_core_walk_item){walk->root, place, NULL, 0, 0, false};
-        return walk_push(walk, walk->root, 0, place.start, false);
+        markdown_core_place place = source_place(walk->root, walk->anchor);
+        *item = (markdown_core_walk_item){walk->root, place, NULL, 0, 0};
+        return walk_push(walk, walk->root, 0, place.start);
     }
     while (walk->count) {
         markdown_core_walk_frame *frame = &walk->frames[walk->count - 1];
@@ -1978,35 +1952,30 @@ bool markdown_core_walk_next(markdown_core_walk *walk, markdown_core_walk_item *
                 walk->count--;
                 continue;
             }
-            /* A root's first relation is its content, which runs from 0. */
-            frame->anchor = frame->root ? 0 : frame->owner_start;
+            frame->anchor = frame->owner_start;
             frame->active = true;
             frame->group_pending = frame->relation.group != NULL;
             markdown_core_relation_walk_begin(&frame->nodes, &frame->relation);
         }
         if (frame->group_pending) {
             frame->group_pending = false;
-            *item = (markdown_core_walk_item){
-                NULL, {0, 0}, frame->relation.group, frame->relation.count, frame->level + 1, false};
+            *item =
+                (markdown_core_walk_item){NULL, {0, 0}, frame->relation.group, frame->relation.count, frame->level + 1};
             walk->at_group = true;
             walk->owner = walk->count;
             return true;
         }
         const markdown_core_node *node = markdown_core_relation_walk_next(&frame->nodes);
         if (node) {
-            markdown_core_place place = walk_place(node, frame->anchor);
+            markdown_core_place place = source_place(node, frame->anchor);
             frame->anchor = place.end;
             size_t level = frame->level + (frame->relation.group ? 2 : 1);
-            *item = (markdown_core_walk_item){node, place, NULL, 0, level, frame->content};
+            *item = (markdown_core_walk_item){node, place, NULL, 0, level};
             walk->at_group = false;
             walk->owner = walk->count;
-            return walk_push(walk, node, level, place.start, frame->content);
+            return walk_push(walk, node, level, place.start);
         }
         frame->active = false;
-        /* A root's later relations are not its content. */
-        if (frame->root) {
-            frame->root = frame->content = false;
-        }
     }
     return false;
 }
@@ -2024,41 +1993,35 @@ bool markdown_core_walk_has_next(const markdown_core_walk *walk) {
     return markdown_core_relation_walk_more(&owner->nodes) || (!owner->relation.group && walk_more_after(owner));
 }
 
-static bool walk_reserve(markdown_core_walk *walk, size_t count) {
-    markdown_core_place *ranges = markdown_core_reserve(walk->ranges, &walk->range_capacity, count, sizeof(*ranges));
-    if (!ranges) {
-        walk->failed = true;
-        return false;
-    }
-    walk->ranges = ranges;
-    return true;
-}
-
 bool markdown_core_walk_ranges(markdown_core_walk *walk, const markdown_core_walk_item *item,
                                const markdown_core_place **ranges, size_t *count) {
-    /* An inline node's window is the source its content range was read
-     * from, cut by its root's runs; a block's is its range, cut by its own. */
-    const markdown_core_source_runs *table = &walk->runs;
-    markdown_core_place window = item->place;
-    if (item->content) {
-        window = markdown_core_source_runs_window(table, item->place);
-    } else {
-        const markdown_core_runs *runs = shape_runs(item->node, shape_of(item->node));
-        walk->own.count = 0;
-        if (runs && !markdown_core_source_runs_read(&walk->own, runs, item->place.start)) {
+    const markdown_core_runs *runs = item->node->runs;
+    const size_t needed = runs ? runs->count : 1;
+    if (needed > walk->range_capacity) {
+        markdown_core_place *grown = markdown_core_reserve(walk->ranges, &walk->range_capacity, needed, sizeof(*grown));
+        if (!grown) {
             walk->failed = true;
             return false;
         }
-        table = &walk->own;
+        walk->ranges = grown;
     }
-    size_t needed = markdown_core_source_runs_ranges(table, window, walk->ranges, walk->range_capacity);
-    if (needed > walk->range_capacity) {
-        if (!walk_reserve(walk, needed)) {
-            return false;
+    size_t made = 0;
+    if (!runs) {
+        walk->ranges[made++] = item->place;
+    } else {
+        int64_t at = (int64_t)item->place.start - runs->items[0].run.source.lead;
+        for (uint32_t i = 0; i < runs->count; i++) {
+            const markdown_core_extent source = runs->items[i].run.source;
+            const uint32_t start = (uint32_t)(at + source.lead), end = start + source.span;
+            at = end;
+            if (made && walk->ranges[made - 1].end == start) {
+                walk->ranges[made - 1].end = end;
+            } else {
+                walk->ranges[made++] = (markdown_core_place){start, end};
+            }
         }
-        markdown_core_source_runs_ranges(table, window, walk->ranges, walk->range_capacity);
     }
-    *count = needed;
+    *count = made;
     *ranges = walk->ranges;
     return true;
 }

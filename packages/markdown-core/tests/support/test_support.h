@@ -77,9 +77,9 @@ const markdown_core_node *ts_field(const markdown_core_node *node, ts_node_field
 const markdown_core_node *ts_child(const markdown_core_node *node, markdown_core_field field, size_t index);
 size_t ts_child_count(const markdown_core_node *node, markdown_core_field field);
 
-/* A node's range in bytes of its input, resolved from the extents by the
- * walk itself rather than by the facade's scope query: in the source, or in
- * the content of the inline root that holds it. */
+/* A node's source window in bytes, resolved from its runs, or its extent
+ * when it has none, by the walk itself rather than by the facade's scope
+ * query. */
 typedef struct {
     int64_t start, end;
 } ts_ast_range;
@@ -93,18 +93,14 @@ typedef int (*ts_ast_visit_fn)(const markdown_core_node *node, ts_ast_range rang
  * completion, or -1 on allocation failure. */
 int ts_ast_walk(const markdown_core_node *root, ts_ast_visit_fn visit, void *context);
 
-/* Where the walk found a node: its range, the node whose relation holds it
- * (NULL for the root) and a number that orders that owner's relations in
- * canonical field order, the same whether or not the ones before it are
- * present, and the inline
- * root whose content the range is in, with that root's source start (NULL
- * and 0 for a range in the source). */
+/* Where the walk found a node: its source window, the node whose relation
+ * holds it (NULL for the root) and a number that orders that owner's
+ * relations in canonical field order, the same whether or not the ones
+ * before it are present. */
 typedef struct {
     ts_ast_range range;
     const markdown_core_node *owner;
     size_t relation;
-    const markdown_core_node *root;
-    int64_t root_start;
 } ts_ast_place;
 
 typedef int (*ts_ast_owned_visit_fn)(const markdown_core_node *node, ts_ast_place place, void *context);
@@ -113,7 +109,7 @@ typedef int (*ts_ast_owned_visit_fn)(const markdown_core_node *node, ts_ast_plac
 int ts_ast_walk_owned(const markdown_core_node *root, ts_ast_owned_visit_fn visit, void *context);
 
 /* THE FIRST NODE WHOSE RANGE LEAVES ITS INPUT under `root`, or NULL when
- * every range lies in `[0, length]`, or within its inline root's content.
+ * every source window and run lies in `[0, length]`.
  *
  * A scan that reads past its line but stays inside the parser's own buffer is
  * invisible to a sanitizer; the range it leaves behind is what shows it. The

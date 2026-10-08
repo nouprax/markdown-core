@@ -98,9 +98,6 @@ typedef struct {
     size_t count, capacity;
 } markdown_core_source_runs;
 
-/* Reads the published `runs`, measured from `origin`, into `table`, whose
- * storage it reuses. False when it could not grow. */
-bool markdown_core_source_runs_read(markdown_core_source_runs *table, const markdown_core_runs *runs, uint32_t origin);
 /* The source window of the content range `place`: from where its first
  * byte is read to where its last is; an empty range is the empty window
  * where its offset is read from. */
@@ -112,11 +109,10 @@ size_t markdown_core_source_runs_ranges(const markdown_core_source_runs *table, 
                                         markdown_core_place *ranges, size_t capacity);
 
 /* THE CANONICAL WALK: every node of a published document's tree in canonical
- * walk order, each with its range, and the group lines of the canonical dump
- * between them, read from the extents. A node in an inline root's content has
- * its range in that content, and the walk holds the root's runs while it is
- * in it. An explicit stack of relation cursors, so its depth is the tree's
- * and never the C stack's. */
+ * walk order, each with the source window it lies in, and the group lines of
+ * the canonical dump between them, read from the runs, or the extent of a
+ * node without runs. An explicit stack of relation cursors, so its depth is
+ * the tree's and never the C stack's. */
 typedef struct markdown_core_walk_item {
     /* The node, or NULL for a group line. */
     const markdown_core_node *node;
@@ -125,9 +121,6 @@ typedef struct markdown_core_walk_item {
     size_t count;
     /* The nesting level the line is drawn at (the root's is 0). */
     size_t level;
-    /* Whether `place` is in the content of the inline root whose runs the
-     * walk holds, rather than in the source. */
-    bool content;
 } markdown_core_walk_item;
 
 typedef struct markdown_core_walk_frame {
@@ -135,10 +128,9 @@ typedef struct markdown_core_walk_frame {
     markdown_core_relation_cursor cursor;
     markdown_core_relation relation;
     bool active, group_pending;
-    /* Whether the relation in hand is in an inline root's content, and
-     * whether the frame's node is that root. */
-    bool content, root;
     markdown_core_relation_walk nodes;
+    /* Where the frame's node begins in the source, and where the source of
+     * the node before the next ends. */
     uint32_t owner_start, anchor;
 } markdown_core_walk_frame;
 
@@ -152,10 +144,7 @@ typedef struct markdown_core_walk {
     /* The frame of the owner of the item returned last, counted from 1; 0 for
      * the root. */
     size_t owner;
-    /* The runs of the inline root whose content the walk is in, those of
-     * the block whose ranges are asked for, and the source ranges
-     * markdown_core_walk_ranges answers with. */
-    markdown_core_source_runs runs, own;
+    /* The source ranges markdown_core_walk_ranges answers with. */
     markdown_core_place *ranges;
     size_t range_capacity;
 } markdown_core_walk;
@@ -168,8 +157,9 @@ void markdown_core_walk_begin_at(markdown_core_walk *walk, const markdown_core_n
  * (`failed`). */
 bool markdown_core_walk_next(markdown_core_walk *walk, markdown_core_walk_item *item);
 /* The source ranges of `item`, the node the walk returned last, in source
- * order: its window less the gaps between the runs that place it (ast.c). They live in the walk until its next call.
- * False, with the walk `failed`, when they could not be allocated. */
+ * order: its runs, those that touch joined, or its window when it has none.
+ * They live in the walk until its next call. False, with the walk `failed`,
+ * when they could not be allocated. */
 bool markdown_core_walk_ranges(markdown_core_walk *walk, const markdown_core_walk_item *item,
                                const markdown_core_place **ranges, size_t *count);
 /* Whether another line follows the item the walk returned last at its level
@@ -200,31 +190,17 @@ typedef enum {
     MARKDOWN_CORE_TABLE_COUNT
 } markdown_core_definition_kind;
 
-/* THE IMAGES OF AN OLD ROOT'S CONTENT in the new root's (5.2): for each part
- * of the old content whose bytes the new root reads too, in content order,
- * the new content offset its first byte is read at, and whether the rest
- * follow it byte for byte. An old copied run's part reads each content byte
- * from one source byte that no edit replaced and the new root reads; any
- * other old run is one part, imaged where the new root reads the first of
- * its source bytes it still reads. */
-typedef struct {
-    uint32_t from, to, at;
-    bool copied;
-} markdown_core_content_image;
-
 /* WHAT ONE PARSE PUBLISHES AS ITS NODES COMPLETE (docs/plans/2026-09-29-
  * incremental-parsing.md, 5.8, 5.9): each definition as it settles, at its
  * source start, and the runs of the inline root being completed, in
  * absolute offsets, read when a definition in its content first asks where
- * it was written or an old node first asks where its content lies now. For
- * the reuse cursor it keeps the images
- * of the old content of the root being completed (`hint` is where the last
- * lookup ended), the members a search climbs through, the old nodes each
+ * it was written or a node of its content first asks where its source lies.
+ * For the reuse cursor it keeps the members a search climbs through, the old nodes each
  * child's range holds, and the nodes the parse made that settled as old
  * nodes, which go when the parse does. The document element holds it for
  * the parse. */
-/* An old node a child's range holds, starting at `start` in its old
- * coordinates; `next` is the next one the child holds, plus one, or 0. */
+/* An old node a child's range holds, its source starting at `start`; `next` is the next one the child holds, plus one,
+ * or 0. */
 typedef struct markdown_core_candidate {
     const markdown_core_node *old;
     uint32_t start, next;
@@ -234,9 +210,9 @@ typedef struct markdown_core_publication {
     markdown_core_definition_table tables[MARKDOWN_CORE_TABLE_COUNT];
     markdown_core_source_runs runs;
     const markdown_core_inline_root *runs_root;
-    markdown_core_content_image *images;
-    size_t image_count, image_capacity, hint;
-    const markdown_core_inline_root *images_root;
+    /* The source ranges of the inline node being numbered. */
+    markdown_core_place *ranges;
+    size_t range_capacity;
     markdown_core_member **climb;
     size_t climb_capacity;
     markdown_core_candidate *candidates;

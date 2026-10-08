@@ -11,7 +11,7 @@ public struct Heading: Markup {
     public var id: MarkupID { record.id }
     /// Where it is, relative to its neighbours. See ``Extent``.
     public var extent: Extent { record.extent }
-    /// The source it read, and where its content was read from. See ``Run``.
+    /// Its own source ranges, in source order. See ``Run``.
     public var runs: [Run] { record.runs }
     /// The explicit anchor, absent when none was attached.
     public var anchor: String? { record.anchor }

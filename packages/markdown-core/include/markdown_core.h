@@ -150,19 +150,16 @@ typedef struct markdown_core_extent {
 } markdown_core_extent;
 #endif
 
-/** A RUN of the source a node read: `decoded` bytes read from the `source`
- * range, whose lead is from the end of the previous run's, or from the start
- * of the node that holds the runs for the first. A run whose source spans as
- * many bytes as it decodes reads each decoded byte from one source byte; any other
- * decodes all of its bytes from all of its source, and a run that decodes no
- * bytes reads source that gives none. Between the first run and the last the
- * runs cover exactly the node's own source, so the source between two runs is
- * not the node's. */
+/** A RUN of the source a node read: its `source` range, whose lead is from
+ * the end of the previous run, or, for the first, from where the source of
+ * the node before it in its relation ends, or where its owner's begins. A
+ * node's source is its runs, or its extent when it has none; the source
+ * between two runs is not the node's. A node of an inline root's content,
+ * whose extent is in that content, always has runs. */
 #ifndef MARKDOWN_CORE_RUN_TYPEDEF
 #define MARKDOWN_CORE_RUN_TYPEDEF
 typedef struct markdown_core_run {
     markdown_core_extent source;
-    uint32_t decoded;
 } markdown_core_run;
 #endif
 
@@ -462,12 +459,11 @@ MARKDOWN_CORE_API const markdown_core_node *markdown_core_document_root(const ma
 MARKDOWN_CORE_API uint64_t markdown_core_node_id(const markdown_core_node *node);
 /** The node's extent (markdown_core_extent). */
 MARKDOWN_CORE_API markdown_core_extent markdown_core_node_extent(const markdown_core_node *node);
-/** The node's runs (markdown_core_run), and their count in `*count`: the
- * runs of length 0 between which lies source that is not its own, and, when
- * its first relation is an inline root's content, the runs that content was
- * read from, which place that relation's nodes. None when its own source is
- * its one range and it has no inline content. They borrow from the
- * document. */
+/** The node's runs (markdown_core_run), and their count in `*count`: its
+ * own source, in source order, with the source that is not its own between
+ * them. A block's runs run from its start to its end, and a block whose own
+ * source is its extent has none; every inline node has runs. They borrow
+ * from the document. */
 MARKDOWN_CORE_API const markdown_core_run *markdown_core_node_runs(const markdown_core_node *node, size_t *count);
 
 /** SCOPE QUERIES. Each takes the source the document was parsed from and

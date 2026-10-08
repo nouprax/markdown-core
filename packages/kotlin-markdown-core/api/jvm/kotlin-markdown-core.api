@@ -783,13 +783,11 @@ public final class com/nouprax/markdown/core/Reference : com/nouprax/markdown/co
 }
 
 public final class com/nouprax/markdown/core/Run {
-	public synthetic fun <init> (Lcom/nouprax/markdown/core/Extent;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lcom/nouprax/markdown/core/Extent;)V
 	public final fun component1 ()Lcom/nouprax/markdown/core/Extent;
-	public final fun component2-pVg5ArA ()I
-	public final fun copy-Qn1smSk (Lcom/nouprax/markdown/core/Extent;I)Lcom/nouprax/markdown/core/Run;
-	public static synthetic fun copy-Qn1smSk$default (Lcom/nouprax/markdown/core/Run;Lcom/nouprax/markdown/core/Extent;IILjava/lang/Object;)Lcom/nouprax/markdown/core/Run;
+	public final fun copy (Lcom/nouprax/markdown/core/Extent;)Lcom/nouprax/markdown/core/Run;
+	public static synthetic fun copy$default (Lcom/nouprax/markdown/core/Run;Lcom/nouprax/markdown/core/Extent;ILjava/lang/Object;)Lcom/nouprax/markdown/core/Run;
 	public fun equals (Ljava/lang/Object;)Z
-	public final fun getDecoded-pVg5ArA ()I
 	public final fun getSource ()Lcom/nouprax/markdown/core/Extent;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;

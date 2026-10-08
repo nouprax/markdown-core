@@ -138,14 +138,13 @@ static void put_extent(wire_buffer *buffer, markdown_core_extent extent) {
     put_u32(buffer, extent.span);
 }
 
-/* runs: [Run { source: Extent, decoded: UInt32 }]. */
+/* runs: [Run { source: Extent }]. */
 static void put_runs(wire_buffer *buffer, const markdown_core_node *node) {
     size_t count;
     const markdown_core_run *runs = markdown_core_node_runs(node, &count);
     put_count(buffer, count);
     for (size_t i = 0; i < count; i++) {
         put_extent(buffer, runs[i].source);
-        put_u32(buffer, runs[i].decoded);
     }
 }
 

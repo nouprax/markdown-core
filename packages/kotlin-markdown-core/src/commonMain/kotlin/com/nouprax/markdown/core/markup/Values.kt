@@ -25,19 +25,17 @@ public data class Extent(
 )
 
 /**
- * A run of the source a node reads: [decoded] bytes read from the [source]
- * range, whose lead is signed from the end of the previous run's source, or
- * from the node's start for the first, and whose span is how many source bytes
- * it reads. A run whose source spans as many bytes as it decodes reads each
- * decoded byte from one source byte; any other decodes all of its bytes from
- * all of its source, and a run that decodes no bytes reads source that gives
- * none. Between its first run and its last, a node's runs cover exactly its
- * own source: the source between two runs is not the node's. A node whose runs
- * decode bytes is an inline root, and they cover its content in order.
+ * A run of a node's own source: the [source] range, whose lead is signed from
+ * the end of the run before, or, for the first run, from the end of the source
+ * of the previous node in the same relation (or from the start of the owner's
+ * source, for a relation's first node), and whose span is its length in bytes.
+ * A node's source starts where its first run starts and ends where its last
+ * ends; between them its runs cover exactly its own source, so the source
+ * between two runs is not the node's. A block whose own source is its range
+ * has no runs, and every inline node has runs.
  */
 public data class Run(
     public val source: Extent,
-    public val decoded: UInt,
 )
 
 /** How a document counts the columns of its scope queries: UTF-8 bytes or UTF-16 code units. */

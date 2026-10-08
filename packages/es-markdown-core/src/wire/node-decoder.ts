@@ -121,7 +121,7 @@ export class Decoder {
         const kind = kinds[this.u8()] as NativeKind;
         const id = this.id();
         const extent = this.extent();
-        const runs = this.sparse((): Run => ({ source: this.extent(), decoded: this.u32() }));
+        const runs = this.sparse((): Run => ({ source: this.extent() }));
         const anchor = this.optional(() => this.string());
         const attributes = this.attributes();
         const node = this.fields(kind, { kind, id, extent, runs, anchor, attributes }) as Markup;

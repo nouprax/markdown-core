@@ -39,11 +39,9 @@ export interface Document extends MarkupBase<"document"> {
     /**
      * The scopes of `node`, one per source range in source order, computed
      * from the extents, runs and `source`, the text the document was parsed
-     * from, with columns in the document's unit. A node's source ranges are a
-     * window less the gaps between the runs that place it: its range and its
-     * own runs, or, when it is in an inline root's content, the source from
-     * where its first content byte was read to where its last was, and the
-     * root's runs. `node` is a
+     * from, with columns in the document's unit. A node's source ranges are
+     * its runs, with touching runs one range, or its range when it has no
+     * runs. `node` is a
      * node of this document. Throws `MarkdownCoreError` `outOfBounds` when
      * `source` ends before the node does.
      */

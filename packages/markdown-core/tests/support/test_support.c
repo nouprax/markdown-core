@@ -379,53 +379,38 @@ static size_t ts_field_rank(markdown_core_field field) {
     }
 }
 
-/* The first relation a kind has in canonical traversal order, present or
- * not: an inline root's content. */
-static markdown_core_field ts_first_field(markdown_core_node_kind kind) {
-    switch (kind) {
-    case MARKDOWN_CORE_KIND_DOCUMENT:
-        return MARKDOWN_CORE_FIELD_METADATA;
-    case MARKDOWN_CORE_KIND_TABLE:
-        return MARKDOWN_CORE_FIELD_CAPTION;
-    case MARKDOWN_CORE_KIND_DIRECTIVE:
-    case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
-        return MARKDOWN_CORE_FIELD_LABEL;
-    case MARKDOWN_CORE_KIND_CALLOUT:
-        return MARKDOWN_CORE_FIELD_TITLE;
-    case MARKDOWN_CORE_KIND_CITE:
-        return MARKDOWN_CORE_FIELD_CITATIONS;
-    case MARKDOWN_CORE_KIND_CITATION:
-        return MARKDOWN_CORE_FIELD_NOTE;
-    case MARKDOWN_CORE_KIND_DEFINITION:
-        return MARKDOWN_CORE_FIELD_TERM;
-    case MARKDOWN_CORE_KIND_DEFINITION_LIST:
-        return MARKDOWN_CORE_FIELD_DEFINITIONS;
-    case MARKDOWN_CORE_KIND_TABLE_ROW:
-        return MARKDOWN_CORE_FIELD_CELLS;
-    default:
-        return MARKDOWN_CORE_FIELD_CONTENT;
-    }
-}
-
-static int64_t ts_content_length(const markdown_core_node *root);
-
-/* One node on the walk's path: where it starts, the relation of it the
- * walk is in and where that relation's next node leads from, and the inline
- * root its own range is in. */
+/* One node on the walk's path: where its source starts, and the relation of
+ * it the walk is in and where that relation's next node is measured from. */
 typedef struct {
     const markdown_core_node *node;
     int64_t start, anchor;
     size_t relation;
-    bool in_relation, runs;
-    const markdown_core_node *root;
-    int64_t root_start;
+    bool in_relation;
 } ts_walk_frame;
 
+/* The source window of `node`, measured from `anchor`: from where its first
+ * run begins to where its last ends, or its extent when it has no runs. */
+static ts_ast_range ts_source_window(const markdown_core_node *node, int64_t anchor) {
+    size_t count = 0;
+    const markdown_core_run *runs = markdown_core_node_runs(node, &count);
+    if (!count) {
+        markdown_core_extent extent = markdown_core_node_extent(node);
+        return (ts_ast_range){anchor + extent.lead, anchor + extent.lead + (int64_t)extent.span};
+    }
+    ts_ast_range range = {anchor + runs[0].source.lead, 0};
+    int64_t at = anchor;
+    for (size_t index = 0; index < count; index++) {
+        at += runs[index].source.lead + (int64_t)runs[index].source.span;
+    }
+    range.end = at;
+    return range;
+}
+
 /* Each node's relations in canonical field order, read with a cursor: a
- * relation's first node leads from the owner's start, or from 0 when the
- * owner is an inline root and the relation is its content, and each next one
- * from the end of the one before. A relation is numbered from its field and
- * its list, so an absent or empty one keeps its place. */
+ * relation's first node is measured from where its owner's source starts,
+ * and each next one from where the source of the one before ends. A
+ * relation is numbered from its field and its list, so an absent or empty
+ * one keeps its place. */
 int ts_ast_walk_owned(const markdown_core_node *root, ts_ast_owned_visit_fn visit, void *context) {
     markdown_core_cursor *cursor;
     ts_walk_frame *frames = NULL;
@@ -434,8 +419,7 @@ int ts_ast_walk_owned(const markdown_core_node *root, ts_ast_owned_visit_fn visi
     if (markdown_core_cursor_open(root, &cursor) != MARKDOWN_CORE_OK) {
         return -1;
     }
-    markdown_core_extent extent = markdown_core_node_extent(root);
-    ts_ast_place place = {{extent.lead, extent.lead + (int64_t)extent.span}, NULL, 0, NULL, 0};
+    ts_ast_place place = {ts_source_window(root, 0), NULL, 0};
     for (;;) {
         const markdown_core_node *node = markdown_core_cursor_node(cursor);
         if ((result = visit(node, place, context))) {
@@ -450,8 +434,7 @@ int ts_ast_walk_owned(const markdown_core_node *root, ts_ast_owned_visit_fn visi
             }
             frames = grown;
         }
-        frames[depth] = (ts_walk_frame){node,  place.range.start,           0,          0,
-                                        false, ts_content_length(node) > 0, place.root, place.root_start};
+        frames[depth] = (ts_walk_frame){node, place.range.start, 0, 0, false};
         bool moved;
         if (markdown_core_cursor_child(cursor, &moved) != MARKDOWN_CORE_OK) {
             result = -1;
@@ -471,18 +454,13 @@ int ts_ast_walk_owned(const markdown_core_node *root, ts_ast_owned_visit_fn visi
         ts_walk_frame *owner = &frames[depth - 1];
         markdown_core_field field = markdown_core_cursor_field(cursor);
         size_t relation = ts_field_rank(field) * 1000000 + markdown_core_cursor_list(cursor);
-        bool content = owner->runs && field == ts_first_field(markdown_core_node_get_kind(owner->node));
         if (!owner->in_relation || owner->relation != relation) {
             owner->in_relation = true;
             owner->relation = relation;
-            owner->anchor = content ? 0 : owner->start;
+            owner->anchor = owner->start;
         }
-        extent = markdown_core_node_extent(markdown_core_cursor_node(cursor));
-        place = (ts_ast_place){{owner->anchor + extent.lead, owner->anchor + extent.lead + (int64_t)extent.span},
-                               owner->node,
-                               relation,
-                               content ? owner->node : owner->root,
-                               content ? owner->start : owner->root_start};
+        place =
+            (ts_ast_place){ts_source_window(markdown_core_cursor_node(cursor), owner->anchor), owner->node, relation};
         owner->anchor = place.range.end;
     }
     free(frames);
@@ -510,17 +488,6 @@ typedef struct {
     const markdown_core_node *outside;
 } ts_range_check;
 
-/* The length of an inline root's content: what its runs decode. */
-static int64_t ts_content_length(const markdown_core_node *root) {
-    size_t count = 0;
-    const markdown_core_run *runs = markdown_core_node_runs(root, &count);
-    int64_t length = 0;
-    for (size_t index = 0; index < count; index++) {
-        length += runs[index].decoded;
-    }
-    return length;
-}
-
 /* Whether the source ranges runs lead to from `at`, each from the end of the
  * one before, lie in `[0, length]`. */
 static bool ts_runs_inside(const markdown_core_run *runs, size_t count, int64_t at, int64_t length) {
@@ -536,11 +503,10 @@ static bool ts_runs_inside(const markdown_core_run *runs, size_t count, int64_t 
 
 static int ts_range_visit(const markdown_core_node *node, ts_ast_place place, void *context) {
     ts_range_check *check = context;
-    int64_t length = place.root ? ts_content_length(place.root) : check->length;
-    bool inside = place.range.start >= 0 && place.range.end >= place.range.start && place.range.end <= length;
+    bool inside = place.range.start >= 0 && place.range.end >= place.range.start && place.range.end <= check->length;
     size_t runs = 0;
     const markdown_core_run *run = markdown_core_node_runs(node, &runs);
-    inside = inside && ts_runs_inside(run, runs, place.range.start, check->length);
+    inside = inside && (!runs || ts_runs_inside(run, runs, place.range.start - run[0].source.lead, check->length));
     if (!inside) {
         check->outside = node;
         return 1;

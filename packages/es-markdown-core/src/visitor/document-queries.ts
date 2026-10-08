@@ -10,8 +10,8 @@ import { placesOf, type Place } from "./source-places.js";
  * canonical walk. A node is found by reference. */
 function placesIn(document: Document, target: Markup): Place[] {
     let places!: Place[];
-    traverse(document, (node, phase, start, end, content) => {
-        if (node === target && phase === "enter") places = placesOf(node, start, end, content);
+    traverse(document, (node, phase, source) => {
+        if (node === target && phase === "enter") places = placesOf(node, source);
     });
     return places;
 }
@@ -37,9 +37,9 @@ export function nodeAt(document: Document, position: Position, source: string): 
     const offset = new SourceLines(source).offset(position, document.unit);
     if (offset === null) return null;
     let found: Markup | null = null;
-    traverse(document, (node, phase, start, end, content) => {
+    traverse(document, (node, phase, source) => {
         if (phase !== "enter") return;
-        if (placesOf(node, start, end, content).some((place) => place.start <= offset && offset < place.end)) {
+        if (placesOf(node, source).some((place) => place.start <= offset && offset < place.end)) {
             found = node;
         }
     });

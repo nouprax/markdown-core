@@ -112,19 +112,17 @@ A node stores no line or column. Its `extent: Extent(lead, span)` is the raw
 byte range the engine keeps, a block's in the UTF-8 source and an inline
 node's in its inline root's content, which starts at 0: `lead` is signed, from
 the end of the previous node in the same relation (or the owner's start) to
-the node's start, and `span` is its length. A node whose range is not all
-its own, such as a block inside a container, has `runs`: `Run(source,
-decoded)`, `decoded` bytes read from the `source` extent, whose lead is from
-the end of the previous run's source, and the source between two runs is not
-the node's. A run whose source spans as many bytes as it decodes reads each
-decoded byte from one source byte; any other decodes all of its bytes from
-all of its source. A node whose runs decode bytes, some run with `decoded > 0`, is an inline
-root, whose first relation is that content.
-A node's source ranges are one window less the gaps between the runs that
-place it: in an inline root's content, the source its content range was read
-from through the root's runs; else its own range, cut by its own runs. Scopes, one per source range in source order,
-are computed on request from those and the source the document was parsed
-from:
+the node's start, and `span` is its length. Its `runs` are its own source
+ranges in source order: `Run(source)`, a source extent. The first run's lead
+is from the end of the source of the previous node in the same relation, or
+from the start of the owner's source for a relation's first node; every other
+run's lead is from the end of the run before. A node's source starts where its
+first run starts and ends where its last ends, and the source between two runs
+is not the node's. Every inline node has runs; a block whose own source is its
+range has none, and its source is its range. A node's source ranges are its
+runs, with touching runs one range, or its range when it has none. Scopes, one
+per source range in source order, are computed on request from those and the
+source the document was parsed from:
 
 ```kotlin
 val document = Document.parse(source)            // TextUnit.UTF16 by default

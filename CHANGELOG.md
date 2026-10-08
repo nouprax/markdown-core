@@ -10,17 +10,15 @@ promised to remain compatible between releases.
   that produced the node. Block extents stay source offsets; an inline
   node's extent is now an offset in its inline root's content, which starts
   at 0. Every `Markup` gains `runs: [Run]` after `extent`, part of
-  equality. A `Run(source, decoded)` is a stretch of the node's own
-  source, an `Extent`, and the bytes it decodes to: a run whose source spans
-  its decoded count is copied byte for byte into its content, a run that
-  decodes 0 bytes is source without content (a fence line, an underline, a
-  continuation indent, a cell's column slice), and any other run maps as a
-  whole. Between its first and last run, the runs cover
+  equality. A `Run(source)` is a stretch of the node's own source, an
+  `Extent`: the first measured from the end of the previous node's source in
+  the same relation, or from the start of its owner's, and each other from
+  the end of the run before. Between its first and last run, the runs cover
   exactly the node's own source; the bytes between them belong to its
-  containers. A node is an inline root when its runs read content.
-  `document.scope(of:in:)` returns `[Scope]`, one per source range in source
-  order: a block's range less the gaps between its runs, and an inline
-  node's content window mapped through its root's runs. `node(at:in:)` and
+  containers. A block whose own source is its range has no runs, and every
+  inline node has its own. `document.scope(of:in:)` returns `[Scope]`, one
+  per source range in source order, read from the node's own runs or its
+  range. `node(at:in:)` and
   the dumps read every range (`scope=` joins them with `,`). The C facade
   adds `markdown_core_node_runs` and `markdown_core_scopes_free`, and
   `markdown_core_document_scope` writes an array and its count. MCB3 writes

@@ -680,7 +680,7 @@ markdown_core_node *markdown_core_node_copy(markdown_core_node_pool *pool, const
         ok &= !copy->content.oom;
     }
     if (node->runs) {
-        const size_t bytes = sizeof(*node->runs) + node->runs->count * sizeof(markdown_core_run_where);
+        const size_t bytes = markdown_core_runs_size(node->runs->capacity, node->runs->pieces);
         copy->runs = markdown_core_node_pool_bytes(pool, bytes);
         if (copy->runs) {
             memcpy(copy->runs, node->runs, bytes);

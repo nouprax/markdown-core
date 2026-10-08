@@ -563,11 +563,11 @@ test("ast: a title is decoded before the content and dumped as a group", () => {
     // count is present exactly when a title was authored. This message is
     // written by hand: a document holding one collapsed `note` callout whose
     // title is the text `T` and whose content is empty. The title is an
-    // inline root's content: its first node leads from 0, and the callout's
-    // run reads it from the source byte 11 past the callout's start.
+    // inline root's content: its first node's extent leads from 0, and its
+    // run is its own source, 11 bytes past the start of the callout's.
     const bytes = new MessageWriter()
-        .text("T", { extent: [0, 1] })
-        .record("callout", { extent: [0, 12], runs: [[[11, 1], 1]] })
+        .text("T", { extent: [0, 1], runs: [[11, 1]] })
+        .record("callout", { extent: [0, 12] })
         .optional("note", MessageWriter.prototype.string)
         .optional(true, MessageWriter.prototype.bool)
         .optional(1, MessageWriter.prototype.u32)
@@ -593,7 +593,8 @@ test("ast: a title is decoded before the content and dumped as a group", () => {
             "    └── Title children=1\n" +
             '        └── Text scope=1:12..1:12 anchor=null attributes={} literal="T" children=0\n'
     );
-    assert.deepEqual(callout.runs, [{ source: { lead: 11, span: 1 }, decoded: 1 }]);
+    assert.deepEqual(callout.runs, []);
+    assert.deepEqual(callout.title[0].runs, [{ source: { lead: 11, span: 1 } }]);
     assert.deepEqual(document.scope(callout.title[0], source), [
         { start: { line: 1, column: 12 }, end: { line: 1, column: 12 } }
     ]);
@@ -1712,29 +1713,28 @@ test("api: scope queries count columns in the document's unit from the extents a
     assert.equal(Document.parse("é🚀x\n").unit, "utf16");
 });
 
-test("api: a node's scopes are its source ranges, cut by its own runs or its inline root's runs", () => {
+test("api: a node's scopes are its own runs, or its range when it has none", () => {
     const scope = (startLine, startColumn, endLine, endColumn) => ({
         start: { line: startLine, column: startColumn },
         end: { line: endLine, column: endColumn }
     });
     // A paragraph inside a block quote owns its lines past the `> ` prefixes:
-    // its content is read through one run per line, and the prefix between
-    // them is not its own.
+    // it has one run per line, and the prefix between them is not its own.
     const source = "> a *b\n> c* d\n";
     const document = Document.parse(source, { unit: "utf8" });
     const [quote] = document.content;
     const [paragraph] = quote.content;
     const [, emphasis] = paragraph.content;
     const c = emphasis.content[2];
-    assert.deepEqual(paragraph.runs, [
-        { source: { lead: 0, span: 5 }, decoded: 5 },
-        { source: { lead: 2, span: 4 }, decoded: 4 }
-    ]);
+    assert.deepEqual(paragraph.runs, [{ source: { lead: 2, span: 5 } }, { source: { lead: 2, span: 4 } }]);
     assert.deepEqual(document.scope(paragraph, source), [scope(1, 3, 2, 0), scope(2, 3, 2, 6)]);
-    // Inline extents are offsets in the content, which starts at 0: `c` is
-    // content byte 7 and source byte 9.
+    // Inline extents are offsets in the content, which starts at 0, and
+    // inline runs are source: `c` is content byte 7 and source byte 9, past
+    // the emphasis's two runs and the `> ` between them.
     assert.deepEqual(emphasis.extent, { lead: 0, span: 5 });
+    assert.deepEqual(emphasis.runs, [{ source: { lead: 0, span: 3 } }, { source: { lead: 2, span: 2 } }]);
     assert.deepEqual(c.extent, { lead: 0, span: 1 });
+    assert.deepEqual(c.runs, [{ source: { lead: 2, span: 1 } }]);
     assert.deepEqual(document.scope(emphasis, source), [scope(1, 5, 2, 0), scope(2, 3, 2, 4)]);
     assert.deepEqual(document.scope(c, source), [scope(2, 3, 2, 3)]);
     // A prefix byte belongs to the quote alone; a byte of a range to the last
@@ -1742,8 +1742,8 @@ test("api: a node's scopes are its source ranges, cut by its own runs or its inl
     assert.equal(document.nodeAt({ line: 2, column: 1 }, source), quote);
     assert.equal(document.nodeAt({ line: 2, column: 3 }, source), c);
     assert.equal(document.nodeAt({ line: 2, column: 4 }, source), emphasis);
-    // A subtree's dump places its nodes in the content they are in, and its
-    // levels count from the node.
+    // A subtree's dump places its nodes in the source by the document's walk,
+    // and its levels count from the node.
     assert.equal(
         document.dump(emphasis, source),
         "Emphasis scope=1:5..2:0,2:3..2:4 anchor=null attributes={} children=3\n" +
@@ -1757,12 +1757,13 @@ test("api: a node's scopes are its source ranges, cut by its own runs or its inl
         (error) => error.code === "outOfBounds"
     );
 
-    // A callout's title is its content, and its later relations are back in
-    // source coordinates.
+    // A callout's title is an inline root's content whose nodes have runs of
+    // their own; the callout has none, and its content's extents are source.
     const titled = "> [!note] T *u*\n> body\n";
     const callout = Document.parse(titled, { unit: "utf8" });
     const [note] = callout.content;
-    assert.deepEqual(note.runs, [{ source: { lead: 10, span: 5 }, decoded: 5 }]);
+    assert.deepEqual(note.runs, []);
+    assert.deepEqual(note.title[0].runs, [{ source: { lead: 10, span: 2 } }]);
     assert.deepEqual(callout.scope(note.title[1].content[0], titled), [scope(1, 14, 1, 14)]);
     assert.deepEqual(note.content[0].extent, { lead: 18, span: 4 });
     assert.deepEqual(callout.scope(note.content[0], titled), [scope(2, 3, 2, 6)]);
@@ -1778,16 +1779,16 @@ test("api: runs take part in value equality", () => {
                 .root(1, { id: 1, extent: [0, 1] })
                 .document()
         ).decode();
-    const plain = message({ runs: [[[0, 1], 1]] });
-    assert.ok(markupEquals(plain, message({ runs: [[[0, 1], 1]] })));
-    assert.equal(markupEquals(plain, message({ runs: [[[0, 2], 1]] })), false);
+    const plain = message({ runs: [[0, 1]] });
+    assert.ok(markupEquals(plain, message({ runs: [[0, 1]] })));
+    assert.equal(markupEquals(plain, message({ runs: [[0, 2]] })), false);
     assert.equal(
         markupEquals(
             plain,
             message({
                 runs: [
-                    [[0, 1], 1],
-                    [[1, 1], 0]
+                    [0, 1],
+                    [1, 1]
                 ]
             })
         ),

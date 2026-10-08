@@ -29,7 +29,7 @@ public struct Table: Markup {
     public var foot: MarkupCollection<TableRow> { record.collection(record.foot) }
     /// Authored source extent. See ``Extent``.
     public var extent: Extent { record.extent }
-    /// The source it read, and where its content was read from. See ``Run``.
+    /// Its own source ranges, in source order. See ``Run``.
     public var runs: [Run] { record.runs }
     /// The explicit anchor, absent when none was attached.
     public var anchor: String? { record.anchor }
@@ -122,7 +122,7 @@ public struct TableRow: Markup {
     public var cells: MarkupCollection<TableCell> { record.collection(record.children.indices) }
     /// Authored source extent. See ``Extent``.
     public var extent: Extent { record.extent }
-    /// The source it read, and where its content was read from. See ``Run``.
+    /// Its own source ranges, in source order. See ``Run``.
     public var runs: [Run] { record.runs }
     /// The explicit anchor, absent when none was attached.
     public var anchor: String? { record.anchor }
@@ -158,7 +158,7 @@ public struct TableCell: Markup {
     public var content: MarkupCollection<any Markup> { record.collection(record.children.indices) }
     /// Authored source extent. See ``Extent``.
     public var extent: Extent { record.extent }
-    /// The source it read, and where its content was read from. See ``Run``.
+    /// Its own source ranges, in source order. See ``Run``.
     public var runs: [Run] { record.runs }
     /// The explicit anchor, absent when none was attached.
     public var anchor: String? { record.anchor }
@@ -207,7 +207,7 @@ public struct TableCaption: Markup {
     public var content: MarkupCollection<any Markup> { record.collection(record.children.indices) }
     /// Authored source extent, including the caption marker.
     public var extent: Extent { record.extent }
-    /// The source it read, and where its content was read from. See ``Run``.
+    /// Its own source ranges, in source order. See ``Run``.
     public var runs: [Run] { record.runs }
     /// The explicit anchor, absent when none was attached.
     public var anchor: String? { record.anchor }

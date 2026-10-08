@@ -221,38 +221,43 @@ Extent(lead: Int32, span: UInt32)       offsets in the parser's input
     lead:   signed, from the end of the previous node in the same relation
             (or the owner's start, for the first node) to this node's start
     span:   of this node's range
-Run(source: Extent, decoded: UInt32)   offsets in the source
-    source:  the source range the run reads, its lead from the end of the
-             previous run's (or the node's start, for the first run)
-    decoded: bytes it decodes them to
+Run(source: Extent)                     offsets in the source
+    source: a range of the node's own source, its lead from the end of the
+            previous run's (or, for the first run, from the end of the
+            previous node's source in the same relation, or the start of
+            the owner's source for the first node)
 ```
 
 - **One rule.** Every extent is a byte offset in the input of the parser
   that made the node. The block parser reads the source text, so a block's
   extent is an offset in the source. The inline parser reads its root's
   content, which starts at offset 0, so an inline node's extent is an offset
-  in that content. Each parser, its reuse (5.3, 5.6) and identity matching
-  (5.9) work in the offsets of their own input and need no mapping.
-- **Runs.** A node whose source is not one contiguous range, or whose first
-  relation is an inline root's content (a block's inline content, a
-  callout's title, a definition's term), carries `runs`: the source it read,
-  in order. Each run is `decoded` bytes read from its `source` range.
-  - A run whose source spans as many bytes as it decodes reads each decoded
-    byte from one source byte; any other decodes all of its bytes from all of
-    its source by exactly one decoding: a tab gives that many spaces, NUL gives
-    U+FFFD, `\|` in a table cell gives `|`, and a line ending that is not LF
-    (CR, CR LF, or none at the end of the source) gives LF.
-  - A run that decodes 0 bytes is source the node reads that gives no content:
-    an opening fence, a heading's underline, the indentation of a paragraph's
-    later lines, or a whole line of a node without inline content.
+  in that content. Each parser and its reuse (5.3, 5.6) work in the offsets
+  of their own input and need no mapping; identity matching (5.9) works in
+  source windows.
+- **Runs.** A node's runs are its own source, in source order. Every node
+  computes them at its completion: a block from the lines it read, an
+  inline node from its content range and its root's runs. Bindings read a
+  node's scope from its runs, or from its extent when it has none.
   - Between the first run and the last, the runs cover exactly the node's
     own source, so the source between two runs is not the node's: the
     container prefixes between a leaf block's lines (E5) inside a
     blockquote, callout or list item, and the other columns between a grid
-    or multiline table cell's lines.
-  - A run that decodes 0 bytes at either end of the list has a gap beside it,
-    so a node of the document itself without inline content, such as a fenced
-    code block, has no runs, and containers have none of their own.
+    or multiline table cell's lines. Runs that touch are one run.
+  - A block's runs start where it starts and end where it ends, so a block's
+    source and its extent are measured from one anchor. A block whose own
+    source is its range has none.
+  - Every inline node has runs: its window of the source less the gaps
+    between its root's runs. Its window runs from where its root read its
+    first content byte to where it read its last.
+  - An inline root keeps, inside the engine, how many content bytes each of
+    its runs decodes: a run whose source spans as many bytes as it decodes
+    reads each decoded byte from one source byte; any other decodes all of
+    its bytes from all of its source by exactly one decoding: a tab gives
+    that many spaces, NUL gives U+FFFD, `\|` in a table cell gives `|`, and
+    a line ending that is not LF (CR, CR LF, or none at the end of the
+    source) gives LF. These counts map content offsets to source for the
+    inline parse and inline reuse (5.6); they are not part of the model.
   - The element that reads the source records the runs as it reads, so no
     other code knows how an element turns source into content.
 - The engine stores extents and runs on every C node, and the
@@ -276,10 +281,8 @@ Run(source: Extent, decoded: UInt32)   offsets in the source
   parsed from, which the side-by-side editor already holds (`session.text`
   for a session's current document). They return today's editor line and
   column conventions and sentinels, in the session's coordinate unit (4.4).
-  - A node's ranges are one window of source less the gaps between the runs
-    that place it. A block's window is its range, and the runs are its own.
-    An inline node's window runs from where its first content byte was read
-    to where its last was, and the runs are its root's.
+  - A node's ranges are its own runs, joined where they touch, or its range
+    when it has none.
   - Every binding computes them with this one walk over the runs, so no
     binding repeats an element's syntax (closing sequences, cell padding,
     column geometry).
@@ -702,9 +705,9 @@ edits through the content runs of the two roots:
   replacements in the old content's offsets, a batch like a source batch.
 
 The old inline tree is read through those edits as the old block tree is
-read through the source edits (5.2), and the same cursor takes or descends. Identity
-matching (5.9) reads inline anchors through the same mapping, so reuse and
-identity share one model. Each
+read through the source edits (5.2), and the same cursor takes or descends.
+Identity matching (5.9) reads inline anchors from the nodes' source windows,
+as it reads every other node's. Each
 inline node records its **entry**, the
 delimiter state at its start, and its **reach**, the furthest content offset
 any decision about it read:
@@ -886,9 +889,9 @@ follows the parse.
   anchor and cannot be matched; its id retires.
 - An old node `O` can match a new node `N` when their kinds are equal and
   `N`'s source range contains the image of `O`'s anchor byte (5.2).
-- An inline node's anchor is its first content byte that continues (5.6),
-  and its image is that byte's new content offset, so inline nodes match in
-  the offsets of their root's content by the same rule.
+- A node's source range is its source window, from where its source starts
+  to where it ends, its runs giving an inline node's, so inline nodes match
+  by the same rule in source bytes.
 - When `N` contains the anchors of several old siblings, it takes the
   earliest not yet passed, and the ones after it remain for the next new
   sibling: the cells of a grid table that span rows start inside the ranges
@@ -1232,6 +1235,10 @@ them, and step 8 makes the whole engine meet the benchmark gates.
   run that decodes 0 bytes is source that gives no content, and the source
   between two runs is not the node's, so pieces are removed and every scope is
   a window less the gaps between runs (4.3).
+  Revised 2026-10-08: every node carries its own source runs, an inline node
+  computing them at its completion, so a binding reads a node's scope from its
+  own runs. A run is its source range only; how many content bytes an inline
+  root's runs decode stays inside the engine (4.3).
 - **D2 Definitions. Decided 2026-09-29: definitions stay where written.**
   Footnote and specimen definitions remain in the tree where they were
   written, an inline note's `Footnote` is owned at its call site, and the

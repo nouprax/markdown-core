@@ -2427,14 +2427,12 @@ static void table_cell_runs(table_source *source, markdown_core_node *node, cons
         return;
     }
     uint32_t count = (uint32_t)(cell->last - cell->first + 1);
-    markdown_core_runs *runs =
-        markdown_core_node_pool_bytes(parser->pool, sizeof(*runs) + (size_t)count * sizeof(markdown_core_run_where));
+    markdown_core_runs *runs = markdown_core_runs_new(parser->pool, count, false);
     if (!runs) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
     runs->count = count;
-    runs->decoded = 0;
     for (uint32_t i = 0; i < count; i++) {
         const table_source_line *line = &source->lines[cell->first + i];
         int right = cell->right < line->columns ? cell->right : line->columns;
@@ -2443,7 +2441,7 @@ static void table_cell_runs(table_source *source, markdown_core_node *node, cons
                               ? markdown_core_parser_source_offset(parser, line->line, table_byte(line, left) + 1)
                               : markdown_core_parser_source_end(parser, line->line, table_byte(line, left));
         bufsize_t end = markdown_core_parser_source_end(parser, line->line, table_byte(line, right));
-        runs->items[i].place = (markdown_core_run_place){(uint32_t)start, (uint32_t)end, 0};
+        runs->items[i].place = (markdown_core_place){(uint32_t)start, (uint32_t)end};
     }
     if (node->runs) {
         markdown_core_node_pool_bytes_free(parser->pool, node->runs);

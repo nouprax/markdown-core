@@ -771,13 +771,11 @@ static bool S_line_own(markdown_core_parser *parser, int line, markdown_core_pla
  * joined. */
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_line_runs(markdown_core_parser *parser, markdown_core_node *node,
                                                             int first, int last) {
-    markdown_core_runs *runs = markdown_core_node_pool_bytes(
-        parser->pool, sizeof(*runs) + (size_t)(last - first + 1) * sizeof(markdown_core_run_where));
+    markdown_core_runs *runs = markdown_core_runs_new(parser->pool, (uint32_t)(last - first + 1), false);
     if (!runs) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
-    runs->count = runs->decoded = 0;
     markdown_core_place own;
     for (int line = first; line <= last; line++) {
         if (!S_line_own(parser, line, &own)) {
@@ -787,7 +785,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_line_runs(markdown_core_parser
         if (runs->count && runs->items[runs->count - 1].place.end == own.start) {
             runs->items[runs->count - 1].place.end = own.end;
         } else {
-            runs->items[runs->count++].place = (markdown_core_run_place){own.start, own.end, 0};
+            runs->items[runs->count++].place = own;
         }
     }
     if (runs->count < 2) {
@@ -1008,11 +1006,13 @@ static inline void S_runs_add_own(markdown_core_runs *runs, uint32_t start, uint
     if (start >= end) {
         return;
     }
-    markdown_core_run_place *previous = runs->count ? &runs->items[runs->count - 1].place : NULL;
-    if (previous && !previous->decoded && previous->end == start) {
+    markdown_core_run_piece *const pieces = markdown_core_runs_pieces(runs);
+    markdown_core_place *previous = runs->count ? &runs->items[runs->count - 1].place : NULL;
+    if (previous && !pieces[runs->count - 1].decoded && previous->end == start) {
         previous->end = end;
     } else {
-        runs->items[runs->count++].place = (markdown_core_run_place){start, end, 0};
+        pieces[runs->count].decoded = 0;
+        runs->items[runs->count++].place = (markdown_core_place){start, end};
     }
 }
 
@@ -1042,14 +1042,14 @@ void markdown_core_parser_read_content(markdown_core_parser *parser, markdown_co
     const uint32_t line_count = lines ? lines->count : 0;
     /* At most one content run per mark from the first to the end of the map,
      * one run that decodes nothing before each and one after each line. */
-    markdown_core_runs *runs = markdown_core_node_pool_bytes(
-        parser->pool, sizeof(*runs) + ((size_t)(past - mark) * 2 + line_count + 1) * sizeof(markdown_core_run_where));
+    markdown_core_runs *runs =
+        markdown_core_runs_new(parser->pool, (uint32_t)((past - mark) * 2 + line_count + 1), true);
     if (!runs) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
-    runs->count = 0;
     runs->decoded = (uint32_t)length;
+    markdown_core_run_piece *const pieces = markdown_core_runs_pieces(runs);
     uint32_t line = 0, at = 0;
     for (bufsize_t from = map.offset; from < end; mark++) {
         const bufsize_t to = mark + 1 < past && mark[1].content_offset < end ? mark[1].content_offset : end;
@@ -1057,15 +1057,15 @@ void markdown_core_parser_read_content(markdown_core_parser *parser, markdown_co
         const uint32_t stop = start + (uint32_t)((to - from - 1) * mark->source_step + mark->source_width);
         const uint32_t size = (uint32_t)(to - from);
         from = to;
-        markdown_core_run_place *previous =
-            runs->count && runs->items[runs->count - 1].place.decoded ? &runs->items[runs->count - 1].place : NULL;
+        const uint32_t last = runs->count - 1;
+        markdown_core_place *previous = runs->count && pieces[last].decoded ? &runs->items[last].place : NULL;
         assert(!previous || start >= previous->end);
         /* A slice that reads as many bytes as it decodes continues such a run
          * that ends where it starts. */
-        if (stop - start == size && previous && previous->end - previous->start == previous->decoded &&
+        if (stop - start == size && previous && previous->end - previous->start == pieces[last].decoded &&
             previous->end == start) {
             previous->end = stop;
-            previous->decoded += size;
+            pieces[last].decoded += size;
             at = stop;
             continue;
         }
@@ -1073,7 +1073,7 @@ void markdown_core_parser_read_content(markdown_core_parser *parser, markdown_co
          * and its own line up to it; with no lines, all of the source since
          * the run before. */
         for (; line < line_count && lines->items[line].place.end <= start; line++) {
-            const markdown_core_run_place own = lines->items[line].place;
+            const markdown_core_place own = lines->items[line].place;
             S_runs_add_own(runs, at > own.start ? at : own.start, own.end);
         }
         if (line < line_count && lines->items[line].place.start <= start) {
@@ -1082,11 +1082,12 @@ void markdown_core_parser_read_content(markdown_core_parser *parser, markdown_co
         } else if (!lines && runs->count) {
             S_runs_add_own(runs, at, start);
         }
-        runs->items[runs->count++].place = (markdown_core_run_place){start, stop, size};
+        pieces[runs->count].decoded = size;
+        runs->items[runs->count++].place = (markdown_core_place){start, stop};
         at = stop;
     }
     for (; line < line_count; line++) {
-        const markdown_core_run_place own = lines->items[line].place;
+        const markdown_core_place own = lines->items[line].place;
         S_runs_add_own(runs, at > own.start ? at : own.start, own.end);
     }
     if (lines) {

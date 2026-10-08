@@ -42,18 +42,17 @@ export interface Extent {
 }
 
 /**
- * A run of the source a node read: `decoded` bytes read from the `source`
- * range, whose `lead` is from the end of the previous run's source, or from
- * the node's start for the first, and whose `span` is how many source bytes it
- * reads. A run whose source spans as many bytes as it decodes reads each
- * decoded byte from one source byte; any other decodes all of its bytes from
- * all of its source, and a run that decodes no bytes reads source that gives
- * none. Between the first run and the last the runs cover exactly the node's
- * own source, so the source between two runs is not the node's.
+ * A run of a node's own source: the `source` range, whose `lead` is from the
+ * end of the run before, or, for the first run, from the end of the source of
+ * the previous node in the same relation (or from the start of the owner's
+ * source, for a relation's first node), and whose `span` is its length in
+ * bytes. A node's source starts where its first run starts and ends where its
+ * last ends; between them the runs cover exactly the node's own source, so the
+ * source between two runs is not the node's. A block whose own source is its
+ * range has no runs, and every inline node has runs.
  */
 export interface Run {
     readonly source: Extent;
-    readonly decoded: number;
 }
 
 export type ListFlavor = "bullet" | "ordered";

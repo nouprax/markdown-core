@@ -356,7 +356,7 @@ document.content[0] = document;
 // @ts-expect-error readonly extent values cannot be mutated
 document.extent.lead = 2;
 // @ts-expect-error runs are recursively readonly
-document.runs[0]!.decoded = 2;
+document.runs[0]!.source = { lead: 2, span: 1 };
 // @ts-expect-error runs are recursively readonly
 document.runs[0]!.source.lead = 2;
 // @ts-expect-error ids are readonly

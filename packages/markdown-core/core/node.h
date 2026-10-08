@@ -214,39 +214,53 @@ typedef struct {
     uint32_t start, end;
 } markdown_core_place;
 
-/* A run of a node's source (markdown_core.h): `decoded` bytes read from the
- * `source` range, whose lead is from the end of the previous run's, or from
- * the start of the node that holds the runs. */
+/* A run of a node's source (markdown_core.h): its `source` range, whose lead
+ * is from the end of the previous run, or, for the first, from where the
+ * node's extent is measured from, in the source. */
 #ifndef MARKDOWN_CORE_RUN_TYPEDEF
 #define MARKDOWN_CORE_RUN_TYPEDEF
 typedef struct markdown_core_run {
     markdown_core_extent source;
-    uint32_t decoded;
 } markdown_core_run;
 #endif
 
-/* WHERE A NODE'S BYTES LIE when its extent alone does not say: the runs of
- * source it read, those its inline content was read from and, with length
- * 0, those that gave no content, with the source that is not its own between
- * them. While a parse builds the tree each holds an absolute source range,
- * as a node's place does; publishing rewrites them relative, as it rewrites
- * the place as the extent. The list is one owned allocation, NULL when the
- * node has none. */
-typedef struct {
-    uint32_t start, end, decoded;
-} markdown_core_run_place;
-
+/* WHERE A NODE'S BYTES LIE, when its extent alone does not say: the runs of
+ * source it read, with the source that is not its own between them. An
+ * inline root's runs map its content too: each says how many content bytes
+ * it decodes, those its content was read from and, decoding none, those that
+ * gave no content. While a parse builds the tree each run holds an absolute
+ * source range, as a node's place does; publishing rewrites them relative,
+ * as it rewrites the place as the extent. The list is one owned allocation,
+ * NULL when the node has none. */
 typedef union {
-    markdown_core_run_place place;
+    markdown_core_place place;
     markdown_core_run run;
 } markdown_core_run_where;
 
+/* A stretch of an inline root's source that one decoding reads: its source
+ * bytes, and the content bytes it decodes them to. */
+typedef struct markdown_core_run_piece {
+    uint32_t span, decoded;
+} markdown_core_run_piece;
+
 typedef struct markdown_core_runs {
-    /* How many runs there are, and the bytes they decode: 0 for a node
-     * without inline content, whose runs all decode none. */
-    uint32_t count, decoded;
+    /* How many runs there are and how many the list has room for, the
+     * content bytes they decode (0 for a node without inline content), and
+     * how many pieces follow the list's room when it decodes bytes
+     * (markdown_core_runs_pieces). */
+    uint32_t count, capacity, decoded, pieces;
     markdown_core_run_where items[];
 } markdown_core_runs;
+
+/* THE PIECES OF AN INLINE ROOT'S RUNS, in source order: each stretch one
+ * decoding reads (a copy, a tab's columns, a NUL, a cell's `\|`, a line
+ * ending that is not LF, or source that gives no content). While the parse
+ * holds the runs as places, piece `i` is run `i`'s; published, the runs are
+ * the root's own source with touching runs joined, and its pieces fill them
+ * in order. */
+static inline markdown_core_run_piece *markdown_core_runs_pieces(const markdown_core_runs *runs) {
+    return (markdown_core_run_piece *)(runs->items + runs->capacity);
+}
 
 /* WHERE A NODE IS, in bytes of the UTF-8 source, and never in lines or
  * columns. While a parse builds the tree every node holds its absolute
@@ -616,6 +630,26 @@ static inline void *markdown_core_node_pool_bytes(markdown_core_node_pool *pool,
 /* Gives back storage `markdown_core_node_pool_bytes` took, into `pool` for
  * reuse; a NULL pool is the plain release. */
 void markdown_core_node_pool_bytes_free(markdown_core_node_pool *pool, void *storage);
+
+/* The bytes of a list of runs with room for `capacity` and `pieces`. */
+static inline size_t markdown_core_runs_size(uint32_t capacity, uint32_t pieces) {
+    return sizeof(markdown_core_runs) + (size_t)capacity * sizeof(markdown_core_run_where) +
+           (size_t)pieces * sizeof(markdown_core_run_piece);
+}
+/* An empty list of runs from the pool's storage, with room for `capacity`,
+ * and for a piece per run when `decoded`; NULL when it could not be had. */
+static inline markdown_core_runs *markdown_core_runs_new(markdown_core_node_pool *pool, uint32_t capacity,
+                                                         bool decoded) {
+    const uint32_t pieces = decoded ? capacity : 0;
+    markdown_core_runs *runs =
+        (markdown_core_runs *)markdown_core_node_pool_bytes(pool, markdown_core_runs_size(capacity, pieces));
+    if (runs) {
+        runs->count = runs->decoded = 0;
+        runs->capacity = capacity;
+        runs->pieces = pieces;
+    }
+    return runs;
+}
 
 /* `markdown_core_node_new_with_ext` from a pool's slots. A NULL pool is the
  * allocator's own slot, which is what the parser-less constructor takes. */

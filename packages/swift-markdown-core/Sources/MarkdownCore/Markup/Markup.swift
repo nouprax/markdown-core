@@ -89,29 +89,23 @@ public struct Extent: Sendable, Hashable {
     }
 }
 
-/// A run of the source a node read: `decoded` bytes read from the `source`
-/// range.
+/// A run of a node's own source: the `source` range.
 ///
-/// The source's `lead` is the signed distance from the end of the previous
-/// run's source (or from the node's start, for the first) to its start, and
-/// its `span` is how many source bytes the run reads. A run whose source spans
-/// as many bytes as it decodes reads each decoded byte from one source byte;
-/// any other decodes all of its bytes from all of its source, and a run that
-/// decodes no bytes reads source that gives none. Between its first run and
-/// its last, a node's runs cover exactly its own source: the source between two
-/// runs is not the node's. A node whose runs decode bytes is an inline root,
-/// and its first relation is that content, which the runs cover in order.
+/// The first run's `lead` is the signed distance from the end of the source of
+/// the previous node in the same relation (or from the start of the owner's
+/// source, for a relation's first node) to its start; every other run's is
+/// from the end of the run before. Its `span` is its length in bytes. A node's
+/// source starts where its first run starts and ends where its last ends;
+/// between them its runs cover exactly its own source, so the source between
+/// two runs is not the node's. A block whose own source is its range has no
+/// runs, and every inline node has runs.
 public struct Run: Sendable, Hashable {
-    /// The source range the run reads, its lead measured from the previous
-    /// run's end.
+    /// The source range, its lead measured from the end of the run before.
     public let source: Extent
-    /// The decoded bytes the run gives.
-    public let decoded: UInt32
 
     /// Creates a run. No number is validated.
-    public init(source: Extent, decoded: UInt32) {
+    public init(source: Extent) {
         self.source = source
-        self.decoded = decoded
     }
 }
 
@@ -134,7 +128,7 @@ public protocol Markup: Hashable, Identifiable, Sendable, CustomStringConvertibl
     var id: MarkupID { get }
     /// Where the node is, relative to its neighbours. See ``Extent``.
     var extent: Extent { get }
-    /// The source it read, and where its content was read from. See ``Run``.
+    /// Its own source ranges, in source order. See ``Run``.
     var runs: [Run] { get }
     var anchor: String? { get }
     var attributes: Attributes { get }

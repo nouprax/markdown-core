@@ -73,7 +73,7 @@ ECMAScript exports `markupEquals(a, b)`.
 
 ```text
 Extent(lead: Int32, span: UInt32)
-Run(source: Extent, decoded: UInt32)
+Run(source: Extent)
 Position(line: integer, column: integer)
 Scope(start: Position, end: Position)
 ```
@@ -93,35 +93,26 @@ definition body is a relation of its own. `lead` is signed, because ranges may
 overlap or nest as the rules below define. No node stores a line, a column or
 an absolute offset, and bindings copy extents and runs verbatim.
 
-A node's `runs` say which source it read, in order, and how many bytes each
-part decoded to. Each run is `decoded` bytes read from its `source` range,
-whose `lead` is from the end of the previous run's source, or from the node's
-start for the first. A run whose source spans as many bytes as it decodes reads
-each decoded byte from one source byte; any other decodes all of its bytes from
-all of its source by exactly one decoding: a tab gives that many spaces, NUL
-gives U+FFFD, `\|` in a table cell gives `|`, and a line ending that is not LF
-(CR, CR LF, or none at the end of the source) gives LF. A run that decodes 0
-bytes is source the node reads without content. The content runs map a node's
-first relation when it is an inline root's content -- the inline content of a
-block, a callout's title, a definition's term -- and every other run decodes 0
-bytes.
+A node's `runs` are its own source, in source order. A run's `source` is a
+source range: the first run's `lead` is from the end of the source of the
+previous node in the same relation, or from the start of the owner's source
+for a relation's first node, and every other run's is from the end of the run
+before. A node's source starts where its first run starts and ends where its
+last ends; a node without runs has its range as its source, so a block's
+source and its range start and end together.
 
 Between its first run and its last, a node's runs cover exactly its own
 source: the source between two runs is not the node's, such as the container
 prefixes between the lines of a leaf block inside a container, or the other
-columns between the lines of a grid or multiline table cell. A run that
-decodes 0 bytes at either end of the list has such a gap beside it, and runs
-that touch are one run when both read each decoded byte from one source byte
-or both decode 0 bytes. A node whose own source is its one range and that has no inline
-content has none.
+columns between the lines of a grid or multiline table cell. Runs that touch
+are one run. A block whose own source is its range has none. Every inline node
+has runs: its window of the source less the gaps between its root's runs,
+where its window runs from where its root read its first content byte to
+where it read its last, or is the empty range where its start was read when
+it holds no content.
 
-A node's source ranges are one window of the source less the gaps between
-the runs that place it, in source order. A block's window is its range, and
-its runs are its own. An inline node's window runs from where its root's
-runs read its first content byte to where they read its last, or is the
-empty range where its start was read when it holds no content, and its runs
-are its root's. A scope is computed on request for each source range from
-the extents, runs and the source the document was parsed from:
+A scope is computed on request for each source range of a node, from its runs,
+or its extent when it has none, and the source the document was parsed from:
 `document.scope(of: node, in: source)` in the bindings and
 `markdown_core_document_scope` in C answer `[Scope]`, in source order.
 `document.node(at: position, in: source)`
