@@ -130,7 +130,9 @@ static markdown_core_node *handle_backticks(const markdown_core_element_instance
     bufsize_t startpos = inline_state->pos;
     bufsize_t endpos = markdown_core_inline_scan_to_closing_backticks(self, inline_state, openticks.len);
 
-    if (endpos == 0) {                // not found
+    if (endpos == 0) { // not found
+        /* No closer up to the end of the content. */
+        markdown_core_inline_state_read(inline_state, startpos - openticks.len, inline_state->input.len + 1);
         inline_state->pos = startpos; // rewind
         /* The run stands as its own literal, so it covers ITS OWN BYTES:
          * `startpos` is one past the last of them and the run is
@@ -165,6 +167,11 @@ static markdown_core_node *handle_backticks(const markdown_core_element_instance
         if (!node) {
             return NULL;
         }
+        /* The span read through the byte after its closer, and an
+         * attribute block's parse is not recorded. */
+        if (endpos >= inline_state->input.len || inline_state->input.data[endpos] != '{') {
+            markdown_core_inline_state_read(inline_state, startpos - openticks.len, endpos + 1);
+        }
         markdown_core_inline_attach_inline_attributes(inline_state, node, startpos - openticks.len);
         /* The ticks reach no literal and the bytes between them do. */
         return node;
@@ -174,8 +181,11 @@ static markdown_core_node *handle_backticks(const markdown_core_element_instance
 static markdown_core_member *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                    markdown_core_member *parent, unsigned char character,
                                    markdown_core_inline_state *inline_state) {
-    return character == '`' ? markdown_core_inline_state_append(inline_state, handle_backticks(self, inline_state))
-                            : NULL;
+    if (character != '`') {
+        markdown_core_inline_state_read(inline_state, inline_state->pos, inline_state->pos + 1);
+        return NULL;
+    }
+    return markdown_core_inline_state_append(inline_state, handle_backticks(self, inline_state));
 }
 static void dispose_inline(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state) {
     code_backticks *backticks = markdown_core_run_state(inline_state, self);

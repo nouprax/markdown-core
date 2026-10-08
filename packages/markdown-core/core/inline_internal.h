@@ -13,10 +13,15 @@
 #include "inlines.h"
 #include "element.h"
 
+/* The cursor over the old content of an inline root (inlines.c). */
+typedef struct markdown_core_inline_cursor markdown_core_inline_cursor;
+
 /* One maximal parsed delimiter run, classified from immutable source bytes. The text
  * scanner may retain one lookahead run for delimiter dispatch to consume. */
 typedef struct {
     bufsize_t start, end;
+    /* The content its classification read (markdown_core_inline_state_read). */
+    bufsize_t low, reach;
     markdown_core_delimiter_rule rule;
     bool can_open, can_close;
 } delimiter_run;
@@ -74,6 +79,21 @@ struct markdown_core_inline_state {
     /* One past the last consumed byte other than SP/TAB. This lets every
      * inline-note closer test its body's non-empty rule in constant time. */
     bufsize_t nonblank_end;
+    /* WHAT THE TOKEN BEING READ READ (node.h, markdown_core_inline_reads),
+     * kept when the run `records`, as the run of an inline root's content
+     * does; the member the token appended, `token_member`, takes it when the
+     * token ends. `declared` says whether the element asked last said what
+     * it read (markdown_core_inline_state_read): a token stays RECORDED while
+     * every element it asks does. `now` is the content offset of the closer
+     * the stack is being reduced for, where each delimiter it removes leaves
+     * the stack, and INT32_MAX outside a reduction. */
+    markdown_core_inline_reads token;
+    markdown_core_member *token_member;
+    bufsize_t now;
+    bool records, declared;
+    /* The cursor over the old content of the root the run reads again
+     * (inlines.c), or NULL. */
+    markdown_core_inline_cursor *cursor;
     /* This run's block of the elements' run records (markdown_core_run_state):
      * taken from the parser when the run starts and given back when it is
      * cleared. NULL for a run with no parser, and for one whose records could
@@ -95,6 +115,18 @@ struct markdown_core_inline_state {
 static inline void *markdown_core_run_state(const markdown_core_inline_state *inline_state,
                                             const markdown_core_element_instance *self) {
     return inline_state->run_state ? inline_state->run_state + self->run_offset : NULL;
+}
+
+/* The token being read counted or searched the stack entries of `rule`. */
+static inline void markdown_core_inline_read_rule(markdown_core_inline_state *inline_state,
+                                                  markdown_core_delimiter_rule rule) {
+    inline_state->token.rules |= 1u << rule;
+}
+
+/* The token being read was asked of no element that said what it read, or
+ * made what a later parse cannot take whole. */
+static inline void markdown_core_inline_unrecorded(markdown_core_inline_state *inline_state) {
+    inline_state->token.flags &= ~(uint32_t)MARKDOWN_CORE_INLINE_RECORDED;
 }
 
 #define make_str(inline_state, sc, ec, s)                                                                              \

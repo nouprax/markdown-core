@@ -822,6 +822,13 @@ static void init_inline(const markdown_core_element_instance *self, markdown_cor
     markdown_core_brackets(self, inline_state)->no_link_openers = true;
 }
 
+/* An open bracket, or one whose citation tail waits, can still take the
+ * content that follows. */
+static bool holds_inline(const markdown_core_element_instance *self, const markdown_core_inline_state *inline_state) {
+    const markdown_core_bracket_scope *brackets = markdown_core_brackets(self, inline_state);
+    return brackets->last || brackets->pending;
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK = {
     .peers = LINK_PEERS,
     .init_inline = init_inline,
@@ -830,6 +837,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK = {
 
     .inline_precedence = MARKDOWN_CORE_INLINE_FALLBACK,
     .dispose_inline = dispose_inline,
+    .holds_inline = holds_inline,
 
     .name = "link",
     .match_inline = match_bracket,

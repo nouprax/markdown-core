@@ -114,6 +114,7 @@ static markdown_core_member *match(const markdown_core_element_instance *self, m
         }
         return text;
     }
+    markdown_core_inline_state_read(inline_state, inline_state->pos - 1, inline_state->pos + 2);
     return markdown_core_inline_state_append(
         inline_state, make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
                                markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1)));

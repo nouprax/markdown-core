@@ -515,7 +515,8 @@ static bufsize_t decode_quoted(markdown_core_attribute_parser *p, bufsize_t open
             markdown_core_strbuf_putc(&w->strings, s[at + 1]);
             at += 2;
         } else if (c == '&') {
-            bufsize_t used = houdini_unescape_ent(&w->strings, s + at + 1, limit - at - 1);
+            bufsize_t read;
+            bufsize_t used = houdini_unescape_ent(&w->strings, s + at + 1, limit - at - 1, &read);
             if (used) {
                 at += used + 1;
             } else {

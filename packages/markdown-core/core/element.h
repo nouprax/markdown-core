@@ -115,6 +115,11 @@ struct markdown_core_element {
                               markdown_core_member *);
     void (*finish_inline)(const markdown_core_element_instance *, markdown_core_inline_state *);
     void (*dispose_inline)(const markdown_core_element_instance *, markdown_core_inline_state *);
+    /* Whether a token the element keeps open in the run -- a bracket, a
+     * citation token waiting for its group -- can still change what the run
+     * makes of the content that follows (docs/plans/2026-09-29-incremental-
+     * parsing.md, 5.6). */
+    bool (*holds_inline)(const markdown_core_element_instance *, const markdown_core_inline_state *);
     void (*complete_inline)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *, int);
     /* A lazy line -- one that did not match every open container's prefix
      * and opened no block -- is offered to the current block. `accepts_lazy`

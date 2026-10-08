@@ -706,9 +706,10 @@ The old inline tree is read through those edits as the old block tree is
 read through the source edits (5.2), and the same cursor takes or descends.
 Identity matching (5.9) reads inline anchors from the nodes' source windows,
 as it reads every other node's. Each
-inline node records its **entry**, the
-delimiter state at its start, and its **reach**, the furthest content offset
-any decision about it read:
+inline node records its **entry**, the part of the delimiter state at its
+start that it read: the delimiter rules whose stack entries its decisions
+counted or searched, and how far before its start they read. It records its
+**reach**, the furthest content offset any decision about it read:
 
 - a delimiter run that can still open or close, a citation token, a field
   and an unclosed bracket reach the end of the content, because a later
@@ -721,12 +722,11 @@ any decision about it read:
   break inside a paragraph and is trimmed at its end.
 
 The parser reads the content from its start with the cursor over the old
-inline children: an unchanged node whose entry equals the live delimiter
-state is taken with its run, and the cursor descends into every other node. The
-state after a taken run equals the old state there, by the argument of 5.3.
-The entry is small because the delimiter model already summarizes the
-entries that can no longer pair as one floor per range
-(`docs/architecture/inline-delimiters.md`).
+inline children: an unchanged node is taken whole when the live delimiter
+state agrees with the part its entry records, which holds no stack entry of
+the rules it read, as at its old start, and the cursor descends into every
+other node. The state after a taken run equals the old state there, by the
+argument of 5.3. The entry has a fixed size, whatever the stack holds.
 
 Typical streamed prose closes its delimiters within a few words and its Text
 nodes are split per line by SoftBreak, so the per-chunk inline work is about

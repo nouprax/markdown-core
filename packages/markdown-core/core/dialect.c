@@ -200,6 +200,8 @@ static bool S_element_implements_inline(const markdown_core_element *element, ma
         return element->finish_inline != NULL;
     case MARKDOWN_CORE_INLINE_HOOK_DISPOSE:
         return element->dispose_inline != NULL;
+    case MARKDOWN_CORE_INLINE_HOOK_HOLDS:
+        return element->holds_inline != NULL;
     case MARKDOWN_CORE_INLINE_HOOK_COUNT:
         break;
     }

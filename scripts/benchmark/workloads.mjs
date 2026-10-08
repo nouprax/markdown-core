@@ -1081,6 +1081,20 @@ export function identityScripts() {
                 .expect("only")
         );
     }
+    /* An edit inside an inline root changes the nodes it touches; the
+     * nodes beside it are taken whole (5.6), and a closer that pairs with an
+     * opener read before it makes a new node there. */
+    add("inline-siblings-kept", "one *two* `three` four\n", (s) =>
+        s
+            .insert(22, "x")
+            .expect("changed", "Document", 0)
+            .expect("changed", "Paragraph", 0)
+            .expect("changed", "Text", 17)
+            .expect("only")
+    );
+    add("closer-pairs-earlier-opener", "*a* b *c d\n", (s) =>
+        s.insert(10, "*").expect("kept", "Emphasis", 0, 0).expect("new", "Emphasis", 6)
+    );
     return cases;
 }
 

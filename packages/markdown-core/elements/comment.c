@@ -134,6 +134,7 @@ static markdown_core_member *match(const markdown_core_element_instance *self, m
     }
     ((markdown_core_comment_work *)self->state)->scan++;
     if (start + 1 >= input->len || input->data[start + 1] != '%') {
+        markdown_core_inline_state_read(inline_state, start, start + 2);
         return NULL;
     }
     close = markdown_core_inline_state_find_opaque_close(inline_state, MARKDOWN_CORE_DELIM_RULE_COMMENT, start + 2,

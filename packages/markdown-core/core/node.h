@@ -766,6 +766,45 @@ void markdown_core_stem_walk_begin(markdown_core_stem_walk *walk, const markdown
 /* The node the walk is at, and moves past it; NULL once it has read them all. */
 markdown_core_node *markdown_core_stem_walk_next(markdown_core_stem_walk *walk);
 
+/* WHAT THE DECISIONS ABOUT AN INLINE NODE READ (docs/plans/2026-09-29-
+ * incremental-parsing.md, 5.6), kept by its member while its root's content
+ * is parsed and completed. The node lies on the content offsets `start` to
+ * `end`. `rules` are the delimiter rules (one bit per rule) whose stack
+ * entries a decision about it counted or searched; `state` the rules that had
+ * entries on the stack where it begins, and HELD when a token still open
+ * there (a bracket, a citation token, an opaque body) can change what
+ * follows. The decisions read the content from `low` to `reach`, a range in
+ * which -1 is the start of the content and one past its length is its end.
+ * `stay` names the delimiter its token pushed (parser.h, `stays`), and
+ * `until` is the furthest offset at which a delimiter it holds left the
+ * stack. It is RECORDED when every decision about it said what it read; it
+ * leaves a whitespace BOUNDARY on the stack; and its completion read the
+ * nodes around it when it has CONTEXT. */
+#define MARKDOWN_CORE_INLINE_HELD (1u << 31)
+#define MARKDOWN_CORE_INLINE_RECORDED 1u
+#define MARKDOWN_CORE_INLINE_BOUNDARY 2u
+#define MARKDOWN_CORE_INLINE_CONTEXT 4u
+typedef struct markdown_core_inline_reads {
+    uint32_t rules, state;
+    int32_t start, end, low, reach, until;
+    uint32_t stay, flags;
+} markdown_core_inline_reads;
+
+/* AN INLINE NODE'S ENTRY, as its node keeps it for the next parse (5.6): zero
+ * for a node no parse takes whole, and otherwise TAKE, the rules whose stack
+ * must be empty where it is taken, BOUNDARY when taking it leaves a
+ * whitespace boundary on the stack, and how many content bytes before its
+ * start its decisions read. Its `reach` counts the content bytes after its end
+ * they read. A rule is one bit of the low sixteen. */
+#define MARKDOWN_CORE_INLINE_ENTRY_TAKE (1ull << 16)
+#define MARKDOWN_CORE_INLINE_ENTRY_BOUNDARY (1ull << 17)
+static inline uint64_t markdown_core_inline_entry(uint32_t rules, bool boundary, uint32_t back) {
+    return MARKDOWN_CORE_INLINE_ENTRY_TAKE | (boundary ? MARKDOWN_CORE_INLINE_ENTRY_BOUNDARY : 0) |
+           ((uint64_t)back << 32) | (rules & 0xffffu);
+}
+static inline uint32_t markdown_core_inline_entry_rules(uint64_t entry) { return (uint32_t)entry & 0xffffu; }
+static inline uint32_t markdown_core_inline_entry_back(uint64_t entry) { return (uint32_t)(entry >> 32); }
+
 /* A NODE BEING BUILT (5.11, open blocks are builders): while the parser
  * builds a node, the node's place among the nodes being built is this
  * record's, not the node's. Its owner, its siblings and its children are the
@@ -820,7 +859,10 @@ struct markdown_core_member {
     size_t scan_next;
     bool scan_equal;
     uint32_t asks, index, slot, source, waits, candidates, last_candidate;
-    bool held, field, inner, decided, identified, paired, asked, numbered, counted;
+    /* What the decisions about a node of an inline root's content read, and
+     * whether the node is an old one its parse took whole (5.6). */
+    markdown_core_inline_reads reads;
+    bool held, field, inner, decided, identified, paired, asked, numbered, counted, taken;
 };
 
 /* Where `member`'s node lies: its place, which numbering keeps in the member

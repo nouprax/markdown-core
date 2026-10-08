@@ -429,6 +429,8 @@ static markdown_core_member *match(const markdown_core_element_instance *self, m
         }
     }
 
+    /* Every form is at most three bytes long. */
+    markdown_core_inline_state_read(inline_state, offset, offset + 3);
     return NULL;
 }
 

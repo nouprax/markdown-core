@@ -1,0 +1,5 @@
+markdown-core edit script 1
+script closer-pairs-earlier-opener identity
+edit 10 10 2a
+expect kept Emphasis 0 0
+expect new Emphasis 6

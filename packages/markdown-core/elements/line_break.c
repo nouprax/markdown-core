@@ -15,6 +15,7 @@ static markdown_core_node *handle_newline(markdown_core_inline_state *inline_sta
     }
     // skip spaces at beginning of line
     markdown_core_inline_skip_spaces(inline_state);
+    markdown_core_inline_state_read(inline_state, nlpos - 2, inline_state->pos + 1);
     if (nlpos > 1 && markdown_core_inline_peek_at(inline_state, nlpos - 1) == ' ' &&
         markdown_core_inline_peek_at(inline_state, nlpos - 2) == ' ') {
         brk = markdown_core_inline_make_simple_with_state(inline_state, MARKDOWN_CORE_NODE_LINE_BREAK);

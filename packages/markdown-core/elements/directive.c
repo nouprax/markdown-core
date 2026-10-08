@@ -377,14 +377,13 @@ static markdown_core_member *match_colon_directive(const markdown_core_element *
      * one. `::name` and `:::name` at the start of a line are leaf and
      * container directives and open through the block path, not this one. */
     if (offset > 0 && chunk->data[offset - 1] == ':') {
+        markdown_core_inline_state_read(inline_state, offset - 1, offset + 1);
         return NULL;
     }
 
-    if (offset + 1 >= chunk->len || chunk->data[offset + 1] == ':') {
-        return NULL;
-    }
-
-    if (!scan_name(chunk->data, chunk->len, offset + 1, &name_start, &name_len)) {
+    if (offset + 1 >= chunk->len || chunk->data[offset + 1] == ':' ||
+        !scan_name(chunk->data, chunk->len, offset + 1, &name_start, &name_len)) {
+        markdown_core_inline_state_read(inline_state, offset - 1, offset + 2);
         return NULL;
     }
 
@@ -394,6 +393,11 @@ static markdown_core_member *match_colon_directive(const markdown_core_element *
      * from the colon in `12:30` or `http://`. A part that fails to scan does
      * not anchor; the name commits only once one part has. */
     pos = name_start + name_len;
+    if (pos >= chunk->len || (chunk->data[pos] != '[' && chunk->data[pos] != '{')) {
+        /* A name with neither part after it. */
+        markdown_core_inline_state_read(inline_state, offset - 1, pos + 1);
+        return NULL;
+    }
     if (pos < chunk->len && chunk->data[pos] == '[') {
         bufsize_t label_end;
         if (scan_label(chunk->data, chunk->len, pos, &label_start, &label_len, &label_end)) {

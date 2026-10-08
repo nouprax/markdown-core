@@ -1,0 +1,7 @@
+markdown-core edit script 1
+script inline-siblings-kept identity
+edit 22 22 78
+expect changed Document 0
+expect changed Paragraph 0
+expect changed Text 17
+expect only

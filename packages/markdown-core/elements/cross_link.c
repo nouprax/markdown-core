@@ -26,11 +26,9 @@ static markdown_core_member *match(const markdown_core_element_instance *self, m
     markdown_core_cross_reference *cross;
     markdown_core_cross_link_work *counts = self->state;
     counts->scan++;
-    if (input->len - start < opener_length) {
-        return NULL;
-    }
     body = start + opener_length;
-    if (s[body - 2] != '[' || s[body - 1] != '[') {
+    if (input->len - start < opener_length || s[body - 2] != '[' || s[body - 1] != '[') {
+        markdown_core_inline_state_read(inline_state, start, body);
         return NULL;
     }
     for (i = body; i < input->len; i++) {

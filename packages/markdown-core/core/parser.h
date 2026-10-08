@@ -369,6 +369,14 @@ struct markdown_core_parser {
      * (see `markdown_core_inline_push_delimiter_entry`); linked through `next`
      * and released with the parser. */
     struct delimiter *free_delimiters;
+    /* Where each delimiter the run of an inline root's content pushed left
+     * the stack: the content offset of the closer whose reduction removed
+     * it, or INT32_MAX for one that stayed to the end of the content
+     * (docs/plans/2026-09-29-incremental-parsing.md, 5.6). A delimiter's
+     * `stay` is its index here plus one; the run starts the list again and it
+     * is released with the parser. */
+    int32_t *stays;
+    size_t stay_count, stay_capacity;
     /* The workspace every attribute value of the parse is read into before
      * it is laid out (core/attributes.h); released with the parser. */
     markdown_core_attribute_scratch attribute_scratch;

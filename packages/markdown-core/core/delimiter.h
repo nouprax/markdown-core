@@ -47,6 +47,9 @@ struct delimiter {
     markdown_core_delimiter_rule rule;
     int can_open;
     int can_close;
+    /* One plus the index of the marker's stay in the parser's `stays`, or
+     * zero when the run records none. */
+    uint32_t stay;
 };
 
 #endif

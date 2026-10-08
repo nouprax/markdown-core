@@ -94,6 +94,7 @@ static markdown_core_member *match(const markdown_core_element_instance *self, m
                                    markdown_core_inline_state *inline_state) {
     /* An inline note opens a bracket, which only a dialect with links reads. */
     if (character != '^' || markdown_core_inline_peek_char_n(inline_state, 1) != '[' || !self->peers[FOOTNOTE_LINK]) {
+        markdown_core_inline_state_read(inline_state, inline_state->pos, inline_state->pos + 2);
         return NULL;
     }
     inline_state->pos += 2;

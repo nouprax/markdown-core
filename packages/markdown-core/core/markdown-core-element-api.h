@@ -713,6 +713,15 @@ int markdown_core_inline_state_find_opaque_close(markdown_core_inline_state *inl
                                                  markdown_core_delimiter_rule rule, int from,
                                                  markdown_core_opaque_delimiter_scanner scan);
 
+/** SAY WHAT A DECISION READ (docs/plans/2026-09-29-incremental-parsing.md,
+ * 5.6): the content bytes [from, to) of the chunk, where `from` below zero
+ * reads the start of the chunk and `to` past its length reads its end. An
+ * element's `match_inline` and `is_inline_start` call this for everything
+ * the call read before it returns; a call that does not leaves the token
+ * that asked it to be read again by every later parse. A call may say it
+ * read more than it did, never less. */
+void markdown_core_inline_state_read(markdown_core_inline_state *inline_state, int from, int to);
+
 /** Push a delimiter on the delimiter stack.
  * See <<http://spec.commonmark.org/0.24/#phase-2-inline-structure> for
  * more information on the parameters

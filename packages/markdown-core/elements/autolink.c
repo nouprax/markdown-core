@@ -366,10 +366,12 @@ static markdown_core_member *www_match(const markdown_core_element_instance *sel
 
     if (max_rewind > (size_t)markdown_core_inline_state_context_start(self->peers[AUTOLINK_LINK], inline_state) &&
         strchr("*_~(", data[-1]) == NULL && !markdown_core_is_whitespace(data[-1])) {
+        markdown_core_inline_state_read(inline_state, (int)max_rewind - 1, (int)max_rewind + 1);
         return 0;
     }
 
     if (size < 4 || memcmp(data, "www.", strlen("www.")) != 0) {
+        markdown_core_inline_state_read(inline_state, (int)max_rewind - 1, (int)max_rewind + 4);
         return 0;
     }
 
@@ -422,8 +424,11 @@ static markdown_core_member *www_match(const markdown_core_element_instance *sel
     return S_append_link(inline_state, node, text);
 }
 
+/* `read` becomes one past what the scan read when it is no URL for its
+ * first bytes alone, and stays otherwise. */
 static markdown_core_member *url_match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                       markdown_core_member *parent, markdown_core_inline_state *inline_state) {
+                                       markdown_core_member *parent, markdown_core_inline_state *inline_state,
+                                       bufsize_t *read) {
     size_t link_end, domain_len;
     int rewind = 0;
 
@@ -433,6 +438,7 @@ static markdown_core_member *url_match(const markdown_core_element_instance *sel
     size_t size = chunk->len - max_rewind;
 
     if (size < 4 || data[1] != '/' || data[2] != '/') {
+        *read = max_rewind + 4;
         return 0;
     }
 
@@ -503,7 +509,10 @@ static markdown_core_member *url_match(const markdown_core_element_instance *sel
  * The runs are consolidated before that step, which then links the address
  * byte for byte as cmark-gfm links it, `mailto:` spelling included, and skips
  * it inside a link. */
-static markdown_core_member *address_match(markdown_core_parser *parser, markdown_core_inline_state *inline_state) {
+/* `read` becomes one past what the scan read when no address local part
+ * ends in `@`, and stays otherwise. */
+static markdown_core_member *address_match(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
+                                           bufsize_t *read) {
     markdown_core_chunk *chunk = markdown_core_inline_state_get_chunk(inline_state);
     size_t offset = (size_t)markdown_core_inline_state_get_offset(inline_state);
     uint8_t *data = chunk->data + offset;
@@ -516,6 +525,7 @@ static markdown_core_member *address_match(markdown_core_parser *parser, markdow
     for (at = 1; at < size && (markdown_core_isalnum(data[at]) || strchr(".+-_", data[at]) != NULL); at++) {
     }
     if (at == 1 || at >= size || data[at] != '@') {
+        *read = (bufsize_t)(offset + at + 1);
         return NULL;
     }
     /* The domain, as `link_text_addresses` scans it. */
@@ -554,19 +564,29 @@ static markdown_core_member *match(const markdown_core_element_instance *self, m
     int in_bracket = markdown_core_inline_state_in_bracket(self->peers[AUTOLINK_LINK], inline_state, false) ||
                      markdown_core_inline_state_in_bracket(self->peers[AUTOLINK_LINK], inline_state, true);
 
+    bufsize_t at = inline_state->pos;
     if (c == ':') {
         /* No link forms inside a bracket, but the colon is still fenced off
          * there: `link_text_addresses` skips the text of a link, so
          * `[mailto:x@y.z](u)` keeps its plain text as cmark-gfm does, and a
          * bracket that never closes still gets its link. */
-        markdown_core_member *node = in_bracket ? NULL : url_match(self, parser, parent, inline_state);
-        return node || parser->error ? node : address_match(parser, inline_state);
+        bufsize_t url_read = in_bracket ? at + 1 : -1, address_read = -1;
+        markdown_core_member *node = in_bracket ? NULL : url_match(self, parser, parent, inline_state, &url_read);
+        if (node || parser->error) {
+            return node;
+        }
+        node = address_match(parser, inline_state, &address_read);
+        if (!node && url_read >= 0 && address_read >= 0) {
+            markdown_core_inline_state_read(inline_state, at, url_read > address_read ? url_read : address_read);
+        }
+        return node;
     }
 
     if (c == 'w' && !in_bracket) {
         return www_match(self, parser, parent, inline_state);
     }
 
+    markdown_core_inline_state_read(inline_state, at, at + 1);
     return NULL;
 
     // note that we could end up re-consuming something already a
