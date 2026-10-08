@@ -96,13 +96,13 @@ void markdown_core_headings_prepare(const markdown_core_element_instance *self, 
     markdown_core_heading_collection *headings = &state->headings;
     const size_t first = headings->count;
     take_headings(state, parser);
-    if (parser->error) {
+    const size_t count = headings->count - first;
+    if (parser->error || !count) {
         return;
     }
     markdown_core_heading_parse *made = headings->values + first;
-    const size_t count = headings->count - first;
-    if (count && !markdown_core_order_source_entries(&parser->source_order, made, count, sizeof(*made),
-                                                     markdown_core_source_key)) {
+    if (!markdown_core_order_source_entries(&parser->source_order, made, count, sizeof(*made),
+                                            markdown_core_source_key)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
