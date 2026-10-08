@@ -30,7 +30,6 @@ typedef struct {
     markdown_core_chunk literal;
     markdown_core_formula_mode mode;
     int block_delim;
-    int closed;
 } node_formula;
 
 /* A formula node's payload, its `opaque`. */
@@ -210,14 +209,11 @@ static int formula_block_matches(const markdown_core_element_instance *self, mar
     node_formula *formula = get_formula(container->node);
     int first_nonspace = markdown_core_parser_get_first_nonspace(parser);
 
-    if (formula->closed) {
-        return 0;
-    }
-
+    /* The closing line is the block's own last line, as a code fence's is. */
     if (scan_formula_block_close(input, (bufsize_t)len, (bufsize_t)first_nonspace, formula->block_delim)) {
-        formula->closed = 1;
         markdown_core_parser_advance_offset(parser, (char *)input, len - markdown_core_parser_get_offset(parser),
                                             false);
+        return MARKDOWN_CORE_BLOCK_CLOSED;
     }
 
     return 1;

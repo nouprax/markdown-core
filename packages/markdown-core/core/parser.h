@@ -255,6 +255,11 @@ struct markdown_core_parser {
      * at `resume`, after a line whose content ended at `resume_last_end`. */
     uint32_t line_reach;
     bool line_context, previous_blank, taken;
+    /* The line in hand as a leaf's line (E5): `plain` holds where its
+     * content began when it continued the current leaf as a plain line, and
+     * `lines_taken` says that the line began a run of lines a leaf took. */
+    markdown_core_line plain;
+    bool lines_taken;
     int64_t *edit_shift;
     size_t resume;
     bufsize_t resume_last_end;

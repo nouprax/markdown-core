@@ -1,0 +1,5 @@
+markdown-core edit script 1
+script underline-inside-paragraph identity
+edit 95 95 3d3d3d0a
+expect new Heading 0
+expect retired Paragraph 0

@@ -1516,10 +1516,14 @@ static bool settle_old(markdown_core_parser *parser, markdown_core_publication *
     markdown_core_node *node = member->node, *kept = markdown_core_node_retain((markdown_core_node *)old);
     markdown_core_member *owner = member->owner;
     /* The old node is the record of this parse now (5.1): its entry, its
-     * reach and its flags are the new node's. */
+     * reach, its flags and its lines (E5) are the new node's, and the node
+     * takes the old lines with it when it goes. */
     kept->entry = node->entry;
     kept->reach = node->reach;
     kept->flags = node->flags;
+    markdown_core_lines *lines = kept->lines;
+    kept->lines = node->lines;
+    node->lines = lines;
     /* And it declares what the new node declared: an equal node declares
      * the same, and these facts are this parse's (5.7). */
     markdown_core_registry_move(node, kept);

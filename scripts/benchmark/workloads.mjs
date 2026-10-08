@@ -1045,6 +1045,29 @@ export function identityScripts() {
             .expect("changed", "Heading", 0)
             .expect("only")
     );
+    /* A leaf block edited on a later line takes its untouched lines (E5);
+     * an edit that ends it early, or makes its lines a heading, is read. */
+    {
+        const lines = Array.from({ length: 40 }, (_, i) => `${word(i * 2 + 1)} ${word(i * 2 + 2)}\n`);
+        const code = `\`\`\`\n${lines.join("")}\`\`\`\n`;
+        const line = (n) => 4 + bytes(lines.slice(0, n).join(""));
+        add("code-line-near-end", code, (s) => s.insert(line(30) + 1, "x").expect("kept", "CodeBlock", 0, 0));
+        add("fence-inside-code", code, (s) =>
+            s
+                .insert(line(20), "```\n")
+                .expect("kept", "CodeBlock", 0, 0)
+                .expect("new", "Paragraph", line(20) + 4)
+        );
+        const text = lines.join("");
+        const at = bytes(lines.slice(0, 20).join(""));
+        add("paragraph-line-near-end", text, (s) => s.insert(at + 1, "x").expect("kept", "Paragraph", 0, 0));
+        add("underline-inside-paragraph", text, (s) =>
+            s.insert(at, "===\n").expect("new", "Heading", 0).expect("retired", "Paragraph", 0)
+        );
+        const item = `- ${lines.join("  ")}`;
+        const third = 2 + bytes(lines.slice(0, 30).join("  "));
+        add("item-line-near-end", item, (s) => s.insert(third + 3, "x").expect("kept", "Paragraph", 2, 2));
+    }
     {
         const paragraphs = Array.from({ length: 1000 }, (_, i) => `${word(i * 3 + 1)} ${word(i * 3 + 2)}\n\n`);
         const text = paragraphs.join("");

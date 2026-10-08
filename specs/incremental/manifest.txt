@@ -35,6 +35,16 @@ document documents/identity-line-at-top.md
 edits documents/identity-line-at-top.md scripts/identity-line-at-top.edits
 document documents/identity-heading-anchor-targets.md
 edits documents/identity-heading-anchor-targets.md scripts/identity-heading-anchor-targets.edits
+document documents/identity-code-line-near-end.md
+edits documents/identity-code-line-near-end.md scripts/identity-code-line-near-end.edits
+document documents/identity-fence-inside-code.md
+edits documents/identity-fence-inside-code.md scripts/identity-fence-inside-code.edits
+document documents/identity-paragraph-line-near-end.md
+edits documents/identity-paragraph-line-near-end.md scripts/identity-paragraph-line-near-end.edits
+document documents/identity-underline-inside-paragraph.md
+edits documents/identity-underline-inside-paragraph.md scripts/identity-underline-inside-paragraph.edits
+document documents/identity-item-line-near-end.md
+edits documents/identity-item-line-near-end.md scripts/identity-item-line-near-end.edits
 document documents/identity-typing-paragraph-5-of-1000.md
 edits documents/identity-typing-paragraph-5-of-1000.md scripts/identity-typing-paragraph-5-of-1000.edits
 document documents/rejections.md

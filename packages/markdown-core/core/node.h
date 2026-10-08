@@ -251,6 +251,31 @@ typedef struct markdown_core_runs {
     markdown_core_run_where items[];
 } markdown_core_runs;
 
+/* THE LINES OF A LEAF BLOCK (E5): what the line machine did with each
+ * physical line the leaf took, in order, its opening line first. `span` runs
+ * from the line's start to where the next line read begins, and `reach` is
+ * how far past there the decisions on the line read. A PLAIN line continued
+ * the leaf, which was the current block when the line began, with every
+ * container prefix matched, and opened no block: its content begins `offset`
+ * bytes into the line at `column`, after `indent` columns of indentation and
+ * the rest of a TAB, and the leaf's own source `own` bytes into the line. A
+ * BLANK line is blank past its prefixes. `lead` runs from the leaf's start to
+ * its opening line's; a leaf whose lines the parse could not follow one by
+ * one is BROKEN, and none of its lines is taken. */
+enum { MARKDOWN_CORE_LINE_PLAIN = 1, MARKDOWN_CORE_LINE_BLANK = 2, MARKDOWN_CORE_LINE_TAB = 4 };
+typedef struct markdown_core_line {
+    uint32_t span, reach, own, offset;
+    int32_t column, indent;
+    uint32_t flags;
+} markdown_core_line;
+
+typedef struct markdown_core_lines {
+    uint32_t count, capacity;
+    int32_t lead;
+    bool broken;
+    markdown_core_line items[];
+} markdown_core_lines;
+
 /* THE PIECES OF AN INLINE ROOT'S RUNS, in source order: each stretch one
  * decoding reads (a copy, a tab's columns, a NUL, a cell's `\|`, a line
  * ending that is not LF, or source that gives no content). While the parse
@@ -443,6 +468,8 @@ struct markdown_core_node {
     markdown_core_content_map content_map;
     /* The runs of its source (markdown_core_runs). */
     markdown_core_runs *runs;
+    /* A leaf block's lines (markdown_core_lines), or NULL. */
+    markdown_core_lines *lines;
 
     const markdown_core_element *element;
     /* Element-owned data, allocated by opaque_alloc_func and released by

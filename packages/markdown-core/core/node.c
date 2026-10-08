@@ -544,6 +544,9 @@ static void S_release_value(markdown_core_node_pool *pool, markdown_core_node *e
     if (e->runs) {
         markdown_core_node_pool_bytes_free(pool, e->runs);
     }
+    if (e->lines) {
+        markdown_core_node_pool_bytes_free(pool, e->lines);
+    }
     if (e->opaque && e->element && e->element->opaque_free_func) {
         e->element->opaque_free_func(e->element, e);
     }
@@ -686,6 +689,14 @@ markdown_core_node *markdown_core_node_copy(markdown_core_node_pool *pool, const
             memcpy(copy->runs, node->runs, bytes);
         }
         ok &= copy->runs != NULL;
+    }
+    if (node->lines) {
+        const size_t bytes = offsetof(markdown_core_lines, items) + node->lines->capacity * sizeof(markdown_core_line);
+        copy->lines = markdown_core_node_pool_bytes(pool, bytes);
+        if (copy->lines) {
+            memcpy(copy->lines, node->lines, bytes);
+        }
+        ok &= copy->lines != NULL;
     }
     if (!ok) {
         markdown_core_node_pool_release(pool, copy);
