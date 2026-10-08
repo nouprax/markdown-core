@@ -62,9 +62,11 @@ struct markdown_core_fact {
     markdown_core_fact *prev, *next;
     /* The next fact its node holds. */
     markdown_core_fact *sibling;
+    /* The parse that made it (markdown_core_registry_begin). */
+    uint64_t edit;
     /* The source byte its node begins at in the parse that last made or took
-     * it, and the parse that made it (markdown_core_registry_begin). */
-    uint32_t start, edit;
+     * it. */
+    uint32_t start;
     uint8_t role;
     /* A spelling, for a reservation or a base. */
     uint32_t length;
@@ -81,7 +83,7 @@ struct markdown_core_key {
     size_t declared;
     /* The edit that marked it, 0 when none has, and whether it was defined
      * when that edit first marked it. */
-    uint32_t marked;
+    uint64_t marked;
     bool was;
     uint8_t group;
     uint32_t length;
@@ -93,8 +95,9 @@ struct markdown_core_registry {
     size_t capacity, count;
     /* The keys this edit marked, last first. */
     markdown_core_key *marked;
-    /* The edit being parsed: each parse is one more, from 1. */
-    uint32_t edit;
+    /* The edit being parsed: each parse is one more, from 1. A session parses
+     * far fewer than 2^64 times, so 0 never comes again. */
+    uint64_t edit;
     /* Where a label is normalized before it is asked or declared. */
     markdown_core_strbuf scratch;
 };
