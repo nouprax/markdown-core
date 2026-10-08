@@ -60,9 +60,11 @@ promised to remain compatible between releases.
 
 - Give every node an id and a raw extent, and compute scopes on request
   (incremental parsing, step 1). `Markup` loses `scope` and gains `id:
-  MarkupID`, numbered from 1 in canonical walk order, and `extent: Extent`,
-  its signed `lead` from the previous node in the same relation (or its
-  owner's start) and its `span`, in bytes of UTF-8 source. Equality is deep
+  MarkupID`, numbered from 1 in the order nodes complete (a node's owner
+  numbers the nodes it holds as it completes, and the document numbers
+  itself last), and `extent: Extent`, its signed `lead` from the previous
+  node in the same relation (or its owner's start) and its `span`, in bytes
+  of UTF-8 source. Equality is deep
   and includes ids, and hashing reads the id. `Document.parse` takes a text
   unit, UTF-16 by default in the bindings (C adds
   `markdown_core_document_parse_in`; `markdown_core_document_parse` counts
