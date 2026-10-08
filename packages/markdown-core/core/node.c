@@ -1553,41 +1553,9 @@ bool markdown_core_definition_label(const markdown_core_node *node, markdown_cor
 
 /* THE BUILDERS. */
 
-#define MARKDOWN_CORE_MEMBER_SLAB_BYTES ((size_t)16 * 1024)
-
-markdown_core_member *markdown_core_member_new(markdown_core_node_pool *pool, markdown_core_node *node, bool held) {
-    markdown_core_member *member =
-        markdown_core_slab_take(pool ? &pool->members : NULL, sizeof(*member), MARKDOWN_CORE_MEMBER_SLAB_BYTES);
-    if (member) {
-        *member = (markdown_core_member){.node = node, .held = held};
-    }
-    return member;
-}
-
-void markdown_core_member_attach(markdown_core_member *owner, markdown_core_member *child,
-                                 markdown_core_member *before) {
-    assert(owner && child && owner != child);
-    assert(!child->owner && !child->prev && !child->next);
-    assert(!before || before->owner == owner);
-    /* Built-in containment is pure and shares its rules with checked
-     * construction. Dynamic policies were decided before; never replay them. */
-    assert((owner->node->element && owner->node->element->can_contain_func) ||
-           markdown_core_node_can_contain_builtin(owner->node, (markdown_core_node_type)child->node->kind));
-    markdown_core_member *previous = before ? before->prev : owner->last;
-    child->owner = owner;
-    child->inner = owner->inner;
-    child->prev = previous;
-    child->next = before;
-    if (previous) {
-        previous->next = child;
-    } else {
-        owner->first = child;
-    }
-    if (before) {
-        before->prev = child;
-    } else {
-        owner->last = child;
-    }
+bool markdown_core_member_admits(const markdown_core_member *owner, const markdown_core_member *child) {
+    return (owner->node->element && owner->node->element->can_contain_func) ||
+           markdown_core_node_can_contain_builtin(owner->node, (markdown_core_node_type)child->node->kind);
 }
 
 void markdown_core_member_attach_field(markdown_core_member *owner, markdown_core_member *field) {
@@ -1600,30 +1568,6 @@ void markdown_core_member_attach_field(markdown_core_member *owner, markdown_cor
         at = &(*at)->next;
     }
     *at = field;
-}
-
-void markdown_core_member_unlink(markdown_core_member *member) {
-    markdown_core_member *owner = member->owner;
-    if (member->field) {
-        markdown_core_member **at = &owner->fields;
-        while (*at != member) {
-            at = &(*at)->next;
-        }
-        *at = member->next;
-        member->field = false;
-    } else {
-        if (member->prev) {
-            member->prev->next = member->next;
-        } else if (owner) {
-            owner->first = member->next;
-        }
-        if (member->next) {
-            member->next->prev = member->prev;
-        } else if (owner) {
-            owner->last = member->prev;
-        }
-    }
-    member->owner = member->prev = member->next = NULL;
 }
 
 static void S_member_free(markdown_core_node_pool *pool, markdown_core_member *member) {

@@ -6,7 +6,9 @@ extern "C" {
 #endif
 
 #include <stdio.h>
+#include <assert.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "node_type.h"
 #include "markdown-core-element-api.h"
@@ -923,22 +925,81 @@ static inline markdown_core_place markdown_core_member_place(const markdown_core
     return member->numbered ? member->place : member->node->where.place;
 }
 
+/* Whether `owner`'s node may hold `child`'s: its built-in containment, which
+ * is pure and shares its rules with checked construction, or an element's
+ * dynamic policy, decided before and never replayed. */
+bool markdown_core_member_admits(const markdown_core_member *owner, const markdown_core_member *child);
+
+#define MARKDOWN_CORE_MEMBER_SLAB_BYTES ((size_t)16 * 1024)
+
 /* A member for `node`, linked to nothing; it holds the node's reference when
  * `held`. NULL when it could not be allocated. */
-markdown_core_member *markdown_core_member_new(markdown_core_node_pool *pool, markdown_core_node *node, bool held);
+static inline markdown_core_member *markdown_core_member_new(markdown_core_node_pool *pool, markdown_core_node *node,
+                                                             bool held) {
+    markdown_core_member *member = (markdown_core_member *)markdown_core_slab_take(
+        pool ? &pool->members : NULL, sizeof(*member), MARKDOWN_CORE_MEMBER_SLAB_BYTES);
+    if (member) {
+        memset(member, 0, sizeof(*member));
+        member->node = node;
+        member->held = held;
+    }
+    return member;
+}
 
 /* Links the detached `child` under `owner`, before `before` (a child of
  * `owner`) or last; it is inner when `owner` is. The caller has proved
  * containment. */
-void markdown_core_member_attach(markdown_core_member *owner, markdown_core_member *child,
-                                 markdown_core_member *before);
+static inline void markdown_core_member_attach(markdown_core_member *owner, markdown_core_member *child,
+                                               markdown_core_member *before) {
+    assert(owner && child && owner != child);
+    assert(!child->owner && !child->prev && !child->next);
+    assert(!before || before->owner == owner);
+    assert(markdown_core_member_admits(owner, child));
+    markdown_core_member *previous = before ? before->prev : owner->last;
+    child->owner = owner;
+    child->inner = owner->inner;
+    child->prev = previous;
+    child->next = before;
+    if (previous) {
+        previous->next = child;
+    } else {
+        owner->first = child;
+    }
+    if (before) {
+        before->prev = child;
+    } else {
+        owner->last = child;
+    }
+}
 
 /* Links the detached `field` as the last field root `owner` builds; it is
  * inner when `owner` is. */
 void markdown_core_member_attach_field(markdown_core_member *owner, markdown_core_member *field);
 
 /* Detaches `member` from its owner and siblings, keeping its subtree. */
-void markdown_core_member_unlink(markdown_core_member *member);
+static inline void markdown_core_member_unlink(markdown_core_member *member) {
+    markdown_core_member *owner = member->owner;
+    if (member->field) {
+        markdown_core_member **at = &owner->fields;
+        while (*at != member) {
+            at = &(*at)->next;
+        }
+        *at = member->next;
+        member->field = false;
+    } else {
+        if (member->prev) {
+            member->prev->next = member->next;
+        } else if (owner) {
+            owner->first = member->next;
+        }
+        if (member->next) {
+            member->next->prev = member->prev;
+        } else if (owner) {
+            owner->last = member->prev;
+        }
+    }
+    member->owner = member->prev = member->next = NULL;
+}
 
 /* COMPLETES A BUILDER'S STRUCTURE: the nodes of `member`'s children become
  * its node's stem, which takes the references their members held and
