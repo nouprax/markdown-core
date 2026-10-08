@@ -2709,7 +2709,11 @@ static const markdown_core_node *cursor_relation(cursor_frame *frame) {
 }
 
 markdown_core_status markdown_core_cursor_child(markdown_core_cursor *cursor, bool *moved) {
-    if (cursor->count == cursor->capacity) {
+    cursor_frame *frame = &cursor->frames[cursor->count - 1];
+    markdown_core_relations_begin(&frame->relations, frame->node);
+    const markdown_core_node *child = cursor_relation(frame);
+    /* The path grows only when the cursor descends. */
+    if (child && cursor->count == cursor->capacity) {
         cursor_frame *frames =
             markdown_core_reserve(cursor->frames, &cursor->capacity, cursor->count + 1, sizeof(*frames));
         if (!frames) {
@@ -2717,9 +2721,6 @@ markdown_core_status markdown_core_cursor_child(markdown_core_cursor *cursor, bo
         }
         cursor->frames = frames;
     }
-    cursor_frame *frame = &cursor->frames[cursor->count - 1];
-    markdown_core_relations_begin(&frame->relations, frame->node);
-    const markdown_core_node *child = cursor_relation(frame);
     if (child) {
         cursor->frames[cursor->count++] = (cursor_frame){.node = child};
     }
