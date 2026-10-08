@@ -1,0 +1,4 @@
+markdown-core edit script 1
+script quote-after-definition identity
+edit 4 5 71
+expect kept Callout 6 6

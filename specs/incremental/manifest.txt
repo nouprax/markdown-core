@@ -51,6 +51,8 @@ document documents/identity-inline-siblings-kept.md
 edits documents/identity-inline-siblings-kept.md scripts/identity-inline-siblings-kept.edits
 document documents/identity-closer-pairs-earlier-opener.md
 edits documents/identity-closer-pairs-earlier-opener.md scripts/identity-closer-pairs-earlier-opener.edits
+document documents/identity-quote-after-definition.md
+edits documents/identity-quote-after-definition.md scripts/identity-quote-after-definition.edits
 document documents/rejections.md
 edits documents/rejections.md scripts/rejections.edits
 document ../canonical-ast/block-identifiers.md

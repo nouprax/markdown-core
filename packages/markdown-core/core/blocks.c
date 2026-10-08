@@ -1293,6 +1293,15 @@ markdown_core_member *markdown_core_block_finalize(markdown_core_parser *parser,
     bool held = false;
     assert(b->flags & MARKDOWN_CORE_NODE__OPEN); // shouldn't call markdown_core_block_finalize on closed blocks
     b->flags &= ~MARKDOWN_CORE_NODE__OPEN;
+    /* The current block and the block the line matched are open: closing
+     * either makes its owner take its place, before the block settles and
+     * may be released. */
+    if (parser->current == member) {
+        parser->current = parent;
+    }
+    if (parser->matched_container == member) {
+        parser->matched_container = parent;
+    }
 
     if (parser->curline.size == 0) {
         // end of input - line number has not been incremented
@@ -1397,11 +1406,27 @@ void markdown_core_block_close(markdown_core_parser *parser, markdown_core_membe
 /* A source-owning block candidate commits only after the prior open path has
  * closed at this line's matched boundary. This is also the ordinary text path's
  * transition; caption attachment therefore cannot strand an open preceding table. */
-void markdown_core_parser_finalize_unmatched_blocks(markdown_core_parser *parser) {
-    while (parser->current != parser->matched_container && !parser->error) {
-        parser->current = markdown_core_block_finalize(parser, parser->current);
-        assert(parser->current);
+/* Whether `member` is `held` or holds it. */
+static bool S_holds(const markdown_core_member *member, const markdown_core_member *held) {
+    while (held && held != member) {
+        held = held->owner;
     }
+    return held != NULL;
+}
+
+/* Closes the open blocks on the current path below `target`, which then
+ * holds the current block. A block on the path already closed, holding
+ * open ones until they settle, is passed. */
+static void S_close_to(markdown_core_parser *parser, const markdown_core_member *target) {
+    while (!S_holds(parser->current, target) && !parser->error) {
+        parser->current = parser->current->node->flags & MARKDOWN_CORE_NODE__OPEN
+                              ? markdown_core_block_finalize(parser, parser->current)
+                              : parser->current->owner;
+    }
+}
+
+void markdown_core_parser_finalize_unmatched_blocks(markdown_core_parser *parser) {
+    S_close_to(parser, parser->matched_container);
 }
 
 markdown_core_member *markdown_core_block_parent_for(markdown_core_parser *parser, markdown_core_member *parent,
@@ -1443,14 +1468,6 @@ bool markdown_core_parser_replace(markdown_core_parser *parser, const markdown_c
     parser->replacements = replacements;
     replacements[parser->replacement_count++] = (struct markdown_core_replacement){old, node, member, start};
     return true;
-}
-
-/* Whether `member` is `held` or holds it. */
-static bool S_holds(const markdown_core_member *member, const markdown_core_member *held) {
-    while (held && held != member) {
-        held = held->owner;
-    }
-    return held != NULL;
 }
 
 /* THE CURSOR (docs/plans/2026-09-29-incremental-parsing.md, 5.3). Where
@@ -1537,15 +1554,10 @@ static bool S_take(markdown_core_parser *parser, markdown_core_member *parent, m
             resume += parser->input_chunk[resume - parser->input_chunk_start] == '\n';
         }
     }
-    /* The open blocks that do not hold `parent` are those this line closes
-     * (a block the line closed already, holding open ones, is passed):
-     * they close before the run, which then lies after `parent`'s last child
-     * as it did after the old one. */
-    while (!S_holds(parser->current, parent) && !parser->error) {
-        parser->current = parser->current->node->flags & MARKDOWN_CORE_NODE__OPEN
-                              ? markdown_core_block_finalize(parser, parser->current)
-                              : parser->current->owner;
-    }
+    /* The open blocks below `parent` are those this line closes: they close
+     * before the run, which then lies after `parent`'s last child as it did
+     * after the old one. */
+    S_close_to(parser, parent);
     if (parser->error) {
         return false;
     }
@@ -3364,7 +3376,8 @@ static void S_hold_plain(markdown_core_parser *parser) {
 }
 
 static void add_text_to_container(markdown_core_parser *parser, markdown_core_member *container,
-                                  markdown_core_member *last_matched_container, markdown_core_chunk *input) {
+                                  markdown_core_chunk *input) {
+    markdown_core_member *const last_matched_container = parser->matched_container;
     markdown_core_member *tmp;
     // what remains at parser->offset is a text line.  add the text to the
     // appropriate container.
@@ -3601,7 +3614,7 @@ static void S_process_line(markdown_core_parser *parser, const unsigned char *bu
         goto finished;
     }
 
-    add_text_to_container(parser, container, last_matched_container, &input);
+    add_text_to_container(parser, container, &input);
 
 finished:
     /* Block scopes cover the complete physical line, including closing

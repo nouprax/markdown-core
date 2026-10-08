@@ -1095,6 +1095,11 @@ export function identityScripts() {
     add("closer-pairs-earlier-opener", "*a* b *c d\n", (s) =>
         s.insert(10, "*").expect("kept", "Emphasis", 0, 0).expect("new", "Emphasis", 6)
     );
+    /* A quote that interrupts a paragraph of only definitions closes it
+     * into its References; the quote after an edited definition is taken. */
+    add("quote-after-definition", "[d]:g\n>", (s) =>
+        s.edit([{ start: 4, end: 5, text: "q" }]).expect("kept", "Callout", 6, 6)
+    );
     return cases;
 }
 
