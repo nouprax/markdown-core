@@ -421,12 +421,30 @@ typedef struct {
     uint64_t (*combine)(uint64_t front, uint64_t back);
 } markdown_core_stem_summary;
 
+/* WHAT A STEM MEASURES of the nodes under it (5.1), from their extents and
+ * their parse records once their owner has numbered them: `length`, the sum
+ * of their leads and spans, which is how far the end of the last lies from
+ * where the first is measured; `far`, how far past that end the furthest
+ * of their reaches goes; their first order; and its marks. A stem made of nodes not numbered
+ * yet is FRESH until markdown_core_stem_measure measures it. */
+enum {
+    /* A node under it is a group. */
+    MARKDOWN_CORE_STEM_GROUP = 1,
+    /* A node under it does not hold the next (MARKDOWN_CORE_NODE__HOLDS_NEXT). */
+    MARKDOWN_CORE_STEM_FREE = 2,
+    MARKDOWN_CORE_STEM_FRESH = 4,
+};
+
 struct markdown_core_stem {
     uint32_t refs;
     uint32_t count;
     uint8_t height;
     uint8_t width;
+    uint8_t marks;
     uint64_t summary;
+    int64_t length, far;
+    /* The first order of the nodes under it (markdown_core_node), or NULL. */
+    struct markdown_core_order *first;
     markdown_core_stem_entry entries[];
 };
 
@@ -457,6 +475,11 @@ struct markdown_core_node {
     /* The facts the node declares to the document, and the questions an
      * inline root it holds asked of it (registry.h), or NULL. */
     struct markdown_core_fact *facts;
+    /* Where it lies in tree order when it declares facts, holds an inline
+     * root or holds blocks read from its content (registry.h), and the first
+     * order of its subtree, which is its own when it has one; NULL when
+     * there is none. Set when its owner numbers it. */
+    struct markdown_core_order *order, *first;
 
     markdown_core_attributes attributes;
     markdown_core_strbuf content;
@@ -734,6 +757,30 @@ uint64_t markdown_core_stem_run_summary(const markdown_core_stem *stem, size_t i
 
 static inline size_t markdown_core_stem_count(const markdown_core_stem *stem) { return stem ? stem->count : 0; }
 
+/* Measures the fresh stems of `stem` (which may be NULL), whose nodes are
+ * numbered now. */
+void markdown_core_stem_measure(markdown_core_stem *stem);
+
+/* The first node of `stem` (which may be NULL) at or after `index` that is
+ * a group or whose reach meets `edge`: its end past its reach is at `edge`
+ * or after, with the node at `index` measured from `*anchor`. Returns its
+ * index, with `*anchor` where it is measured from, or the stem's count, with
+ * `*anchor` where its last node ends, when none is. */
+size_t markdown_core_stem_meet(const markdown_core_stem *stem, size_t index, int64_t *anchor, int64_t edge);
+
+/* The last node of `stem` from `index` up to `end` that does not hold the
+ * next; SIZE_MAX when none. */
+size_t markdown_core_stem_last_free(const markdown_core_stem *stem, size_t index, size_t end);
+
+/* How far the end of the last of the `count` nodes of `stem` from `index`
+ * lies from where the first is measured: their leads and spans. */
+int64_t markdown_core_stem_length(const markdown_core_stem *stem, size_t index, size_t count);
+
+/* The last node of `stem` whose first order (markdown_core_node) lies at
+ * `label` or before it: the node whose subtree holds the order labelled
+ * `label` when `stem`'s nodes hold it. SIZE_MAX when none does. */
+size_t markdown_core_stem_find(const markdown_core_stem *stem, uint64_t label);
+
 /* The node at `index` of the stem, which holds more than `index`. */
 markdown_core_node *markdown_core_stem_at(const markdown_core_stem *stem, size_t index);
 
@@ -858,11 +905,27 @@ struct markdown_core_member {
     uint32_t scan_start, scan_at;
     size_t scan_next;
     bool scan_equal;
+    /* A RUN of old children the parse took whole (5.3), held as one stem: the
+     * member stands for all of them, its node is the last of them, and
+     * `past` is the index after them among the old children they were taken
+     * from. NULL for a member of one node. */
+    markdown_core_stem *run;
+    size_t past;
+    /* THE ORDERS OF ITS SUBTREE (registry.h), as its completion and its
+     * owner's numbering collect them: the new ones in tree order from
+     * `order_first` to `order_last`, linked by `next`. An old order the
+     * subtree holds is the `before` of the new ones ahead of it: until the
+     * next old one comes, those from `order_open` on have none.
+     * `order_lead` is the first old one, and `order_head` the first one of
+     * either. */
+    markdown_core_order *order_first, *order_last, *order_open, *order_lead, *order_head;
     uint32_t asks, index, slot, source, waits, candidates, last_candidate;
     /* What the decisions about a node of an inline root's content read, and
      * whether the node is an old one its parse took whole (5.6). */
     markdown_core_inline_reads reads;
     bool held, field, inner, decided, identified, paired, asked, numbered, counted, taken;
+    /* Whether blocks are read from its node's content (markdown_core_parser_queue_block_input). */
+    bool queued;
 };
 
 /* Where `member`'s node lies: its place, which numbering keeps in the member
@@ -889,7 +952,8 @@ void markdown_core_member_attach_field(markdown_core_member *owner, markdown_cor
 void markdown_core_member_unlink(markdown_core_member *member);
 
 /* COMPLETES A BUILDER'S STRUCTURE: the nodes of `member`'s children become
- * its node's stem, which takes the references their members held; the
+ * its node's stem, which takes the references their members held and
+ * shares the stems of the runs they hold; the
  * members stay, for the node's numbering, and the stem keeps the `summary`
  * of the node's kind (E4), which may be NULL. False, changing nothing, when
  * the stem could not be allocated. */

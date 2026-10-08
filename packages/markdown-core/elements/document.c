@@ -32,20 +32,11 @@ static void dispose_document(const markdown_core_element_instance *self, markdow
     }
     markdown_core_publication_dispose(&((document_state *)self->state)->publication, parser->pool);
 }
-/* A ROOT WHOSE LOOKUPS ARE ANSWERED OTHERWISE (docs/plans/2026-09-29-
- * incremental-parsing.md, 5.7): the node, and where it began in the old
- * source. */
-typedef struct {
-    const markdown_core_node *node;
-    uint32_t start;
-} again_root;
-
-static int again_order(const void *left, const void *right) {
-    const again_root *a = left, *b = right;
-    if (a->start != b->start) {
-        return (a->start > b->start) - (a->start < b->start);
-    }
-    return ((uintptr_t)a->node > (uintptr_t)b->node) - ((uintptr_t)a->node < (uintptr_t)b->node);
+/* Roots in tree order (5.7). */
+static int tree_order(const void *left, const void *right) {
+    const uint64_t a = (*(const markdown_core_node *const *)left)->order->label;
+    const uint64_t b = (*(const markdown_core_node *const *)right)->order->label;
+    return (a > b) - (a < b);
 }
 
 static int address_order(const void *left, const void *right) {
@@ -61,7 +52,7 @@ static int address_order(const void *left, const void *right) {
  * defined, is not the one it gave the old document has each such root
  * parsed again in place, in source order, each once: into `*roots`, with
  * their count. False when the list could not grow. */
-static bool lookups_changed(markdown_core_parser *parser, again_root **roots, size_t *count) {
+static bool lookups_changed(markdown_core_parser *parser, const markdown_core_node ***roots, size_t *count) {
     const markdown_core_registry *registry = parser->registry;
     size_t capacity = 0;
     *roots = NULL;
@@ -74,35 +65,26 @@ static bool lookups_changed(markdown_core_parser *parser, again_root **roots, si
             if (lookup->edit == registry->edit) {
                 continue;
             }
-            again_root *grown = markdown_core_reserve(*roots, &capacity, *count + 1, sizeof(*grown));
+            const markdown_core_node **grown = markdown_core_reserve(*roots, &capacity, *count + 1, sizeof(*grown));
             if (!grown) {
                 return false;
             }
             *roots = grown;
-            grown[(*count)++] = (again_root){lookup->node, lookup->start};
+            grown[(*count)++] = lookup->node;
         }
     }
     if (!*count) {
         return true;
     }
-    qsort(*roots, *count, sizeof(**roots), again_order);
+    qsort(*roots, *count, sizeof(**roots), tree_order);
     size_t kept = 0;
     for (size_t i = 0; i < *count; i++) {
-        if (!kept || (*roots)[kept - 1].node != (*roots)[i].node) {
+        if (!kept || (*roots)[kept - 1] != (*roots)[i]) {
             (*roots)[kept++] = (*roots)[i];
         }
     }
     *count = kept;
     return true;
-}
-
-/* A node of a subtree the parse took whole keeps its facts (5.7), which
- * learn where it begins now. */
-static void take_facts(void *context, const markdown_core_node *node, uint32_t start) {
-    (void)context;
-    for (markdown_core_fact *fact = node->facts; fact; fact = fact->sibling) {
-        fact->start = start;
-    }
 }
 
 /* The document is prepared: the headings the parse made declare their
@@ -115,8 +97,7 @@ static void prepare_document(const markdown_core_element_instance *self, markdow
     if (headings) {
         markdown_core_headings_prepare(headings, parser);
     }
-    again_root *roots = NULL;
-    const markdown_core_node **nodes = NULL;
+    const markdown_core_node **roots = NULL, **nodes = NULL;
     size_t count = 0;
     if (!parser->error && !lookups_changed(parser, &roots, &count)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -125,22 +106,26 @@ static void prepare_document(const markdown_core_element_instance *self, markdow
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     if (nodes) {
-        for (size_t i = 0; i < count; i++) {
-            nodes[i] = roots[i].node;
-        }
+        memcpy((void *)nodes, (const void *)roots, count * sizeof(*nodes));
         qsort(nodes, count, sizeof(*nodes), address_order);
     }
     for (size_t i = 0; i < parser->took_count && !parser->error; i++) {
-        if (!markdown_core_publication_take(publication, parser->took[i].node, parser->took[i].start, nodes,
-                                            nodes ? count : 0, take_facts, NULL)) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        const markdown_core_stem *run = parser->took[i].run;
+        uint32_t anchor = parser->took[i].anchor;
+        markdown_core_stem_walk walk;
+        markdown_core_stem_walk_begin(&walk, run, 0, run->count);
+        for (const markdown_core_node *node; (node = markdown_core_stem_walk_next(&walk)) && !parser->error;) {
+            const uint32_t start = (uint32_t)((int64_t)anchor + node->where.extent.lead);
+            anchor = start + node->where.extent.span;
+            if (!markdown_core_publication_take(publication, node, start, nodes, nodes ? count : 0)) {
+                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            }
         }
     }
     for (size_t i = 0; i < count && !parser->error; i++) {
-        markdown_core_parse_again(parser, roots[i].node, roots[i].start,
-                                  markdown_core_parser_image(parser, roots[i].start));
+        markdown_core_parse_again(parser, publication, roots[i]);
     }
-    markdown_core_free(roots);
+    markdown_core_free((void *)roots);
     markdown_core_free((void *)nodes);
     if (headings && count && !parser->error) {
         markdown_core_headings_prepare(headings, parser);
@@ -182,7 +167,7 @@ static void finish_document(const markdown_core_element_instance *self, markdown
         replacement->node = NULL;
         if (node == replacement->old) {
             markdown_core_parser_release_node(parser, node);
-        } else if (!markdown_core_publication_splice(parser, publication, replacement->old, node, replacement->start)) {
+        } else if (!markdown_core_publication_splice(parser, publication, replacement->old, node)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
     }

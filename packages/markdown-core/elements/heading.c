@@ -274,11 +274,12 @@ static void append_anchor_suffix(markdown_core_strbuf *base, size_t ordinal) {
     markdown_core_strbuf_put(base, (const unsigned char *)start, (bufsize_t)(end - start));
 }
 
-/* A heading's base fact, in source order of the headings that declare
- * them. */
+/* A heading's base fact, in tree order of the headings that declare them
+ * (5.7). */
 static int base_order(const void *left, const void *right) {
-    const markdown_core_fact *a = *(markdown_core_fact *const *)left, *b = *(markdown_core_fact *const *)right;
-    return (a->start > b->start) - (a->start < b->start);
+    const uint64_t a = (*(markdown_core_fact *const *)left)->node->order->label;
+    const uint64_t b = (*(markdown_core_fact *const *)right)->node->order->label;
+    return (a > b) - (a < b);
 }
 
 /* THE ANCHORS OF ONE FAMILY (docs/plans/2026-09-29-incremental-parsing.md,
@@ -365,7 +366,7 @@ static void assign_family(markdown_core_parser *parser, markdown_core_heading_st
                     break;
                 }
                 markdown_core_registry_move(node, copy);
-                if (!markdown_core_parser_replace(parser, node, copy, NULL, fact->start)) {
+                if (!markdown_core_parser_replace(parser, node, copy, NULL)) {
                     break;
                 }
                 anchor = &copy->attributes.anchor;
@@ -406,11 +407,7 @@ void markdown_core_headings_finish(const markdown_core_element_instance *self, m
         if (parser->error) {
             break;
         }
-        markdown_core_fact *fact =
-            declare_anchor(parser, node, MARKDOWN_CORE_FACT_BASE, &(markdown_core_chunk){base.ptr, base.size, 0});
-        if (fact) {
-            fact->start = headings->values[i].source.start;
-        }
+        declare_anchor(parser, node, MARKDOWN_CORE_FACT_BASE, &(markdown_core_chunk){base.ptr, base.size, 0});
     }
     markdown_core_free(stack.values);
     markdown_core_fact **bases = NULL;

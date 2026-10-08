@@ -346,19 +346,30 @@ uint32_t markdown_core_parser_image(const markdown_core_parser *parser, uint32_t
     return (uint32_t)((int64_t)x + parser->edit_shift[at]);
 }
 
-bool markdown_core_parser_touched(const markdown_core_parser *parser, uint32_t from, uint32_t to) {
+uint32_t markdown_core_parser_origin(const markdown_core_parser *parser, uint32_t y) {
     const markdown_core_revision *revision = parser->revision;
     const markdown_core_byte_edit *edits = revision->edits;
+    /* The edits whose replacements end at `y` or before it. */
     size_t lo = 0, hi = revision->edit_count;
     while (lo < hi) {
         size_t mid = lo + (hi - lo) / 2;
-        if (edits[mid].end <= from) {
+        if ((int64_t)edits[mid].start + parser->edit_shift[mid] + edits[mid].size <= y) {
             lo = mid + 1;
         } else {
             hi = mid;
         }
     }
-    return lo < revision->edit_count && edits[lo].start <= to;
+    return (uint32_t)((int64_t)y - parser->edit_shift[lo]);
+}
+
+bool markdown_core_parser_touched(const markdown_core_parser *parser, uint32_t from, uint32_t to) {
+    return markdown_core_parser_edge(parser, from) <= to;
+}
+
+int64_t markdown_core_parser_edge(const markdown_core_parser *parser, uint32_t from) {
+    const markdown_core_revision *revision = parser->revision;
+    const size_t at = markdown_core_parser_edit_after(parser, from);
+    return at < revision->edit_count ? revision->edits[at].start : INT64_MAX;
 }
 
 bool markdown_core_parser_source_anchor(const markdown_core_parser *parser, uint32_t start, uint32_t end,
@@ -970,6 +981,7 @@ bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdo
      * starts is kept here. */
     parser->block_inputs[parser->block_input_count++] = (markdown_core_block_input){member, owner->where.place.start};
     member->waits++;
+    member->queued = true;
     return true;
 }
 
@@ -1453,7 +1465,7 @@ markdown_core_member *markdown_core_parser_add_child(markdown_core_parser *parse
 }
 
 bool markdown_core_parser_replace(markdown_core_parser *parser, const markdown_core_node *old, markdown_core_node *node,
-                                  markdown_core_member *member, uint32_t start) {
+                                  markdown_core_member *member) {
     struct markdown_core_replacement *replacements = markdown_core_reserve(
         parser->replacements, &parser->replacement_capacity, parser->replacement_count + 1, sizeof(*replacements));
     if (!replacements) {
@@ -1466,7 +1478,7 @@ bool markdown_core_parser_replace(markdown_core_parser *parser, const markdown_c
         return false;
     }
     parser->replacements = replacements;
-    replacements[parser->replacement_count++] = (struct markdown_core_replacement){old, node, member, start};
+    replacements[parser->replacement_count++] = (struct markdown_core_replacement){old, node, member};
     return true;
 }
 
@@ -1507,32 +1519,26 @@ static const markdown_core_node *S_old_child(markdown_core_parser *parser, markd
 static bool S_take(markdown_core_parser *parser, markdown_core_member *parent, markdown_core_node_type kind,
                    uint32_t start, uint64_t carry, const markdown_core_node *first, uint32_t first_start) {
     const markdown_core_stem *children = parent->scan->children;
-    const size_t count = markdown_core_stem_count(children);
     if ((first->flags & MARKDOWN_CORE_NODE__GROUP) ||
         (first->kind != kind &&
          !(markdown_core_dialect_kind(parser->dialect, kind)->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH)) ||
         !parent->scan_equal || first->entry != carry) {
         return false;
     }
-    /* The run ends at the last node that does not hold the next. */
-    size_t end = parent->scan_next;
-    uint32_t at = parent->scan_at, run_end = 0;
-    for (size_t i = parent->scan_next; i < count; i++) {
-        const markdown_core_node *child = markdown_core_stem_at(children, i);
-        const uint32_t child_end = (uint32_t)((int64_t)at + child->where.extent.lead) + child->where.extent.span;
-        if ((child->flags & MARKDOWN_CORE_NODE__GROUP) ||
-            markdown_core_parser_touched(parser, at, child_end + child->reach)) {
-            break;
-        }
-        at = child_end;
-        if (!(child->flags & MARKDOWN_CORE_NODE__HOLDS_NEXT)) {
-            end = i + 1;
-            run_end = child_end;
-        }
-    }
-    if (end == parent->scan_next) {
+    /* The run stops at the first node an edit meets from where it is
+     * measured to its reach, which is the first whose reach meets the first
+     * edit that ends after the run begins, or at a group; it ends at the
+     * last node before that which does not hold the next. */
+    int64_t measured = parent->scan_at;
+    const size_t stop = markdown_core_stem_meet(children, parent->scan_next, &measured,
+                                                markdown_core_parser_edge(parser, parent->scan_at));
+    const size_t final = markdown_core_stem_last_free(children, parent->scan_next, stop);
+    if (final == SIZE_MAX) {
         return false;
     }
+    const size_t end = final + 1;
+    const uint32_t run_end =
+        (uint32_t)(parent->scan_at + markdown_core_stem_length(children, parent->scan_next, end - parent->scan_next));
     /* No edit lies in the run, so it moved as a whole; the parse goes on at
      * the line after the one its last node ends on. */
     const int64_t shift = (int64_t)start - first_start;
@@ -1566,33 +1572,37 @@ static bool S_take(markdown_core_parser *parser, markdown_core_member *parent, m
     if ((int64_t)start - anchor != first->where.extent.lead) {
         return false;
     }
-    at = parent->scan_at;
-    for (size_t i = parent->scan_next; i < end; i++) {
-        markdown_core_node *child = markdown_core_stem_at(children, i);
-        const uint32_t child_start = (uint32_t)((int64_t)at + child->where.extent.lead);
-        at = child_start + child->where.extent.span;
-        markdown_core_member *member = markdown_core_parser_member(parser, markdown_core_node_retain(child), true);
-        if (!member) {
-            markdown_core_parser_release_node(parser, child);
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            return false;
-        }
-        markdown_core_member_attach(parent, member, NULL);
-        struct markdown_core_took *took =
-            markdown_core_reserve(parser->took, &parser->took_capacity, parser->took_count + 1, sizeof(*took));
-        if (!took) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            return false;
-        }
-        parser->took = took;
-        took[parser->took_count++] = (struct markdown_core_took){child, (uint32_t)(child_start + shift)};
-        /* A taken node is complete: it continues itself, with its id. */
-        member->decided = member->identified = member->numbered = true;
-        member->old = child;
-        member->old_start = child_start;
-        member->place = (markdown_core_place){(uint32_t)(child_start + shift), (uint32_t)(at + shift)};
-        member->passed = member->place.end;
+    /* The run is one member, holding it as a stem, which stands for its
+     * last node. */
+    bool failed;
+    const size_t taken = end - parent->scan_next;
+    markdown_core_stem *run = markdown_core_stem_slice(parser->pool, children, parent->scan_next, taken,
+                                                       markdown_core_parser_kind(parser, parent->node)->summary, &failed);
+    markdown_core_node *final_node = markdown_core_stem_at(children, final);
+    markdown_core_member *member = failed ? NULL : markdown_core_parser_member(parser, final_node, false);
+    if (!member) {
+        markdown_core_stem_release(parser->pool, run);
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return false;
     }
+    member->run = run;
+    member->past = end;
+    markdown_core_member_attach(parent, member, NULL);
+    struct markdown_core_took *took =
+        markdown_core_reserve(parser->took, &parser->took_capacity, parser->took_count + 1, sizeof(*took));
+    if (!took) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return false;
+    }
+    parser->took = took;
+    took[parser->took_count++] = (struct markdown_core_took){run, (uint32_t)(parent->scan_at + shift)};
+    /* A taken node is complete: it continues itself, with its id. */
+    const uint32_t at = run_end;
+    member->decided = member->identified = member->numbered = true;
+    member->old = final_node;
+    member->old_start = at - final_node->where.extent.span;
+    member->place = (markdown_core_place){(uint32_t)(first_start + shift), (uint32_t)(at + shift)};
+    member->passed = member->place.end;
     parent->scan_next = end;
     parent->scan_at = at;
     parser->taken = true;
@@ -2112,11 +2122,6 @@ static void S_complete_inline_root(markdown_core_parser *parser, markdown_core_i
     parser->completing = NULL;
     parser->asker = NULL;
     root->builder = NULL;
-    /* The questions the root asked, and what it declares, learn where it
-     * begins (5.7). */
-    for (markdown_core_fact *fact = root->node->facts; fact; fact = fact->sibling) {
-        fact->start = root->place.start;
-    }
     /* The node that holds the root waits on it no more. */
     if (!parser->error) {
         markdown_core_parser_release_wait(parser, root->member);

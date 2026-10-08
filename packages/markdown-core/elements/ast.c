@@ -807,7 +807,82 @@ typedef struct {
     markdown_core_publication *publication;
     void (*observe)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
     const markdown_core_element_instance *observer;
+    /* The member being completed, which collects the orders of what it
+     * numbers. */
+    markdown_core_member *member;
 } complete_context;
+
+/* THE ORDERS A MEMBER COLLECTS (markdown_core_member, registry.h). An old
+ * order comes after what `member` holds so far: the new orders no old one
+ * followed are before it. */
+static void order_follow(markdown_core_member *member, markdown_core_order *old) {
+    for (markdown_core_order *order = member->order_open; order; order = order->next) {
+        order->before = old;
+    }
+    member->order_open = NULL;
+    if (!member->order_lead) {
+        member->order_lead = old;
+    }
+    if (!member->order_head) {
+        member->order_head = old;
+    }
+}
+
+/* The orders `from` collected come after those `into` holds, and `from`
+ * holds none. */
+static void order_append(markdown_core_member *into, markdown_core_member *from) {
+    if (!into->order_head) {
+        into->order_head = from->order_head;
+    }
+    if (from->order_lead) {
+        order_follow(into, from->order_lead);
+        into->order_open = from->order_open;
+    } else if (!into->order_open) {
+        into->order_open = from->order_first;
+    }
+    if (from->order_first) {
+        if (into->order_last) {
+            into->order_last->next = from->order_first;
+        } else {
+            into->order_first = from->order_first;
+        }
+        into->order_last = from->order_last;
+    }
+    from->order_first = from->order_last = from->order_open = from->order_lead = from->order_head = NULL;
+}
+
+/* `node` takes a new order, ahead of the orders `member` holds. False when
+ * it could not be had. */
+static bool order_own(markdown_core_member *member, markdown_core_node *node) {
+    markdown_core_order *order = markdown_core_order_new(node);
+    if (!order) {
+        return false;
+    }
+    node->order = order;
+    order->next = member->order_first;
+    member->order_first = order;
+    if (!member->order_last) {
+        member->order_last = order;
+    }
+    if (member->order_lead) {
+        order->before = member->order_lead;
+    } else {
+        member->order_open = order;
+    }
+    member->order_head = order;
+    return true;
+}
+
+/* The orders `member` collected join the registry's list: after `after`,
+ * an order the list holds, those no old order follows, and all of them at
+ * the end when it is NULL. */
+static void order_settle(markdown_core_parser *parser, markdown_core_member *member, markdown_core_order *after) {
+    if (after && after->next != &parser->registry->orders) {
+        order_follow(member, after->next);
+    }
+    markdown_core_order_join(parser->registry, member->order_first);
+    member->order_first = member->order_last = member->order_open = member->order_lead = member->order_head = NULL;
+}
 
 /* Where the next node of a relation is measured from: its extent from
  * `place`, in the input of the parser that made it, and its runs from
@@ -1032,6 +1107,13 @@ static markdown_core_node *field_at(const markdown_core_node *owner, size_t plac
     return find.slot ? *find.slot : NULL;
 }
 
+/* The field of `owner`'s at `place`, its slot. */
+static markdown_core_node **field_slot_at(markdown_core_node *owner, size_t place) {
+    field_find find = {NULL, place, 0, NULL};
+    markdown_core_node_visit_fields(owner, field_find_visit, &find);
+    return find.slot;
+}
+
 /* `member`, a field of `owner`'s, continues the old owner's field in the same
  * place: a group the old group, and a node of its own the old node when it is
  * of its kind and the image of its anchor lies in its range, up to
@@ -1089,6 +1171,21 @@ static void ask_in_order(markdown_core_member *owner, markdown_core_member *memb
 static bool pass_range(markdown_core_parser *parser, markdown_core_publication *publication,
                        markdown_core_member *member) {
     markdown_core_member *owner = member->owner;
+    if (member->run && owner->decided && owner->old == owner->scan) {
+        /* A run the parse took from the old children the cursor walks: the
+         * cursor passes it whole, the old nodes before it with it. */
+        markdown_core_field name;
+        child_relation(owner->node, member->index, &name);
+        if (!owner->paired || owner->pair_name != (uint32_t)name) {
+            pair_open(owner, name);
+        }
+        if (owner->pair_stem == owner->scan->children && owner->pair_next < member->past) {
+            const markdown_core_node *final = member->old;
+            owner->pair_next = member->past;
+            owner->pair_anchor = source_place(final, member->old_start - final->where.extent.lead).end;
+        }
+        return true;
+    }
     const uint32_t end = markdown_core_member_place(member).end;
     if ((member->node->flags & MARKDOWN_CORE_NODE__GROUP) || !owner->decided || !owner->old || member->passed >= end) {
         return true;
@@ -1265,6 +1362,14 @@ static bool complete_number(const complete_context *context, markdown_core_membe
             return false;
         }
         anchor->source = place.end;
+        /* A node that declares or asks, an inline root and a cell read as
+         * blocks takes its order, ahead of the orders of what it holds,
+         * which then follow those its owner collected (5.7). */
+        if ((item->facts || inlines || member->queued) && !item->order && !order_own(member, item)) {
+            return false;
+        }
+        item->first = member->order_head;
+        order_append(context->member, member);
     }
     if (context->observe) {
         context->observe(context->observer, parser, item);
@@ -1379,6 +1484,8 @@ static bool complete_relations(const complete_context *context, markdown_core_me
                 if (!field || (!field->numbered && !complete_number(context, field, &anchor, 0, true))) {
                     return false;
                 }
+            } else if (!completing && item->first) {
+                order_follow(member, item->first);
             }
             continue;
         }
@@ -1389,7 +1496,27 @@ static bool complete_relations(const complete_context *context, markdown_core_me
         uint32_t slot = (uint32_t)relation.index;
         for (markdown_core_node *item; (item = (markdown_core_node *)markdown_core_relation_walk_next(&nodes));
              slot++) {
+            if (at && at->run && item != at->node) {
+                /* The first node of a run the parse took, all of them
+                 * numbered: the walk passes the run whole. */
+                const size_t taken = at->run->count;
+                assert(!in_content && item == markdown_core_stem_at(at->run, 0));
+                if (at->run->first) {
+                    order_follow(member, at->run->first);
+                }
+                anchor.place = (uint32_t)(anchor.place + at->run->length);
+                anchor.source = anchor.place;
+                markdown_core_stem_walk_begin(&nodes.stem, relation.stem, slot + taken, nodes.stem.left - (taken - 1));
+                slot += (uint32_t)(taken - 1);
+                at = at->next;
+                continue;
+            }
             if (item->id || (at && at->node == item && at->numbered)) {
+                /* An old node it holds as it was: what it holds comes
+                 * after the orders collected so far. */
+                if (!completing && item->first && !(at && at->node == item)) {
+                    order_follow(member, item->first);
+                }
                 anchor.place = publish_place(item, anchor.place).end;
                 anchor.source = in_content ? numbered_source_end(item, anchor.source) : anchor.place;
                 if (at && at->node == item) {
@@ -1407,9 +1534,22 @@ static bool complete_relations(const complete_context *context, markdown_core_me
         if (own) {
             child = at;
         } else if (group && !group->numbered) {
+            /* A group holds the first order of the relation it holds. */
+            markdown_core_stem_measure((markdown_core_stem *)relation.stem);
+            group->node->first = relation.stem->first;
             group_numbered(parser, context->publication, group);
         }
     }
+    /* Its nodes are numbered: the stems they fill measure them, once every
+     * relation that is a run of one has been numbered. */
+    markdown_core_relations_begin(&cursor, node);
+    while (relations_next(&cursor, &relation, &more)) {
+        if (!relation.field) {
+            markdown_core_stem_measure((markdown_core_stem *)relation.stem);
+        }
+    }
+    /* And its own, when they hold groups. */
+    markdown_core_stem_measure(node->children);
     return true;
 }
 
@@ -1422,7 +1562,7 @@ bool markdown_core_complete_node(markdown_core_parser *parser, markdown_core_pub
     if (node->flags & MARKDOWN_CORE_NODE__GROUP) {
         return true;
     }
-    const complete_context context = {parser, publication, observe, observer};
+    const complete_context context = {parser, publication, observe, observer, member};
     const relation_shape shape = shape_of(node);
     if (!complete_relations(&context, member, start)) {
         return false;
@@ -1436,6 +1576,16 @@ bool markdown_core_complete_node(markdown_core_parser *parser, markdown_core_pub
         if (runs && !publish_runs(parser->pool, runs, completing->place, anchor)) {
             return false;
         }
+    } else if (!completing && member == parser->root) {
+        /* The document's orders join the list, those no old order follows
+         * at its end, and it holds the first. */
+        node->first = member->order_head;
+        order_settle(parser, member, NULL);
+    } else if (!completing && node->order && markdown_core_order_joined(node->order)) {
+        /* A cell read as blocks, its order in the list: what they hold
+         * follows it, all of it new, as a cell's blocks take nothing. */
+        assert(!member->order_lead);
+        order_settle(parser, member, node->order);
     }
     return true;
 }
@@ -1502,6 +1652,22 @@ static bool node_same(const markdown_core_node *node, const markdown_core_node *
            relations_same(node, old);
 }
 
+/* The field slots of `kept`, an old node, take what those of `node`, the
+ * node of the parse equal to it, hold, and `node`'s what they held. */
+typedef struct {
+    markdown_core_node *node;
+    size_t at;
+} fields_trade;
+
+static int fields_trade_visit(markdown_core_node **slot, void *context) {
+    fields_trade *trade = context;
+    markdown_core_node **other = field_slot_at(trade->node, trade->at++);
+    markdown_core_node *held = *slot;
+    *slot = *other;
+    *other = held;
+    return 1;
+}
+
 /* `old` takes the place of `member`'s node in its owner, or as the document,
  * and the node goes when the parse does. False when it could not be kept
  * for that. */
@@ -1524,6 +1690,15 @@ static bool settle_old(markdown_core_parser *parser, markdown_core_publication *
     markdown_core_lines *lines = kept->lines;
     kept->lines = node->lines;
     node->lines = lines;
+    /* Its relations hold the very nodes the new node's do, and the groups
+     * that hold them equal: it takes the new node's, which this parse
+     * measured, the orders of the nodes under them among what they hold
+     * (5.1, 5.7). */
+    markdown_core_stem *children = kept->children;
+    kept->children = node->children;
+    node->children = children;
+    fields_trade trade = {node, 0};
+    markdown_core_node_visit_fields(kept, fields_trade_visit, &trade);
     /* And it declares what the new node declared: an equal node declares
      * the same, and these facts are this parse's (5.7). */
     markdown_core_registry_move(node, kept);
@@ -1700,8 +1875,7 @@ static bool walk_again(const markdown_core_walk *walk, const markdown_core_walk_
 }
 
 bool markdown_core_publication_take(markdown_core_publication *publication, const markdown_core_node *node,
-                                    uint32_t start, const markdown_core_node *const *again, size_t count,
-                                    void (*visit)(void *, const markdown_core_node *, uint32_t), void *context) {
+                                    uint32_t start, const markdown_core_node *const *again, size_t count) {
     markdown_core_walk walk;
     markdown_core_walk_item item;
     markdown_core_walk_begin_at(&walk, node, (uint32_t)((int64_t)start - node->where.extent.lead));
@@ -1725,7 +1899,6 @@ bool markdown_core_publication_take(markdown_core_publication *publication, cons
         if (SLOT_TABLE(slots)) {
             ok = table_add(&publication->tables[SLOT_TABLE(slots) - 1], item.node, source);
         }
-        visit(context, item.node, source);
     }
     ok = ok && !walk.failed;
     markdown_core_walk_end(&walk);
@@ -1766,9 +1939,119 @@ static markdown_core_runs *runs_places(markdown_core_node_pool *pool, const mark
     return out;
 }
 
-bool markdown_core_parse_again(markdown_core_parser *parser, const markdown_core_node *root, uint32_t old_start,
-                               uint32_t start) {
+/* ONE NODE ON A SPLICE'S SEARCH: the node, where it begins, the step whose
+ * node holds it, `up`, and where: the field at `place` among that node's
+ * fields, or `place` of its stem. A group holding a relation of its owner
+ * begins where its owner does. On the path found, `down` is the step below,
+ * and `own` whether the node is the new tree's own. */
+typedef struct markdown_core_splice_step {
+    markdown_core_node *node;
+    uint32_t start;
+    size_t up, place, down;
+    bool field, own;
+} splice_step;
+
+/* Adds a step to the search; its index, or SIZE_MAX when the search could
+ * not grow. */
+static size_t splice_add(markdown_core_publication *publication, size_t *count, splice_step step) {
+    splice_step *steps =
+        markdown_core_reserve(publication->steps, &publication->step_capacity, *count + 1, sizeof(*steps));
+    if (!steps) {
+        return SIZE_MAX;
+    }
+    publication->steps = steps;
+    steps[*count] = step;
+    return (*count)++;
+}
+
+/* The last field whose first order lies at `label` or before it, and its
+ * place among the fields. */
+typedef struct {
+    uint64_t label;
+    size_t at, place;
+    markdown_core_node *node;
+} field_seek;
+
+static int field_seek_visit(markdown_core_node **slot, void *context) {
+    field_seek *seek = context;
+    if (*slot && (*slot)->first && (*slot)->first->label <= seek->label) {
+        seek->node = *slot;
+        seek->place = seek->at;
+    }
+    seek->at++;
+    return 1;
+}
+
+/* Where the relation of `owner`'s that holds its child at `index` begins
+ * among its children: each relation is measured from the owner's start. */
+static size_t children_relation_start(const markdown_core_node *owner, size_t index) {
+    markdown_core_relation_cursor cursor;
+    markdown_core_relation relation;
+    bool more;
+    markdown_core_relations_begin(&cursor, owner);
+    while (relations_next(&cursor, &relation, &more)) {
+        if (!relation.field && relation.stem == owner->children && index < relation.index + relation.count) {
+            return relation.index;
+        }
+    }
+    assert(false);
+    return 0;
+}
+
+/* The search for `old`, whose order, or its copy's, is `order`, from the
+ * document down (5.7): at each node, the field or child that holds it is the
+ * last whose first order lies at its label or before it, the fields first;
+ * a group holding a relation of its owner begins where its owner does. The
+ * index of its step, or SIZE_MAX when the search could not grow. */
+static size_t splice_find(markdown_core_parser *parser, markdown_core_publication *publication,
+                          const markdown_core_node *old, const markdown_core_order *order) {
+    markdown_core_node *document = parser->root->node;
+    size_t count = 0;
+    size_t at = splice_add(publication, &count,
+                           (splice_step){document, document->where.place.start, SIZE_MAX, 0, 0, false, false});
+    while (at != SIZE_MAX) {
+        markdown_core_node *const owner = publication->steps[at].node;
+        const uint32_t from = publication->steps[at].start;
+        const size_t index = markdown_core_stem_find(owner->children, order->label);
+        splice_step step = {NULL, from, at, index, 0, false, false};
+        if (index != SIZE_MAX) {
+            step.node = markdown_core_stem_at(owner->children, index);
+            if (!(step.node->flags & MARKDOWN_CORE_NODE__GROUP)) {
+                const size_t relation = children_relation_start(owner, index);
+                const int64_t before = markdown_core_stem_length(owner->children, relation, index - relation);
+                step.start = publish_place(step.node, (uint32_t)(from + before)).start;
+            }
+        } else {
+            field_seek seek = {order->label, 0, 0, NULL};
+            markdown_core_node_visit_fields(owner, field_seek_visit, &seek);
+            /* The node is in the tree, so a field holds it. */
+            assert(seek.node);
+            step.node = seek.node;
+            step.place = seek.place;
+            step.field = true;
+            if (!(step.node->flags & MARKDOWN_CORE_NODE__GROUP)) {
+                step.start = publish_place(step.node, from).start;
+            }
+        }
+        at = splice_add(publication, &count, step);
+        if (step.node == old) {
+            return at;
+        }
+    }
+    return SIZE_MAX;
+}
+
+bool markdown_core_parse_again(markdown_core_parser *parser, markdown_core_publication *publication,
+                               const markdown_core_node *root) {
     markdown_core_node_pool *pool = parser->pool;
+    const size_t step = splice_find(parser, publication, root, root->order);
+    if (step == SIZE_MAX) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return false;
+    }
+    /* No edit met it: it began where its start was before the edits. */
+    const uint32_t start = publication->steps[step].start;
+    const uint32_t old_start = markdown_core_parser_origin(parser, start);
     const relation_shape shape = shape_of(root);
     markdown_core_node *const held = content_holder((markdown_core_node *)root, shape);
     markdown_core_node *again = markdown_core_node_copy(pool, root);
@@ -1800,8 +2083,9 @@ bool markdown_core_parse_again(markdown_core_parser *parser, const markdown_core
     holder->content_map = (markdown_core_content_map){MARKDOWN_CORE_IDENTITY_MARK, 1, 0};
     const markdown_core_place place = {start, start + root->where.extent.span};
     /* What `root` declared and asked leaves with the content its copy reads
-     * again, which only `root` holds now. */
+     * again, which only `root` holds now; the copy takes its order. */
     markdown_core_registry_unlink((markdown_core_node *)root);
+    markdown_core_registry_move((markdown_core_node *)root, again);
     bool retired = true;
     if (held != root) {
         retired = markdown_core_registry_retire(held);
@@ -1832,146 +2116,7 @@ bool markdown_core_parse_again(markdown_core_parser *parser, const markdown_core
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
-    return markdown_core_parser_replace(parser, root, NULL, member, start);
-}
-
-/* ONE NODE ON A SPLICE'S SEARCH: the node, where it begins, the step whose
- * node holds it, `up`, and where: the field at `place` among that node's
- * fields, or `place` of its stem. A group holding a relation of its owner
- * begins where its owner does. On the path found, `down` is the step below,
- * and `own` whether the node is the new tree's own. */
-typedef struct markdown_core_splice_step {
-    markdown_core_node *node;
-    uint32_t start;
-    size_t up, place, down;
-    bool field, own;
-} splice_step;
-
-/* Adds a step to the search; its index, or SIZE_MAX when the search could
- * not grow. */
-static size_t splice_add(markdown_core_publication *publication, size_t *count, splice_step step) {
-    splice_step *steps =
-        markdown_core_reserve(publication->steps, &publication->step_capacity, *count + 1, sizeof(*steps));
-    if (!steps) {
-        return SIZE_MAX;
-    }
-    publication->steps = steps;
-    steps[*count] = step;
-    return (*count)++;
-}
-
-/* Where `owner` holds the group whose stem is `stem`: in its stem, or in a
- * field. */
-typedef struct {
-    const markdown_core_stem *stem;
-    size_t at;
-    bool found;
-} group_find;
-
-static int group_find_visit(markdown_core_node **slot, void *context) {
-    group_find *find = context;
-    if (*slot && (*slot)->children == find->stem) {
-        find->found = true;
-        return 0;
-    }
-    find->at++;
-    return 1;
-}
-
-static markdown_core_node *group_of(markdown_core_node *owner, const markdown_core_stem *stem, size_t *place,
-                                    bool *field) {
-    markdown_core_stem_walk children;
-    markdown_core_stem_walk_begin(&children, owner->children, 0, markdown_core_stem_count(owner->children));
-    size_t at = 0;
-    for (markdown_core_node *node; (node = markdown_core_stem_walk_next(&children)); at++) {
-        if (node->children == stem) {
-            *place = at;
-            *field = false;
-            return node;
-        }
-    }
-    group_find find = {stem, 0, false};
-    markdown_core_node_visit_fields(owner, group_find_visit, &find);
-    assert(find.found);
-    *place = find.at;
-    *field = true;
-    return field_at(owner, find.at);
-}
-
-/* The field slot at `place` among `owner`'s fields. */
-static markdown_core_node **field_slot_at(markdown_core_node *owner, size_t place) {
-    field_find find = {NULL, place, 0, NULL};
-    markdown_core_node_visit_fields(owner, field_find_visit, &find);
-    return find.slot;
-}
-
-/* The search for `old`, which begins at `start`, from the document down
- * through the blocks whose ranges hold `start`: the index of its step, or
- * SIZE_MAX when the search could not grow. */
-static size_t splice_find(markdown_core_parser *parser, markdown_core_publication *publication,
-                          const markdown_core_node *old, uint32_t start) {
-    markdown_core_node *document = parser->root->node;
-    size_t count = 0, pending = 0;
-    if (splice_add(publication, &count,
-                   (splice_step){document, document->where.place.start, SIZE_MAX, 0, 0, false, false}) == SIZE_MAX) {
-        return SIZE_MAX;
-    }
-    size_t next = 0;
-    for (;;) {
-        markdown_core_node *owner = publication->steps[next].node;
-        const uint32_t from = publication->steps[next].start;
-        markdown_core_relation_cursor cursor;
-        markdown_core_relation relation;
-        markdown_core_relations_begin(&cursor, owner);
-        while (markdown_core_relations_next(&cursor, &relation)) {
-            size_t up = next, slot = relation.index;
-            bool field = relation.field;
-            markdown_core_relation_walk nodes;
-            markdown_core_relation_walk_begin(&nodes, &relation);
-            if (field) {
-                field_slot(owner, relation.node, &slot);
-            } else if (relation.count && relation.stem != owner->children) {
-                size_t place;
-                bool in_field;
-                markdown_core_node *group = group_of(owner, relation.stem, &place, &in_field);
-                up = splice_add(publication, &count, (splice_step){group, from, next, place, 0, in_field, false});
-                if (up == SIZE_MAX) {
-                    return SIZE_MAX;
-                }
-                slot = 0;
-            }
-            uint32_t anchor = from;
-            for (const markdown_core_node *node; (node = markdown_core_relation_walk_next(&nodes)); slot++) {
-                const markdown_core_place place = publish_place(node, anchor);
-                anchor = place.end;
-                const bool found = node == old;
-                if (!found && (place.start > start || start > place.end ||
-                               (node->kind & MARKDOWN_CORE_NODE_TYPE_MASK) != MARKDOWN_CORE_NODE_TYPE_BLOCK ||
-                               relations_empty(node))) {
-                    continue;
-                }
-                const size_t at =
-                    splice_add(publication, &count,
-                               (splice_step){(markdown_core_node *)node, place.start, up, slot, 0, field, false});
-                if (at == SIZE_MAX) {
-                    return SIZE_MAX;
-                }
-                if (found) {
-                    return at;
-                }
-                size_t *grown = markdown_core_reserve(publication->pending, &publication->pending_capacity, pending + 1,
-                                                      sizeof(*grown));
-                if (!grown) {
-                    return SIZE_MAX;
-                }
-                publication->pending = grown;
-                grown[pending++] = at;
-            }
-        }
-        /* The node is in the tree, so the search finds it. */
-        assert(pending);
-        next = publication->pending[--pending];
-    }
+    return markdown_core_parser_replace(parser, root, NULL, member);
 }
 
 /* Whether the stems from `stem` down to the node at `index` are held once. */
@@ -2006,9 +2151,9 @@ static bool rename_node(markdown_core_publication *publication, const markdown_c
 }
 
 bool markdown_core_publication_splice(markdown_core_parser *parser, markdown_core_publication *publication,
-                                      const markdown_core_node *old, markdown_core_node *node, uint32_t start) {
+                                      const markdown_core_node *old, markdown_core_node *node) {
     markdown_core_node_pool *pool = parser->pool;
-    size_t at = splice_find(parser, publication, old, start);
+    size_t at = splice_find(parser, publication, old, node->order);
     if (at == SIZE_MAX) {
         markdown_core_node_pool_release(pool, node);
         return false;

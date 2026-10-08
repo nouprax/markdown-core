@@ -55,6 +55,23 @@ typedef struct markdown_core_fact markdown_core_fact;
 typedef struct markdown_core_key markdown_core_key;
 typedef struct markdown_core_registry markdown_core_registry;
 
+/* AN ORDER LABEL (docs/plans/2026-09-29-incremental-parsing.md, 5.7): where
+ * a node that declares a fact, holds an inline root or holds blocks read
+ * from its content lies in tree order. The registry keeps the orders of the
+ * session's tree in one list in tree order, and each carries a label that
+ * grows along it, so two compare in O(1) (Dietz and Sleator's order
+ * maintenance): a new one gets a label between its neighbours', and when
+ * none is free the labels of the fewest orders around it that leave room
+ * are spread again. The orders a parse makes form a sequence in tree order,
+ * linked by `next`, that joins the list as the document completes
+ * (markdown_core_order_join); in it `before` names the first old order the
+ * tree holds after it, or is NULL when it holds none. */
+typedef struct markdown_core_order {
+    uint64_t label;
+    struct markdown_core_order *prev, *next, *before;
+    struct markdown_core_node *node;
+} markdown_core_order;
+
 struct markdown_core_fact {
     markdown_core_key *key;
     struct markdown_core_node *node;
@@ -64,9 +81,6 @@ struct markdown_core_fact {
     markdown_core_fact *sibling;
     /* The parse that made it (markdown_core_registry_begin). */
     uint64_t edit;
-    /* The source byte its node begins at in the parse that last made or took
-     * it. */
-    uint32_t start;
     uint8_t role;
     /* A spelling, for a reservation or a base. */
     uint32_t length;
@@ -91,6 +105,9 @@ struct markdown_core_key {
 };
 
 struct markdown_core_registry {
+    /* The head of the list of orders: its `next` is the first in tree
+     * order, its `prev` the last. */
+    markdown_core_order orders;
     markdown_core_key **buckets;
     size_t capacity, count;
     /* The keys this edit marked, last first. */
@@ -133,13 +150,23 @@ void markdown_core_registry_unlink(struct markdown_core_node *node);
 /* Every question the inline root `node` asked leaves its key's reverse
  * index; the key is marked. */
 void markdown_core_registry_unask(struct markdown_core_node *node);
-/* `to` takes the facts of `from`, the node a parse made equal to it, and
- * drops its own. */
+/* `to` takes the facts and the order of `from`, the node a parse made equal
+ * to it or a copy of it, and drops its own. */
 void markdown_core_registry_move(struct markdown_core_node *from, struct markdown_core_node *to);
 /* The facts of every node of `root` that only the old tree holds leave: the
  * nodes the parse did not take. False when the walk could not allocate its
  * stack. */
 bool markdown_core_registry_retire(struct markdown_core_node *root);
+
+/* A new order for `node`, in no list; NULL when it could not be had. */
+markdown_core_order *markdown_core_order_new(struct markdown_core_node *node);
+/* `order` leaves its list, if it is in one, and goes. */
+void markdown_core_order_free(markdown_core_order *order);
+/* Whether `order` is in the registry's list. */
+static inline bool markdown_core_order_joined(const markdown_core_order *order) { return order->prev != NULL; }
+/* The sequence of new orders from `first` joins the list: each right
+ * before its `before`, and one with none at the end. */
+void markdown_core_order_join(markdown_core_registry *registry, markdown_core_order *first);
 
 /* Whether the key is defined: a fact declares it. */
 static inline bool markdown_core_key_defined(const markdown_core_key *key) { return key->declared > 0; }

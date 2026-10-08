@@ -38,7 +38,99 @@ static void key_mark(markdown_core_key *key) {
     key->was = key->declared > 0;
 }
 
+/* THE ORDER LIST. Labels lie below ORDER_TOP; the list's head stands for
+ * 0 before the first and ORDER_TOP after the last. */
+#define ORDER_TOP (UINT64_C(1) << 62)
+
+markdown_core_order *markdown_core_order_new(markdown_core_node *node) {
+    markdown_core_order *order = markdown_core_alloc(1, sizeof(*order));
+    if (order) {
+        order->node = node;
+    }
+    return order;
+}
+
+void markdown_core_order_free(markdown_core_order *order) {
+    if (!order) {
+        return;
+    }
+    if (markdown_core_order_joined(order)) {
+        order->prev->next = order->next;
+        order->next->prev = order->prev;
+    }
+    markdown_core_free(order);
+}
+
+/* `order` joins the list right after `before`, with a label between theirs;
+ * when there is none, the orders whose labels share the most leading bits
+ * with `before`'s and are few enough for the room those bits leave -- at
+ * most (10/7)^i of them for i free bits -- take labels spread evenly over
+ * it. Each label spread pays for the insertions that filled its range, so
+ * an insertion costs O(log n) amortized. */
+static void order_place(markdown_core_registry *registry, markdown_core_order *order, markdown_core_order *before) {
+    markdown_core_order *const head = &registry->orders;
+    markdown_core_order *after = before->next;
+    order->prev = before;
+    order->next = after;
+    before->next = order;
+    after->prev = order;
+    const uint64_t low = before == head ? 0 : before->label + 1;
+    const uint64_t high = after == head ? ORDER_TOP : after->label;
+    if (low < high) {
+        order->label = low + (high - low) / 2;
+        return;
+    }
+    /* The orders from `first` to `last` have labels in [base, base + 2^bits). */
+    markdown_core_order *first = order, *last = order;
+    size_t count = 1;
+    double room = 1;
+    for (unsigned bits = 1; bits <= 62; bits++) {
+        room *= 10.0 / 7.0;
+        const uint64_t base = before == head ? 0 : before->label & ~((UINT64_C(1) << bits) - 1);
+        const uint64_t top = base + (UINT64_C(1) << bits);
+        while (first->prev != head && first->prev->label >= base) {
+            first = first->prev;
+            count++;
+        }
+        while (last->next != head && last->next->label < top) {
+            last = last->next;
+            count++;
+        }
+        if ((double)count <= room || bits == 62) {
+            const uint64_t step = (UINT64_C(1) << bits) / count;
+            uint64_t label = base;
+            for (markdown_core_order *at = first;; at = at->next) {
+                at->label = label;
+                label += step;
+                if (at == last) {
+                    return;
+                }
+            }
+        }
+    }
+}
+
+void markdown_core_order_join(markdown_core_registry *registry, markdown_core_order *first) {
+    markdown_core_order *const head = &registry->orders;
+    if (!head->next) {
+        head->next = head->prev = head;
+    }
+    for (markdown_core_order *order = first, *next; order; order = next) {
+        next = order->next;
+        markdown_core_order *const before = order->before ? order->before : head;
+        order->before = NULL;
+        order_place(registry, order, before->prev);
+    }
+}
+
 void markdown_core_registry_dispose(markdown_core_registry *registry) {
+    /* The nodes outlive the registry: they hold no order now. */
+    markdown_core_order *const head = &registry->orders;
+    for (markdown_core_order *order = head->next, *next; order && order != head; order = next) {
+        next = order->next;
+        order->node->order = NULL;
+        markdown_core_free(order);
+    }
     for (size_t i = 0; i < registry->capacity; i++) {
         for (markdown_core_key *key = registry->buckets[i], *next; key; key = next) {
             next = key->chain;
@@ -239,6 +331,15 @@ void markdown_core_registry_move(markdown_core_node *from, markdown_core_node *t
     for (markdown_core_fact *fact = to->facts; fact; fact = fact->sibling) {
         fact->node = to;
     }
+    if (to->order != from->order) {
+        markdown_core_order_free(to->order);
+        to->order = from->order;
+        from->order = NULL;
+        if (to->order) {
+            to->order->node = to;
+        }
+    }
+    to->first = from->first;
 }
 
 void markdown_core_registry_settle(markdown_core_registry *registry) {
@@ -260,53 +361,77 @@ void markdown_core_registry_settle(markdown_core_registry *registry) {
     registry->marked = NULL;
 }
 
+/* What retiring has yet to visit: nodes, and stems of children. */
 typedef struct {
-    markdown_core_node **nodes;
+    union {
+        markdown_core_node *node;
+        markdown_core_stem *stem;
+    } as;
+    bool stem;
+} retire_item;
+
+typedef struct {
+    retire_item *items;
     size_t count, capacity;
     bool failed;
 } retire_stack;
 
-static void retire_push(retire_stack *stack, markdown_core_node *node) {
-    if (!node || stack->failed) {
+static void retire_push(retire_stack *stack, retire_item item) {
+    if (stack->failed) {
         return;
     }
     if (stack->count == stack->capacity) {
         const size_t capacity = stack->capacity ? stack->capacity * 2 : 64;
-        markdown_core_node **nodes = markdown_core_realloc(stack->nodes, capacity * sizeof(*nodes));
-        if (!nodes) {
+        retire_item *items = markdown_core_realloc(stack->items, capacity * sizeof(*items));
+        if (!items) {
             stack->failed = true;
             return;
         }
-        stack->nodes = nodes;
+        stack->items = items;
         stack->capacity = capacity;
     }
-    stack->nodes[stack->count++] = node;
+    stack->items[stack->count++] = item;
 }
 
 static int retire_field(markdown_core_node **slot, void *context) {
-    retire_push(context, *slot);
+    if (*slot) {
+        retire_push(context, (retire_item){.as.node = *slot});
+    }
     return 1;
 }
 
 bool markdown_core_registry_retire(markdown_core_node *root) {
     retire_stack stack = {0};
-    retire_push(&stack, root);
+    retire_push(&stack, (retire_item){.as.node = root});
     while (stack.count && !stack.failed) {
-        markdown_core_node *node = stack.nodes[--stack.count];
+        const retire_item item = stack.items[--stack.count];
+        if (item.stem) {
+            /* A stem the new tree holds too holds what the parse took. */
+            markdown_core_stem *stem = item.as.stem;
+            if (stem->refs > 1) {
+                continue;
+            }
+            for (uint8_t i = 0; i < stem->width; i++) {
+                retire_push(&stack, stem->height ? (retire_item){.as.stem = stem->entries[i].stem, .stem = true}
+                                                 : (retire_item){.as.node = stem->entries[i].node});
+            }
+            continue;
+        }
+        markdown_core_node *node = item.as.node;
         /* A node the new tree holds too was taken, with all it holds. */
         if (node->refs > 1) {
             continue;
         }
         markdown_core_registry_unlink(node);
+        markdown_core_order_free(node->order);
+        node->order = NULL;
         markdown_core_node_visit_fields(node, retire_field, &stack);
-        markdown_core_stem_walk walk;
-        markdown_core_stem_walk_begin(&walk, node->children, 0, markdown_core_stem_count(node->children));
-        for (markdown_core_node *child; (child = markdown_core_stem_walk_next(&walk));) {
-            retire_push(&stack, child);
+        if (node->children) {
+            retire_push(&stack, (retire_item){.as.stem = node->children, .stem = true});
         }
     }
     const bool ok = !stack.failed;
-    markdown_core_free(stack.nodes);
+    markdown_core_free(stack.items);
     return ok;
 }
 

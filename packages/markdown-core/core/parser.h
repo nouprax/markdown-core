@@ -263,11 +263,11 @@ struct markdown_core_parser {
     int64_t *edit_shift;
     size_t resume;
     bufsize_t resume_last_end;
-    /* Every node the parse took, with the offset where it begins now: the
-     * document lists their declarations (5.7). */
+    /* Every run of nodes the parse took, with the offset its first is
+     * measured from now: the document lists their declarations (5.7). */
     struct markdown_core_took {
-        const struct markdown_core_node *node;
-        uint32_t start;
+        const struct markdown_core_stem *run;
+        uint32_t anchor;
     } *took;
     size_t took_count, took_capacity;
     /* THE NODES OF TAKEN SUBTREES THE PARSE REPLACES (5.7), in the order
@@ -280,7 +280,6 @@ struct markdown_core_parser {
         const struct markdown_core_node *old;
         struct markdown_core_node *node;
         struct markdown_core_member *member;
-        uint32_t start;
     } *replacements;
     size_t replacement_count, replacement_capacity;
     /* The last open block after a line is fully processed */
@@ -686,22 +685,28 @@ markdown_core_input_line *markdown_core_parser_extend_source_lines(markdown_core
  * first edit that ends after old byte `x`: every one before it ends at or
  * before x. `markdown_core_parser_image` is where the boundary at old offset
  * `x` lies now: inside a replaced range it lies where the replacement ends.
+ * `markdown_core_parser_edge` is where the first edit that ends after old
+ * byte `from` begins, INT64_MAX when none does, and
  * `markdown_core_parser_touched` says whether an edit meets or touches the
  * old range [from, to], both ends included. `markdown_core_parser_source_
  * anchor` gives the image of the first byte of the old range [start, end)
  * that no edit replaced, false when every byte of it was replaced. */
 size_t markdown_core_parser_edit_after(const markdown_core_parser *parser, uint32_t x);
 uint32_t markdown_core_parser_image(const markdown_core_parser *parser, uint32_t x);
+/* The old offset whose image is `y`, a byte no edit replaced: the later one
+ * when an edit removed bytes there. */
+uint32_t markdown_core_parser_origin(const markdown_core_parser *parser, uint32_t y);
+int64_t markdown_core_parser_edge(const markdown_core_parser *parser, uint32_t from);
 bool markdown_core_parser_touched(const markdown_core_parser *parser, uint32_t from, uint32_t to);
 bool markdown_core_parser_source_anchor(const markdown_core_parser *parser, uint32_t start, uint32_t end,
                                         uint32_t *image);
 
-/* `old`, a node of a subtree the parse took that begins at `start`, gives
- * its place to `node`, or to the node of `member` once it settles; the
+/* `old`, a node of a subtree the parse took, gives its place to `node`, or
+ * to the node of `member` once it settles, which holds `old`'s order; the
  * replacement takes the reference to either. False, with the parse failed
  * and the reference released, when the list could not grow. */
 bool markdown_core_parser_replace(markdown_core_parser *parser, const markdown_core_node *old, markdown_core_node *node,
-                                  markdown_core_member *member, uint32_t start);
+                                  markdown_core_member *member);
 
 /* THE STATE `parent` CARRIES where a child of it begins after `previous`
  * (5.3, E3): the word its element saves, the kind of the child before, and
