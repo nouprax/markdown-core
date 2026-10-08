@@ -364,7 +364,10 @@ typedef union {
  * it counts one reference, and an entry it holds counts one reference of
  * that entry's. */
 #define MARKDOWN_CORE_STEM_WIDTH 32
-#define MARKDOWN_CORE_STEM_HEIGHT 8
+/* Every stem but the root of a tree holds at least half the width, so a tree
+ * of n nodes is at most log base 16 of n high. */
+#define MARKDOWN_CORE_STEM_FILL (MARKDOWN_CORE_STEM_WIDTH / 2)
+#define MARKDOWN_CORE_STEM_HEIGHT 10
 
 typedef struct markdown_core_stem markdown_core_stem;
 
@@ -373,11 +376,21 @@ typedef union {
     markdown_core_stem *stem;
 } markdown_core_stem_entry;
 
+/* A CHILDREN TREE'S SUMMARY (E4): a word `of` each node, and an associative
+ * `combine` of the words of two adjacent runs of nodes, the front one first.
+ * A stem built with a summary holds the combined word of the nodes under
+ * it; one built without holds 0. */
+typedef struct {
+    uint64_t (*of)(const struct markdown_core_node *node);
+    uint64_t (*combine)(uint64_t front, uint64_t back);
+} markdown_core_stem_summary;
+
 struct markdown_core_stem {
     uint32_t refs;
     uint32_t count;
     uint8_t height;
     uint8_t width;
+    uint64_t summary;
     markdown_core_stem_entry entries[];
 };
 
@@ -619,11 +632,43 @@ void markdown_core_node_pool_dispose(markdown_core_node_pool *pool);
 
 /* THE CHILDREN TREE'S OPERATIONS. */
 
-/* A stem of the `count` nodes at `nodes`, in order, balanced: it takes the
- * reference to each node the caller held. NULL, having taken nothing, when
- * `count` is 0 or an allocation failed (`*failed`). */
+/* A stem of the `count` nodes at `nodes`, in order, balanced, with
+ * `summary` (which may be NULL): it takes the reference to each node the
+ * caller held. NULL, having taken nothing, when `count` is 0 or an
+ * allocation failed (`*failed`). */
 markdown_core_stem *markdown_core_stem_make(markdown_core_node_pool *pool, markdown_core_node *const *nodes,
-                                            size_t count, bool *failed);
+                                            size_t count, const markdown_core_stem_summary *summary, bool *failed);
+
+static inline markdown_core_stem *markdown_core_stem_retain(markdown_core_stem *stem) {
+    if (stem) {
+        stem->refs++;
+    }
+    return stem;
+}
+
+/* Drops a reference to `stem` (which may be NULL), releasing what only it
+ * held into `pool`. */
+void markdown_core_stem_release(markdown_core_node_pool *pool, markdown_core_stem *stem);
+
+/* The nodes of `front` followed by those of `back`, either of which may be
+ * NULL, as one balanced stem with `summary`; it shares their stems and takes
+ * the caller's references to both. NULL, having taken nothing, when an
+ * allocation failed (`*failed`) or both are NULL. */
+markdown_core_stem *markdown_core_stem_join(markdown_core_node_pool *pool, markdown_core_stem *front,
+                                            markdown_core_stem *back, const markdown_core_stem_summary *summary,
+                                            bool *failed);
+
+/* The `count` nodes of `stem` from `index`, which it holds, as a balanced
+ * stem with `summary` that shares the stems of `stem` they fill; a new
+ * reference. NULL when `count` is 0 or an allocation failed (`*failed`). */
+markdown_core_stem *markdown_core_stem_slice(markdown_core_node_pool *pool, const markdown_core_stem *stem,
+                                             size_t index, size_t count, const markdown_core_stem_summary *summary,
+                                             bool *failed);
+
+/* The combined `summary` word of the `count` nodes of `stem` from `index`
+ * (at least one, all of which it holds), read from the stems they fill. */
+uint64_t markdown_core_stem_run_summary(const markdown_core_stem *stem, size_t index, size_t count,
+                                        const markdown_core_stem_summary *summary);
 
 static inline size_t markdown_core_stem_count(const markdown_core_stem *stem) { return stem ? stem->count : 0; }
 

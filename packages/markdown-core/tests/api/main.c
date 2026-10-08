@@ -370,7 +370,7 @@ static void tree_walk_end(tree_walk *walk) {
  * new stem could not be made. */
 static bool replace_children(markdown_core_node *node, markdown_core_node *const *nodes, size_t count) {
     bool failed = false;
-    markdown_core_stem *stem = markdown_core_stem_make(NULL, nodes, count, &failed);
+    markdown_core_stem *stem = markdown_core_stem_make(NULL, nodes, count, NULL, &failed);
     markdown_core_node *husk = failed ? NULL : markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
     if (!husk) {
         return false;
@@ -1217,7 +1217,7 @@ static void node_check(test_batch_runner *runner) {
     markdown_core_node *blocks[] = {markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH),
                                     markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH)};
     bool failed = false;
-    doc->children = markdown_core_stem_make(NULL, blocks, 2, &failed);
+    doc->children = markdown_core_stem_make(NULL, blocks, 2, NULL, &failed);
     OK(runner, doc->children && !failed, "a stem holds both paragraphs");
     INT_EQ(runner, markdown_core_node_check(doc, NULL), 0, "node_check passes a sound tree");
 
@@ -1231,6 +1231,153 @@ static void node_check(test_batch_runner *runner) {
     INT_EQ(runner, markdown_core_node_check(doc, NULL), 0, "node_check passes the restored tree");
 
     markdown_core_node_free(doc);
+}
+
+/* A CHILDREN TREE'S JOINS AND SLICES (E4): the word of a run is its first
+ * node, its last node and how many it holds, so the combine is associative
+ * and not commutative, and a summary read in the wrong order shows. */
+#define STEM_RUN_WORD(first, last, count) ((uint64_t)(first) << 40 | (uint64_t)(last) << 20 | (uint64_t)(count))
+
+static uint64_t stem_test_of(const markdown_core_node *node) {
+    return STEM_RUN_WORD(node->internal_offset, node->internal_offset, 1);
+}
+
+static uint64_t stem_test_combine(uint64_t front, uint64_t back) {
+    return STEM_RUN_WORD(front >> 40, back >> 20 & 0xfffff, (front & 0xfffff) + (back & 0xfffff));
+}
+
+static const markdown_core_stem_summary stem_test_summary = {stem_test_of, stem_test_combine};
+
+/* Whether `stem` holds the `count` nodes from `first` of `nodes` in order,
+ * sums them, and is sound and fills its stems under a node. */
+static bool stem_holds_run(markdown_core_stem *stem, markdown_core_node *const *nodes, size_t first, size_t count) {
+    if (markdown_core_stem_count(stem) != count) {
+        return false;
+    }
+    if (!count) {
+        return true;
+    }
+    markdown_core_stem_walk walk;
+    markdown_core_stem_walk_begin(&walk, stem, 0, count);
+    for (size_t i = 0; i < count; i++) {
+        if (markdown_core_stem_walk_next(&walk) != nodes[first + i] ||
+            markdown_core_stem_at(stem, i) != nodes[first + i]) {
+            return false;
+        }
+    }
+    if (stem->summary != STEM_RUN_WORD(first, first + count - 1, count)) {
+        return false;
+    }
+    markdown_core_node *holder = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
+    holder->children = markdown_core_stem_retain(stem);
+    const bool sound = markdown_core_node_check(holder, NULL) == 0;
+    markdown_core_node_free(holder);
+    return sound;
+}
+
+static void stem_joins_and_slices(test_batch_runner *runner) {
+    enum { STEM_TEST_NODES = 3000 };
+    markdown_core_node **nodes = malloc(STEM_TEST_NODES * sizeof(*nodes));
+    for (size_t i = 0; i < STEM_TEST_NODES; i++) {
+        nodes[i] = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+        nodes[i]->internal_offset = (int)i;
+    }
+    /* A stem takes a reference to each node; the test keeps one of its own,
+     * so every node is held exactly once again when every stem is gone. */
+    bool failed = false;
+    bool joins = true, slices = true, sums = true;
+    const size_t cuts[] = {0, 1, 2, 15, 16, 17, 31, 32, 33, 64, 500, 1024, 1500, 2999, 3000};
+    for (size_t c = 0; c < sizeof(cuts) / sizeof(*cuts); c++) {
+        for (size_t d = c; d < sizeof(cuts) / sizeof(*cuts); d++) {
+            const size_t cut = cuts[c], end = cuts[d];
+            for (size_t i = 0; i < end; i++) {
+                markdown_core_node_retain(nodes[i]);
+            }
+            markdown_core_stem *front = markdown_core_stem_make(NULL, nodes, cut, &stem_test_summary, &failed);
+            markdown_core_stem *back =
+                markdown_core_stem_make(NULL, nodes + cut, end - cut, &stem_test_summary, &failed);
+            markdown_core_stem *joined = markdown_core_stem_join(NULL, front, back, &stem_test_summary, &failed);
+            joins &= !failed && stem_holds_run(joined, nodes, 0, end);
+            for (size_t from = 0; from < end; from += 1 + from / 3) {
+                for (size_t count = 1; from + count <= end; count += 1 + count / 2) {
+                    markdown_core_stem *slice =
+                        markdown_core_stem_slice(NULL, joined, from, count, &stem_test_summary, &failed);
+                    slices &= !failed && stem_holds_run(slice, nodes, from, count);
+                    sums &= markdown_core_stem_run_summary(joined, from, count, &stem_test_summary) ==
+                            STEM_RUN_WORD(from, from + count - 1, count);
+                    markdown_core_stem_release(NULL, slice);
+                }
+            }
+            markdown_core_stem_release(NULL, joined);
+        }
+    }
+    OK(runner, joins, "two balanced stems join into one holding both runs in order");
+    OK(runner, slices, "a slice holds its run in order, balanced and filled");
+    OK(runner, sums, "a run's summary combines its nodes in order");
+
+    /* A tree joined one piece at a time, of every size, front and back. */
+    bool built = true;
+    markdown_core_stem *grown = NULL;
+    for (size_t at = 0, size = 1; at < STEM_TEST_NODES; at += size, size = size % 70 + 1) {
+        const size_t count = at + size <= STEM_TEST_NODES ? size : STEM_TEST_NODES - at;
+        for (size_t i = 0; i < count; i++) {
+            markdown_core_node_retain(nodes[at + i]);
+        }
+        markdown_core_stem *piece = markdown_core_stem_make(NULL, nodes + at, count, &stem_test_summary, &failed);
+        grown = markdown_core_stem_join(NULL, grown, piece, &stem_test_summary, &failed);
+        built &= !failed && stem_holds_run(grown, nodes, 0, at + count);
+    }
+    markdown_core_stem *rebuilt = NULL;
+    for (size_t end = STEM_TEST_NODES, size = 1; end > 0; end -= size, size = size % 70 + 1) {
+        size = size < end ? size : end;
+        markdown_core_stem *piece =
+            markdown_core_stem_slice(NULL, grown, end - size, size, &stem_test_summary, &failed);
+        rebuilt = markdown_core_stem_join(NULL, piece, rebuilt, &stem_test_summary, &failed);
+        built &= !failed && stem_holds_run(rebuilt, nodes, end - size, STEM_TEST_NODES - end + size);
+    }
+    OK(runner, built, "pieces joined at either end keep the tree sound and in order");
+
+    /* A join or a slice that cannot allocate takes nothing and leaks nothing. */
+    bool refused = true;
+    size_t needed[2] = {0, 0};
+    payload_probe_arm();
+    for (int kind = 0; kind < 2; kind++) {
+        for (size_t fail = 0; fail == 0 || fail <= needed[kind]; fail++) {
+            markdown_core_stem *front = markdown_core_stem_slice(NULL, grown, 7, 1100, &stem_test_summary, &failed);
+            markdown_core_stem *back = markdown_core_stem_slice(NULL, grown, 1200, 3, &stem_test_summary, &failed);
+            const size_t live = payload_live, before = payload_allocations;
+            payload_fail_at = fail ? before + fail : 0;
+            markdown_core_stem *made =
+                kind == 0 ? markdown_core_stem_join(NULL, front, back, &stem_test_summary, &failed)
+                          : markdown_core_stem_slice(NULL, grown, 5, 2900, &stem_test_summary, &failed);
+            payload_fail_at = 0;
+            if (!fail) {
+                needed[kind] = payload_allocations - before;
+                refused &= !failed && made;
+            } else {
+                refused &= failed && !made && payload_live == live && front->refs == 1 && back->refs == 1;
+            }
+            if (kind == 0 && !failed) {
+                front = back = NULL;
+            }
+            markdown_core_stem_release(NULL, made);
+            markdown_core_stem_release(NULL, front);
+            markdown_core_stem_release(NULL, back);
+        }
+    }
+    payload_probe_disarm();
+    OK(runner, refused && needed[0] && needed[1],
+       "a join fails at each of its %zu allocations, a slice at each of its %zu, taking nothing", needed[0], needed[1]);
+
+    markdown_core_stem_release(NULL, grown);
+    markdown_core_stem_release(NULL, rebuilt);
+    bool held = true;
+    for (size_t i = 0; i < STEM_TEST_NODES; i++) {
+        held &= nodes[i]->refs == 1;
+        markdown_core_node_free(nodes[i]);
+    }
+    OK(runner, held, "every stem gone, each node is held only by the test again");
+    free(nodes);
 }
 
 static void iterator(test_batch_runner *runner) {
@@ -2715,7 +2862,7 @@ static void link_resource_lifecycle(test_batch_runner *runner) {
     OK(runner, markdown_core_node_can_contain_type(paragraph, MARKDOWN_CORE_NODE_EMBEDDED),
        "hand-built image joins a paragraph");
     OK(runner, markdown_core_node_can_contain_type(paragraph, MARKDOWN_CORE_NODE_TEXT), "text joins a paragraph");
-    paragraph->children = markdown_core_stem_make(NULL, content, 3, &failed);
+    paragraph->children = markdown_core_stem_make(NULL, content, 3, NULL, &failed);
     OK(runner, paragraph->children && !failed, "the paragraph holds all three");
 
     OK(runner, link->as.link->resource == NULL, "a hand-built link has no resource");
@@ -3587,7 +3734,7 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
     markdown_core_node *cite = markdown_core_node_new(MARKDOWN_CORE_NODE_CITE);
     markdown_core_node *content[] = {text, empty, cite};
     bool failed = false;
-    parent->children = markdown_core_stem_make(NULL, content, 3, &failed);
+    parent->children = markdown_core_stem_make(NULL, content, 3, NULL, &failed);
     OK(runner, parent->children && !failed, "text, a fieldless node and a cite join their parent");
     OK(runner, set_literal(text, "retained"), "text owns a literal");
     markdown_core_chunk *original_payload = text->as.literal;
@@ -3638,10 +3785,10 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
     markdown_core_node *prefix = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
     /* A cite's citations are its children; a citation's affix is a field
      * node whose content is its children. */
-    cite->children = markdown_core_stem_make(NULL, &item, 1, &failed);
+    cite->children = markdown_core_stem_make(NULL, &item, 1, NULL, &failed);
     OK(runner, cite->children && !failed, "a citation joins its cite");
     item->as.citation->prefix = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
-    item->as.citation->prefix->children = markdown_core_stem_make(NULL, &prefix, 1, &failed);
+    item->as.citation->prefix->children = markdown_core_stem_make(NULL, &prefix, 1, NULL, &failed);
     OK(runner, set_literal(prefix, "prefix") && !failed, "citation owns an affix subtree");
     payload_fail_at = payload_allocations + 1;
     before = payload_live;
@@ -3667,7 +3814,7 @@ static void kind_conversion_reuses_cell_storage(test_batch_runner *runner) {
         markdown_core_node *parent = markdown_core_node_pool_new(source, MARKDOWN_CORE_NODE_PARAGRAPH, NULL);
         markdown_core_node *node = markdown_core_node_pool_new(source, MARKDOWN_CORE_NODE_TEXT, NULL);
         bool failed = false;
-        parent->children = markdown_core_stem_make(source, &node, 1, &failed);
+        parent->children = markdown_core_stem_make(source, &node, 1, NULL, &failed);
         OK(runner, parent->children && !failed, "the convertible node joins its parent");
         void *cell_record = node->as.data;
         markdown_core_node_pool_dispose(&pool);
@@ -3775,12 +3922,12 @@ static void element_owned_field_lifecycle(test_batch_runner *runner) {
         fields->second = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
         markdown_core_node *text = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
         bool failed = false;
-        owner->children = markdown_core_stem_make(NULL, &text, 1, &failed);
+        owner->children = markdown_core_stem_make(NULL, &text, 1, NULL, &failed);
         root = owner;
     }
     markdown_core_node *document = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
     bool failed = false;
-    document->children = markdown_core_stem_make(NULL, &root, 1, &failed);
+    document->children = markdown_core_stem_make(NULL, &root, 1, NULL, &failed);
     owned_field_probe *retained = root->opaque;
     markdown_core_node *retained_first = retained->first;
     OK(runner,
@@ -10979,6 +11126,7 @@ int main(void) {
     table_margin_is_shared_indentation(runner);
     pipe_rows_are_one_row(runner);
     node_check(runner);
+    stem_joins_and_slices(runner);
     iterator(runner);
     iterator_delete(runner);
     create_tree(runner);

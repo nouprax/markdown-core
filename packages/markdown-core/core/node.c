@@ -598,8 +598,22 @@ static markdown_core_stem *S_stem_new(markdown_core_node_pool *pool, uint8_t hei
         stem->count = 0;
         stem->height = height;
         stem->width = (uint8_t)width;
+        stem->summary = 0;
     }
     return stem;
+}
+
+/* Sets the count and the `summary` word of `stem` from its entries. */
+static void S_stem_sum(markdown_core_stem *stem, const markdown_core_stem_summary *summary) {
+    stem->count = 0;
+    for (uint8_t i = 0; i < stem->width; i++) {
+        const markdown_core_stem_entry entry = stem->entries[i];
+        stem->count += stem->height ? entry.stem->count : 1;
+        if (summary) {
+            const uint64_t word = stem->height ? entry.stem->summary : summary->of(entry.node);
+            stem->summary = i ? summary->combine(stem->summary, word) : word;
+        }
+    }
 }
 
 /* `count` entries, split as evenly as stems of at most the width allow, so a
@@ -610,7 +624,7 @@ static size_t S_stem_level_width(size_t count) {
 }
 
 markdown_core_stem *markdown_core_stem_make(markdown_core_node_pool *pool, markdown_core_node *const *nodes,
-                                            size_t count, bool *failed) {
+                                            size_t count, const markdown_core_stem_summary *summary, bool *failed) {
     *failed = false;
     if (!count) {
         return NULL;
@@ -633,7 +647,7 @@ markdown_core_stem *markdown_core_stem_make(markdown_core_node_pool *pool, markd
         for (size_t j = 0; j < width; j++) {
             leaf->entries[j].node = nodes[from + j];
         }
-        leaf->count = (uint32_t)width;
+        S_stem_sum(leaf, summary);
         level[built++] = leaf;
         from += width;
     }
@@ -654,8 +668,8 @@ markdown_core_stem *markdown_core_stem_make(markdown_core_node_pool *pool, markd
             }
             for (size_t j = 0; j < width; j++) {
                 stem->entries[j].stem = level[from + j];
-                stem->count += level[from + j]->count;
             }
+            S_stem_sum(stem, summary);
             level[made++] = stem;
             from += width;
         }
@@ -761,6 +775,254 @@ markdown_core_node *markdown_core_stem_walk_next(markdown_core_stem_walk *walk) 
     return node;
 }
 
+void markdown_core_stem_release(markdown_core_node_pool *pool, markdown_core_stem *stem) {
+    S_release_lists lists = {NULL, NULL};
+    S_drop_stem(&lists, stem);
+    (void)S_release(pool, &lists);
+}
+
+/* A stem of `height` holding the `width` entries at `entries`, each of which
+ * it takes a new reference to; NULL when it could not be allocated. */
+static markdown_core_stem *S_stem_hold(markdown_core_node_pool *pool, uint8_t height,
+                                       const markdown_core_stem_entry *entries, size_t width,
+                                       const markdown_core_stem_summary *summary) {
+    markdown_core_stem *stem = S_stem_new(pool, height, width);
+    if (!stem) {
+        return NULL;
+    }
+    for (size_t i = 0; i < width; i++) {
+        stem->entries[i] = entries[i];
+        if (height) {
+            entries[i].stem->refs++;
+        } else {
+            entries[i].node->refs++;
+        }
+    }
+    S_stem_sum(stem, summary);
+    return stem;
+}
+
+/* The `width` entries at `entries`, all of one stem's height, as one stem or,
+ * past the width, two of at least the fill each: `out[0]` and `out[1]`, new
+ * references, and how many. 0 when a stem could not be allocated. */
+static size_t S_stem_pack(markdown_core_node_pool *pool, uint8_t height, const markdown_core_stem_entry *entries,
+                          size_t width, const markdown_core_stem_summary *summary, markdown_core_stem *out[2]) {
+    if (width <= MARKDOWN_CORE_STEM_WIDTH) {
+        return (out[0] = S_stem_hold(pool, height, entries, width, summary)) != NULL;
+    }
+    const size_t half = width / 2;
+    if (!(out[0] = S_stem_hold(pool, height, entries, half, summary))) {
+        return 0;
+    }
+    if (!(out[1] = S_stem_hold(pool, height, entries + half, width - half, summary))) {
+        markdown_core_stem_release(pool, out[0]);
+        return 0;
+    }
+    return 2;
+}
+
+/* Two stems of one height side by side as one stem or two, as S_stem_pack
+ * gives them; two that each hold the fill already stay as they are. */
+static size_t S_stem_pair(markdown_core_node_pool *pool, markdown_core_stem *front, markdown_core_stem *back,
+                          const markdown_core_stem_summary *summary, markdown_core_stem *out[2]) {
+    const size_t width = (size_t)front->width + back->width;
+    if (width > MARKDOWN_CORE_STEM_WIDTH && front->width >= MARKDOWN_CORE_STEM_FILL &&
+        back->width >= MARKDOWN_CORE_STEM_FILL) {
+        out[0] = markdown_core_stem_retain(front);
+        out[1] = markdown_core_stem_retain(back);
+        return 2;
+    }
+    markdown_core_stem_entry entries[2 * MARKDOWN_CORE_STEM_WIDTH];
+    memcpy(entries, front->entries, front->width * sizeof(*entries));
+    memcpy(entries + front->width, back->entries, back->width * sizeof(*entries));
+    return S_stem_pack(pool, front->height, entries, width, summary, out);
+}
+
+markdown_core_stem *markdown_core_stem_join(markdown_core_node_pool *pool, markdown_core_stem *front,
+                                            markdown_core_stem *back, const markdown_core_stem_summary *summary,
+                                            bool *failed) {
+    *failed = false;
+    if (!front || !back) {
+        return front ? front : back;
+    }
+    /* The shorter tree joins the taller one's outermost stem of its own
+     * height on the side it lies; each stem of that side above is then copied
+     * with its outermost entry replaced by what that made, one stem or two. */
+    const bool down_front = front->height >= back->height;
+    markdown_core_stem *tall = down_front ? front : back, *short_tree = down_front ? back : front;
+    const markdown_core_stem *spine[MARKDOWN_CORE_STEM_HEIGHT];
+    spine[tall->height] = tall;
+    for (uint8_t level = tall->height; level > short_tree->height; level--) {
+        const markdown_core_stem *above = spine[level];
+        spine[level - 1] = above->entries[down_front ? above->width - 1 : 0].stem;
+    }
+    markdown_core_stem *out[2];
+    markdown_core_stem *meet = (markdown_core_stem *)spine[short_tree->height];
+    size_t made = down_front ? S_stem_pair(pool, meet, short_tree, summary, out)
+                             : S_stem_pair(pool, short_tree, meet, summary, out);
+    for (uint8_t level = short_tree->height + 1; made && level <= tall->height; level++) {
+        const markdown_core_stem *above = spine[level];
+        markdown_core_stem_entry entries[MARKDOWN_CORE_STEM_WIDTH + 1];
+        const size_t kept = above->width - 1u;
+        size_t width = 0;
+        if (down_front) {
+            memcpy(entries, above->entries, kept * sizeof(*entries));
+            width = kept;
+        }
+        for (size_t i = 0; i < made; i++) {
+            entries[width++].stem = out[i];
+        }
+        if (!down_front) {
+            memcpy(entries + width, above->entries + 1, kept * sizeof(*entries));
+            width += kept;
+        }
+        markdown_core_stem *packed[2];
+        const size_t packs = S_stem_pack(pool, level, entries, width, summary, packed);
+        for (size_t i = 0; i < made; i++) {
+            markdown_core_stem_release(pool, out[i]);
+        }
+        made = packs;
+        memcpy(out, packed, sizeof(out));
+    }
+    if (made == 2) {
+        markdown_core_stem *root = NULL;
+        if (tall->height + 1 < MARKDOWN_CORE_STEM_HEIGHT) {
+            const markdown_core_stem_entry entries[2] = {{.stem = out[0]}, {.stem = out[1]}};
+            root = S_stem_hold(pool, (uint8_t)(tall->height + 1), entries, 2, summary);
+        }
+        markdown_core_stem_release(pool, out[0]);
+        markdown_core_stem_release(pool, out[1]);
+        made = root != NULL;
+        out[0] = root;
+    }
+    if (!made) {
+        *failed = true;
+        return NULL;
+    }
+    markdown_core_stem_release(pool, front);
+    markdown_core_stem_release(pool, back);
+    return out[0];
+}
+
+/* A STEM'S NODES FROM `index`, `count` of them, as the stems that lie wholly
+ * among them and the runs of the leaves they cut: a walk in order that
+ * hands each to `visit`, with a stem of height 0 for a cut run. The walk
+ * keeps the stems it is due to visit on a stack no deeper than the width at each
+ * level. */
+typedef struct {
+    const markdown_core_stem *stem;
+    size_t start;
+} S_stem_due;
+
+typedef bool (*S_stem_visit)(void *context, const markdown_core_stem *stem, size_t from, size_t count);
+
+static bool S_stem_cover(const markdown_core_stem *stem, size_t index, size_t count, S_stem_visit visit,
+                         void *context) {
+    S_stem_due due[MARKDOWN_CORE_STEM_WIDTH * MARKDOWN_CORE_STEM_HEIGHT];
+    size_t depth = 0;
+    const size_t end = index + count;
+    due[depth++] = (S_stem_due){stem, 0};
+    while (depth) {
+        const S_stem_due top = due[--depth];
+        const size_t top_end = top.start + top.stem->count;
+        if (top_end <= index || top.start >= end) {
+            continue;
+        }
+        if (top.start >= index && top_end <= end) {
+            if (!visit(context, top.stem, 0, top.stem->count)) {
+                return false;
+            }
+            continue;
+        }
+        if (!top.stem->height) {
+            const size_t from = index > top.start ? index - top.start : 0;
+            const size_t to = (end < top_end ? end : top_end) - top.start;
+            if (!visit(context, top.stem, from, to - from)) {
+                return false;
+            }
+            continue;
+        }
+        /* Its entries go on in reverse, so the first comes off first. */
+        size_t start = top_end;
+        for (uint8_t i = top.stem->width; i-- > 0;) {
+            const markdown_core_stem *below = top.stem->entries[i].stem;
+            start -= below->count;
+            due[depth++] = (S_stem_due){below, start};
+        }
+    }
+    return true;
+}
+
+typedef struct {
+    markdown_core_node_pool *pool;
+    const markdown_core_stem_summary *summary;
+    markdown_core_stem *joined;
+} S_stem_cut;
+
+static bool S_stem_cut_visit(void *context, const markdown_core_stem *stem, size_t from, size_t count) {
+    S_stem_cut *cut = context;
+    markdown_core_stem *piece = from == 0 && count == stem->count
+                                    ? markdown_core_stem_retain((markdown_core_stem *)stem)
+                                    : S_stem_hold(cut->pool, 0, stem->entries + from, count, cut->summary);
+    if (!piece) {
+        return false;
+    }
+    bool failed;
+    markdown_core_stem *joined = markdown_core_stem_join(cut->pool, cut->joined, piece, cut->summary, &failed);
+    if (failed) {
+        markdown_core_stem_release(cut->pool, piece);
+        return false;
+    }
+    cut->joined = joined;
+    return true;
+}
+
+markdown_core_stem *markdown_core_stem_slice(markdown_core_node_pool *pool, const markdown_core_stem *stem,
+                                             size_t index, size_t count, const markdown_core_stem_summary *summary,
+                                             bool *failed) {
+    *failed = false;
+    if (!count) {
+        return NULL;
+    }
+    S_stem_cut cut = {pool, summary, NULL};
+    if (!S_stem_cover(stem, index, count, S_stem_cut_visit, &cut)) {
+        markdown_core_stem_release(pool, cut.joined);
+        *failed = true;
+        return NULL;
+    }
+    return cut.joined;
+}
+
+typedef struct {
+    const markdown_core_stem_summary *summary;
+    uint64_t word;
+    bool any;
+} S_stem_total;
+
+static void S_stem_total_add(S_stem_total *total, uint64_t word) {
+    total->word = total->any ? total->summary->combine(total->word, word) : word;
+    total->any = true;
+}
+
+static bool S_stem_total_visit(void *context, const markdown_core_stem *stem, size_t from, size_t count) {
+    S_stem_total *total = context;
+    if (from == 0 && count == stem->count) {
+        S_stem_total_add(total, stem->summary);
+        return true;
+    }
+    for (size_t i = from; i < from + count; i++) {
+        S_stem_total_add(total, total->summary->of(stem->entries[i].node));
+    }
+    return true;
+}
+
+uint64_t markdown_core_stem_run_summary(const markdown_core_stem *stem, size_t index, size_t count,
+                                        const markdown_core_stem_summary *summary) {
+    S_stem_total total = {summary, 0, false};
+    (void)S_stem_cover(stem, index, count, S_stem_total_visit, &total);
+    return total.word;
+}
+
 /* THE BUILDERS. */
 
 #define MARKDOWN_CORE_MEMBER_SLAB_BYTES ((size_t)16 * 1024)
@@ -862,7 +1124,7 @@ bool markdown_core_member_freeze(markdown_core_node_pool *pool, markdown_core_me
         }
     }
     bool failed;
-    node->children = markdown_core_stem_make(pool, nodes, count, &failed);
+    node->children = markdown_core_stem_make(pool, nodes, count, NULL, &failed);
     if (nodes != small) {
         markdown_core_free(nodes);
     }
@@ -1022,8 +1284,9 @@ static void S_print_error(FILE *out, markdown_core_node *node, const char *elem)
 }
 
 /* The errors of a node's stem: a stem that holds no entry or no reference,
- * one whose entries are not all one height below it, and one that miscounts
- * the nodes under it. The walk's path is no deeper than the stem's height. */
+ * one below the root that holds less than the fill, one whose entries are
+ * not all one height below it, and one that miscounts the nodes under it.
+ * The walk's path is no deeper than the stem's height. */
 static int S_check_stem(const markdown_core_node *owner, const markdown_core_stem *stem, FILE *out) {
     const markdown_core_stem *path[MARKDOWN_CORE_STEM_HEIGHT + 1];
     uint8_t at[MARKDOWN_CORE_STEM_HEIGHT + 1];
@@ -1042,6 +1305,10 @@ static int S_check_stem(const markdown_core_node *owner, const markdown_core_ste
             if (!top->width || !top->refs) {
                 S_print_error(out, (markdown_core_node *)owner, "stem");
                 return errors + 1;
+            }
+            if (depth && top->width < MARKDOWN_CORE_STEM_FILL) {
+                S_print_error(out, (markdown_core_node *)owner, "stem fill");
+                errors++;
             }
             for (uint8_t i = 0; i < top->width; i++) {
                 if (top->height) {
