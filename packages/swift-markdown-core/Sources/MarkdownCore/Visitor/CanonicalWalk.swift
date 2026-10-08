@@ -4,7 +4,7 @@
 /// It mirrors the C walk: each relation's first node is placed from its owner's
 /// start and each later node from the end of the one before it, and a named
 /// relation yields a line of its own before its nodes. A node whose runs read
-/// content, some run's length being positive, is an inline root: its first
+/// content, some run decoding bytes, is an inline root: its first
 /// relation is its content, whose nodes and everything under them are placed
 /// in that content from 0, and the walk holds the root's runs while it is in
 /// it. Roots never nest. The frames are the tree's depth; the call stack stays
@@ -30,18 +30,19 @@ struct CanonicalWalk {
         let hasNext: Bool
     }
 
-    /// One run of a node in absolute offsets: the content offset its bytes
-    /// start at, how many there are, and the source range they were read
-    /// from. A run of size 0 is source the node reads without content.
+    /// One run of a node in absolute offsets: the content offset its decoded
+    /// bytes start at, how many there are, and the source range they were
+    /// read from. A run that decodes no bytes reads source that gives none.
     private struct SourceRun {
         let content: Int
-        let size: Int
+        let decoded: Int
         let start: Int
         let end: Int
 
-        /// Whether it reads each content byte from one source byte, rather
-        /// than all of its content from all of its source.
-        var copied: Bool { end - start == size }
+        /// Whether it reads each decoded byte from one source byte, its
+        /// source spanning as many bytes as it decodes, rather than all of
+        /// them from all of its source.
+        var copied: Bool { end - start == decoded }
     }
 
     private struct Frame {
@@ -158,7 +159,7 @@ struct CanonicalWalk {
     /// An inline root, a node whose runs read content, has a frame that holds
     /// its runs, which its first relation's nodes are placed by.
     private mutating func enter(_ record: MarkupRecord, level: Int, start: Int, content: Bool, hasNext: Bool) -> Item {
-        let root = record.runs.contains { $0.length > 0 }
+        let root = record.runs.contains { $0.decoded > 0 }
         if root { Self.absolute(record.runs, from: start, into: &runs) }
         frames.append(Frame(record: record, level: level, start: start, content: content || root, root: root))
         let end = start + Int(record.extent.span)
@@ -175,17 +176,17 @@ struct CanonicalWalk {
     }
 
     /// `runs`, measured from `start`, in absolute offsets, in place of what
-    /// `into` held. Each starts `lead` past the end of the run before, or past
-    /// `start` for the first.
+    /// `into` held. Each source starts its `lead` past the end of the run
+    /// before, or past `start` for the first.
     private static func absolute(_ runs: [Run], from start: Int, into held: inout [SourceRun]) {
         held.removeAll(keepingCapacity: true)
         var content = 0
         var cursor = start
         for run in runs {
-            let start = cursor + Int(run.lead)
-            cursor = start + Int(run.span)
-            held.append(SourceRun(content: content, size: Int(run.length), start: start, end: cursor))
-            content += Int(run.length)
+            let start = cursor + Int(run.source.lead)
+            cursor = start + Int(run.source.span)
+            held.append(SourceRun(content: content, decoded: Int(run.decoded), start: start, end: cursor))
+            content += Int(run.decoded)
         }
     }
 
@@ -234,7 +235,7 @@ struct CanonicalWalk {
                 upper = middle
             }
         }
-        while lower > 0 && runs[lower].size == 0 { lower -= 1 }
+        while lower > 0 && runs[lower].decoded == 0 { lower -= 1 }
         return lower
     }
 
@@ -243,7 +244,7 @@ struct CanonicalWalk {
     /// ends.
     private func place(of offset: Int) -> Int {
         let run = runs[self.run(at: offset)]
-        if offset >= run.content + run.size { return run.end }
+        if offset >= run.content + run.decoded { return run.end }
         return run.copied ? run.start + (offset - run.content) : run.start
     }
 
@@ -251,7 +252,7 @@ struct CanonicalWalk {
     /// past its source byte, or the end of the run that reads it whole.
     private func placeEnd(of offset: Int) -> Int {
         let run = runs[self.run(at: offset - 1)]
-        if offset - 1 >= run.content + run.size || !run.copied { return run.end }
+        if offset - 1 >= run.content + run.decoded || !run.copied { return run.end }
         return run.start + (offset - run.content)
     }
 

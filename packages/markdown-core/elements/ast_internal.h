@@ -83,14 +83,14 @@ void markdown_core_relations_begin(markdown_core_relation_cursor *cursor, const 
 bool markdown_core_relations_next(markdown_core_relation_cursor *cursor, markdown_core_relation *relation);
 
 /* A NODE'S RUNS IN ABSOLUTE OFFSETS (node.h, markdown_core_runs): the
- * content offset each run's bytes start at, how many there are, and the
- * source range they were read from. A copied run, whose source is as long as
- * its content, reads each content byte from one source byte; any other reads
- * all of its content from all of its source, and a run of length 0 reads
- * none. Content and source both increase along the runs, and the source
+ * content offset each run's decoded bytes start at, how many there are, and
+ * the source range they were read from. A run whose range is as long as what
+ * it decodes reads each content byte from one source byte; any other decodes
+ * all of its content from all of its source, and a run that decodes nothing
+ * reads none. Content and source both increase along the runs, and the source
  * between two runs is not the node's. */
 typedef struct {
-    uint32_t content, length, start, end;
+    uint32_t content, decoded, start, end;
 } markdown_core_source_run;
 
 typedef struct {

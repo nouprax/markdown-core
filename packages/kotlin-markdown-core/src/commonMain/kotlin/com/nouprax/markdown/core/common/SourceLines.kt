@@ -144,16 +144,17 @@ internal class SourcePlaces {
 
 /**
  * A NODE'S RUNS in absolute offsets: for each run, the content offset it
- * starts at, its content length, and the source range it reads. A run whose
- * source is as long as its content reads each content byte from one source
- * byte; any other reads all of its content from all of its source, and a run
- * of length 0 reads none. The source between two runs is not the node's. A
+ * starts at, the bytes it decodes, and the source range it reads. A run
+ * whose source spans as many bytes as it decodes reads each decoded byte from
+ * one source byte; any other decodes all of its bytes from all of its
+ * source, and a run that decodes no bytes reads source that gives none. The
+ * source between two runs is not the node's. A
  * walk holds one for the inline root whose content it is in, and one for the
  * block it is asked about, each refilled in turn.
  */
 internal class SourceRuns {
     private var contents = LongArray(0)
-    private var sizes = LongArray(0)
+    private var decoded = LongArray(0)
     private var starts = LongArray(0)
     private var ends = LongArray(0)
     private var count = 0
@@ -165,7 +166,7 @@ internal class SourceRuns {
     ) {
         if (runs.size > starts.size) {
             contents = LongArray(runs.size)
-            sizes = LongArray(runs.size)
+            decoded = LongArray(runs.size)
             starts = LongArray(runs.size)
             ends = LongArray(runs.size)
         }
@@ -173,18 +174,19 @@ internal class SourceRuns {
         var at = anchor
         for (index in runs.indices) {
             val run = runs[index]
-            val start = at + run.lead
+            val start = at + run.source.lead
             contents[index] = content
-            sizes[index] = run.length.toLong()
+            decoded[index] = run.decoded.toLong()
             starts[index] = start
-            ends[index] = start + run.span.toLong()
-            content += sizes[index]
+            ends[index] = start + run.source.span.toLong()
+            content += decoded[index]
             at = ends[index]
         }
         count = runs.size
     }
 
-    private fun copied(index: Int): Boolean = ends[index] - starts[index] == sizes[index]
+    /** Whether run [index] reads each decoded byte from one source byte. */
+    private fun copied(index: Int): Boolean = ends[index] - starts[index] == decoded[index]
 
     /**
      * The run content offset [offset] is in: the last that starts at or
@@ -197,7 +199,7 @@ internal class SourceRuns {
             val middle = lo + (hi - lo) / 2
             if (contents[middle] <= offset) lo = middle else hi = middle
         }
-        while (lo > 0 && sizes[lo] == 0L) lo--
+        while (lo > 0 && decoded[lo] == 0L) lo--
         return lo
     }
 
@@ -208,7 +210,7 @@ internal class SourceRuns {
      */
     private fun place(offset: Long): Long {
         val run = runAt(offset)
-        if (offset >= contents[run] + sizes[run]) return ends[run]
+        if (offset >= contents[run] + decoded[run]) return ends[run]
         return if (copied(run)) starts[run] + (offset - contents[run]) else starts[run]
     }
 
@@ -218,7 +220,7 @@ internal class SourceRuns {
      */
     private fun placeEnd(offset: Long): Long {
         val run = runAt(offset - 1)
-        if (offset - 1 >= contents[run] + sizes[run] || !copied(run)) return ends[run]
+        if (offset - 1 >= contents[run] + decoded[run] || !copied(run)) return ends[run]
         return starts[run] + (offset - contents[run])
     }
 
@@ -272,6 +274,6 @@ internal class SourceRuns {
 
     companion object {
         /** Whether [runs] read content: their node is an inline root. */
-        fun readContent(runs: kotlin.collections.List<Run>): Boolean = runs.any { it.length > 0u }
+        fun readContent(runs: kotlin.collections.List<Run>): Boolean = runs.any { it.decoded > 0u }
     }
 }

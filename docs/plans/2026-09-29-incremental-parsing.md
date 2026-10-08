@@ -221,12 +221,10 @@ Extent(lead: Int32, span: UInt32)       offsets in the parser's input
     lead:   signed, from the end of the previous node in the same relation
             (or the owner's start, for the first node) to this node's start
     span:   of this node's range
-Run(lead: Int32, span: UInt32, length: UInt32)
-                                        offsets in the source
-    lead:   from the end of the previous run (or the node's start, for the
-            first run) to this run's start
-    span:   source bytes the run reads
-    length: content bytes it becomes
+Run(source: Extent, decoded: UInt32)   offsets in the source
+    source:  the source range the run reads, its lead from the end of the
+             previous run's (or the node's start, for the first run)
+    decoded: bytes it decodes them to
 ```
 
 - **One rule.** Every extent is a byte offset in the input of the parser
@@ -238,22 +236,22 @@ Run(lead: Int32, span: UInt32, length: UInt32)
 - **Runs.** A node whose source is not one contiguous range, or whose first
   relation is an inline root's content (a block's inline content, a
   callout's title, a definition's term), carries `runs`: the source it read,
-  in order. Each run is `length` content bytes read from `span` source
-  bytes.
-  - A run whose span is its length reads each content byte from one source
-    byte; any other reads all of its content from all of its source, as
-    `\|` in a table cell is two source bytes and one content byte, and a tab
-    in a grid cell is one source byte and the spaces it becomes.
-  - A run of length 0 is source the node reads that gives no content: an
-    opening fence, a heading's underline, the indentation of a paragraph's
+  in order. Each run is `decoded` bytes read from its `source` range.
+  - A run whose source spans as many bytes as it decodes reads each decoded
+    byte from one source byte; any other decodes all of its bytes from all of
+    its source by exactly one decoding: a tab gives that many spaces, NUL gives
+    U+FFFD, `\|` in a table cell gives `|`, and a line ending that is not LF
+    (CR, CR LF, or none at the end of the source) gives LF.
+  - A run that decodes 0 bytes is source the node reads that gives no content:
+    an opening fence, a heading's underline, the indentation of a paragraph's
     later lines, or a whole line of a node without inline content.
   - Between the first run and the last, the runs cover exactly the node's
     own source, so the source between two runs is not the node's: the
     container prefixes between a leaf block's lines (E5) inside a
     blockquote, callout or list item, and the other columns between a grid
     or multiline table cell's lines.
-  - A run of length 0 at either end of the list has a gap beside it, so a
-    node of the document itself without inline content, such as a fenced
+  - A run that decodes 0 bytes at either end of the list has a gap beside it,
+    so a node of the document itself without inline content, such as a fenced
     code block, has no runs, and containers have none of their own.
   - The element that reads the source records the runs as it reads, so no
     other code knows how an element turns source into content.
@@ -1230,10 +1228,10 @@ them, and step 8 makes the whole engine meet the benchmark gates.
   every binding maps an inline node's range to the source with one walk
   (4.3), and an inline root finds its edit from the step's source edits
   through them (5.6).
-  Revised 2026-10-06: runs are the one record of where a node's source lies.
-  A run of length 0 is source that gives no content, and the source between
-  two runs is not the node's, so pieces are removed and every scope is a
-  window less the gaps between runs (4.3).
+  Revised 2026-10-06: runs are the one record of where a node's source lies. A
+  run that decodes 0 bytes is source that gives no content, and the source
+  between two runs is not the node's, so pieces are removed and every scope is
+  a window less the gaps between runs (4.3).
 - **D2 Definitions. Decided 2026-09-29: definitions stay where written.**
   Footnote and specimen definitions remain in the tree where they were
   written, an inline note's `Footnote` is owned at its call site, and the

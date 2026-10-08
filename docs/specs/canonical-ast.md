@@ -73,7 +73,7 @@ ECMAScript exports `markupEquals(a, b)`.
 
 ```text
 Extent(lead: Int32, span: UInt32)
-Run(lead: Int32, span: UInt32, length: UInt32)
+Run(source: Extent, decoded: UInt32)
 Position(line: integer, column: integer)
 Scope(start: Position, end: Position)
 ```
@@ -93,23 +93,26 @@ definition body is a relation of its own. `lead` is signed, because ranges may
 overlap or nest as the rules below define. No node stores a line, a column or
 an absolute offset, and bindings copy extents and runs verbatim.
 
-A node's `runs` say which source it read, in order, and how many content
-bytes each part became. Each run is `length` content bytes read from `span`
-source bytes, its `lead` from the end of the previous run, or from the node's
-start for the first. A run whose span is its length reads each content byte
-from one source byte; any other reads all of its content from all of its
-source. A run of length 0 is source the node reads without content. The
-content runs map a node's first relation when it is an inline root's content
--- the inline content of a block, a callout's title, a definition's term --
-and every other run has length 0.
+A node's `runs` say which source it read, in order, and how many bytes each
+part decoded to. Each run is `decoded` bytes read from its `source` range,
+whose `lead` is from the end of the previous run's source, or from the node's
+start for the first. A run whose source spans as many bytes as it decodes reads
+each decoded byte from one source byte; any other decodes all of its bytes from
+all of its source by exactly one decoding: a tab gives that many spaces, NUL
+gives U+FFFD, `\|` in a table cell gives `|`, and a line ending that is not LF
+(CR, CR LF, or none at the end of the source) gives LF. A run that decodes 0
+bytes is source the node reads without content. The content runs map a node's
+first relation when it is an inline root's content -- the inline content of a
+block, a callout's title, a definition's term -- and every other run decodes 0
+bytes.
 
 Between its first run and its last, a node's runs cover exactly its own
 source: the source between two runs is not the node's, such as the container
 prefixes between the lines of a leaf block inside a container, or the other
-columns between the lines of a grid or multiline table cell. A run of length
-0 at either end of the list has such a gap beside it, and runs that touch are
-one run when both read each content byte from one source byte or both have
-length 0. A node whose own source is its one range and that has no inline
+columns between the lines of a grid or multiline table cell. A run that
+decodes 0 bytes at either end of the list has such a gap beside it, and runs
+that touch are one run when both read each decoded byte from one source byte
+or both decode 0 bytes. A node whose own source is its one range and that has no inline
 content has none.
 
 A node's source ranges are one window of the source less the gaps between

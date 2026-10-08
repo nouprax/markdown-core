@@ -500,7 +500,7 @@ static inline markdown_core_runs *shape_runs(const markdown_core_node *node, rel
  * below them is too. Roots never nest. */
 static markdown_core_runs *content_runs(const markdown_core_node *node) {
     markdown_core_runs *runs = shape_runs(node, shape_of(node));
-    return runs && runs->content ? runs : NULL;
+    return runs && runs->decoded ? runs : NULL;
 }
 
 bool markdown_core_source_runs_read(markdown_core_source_runs *table, const markdown_core_runs *runs, uint32_t origin) {
@@ -514,17 +514,13 @@ bool markdown_core_source_runs_read(markdown_core_source_runs *table, const mark
     int64_t at = origin;
     for (uint32_t i = 0; i < runs->count; i++) {
         const markdown_core_run run = runs->items[i].run;
-        const uint32_t start = (uint32_t)(at + run.lead);
-        table->runs[i] = (markdown_core_source_run){content, run.length, start, start + run.span};
-        content += run.length;
-        at = start + run.span;
+        const uint32_t start = (uint32_t)(at + run.source.lead);
+        table->runs[i] = (markdown_core_source_run){content, run.decoded, start, start + run.source.span};
+        content += run.decoded;
+        at = start + run.source.span;
     }
     table->count = runs->count;
     return true;
-}
-
-static inline bool source_run_copied(const markdown_core_source_run *run) {
-    return run->end - run->start == run->length;
 }
 
 /* The content run content offset `offset` is in: the last that starts at or
@@ -539,10 +535,15 @@ static size_t source_run_at(const markdown_core_source_runs *table, uint32_t off
             hi = mid;
         }
     }
-    while (lo > 0 && !table->runs[lo].length) {
+    while (lo > 0 && !table->runs[lo].decoded) {
         lo--;
     }
     return lo;
+}
+
+/* Whether the run reads each content byte from one source byte. */
+static inline bool source_run_copied(const markdown_core_source_run *run) {
+    return run->end - run->start == run->decoded;
 }
 
 /* Where content offset `offset` is read from: its source byte, the start of
@@ -550,7 +551,7 @@ static size_t source_run_at(const markdown_core_source_runs *table, uint32_t off
  * ends. */
 static uint32_t source_run_place(const markdown_core_source_runs *table, uint32_t offset) {
     const markdown_core_source_run *run = &table->runs[source_run_at(table, offset)];
-    if (offset >= run->content + run->length) {
+    if (offset >= run->content + run->decoded) {
         return run->end;
     }
     return source_run_copied(run) ? run->start + (offset - run->content) : run->start;
@@ -560,7 +561,7 @@ static uint32_t source_run_place(const markdown_core_source_runs *table, uint32_
  * or the end of the run that reads it whole. */
 static uint32_t source_run_end(const markdown_core_source_runs *table, uint32_t offset) {
     const markdown_core_source_run *run = &table->runs[source_run_at(table, offset - 1)];
-    if (offset - 1 >= run->content + run->length || !source_run_copied(run)) {
+    if (offset - 1 >= run->content + run->decoded || !source_run_copied(run)) {
         return run->end;
     }
     return run->start + (offset - run->content);
@@ -615,9 +616,9 @@ size_t markdown_core_source_runs_ranges(const markdown_core_source_runs *table, 
     return count;
 }
 
-/* A node's runs as they are published (node.h): each run of length 0
- * within its place, those that touch joined, and the runs of length 0 at
- * either end without a gap beside them dropped, the rest measured from the
+/* A node's runs as they are published (node.h): each run that decodes
+ * nothing within its place, those that touch joined, and those at either end
+ * without a gap beside them dropped, the rest measured from the
  * end of the run before, or from the node's start. A node that has no runs
  * left has none. */
 static void publish_runs(markdown_core_node_pool *pool, markdown_core_runs **at, markdown_core_place place) {
@@ -626,13 +627,13 @@ static void publish_runs(markdown_core_node_pool *pool, markdown_core_runs **at,
     uint32_t count = 0;
     for (uint32_t i = 0; i < runs->count; i++) {
         markdown_core_run_place run = items[i].place;
-        if (!run.length) {
+        if (!run.decoded) {
             run.start = run.start > place.start ? run.start : place.start;
             run.end = run.end < place.end ? run.end : place.end;
             if (run.start >= run.end) {
                 continue;
             }
-            if (count && !items[count - 1].place.length && items[count - 1].place.end == run.start) {
+            if (count && !items[count - 1].place.decoded && items[count - 1].place.end == run.start) {
                 items[count - 1].place.end = run.end;
                 continue;
             }
@@ -640,11 +641,11 @@ static void publish_runs(markdown_core_node_pool *pool, markdown_core_runs **at,
         items[count++].place = run;
     }
     uint32_t first = 0;
-    while (first < count && !items[first].place.length &&
+    while (first < count && !items[first].place.decoded &&
            (first + 1 == count || items[first].place.end == items[first + 1].place.start)) {
         first++;
     }
-    while (count > first && !items[count - 1].place.length &&
+    while (count > first && !items[count - 1].place.decoded &&
            (count - 1 == first || items[count - 2].place.end == items[count - 1].place.start)) {
         count--;
     }
@@ -657,7 +658,7 @@ static void publish_runs(markdown_core_node_pool *pool, markdown_core_runs **at,
     for (uint32_t i = first; i < count; i++) {
         const markdown_core_run_place run = items[i].place;
         items[i - first].run =
-            (markdown_core_run){(int32_t)((int64_t)run.start - anchor), run.end - run.start, run.length};
+            (markdown_core_run){{(int32_t)((int64_t)run.start - anchor), run.end - run.start}, run.decoded};
         anchor = run.end;
     }
     runs->count = count - first;
@@ -711,8 +712,8 @@ static bool source_runs_read_places(markdown_core_source_runs *table, const mark
     uint32_t content = 0;
     for (uint32_t i = 0; i < runs->count; i++) {
         const markdown_core_run_place run = runs->items[i].place;
-        table->runs[i] = (markdown_core_source_run){content, run.length, run.start, run.end};
-        content += run.length;
+        table->runs[i] = (markdown_core_source_run){content, run.decoded, run.start, run.end};
+        content += run.decoded;
     }
     table->count = runs->count;
     return true;
@@ -794,14 +795,14 @@ static bool content_images_read(const markdown_core_parser *parser, markdown_cor
     }
     int64_t at = origin;
     uint32_t content = 0;
-    size_t edit = markdown_core_parser_edit_after(parser, (uint32_t)(at + runs->items[0].run.lead)), next = 0;
+    size_t edit = markdown_core_parser_edit_after(parser, (uint32_t)(at + runs->items[0].run.source.lead)), next = 0;
     for (uint32_t i = 0; i < runs->count; i++) {
         const markdown_core_run run = runs->items[i].run;
-        const uint32_t start = (uint32_t)(at + run.lead), end = start + run.span, from = content;
-        const bool copied = run.span == run.length;
+        const uint32_t start = (uint32_t)(at + run.source.lead), end = start + run.source.span, from = content;
+        const bool copied = run.source.span == run.decoded;
         at = end;
-        content += run.length;
-        if (!run.length) {
+        content += run.decoded;
+        if (!run.decoded) {
             continue;
         }
         /* Each stretch of the run's source that no edit replaced, and the
@@ -823,7 +824,7 @@ static bool content_images_read(const markdown_core_parser *parser, markdown_cor
             }
             for (size_t j = next; j < fresh->count && fresh->runs[j].start < high; j++) {
                 const markdown_core_source_run *read = &fresh->runs[j];
-                if (!read->length) {
+                if (!read->decoded) {
                     continue;
                 }
                 const uint32_t first = low > read->start ? low : read->start;
@@ -1470,7 +1471,7 @@ static bool runs_equal(const markdown_core_runs *a, const markdown_core_runs *b)
     }
     for (uint32_t i = 0; i < a->count; i++) {
         const markdown_core_run x = a->items[i].run, y = b->items[i].run;
-        if (x.lead != y.lead || x.span != y.span || x.length != y.length) {
+        if (x.source.lead != y.source.lead || x.source.span != y.source.span || x.decoded != y.decoded) {
             return false;
         }
     }

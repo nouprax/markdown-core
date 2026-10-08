@@ -588,6 +588,112 @@ size_t markdown_core_node_release(markdown_core_node *node) { return markdown_co
 
 void markdown_core_node_free(markdown_core_node *node) { (void)markdown_core_node_release(node); }
 
+/* A COPY'S OWN BYTES. Each makes the copy's member, which views the bytes of
+ * the node it copies, its own; when it cannot, it leaves the member owning
+ * nothing, so releasing the copy frees nothing of the node's, and fails. */
+
+/* A label in storage of the pool's (markdown_core_node_pool_bytes),
+ * NUL-terminated. */
+static bool S_copy_label(markdown_core_node_pool *pool, markdown_core_chunk *label) {
+    if (!label->len) {
+        return true;
+    }
+    unsigned char *bytes = markdown_core_node_pool_bytes(pool, (size_t)label->len + 1);
+    if (!bytes) {
+        *label = (markdown_core_chunk){0};
+        return false;
+    }
+    memcpy(bytes, label->data, (size_t)label->len);
+    bytes[label->len] = '\0';
+    label->data = bytes;
+    return true;
+}
+
+/* A resource, which the copy holds its own of. */
+static bool S_copy_resource(markdown_core_node_pool *pool, markdown_core_resource **resource) {
+    if (!*resource) {
+        return true;
+    }
+    const markdown_core_resource *from = *resource;
+    markdown_core_optional_chunk title = from->title;
+    title.value.alloc = 0;
+    markdown_core_chunk url = from->url;
+    url.alloc = 0;
+    *resource = markdown_core_resource_new(pool, url, title);
+    return *resource != NULL;
+}
+
+static int S_retain_field(markdown_core_node **slot, void *context) {
+    (void)context;
+    if (*slot) {
+        markdown_core_node_retain(*slot);
+    }
+    return 1;
+}
+
+markdown_core_node *markdown_core_node_copy(markdown_core_node_pool *pool, const markdown_core_node *node) {
+    assert(node->kind != MARKDOWN_CORE_NODE_DOCUMENT && node->kind != MARKDOWN_CORE_NODE_METADATA);
+    markdown_core_node *copy = markdown_core_node_pool_new(pool, (markdown_core_node_type)node->kind, node->element);
+    if (!copy) {
+        return NULL;
+    }
+    copy->flags = node->flags;
+    copy->id = node->id;
+    copy->entry = node->entry;
+    copy->reach = node->reach;
+    copy->where = node->where;
+    copy->internal_offset = node->internal_offset;
+    copy->children = markdown_core_stem_retain(node->children);
+    const size_t payload = S_node_payload_size((markdown_core_node_type)node->kind);
+    if (payload) {
+        memcpy(copy->as.data, node->as.data, payload);
+    }
+    bool ok = true;
+    markdown_core_chunk *strings[NODE_STRING_LIMIT];
+    const int count = node_strings(copy, strings);
+    for (int i = 0; i < count; i++) {
+        ok &= markdown_core_chunk_own(strings[i]);
+    }
+    switch (copy->kind) {
+    case MARKDOWN_CORE_NODE_HEADING:
+        ok &= S_copy_label(pool, &copy->as.heading->label);
+        break;
+    case MARKDOWN_CORE_NODE_LINK:
+    case MARKDOWN_CORE_NODE_EMBEDDED:
+        ok &= S_copy_resource(pool, &copy->as.link->resource);
+        ok &= S_copy_label(pool, &copy->as.link->label);
+        break;
+    case MARKDOWN_CORE_NODE_REFERENCE:
+        ok &= S_copy_resource(pool, &copy->as.reference->resource);
+        ok &= S_copy_label(pool, &copy->as.reference->label);
+        break;
+    default:
+        break;
+    }
+    if (copy->element && copy->element->opaque_copy_func) {
+        ok &= copy->element->opaque_copy_func(copy->element, node, copy);
+    }
+    markdown_core_node_visit_fields(copy, S_retain_field, NULL);
+    ok &= markdown_core_attributes_copy(&copy->attributes, &node->attributes);
+    if (node->content.size) {
+        markdown_core_strbuf_set(&copy->content, node->content.ptr, node->content.size);
+        ok &= !copy->content.oom;
+    }
+    if (node->runs) {
+        const size_t bytes = sizeof(*node->runs) + node->runs->count * sizeof(markdown_core_run_where);
+        copy->runs = markdown_core_node_pool_bytes(pool, bytes);
+        if (copy->runs) {
+            memcpy(copy->runs, node->runs, bytes);
+        }
+        ok &= copy->runs != NULL;
+    }
+    if (!ok) {
+        markdown_core_node_pool_release(pool, copy);
+        return NULL;
+    }
+    return copy;
+}
+
 /* THE CHILDREN TREE. */
 
 static markdown_core_stem *S_stem_new(markdown_core_node_pool *pool, uint8_t height, size_t width) {
@@ -727,6 +833,62 @@ markdown_core_node *markdown_core_stem_put(markdown_core_stem *stem, size_t inde
     markdown_core_node *held = stem->entries[index].node;
     stem->entries[index].node = node;
     return held;
+}
+
+static markdown_core_stem *S_stem_hold(markdown_core_node_pool *pool, uint8_t height,
+                                       const markdown_core_stem_entry *entries, size_t width,
+                                       const markdown_core_stem_summary *summary);
+
+markdown_core_stem *markdown_core_stem_replace(markdown_core_node_pool *pool, const markdown_core_stem *stem,
+                                               size_t index, markdown_core_node *node,
+                                               const markdown_core_stem_summary *summary, bool *failed) {
+    const markdown_core_stem *path[MARKDOWN_CORE_STEM_HEIGHT];
+    uint8_t at[MARKDOWN_CORE_STEM_HEIGHT];
+    size_t depth = 0;
+    *failed = false;
+    for (;;) {
+        uint8_t i = 0;
+        if (stem->height) {
+            while (index >= stem->entries[i].stem->count) {
+                index -= stem->entries[i].stem->count;
+                i++;
+            }
+        } else {
+            i = (uint8_t)index;
+        }
+        path[depth] = stem;
+        at[depth++] = i;
+        if (!stem->height) {
+            break;
+        }
+        stem = stem->entries[i].stem;
+    }
+    /* Up the path, each stem is a new one holding what the old one held but
+     * the entry below, which is the new one under it. */
+    markdown_core_stem *below = NULL;
+    while (depth--) {
+        const markdown_core_stem *old = path[depth];
+        markdown_core_stem *copy = S_stem_hold(pool, old->height, old->entries, old->width, NULL);
+        if (!copy) {
+            if (below) {
+                markdown_core_node_retain(node);
+                markdown_core_stem_release(pool, below);
+            }
+            *failed = true;
+            return NULL;
+        }
+        markdown_core_stem_entry *entry = &copy->entries[at[depth]];
+        if (old->height) {
+            entry->stem->refs--;
+            entry->stem = below;
+        } else {
+            entry->node->refs--;
+            entry->node = node;
+        }
+        S_stem_sum(copy, summary);
+        below = copy;
+    }
+    return below;
 }
 
 void markdown_core_stem_walk_begin(markdown_core_stem_walk *walk, const markdown_core_stem *stem, size_t index,

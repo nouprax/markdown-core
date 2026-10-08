@@ -474,7 +474,7 @@ static int S_append_content_mark(markdown_core_parser *parser, markdown_core_con
         assert(map->first + map->count == parser->line_marks_size);
         assert(parser->line_marks[parser->line_marks_size - 1].content_offset < mark.content_offset);
     }
-    assert(mark.source_width >= 1);
+    assert(mark.source_step == 1 ? mark.source_width == 1 : mark.source_step == 0 && mark.source_width >= 0);
     parser->line_marks[parser->line_marks_size++] = mark;
     map->count++;
     return 1;
@@ -523,10 +523,16 @@ void markdown_core_block_add_line(markdown_core_node *node, markdown_core_chunk 
      * and the tab below is one of them, because its expansion is what lands in
      * the buffer. */
     if (parser->partially_consumed_tab) {
-        /* The spaces below stand for the tail of the tab at parser->offset and
-         * have no source bytes of their own, so they are marked against the
-         * tab itself and the copied bytes get a mark of their own. */
-        S_record_content_mark(parser, node, parser->offset + 1, 1);
+        /* The spaces below are the rest of the tab at parser->offset: a
+         * decoded run of their own, which reads the tab, and the copied
+         * bytes after it get a run of their own. */
+        const int line = parser->line_number, column = parser->offset + 1;
+        const bufsize_t tab = markdown_core_parser_source_offset(parser, line, column);
+        S_append_content_mark(
+            parser, &node->content_map,
+            (markdown_core_line_mark){node->content.size, line, tab,
+                                      (int)(markdown_core_parser_source_end(parser, line, column) - tab), 0,
+                                      parser->indent});
         parser->offset += 1; // skip over tab
         // add space characters:
         chars_to_tab = TAB_STOP - (parser->column % TAB_STOP);
@@ -771,7 +777,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_line_runs(markdown_core_parser
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
-    runs->count = runs->content = 0;
+    runs->count = runs->decoded = 0;
     markdown_core_place own;
     for (int line = first; line <= last; line++) {
         if (!S_line_own(parser, line, &own)) {
@@ -880,18 +886,49 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) int S_append_nul_line_marks(markdown_
     return 1;
 }
 
+/* Whether document line `geometry` ends in LF, the byte the block parser
+ * reads its ending as. False, with the parse failed, when the input could
+ * not be read. */
+static inline bool S_ends_in_lf(markdown_core_parser *parser, const markdown_core_input_line *geometry) {
+    return markdown_core_input_line_next(parser, geometry) - geometry->end == 1 &&
+           S_input_seek(parser, geometry->end) &&
+           parser->input_chunk[geometry->end - parser->input_chunk_start] == '\n';
+}
+
 /* The runs of `length` bytes from `column` of input line `line`, which
- * starts at `line_start` in the active input. */
+ * starts at `line_start` in the active input. The block parser reads a
+ * document line's ending as LF: a copied byte when it is LF, and otherwise
+ * a decoded run of its own over CR, CR LF, or nothing at the end of an input
+ * without one. A line of a cell's content reads its owner's runs. */
 static inline int S_append_input_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
                                        bufsize_t line_start, int column, bufsize_t length, bufsize_t offset) {
-    if (!parser->input_mapped) {
-        return S_append_copied_mark(parser, node, line, line_start + column - 1, offset);
+    if (parser->block_root != parser->root) {
+        return markdown_core_parser_append_content_marks(parser, &parser->block_root->node->content_map,
+                                                         &node->content_map, line_start + column - 1, length, offset);
     }
-    if (parser->block_root == parser->root) {
-        return S_append_nul_line_marks(parser, node, line, line_start, column, length, offset);
+    const markdown_core_input_line *geometry = markdown_core_parser_visited_line(parser, line);
+    bufsize_t text = (bufsize_t)(geometry->end - geometry->start);
+    if (geometry->facts) {
+        text += 2 * (bufsize_t)parser->input_facts[geometry->facts - 1].nul_count;
     }
-    return markdown_core_parser_append_content_marks(parser, &parser->block_root->node->content_map, &node->content_map,
-                                                     line_start + column - 1, length, offset);
+    const bool ending = column - 1 <= text && column - 1 + length > text;
+    if (ending && !S_ends_in_lf(parser, geometry)) {
+        if (parser->error) {
+            return 0;
+        }
+        length--;
+        if (length &&
+            !(parser->input_mapped ? S_append_nul_line_marks(parser, node, line, line_start, column, length, offset)
+                                   : S_append_copied_mark(parser, node, line, line_start + column - 1, offset))) {
+            return 0;
+        }
+        const uint32_t next = (uint32_t)markdown_core_input_line_next(parser, geometry);
+        return S_append_content_mark(parser, &node->content_map,
+                                     (markdown_core_line_mark){offset + length, line, (bufsize_t)geometry->end,
+                                                               (int)(next - geometry->end), 0, parser->indent});
+    }
+    return parser->input_mapped ? S_append_nul_line_marks(parser, node, line, line_start, column, length, offset)
+                                : S_append_copied_mark(parser, node, line, line_start + column - 1, offset);
 }
 
 int markdown_core_parser_append_line_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
@@ -965,14 +1002,14 @@ int markdown_core_parser_content_end_place(markdown_core_parser *parser, const m
     return S_content_place(parser, map, offset, true, line, end);
 }
 
-/* Appends to `runs` a run of length 0 over `start` to `end`, joined to a run
- * of length 0 it touches. */
+/* Appends to `runs` a run that decodes nothing over `start` to `end`, joined
+ * to such a run it touches. */
 static inline void S_runs_add_own(markdown_core_runs *runs, uint32_t start, uint32_t end) {
     if (start >= end) {
         return;
     }
     markdown_core_run_place *previous = runs->count ? &runs->items[runs->count - 1].place : NULL;
-    if (previous && !previous->length && previous->end == start) {
+    if (previous && !previous->decoded && previous->end == start) {
         previous->end = end;
     } else {
         runs->items[runs->count++].place = (markdown_core_run_place){start, end, 0};
@@ -982,16 +1019,14 @@ static inline void S_runs_add_own(markdown_core_runs *runs, uint32_t start, uint
 /* AN INLINE ROOT'S CONTENT BECOMES THE INPUT ITS NODES ARE PLACED IN
  * (markdown_core_inline_start_inlines). The `length` bytes its parse reads
  * keep their map to the source in the root's runs: one run per run of the
- * map, the bytes it reads from where it reads them, copied runs that touch
- * in the source joined into one, and a run that reads source the run before
- * read joined to it, so the runs' source ranges are in order and apart or
- * touching. A copied run reads each content byte from one source byte; any
- * other reads all of its content from all of its source. The root's own
- * source that gives no content lies in runs of length 0 between them: the
- * rest of each line its runs of length 0 cover (markdown_core_parser_place_runs),
- * or, when it has none, all of the source between its content runs. The
- * root's map becomes the identity, so the parse places its nodes at offsets
- * of the content. */
+ * map, the bytes it decodes from where it reads them, runs that read as many
+ * bytes as they decode and touch in the source joined into one, so the runs'
+ * source ranges are in order and apart or touching (markdown_core_run). The root's
+ * own source that gives no content lies in runs that decode nothing between
+ * them: the rest of each line its runs that decode nothing cover
+ * (markdown_core_parser_place_runs), or, when it has none, all of the source
+ * between its content runs. The root's map becomes the identity, so the
+ * parse places its nodes at offsets of the content. */
 void markdown_core_parser_read_content(markdown_core_parser *parser, markdown_core_node *node, bufsize_t length) {
     const markdown_core_content_map map = node->content_map;
     node->content_map = (markdown_core_content_map){MARKDOWN_CORE_IDENTITY_MARK, 1, 0};
@@ -1006,7 +1041,7 @@ void markdown_core_parser_read_content(markdown_core_parser *parser, markdown_co
     markdown_core_runs *const lines = node->runs;
     const uint32_t line_count = lines ? lines->count : 0;
     /* At most one content run per mark from the first to the end of the map,
-     * one run of length 0 before each and one after each line. */
+     * one run that decodes nothing before each and one after each line. */
     markdown_core_runs *runs = markdown_core_node_pool_bytes(
         parser->pool, sizeof(*runs) + ((size_t)(past - mark) * 2 + line_count + 1) * sizeof(markdown_core_run_where));
     if (!runs) {
@@ -1014,7 +1049,7 @@ void markdown_core_parser_read_content(markdown_core_parser *parser, markdown_co
         return;
     }
     runs->count = 0;
-    runs->content = (uint32_t)length;
+    runs->decoded = (uint32_t)length;
     uint32_t line = 0, at = 0;
     for (bufsize_t from = map.offset; from < end; mark++) {
         const bufsize_t to = mark + 1 < past && mark[1].content_offset < end ? mark[1].content_offset : end;
@@ -1023,17 +1058,15 @@ void markdown_core_parser_read_content(markdown_core_parser *parser, markdown_co
         const uint32_t size = (uint32_t)(to - from);
         from = to;
         markdown_core_run_place *previous =
-            runs->count && runs->items[runs->count - 1].place.length ? &runs->items[runs->count - 1].place : NULL;
-        /* A copied slice that continues a copied run extends it, and one
-         * that reads source the run already read, as an expanded tab's
-         * columns read one tab, joins it: the run reads all of its content
-         * from all of its source. */
-        const bool continues = previous && previous->end == start && stop - start == size &&
-                               previous->end - previous->start == previous->length;
-        if (continues || (previous && start < previous->end)) {
-            previous->end = stop > previous->end ? stop : previous->end;
-            previous->length += size;
-            at = previous->end;
+            runs->count && runs->items[runs->count - 1].place.decoded ? &runs->items[runs->count - 1].place : NULL;
+        assert(!previous || start >= previous->end);
+        /* A slice that reads as many bytes as it decodes continues such a run
+         * that ends where it starts. */
+        if (stop - start == size && previous && previous->end - previous->start == previous->decoded &&
+            previous->end == start) {
+            previous->end = stop;
+            previous->decoded += size;
+            at = stop;
             continue;
         }
         /* The own source before the slice: the rest of each line it passes,

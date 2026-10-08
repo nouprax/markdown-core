@@ -86,7 +86,7 @@ static void set_cell_content(markdown_core_parser *parser, markdown_core_node *n
                 end = markdown_core_parser_source_end(parser, line, offset + from + 2);
             }
             markdown_core_parser_append_content_mark(parser, node, node->content.size, place, first, (int)(end - first),
-                                                     (int)(end - first));
+                                                     0);
             markdown_core_strbuf_putc(&node->content, '|');
             to = from + 2;
         } else {
@@ -594,6 +594,25 @@ static void opaque_alloc(const markdown_core_element *self, markdown_core_node *
 }
 
 static void opaque_free(const markdown_core_element *self, markdown_core_node *node) { free_node_table(node->opaque); }
+
+static int opaque_copy(const markdown_core_element *self, const markdown_core_node *from, markdown_core_node *to) {
+    const markdown_core_table *table = from->opaque;
+    markdown_core_table *copy = to->opaque;
+    if (!table || !copy) {
+        return !table;
+    }
+    *copy = *table;
+    copy->columns = NULL;
+    if (table->column_count) {
+        copy->columns = markdown_core_alloc(table->column_count, sizeof(*table->columns));
+        if (!copy->columns) {
+            copy->caption = NULL;
+            return 0;
+        }
+        memcpy(copy->columns, table->columns, table->column_count * sizeof(*table->columns));
+    }
+    return 1;
+}
 
 static int visit_owned_subtrees(const markdown_core_element *self, markdown_core_node *node,
                                 markdown_core_owned_subtree_visitor visitor, void *context) {
@@ -2274,15 +2293,25 @@ static void table_append_range(table_source *source, markdown_core_node *node, s
     for (int column = left; column < right && !parser->error;) {
         int byte = bytes[column];
         if (data[byte] == '\t') {
+            /* The tab's columns in the cell are spaces, decoded from the tab
+             * by one run. */
+            int end = column + 1;
+            while (end < right && bytes[end] == byte) {
+                end++;
+            }
             bufsize_t original = markdown_core_parser_source_offset(parser, line->line, byte + 1);
-            markdown_core_parser_append_content_mark(parser, node, node->content.size, line->line, original, 1, 0);
-            markdown_core_strbuf_putc(&node->content, ' ');
-            column++;
+            bufsize_t past = markdown_core_parser_source_end(parser, line->line, byte + 1);
+            markdown_core_parser_append_content_mark(parser, node, node->content.size, line->line, original,
+                                                     (int)(past - original), 0);
+            for (int space = column; space < end; space++) {
+                markdown_core_strbuf_putc(&node->content, ' ');
+            }
+            column = end;
         } else if (escapes && column + 1 < right && data[byte] == '\\' && data[bytes[column + 1]] == '|') {
             bufsize_t first = markdown_core_parser_source_offset(parser, line->line, byte + 1);
             bufsize_t end = markdown_core_parser_source_end(parser, line->line, byte + 2);
             markdown_core_parser_append_content_mark(parser, node, node->content.size, line->line, first,
-                                                     (int)(end - first), (int)(end - first));
+                                                     (int)(end - first), 0);
             markdown_core_strbuf_putc(&node->content, '|');
             column += 2;
         } else {
@@ -2405,7 +2434,7 @@ static void table_cell_runs(table_source *source, markdown_core_node *node, cons
         return;
     }
     runs->count = count;
-    runs->content = 0;
+    runs->decoded = 0;
     for (uint32_t i = 0; i < count; i++) {
         const table_source_line *line = &source->lines[cell->first + i];
         int right = cell->right < line->columns ? cell->right : line->columns;
@@ -2731,5 +2760,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .finalize_block = finalize_block,
     .opaque_alloc_func = opaque_alloc,
     .opaque_free_func = opaque_free,
+    .opaque_copy_func = opaque_copy,
     .visit_owned_subtrees_func = visit_owned_subtrees,
 };

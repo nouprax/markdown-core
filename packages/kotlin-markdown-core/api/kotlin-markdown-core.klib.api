@@ -1062,19 +1062,16 @@ final class com.nouprax.markdown.core/Reference : com.nouprax.markdown.core/Mark
 }
 
 final class com.nouprax.markdown.core/Run { // com.nouprax.markdown.core/Run|null[0]
-    constructor <init>(kotlin/Int, kotlin/UInt, kotlin/UInt) // com.nouprax.markdown.core/Run.<init>|<init>(kotlin.Int;kotlin.UInt;kotlin.UInt){}[0]
+    constructor <init>(com.nouprax.markdown.core/Extent, kotlin/UInt) // com.nouprax.markdown.core/Run.<init>|<init>(com.nouprax.markdown.core.Extent;kotlin.UInt){}[0]
 
-    final val lead // com.nouprax.markdown.core/Run.lead|{}lead[0]
-        final fun <get-lead>(): kotlin/Int // com.nouprax.markdown.core/Run.lead.<get-lead>|<get-lead>(){}[0]
-    final val length // com.nouprax.markdown.core/Run.length|{}length[0]
-        final fun <get-length>(): kotlin/UInt // com.nouprax.markdown.core/Run.length.<get-length>|<get-length>(){}[0]
-    final val span // com.nouprax.markdown.core/Run.span|{}span[0]
-        final fun <get-span>(): kotlin/UInt // com.nouprax.markdown.core/Run.span.<get-span>|<get-span>(){}[0]
+    final val decoded // com.nouprax.markdown.core/Run.decoded|{}decoded[0]
+        final fun <get-decoded>(): kotlin/UInt // com.nouprax.markdown.core/Run.decoded.<get-decoded>|<get-decoded>(){}[0]
+    final val source // com.nouprax.markdown.core/Run.source|{}source[0]
+        final fun <get-source>(): com.nouprax.markdown.core/Extent // com.nouprax.markdown.core/Run.source.<get-source>|<get-source>(){}[0]
 
-    final fun component1(): kotlin/Int // com.nouprax.markdown.core/Run.component1|component1(){}[0]
+    final fun component1(): com.nouprax.markdown.core/Extent // com.nouprax.markdown.core/Run.component1|component1(){}[0]
     final fun component2(): kotlin/UInt // com.nouprax.markdown.core/Run.component2|component2(){}[0]
-    final fun component3(): kotlin/UInt // com.nouprax.markdown.core/Run.component3|component3(){}[0]
-    final fun copy(kotlin/Int = ..., kotlin/UInt = ..., kotlin/UInt = ...): com.nouprax.markdown.core/Run // com.nouprax.markdown.core/Run.copy|copy(kotlin.Int;kotlin.UInt;kotlin.UInt){}[0]
+    final fun copy(com.nouprax.markdown.core/Extent = ..., kotlin/UInt = ...): com.nouprax.markdown.core/Run // com.nouprax.markdown.core/Run.copy|copy(com.nouprax.markdown.core.Extent;kotlin.UInt){}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // com.nouprax.markdown.core/Run.equals|equals(kotlin.Any?){}[0]
     final fun hashCode(): kotlin/Int // com.nouprax.markdown.core/Run.hashCode|hashCode(){}[0]
     final fun toString(): kotlin/String // com.nouprax.markdown.core/Run.toString|toString(){}[0]

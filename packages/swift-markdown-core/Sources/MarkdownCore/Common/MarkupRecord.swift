@@ -152,6 +152,6 @@ extension Extent {
 
 extension Run {
     init(_ run: markdown_core_run) {
-        self.init(lead: run.lead, span: run.span, length: run.length)
+        self.init(source: Extent(run.source), decoded: run.decoded)
     }
 }

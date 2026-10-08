@@ -80,8 +80,8 @@ A value type of the contract encodes structurally from its declaration:
 - A value with `fields` writes each field in order.
 - A value with `branches` writes a `u8` branch index -- the branch's position
   in the declaration, from 0 -- and then that branch's fields.
-- `Extent` is `i32` lead and `u32` span, and `Run` is `i32` lead, `u32` span
-  and `u32` length, in bytes as the contract measures them.
+- `Extent` is `i32` lead and `u32` span, in bytes as the contract measures
+  them.
 
 A field of type `T` writes `T`. `T?` writes a `u8` presence, 0 or 1, and `T`
 when present. `[T]` writes a `u32` count and that many `T`.

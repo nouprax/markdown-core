@@ -293,6 +293,7 @@ struct markdown_core_element {
     const markdown_core_node_type *complete_scope_kinds;
     markdown_core_opaque_alloc_func opaque_alloc_func;
     markdown_core_opaque_free_func opaque_free_func;
+    markdown_core_opaque_copy_func opaque_copy_func;
     markdown_core_visit_owned_subtrees_func visit_owned_subtrees_func;
     /* The bytes of the element's parse record and of its record in each
      * inline run (markdown-core-element-api.h, "AN ELEMENT AS ONE PARSE HOLDS

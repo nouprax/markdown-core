@@ -68,7 +68,7 @@ internal object WireDecoder {
             val kind = WireNodeKind.from(u8())
             val id = MarkupID(int())
             val extent = Extent(i32(), u32().toUInt())
-            val runs = list { Run(i32(), u32().toUInt(), u32().toUInt()) }
+            val runs = list { Run(Extent(i32(), u32().toUInt()), u32().toUInt()) }
             val anchor = optional { string() }
             val attributes = attributes()
             val children = Children(nodes.size)

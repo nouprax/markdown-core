@@ -10,11 +10,12 @@ promised to remain compatible between releases.
   that produced the node. Block extents stay source offsets; an inline
   node's extent is now an offset in its inline root's content, which starts
   at 0. Every `Markup` gains `runs: [Run]` after `extent`, part of
-  equality. A `Run(lead, span, length)` is a stretch of the node's own
-  source: a run whose span equals its length is copied byte for byte into
-  its content, a run of length 0 is source without content (a fence line,
-  an underline, a continuation indent, a cell's column slice), and any other
-  run maps as a whole. Between its first and last run, the runs cover
+  equality. A `Run(source, decoded)` is a stretch of the node's own
+  source, an `Extent`, and the bytes it decodes to: a run whose source spans
+  its decoded count is copied byte for byte into its content, a run that
+  decodes 0 bytes is source without content (a fence line, an underline, a
+  continuation indent, a cell's column slice), and any other run maps as a
+  whole. Between its first and last run, the runs cover
   exactly the node's own source; the bytes between them belong to its
   containers. A node is an inline root when its runs read content.
   `document.scope(of:in:)` returns `[Scope]`, one per source range in source

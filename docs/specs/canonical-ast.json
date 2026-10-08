@@ -1100,20 +1100,15 @@
             "dump": "never printed; the dump prints the scope computed from it"
         },
         "Run": {
-            "purpose": "A run of the source a node read: length content bytes read from span source bytes, lead signed from the end of the previous run (or the node's start, for the first). A run whose span is its length reads each content byte from one source byte; any other reads all of its content from all of its source, and a run of length 0 gives no content. The runs that read content map the node's first relation when it is an inline root's content. Between the first run and the last, the runs cover exactly the node's own source, so the source between two runs is not the node's; a run of length 0 at either end of the list has such a gap beside it, and a node whose own source is its one range and that has no inline content has none.",
+            "purpose": "A run of the source a node read: decoded bytes read from the source range, whose lead is signed from the end of the previous run's source (or the node's start, for the first). A run whose source spans as many bytes as it decodes reads each decoded byte from one source byte; any other decodes all of its bytes from all of its source by exactly one decoding: a tab gives that many spaces, NUL gives U+FFFD, an escaped pipe in a table cell gives the pipe, and a line ending that is not LF (CR, CR LF, or none at the end of the source) gives LF. A run that decodes 0 bytes gives no content. The runs that decode content map the node's first relation when it is an inline root's content. Between the first run and the last, the runs cover exactly the node's own source, so the source between two runs is not the node's; a run that decodes 0 bytes at either end of the list has such a gap beside it, and a node whose own source is its one range and that has no inline content has none.",
             "fields": [
                 {
-                    "name": "lead",
-                    "type": "Int32",
+                    "name": "source",
+                    "type": "Extent",
                     "optional": false
                 },
                 {
-                    "name": "span",
-                    "type": "UInt32",
-                    "optional": false
-                },
-                {
-                    "name": "length",
+                    "name": "decoded",
                     "type": "UInt32",
                     "optional": false
                 }

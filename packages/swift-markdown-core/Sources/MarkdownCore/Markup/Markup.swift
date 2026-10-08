@@ -89,30 +89,29 @@ public struct Extent: Sendable, Hashable {
     }
 }
 
-/// A run of the source a node read: `length` content bytes read from `span`
-/// source bytes.
+/// A run of the source a node read: `decoded` bytes read from the `source`
+/// range.
 ///
-/// `lead` is the signed distance from the end of the previous run (or from the
-/// node's start, for the first) to the run's source start. A run whose span is
-/// its length reads each content byte from one source byte; any other reads
-/// all of its content from all of its source, and a run of length 0 is source
-/// the node reads without content. Between its first run and its last, a
-/// node's runs cover exactly its own source: the source between two runs is
-/// not the node's. A node whose runs read content is an inline root, and its
-/// first relation is that content, which the runs cover in order.
+/// The source's `lead` is the signed distance from the end of the previous
+/// run's source (or from the node's start, for the first) to its start, and
+/// its `span` is how many source bytes the run reads. A run whose source spans
+/// as many bytes as it decodes reads each decoded byte from one source byte;
+/// any other decodes all of its bytes from all of its source, and a run that
+/// decodes no bytes reads source that gives none. Between its first run and
+/// its last, a node's runs cover exactly its own source: the source between two
+/// runs is not the node's. A node whose runs decode bytes is an inline root,
+/// and its first relation is that content, which the runs cover in order.
 public struct Run: Sendable, Hashable {
-    /// The signed byte distance from the previous run's end to its start.
-    public let lead: Int32
-    /// The source bytes the run reads.
-    public let span: UInt32
-    /// The content bytes the run reads them as.
-    public let length: UInt32
+    /// The source range the run reads, its lead measured from the previous
+    /// run's end.
+    public let source: Extent
+    /// The decoded bytes the run gives.
+    public let decoded: UInt32
 
     /// Creates a run. No number is validated.
-    public init(lead: Int32, span: UInt32, length: UInt32) {
-        self.lead = lead
-        self.span = span
-        self.length = length
+    public init(source: Extent, decoded: UInt32) {
+        self.source = source
+        self.decoded = decoded
     }
 }
 

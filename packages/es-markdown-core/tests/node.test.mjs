@@ -567,7 +567,7 @@ test("ast: a title is decoded before the content and dumped as a group", () => {
     // run reads it from the source byte 11 past the callout's start.
     const bytes = new MessageWriter()
         .text("T", { extent: [0, 1] })
-        .record("callout", { extent: [0, 12], runs: [[11, 1, 1]] })
+        .record("callout", { extent: [0, 12], runs: [[[11, 1], 1]] })
         .optional("note", MessageWriter.prototype.string)
         .optional(true, MessageWriter.prototype.bool)
         .optional(1, MessageWriter.prototype.u32)
@@ -593,7 +593,7 @@ test("ast: a title is decoded before the content and dumped as a group", () => {
             "    └── Title children=1\n" +
             '        └── Text scope=1:12..1:12 anchor=null attributes={} literal="T" children=0\n'
     );
-    assert.deepEqual(callout.runs, [{ lead: 11, span: 1, length: 1 }]);
+    assert.deepEqual(callout.runs, [{ source: { lead: 11, span: 1 }, decoded: 1 }]);
     assert.deepEqual(document.scope(callout.title[0], source), [
         { start: { line: 1, column: 12 }, end: { line: 1, column: 12 } }
     ]);
@@ -1682,13 +1682,15 @@ test("api: scope queries count columns in the document's unit from the extents a
         ["paragraph", scope(1, 1, 1, 4)],
         ["text", scope(1, 1, 1, 4)]
     ]);
-    // CRLF is one terminator; a lone CR ends a line too.
+    // CRLF is one terminator; a lone CR ends a line too. A soft break reads
+    // its CR LF whole, one run that decodes LF from both bytes, so it ends
+    // where the next line starts.
     const crlf = "a\r\nb 🚀c\r\n\r\n- é\r";
     assert.deepEqual(scopes(crlf, "utf8"), [
         ["document", scope(1, 1, 4, 4)],
         ["paragraph", scope(1, 1, 2, 7)],
         ["text", scope(1, 1, 1, 1)],
-        ["softBreak", scope(1, 2, 1, 2)],
+        ["softBreak", scope(1, 2, 2, 0)],
         ["text", scope(2, 1, 2, 7)],
         ["list", scope(4, 1, 4, 4)],
         ["listItem", scope(4, 1, 4, 4)],
@@ -1699,7 +1701,7 @@ test("api: scope queries count columns in the document's unit from the extents a
         ["document", scope(1, 1, 4, 3)],
         ["paragraph", scope(1, 1, 2, 5)],
         ["text", scope(1, 1, 1, 1)],
-        ["softBreak", scope(1, 2, 1, 2)],
+        ["softBreak", scope(1, 2, 2, 0)],
         ["text", scope(2, 1, 2, 5)],
         ["list", scope(4, 1, 4, 3)],
         ["listItem", scope(4, 1, 4, 3)],
@@ -1725,8 +1727,8 @@ test("api: a node's scopes are its source ranges, cut by its own runs or its inl
     const [, emphasis] = paragraph.content;
     const c = emphasis.content[2];
     assert.deepEqual(paragraph.runs, [
-        { lead: 0, span: 5, length: 5 },
-        { lead: 2, span: 4, length: 4 }
+        { source: { lead: 0, span: 5 }, decoded: 5 },
+        { source: { lead: 2, span: 4 }, decoded: 4 }
     ]);
     assert.deepEqual(document.scope(paragraph, source), [scope(1, 3, 2, 0), scope(2, 3, 2, 6)]);
     // Inline extents are offsets in the content, which starts at 0: `c` is
@@ -1760,7 +1762,7 @@ test("api: a node's scopes are its source ranges, cut by its own runs or its inl
     const titled = "> [!note] T *u*\n> body\n";
     const callout = Document.parse(titled, { unit: "utf8" });
     const [note] = callout.content;
-    assert.deepEqual(note.runs, [{ lead: 10, span: 5, length: 5 }]);
+    assert.deepEqual(note.runs, [{ source: { lead: 10, span: 5 }, decoded: 5 }]);
     assert.deepEqual(callout.scope(note.title[1].content[0], titled), [scope(1, 14, 1, 14)]);
     assert.deepEqual(note.content[0].extent, { lead: 18, span: 4 });
     assert.deepEqual(callout.scope(note.content[0], titled), [scope(2, 3, 2, 6)]);
@@ -1776,16 +1778,16 @@ test("api: runs take part in value equality", () => {
                 .root(1, { id: 1, extent: [0, 1] })
                 .document()
         ).decode();
-    const plain = message({ runs: [[0, 1, 1]] });
-    assert.ok(markupEquals(plain, message({ runs: [[0, 1, 1]] })));
-    assert.equal(markupEquals(plain, message({ runs: [[0, 2, 1]] })), false);
+    const plain = message({ runs: [[[0, 1], 1]] });
+    assert.ok(markupEquals(plain, message({ runs: [[[0, 1], 1]] })));
+    assert.equal(markupEquals(plain, message({ runs: [[[0, 2], 1]] })), false);
     assert.equal(
         markupEquals(
             plain,
             message({
                 runs: [
-                    [0, 1, 1],
-                    [1, 1, 0]
+                    [[0, 1], 1],
+                    [[1, 1], 0]
                 ]
             })
         ),
@@ -1819,7 +1821,8 @@ test("api: nodeAt finds the last node in walk order holding the byte at a positi
     const document = Document.parse(crlf);
     const [paragraph, list] = document.content;
     assert.equal(at(document, crlf, 1, 2), paragraph.content[1]);
-    assert.equal(at(document, crlf, 1, 3), paragraph);
+    // The soft break reads its CR LF whole.
+    assert.equal(at(document, crlf, 1, 3), paragraph.content[1]);
     assert.equal(at(document, crlf, 2, 5), paragraph.content[2]);
     assert.equal(at(document, crlf, 4, 3), list.items[0].content[0].content[0]);
     assert.equal(at(document, crlf, 4, 4), null);

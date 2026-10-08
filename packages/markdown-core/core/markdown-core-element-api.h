@@ -287,6 +287,14 @@ typedef void (*markdown_core_opaque_alloc_func)(const markdown_core_element *ele
 
 typedef void (*markdown_core_opaque_free_func)(const markdown_core_element *element, markdown_core_node *node);
 
+/* Fills the payload of `to`, a copy of `from` (markdown_core_node_copy) whose
+ * payload opaque_alloc_func made, with a value equal to `from`'s that `to`
+ * owns. The node-valued fields it copies are retained by the copy after this
+ * returns. Returns 0 on allocation failure, leaving a payload that
+ * opaque_free_func releases. */
+typedef int (*markdown_core_opaque_copy_func)(const markdown_core_element *element, const markdown_core_node *from,
+                                              markdown_core_node *to);
+
 /** A parser element is a `static const` descriptor in a fixed compile-time
  * table (`elements/core-elements.c`), not an object built at run time.
  *
@@ -456,8 +464,11 @@ int markdown_core_parser_content_place(markdown_core_parser *parser, const markd
 
 /** Append a source run for content already assembled by a producer. Runs
  * must be contiguous in the parser vector and have increasing content offsets.
- * source_width is the authored width represented by each logical byte, and
- * source_step is the source-byte stride. Allocation failure marks the parse lost. */
+ * A run with source_step 1 is copied: each content byte is the source byte it
+ * reads, and source_width is 1. A run with source_step 0 is decoded: all of
+ * its content is decoded from the source_width bytes at `source`, and it
+ * holds one decoding -- a tab's columns, NUL's U+FFFD, an escaped pipe's
+ * pipe, or a line ending's LF. Allocation failure marks the parse lost. */
 int markdown_core_parser_append_content_mark(markdown_core_parser *parser, markdown_core_node *node, bufsize_t offset,
                                              int line, bufsize_t source, int source_width, int source_step);
 /** Append the source runs covering a literal slice to a growing result map.

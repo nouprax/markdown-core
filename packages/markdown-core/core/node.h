@@ -214,15 +214,14 @@ typedef struct {
     uint32_t start, end;
 } markdown_core_place;
 
-/* A run of a node's source (markdown_core.h): `length` content bytes read
- * from the source bytes `span` long, `lead` from the end of the previous run,
- * or from the start of the node that holds the runs. */
+/* A run of a node's source (markdown_core.h): `decoded` bytes read from the
+ * `source` range, whose lead is from the end of the previous run's, or from
+ * the start of the node that holds the runs. */
 #ifndef MARKDOWN_CORE_RUN_TYPEDEF
 #define MARKDOWN_CORE_RUN_TYPEDEF
 typedef struct markdown_core_run {
-    int32_t lead;
-    uint32_t span;
-    uint32_t length;
+    markdown_core_extent source;
+    uint32_t decoded;
 } markdown_core_run;
 #endif
 
@@ -234,7 +233,7 @@ typedef struct markdown_core_run {
  * the place as the extent. The list is one owned allocation, NULL when the
  * node has none. */
 typedef struct {
-    uint32_t start, end, length;
+    uint32_t start, end, decoded;
 } markdown_core_run_place;
 
 typedef union {
@@ -243,9 +242,9 @@ typedef union {
 } markdown_core_run_where;
 
 typedef struct markdown_core_runs {
-    /* How many runs there are, and the content bytes they read: 0 for a
-     * node without inline content, whose runs all have length 0. */
-    uint32_t count, content;
+    /* How many runs there are, and the bytes they decode: 0 for a node
+     * without inline content, whose runs all decode none. */
+    uint32_t count, decoded;
     markdown_core_run_where items[];
 } markdown_core_runs;
 
@@ -622,6 +621,10 @@ void markdown_core_node_pool_bytes_free(markdown_core_node_pool *pool, void *sto
  * allocator's own slot, which is what the parser-less constructor takes. */
 markdown_core_node *markdown_core_node_pool_new(markdown_core_node_pool *pool, markdown_core_node_type type,
                                                 const markdown_core_element *element);
+/* A new node from a pool's slots equal to `node`, with its id, that shares
+ * its children and fields and owns its own copy of everything else. NULL when
+ * an allocation failed. */
+markdown_core_node *markdown_core_node_copy(markdown_core_node_pool *pool, const markdown_core_node *node);
 /* `markdown_core_node_release` into a pool: the node slots and the slots of
  * the resources the nodes held last go back to it for reuse rather than
  * dropping their slabs. A NULL pool is the plain release. */
@@ -679,6 +682,14 @@ markdown_core_node *markdown_core_stem_at(const markdown_core_stem *stem, size_t
  * node it held there; the stem takes the caller's reference to `node` and
  * gives the caller its reference to the one it returns. */
 markdown_core_node *markdown_core_stem_put(markdown_core_stem *stem, size_t index, markdown_core_node *node);
+
+/* A new stem equal to `stem` but for `node` at `index`, which `stem` holds,
+ * with `summary`: it shares the stems off the path to `index` and takes the
+ * caller's reference to `node`; `stem` is unchanged. NULL, having taken
+ * nothing, when an allocation failed (`*failed`). */
+markdown_core_stem *markdown_core_stem_replace(markdown_core_node_pool *pool, const markdown_core_stem *stem,
+                                               size_t index, markdown_core_node *node,
+                                               const markdown_core_stem_summary *summary, bool *failed);
 
 /* A WALK OVER A RUN OF A STEM'S NODES, in order: the path from the stem to
  * the node it is at. */

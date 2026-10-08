@@ -10,8 +10,9 @@ import Testing
         #expect(wide.unit == .utf8 && narrow.unit == .utf16)
         // The unit is how positions are counted, not what was parsed.
         #expect(wide == narrow)
-        // The first text's start and end columns, then the soft break's.
-        let cases: [(Document, [Int32])] = [(wide, [1, 6, 7, 7]), (narrow, [1, 3, 4, 4])]
+        // The first text's start and end columns, then the soft break's
+        // start: it reads its CR LF whole, so it ends where line 2 starts.
+        let cases: [(Document, [Int32])] = [(wide, [1, 6, 7]), (narrow, [1, 3, 4])]
         for (document, columns) in cases {
             let paragraph = try #require(document.content.first as? Paragraph)
             #expect(
@@ -20,7 +21,7 @@ import Testing
             )
             #expect(
                 try scope(of: paragraph.content[1], in: document, source: source)
-                    == Scope(start: Position(line: 1, column: columns[2]), end: Position(line: 1, column: columns[3]))
+                    == Scope(start: Position(line: 1, column: columns[2]), end: Position(line: 2, column: 0))
             )
             #expect(
                 try scope(of: paragraph.content[2], in: document, source: source)
@@ -37,10 +38,11 @@ import Testing
     func hitTesting() throws {
         let source = "é🚀\r\nx"
         // Ids, in completion order: 1 paragraph, 2 "é🚀", 3 the soft break
-        // (the CR), 4 "x", 5 document. Zero is no node.
+        // (the CR LF, one decoded run it reads whole), 4 "x", 5 document.
+        // Zero is no node.
         let expected: [(TextUnit, [UInt64])] = [
-            (.utf8, [2, 0, 2, 0, 0, 0, 3, 1, 0]),
-            (.utf16, [2, 2, 0, 3, 1, 0, 0, 0, 0]),
+            (.utf8, [2, 0, 2, 0, 0, 0, 3, 3, 0]),
+            (.utf16, [2, 2, 0, 3, 3, 0, 0, 0, 0]),
         ]
         for (unit, ids) in expected {
             let document = try Document.parse(source, unit: unit)
@@ -97,7 +99,12 @@ import Testing
         }
         // The paragraph reads its own bytes, one line each, in two copied runs;
         // the second quote marker between them is not its own.
-        #expect(block.runs == [Run(lead: 0, span: 5, length: 5), Run(lead: 2, span: 4, length: 4)])
+        #expect(
+            block.runs == [
+                Run(source: Extent(lead: 0, span: 5), decoded: 5),
+                Run(source: Extent(lead: 2, span: 4), decoded: 4),
+            ]
+        )
         #expect(try document.scope(of: block, in: source) == [place((1, 3), (2, 0)), place((2, 3), (2, 6))])
         // The emphasis is at offset 2 of the content "a *b\nc* d", and its
         // source skips the marker too.
@@ -120,7 +127,9 @@ import Testing
         let wider = try Document.parse("> a *b\n>  c* d\n")
         let moved = try #require((wider.content.first as? Callout)?.content.first as? Paragraph)
         let runs = [
-            Run(lead: 0, span: 5, length: 5), Run(lead: 2, span: 1, length: 0), Run(lead: 0, span: 4, length: 4),
+            Run(source: Extent(lead: 0, span: 5), decoded: 5),
+            Run(source: Extent(lead: 2, span: 1), decoded: 0),
+            Run(source: Extent(lead: 0, span: 4), decoded: 4),
         ]
         #expect(moved.runs == runs)
         #expect(moved != block)
@@ -141,7 +150,9 @@ import Testing
         #expect(code.literal == "x\n")
         #expect(
             code.runs == [
-                Run(lead: 0, span: 4, length: 0), Run(lead: 2, span: 2, length: 0), Run(lead: 2, span: 3, length: 0),
+                Run(source: Extent(lead: 0, span: 4), decoded: 0),
+                Run(source: Extent(lead: 2, span: 2), decoded: 0),
+                Run(source: Extent(lead: 2, span: 3), decoded: 0),
             ]
         )
         #expect(

@@ -152,6 +152,22 @@ static MARKDOWN_CORE_INLINE int markdown_core_chunk_set_cstr(markdown_core_chunk
     return 1;
 }
 
+/* A chunk duplicated from another's members becomes its own: bytes the other
+ * owns are copied, a view stays one. Returns 0 when the copy could not be
+ * allocated, leaving the chunk empty. */
+static MARKDOWN_CORE_INLINE int markdown_core_chunk_own(markdown_core_chunk *c) {
+    if (!c->alloc) {
+        return 1;
+    }
+    c->alloc = 0;
+    if (!markdown_core_chunk_to_cstr(c)) {
+        markdown_core_chunk empty = MARKDOWN_CORE_CHUNK_EMPTY;
+        *c = empty;
+        return 0;
+    }
+    return 1;
+}
+
 static MARKDOWN_CORE_INLINE markdown_core_chunk markdown_core_chunk_literal(const char *data) {
     bufsize_t len = data ? (bufsize_t)strlen(data) : 0;
     markdown_core_chunk c = {(unsigned char *)data, len, 0};

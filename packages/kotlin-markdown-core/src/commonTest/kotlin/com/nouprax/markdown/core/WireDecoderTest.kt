@@ -77,7 +77,7 @@ private class MessageWriter {
         int(id)
         u32(lead).u32(span)
         u32(runs.size)
-        runs.forEach { u32(it.lead).u32(it.span.toLong()).u32(it.length.toLong()) }
+        runs.forEach { u32(it.source.lead).u32(it.source.span.toLong()).u32(it.decoded.toLong()) }
         optional(anchor) { string(it) }
         attributes(classes)
     }
@@ -310,9 +310,9 @@ class WireDecoderTest {
     fun recordsCarryTheirIdAndTheirSignedExtentAndRunsVerbatim() {
         val runs =
             listOf(
-                Run(Int.MIN_VALUE, 0u, UInt.MAX_VALUE),
-                Run(3, 2u, 2u),
-                Run(Int.MAX_VALUE, UInt.MAX_VALUE, 0u),
+                Run(Extent(Int.MIN_VALUE, 0u), UInt.MAX_VALUE),
+                Run(Extent(3, 2u), 2u),
+                Run(Extent(Int.MAX_VALUE, UInt.MAX_VALUE), 0u),
             )
         val document =
             decode(

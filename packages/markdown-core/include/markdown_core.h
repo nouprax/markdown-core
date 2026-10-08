@@ -150,19 +150,19 @@ typedef struct markdown_core_extent {
 } markdown_core_extent;
 #endif
 
-/** A RUN of the source a node read: `length` content bytes read from the
- * source bytes `span` long, `lead` from the end of the previous run, or from
- * the start of the node that holds the runs for the first. A run whose span
- * is its length reads each content byte from one source byte; any other reads
- * all of its content from all of its source, and a run of length 0 gives no
- * content. Between the first run and the last the runs cover exactly the
- * node's own source, so the source between two runs is not the node's. */
+/** A RUN of the source a node read: `decoded` bytes read from the `source`
+ * range, whose lead is from the end of the previous run's, or from the start
+ * of the node that holds the runs for the first. A run whose source spans as
+ * many bytes as it decodes reads each decoded byte from one source byte; any other
+ * decodes all of its bytes from all of its source, and a run that decodes no
+ * bytes reads source that gives none. Between the first run and the last the
+ * runs cover exactly the node's own source, so the source between two runs is
+ * not the node's. */
 #ifndef MARKDOWN_CORE_RUN_TYPEDEF
 #define MARKDOWN_CORE_RUN_TYPEDEF
 typedef struct markdown_core_run {
-    int32_t lead;
-    uint32_t span;
-    uint32_t length;
+    markdown_core_extent source;
+    uint32_t decoded;
 } markdown_core_run;
 #endif
 

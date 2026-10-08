@@ -80,11 +80,11 @@ class IdentityTest {
         // other source bytes is equal.
         fun paragraph(runs: kotlin.collections.List<Run>) =
             Paragraph(emptyList(), MarkupID(1), Extent(0, 3u), runs, null, Attributes.empty)
-        val runs = listOf(Run(0, 1u, 1u), Run(1, 1u, 1u))
+        val runs = listOf(Run(Extent(0, 1u), 1u), Run(Extent(1, 1u), 1u))
         assertEquals(paragraph(runs), paragraph(runs))
         assertNotEquals(paragraph(runs), paragraph(emptyList()))
-        assertNotEquals(paragraph(runs), paragraph(listOf(Run(0, 1u, 1u), Run(1, 1u, 0u))))
-        assertNotEquals(paragraph(runs), paragraph(runs + Run(0, 1u, 0u)))
+        assertNotEquals(paragraph(runs), paragraph(listOf(Run(Extent(0, 1u), 1u), Run(Extent(1, 1u), 0u))))
+        assertNotEquals(paragraph(runs), paragraph(runs + Run(Extent(0, 1u), 0u)))
 
         fun quoted(source: String) =
             assertIs<Paragraph>(assertIs<Callout>(Document.parse(source).content.single()).content.single())
@@ -189,7 +189,7 @@ class ScopeTest {
         // A leaf block inside a container owns each line from where the
         // container's prefix ends: the runs its content was read from, one
         // per line, and the source between them is not its own.
-        assertEquals(listOf(Run(0, 2u, 2u), Run(2, 3u, 3u), Run(2, 2u, 2u)), paragraph.runs)
+        assertEquals(listOf(Run(Extent(0, 2u), 2u), Run(Extent(2, 3u), 3u), Run(Extent(2, 2u), 2u)), paragraph.runs)
         assertTrue(item.runs.isEmpty() && emphasis.runs.isEmpty())
         assertEquals(
             listOf(
@@ -230,7 +230,7 @@ class ScopeTest {
         val paragraph = assertIs<Paragraph>(callout.content.single())
         val emphasis = assertIs<Emphasis>(paragraph.content[1])
         // One run per line; the quote marker between them is the callout's.
-        assertEquals(listOf(Run(0, 5u, 5u), Run(2, 4u, 4u)), paragraph.runs)
+        assertEquals(listOf(Run(Extent(0, 5u), 5u), Run(Extent(2, 4u), 4u)), paragraph.runs)
         assertEquals(
             listOf(Scope(Position(1, 3), Position(2, 0)), Scope(Position(2, 3), Position(2, 6))),
             document.scope(paragraph, source),
@@ -250,7 +250,7 @@ class ScopeTest {
         val code = assertIs<CodeBlock>(callout.content.single())
         // A code block's literal is no inline content: its runs only say
         // which source is its own, so the quote markers are the callout's.
-        assertTrue(code.runs.isNotEmpty() && code.runs.all { it.length == 0u })
+        assertTrue(code.runs.isNotEmpty() && code.runs.all { it.decoded == 0u })
         assertEquals(
             listOf(
                 Scope(Position(1, 3), Position(2, 0)),
@@ -281,9 +281,10 @@ class ScopeTest {
         val emphasis = assertIs<Emphasis>(assertIs<Paragraph>(utf16.content.single()).content[1])
         assertSame(emphasis.content.single(), utf16.node(Position(1, 6), source))
         assertSame(emphasis, utf16.node(Position(1, 5), source))
-        // A line terminator is a byte of its line; past it there is none.
+        // A line terminator is a byte of its line, and a CR LF is one
+        // decoded run the soft break reads whole; past it there is none.
         assertIs<SoftBreak>(utf16.node(Position(1, 8), source))
-        assertSame(utf16.content.single(), utf16.node(Position(1, 9), source))
+        assertIs<SoftBreak>(utf16.node(Position(1, 9), source))
         assertNull(utf16.node(Position(1, 10), source))
         assertSame(assertIs<Paragraph>(utf16.content.single()).content.last(), utf16.node(Position(2, 1), source))
         // Past the last line there is none.

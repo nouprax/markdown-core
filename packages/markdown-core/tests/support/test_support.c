@@ -510,13 +510,13 @@ typedef struct {
     const markdown_core_node *outside;
 } ts_range_check;
 
-/* The length of an inline root's content: what its runs read. */
+/* The length of an inline root's content: what its runs decode. */
 static int64_t ts_content_length(const markdown_core_node *root) {
     size_t count = 0;
     const markdown_core_run *runs = markdown_core_node_runs(root, &count);
     int64_t length = 0;
     for (size_t index = 0; index < count; index++) {
-        length += runs[index].length;
+        length += runs[index].decoded;
     }
     return length;
 }
@@ -525,8 +525,8 @@ static int64_t ts_content_length(const markdown_core_node *root) {
  * one before, lie in `[0, length]`. */
 static bool ts_runs_inside(const markdown_core_run *runs, size_t count, int64_t at, int64_t length) {
     for (size_t index = 0; index < count; index++) {
-        int64_t start = at + runs[index].lead;
-        at = start + (int64_t)runs[index].span;
+        int64_t start = at + runs[index].source.lead;
+        at = start + (int64_t)runs[index].source.span;
         if (start < 0 || at > length) {
             return false;
         }

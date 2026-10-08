@@ -68,6 +68,16 @@ static void formula_opaque_free(const markdown_core_element *element, markdown_c
     markdown_core_free(formula);
 }
 
+static int formula_opaque_copy(const markdown_core_element *element, const markdown_core_node *from,
+                               markdown_core_node *to) {
+    node_formula *copy = to->opaque;
+    if (!copy) {
+        return 0;
+    }
+    *copy = *(const node_formula *)from->opaque;
+    return markdown_core_chunk_own(&copy->literal);
+}
+
 static int set_formula_literal_bytes(markdown_core_node *node, const unsigned char *data, bufsize_t len) {
     node_formula *formula = get_formula(node);
     markdown_core_chunk_free(&formula->literal);
@@ -737,6 +747,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .accepts_lines_func = accepts_lines,
     .opaque_alloc_func = formula_opaque_alloc,
     .opaque_free_func = formula_opaque_free,
+    .opaque_copy_func = formula_opaque_copy,
     .insert_inline_from_delim = insert_formula,
     .terminates_text = "$",
     .dispatch = "$\\",

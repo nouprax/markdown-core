@@ -7,20 +7,20 @@ export interface Place {
     readonly end: number;
 }
 
-/** A run with its places made absolute: `length` content bytes from
+/** A run with its places made absolute: `decoded` content bytes from
  * `content`, read from the source bytes [start, end). */
 interface SourceRun {
     readonly content: number;
-    readonly length: number;
+    readonly decoded: number;
     readonly start: number;
     readonly end: number;
 }
 
 /**
  * A NODE'S RUNS, in absolute offsets: the source it read and what each part
- * of its content was read from. A copied run, whose span is its length,
- * reads each content byte from one source byte; any other reads all of its
- * content from all of its source, and a run of length 0 reads none. The
+ * of its content was read from. A copied run, whose source spans as many
+ * bytes as it decodes, reads each decoded byte from one source byte; any other
+ * decodes all of its bytes from all of its source, and a run that decodes no bytes reads source that gives none. The
  * source between two runs is not the node's. A walk holds one per root it
  * enters, so they are made absolute when a place is first asked for.
  */
@@ -35,18 +35,18 @@ export class SourceRuns {
 
     /** Whether the runs read content: the node is an inline root. */
     static readContent(runs: readonly Run[]): boolean {
-        return runs.some((run) => run.length > 0);
+        return runs.some((run) => run.decoded > 0);
     }
 
-    /** Each run starts `lead` past the end of the run before, or past the
-     * node's start for the first. */
+    /** Each run's source starts its `lead` past the end of the run before,
+     * or past the node's start for the first. */
     private get runs(): readonly SourceRun[] {
         if (this.absolute !== null) return this.absolute;
         let content = 0;
         let at = this.start;
-        this.absolute = this.stored.map(({ lead, span, length }) => {
-            const run = { content, length, start: at + lead, end: at + lead + span };
-            content += length;
+        this.absolute = this.stored.map(({ source, decoded }) => {
+            const run = { content, decoded, start: at + source.lead, end: at + source.lead + source.span };
+            content += decoded;
             at = run.end;
             return run;
         });
@@ -101,7 +101,7 @@ export class SourceRuns {
             if (runs[middle]!.content <= offset) lower = middle;
             else upper = middle;
         }
-        while (lower > 0 && runs[lower]!.length === 0) lower -= 1;
+        while (lower > 0 && runs[lower]!.decoded === 0) lower -= 1;
         return lower;
     }
 
@@ -110,7 +110,7 @@ export class SourceRuns {
      * ends. */
     private place(offset: number): number {
         const run = this.runs[this.at(offset)]!;
-        if (offset >= run.content + run.length) return run.end;
+        if (offset >= run.content + run.decoded) return run.end;
         return copiedRun(run) ? run.start + (offset - run.content) : run.start;
     }
 
@@ -118,13 +118,14 @@ export class SourceRuns {
      * byte, or the end of the run that reads it whole. */
     private placeEnd(offset: number): number {
         const run = this.runs[this.at(offset - 1)]!;
-        if (offset - 1 >= run.content + run.length || !copiedRun(run)) return run.end;
+        if (offset - 1 >= run.content + run.decoded || !copiedRun(run)) return run.end;
         return run.start + (offset - run.content);
     }
 }
 
+/** Whether `run` reads each decoded byte from one source byte. */
 function copiedRun(run: SourceRun): boolean {
-    return run.end - run.start === run.length;
+    return run.end - run.start === run.decoded;
 }
 
 /**

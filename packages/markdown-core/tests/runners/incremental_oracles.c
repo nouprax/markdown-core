@@ -109,9 +109,9 @@ typedef struct {
 } view_object;
 
 /* An inline root's run in absolute offsets: the content it starts at and
- * reads, and the source it reads it from. */
+ * decodes, and the source it reads it from. */
 typedef struct {
-    int64_t content, length, start, end;
+    int64_t content, decoded, start, end;
 } view_run;
 
 typedef struct view {
@@ -141,7 +141,7 @@ static void view_free(view *taken) {
     memset(taken, 0, sizeof(*taken));
 }
 
-static bool run_copied(const view_run *run) { return run->end - run->start == run->length; }
+static bool run_copied(const view_run *run) { return run->end - run->start == run->decoded; }
 
 /* The first run of root `root` that reads content past `offset`. The runs
  * are in content order. */
@@ -150,7 +150,7 @@ static size_t content_run(const view *taken, size_t root, int64_t offset) {
     size_t lo = 0, hi = taken->nodes[root].run_count;
     while (lo < hi) {
         size_t mid = lo + (hi - lo) / 2;
-        if (runs[mid].content + runs[mid].length <= offset) {
+        if (runs[mid].content + runs[mid].decoded <= offset) {
             lo = mid + 1;
         } else {
             hi = mid;
@@ -184,7 +184,7 @@ static bool source_content(const view *taken, size_t root, int64_t source, int64
             hi = mid;
         }
     }
-    if (lo == taken->nodes[root].run_count || runs[lo].start > source || !runs[lo].length) {
+    if (lo == taken->nodes[root].run_count || runs[lo].start > source || !runs[lo].decoded) {
         return false;
     }
     *offset = run_copied(&runs[lo]) ? runs[lo].content + (source - runs[lo].start) : runs[lo].content;
@@ -242,10 +242,10 @@ static int view_visit(const markdown_core_node *node, ts_ast_place place, void *
         int64_t at = place.range.start, content = 0;
         size_t index;
         for (index = 0; index < run_count; index++) {
-            int64_t start = at + runs[index].lead;
-            at = start + (int64_t)runs[index].span;
-            taken->runs[taken->run_count++] = (view_run){content, runs[index].length, start, at};
-            content += runs[index].length;
+            int64_t start = at + runs[index].source.lead;
+            at = start + (int64_t)runs[index].source.span;
+            taken->runs[taken->run_count++] = (view_run){content, runs[index].decoded, start, at};
+            content += runs[index].decoded;
         }
         /* A node whose runs read content is an inline root. */
         if (content) {
@@ -330,8 +330,8 @@ static bool view_values(view *taken, const uint8_t *dump, size_t dump_length) {
                 const markdown_core_run *run = markdown_core_node_runs(entry->object, &count);
                 at += (size_t)snprintf(taken->values + at, capacity - at, " runs=");
                 for (item = 0; item < count; item++) {
-                    at += (size_t)snprintf(taken->values + at, capacity - at, "%d,%u,%u;", (int)run[item].lead,
-                                           (unsigned)run[item].span, (unsigned)run[item].length);
+                    at += (size_t)snprintf(taken->values + at, capacity - at, "%d,%u,%u;", (int)run[item].source.lead,
+                                           (unsigned)run[item].source.span, (unsigned)run[item].decoded);
                 }
             }
             entry->value = taken->values_size;
@@ -645,7 +645,7 @@ static bool content_anchor(const view *before, const view_node *old, const view 
          index < holder->run_count && before->runs[holder->runs + index].content < old->range.end; index++) {
         const view_run *run = &before->runs[holder->runs + index];
         int64_t from = old->range.start > run->content ? old->range.start : run->content;
-        int64_t to = old->range.end < run->content + run->length ? old->range.end : run->content + run->length;
+        int64_t to = old->range.end < run->content + run->decoded ? old->range.end : run->content + run->decoded;
         int64_t first, last, source, mapped;
         if (from >= to) {
             continue;

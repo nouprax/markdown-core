@@ -58,10 +58,14 @@ typedef struct {
     int line;
     /* The byte offset in the document source the run begins at. */
     bufsize_t source;
-    /* Authored byte width represented by each logical byte in this run. */
+    /* The source bytes each content byte of a copied run reads, 1, or all
+     * of the source a decoded run reads. */
     int source_width;
-    /* Source bytes advanced per logical byte: one for copied bytes,
-     * two for a contracted pipe escape, zero within a decoded token. */
+    /* Source bytes advanced per logical byte: 1 for a copied run, whose
+     * content bytes are the source bytes they read, and 0 for a decoded
+     * run, all of whose content is decoded from its source -- one tab's
+     * columns, one NUL's U+FFFD, one escaped pipe's pipe or one line
+     * ending's LF. */
     int source_step;
     /* Virtual indentation after container prefixes, before block content was
      * stripped. Slices retain this line provenance, including table leads;
@@ -868,7 +872,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bufsize_t
 bufsize_t markdown_core_parser_line_offset(markdown_core_parser *parser, int line);
 /* THE RUNS OF THE OWN LINES OF `node`, a block of `container`, which starts
  * on input line `*line`, an earlier one or a later one of the lines visited:
- * on each line its place spans, a run of length 0 over the source from where
+ * on each line its place spans, a run that decodes nothing over the source from where
  * the line's own bytes begin to where the line ends, through its terminator
  * on a line of the document itself, those that touch joined. A node whose
  * lines join into one run keeps none, and a block of the document itself,
@@ -884,8 +888,8 @@ void markdown_core_parser_place_runs(markdown_core_parser *parser, markdown_core
 bool markdown_core_parser_starts_on_line(markdown_core_parser *parser, const markdown_core_node *node, int line);
 /* An inline root's content, `length` bytes of it read, becomes the input its
  * nodes are placed in: its map to the source is kept in its runs, among the
- * runs of length 0 of its own source, and its map becomes the identity
- * (blocks.c). */
+ * runs that decode nothing of its own source, and its map becomes the
+ * identity (blocks.c). */
 void markdown_core_parser_read_content(markdown_core_parser *parser, markdown_core_node *node, bufsize_t length);
 int markdown_core_parser_append_source_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
                                              int column, bufsize_t length, bufsize_t offset);
