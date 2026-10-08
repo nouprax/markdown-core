@@ -1097,7 +1097,7 @@ export function identityScripts() {
     );
     /* A quote that interrupts a paragraph of only definitions closes it
      * into its References; the quote after an edited definition is taken. */
-    add("quote-after-definition", "[d]:g\n>", (s) =>
+    add("quote-after-definition", "[d]:g\n>\n", (s) =>
         s.edit([{ start: 4, end: 5, text: "q" }]).expect("kept", "Callout", 6, 6)
     );
     return cases;
