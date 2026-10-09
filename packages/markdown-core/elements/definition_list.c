@@ -244,12 +244,26 @@ static markdown_core_member *try_paragraph(const markdown_core_element_instance 
     return markdown_core_block_open_definition(self->state, parser, parent, &input, compact);
 }
 
+/* A definition owns the lines of its bodies: a blank line, a marker that
+ * opens its next body, and a line its open body continues. Any other line,
+ * the next term among them, lies after it, as a line after a list item lies
+ * after that item. */
 static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                markdown_core_member *node, markdown_core_chunk *input,
                                const markdown_core_member *joining, bool *taken) {
     (void)self;
-    return node->node->kind != MARKDOWN_CORE_NODE_DEFINITION_BODY ||
-           markdown_core_definition_list_continue(parser, node, input);
+    switch (node->node->kind) {
+    case MARKDOWN_CORE_NODE_DEFINITION_BODY:
+        return markdown_core_definition_list_continue(parser, node, input);
+    case MARKDOWN_CORE_NODE_DEFINITION: {
+        const markdown_core_member *body = node->last;
+        return parser->blank || markdown_core_block_definition_marker(input, parser->first_nonspace, parser->indent) ||
+               (body && (body->node->flags & MARKDOWN_CORE_NODE__OPEN) &&
+                parser->indent >= body->node->as.definition_body->continuation);
+    }
+    default:
+        return true;
+    }
 }
 /* A definition list, a definition and a body end where their last child
  * ends, which closed before them; a body without one ends at its marker.
