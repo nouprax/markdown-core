@@ -595,10 +595,23 @@ static inline markdown_core_node *markdown_core_parser_make_node_with_ext(markdo
     return markdown_core_node_pool_new(parser ? parser->pool : NULL, type, element);
 }
 
+/* A block its lines turned into another kind reads the old node of that
+ * kind which begins where it does (blocks.c). */
+void markdown_core_parser_kind_changed(markdown_core_parser *parser, markdown_core_member *member);
+
 /* Turns the block `member` holds into one of `kind`, as its lines decided. */
-markdown_core_node_set_kind_result markdown_core_parser_set_node_kind(markdown_core_parser *parser,
-                                                                      markdown_core_member *member,
-                                                                      markdown_core_node_type kind);
+static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_kind(markdown_core_parser *parser,
+                                                                                    markdown_core_member *member,
+                                                                                    markdown_core_node_type kind) {
+    markdown_core_parser_note_kind(parser, kind);
+    const markdown_core_node_type was = (markdown_core_node_type)member->node->kind;
+    markdown_core_node_set_kind_result result =
+        markdown_core_node_set_kind(member->node, markdown_core_parser_owner(parser, member), kind);
+    if (member->node->kind != was) {
+        markdown_core_parser_kind_changed(parser, member);
+    }
+    return result;
+}
 
 /* The instance of the structure element of `node`'s kind (dialect.h,
  * markdown_core_dialect_structure): the `self` of every structure hook the

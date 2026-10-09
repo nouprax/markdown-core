@@ -1722,24 +1722,17 @@ markdown_core_member *markdown_core_parser_add_child_validated(markdown_core_par
     return member;
 }
 
-markdown_core_node_set_kind_result markdown_core_parser_set_node_kind(markdown_core_parser *parser,
-                                                                      markdown_core_member *member,
-                                                                      markdown_core_node_type kind) {
-    markdown_core_parser_note_kind(parser, kind);
-    markdown_core_node_set_kind_result result =
-        markdown_core_node_set_kind(member->node, markdown_core_parser_owner(parser, member), kind);
-    /* A block its lines turned into another kind reads the old node of
-     * that kind which begins where it does. */
+/* A block its lines turned into `member`'s kind reads the old node of that
+ * kind which begins where it does. */
+void markdown_core_parser_kind_changed(markdown_core_parser *parser, markdown_core_member *member) {
     markdown_core_member *owner = member->owner;
-    if (result == MARKDOWN_CORE_NODE_SET_KIND_OK && !member->scan && owner && owner->scan &&
-        parser->block_root == parser->root) {
+    if (!member->scan && owner && owner->scan && parser->block_root == parser->root) {
         uint32_t old_start;
         const markdown_core_node *old = S_old_child(parser, owner, member->node->where.place.start, &old_start);
         if (old) {
             S_read_again(parser, member, old, old_start);
         }
     }
-    return result;
 }
 
 markdown_core_member *markdown_core_parser_attach(markdown_core_parser *parser, markdown_core_member *owner,
