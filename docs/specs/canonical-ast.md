@@ -88,8 +88,9 @@ produced it: a block's in the UTF-8 source, and an inline node's in the
 content of its inline root, which starts at 0. `lead` runs from the end of
 the previous node in the same relation, or from the owner's start for a
 relation's first node, to this node's start; `span` is the length of this
-node's range. Each typed field of an owner, each table row group and each
-definition body is a relation of its own. `lead` is signed, because ranges may
+node's range. Each typed field of an owner and each definition body is a
+relation of its own, and a table's rows, in head, content and foot order, are
+one relation. `lead` is signed, because ranges may
 overlap or nest as the rules below define. No node stores a line, a column or
 an absolute offset, and bindings copy extents and runs verbatim.
 

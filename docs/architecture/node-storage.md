@@ -214,8 +214,8 @@ block settles once every block it holds has settled; one that closes while the
 last block under it is still open (a new list closes the old one before its
 items) settles as that block does. Completing a node numbers each node it holds
 that is not numbered yet, in canonical field order: its extent, measured from
-the end of the node before it in its relation or from the owner's start. A
-numbered node settles once nothing it waits on is pending -- its inline root,
+the end of the node before it in its relation (a table's rows are one) or
+from the owner's start. A numbered node settles once nothing it waits on is pending -- its inline root,
 its block input, its anchor, the nodes it holds. Its parse-time place becomes its extent. A Footnote,
 Specimen, Reference or Heading enters the document's definition tables at its
 source start as it is numbered, and a node holding inline content is queued as

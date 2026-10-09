@@ -852,8 +852,10 @@ static void child_relation(const markdown_core_node *owner, uint32_t index, mark
 }
 
 /* Points `owner`'s cursor at its old node's relation `name`: the source of
- * the relation's first old node is measured from where the old node's
- * begins. */
+ * the relation's first old node is measured from where the one before it in
+ * its stem ends, or where the old node's begins. A relation that begins
+ * inside a stem is a run of a table's rows, blocks, whose source is their
+ * range. */
 static void pair_open(markdown_core_member *owner, markdown_core_field name) {
     owner->paired = true;
     owner->pair_name = (uint32_t)name;
@@ -869,6 +871,8 @@ static void pair_open(markdown_core_member *owner, markdown_core_field name) {
             owner->pair_stem = relation.stem;
             owner->pair_next = relation.index;
             owner->pair_end = relation.index + relation.count;
+            owner->pair_anchor =
+                (uint32_t)(owner->old_start + markdown_core_stem_length(relation.stem, 0, relation.index));
             return;
         }
     }
@@ -1365,9 +1369,9 @@ static bool order_take(const complete_context *context, markdown_core_member *me
 
 /* Numbers what `member`'s node, which starts at `start`, holds and has not
  * numbered yet, relation by relation: each node is measured from the end of
- * the one before it in its relation, or from where the relation is measured
- * -- the owner's start, or 0 for the content of the inline root being
- * completed, which is its first relation -- and its runs from where the
+ * the one before it in its stem, or from where the stem is measured -- the
+ * owner's start, or 0 for the content of the inline root being completed,
+ * which is its first relation -- and its runs from where the
  * source of the one before it ends, or the owner's begins (item_anchor). The
  * members of a relation's nodes are walked with them: the node's
  * children's, or those of the group that holds the relation, and a field's
@@ -1397,9 +1401,14 @@ static bool complete_relations(const complete_context *context, markdown_core_me
         }
         source = markdown_core_source_runs_window(table, (markdown_core_place){start, start}).start;
     }
+    item_anchor anchor = {start, source};
     markdown_core_relations_begin(&cursor, node);
     while (relations_next(&cursor, &relation, &more)) {
-        item_anchor anchor = content ? (item_anchor){0, completing->place.start} : (item_anchor){start, source};
+        /* A relation that is a later run of its stem goes on from where the
+         * one before it ended. */
+        if (relation.field || !relation.index) {
+            anchor = content ? (item_anchor){0, completing->place.start} : (item_anchor){start, source};
+        }
         const bool in_content = inside || content;
         content = false;
         if (relation.field) {
@@ -1780,22 +1789,6 @@ static int field_seek_visit(markdown_core_node **slot, void *context) {
     return 1;
 }
 
-/* Where the relation of `owner`'s that holds its child at `index` begins
- * among its children: each relation is measured from the owner's start. */
-static size_t children_relation_start(const markdown_core_node *owner, size_t index) {
-    markdown_core_relation_cursor cursor;
-    markdown_core_relation relation;
-    bool more;
-    markdown_core_relations_begin(&cursor, owner);
-    while (relations_next(&cursor, &relation, &more)) {
-        if (!relation.field && relation.stem == owner->children && index < relation.index + relation.count) {
-            return relation.index;
-        }
-    }
-    assert(false);
-    return 0;
-}
-
 /* The search for `old`, whose order, or its copy's, is `order`, from the
  * document down (5.7): at each node, the field or child that holds it is the
  * last whose first order lies at its label or before it, the fields first;
@@ -1815,8 +1808,7 @@ static size_t splice_find(markdown_core_parser *parser, markdown_core_publicatio
         if (index != SIZE_MAX) {
             step.node = markdown_core_stem_at(owner->children, index);
             if (!(step.node->flags & MARKDOWN_CORE_NODE__GROUP)) {
-                const size_t relation = children_relation_start(owner, index);
-                const int64_t before = markdown_core_stem_length(owner->children, relation, index - relation);
+                const int64_t before = markdown_core_stem_length(owner->children, 0, index);
                 step.start = publish_place(step.node, (uint32_t)(from + before)).start;
             }
         } else {
@@ -2247,7 +2239,9 @@ bool markdown_core_walk_next(markdown_core_walk *walk, markdown_core_walk_item *
                 walk->count--;
                 continue;
             }
-            frame->anchor = frame->owner_start;
+            if (frame->relation.field || !frame->relation.index) {
+                frame->anchor = frame->owner_start;
+            }
             frame->active = true;
             frame->group_pending = frame->relation.group != NULL;
             markdown_core_relation_walk_begin(&frame->nodes, &frame->relation);

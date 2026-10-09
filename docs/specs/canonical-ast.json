@@ -1084,7 +1084,7 @@
             "dump": "(width=100,height=null) or (width=100,height=145); an optional absent value prints null"
         },
         "Extent": {
-            "purpose": "The range a node covers, in bytes of the input of the parser that produced it: a block's in the UTF-8 source, an inline node's in its inline root's content, which starts at 0. lead is signed, from the end of the previous node in the same relation (or the owner's start, for the first node) to this node's start; span is the length of the node's range. Scopes are computed from extents, runs and the source on request.",
+            "purpose": "The range a node covers, in bytes of the input of the parser that produced it: a block's in the UTF-8 source, an inline node's in its inline root's content, which starts at 0. lead is signed, from the end of the previous node in the same relation (or the owner's start, for the first node) to this node's start; span is the length of the node's range. A table's rows, in head, content and foot order, are one relation. Scopes are computed from extents, runs and the source on request.",
             "fields": [
                 {
                     "name": "lead",

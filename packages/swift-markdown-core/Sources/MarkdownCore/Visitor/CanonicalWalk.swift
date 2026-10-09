@@ -2,7 +2,8 @@
 /// absolute source and the dump's line layout.
 ///
 /// It mirrors the C walk: each relation's first node leads from the start of
-/// its owner's source and each later node from the end of the source of the
+/// its owner's source, or from the end of the relation before when it
+/// continues that one, and each later node from the end of the source of the
 /// one before it, and a named relation yields a line of its own before its
 /// nodes. A node's source runs from where its first run starts to where its
 /// last ends. The frames are the tree's depth; the call stack stays constant.
@@ -93,7 +94,9 @@ struct CanonicalWalk {
         frames[top].step += 1
         frames[top].relation = relation
         frames[top].index = relation.indices.lowerBound
-        frames[top].anchor = frames[top].start
+        if !relation.continues {
+            frames[top].anchor = frames[top].start
+        }
         frames[top].named = relation.name != nil
         return true
     }

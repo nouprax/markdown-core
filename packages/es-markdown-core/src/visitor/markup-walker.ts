@@ -113,10 +113,11 @@ const relations: {
     heading: (node) => [node.content],
     list: (node) => [node.items],
     listItem: (node) => [node.content],
+    // A table's rows, in head, content and foot order, are one relation.
     table: (node) =>
         node.caption === null
-            ? [node.head, node.content, node.foot]
-            : [[node.caption], node.head, node.content, node.foot],
+            ? [[...node.head, ...node.content, ...node.foot]]
+            : [[node.caption], [...node.head, ...node.content, ...node.foot]],
     tableCaption: (node) => [node.content],
     tableRow: (node) => [node.cells],
     tableCell: (node) => [node.content],

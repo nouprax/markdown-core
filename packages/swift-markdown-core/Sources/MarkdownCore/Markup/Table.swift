@@ -76,8 +76,8 @@ final class TableRecord: MarkupRecord, @unchecked Sendable {
         switch step {
         case 0: Relation(name: nil, indices: 0..<captionCount)
         case 1: Relation(name: "TableHead", indices: head)
-        case 2: Relation(name: "TableBody", indices: body)
-        case 3: Relation(name: "TableFoot", indices: foot)
+        case 2: Relation(name: "TableBody", indices: body, continues: true)
+        case 3: Relation(name: "TableFoot", indices: foot, continues: true)
         default: nil
         }
     }

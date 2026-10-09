@@ -37,7 +37,7 @@ bool markdown_core_tree_scope(const markdown_core_node *root, const markdown_cor
  * canonical dump draws it as a group line (`Title`, `CitationPrefix`, a
  * table's row groups, a definition's term and bodies), and is NULL when its
  * nodes are drawn directly under the owner. A node's extent is relative to
- * the previous node of its relation, or to the owner's start. */
+ * the previous node of its stem, or to the owner's start. */
 typedef struct markdown_core_relation {
     const char *group;
     const markdown_core_stem *stem;

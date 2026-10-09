@@ -3,11 +3,14 @@ package com.nouprax.markdown.core
 /**
  * One owned node-valued field of a node: its nodes in stored order, and the
  * name of the group line the dump draws for it, or null when its nodes nest
- * directly under the owner.
+ * directly under the owner. A relation that [continues] the one before it (a
+ * table's body and foot rows go on from its head rows) leads its first node
+ * from the end of that one's last.
  */
 internal class Relation(
     val group: String?,
     val nodes: kotlin.collections.List<Markup>,
+    val continues: Boolean = false,
 )
 
 /**
@@ -17,8 +20,9 @@ internal class Relation(
  * frames, never the call stack, so its depth is the tree's.
  *
  * It also places the source of every node it enters: a relation's first
- * node leads from the start of its owner's source and every later one from
- * the end of the source of the node before it; the root leads from 0. A
+ * node leads from the start of its owner's source, or from the end of the
+ * relation before when it continues that one, and every later one from the
+ * end of the source of the node before it; the root leads from 0. A
  * node's source runs from where its first run starts to where its last ends.
  */
 internal class MarkupTraversal(
@@ -96,7 +100,9 @@ internal class MarkupTraversal(
                 val opened = frame.relations[frame.next++]
                 frame.relation = opened
                 frame.index = 0
-                frame.anchor = frame.start
+                if (!opened.continues) {
+                    frame.anchor = frame.start
+                }
                 // The group's own nodes follow it one level down, so what
                 // follows it at its own level is the owner's next relation.
                 if (opened.group != null) {

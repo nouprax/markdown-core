@@ -79,8 +79,8 @@ public sealed class Markup {
                 listOfNotNull(
                     caption?.let { Relation(null, listOf(it)) },
                     Relation("TableHead", head),
-                    Relation("TableBody", content),
-                    Relation("TableFoot", foot),
+                    Relation("TableBody", content, continues = true),
+                    Relation("TableFoot", foot, continues = true),
                 )
             }
 
