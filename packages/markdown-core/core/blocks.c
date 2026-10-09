@@ -511,6 +511,9 @@ void markdown_core_block_add_line(markdown_core_node *node, markdown_core_chunk 
     int chars_to_tab;
     int i;
     assert(node->flags & MARKDOWN_CORE_NODE__OPEN);
+    /* A block that takes its lines as a literal keeps no map of its content:
+     * no parse places nodes in it. */
+    const bool mapped = !S_kind_accepts_lines(markdown_core_parser_kind(parser, node), node);
     /* Block content accumulates physical lines. Keep its existing initial
      * minimum reservation, but acquire enough for the complete first write
      * rather than allocating a small buffer and immediately growing it.
@@ -543,12 +546,14 @@ void markdown_core_block_add_line(markdown_core_node *node, markdown_core_chunk 
          * decoded run of their own, which reads the tab, and the copied
          * bytes after it get a run of their own. */
         const int line = parser->line_number, column = parser->offset + 1;
-        const bufsize_t tab = markdown_core_parser_source_offset(parser, line, column);
-        S_append_content_mark(
-            parser, &node->content_map,
-            (markdown_core_line_mark){node->content.size, line, tab,
-                                      (int)(markdown_core_parser_source_end(parser, line, column) - tab), 0,
-                                      parser->indent});
+        if (mapped) {
+            const bufsize_t tab = markdown_core_parser_source_offset(parser, line, column);
+            S_append_content_mark(
+                parser, &node->content_map,
+                (markdown_core_line_mark){node->content.size, line, tab,
+                                          (int)(markdown_core_parser_source_end(parser, line, column) - tab), 0,
+                                          parser->indent});
+        }
         parser->offset += 1; // skip over tab
         // add space characters:
         chars_to_tab = TAB_STOP - (parser->column % TAB_STOP);
@@ -556,7 +561,9 @@ void markdown_core_block_add_line(markdown_core_node *node, markdown_core_chunk 
             markdown_core_strbuf_putc(&node->content, ' ');
         }
     }
-    S_record_content_mark(parser, node, parser->offset + 1, ch->len - parser->offset);
+    if (mapped) {
+        S_record_content_mark(parser, node, parser->offset + 1, ch->len - parser->offset);
+    }
     markdown_core_strbuf_put(&node->content, ch->data + parser->offset, ch->len - parser->offset);
     if (node->content.oom) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -1242,13 +1249,17 @@ const markdown_core_stem_summary MARKDOWN_CORE_BLANK_SUMMARY = {S_blank_of, S_bl
 
 static void S_settle(markdown_core_parser *parser, markdown_core_member *member);
 
-/* Adds `line` to the lines of `node`, a leaf (E5). False, with the parse
- * failed, when they could not grow. */
-static bool S_lines_add(markdown_core_parser *parser, markdown_core_node *node, int32_t lead,
-                        const markdown_core_line *line) {
+/* Adds the `count` lines at `added` to the lines of `node`, a leaf (E5).
+ * False, with the parse failed, when they could not grow. */
+static bool S_lines_append(markdown_core_parser *parser, markdown_core_node *node, int32_t lead,
+                           const markdown_core_line *added, uint32_t count) {
     markdown_core_lines *lines = node->lines;
-    if (!lines || lines->count == lines->capacity) {
-        const uint32_t capacity = lines ? lines->capacity * 2 : 4;
+    const uint32_t needed = (lines ? lines->count : 0) + count;
+    if (!lines || needed > lines->capacity) {
+        uint32_t capacity = lines ? lines->capacity * 2 : 4;
+        while (capacity < needed) {
+            capacity *= 2;
+        }
         markdown_core_lines *grown = markdown_core_node_pool_bytes(
             parser->pool, offsetof(markdown_core_lines, items) + capacity * sizeof(markdown_core_line));
         if (!grown) {
@@ -1265,7 +1276,8 @@ static bool S_lines_add(markdown_core_parser *parser, markdown_core_node *node, 
         }
         node->lines = lines = grown;
     }
-    lines->items[lines->count++] = *line;
+    memcpy(lines->items + lines->count, added, count * sizeof(markdown_core_line));
+    lines->count = needed;
     return true;
 }
 
@@ -1282,10 +1294,11 @@ static void S_record_line(markdown_core_parser *parser, markdown_core_member *be
         return;
     }
     const int last = parser->claimed ? parser->claimed_line : parser->line_number;
-    const uint32_t next =
-        (uint32_t)markdown_core_input_line_next(parser, markdown_core_parser_visited_line(parser, last));
+    const markdown_core_input_line *geometry = markdown_core_parser_visited_line(parser, last);
+    const uint32_t next = (uint32_t)markdown_core_input_line_next(parser, geometry);
     markdown_core_line line = leaf == before && !parser->claimed ? parser->plain : (markdown_core_line){0};
     line.span = next - (uint32_t)parser->line_start;
+    line.text = geometry->end - (uint32_t)parser->line_start;
     line.reach = parser->line_reach > next ? parser->line_reach - next : 0;
     markdown_core_lines *lines = leaf->node->lines;
     if (leaf != before) {
@@ -1293,9 +1306,10 @@ static void S_record_line(markdown_core_parser *parser, markdown_core_member *be
             lines->broken = true;
             return;
         }
-        S_lines_add(parser, leaf->node, (int32_t)((int64_t)parser->line_start - leaf->node->where.place.start), &line);
+        S_lines_append(parser, leaf->node, (int32_t)((int64_t)parser->line_start - leaf->node->where.place.start),
+                       &line, 1);
     } else if (lines) {
-        S_lines_add(parser, leaf->node, lines->lead, &line);
+        S_lines_append(parser, leaf->node, lines->lead, &line, 1);
     }
 }
 
@@ -3418,8 +3432,14 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_member *
 /* The line in hand is a plain line of the current leaf (E5): where its
  * content begins, as markdown_core_block_add_line reads it. */
 static void S_hold_plain(markdown_core_parser *parser) {
+    const markdown_core_input_line *geometry = markdown_core_parser_visited_line(parser, parser->line_number);
+    /* A line with NUL is read through a normalized view of it, which its
+     * record does not give. */
+    if (geometry->facts && parser->input_facts[geometry->facts - 1].nul_count) {
+        return;
+    }
     parser->plain =
-        (markdown_core_line){.own = markdown_core_parser_visited_line(parser, parser->line_number)->own,
+        (markdown_core_line){.own = geometry->own,
                              .offset = (uint32_t)parser->offset,
                              .column = parser->column,
                              .indent = parser->indent,
@@ -3543,6 +3563,32 @@ static bool S_hold_line(markdown_core_parser *parser, const unsigned char *buffe
     return true;
 }
 
+/* The index entry of input line `index`, a line a leaf takes (E5), which
+ * starts at `start` as its record `line` says: the one a lookahead read
+ * already, or the one the record gives, with no byte of it scanned. NULL,
+ * with the parse failed, when the index could not grow. */
+static markdown_core_input_line *S_index_taken_line(markdown_core_parser *parser, size_t index, uint32_t start,
+                                                    const markdown_core_line *line) {
+    if (index < parser->input_line_count) {
+        return &parser->input_lines[index];
+    }
+    assert(index == parser->input_line_count && parser->input_scanned == start);
+    if (parser->input_line_count == parser->input_line_capacity) {
+        void *lines = markdown_core_reserve(parser->input_lines, &parser->input_line_capacity,
+                                            parser->input_line_count + 1, sizeof(*parser->input_lines));
+        if (!lines) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            return NULL;
+        }
+        parser->input_lines = lines;
+    }
+    parser->input_scanned = start + line->span;
+    parser->input_line_work += line->span;
+    markdown_core_input_line *entry = &parser->input_lines[parser->input_line_count++];
+    *entry = (markdown_core_input_line){.start = start, .end = start + line->text};
+    return entry;
+}
+
 /* THE UNTOUCHED LINES OF A LEAF (E5). On its second line, with every prefix
  * matched, a leaf that reads its old node again, which it entered as the old
  * one did and opened on the same untouched line, takes the old node's plain
@@ -3585,7 +3631,7 @@ static bool S_take_lines(markdown_core_parser *parser, markdown_core_chunk *inpu
         if (i > 1) {
             markdown_core_strbuf_clear(&parser->curline);
             markdown_core_input_line *found =
-                S_extend_source_lines(parser, (size_t)(parser->line_number + 1 - parser->input_first_line));
+                S_index_taken_line(parser, (size_t)(parser->line_number + 1 - parser->input_first_line), at, line);
             bufsize_t length = 0;
             const unsigned char *content = found ? S_input_line_content(parser, found, &length) : NULL;
             if (!content || !S_hold_line(parser, content, length, input)) {
@@ -3602,12 +3648,10 @@ static bool S_take_lines(markdown_core_parser *parser, markdown_core_chunk *inpu
         parser->partially_consumed_tab = (line->flags & MARKDOWN_CORE_LINE_TAB) != 0;
         parser->blank = (line->flags & MARKDOWN_CORE_LINE_BLANK) != 0;
         markdown_core_block_add_line(leaf->node, input, parser);
-        const uint32_t next = (uint32_t)parser->line_start + line->span;
-        reach = reach > next + line->reach ? reach : next + line->reach;
-        if (!S_lines_add(parser, leaf->node, lead, line)) {
-            break;
-        }
+        at = (uint32_t)parser->line_start + line->span;
+        reach = reach > at + line->reach ? reach : at + line->reach;
     }
+    S_lines_append(parser, leaf->node, lead, was->items + 1, count);
     parser->line_reach = reach;
     S_after_text(parser);
     parser->lines_taken = true;

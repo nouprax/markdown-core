@@ -240,7 +240,8 @@ typedef struct markdown_core_runs {
 
 /* THE LINES OF A LEAF BLOCK (E5): what the line machine did with each
  * physical line the leaf took, in order, its opening line first. `span` runs
- * from the line's start to where the next line read begins, and `reach` is
+ * from the line's start to where the next line read begins, `text` to where
+ * its content ends before its line ending, and `reach` is
  * how far past there the decisions on the line read. A PLAIN line continued
  * the leaf, which was the current block when the line began, with every
  * container prefix matched, and opened no block: its content begins `offset`
@@ -251,7 +252,7 @@ typedef struct markdown_core_runs {
  * one is BROKEN, and none of its lines is taken. */
 enum { MARKDOWN_CORE_LINE_PLAIN = 1, MARKDOWN_CORE_LINE_BLANK = 2, MARKDOWN_CORE_LINE_TAB = 4 };
 typedef struct markdown_core_line {
-    uint32_t span, reach, own, offset;
+    uint32_t span, text, reach, own, offset;
     int32_t column, indent;
     uint32_t flags;
 } markdown_core_line;
