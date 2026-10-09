@@ -27,10 +27,10 @@ static MARKDOWN_CORE_INLINE markdown_core_chunk take_while(markdown_core_inline_
 // backticks, otherwise return the position in the inline state
 // after the closing backticks.
 /* ONE RUN'S BACKTICK INDEX (the code element's run record): the
- * last position of a run of each length up to `capacity`, recorded as the
- * first scan for a closer passes it, and whether a scan has reached the end
- * of the run, after which a length whose last run lies behind the cursor has
- * no closer. Allocated when a run first looks for a closer. */
+ * last position of a run of each length up to `capacity`, as the scans for a
+ * closer pass them, and whether a scan has reached the end of the run, after
+ * which a length whose last run lies behind the cursor has no closer.
+ * Allocated when a run first looks for a closer. */
 typedef struct {
     bufsize_t *positions;
     bufsize_t capacity;
@@ -76,8 +76,12 @@ bufsize_t markdown_core_inline_scan_to_closing_backticks(const markdown_core_ele
             advance(inline_state);
             numticks++;
         }
-        // store position of ender
-        if (numticks <= backticks->capacity) {
+        /* The index keeps the LAST run of each length: a scan that starts
+         * after an earlier one passes runs that one already passed, and
+         * must not lower what it knows. The answer to "is there a closer
+         * after here" is then a fact of the input, whatever scans ran
+         * before it. */
+        if (numticks <= backticks->capacity && backticks->positions[numticks] < inline_state->pos - numticks) {
             backticks->positions[numticks] = inline_state->pos - numticks;
         }
         if (numticks == openticklength) {

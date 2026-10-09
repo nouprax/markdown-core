@@ -1045,6 +1045,10 @@ export function identityScripts() {
             .expect("changed", "Heading", 0)
             .expect("only")
     );
+    /* A code span's closer search reads what earlier spans' searches
+     * learned of the runs after them; the answer must not depend on which
+     * of those spans the edit took whole. */
+    add("code-closer-after-span", "``x`8`@`\n", (s) => s.insert(8, "D`").expect("new", "Code", 7));
     /* A leaf block edited on a later line takes its untouched lines (E5);
      * an edit that ends it early, or makes its lines a heading, is read. */
     {

@@ -1,0 +1,4 @@
+markdown-core edit script 1
+script code-closer-after-span identity
+edit 8 8 4460
+expect new Code 7
