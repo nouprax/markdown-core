@@ -532,10 +532,10 @@ static inline markdown_core_node_kind public_kind(const markdown_core_node *node
  * caption, completes again. Numbering a node passes the reuse cursor over
  * its range, collecting the old nodes it may continue. A node continues the first of
  * those old nodes of its kind, which gives it its id, or none, and takes the
- * next id; it decides as soon as that cannot change (number_id), at the latest
- * as it settles, once it waits on nothing, its kind and range final. Equal to
- * the old node it continues, it is that node. A descendant that asks which
- * old node a node continues has it decided then. */
+ * next id; it decides as soon as that cannot change (number_unsettled), at
+ * the latest as it settles, once it waits on nothing, its kind and range
+ * final. Equal to the old node it continues, it is that node. A descendant
+ * that asks which old node a node continues has it decided then. */
 
 /* The node a node's inline content is parsed into: the node itself, or the
  * private node its title or term hangs from, which holds the runs that read
@@ -750,10 +750,10 @@ static bool order_gather(markdown_core_parser *parser, markdown_core_member *mem
         markdown_core_relation_cursor cursor;
         markdown_core_relation relation;
         markdown_core_relation_walk nodes;
-        bool more;
+        bool more = true;
         const size_t mark = count;
         markdown_core_relations_begin(&cursor, at);
-        while (ok && relations_next(&cursor, &relation, &more)) {
+        while (ok && more && relations_next(&cursor, &relation, &more)) {
             markdown_core_relation_walk_begin(&nodes, &relation);
             for (const markdown_core_node *item; ok && (item = markdown_core_relation_walk_next(&nodes));) {
                 if (!item->first) {
@@ -1203,23 +1203,20 @@ static void identify(markdown_core_parser *parser, markdown_core_member *member)
     }
 }
 
-/* `member`'s node is numbered. It decides, and takes its id, as soon as that
- * cannot change: now when its owner continues nothing, as then it decided
- * with its owner to continue nothing whatever it becomes, or when it waits on
- * nothing, its kind and range final; otherwise as it settles, when they are.
- * False when an allocation failed. */
-static bool number_id(markdown_core_parser *parser, markdown_core_publication *publication,
-                      markdown_core_member *member) {
-    assert(member->owner || member == parser->root);
-    if (member->waits && !markdown_core_member_continues_nothing(member->owner)) {
-        return true;
+/* `member`'s node is numbered while it still waits, and its owner counts it
+ * among what it waits on. It decides, and takes its id, as soon as that cannot
+ * change: now when its owner continues nothing, as then it decided with its
+ * owner to continue nothing whatever it becomes; otherwise as it settles, when
+ * its kind and range are final. A member that waits on nothing settles as it
+ * is numbered, which decides it. */
+static void number_unsettled(markdown_core_parser *parser, markdown_core_member *member) {
+    assert(member->waits && member->owner);
+    if (markdown_core_member_continues_nothing(member->owner)) {
+        assert(member->decided);
+        identify(parser, member);
     }
-    if (!search(parser, publication, member, member->place.end)) {
-        return false;
-    }
-    assert(member->decided);
-    identify(parser, member);
-    return true;
+    member->counted = true;
+    member->owner->waits++;
 }
 
 /* Numbers `member`'s node, which `owner` holds, lies at its place, is
@@ -1283,12 +1280,8 @@ static bool complete_number(const complete_context *context, markdown_core_membe
     }
     member->numbered = true;
     member->slot = slot;
-    if (!number_id(parser, context->publication, member)) {
-        return false;
-    }
     if (member->waits) {
-        member->counted = true;
-        member->owner->waits++;
+        number_unsettled(parser, member);
     } else {
         markdown_core_settle_member(parser, context->publication, member);
     }
@@ -1381,7 +1374,7 @@ static bool complete_relations(const complete_context *context, markdown_core_me
     markdown_core_relation relation;
     markdown_core_relation_walk nodes;
     markdown_core_member *child = member->first;
-    bool more, content = completing && completing->node == node;
+    bool more = true, content = completing && completing->node == node;
     /* A node of the root's content begins in the source where its first
      * content byte was read from. */
     const bool inside = completing && !content;
@@ -1396,7 +1389,8 @@ static bool complete_relations(const complete_context *context, markdown_core_me
     }
     item_anchor anchor = {start, source};
     markdown_core_relations_begin(&cursor, node);
-    while (relations_next(&cursor, &relation, &more)) {
+    /* It steps no further than its last relation. */
+    while (more && relations_next(&cursor, &relation, &more)) {
         /* A relation that is a later run of its stem goes on from where the
          * one before it ended. */
         if (relation.field || !relation.index) {
@@ -1997,9 +1991,6 @@ bool markdown_core_publish_tree(markdown_core_parser *parser, markdown_core_publ
     assert(!member->waits);
     member->place = place;
     member->numbered = true;
-    if (!number_id(parser, publication, member)) {
-        return false;
-    }
     markdown_core_settle_member(parser, publication, member);
     if (parser->error) {
         return false;
