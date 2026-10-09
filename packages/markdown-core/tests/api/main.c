@@ -3596,6 +3596,128 @@ static void registry_facts_live_with_their_nodes(test_batch_runner *runner) {
     payload_probe_disarm();
 }
 
+/* Whether the roster at `roster` is an AVL tree whose heights and counts
+ * are its own, listing `expected`, `count` nodes, in order. */
+static bool roster_test_lists(const markdown_core_roster *roster, markdown_core_node *const *expected, size_t count) {
+    if (markdown_core_roster_count(roster) != count) {
+        return false;
+    }
+    const markdown_core_roster *stack[128];
+    size_t depth = 0, at = 0;
+    for (const markdown_core_roster *node = roster; node || depth;) {
+        while (node) {
+            const unsigned left = node->left ? node->left->height : 0, right = node->right ? node->right->height : 0;
+            if (node->height != 1 + (left > right ? left : right) || left > right + 1 || right > left + 1 ||
+                node->count != 1 + markdown_core_roster_count(node->left) + markdown_core_roster_count(node->right) ||
+                depth == 128) {
+                return false;
+            }
+            stack[depth++] = node;
+            node = node->left;
+        }
+        node = stack[--depth];
+        if (at >= count || node->node != expected[at++]) {
+            return false;
+        }
+        node = node->right;
+    }
+    return at == count;
+}
+
+/* THE ROSTERS TAKE A JOIN AS ONE BATCH (registry.c, roster_union): orders
+ * that join in runs at places spread over the list, a whole batch at its
+ * end, and orders that leave keep the tree order roster an AVL tree listing
+ * the References in list order, and a roster held from before a join lists
+ * what it listed. */
+static void registry_rosters_join_batches(test_batch_runner *runner) {
+    enum { LIMIT = 600 };
+    markdown_core_node_pool pool = {0};
+    markdown_core_registry *registry = &pool.registry;
+    markdown_core_node *listed[LIMIT], *held[LIMIT];
+    size_t count = 0, made = 0;
+    uint64_t seed = 0x9e3779b97f4a7c15u;
+    bool shaped = true, kept = true, joined = true;
+    for (int round = 0; round < 60 && joined; round++) {
+        markdown_core_registry_begin(registry);
+        /* A sequence of runs, each before an order the list holds or at its
+         * end, the places in tree order. */
+        size_t places[4], runs = 1 + (size_t)(seed % 4), adding = 0;
+        for (size_t i = 0; i < runs; i++) {
+            seed ^= seed << 13, seed ^= seed >> 7, seed ^= seed << 17;
+            places[i] = count ? (size_t)(seed % (count + 1)) : 0;
+        }
+        for (size_t i = 1; i < runs; i++) {
+            for (size_t j = i; j > 0 && places[j - 1] > places[j]; j--) {
+                const size_t swap = places[j];
+                places[j] = places[j - 1];
+                places[j - 1] = swap;
+            }
+        }
+        markdown_core_node *next[LIMIT];
+        size_t next_count = 0, taken = 0;
+        markdown_core_order *first = NULL, *last = NULL;
+        for (size_t i = 0; i < runs; i++) {
+            const size_t width = round == 0 ? 400 : 1 + (size_t)((seed >> (8 * i)) % 9);
+            for (; taken < places[i]; taken++) {
+                next[next_count++] = listed[taken];
+            }
+            for (size_t j = 0; j < width && count + adding < LIMIT - 1; j++, adding++) {
+                markdown_core_node *node = markdown_core_node_pool_new(&pool, MARKDOWN_CORE_NODE_REFERENCE, NULL);
+                markdown_core_order *order = node ? markdown_core_order_new(registry, node) : NULL;
+                if (!order) {
+                    joined = false;
+                    break;
+                }
+                node->order = order;
+                order->before = places[i] < count ? listed[places[i]]->order : &registry->orders;
+                if (last) {
+                    last->next = order;
+                } else {
+                    first = order;
+                }
+                last = order;
+                next[next_count++] = node;
+                made++;
+            }
+        }
+        for (; taken < count; taken++) {
+            next[next_count++] = listed[taken];
+        }
+        markdown_core_roster *before = markdown_core_roster_retain(registry->rosters[MARKDOWN_CORE_ROSTER_REFERENCES]);
+        memcpy(held, listed, count * sizeof(*held));
+        const size_t held_count = count;
+        joined &= !first || markdown_core_order_join(registry, first, NULL);
+        memcpy(listed, next, next_count * sizeof(*listed));
+        count = next_count;
+        /* Every fifth round, a few orders leave. */
+        for (size_t i = 0; round % 5 == 4 && i < 3 && count; i++) {
+            seed ^= seed << 13, seed ^= seed >> 7, seed ^= seed << 17;
+            const size_t at = (size_t)(seed % count);
+            joined &= markdown_core_order_leave(registry, listed[at]->order);
+            listed[at]->order = NULL;
+            markdown_core_node_pool_release(&pool, listed[at]);
+            memmove(listed + at, listed + at + 1, (count - at - 1) * sizeof(*listed));
+            count--;
+        }
+        shaped &= roster_test_lists(registry->rosters[MARKDOWN_CORE_ROSTER_REFERENCES], listed, count);
+        kept &= roster_test_lists(before, held, held_count);
+        markdown_core_roster_release(before);
+        for (const markdown_core_order *order = registry->orders.next, *prev = &registry->orders;
+             order != &registry->orders; prev = order, order = order->next) {
+            shaped &= prev == &registry->orders || prev->label < order->label;
+        }
+    }
+    OK(runner, joined && made > 400, "the batches join");
+    OK(runner, shaped, "the roster is an AVL tree listing the References in list order, the labels growing");
+    OK(runner, kept, "a roster held from before a join lists what it listed");
+    for (size_t i = 0; i < count; i++) {
+        markdown_core_order_leave(registry, listed[i]->order);
+        listed[i]->order = NULL;
+        markdown_core_node_pool_release(&pool, listed[i]);
+    }
+    markdown_core_node_pool_dispose(&pool);
+}
+
 /* Run from the instance's own beginning -- a document owner's lifecycle --
  * because what it measures is the fresh parser's storage. */
 static void inspect_lazy_block_content(const markdown_core_element_instance *self, markdown_core_parser *parser) {
@@ -11087,6 +11209,7 @@ int main(void) {
     anchor_images_only_scalars(runner);
     whitespace_is_space_tab_and_line_ending(runner);
     registry_facts_live_with_their_nodes(runner);
+    registry_rosters_join_batches(runner);
     properties_values(runner);
     properties_source_boundaries(runner);
     properties_member_work(runner);

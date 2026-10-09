@@ -108,6 +108,16 @@ typedef struct markdown_core_roster {
     const markdown_core_order *order;
 } markdown_core_roster;
 
+/* A node a batch adds to a roster, with its order in a tree order roster,
+ * what the roster's order compares it by -- its order's label, or its key --
+ * and the roster. */
+typedef struct {
+    const struct markdown_core_node *node;
+    const markdown_core_order *order;
+    const void *context;
+    uint8_t roster;
+} markdown_core_roster_entry;
+
 typedef enum {
     MARKDOWN_CORE_ROSTER_FOOTNOTES,
     MARKDOWN_CORE_ROSTER_SPECIMENS,
@@ -163,6 +173,9 @@ struct markdown_core_registry {
     markdown_core_strbuf scratch;
     /* The rosters of the document as the session's last parse leaves it. */
     markdown_core_roster *rosters[MARKDOWN_CORE_ROSTER_COUNT];
+    /* The nodes a join or a resolution adds to the rosters, as one batch. */
+    markdown_core_roster_entry *batch;
+    size_t batch_count, batch_capacity;
     /* The storage of its keys, facts, orders and roster entries (slab.h). A
      * roster a document holds outlives the registry, and its entries their
      * slabs' holds keep. */

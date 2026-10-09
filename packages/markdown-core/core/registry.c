@@ -240,33 +240,148 @@ static size_t roster_descend(markdown_core_registry *registry, markdown_core_ros
     }
 }
 
-/* `node` and `order` take place `index` of the roster at `*root`. */
-static bool roster_insert(markdown_core_registry *registry, markdown_core_roster **root, size_t index,
-                          const markdown_core_node *node, const markdown_core_order *order) {
+/* `x`, a node only the edited roster holds, joined between `left` and
+ * `right`, every node of `left` before it and every node of `right` after:
+ * the taller of the two takes it down its near spine, at the first subtree
+ * no more than one taller than the other, and the path rises balanced again
+ * (Blelloch, Ferizovic and Sun's join). The join takes the references it is
+ * given. False when a node on the path could not be owned: `x` then joins
+ * where the descent stopped, the shape unbalanced and the sums kept. */
+static markdown_core_roster *roster_join(markdown_core_registry *registry, markdown_core_roster *left,
+                                         markdown_core_roster *x, markdown_core_roster *right, bool *ok) {
+    const uint8_t low = roster_height(left), high = roster_height(right);
+    if (low <= high + 1 && high <= low + 1) {
+        x->left = left;
+        x->right = right;
+        roster_sum(x);
+        return x;
+    }
+    const bool down_right = low > high;
+    const uint8_t stop = (uint8_t)((down_right ? high : low) + 1);
+    markdown_core_roster *root = down_right ? left : right;
     markdown_core_roster **path[ROSTER_HEIGHT];
     size_t depth = 0;
-    markdown_core_roster **slot = root;
-    while (*slot) {
+    markdown_core_roster **slot = &root;
+    while (roster_height(*slot) > stop) {
         if (!roster_own(registry, slot)) {
-            return false;
+            *ok = false;
+            break;
         }
         path[depth++] = slot;
-        markdown_core_roster *at = *slot;
-        const size_t left = markdown_core_roster_count(at->left);
-        if (index <= left) {
-            slot = &at->left;
-        } else {
-            index -= left + 1;
-            slot = &at->right;
-        }
+        slot = down_right ? &(*slot)->right : &(*slot)->left;
     }
+    x->left = down_right ? *slot : left;
+    x->right = down_right ? right : *slot;
+    roster_sum(x);
+    *slot = x;
+    *ok &= roster_rise(registry, path, depth);
+    return root;
+}
+
+/* One step of a union: the subtree `tree` and the batch entries [lo, hi)
+ * that fall within it, then, once the left side is joined, its pivot and
+ * the right side's. */
+typedef struct {
+    markdown_core_roster *tree, *pivot, *joined, *right;
+    size_t lo, middle, hi;
+    int state;
+} roster_union_step;
+
+/* A batch entry's node, in a roster node only the edited roster holds;
+ * NULL when it could not be had. */
+static markdown_core_roster *roster_leaf(markdown_core_registry *registry, const markdown_core_roster_entry *entry) {
     markdown_core_roster *leaf = registry_take(registry, sizeof(*leaf));
-    if (!leaf) {
-        return false;
+    if (leaf) {
+        *leaf = (markdown_core_roster){1, 1, 1, NULL, NULL, entry->node, entry->order};
     }
-    *leaf = (markdown_core_roster){1, 1, 1, NULL, NULL, node, order};
-    *slot = leaf;
-    return roster_rise(registry, path, depth);
+    return leaf;
+}
+
+/* THE ENTRIES OF A BATCH JOIN THE ROSTER AT `*root` (5.8): `entries`, in the
+ * roster's order, none equal to a node it lists, and `before` says whether a
+ * roster node comes before an entry's context. One union does it: each
+ * subtree splits the entries that fall within it at its root, the two sides
+ * take theirs, and the root joins them again; a subtree no entry falls in is
+ * kept as it is, shared, and entries no subtree is left for build a
+ * balanced one around their middle. For k entries and n nodes that is
+ * O(k log(n / k + 1)): a fresh roster is built in O(k), and one entry joins
+ * in O(log n). The work runs on an explicit stack as deep as the result.
+ * False when a node could not be had; what could be joined is. */
+static bool roster_union(markdown_core_registry *registry, markdown_core_roster **root,
+                         const markdown_core_roster_entry *entries, size_t count,
+                         bool (*before)(const markdown_core_roster *entry, const void *context)) {
+    roster_union_step stack[2 * ROSTER_HEIGHT];
+    size_t depth = 0;
+    bool ok = true;
+    markdown_core_roster *result = NULL;
+    stack[depth++] = (roster_union_step){.tree = *root, .lo = 0, .hi = count};
+    while (depth) {
+        roster_union_step *step = &stack[depth - 1];
+        if (step->state == 0) {
+            if (step->lo == step->hi) {
+                result = step->tree;
+                depth--;
+                continue;
+            }
+            markdown_core_roster *tree = step->tree, *left = NULL;
+            size_t split = step->lo, after;
+            if (!tree) {
+                /* No subtree is left: the middle entry is the pivot, in
+                 * neither side. */
+                split = step->lo + (step->hi - step->lo) / 2;
+                after = split + 1;
+                step->pivot = roster_leaf(registry, &entries[split]);
+                step->right = NULL;
+            } else {
+                /* The entries before the root go left of it. */
+                size_t hi = step->hi;
+                while (split < hi) {
+                    const size_t mid = split + (hi - split) / 2;
+                    if (before(tree, entries[mid].context)) {
+                        hi = mid;
+                    } else {
+                        split = mid + 1;
+                    }
+                }
+                after = split;
+                if (tree->refs == 1) {
+                    left = tree->left;
+                    step->right = tree->right;
+                    tree->left = tree->right = NULL;
+                    step->pivot = tree;
+                } else {
+                    step->pivot =
+                        roster_leaf(registry, &(markdown_core_roster_entry){tree->node, tree->order, NULL, 0});
+                    if (step->pivot) {
+                        left = markdown_core_roster_retain(tree->left);
+                        step->right = markdown_core_roster_retain(tree->right);
+                        tree->refs--;
+                    }
+                }
+            }
+            if (!step->pivot) {
+                /* The subtree stays as it was, without the entries. */
+                ok = false;
+                result = tree;
+                depth--;
+                continue;
+            }
+            step->middle = after;
+            step->state = 1;
+            stack[depth++] = (roster_union_step){.tree = left, .lo = step->lo, .hi = split};
+            continue;
+        }
+        if (step->state == 1) {
+            step->joined = result;
+            step->state = 2;
+            stack[depth++] = (roster_union_step){.tree = step->right, .lo = step->middle, .hi = step->hi};
+            continue;
+        }
+        result = roster_join(registry, step->joined, step->pivot, result, &ok);
+        depth--;
+    }
+    *root = result;
+    return ok;
 }
 
 /* The node at `index` leaves the roster at `*root`. */
@@ -339,13 +454,6 @@ static size_t roster_place(const markdown_core_roster *roster, const markdown_co
     return markdown_core_roster_rank(roster, roster_before_label, &order->label);
 }
 
-/* `order`, just placed, lists its node in its roster. */
-static bool roster_enter(markdown_core_registry *registry, const markdown_core_order *order) {
-    const int kind = roster_of(order->node);
-    return kind < 0 || roster_insert(registry, &registry->rosters[kind], roster_place(registry->rosters[kind], order),
-                                     order->node, order);
-}
-
 /* `order`, still placed, takes its node out of its roster. */
 static bool roster_leave(markdown_core_registry *registry, const markdown_core_order *order) {
     const int kind = roster_of(order->node);
@@ -355,6 +463,42 @@ static bool roster_leave(markdown_core_registry *registry, const markdown_core_o
     const size_t index = roster_place(registry->rosters[kind], order);
     assert(index < markdown_core_roster_count(registry->rosters[kind]));
     return roster_remove(registry, &registry->rosters[kind], index);
+}
+
+/* The batch takes `entry`. False when it could not grow. */
+static bool batch_add(markdown_core_registry *registry, markdown_core_roster_entry entry) {
+    markdown_core_roster_entry *batch =
+        markdown_core_reserve(registry->batch, &registry->batch_capacity, registry->batch_count + 1, sizeof(*batch));
+    if (!batch) {
+        return false;
+    }
+    registry->batch = batch;
+    batch[registry->batch_count++] = entry;
+    return true;
+}
+
+/* The batch's entries for the roster `kind` join it: they are gathered, in
+ * the batch's order, past its end, and the roster takes them as one union.
+ * False when the gathering or the roster could not grow. */
+static bool batch_join(markdown_core_registry *registry, int kind,
+                       bool (*before)(const markdown_core_roster *entry, const void *context)) {
+    const size_t count = registry->batch_count;
+    if (!count) {
+        return true;
+    }
+    markdown_core_roster_entry *batch =
+        markdown_core_reserve(registry->batch, &registry->batch_capacity, 2 * count, sizeof(*batch));
+    if (!batch) {
+        return false;
+    }
+    registry->batch = batch;
+    size_t taken = 0;
+    for (size_t i = 0; i < count; i++) {
+        if (batch[i].roster == kind) {
+            batch[count + taken++] = batch[i];
+        }
+    }
+    return roster_union(registry, &registry->rosters[kind], batch + count, taken, before);
 }
 
 /* THE ORDER LIST. Labels lie below ORDER_TOP; the list's head stands for
@@ -399,28 +543,33 @@ bool markdown_core_order_leave(markdown_core_registry *registry, markdown_core_o
     return ok;
 }
 
-/* `order` joins the list right after `before`, with a label between theirs;
- * when there is none, the orders whose labels share the most leading bits
- * with `before`'s and are few enough for the room those bits leave -- at
+/* The `count` orders from `first` to `last`, which have just joined the
+ * list side by side, take labels between those of the orders around them,
+ * spread evenly over the room they leave. When they leave too little, the
+ * orders whose labels share the most leading bits with the label before the
+ * run, with the run, and are few enough for the room those bits leave -- at
  * most (10/7)^i of them for i free bits -- take labels spread evenly over
  * it. Each label spread pays for the insertions that filled its range, so
- * an insertion costs O(log n) amortized. */
-static void order_place(markdown_core_registry *registry, markdown_core_order *order, markdown_core_order *before) {
+ * an insertion costs O(log n) amortized, and a run of k at one place O(k)
+ * more. */
+static void order_label(markdown_core_registry *registry, markdown_core_order *first, markdown_core_order *last,
+                        size_t count) {
     markdown_core_order *const head = &registry->orders;
-    markdown_core_order *after = before->next;
-    order->prev = before;
-    order->next = after;
-    before->next = order;
-    after->prev = order;
+    markdown_core_order *const before = first->prev, *const after = last->next;
     const uint64_t low = before == head ? 0 : before->label + 1;
     const uint64_t high = after == head ? ORDER_TOP : after->label;
-    if (low < high) {
-        order->label = low + (high - low) / 2;
-        return;
+    if (high - low > count) {
+        const uint64_t step = (high - low) / (count + 1);
+        uint64_t label = low;
+        for (markdown_core_order *at = first;; at = at->next) {
+            label += step;
+            at->label = label;
+            if (at == last) {
+                return;
+            }
+        }
     }
     /* The orders from `first` to `last` have labels in [base, base + 2^bits). */
-    markdown_core_order *first = order, *last = order;
-    size_t count = 1;
     double room = 1;
     for (unsigned bits = 1; bits <= 62; bits++) {
         room *= 10.0 / 7.0;
@@ -454,18 +603,37 @@ bool markdown_core_order_join(markdown_core_registry *registry, markdown_core_or
     if (!head->next) {
         head->next = head->prev = head;
     }
-    for (markdown_core_order *order = first, *next; order; order = next) {
-        next = order->next;
-        markdown_core_order *const at = order->before ? order->before->prev : after;
-        assert(at);
-        order->before = NULL;
-        order_place(registry, order, at);
-        after = order;
-        if (!roster_enter(registry, order)) {
-            return false;
-        }
+    bool ok = true;
+    registry->batch_count = 0;
+    /* The sequence joins a run at a time: the orders that each go right
+     * after the one before, in one place of the list. */
+    for (markdown_core_order *order = first; order;) {
+        markdown_core_order *at = order->before ? order->before->prev : after, *const run = order;
+        size_t count = 0;
+        do {
+            markdown_core_order *const next = order->next, *const following = at->next;
+            order->before = NULL;
+            order->prev = at;
+            order->next = following;
+            at->next = order;
+            following->prev = order;
+            at = order;
+            count++;
+            const int kind = roster_of(order->node);
+            if (kind >= 0) {
+                ok &=
+                    batch_add(registry, (markdown_core_roster_entry){order->node, order, &order->label, (uint8_t)kind});
+            }
+            order = next;
+        } while (order && (!order->before || order->before->prev == at));
+        order_label(registry, run, at, count);
+        after = at;
     }
-    return true;
+    /* The sequence is in tree order, so each roster's entries are too. */
+    for (int kind = MARKDOWN_CORE_ROSTER_FOOTNOTES; kind <= MARKDOWN_CORE_ROSTER_REFERENCES; kind++) {
+        ok &= batch_join(registry, kind, roster_before_label);
+    }
+    return ok;
 }
 
 void markdown_core_registry_dispose(markdown_core_registry *registry) {
@@ -498,6 +666,9 @@ void markdown_core_registry_dispose(markdown_core_registry *registry) {
     }
     if (registry->scratch.ptr) {
         markdown_core_strbuf_free(&registry->scratch);
+    }
+    if (registry->batch) {
+        markdown_core_free(registry->batch);
     }
     markdown_core_bytes_pool_dispose(&registry->storage);
     *registry = (markdown_core_registry){0};
@@ -726,6 +897,55 @@ static bool fact_wins(const markdown_core_fact *fact, const markdown_core_fact *
     return fact->node->order->label < winner->node->order->label;
 }
 
+/* Whether the label of `a`'s key comes before that of `b`'s: in byte
+ * order, the shorter first on a common prefix. */
+static inline bool label_less(const markdown_core_roster_entry *a, const markdown_core_roster_entry *b) {
+    const markdown_core_key *x = a->context, *y = b->context;
+    const uint32_t common = x->length < y->length ? x->length : y->length;
+    const int order = common ? memcmp(x->label, y->label, common) : 0;
+    return order < 0 || (order == 0 && x->length < y->length);
+}
+
+/* The batch, sorted by its keys' labels: a bottom-up merge sort that runs
+ * between the batch and as much room past it. False when the room could
+ * not be had. */
+static bool batch_sort_labels(markdown_core_registry *registry) {
+    const size_t count = registry->batch_count;
+    if (count < 2) {
+        return true;
+    }
+    markdown_core_roster_entry *batch =
+        markdown_core_reserve(registry->batch, &registry->batch_capacity, 2 * count, sizeof(*batch));
+    if (!batch) {
+        return false;
+    }
+    registry->batch = batch;
+    markdown_core_roster_entry *from = batch, *into = batch + count;
+    for (size_t width = 1; width < count; width *= 2) {
+        for (size_t lo = 0; lo < count; lo += 2 * width) {
+            const size_t middle = lo + width < count ? lo + width : count;
+            const size_t hi = middle + width < count ? middle + width : count;
+            size_t i = lo, j = middle, at = lo;
+            while (i < middle && j < hi) {
+                into[at++] = label_less(&from[j], &from[i]) ? from[j++] : from[i++];
+            }
+            while (i < middle) {
+                into[at++] = from[i++];
+            }
+            while (j < hi) {
+                into[at++] = from[j++];
+            }
+        }
+        markdown_core_roster_entry *swap = from;
+        from = into;
+        into = swap;
+    }
+    if (from != batch) {
+        memcpy(batch, from, count * sizeof(*batch));
+    }
+    return true;
+}
+
 bool markdown_core_registry_resolve(markdown_core_registry *registry) {
     static const int labels[] = {
         [MARKDOWN_CORE_KEY_REFERENCE] = MARKDOWN_CORE_ROSTER_REFERENCE_LABELS,
@@ -733,6 +953,8 @@ bool markdown_core_registry_resolve(markdown_core_registry *registry) {
         [MARKDOWN_CORE_KEY_SPECIMEN] = MARKDOWN_CORE_ROSTER_SPECIMEN_LABELS,
         [MARKDOWN_CORE_KEY_FAMILY] = -1,
     };
+    bool ok = true;
+    registry->batch_count = 0;
     for (const markdown_core_key *key = registry->marked; key; key = key->marked_next) {
         if (labels[key->group] < 0) {
             continue;
@@ -754,14 +976,19 @@ bool markdown_core_registry_resolve(markdown_core_registry *registry) {
         if (winner && listed && markdown_core_roster_at(*roster, index) == winner->node) {
             continue;
         }
-        const bool ok = winner ? listed ? roster_put(registry, roster, index, winner->node, NULL)
-                                        : roster_insert(registry, roster, index, winner->node, NULL)
-                               : !listed || roster_remove(registry, roster, index);
-        if (!ok) {
-            return false;
-        }
+        /* A label it does not list yet joins with the batch, once every
+         * label it lists has changed. */
+        ok &= winner ? listed ? roster_put(registry, roster, index, winner->node, NULL)
+                              : batch_add(registry, (markdown_core_roster_entry){winner->node, NULL, key,
+                                                                                 (uint8_t)labels[key->group]})
+                     : !listed || roster_remove(registry, roster, index);
     }
-    return true;
+    /* The new labels join in label order. */
+    ok &= batch_sort_labels(registry);
+    for (int kind = MARKDOWN_CORE_ROSTER_FOOTNOTE_LABELS; kind <= MARKDOWN_CORE_ROSTER_REFERENCE_LABELS; kind++) {
+        ok &= batch_join(registry, kind, label_before);
+    }
+    return ok;
 }
 
 void markdown_core_registry_settle(markdown_core_registry *registry) {
