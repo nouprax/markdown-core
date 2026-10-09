@@ -205,7 +205,8 @@ static bool scan_code(const markdown_core_element_instance *self, markdown_core_
     (void)self;
     if (context->indent >= CODE_INDENT) {
         /* Indented code interrupts no paragraph, and a lazy line is text. */
-        if (context->paragraph || context->lazy || markdown_core_is_line_end(context->input->data[context->first])) {
+        if (markdown_core_is_line_end(context->input->data[context->first]) ||
+            markdown_core_block_start_refuses(context, true, true)) {
             return false;
         }
         start->open = open_indented;

@@ -2369,22 +2369,22 @@ static void sweep_block_gates(const markdown_core_element_instance *self, markdo
                         if (!parent) {
                             continue;
                         }
+                        block_start_context context = {.container = parent,
+                                                       .input = &input,
+                                                       .first = 0,
+                                                       .column = 1,
+                                                       .indent = 0,
+                                                       .paragraph = paragraph != 0,
+                                                       .lazy = false,
+                                                       .all_matched = true,
+                                                       .depth = 1};
                         if (gates[g].family[0] == 'o') {
                             claimed = element->try_opening_block(instance, 0, &probe, parent, line, input.len) != NULL;
                         } else if (gates[g].family[0] == 's') {
-                            block_start_context context = {.container = parent,
-                                                           .input = &input,
-                                                           .first = 0,
-                                                           .column = 1,
-                                                           .indent = 0,
-                                                           .paragraph = paragraph != 0,
-                                                           .lazy = false,
-                                                           .all_matched = true,
-                                                           .depth = 1};
                             block_start start = {0};
                             claimed = element->scan_block_start(instance, &probe, &context, &start);
                         } else {
-                            claimed = element->try_interrupting_block(instance, &probe, parent, &input, false) != NULL;
+                            claimed = element->try_interrupting_block(instance, &probe, &context) != NULL;
                         }
                         if (claimed) {
                             sweep->violations++;

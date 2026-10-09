@@ -100,8 +100,8 @@ static bool markdown_core_specimen_scan(const markdown_core_element_instance *se
     (void)parser;
     markdown_core_chunk *input = context->input;
     int first = context->first;
-    if (!(!context->paragraph &&
-          (start->matched = markdown_core_block_parse_specimen_marker(self->state, input, first, &start->specimen)))) {
+    if (!(start->matched = markdown_core_block_parse_specimen_marker(self->state, input, first, &start->specimen)) ||
+        markdown_core_block_start_refuses(context, true, false)) {
         return false;
     }
     start->kind = MARKDOWN_CORE_NODE_SPECIMEN;

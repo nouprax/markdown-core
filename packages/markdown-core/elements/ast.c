@@ -1074,9 +1074,9 @@ static void ask_in_order(markdown_core_member *owner, markdown_core_member *memb
 static bool pass_range(markdown_core_parser *parser, markdown_core_publication *publication,
                        markdown_core_member *member) {
     markdown_core_member *owner = member->owner;
-    if (member->run && owner->decided && owner->old == owner->scan) {
-        /* A run the parse took from the old children the cursor walks: the
-         * cursor passes it whole, the old nodes before it with it. */
+    if (member->candidate && owner->decided && owner->old == owner->scan) {
+        /* A candidate the parse took from the old children the cursor walks:
+         * the cursor passes it whole, the old nodes before it with it. */
         markdown_core_field name;
         child_relation(owner->node, member->index, &name);
         if (!owner->paired || owner->pair_name != (uint32_t)name) {
@@ -1421,15 +1421,15 @@ static bool complete_relations(const complete_context *context, markdown_core_me
         uint32_t slot = (uint32_t)relation.index;
         for (markdown_core_node *item; (item = (markdown_core_node *)markdown_core_relation_walk_next(&nodes));
              slot++) {
-            if (at && at->run && item == markdown_core_stem_at(at->run, 0)) {
-                /* The first node of a run the parse took, all of them
-                 * numbered: the walk passes the run whole. */
-                const size_t taken = at->run->count;
+            if (at && at->candidate && item == markdown_core_stem_at(at->candidate, 0)) {
+                /* The first node of a candidate the parse took, all of them
+                 * numbered: the walk passes the candidate whole. */
+                const size_t taken = at->candidate->count;
                 assert(!in_content);
-                if (at->run->first && !completing) {
-                    order_follow(member, at->run->first);
+                if (at->candidate->first && !completing) {
+                    order_follow(member, at->candidate->first);
                 }
-                anchor.place = (uint32_t)(anchor.place + at->run->length);
+                anchor.place = (uint32_t)(anchor.place + at->candidate->length);
                 anchor.source = anchor.place;
                 markdown_core_stem_walk_begin(&nodes.stem, relation.stem, slot + taken, nodes.stem.left - (taken - 1));
                 slot += (uint32_t)(taken - 1);

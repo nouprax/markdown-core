@@ -54,11 +54,18 @@ typedef struct markdown_core_block_start_context {
      * kind, a dash-led table and the paragraph hooks open on neither, so such
      * a line stays text. Every other start reads `paragraph` alone, if
      * anything: a list that cannot interrupt a paragraph still opens on a
-     * lazy line, as in cmark. */
-    bool paragraph, lazy, all_matched;
+     * lazy line, as in cmark. A start the context refuses says so through
+     * markdown_core_block_start_refuses, which sets `refused`. */
+    bool paragraph, lazy, all_matched, refused;
     size_t depth;
     bufsize_t thematic_kill;
 } block_start_context;
+/* Whether `context` refuses a start whose own syntax matched the line: one
+ * that does not interrupt a paragraph (`paragraph`) or open on a lazy line
+ * (`lazy`). The line would open it after a closed block, so a refusal is
+ * the line's reading depending on the block it would continue: the block
+ * the line closes holds the next one (5.3). */
+bool markdown_core_block_start_refuses(block_start_context *context, bool paragraph, bool lazy);
 
 typedef struct markdown_core_block_start {
     /* The claiming owner's open, and the owner itself, which the dispatcher

@@ -7,7 +7,7 @@ static bool markdown_core_block_list_facts_match(const markdown_core_list *list,
 static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *counts, markdown_core_parser *parser,
                                                        markdown_core_chunk *input, bufsize_t pos,
                                                        markdown_core_member *container, int first_column,
-                                                       bool interrupts_paragraph, markdown_core_list *data);
+                                                       markdown_core_list *data);
 static bool markdown_core_list_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                     block_start_context *context, block_start *start);
 /* The upper-case roman letters: the terms of ordered_numeral's roman variant. */
@@ -88,7 +88,7 @@ static bool markdown_core_block_list_facts_match(const markdown_core_list *list,
 static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *counts, markdown_core_parser *parser,
                                                        markdown_core_chunk *input, bufsize_t pos,
                                                        markdown_core_member *container, int first_column,
-                                                       bool interrupts_paragraph, markdown_core_list *data) {
+                                                       markdown_core_list *data) {
     bufsize_t startpos = pos;
     unsigned char c = BLOCK_PEEK(input, pos);
     const markdown_core_list *committed =
@@ -155,9 +155,6 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *
             (!committed || committed->delimiter.kind == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT)) {
             data->delimiter.kind = MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT;
         }
-        if (interrupts_paragraph && data->start != 1) {
-            return 0;
-        }
         if (!committed || !markdown_core_block_list_facts_match(committed, data)) {
             for (markdown_core_member *ancestor = container; ancestor; ancestor = ancestor->owner) {
                 if ((ancestor->node->kind == MARKDOWN_CORE_NODE_LIST_ITEM ||
@@ -185,16 +182,6 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *
     }
     if (!markdown_core_is_whitespace(BLOCK_PEEK(input, pos))) {
         return 0;
-    }
-    if (interrupts_paragraph) {
-        bufsize_t at = pos;
-        while (markdown_core_is_space_or_tab(BLOCK_PEEK(input, at))) {
-            counts->markers++;
-            at++;
-        }
-        if (markdown_core_is_line_end(BLOCK_PEEK(input, at))) {
-            return 0;
-        }
     }
     return pos - startpos;
 }
@@ -243,9 +230,20 @@ static bool markdown_core_list_scan(const markdown_core_element_instance *self, 
                                     block_start_context *context, block_start *start) {
     markdown_core_chunk *input = context->input;
     int first = context->first;
-    if (!((start->matched =
-               markdown_core_block_parse_list_marker(self->state, parser, input, first, context->container,
-                                                     context->column, context->paragraph, &start->list)))) {
+    if (!((start->matched = markdown_core_block_parse_list_marker(self->state, parser, input, first,
+                                                                   context->container, context->column,
+                                                                   &start->list)))) {
+        return false;
+    }
+    /* An item interrupts a paragraph only when it has content and, ordered,
+     * starts at 1. */
+    bufsize_t at = first + start->matched;
+    while (markdown_core_is_space_or_tab(BLOCK_PEEK(input, at))) {
+        at++;
+    }
+    if (((start->list.flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED && start->list.start != 1) ||
+         markdown_core_is_line_end(BLOCK_PEEK(input, at))) &&
+        markdown_core_block_start_refuses(context, true, false)) {
         return false;
     }
     start->kind = MARKDOWN_CORE_NODE_LIST;

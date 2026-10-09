@@ -46,11 +46,9 @@ static bool open_thematic(const markdown_core_element_instance *self, markdown_c
 static bool scan_thematic(const markdown_core_element_instance *self, markdown_core_parser *parser,
                           block_start_context *context, block_start *start) {
     (void)self;
-    if (context->paragraph && !context->all_matched) {
-        return false;
-    }
     if (context->thematic_kill > context->first ||
-        !(start->matched = S_scan_thematic_break(context->input, context->first, &context->thematic_kill))) {
+        !(start->matched = S_scan_thematic_break(context->input, context->first, &context->thematic_kill)) ||
+        (!context->all_matched && markdown_core_block_start_refuses(context, true, false))) {
         return false;
     }
     start->kind = MARKDOWN_CORE_NODE_THEMATIC_BREAK;

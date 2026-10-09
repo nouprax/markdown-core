@@ -568,16 +568,19 @@ the cursor for the old node that starts at that position, as tree-sitter asks
 for a reusable node before it lexes:
 
 - **Take.** The node is not touched (5.2) and its entry equals the carried state
-  of the live innermost container. The node is taken whole, with the run of
-  untouched siblings after it, the container folds the run's combined
-  summary (E4) into its carried state, and the parse continues after the run
-  without reading any line of it. The rest of the run needs no comparison:
+  of the live innermost container. The node is taken whole, with the
+  candidate of untouched siblings after it, the container folds the
+  candidate's combined summary (E4) into its carried state, and the parse
+  continues after the candidate without reading any line of it. The rest of
+  the candidate needs no comparison:
   equal state at a node's start and identical bytes through its reach and
   its next sibling's lead give equal state at that sibling's start, which is
-  its entry. A run ends only at a node after which the parse reads the next
-  lines as the old one did: not at one whose closing line refused a block
-  start because it was open, not at one that was open over blank lines after
-  its end, and not at one a later line may still write into (E2).
+  its entry. A candidate ends only at a node after which the parse reads the
+  next lines as the old one did: not at one whose closing line refused a
+  block start because it was open, not at one that was open over blank lines
+  after its end when an edit meets the node after it, and not at one a later
+  line may still write into (E2). The parse resumes at the line the next node
+  begins on, in the state that node's entry records.
 - **Descend.** Otherwise the cursor moves to the node's first child, as
   tree-sitter breaks a changed node down, and the line machine reads the line
   with `S_process_line`, as a fresh parse does. A touched container is built
@@ -627,7 +630,7 @@ are requirements on every element, each checked by an audit script in
   closed (a separate-line block identifier, a table's trailing caption) uses
   `markdown_core_parser_write_closed(parser, parent, end)`, which extends the
   open parent's last child to `end` and raises its reach to what the line has
-  read. No run of taken blocks ends at a block a later line may write into
+  read. No candidate ends at a block a later line may write into
   (5.3), so that block is the parse's own and changes in place. The audit
   forbids other writes to closed nodes.
 - **E3 Carried state is a word.** Per-parse element state
@@ -725,7 +728,7 @@ The parser reads the content from its start with the cursor over the old
 inline children: an unchanged node is taken whole when the live delimiter
 state agrees with the part its entry records, which holds no stack entry of
 the rules it read, as at its old start, and the cursor descends into every
-other node. The state after a taken run equals the old state there, by the
+other node. The state after a candidate equals the old state there, by the
 argument of 5.3. The entry has a fixed size, whatever the stack holds.
 
 Typical streamed prose closes its delimiters within a few words and its Text
@@ -780,7 +783,7 @@ is read whole and needs no order.
 Sleator's order maintenance), so two facts compare in O(1). The parse visits
 the document in tree order, reading some nodes and taking others, and keeps
 the last fact before its position. A new fact is labeled right after that
-fact. A taken run gives its last fact from its children tree's sums, as it
+fact. A candidate gives its last fact from its children tree's sums, as it
 gives its reach (5.1). An inline root records the last fact before it when
 it is listed (5.8), so its inline facts are labeled in tree order too.
 
@@ -958,8 +961,8 @@ The tree is stored the way tree-sitter stores its syntax trees:
   one subtree can sit in the old tree and the new one at once. Walks carry
   their path on an explicit stack, and no operation recurses along tree edges
   (D3).
-- **Taking is a reference.** Taking a node retains it, in O(1). Taking a run
-  of children retains the few internal nodes of the old children tree that
+- **Taking is a reference.** Taking a node retains it, in O(1). Taking a
+  candidate retains the few internal nodes of the old children tree that
   hold it and joins them into the live container's children tree, in
   O(log children).
 - **Writes copy what is shared.** A change to a node referenced once happens

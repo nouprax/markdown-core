@@ -289,6 +289,10 @@ typedef union {
 enum markdown_core_node__internal_flags {
     MARKDOWN_CORE_NODE__OPEN = (1 << 0),
     MARKDOWN_CORE_NODE__LAST_LINE_BLANK = (1 << 1),
+    /* Part of the block's parse record (5.3): a line after its end, before
+     * the next block, wrote into it or was read with it open, so a
+     * candidate ends at it only before a block no edit meets. */
+    MARKDOWN_CORE_NODE__TRAILED = (1 << 2),
     MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK = (1 << 3),
     // An HTML block whose own end condition matched on the line being
     // processed. `finalize` reads it to end the block on that line rather
@@ -324,10 +328,10 @@ enum markdown_core_node__internal_flags {
     MARKDOWN_CORE_NODE__AWAITS_CHILD = (1 << 10),
 
     /* Part of the block's parse record (docs/plans/2026-09-29-incremental-
-     * parsing.md, 5.3): a run of taken blocks does not end at it, because
-     * the line after it was not read as it would be with the block closed
-     * before that line (markdown_core_block_finalize), or a later line wrote
-     * into it (markdown_core_parser_record). */
+     * parsing.md, 5.3): a candidate does not end at it, because the line
+     * after it read it: that line matched it, refused a start it would open
+     * with the block closed (markdown_core_block_start_refuses), or split
+     * the block (markdown_core_block_close). */
     MARKDOWN_CORE_NODE__HOLDS_NEXT = (1 << 11),
 
     // The first bit an element may claim. Element flags are compile-time
@@ -897,11 +901,11 @@ struct markdown_core_member {
     uint32_t scan_start, scan_at;
     size_t scan_next;
     bool scan_equal;
-    /* A RUN of old children the parse took whole (5.3), held as one stem: the
+    /* A CANDIDATE, old children the parse took whole (5.3), held as one stem: the
      * member stands for all of them, its node is the last of them, and
      * `past` is the index after them among the old children they were taken
      * from. NULL for a member of one node. */
-    markdown_core_stem *run;
+    markdown_core_stem *candidate;
     size_t past;
     /* THE ORDERS OF ITS SUBTREE (registry.h), as its completion and its
      * owner's numbering collect them: the new ones in tree order from

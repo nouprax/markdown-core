@@ -495,8 +495,10 @@ static markdown_core_member *try_opening_table_row(const markdown_core_element *
 
 typedef struct markdown_core_table_workspace table_workspace;
 /* Recognize a complete source candidate before claiming any of its lines. */
-static markdown_core_member *table_try_open(table_workspace *workspace, markdown_core_parser *parser,
-                                            markdown_core_member *parent, unsigned char *input, int length);
+static bool table_open_matches(markdown_core_parser *parser, markdown_core_member *parent, unsigned char *input,
+                               int length);
+static markdown_core_member *table_open(table_workspace *workspace, markdown_core_parser *parser,
+                                        markdown_core_member *parent, unsigned char *input, int length);
 
 static markdown_core_member *try_opening_table_block(const markdown_core_element_instance *self, int indented,
                                                      markdown_core_parser *parser,
@@ -508,8 +510,8 @@ static markdown_core_member *try_opening_table_block(const markdown_core_element
         return try_opening_table_header(self, parser, parent_container, input, len);
     } else if (!indented && parent_type == MARKDOWN_CORE_NODE_TABLE) {
         return try_opening_table_row(self->element, parser, parent_container, input, len);
-    } else if (!indented) {
-        return table_try_open(self->state, parser, parent_container, input, len);
+    } else if (!indented && table_open_matches(parser, parent_container, input, len)) {
+        return table_open(self->state, parser, parent_container, input, len);
     }
 
     return NULL;
@@ -2607,22 +2609,27 @@ static bool table_open_admits(markdown_core_parser *parser, const unsigned char 
                                 table_dash_count_raw(input, parser->offset, trimmed), parser->line_number + 1, false);
 }
 
-static markdown_core_member *table_try_open(table_workspace *workspace, markdown_core_parser *parser,
-                                            markdown_core_member *parent, unsigned char *input, int length) {
+/* Whether the line may begin a table table_open reads ahead for, or a
+ * caption of one, under `parent`: what that lookahead needs before it is
+ * worth entering. */
+static bool table_open_matches(markdown_core_parser *parser, markdown_core_member *parent, unsigned char *input,
+                               int length) {
     markdown_core_node_type parent_type = (markdown_core_node_type)parent->node->kind;
     if (parser->indent > 3 || parser->blank || parent_type == MARKDOWN_CORE_NODE_TABLE ||
-        parent_type == MARKDOWN_CORE_NODE_TABLE_ROW || parent_type == MARKDOWN_CORE_NODE_PARAGRAPH) {
-        return NULL;
+        parent_type == MARKDOWN_CORE_NODE_TABLE_ROW) {
+        return false;
     }
     /* Every opening grammar needs a later physical line. At EOF only an
      * existing eligible table can claim a trailing caption. */
     if (!markdown_core_parser_input_continues(parser) &&
         (!parent->last || parent->last->node->kind != MARKDOWN_CORE_NODE_TABLE)) {
-        return NULL;
+        return false;
     }
-    if (!table_open_admits(parser, input, length)) {
-        return NULL;
-    }
+    return table_open_admits(parser, input, length);
+}
+
+static markdown_core_member *table_open(table_workspace *workspace, markdown_core_parser *parser,
+                                        markdown_core_member *parent, unsigned char *input, int length) {
     table_source source = {.parser = parser, .workspace = workspace, .lines = workspace->lines};
     table_candidate *candidate = &workspace->candidate;
     markdown_core_member *result = NULL;
@@ -2705,13 +2712,14 @@ done:
 /* A block-only element: no byte ends a text run for it, no byte is offered to an
  * inline hook it does not have, and no byte is transparent to flanking. */
 static markdown_core_member *try_interrupting_block(const markdown_core_element_instance *self,
-                                                    markdown_core_parser *parser, markdown_core_member *member,
-                                                    markdown_core_chunk *input, bool lazy) {
-    if (parser->indent >= 4 || lazy || member->node->kind == MARKDOWN_CORE_NODE_PARAGRAPH ||
-        input->data[parser->first_nonspace] != '-') {
+                                                    markdown_core_parser *parser, block_start_context *context) {
+    markdown_core_chunk *input = context->input;
+    if (input->data[context->first] != '-' ||
+        !table_open_matches(parser, context->container, input->data, input->len) ||
+        markdown_core_block_start_refuses(context, true, true)) {
         return NULL;
     }
-    return table_try_open(self->state, parser, member, input->data, input->len);
+    return table_open(self->state, parser, context->container, input->data, input->len);
 }
 
 static void dispose_parser(const markdown_core_element_instance *self, markdown_core_parser *parser) {

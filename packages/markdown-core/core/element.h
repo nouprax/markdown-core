@@ -159,8 +159,10 @@ struct markdown_core_element {
     void (*publish_document)(const markdown_core_element_instance *, markdown_core_parser *);
     markdown_core_member *(*open_text_block)(const markdown_core_element_instance *, markdown_core_parser *,
                                              markdown_core_member *, markdown_core_chunk *);
+    /* A start that precedes every scanned one, read in the line's context
+     * as a scanned start is (block_start_context). */
     markdown_core_member *(*try_interrupting_block)(const markdown_core_element_instance *, markdown_core_parser *,
-                                                    markdown_core_member *, markdown_core_chunk *, bool);
+                                                    struct markdown_core_block_start_context *);
     bool interrupts_paragraph;
 
     /* THE STATE A CONTAINER CARRIES where a child of it can begin

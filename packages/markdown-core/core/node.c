@@ -1578,19 +1578,19 @@ bool markdown_core_member_freeze(markdown_core_node_pool *pool, markdown_core_me
     if (!member->first) {
         return true;
     }
-    /* The most nodes held between two runs. */
-    size_t count = 0, most = 0, runs = 0;
+    /* The most nodes held between two candidates. */
+    size_t count = 0, most = 0, candidates = 0;
     for (const markdown_core_member *child = member->first; child; child = child->next) {
         count += child->held;
-        if (child->run) {
-            runs++;
+        if (child->candidate) {
+            candidates++;
             count = 0;
         }
         most = count > most ? count : most;
     }
     markdown_core_node *node = member->node;
-    assert(!node->children || (!most && !runs));
-    if (!most && !runs) {
+    assert(!node->children || (!most && !candidates));
+    if (!most && !candidates) {
         return true;
     }
     markdown_core_node *small[MARKDOWN_CORE_STEM_WIDTH];
@@ -1629,11 +1629,11 @@ bool markdown_core_member_freeze(markdown_core_node_pool *pool, markdown_core_me
         if (!child) {
             break;
         }
-        if (child->run) {
-            markdown_core_stem *run = markdown_core_stem_retain(child->run);
-            markdown_core_stem *both = markdown_core_stem_join(pool, joined, run, summary, &failed);
+        if (child->candidate) {
+            markdown_core_stem *candidate = markdown_core_stem_retain(child->candidate);
+            markdown_core_stem *both = markdown_core_stem_join(pool, joined, candidate, summary, &failed);
             if (failed) {
-                markdown_core_stem_release(pool, run);
+                markdown_core_stem_release(pool, candidate);
                 break;
             }
             joined = both;
@@ -1685,8 +1685,8 @@ void markdown_core_member_release(markdown_core_node_pool *pool, markdown_core_m
         if (taken->held) {
             markdown_core_node_pool_release(pool, taken->node);
         }
-        if (taken->run) {
-            markdown_core_stem_release(pool, taken->run);
+        if (taken->candidate) {
+            markdown_core_stem_release(pool, taken->candidate);
         }
         S_member_free(pool, taken);
     }

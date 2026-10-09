@@ -246,13 +246,15 @@ struct markdown_core_parser {
      * being processed: the end of the furthest line any decision on it read,
      * through its terminator, as markdown_core_parser_source_line raises it.
      * `line_context` says whether the line was read with an open paragraph
-     * as its context, which may refuse a start it would take after a closed
-     * block, and `previous_blank` whether the line before it was blank past
-     * its prefixes: a block closed by such a line holds the next
-     * (MARKDOWN_CORE_NODE__HOLDS_NEXT). `edit_shift` is the length change
+     * as its context: a start the line would open after a closed block was
+     * refused (markdown_core_block_start_refuses), and `previous_blank` whether the line before it was blank past
+     * its prefixes: a block closed by such a line trails
+     * (MARKDOWN_CORE_NODE__TRAILED). `edit_shift` is the length change
      * before each of the revision's edits. A take (markdown_core_parser_add_
      * child) sets `taken`: the line ends there, and the next one read begins
-     * at `resume`, after a line whose content ended at `resume_last_end`. */
+     * at `resume`, after a line whose content ended at `resume_last_end`;
+     * `resume_blank` says that line was blank, and `resume_flags` are the
+     * blank-line flags the innermost open block had there (5.3). */
     uint32_t line_reach;
     bool line_context, previous_blank, taken;
     /* The line in hand as a leaf's line (E5): `plain` holds where its
@@ -263,6 +265,8 @@ struct markdown_core_parser {
     int64_t *edit_shift;
     size_t resume;
     bufsize_t resume_last_end;
+    bool resume_blank;
+    uint16_t resume_flags;
     /* THE NODES OF TAKEN SUBTREES THE PARSE REPLACES (5.7), in the order
      * found: a root whose lookups are answered otherwise now, parsed again
      * as `member`, whose node takes its place once it settles, and a heading
