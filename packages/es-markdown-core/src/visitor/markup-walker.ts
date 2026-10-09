@@ -34,7 +34,7 @@ interface Frame {
     readonly places: readonly Place[];
     /** Where its source starts, from its first run. */
     readonly start: number;
-    readonly relations: readonly (readonly Markup[])[];
+    readonly relations: readonly Relation[];
     relation: number;
     index: number;
     /** The offset the next node's first lead is relative to. */
@@ -72,17 +72,21 @@ export function traverse(root: Markup, each: Visit): void {
     while (frames.length > 0) {
         const frame = frames[frames.length - 1]!;
         const relation = frame.relations[frame.relation];
-        if (relation === undefined) {
+        const nodes = relation === undefined ? undefined : chain(relation);
+        if (nodes === undefined) {
             frames.pop();
             each(frame.node, "exit", frame.places);
-        } else if (frame.index < relation.length) {
-            const node = relation[frame.index]!;
+        } else if (frame.index < nodes.length) {
+            const node = nodes[frame.index]!;
             frame.index += 1;
             frame.anchor = enter(node, frame.anchor);
         } else {
             frame.relation += 1;
             frame.index = 0;
-            frame.anchor = frame.start;
+            const next = frame.relations[frame.relation];
+            if (next === undefined || !("continues" in next)) {
+                frame.anchor = frame.start;
+            }
         }
     }
 }
@@ -97,7 +101,21 @@ function dispatch<Kind extends Markup["kind"]>(
     visitor[node.kind](node, phase);
 }
 
-const none: readonly (readonly Markup[])[] = [];
+/** A chain that continues the relation of the chain before it: its first
+ * node leads from where the last node of that chain ends. A table's body
+ * and foot rows continue its head rows. */
+interface Continuing {
+    readonly continues: readonly Markup[];
+}
+
+/** One chain of extents of a node's relations. */
+type Relation = readonly Markup[] | Continuing;
+
+function chain(relation: Relation): readonly Markup[] {
+    return "continues" in relation ? relation.continues : relation;
+}
+
+const none: readonly Relation[] = [];
 
 /**
  * Every kind's owned Markup relations in canonical order, each one chain of
@@ -105,7 +123,7 @@ const none: readonly (readonly Markup[])[] = [];
  * its relations.
  */
 const relations: {
-    [Kind in Markup["kind"]]: (node: Extract<Markup, { kind: Kind }>) => readonly (readonly Markup[])[];
+    [Kind in Markup["kind"]]: (node: Extract<Markup, { kind: Kind }>) => readonly Relation[];
 } = {
     document: (node) => (node.metadata === null ? [node.content] : [[node.metadata], node.content]),
     callout: (node) => (node.title === null ? [node.content] : [node.title, node.content]),
@@ -116,8 +134,8 @@ const relations: {
     // A table's rows, in head, content and foot order, are one relation.
     table: (node) =>
         node.caption === null
-            ? [[...node.head, ...node.content, ...node.foot]]
-            : [[node.caption], [...node.head, ...node.content, ...node.foot]],
+            ? [node.head, { continues: node.content }, { continues: node.foot }]
+            : [[node.caption], node.head, { continues: node.content }, { continues: node.foot }],
     tableCaption: (node) => [node.content],
     tableRow: (node) => [node.cells],
     tableCell: (node) => [node.content],
