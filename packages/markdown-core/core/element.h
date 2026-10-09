@@ -172,6 +172,13 @@ struct markdown_core_element {
      * reads the old children of such a block again (5.3), and reads a block
      * of an element without it whole. */
     uint32_t (*carry_save)(const markdown_core_element_instance *, const markdown_core_member *);
+    /* WHAT ITS CHILDREN ADD TO THAT STATE, when its later lines read what
+     * the children before them hold (E4): the summary its children tree
+     * keeps, and the fold that adds the combined summary of old children the
+     * cursor takes whole (5.3), so the state after them is the old one. */
+    const markdown_core_stem_summary *children_summary;
+    void (*fold_children)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *,
+                          uint64_t);
     bool (*continue_container)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *,
                                markdown_core_chunk *, const markdown_core_member *, bool *);
     /* The bytes `continue_container` can strip from a line besides

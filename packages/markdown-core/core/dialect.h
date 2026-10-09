@@ -158,9 +158,10 @@ typedef struct markdown_core_complete_step_entry {
  * - BLANK_OPAQUE, BLANK_ASK (`blank_line`) and BLANK_RUNS: what a blank
  *   line means inside it.
  *
- * `summary` is the summary its children tree keeps (E4): the blank-line
- * summary when a child's blank line propagates out of the kind
- * (`propagates_child_blank`), and NULL otherwise. `complete` is the
+ * `summary` is the summary its children tree keeps (E4): the structure's
+ * `children_summary`, the blank-line summary when a child's blank line
+ * propagates out of the kind (`propagates_child_blank`), and NULL
+ * otherwise. `complete` is the
  * structure's `complete_inline`, NULL when it declares none, which inline completion calls at every ENTER. The
  * out-of-table index answers nothing. */
 enum {

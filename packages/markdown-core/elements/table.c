@@ -17,12 +17,16 @@
 // Limit to prevent a malicious input from causing a denial of service.
 #define MAX_AUTOCOMPLETED_CELLS 0x80000
 
-// Custom node flag, initialized in `create_table_element`.
-/* The one element node flag, as a COMPILE-TIME CONSTANT. It used to be a
+/* The element's node flags, as COMPILE-TIME CONSTANTS. They used to be a
  * zero-initialised global filled in by `markdown_core_register_node_flag`,
  * which aborts if it is called twice and hands out bits in call order. One
- * bit, one owner, one value known at compile time (Q16). */
-enum { MARKDOWN_CORE_NODE__TABLE_VISITED = MARKDOWN_CORE_NODE__ELEMENT_FIRST };
+ * bit, one owner, one value known at compile time (Q16). VISITED: a
+ * paragraph whose header was tried. COMPLETED: a cell a short row's
+ * completion made, which no source wrote. */
+enum {
+    MARKDOWN_CORE_NODE__TABLE_VISITED = MARKDOWN_CORE_NODE__ELEMENT_FIRST,
+    MARKDOWN_CORE_NODE__TABLE_COMPLETED = MARKDOWN_CORE_NODE__ELEMENT_FIRST << 1,
+};
 
 typedef struct {
     /* Borrowed trimmed authored bytes, valid for this row parse only. */
@@ -371,6 +375,9 @@ static markdown_core_member *try_opening_table_header(const markdown_core_elemen
                                       : (right ? MARKDOWN_CORE_FLOW_RIGHT : MARKDOWN_CORE_FLOW_NONE);
     }
 
+    table->head_count = 1;
+    /* The header row may be an old one the cursor takes, with the rows after
+     * it (5.3). */
     table_header = markdown_core_parser_add_child(parser, parent_container, MARKDOWN_CORE_NODE_TABLE_ROW, 1);
     if (!table_header) {
 
@@ -388,8 +395,6 @@ static markdown_core_member *try_opening_table_header(const markdown_core_elemen
      * each offset back into the place it was written. */
     S_place_content_span(parser, container, table_header->node, header_row.paragraph_offset,
                          (bufsize_t)strlen(parent_string) - 2);
-
-    table->head_count = 1;
 
     pipe_row_cursor header = pipe_row_cells(&header_row);
     while (pipe_row_next(&header, &geometry)) {
@@ -457,7 +462,6 @@ static markdown_core_member *try_opening_table_row(const markdown_core_element *
             set_cell_content(parser, node, cell, NULL, parser->line_number, parser->line_start,
                              (bufsize_t)(cell->content.data - input));
         }
-        table->content_count++;
         table->autocompleted_cells += (size_t)(table_columns - i);
 
         /* AUTOCOMPLETED CELLS SIT WHERE THEY WERE COMPLETED (Q44, answered
@@ -482,6 +486,7 @@ static markdown_core_member *try_opening_table_row(const markdown_core_element *
             if (!member) {
                 break;
             }
+            member->node->flags |= MARKDOWN_CORE_NODE__TABLE_COMPLETED;
             member->node->where.place.end =
                 (uint32_t)markdown_core_parser_source_end(parser, parser->line_number, (int)completed_at);
         }
@@ -573,15 +578,63 @@ static int contains_inlines(const markdown_core_element *element, markdown_core_
 /* A TABLE COMPLETES ITS ROWS AS IT CLOSES: each takes its cells as its stem
  * and numbers them, and the table, completing next, its rows and its
  * caption. A row its line closed completed then, and holds no cell members
- * by now. */
+ * by now; rows the cursor took are complete. The rows between the head and
+ * the foot are its content. */
 static void finalize_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
                            markdown_core_member *member) {
     (void)self;
     if (member->node->kind != MARKDOWN_CORE_NODE_TABLE) {
         return;
     }
+    size_t rows = 0;
     for (markdown_core_member *row = member->first; row && !parser->error; row = row->next) {
-        markdown_core_parser_complete_node(parser, row);
+        if (row->candidate) {
+            rows += markdown_core_stem_count(row->candidate);
+        } else {
+            rows++;
+            markdown_core_parser_complete_node(parser, row);
+        }
+    }
+    markdown_core_table *table = member->node->opaque;
+    if (table) {
+        table->content_count = rows - table->head_count - table->foot_count;
+    }
+}
+
+/* THE STATE A TABLE CARRIES to its rows (E3): its width, which a row's
+ * cells read, and whether the cells short rows completed passed the limit,
+ * past which no row joins it. */
+static uint32_t carry_save(const markdown_core_element_instance *self, const markdown_core_member *member) {
+    (void)self;
+    const markdown_core_table *table = member->node->kind == MARKDOWN_CORE_NODE_TABLE ? member->node->opaque : NULL;
+    return table
+               ? (uint32_t)table->column_count | (uint32_t)(table->autocompleted_cells > MAX_AUTOCOMPLETED_CELLS) << 31
+               : 0;
+}
+
+/* A row's summary (E4) is the cells its completion made; rows add. */
+static uint64_t completed_of(const markdown_core_node *node) {
+    uint64_t completed = 0;
+    if (node->kind == MARKDOWN_CORE_NODE_TABLE_ROW && node->children) {
+        const size_t count = markdown_core_stem_count(node->children);
+        for (size_t i = 0; i < count; i++) {
+            completed += (markdown_core_stem_at(node->children, i)->flags & MARKDOWN_CORE_NODE__TABLE_COMPLETED) != 0;
+        }
+    }
+    return completed;
+}
+
+static uint64_t completed_combine(uint64_t front, uint64_t back) { return front + back; }
+
+static const markdown_core_stem_summary COMPLETED_SUMMARY = {completed_of, completed_combine};
+
+static void fold_children(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                          markdown_core_member *member, uint64_t summary) {
+    (void)self;
+    (void)parser;
+    markdown_core_table *table = member->node->opaque;
+    if (table) {
+        table->autocompleted_cells += (size_t)summary;
     }
 }
 
@@ -2764,6 +2817,9 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .containment_kinds = containment_kinds,
     .contains_inlines_func = contains_inlines,
     .finalize_block = finalize_block,
+    .carry_save = carry_save,
+    .children_summary = &COMPLETED_SUMMARY,
+    .fold_children = fold_children,
     .opaque_alloc_func = opaque_alloc,
     .opaque_free_func = opaque_free,
     .opaque_copy_func = opaque_copy,

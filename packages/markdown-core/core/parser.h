@@ -595,12 +595,10 @@ static inline markdown_core_node *markdown_core_parser_make_node_with_ext(markdo
     return markdown_core_node_pool_new(parser ? parser->pool : NULL, type, element);
 }
 
-static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_kind(markdown_core_parser *parser,
-                                                                                    markdown_core_member *member,
-                                                                                    markdown_core_node_type kind) {
-    markdown_core_parser_note_kind(parser, kind);
-    return markdown_core_node_set_kind(member->node, markdown_core_parser_owner(parser, member), kind);
-}
+/* Turns the block `member` holds into one of `kind`, as its lines decided. */
+markdown_core_node_set_kind_result markdown_core_parser_set_node_kind(markdown_core_parser *parser,
+                                                                      markdown_core_member *member,
+                                                                      markdown_core_node_type kind);
 
 /* The instance of the structure element of `node`'s kind (dialect.h,
  * markdown_core_dialect_structure): the `self` of every structure hook the

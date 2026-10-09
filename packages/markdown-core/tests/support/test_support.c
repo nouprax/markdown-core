@@ -406,7 +406,7 @@ static ts_ast_range ts_source_window(const markdown_core_node *node, int64_t anc
  * relation's first node is measured from where its owner's source starts,
  * and each next one from where the source of the one before ends. A
  * relation is numbered from its field and its list, so an absent or empty
- * one keeps its place. */
+ * one keeps its place; a table's rows are one relation. */
 int ts_ast_walk_owned(const markdown_core_node *root, ts_ast_owned_visit_fn visit, void *context) {
     markdown_core_cursor *cursor;
     ts_walk_frame *frames = NULL;
@@ -449,7 +449,11 @@ int ts_ast_walk_owned(const markdown_core_node *root, ts_ast_owned_visit_fn visi
         }
         ts_walk_frame *owner = &frames[depth - 1];
         markdown_core_field field = markdown_core_cursor_field(cursor);
-        size_t relation = ts_field_rank(field) * 1000000 + markdown_core_cursor_list(cursor);
+        /* A table's rows, in head, content and foot order, are one relation. */
+        size_t relation =
+            markdown_core_node_get_kind(owner->node) == MARKDOWN_CORE_KIND_TABLE && field != MARKDOWN_CORE_FIELD_CAPTION
+                ? ts_field_rank(MARKDOWN_CORE_FIELD_HEAD) * 1000000
+                : ts_field_rank(field) * 1000000 + markdown_core_cursor_list(cursor);
         if (!owner->in_relation || owner->relation != relation) {
             owner->in_relation = true;
             owner->relation = relation;

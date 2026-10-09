@@ -4574,15 +4574,27 @@ static void table_source_map_growth(test_batch_runner *runner) {
                "source map storage is linear at %zu repeats (%d runs)", count, observed_source_marks);
             markdown_core_node *table = child_at(root, 0);
             markdown_core_node *cell = child_at(child_at(table, 1), 0);
+            /* The cell's nodes are read off their runs in one pass, each
+             * leading from where the one before it ends and the first from
+             * the cell's start, so the check stays linear in the cell. */
             size_t links = 0;
+            int64_t anchor = START_COLUMN(cell);
             markdown_core_stem_walk walk;
             markdown_core_stem_walk_begin(&walk, cell->children, 0, child_count(cell));
             for (markdown_core_node *node; (node = markdown_core_stem_walk_next(&walk));) {
+                size_t run_count = 0;
+                const markdown_core_run *runs = markdown_core_node_runs(node, &run_count);
+                int64_t start = anchor + runs[0].lead, end = start;
+                for (size_t r = 0; r < run_count; r++) {
+                    int64_t from = (r ? end : anchor) + runs[r].lead;
+                    end = from + runs[r].span;
+                }
+                anchor = end;
                 if (node->kind != MARKDOWN_CORE_NODE_LINK) {
                     continue;
                 }
-                INT_EQ(runner, START_COLUMN(node), 12 + links * unit_length, "address begins at its authored byte");
-                INT_EQ(runner, END_COLUMN(node), 27 + links * unit_length, "address ends at its authored byte");
+                INT_EQ(runner, start, 12 + links * unit_length, "address begins at its authored byte");
+                INT_EQ(runner, end - 1, 27 + links * unit_length, "address ends at its authored byte");
                 links++;
             }
             INT_EQ(runner, links, count, "every address is retained");

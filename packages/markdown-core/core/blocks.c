@@ -1643,6 +1643,10 @@ static bool S_take(markdown_core_parser *parser, markdown_core_member *parent, m
     member->candidate = candidate;
     member->past = end;
     markdown_core_member_attach(parent, member, NULL);
+    const markdown_core_element_instance *structure = markdown_core_parser_structure(parser, parent->node);
+    if (structure && structure->element->fold_children) {
+        structure->element->fold_children(structure, parser, parent, candidate->summary);
+    }
     /* A taken node is complete: it continues itself, with its id. */
     const uint32_t at = candidate_end;
     member->decided = member->identified = member->numbered = true;
@@ -1659,6 +1663,18 @@ static bool S_take(markdown_core_parser *parser, markdown_core_member *parent, m
     parser->resume_flags = next ? (markdown_core_node_internal_flags)(next->entry >> 48) : 0;
     parser->current = parent;
     return true;
+}
+
+/* A block whose old node of its kind begins where it does reads that node
+ * again: a container its children, and a leaf its lines (E5). */
+static void S_read_again(markdown_core_parser *parser, markdown_core_member *member, const markdown_core_node *old,
+                         uint32_t old_start) {
+    const markdown_core_element_instance *structure = markdown_core_parser_structure(parser, member->node);
+    if (old->kind == member->node->kind && (old->lines || (structure && structure->element->carry_save))) {
+        member->scan = old;
+        member->scan_start = member->scan_at = old_start;
+        member->scan_equal = member->owner->scan_equal && old->entry == member->node->entry;
+    }
 }
 
 /* A selected parent is a semantic decision, not a hint to repeat the search. */
@@ -1700,15 +1716,30 @@ markdown_core_member *markdown_core_parser_add_child_validated(markdown_core_par
         return NULL;
     }
     child->entry = carry;
-    /* A block whose old node of its kind begins where it does reads that
-     * node again: a container its children, and a leaf its lines (E5). */
-    const markdown_core_element_instance *structure = markdown_core_parser_structure(parser, child);
-    if (old && old->kind == block_type && (old->lines || (structure && structure->element->carry_save))) {
-        member->scan = old;
-        member->scan_start = member->scan_at = old_start;
-        member->scan_equal = parent->scan_equal && old->entry == carry;
+    if (old) {
+        S_read_again(parser, member, old, old_start);
     }
     return member;
+}
+
+markdown_core_node_set_kind_result markdown_core_parser_set_node_kind(markdown_core_parser *parser,
+                                                                      markdown_core_member *member,
+                                                                      markdown_core_node_type kind) {
+    markdown_core_parser_note_kind(parser, kind);
+    markdown_core_node_set_kind_result result =
+        markdown_core_node_set_kind(member->node, markdown_core_parser_owner(parser, member), kind);
+    /* A block its lines turned into another kind reads the old node of
+     * that kind which begins where it does. */
+    markdown_core_member *owner = member->owner;
+    if (result == MARKDOWN_CORE_NODE_SET_KIND_OK && !member->scan && owner && owner->scan &&
+        parser->block_root == parser->root) {
+        uint32_t old_start;
+        const markdown_core_node *old = S_old_child(parser, owner, member->node->where.place.start, &old_start);
+        if (old) {
+            S_read_again(parser, member, old, old_start);
+        }
+    }
+    return result;
 }
 
 markdown_core_member *markdown_core_parser_attach(markdown_core_parser *parser, markdown_core_member *owner,

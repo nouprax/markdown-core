@@ -829,19 +829,14 @@ static bool inline_runs(markdown_core_parser *parser, markdown_core_publication 
     return true;
 }
 
-/* The relation of `owner`'s that the member at `index` among the members it
- * holds as children is in: a table's rows are in its head, body or foot by
- * their place, and every other kind's children are its one children
- * relation. */
-static void child_relation(const markdown_core_node *owner, uint32_t index, markdown_core_field *name) {
+/* The relation of `owner`'s that the members it holds as children are in:
+ * a table's rows are one relation, which its head opens, and every other
+ * kind's children are its one children relation. */
+static void child_relation(const markdown_core_node *owner, markdown_core_field *name) {
     switch (shape_of(owner)) {
-    case SHAPE_TABLE: {
-        const markdown_core_table *table = owner->opaque;
-        *name = index < table->head_count                          ? MARKDOWN_CORE_FIELD_HEAD
-                : index < table->head_count + table->content_count ? MARKDOWN_CORE_FIELD_CONTENT
-                                                                   : MARKDOWN_CORE_FIELD_FOOT;
+    case SHAPE_TABLE:
+        *name = MARKDOWN_CORE_FIELD_HEAD;
         return;
-    }
     case SHAPE_CITE:
         *name = MARKDOWN_CORE_FIELD_CITATIONS;
         return;
@@ -851,11 +846,9 @@ static void child_relation(const markdown_core_node *owner, uint32_t index, mark
     }
 }
 
-/* Points `owner`'s cursor at its old node's relation `name`: the source of
- * the relation's first old node is measured from where the one before it in
- * its stem ends, or where the old node's begins. A relation that begins
- * inside a stem is a run of a table's rows, blocks, whose source is their
- * range. */
+/* Points `owner`'s cursor at its old node's relation `name`, whose first
+ * old node is measured from where the old node begins. The later runs of a
+ * relation's stem continue it: a table's rows are one relation. */
 static void pair_open(markdown_core_member *owner, markdown_core_field name) {
     owner->paired = true;
     owner->pair_name = (uint32_t)name;
@@ -867,12 +860,12 @@ static void pair_open(markdown_core_member *owner, markdown_core_field name) {
     bool more;
     markdown_core_relations_begin(&cursor, owner->old);
     while (relations_next(&cursor, &relation, &more)) {
-        if (!relation.field && relation.name == name) {
+        const bool in_relation =
+            !relation.field && (owner->pair_stem ? relation.stem == owner->pair_stem : relation.name == name);
+        if (in_relation) {
             owner->pair_stem = relation.stem;
-            owner->pair_next = relation.index;
             owner->pair_end = relation.index + relation.count;
-            owner->pair_anchor =
-                (uint32_t)(owner->old_start + markdown_core_stem_length(relation.stem, 0, relation.index));
+        } else if (owner->pair_stem) {
             return;
         }
     }
@@ -910,7 +903,7 @@ static inline bool range_final(const markdown_core_member *member) {
 static bool pair_search(markdown_core_parser *parser, markdown_core_publication *publication,
                         markdown_core_member *owner, markdown_core_member *member, uint32_t reach) {
     markdown_core_field name;
-    child_relation(owner->node, member->index, &name);
+    child_relation(owner->node, &name);
     if (!owner->paired || owner->pair_name != (uint32_t)name) {
         pair_open(owner, name);
     }
@@ -1082,7 +1075,7 @@ static bool pass_range(markdown_core_parser *parser, markdown_core_publication *
         /* A candidate the parse took from the old children the cursor walks:
          * the cursor passes it whole, the old nodes before it with it. */
         markdown_core_field name;
-        child_relation(owner->node, member->index, &name);
+        child_relation(owner->node, &name);
         if (!owner->paired || owner->pair_name != (uint32_t)name) {
             pair_open(owner, name);
         }

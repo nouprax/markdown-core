@@ -270,7 +270,9 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
                 }
             }
             record.complete = structure->complete_inline;
-            record.summary = structure->propagates_child_blank ? &MARKDOWN_CORE_BLANK_SUMMARY : NULL;
+            record.summary = structure->children_summary         ? structure->children_summary
+                             : structure->propagates_child_blank ? &MARKDOWN_CORE_BLANK_SUMMARY
+                                                                 : NULL;
         }
         dialect->kinds[index] = record;
     }

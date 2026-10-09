@@ -140,8 +140,9 @@ typedef struct markdown_core_scope {
  * the UTF-8 source for a block, and its inline root's content for an inline
  * node. `lead` is the signed distance from the end of the previous node in
  * the same relation -- or from the owner's start, for the first node of a
- * relation -- to this node's start, and `span` the length of its range. An
- * inline root's content starts at 0. */
+ * relation -- to this node's start, and `span` the length of its range. A
+ * table's rows, in head, content and foot order, are one relation. An inline
+ * root's content starts at 0. */
 #ifndef MARKDOWN_CORE_EXTENT_TYPEDEF
 #define MARKDOWN_CORE_EXTENT_TYPEDEF
 typedef struct markdown_core_extent {
