@@ -80,8 +80,8 @@ A value type of the contract encodes structurally from its declaration:
 - A value with `fields` writes each field in order.
 - A value with `branches` writes a `u8` branch index -- the branch's position
   in the declaration, from 0 -- and then that branch's fields.
-- `Extent` is `i32` lead and `u32` span, in bytes as the contract measures
-  them.
+- `Extent` and `Run` are each `i32` lead and `u32` span, in bytes as the
+  contract measures them.
 
 A field of type `T` writes `T`. `T?` writes a `u8` presence, 0 or 1, and `T`
 when present. `[T]` writes a `u32` count and that many `T`.
@@ -141,8 +141,8 @@ destination resolves, in byte order of the label. The id names the
 an id that names no node of one of those kinds is invalid. A reader answers
 a document's reference lookup from this table.
 
-Scopes are not on the wire. A binding computes them from the extents, runs
-and the source, as the facade's scope query does.
+Scopes are not on the wire. A binding computes them from the node's runs and
+the source, as the facade's scope query does; extents take no part.
 
 ## What a reader checks
 
