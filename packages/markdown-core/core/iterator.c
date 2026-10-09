@@ -133,7 +133,9 @@ markdown_core_complete_result markdown_core_consolidate_text_step(markdown_core_
             cur->content_map = combined_map;
         }
         markdown_core_iter_reset(iter, text, MARKDOWN_CORE_EVENT_EXIT);
-        markdown_core_chunk_free(cur->as.literal);
+        if (cur->as.literal->alloc) {
+            markdown_core_node_pool_bytes_free(parser ? parser->pool : NULL, cur->as.literal->data);
+        }
         merged[at] = '\0';
         *cur->as.literal = (markdown_core_chunk){merged, at, 1};
     }

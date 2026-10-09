@@ -410,7 +410,6 @@ bool markdown_core_node_hold_strings(markdown_core_node_pool *pool, markdown_cor
 }
 
 static void free_node_as(markdown_core_node_pool *pool, markdown_core_node *node) {
-    markdown_core_slab_pool *resources = pool ? &pool->resources : NULL;
     markdown_core_chunk *strings[NODE_STRING_LIMIT];
     const int count = node_strings(node, strings);
     for (int i = 0; i < count; i++) {
@@ -435,14 +434,14 @@ static void free_node_as(markdown_core_node_pool *pool, markdown_core_node *node
         break;
     case MARKDOWN_CORE_NODE_LINK:
     case MARKDOWN_CORE_NODE_EMBEDDED:
-        markdown_core_resource_free(resources, node->as.link->resource);
+        markdown_core_resource_free(pool, node->as.link->resource);
         node->as.link->resource = NULL;
         if (node->as.link->label.len) {
             markdown_core_node_pool_bytes_free(pool, node->as.link->label.data);
         }
         break;
     case MARKDOWN_CORE_NODE_REFERENCE:
-        markdown_core_resource_free(resources, node->as.reference->resource);
+        markdown_core_resource_free(pool, node->as.reference->resource);
         node->as.reference->resource = NULL;
         if (node->as.reference->label.len) {
             markdown_core_node_pool_bytes_free(pool, node->as.reference->label.data);
@@ -1774,7 +1773,7 @@ markdown_core_resource *markdown_core_resource_new(markdown_core_node_pool *pool
     markdown_core_chunk held_title = title.value;
     if (!hold_string(pool, &held) || !hold_string(pool, &held_title)) {
         if (held.alloc && !url.alloc) {
-            markdown_core_chunk_free(&held);
+            markdown_core_node_pool_bytes_free(pool, held.data);
         }
         markdown_core_slab_release(pool ? &pool->resources : NULL, resource);
         return NULL;
@@ -1786,13 +1785,17 @@ markdown_core_resource *markdown_core_resource_new(markdown_core_node_pool *pool
     return resource;
 }
 
-void markdown_core_resource_free(markdown_core_slab_pool *resources, markdown_core_resource *resource) {
+void markdown_core_resource_free(markdown_core_node_pool *pool, markdown_core_resource *resource) {
     if (!resource) {
         return;
     }
-    markdown_core_chunk_free(&resource->url);
-    markdown_core_optional_chunk_free(&resource->title);
-    markdown_core_slab_release(resources, resource);
+    if (resource->url.alloc) {
+        markdown_core_node_pool_bytes_free(pool, resource->url.data);
+    }
+    if (resource->title.value.alloc) {
+        markdown_core_node_pool_bytes_free(pool, resource->title.value.data);
+    }
+    markdown_core_slab_release(pool ? &pool->resources : NULL, resource);
 }
 
 int markdown_core_node_set_element(markdown_core_node *node, const markdown_core_element *element) {

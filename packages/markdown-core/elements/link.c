@@ -386,7 +386,7 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_me
             : NULL;
     if (!reference) {
         if (resource) {
-            markdown_core_resource_free(&parser->pool->resources, resource);
+            markdown_core_resource_free(parser->pool, resource);
         } else {
             markdown_core_chunk_free(&clean_url);
             markdown_core_optional_chunk_free(&clean_title);

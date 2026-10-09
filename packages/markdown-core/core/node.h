@@ -506,9 +506,10 @@ static inline markdown_core_cross_reference *markdown_core_node_cross_reference(
  * allocator when it is NULL (slab.h). */
 markdown_core_resource *markdown_core_resource_new(struct markdown_core_node_pool *pool, markdown_core_chunk url,
                                                    markdown_core_optional_chunk title);
-/* Frees the resource, its slot going back to `resources` (a pool's resource
- * slabs) or, when that is NULL, dropping its slab hold. NULL is a no-op. */
-void markdown_core_resource_free(markdown_core_slab_pool *resources, markdown_core_resource *resource);
+/* Frees the resource, its slot and the strings it holds going back to
+ * `pool`, or, when that is NULL, dropping their slab holds. NULL is a
+ * no-op. */
+void markdown_core_resource_free(struct markdown_core_node_pool *pool, markdown_core_resource *resource);
 int markdown_core_node_check(markdown_core_node *node, FILE *out);
 
 static MARKDOWN_CORE_INLINE bool MARKDOWN_CORE_NODE_TYPE_BLOCK_P(markdown_core_node_type node_type) {
