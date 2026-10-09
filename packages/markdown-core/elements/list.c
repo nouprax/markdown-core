@@ -230,9 +230,8 @@ static bool markdown_core_list_scan(const markdown_core_element_instance *self, 
                                     block_start_context *context, block_start *start) {
     markdown_core_chunk *input = context->input;
     int first = context->first;
-    if (!((start->matched = markdown_core_block_parse_list_marker(self->state, parser, input, first,
-                                                                   context->container, context->column,
-                                                                   &start->list)))) {
+    if (!((start->matched = markdown_core_block_parse_list_marker(self->state, parser, input, first, context->container,
+                                                                  context->column, &start->list)))) {
         return false;
     }
     /* An item interrupts a paragraph only when it has content and, ordered,
