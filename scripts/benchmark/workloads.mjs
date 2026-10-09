@@ -946,28 +946,33 @@ function randomScript(document, letters, seed) {
     return script;
 }
 
+/** The families whose steps `undo` inverts. */
+export const UNDONE_FAMILIES = Object.freeze(["typing", "lines", "markers", "ranges", "far", "batch", "declarations"]);
+
 /**
- * Every edit script of one document. `families` narrows the set; the
- * benchmark's grammar corpus documents run a subset (section 9).
+ * Every edit script of one document. `families` narrows the set, and `undone`
+ * the families `undo` inverts; the benchmark's grammar corpus documents run a
+ * subset (section 9).
  */
-export function editScripts(document, families = EDIT_FAMILIES) {
+export function editScripts(document, families = EDIT_FAMILIES, undone = UNDONE_FAMILIES) {
     const letters = alphabets[document.alphabet ?? "ascii"];
     const wanted = new Set(families);
+    const inverted = new Set(wanted.has("undo") ? undone : []);
     const base = [];
-    if (wanted.has("typing") || wanted.has("undo"))
+    if (wanted.has("typing") || inverted.has("typing"))
         for (const site of typingSites(document))
             base.push(
                 typingScript(`typing-${site.kind}`, document.text, snap(Buffer.from(document.text), site.at), letters)
             );
-    if (wanted.has("lines") || wanted.has("undo")) base.push(...linesScripts(document));
-    if (wanted.has("markers") || wanted.has("undo")) base.push(...markerScripts(document));
-    if (wanted.has("ranges") || wanted.has("undo")) base.push(rangesScript(document, letters));
-    if (wanted.has("far") || wanted.has("undo")) base.push(farScript(document, letters));
-    if (wanted.has("batch") || wanted.has("undo")) base.push(batchScript(document, letters, 0x62617463));
-    if (wanted.has("declarations") || wanted.has("undo")) base.push(declarationsScript(document, letters));
+    if (wanted.has("lines") || inverted.has("lines")) base.push(...linesScripts(document));
+    if (wanted.has("markers") || inverted.has("markers")) base.push(...markerScripts(document));
+    if (wanted.has("ranges") || inverted.has("ranges")) base.push(rangesScript(document, letters));
+    if (wanted.has("far") || inverted.has("far")) base.push(farScript(document, letters));
+    if (wanted.has("batch") || inverted.has("batch")) base.push(batchScript(document, letters, 0x62617463));
+    if (wanted.has("declarations") || inverted.has("declarations")) base.push(declarationsScript(document, letters));
     const scripts = base.filter((script) => script && script.steps.length);
     const result = scripts.filter((script) => wanted.has(script.family));
-    if (wanted.has("undo")) result.push(...scripts.map((script) => undoScript(script, document.text)));
+    for (const script of scripts) if (inverted.has(script.family)) result.push(undoScript(script, document.text));
     if (wanted.has("random"))
         for (let seed = 1; seed <= RANDOM_SEEDS; seed++) result.push(randomScript(document, letters, seed));
     /* A script is its steps; the text it built them against is not kept. */
@@ -1262,9 +1267,9 @@ export function correctnessSet() {
 
 /**
  * The benchmark workloads (section 9): every grammar corpus document with
- * `typing`, `lines`, `markers`, `undo`, `random`, `tokens` and `scalars`, and
- * every scale and adversarial shape at all four sizes with every family but
- * `undo`. Each workload is one document and one script or stream family.
+ * `typing`, `lines`, `markers`, `undo` of every family but `batch`, `random`,
+ * `tokens` and `scalars`, and every scale and adversarial shape at all four
+ * sizes with every family but `undo`. Each workload is one document and one script or stream family.
  *
  * `set` is `all`, or `corpus` for the grammar corpus's workloads alone: the
  * shapes are measured at their four sizes together or not at all.
@@ -1278,7 +1283,11 @@ export function benchmarkWorkloads(set = "all") {
     for (const entry of buildGrammarCorpus().cases.filter((item) => item.side === "dialect")) {
         const document = { name: entry.name, text: entry.text, alphabet: entry.alphabet, sites: [], parts: null };
         documents.push(document);
-        for (const script of editScripts(document, ["typing", "lines", "markers", "undo", "random"]))
+        for (const script of editScripts(
+            document,
+            ["typing", "lines", "markers", "undo", "random"],
+            UNDONE_FAMILIES.filter((family) => family !== "batch")
+        ))
             workloads.push({ document, family: script.family, name: `${document.name}.${script.name}`, script });
         for (const family of ["tokens", "scalars"])
             workloads.push({ document, family, name: `${document.name}.${family}`, stream: family });

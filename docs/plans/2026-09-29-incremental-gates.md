@@ -492,7 +492,8 @@ enough to track.
 
 **The benchmark workloads** are the generator's large output, built when the
 benchmark runs, as the grammar corpus is: every grammar corpus document with
-`typing`, `lines`, `markers`, `undo`, `random`, `tokens` and `scalars`, and
+`typing`, `lines`, `markers`, `undo` of every family but `batch`, `random`,
+`tokens` and `scalars`, and
 every scale and adversarial shape at all four sizes with every family but
 `undo`. `random` runs with 16 seeds in both, so 6.3 is measured on arbitrary
 ranges and not only on the scripted families.
