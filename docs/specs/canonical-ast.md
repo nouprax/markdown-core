@@ -144,7 +144,7 @@ can occupy segments on lines shared with other cells. A spanning grid cell can
 reach beyond its starting row. These positions describe editor locations,
 not a partition of the source into independently sliceable substrings.
 
-Every binding computes scopes with this one rule from the extents and runs
+Every binding computes scopes with this one rule from the runs
 the C parser produced; none rescans, normalizes, expands, rejects, or otherwise
 reinterprets particular ranges.
 
