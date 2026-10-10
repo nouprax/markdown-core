@@ -1536,22 +1536,19 @@ static const markdown_core_node *S_old_child(markdown_core_parser *parser, markd
     return child && markdown_core_parser_image(parser, *child_start) == start ? child : NULL;
 }
 
-/* The cursor takes `first`, the old child the block of `kind` the line
- * machine is about to start would read again, whole when no edit meets it
- * from its lead to its reach and its entry is `carry`, the state `parent`
- * carries now, with the candidate of unchanged siblings after it, up to the
- * last one after which the next line is read as the old parse read it; the
- * line ends there, and the parse goes on after the candidate. Where a
- * paragraph would begin, the old child may be of any kind a paragraph's
- * lines become: a Reference, a table, a setext heading. True when it took a
- * candidate. */
-static bool S_take(markdown_core_parser *parser, markdown_core_member *parent, markdown_core_node_type kind,
-                   uint32_t start, uint64_t carry, const markdown_core_node *first, uint32_t first_start) {
+/* The cursor takes `first`, the old child that begins where the line
+ * machine is about to start a block, whole when no edit meets it from its
+ * lead to its reach and its entry is `carry`, the state `parent` carries now,
+ * with the candidate of unchanged siblings after it, up to the last one after
+ * which the next line is read as the old parse read it; the line ends there,
+ * and the parse goes on after the candidate. Equal state and equal bytes
+ * start the block the old parse started, whatever kind its lines made of it:
+ * a paragraph's a Reference, a table or a setext heading, an HTML block's a
+ * comment. True when it took a candidate. */
+static bool S_take(markdown_core_parser *parser, markdown_core_member *parent, uint32_t start, uint64_t carry,
+                   const markdown_core_node *first, uint32_t first_start) {
     const markdown_core_stem *children = parent->scan->children;
-    if ((first->flags & MARKDOWN_CORE_NODE__GROUP) ||
-        (first->kind != kind &&
-         !(markdown_core_dialect_kind(parser->dialect, kind)->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH)) ||
-        !parent->scan_equal || first->entry != carry) {
+    if ((first->flags & MARKDOWN_CORE_NODE__GROUP) || !parent->scan_equal || first->entry != carry) {
         return false;
     }
     /* The candidate stops at the first node an edit meets from where it is
@@ -1725,7 +1722,7 @@ markdown_core_member *markdown_core_parser_add_child_validated(markdown_core_par
         old = S_old_child(parser, parent, (uint32_t)start, &old_start);
         /* A container's opening line is read whole (5.3). */
         if (old && (parent == parser->root || !S_starts_on_line(parser, parent->node, parser->line_number)) &&
-            S_take(parser, parent, block_type, (uint32_t)start, carry, old, old_start)) {
+            S_take(parser, parent, (uint32_t)start, carry, old, old_start)) {
             return NULL;
         }
     }
