@@ -184,6 +184,10 @@ struct markdown_core_parser {
      * document is prepared. */
     struct markdown_core_inline_root *inline_roots;
     size_t inline_root_count, inline_root_capacity;
+    /* THE OPEN BLOCKS THAT HAVE NOT DECIDED what they continue (5.9), from
+     * `undecided_front` on, highest first (ast.c, spine_decide). */
+    struct markdown_core_member **undecided;
+    size_t undecided_front, undecided_count, undecided_capacity;
     /* The root whose content is being completed, or NULL: the nodes numbered
      * meanwhile lie in its content. */
     struct markdown_core_inline_root *completing;
@@ -852,6 +856,10 @@ bool markdown_core_parser_contains_inlines(markdown_core_parser *parser, markdow
  * (markdown_core_inline_root), and the member waits on it. Its builder is
  * the member, or one made for `holder` as a field root of the member's. False
  * when the list or the builder could not be allocated. */
+/* `member`, a block that was open and had not decided what it continues,
+ * leaves the parser's spine of them (5.9). */
+void markdown_core_parser_leave_spine(markdown_core_parser *parser, markdown_core_member *member);
+
 bool markdown_core_parser_hold_inline_root(markdown_core_parser *parser, markdown_core_member *member,
                                            markdown_core_node *holder, markdown_core_place place, bool field);
 /* `member` waits on one thing less -- an inline root, a block input, a value

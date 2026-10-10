@@ -124,6 +124,7 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     markdown_core_source_order_dispose(&parser->source_order);
     markdown_core_free(parser->walk_stack);
     markdown_core_free(parser->inline_roots);
+    markdown_core_free(parser->undecided);
     markdown_core_free(parser->block_inputs);
     S_clear_normalized_lines(parser);
     markdown_core_free(parser->input_lines);
@@ -1392,6 +1393,9 @@ markdown_core_member *markdown_core_block_finalize(markdown_core_parser *parser,
 static void S_settle(markdown_core_parser *parser, markdown_core_member *member) {
     markdown_core_member *parent = member->owner;
     markdown_core_node *b = member->node;
+    /* Closed, it leaves the open blocks that have not decided (5.9); it
+     * decides as it completes. */
+    markdown_core_parser_leave_spine(parser, member);
     /* A block that takes text lines in a container has a run of its own
      * source on each of its lines, whatever its close hook makes of it; one
      * of the document itself lies on whole lines, its own source its range. */
@@ -1793,6 +1797,25 @@ markdown_core_member *markdown_core_parser_add_child_validated(markdown_core_par
     if (old) {
         S_read_again(parser, member, old, old_start);
     }
+    /* An open block that has not decided what it continues decides when a
+     * block it holds completes (5.9). The blocks closed since the last one
+     * opened leave the spine first: what is left of it lies on the path to
+     * this one. */
+    while (parser->undecided_count > parser->undecided_front &&
+           !(parser->undecided[parser->undecided_count - 1]->node->flags & MARKDOWN_CORE_NODE__OPEN)) {
+        parser->undecided[--parser->undecided_count]->spine = false;
+    }
+    if (!member->decided) {
+        markdown_core_member **undecided = markdown_core_reserve(parser->undecided, &parser->undecided_capacity,
+                                                                 parser->undecided_count + 1, sizeof(*undecided));
+        if (!undecided) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            return member;
+        }
+        parser->undecided = undecided;
+        undecided[parser->undecided_count++] = member;
+        member->spine = true;
+    }
     return member;
 }
 
@@ -1800,6 +1823,12 @@ markdown_core_member *markdown_core_parser_add_child_validated(markdown_core_par
  * kind which begins where it does. */
 void markdown_core_parser_kind_changed(markdown_core_parser *parser, markdown_core_member *member) {
     markdown_core_member *owner = member->owner;
+    /* One that decided as the kind it was decides again (5.9). */
+    if (member->decided && member->searched && !member->taken) {
+        member->decided = false;
+        member->old = NULL;
+        member->redo = true;
+    }
     if (!member->scan && owner && owner->scan && parser->block_root == parser->root) {
         uint32_t old_start;
         const markdown_core_node *old = S_old_child(parser, owner, member->node->where.place.start, &old_start);
@@ -1830,7 +1859,24 @@ markdown_core_member *markdown_core_parser_attach_field(markdown_core_parser *pa
     return member;
 }
 
+void markdown_core_parser_leave_spine(markdown_core_parser *parser, markdown_core_member *member) {
+    if (!member->spine) {
+        return;
+    }
+    size_t at = parser->undecided_count;
+    while (parser->undecided[--at] != member) {
+    }
+    memmove(&parser->undecided[at], &parser->undecided[at + 1],
+            (parser->undecided_count - at - 1) * sizeof(*parser->undecided));
+    parser->undecided_count--;
+    member->spine = false;
+    if (parser->undecided_count == parser->undecided_front) {
+        parser->undecided_count = parser->undecided_front = 0;
+    }
+}
+
 void markdown_core_parser_release_member(markdown_core_parser *parser, markdown_core_member *member) {
+    assert(!member->spine || (parser && parser->error));
     if (member->owner) {
         markdown_core_member_unlink(member);
     }
@@ -2116,6 +2162,7 @@ static void S_settle_taken(markdown_core_member *member) {
     member->taken = false;
     member->old = NULL;
     member->old_start = member->passed = 0;
+    member->searched = member->redo = false;
     /* Under an owner that continues nothing, it has decided so too. */
     member->decided = markdown_core_member_continues_nothing(member->owner);
     member->node->entry = 0;

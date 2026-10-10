@@ -878,15 +878,18 @@ static inline uint32_t markdown_core_inline_entry_back(uint64_t entry) { return 
  * A member also carries what the node continues
  * (docs/plans/2026-09-29-incremental-parsing.md, 5.9): `old`, the node of
  * the previous tree it continues once `decided`, whether its node has taken
- * its id (`identified`), where that node starts in
- * its old coordinates, `passed`, the image up to which its owner's cursor
- * has passed for it, and its `candidates` to `last_candidate`, the old nodes
- * whose images lie in its range (ast_internal.h), among which
- * it decides. As an owner it pairs the members it holds with the old node's
- * relation `pair_name`: the old nodes `pair_next` to `pair_end`
- * of `pair_stem` not yet passed, and the end of the one passed last. `asks`
- * counts the members it holds that have `asked` for their old node, each of
- * which took its `index` among them as it asked.
+ * its id (`identified`), where that node starts in its old coordinates,
+ * `passed`, the end of the range its search has passed, whether it has
+ * `searched` its owner's cursor, in its order among the children, and
+ * `from_next` and `from_anchor`, where that cursor stood as its search
+ * began, which it reads from again to `redo` its search when its kind
+ * changed after it decided; an open block that has not decided is on the
+ * parser's `spine` of them. As an
+ * owner it pairs the members it holds with the old node's relation
+ * `pair_name`: the old nodes `pair_next` to `pair_end` of `pair_stem` not yet
+ * passed, and the end of the one passed last. A member's `index` counts the
+ * children its owner linked before it, `children` those it has linked, and
+ * `depth` is its distance from the root.
  *
  * A node is final when everything it waits on is: `waits` counts the inline
  * root, block input or late value it waits on and the members it holds that
@@ -928,11 +931,13 @@ struct markdown_core_member {
      * `order_lead` is the first old one, and `order_head` the first one of
      * either. */
     markdown_core_order *order_first, *order_last, *order_open, *order_lead, *order_head;
-    uint32_t asks, index, slot, source, waits, candidates, last_candidate;
+    size_t from_next;
+    uint32_t from_anchor;
+    uint32_t index, depth, slot, source, waits, children;
     /* What the decisions about a node of an inline root's content read, and
      * whether the node is an old one its parse took whole (5.6). */
     markdown_core_inline_reads reads;
-    bool held, field, inner, decided, identified, paired, asked, numbered, counted, taken;
+    bool held, field, inner, decided, identified, paired, searched, redo, spine, numbered, counted, taken;
     /* Whether blocks are read from its node's content (markdown_core_parser_queue_block_input). */
     bool queued;
 };
@@ -1026,6 +1031,8 @@ static inline void markdown_core_member_attach(markdown_core_member *owner, mark
     assert(markdown_core_member_admits(owner, child));
     markdown_core_member *previous = before ? before->prev : owner->last;
     child->owner = owner;
+    child->depth = owner->depth + 1;
+    child->index = owner->children++;
     markdown_core_member_inherit(owner, child);
     child->prev = previous;
     child->next = before;

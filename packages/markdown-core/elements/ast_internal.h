@@ -172,16 +172,9 @@ void markdown_core_walk_end(markdown_core_walk *walk);
  * incremental-parsing.md, 5.8, 5.9): the runs of the inline root being
  * completed, in absolute offsets, read when a node of its content first asks
  * where its source lies.
- * For the reuse cursor it keeps the members a search climbs through, the old nodes each
- * child's range holds, and the nodes the parse made that settled as old
- * nodes, which go when the parse does. The document element holds it for
- * the parse. */
-/* An old node a child's range holds, its source starting at `start`; `next` is the next one the child holds, plus one,
- * or 0. */
-typedef struct markdown_core_candidate {
-    const markdown_core_node *old;
-    uint32_t start, next;
-} markdown_core_candidate;
+ * For the reuse cursor it keeps the members a decision climbs through, and
+ * the nodes the parse made that settled as old nodes, which go when the
+ * parse does. The document element holds it for the parse. */
 
 typedef struct markdown_core_publication {
     /* The runs of the inline root `runs_node` being completed, read as
@@ -193,8 +186,6 @@ typedef struct markdown_core_publication {
     size_t range_capacity;
     markdown_core_member **climb;
     size_t climb_capacity;
-    markdown_core_candidate *candidates;
-    size_t candidate_count, candidate_capacity;
     markdown_core_node **replaced;
     size_t replaced_count, replaced_capacity;
     /* A splice's search for the node it replaces: the nodes it reached, and
