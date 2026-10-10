@@ -1,0 +1,4 @@
+markdown-core edit script 1
+script body-after-body identity
+edit 38 40 7879
+expect changed Text 32

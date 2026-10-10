@@ -1071,6 +1071,13 @@ export function identityScripts() {
     add("marker-after-changed-list", "(A) a\n(B) b\n\nIV) c\n\nI.  d\n", (s) =>
         s.edit([{ start: 13, end: 15, text: "(C" }]).expect("changed", "List", 20)
     );
+    /* A definition's bodies are groups its definition measures, which have
+     * no extent of their own: an edited second body reads none of the first
+     * body's blocks or inline nodes, though the first body's paragraph lies
+     * where the second's begins when measured from the first body. */
+    add("body-after-body", "Term term term\n: aaaaa\nbbbbb\n\n: ccccc dd\n", (s) =>
+        s.edit([{ start: 38, end: 40, text: "xy" }]).expect("changed", "Text", 32)
+    );
     /* A leaf block edited on a later line takes its untouched lines (E5);
      * an edit that ends it early, or makes its lines a heading, is read. */
     {

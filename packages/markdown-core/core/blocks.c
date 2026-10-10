@@ -1509,13 +1509,19 @@ bool markdown_core_parser_replace(markdown_core_parser *parser, const markdown_c
  * which reads its old node again, the cursor passes the old children whose
  * images end at `start` or before it and holds the next, which begins at
  * `*child_start` in its old coordinates and whose image begins at `start`,
- * after it, or before it when it spans `start`. NULL when none is left. */
+ * after it, or before it when it spans `start`. NULL when none is left. A
+ * group (MARKDOWN_CORE_NODE__GROUP), as a definition's body, has no extent:
+ * its owner measures the nodes it holds along its relation, so the cursor
+ * measures nothing from a group on and holds none. */
 static const markdown_core_node *S_cursor_at(markdown_core_parser *parser, markdown_core_member *parent, uint32_t start,
                                              uint32_t *child_start) {
     const markdown_core_stem *children = parent->scan->children;
     const size_t count = markdown_core_stem_count(children);
     while (parent->scan_next < count) {
         const markdown_core_node *child = markdown_core_stem_at(children, parent->scan_next);
+        if (child->flags & MARKDOWN_CORE_NODE__GROUP) {
+            return NULL;
+        }
         const uint32_t at = (uint32_t)((int64_t)parent->scan_at + child->where.extent.lead);
         const uint32_t end = at + child->where.extent.span;
         if (markdown_core_parser_image(parser, end) > start || markdown_core_parser_image(parser, at) >= start) {

@@ -43,6 +43,8 @@ document documents/identity-text-before-hard-break.md
 edits documents/identity-text-before-hard-break.md scripts/identity-text-before-hard-break.edits
 document documents/identity-marker-after-changed-list.md
 edits documents/identity-marker-after-changed-list.md scripts/identity-marker-after-changed-list.edits
+document documents/identity-body-after-body.md
+edits documents/identity-body-after-body.md scripts/identity-body-after-body.edits
 document documents/identity-code-line-near-end.md
 edits documents/identity-code-line-near-end.md scripts/identity-code-line-near-end.edits
 document documents/identity-fence-inside-code.md
