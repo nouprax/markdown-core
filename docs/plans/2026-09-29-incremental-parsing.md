@@ -756,8 +756,9 @@ root asks of it, is a **fact**. The nodes that declare are:
 - an inline root, declaring a **lookup** for each key it asked.
 
 A fact belongs to the node that declares it and lives exactly as long as
-that node. It is made when its node is made, and it is removed when its node
-is released (5.11). A taken node keeps its facts, because it is the old node.
+that node. It is made when its node is made. It is removed when the parse
+passes its old node without taking it (5.3), or when its node is released
+(5.11). A taken node keeps its facts, because it is the old node.
 The registry stores no positions.
 
 The **key index** maps each key to two collections:
@@ -791,26 +792,30 @@ Sleator's order maintenance), so two facts compare in O(1). The parse visits
 the document in tree order, reading some nodes and taking others, and keeps
 the last fact before its position. A new fact is labeled right after that
 fact. A candidate gives its last fact from its children tree's sums, as it
-gives its reach (5.1). An inline root records the last fact before it when
-it is listed (5.8), so its inline facts are labeled in tree order too.
+gives its reach (5.1). An inline root is parsed when its block closes (5.8),
+at its place in the visit, so its inline facts are labeled in tree order too.
 
 **One edit**, in order:
 
-- **Block parse.** The parse declares the facts of the blocks it makes and
-  marks their keys.
+- **Parse.** The parse visits the document in tree order. It declares the
+  facts of the nodes it makes and marks their keys, and it parses each
+  inline root when the root's block closes (5.8). Each old node the cursor
+  passes without taking it removes its facts and marks their keys as it is
+  passed, inline nodes of a root read against its old inline tree (5.6)
+  included. These are exactly the nodes the parse read again, so this costs
+  what the parse read. A root's lookups are answered at once from the
+  registry as it stands and are added to the reverse index of each key
+  asked.
 - **Release.** The old root is released. The old nodes the parse did not
-  take are freed, and each removes its facts and marks their keys. These are
-  exactly the nodes the parse read again, so this costs what the parse read.
-  A root that was read again holds its old inline tree (5.6) until its own
-  inline parse ends. That old tree's facts leave then, the same way.
-- **Inline parse.** Each root that was read again is parsed. Its lookups
-  are answered at once from the registry, whose definitions are complete
-  after the release, and are added to the reverse index of each key asked.
+  take are freed.
 - **Resolution.** For each marked key, the winner is found again.
   - **Lookups.** An occurrence names its definition by label (4.5), so
-    what an inline parse reads from a key is whether it is defined. When
-    that changed, each root on the key's reverse index that this edit did
-    not parse is parsed again in place. The
+    what an inline parse reads from a key is whether it is defined. Each
+    root on the key's reverse index whose answer differs from the key's
+    answer now is parsed again in place: a root that is not part of this
+    edit's parse, or one this parse answered before a later node declared
+    or removed the key's definition. A fresh parse handles a reference used
+    before its definition the same way. The
     document is a snapshot of the session (4.4), and its node is the
     session's own once the old root is released, so the node is updated in
     place. Its extent and runs stay the same. The root leaves the reverse
@@ -823,8 +828,8 @@ it is listed (5.8), so its inline facts are labeled in tree order too.
 
 An inline parse in resolution changes only what its root read from the
 registry. Its content and inline anchors stay the same, and the keys it asks
-are answered from definitions that are complete after the release, so no
-root is parsed twice and each stage runs once per edit. A definition's
+are answered from the complete registry, so a root is parsed at most once in
+resolution and each stage runs once per edit. A definition's
 destination, title or anchor changes only the definition node and the
 document's tables, never an occurrence. Definitions stay in the tree, so nothing is spliced into the
 document and no ordinal is recomputed.
@@ -845,30 +850,30 @@ parse.
   completes, and its extent is measured from 0. A paragraph's close makes a
   `Reference` for each reference definition it consumed and adds them to its
   parent before it. A paragraph left with no content is not added.
-- **Inline roots complete when their parse ends.** A block's inline content
-  and each inline field of a block (a definition's term, a callout's title, a
-  table's caption, a directive's label) is an inline root. Closing the block
-  adds it to the parse's list of roots with its absolute start; its owner
-  completes, and numbers it, first. After S3,
-  each root on the list is parsed. Delimiters decide nesting only when a
+- **Inline roots complete when their block closes.** A block's inline
+  content and each inline field of a block (a definition's term, a callout's
+  title, a table's caption, a directive's label) is an inline root. Closing
+  the block parses each of its roots and completes their trees, and the
+  block completes after them and numbers them with the rest of what it
+  holds. Delimiters decide nesting only when a
   closer pairs, and the language gives an inline node meaning from what
   encloses it: an escaped space inside a word body, a Text outside a Link for
   email autolinks, and runs of Text that become one. So an inline node is
   complete when its root's parse ends, and the root completes its own tree
   then, in one pass over that tree: consolidation, completion, email
-  autolinks, extents and ids. The root completes last, from the start it
-  recorded, and the content of a group it holds for its owner is published
-  from where the owner starts. A paragraph whose only content is a standalone
-  formula becomes a FormulaBlock at that point; the Formula it consumes was
-  never numbered.
+  autolinks, extents and ids. The root completes last, and the content of a
+  group it holds for its owner is published from where the owner starts. A
+  paragraph whose only content is a standalone formula closes as a
+  FormulaBlock; the Formula it consumes is never numbered.
 - **Absolute positions belong to the parse.** A node holds only its extent
   once it is complete. Everything that needs an absolute position after that
-  (a root on the list, table geometry) records it when it is made.
+  (table geometry) records it when it is made.
 - **Document facts come from the registry.** Resolution (5.7) assigns
   anchors and destinations, and the footnote and specimen lookup tables list
   their definitions' facts in tree order.
 
-A fresh parse is the block parse, the inline parse of each root, and resolution.
+A fresh parse is the block parse, which parses each inline root as its block
+closes, and resolution.
 `check-completion-hooks.mjs` is the audit of these hooks: a close step
 reads its block and the block's children, and a completion reads one inline
 root.
@@ -927,7 +932,20 @@ follows the parse.
 As a matched read node `N` completes, after its children, it is compared
 with its `O`: equal kind, equal scalars, equal extent, and every child
 relation holding the same objects. If they are equal, `N` is released and `O`
-is shared in its place. Within the C session, a node that differs from its predecessor as an
+is shared in its place.
+
+Each owner decides its match from its own place on the spine. When a read
+node `N` first needs its old node, as its first held node completes or as it
+completes, its owner's cursor proposes `T`: the first old sibling not yet
+passed whose kind is `N`'s and whose anchor image is at or after `N`'s start.
+When `N` completes, it matches `T` if `T`'s anchor image lies before `N`'s
+end, and the old siblings whose anchor images lie before `N`'s end are
+passed. This is the earliest candidate the rule above names, because anchors
+are in source order and images are monotone (5.2). A node held by `N` lies in
+`N`'s range, and the anchor of an old node held by `T` is at or after `T`'s
+anchor, so a held node matches inside `T` only when `T`'s anchor image lies in
+`N`'s range: every decision stands when it is made. A node's kind is decided
+before any node it holds completes. Within the C session, a node that differs from its predecessor as an
 object therefore differs as a value, which is what R3 measures.
 
 ### 5.10 Why the result equals a fresh parse
@@ -976,13 +994,17 @@ The tree is stored the way tree-sitter stores its syntax trees:
   in place. A change to a shared node first copies its header and its
   references to its children, retaining each, like `ts_subtree_make_mut`.
   An edit copies only the paths from the root to what changed.
-- **Open blocks are builders.** A block is mutable only while it is open on
-  the parser's spine. When it closes it is complete (5.8) and becomes a node
-  with a reference count of one, with its children tree balanced as it was
-  built. An inline root's block is complete except for its inline content,
-  which its root's parse completes.
+- **Open nodes are builders.** A block is mutable only while it is open on
+  the parser's spine. Its frame holds the children that have completed, the
+  cursor over the old relation at its place (5.3) and its match (5.9). An
+  inline root being parsed builds its nodes in a scratch area linked by
+  index, where a closer that pairs regroups a range of siblings in O(1); the
+  area is reset when the root completes. A node completes in one pass over
+  its children that sets their extents, runs and ids, labels their facts and
+  builds its children tree. It is then a node with a reference count of one,
+  with its children tree balanced as it was built.
 - **Release is iterative.** Releasing a node decrements its count. At zero,
-  its facts leave the registry (5.7), its children are released the same way
+  the facts it still declares leave the registry (5.7), its children are released the same way
   from an explicit stack, and the freed slots return to the session's pool.
 
 An edit retains the old root for its parse, builds the new root, makes it the
