@@ -1506,28 +1506,34 @@ bool markdown_core_parser_replace(markdown_core_parser *parser, const markdown_c
 
 /* THE CURSOR (docs/plans/2026-09-29-incremental-parsing.md, 5.3). Where
  * the line machine is about to start a block at `start` under `parent`,
- * which reads its old node again, the cursor passes the old children that
- * begin before `start` and offers the one that begins there, at
- * `*child_start` in its old coordinates, or NULL. */
-static const markdown_core_node *S_old_child(markdown_core_parser *parser, markdown_core_member *parent, uint32_t start,
+ * which reads its old node again, the cursor passes the old children whose
+ * images end at `start` or before it and holds the next, which begins at
+ * `*child_start` in its old coordinates and whose image begins at `start`,
+ * after it, or before it when it spans `start`. NULL when none is left. */
+static const markdown_core_node *S_cursor_at(markdown_core_parser *parser, markdown_core_member *parent, uint32_t start,
                                              uint32_t *child_start) {
     const markdown_core_stem *children = parent->scan->children;
     const size_t count = markdown_core_stem_count(children);
     while (parent->scan_next < count) {
         const markdown_core_node *child = markdown_core_stem_at(children, parent->scan_next);
         const uint32_t at = (uint32_t)((int64_t)parent->scan_at + child->where.extent.lead);
-        const uint32_t image = markdown_core_parser_image(parser, at);
-        if (image == start) {
+        const uint32_t end = at + child->where.extent.span;
+        if (markdown_core_parser_image(parser, end) > start || markdown_core_parser_image(parser, at) >= start) {
             *child_start = at;
             return child;
         }
-        if (image > start) {
-            return NULL;
-        }
-        parent->scan_at = at + child->where.extent.span;
+        parent->scan_at = end;
         parent->scan_next++;
     }
     return NULL;
+}
+
+/* The old child the cursor offers where a block begins at `start`: the one
+ * whose image begins there, or NULL. */
+static const markdown_core_node *S_old_child(markdown_core_parser *parser, markdown_core_member *parent, uint32_t start,
+                                             uint32_t *child_start) {
+    const markdown_core_node *child = S_cursor_at(parser, parent, start, child_start);
+    return child && markdown_core_parser_image(parser, *child_start) == start ? child : NULL;
 }
 
 /* The cursor takes `first`, the old child the block of `kind` the line
@@ -1673,7 +1679,30 @@ static void S_read_again(markdown_core_parser *parser, markdown_core_member *mem
     if (old->kind == member->node->kind && (old->lines || (structure && structure->element->carry_save))) {
         member->scan = old;
         member->scan_start = member->scan_at = old_start;
-        member->scan_equal = member->owner->scan_equal && old->entry == member->node->entry;
+        /* What the block's own lines read is its kind and the state its
+         * parent carries (E3); its siblings decided only where it begins,
+         * which its opening line, read again, decides anew. */
+        member->scan_equal = member->owner->scan_equal && (uint32_t)old->entry == (uint32_t)member->node->entry;
+    }
+}
+
+/* THE CURSOR DESCENDS (5.3). A container that read no old node where it
+ * began, as one whose opening line an edit moved, reads again the old node
+ * of its kind its parent's cursor holds across `start`, where it is about to
+ * start a block, as tree-sitter breaks a changed node down to the nodes that
+ * begin where the parse is. The parent's cursor passes the node it descends
+ * into. */
+static void S_descend(markdown_core_parser *parser, markdown_core_member *member, uint32_t start) {
+    markdown_core_member *owner = member->owner;
+    if (!owner || !owner->scan) {
+        return;
+    }
+    uint32_t at;
+    const markdown_core_node *child = S_cursor_at(parser, owner, start, &at);
+    if (child && child->kind == member->node->kind && markdown_core_parser_image(parser, at) <= start) {
+        owner->scan_at = at + child->where.extent.span;
+        owner->scan_next++;
+        S_read_again(parser, member, child, at);
     }
 }
 
@@ -1689,6 +1718,9 @@ markdown_core_member *markdown_core_parser_add_child_validated(markdown_core_par
         records ? markdown_core_parser_carry(parser, parent, parent->last ? parent->last->node : NULL) : 0;
     const markdown_core_node *old = NULL;
     uint32_t old_start = 0;
+    if (records && !parent->scan) {
+        S_descend(parser, parent, (uint32_t)start);
+    }
     if (records && parent->scan) {
         old = S_old_child(parser, parent, (uint32_t)start, &old_start);
         /* A container's opening line is read whole (5.3). */
