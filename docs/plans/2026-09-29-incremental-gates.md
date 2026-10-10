@@ -367,8 +367,8 @@ There is no tolerance.
 
 ### 6.2 Flatness, on Ir
 
-For every local edit family (`typing`, `lines`, `ranges`, `far`, `batch`)
-on every scale shape, **every step** costs at most 1.25 times as much at every
+For every local edit family the benchmark runs (`typing`, `lines`, `ranges`,
+`far`) on every scale shape, **every step** costs at most 1.25 times as much at every
 larger size as at 16 KB. The scripts apply the same edits at the same relative
 positions at every size, so step `i` of one size corresponds to step `i` of
 another. With `c(s)` the cost of step `i` at size `s`, each of `c(64 KB)`,
@@ -495,7 +495,7 @@ benchmark runs, as the grammar corpus is: every grammar corpus document with
 `typing`, `lines`, `markers`, `undo` of every family but `batch`, `random`,
 `tokens` and `scalars`, and
 every scale and adversarial shape at all four sizes with every family but
-`undo`. `random` runs with 16 seeds in both, so 6.3 is measured on arbitrary
+`undo` and `batch`. `random` runs with 16 seeds in both, so 6.3 is measured on arbitrary
 ranges and not only on the scripted families.
 
 The benchmarks run as `pnpm benchmark:edits`, sharing `run.mjs`'s build,

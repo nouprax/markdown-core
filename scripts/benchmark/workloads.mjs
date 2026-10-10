@@ -1269,7 +1269,7 @@ export function correctnessSet() {
  * The benchmark workloads (section 9): every grammar corpus document with
  * `typing`, `lines`, `markers`, `undo` of every family but `batch`, `random`,
  * `tokens` and `scalars`, and every scale and adversarial shape at all four
- * sizes with every family but `undo`. Each workload is one document and one script or stream family.
+ * sizes with every family but `undo` and `batch`. Each workload is one document and one script or stream family.
  *
  * `set` is `all`, or `corpus` for the grammar corpus's workloads alone: the
  * shapes are measured at their four sizes together or not at all.
@@ -1300,7 +1300,7 @@ export function benchmarkWorkloads(set = "all") {
                 documents.push(document);
                 for (const script of editScripts(
                     { ...document, sites },
-                    EDIT_FAMILIES.filter((family) => family !== "undo")
+                    EDIT_FAMILIES.filter((family) => family !== "undo" && family !== "batch")
                 ))
                     workloads.push({
                         document,
