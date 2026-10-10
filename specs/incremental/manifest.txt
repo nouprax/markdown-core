@@ -35,8 +35,36 @@ document documents/identity-line-at-top.md
 edits documents/identity-line-at-top.md scripts/identity-line-at-top.edits
 document documents/identity-heading-anchor-targets.md
 edits documents/identity-heading-anchor-targets.md scripts/identity-heading-anchor-targets.edits
+document documents/identity-code-closer-after-span.md
+edits documents/identity-code-closer-after-span.md scripts/identity-code-closer-after-span.edits
+document documents/identity-table-header-refused.md
+edits documents/identity-table-header-refused.md scripts/identity-table-header-refused.edits
+document documents/identity-text-before-hard-break.md
+edits documents/identity-text-before-hard-break.md scripts/identity-text-before-hard-break.edits
+document documents/identity-marker-after-changed-list.md
+edits documents/identity-marker-after-changed-list.md scripts/identity-marker-after-changed-list.edits
+document documents/identity-body-after-body.md
+edits documents/identity-body-after-body.md scripts/identity-body-after-body.edits
+document documents/identity-registry-root-in-new-owner.md
+edits documents/identity-registry-root-in-new-owner.md scripts/identity-registry-root-in-new-owner.edits
+document documents/identity-code-line-near-end.md
+edits documents/identity-code-line-near-end.md scripts/identity-code-line-near-end.edits
+document documents/identity-fence-inside-code.md
+edits documents/identity-fence-inside-code.md scripts/identity-fence-inside-code.edits
+document documents/identity-paragraph-line-near-end.md
+edits documents/identity-paragraph-line-near-end.md scripts/identity-paragraph-line-near-end.edits
+document documents/identity-underline-inside-paragraph.md
+edits documents/identity-underline-inside-paragraph.md scripts/identity-underline-inside-paragraph.edits
+document documents/identity-item-line-near-end.md
+edits documents/identity-item-line-near-end.md scripts/identity-item-line-near-end.edits
 document documents/identity-typing-paragraph-5-of-1000.md
 edits documents/identity-typing-paragraph-5-of-1000.md scripts/identity-typing-paragraph-5-of-1000.edits
+document documents/identity-inline-siblings-kept.md
+edits documents/identity-inline-siblings-kept.md scripts/identity-inline-siblings-kept.edits
+document documents/identity-closer-pairs-earlier-opener.md
+edits documents/identity-closer-pairs-earlier-opener.md scripts/identity-closer-pairs-earlier-opener.edits
+document documents/identity-quote-after-definition.md
+edits documents/identity-quote-after-definition.md scripts/identity-quote-after-definition.edits
 document documents/rejections.md
 edits documents/rejections.md scripts/rejections.edits
 document ../canonical-ast/block-identifiers.md

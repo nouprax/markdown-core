@@ -1,0 +1,4 @@
+markdown-core edit script 1
+script code-line-near-end identity
+edit 160 160 78
+expect kept CodeBlock 0 0

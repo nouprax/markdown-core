@@ -61,27 +61,8 @@ static bufsize_t markdown_core_block_parse_specimen_marker(markdown_core_specime
     return pos + 1 - begin;
 }
 
-void markdown_core_block_prepare_specimens(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    markdown_core_specimen_state *state = self->state;
-    markdown_core_definition_collection *collection = &state->definitions;
-    if (!markdown_core_key_index_init(&state->ids, collection->count) ||
-        (collection->count && !markdown_core_block_order_definitions(parser, collection))) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return;
-    }
-    for (size_t i = 0; i < collection->count; i++) {
-        markdown_core_node *definition = collection->values[i];
-        markdown_core_optional_chunk *id = &definition->as.specimen->label;
-        if (id->has_value &&
-            !markdown_core_key_index_insert(&state->ids, id->value.data, id->value.len, definition, 0, NULL)) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            return;
-        }
-    }
-}
-
 static bool markdown_core_specimen_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                        markdown_core_node **container, markdown_core_chunk *input,
+                                        markdown_core_member **container, markdown_core_chunk *input,
                                         block_start *start) {
     bufsize_t matched = start->matched;
     markdown_core_specimen_value specimen = start->specimen;
@@ -96,14 +77,15 @@ static bool markdown_core_specimen_open(const markdown_core_element_instance *se
         markdown_core_optional_chunk_free(&specimen.label);
         return false;
     }
-    if ((*container)->prev && (*container)->prev->kind == MARKDOWN_CORE_NODE_SPECIMEN) {
+    if ((*container)->prev && (*container)->prev->node->kind == MARKDOWN_CORE_NODE_SPECIMEN) {
         specimen.has_start = false;
         specimen.start = 0;
     }
-    *(*container)->as.specimen = specimen;
+    *(*container)->node->as.specimen = specimen;
     markdown_core_specimen_state *state = self->state;
-    if (!markdown_core_parser_register_definition(parser, &state->definitions, *container)) {
-        return false;
+    /* The document defines this label while the definition is in the tree. */
+    if (specimen.label.has_value) {
+        markdown_core_parser_declare(parser, (*container)->node, MARKDOWN_CORE_KEY_SPECIMEN, &specimen.label.value);
     }
     markdown_core_block_advance_offset(parser, input, parser->first_nonspace + matched - parser->offset, false);
     while (markdown_core_is_space_or_tab(input->data[parser->offset])) {
@@ -118,8 +100,8 @@ static bool markdown_core_specimen_scan(const markdown_core_element_instance *se
     (void)parser;
     markdown_core_chunk *input = context->input;
     int first = context->first;
-    if (!(!context->paragraph &&
-          (start->matched = markdown_core_block_parse_specimen_marker(self->state, input, first, &start->specimen)))) {
+    if (!(start->matched = markdown_core_block_parse_specimen_marker(self->state, input, first, &start->specimen)) ||
+        markdown_core_block_start_refuses(context, true, false)) {
         return false;
     }
     start->kind = MARKDOWN_CORE_NODE_SPECIMEN;
@@ -127,30 +109,30 @@ static bool markdown_core_specimen_scan(const markdown_core_element_instance *se
     return true;
 }
 
-bool markdown_core_specimen_continue(markdown_core_parser *parser, markdown_core_node *container,
+bool markdown_core_specimen_continue(markdown_core_parser *parser, markdown_core_member *container,
                                      markdown_core_chunk *input) {
     return markdown_core_block_continue_indented(parser, input, 4, true);
 }
 
 static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                               markdown_core_node *node, markdown_core_chunk *input, const markdown_core_node *joining,
-                               bool *taken) {
+                               markdown_core_member *node, markdown_core_chunk *input,
+                               const markdown_core_member *joining, bool *taken) {
     (void)self;
     return markdown_core_specimen_continue(parser, node, input);
 }
+/* A specimen carries nothing its lines read (E3). */
+static uint32_t carry_save(const markdown_core_element_instance *self, const markdown_core_member *member) {
+    (void)self;
+    (void)member;
+    return 0;
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_SPECIMEN = {
     .name = "specimen",
     .state_size = sizeof(markdown_core_specimen_state),
     .continue_container = continue_container,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_specimen_scan,
+    .carry_save = carry_save,
     .scan_block_gate = {.bytes = "("},
 };
-
-/* Release the parse index. The definitions stay owned by the tree. */
-void markdown_core_specimen_dispose(const markdown_core_element_instance *self) {
-    markdown_core_specimen_state *state = self->state;
-    markdown_core_free(state->definitions.values);
-    state->definitions = (markdown_core_definition_collection){0};
-    markdown_core_key_index_free(&state->ids);
-}

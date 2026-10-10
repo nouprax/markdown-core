@@ -1,6 +1,6 @@
 import type { Markup } from "../markup/markup.js";
 import type { MarkupVisitPhase, MarkupVisitor } from "./markup-visitor.js";
-import { SourceRuns } from "./source-places.js";
+import { endOf, placesOf, type Place } from "./source-places.js";
 
 /** Walks markup depth first with an explicit stack, reporting both phases to the visitor. */
 export function walk(root: Markup, visitor: MarkupVisitor): void {
@@ -8,98 +8,88 @@ export function walk(root: Markup, visitor: MarkupVisitor): void {
 }
 
 /** The walk the dumper drives: the document's walk, which places every node
- * in the content it is in, with only `target`'s tree reported to `visitor`;
- * `place` hears each of those nodes' range and content before the visitor
- * enters it. */
+ * in the source, with only `target`'s tree reported to `visitor`; `place`
+ * hears each of those nodes' source ranges before the visitor enters it. */
 export function walkTree(
     document: Markup,
     target: Markup,
     visitor: MarkupVisitor,
-    place: (node: Markup, start: number, end: number, content: SourceRuns | null) => void
+    place: (places: readonly Place[]) => void
 ): void {
     let inside = false;
-    traverse(document, (node, phase, start, end, content) => {
+    traverse(document, (node, phase, anchor) => {
         if (!inside && node !== target) return;
         inside = !(node === target && phase === "exit");
-        if (phase === "enter") place(node, start, end, content);
+        if (phase === "enter") place(placesOf(node, anchor));
         dispatch(visitor, node, phase);
     });
 }
 
-/** One visit of the canonical walk: the node's phase, its absolute range, and
- * the runs of the inline root content that range is in, or null when it is in
- * the source. */
-export type Visit = (
-    node: Markup,
-    phase: MarkupVisitPhase,
-    start: number,
-    end: number,
-    content: SourceRuns | null
-) => void;
+/** One visit of the canonical walk: the node's phase and the offset its
+ * first run leads from, from which `placesOf` gives its absolute source
+ * ranges, its runs, in source order. */
+export type Visit = (node: Markup, phase: MarkupVisitPhase, anchor: number) => void;
 
 interface Frame {
     readonly node: Markup;
+    /** The offset its first run leads from. */
+    readonly from: number;
+    /** Where its source starts, from its first run. */
     readonly start: number;
-    readonly end: number;
-    /** The runs of the content the node is in, or null in the source. */
-    readonly within: SourceRuns | null;
-    readonly relations: readonly (readonly Markup[])[];
+    readonly relations: readonly Relation[];
     relation: number;
     index: number;
-    /** The offset the next node's lead is relative to. */
+    /** The offset the next node's first lead is relative to. */
     anchor: number;
-    /** The runs of the content the relation in hand is in, or null in the
-     * source. */
-    content: SourceRuns | null;
 }
 
 /**
  * The canonical walk: every node enters, its relations follow in canonical
  * order with each relation in stored order, then it exits. The work stack
- * holds one frame per level, so depth is data, not call stack. Each node's
- * absolute range follows from its extent: the first node of a relation leads
- * from its owner's start, every later one from the end of the node before it.
- * A node whose runs read content is an inline root: its first relation is its content,
- * which starts at 0 and is read from the source through its runs, and every
- * node below that relation is placed in that content; its later relations are
- * back in the coordinates it is in. Roots never nest. Places are absolute
- * when `root` is a document.
+ * holds one frame per level, so depth is data, not call stack. It makes no
+ * source range: a visit that needs a node's absolute source ranges, its
+ * runs, reads them from the offset its first run leads from. Each node's
+ * absolute source ranges are its runs, and its source runs from where its
+ * first run starts to where its last ends: the first node of a relation leads
+ * from the start of its owner's source, every later one from the end of the
+ * source of the node before it. Places are
+ * absolute when `root` is a document.
  */
 export function traverse(root: Markup, each: Visit): void {
     const frames: Frame[] = [];
-    const enter = (node: Markup, start: number, within: SourceRuns | null): number => {
-        const end = start + node.extent.span;
-        each(node, "enter", start, end, within);
-        const content = SourceRuns.readContent(node.runs) ? new SourceRuns(node.runs, start) : null;
+    const enter = (node: Markup, anchor: number): number => {
+        const start = anchor + node.runs[0]!.lead;
+        each(node, "enter", anchor);
         frames.push({
             node,
+            from: anchor,
             start,
-            end,
-            within,
             relations: relations[node.kind](node as never),
             relation: 0,
             index: 0,
-            anchor: content === null ? start : 0,
-            content: content ?? within
+            anchor: start
         });
-        return end;
+        return endOf(node, anchor);
     };
-    enter(root, root.extent.lead, null);
+    enter(root, 0);
     while (frames.length > 0) {
         const frame = frames[frames.length - 1]!;
         const relation = frame.relations[frame.relation];
-        if (relation === undefined) {
+        const nodes = relation === undefined ? undefined : chain(relation);
+        if (nodes === undefined) {
             frames.pop();
-            each(frame.node, "exit", frame.start, frame.end, frame.within);
-        } else if (frame.index < relation.length) {
-            const node = relation[frame.index]!;
+            each(frame.node, "exit", frame.from);
+        } else if (frame.index < nodes.length) {
+            const node = nodes[frame.index]!;
             frame.index += 1;
-            frame.anchor = enter(node, frame.anchor + node.extent.lead, frame.content);
+            frame.anchor = enter(node, frame.anchor);
         } else {
             frame.relation += 1;
             frame.index = 0;
-            frame.anchor = frame.start;
-            frame.content = frame.within;
+            const next = frame.relations[frame.relation];
+            if (next === undefined || !("continues" in next)) {
+                frame.anchor = frame.start;
+            }
         }
     }
 }
@@ -114,7 +104,21 @@ function dispatch<Kind extends Markup["kind"]>(
     visitor[node.kind](node, phase);
 }
 
-const none: readonly (readonly Markup[])[] = [];
+/** A chain that continues the relation of the chain before it: its first
+ * node leads from where the last node of that chain ends. A table's body
+ * and foot rows continue its head rows. */
+interface Continuing {
+    readonly continues: readonly Markup[];
+}
+
+/** One chain of extents of a node's relations. */
+type Relation = readonly Markup[] | Continuing;
+
+function chain(relation: Relation): readonly Markup[] {
+    return "continues" in relation ? relation.continues : relation;
+}
+
+const none: readonly Relation[] = [];
 
 /**
  * Every kind's owned Markup relations in canonical order, each one chain of
@@ -122,7 +126,7 @@ const none: readonly (readonly Markup[])[] = [];
  * its relations.
  */
 const relations: {
-    [Kind in Markup["kind"]]: (node: Extract<Markup, { kind: Kind }>) => readonly (readonly Markup[])[];
+    [Kind in Markup["kind"]]: (node: Extract<Markup, { kind: Kind }>) => readonly Relation[];
 } = {
     document: (node) => (node.metadata === null ? [node.content] : [[node.metadata], node.content]),
     callout: (node) => (node.title === null ? [node.content] : [node.title, node.content]),
@@ -130,10 +134,11 @@ const relations: {
     heading: (node) => [node.content],
     list: (node) => [node.items],
     listItem: (node) => [node.content],
+    // A table's rows, in head, content and foot order, are one relation.
     table: (node) =>
         node.caption === null
-            ? [node.head, node.content, node.foot]
-            : [[node.caption], node.head, node.content, node.foot],
+            ? [node.head, { continues: node.content }, { continues: node.foot }]
+            : [[node.caption], node.head, { continues: node.content }, { continues: node.foot }],
     tableCaption: (node) => [node.content],
     tableRow: (node) => [node.cells],
     tableCell: (node) => [node.content],

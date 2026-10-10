@@ -11,40 +11,42 @@
 #include <text_tree.h>
 
 /* A SESSION: the text, the parser instance that reads it, the document
- * parsed from it, the storage its nodes live in, the last id it issued and
- * the document's node count. Each edit parses the whole text again as a
- * revision of the document (parser.h), so the new document continues the old
- * one and the old one's nodes go back to the session's pool. */
+ * parsed from it, the storage its nodes live in and the last id it issued.
+ * Each edit parses the text again as a revision of the document (parser.h),
+ * reading the text tree a piece at a time, and the old document's reference
+ * to its tree goes back to the session's pool. */
 struct markdown_core_session {
     markdown_core_text_tree text;
     markdown_core_parser *parser;
     markdown_core_node_pool pool;
     markdown_core_document document;
     uint64_t last_id;
-    size_t node_count;
 };
 
-/* The one parse of a session's text. A (NULL, 0) source is the empty
- * buffer. */
-static markdown_core_status session_parse(markdown_core_session *session, const uint8_t *source, size_t size,
-                                          const markdown_core_byte_edit *edits, size_t count) {
-    static const uint8_t empty[1] = {0};
+static const unsigned char *session_read(const markdown_core_input *input, size_t offset, size_t *size) {
+    return markdown_core_text_tree_read(input->payload, offset, size);
+}
+
+/* The one parse of a session's text, after `edits`. */
+static markdown_core_status session_parse(markdown_core_session *session, const markdown_core_byte_edit *edits,
+                                          size_t count) {
+    const markdown_core_input input = {session_read, &session->text, markdown_core_text_tree_size(&session->text)};
     markdown_core_revision revision = {
         .pool = &session->pool,
         .previous = session->document.root,
         .edits = edits,
         .edit_count = count,
         .last_id = session->last_id,
-        .node_count = session->node_count,
     };
-    markdown_core_node *root =
-        markdown_core_parser_parse(session->parser, (const char *)(size ? source : empty), size, &revision);
+    markdown_core_node *root = markdown_core_parser_parse(session->parser, &input, &revision);
     if (!root) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
+    if (revision.previous) {
+        markdown_core_node_pool_release(&session->pool, revision.previous);
+    }
     session->document.root = root;
     session->last_id = revision.last_id;
-    session->node_count = revision.node_count;
     return MARKDOWN_CORE_OK;
 }
 
@@ -58,8 +60,8 @@ static void session_close(markdown_core_session *session) {
     markdown_core_parser_destroy(session->parser);
 }
 
-/* Opens a zeroed session in place: makes its parser, parses the source,
- * then takes it as the text. This is where a source enters the library, so
+/* Opens a zeroed session in place: takes the source as its text, makes its
+ * parser and parses the text. This is where a source enters the library, so
  * the capacity is checked here and at each edit, and nowhere below: offsets
  * are int32 and every buffer derived from the source stays under half of
  * that. */
@@ -70,8 +72,8 @@ static markdown_core_status session_open(markdown_core_session *session, const u
     }
     session->document.unit = unit;
     session->parser = markdown_core_core_parser(NULL, NULL);
-    if (!session->parser || session_parse(session, source, size, NULL, 0) != MARKDOWN_CORE_OK ||
-        !markdown_core_text_tree_init(&session->text, source, size)) {
+    if (!markdown_core_text_tree_init(&session->text, source, size) || !session->parser ||
+        session_parse(session, NULL, 0) != MARKDOWN_CORE_OK) {
         session_close(session);
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
@@ -154,7 +156,6 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
      * the revision describes, and the bytes each writes. */
     markdown_core_byte_edit *revision = NULL;
     const uint8_t **texts = NULL;
-    uint8_t *source = NULL;
     if (status == MARKDOWN_CORE_OK) {
         revision = markdown_core_alloc(count + 1, sizeof(*revision));
         texts = markdown_core_alloc(count + 1, sizeof(*texts));
@@ -183,19 +184,14 @@ markdown_core_status markdown_core_session_edit(markdown_core_session *session, 
             after += revision[i].size;
         }
     }
-    if (status == MARKDOWN_CORE_OK) {
-        source = markdown_core_alloc(after + 1, 1);
-        if (!source || !markdown_core_text_tree_replace(&session->text, revision, texts, count)) {
-            status = MARKDOWN_CORE_ALLOCATION_FAILED;
-        }
+    if (status == MARKDOWN_CORE_OK && !markdown_core_text_tree_replace(&session->text, revision, texts, count)) {
+        status = MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     if (status == MARKDOWN_CORE_OK) {
-        markdown_core_text_tree_copy(&session->text, source);
-        status = session_parse(session, source, after, revision, count);
+        status = session_parse(session, revision, count);
     }
     markdown_core_free(texts);
     markdown_core_free(revision);
-    markdown_core_free(source);
     markdown_core_free(sorted);
     if (status == MARKDOWN_CORE_OK) {
         *document = &session->document;

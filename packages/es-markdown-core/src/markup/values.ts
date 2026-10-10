@@ -14,7 +14,7 @@ export interface Position {
 
 /**
  * Editor coordinates of one source range of a node, computed on request from
- * the extents, runs and the source (`Document.scope`). `start` is the
+ * the runs and the source (`Document.scope`). `start` is the
  * position of the range's first byte, where a line terminator is the column
  * after its line's last character. `end` is the line holding the byte just
  * past the range's last byte and the column count from that line's start to
@@ -34,7 +34,7 @@ export interface Scope {
  * previous node in the same relation -- or from the owner's start, for the
  * first node of a relation -- to this node's start, and `span` the length of
  * its range. Neither changes when text before the node shifts; scopes are
- * computed from extents, runs and the source on request.
+ * computed from runs and the source on request.
  */
 export interface Extent {
     readonly lead: number;
@@ -42,18 +42,17 @@ export interface Extent {
 }
 
 /**
- * A run of the source a node read: `length` content bytes read from `span`
- * source bytes, `lead` from the end of the previous run, or from the node's
- * start for the first. A run whose span is its length reads each content
- * byte from one source byte; any other reads all of its content from all of
- * its source, and a run of length 0 gives no content. Between the first run
- * and the last the runs cover exactly the node's own source, so the source
- * between two runs is not the node's.
+ * A run of a node's own source: a source range whose `lead` is from the end
+ * of the run before, or, for the first run, from the end of the source of the
+ * previous node in the same relation (or from the start of the owner's
+ * source, for a relation's first node), and whose `span` is its length in
+ * bytes. A node's source starts where its first run starts and ends where its
+ * last ends; between them the runs cover exactly the node's own source, so the
+ * source between two runs is not the node's. Every node has at least one run.
  */
 export interface Run {
     readonly lead: number;
     readonly span: number;
-    readonly length: number;
 }
 
 export type ListFlavor = "bullet" | "ordered";

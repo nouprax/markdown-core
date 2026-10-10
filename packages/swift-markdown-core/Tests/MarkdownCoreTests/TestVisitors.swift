@@ -150,12 +150,13 @@ func scope(of node: any Markup, in document: Document, source: String) throws ->
     return scopes[0]
 }
 
-/// A hand-built record's inherited fields: no source range and no attributes.
+/// A hand-built record's inherited fields: an empty source range, its one
+/// run, and no attributes.
 func fields(_ id: UInt64) -> InheritedFields {
     InheritedFields(
         id: MarkupID(id),
         extent: Extent(lead: 0, span: 0),
-        runs: [],
+        runs: [Run(lead: 0, span: 0)],
         anchor: nil,
         attributes: .empty
     )

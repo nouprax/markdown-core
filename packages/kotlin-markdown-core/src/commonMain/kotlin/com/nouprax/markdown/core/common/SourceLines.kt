@@ -111,8 +111,8 @@ internal class SourceLines(
 
 /**
  * A NODE'S SOURCE RANGES, absolute byte ranges of the source in source order,
- * each [start] inclusive and [end] exclusive. A walk refills one for each node
- * it is asked about.
+ * each [start] inclusive and [end] exclusive: its runs.
+ * A walk refills one for each node it is asked about.
  */
 internal class SourcePlaces {
     private var starts = LongArray(4)
@@ -129,6 +129,7 @@ internal class SourcePlaces {
         count = 0
     }
 
+    /** Adds the range [start, end). */
     fun add(
         start: Long,
         end: Long,
@@ -139,139 +140,5 @@ internal class SourcePlaces {
         }
         starts[count] = start
         ends[count++] = end
-    }
-}
-
-/**
- * A NODE'S RUNS in absolute offsets: for each run, the content offset it
- * starts at, its content length, and the source range it reads. A run whose
- * source is as long as its content reads each content byte from one source
- * byte; any other reads all of its content from all of its source, and a run
- * of length 0 reads none. The source between two runs is not the node's. A
- * walk holds one for the inline root whose content it is in, and one for the
- * block it is asked about, each refilled in turn.
- */
-internal class SourceRuns {
-    private var contents = LongArray(0)
-    private var sizes = LongArray(0)
-    private var starts = LongArray(0)
-    private var ends = LongArray(0)
-    private var count = 0
-
-    /** Reads [runs], the runs of a node that starts at [anchor]. */
-    fun read(
-        runs: kotlin.collections.List<Run>,
-        anchor: Long,
-    ) {
-        if (runs.size > starts.size) {
-            contents = LongArray(runs.size)
-            sizes = LongArray(runs.size)
-            starts = LongArray(runs.size)
-            ends = LongArray(runs.size)
-        }
-        var content = 0L
-        var at = anchor
-        for (index in runs.indices) {
-            val run = runs[index]
-            val start = at + run.lead
-            contents[index] = content
-            sizes[index] = run.length.toLong()
-            starts[index] = start
-            ends[index] = start + run.span.toLong()
-            content += sizes[index]
-            at = ends[index]
-        }
-        count = runs.size
-    }
-
-    private fun copied(index: Int): Boolean = ends[index] - starts[index] == sizes[index]
-
-    /**
-     * The run content offset [offset] is in: the last that starts at or
-     * before it and reads content, or the first run.
-     */
-    private fun runAt(offset: Long): Int {
-        var lo = 0
-        var hi = count
-        while (hi - lo > 1) {
-            val middle = lo + (hi - lo) / 2
-            if (contents[middle] <= offset) lo = middle else hi = middle
-        }
-        while (lo > 0 && sizes[lo] == 0L) lo--
-        return lo
-    }
-
-    /**
-     * Where content offset [offset] is read from: its source byte, the start
-     * of the run that reads it whole, or, past the content, where the content
-     * ends.
-     */
-    private fun place(offset: Long): Long {
-        val run = runAt(offset)
-        if (offset >= contents[run] + sizes[run]) return ends[run]
-        return if (copied(run)) starts[run] + (offset - contents[run]) else starts[run]
-    }
-
-    /**
-     * Where the content byte before [offset] is read to: past its source
-     * byte, or the end of the run that reads it whole.
-     */
-    private fun placeEnd(offset: Long): Long {
-        val run = runAt(offset - 1)
-        if (offset - 1 >= contents[run] + sizes[run] || !copied(run)) return ends[run]
-        return starts[run] + (offset - contents[run])
-    }
-
-    /**
-     * Adds to [places] the source the content range [start, end) was read
-     * from: the window from where its first byte is read to where its last
-     * is, less the gaps between the runs. An empty range is the empty window
-     * where its offset is read from.
-     */
-    fun content(
-        start: Long,
-        end: Long,
-        places: SourcePlaces,
-    ) {
-        val from = place(start)
-        cut(from, if (end > start) placeEnd(end) else from, places)
-    }
-
-    /**
-     * Adds to [places] the source range [start, end) less the gaps between
-     * the runs, in source order. An empty range is one empty range.
-     */
-    fun cut(
-        start: Long,
-        end: Long,
-        places: SourcePlaces,
-    ) {
-        if (end <= start) {
-            places.add(start, start)
-            return
-        }
-        // The first run that ends past the window's start; no gap before it is in the window.
-        var lo = 0
-        var hi = count
-        while (lo < hi) {
-            val middle = lo + (hi - lo) / 2
-            if (ends[middle] <= start) lo = middle + 1 else hi = middle
-        }
-        var from = start
-        var index = lo
-        while (index + 1 < count && ends[index] < end) {
-            val gap = ends[index]
-            val past = starts[index + 1]
-            index++
-            if (past <= gap) continue
-            if (gap > from) places.add(from, gap)
-            from = maxOf(from, past)
-        }
-        if (from < end) places.add(from, end)
-    }
-
-    companion object {
-        /** Whether [runs] read content: their node is an inline root. */
-        fun readContent(runs: kotlin.collections.List<Run>): Boolean = runs.any { it.length > 0u }
     }
 }

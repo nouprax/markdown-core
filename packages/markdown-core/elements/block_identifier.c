@@ -72,22 +72,22 @@ static bool S_attach_block_identifier(markdown_core_parser *parser, markdown_cor
 }
 
 void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identifier_work *work,
-                                                     markdown_core_parser *parser, markdown_core_node *paragraph) {
+                                                     markdown_core_parser *parser, markdown_core_member *member) {
+    markdown_core_node *paragraph = member->node;
     block_identifier candidate;
     if (!S_scan_block_identifier(work, paragraph->content.ptr, paragraph->content.size, &candidate)) {
         return;
     }
     markdown_core_node *owner = paragraph;
-    markdown_core_node *parent = paragraph->parent;
+    markdown_core_member *parent = member->owner;
     int line;
     bufsize_t source;
-    if (parent && markdown_core_block_type(parent) == MARKDOWN_CORE_NODE_LIST_ITEM &&
-        parent->first_child == paragraph &&
+    if (parent && markdown_core_block_type(parent->node) == MARKDOWN_CORE_NODE_LIST_ITEM && parent->first == member &&
         markdown_core_parser_content_place(parser, &paragraph->content_map,
                                            (bufsize_t)(candidate.identifier.data - paragraph->content.ptr), &line,
                                            &source) &&
-        markdown_core_parser_starts_on_line(parser, parent, line)) {
-        owner = parent;
+        markdown_core_parser_starts_on_line(parser, parent->node, line)) {
+        owner = parent->node;
     }
     bufsize_t at = (bufsize_t)(candidate.identifier.data - paragraph->content.ptr) + paragraph->content_map.offset;
     int indent =
@@ -103,8 +103,9 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identif
 }
 
 bool markdown_core_block_attach_identifier_line(markdown_core_block_identifier_work *work, markdown_core_parser *parser,
-                                                markdown_core_node *parent, markdown_core_chunk *input) {
-    markdown_core_node *owner = parent->last_child;
+                                                markdown_core_member *parent, markdown_core_chunk *input) {
+    /* The block before the line is closed: its node is complete. */
+    markdown_core_node *owner = parent->last ? parent->last->node : NULL;
     block_identifier candidate;
     if (parser->indent >= CODE_INDENT || input->data[parser->first_nonspace] != '#' || !owner ||
         owner->attributes.anchor.len ||
@@ -113,10 +114,10 @@ bool markdown_core_block_attach_identifier_line(markdown_core_block_identifier_w
          markdown_core_block_type(owner) != MARKDOWN_CORE_NODE_TABLE) ||
         !S_scan_block_identifier(work, input->data + parser->first_nonspace, input->len - parser->first_nonspace,
                                  &candidate) ||
-        !candidate.own_line || candidate.content_end || !markdown_core_block_ends_with_blank_line(parser, owner)) {
+        !candidate.own_line || candidate.content_end || !markdown_core_block_ends_with_blank_line(owner)) {
         return false;
     }
-    bool followed_by_boundary = parser->lookahead_cursor == parser->lookahead_end;
+    bool followed_by_boundary = !markdown_core_parser_input_continues(parser);
     if (!followed_by_boundary) {
         markdown_core_block_lookahead lookahead;
         markdown_core_chunk next;
@@ -131,6 +132,6 @@ bool markdown_core_block_attach_identifier_line(markdown_core_block_identifier_w
     if (!followed_by_boundary || parser->error || !S_attach_block_identifier(parser, owner, &candidate)) {
         return false;
     }
-    markdown_core_block_set_end_to_current_line(parser, owner);
+    markdown_core_parser_write_closed(parser, parent, parser->line_end);
     return true;
 }

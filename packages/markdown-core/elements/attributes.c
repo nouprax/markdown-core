@@ -325,6 +325,66 @@ void markdown_core_attributes_free(markdown_core_attributes *v) {
     memset(v, 0, sizeof(*v));
 }
 
+/* A COPY lays out the value's block again: every string in it is
+ * NUL-terminated and the last ends the block, so the block's size is where
+ * its last string ends. */
+static void S_block_end(const unsigned char *block, const markdown_core_chunk *string, size_t *end) {
+    const size_t at = (size_t)(string->data - block) + (size_t)string->len + 1;
+    *end = at > *end ? at : *end;
+}
+
+static void S_rebase(const unsigned char *from, unsigned char *to, markdown_core_chunk *string) {
+    string->data = to + (string->data - from);
+}
+
+int markdown_core_attributes_copy(markdown_core_attributes *to, const markdown_core_attributes *from) {
+    *to = (markdown_core_attributes){0};
+    if (!markdown_core_attributes_owns(from)) {
+        return 1;
+    }
+    markdown_core_attributes copy = *from;
+    if (from->storage) {
+        const unsigned char *const block = from->storage;
+        size_t bytes = 0;
+        for (uint32_t i = 0; i < from->class_count; i++) {
+            S_block_end(block, &from->classes[i], &bytes);
+        }
+        for (uint32_t i = 0; i < from->record_count; i++) {
+            S_block_end(block, &from->records[i].name, &bytes);
+            S_block_end(block, &from->records[i].value, &bytes);
+        }
+        if (from->anchor.data && !from->anchor.alloc) {
+            S_block_end(block, &from->anchor, &bytes);
+        }
+        unsigned char *storage = markdown_core_realloc(NULL, bytes);
+        if (!storage) {
+            return 0;
+        }
+        memcpy(storage, block, bytes);
+        copy.storage = storage;
+        copy.classes =
+            from->classes ? (markdown_core_chunk *)(storage + ((const unsigned char *)from->classes - block)) : NULL;
+        copy.records =
+            from->records ? (markdown_core_record *)(storage + ((const unsigned char *)from->records - block)) : NULL;
+        for (uint32_t i = 0; i < copy.class_count; i++) {
+            S_rebase(block, storage, &copy.classes[i]);
+        }
+        for (uint32_t i = 0; i < copy.record_count; i++) {
+            S_rebase(block, storage, &copy.records[i].name);
+            S_rebase(block, storage, &copy.records[i].value);
+        }
+        if (copy.anchor.data && !copy.anchor.alloc) {
+            S_rebase(block, storage, &copy.anchor);
+        }
+    }
+    if (!markdown_core_chunk_own(&copy.anchor)) {
+        markdown_core_free(copy.storage);
+        return 0;
+    }
+    *to = copy;
+    return 1;
+}
+
 /* The memo exists only once recognition ran (see the recogniser above): a
  * parser that never asked owns nothing and releases nothing. The scratch is
  * borrowed and released by its owner, and totals the work of every
@@ -455,7 +515,8 @@ static bufsize_t decode_quoted(markdown_core_attribute_parser *p, bufsize_t open
             markdown_core_strbuf_putc(&w->strings, s[at + 1]);
             at += 2;
         } else if (c == '&') {
-            bufsize_t used = houdini_unescape_ent(&w->strings, s + at + 1, limit - at - 1);
+            bufsize_t read;
+            bufsize_t used = houdini_unescape_ent(&w->strings, s + at + 1, limit - at - 1, &read);
             if (used) {
                 at += used + 1;
             } else {

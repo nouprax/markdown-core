@@ -19,7 +19,7 @@ add_library(
     "${MARKDOWN_CORE_CORE_DIR}/inlines.c"
     "${MARKDOWN_CORE_CORE_DIR}/utf8.c"
     "${MARKDOWN_CORE_CORE_DIR}/buffer.c"
-    "${MARKDOWN_CORE_CORE_DIR}/references.c"
+    "${MARKDOWN_CORE_CORE_DIR}/registry.c"
     "${MARKDOWN_CORE_CORE_DIR}/map.c"
     "${MARKDOWN_CORE_CORE_DIR}/text_tree.c"
     "${MARKDOWN_CORE_CORE_DIR}/houdini_html_u.c"

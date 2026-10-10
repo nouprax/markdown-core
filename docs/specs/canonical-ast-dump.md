@@ -11,7 +11,7 @@ only at `specs/canonical-ast/`. C, Swift, Kotlin, and ES conformance targets
 enumerate that same non-empty manifest. Swift, Kotlin, and ES each implement
 this tree format independently over their public immutable AST; they never
 call the native C dump or another binding output. Scopes are computed from the
-nodes' extents and the source the document was parsed from, so every dump
+nodes' runs and the source the document was parsed from, so every dump
 takes the document and that source, and a node dump names a node of that
 document for focused subtree inspection:
 

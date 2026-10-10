@@ -86,7 +86,7 @@ import Testing
         #expect((first.content.first as? Text)?.literal == "first")
         #expect((second.content.first as? Text)?.literal == "second")
         #expect((other.content.first as? Text)?.literal == "other")
-        #expect(first.id == MarkupID(2) && second.id == MarkupID(4) && other.id == MarkupID(2))
+        #expect(first.id == MarkupID(1) && second.id == MarkupID(2) && other.id == MarkupID(1))
         #expect(second.extent == Extent(lead: 2, span: 6))
         // Ids from different documents are not comparable; equality still is.
         #expect(first != other)
@@ -117,8 +117,8 @@ import Testing
     @Test("a node describes its kind and id without reading its descendants")
     func describes() throws {
         let document = try Document.parse("# x\n")
-        #expect(document.description == "Document(id=1)")
-        #expect(String(describing: document.content[0]) == "Heading(id=2)")
+        #expect(document.description == "Document(id=3)")
+        #expect(String(describing: document.content[0]) == "Heading(id=1)")
     }
 }
 
@@ -164,8 +164,8 @@ private func deepTreeFailures(depth: Int) -> [String] {
         (try? document.node(at: Position(line: 1, column: column + 1), in: source)?.isEqual(leaf)) == true,
         "hit test"
     )
-    check(document.description == "Document(id=1)", "description")
-    check(leaf.description == "Text(id=\(depth * 2 + 3))", "leaf description")
+    check(document.description == "Document(id=\(depth * 2 + 3))", "description")
+    check(leaf.description == "Text(id=\(depth * 2 + 2))", "leaf description")
     return failures + deepReleaseFailures(source: source)
 }
 
@@ -215,7 +215,7 @@ private func deepSessionFailures(depth: Int) -> [String] {
         (try? document.node(at: Position(line: 1, column: column), in: text)?.isEqual(leaf)) == true,
         "hit test"
     )
-    check(document.description == "Document(id=1)", "description")
+    check(document.description == "Document(id=\(depth * 2 + 3))", "description")
     return failures
 }
 

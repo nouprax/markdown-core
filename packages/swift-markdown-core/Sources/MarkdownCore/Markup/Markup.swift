@@ -24,8 +24,8 @@ public struct Position: Sendable, Hashable {
 /// A SCOPE IS A PAIR OF BOUNDARIES, NOT A BYTE RANGE. It tells an editor which
 /// range of the source an element covers; it does not name a substring, and no
 /// substring can be taken with it. A node stores no scope: ``Document`` computes
-/// one for each of the node's source ranges from the extents and runs and the
-/// source when it is asked.
+/// one for each of the node's runs from the runs and the source when it is
+/// asked.
 public struct Scope: Sendable, Hashable {
     /// The position of the element's first byte.
     public let start: Position
@@ -52,8 +52,9 @@ public enum TextUnit: Sendable, Hashable {
     case utf16
 }
 
-/// A node's identifier: unique within its document, and numbered from 1 in
-/// canonical walk order by a parse, so two parses of the same text agree.
+/// A node's identifier: unique within its document, and numbered from 1 by a
+/// parse in the order its nodes complete, the document last, so two parses of
+/// the same text agree.
 ///
 /// Identifiers from different documents are not comparable. Every value is
 /// below 2^53.
@@ -73,8 +74,8 @@ public struct MarkupID: Hashable, Sendable {
 /// `lead` is the signed distance from the end of the previous node in the same
 /// relation (or from the owner's start, for the first node of a relation) to
 /// this node's start, and `span` the length of its range. Neither changes when
-/// text before the node moves. Scopes are computed from extents, runs and the
-/// source on request; see ``Document/scope(of:in:)``.
+/// text before the node moves. Scopes are computed from runs and the source
+/// on request; see ``Document/scope(of:in:)``.
 public struct Extent: Sendable, Hashable {
     /// The signed byte distance from the node's anchor to its start.
     public let lead: Int32
@@ -88,30 +89,26 @@ public struct Extent: Sendable, Hashable {
     }
 }
 
-/// A run of the source a node read: `length` content bytes read from `span`
-/// source bytes.
+/// A run of a node's own source: a source range.
 ///
-/// `lead` is the signed distance from the end of the previous run (or from the
-/// node's start, for the first) to the run's source start. A run whose span is
-/// its length reads each content byte from one source byte; any other reads
-/// all of its content from all of its source, and a run of length 0 is source
-/// the node reads without content. Between its first run and its last, a
-/// node's runs cover exactly its own source: the source between two runs is
-/// not the node's. A node whose runs read content is an inline root, and its
-/// first relation is that content, which the runs cover in order.
+/// The first run's `lead` is the signed distance from the end of the source of
+/// the previous node in the same relation (or from the start of the owner's
+/// source, for a relation's first node) to its start; every other run's is
+/// from the end of the run before. Its `span` is its length in bytes. A node's
+/// source starts where its first run starts and ends where its last ends;
+/// between them its runs cover exactly its own source, so the source between
+/// two runs is not the node's. Every node has at least one run.
 public struct Run: Sendable, Hashable {
-    /// The signed byte distance from the previous run's end to its start.
+    /// The signed byte distance from the end of the run before, or the
+    /// first run's anchor, to the run's start.
     public let lead: Int32
-    /// The source bytes the run reads.
+    /// The run's length in bytes.
     public let span: UInt32
-    /// The content bytes the run reads them as.
-    public let length: UInt32
 
-    /// Creates a run. No number is validated.
-    public init(lead: Int32, span: UInt32, length: UInt32) {
+    /// Creates a run. Neither number is validated.
+    public init(lead: Int32, span: UInt32) {
         self.lead = lead
         self.span = span
-        self.length = length
     }
 }
 
@@ -134,7 +131,7 @@ public protocol Markup: Hashable, Identifiable, Sendable, CustomStringConvertibl
     var id: MarkupID { get }
     /// Where the node is, relative to its neighbours. See ``Extent``.
     var extent: Extent { get }
-    /// The source it read, and where its content was read from. See ``Run``.
+    /// Its own source ranges, in source order, at least one. See ``Run``.
     var runs: [Run] { get }
     var anchor: String? { get }
     var attributes: Attributes { get }

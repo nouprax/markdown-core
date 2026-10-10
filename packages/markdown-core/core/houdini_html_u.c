@@ -43,13 +43,17 @@ static const unsigned char *S_lookup_entity(const unsigned char *s, int len, buf
     return S_lookup(ENT_TABLE_SIZE / 2, 0, ENT_TABLE_SIZE - 1, s, len, size_out);
 }
 
-bufsize_t houdini_unescape_ent(markdown_core_strbuf *ob, const uint8_t *src, bufsize_t size) {
+bufsize_t houdini_unescape_ent(markdown_core_strbuf *ob, const uint8_t *src, bufsize_t size, bufsize_t *read) {
     bufsize_t i = 0;
+    /* One past the last byte the scan looks at: size + 1 when it looks for a
+     * byte past the end. */
+    *read = size + 1;
 
     if (size >= 3 && src[0] == '#') {
         int codepoint = 0;
         int num_digits = 0;
         int max_digits = 7;
+        *read = 2;
 
         if (_isdigit(src[1])) {
             for (i = 1; i < size && _isdigit(src[i]); ++i) {
@@ -64,6 +68,7 @@ bufsize_t houdini_unescape_ent(markdown_core_strbuf *ob, const uint8_t *src, buf
 
             num_digits = i - 1;
             max_digits = 7;
+            *read = i + 1;
         }
 
         else if (src[1] == 'x' || src[1] == 'X') {
@@ -79,6 +84,7 @@ bufsize_t houdini_unescape_ent(markdown_core_strbuf *ob, const uint8_t *src, buf
 
             num_digits = i - 2;
             max_digits = 6;
+            *read = i + 1;
         }
 
         if (num_digits >= 1 && num_digits <= max_digits && i < size && src[i] == ';') {
@@ -91,6 +97,7 @@ bufsize_t houdini_unescape_ent(markdown_core_strbuf *ob, const uint8_t *src, buf
     }
 
     else {
+        bufsize_t whole = size;
         if (size > ENT_MAX_LENGTH) {
             size = ENT_MAX_LENGTH;
         }
@@ -106,12 +113,14 @@ bufsize_t houdini_unescape_ent(markdown_core_strbuf *ob, const uint8_t *src, buf
 
                 if (entity != NULL) {
                     markdown_core_strbuf_put(ob, entity, entity_size);
+                    *read = i + 1;
                     return i + 1;
                 }
 
                 break;
             }
         }
+        *read = i < whole ? i + 1 : whole + 1;
     }
 
     return 0;
@@ -145,7 +154,8 @@ int houdini_unescape_html(markdown_core_strbuf *ob, const uint8_t *src, bufsize_
 
         i++;
 
-        ent = houdini_unescape_ent(ob, src + i, size - i);
+        bufsize_t read;
+        ent = houdini_unescape_ent(ob, src + i, size - i, &read);
         i += ent;
 
         /* not really an entity */

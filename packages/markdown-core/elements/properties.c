@@ -41,7 +41,7 @@ typedef struct {
 /* Decode a pre-indexed envelope. Return geometry by value so a later parser
  * operation cannot invalidate a decoder's line reference. */
 static source_line property_line(const properties *p, size_t line) {
-    return p->parser->input_lines[p->first_line + line];
+    return *markdown_core_parser_visited_line(p->parser, (int)(p->first_line + line));
 }
 
 static bool plain_start(const unsigned char *s, size_t start, size_t end) {
@@ -49,15 +49,6 @@ static bool plain_start(const unsigned char *s, size_t start, size_t end) {
         return false;
     }
     return !((s[start] == '?' || s[start] == ':') && (start + 1 == end || markdown_core_is_whitespace(s[start + 1])));
-}
-static size_t next_line(const unsigned char *s, size_t p, size_t end) {
-    if (p < end && s[p] == '\r') {
-        p++;
-    }
-    if (p < end && s[p] == '\n') {
-        p++;
-    }
-    return p;
 }
 /* The line holding the decoder's cursor. The cursor only moves forward, so
  * the line index catches up to it through the index and never reads a byte.
@@ -748,68 +739,56 @@ static void payload(properties *p) {
         line = boundary;
     }
 }
-size_t markdown_core_properties_parse(markdown_core_properties_work *work, markdown_core_parser *parser,
-                                      const unsigned char *source, size_t length) {
+void markdown_core_properties_parse(markdown_core_properties_work *work, markdown_core_parser *parser) {
     /* The opener is exactly "---" and a line ending: a peek, not a scan. */
-    if (length < 4 || memcmp(source, "---", 3) || !markdown_core_is_line_end(source[3])) {
-        return 0;
+    source_line *opener = markdown_core_parser_source_line(parser, 1);
+    const unsigned char *bytes = opener ? markdown_core_parser_line_bytes(parser, opener) : NULL;
+    if (!bytes || opener->end - opener->start != 3 || memcmp(bytes, "---", 3) ||
+        markdown_core_input_line_next(parser, opener) == opener->end) {
+        return;
     }
-    size_t start = next_line(source, 3, length), close = start;
-    properties p = {.parser = parser, .work = work, .source = source};
-    /* THE FENCE NEEDS NO LINE GEOMETRY. It is "---" bracketed by line ends,
-     * so the search for it is one `memchr` pass over the dashes, checked at
-     * each hit for the line start before it and the line end after it, and
-     * it allocates nothing: a document that opens with a thematic break and
-     * never closes an envelope -- ordinary Markdown -- costs one pass and
-     * one byte of state. The shared input index is extended through the
-     * closing fence afterwards; the block driver later reuses those entries. */
-    bool closed = false;
-    size_t fence_work = 0;
-    while (close < length) {
-        const unsigned char *hit = memchr(source + close, '-', length - close);
-        if (!hit) {
-            fence_work += length - close;
-            break;
-        }
-        size_t at = (size_t)(hit - source);
-        fence_work += at - close + 1;
-        if (markdown_core_is_line_end(source[at - 1]) && length - at >= 3 && source[at + 1] == '-' &&
-            source[at + 2] == '-' && (at + 3 == length || markdown_core_is_line_end(source[at + 3]))) {
-            close = at;
-            closed = true;
-            break;
-        }
-        close = at + 1;
-    }
-    work->line_work += fence_work;
-    if (!closed) {
-        return 0;
-    }
-    int number = 1;
+    /* THE FENCE IS A LINE OF ITS OWN, exactly "---", so the search for it
+     * reads at most four bytes of each line the shared input index yields; a
+     * document that opens with a thematic break and never closes an envelope
+     * -- ordinary Markdown -- costs the index the block driver reuses. */
+    int number = 2;
     source_line *line;
-    do {
-        line = markdown_core_parser_source_line(parser, number++);
-    } while (line && line->start < close);
-    if (!line) {
-        return 0;
+    for (;; number++) {
+        line = markdown_core_parser_source_line(parser, number);
+        if (!line) {
+            return;
+        }
+        const size_t length = line->end - line->start;
+        work->line_work += length < 4 ? length : 4;
+        if (length == 3 && (bytes = markdown_core_parser_line_bytes(parser, line)) && !memcmp(bytes, "---", 3)) {
+            break;
+        }
+        if (parser->error) {
+            return;
+        }
     }
-    p.count = (size_t)number - 3;
-    p.first_line = 1;
+    const size_t close = line->start;
+    /* The envelope, one view from the opener through the fence. */
+    const unsigned char *source = markdown_core_parser_input_view(parser, 1, number);
+    if (!source) {
+        return;
+    }
+    properties p = {.parser = parser, .work = work, .source = source};
+    p.count = (size_t)number - 2;
+    p.first_line = 2;
     markdown_core_node *node = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_METADATA);
     if (!node) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return 0;
+        return;
     }
-    size_t consumed = next_line(source, close + 3, length);
     p.metadata = node->as.metadata;
     node->where.place = (markdown_core_place){0, (uint32_t)(close + 3)};
     payload(&p);
     if (parser->error) {
         markdown_core_parser_release_node(parser, node);
-        return 0;
+        return;
     }
-    parser->root->as.document->metadata = node;
+    parser->root->node->as.document->metadata = node;
     parser->line_number = (int)(p.count + 2);
     parser->last_line_end = (bufsize_t)(close + 3);
-    return consumed;
 }

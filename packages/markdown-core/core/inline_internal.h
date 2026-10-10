@@ -13,10 +13,15 @@
 #include "inlines.h"
 #include "element.h"
 
+/* The cursor over the old content of an inline root (inlines.c). */
+typedef struct markdown_core_inline_cursor markdown_core_inline_cursor;
+
 /* One maximal parsed delimiter run, classified from immutable source bytes. The text
  * scanner may retain one lookahead run for delimiter dispatch to consume. */
 typedef struct {
     bufsize_t start, end;
+    /* The content its classification read (markdown_core_inline_state_read). */
+    bufsize_t low, reach;
     markdown_core_delimiter_rule rule;
     bool can_open, can_close;
 } delimiter_run;
@@ -38,7 +43,7 @@ struct markdown_core_inline_state {
      * inline state built straight out of a chunk -- the reference-definition
      * parser -- and the map is then simply not consulted. */
     markdown_core_parser *owner_parser;
-    markdown_core_node *owner;
+    markdown_core_member *owner;
     /* The instance of `owner`'s structure element, resolved once. The projection is a pure
      * function of `owner->kind`, `owner` does not change across a run, and a
      * run's owner does not change kind during it -- so asking per token was
@@ -64,7 +69,6 @@ struct markdown_core_inline_state {
     int mark_line, mark_step, mark_width;
     bufsize_t mark_source;
     bool mapped;
-    markdown_core_map *refmap;
     delimiter *last_delim;
     delimiter_run cached_run;
     /* How many delimiters of each rule on the stack can open, and how many
@@ -72,9 +76,26 @@ struct markdown_core_inline_state {
      * a closer will pair without walking the stack. */
     int delim_openers[MARKDOWN_CORE_DELIM_RULE_COUNT];
     int delim_closers[MARKDOWN_CORE_DELIM_RULE_COUNT];
+    /* The rules that have a delimiter on the stack, one bit per rule. */
+    uint32_t delim_rules;
     /* One past the last consumed byte other than SP/TAB. This lets every
      * inline-note closer test its body's non-empty rule in constant time. */
     bufsize_t nonblank_end;
+    /* WHAT THE TOKEN BEING READ READ (node.h, markdown_core_inline_reads),
+     * kept when the run `records`, as the run of an inline root's content
+     * does; the member the token appended, `token_member`, takes it when the
+     * token ends. `declared` says whether the element asked last said what
+     * it read (markdown_core_inline_state_read): a token stays RECORDED while
+     * every element it asks does. `now` is the content offset of the closer
+     * the stack is being reduced for, where each delimiter it removes leaves
+     * the stack, and INT32_MAX outside a reduction. */
+    markdown_core_inline_reads token;
+    markdown_core_member *token_member;
+    bufsize_t now;
+    bool records, declared;
+    /* The cursor over the old content of the root the run reads again
+     * (inlines.c), or NULL. */
+    markdown_core_inline_cursor *cursor;
     /* This run's block of the elements' run records (markdown_core_run_state):
      * taken from the parser when the run starts and given back when it is
      * cleared. NULL for a run with no parser, and for one whose records could
@@ -98,6 +119,25 @@ static inline void *markdown_core_run_state(const markdown_core_inline_state *in
     return inline_state->run_state ? inline_state->run_state + self->run_offset : NULL;
 }
 
+/* The token being read counted or searched the stack entries of `rule`. */
+static inline void markdown_core_inline_read_rule(markdown_core_inline_state *inline_state,
+                                                  markdown_core_delimiter_rule rule) {
+    inline_state->token.rules |= 1u << rule;
+}
+
+/* The token being read made what a later parse takes whole only where the
+ * root's content is all the old one's. */
+static inline void markdown_core_inline_unrecorded(markdown_core_inline_state *inline_state) {
+    inline_state->token.flags &= ~(uint32_t)MARKDOWN_CORE_INLINE_RECORDED;
+}
+
+/* The token being read decided what a parse of the same content may decide
+ * otherwise: it asked a registry or an element that did not say what it
+ * read, or it made more nodes than one. */
+static inline void markdown_core_inline_outside(markdown_core_inline_state *inline_state) {
+    inline_state->token.flags &= ~(uint32_t)(MARKDOWN_CORE_INLINE_RECORDED | MARKDOWN_CORE_INLINE_LOCAL);
+}
+
 #define make_str(inline_state, sc, ec, s)                                                                              \
     markdown_core_inline_make_literal(inline_state, MARKDOWN_CORE_NODE_TEXT, sc, ec, s)
 
@@ -109,7 +149,7 @@ static inline void *markdown_core_run_state(const markdown_core_inline_state *in
  * on; it is asserted here rather than tested per placement. */
 static inline void markdown_core_inline_seat_cursor(markdown_core_inline_state *inline_state) {
     markdown_core_parser *parser = inline_state->owner_parser;
-    markdown_core_node *owner = inline_state->owner;
+    const markdown_core_node *owner = inline_state->owner ? inline_state->owner->node : NULL;
     inline_state->mapped = parser && owner && owner->content_map.count > 0;
     if (!inline_state->mapped) {
         return;
@@ -142,7 +182,7 @@ static inline void markdown_core_inline_map_text(markdown_core_inline_state *inl
          memcmp(literal->data, inline_state->input.data + from, (size_t)literal->len) == 0)) {
         node->content_map.first = first;
         node->content_map.count = last - first + 1;
-        node->content_map.offset = from + inline_state->owner->content_map.offset;
+        node->content_map.offset = from + inline_state->owner->node->content_map.offset;
     } else {
         node->content_map.count = 0;
         node->content_map.offset = 0;
@@ -174,7 +214,7 @@ static inline void markdown_core_inline_place(markdown_core_inline_state *inline
     if (!inline_state->mapped) {
         return;
     }
-    bufsize_t base = inline_state->owner->content_map.offset;
+    bufsize_t base = inline_state->owner->node->content_map.offset;
     bufsize_t from_offset = from + base, to_offset = to + base;
     inline_state->owner_parser->content_mark_queries++;
     if (from < 0 || to < 0 || from_offset < inline_state->mark_run_start || to_offset < inline_state->mark_run_start ||
@@ -201,7 +241,7 @@ markdown_core_node *markdown_core_inline_make_simple(markdown_core_inline_state 
 markdown_core_node *markdown_core_inline_make_simple_with_state(markdown_core_inline_state *inline_state,
                                                                 markdown_core_node_type t);
 void markdown_core_inline_state_from_buf(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
-                                         markdown_core_chunk *chunk, markdown_core_map *refmap);
+                                         markdown_core_chunk *chunk);
 unsigned char markdown_core_inline_peek_char_n(markdown_core_inline_state *inline_state, bufsize_t n);
 unsigned char markdown_core_inline_peek_char(markdown_core_inline_state *inline_state);
 unsigned char markdown_core_inline_peek_at(markdown_core_inline_state *inline_state, bufsize_t pos);
@@ -214,12 +254,20 @@ delimiter *markdown_core_inline_push_delimiter_entry(markdown_core_inline_state 
 void markdown_core_inline_process_delimiters(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
                                              bufsize_t stack_bottom, delimiter *after);
 int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_core_inline_state *inline_state);
-void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_core_node *parent, bool root,
-                                        markdown_core_map *refmap, markdown_core_inline_state *inline_state);
+/* THE RUN ASKS THE REGISTRY (registry.h) whether a fact defines the key
+ * (`group`, `label`), `label` read in its normal form first when `normalize`
+ * is set, as a link label is: the key when one does, NULL when none does. The
+ * question is its root's, and joins the key's reverse index; the run fails
+ * when it could not be recorded. */
+const markdown_core_key *markdown_core_inline_ask(markdown_core_inline_state *inline_state,
+                                                  markdown_core_key_group group, const markdown_core_chunk *label,
+                                                  bool normalize);
+void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_core_member *parent, bool root,
+                                        markdown_core_inline_state *inline_state);
 void markdown_core_inline_clear_inlines(markdown_core_inline_state *inline_state);
 bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_core_inline_state *inline_state);
-markdown_core_node *markdown_core_inline_match_delimiter(const markdown_core_element_instance *self,
-                                                         markdown_core_inline_state *inline_state);
+markdown_core_member *markdown_core_inline_match_delimiter(const markdown_core_element_instance *self,
+                                                           markdown_core_inline_state *inline_state);
 int markdown_core_byte_set_has(const char *set, unsigned char character);
 void markdown_core_inline_push_boundary(markdown_core_inline_state *inline_state, bufsize_t position);
 #endif

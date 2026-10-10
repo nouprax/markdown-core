@@ -151,8 +151,9 @@ unsupported, default builds still run the native concurrency regressions.
 
 ## The node integrity check
 
-`markdown_core_node_check` walks a finished root and reports every parent,
-sibling and containment relation that disagrees with its counterpart. It is the
+`markdown_core_node_check` walks a finished root and reports every stem whose
+height or count disagrees with what it holds, and every node nothing
+holds. It is the
 only structural self-check this tree has, and it is compiled in by
 `MARKDOWN_CORE_DEBUG_NODES`, which the `debug` preset alone defines:
 
@@ -162,12 +163,9 @@ cmake --build --preset debug --parallel
 ctest --preset correctness-debug
 ```
 
-The engine runs it once per owned root when that root's finish walk completes
--- inline completion, text consolidation and every element finish step run
-from inside that one walk, so a break one of them introduced is attributed to
-the root's walk -- and
-again after each global postprocess pass, so a break a pass introduced is
-attributed to that pass. A configuration
+The engine runs it once, after every inline root has completed, and a parse
+whose check cannot allocate its work stack fails as any allocation failure
+does. A configuration
 that does not define the macro is indistinguishable from one where the check
 passes, which is how it stayed dead for the whole of its life: the define was
 set in `core/`, where `set()` cannot reach the sibling directory that builds the

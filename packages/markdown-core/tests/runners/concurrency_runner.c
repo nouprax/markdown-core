@@ -24,6 +24,7 @@
 // The runner uses raw native threads (pthread / Win32) on purpose: the
 // facade contract must hold without any test-harness serialization.
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -146,18 +147,35 @@ static markdown_core_status parse_document(const char *input, markdown_core_docu
     return markdown_core_document_parse((const uint8_t *)input, strlen(input), document);
 }
 
-// Depth-first traversal touching kind, id, extent, child count, and per-kind
-// accessors; returns the node count so results can be sanity-compared, or 0
-// when an accessor refuses a node of the kind it reads.
-static size_t traverse(const markdown_core_node *node) {
-    size_t visited = 1;
+// Whether a node a cursor reads in `field` of an owner of `kind` is one that
+// markdown_core_node_child_count counts: the nodes of the owner's first list
+// field, which a Definition and a Cite do not count.
+static bool counted(markdown_core_node_kind kind, markdown_core_field field) {
+    if (kind == MARKDOWN_CORE_KIND_DEFINITION || kind == MARKDOWN_CORE_KIND_CITE) {
+        return false;
+    }
+    switch (field) {
+    case MARKDOWN_CORE_FIELD_CONTENT:
+    case MARKDOWN_CORE_FIELD_HEAD:
+    case MARKDOWN_CORE_FIELD_FOOT:
+    case MARKDOWN_CORE_FIELD_CELLS:
+    case MARKDOWN_CORE_FIELD_DEFINITIONS:
+        return true;
+    default:
+        return false;
+    }
+}
 
+// Touches one node's kind, id, extent, child count, and per-kind accessors,
+// reading its children with `scan`; false when an accessor refuses a node of
+// the kind it reads or the child count disagrees with the children read.
+static bool inspect(const markdown_core_node *node, markdown_core_cursor *scan) {
     markdown_core_node_kind kind = markdown_core_node_get_kind(node);
     markdown_core_extent extent = markdown_core_node_extent(node);
     const char *name;
     if (markdown_core_node_kind_name(kind, &name) != MARKDOWN_CORE_OK || markdown_core_node_id(node) == 0 ||
         extent.span > UINT32_MAX / 2) {
-        return 0;
+        return false;
     }
 
     markdown_core_string value;
@@ -183,22 +201,54 @@ static size_t traverse(const markdown_core_node *node) {
         break;
     }
     if (status != MARKDOWN_CORE_OK) {
-        return 0;
+        return false;
     }
 
     size_t children = 0;
-    const markdown_core_node *child = markdown_core_node_get_first_child(node);
-    for (; child; child = markdown_core_node_get_next_sibling(child)) {
-        size_t below = traverse(child);
-        if (!below) {
-            return 0;
+    bool moved;
+    markdown_core_cursor_reset(scan, node);
+    if (markdown_core_cursor_child(scan, &moved) != MARKDOWN_CORE_OK) {
+        return false;
+    }
+    for (; moved; moved = markdown_core_cursor_next(scan)) {
+        children += counted(kind, markdown_core_cursor_field(scan));
+    }
+    return children == markdown_core_node_child_count(node);
+}
+
+// Pre-order traversal of every node below `root`, in every node-valued field,
+// with one cursor and no recursion; returns the node count so results can be
+// sanity-compared, or 0 when a node fails inspection or a cursor cannot
+// allocate.
+static size_t traverse(const markdown_core_node *root) {
+    markdown_core_cursor *walk = NULL;
+    markdown_core_cursor *scan = NULL;
+    size_t visited = 0;
+    bool done = false;
+    if (markdown_core_cursor_open(root, &walk) != MARKDOWN_CORE_OK ||
+        markdown_core_cursor_open(root, &scan) != MARKDOWN_CORE_OK) {
+        done = true;
+    }
+    while (!done) {
+        bool moved;
+        if (!inspect(markdown_core_cursor_node(walk), scan) ||
+            markdown_core_cursor_child(walk, &moved) != MARKDOWN_CORE_OK) {
+            visited = 0;
+            break;
         }
-        visited += below;
-        children += 1;
+        visited += 1;
+        if (moved) {
+            continue;
+        }
+        while (!markdown_core_cursor_next(walk)) {
+            if (!markdown_core_cursor_parent(walk)) {
+                done = true;
+                break;
+            }
+        }
     }
-    if (children != markdown_core_node_child_count(node)) {
-        return 0;
-    }
+    markdown_core_cursor_free(scan);
+    markdown_core_cursor_free(walk);
     return visited;
 }
 

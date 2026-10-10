@@ -10,8 +10,9 @@ import Testing
         #expect(wide.unit == .utf8 && narrow.unit == .utf16)
         // The unit is how positions are counted, not what was parsed.
         #expect(wide == narrow)
-        // The first text's start and end columns, then the soft break's.
-        let cases: [(Document, [Int32])] = [(wide, [1, 6, 7, 7]), (narrow, [1, 3, 4, 4])]
+        // The first text's start and end columns, then the soft break's
+        // start: it reads its CR LF whole, so it ends where line 2 starts.
+        let cases: [(Document, [Int32])] = [(wide, [1, 6, 7]), (narrow, [1, 3, 4])]
         for (document, columns) in cases {
             let paragraph = try #require(document.content.first as? Paragraph)
             #expect(
@@ -20,7 +21,7 @@ import Testing
             )
             #expect(
                 try scope(of: paragraph.content[1], in: document, source: source)
-                    == Scope(start: Position(line: 1, column: columns[2]), end: Position(line: 1, column: columns[3]))
+                    == Scope(start: Position(line: 1, column: columns[2]), end: Position(line: 2, column: 0))
             )
             #expect(
                 try scope(of: paragraph.content[2], in: document, source: source)
@@ -36,11 +37,12 @@ import Testing
     @Test("a position names a byte of its line at a scalar boundary, and finds the last node holding it")
     func hitTesting() throws {
         let source = "é🚀\r\nx"
-        // Ids: 1 document, 2 paragraph, 3 "é🚀", 4 the soft break (the CR),
-        // 5 "x". Zero is no node.
+        // Ids, in completion order: 1 paragraph, 2 "é🚀", 3 the soft break
+        // (the CR LF, its one run), 4 "x", 5 document.
+        // Zero is no node.
         let expected: [(TextUnit, [UInt64])] = [
-            (.utf8, [3, 0, 3, 0, 0, 0, 4, 2, 0]),
-            (.utf16, [3, 3, 0, 4, 2, 0, 0, 0, 0]),
+            (.utf8, [2, 0, 2, 0, 0, 0, 3, 3, 0]),
+            (.utf16, [2, 2, 0, 3, 3, 0, 0, 0, 0]),
         ]
         for (unit, ids) in expected {
             let document = try Document.parse(source, unit: unit)
@@ -48,7 +50,7 @@ import Testing
                 try document.node(at: Position(line: 1, column: column), in: source)?.id.value ?? 0
             }
             #expect(found == ids, "\(unit)")
-            #expect(try document.node(at: Position(line: 2, column: 1), in: source)?.id.value == 5)
+            #expect(try document.node(at: Position(line: 2, column: 1), in: source)?.id.value == 4)
             #expect(try document.node(at: Position(line: 2, column: 2), in: source) == nil)
             #expect(try document.node(at: Position(line: 3, column: 1), in: source) == nil)
         }
@@ -85,8 +87,8 @@ import Testing
         #expect(try document.dump(in: covering) == document.dump(in: source))
     }
 
-    @Test("a node in an inline root's content has a scope per source range its content was read from")
-    func contentSources() throws {
+    @Test("an inline node has a scope per run of its own source")
+    func inlineSources() throws {
         let source = "> a *b\n> c* d\n"
         let document = try Document.parse(source)
         let callout = try #require(document.content.first as? Callout)
@@ -95,18 +97,30 @@ import Testing
         func place(_ start: (Int32, Int32), _ end: (Int32, Int32)) -> Scope {
             Scope(start: Position(line: start.0, column: start.1), end: Position(line: end.0, column: end.1))
         }
-        // The paragraph reads its own bytes, one line each, in two copied runs;
-        // the second quote marker between them is not its own.
-        #expect(block.runs == [Run(lead: 0, span: 5, length: 5), Run(lead: 2, span: 4, length: 4)])
+        // The paragraph's runs are its own bytes, one line each, the first
+        // leading from the callout's start; the second quote marker between
+        // them is not its own.
+        #expect(
+            block.runs == [
+                Run(lead: 2, span: 5),
+                Run(lead: 2, span: 4),
+            ]
+        )
         #expect(try document.scope(of: block, in: source) == [place((1, 3), (2, 0)), place((2, 3), (2, 6))])
         // The emphasis is at offset 2 of the content "a *b\nc* d", and its
-        // source skips the marker too.
+        // runs, which lead from the end of the text before it, skip the
+        // marker too.
         #expect(emphasis.extent == Extent(lead: 0, span: 5))
-        #expect(emphasis.runs.isEmpty)
+        #expect(
+            emphasis.runs == [
+                Run(lead: 0, span: 3),
+                Run(lead: 2, span: 2),
+            ]
+        )
         #expect(try document.scope(of: emphasis, in: source) == [place((1, 5), (2, 0)), place((2, 3), (2, 4))])
         #expect(try document.node(at: Position(line: 2, column: 1), in: source)?.isEqual(callout) == true)
         #expect(try document.node(at: Position(line: 2, column: 4), in: source)?.isEqual(emphasis) == true)
-        // A subtree's dump places it in its root's content and draws it from
+        // A subtree's dump places it by the document's walk and draws it from
         // its own level.
         #expect(
             try document.dump(emphasis, in: source)
@@ -115,19 +129,28 @@ import Testing
                 + "├── SoftBreak scope=1:7..2:0 anchor=null attributes={} children=0\n"
                 + "└── Text scope=2:3..2:3 anchor=null attributes={} literal=\"c\" children=0\n"
         )
-        // A continuation indent moves the paragraph's runs, never what its
-        // content holds: the stripped space is its own source without content.
+        // A continuation indent moves the runs, never the content's extents:
+        // the stripped space is the paragraph's own source, and the emphasis's
+        // second run starts at it.
         let wider = try Document.parse("> a *b\n>  c* d\n")
         let moved = try #require((wider.content.first as? Callout)?.content.first as? Paragraph)
         let runs = [
-            Run(lead: 0, span: 5, length: 5), Run(lead: 2, span: 1, length: 0), Run(lead: 0, span: 4, length: 4),
+            Run(lead: 2, span: 5),
+            Run(lead: 2, span: 5),
         ]
         #expect(moved.runs == runs)
         #expect(moved != block)
-        #expect(moved.content[1].isEqual(emphasis))
+        #expect(moved.content[1].extent == emphasis.extent)
+        #expect(
+            moved.content[1].runs == [
+                Run(lead: 0, span: 3),
+                Run(lead: 2, span: 3),
+            ]
+        )
+        #expect(!moved.content[1].isEqual(emphasis))
     }
 
-    @Test("a block whose runs read no content is no inline root, and its runs cut its range")
+    @Test("a block in a container has its own lines as runs, and the source between them is not its own")
     func sourceWithoutContent() throws {
         let source = "> ```\n> x\n> ```\n"
         let document = try Document.parse(source)
@@ -136,12 +159,14 @@ import Testing
         func place(_ start: (Int32, Int32), _ end: (Int32, Int32)) -> Scope {
             Scope(start: Position(line: start.0, column: start.1), end: Position(line: end.0, column: end.1))
         }
-        // The code block reads its lines without content, so the quote
-        // markers between them are not its own.
+        // The code block's runs are its lines, so the quote markers between
+        // them are not its own.
         #expect(code.literal == "x\n")
         #expect(
             code.runs == [
-                Run(lead: 0, span: 4, length: 0), Run(lead: 2, span: 2, length: 0), Run(lead: 2, span: 3, length: 0),
+                Run(lead: 2, span: 4),
+                Run(lead: 2, span: 2),
+                Run(lead: 2, span: 3),
             ]
         )
         #expect(
@@ -150,6 +175,45 @@ import Testing
         )
         #expect(try document.node(at: Position(line: 2, column: 1), in: source)?.isEqual(callout) == true)
         #expect(try document.node(at: Position(line: 2, column: 3), in: source)?.isEqual(code) == true)
+    }
+
+    @Test("every node has runs, the first leading from where the source before it ends")
+    func everyNodeHasRuns() throws {
+        let source = "> [!NOTE] Ti*t*le\n> x\n"
+        let document = try Document.parse(source)
+        let callout = try #require(document.content.first as? Callout)
+        // A block whose own source is its range has one run, its range.
+        #expect(document.runs == [Run(lead: 0, span: 21)])
+        #expect(callout.runs == [Run(lead: 0, span: 21)])
+        // The title's nodes lead from the callout's start, then each from
+        // where the source of the one before it ends.
+        let title = try #require(callout.title)
+        let emphasis = try #require(title[1] as? Emphasis)
+        #expect(title[0].runs == [Run(lead: 10, span: 2)])
+        #expect(emphasis.runs == [Run(lead: 0, span: 3)])
+        #expect(emphasis.content[0].runs == [Run(lead: 1, span: 1)])
+        #expect(title[2].runs == [Run(lead: 0, span: 2)])
+        // The content's first node leads from the callout's start too.
+        let paragraph = try #require(callout.content.first as? Paragraph)
+        #expect(paragraph.runs == [Run(lead: 20, span: 1)])
+        #expect(paragraph.content[0].runs == [Run(lead: 0, span: 1)])
+        #expect(
+            try document.scope(of: emphasis, in: source)
+                == [Scope(start: Position(line: 1, column: 13), end: Position(line: 1, column: 15))]
+        )
+
+        // The fence's source ends before its line terminator, which the
+        // thematic break's run leads past.
+        let fenced = "```\nx\n```\n---\n"
+        let blocks = try Document.parse(fenced)
+        let code = try #require(blocks.content[0] as? CodeBlock)
+        let rule = try #require(blocks.content[1] as? ThematicBreak)
+        #expect(code.runs == [Run(lead: 0, span: 9)])
+        #expect(rule.runs == [Run(lead: 1, span: 3)])
+        #expect(
+            try blocks.scope(of: rule, in: fenced)
+                == [Scope(start: Position(line: 4, column: 1), end: Position(line: 4, column: 3))]
+        )
     }
 
     @Test("an empty document and a lone line terminator are 1:1..1:0 and hold no byte", arguments: ["", "\n"])

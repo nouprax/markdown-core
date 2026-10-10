@@ -3,11 +3,14 @@ import MarkdownCoreC
 /// One owned relation of a record: a run of its children in canonical order,
 /// and the name of the group line the dump draws for it, if any.
 ///
-/// The extent of a relation's first node is relative to the owner's start, and
-/// each later node's to the end of the node before it.
+/// The extent of a relation's first node is relative to the owner's start, or,
+/// when the relation `continues` the one before it (a table's body and foot
+/// rows go on from its head rows), to the end of that one's last node; each
+/// later node's is relative to the end of the node before it.
 struct Relation {
     let name: String?
     let indices: Range<Int>
+    var continues = false
 }
 
 /// The one record behind every Markup value: an immutable node that holds its
@@ -152,6 +155,6 @@ extension Extent {
 
 extension Run {
     init(_ run: markdown_core_run) {
-        self.init(lead: run.lead, span: run.span, length: run.length)
+        self.init(lead: run.lead, span: run.span)
     }
 }

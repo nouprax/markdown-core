@@ -43,7 +43,8 @@ static markdown_core_node *handle_backslash(const markdown_core_element_instance
             end++;
         }
         counts->whitespace += (size_t)(end - inline_state->pos);
-        if ((end == inline_state->input.len && !MARKDOWN_CORE_NODE_TYPE_INLINE_P(inline_state->owner->kind)) ||
+        markdown_core_inline_state_read(inline_state, start, end + 1);
+        if ((end == inline_state->input.len && !MARKDOWN_CORE_NODE_TYPE_INLINE_P(inline_state->owner->node->kind)) ||
             (end < inline_state->input.len &&
              markdown_core_is_line_end(markdown_core_inline_peek_at(inline_state, end)))) {
             return make_str(inline_state, start, start, markdown_core_chunk_dup(&inline_state->input, start, 1));
@@ -55,6 +56,7 @@ static markdown_core_node *handle_backslash(const markdown_core_element_instance
             /* Contextual escape token: inline completion decodes it once the
              * delimiter/bracket engine has established its semantic owner. */
             escaped->flags |= MARKDOWN_CORE_NODE__ESCAPED_SPACE;
+            inline_state->token.flags |= MARKDOWN_CORE_INLINE_CONTEXT;
         }
         return escaped;
     }
@@ -65,13 +67,15 @@ static markdown_core_node *handle_backslash(const markdown_core_element_instance
                    inline_state->input.data[end + 1] == '\\') {
                 end += 2;
             }
+            markdown_core_inline_state_read(inline_state, start, end + 2);
             if (end - start >= 4) {
                 bufsize_t output_len = (end - start) / 2;
-                unsigned char *output = (unsigned char *)markdown_core_alloc((size_t)output_len + 1, 1);
+                unsigned char *output = (unsigned char *)markdown_core_bytes_take(NULL, (size_t)output_len + 1, 0);
                 if (output) {
                     markdown_core_chunk contents = {output, output_len, 1};
                     markdown_core_node *run;
                     memset(output, '\\', (size_t)output_len);
+                    output[output_len] = '\0';
                     inline_state->pos = end;
                     run = make_str(inline_state, start, end - 1, contents);
                     /* One escape per PAIR: the first backslash of each is the
@@ -83,6 +87,7 @@ static markdown_core_node *handle_backslash(const markdown_core_element_instance
         }
         // only ascii symbols and newline can be escaped
         advance(inline_state);
+        markdown_core_inline_state_read(inline_state, start, inline_state->pos);
         {
             markdown_core_node *escaped =
                 make_str(inline_state, inline_state->pos - 2, inline_state->pos - 1,
@@ -90,6 +95,7 @@ static markdown_core_node *handle_backslash(const markdown_core_element_instance
             return escaped;
         }
     } else if (!markdown_core_inline_is_eof(inline_state) && markdown_core_inline_skip_line_end(inline_state)) {
+        markdown_core_inline_state_read(inline_state, start, inline_state->pos + 1);
         markdown_core_inline_push_boundary(inline_state, inline_state->pos);
         // A backslash hard break CONSUMES a line ending, so the inline state has to
         // be told, exactly as handle_newline tells it. It was not, so every node
@@ -112,6 +118,7 @@ static markdown_core_node *handle_backslash(const markdown_core_element_instance
         }
         return hard;
     } else {
+        markdown_core_inline_state_read(inline_state, start, start + 3);
         return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
                         markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
     }
@@ -119,12 +126,13 @@ static markdown_core_node *handle_backslash(const markdown_core_element_instance
 
 static markdown_core_node *handle_entity(markdown_core_inline_state *inline_state) {
     markdown_core_strbuf ent = MARKDOWN_CORE_BUF_INIT();
-    bufsize_t len;
+    bufsize_t len, read;
 
     advance(inline_state);
 
     len = houdini_unescape_ent(&ent, inline_state->input.data + inline_state->pos,
-                               inline_state->input.len - inline_state->pos);
+                               inline_state->input.len - inline_state->pos, &read);
+    markdown_core_inline_state_read(inline_state, inline_state->pos - 1, inline_state->pos + read);
 
     if (len == 0) {
         markdown_core_node *literal = make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
@@ -141,19 +149,19 @@ static markdown_core_node *handle_entity(markdown_core_inline_state *inline_stat
                     markdown_core_chunk_buf_detach(&ent));
 }
 
-static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 markdown_core_node *parent, unsigned char character,
-                                 markdown_core_inline_state *inline_state) {
+static markdown_core_member *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                   markdown_core_member *parent, unsigned char character,
+                                   markdown_core_inline_state *inline_state) {
     if (character == '\\') {
-        return handle_backslash(self, parser, inline_state);
+        return markdown_core_inline_state_append(inline_state, handle_backslash(self, parser, inline_state));
     }
     if (character == '&') {
-        return handle_entity(inline_state);
+        return markdown_core_inline_state_append(inline_state, handle_entity(inline_state));
     }
     return NULL;
 }
-markdown_core_node *markdown_core_text_parse(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                             markdown_core_inline_state *inline_state, bufsize_t endpos) {
+markdown_core_member *markdown_core_text_parse(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                               markdown_core_inline_state *inline_state, bufsize_t endpos) {
     markdown_core_text_work *counts = self->state;
     markdown_core_chunk contents;
     bufsize_t startpos;
@@ -179,6 +187,8 @@ markdown_core_node *markdown_core_text_parse(const markdown_core_element_instanc
     if (boundary >= 0) {
         markdown_core_inline_push_boundary(inline_state, boundary);
     }
+    /* The slice read its bytes and the byte that ended it. */
+    markdown_core_inline_state_read(inline_state, inline_state->pos, endpos + 1);
     /* Text runs are disjoint, so recording separators costs at most one
      * extra visit per byte, regardless of bracket nesting or digit-run
      * length. No image closer scans its label again. */
@@ -200,7 +210,7 @@ markdown_core_node *markdown_core_text_parse(const markdown_core_element_instanc
      * run's, in the role a byte kept nowhere has. Giving them to the block
      * instead left the node covering eight columns and owning three, which
      * is what L5 measures. */
-    return new_inl;
+    return markdown_core_inline_state_append(inline_state, new_inl);
 }
 static void complete_inline(const markdown_core_element_instance *self, markdown_core_parser *parser,
                             markdown_core_node *node, int word_depth) {

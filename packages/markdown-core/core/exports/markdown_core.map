@@ -5,11 +5,17 @@ MARKDOWN_CORE_1.0 {
     markdown_core_attribute_value_class_count;
     markdown_core_attribute_value_record_at;
     markdown_core_attribute_value_record_count;
-    markdown_core_citation_prefix;
     markdown_core_citation_referent;
-    markdown_core_citation_suffix;
-    markdown_core_definition_body_content;
-    markdown_core_definition_body_next;
+    markdown_core_cursor_child;
+    markdown_core_cursor_depth;
+    markdown_core_cursor_field;
+    markdown_core_cursor_free;
+    markdown_core_cursor_list;
+    markdown_core_cursor_next;
+    markdown_core_cursor_node;
+    markdown_core_cursor_open;
+    markdown_core_cursor_parent;
+    markdown_core_cursor_reset;
     markdown_core_document_dump;
     markdown_core_document_footnote_at;
     markdown_core_document_footnote_count;
@@ -30,7 +36,6 @@ MARKDOWN_CORE_1.0 {
     markdown_core_document_specimen_for;
     markdown_core_document_unit;
     markdown_core_dump_free;
-    markdown_core_footnote_content;
     markdown_core_footnote_label;
     markdown_core_metadata_abstract;
     markdown_core_metadata_authors;
@@ -53,14 +58,11 @@ MARKDOWN_CORE_1.0 {
     markdown_core_node_attribute_record_count;
     markdown_core_node_attributes;
     markdown_core_node_callout_properties;
-    markdown_core_node_callout_title;
     markdown_core_node_child_count;
-    markdown_core_node_cite_citations;
     markdown_core_node_code_block_properties;
     markdown_core_node_cross_label;
     markdown_core_node_definition_bodies;
     markdown_core_node_definition_compact;
-    markdown_core_node_definition_term;
     markdown_core_node_destination;
     markdown_core_node_dimensions;
     markdown_core_node_directive_label;
@@ -68,9 +70,7 @@ MARKDOWN_CORE_1.0 {
     markdown_core_node_document_metadata;
     markdown_core_node_extent;
     markdown_core_node_formula_properties;
-    markdown_core_node_get_first_child;
     markdown_core_node_get_kind;
-    markdown_core_node_get_next_sibling;
     markdown_core_node_heading_level;
     markdown_core_node_id;
     markdown_core_node_kind_name;
@@ -93,7 +93,6 @@ MARKDOWN_CORE_1.0 {
     markdown_core_session_text;
     markdown_core_session_text_size;
     markdown_core_session_unit;
-    markdown_core_specimen_content;
     markdown_core_specimen_properties;
   local:
     *;

@@ -5,10 +5,10 @@
 bufsize_t markdown_core_inline_reference_label_length(const unsigned char *data, bufsize_t length);
 int markdown_core_inline_link_label(markdown_core_inline_state *inline_state, markdown_core_chunk *raw_label);
 /* Reads the link reference definitions at the front of `b`'s content into
- * Reference nodes, put in `b`'s parent before `b` in source order, and drops
+ * Reference nodes, put in `b`'s owner before `b` in source order, and drops
  * their bytes from the content. Whether any content is left that is not
  * blank. */
-bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b);
+bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_member *b);
 typedef enum { LINK_UNMATCHED, LINK_SHORTCUT, LINK_EXPLICIT } markdown_core_link_match;
 typedef struct {
     /* The normalized label a reference names; empty for a direct link. */
@@ -34,15 +34,27 @@ bufsize_t markdown_core_reference_definition_length(markdown_core_chunk *input,
 
 void markdown_core_inline_pop_bracket(const markdown_core_element_instance *link,
                                       markdown_core_inline_state *inline_state);
-markdown_core_node *markdown_core_inline_handle_close_bracket(const markdown_core_element_instance *link,
-                                                              markdown_core_parser *parser,
-                                                              markdown_core_inline_state *inline_state);
+/* Reads the `]` at the cursor: closes the innermost bracket into the node its
+ * grammar makes, or appends the `]` as text. The member of what it appended,
+ * or NULL when the bracket closed. */
+markdown_core_member *markdown_core_inline_handle_close_bracket(const markdown_core_element_instance *link,
+                                                                markdown_core_parser *parser,
+                                                                markdown_core_inline_state *inline_state);
+/* Moves the members after `opener`'s literal, up to its closing literal, to
+ * the end of `owner`'s children. */
 void markdown_core_inline_take_bracket_content(const markdown_core_element_instance *link, markdown_core_parser *parser,
-                                               bracket *opener, markdown_core_node *owner);
-void markdown_core_inline_replace_bracket_opener(markdown_core_inline_state *inline_state, bracket *opener,
-                                                 markdown_core_node *replacement);
+                                               bracket *opener, markdown_core_member *owner);
+/* Puts the detached `node` before `opener`'s literal, among the members
+ * being built, and returns its member; NULL, with the parse failed, when it
+ * could not be allocated. */
+markdown_core_member *markdown_core_inline_insert_at_opener(markdown_core_inline_state *inline_state, bracket *opener,
+                                                            markdown_core_node *node);
+/* `replacement` takes the place of `opener`'s literal (an image's `!`
+ * stays); its member, or NULL when it could not be allocated. */
+markdown_core_member *markdown_core_inline_replace_bracket_opener(markdown_core_inline_state *inline_state,
+                                                                  bracket *opener, markdown_core_node *replacement);
 void markdown_core_inline_push_bracket(const markdown_core_element_instance *link,
                                        markdown_core_inline_state *inline_state, bracket_kind kind,
-                                       markdown_core_node *inl_text);
+                                       markdown_core_member *inl_text);
 
 #endif

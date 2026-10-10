@@ -210,10 +210,16 @@ projection of that contract and has one encoder:
   without recursion and without calling back into native code. C types do not
   appear in any public AST.
 
-The parser's element postprocessing is depth-independent as well. In
-particular, enabling formulas must not recursively visit every node in a deep
-document that contains no formula. Correctness tests parse and inspect 10,000
-nested lists through every binding boundary.
+The parser's element completion is depth-independent as well: a close step
+(`finalize_block`) reads the block that is closing and the blocks it holds, a
+completion step (`complete_step`) is asked inside one inline root's completion
+pass at the events of the kinds it declares, and neither walks.
+`scripts/audit/check-completion-hooks.mjs` holds that a translation unit
+declaring either opens no iterator and frees nodes only through the parse
+(`markdown_core_parser_release_node`). In particular, enabling formulas must
+not recursively visit every node in a deep document that contains no formula.
+Correctness tests parse and inspect 10,000 nested lists through every binding
+boundary.
 
 MCB3 is internal to the bindings: it is not installed with the C package, and
 it is not part of any public language AST API. No binding uses the debug dump

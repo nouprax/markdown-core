@@ -7,7 +7,7 @@ struct bracket;
  * scanner records each text slice inside an image's label. */
 void markdown_core_inline_apply_image_dimensions(const markdown_core_element_instance *embedded,
                                                  markdown_core_inline_state *inline_state, const struct bracket *opener,
-                                                 markdown_core_node *image, bufsize_t end);
+                                                 markdown_core_member *image, bufsize_t end);
 void markdown_core_embedded_record_text(const markdown_core_element_instance *embedded,
                                         markdown_core_inline_state *inline_state, bufsize_t endpos);
 extern const markdown_core_element MARKDOWN_CORE_ELEMENT_EMBEDDED;

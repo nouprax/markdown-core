@@ -356,7 +356,9 @@ document.content[0] = document;
 // @ts-expect-error readonly extent values cannot be mutated
 document.extent.lead = 2;
 // @ts-expect-error runs are recursively readonly
-document.runs[0]!.length = 2;
+document.runs[0] = { lead: 2, span: 1 };
+// @ts-expect-error runs are recursively readonly
+document.runs[0]!.lead = 2;
 // @ts-expect-error ids are readonly
 document.id = 2;
 // @ts-expect-error dump methods cannot be replaced
@@ -399,7 +401,7 @@ const metadata: Metadata = {
     kind: "metadata",
     id: 2,
     extent: { lead: 0, span: 0 },
-    runs: [],
+    runs: [{ lead: 0, span: 0 }],
     anchor: null,
     attributes: empty,
     name: metadataValue,

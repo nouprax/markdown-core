@@ -563,11 +563,11 @@ test("ast: a title is decoded before the content and dumped as a group", () => {
     // count is present exactly when a title was authored. This message is
     // written by hand: a document holding one collapsed `note` callout whose
     // title is the text `T` and whose content is empty. The title is an
-    // inline root's content: its first node leads from 0, and the callout's
-    // run reads it from the source byte 11 past the callout's start.
+    // inline root's content: its first node's extent leads from 0, and its
+    // run is its own source, 11 bytes past the start of the callout's.
     const bytes = new MessageWriter()
-        .text("T", { extent: [0, 1] })
-        .record("callout", { extent: [0, 12], runs: [[11, 1, 1]] })
+        .text("T", { extent: [0, 1], runs: [[11, 1]] })
+        .record("callout", { extent: [0, 12] })
         .optional("note", MessageWriter.prototype.string)
         .optional(true, MessageWriter.prototype.bool)
         .optional(1, MessageWriter.prototype.u32)
@@ -593,7 +593,8 @@ test("ast: a title is decoded before the content and dumped as a group", () => {
             "    └── Title children=1\n" +
             '        └── Text scope=1:12..1:12 anchor=null attributes={} literal="T" children=0\n'
     );
-    assert.deepEqual(callout.runs, [{ lead: 11, span: 1, length: 1 }]);
+    assert.deepEqual(callout.runs, [{ lead: 0, span: 12 }]);
+    assert.deepEqual(callout.title[0].runs, [{ lead: 11, span: 1 }]);
     assert.deepEqual(document.scope(callout.title[0], source), [
         { start: { line: 1, column: 12 }, end: { line: 1, column: 12 } }
     ]);
@@ -1682,13 +1683,15 @@ test("api: scope queries count columns in the document's unit from the extents a
         ["paragraph", scope(1, 1, 1, 4)],
         ["text", scope(1, 1, 1, 4)]
     ]);
-    // CRLF is one terminator; a lone CR ends a line too.
+    // CRLF is one terminator; a lone CR ends a line too. A soft break reads
+    // its CR LF whole, one run that decodes LF from both bytes, so it ends
+    // where the next line starts.
     const crlf = "a\r\nb 🚀c\r\n\r\n- é\r";
     assert.deepEqual(scopes(crlf, "utf8"), [
         ["document", scope(1, 1, 4, 4)],
         ["paragraph", scope(1, 1, 2, 7)],
         ["text", scope(1, 1, 1, 1)],
-        ["softBreak", scope(1, 2, 1, 2)],
+        ["softBreak", scope(1, 2, 2, 0)],
         ["text", scope(2, 1, 2, 7)],
         ["list", scope(4, 1, 4, 4)],
         ["listItem", scope(4, 1, 4, 4)],
@@ -1699,7 +1702,7 @@ test("api: scope queries count columns in the document's unit from the extents a
         ["document", scope(1, 1, 4, 3)],
         ["paragraph", scope(1, 1, 2, 5)],
         ["text", scope(1, 1, 1, 1)],
-        ["softBreak", scope(1, 2, 1, 2)],
+        ["softBreak", scope(1, 2, 2, 0)],
         ["text", scope(2, 1, 2, 5)],
         ["list", scope(4, 1, 4, 3)],
         ["listItem", scope(4, 1, 4, 3)],
@@ -1710,29 +1713,37 @@ test("api: scope queries count columns in the document's unit from the extents a
     assert.equal(Document.parse("é🚀x\n").unit, "utf16");
 });
 
-test("api: a node's scopes are its source ranges, cut by its own runs or its inline root's runs", () => {
+test("api: a node's scopes are its own runs", () => {
     const scope = (startLine, startColumn, endLine, endColumn) => ({
         start: { line: startLine, column: startColumn },
         end: { line: endLine, column: endColumn }
     });
     // A paragraph inside a block quote owns its lines past the `> ` prefixes:
-    // its content is read through one run per line, and the prefix between
-    // them is not its own.
+    // it has one run per line, and the prefix between them is not its own.
     const source = "> a *b\n> c* d\n";
     const document = Document.parse(source, { unit: "utf8" });
     const [quote] = document.content;
     const [paragraph] = quote.content;
     const [, emphasis] = paragraph.content;
     const c = emphasis.content[2];
+    // Every node has runs: the quote owns its whole range, one run.
+    assert.deepEqual(quote.runs, [{ lead: 0, span: 13 }]);
+    assert.deepEqual(document.runs, [{ lead: 0, span: 13 }]);
     assert.deepEqual(paragraph.runs, [
-        { lead: 0, span: 5, length: 5 },
-        { lead: 2, span: 4, length: 4 }
+        { lead: 2, span: 5 },
+        { lead: 2, span: 4 }
     ]);
     assert.deepEqual(document.scope(paragraph, source), [scope(1, 3, 2, 0), scope(2, 3, 2, 6)]);
-    // Inline extents are offsets in the content, which starts at 0: `c` is
-    // content byte 7 and source byte 9.
+    // Inline extents are offsets in the content, which starts at 0, and
+    // inline runs are source: `c` is content byte 7 and source byte 9, past
+    // the emphasis's two runs and the `> ` between them.
     assert.deepEqual(emphasis.extent, { lead: 0, span: 5 });
+    assert.deepEqual(emphasis.runs, [
+        { lead: 0, span: 3 },
+        { lead: 2, span: 2 }
+    ]);
     assert.deepEqual(c.extent, { lead: 0, span: 1 });
+    assert.deepEqual(c.runs, [{ lead: 2, span: 1 }]);
     assert.deepEqual(document.scope(emphasis, source), [scope(1, 5, 2, 0), scope(2, 3, 2, 4)]);
     assert.deepEqual(document.scope(c, source), [scope(2, 3, 2, 3)]);
     // A prefix byte belongs to the quote alone; a byte of a range to the last
@@ -1740,8 +1751,8 @@ test("api: a node's scopes are its source ranges, cut by its own runs or its inl
     assert.equal(document.nodeAt({ line: 2, column: 1 }, source), quote);
     assert.equal(document.nodeAt({ line: 2, column: 3 }, source), c);
     assert.equal(document.nodeAt({ line: 2, column: 4 }, source), emphasis);
-    // A subtree's dump places its nodes in the content they are in, and its
-    // levels count from the node.
+    // A subtree's dump places its nodes in the source by the document's walk,
+    // and its levels count from the node.
     assert.equal(
         document.dump(emphasis, source),
         "Emphasis scope=1:5..2:0,2:3..2:4 anchor=null attributes={} children=3\n" +
@@ -1755,15 +1766,26 @@ test("api: a node's scopes are its source ranges, cut by its own runs or its inl
         (error) => error.code === "outOfBounds"
     );
 
-    // A callout's title is its content, and its later relations are back in
-    // source coordinates.
+    // A callout's title is an inline root's content whose nodes have runs of
+    // their own; the callout's one run is its range, and its content's
+    // extents are source.
     const titled = "> [!note] T *u*\n> body\n";
     const callout = Document.parse(titled, { unit: "utf8" });
     const [note] = callout.content;
-    assert.deepEqual(note.runs, [{ lead: 10, span: 5, length: 5 }]);
+    assert.deepEqual(note.runs, [{ lead: 0, span: 22 }]);
+    assert.deepEqual(note.title[0].runs, [{ lead: 10, span: 2 }]);
     assert.deepEqual(callout.scope(note.title[1].content[0], titled), [scope(1, 14, 1, 14)]);
     assert.deepEqual(note.content[0].extent, { lead: 18, span: 4 });
     assert.deepEqual(callout.scope(note.content[0], titled), [scope(2, 3, 2, 6)]);
+
+    // A block's first run leads from where the source of the block before it
+    // ends: the fence's source ends before its line terminator.
+    const fenced = "```\nx\n```\n---\n";
+    const blocks = Document.parse(fenced, { unit: "utf8" });
+    const [code, rule] = blocks.content;
+    assert.deepEqual(code.runs, [{ lead: 0, span: 9 }]);
+    assert.deepEqual(rule.runs, [{ lead: 1, span: 3 }]);
+    assert.deepEqual(blocks.scope(rule, fenced), [scope(4, 1, 4, 3)]);
 });
 
 test("api: runs take part in value equality", () => {
@@ -1776,16 +1798,16 @@ test("api: runs take part in value equality", () => {
                 .root(1, { id: 1, extent: [0, 1] })
                 .document()
         ).decode();
-    const plain = message({ runs: [[0, 1, 1]] });
-    assert.ok(markupEquals(plain, message({ runs: [[0, 1, 1]] })));
-    assert.equal(markupEquals(plain, message({ runs: [[0, 2, 1]] })), false);
+    const plain = message({ runs: [[0, 1]] });
+    assert.ok(markupEquals(plain, message({ runs: [[0, 1]] })));
+    assert.equal(markupEquals(plain, message({ runs: [[0, 2]] })), false);
     assert.equal(
         markupEquals(
             plain,
             message({
                 runs: [
-                    [0, 1, 1],
-                    [1, 1, 0]
+                    [0, 1],
+                    [1, 1]
                 ]
             })
         ),
@@ -1819,7 +1841,8 @@ test("api: nodeAt finds the last node in walk order holding the byte at a positi
     const document = Document.parse(crlf);
     const [paragraph, list] = document.content;
     assert.equal(at(document, crlf, 1, 2), paragraph.content[1]);
-    assert.equal(at(document, crlf, 1, 3), paragraph);
+    // The soft break reads its CR LF whole.
+    assert.equal(at(document, crlf, 1, 3), paragraph.content[1]);
     assert.equal(at(document, crlf, 2, 5), paragraph.content[2]);
     assert.equal(at(document, crlf, 4, 3), list.items[0].content[0].content[0]);
     assert.equal(at(document, crlf, 4, 4), null);

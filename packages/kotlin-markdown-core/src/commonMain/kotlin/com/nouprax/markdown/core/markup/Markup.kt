@@ -7,16 +7,15 @@ package com.nouprax.markdown.core
  * consistent with that equality in O(1).
  */
 public sealed class Markup {
-    /** Unique within its document, and numbered from 1 in canonical walk order by a parse. */
+    /** Unique within its document, and numbered from 1 by a parse in the order its nodes complete, document last. */
     public abstract val id: MarkupID
 
     /** Where the node is, relative to the node before it; [Document.scope] turns it into editor coordinates. */
     public abstract val extent: Extent
 
     /**
-     * The source the node reads, when its range is not all its own, and where
-     * the inline content its first relation is was read from, when they read
-     * content: the node is an inline root.
+     * Its own source ranges, in source order, at least one; touching runs are
+     * one run, and the source between two runs is not its own.
      */
     public abstract val runs: kotlin.collections.List<Run>
     public abstract val anchor: String?
@@ -80,8 +79,8 @@ public sealed class Markup {
                 listOfNotNull(
                     caption?.let { Relation(null, listOf(it)) },
                     Relation("TableHead", head),
-                    Relation("TableBody", content),
-                    Relation("TableFoot", foot),
+                    Relation("TableBody", content, continues = true),
+                    Relation("TableFoot", foot, continues = true),
                 )
             }
 

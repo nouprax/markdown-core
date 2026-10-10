@@ -2,15 +2,16 @@
 
 The [anchors module](../specs/dialect/anchors.md) owns the language contract.
 Parsing establishes heading labels before reference lookup, then gives each
-heading its anchor after every explicit anchor is known. Consumers and element
-postprocessors receive only the completed document.
+heading its anchor after every explicit anchor is known. Consumers receive
+only the completed document.
 
 ## Declaration order and inline ownership
 
-Block finalization registers headings in source order, including headings in
-footnote definitions. A heading is a leaf block, so closure order is source
-order. The parser keeps borrowed node pointers in that order; no final tree
-search or sorting is needed. Each heading whose text is a writable label keeps
+Block finalization registers headings, including headings in footnote
+definitions. A heading records its source start when it registers
+(`markdown_core_source_entry`), because a numbered node holds only its extent,
+and the collected headings are ordered by that start; no final tree search is
+needed. Each heading whose text is a writable label keeps
 that label, normalized, and declares it in the ordinary reference map, as each
 `Reference` declares its own. Reference parsing asks the map only whether a
 label is declared, so it needs no heading-specific case. The published
@@ -68,24 +69,16 @@ owns. A reference occurrence holds only the label it names; the anchor it
 leads to is the heading's own, and the heading's attributes stay the
 heading's.
 
-The finish walk reserves effective explicit anchors at each node's ENTER,
-while it discovers owned label/title fields. The walk parses each container's
-inline content at that container's ENTER, so it visits only completed child
-trees, after bracket reductions and occurrence attributes have settled; a
-temporary inline later discarded by a footnote call cannot reserve an anchor.
-An inline footnote is appended to the document's own roots by the parse that
-declares it -- a heading's, during the document's preparation, or a
-container's, from inside the walk -- and the walk visits those roots before
-the content tree and again after it, until none is new. Block footnotes are
-still attached to the content tree during this walk; the document's
-finalization, which follows it, moves them into their chains and then gives
-the headings their anchors. No anchor-specific whole-tree traversal is needed.
-Every node's explicit anchor is its own, a `Reference`'s included, so each is
-reserved once, at its node.
+An explicit anchor is noted as its node is numbered. A heading's own anchor
+is read from the collected headings, because its text, which may declare it,
+is parsed after the heading is numbered. Every explicit anchor is reserved
+before any heading is given a computed anchor, when the document finishes. No
+anchor-specific whole-tree traversal is needed. Every node's explicit anchor
+is its own, a `Reference`'s included, so each is noted once, at its node.
 
-The same walk resolves contextual script-space escape tokens after
-bracket/delimiter ownership is final, before consolidation merges the token's
-Text into its neighbours. Heading projection and all later consumers
+Each inline root's completion pass resolves contextual script-space escape
+tokens after bracket/delimiter ownership is final, before consolidation merges
+the token's Text into its neighbours. Heading projection and all later consumers
 therefore read decoded literals; it never reinterprets authored escape spellings.
 Script depth follows child and owned-field edges; a block, such as an inline
 note's Footnote, begins its own context. Failed enclosing candidates therefore leave field
@@ -129,7 +122,7 @@ occurrence owns its label, so freeing a heading or a document invalidates no
 other node.
 Every failure joins the parser's terminal allocation-failure transaction and
 disposes pending inline states before their nodes. Parse-time indices are discarded
-before consolidation or element postprocessing can replace nodes.
+before consolidation or an element's completion step can replace nodes.
 
 Expected work is proportional to parsed input, visited nodes, and produced
 anchor bytes, using the shared hash index's normal bounds. Memory is

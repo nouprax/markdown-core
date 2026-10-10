@@ -56,8 +56,10 @@ Kotlin as `@JvmInline value class MarkupID(val value: Long)`; ECMAScript as
 `readonly id: number`; C answers `markdown_core_node_id(node)` as `uint64_t`.
 
 - Ids are unique within a document, across every owned relation.
-- `Document.parse` numbers nodes from 1 in canonical walk order, so two
-  fresh parses of the same text are equal, ids included.
+- `Document.parse` numbers nodes from 1 in completion order: a node's owner
+  numbers the nodes it holds as it completes, and the document, which
+  completes last, numbers itself last. Two fresh parses of the same text are
+  equal, ids included.
 - An id denotes one kind for its whole life.
 - Ids from different parses are not comparable.
 
@@ -71,7 +73,7 @@ ECMAScript exports `markupEquals(a, b)`.
 
 ```text
 Extent(lead: Int32, span: UInt32)
-Run(lead: Int32, span: UInt32, length: UInt32)
+Run(lead: Int32, span: UInt32)
 Position(line: integer, column: integer)
 Scope(start: Position, end: Position)
 ```
@@ -86,37 +88,31 @@ produced it: a block's in the UTF-8 source, and an inline node's in the
 content of its inline root, which starts at 0. `lead` runs from the end of
 the previous node in the same relation, or from the owner's start for a
 relation's first node, to this node's start; `span` is the length of this
-node's range. Each typed field of an owner, each table row group and each
-definition body is a relation of its own. `lead` is signed, because ranges may
+node's range. Each typed field of an owner and each definition body is a
+relation of its own, and a table's rows, in head, content and foot order, are
+one relation. `lead` is signed, because ranges may
 overlap or nest as the rules below define. No node stores a line, a column or
 an absolute offset, and bindings copy extents and runs verbatim.
 
-A node's `runs` say which source it read, in order, and how many content
-bytes each part became. Each run is `length` content bytes read from `span`
-source bytes, its `lead` from the end of the previous run, or from the node's
-start for the first. A run whose span is its length reads each content byte
-from one source byte; any other reads all of its content from all of its
-source. A run of length 0 is source the node reads without content. The
-content runs map a node's first relation when it is an inline root's content
--- the inline content of a block, a callout's title, a definition's term --
-and every other run has length 0.
+A node's `runs` are its own source, in source order, and every node has at
+least one. A run is a source range: the first run's `lead` is from the end of
+the source of the previous node in the same relation, or from the start of the
+owner's source for a relation's first node, and every other run's is from the
+end of the run before; `span` is the run's length. A node's source starts where
+its first run starts and ends where its last ends, so a block's source and its
+range start and end together.
 
 Between its first run and its last, a node's runs cover exactly its own
 source: the source between two runs is not the node's, such as the container
 prefixes between the lines of a leaf block inside a container, or the other
-columns between the lines of a grid or multiline table cell. A run of length
-0 at either end of the list has such a gap beside it, and runs that touch are
-one run when both read each content byte from one source byte or both have
-length 0. A node whose own source is its one range and that has no inline
-content has none.
+columns between the lines of a grid or multiline table cell. Runs that touch
+are one run. An inline node's runs are its window of the source less the gaps
+between its root's runs, where its window runs from where its root read its
+first content byte to where it read its last, or is the empty range where its
+start was read when it holds no content.
 
-A node's source ranges are one window of the source less the gaps between
-the runs that place it, in source order. A block's window is its range, and
-its runs are its own. An inline node's window runs from where its root's
-runs read its first content byte to where they read its last, or is the
-empty range where its start was read when it holds no content, and its runs
-are its root's. A scope is computed on request for each source range from
-the extents, runs and the source the document was parsed from:
+A scope is computed on request for each source range of a node, from its runs
+and the source the document was parsed from:
 `document.scope(of: node, in: source)` in the bindings and
 `markdown_core_document_scope` in C answer `[Scope]`, in source order.
 `document.node(at: position, in: source)`
@@ -148,7 +144,7 @@ can occupy segments on lines shared with other cells. A spanning grid cell can
 reach beyond its starting row. These positions describe editor locations,
 not a partition of the source into independently sliceable substrings.
 
-Every binding computes scopes with this one rule from the extents and runs
+Every binding computes scopes with this one rule from the runs
 the C parser produced; none rescans, normalizes, expands, rejects, or otherwise
 reinterprets particular ranges.
 

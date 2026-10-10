@@ -205,7 +205,6 @@ const EDIT_FAMILIES = [
     "markers",
     "ranges",
     "far",
-    "batch",
     "declarations",
     "undo",
     "random",

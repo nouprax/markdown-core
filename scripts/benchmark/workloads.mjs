@@ -946,28 +946,33 @@ function randomScript(document, letters, seed) {
     return script;
 }
 
+/** The families whose steps `undo` inverts. */
+export const UNDONE_FAMILIES = Object.freeze(["typing", "lines", "markers", "ranges", "far", "batch", "declarations"]);
+
 /**
- * Every edit script of one document. `families` narrows the set; the
- * benchmark's grammar corpus documents run a subset (section 9).
+ * Every edit script of one document. `families` narrows the set, and `undone`
+ * the families `undo` inverts; the benchmark's grammar corpus documents run a
+ * subset (section 9).
  */
-export function editScripts(document, families = EDIT_FAMILIES) {
+export function editScripts(document, families = EDIT_FAMILIES, undone = UNDONE_FAMILIES) {
     const letters = alphabets[document.alphabet ?? "ascii"];
     const wanted = new Set(families);
+    const inverted = new Set(wanted.has("undo") ? undone : []);
     const base = [];
-    if (wanted.has("typing") || wanted.has("undo"))
+    if (wanted.has("typing") || inverted.has("typing"))
         for (const site of typingSites(document))
             base.push(
                 typingScript(`typing-${site.kind}`, document.text, snap(Buffer.from(document.text), site.at), letters)
             );
-    if (wanted.has("lines") || wanted.has("undo")) base.push(...linesScripts(document));
-    if (wanted.has("markers") || wanted.has("undo")) base.push(...markerScripts(document));
-    if (wanted.has("ranges") || wanted.has("undo")) base.push(rangesScript(document, letters));
-    if (wanted.has("far") || wanted.has("undo")) base.push(farScript(document, letters));
-    if (wanted.has("batch") || wanted.has("undo")) base.push(batchScript(document, letters, 0x62617463));
-    if (wanted.has("declarations") || wanted.has("undo")) base.push(declarationsScript(document, letters));
+    if (wanted.has("lines") || inverted.has("lines")) base.push(...linesScripts(document));
+    if (wanted.has("markers") || inverted.has("markers")) base.push(...markerScripts(document));
+    if (wanted.has("ranges") || inverted.has("ranges")) base.push(rangesScript(document, letters));
+    if (wanted.has("far") || inverted.has("far")) base.push(farScript(document, letters));
+    if (wanted.has("batch") || inverted.has("batch")) base.push(batchScript(document, letters, 0x62617463));
+    if (wanted.has("declarations") || inverted.has("declarations")) base.push(declarationsScript(document, letters));
     const scripts = base.filter((script) => script && script.steps.length);
     const result = scripts.filter((script) => wanted.has(script.family));
-    if (wanted.has("undo")) result.push(...scripts.map((script) => undoScript(script, document.text)));
+    for (const script of scripts) if (inverted.has(script.family)) result.push(undoScript(script, document.text));
     if (wanted.has("random"))
         for (let seed = 1; seed <= RANDOM_SEEDS; seed++) result.push(randomScript(document, letters, seed));
     /* A script is its steps; the text it built them against is not kept. */
@@ -1045,6 +1050,67 @@ export function identityScripts() {
             .expect("changed", "Heading", 0)
             .expect("only")
     );
+    /* A code span's closer search reads what earlier spans' searches
+     * learned of the runs after them; the answer must not depend on which
+     * of those spans the edit took whole. */
+    add("code-closer-after-span", "``x`8`@`\n", (s) => s.insert(8, "D`").expect("new", "Code", 7));
+    /* A delimiter row tried against the paragraph so far, which refused it,
+     * keeps the paragraph from becoming a table on a later delimiter row:
+     * the line it was tried on is read again when the paragraph is (E5). */
+    add("table-header-refused", "a| b | c |\n| - | - |\n| p | d |\n| - | - |\n", (s) =>
+        s.insert(23, "x").expect("changed", "Paragraph", 0)
+    );
+    /* A star typed before the spaces that end a line stays in the Text's
+     * slice when the emphasis before it is taken whole, and is cut into a
+     * token of its own when the emphasis opener is read again: either way
+     * the Text covers the spaces the line ending trimmed. */
+    add("text-before-hard-break", "*x* aaaa bbbb  \nc\n", (s) => s.insert(13, "*").expect("changed", "Text", 3));
+    /* An ordered marker is read against the list it may join: `I.` after a
+     * roman list is roman, and after an alphabetic one the letter I. Making
+     * the roman list alphabetic reads the list after it again. */
+    add("marker-after-changed-list", "(A) a\n(B) b\n\nIV) c\n\nI.  d\n", (s) =>
+        s.edit([{ start: 13, end: 15, text: "(C" }]).expect("changed", "List", 20)
+    );
+    /* A definition's bodies are groups its definition measures, which have
+     * no extent of their own: an edited second body reads none of the first
+     * body's blocks or inline nodes, though the first body's paragraph lies
+     * where the second's begins when measured from the first body. */
+    add("body-after-body", "Term term term\n: aaaaa\nbbbbb\n\n: ccccc dd\n", (s) =>
+        s.edit([{ start: 38, end: 40, text: "xy" }]).expect("changed", "Text", 32)
+    );
+    /* A block taken whole into a new owner and parsed again in place for a
+     * registry answer continues nothing (5.9). */
+    add("registry-root-in-new-owner", ">\n>#\n>[x]\n\n\n```\n```\n[x]: /u\n", (s) =>
+        s
+            .edit([
+                { start: 0, end: 1, text: "" },
+                { start: 15, end: 19, text: "" }
+            ])
+            .expect("new", "Paragraph", 5)
+    );
+    /* A leaf block edited on a later line takes its untouched lines (E5);
+     * an edit that ends it early, or makes its lines a heading, is read. */
+    {
+        const lines = Array.from({ length: 40 }, (_, i) => `${word(i * 2 + 1)} ${word(i * 2 + 2)}\n`);
+        const code = `\`\`\`\n${lines.join("")}\`\`\`\n`;
+        const line = (n) => 4 + bytes(lines.slice(0, n).join(""));
+        add("code-line-near-end", code, (s) => s.insert(line(30) + 1, "x").expect("kept", "CodeBlock", 0, 0));
+        add("fence-inside-code", code, (s) =>
+            s
+                .insert(line(20), "```\n")
+                .expect("kept", "CodeBlock", 0, 0)
+                .expect("new", "Paragraph", line(20) + 4)
+        );
+        const text = lines.join("");
+        const at = bytes(lines.slice(0, 20).join(""));
+        add("paragraph-line-near-end", text, (s) => s.insert(at + 1, "x").expect("kept", "Paragraph", 0, 0));
+        add("underline-inside-paragraph", text, (s) =>
+            s.insert(at, "===\n").expect("new", "Heading", 0).expect("retired", "Paragraph", 0)
+        );
+        const item = `- ${lines.join("  ")}`;
+        const third = 2 + bytes(lines.slice(0, 30).join("  "));
+        add("item-line-near-end", item, (s) => s.insert(third + 3, "x").expect("kept", "Paragraph", 2, 2));
+    }
     {
         const paragraphs = Array.from({ length: 1000 }, (_, i) => `${word(i * 3 + 1)} ${word(i * 3 + 2)}\n\n`);
         const text = paragraphs.join("");
@@ -1058,6 +1124,25 @@ export function identityScripts() {
                 .expect("only")
         );
     }
+    /* An edit inside an inline root changes the nodes it touches; the
+     * nodes beside it are taken whole (5.6), and a closer that pairs with an
+     * opener read before it makes a new node there. */
+    add("inline-siblings-kept", "one *two* `three` four\n", (s) =>
+        s
+            .insert(22, "x")
+            .expect("changed", "Document", 0)
+            .expect("changed", "Paragraph", 0)
+            .expect("changed", "Text", 17)
+            .expect("only")
+    );
+    add("closer-pairs-earlier-opener", "*a* b *c d\n", (s) =>
+        s.insert(10, "*").expect("kept", "Emphasis", 0, 0).expect("new", "Emphasis", 6)
+    );
+    /* A quote that interrupts a paragraph of only definitions closes it
+     * into its References; the quote after an edited definition is taken. */
+    add("quote-after-definition", "[d]:g\n>\n", (s) =>
+        s.edit([{ start: 4, end: 5, text: "q" }]).expect("kept", "Callout", 6, 6)
+    );
     return cases;
 }
 
@@ -1216,9 +1301,9 @@ export function correctnessSet() {
 
 /**
  * The benchmark workloads (section 9): every grammar corpus document with
- * `typing`, `lines`, `markers`, `undo`, `random`, `tokens` and `scalars`, and
- * every scale and adversarial shape at all four sizes with every family but
- * `undo`. Each workload is one document and one script or stream family.
+ * `typing`, `lines`, `markers`, `undo` of every family but `batch`, `random`,
+ * `tokens` and `scalars`, and every scale and adversarial shape at all four
+ * sizes with every family but `undo` and `batch`. Each workload is one document and one script or stream family.
  *
  * `set` is `all`, or `corpus` for the grammar corpus's workloads alone: the
  * shapes are measured at their four sizes together or not at all.
@@ -1232,7 +1317,11 @@ export function benchmarkWorkloads(set = "all") {
     for (const entry of buildGrammarCorpus().cases.filter((item) => item.side === "dialect")) {
         const document = { name: entry.name, text: entry.text, alphabet: entry.alphabet, sites: [], parts: null };
         documents.push(document);
-        for (const script of editScripts(document, ["typing", "lines", "markers", "undo", "random"]))
+        for (const script of editScripts(
+            document,
+            ["typing", "lines", "markers", "undo", "random"],
+            UNDONE_FAMILIES.filter((family) => family !== "batch")
+        ))
             workloads.push({ document, family: script.family, name: `${document.name}.${script.name}`, script });
         for (const family of ["tokens", "scalars"])
             workloads.push({ document, family, name: `${document.name}.${family}`, stream: family });
@@ -1245,7 +1334,7 @@ export function benchmarkWorkloads(set = "all") {
                 documents.push(document);
                 for (const script of editScripts(
                     { ...document, sites },
-                    EDIT_FAMILIES.filter((family) => family !== "undo")
+                    EDIT_FAMILIES.filter((family) => family !== "undo" && family !== "batch")
                 ))
                     workloads.push({
                         document,

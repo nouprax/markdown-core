@@ -5,7 +5,7 @@
 #include "../include/markdown_core.h"
 #include "../core/parser.h"
 
-/* Children are one owned row chain; group counts partition it. The parser
+/* Its children are its rows; group counts partition them. The parser
  * appends head, content, then foot rows in that order. */
 typedef struct {
     size_t column_count;

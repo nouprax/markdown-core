@@ -12,7 +12,8 @@
         "audit:node-kinds": "node --test scripts/tooling/tests/generate-node-kinds.test.mjs && node scripts/tooling/generate-node-kinds.mjs --check",
         "audit:ci": "scripts/audit/check-ci-policy.sh",
         "audit:element-attach-order": "node scripts/audit/check-element-attach-order.mjs",
-        "audit:finish-hook-shapes": "node scripts/audit/check-finish-hook-shapes.mjs",
+        "audit:element-contract": "node scripts/audit/check-element-contract.mjs",
+        "audit:completion-hooks": "node scripts/audit/check-completion-hooks.mjs",
         "audit:node-integrity-check": "node scripts/audit/check-node-integrity.mjs",
         "audit:parser-kind-record": "node scripts/audit/check-parser-kind-record.mjs",
         "audit:allocator-seam": "node scripts/audit/check-allocator-seam.mjs",
@@ -86,7 +87,7 @@
         "test:kotlin-macos-arm64": "scripts/tooling/run-gradle.sh :packages:kotlin-markdown-core:macosArm64Test",
         "test:swift-ios-simulator": "scripts/shared/run-swift-ios-tests.sh MarkdownCoreTests",
         "test:swift-macos": "CLANG_MODULE_CACHE_PATH=build/swift-module-cache swift test --disable-sandbox --filter '^MarkdownCoreTests\\.' && CLANG_MODULE_CACHE_PATH=build/swift-module-cache swift test --disable-sandbox --package-path packages/swift-markdown-core/Tests/Consumer",
-        "verify": "pnpm run format:check && pnpm run lint && pnpm run check:contracts && pnpm run check:gradle-model && pnpm run release:check-version && pnpm run audit:repository && pnpm run audit:ci && pnpm run audit:tests && pnpm run audit:surface && pnpm run check:element-inventory && pnpm run audit:element-special-chars && pnpm run audit:element-attach-order && pnpm run audit:finish-hook-shapes && pnpm run audit:parser-kind-record && pnpm run audit:allocator-seam && pnpm run audit:node-integrity-check && pnpm run audit:source-lists && pnpm run audit:node-kinds && pnpm run audit:incremental-set && pnpm run audit:ast-projections && pnpm run audit:packages",
+        "verify": "pnpm run format:check && pnpm run lint && pnpm run check:contracts && pnpm run check:gradle-model && pnpm run release:check-version && pnpm run audit:repository && pnpm run audit:ci && pnpm run audit:tests && pnpm run audit:surface && pnpm run check:element-inventory && pnpm run audit:element-special-chars && pnpm run audit:element-attach-order && pnpm run audit:completion-hooks && pnpm run audit:element-contract && pnpm run audit:parser-kind-record && pnpm run audit:allocator-seam && pnpm run audit:node-integrity-check && pnpm run audit:source-lists && pnpm run audit:node-kinds && pnpm run audit:incremental-set && pnpm run audit:ast-projections && pnpm run audit:packages",
         "check:pandoc-parity": "node --test scripts/correctness/tests/pandoc-oracle.test.mjs scripts/correctness/tests/pandoc-compositions.test.mjs && node scripts/correctness/check-pandoc-parity.mjs",
         "probe:pandoc-composition": "node --test scripts/correctness/tests/pandoc-compositions.test.mjs && node scripts/correctness/check-pandoc-compositions.mjs"
     },

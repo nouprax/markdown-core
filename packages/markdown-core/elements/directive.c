@@ -150,6 +150,21 @@ static void directive_opaque_free(const markdown_core_element *element, markdown
     node->opaque = NULL;
 }
 
+static int directive_opaque_copy(const markdown_core_element *element, const markdown_core_node *from,
+                                 markdown_core_node *to) {
+    const node_directive *directive = from->opaque;
+    node_directive *copy = to->opaque;
+    if (!directive || !copy) {
+        return !directive;
+    }
+    *copy = *directive;
+    if (!markdown_core_chunk_own(&copy->name)) {
+        copy->label = NULL;
+        return 0;
+    }
+    return 1;
+}
+
 /* Recognize the shared attribute grammar without constructing semantic
  * strings or records. The parser owns and accounts for recognition work. */
 static int scan_directive_attributes(markdown_core_parser *parser, unsigned char *data, bufsize_t len, bufsize_t *pos,
@@ -338,9 +353,10 @@ static markdown_core_node *make_directive_node(const markdown_core_element *elem
  *
  * Scanning it here also means the bytes are CONSUMED here, so no other
  * element is ever offered them. There is nothing left to protect. */
-static markdown_core_node *match_colon_directive(const markdown_core_element *element, markdown_core_parser *parser,
-                                                 markdown_core_node *parent, markdown_core_inline_state *inline_state,
-                                                 markdown_core_chunk *chunk, bufsize_t offset) {
+static markdown_core_member *match_colon_directive(const markdown_core_element *element, markdown_core_parser *parser,
+                                                   markdown_core_member *parent,
+                                                   markdown_core_inline_state *inline_state, markdown_core_chunk *chunk,
+                                                   bufsize_t offset) {
     bufsize_t name_start;
     bufsize_t name_len;
     bufsize_t pos;
@@ -361,14 +377,13 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
      * one. `::name` and `:::name` at the start of a line are leaf and
      * container directives and open through the block path, not this one. */
     if (offset > 0 && chunk->data[offset - 1] == ':') {
+        markdown_core_inline_state_read(inline_state, offset - 1, offset + 1);
         return NULL;
     }
 
-    if (offset + 1 >= chunk->len || chunk->data[offset + 1] == ':') {
-        return NULL;
-    }
-
-    if (!scan_name(chunk->data, chunk->len, offset + 1, &name_start, &name_len)) {
+    if (offset + 1 >= chunk->len || chunk->data[offset + 1] == ':' ||
+        !scan_name(chunk->data, chunk->len, offset + 1, &name_start, &name_len)) {
+        markdown_core_inline_state_read(inline_state, offset - 1, offset + 2);
         return NULL;
     }
 
@@ -378,6 +393,11 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
      * from the colon in `12:30` or `http://`. A part that fails to scan does
      * not anchor; the name commits only once one part has. */
     pos = name_start + name_len;
+    if (pos >= chunk->len || (chunk->data[pos] != '[' && chunk->data[pos] != '{')) {
+        /* A name with neither part after it. */
+        markdown_core_inline_state_read(inline_state, offset - 1, pos + 1);
+        return NULL;
+    }
     if (pos < chunk->len && chunk->data[pos] == '[') {
         bufsize_t label_end;
         if (scan_label(chunk->data, chunk->len, pos, &label_start, &label_len, &label_end)) {
@@ -430,22 +450,22 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
         directive->label = label_node;
         /* The field is a view of these source bytes, including line breaks
          * and stripped block prefixes. Do not rebuild its map from one column. */
-        markdown_core_parser_adopt_content_marks(parser, &parent->content_map, &label_node->content_map, label_start,
-                                                 label_len);
+        markdown_core_parser_adopt_content_marks(parser, &parent->node->content_map, &label_node->content_map,
+                                                 label_start, label_len);
     }
 
     markdown_core_inline_state_set_offset(inline_state, (int)pos);
 
-    return node;
+    return markdown_core_inline_state_append(inline_state, node);
 }
 
 /* ONE BYTE, not two. `]` was claimed because a label's closer had to be
  * recognised as a delimiter to pair with the opener; the label is scanned at
  * the colon now, so the bracket is nobody's business but the core's -- which
  * is what makes `[a](b)` inside a label work like any other link. */
-static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 markdown_core_node *parent, unsigned char character,
-                                 markdown_core_inline_state *inline_state) {
+static markdown_core_member *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                   markdown_core_member *parent, unsigned char character,
+                                   markdown_core_inline_state *inline_state) {
     markdown_core_chunk *chunk = markdown_core_inline_state_get_chunk(inline_state);
     bufsize_t offset = (bufsize_t)markdown_core_inline_state_get_offset(inline_state);
 
@@ -529,34 +549,36 @@ static int probe_directive_block(const markdown_core_element_instance *self, mar
     return matched;
 }
 
-static markdown_core_node *open_directive_block(const markdown_core_element_instance *self, int indented,
-                                                markdown_core_parser *parser, markdown_core_node *parent_container,
-                                                unsigned char *input, int len) {
+static markdown_core_member *open_directive_block(const markdown_core_element_instance *self, int indented,
+                                                  markdown_core_parser *parser, markdown_core_member *parent_container,
+                                                  unsigned char *input, int len) {
     (void)indented;
     bufsize_t first_nonspace = (bufsize_t)markdown_core_parser_get_first_nonspace(parser);
     parsed_directive parsed;
     bufsize_t colon_count =
         scan_directive_block(parser, input, len, first_nonspace, markdown_core_parser_get_indent(parser), &parsed);
-    markdown_core_node *node = NULL;
+    markdown_core_member *member = NULL;
+    markdown_core_node *node;
     node_directive *directive;
     if (!colon_count) {
         goto done;
     }
 
-    node = markdown_core_parser_add_child(parser, parent_container, MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK,
-                                          (int)first_nonspace + 1);
-    if (!node) {
+    member = markdown_core_parser_add_child(parser, parent_container, MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK,
+                                            (int)first_nonspace + 1);
+    if (!member) {
         goto done;
     }
 
+    node = member->node;
     markdown_core_node_set_element(node, self->element);
     node->opaque = markdown_core_alloc(1, sizeof(node_directive));
     if (!node->opaque || !apply_parsed_directive(self->element, parser, node, input, &parsed,
                                                  markdown_core_parser_get_line_number(parser))) {
         /* The suffix already validated; failure here is allocation loss. */
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        markdown_core_parser_release_node(parser, node);
-        node = NULL;
+        markdown_core_parser_release_member(parser, member);
+        member = NULL;
         goto done;
     }
 
@@ -567,7 +589,7 @@ static markdown_core_node *open_directive_block(const markdown_core_element_inst
 
 done:
     free_parsed_directive(&parsed);
-    return node;
+    return member;
 }
 
 /* The one closer rule of the directives module: a bare colon run at least as
@@ -583,8 +605,8 @@ static int directive_closer_line(const node_directive *directive, markdown_core_
 }
 
 static int directive_block_continues(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                     const unsigned char *input, int len, markdown_core_node *container) {
-    node_directive *directive = get_directive(container);
+                                     const unsigned char *input, int len, markdown_core_member *container) {
+    node_directive *directive = get_directive(container->node);
 
     if (!directive || directive->fence_length == 2) {
         return 0;
@@ -594,8 +616,8 @@ static int directive_block_continues(const markdown_core_element_instance *self,
 }
 
 static int directive_block_matches(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                   unsigned char *input, int len, markdown_core_node *container) {
-    node_directive *directive = get_directive(container);
+                                   unsigned char *input, int len, markdown_core_member *container) {
+    node_directive *directive = get_directive(container->node);
 
     if (!directive) {
         return 0;
@@ -643,6 +665,14 @@ static int visit_owned_subtrees(const markdown_core_element *element, markdown_c
 /* The opener consumes the complete token; the shared inline parser parses its
  * owned label before continuing beyond it. No close-bracket dispatch exists. */
 
+/* What a directive block carries (E3): its fence, which a closer must
+ * match. */
+static uint32_t carry_save(const markdown_core_element_instance *self, const markdown_core_member *member) {
+    (void)self;
+    const node_directive *directive = member->node->opaque;
+    return directive ? (uint32_t)directive->fence_length : 0;
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
     .interrupts_paragraph = true,
 
@@ -652,6 +682,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
     .match_inline = match,
     .last_block_matches = directive_block_matches,
     .continues_block = directive_block_continues,
+    .carry_save = carry_save,
     .maximum_block_indent = 3,
     .try_opening_block = open_directive_block,
     /* `scan_directive_block` needs at least two leading colons, so a line that
@@ -663,6 +694,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
     .accepts_lines_func = accepts_lines,
     .opaque_alloc_func = directive_opaque_alloc,
     .opaque_free_func = directive_opaque_free,
+    .opaque_copy_func = directive_opaque_copy,
     .visit_owned_subtrees_func = visit_owned_subtrees,
     .terminates_text = ":",
     .dispatch = ":",

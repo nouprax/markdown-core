@@ -3,101 +3,166 @@
 #include "block_internal.h"
 #include "properties.h"
 #include "heading.h"
-#include "footnote.h"
-#include "specimen.h"
 #include "ast_internal.h"
 
 /* The elements whose state this element reads, as `self->peers` holds them. */
-enum { DOCUMENT_HEADING, DOCUMENT_FOOTNOTE, DOCUMENT_SPECIMEN };
+enum { DOCUMENT_HEADING };
 static const markdown_core_element *const DOCUMENT_PEERS[] = {[DOCUMENT_HEADING] = &MARKDOWN_CORE_ELEMENT_HEADING,
-                                                              [DOCUMENT_FOOTNOTE] = &MARKDOWN_CORE_ELEMENT_FOOTNOTE,
-                                                              [DOCUMENT_SPECIMEN] = &MARKDOWN_CORE_ELEMENT_SPECIMEN,
                                                               NULL};
 
-/* THE DOCUMENT LIFECYCLE. The document element drives it and owns only the
- * reference map and the properties grammar's work, its parse record; the
- * headings, footnotes and specimens it finalizes are the state of their own
- * elements, its peers, which it asks through their lifecycle calls. An
- * element the dialect does not hold has nothing to finalize. */
+/* THE DOCUMENT'S PARSE RECORD: the properties grammar's work, and what the
+ * parse publishes as its nodes complete. */
+typedef struct {
+    markdown_core_properties_work properties;
+    markdown_core_publication publication;
+} document_state;
+
+/* THE DOCUMENT LIFECYCLE. The document element drives it and owns only its
+ * parse record; the headings it finishes are the state of their own element,
+ * a peer, which it asks through its lifecycle calls. An element the dialect
+ * does not hold has nothing to finish. */
 static void init_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    const markdown_core_element_instance *footnotes = self->peers[DOCUMENT_FOOTNOTE];
-    parser->refmap = markdown_core_reference_map_new();
-    if (!parser->refmap) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
-    if (footnotes) {
-        markdown_core_footnotes_begin(footnotes, parser);
-    }
+    (void)self;
+    (void)parser;
 }
 static void dispose_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
-    const markdown_core_element_instance *footnotes = self->peers[DOCUMENT_FOOTNOTE];
-    const markdown_core_element_instance *specimens = self->peers[DOCUMENT_SPECIMEN];
     if (headings) {
         markdown_core_headings_dispose(headings);
     }
-    if (footnotes) {
-        markdown_core_footnotes_dispose(footnotes);
-    }
-    if (specimens) {
-        markdown_core_specimen_dispose(specimens);
-    }
-    if (parser->refmap) {
-        markdown_core_map_free(parser->refmap);
-        parser->refmap = NULL;
-    }
+    markdown_core_publication_dispose(&((document_state *)self->state)->publication, parser->pool);
 }
+/* Roots in tree order (5.7). */
+static int tree_order(const void *left, const void *right) {
+    const uint64_t a = (*(const markdown_core_node *const *)left)->order->label;
+    const uint64_t b = (*(const markdown_core_node *const *)right)->order->label;
+    return (a > b) - (a < b);
+}
+
+/* RESOLUTION OF LOOKUPS (5.7). Every definition is declared once the blocks
+ * are complete and the headings the parse made have declared their labels,
+ * and the questions asked of the registry then that an earlier parse asked
+ * are those of the roots the parse took. A key whose answer, whether it is
+ * defined, is not the one it gave the old document has each such root
+ * parsed again in place, in source order, each once: into `*roots`, with
+ * their count. False when the list could not grow. */
+static bool lookups_changed(markdown_core_parser *parser, const markdown_core_node ***roots, size_t *count) {
+    const markdown_core_registry *registry = parser->registry;
+    size_t capacity = 0;
+    *roots = NULL;
+    *count = 0;
+    for (const markdown_core_key *key = registry->marked; key; key = key->marked_next) {
+        if (key->group == MARKDOWN_CORE_KEY_FAMILY || key->was == markdown_core_key_defined(key)) {
+            continue;
+        }
+        for (const markdown_core_fact *lookup = key->lookups; lookup; lookup = lookup->next) {
+            if (lookup->edit == registry->edit) {
+                continue;
+            }
+            const markdown_core_node **grown = markdown_core_reserve(*roots, &capacity, *count + 1, sizeof(*grown));
+            if (!grown) {
+                return false;
+            }
+            *roots = grown;
+            grown[(*count)++] = lookup->node;
+        }
+    }
+    if (!*count) {
+        return true;
+    }
+    qsort(*roots, *count, sizeof(**roots), tree_order);
+    size_t kept = 0;
+    for (size_t i = 0; i < *count; i++) {
+        if (!kept || (*roots)[kept - 1] != (*roots)[i]) {
+            (*roots)[kept++] = (*roots)[i];
+        }
+    }
+    *count = kept;
+    return true;
+}
+
+/* The document is prepared: the headings the parse made declare their
+ * labels, and the roots whose lookups are answered otherwise now are parsed
+ * again in place, their headings with the others. */
 static void prepare_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
-    const markdown_core_element_instance *specimens = self->peers[DOCUMENT_SPECIMEN];
-    if (specimens) {
-        markdown_core_block_prepare_specimens(specimens, parser);
-    }
-    if (parser->error) {
-        return;
-    }
+    markdown_core_publication *publication = &((document_state *)self->state)->publication;
     if (headings) {
         markdown_core_headings_prepare(headings, parser);
     }
-}
-static void observe_inline(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                           markdown_core_node *node) {
-    const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
-    if (headings) {
-        markdown_core_headings_observe(headings, parser, node);
+    const markdown_core_node **roots = NULL;
+    size_t count = 0;
+    if (!parser->error && !lookups_changed(parser, &roots, &count)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+    for (size_t i = 0; i < count && !parser->error; i++) {
+        markdown_core_parse_again(parser, publication, roots[i]);
+    }
+    markdown_core_free((void *)roots);
+    if (headings && count && !parser->error) {
+        markdown_core_headings_prepare(headings, parser);
     }
 }
+/* A node is complete: it numbers the nodes it holds, and the headings note
+ * the explicit anchors among them. */
+static void complete_node(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                          markdown_core_member *member, uint32_t start) {
+    const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
+    if (!markdown_core_complete_node(parser, &((document_state *)self->state)->publication, member, start,
+                                     headings ? markdown_core_headings_observe : NULL, headings)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+}
+/* A numbered node waits on nothing any more: it settles. */
+static void settle_member(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                          markdown_core_member *member) {
+    markdown_core_settle_member(parser, &((document_state *)self->state)->publication, member);
+}
+/* The document is finished: the headings take their anchors, each node of a
+ * subtree the parse took that it replaces gives its place to the node
+ * replacing it, unless that is itself, and each label whose key changed
+ * takes its place in its roster (5.7). */
 static void finish_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
-    const markdown_core_element_instance *footnotes = self->peers[DOCUMENT_FOOTNOTE];
-    const markdown_core_element_instance *specimens = self->peers[DOCUMENT_SPECIMEN];
-    if ((parser->refmap && parser->refmap->oom) || (footnotes && markdown_core_footnotes_lost(footnotes))) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
-    if (specimens) {
-        markdown_core_specimen_dispose(specimens);
-    }
-    if (!parser->error && headings) {
-        markdown_core_headings_finish(headings, parser);
-    }
+    markdown_core_publication *publication = &((document_state *)self->state)->publication;
     if (headings) {
+        markdown_core_headings_finish(headings, parser);
         markdown_core_headings_dispose(headings);
     }
-}
-static void publish_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    (void)self;
-    if (!markdown_core_publish_tree(parser)) {
+    for (size_t i = 0; i < parser->replacement_count && !parser->error; i++) {
+        struct markdown_core_replacement *replacement = &parser->replacements[i];
+        markdown_core_node *node = replacement->node;
+        if (replacement->member) {
+            node = markdown_core_node_retain(replacement->member->node);
+            markdown_core_member_release(parser->pool, replacement->member);
+        }
+        replacement->member = NULL;
+        replacement->node = NULL;
+        if (node == replacement->old) {
+            markdown_core_parser_release_node(parser, node);
+        } else if (!markdown_core_publication_splice(parser, publication, replacement->old, node)) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        }
+    }
+    if (!parser->error && !markdown_core_registry_resolve(parser->registry)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
+    markdown_core_registry_settle(parser->registry);
 }
-static size_t read_document_prefix(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                   const unsigned char *source, size_t length) {
-    return markdown_core_properties_parse(self->state, parser, source, length);
+static void publish_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
+    markdown_core_publication *publication = &((document_state *)self->state)->publication;
+    if (!markdown_core_publish_tree(parser, publication)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+    markdown_core_publication_dispose(publication, parser->pool);
+}
+static void read_document_prefix(const markdown_core_element_instance *self, markdown_core_parser *parser) {
+    markdown_core_properties_parse(&((document_state *)self->state)->properties, parser);
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
     .peers = DOCUMENT_PEERS,
-    .state_size = sizeof(markdown_core_properties_work),
+    .state_size = sizeof(document_state),
     .name = "document",
     .init_document = init_document,
     .dispose_document = dispose_document,
@@ -105,5 +170,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
     .prepare_document = prepare_document,
     .finish_document = finish_document,
     .publish_document = publish_document,
-    .observe_inline = observe_inline,
+    .complete_node = complete_node,
+    .settle_member = settle_member,
 };

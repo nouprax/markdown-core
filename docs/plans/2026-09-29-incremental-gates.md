@@ -186,7 +186,7 @@ it compares meaning and positions and nothing that depends on history.
 
 A node stores its relative extent, `Extent(lead, span)` in UTF-8 bytes (plan
 4.3). `Document.scope(of:in:)` and `Document.node(at:in:)` compute absolute
-positions from the extents and the source text the caller passes, in the
+positions from the node's runs and the source text the caller passes, in the
 session's unit. For every node of the subject's document, `scope(of:in:)` with
 the model text equals `scope(of:in:)` of the corresponding node of the fresh
 parse. At every position where some node's scope starts or ends, and on each
@@ -367,8 +367,8 @@ There is no tolerance.
 
 ### 6.2 Flatness, on Ir
 
-For every local edit family (`typing`, `lines`, `ranges`, `far`, `batch`)
-on every scale shape, **every step** costs at most 1.25 times as much at every
+For every local edit family the benchmark runs (`typing`, `lines`, `ranges`,
+`far`) on every scale shape, **every step** costs at most 1.25 times as much at every
 larger size as at 16 KB. The scripts apply the same edits at the same relative
 positions at every size, so step `i` of one size corresponds to step `i` of
 another. With `c(s)` the cost of step `i` at size `s`, each of `c(64 KB)`,
@@ -492,9 +492,10 @@ enough to track.
 
 **The benchmark workloads** are the generator's large output, built when the
 benchmark runs, as the grammar corpus is: every grammar corpus document with
-`typing`, `lines`, `markers`, `undo`, `random`, `tokens` and `scalars`, and
+`typing`, `lines`, `markers`, `undo` of every family but `batch`, `random`,
+`tokens` and `scalars`, and
 every scale and adversarial shape at all four sizes with every family but
-`undo`. `random` runs with 16 seeds in both, so 6.3 is measured on arbitrary
+`undo` and `batch`. `random` runs with 16 seeds in both, so 6.3 is measured on arbitrary
 ranges and not only on the scripted families.
 
 The benchmarks run as `pnpm benchmark:edits`, sharing `run.mjs`'s build,

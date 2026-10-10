@@ -2,6 +2,12 @@
 #include "code_block.h"
 #include "block_internal.h"
 #include "attributes.h"
+#include "formula.h"
+
+/* The elements whose state this element reads, as `self->peers` holds them. */
+enum { CODE_BLOCK_FORMULA };
+static const markdown_core_element *const CODE_BLOCK_PEERS[] = {[CODE_BLOCK_FORMULA] = &MARKDOWN_CORE_ELEMENT_FORMULA,
+                                                                NULL};
 #define peek_at(input, at) ((input)->data[(at)])
 
 static void remove_trailing_blank_lines(markdown_core_strbuf *ln) {
@@ -34,7 +40,8 @@ static void remove_trailing_blank_lines(markdown_core_strbuf *ln) {
 }
 
 static int continue_code(const markdown_core_element_instance *self, markdown_core_parser *parser, unsigned char *data,
-                         int length, markdown_core_node *container) {
+                         int length, markdown_core_member *member) {
+    markdown_core_node *container = member->node;
     markdown_core_chunk input_chunk = {(unsigned char *)data, length, 0};
     markdown_core_chunk *input = &input_chunk;
     bool res = false;
@@ -76,8 +83,8 @@ static int continue_code(const markdown_core_element_instance *self, markdown_co
 }
 
 static void finalize_code(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_node *b) {
-    (void)self;
+                          markdown_core_member *member) {
+    markdown_core_node *b = member->node;
     bufsize_t pos;
     markdown_core_strbuf *node_content = &b->content;
 
@@ -145,9 +152,12 @@ static void finalize_code(const markdown_core_element_instance *self, markdown_c
     if (!b->as.code->literal.data) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
+    if (!parser->error && self->peers[CODE_BLOCK_FORMULA]) {
+        markdown_core_formula_take_code(self->peers[CODE_BLOCK_FORMULA], parser, member);
+    }
 }
 static bool open_fenced(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                        markdown_core_node **container, markdown_core_chunk *input, block_start *start) {
+                        markdown_core_member **container, markdown_core_chunk *input, block_start *start) {
     (void)self;
     bufsize_t matched = start->matched;
 
@@ -156,22 +166,22 @@ static bool open_fenced(const markdown_core_element_instance *self, markdown_cor
     if (!*container) {
         return false;
     }
-    (*container)->as.code->fenced = true;
-    (*container)->as.code->fence_char = peek_at(input, parser->first_nonspace);
-    (*container)->as.code->fence_length = (matched > 255) ? 255 : (uint8_t)matched;
-    (*container)->as.code->fence_offset = (int8_t)(parser->first_nonspace - parser->offset);
-    (*container)->as.code->fence_closed = false;
+    (*container)->node->as.code->fenced = true;
+    (*container)->node->as.code->fence_char = peek_at(input, parser->first_nonspace);
+    (*container)->node->as.code->fence_length = (matched > 255) ? 255 : (uint8_t)matched;
+    (*container)->node->as.code->fence_offset = (int8_t)(parser->first_nonspace - parser->offset);
+    (*container)->node->as.code->fence_closed = false;
     /* Nothing is known about an info string until the fence line is
      * read; ABSENT is the honest state, and the close either replaces
      * it or leaves it. It used to open as an empty STRING, which said
      * the source had written one. */
-    (*container)->as.code->info = markdown_core_optional_chunk_absent();
+    (*container)->node->as.code->info = markdown_core_optional_chunk_absent();
     markdown_core_block_advance_offset(parser, input, parser->first_nonspace + matched - parser->offset, false);
 
     return true;
 }
 static bool open_indented(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_node **container, markdown_core_chunk *input, block_start *start) {
+                          markdown_core_member **container, markdown_core_chunk *input, block_start *start) {
     (void)self;
 
     markdown_core_block_advance_offset(parser, input, CODE_INDENT, true);
@@ -179,14 +189,14 @@ static bool open_indented(const markdown_core_element_instance *self, markdown_c
     if (!*container) {
         return false;
     }
-    (*container)->as.code->fenced = false;
-    (*container)->as.code->fence_char = 0;
-    (*container)->as.code->fence_length = 0;
-    (*container)->as.code->fence_offset = 0;
-    (*container)->as.code->fence_closed = false;
+    (*container)->node->as.code->fenced = false;
+    (*container)->node->as.code->fence_char = 0;
+    (*container)->node->as.code->fence_length = 0;
+    (*container)->node->as.code->fence_offset = 0;
+    (*container)->node->as.code->fence_closed = false;
     /* An indented code block has no fence and therefore no info
      * string, ever. */
-    (*container)->as.code->info = markdown_core_optional_chunk_absent();
+    (*container)->node->as.code->info = markdown_core_optional_chunk_absent();
 
     return true;
 }
@@ -195,7 +205,8 @@ static bool scan_code(const markdown_core_element_instance *self, markdown_core_
     (void)self;
     if (context->indent >= CODE_INDENT) {
         /* Indented code interrupts no paragraph, and a lazy line is text. */
-        if (context->paragraph || context->lazy || markdown_core_is_line_end(context->input->data[context->first])) {
+        if (markdown_core_is_line_end(context->input->data[context->first]) ||
+            markdown_core_block_start_refuses(context, true, true)) {
             return false;
         }
         start->open = open_indented;
@@ -210,11 +221,12 @@ static bool scan_code(const markdown_core_element_instance *self, markdown_core_
     return true;
 }
 static bool blank_line(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                       markdown_core_node *node) {
+                       markdown_core_member *member) {
     (void)self;
-    return !node->as.code->fenced;
+    return !member->node->as.code->fenced;
 }
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE_BLOCK = {
+    .peers = CODE_BLOCK_PEERS,
     .name = "code_block",
     .maximum_block_indent = INT_MAX,
     .scan_block_start = scan_code,

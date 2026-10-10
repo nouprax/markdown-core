@@ -11,9 +11,11 @@ extern "C" {
 
 typedef struct markdown_core_parser markdown_core_parser;
 typedef struct markdown_core_element markdown_core_element;
+/* A node being built, and its place among the nodes being built (node.h). */
+typedef struct markdown_core_member markdown_core_member;
 
 /* Where a depth-first walk stands on a node: every node yields one ENTER and
- * one EXIT, and DONE follows the root's EXIT (iterator.h). Element finish
+ * one EXIT, and DONE follows the root's EXIT (iterator.h). Element completion
  * steps receive the event they are called at. */
 typedef enum {
     MARKDOWN_CORE_EVENT_NONE,
@@ -129,8 +131,8 @@ typedef enum {
  */
 typedef struct delimiter delimiter;
 
-/** The literal text node the delimiter was pushed for. */
-markdown_core_node *markdown_core_delimiter_node(const delimiter *delim);
+/** The member of the literal text node the delimiter was pushed for. */
+markdown_core_member *markdown_core_delimiter_member(const delimiter *delim);
 
 markdown_core_delimiter_rule markdown_core_delimiter_rule_of(const delimiter *delim);
 
@@ -148,18 +150,20 @@ int markdown_core_delimiter_can_close(const delimiter *delim);
  * 'input' matches a syntax rule for that block type. It is allowed
  * to modify the type of 'parent_container'.
  *
- * Should return the newly created block if there is one, or
+ * Should return the newly created block's member if there is one, or
  * 'parent_container' if its type was modified, or NULL.
  */
-typedef markdown_core_node *(*markdown_core_open_block_func)(const markdown_core_element_instance *self, int indented,
-                                                             markdown_core_parser *parser,
-                                                             markdown_core_node *parent_container, unsigned char *input,
-                                                             int len);
+typedef markdown_core_member *(*markdown_core_open_block_func)(const markdown_core_element_instance *self, int indented,
+                                                               markdown_core_parser *parser,
+                                                               markdown_core_member *parent_container,
+                                                               unsigned char *input, int len);
 
-typedef markdown_core_node *(*markdown_core_match_inline_func)(const markdown_core_element_instance *self,
-                                                               markdown_core_parser *parser, markdown_core_node *parent,
-                                                               unsigned char character,
-                                                               markdown_core_inline_state *inline_state);
+/** Returns the member of the token it appended to 'parent' with
+ * markdown_core_inline_state_append, or NULL. */
+typedef markdown_core_member *(*markdown_core_match_inline_func)(const markdown_core_element_instance *self,
+                                                                 markdown_core_parser *parser,
+                                                                 markdown_core_member *parent, unsigned char character,
+                                                                 markdown_core_inline_state *inline_state);
 
 /* Builds the opaque AST value only. The matcher owns all delimiter removal,
  * including the matched endpoints, on success and failure alike. */
@@ -193,7 +197,7 @@ typedef void (*markdown_core_inline_from_delim_func)(const markdown_core_element
  *  MARKDOWN_CORE_BLOCK_PENDING_CLOSE until descendant ownership is known.
  */
 typedef int (*markdown_core_match_block_func)(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                              unsigned char *input, int len, markdown_core_node *container);
+                                              unsigned char *input, int len, markdown_core_member *container);
 
 /** Whether 'input' would continue 'container', asked AHEAD OF TIME.
  *
@@ -211,7 +215,7 @@ typedef int (*markdown_core_match_block_func)(const markdown_core_element_instan
  */
 typedef int (*markdown_core_continues_block_func)(const markdown_core_element_instance *self,
                                                   markdown_core_parser *parser, const unsigned char *input, int len,
-                                                  markdown_core_node *container);
+                                                  markdown_core_member *container);
 
 typedef int (*markdown_core_can_contain_func)(const markdown_core_element *element, markdown_core_node *node,
                                               markdown_core_node_type child);
@@ -220,105 +224,76 @@ typedef int (*markdown_core_contains_inlines_func)(const markdown_core_element *
 
 typedef int (*markdown_core_accepts_lines_func)(const markdown_core_element *element, markdown_core_node *node);
 
-/** THE TWO SHAPES OF A FINISH HOOK, and the invariant that keeps them apart.
+/** COMPLETION STEPS: an inline root completes its own tree when its parse
+ * ends (docs/plans/2026-09-29-incremental-parsing.md, 5.8), in one pass over
+ * that tree -- the content of a paragraph, a heading, a cell, or of a field
+ * such as a definition term, a callout title, a table caption or a directive
+ * label, with the fields of the inline nodes in it. The pass consolidates each
+ * run of Text, completes each node, numbers what each node holds when the node
+ * is left, and asks an element's completion step at the events of the kinds it
+ * declared (`complete_exit_kinds`, `complete_scope_kinds`).
  *
- * The finish stage walks every owned root of the document exactly once --
- * the content tree, each definition term, callout title, citation affix,
- * table caption and directive label -- and an element can take part in that
- * walk in one of two ways.
- *
- * A finish STEP is LOCAL. It is called from inside the walk, at the events of
- * the kinds it declared (`finish_exit_kinds`, `finish_scope_kinds`), and it
- * may touch only what the walk guarantees is settled at that moment: the
- * current node and, at EXIT, the current node's complete subtree (at ENTER
- * the subtree is untouched and about to be walked). It may READ the siblings
- * that FOLLOW the current node, but never unlink, move or free one of them:
- * the walk's lookahead already names the node after the current one. It may
- * free only the node whose EXIT is current, and only when that node owns no
- * field roots (the walk pushed those at its ENTER and keeps them for the
- * passes); it may insert only BEFORE the current node, which the walk has
- * passed and never visits again. A step never walks anything itself; the walk
- * it is part of is the one traversal the finish stage makes.
- *
- * A postprocess PASS is GLOBAL. It receives a whole root after every root's
- * walk has completed and the document has been finalized -- the footnotes
- * and specimens in their chains, the headings holding their anchors -- walks
- * it itself, and may read state outside that root (the document's footnotes,
- * say). It costs a traversal of the root per pass, which is why the element
- * hooks that rewrite one node at a time are steps and only a rewrite that
- * needs the whole finished root is a pass.
- *
- * One element declares one or the other, never both: an element that needs
- * both shapes has two concerns, and `markdown_core_dialect_builder_attach`
- * refuses the descriptor.
+ * A step is LOCAL to the node it is handed. At EXIT it may read and rewrite
+ * the current node and its complete subtree; at ENTER the subtree is untouched
+ * and about to be passed. It may READ the siblings that FOLLOW the current
+ * node, but never unlink, move or free one of them: the pass's lookahead
+ * already names the node after the current one. It may free only the node
+ * whose EXIT is current, and only when that node owns no field roots; it may
+ * insert only BEFORE the current node, which the pass has left and never
+ * visits again, and what it inserts it completes itself
+ * (`markdown_core_parser_complete_node`). A step never walks anything itself.
  */
 
-/** What a finish step did to the current node. */
+/** What a completion step did to the current node. */
 typedef enum {
     /** The node is still in the tree; the steps after this one run. */
-    MARKDOWN_CORE_FINISH_CONTINUE,
+    MARKDOWN_CORE_COMPLETE_CONTINUE,
     /** The node was freed or replaced. No later step sees this event: the
      *  node it names is gone. Legal only at EXIT. */
-    MARKDOWN_CORE_FINISH_CONSUMED,
-    /** An allocation failed and 'parser->error' is set. The walk stops. */
-    MARKDOWN_CORE_FINISH_FAILED
-} markdown_core_finish_result;
+    MARKDOWN_CORE_COMPLETE_CONSUMED,
+    /** An allocation failed and 'parser->error' is set. The pass stops. */
+    MARKDOWN_CORE_COMPLETE_FAILED
+} markdown_core_complete_result;
 
-/** Observe one event of the finish walk at 'node'.
+/** Observe one event of an inline root's completion at 'node'.
  *
  * 'event' is `MARKDOWN_CORE_EVENT_EXIT` for a node of a kind the step declared
- * in `finish_exit_kinds` (asked once the node's subtree is complete), and
+ * in `complete_exit_kinds` (asked once the node's subtree is complete), and
  * `MARKDOWN_CORE_EVENT_ENTER` or `MARKDOWN_CORE_EVENT_EXIT` for a node of a
- * kind it declared in `finish_scope_kinds` (the kinds whose extent it tracks).
- * It is asked at no other event, and at the EXIT of a kind it is asked at
- * only once the parse has produced a kind of those it declared in
- * `finish_acts_on_kinds`, the kinds it acts on: the same gate that skips a
- * pass skips a step, read at the event rather than before the walk, because
- * the walk parses each container's inline content at that container's ENTER
- * and a kind's first node may be made after the walk began. The ENTER and
- * EXIT of a scope kind are delivered whenever the extent is walked, so the
- * state a step keeps for an extent is always in step with the tree.
- * 'is_root' is 1 when 'node' is the root of the tree being walked; a root
- * belongs to whoever holds it and may be rewritten in place but never
- * replaced or freed. '*state' is one word the walk keeps for this element
- * per root, zero when the root's walk starts, so a step can carry a fact
- * such as "inside a Link" across the events of one root and never across
- * roots.
+ * kind it declared in `complete_scope_kinds` (the kinds whose extent it
+ * tracks). It is asked at no other event, and at the EXIT of a kind it is
+ * asked at only once the parse has produced a kind of those it declared in
+ * `complete_acts_on_kinds`, the kinds it acts on. The ENTER and EXIT of a
+ * scope kind are delivered whenever the extent is passed, so the state a
+ * step keeps for an extent is always in step with the tree.
+ * 'is_root' is 1 when 'node' is the root of a field -- a definition's term,
+ * a callout's title -- which belongs to its owner and may be rewritten in
+ * place but never replaced or freed. '*state' is one word the pass keeps for
+ * this element per root, zero when the root's pass starts, so a step can
+ * carry a fact such as "inside a Link" across the events of one root and
+ * never across roots.
  *
  * The step obeys the LOCAL contract above. It returns CONSUMED when it freed
  * or replaced 'node' (legal only at EXIT), FAILED with 'parser->error' set when
  * an allocation failed, and CONTINUE otherwise.
  */
-typedef markdown_core_finish_result (*markdown_core_finish_step_func)(const markdown_core_element_instance *self,
-                                                                      markdown_core_parser *parser,
-                                                                      markdown_core_node *node,
-                                                                      markdown_core_event_type event, int is_root,
-                                                                      void **state);
-
-/** Rewrite the tree rooted at 'root' in place, after its finish walk.
- *
- * Return 1 on success and 0 on failure, having set 'parser->error' to report it.
- *
- * 'root' itself belongs to whoever holds it: the parser for the document, and
- * the owning element for a node-valued field such as a definition term or a
- * table caption. A pass may rewrite 'root' in place -- change its kind, its
- * literal, its children -- but it may NOT substitute a different node for it,
- * and the signature does not let it try. A field root's kind is part of its
- * owner's contract, and substituting one cannot even be expressed: the field
- * root is detached, so the attach a substitution needs has no parent to take.
- *
- * The pass is handed each root once its own walk -- text consolidation and
- * every finish step -- has completed. What it may read of OTHER roots is not
- * part of the contract: a pass that reads the document root while it is handed
- * a field root sees that document in whatever state the finish stage has
- * reached, which is not the state any pass is promised.
- */
-typedef int (*markdown_core_postprocess_func)(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                              markdown_core_node *root);
+typedef markdown_core_complete_result (*markdown_core_complete_step_func)(const markdown_core_element_instance *self,
+                                                                          markdown_core_parser *parser,
+                                                                          markdown_core_member *node,
+                                                                          markdown_core_event_type event, int is_root,
+                                                                          void **state);
 
 typedef void (*markdown_core_opaque_alloc_func)(const markdown_core_element *element, markdown_core_node *node);
 
 typedef void (*markdown_core_opaque_free_func)(const markdown_core_element *element, markdown_core_node *node);
+
+/* Fills the payload of `to`, a copy of `from` (markdown_core_node_copy) whose
+ * payload opaque_alloc_func made, with a value equal to `from`'s that `to`
+ * owns. The node-valued fields it copies are retained by the copy after this
+ * returns. Returns 0 on allocation failure, leaving a payload that
+ * opaque_free_func releases. */
+typedef int (*markdown_core_opaque_copy_func)(const markdown_core_element *element, const markdown_core_node *from,
+                                              markdown_core_node *to);
 
 /** A parser element is a `static const` descriptor in a fixed compile-time
  * table (`elements/core-elements.c`), not an object built at run time.
@@ -489,8 +464,11 @@ int markdown_core_parser_content_place(markdown_core_parser *parser, const markd
 
 /** Append a source run for content already assembled by a producer. Runs
  * must be contiguous in the parser vector and have increasing content offsets.
- * source_width is the authored width represented by each logical byte, and
- * source_step is the source-byte stride. Allocation failure marks the parse lost. */
+ * A run with source_step 1 is copied: each content byte is the source byte it
+ * reads, and source_width is 1. A run with source_step 0 is decoded: all of
+ * its content is decoded from the source_width bytes at `source`, and it
+ * holds one decoding -- a tab's columns, NUL's U+FFFD, an escaped pipe's
+ * pipe, or a line ending's LF. Allocation failure marks the parse lost. */
 int markdown_core_parser_append_content_mark(markdown_core_parser *parser, markdown_core_node *node, bufsize_t offset,
                                              int line, bufsize_t source, int source_width, int source_step);
 /** Append the source runs covering a literal slice to a growing result map.
@@ -570,14 +548,46 @@ int markdown_core_parser_has_partially_consumed_tab(markdown_core_parser *parser
  */
 bufsize_t markdown_core_parser_get_last_line_end(markdown_core_parser *parser);
 
-/** Add a child to 'parent' during the parsing process.
+/** Add a child to 'parent' during the parsing process, and return its
+ * member.
  *
  * If 'parent' isn't the kind of node that can accept this child,
  * this function will back up till it hits a node that can, closing
  * blocks as appropriate.
  */
-markdown_core_node *markdown_core_parser_add_child(markdown_core_parser *parser, markdown_core_node *parent,
-                                                   markdown_core_node_type block_type, int start_column);
+markdown_core_member *markdown_core_parser_add_child(markdown_core_parser *parser, markdown_core_member *parent,
+                                                     markdown_core_node_type block_type, int start_column);
+
+/** A member for the detached `node`, holding its reference, linked under
+ * `owner` before `before` or last; NULL, with the parse failed and the node
+ * released, when it could not be allocated. The caller has proved
+ * containment. */
+markdown_core_member *markdown_core_parser_attach(markdown_core_parser *parser, markdown_core_member *owner,
+                                                  markdown_core_node *node, markdown_core_member *before);
+
+/** A member for the field root `node`, which `owner`'s node holds, linked as
+ * the last field root `owner` builds; NULL, with the parse failed, when it
+ * could not be allocated. */
+markdown_core_member *markdown_core_parser_attach_field(markdown_core_parser *parser, markdown_core_member *owner,
+                                                        markdown_core_node *node);
+
+/** The node that holds `member`'s node: its owner's. NULL for the
+ * document. */
+markdown_core_node *markdown_core_parser_owner(const markdown_core_parser *parser, const markdown_core_member *member);
+
+/** Detaches `member` from its owner and siblings when it has them, and
+ * releases it, its subtree and the references they hold into the parse's
+ * pool. */
+void markdown_core_parser_release_member(markdown_core_parser *parser, markdown_core_member *member);
+
+/** Complete 'member''s node (docs/plans/2026-09-29-incremental-parsing.md,
+ * 5.8): its children, each complete, become its stem, and it numbers each
+ * node it holds that is not numbered yet, measured from where it starts. The
+ * engine completes every block as it closes and every node of an inline
+ * root's content as the root's completion leaves it; an element completes
+ * what it makes outside both, such as the nodes a completion step inserts.
+ */
+void markdown_core_parser_complete_node(markdown_core_parser *parser, markdown_core_member *member);
 
 /** Advance the 'offset' of the parser in the current line.
  *
@@ -591,10 +601,9 @@ void markdown_core_parser_advance_offset(markdown_core_parser *parser, const cha
  *
  *  Returns 'true' if the 'element' was registered, 'false' otherwise: on
  *  allocation failure, for a descriptor the registration rule refuses -- one
- *  that declares both a finish step and a postprocess pass (see the two
- *  shapes above), or where a step is asked without a step, or one kind as
- *  both an exit and a scope kind, or only part of the document lifecycle,
- *  or a flanking-transparent byte outside ASCII -- and once the dialect holds
+ *  where a completion step is asked without a step, or a step asked at no
+ *  kind, or one kind as both an exit and a scope kind, or only part of the
+ *  document lifecycle, or a flanking-transparent byte outside ASCII -- and once the dialect holds
  *  255 elements (the block-start projection lists a family's owners by byte),
  *  with the builder left as it was.
  */
@@ -616,9 +625,9 @@ typedef enum {
     MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED,
 } markdown_core_node_set_kind_result;
 
-/** Change 'node' to the internal kind encoded by 'kind'.
+/** Change 'node', held by 'owner', to the internal kind encoded by 'kind'.
  *
- * Return OK on success, REJECTED when parent containment disallows the change,
+ * Return OK on success, REJECTED when the owner's containment disallows it,
  * or ALLOCATION_FAILED when replacement node data cannot be allocated.
  * Either failure preserves the original kind, data, and tree links.
  *
@@ -627,7 +636,8 @@ typedef enum {
  * A record that fits the node's existing cell needs no allocation.
  * Setting the current kind succeeds without allocating or changing its data.
  */
-markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_node *node, markdown_core_node_type kind);
+markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_node *node, markdown_core_node *owner,
+                                                               markdown_core_node_type kind);
 
 /** Return the string content for all types of 'node'.
  *  The pointer stays valid as long as 'node' isn't freed.
@@ -669,11 +679,10 @@ void markdown_core_inline_state_set_offset(markdown_core_inline_state *inline_st
  */
 struct markdown_core_chunk *markdown_core_inline_state_get_chunk(markdown_core_inline_state *inline_state);
 
-/** Remove the last n characters from the last child of the given node.
- * This only works where all n characters are in the single last child, and the last
- * child is MARKDOWN_CORE_NODE_TEXT.
+/** Remove the last n characters from the last children of the given member,
+ * while they are MARKDOWN_CORE_NODE_TEXT.
  */
-void markdown_core_node_unput(markdown_core_parser *parser, markdown_core_node *node, int n);
+void markdown_core_node_unput(markdown_core_parser *parser, markdown_core_member *member, int n);
 
 /** Get the character located at the current inline parsing offset
  */
@@ -704,6 +713,15 @@ int markdown_core_inline_state_find_opaque_close(markdown_core_inline_state *inl
                                                  markdown_core_delimiter_rule rule, int from,
                                                  markdown_core_opaque_delimiter_scanner scan);
 
+/** SAY WHAT A DECISION READ (docs/plans/2026-09-29-incremental-parsing.md,
+ * 5.6): the content bytes [from, to) of the chunk, where `from` below zero
+ * reads the start of the chunk and `to` past its length reads its end. An
+ * element's `match_inline` and `is_inline_start` call this for everything
+ * the call read before it returns; a call that does not leaves the token
+ * that asked it to be read again by every later parse. A call may say it
+ * read more than it did, never less. */
+void markdown_core_inline_state_read(markdown_core_inline_state *inline_state, int from, int to);
+
 /** Push a delimiter on the delimiter stack.
  * See <<http://spec.commonmark.org/0.24/#phase-2-inline-structure> for
  * more information on the parameters
@@ -711,7 +729,7 @@ int markdown_core_inline_state_find_opaque_close(markdown_core_inline_state *inl
 void markdown_core_inline_state_push_delimiter(markdown_core_inline_state *inline_state,
                                                const markdown_core_element_instance *owner,
                                                markdown_core_delimiter_rule rule, int can_open, int can_close,
-                                               markdown_core_node *inl_text);
+                                               markdown_core_member *inl_text);
 
 /** Whether the delimiters of `rule` on the stack that can open outnumber
  * those that can close. The counts are kept at every push and removal, so the
@@ -727,6 +745,15 @@ void markdown_core_inline_state_push_delimiter(markdown_core_inline_state *inlin
  */
 int markdown_core_inline_state_has_unmatched_opener(markdown_core_inline_state *inline_state,
                                                     markdown_core_delimiter_rule rule);
+
+/** Appends the detached `token` to the content the inline state builds and
+ * returns its member, which holds the token's reference. Each field root the
+ * token holds is built with it, and a field root with content of its own is
+ * parsed before the next token is read. NULL, with the token released and
+ * the parse failed, when the owner's policy refuses the token or a member
+ * could not be allocated. */
+markdown_core_member *markdown_core_inline_state_append(markdown_core_inline_state *inline_state,
+                                                        markdown_core_node *token);
 
 /** Make the Text node a delimiter run stands as: its literal is the bytes
  * [from, to] of the block's content and its position is a projection of that

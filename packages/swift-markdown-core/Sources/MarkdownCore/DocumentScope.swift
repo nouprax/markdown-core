@@ -1,15 +1,10 @@
 extension Document {
-    /// The editor scopes of `node`, one per source range in source order,
-    /// computed from the extents and runs and `source`, with columns in the
-    /// document's ``unit``.
+    /// The editor scopes of `node`, one per run in source order, computed
+    /// from the runs and `source`, with columns in the document's ``unit``.
     ///
-    /// A node's source ranges are a window less the gaps between the runs
-    /// that place it. A block's window is its range and its runs are its own;
-    /// a node in an inline root's content has as its window the source from
-    /// where its first content byte was read to where its last was, and the
-    /// root's runs. An empty window is one empty range. Each call walks the
-    /// document once to place the node and reads the source for its lines;
-    /// nothing is cached.
+    /// A node's source ranges are its runs. Each call walks the document once
+    /// to place the node and reads the source for its lines; nothing is
+    /// cached.
     ///
     /// - Parameters:
     ///   - node: a node of this document.
@@ -73,8 +68,8 @@ extension Document {
         let top = MarkupRecord.of(node)
         var text = source
         return try text.withUTF8 { bytes in
-            // A node's source ranges depend on the inline root it is in, so
-            // the walk starts at the document's root.
+            // A node's source leads from where the source of the node before
+            // it ends, so the walk starts at the document's root.
             guard let output = MarkupDumper.render(top, in: record, bytes: bytes, lines: SourceLines(bytes)) else {
                 throw MarkdownCoreError(code: .outOfBounds)
             }

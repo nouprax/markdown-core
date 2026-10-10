@@ -106,15 +106,20 @@ struct markdown_core_element {
      * A byte's owners are asked in ascending precedence -- any value, not only
      * the named ones -- and equal precedences in descriptor order. */
     markdown_core_inline_precedence inline_precedence;
-    markdown_core_node *(*parse_text)(const markdown_core_element_instance *, markdown_core_parser *,
-                                      markdown_core_inline_state *, bufsize_t);
+    markdown_core_member *(*parse_text)(const markdown_core_element_instance *, markdown_core_parser *,
+                                        markdown_core_inline_state *, bufsize_t);
     void (*init_inline)(const markdown_core_element_instance *, markdown_core_inline_state *);
     void (*begin_inline)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_inline_state *,
-                         markdown_core_node *);
+                         markdown_core_member *);
     bool (*claim_inline_tail)(const markdown_core_element_instance *, markdown_core_inline_state *,
-                              markdown_core_node *);
+                              markdown_core_member *);
     void (*finish_inline)(const markdown_core_element_instance *, markdown_core_inline_state *);
     void (*dispose_inline)(const markdown_core_element_instance *, markdown_core_inline_state *);
+    /* Whether a token the element keeps open in the run -- a bracket, a
+     * citation token waiting for its group -- can still change what the run
+     * makes of the content that follows (docs/plans/2026-09-29-incremental-
+     * parsing.md, 5.6). */
+    bool (*holds_inline)(const markdown_core_element_instance *, const markdown_core_inline_state *);
     void (*complete_inline)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *, int);
     /* A lazy line -- one that did not match every open container's prefix
      * and opened no block -- is offered to the current block. `accepts_lazy`
@@ -126,9 +131,9 @@ struct markdown_core_element {
      * accepts the line takes it as a paragraph takes a lazy line: the starts
      * that refuse a lazy line (`block_start_context`) open no block on it, so
      * the line is lazy exactly when it would be after a paragraph's line. */
-    markdown_core_node *(*open_lazy)(const markdown_core_element_instance *, markdown_core_parser *,
-                                     markdown_core_node *, markdown_core_chunk *);
-    bool (*accepts_lazy)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
+    markdown_core_member *(*open_lazy)(const markdown_core_element_instance *, markdown_core_parser *,
+                                       markdown_core_member *, markdown_core_chunk *);
+    bool (*accepts_lazy)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *);
     unsigned speculative_flags;
     markdown_core_content_mode content_mode;
     bool inline_content, deferred_inlines, paragraph, blank_opaque, blank_runs, propagates_child_blank, pending_close;
@@ -136,22 +141,46 @@ struct markdown_core_element {
     void (*init_document)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*dispose_parser)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*dispose_document)(const markdown_core_element_instance *, markdown_core_parser *);
-    size_t (*read_document_prefix)(const markdown_core_element_instance *, markdown_core_parser *,
-                                   const unsigned char *, size_t);
+    void (*read_document_prefix)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*prepare_document)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*finish_document)(const markdown_core_element_instance *, markdown_core_parser *);
-    /* The last step of the parse: the tree is final, and the owner publishes
-     * it (ids, extents, definition tables). */
+    /* The node a member builds is complete: it numbers the nodes it holds
+     * that are not numbered yet, in canonical field order, and gives each
+     * the id of the old node it continues or the next, and its extent,
+     * measured from `start`, where the node begins
+     * (docs/plans/2026-09-29-incremental-parsing.md, 5.8, 5.9). */
+    void (*complete_node)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *,
+                          uint32_t start);
+    /* A numbered node waits on nothing any more: it settles, as the old
+     * node it continues when it equals it (5.9). */
+    void (*settle_member)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *);
+    /* The last step of the parse: every node is complete, and the owner
+     * publishes the document (identity, definition tables). */
     void (*publish_document)(const markdown_core_element_instance *, markdown_core_parser *);
-    void (*observe_inline)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
-    markdown_core_node *(*open_text_block)(const markdown_core_element_instance *, markdown_core_parser *,
-                                           markdown_core_node *, markdown_core_chunk *);
-    markdown_core_node *(*try_interrupting_block)(const markdown_core_element_instance *, markdown_core_parser *,
-                                                  markdown_core_node *, markdown_core_chunk *, bool);
+    markdown_core_member *(*open_text_block)(const markdown_core_element_instance *, markdown_core_parser *,
+                                             markdown_core_member *, markdown_core_chunk *);
+    /* A start that precedes every scanned one, read in the line's context
+     * as a scanned start is (block_start_context). */
+    markdown_core_member *(*try_interrupting_block)(const markdown_core_element_instance *, markdown_core_parser *,
+                                                    struct markdown_core_block_start_context *);
     bool interrupts_paragraph;
 
-    bool (*continue_container)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                               markdown_core_chunk *, const markdown_core_node *, bool *);
+    /* THE STATE A CONTAINER CARRIES where a child of it can begin
+     * (docs/plans/2026-09-29-incremental-parsing.md, 5.4, E3): the word its
+     * opening line decided, which its later lines read. An element whose
+     * blocks hold blocks that a later parse may take declares it; the cursor
+     * reads the old children of such a block again (5.3), and reads a block
+     * of an element without it whole. */
+    uint32_t (*carry_save)(const markdown_core_element_instance *, const markdown_core_member *);
+    /* WHAT ITS CHILDREN ADD TO THAT STATE, when its later lines read what
+     * the children before them hold (E4): the summary its children tree
+     * keeps, and the fold that adds the combined summary of old children the
+     * cursor takes whole (5.3), so the state after them is the old one. */
+    const markdown_core_stem_summary *children_summary;
+    void (*fold_children)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *,
+                          uint64_t);
+    bool (*continue_container)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *,
+                               markdown_core_chunk *, const markdown_core_member *, bool *);
     /* The bytes `continue_container` can strip from a line besides
      * indentation: the COMPLETE set, as a gate's is, and NULL when it strips
      * indentation only. A block-start question asked of a LATER line from raw
@@ -164,11 +193,11 @@ struct markdown_core_element {
      * from that marker in raw source, so the key hands such a line to the
      * lookahead rather than walking over it. */
     const char *container_prefix_bytes;
-    bool (*accepts_blank)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
-    bool (*blank_line)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
-    bool (*ends_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+    bool (*accepts_blank)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *);
+    bool (*blank_line)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *);
+    bool (*ends_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *,
                        markdown_core_chunk *);
-    void (*finalize_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
+    void (*finalize_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *);
 
     bool (*scan_block_start)(const markdown_core_element_instance *, markdown_core_parser *,
                              struct markdown_core_block_start_context *, struct markdown_core_block_start *);
@@ -228,67 +257,57 @@ struct markdown_core_element {
     markdown_core_can_contain_func can_contain_func;
     markdown_core_contains_inlines_func contains_inlines_func;
     markdown_core_accepts_lines_func accepts_lines_func;
-    /* The two finish-stage hook shapes; an element declares at most one (the
-     * API header states the LOCAL/GLOBAL invariant that separates them, and
-     * registration refuses a descriptor that declares both).
+    /* The element's completion step (markdown-core-element-api.h), asked
+     * from inside an inline root's completion at the EXIT of every node whose
+     * kind is in `complete_exit_kinds` and at the ENTER and EXIT of every
+     * node whose kind is in `complete_scope_kinds`. It costs the root nothing
+     * at any other event: the pass projects the steps by (event, kind) once
+     * per dialect, so a step asked at Text is not so much as looked at when a
+     * Paragraph is left, nor when a Text is entered. */
+    markdown_core_complete_step_func complete_step;
+    /* The node kinds the step ACTS ON, terminated by MARKDOWN_CORE_NODE_NONE;
+     * NULL declares nothing. This is THE GATE: the set is intersected with
+     * the kinds the parse has produced, and a step that cannot find anything
+     * is skipped at every event it was projected to. A step whose trigger
+     * kind is CREATED by an earlier step must therefore name that creator
+     * kind too.
      *
-     * `finish_step` is asked from inside the one finish walk, at the EXIT of
-     * every node whose kind is in `finish_exit_kinds` and at the ENTER and
-     * EXIT of every node whose kind is in `finish_scope_kinds`. It costs the
-     * document nothing at any other event: the walk projects the steps by
-     * (event, kind) once per parse, so a step asked at Text is not so much as
-     * looked at when a Paragraph closes, nor when a Text opens.
-     * `postprocess_func` is handed each root after that root's walk and walks
-     * it again itself. */
-    markdown_core_finish_step_func finish_step;
-    markdown_core_postprocess_func postprocess_func;
-    /* The node kinds the element's finish hook ACTS ON, terminated by
-     * MARKDOWN_CORE_NODE_NONE; NULL declares nothing. This is THE GATE, set
-     * by a step and by a pass alike and meaning the same for both shapes: the
-     * set is intersected with the kinds
-     * the parse actually produced, taken when the block tree is complete, and
-     * a hook that cannot find anything is skipped -- a pass along with the
-     * traversal it would have made, a step at every event it was projected
-     * to. A hook whose trigger kind is CREATED by an earlier hook must
-     * therefore name that creator kind too.
-     *
-     * The kinds a hook acts on are not always the kinds it is asked at:
-     * formula rewrites a Formula, a CodeBlock and a FormulaBlock, and the
-     * Formula's rewrite -- the paragraph that holds nothing else becomes a
-     * FormulaBlock -- is decided at the PARAGRAPH's EXIT, where the paragraph
-     * may be replaced. So a step says where it is asked separately, below,
+     * The kinds a step acts on are not always the kinds it is asked at:
+     * formula rewrites a Formula, and the Formula's rewrite -- the paragraph
+     * that holds nothing else becomes a FormulaBlock -- is decided at the
+     * PARAGRAPH's EXIT. So a step says where it is asked separately, below,
      * and the gate stays what makes a document with no formula pay nothing
      * at each of its paragraphs.
      *
      * The kinds are declared as KINDS rather than as a precomputed bit set so
      * that each one keeps its namespace: block and inline values collide once
      * masked, and a Formula written where a block kind belongs has to be
-     * detectable rather than silently becoming some unrelated block's bit.
-     * The engine projects them per parse. */
-    const markdown_core_node_type *finish_acts_on_kinds;
-    /* WHERE A FINISH STEP IS ASKED, two lists terminated the same way; NULL
-     * declares nothing, and a pass declares neither.
+     * detectable rather than silently becoming some unrelated block's bit. */
+    const markdown_core_node_type *complete_acts_on_kinds;
+    /* WHERE A COMPLETION STEP IS ASKED, two lists terminated the same way;
+     * NULL declares nothing.
      *
-     * `finish_exit_kinds`: the step receives the EXIT of these kinds, the
-     * point where the node's subtree is complete and the node may be rewritten
-     * or replaced. It names the kind of the node the step is handed --
+     * `complete_exit_kinds`: the step receives the EXIT of these kinds, the
+     * point where the node's subtree is complete and the node may be
+     * rewritten. It names the kind of the node the step is handed --
      * PARAGRAPH for formula's promotion, TEXT for autolink's scan.
      *
-     * `finish_scope_kinds`: the kinds whose EXTENT the step tracks. It
-     * receives their ENTER and their EXIT and nothing else about them: it acts
-     * on nothing there, it learns that the nodes to come are inside one, and
-     * it keeps that in its per-root state word. Autolink declares LINK -- an
-     * address inside a Link is already a link's text.
+     * `complete_scope_kinds`: the kinds whose EXTENT the step tracks. It
+     * receives their ENTER and their EXIT and nothing else about them: it
+     * acts on nothing there, it learns that the nodes to come are inside one,
+     * and it keeps that in its per-root state word. Autolink declares LINK --
+     * an address inside a Link is already a link's text.
      *
      * The two are disjoint: a kind in both would be one event asked twice,
      * and registration refuses the descriptor. It also refuses a step that
      * names no kind in either list, which would never be asked, and a kind
      * the dispatch table cannot index (an ordinal at or past
      * MARKDOWN_CORE_NODE_KIND_COUNT, or a value of neither class). */
-    const markdown_core_node_type *finish_exit_kinds;
-    const markdown_core_node_type *finish_scope_kinds;
+    const markdown_core_node_type *complete_exit_kinds;
+    const markdown_core_node_type *complete_scope_kinds;
     markdown_core_opaque_alloc_func opaque_alloc_func;
     markdown_core_opaque_free_func opaque_free_func;
+    markdown_core_opaque_copy_func opaque_copy_func;
     markdown_core_visit_owned_subtrees_func visit_owned_subtrees_func;
     /* The bytes of the element's parse record and of its record in each
      * inline run (markdown-core-element-api.h, "AN ELEMENT AS ONE PARSE HOLDS
@@ -299,55 +318,5 @@ struct markdown_core_element {
      * Sealing resolves them, in this order, into the instance's `peers`. */
     const markdown_core_element *const *peers;
 };
-
-/* Defined here rather than in node.c because the ANSWER IS NO for almost every
- * node, and the question was costing a cross-translation-unit call to find that
- * out. `walk_owned_trees` asks it once per node of every tree it walks --
- * 2,981,851 times over the 65 same-job benchmark documents, of which 136,500
- * reach an element hook and about 26,800 visit anything at all. Inlined, the
- * common answer is a compare against `kind` and a NULL test on a pointer.
- *
- * It lives in element.h, not beside its declaration in node.h, because it
- * reads through `markdown_core_element`, which node.h only forward-declares.
- *
- * Kept as ONE definition rather than a cheap predicate placed beside the real
- * one: a second copy of "which kinds can own a subtree" drifts from the list
- * below the first time a kind is added to it. */
-/* WHICH KINDS CAN OWN A SUBTREE THROUGH THEIR OWN RECORD: the one predicate,
- * read by the visitor below and projected into the finish walk's per-kind
- * record (dialect.h, MARKDOWN_CORE_KIND_FIELDS), so the walk asks it
- * once per parse per kind rather than three compares per node. An element
- * that owns subtrees through `visit_owned_subtrees_func` is found through
- * the node's `element`, which the walk tests beside the flag. */
-static inline bool markdown_core_kind_owns_fields(markdown_core_node_type kind) {
-    return kind == MARKDOWN_CORE_NODE_DEFINITION || kind == MARKDOWN_CORE_NODE_CALLOUT ||
-           kind == MARKDOWN_CORE_NODE_CITE;
-}
-
-static inline int markdown_core_visit_inline_subtrees(markdown_core_node *node,
-                                                      markdown_core_owned_subtree_visitor visitor, void *context) {
-    if (markdown_core_kind_owns_fields((markdown_core_node_type)node->kind)) {
-        if (node->kind == MARKDOWN_CORE_NODE_DEFINITION && node->as.definition->term &&
-            !visitor(&node->as.definition->term, context)) {
-            return 0;
-        }
-        if (node->kind == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->title &&
-            !visitor(&node->as.callout->title, context)) {
-            return 0;
-        }
-        if (node->kind == MARKDOWN_CORE_NODE_CITE) {
-            for (markdown_core_node *item = node->as.cite->citations; item; item = item->next) {
-                if ((item->as.citation->note && !visitor(&item->as.citation->note, context)) ||
-                    (item->as.citation->prefix && !visitor(&item->as.citation->prefix, context)) ||
-                    (item->as.citation->suffix && !visitor(&item->as.citation->suffix, context))) {
-                    return 0;
-                }
-            }
-        }
-    }
-    const markdown_core_element *element = node->element;
-    return !element || !element->visit_owned_subtrees_func ||
-           element->visit_owned_subtrees_func(element, node, visitor, context);
-}
 
 #endif

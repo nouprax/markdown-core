@@ -49,7 +49,7 @@ bool markdown_core_parse_dimensions(markdown_core_chunk label, bufsize_t suffix,
 
 void markdown_core_inline_apply_image_dimensions(const markdown_core_element_instance *self,
                                                  markdown_core_inline_state *inline_state, const bracket *opener,
-                                                 markdown_core_node *image, bufsize_t end) {
+                                                 markdown_core_member *image, bufsize_t end) {
     /* Earlier inline allocation failure may have omitted the final text run.
      * The transaction is already failed; do not consume its incomplete tree. */
     if (inline_state->error || inline_state->owner_parser->error) {
@@ -66,17 +66,18 @@ void markdown_core_inline_apply_image_dimensions(const markdown_core_element_ins
     /* A successful suffix contains only ordinary ASCII text and belongs to
      * the final text run at this bracket depth. Remove it before delimiter
      * reduction; the prefix keeps its nodes and its original source map. */
-    markdown_core_node *tail = image->last_child;
-    assert(tail && tail->kind == MARKDOWN_CORE_NODE_TEXT && tail->as.literal->len >= end - suffix);
+    markdown_core_member *last = image->last;
+    markdown_core_node *tail = last->node;
+    assert(tail->kind == MARKDOWN_CORE_NODE_TEXT && tail->as.literal->len >= end - suffix);
     bufsize_t start = end - tail->as.literal->len;
     tail->as.literal->len -= end - suffix;
     if (tail->as.literal->len == 0) {
-        markdown_core_parser_release_node(inline_state->owner_parser, tail);
+        markdown_core_parser_release_member(inline_state->owner_parser, last);
     } else {
         markdown_core_inline_state_place(inline_state, tail, start, suffix - 1);
     }
-    image->as.link->dimensions.value = dimensions;
-    image->as.link->dimensions.has_value = true;
+    image->node->as.link->dimensions.value = dimensions;
+    image->node->as.link->dimensions.has_value = true;
 }
 
 void markdown_core_embedded_record_text(const markdown_core_element_instance *self,
@@ -94,9 +95,9 @@ void markdown_core_embedded_record_text(const markdown_core_element_instance *se
     }
 }
 
-static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 markdown_core_node *parent, unsigned char character,
-                                 markdown_core_inline_state *inline_state) {
+static markdown_core_member *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                   markdown_core_member *parent, unsigned char character,
+                                   markdown_core_inline_state *inline_state) {
     if (character != '!') {
         return NULL;
     }
@@ -105,15 +106,18 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     if (self->peers[EMBEDDED_LINK] && markdown_core_inline_peek_char(inline_state) == '[' &&
         markdown_core_inline_peek_char_n(inline_state, 1) != '^') {
         inline_state->pos++;
-        markdown_core_node *text = make_str(inline_state, inline_state->pos - 2, inline_state->pos - 1,
-                                            markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 2, 2));
+        markdown_core_member *text = markdown_core_inline_state_append(
+            inline_state, make_str(inline_state, inline_state->pos - 2, inline_state->pos - 1,
+                                   markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 2, 2)));
         if (text) {
             markdown_core_inline_push_bracket(self->peers[EMBEDDED_LINK], inline_state, BRACKET_IMAGE, text);
         }
         return text;
     }
-    return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
-                    markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
+    markdown_core_inline_state_read(inline_state, inline_state->pos - 1, inline_state->pos + 2);
+    return markdown_core_inline_state_append(
+        inline_state, make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
+                               markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1)));
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_EMBEDDED = {

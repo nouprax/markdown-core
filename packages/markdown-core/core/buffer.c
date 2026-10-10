@@ -11,6 +11,7 @@
 #include "config.h"
 #include "markdown_core_ctype.h"
 #include "buffer.h"
+#include "slab.h"
 
 /* Used as default value for markdown_core_strbuf->ptr so that people can always
  * assume ptr is non-NULL and zero terminated even for new markdown_core_strbufs.
@@ -83,7 +84,8 @@ void markdown_core_strbuf_grow(markdown_core_strbuf *buf, bufsize_t target_size)
         new_size = MARKDOWN_CORE_STRBUF_LIMIT + 1;
     }
 
-    unsigned char *new_ptr = (unsigned char *)markdown_core_realloc(buf->asize ? buf->ptr : NULL, new_size);
+    unsigned char *new_ptr =
+        (unsigned char *)markdown_core_bytes_resize(buf->asize ? buf->ptr : NULL, (size_t)new_size);
     if (!new_ptr) {
         buf->oom = 1;
         return;
@@ -103,7 +105,7 @@ void markdown_core_strbuf_free(markdown_core_strbuf *buf) {
     }
 
     if (markdown_core_strbuf_owns(buf)) {
-        markdown_core_free(buf->ptr);
+        markdown_core_bytes_release(NULL, buf->ptr);
     }
 
     markdown_core_strbuf_init(buf, 0);
@@ -201,7 +203,11 @@ unsigned char *markdown_core_strbuf_detach(markdown_core_strbuf *buf) {
 
     if (buf->asize == 0) {
         /* return an empty string; NULL reports allocation failure */
-        return (unsigned char *)markdown_core_alloc(1, 1);
+        unsigned char *empty = markdown_core_bytes_take(NULL, 1, 0);
+        if (empty) {
+            empty[0] = '\0';
+        }
+        return empty;
     }
 
     markdown_core_strbuf_init(buf, 0);

@@ -55,9 +55,25 @@ static markdown_core_chunk markdown_core_clean_autolink(markdown_core_inline_sta
     return markdown_core_chunk_buf_detach(&buf);
 }
 
-static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(markdown_core_inline_state *inline_state,
-                                                              int start_column, int end_column, markdown_core_chunk url,
-                                                              int is_email) {
+/* An autolink token joins the content with its text as its child. */
+static markdown_core_member *S_append_link(markdown_core_inline_state *inline_state, markdown_core_node *link,
+                                           markdown_core_node *text) {
+    markdown_core_member *member = markdown_core_inline_state_append(inline_state, link);
+    if (!member) {
+        if (text) {
+            markdown_core_parser_release_node(inline_state->owner_parser, text);
+        }
+        return NULL;
+    }
+    if (text && !markdown_core_parser_attach(inline_state->owner_parser, member, text, NULL)) {
+        return NULL;
+    }
+    return member;
+}
+
+static MARKDOWN_CORE_INLINE markdown_core_member *make_autolink(markdown_core_inline_state *inline_state,
+                                                                int start_column, int end_column,
+                                                                markdown_core_chunk url, int is_email) {
     markdown_core_node *link = markdown_core_inline_make_simple(inline_state, MARKDOWN_CORE_NODE_LINK);
     markdown_core_node *text;
     if (!link) {
@@ -86,15 +102,12 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(markdown_core_inli
     // paragraph, produced a Link that did not contain its own Text.
     markdown_core_inline_state_place(inline_state, link, start_column, end_column);
     text = make_str_with_entities(inline_state, start_column + 1, end_column - 1, &url);
-    if (text) {
-        markdown_core_node_attach_validated(link, text, NULL);
-    }
     markdown_core_inline_attach_inline_attributes(inline_state, link, start_column);
     /* The pointy braces are the syntax; what they enclose is the text. */
-    return link;
+    return S_append_link(inline_state, link, text);
 }
 
-static markdown_core_node *match_angle(markdown_core_inline_state *inline_state) {
+static markdown_core_member *match_angle(markdown_core_inline_state *inline_state) {
     bufsize_t from = inline_state->pos + 1;
     bufsize_t length = scan_autolink_uri(inline_state->input.data, inline_state->input.len, from);
     bool email = false;
@@ -342,8 +355,8 @@ static size_t autolink_extent(const markdown_core_element_instance *self, markdo
     return offset;
 }
 
-static markdown_core_node *www_match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                     markdown_core_node *parent, markdown_core_inline_state *inline_state) {
+static markdown_core_member *www_match(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                       markdown_core_member *parent, markdown_core_inline_state *inline_state) {
     markdown_core_chunk *chunk = markdown_core_inline_state_get_chunk(inline_state);
     size_t max_rewind = markdown_core_inline_state_get_offset(inline_state);
     uint8_t *data = chunk->data + max_rewind;
@@ -353,10 +366,12 @@ static markdown_core_node *www_match(const markdown_core_element_instance *self,
 
     if (max_rewind > (size_t)markdown_core_inline_state_context_start(self->peers[AUTOLINK_LINK], inline_state) &&
         strchr("*_~(", data[-1]) == NULL && !markdown_core_is_whitespace(data[-1])) {
+        markdown_core_inline_state_read(inline_state, (int)max_rewind - 1, (int)max_rewind + 1);
         return 0;
     }
 
     if (size < 4 || memcmp(data, "www.", strlen("www.")) != 0) {
+        markdown_core_inline_state_read(inline_state, (int)max_rewind - 1, (int)max_rewind + 4);
         return 0;
     }
 
@@ -403,16 +418,17 @@ static markdown_core_node *www_match(const markdown_core_element_instance *self,
         return NULL;
     }
     *text->as.literal = markdown_core_chunk_dup(chunk, (bufsize_t)max_rewind, (bufsize_t)link_end);
-    markdown_core_node_attach_validated(node, text, NULL);
-
     markdown_core_inline_state_place(inline_state, node, (int)max_rewind, (int)(max_rewind + link_end - 1));
     markdown_core_inline_state_place(inline_state, text, (int)max_rewind, (int)(max_rewind + link_end - 1));
 
-    return node;
+    return S_append_link(inline_state, node, text);
 }
 
-static markdown_core_node *url_match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                     markdown_core_node *parent, markdown_core_inline_state *inline_state) {
+/* `read` becomes one past what the scan read when it is no URL for its
+ * first bytes alone, and stays otherwise. */
+static markdown_core_member *url_match(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                       markdown_core_member *parent, markdown_core_inline_state *inline_state,
+                                       bufsize_t *read) {
     size_t link_end, domain_len;
     int rewind = 0;
 
@@ -422,6 +438,7 @@ static markdown_core_node *url_match(const markdown_core_element_instance *self,
     size_t size = chunk->len - max_rewind;
 
     if (size < 4 || data[1] != '/' || data[2] != '/') {
+        *read = max_rewind + 4;
         return 0;
     }
 
@@ -472,12 +489,10 @@ static markdown_core_node *url_match(const markdown_core_element_instance *self,
         return NULL;
     }
     *text->as.literal = url;
-    markdown_core_node_attach_validated(node, text, NULL);
-
     markdown_core_inline_state_place(inline_state, node, max_rewind - rewind, (int)(max_rewind + link_end - 1));
     markdown_core_inline_state_place(inline_state, text, max_rewind - rewind, (int)(max_rewind + link_end - 1));
 
-    return node;
+    return S_append_link(inline_state, node, text);
 }
 
 /* A3 BEFORE A10. A bare address is an autolink wherever it appears, and the
@@ -494,7 +509,10 @@ static markdown_core_node *url_match(const markdown_core_element_instance *self,
  * The runs are consolidated before that step, which then links the address
  * byte for byte as cmark-gfm links it, `mailto:` spelling included, and skips
  * it inside a link. */
-static markdown_core_node *address_match(markdown_core_parser *parser, markdown_core_inline_state *inline_state) {
+/* `read` becomes one past what the scan read when no address local part
+ * ends in `@`, and stays otherwise. */
+static markdown_core_member *address_match(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
+                                           bufsize_t *read) {
     markdown_core_chunk *chunk = markdown_core_inline_state_get_chunk(inline_state);
     size_t offset = (size_t)markdown_core_inline_state_get_offset(inline_state);
     uint8_t *data = chunk->data + offset;
@@ -507,9 +525,10 @@ static markdown_core_node *address_match(markdown_core_parser *parser, markdown_
     for (at = 1; at < size && (markdown_core_isalnum(data[at]) || strchr(".+-_", data[at]) != NULL); at++) {
     }
     if (at == 1 || at >= size || data[at] != '@') {
+        *read = (bufsize_t)(offset + at + 1);
         return NULL;
     }
-    /* The domain, as `postprocess_text` scans it. */
+    /* The domain, as `link_text_addresses` scans it. */
     for (end = at + 1; end < size; end++) {
         uint8_t c = data[end];
         if (markdown_core_isalnum(c)) {
@@ -532,12 +551,12 @@ static markdown_core_node *address_match(markdown_core_parser *parser, markdown_
         return NULL;
     }
     markdown_core_inline_state_set_offset(inline_state, (int)(offset + 1));
-    return node;
+    return markdown_core_inline_state_append(inline_state, node);
 }
 
-static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 markdown_core_node *parent, unsigned char c,
-                                 markdown_core_inline_state *inline_state) {
+static markdown_core_member *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                   markdown_core_member *parent, unsigned char c,
+                                   markdown_core_inline_state *inline_state) {
     if (c == '<') {
         return match_angle(inline_state);
     }
@@ -545,19 +564,29 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     int in_bracket = markdown_core_inline_state_in_bracket(self->peers[AUTOLINK_LINK], inline_state, false) ||
                      markdown_core_inline_state_in_bracket(self->peers[AUTOLINK_LINK], inline_state, true);
 
+    bufsize_t at = inline_state->pos;
     if (c == ':') {
         /* No link forms inside a bracket, but the colon is still fenced off
-         * there: `postprocess_text` skips the text of a link, so
+         * there: `link_text_addresses` skips the text of a link, so
          * `[mailto:x@y.z](u)` keeps its plain text as cmark-gfm does, and a
          * bracket that never closes still gets its link. */
-        markdown_core_node *node = in_bracket ? NULL : url_match(self, parser, parent, inline_state);
-        return node || parser->error ? node : address_match(parser, inline_state);
+        bufsize_t url_read = in_bracket ? at + 1 : -1, address_read = -1;
+        markdown_core_member *node = in_bracket ? NULL : url_match(self, parser, parent, inline_state, &url_read);
+        if (node || parser->error) {
+            return node;
+        }
+        node = address_match(parser, inline_state, &address_read);
+        if (!node && url_read >= 0 && address_read >= 0) {
+            markdown_core_inline_state_read(inline_state, at, url_read > address_read ? url_read : address_read);
+        }
+        return node;
     }
 
     if (c == 'w' && !in_bracket) {
         return www_match(self, parser, parent, inline_state);
     }
 
+    markdown_core_inline_state_read(inline_state, at, at + 1);
     return NULL;
 
     // note that we could end up re-consuming something already a
@@ -615,7 +644,8 @@ static markdown_core_node *email_text_fragment(markdown_core_parser *parser,
  * A Text that is nothing but addresses is freed once its splits are in place;
  * the return value says so, because the caller's event names a node that is
  * then gone. Sets parser->error on failure and leaves the tree consistent. */
-static markdown_core_finish_result postprocess_text(markdown_core_parser *parser, markdown_core_node *text) {
+static markdown_core_complete_result link_text_addresses(markdown_core_parser *parser, markdown_core_member *member) {
+    markdown_core_node *text = member->node;
     size_t start = 0;
     size_t offset = 0;
     markdown_core_content_map source_map = text->content_map;
@@ -719,8 +749,8 @@ static markdown_core_finish_result postprocess_text(markdown_core_parser *parser
         /* Recognition alone cannot authorize a rewrite in an extension-owned
          * parent. Decide before allocating or splitting the original text. */
         size_t prefix_len = offset + max_rewind - rewind;
-        if (!text->parent || !markdown_core_node_can_contain_type(text->parent, MARKDOWN_CORE_NODE_LINK) ||
-            (prefix_len && !markdown_core_node_can_contain_type(text->parent, MARKDOWN_CORE_NODE_TEXT))) {
+        if (!member->owner || !markdown_core_node_can_contain_type(member->owner->node, MARKDOWN_CORE_NODE_LINK) ||
+            (prefix_len && !markdown_core_node_can_contain_type(member->owner->node, MARKDOWN_CORE_NODE_TEXT))) {
             break;
         }
         markdown_core_node *link_node = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_LINK);
@@ -756,69 +786,83 @@ static markdown_core_finish_result postprocess_text(markdown_core_parser *parser
             markdown_core_parser_release_node(parser, link_node);
             break;
         }
-        markdown_core_node_attach_validated(link_node, link_text, NULL);
         if (prefix_len) {
             markdown_core_node *prefix = email_text_fragment(parser, &source_map, &source, prefix_start, prefix_len);
             if (!prefix) {
+                markdown_core_parser_release_node(parser, link_text);
                 markdown_core_parser_release_node(parser, link_node);
                 break;
             }
-            markdown_core_node_attach_validated(text->parent, prefix, text);
+            if (!markdown_core_parser_attach(parser, member->owner, prefix, member)) {
+                markdown_core_parser_release_node(parser, link_text);
+                markdown_core_parser_release_node(parser, link_node);
+                break;
+            }
         }
-        markdown_core_node_attach_validated(text->parent, link_node, text);
+        markdown_core_member *link = markdown_core_parser_attach(parser, member->owner, link_node, member);
+        if (!link) {
+            markdown_core_parser_release_node(parser, link_text);
+            break;
+        }
+        if (!markdown_core_parser_attach(parser, link, link_text, NULL)) {
+            break;
+        }
+        /* The pass has left the place it is inserted at: the link completes
+         * here. */
+        markdown_core_parser_complete_node(parser, link);
         start = post_start;
         remaining = source.len - start;
         offset = 0;
     }
 
     if (parser->error) {
-        return MARKDOWN_CORE_FINISH_FAILED;
+        return MARKDOWN_CORE_COMPLETE_FAILED;
     }
     if (!start) {
-        return MARKDOWN_CORE_FINISH_CONTINUE;
+        return MARKDOWN_CORE_COMPLETE_CONTINUE;
     }
     if (!remaining) {
-        markdown_core_parser_release_node(parser, text);
-        return MARKDOWN_CORE_FINISH_CONSUMED;
+        markdown_core_parser_release_member(parser, member);
+        return MARKDOWN_CORE_COMPLETE_CONSUMED;
     }
     markdown_core_chunk tail = markdown_core_chunk_dup(&source, (bufsize_t)start, (bufsize_t)remaining);
     if (!markdown_core_chunk_to_cstr(&tail)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return MARKDOWN_CORE_FINISH_FAILED;
+        return MARKDOWN_CORE_COMPLETE_FAILED;
     }
     set_sourcepos_from_range(parser, text, &source_map, start, remaining);
     *text->as.literal = tail;
     markdown_core_chunk_free(&source);
-    return MARKDOWN_CORE_FINISH_CONTINUE;
+    return MARKDOWN_CORE_COMPLETE_CONTINUE;
 }
 
-/* The email scan is a finish STEP: it is asked, from inside the one finish
- * walk, at a Text's EXIT (the kind it acts on) and at a Link's ENTER and EXIT
- * (the kind whose extent it tracks). The Link events set and clear the
- * per-root state word -- a Text inside a Link is never scanned, an address
- * there is already a link's text -- and a Text's EXIT outside a Link is
- * scanned. The walk has already consolidated that Text with the siblings that
- * followed it when this is asked, so the scan sees the whole run, and the
- * EXIT's lookahead already names the following survivor, so the splits
- * inserted before the Text are never visited and the Text itself may be
- * freed. */
-static markdown_core_finish_result finish_step(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                               markdown_core_node *node, markdown_core_event_type event, int is_root,
-                                               void **state) {
+/* The email scan is a completion STEP: it is asked, from inside an inline
+ * root's completion, at a Text's EXIT (the kind it acts on) and at a Link's
+ * ENTER and EXIT (the kind whose extent it tracks). The Link events set and
+ * clear the per-root state word -- a Text inside a Link is never scanned, an
+ * address there is already a link's text -- and a Text's EXIT outside a Link
+ * is scanned. The pass has already consolidated that Text with the siblings
+ * that followed it when this is asked, so the scan sees the whole run, and
+ * the EXIT's lookahead already names the following survivor, so the splits
+ * inserted before the Text are never visited, the links among them complete
+ * as they are inserted, and the Text itself may be freed. */
+static markdown_core_complete_result complete_step(const markdown_core_element_instance *self,
+                                                   markdown_core_parser *parser, markdown_core_member *member,
+                                                   markdown_core_event_type event, int is_root, void **state) {
     (void)self;
     (void)is_root;
-    if (node->kind == MARKDOWN_CORE_NODE_LINK) {
-        *state = event == MARKDOWN_CORE_EVENT_ENTER ? node : NULL;
-        return MARKDOWN_CORE_FINISH_CONTINUE;
+    if (member->node->kind == MARKDOWN_CORE_NODE_LINK) {
+        *state = event == MARKDOWN_CORE_EVENT_ENTER ? member : NULL;
+        return MARKDOWN_CORE_COMPLETE_CONTINUE;
     }
     assert(event == MARKDOWN_CORE_EVENT_EXIT);
     if (*state) {
-        return MARKDOWN_CORE_FINISH_CONTINUE;
+        return MARKDOWN_CORE_COMPLETE_CONTINUE;
     }
-    return postprocess_text(parser, node);
+    return link_text_addresses(parser, member);
 }
 
-static const markdown_core_node_type AUTOLINK_FINISH_KINDS[] = {MARKDOWN_CORE_NODE_TEXT, MARKDOWN_CORE_NODE_NONE};
+static const markdown_core_node_type AUTOLINK_TEXT_KINDS[] = {MARKDOWN_CORE_NODE_TEXT, MARKDOWN_CORE_NODE_NONE};
 static const markdown_core_node_type AUTOLINK_SCOPE_KINDS[] = {MARKDOWN_CORE_NODE_LINK, MARKDOWN_CORE_NODE_NONE};
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_AUTOLINK = {
@@ -827,13 +871,13 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_AUTOLINK = {
     .state_size = sizeof(markdown_core_autolink_work),
     .run_state_size = sizeof(autolink_run),
     .match_inline = match,
-    .finish_step = finish_step,
+    .complete_step = complete_step,
     /* The step rewrites a Text -- the kind it acts on and the kind it is asked
      * at are the same -- and reads a Link's ENTER and EXIT to know when a
      * Text is inside one. */
-    .finish_acts_on_kinds = AUTOLINK_FINISH_KINDS,
-    .finish_exit_kinds = AUTOLINK_FINISH_KINDS,
-    .finish_scope_kinds = AUTOLINK_SCOPE_KINDS,
+    .complete_acts_on_kinds = AUTOLINK_TEXT_KINDS,
+    .complete_exit_kinds = AUTOLINK_TEXT_KINDS,
+    .complete_scope_kinds = AUTOLINK_SCOPE_KINDS,
     .terminates_text = "<:w",
     .dispatch = "<:w",
 };

@@ -10,16 +10,13 @@ promised to remain compatible between releases.
   that produced the node. Block extents stay source offsets; an inline
   node's extent is now an offset in its inline root's content, which starts
   at 0. Every `Markup` gains `runs: [Run]` after `extent`, part of
-  equality. A `Run(lead, span, length)` is a stretch of the node's own
-  source: a run whose span equals its length is copied byte for byte into
-  its content, a run of length 0 is source without content (a fence line,
-  an underline, a continuation indent, a cell's column slice), and any other
-  run maps as a whole. Between its first and last run, the runs cover
-  exactly the node's own source; the bytes between them belong to its
-  containers. A node is an inline root when its runs read content.
-  `document.scope(of:in:)` returns `[Scope]`, one per source range in source
-  order: a block's range less the gaps between its runs, and an inline
-  node's content window mapped through its root's runs. `node(at:in:)` and
+  equality. A `Run(lead, span)` is a stretch of the node's own source: the
+  first measured from the end of the previous node's source in the same
+  relation, or from the start of its owner's, and each other from the end of
+  the run before. Every node has at least one run. Between its first and
+  last run, the runs cover exactly the node's own source; the bytes between
+  them belong to its containers. `document.scope(of:in:)` returns `[Scope]`,
+  one per source range in source order, read from the node's own runs. `node(at:in:)` and
   the dumps read every range (`scope=` joins them with `,`). The C facade
   adds `markdown_core_node_runs` and `markdown_core_scopes_free`, and
   `markdown_core_document_scope` writes an array and its count. MCB3 writes
@@ -63,15 +60,18 @@ promised to remain compatible between releases.
 
 - Give every node an id and a raw extent, and compute scopes on request
   (incremental parsing, step 1). `Markup` loses `scope` and gains `id:
-  MarkupID`, numbered from 1 in canonical walk order, and `extent: Extent`,
-  its signed `lead` from the previous node in the same relation (or its
-  owner's start) and its `span`, in bytes of UTF-8 source. Equality is deep
+  MarkupID`, numbered from 1 in the order nodes complete (a node's owner
+  numbers the nodes it holds as it completes, and the document numbers
+  itself last), and `extent: Extent`, its signed `lead` from the previous
+  node in the same relation (or its owner's start) and its `span`, in bytes
+  of UTF-8 source. Equality is deep
   and includes ids, and hashing reads the id. `Document.parse` takes a text
   unit, UTF-16 by default in the bindings (C adds
   `markdown_core_document_parse_in`; `markdown_core_document_parse` counts
   UTF-8), and
   `document.scope(of:in:)` and `document.node(at:in:)` compute positions in
-  that unit from the extents and the source; the dump takes the source too.
+  that unit from the node's runs and the source; the dump takes the source
+  too.
   Scopes follow one byte rule, so `SoftBreak`, `LineBreak` and a `Citation`
   that end on a line terminator now end at `L:0`, a zero-byte document is
   `1:1..1:0`, and a grid or multiline cell that ends on a blank line part

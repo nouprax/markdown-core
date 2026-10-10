@@ -102,8 +102,9 @@ the engine's session; the documents it returned stay complete values.
 ### Identity, equality and scopes
 
 Every node has an `id: MarkupID`, unique within its document across every
-owned relation and numbered from 1 in walk order by a parse, so two parses of
-one text are equal, ids included. Ids suit Compose `key` in lazy lists.
+owned relation and numbered from 1 by a parse in the order its nodes
+complete: a node's owner numbers the nodes it holds as it completes, and the
+document numbers itself last. Two parses of one text are equal, ids included. Ids suit Compose `key` in lazy lists.
 `equals` is deep value equality: the same kind, id, scalar fields, extent,
 runs and pairwise equal children in every relation, compared with an explicit work
 stack after a reference check. `hashCode` reads the id alone.
@@ -112,16 +113,16 @@ A node stores no line or column. Its `extent: Extent(lead, span)` is the raw
 byte range the engine keeps, a block's in the UTF-8 source and an inline
 node's in its inline root's content, which starts at 0: `lead` is signed, from
 the end of the previous node in the same relation (or the owner's start) to
-the node's start, and `span` is its length. A node whose range is not all
-its own, such as a block inside a container, has `runs`: `Run(lead, span,
-length)`, `length` content bytes read from `span` source bytes, and the source
-between two runs is not the node's. A node whose runs read content, some run
-with `length > 0`, is an inline root, whose first relation is that content.
-A node's source ranges are one window less the gaps between the runs that
-place it: in an inline root's content, the source its content range was read
-from through the root's runs; else its own range, cut by its own runs. Scopes, one per source range in source order,
-are computed on request from those and the source the document was parsed
-from:
+the node's start, and `span` is its length. Its `runs` are its own source
+ranges in source order, each `Run(lead, span)` in bytes, and every node has at
+least one. The first run's lead is from the end of the source of the previous
+node in the same relation, or from the start of the owner's source for a
+relation's first node; every other run's lead is from the end of the run
+before. A node's source starts where its first run starts and ends where its
+last ends, and the source between two runs is not the node's; runs that touch
+are one run, so a block whose own source is its range has exactly one run, its
+range. Scopes, one per run in source order, are computed on request from the
+runs and the source the document was parsed from:
 
 ```kotlin
 val document = Document.parse(source)            // TextUnit.UTF16 by default

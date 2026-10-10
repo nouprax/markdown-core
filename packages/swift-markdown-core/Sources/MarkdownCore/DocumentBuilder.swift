@@ -5,19 +5,32 @@ import MarkdownCoreC
 /// and records are built from the last queued node back to the root. No native
 /// pointer survives the copy.
 struct DocumentBuilder {
-    /// Queue positions of one native node's owned relations.
+    /// Queue positions of one native node's owned relations: its children,
+    /// the nodes of each other field, and a Definition's bodies.
     private struct Relations {
+        /// The fields whose nodes are a node's children: content, a table's
+        /// rows, a row's cells, a list's definitions.
+        static let childFields: Set<markdown_core_field> = [
+            MARKDOWN_CORE_FIELD_CONTENT, MARKDOWN_CORE_FIELD_HEAD, MARKDOWN_CORE_FIELD_FOOT,
+            MARKDOWN_CORE_FIELD_CELLS, MARKDOWN_CORE_FIELD_DEFINITIONS,
+        ]
+
         var children: [Int] = []
-        var metadata: Int?
-        var caption: Int?
-        var label: Int?
-        var title: [Int] = []
-        var term: [Int] = []
+        var fields: [markdown_core_field: [Int]] = [:]
         var bodies: [[Int]] = []
-        var citations: [Int] = []
-        var note: Int?
-        var prefix: [Int] = []
-        var suffix: [Int] = []
+
+        mutating func add(_ index: Int, in field: markdown_core_field) {
+            if Relations.childFields.contains(field) {
+                children.append(index)
+            } else {
+                fields[field, default: []].append(index)
+            }
+        }
+
+        func nodes(_ field: markdown_core_field) -> [Int] { fields[field] ?? [] }
+
+        /// The node of a field that holds at most one.
+        func node(_ field: markdown_core_field) -> Int? { fields[field]?.first }
     }
 
     private let document: OpaquePointer
@@ -29,13 +42,20 @@ struct DocumentBuilder {
     /// and reference, and every heading a label may resolve to.
     private var definitions: [OpaquePointer: MarkupRecord] = [:]
 
-    init(document: OpaquePointer, root: OpaquePointer, unit: TextUnit) {
+    /// Queues the tree below `root`, reading each node's children with one
+    /// native cursor. Throws ``MarkdownCoreError`` with
+    /// ``ErrorCode/allocationFailed`` when the cursor cannot allocate.
+    init(document: OpaquePointer, root: OpaquePointer, unit: TextUnit) throws {
         self.document = document
         self.unit = unit
+        var native: OpaquePointer?
+        let status = markdown_core_cursor_open(root, &native)
+        guard status == MARKDOWN_CORE_OK, let cursor = native else { throw MarkdownCoreError(status) }
+        defer { markdown_core_cursor_free(cursor) }
         queue = [root]
         var index = 0
         while index < queue.count {
-            let owned = scan(queue[index])
+            let owned = try scan(queue[index], with: cursor)
             relations.append(owned)
             index += 1
         }
@@ -56,35 +76,30 @@ struct DocumentBuilder {
         return unsafeDowncast(take(0), to: DocumentRecord.self)
     }
 
-    // Enumerate each facade-owned relation alongside its native kind.
-    private mutating func scan(_ node: OpaquePointer) -> Relations {
+    /// Queues each child the cursor reads of `node`, in canonical traversal
+    /// order, in the relation its field names: a Definition's content is its
+    /// bodies, the list the cursor names, and every body is kept, an empty one
+    /// included.
+    private mutating func scan(_ node: OpaquePointer, with cursor: OpaquePointer) throws -> Relations {
         var relations = Relations()
-        relations.children = enqueue(chain: markdown_core_node_get_first_child(node))
-        switch markdown_core_node_get_kind(node) {
-        case MARKDOWN_CORE_KIND_TABLE:
-            relations.caption = enqueue(field: answer { markdown_core_node_table_caption(node, $0) })
-        case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, MARKDOWN_CORE_KIND_DIRECTIVE:
-            relations.label = enqueue(field: answer { markdown_core_node_directive_label(node, $0) })
-        case MARKDOWN_CORE_KIND_CALLOUT:
-            relations.title = enqueue(chain: answer { markdown_core_node_callout_title(node, $0) })
-        case MARKDOWN_CORE_KIND_DEFINITION:
-            relations.term = enqueue(chain: answer { markdown_core_node_definition_term(node, $0) })
-            var body = answer { markdown_core_node_definition_bodies(node, $0) }
-            while let current = body {
-                relations.bodies.append(enqueue(chain: markdown_core_definition_body_content(current)))
-                body = markdown_core_definition_body_next(current)
+        let kind = markdown_core_node_get_kind(node)
+        if kind == MARKDOWN_CORE_KIND_DEFINITION {
+            let count = answer(0) { markdown_core_node_definition_bodies(node, $0) }
+            relations.bodies = Array(repeating: [], count: count)
+        }
+        markdown_core_cursor_reset(cursor, node)
+        var moved = false
+        let status = markdown_core_cursor_child(cursor, &moved)
+        guard status == MARKDOWN_CORE_OK else { throw MarkdownCoreError(status) }
+        while moved {
+            let index = enqueue(markdown_core_cursor_node(cursor))
+            let field = markdown_core_cursor_field(cursor)
+            if kind == MARKDOWN_CORE_KIND_DEFINITION && field == MARKDOWN_CORE_FIELD_CONTENT {
+                relations.bodies[markdown_core_cursor_list(cursor)].append(index)
+            } else {
+                relations.add(index, in: field)
             }
-        case MARKDOWN_CORE_KIND_DOCUMENT:
-            relations.metadata = enqueue(field: answer { markdown_core_node_document_metadata(node, $0) })
-        case MARKDOWN_CORE_KIND_CITE:
-            relations.citations = enqueue(chain: answer { markdown_core_node_cite_citations(node, $0) })
-        case MARKDOWN_CORE_KIND_CITATION:
-            let referent = answer(markdown_core_referent()) { markdown_core_citation_referent(node, $0) }
-            relations.note = enqueue(field: referent.note)
-            relations.prefix = enqueue(chain: answer { markdown_core_citation_prefix(node, $0) })
-            relations.suffix = enqueue(chain: answer { markdown_core_citation_suffix(node, $0) })
-        default:
-            break
+            moved = markdown_core_cursor_next(cursor)
         }
         return relations
     }
@@ -93,20 +108,6 @@ struct DocumentBuilder {
         let index = queue.count
         queue.append(value)
         return index
-    }
-
-    private mutating func enqueue(field node: OpaquePointer?) -> Int? {
-        node.map { enqueue($0) }
-    }
-
-    private mutating func enqueue(chain first: OpaquePointer?) -> [Int] {
-        var indices: [Int] = []
-        var node = first
-        while let current = node {
-            indices.append(enqueue(current))
-            node = markdown_core_node_get_next_sibling(current)
-        }
-        return indices
     }
 
     /// Moves a built record out of the queue, so its parent alone owns it.
@@ -166,7 +167,7 @@ extension DocumentBuilder {
             return DocumentRecord(
                 InheritedFields(from: node),
                 unit: unit,
-                metadata: take(relations.metadata, as: MetadataRecord.self),
+                metadata: take(relations.node(MARKDOWN_CORE_FIELD_METADATA), as: MetadataRecord.self),
                 content: children,
                 footnotes: table(
                     count: markdown_core_document_footnote_count(document),
@@ -188,19 +189,20 @@ extension DocumentBuilder {
         case MARKDOWN_CORE_KIND_CITATION:
             return CitationRecord(
                 from: node,
-                note: take(relations.note, as: FootnoteRecord.self),
-                prefix: take(relations.prefix),
-                suffix: take(relations.suffix)
+                note: take(relations.node(MARKDOWN_CORE_FIELD_NOTE), as: FootnoteRecord.self),
+                prefix: take(relations.nodes(MARKDOWN_CORE_FIELD_PREFIX)),
+                suffix: take(relations.nodes(MARKDOWN_CORE_FIELD_SUFFIX))
             )
         case MARKDOWN_CORE_KIND_FOOTNOTE: return FootnoteRecord(from: node, content: children)
         case MARKDOWN_CORE_KIND_SPECIMEN: return SpecimenRecord(from: node, content: children)
         case MARKDOWN_CORE_KIND_METADATA: return MetadataRecord(from: node)
         case MARKDOWN_CORE_KIND_REFERENCE: return ReferenceRecord(from: node)
         case MARKDOWN_CORE_KIND_CALLOUT:
-            return CalloutRecord(from: node, title: take(relations.title), content: children)
+            let title = take(relations.nodes(MARKDOWN_CORE_FIELD_TITLE))
+            return CalloutRecord(from: node, title: title, content: children)
         case MARKDOWN_CORE_KIND_DEFINITION_LIST: return DefinitionListRecord(from: node, definitions: children)
         case MARKDOWN_CORE_KIND_DEFINITION:
-            let term = take(relations.term)
+            let term = take(relations.nodes(MARKDOWN_CORE_FIELD_TERM))
             let bodies = relations.bodies.map { body in body.map { take($0) } }
             return DefinitionRecord(from: node, term: term, bodies: bodies)
         case MARKDOWN_CORE_KIND_PARAGRAPH: return ParagraphRecord(from: node, content: children)
@@ -212,12 +214,12 @@ extension DocumentBuilder {
         case MARKDOWN_CORE_KIND_HTML_BLOCK: return HTMLBlockRecord(from: node)
         case MARKDOWN_CORE_KIND_FORMULA_BLOCK: return FormulaBlockRecord(from: node)
         case MARKDOWN_CORE_KIND_TABLE:
-            let caption = take(relations.caption, as: TableCaptionRecord.self)
+            let caption = take(relations.node(MARKDOWN_CORE_FIELD_CAPTION), as: TableCaptionRecord.self)
             return TableRecord(from: node, caption: caption, rows: children)
         case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK:
             return DirectiveBlockRecord(
                 from: node,
-                label: take(relations.label, as: DirectiveLabelRecord.self),
+                label: take(relations.node(MARKDOWN_CORE_FIELD_LABEL), as: DirectiveLabelRecord.self),
                 content: children
             )
         case MARKDOWN_CORE_KIND_TEXT: return TextRecord(from: node)
@@ -240,8 +242,10 @@ extension DocumentBuilder {
         case MARKDOWN_CORE_KIND_LINK: return LinkRecord(from: node, content: children)
         case MARKDOWN_CORE_KIND_EMBEDDED: return EmbeddedRecord(from: node, content: children)
         case MARKDOWN_CORE_KIND_DIRECTIVE:
-            return DirectiveRecord(from: node, label: take(relations.label, as: DirectiveLabelRecord.self))
-        case MARKDOWN_CORE_KIND_CITE: return CiteRecord(from: node, citations: take(relations.citations))
+            let label = take(relations.node(MARKDOWN_CORE_FIELD_LABEL), as: DirectiveLabelRecord.self)
+            return DirectiveRecord(from: node, label: label)
+        case MARKDOWN_CORE_KIND_CITE:
+            return CiteRecord(from: node, citations: take(relations.nodes(MARKDOWN_CORE_FIELD_CITATIONS)))
         case MARKDOWN_CORE_KIND_TABLE_CAPTION: return TableCaptionRecord(from: node, content: children)
         case MARKDOWN_CORE_KIND_TABLE_ROW: return TableRowRecord(from: node, cells: children)
         case MARKDOWN_CORE_KIND_TABLE_CELL: return TableCellRecord(from: node, content: children)

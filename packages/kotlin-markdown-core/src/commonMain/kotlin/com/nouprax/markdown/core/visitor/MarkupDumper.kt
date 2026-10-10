@@ -29,9 +29,9 @@ public object MarkupDumper {
 /**
  * Draws one line per item of the canonical walk: a node's line, or a group
  * line naming a node-valued list. The walk's stack is the tree's depth, never
- * the call stack's. A node is placed by the relations above it, its content's
- * through its inline root's runs, so the walk starts at the document even for
- * a node below it.
+ * the call stack's. A node's source leads from where the source of the node
+ * before it ends, so the walk starts at the document even for a node below
+ * it.
  */
 private class Tree(
     private val lines: SourceLines,

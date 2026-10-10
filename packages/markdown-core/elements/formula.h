@@ -16,6 +16,13 @@ extern "C" {
  * place its position in the attach order is written down. */
 extern const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA;
 
+/** A fenced code block whose info string is the word `formula` becomes a
+ * standalone FormulaBlock in place as it closes, holding the code's literal;
+ * the code block element asks this of each of its blocks once it has read
+ * the info string. */
+void markdown_core_formula_take_code(const markdown_core_element_instance *formula, markdown_core_parser *parser,
+                                     markdown_core_member *member);
+
 #ifdef __cplusplus
 }
 #endif

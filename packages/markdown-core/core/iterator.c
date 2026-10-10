@@ -10,44 +10,11 @@
 #include "parser.h"
 #include "iterator.h"
 
-markdown_core_iter *markdown_core_iter_new(markdown_core_node *root) {
-    if (root == NULL) {
-        return NULL;
-    }
-    markdown_core_iter *iter = (markdown_core_iter *)markdown_core_alloc(1, sizeof(markdown_core_iter));
-    if (!iter) {
-        return NULL;
-    }
-    markdown_core_iter_init(iter, root);
-    return iter;
-}
-
-void markdown_core_iter_free(markdown_core_iter *iter) { markdown_core_free(iter); }
-
-markdown_core_event_type markdown_core_iter_next(markdown_core_iter *iter) { return markdown_core_iter_step(iter); }
-
-void markdown_core_iter_reset(markdown_core_iter *iter, markdown_core_node *current,
+void markdown_core_iter_reset(markdown_core_iter *iter, markdown_core_member *current,
                               markdown_core_event_type event_type) {
     iter->next.ev_type = event_type;
-    iter->next.node = current;
+    iter->next.member = current;
     markdown_core_iter_step(iter);
-}
-
-markdown_core_node *markdown_core_iter_get_node(markdown_core_iter *iter) { return iter->cur.node; }
-
-/* Every iterator step a finish-stage consolidation takes is counted on the
- * parser when there is one, so the traversal count the finish stage claims
- * can be checked (see the counters in parser.h). */
-static void S_count_step(markdown_core_parser *parser, markdown_core_event_type event) {
-    if (!parser) {
-        return;
-    }
-    parser->finish_walk_events++;
-    if (event == MARKDOWN_CORE_EVENT_ENTER) {
-        parser->finish_nodes_entered++;
-    } else if (event == MARKDOWN_CORE_EVENT_DONE) {
-        parser->finish_walk_roots++;
-    }
 }
 
 /* The surviving Text owns the concatenated literal and a concatenation of
@@ -58,15 +25,17 @@ static void S_count_step(markdown_core_parser *parser, markdown_core_event_type 
  * may free is the one whose EXIT is current. `TEXT` was in the old
  * `S_is_leaf` list, so its EXIT was suppressed and freeing at ENTER
  * happened to be safe; with the contract total it is a use-after-free. */
-markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_parser *parser, markdown_core_iter *iter,
-                                                                markdown_core_node *cur,
-                                                                markdown_core_complete_node_func complete, int depth) {
-    markdown_core_node *tmp, *next;
+markdown_core_complete_result markdown_core_consolidate_text_step(markdown_core_parser *parser,
+                                                                  markdown_core_iter *iter, markdown_core_member *text,
+                                                                  markdown_core_complete_node_func complete,
+                                                                  int depth) {
+    markdown_core_member *member, *next;
+    markdown_core_node *cur = text->node, *tmp;
 
-    assert(iter->cur.node == cur && iter->cur.ev_type == MARKDOWN_CORE_EVENT_EXIT);
+    assert(iter->cur.member == text && iter->cur.ev_type == MARKDOWN_CORE_EVENT_EXIT);
     assert(cur->kind == MARKDOWN_CORE_NODE_TEXT);
 
-    if (cur->next && cur->next->kind == MARKDOWN_CORE_NODE_TEXT) {
+    if (text->next && text->next->node->kind == MARKDOWN_CORE_NODE_TEXT) {
         /* THE MERGED TEXT'S MAP IS A VIEW WHEN ITS OPERANDS ARE. A Text that
          * is a verbatim copy of its source holds a slice of its container's
          * runs (markdown_core_inline_map_text), and the siblings absorbed
@@ -88,7 +57,8 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
          * taken here, and each operand is copied to its place: no buffer
          * grows, and none is handed over and grown again for the next run. */
         size_t length = (size_t)cur->as.literal->len;
-        for (tmp = cur->next; tmp && tmp->kind == MARKDOWN_CORE_NODE_TEXT; tmp = tmp->next) {
+        for (member = text->next; member && member->node->kind == MARKDOWN_CORE_NODE_TEXT; member = member->next) {
+            tmp = member->node;
             length += (size_t)tmp->as.literal->len;
             if (!view) {
                 continue;
@@ -100,7 +70,7 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
         }
         /* The bound every literal buffer shares. */
         if (length > (size_t)MARKDOWN_CORE_STRBUF_LIMIT) {
-            return MARKDOWN_CORE_FINISH_FAILED;
+            return MARKDOWN_CORE_COMPLETE_FAILED;
         }
         if (view) {
             combined_map.first = cur->content_map.first;
@@ -108,60 +78,65 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
             combined_map.offset = cur->content_map.offset;
         } else if (parser && !markdown_core_parser_append_content_marks(parser, &cur->content_map, &combined_map, 0,
                                                                         cur->as.literal->len, 0)) {
-            return MARKDOWN_CORE_FINISH_FAILED;
+            return MARKDOWN_CORE_COMPLETE_FAILED;
         }
-        unsigned char *merged = markdown_core_realloc(NULL, length + 1);
+        unsigned char *merged = markdown_core_bytes_take(NULL, length + 1, 0);
         if (!merged) {
-            return MARKDOWN_CORE_FINISH_FAILED;
+            return MARKDOWN_CORE_COMPLETE_FAILED;
         }
         bufsize_t at = cur->as.literal->len;
         if (at) {
             memcpy(merged, cur->as.literal->data, (size_t)at);
         }
-        tmp = cur->next;
-        while (tmp && tmp->kind == MARKDOWN_CORE_NODE_TEXT) {
+        member = text->next;
+        while (member && member->node->kind == MARKDOWN_CORE_NODE_TEXT) {
+            tmp = member->node;
             /* Bring `tmp` to its own EXIT before freeing it: two events now,
              * where a suppressed EXIT used to make one enough. They are steps
              * of the walk this is part of, taken HERE so that no step after
              * this one is ever handed a node this one is about to free. */
-            S_count_step(parser, markdown_core_iter_next(iter)); /* tmp ENTER */
-            S_count_step(parser, markdown_core_iter_next(iter)); /* tmp EXIT  */
+            markdown_core_iter_step(iter); /* ENTER */
+            markdown_core_iter_step(iter); /* EXIT  */
             if (complete) {
                 complete(parser, tmp, depth);
             }
             if (parser && !view &&
                 !markdown_core_parser_append_content_marks(parser, &tmp->content_map, &combined_map, 0,
                                                            tmp->as.literal->len, at)) {
-                markdown_core_free(merged);
-                return MARKDOWN_CORE_FINISH_FAILED;
+                markdown_core_bytes_release(NULL, merged);
+                return MARKDOWN_CORE_COMPLETE_FAILED;
             }
             if (tmp->as.literal->len) {
                 memcpy(merged + at, tmp->as.literal->data, (size_t)tmp->as.literal->len);
                 at += tmp->as.literal->len;
             }
-            // ONLY AN OPERAND THAT OWNS BYTES CAN SAY WHERE THE RUN ENDS.
-            // An empty one has no last byte to end at, and the empties in
-            // this tree carry a zeroed position rather than an honest one,
-            // so taking their end put `1:1..1:0` on a run of four real
-            // characters.
-            if (tmp->as.literal->len > 0) {
-                cur->where.place.end = tmp->where.place.end;
-            }
-            next = tmp->next;
-            markdown_core_parser_release_node(parser, tmp);
-            tmp = next;
+            // THE MERGED TEXT COVERS EVERY OPERAND'S SCOPE, an empty one's
+            // too: the operands lie left to right, each where the previous
+            // one ended, and an empty one still lies on the bytes it was
+            // made of, as the spaces a line ending trims out of a slice's
+            // literal (text.c). The Text a slice ending at
+            // that line ending makes covers them, so the Text merged from
+            // slices cut anywhere else covers them as well: a scope does not
+            // depend on where the tokens were cut.
+            cur->where.place.end = tmp->where.place.end;
+            next = member->next;
+            markdown_core_member_unlink(member);
+            markdown_core_parser_release_member(parser, member);
+            member = next;
         }
         /* Every node the loop freed was ahead of the cursor and is now
          * unlinked, so the cursor sits at the last one's EXIT. Re-establish
          * `cur`'s EXIT: it recomputes the lookahead from the siblings that
          * survived, and it is what makes the drop below legal under the
-         * rule rather than merely safe. It is not a step of the walk -- the
-         * event it re-delivers was delivered already -- so it is not counted. */
+         * rule rather than merely safe. It is not a step of the walk: the
+         * event it re-delivers was delivered already. */
         if (parser) {
             cur->content_map = combined_map;
         }
-        markdown_core_iter_reset(iter, cur, MARKDOWN_CORE_EVENT_EXIT);
-        markdown_core_chunk_free(cur->as.literal);
+        markdown_core_iter_reset(iter, text, MARKDOWN_CORE_EVENT_EXIT);
+        if (cur->as.literal->alloc) {
+            markdown_core_node_pool_bytes_free(parser ? parser->pool : NULL, cur->as.literal->data);
+        }
         merged[at] = '\0';
         *cur->as.literal = (markdown_core_chunk){merged, at, 1};
     }
@@ -178,44 +153,9 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
     // one's subtree. The caller learns that `cur` is gone and hands this
     // event to nothing else.
     if (cur->as.literal->len == 0) {
-        markdown_core_chunk_free(cur->as.literal);
-        markdown_core_parser_release_node(parser, cur);
-        return MARKDOWN_CORE_FINISH_CONSUMED;
+        markdown_core_member_unlink(text);
+        markdown_core_parser_release_member(parser, text);
+        return MARKDOWN_CORE_COMPLETE_CONSUMED;
     }
-    return MARKDOWN_CORE_FINISH_CONTINUE;
-}
-
-/* The same step, driven by a walk of its own. Inside a parse the finish walk
- * runs the step itself and never comes here; this is the entry point for a
- * tree built or rewritten outside a parse, and a pass that calls it with a
- * parser pays -- and is counted for -- one more traversal of the root. */
-int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parser, markdown_core_node *root) {
-    if (root == NULL) {
-        return 1;
-    }
-    markdown_core_iter *iter = markdown_core_iter_new(root);
-    markdown_core_event_type ev_type;
-    int ok = 1;
-
-    if (!iter) {
-        return 0;
-    }
-
-    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *cur = markdown_core_iter_get_node(iter);
-        S_count_step(parser, ev_type);
-        if (ev_type != MARKDOWN_CORE_EVENT_EXIT || cur->kind != MARKDOWN_CORE_NODE_TEXT) {
-            continue;
-        }
-        if (markdown_core_consolidate_text_step(parser, iter, cur, NULL, 0) == MARKDOWN_CORE_FINISH_FAILED) {
-            ok = 0;
-            break;
-        }
-    }
-    if (ok) {
-        S_count_step(parser, MARKDOWN_CORE_EVENT_DONE);
-    }
-
-    markdown_core_iter_free(iter);
-    return ok;
+    return MARKDOWN_CORE_COMPLETE_CONTINUE;
 }
