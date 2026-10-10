@@ -313,6 +313,7 @@ static markdown_core_member *try_opening_table_header(const markdown_core_elemen
     }
 
     // Select the final header row and verify width before committing a table.
+    markdown_core_parser_read_leaf(parser);
     parent_string = markdown_core_node_get_string_content(container);
     if (!recognize_pipe_row((unsigned char *)parent_string, (int)strlen(parent_string), &header_row) ||
         header_row.n_columns != delimiter_row.n_columns) {

@@ -1,0 +1,4 @@
+markdown-core edit script 1
+script table-header-refused identity
+edit 23 23 78
+expect changed Paragraph 0

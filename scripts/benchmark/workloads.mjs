@@ -1054,6 +1054,12 @@ export function identityScripts() {
      * learned of the runs after them; the answer must not depend on which
      * of those spans the edit took whole. */
     add("code-closer-after-span", "``x`8`@`\n", (s) => s.insert(8, "D`").expect("new", "Code", 7));
+    /* A delimiter row tried against the paragraph so far, which refused it,
+     * keeps the paragraph from becoming a table on a later delimiter row:
+     * the line it was tried on is read again when the paragraph is (E5). */
+    add("table-header-refused", "a| b | c |\n| - | - |\n| p | d |\n| - | - |\n", (s) =>
+        s.insert(23, "x").expect("changed", "Paragraph", 0)
+    );
     /* A leaf block edited on a later line takes its untouched lines (E5);
      * an edit that ends it early, or makes its lines a heading, is read. */
     {

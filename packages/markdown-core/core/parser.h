@@ -258,10 +258,12 @@ struct markdown_core_parser {
     uint32_t line_reach;
     bool line_context, previous_blank, taken;
     /* The line in hand as a leaf's line (E5): `plain` holds where its
-     * content began when it continued the current leaf as a plain line, and
-     * `lines_taken` says that the line began a run of lines a leaf took. */
+     * content began when it continued the current leaf as a plain line,
+     * `lines_taken` says that the line began a run of lines a leaf took, and
+     * `read_leaf` that a decision on the line read the leaf's content before
+     * it (markdown_core_parser_read_leaf), so it is no plain line. */
     markdown_core_line plain;
-    bool lines_taken;
+    bool lines_taken, read_leaf;
     int64_t *edit_shift;
     size_t resume;
     bufsize_t resume_last_end;
@@ -598,6 +600,11 @@ static inline markdown_core_node *markdown_core_parser_make_node_with_ext(markdo
 /* A block its lines turned into another kind reads the old node of that
  * kind which begins where it does (blocks.c). */
 void markdown_core_parser_kind_changed(markdown_core_parser *parser, markdown_core_member *member);
+
+/* A decision on the line in hand read the content of the leaf the line would
+ * continue, as a table header is tried against the paragraph so far: the
+ * line is read again by every parse (E5). */
+static inline void markdown_core_parser_read_leaf(markdown_core_parser *parser) { parser->read_leaf = true; }
 
 /* Turns the block `member` holds into one of `kind`, as its lines decided. */
 static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_kind(markdown_core_parser *parser,

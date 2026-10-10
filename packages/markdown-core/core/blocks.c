@@ -2655,7 +2655,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_parse_source(markdown_core_par
         }
         markdown_core_member *const before = parser->current;
         parser->plain.flags = 0;
-        parser->lines_taken = false;
+        parser->lines_taken = parser->read_leaf = false;
         S_process_line(parser, content, content_length);
         if (at_root && parser->current) {
             S_record_line(parser, before);
@@ -3487,8 +3487,9 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_member *
 static void S_hold_plain(markdown_core_parser *parser) {
     const markdown_core_input_line *geometry = markdown_core_parser_visited_line(parser, parser->line_number);
     /* A line with NUL is read through a normalized view of it, which its
-     * record does not give. */
-    if (geometry->facts && parser->input_facts[geometry->facts - 1].nul_count) {
+     * record does not give; a line a decision read the leaf for is read
+     * again. */
+    if (parser->read_leaf || (geometry->facts && parser->input_facts[geometry->facts - 1].nul_count)) {
         return;
     }
     parser->plain =
