@@ -1,0 +1,4 @@
+markdown-core edit script 1
+script text-before-hard-break identity
+edit 13 13 2a
+expect changed Text 3

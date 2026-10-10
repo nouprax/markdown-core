@@ -110,14 +110,15 @@ markdown_core_complete_result markdown_core_consolidate_text_step(markdown_core_
                 memcpy(merged + at, tmp->as.literal->data, (size_t)tmp->as.literal->len);
                 at += tmp->as.literal->len;
             }
-            // ONLY AN OPERAND THAT OWNS BYTES CAN SAY WHERE THE RUN ENDS.
-            // An empty one has no last byte to end at, and the empties in
-            // this tree carry a zeroed position rather than an honest one,
-            // so taking their end put `1:1..1:0` on a run of four real
-            // characters.
-            if (tmp->as.literal->len > 0) {
-                cur->where.place.end = tmp->where.place.end;
-            }
+            // THE MERGED TEXT COVERS EVERY OPERAND'S SCOPE, an empty one's
+            // too: the operands lie left to right, each where the previous
+            // one ended, and an empty one still lies on the bytes it was
+            // made of, as the spaces a line ending trims out of a slice's
+            // literal (text.c). The Text a slice ending at
+            // that line ending makes covers them, so the Text merged from
+            // slices cut anywhere else covers them as well: a scope does not
+            // depend on where the tokens were cut.
+            cur->where.place.end = tmp->where.place.end;
             next = member->next;
             markdown_core_member_unlink(member);
             markdown_core_parser_release_member(parser, member);

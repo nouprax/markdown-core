@@ -39,6 +39,8 @@ document documents/identity-code-closer-after-span.md
 edits documents/identity-code-closer-after-span.md scripts/identity-code-closer-after-span.edits
 document documents/identity-table-header-refused.md
 edits documents/identity-table-header-refused.md scripts/identity-table-header-refused.edits
+document documents/identity-text-before-hard-break.md
+edits documents/identity-text-before-hard-break.md scripts/identity-text-before-hard-break.edits
 document documents/identity-code-line-near-end.md
 edits documents/identity-code-line-near-end.md scripts/identity-code-line-near-end.edits
 document documents/identity-fence-inside-code.md

@@ -1060,6 +1060,11 @@ export function identityScripts() {
     add("table-header-refused", "a| b | c |\n| - | - |\n| p | d |\n| - | - |\n", (s) =>
         s.insert(23, "x").expect("changed", "Paragraph", 0)
     );
+    /* A star typed before the spaces that end a line stays in the Text's
+     * slice when the emphasis before it is taken whole, and is cut into a
+     * token of its own when the emphasis opener is read again: either way
+     * the Text covers the spaces the line ending trimmed. */
+    add("text-before-hard-break", "*x* aaaa bbbb  \nc\n", (s) => s.insert(13, "*").expect("changed", "Text", 3));
     /* A leaf block edited on a later line takes its untouched lines (E5);
      * an edit that ends it early, or makes its lines a heading, is read. */
     {
