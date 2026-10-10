@@ -1,6 +1,6 @@
 import type { Markup } from "../markup/markup.js";
 import type { MarkupVisitPhase, MarkupVisitor } from "./markup-visitor.js";
-import { placesOf, type Place } from "./source-places.js";
+import { endOf, placesOf, type Place } from "./source-places.js";
 
 /** Walks markup depth first with an explicit stack, reporting both phases to the visitor. */
 export function walk(root: Markup, visitor: MarkupVisitor): void {
@@ -17,21 +17,23 @@ export function walkTree(
     place: (places: readonly Place[]) => void
 ): void {
     let inside = false;
-    traverse(document, (node, phase, places) => {
+    traverse(document, (node, phase, anchor) => {
         if (!inside && node !== target) return;
         inside = !(node === target && phase === "exit");
-        if (phase === "enter") place(places);
+        if (phase === "enter") place(placesOf(node, anchor));
         dispatch(visitor, node, phase);
     });
 }
 
-/** One visit of the canonical walk: the node's phase and its absolute
- * source ranges, its runs, in source order. */
-export type Visit = (node: Markup, phase: MarkupVisitPhase, places: readonly Place[]) => void;
+/** One visit of the canonical walk: the node's phase and the offset its
+ * first run leads from, from which `placesOf` gives its absolute source
+ * ranges, its runs, in source order. */
+export type Visit = (node: Markup, phase: MarkupVisitPhase, anchor: number) => void;
 
 interface Frame {
     readonly node: Markup;
-    readonly places: readonly Place[];
+    /** The offset its first run leads from. */
+    readonly from: number;
     /** Where its source starts, from its first run. */
     readonly start: number;
     readonly relations: readonly Relation[];
@@ -44,7 +46,9 @@ interface Frame {
 /**
  * The canonical walk: every node enters, its relations follow in canonical
  * order with each relation in stored order, then it exits. The work stack
- * holds one frame per level, so depth is data, not call stack. Each node's
+ * holds one frame per level, so depth is data, not call stack. It makes no
+ * source range: a visit that needs a node's absolute source ranges, its
+ * runs, reads them from the offset its first run leads from. Each node's
  * absolute source ranges are its runs, and its source runs from where its
  * first run starts to where its last ends: the first node of a relation leads
  * from the start of its owner's source, every later one from the end of the
@@ -54,19 +58,18 @@ interface Frame {
 export function traverse(root: Markup, each: Visit): void {
     const frames: Frame[] = [];
     const enter = (node: Markup, anchor: number): number => {
-        const places = placesOf(node, anchor);
-        const start = places[0]!.start;
-        each(node, "enter", places);
+        const start = anchor + node.runs[0]!.lead;
+        each(node, "enter", anchor);
         frames.push({
             node,
-            places,
+            from: anchor,
             start,
             relations: relations[node.kind](node as never),
             relation: 0,
             index: 0,
             anchor: start
         });
-        return places[places.length - 1]!.end;
+        return endOf(node, anchor);
     };
     enter(root, 0);
     while (frames.length > 0) {
@@ -75,7 +78,7 @@ export function traverse(root: Markup, each: Visit): void {
         const nodes = relation === undefined ? undefined : chain(relation);
         if (nodes === undefined) {
             frames.pop();
-            each(frame.node, "exit", frame.places);
+            each(frame.node, "exit", frame.from);
         } else if (frame.index < nodes.length) {
             const node = nodes[frame.index]!;
             frame.index += 1;

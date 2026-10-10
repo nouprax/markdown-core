@@ -20,3 +20,22 @@ export function placesOf(node: Markup, anchor: number): Place[] {
         return { start, end: at };
     });
 }
+
+/** Where `node`'s source ends: the end of its last run, measured as
+ * `placesOf` measures them, without making a range. */
+export function endOf(node: Markup, anchor: number): number {
+    let at = anchor;
+    for (const { lead, span } of node.runs) at += lead + span;
+    return at;
+}
+
+/** Whether one of `node`'s source ranges holds the byte at `offset`. */
+export function holds(node: Markup, anchor: number, offset: number): boolean {
+    let at = anchor;
+    for (const { lead, span } of node.runs) {
+        const start = at + lead;
+        at = start + span;
+        if (start <= offset && offset < at) return true;
+    }
+    return false;
+}
