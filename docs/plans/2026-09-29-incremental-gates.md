@@ -186,7 +186,7 @@ it compares meaning and positions and nothing that depends on history.
 
 A node stores its relative extent, `Extent(lead, span)` in UTF-8 bytes (plan
 4.3). `Document.scope(of:in:)` and `Document.node(at:in:)` compute absolute
-positions from the extents and the source text the caller passes, in the
+positions from the node's runs and the source text the caller passes, in the
 session's unit. For every node of the subject's document, `scope(of:in:)` with
 the model text equals `scope(of:in:)` of the corresponding node of the fresh
 parse. At every position where some node's scope starts or ends, and on each

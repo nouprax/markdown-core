@@ -70,7 +70,8 @@ promised to remain compatible between releases.
   `markdown_core_document_parse_in`; `markdown_core_document_parse` counts
   UTF-8), and
   `document.scope(of:in:)` and `document.node(at:in:)` compute positions in
-  that unit from the extents and the source; the dump takes the source too.
+  that unit from the node's runs and the source; the dump takes the source
+  too.
   Scopes follow one byte rule, so `SoftBreak`, `LineBreak` and a `Citation`
   that end on a line terminator now end at `L:0`, a zero-byte document is
   `1:1..1:0`, and a grid or multiline cell that ends on a blank line part
