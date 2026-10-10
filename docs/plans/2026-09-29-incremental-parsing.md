@@ -580,7 +580,9 @@ for a reusable node before it lexes:
   block start because it was open, not at one that was open over blank lines
   after its end when an edit meets the node after it, and not at one a later
   line may still write into (E2). The parse resumes at the line the next node
-  begins on, in the state that node's entry records.
+  begins on, in the state that node's entry records, or, when only blank
+  lines follow a candidate of the document's children, at the end of the
+  input, in the state the old parse left there.
 - **Descend.** Otherwise the cursor moves to the node's first child, as
   tree-sitter breaks a changed node down, and the line machine reads the line
   with `S_process_line`, as a fresh parse does. A touched container is built

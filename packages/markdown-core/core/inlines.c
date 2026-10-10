@@ -1196,7 +1196,9 @@ static bool S_cursor_fits(const markdown_core_parser *parser, const markdown_cor
 }
 
 /* Whether every old content byte in [from, to) is a copy of a source byte no
- * edit touched, read now `delta` bytes after where it was. */
+ * edit touched, read now `delta` bytes after where it was. A piece that
+ * decodes its bytes otherwise than one for one is read whole: its content is
+ * what it was when its whole source is, read as the same piece. */
 static bool S_cursor_copies(const markdown_core_parser *parser, const markdown_core_inline_cursor *cursor, int32_t from,
                             int32_t to, int64_t delta) {
     if (from >= to) {
@@ -1205,24 +1207,29 @@ static bool S_cursor_copies(const markdown_core_parser *parser, const markdown_c
     uint32_t first = 0, last = 0;
     for (int32_t at = from; at < to;) {
         const inline_piece *old_piece = S_old_piece(cursor, at);
-        if (old_piece->span != old_piece->decoded) {
-            return false;
-        }
+        const bool copied = old_piece->span == old_piece->decoded;
         const int32_t stop = (int32_t)old_piece->content + (int32_t)old_piece->decoded < to
                                  ? (int32_t)(old_piece->content + old_piece->decoded)
                                  : to;
-        const uint32_t source = old_piece->source + (uint32_t)(at - old_piece->content);
+        const uint32_t source = old_piece->source + (copied ? (uint32_t)(at - old_piece->content) : 0);
+        const uint32_t length = copied ? (uint32_t)(stop - at) : old_piece->span;
         const uint32_t now_source = markdown_core_parser_image(parser, source);
         const inline_piece *new_piece = S_new_piece(cursor, now_source);
-        if (!new_piece || new_piece->source > now_source || new_piece->span != new_piece->decoded ||
-            (int64_t)now_source + (stop - at) > (int64_t)new_piece->source + new_piece->span ||
-            (int64_t)new_piece->content + (now_source - new_piece->source) != at + delta) {
+        if (!new_piece || new_piece->source > now_source) {
+            return false;
+        }
+        if (copied ? new_piece->span != new_piece->decoded ||
+                         (int64_t)now_source + length > (int64_t)new_piece->source + new_piece->span ||
+                         (int64_t)new_piece->content + (now_source - new_piece->source) != at + delta
+                   : new_piece->source != now_source || new_piece->span != old_piece->span ||
+                         new_piece->decoded != old_piece->decoded ||
+                         (int64_t)new_piece->content != (int64_t)old_piece->content + delta) {
             return false;
         }
         if (at == from) {
             first = source;
         }
-        last = source + (uint32_t)(stop - at) - 1;
+        last = source + length - 1;
         at = stop;
     }
     return !markdown_core_parser_touched(parser, first, last);

@@ -1542,6 +1542,21 @@ static const markdown_core_node *S_old_child(markdown_core_parser *parser, markd
     return child && markdown_core_parser_image(parser, *child_start) == start ? child : NULL;
 }
 
+/* Whether the input holds nothing but blank lines from `from` to its end:
+ * lines that write into the block before them and close nothing. */
+static bool S_blank_to_end(markdown_core_parser *parser, size_t from) {
+    for (size_t at = from; at < parser->input_length; at++) {
+        if (!S_input_seek(parser, at)) {
+            return false;
+        }
+        const unsigned char c = parser->input_chunk[at - parser->input_chunk_start];
+        if (c != ' ' && c != '\t' && c != '\r' && c != '\n') {
+            return false;
+        }
+    }
+    return true;
+}
+
 /* The cursor takes `first`, the old child that begins where the line
  * machine is about to start a block, whole when no edit meets it from its
  * lead to its reach and its entry is `carry`, the state `parent` carries now,
@@ -1570,15 +1585,25 @@ static bool S_take(markdown_core_parser *parser, markdown_core_member *parent, u
      * edit that ends after the candidate begins, or at a group; it ends at the
      * last node before that which does not hold the next. A node that later
      * lines wrote into (MARKDOWN_CORE_NODE__TRAILED) ends it only before an
-     * untouched node: those lines lie before that node, read as the old parse
-     * read them. */
+     * untouched node, or, among the document's children, at the end of the
+     * input when nothing but blank lines runs to it: those lines lie before
+     * that node, or the end, read as the old parse read them. */
     int64_t measured = parent->scan_at;
     const size_t stop = markdown_core_stem_meet(children, parent->scan_next, &measured,
                                                 markdown_core_parser_edge(parser, parent->scan_at));
+    const int64_t shift = (int64_t)start - first_start;
     size_t final = markdown_core_stem_last_free(children, parent->scan_next, stop);
+    bool to_end = false;
     if (final != SIZE_MAX && final + 1 == stop &&
         (markdown_core_stem_at(children, final)->flags & MARKDOWN_CORE_NODE__TRAILED)) {
-        final = markdown_core_stem_last_free(children, parent->scan_next, final);
+        const int64_t trailed_end =
+            parent->scan_at + markdown_core_stem_length(children, parent->scan_next, stop - parent->scan_next);
+        to_end = parent == parser->root && stop == markdown_core_stem_count(children) &&
+                 trailed_end + shift + markdown_core_stem_at(children, final)->reach >= (int64_t)parser->input_length &&
+                 S_blank_to_end(parser, (size_t)(trailed_end + shift));
+        if (!to_end) {
+            final = markdown_core_stem_last_free(children, parent->scan_next, final);
+        }
     }
     if (final == SIZE_MAX) {
         return false;
@@ -1588,12 +1613,14 @@ static bool S_take(markdown_core_parser *parser, markdown_core_member *parent, u
         (uint32_t)(parent->scan_at + markdown_core_stem_length(children, parent->scan_next, end - parent->scan_next));
     /* No edit lies in the candidate, so it moved as a whole; the parse goes on at
      * the line after the one its last node ends on, or, before an untouched
-     * node, at the line that node begins on, in the state its entry records:
-     * the lines between were read as the old parse read them. */
-    const int64_t shift = (int64_t)start - first_start;
+     * node or the end of the input, at the line that node begins on, in the
+     * state its entry records, or at the end, in the state the old parse
+     * left: the lines between were read as the old parse read them. */
     const size_t last_end = (size_t)(candidate_end + shift);
     const markdown_core_node *next = end < stop ? markdown_core_stem_at(children, end) : NULL;
-    const size_t next_start = next ? last_end + (size_t)next->where.extent.lead : last_end;
+    const size_t next_start = next     ? last_end + (size_t)next->where.extent.lead
+                              : to_end ? parser->input_length
+                                       : last_end;
     size_t resume = last_end, resume_last_end = last_end;
     bool skipped = false;
     if (resume < parser->input_length) {
@@ -1677,7 +1704,11 @@ static bool S_take(markdown_core_parser *parser, markdown_core_member *parent, u
     parser->resume = resume;
     parser->resume_last_end = (bufsize_t)resume_last_end;
     parser->resume_blank = skipped;
-    parser->resume_flags = next ? (markdown_core_node_internal_flags)(next->entry >> 48) : 0;
+    parser->resume_flags =
+        next     ? (markdown_core_node_internal_flags)(next->entry >> 48)
+        : to_end ? (markdown_core_node_internal_flags)(parent->scan->flags & (MARKDOWN_CORE_NODE__LAST_LINE_BLANK |
+                                                                              MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK))
+                 : 0;
     parser->current = parent;
     return true;
 }
