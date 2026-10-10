@@ -335,10 +335,16 @@ enum markdown_core_node__internal_flags {
      * the block (markdown_core_block_close). */
     MARKDOWN_CORE_NODE__HOLDS_NEXT = (1 << 11),
 
+    /* A node of the tree a parse builds that holds old nodes it took whole
+     * from an old node it does not continue (5.9): they are kept whole and
+     * continue nothing, so a copy of one made to change it continues nothing
+     * either (markdown_core_publication_splice). */
+    MARKDOWN_CORE_NODE__FOSTERS = (1 << 12),
+
     // The first bit an element may claim. Element flags are compile-time
     // constants owned by the element that uses them; there is no runtime
     // registration and no allocator to run out of bits.
-    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 12),
+    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 13),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;

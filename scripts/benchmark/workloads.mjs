@@ -1078,6 +1078,16 @@ export function identityScripts() {
     add("body-after-body", "Term term term\n: aaaaa\nbbbbb\n\n: ccccc dd\n", (s) =>
         s.edit([{ start: 38, end: 40, text: "xy" }]).expect("changed", "Text", 32)
     );
+    /* A block taken whole into a new owner and parsed again in place for a
+     * registry answer continues nothing (5.9). */
+    add("registry-root-in-new-owner", ">\n>#\n>[x]\n\n\n```\n```\n[x]: /u\n", (s) =>
+        s
+            .edit([
+                { start: 0, end: 1, text: "" },
+                { start: 15, end: 19, text: "" }
+            ])
+            .expect("new", "Paragraph", 5)
+    );
     /* A leaf block edited on a later line takes its untouched lines (E5);
      * an edit that ends it early, or makes its lines a heading, is read. */
     {

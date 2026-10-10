@@ -1,0 +1,4 @@
+markdown-core edit script 1
+script registry-root-in-new-owner identity
+edit 0 1 - 15 19 -
+expect new Paragraph 5

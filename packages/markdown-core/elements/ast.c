@@ -1198,9 +1198,15 @@ static inline bool search(markdown_core_parser *parser, markdown_core_publicatio
 /* `member` takes the id of the old node it continues, or the next id. */
 static void identify(markdown_core_parser *parser, markdown_core_member *member) {
     member->identified = true;
-    if (!(member->node->flags & MARKDOWN_CORE_NODE__GROUP)) {
-        member->node->id = member->old ? member->old->id : ++parser->last_id;
+    markdown_core_node *node = member->node;
+    if (!(node->flags & MARKDOWN_CORE_NODE__GROUP)) {
+        node->id = member->old ? member->old->id : ++parser->last_id;
     }
+    /* The old children it took are the old node's it read again (5.3). */
+    node->flags =
+        (markdown_core_node_internal_flags)((node->flags & ~MARKDOWN_CORE_NODE__FOSTERS) |
+                                            (member->scan && member->old != member->scan ? MARKDOWN_CORE_NODE__FOSTERS
+                                                                                         : 0));
 }
 
 /* `member`'s node is numbered while it still waits, and its owner counts it
@@ -1737,12 +1743,13 @@ static markdown_core_runs *runs_places(markdown_core_node_pool *pool, const mark
  * node holds it, `up`, and where: the field at `place` among that node's
  * fields, or `place` of its stem. A group holding a relation of its owner
  * begins where its owner does. On the path found, `down` is the step below,
- * and `own` whether the node is the new tree's own. */
+ * `own` whether the node is the new tree's own, and `continues` whether it
+ * continues the old node it is (splice_mark). */
 typedef struct markdown_core_splice_step {
     markdown_core_node *node;
     uint32_t start;
     size_t up, place, down;
-    bool field, own;
+    bool field, own, continues;
 } splice_step;
 
 /* Adds a step to the search; its index, or SIZE_MAX when the search could
@@ -1786,12 +1793,12 @@ static size_t splice_find(markdown_core_parser *parser, markdown_core_publicatio
     markdown_core_node *document = parser->root->node;
     size_t count = 0;
     size_t at = splice_add(publication, &count,
-                           (splice_step){document, document->where.place.start, SIZE_MAX, 0, 0, false, false});
+                           (splice_step){document, document->where.place.start, SIZE_MAX, 0, 0, false, false, false});
     while (at != SIZE_MAX) {
         markdown_core_node *const owner = publication->steps[at].node;
         const uint32_t from = publication->steps[at].start;
         const size_t index = markdown_core_stem_find(owner->children, order->label);
-        splice_step step = {NULL, from, at, index, 0, false, false};
+        splice_step step = {NULL, from, at, index, 0, false, false, false};
         if (index != SIZE_MAX) {
             step.node = markdown_core_stem_at(owner->children, index);
             if (!(step.node->flags & MARKDOWN_CORE_NODE__GROUP)) {
@@ -1816,6 +1823,51 @@ static size_t splice_find(markdown_core_parser *parser, markdown_core_publicatio
         }
     }
     return SIZE_MAX;
+}
+
+/* Whether the stems from `stem` down to the node at `index` are held once. */
+static bool stem_held_once(const markdown_core_stem *stem, size_t index) {
+    for (;;) {
+        if (stem->refs != 1) {
+            return false;
+        }
+        if (!stem->height) {
+            return true;
+        }
+        uint8_t i = 0;
+        while (index >= stem->entries[i].stem->count) {
+            index -= stem->entries[i].stem->count;
+            i++;
+        }
+        stem = stem->entries[i].stem;
+    }
+}
+
+/* THE PATH FOUND DOWN TO THE STEP AT `at`: each step's `down`, and whether
+ * its node is the new tree's own, which it is when the document reaches it
+ * through nodes and stems held once: read down the path from the document,
+ * whose own the parse is. A node of the new tree's own is the one it
+ * continues as; a node the old tree shares continues itself when the new
+ * tree's node above it continues the old node that held it, which a node
+ * that holds old nodes it took from an old node it does not continue
+ * (MARKDOWN_CORE_NODE__FOSTERS) does not, and when the shared node above it
+ * continues itself (5.9). */
+static void splice_mark(markdown_core_publication *publication, size_t at) {
+    splice_step *const steps = publication->steps;
+    size_t top = at;
+    while (steps[top].up != SIZE_MAX) {
+        steps[steps[top].up].down = top;
+        top = steps[top].up;
+    }
+    steps[top].own = steps[top].continues = true;
+    for (size_t step = top; step != at; step = steps[step].down) {
+        const splice_step *above = &steps[step];
+        splice_step *child = &steps[above->down];
+        child->own = above->own && child->node->refs == 1 &&
+                     (child->field || stem_held_once(above->node->children, child->place));
+        child->continues =
+            child->own || (above->own ? !(above->node->flags & MARKDOWN_CORE_NODE__FOSTERS) : above->continues);
+    }
 }
 
 bool markdown_core_parse_again(markdown_core_parser *parser, markdown_core_publication *publication,
@@ -1878,9 +1930,16 @@ bool markdown_core_parse_again(markdown_core_parser *parser, markdown_core_publi
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
-    /* It continues `root`, with its id, and settles alone. */
+    /* It continues `root`, with its id, when `root` continues itself, and
+     * else nothing; it settles alone. */
+    splice_mark(publication, step);
     member->decided = member->identified = member->numbered = true;
-    member->old = root;
+    const markdown_core_node *continued = publication->steps[step].continues ? root : NULL;
+    if (!continued) {
+        again->id = ++parser->last_id;
+        again->flags |= MARKDOWN_CORE_NODE__FOSTERS;
+    }
+    member->old = continued;
     member->old_start = old_start;
     member->place = place;
     member->passed = place.end;
@@ -1893,24 +1952,6 @@ bool markdown_core_parse_again(markdown_core_parser *parser, markdown_core_publi
     return markdown_core_parser_replace(parser, root, NULL, member);
 }
 
-/* Whether the stems from `stem` down to the node at `index` are held once. */
-static bool stem_held_once(const markdown_core_stem *stem, size_t index) {
-    for (;;) {
-        if (stem->refs != 1) {
-            return false;
-        }
-        if (!stem->height) {
-            return true;
-        }
-        uint8_t i = 0;
-        while (index >= stem->entries[i].stem->count) {
-            index -= stem->entries[i].stem->count;
-            i++;
-        }
-        stem = stem->entries[i].stem;
-    }
-}
-
 bool markdown_core_publication_splice(markdown_core_parser *parser, markdown_core_publication *publication,
                                       const markdown_core_node *old, markdown_core_node *node) {
     markdown_core_node_pool *pool = parser->pool;
@@ -1919,24 +1960,18 @@ bool markdown_core_publication_splice(markdown_core_parser *parser, markdown_cor
         markdown_core_node_pool_release(pool, node);
         return false;
     }
-    /* A node on the path is the new tree's own when the document reaches it
-     * through nodes and stems held once: read down the path from the
-     * document, whose own the parse is. */
     splice_step *const steps = publication->steps;
-    size_t top = at;
-    while (steps[top].up != SIZE_MAX) {
-        steps[steps[top].up].down = top;
-        top = steps[top].up;
-    }
-    steps[top].own = true;
-    for (size_t step = top; step != at; step = steps[step].down) {
-        splice_step *child = &steps[steps[step].down];
-        child->own = steps[step].own && child->node->refs == 1 &&
-                     (child->field || stem_held_once(steps[step].node->children, child->place));
+    splice_mark(publication, at);
+    /* A replacement that takes the old node's id keeps it only when the old
+     * node continues itself. */
+    if (!steps[at].continues && node->id == old->id) {
+        node->id = ++parser->last_id;
+        node->flags |= MARKDOWN_CORE_NODE__FOSTERS;
     }
     /* Up the path, `node` takes its place in the node that holds it, which
      * changes in place when it is the new tree's own, and is copied when the
-     * old tree shares it; the copy then takes its own place. */
+     * old tree shares it; the copy then takes its own place, and continues
+     * the node it copies when that continues itself. */
     for (;;) {
         const splice_step step = steps[at];
         markdown_core_node *owner = steps[step.up].node, *into = owner;
@@ -1946,6 +1981,11 @@ bool markdown_core_publication_splice(markdown_core_parser *parser, markdown_cor
                 markdown_core_node_pool_release(pool, into);
                 markdown_core_node_pool_release(pool, node);
                 return false;
+            }
+            into->flags = (markdown_core_node_internal_flags)(into->flags & ~MARKDOWN_CORE_NODE__FOSTERS);
+            if (!steps[step.up].continues) {
+                into->id = ++parser->last_id;
+                into->flags |= MARKDOWN_CORE_NODE__FOSTERS;
             }
         }
         if (step.field) {
