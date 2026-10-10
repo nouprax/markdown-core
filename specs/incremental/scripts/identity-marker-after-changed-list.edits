@@ -1,0 +1,4 @@
+markdown-core edit script 1
+script marker-after-changed-list identity
+edit 13 15 2843
+expect changed List 20

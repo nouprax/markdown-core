@@ -1065,6 +1065,12 @@ export function identityScripts() {
      * token of its own when the emphasis opener is read again: either way
      * the Text covers the spaces the line ending trimmed. */
     add("text-before-hard-break", "*x* aaaa bbbb  \nc\n", (s) => s.insert(13, "*").expect("changed", "Text", 3));
+    /* An ordered marker is read against the list it may join: `I.` after a
+     * roman list is roman, and after an alphabetic one the letter I. Making
+     * the roman list alphabetic reads the list after it again. */
+    add("marker-after-changed-list", "(A) a\n(B) b\n\nIV) c\n\nI.  d\n", (s) =>
+        s.edit([{ start: 13, end: 15, text: "(C" }]).expect("changed", "List", 20)
+    );
     /* A leaf block edited on a later line takes its untouched lines (E5);
      * an edit that ends it early, or makes its lines a heading, is read. */
     {

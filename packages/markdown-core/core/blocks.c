@@ -1551,6 +1551,14 @@ static bool S_take(markdown_core_parser *parser, markdown_core_member *parent, u
     if ((first->flags & MARKDOWN_CORE_NODE__GROUP) || !parent->scan_equal || first->entry != carry) {
         return false;
     }
+    /* The old node before `first`, which the cursor passed, was read again.
+     * When it holds the next, the line that closed it, on which `first`
+     * begins, was read in its context, as an item marker is read against the
+     * list it may join: that line is read again with it. */
+    if (parent->scan_next > 0 &&
+        (markdown_core_stem_at(children, parent->scan_next - 1)->flags & MARKDOWN_CORE_NODE__HOLDS_NEXT)) {
+        return false;
+    }
     /* The candidate stops at the first node an edit meets from where it is
      * measured to its reach, which is the first whose reach meets the first
      * edit that ends after the candidate begins, or at a group; it ends at the
