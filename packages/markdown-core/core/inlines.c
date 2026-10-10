@@ -718,7 +718,7 @@ static void S_read_delimited(markdown_core_member *inline_member, markdown_core_
     reads->end = closing->start + used;
     reads->rules |= closing->rules;
     reads->reach = reads->reach > closing->reach ? reads->reach : closing->reach;
-    reads->flags &= closing->flags | ~(uint32_t)MARKDOWN_CORE_INLINE_RECORDED;
+    reads->flags &= closing->flags | ~(uint32_t)(MARKDOWN_CORE_INLINE_RECORDED | MARKDOWN_CORE_INLINE_LOCAL);
     reads->flags |= closing->flags & MARKDOWN_CORE_INLINE_CONTEXT;
     if (opener_left > 0) {
         reads->flags &= ~(uint32_t)MARKDOWN_CORE_INLINE_RECORDED;
@@ -860,7 +860,7 @@ static bool S_is_inline_start(const markdown_core_element_instance *owner, markd
     inline_state->declared = false;
     bool start = owner->element->is_inline_start(owner, inline_state, at);
     if (!inline_state->declared) {
-        markdown_core_inline_unrecorded(inline_state);
+        markdown_core_inline_outside(inline_state);
     }
     return start;
 }
@@ -913,7 +913,7 @@ static markdown_core_member *try_elements(markdown_core_parser *parser, markdown
         inline_state->declared = false;
         res = (*owner)->element->match_inline(*owner, parser, parent, c, inline_state);
         if (!inline_state->declared) {
-            markdown_core_inline_unrecorded(inline_state);
+            markdown_core_inline_outside(inline_state);
         }
 
         if (res || inline_state->pos != start || parser->error || inline_state->error) {
@@ -965,7 +965,7 @@ markdown_core_member *markdown_core_inline_state_append(markdown_core_inline_sta
     /* A token is taken whole as one node: one that appends more is read
      * again by every later parse. */
     if (inline_state->token_member) {
-        markdown_core_inline_unrecorded(inline_state);
+        markdown_core_inline_outside(inline_state);
     } else if (inline_state->records) {
         inline_state->token_member = member;
     }
@@ -1032,7 +1032,13 @@ struct markdown_core_inline_cursor {
     int32_t old_size, new_size;
     inline_level *levels;
     size_t depth, capacity;
+    /* Every content byte is a copy of a source byte no edit touched, at the
+     * offset it had: the root reads its old content (S_cursor_open). */
+    bool whole;
 };
+
+static bool S_cursor_copies(const markdown_core_parser *parser, const markdown_core_inline_cursor *cursor, int32_t from,
+                            int32_t to, int64_t delta);
 
 /* The cursor's levels hold `stem` next, its first node at `at`. */
 static bool S_cursor_push(markdown_core_inline_cursor *cursor, const markdown_core_stem *stem, int32_t at) {
@@ -1112,6 +1118,8 @@ static void S_cursor_open(markdown_core_inline_state *inline_state, const markdo
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         return;
     }
+    cursor->whole = cursor->old_size == cursor->new_size &&
+                    S_cursor_copies(inline_state->owner_parser, cursor, 0, cursor->old_size, 0);
     inline_state->cursor = cursor;
 }
 
@@ -1183,8 +1191,14 @@ static bool S_cursor_fits(const markdown_core_parser *parser, const markdown_cor
         end + delta > cursor->new_size) {
         return false;
     }
-    const int32_t from = before < 0 ? 0 : (int32_t)before;
-    const int32_t to = after > cursor->old_size ? cursor->old_size : (int32_t)after;
+    return S_cursor_copies(parser, cursor, before < 0 ? 0 : (int32_t)before,
+                           after > cursor->old_size ? cursor->old_size : (int32_t)after, delta);
+}
+
+/* Whether every old content byte in [from, to) is a copy of a source byte no
+ * edit touched, read now `delta` bytes after where it was. */
+static bool S_cursor_copies(const markdown_core_parser *parser, const markdown_core_inline_cursor *cursor, int32_t from,
+                            int32_t to, int64_t delta) {
     if (from >= to) {
         return true;
     }
@@ -1234,7 +1248,8 @@ static const markdown_core_node *S_cursor_offer(markdown_core_inline_state *inli
         if (now > pos) {
             return NULL;
         }
-        if (now == pos && (node->entry & MARKDOWN_CORE_INLINE_ENTRY_TAKE)) {
+        if (now == pos &&
+            (node->entry & (cursor->whole ? MARKDOWN_CORE_INLINE_ENTRY_LOCAL : MARKDOWN_CORE_INLINE_ENTRY_TAKE))) {
             *start = at;
             return node;
         }
@@ -1265,7 +1280,7 @@ static bool S_take_old(markdown_core_parser *parser, markdown_core_inline_state 
     int32_t start = 0;
     const markdown_core_node *old = S_cursor_offer(inline_state, pos, &start);
     if (!old || pos < inline_state->opaque_end || (inline_state->token.state & MARKDOWN_CORE_INLINE_HELD) ||
-        !S_cursor_fits(parser, inline_state->cursor, old, start, pos)) {
+        (!inline_state->cursor->whole && !S_cursor_fits(parser, inline_state->cursor, old, start, pos))) {
         return false;
     }
     const uint32_t rules = markdown_core_inline_entry_rules(old->entry);
@@ -1309,15 +1324,16 @@ static bool S_take_old(markdown_core_parser *parser, markdown_core_inline_state 
     member->old = old;
     member->old_start = (uint32_t)start;
     member->passed = (uint32_t)end;
-    member->reads = (markdown_core_inline_reads){.rules = rules,
-                                                 .state = inline_state->token.state,
-                                                 .start = pos,
-                                                 .end = end,
-                                                 .low = pos - (int32_t)markdown_core_inline_entry_back(old->entry),
-                                                 .reach = (int32_t)copy->reach,
-                                                 .until = -1,
-                                                 .flags = MARKDOWN_CORE_INLINE_RECORDED |
-                                                          (boundary ? MARKDOWN_CORE_INLINE_BOUNDARY : 0)};
+    member->reads = (markdown_core_inline_reads){
+        .rules = rules,
+        .state = inline_state->token.state,
+        .start = pos,
+        .end = end,
+        .low = pos - (int32_t)markdown_core_inline_entry_back(old->entry),
+        .reach = (int32_t)copy->reach,
+        .until = -1,
+        .flags = (old->entry & MARKDOWN_CORE_INLINE_ENTRY_TAKE ? MARKDOWN_CORE_INLINE_RECORDED : 0) |
+                 MARKDOWN_CORE_INLINE_LOCAL | (boundary ? MARKDOWN_CORE_INLINE_BOUNDARY : 0)};
     if (boundary) {
         markdown_core_inline_push_boundary(inline_state, end);
     }
@@ -1331,13 +1347,14 @@ static bool S_take_old(markdown_core_parser *parser, markdown_core_inline_state 
 /* A token begins at the cursor: it has read nothing yet. */
 static void S_begin_token(markdown_core_inline_state *inline_state) {
     bufsize_t pos = inline_state->pos;
-    inline_state->token = (markdown_core_inline_reads){.state = S_stack_state(inline_state),
-                                                       .start = pos,
-                                                       .end = pos,
-                                                       .low = pos,
-                                                       .reach = pos,
-                                                       .until = -1,
-                                                       .flags = MARKDOWN_CORE_INLINE_RECORDED};
+    inline_state->token =
+        (markdown_core_inline_reads){.state = S_stack_state(inline_state),
+                                     .start = pos,
+                                     .end = pos,
+                                     .low = pos,
+                                     .reach = pos,
+                                     .until = -1,
+                                     .flags = MARKDOWN_CORE_INLINE_RECORDED | MARKDOWN_CORE_INLINE_LOCAL};
     inline_state->token_member = NULL;
 }
 
@@ -1388,7 +1405,7 @@ int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_cor
         inline_state->declared = false;
         text->element->parse_text(text, parser, inline_state, endpos);
         if (!inline_state->declared) {
-            markdown_core_inline_unrecorded(inline_state);
+            markdown_core_inline_outside(inline_state);
         }
     }
 append:
@@ -1423,7 +1440,7 @@ const markdown_core_key *markdown_core_inline_ask(markdown_core_inline_state *in
     markdown_core_registry *registry = parser->registry;
     /* The question is the root's: a later parse asks it again, so no parse
      * takes the token that asked it whole. */
-    markdown_core_inline_unrecorded(inline_state);
+    markdown_core_inline_outside(inline_state);
     const unsigned char *bytes = label->data;
     uint32_t length = (uint32_t)label->len;
     bool failed = false;

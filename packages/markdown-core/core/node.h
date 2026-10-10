@@ -822,12 +822,15 @@ markdown_core_node *markdown_core_stem_walk_next(markdown_core_stem_walk *walk);
  * `stay` names the delimiter its token pushed (parser.h, `stays`), and
  * `until` is the furthest offset at which a delimiter it holds left the
  * stack. It is RECORDED when every decision about it said what it read; it
- * leaves a whitespace BOUNDARY on the stack; and its completion read the
- * nodes around it when it has CONTEXT. */
+ * leaves a whitespace BOUNDARY on the stack; its completion read the nodes
+ * around it when it has CONTEXT; and it is LOCAL when its decisions read
+ * nothing but the root's content and the parse of it, asking no registry
+ * and no element that did not say what it read. */
 #define MARKDOWN_CORE_INLINE_HELD (1u << 31)
 #define MARKDOWN_CORE_INLINE_RECORDED 1u
 #define MARKDOWN_CORE_INLINE_BOUNDARY 2u
 #define MARKDOWN_CORE_INLINE_CONTEXT 4u
+#define MARKDOWN_CORE_INLINE_LOCAL 8u
 typedef struct markdown_core_inline_reads {
     uint32_t rules, state;
     int32_t start, end, low, reach, until;
@@ -835,16 +838,19 @@ typedef struct markdown_core_inline_reads {
 } markdown_core_inline_reads;
 
 /* AN INLINE NODE'S ENTRY, as its node keeps it for the next parse (5.6): zero
- * for a node no parse takes whole, and otherwise TAKE, the rules whose stack
- * must be empty where it is taken, BOUNDARY when taking it leaves a
- * whitespace boundary on the stack, and how many content bytes before its
- * start its decisions read. Its `reach` counts the content bytes after its end
- * they read. A rule is one bit of the low sixteen. */
+ * for a node no parse takes whole. A LOCAL node is taken whole where its
+ * root's content is all the old one's (inlines.c, S_cursor_open); a TAKE
+ * node, which is LOCAL, also where only the bytes its decisions read are,
+ * with the rules whose stack must be empty where it is taken and how many
+ * content bytes before its start its decisions read. BOUNDARY when taking it
+ * leaves a whitespace boundary on the stack. Its `reach` counts the content
+ * bytes after its end they read. A rule is one bit of the low sixteen. */
 #define MARKDOWN_CORE_INLINE_ENTRY_TAKE (1ull << 16)
 #define MARKDOWN_CORE_INLINE_ENTRY_BOUNDARY (1ull << 17)
-static inline uint64_t markdown_core_inline_entry(uint32_t rules, bool boundary, uint32_t back) {
-    return MARKDOWN_CORE_INLINE_ENTRY_TAKE | (boundary ? MARKDOWN_CORE_INLINE_ENTRY_BOUNDARY : 0) |
-           ((uint64_t)back << 32) | (rules & 0xffffu);
+#define MARKDOWN_CORE_INLINE_ENTRY_LOCAL (1ull << 18)
+static inline uint64_t markdown_core_inline_entry(bool take, uint32_t rules, bool boundary, uint32_t back) {
+    return MARKDOWN_CORE_INLINE_ENTRY_LOCAL | (take ? MARKDOWN_CORE_INLINE_ENTRY_TAKE : 0) |
+           (boundary ? MARKDOWN_CORE_INLINE_ENTRY_BOUNDARY : 0) | ((uint64_t)back << 32) | (rules & 0xffffu);
 }
 static inline uint32_t markdown_core_inline_entry_rules(uint64_t entry) { return (uint32_t)entry & 0xffffu; }
 static inline uint32_t markdown_core_inline_entry_back(uint64_t entry) { return (uint32_t)(entry >> 32); }

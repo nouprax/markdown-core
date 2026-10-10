@@ -690,6 +690,11 @@ An inline root is parsed again when its block was read again, or when a
 registry winner it looked up changed (5.7). Every other root keeps its inline
 tree.
 
+A root parsed again whose content no edit touched keeps its inline tree:
+every old node whose decisions read only the root's content is taken whole
+where it lies. A node that asked a registry, or an element that did not say
+what it read, is parsed again.
+
 A root that is parsed again holds the old inline tree of the old root it
 continues and is parsed against it by the algorithm of 5.3. Inline extents
 are content offsets (4.3), and the root finds its edit from the step's source

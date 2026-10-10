@@ -125,10 +125,17 @@ static inline void markdown_core_inline_read_rule(markdown_core_inline_state *in
     inline_state->token.rules |= 1u << rule;
 }
 
-/* The token being read was asked of no element that said what it read, or
- * made what a later parse cannot take whole. */
+/* The token being read made what a later parse takes whole only where the
+ * root's content is all the old one's. */
 static inline void markdown_core_inline_unrecorded(markdown_core_inline_state *inline_state) {
     inline_state->token.flags &= ~(uint32_t)MARKDOWN_CORE_INLINE_RECORDED;
+}
+
+/* The token being read decided what a parse of the same content may decide
+ * otherwise: it asked a registry or an element that did not say what it
+ * read, or it made more nodes than one. */
+static inline void markdown_core_inline_outside(markdown_core_inline_state *inline_state) {
+    inline_state->token.flags &= ~(uint32_t)(MARKDOWN_CORE_INLINE_RECORDED | MARKDOWN_CORE_INLINE_LOCAL);
 }
 
 #define make_str(inline_state, sc, ec, s)                                                                              \

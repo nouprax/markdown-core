@@ -2015,7 +2015,7 @@ static void S_join_reads(const markdown_core_parser *parser, markdown_core_inlin
     into->low = from->low < into->low ? from->low : into->low;
     into->reach = from->reach > into->reach ? from->reach : into->reach;
     into->until = until > into->until ? until : into->until;
-    into->flags = (into->flags & from->flags & MARKDOWN_CORE_INLINE_RECORDED) |
+    into->flags = (into->flags & from->flags & (MARKDOWN_CORE_INLINE_RECORDED | MARKDOWN_CORE_INLINE_LOCAL)) |
                   ((into->flags | from->flags) & (MARKDOWN_CORE_INLINE_BOUNDARY | MARKDOWN_CORE_INLINE_CONTEXT));
 }
 
@@ -2031,22 +2031,24 @@ static void S_absorb_reads(const markdown_core_parser *parser, markdown_core_mem
 
 /* AN INLINE NODE'S ENTRY (docs/plans/2026-09-29-incremental-parsing.md, 5.6),
  * once it is complete: a later parse may take it whole where the stack holds
- * no entry of the rules its decisions counted or searched, when every
- * decision about it said what it read, none read the nodes around it or a
- * token held open where it begins, the rules they counted had no entry
- * there, every delimiter it holds left the stack by its end, and it lies on
- * the bytes it was read from. Its reach is the content offset its decisions
- * read up to. Its owner read what it read. */
+ * no entry of the rules its decisions counted or searched, when its
+ * decisions read nothing but the root's content, none read the nodes around
+ * it or a token held open where it begins, the rules they counted had no
+ * entry there, every delimiter it holds left the stack by its end, and it
+ * lies on the bytes it was read from: where the root's content is all the
+ * old one's, and else when every decision about it said what it read. Its
+ * reach is the content offset its decisions read up to. Its owner read what
+ * it read. */
 static void S_settle_reads(markdown_core_parser *parser, markdown_core_member *member) {
     markdown_core_inline_reads *reads = &member->reads;
     markdown_core_node *node = member->node;
     reads->until = S_reads_until(parser, reads);
     reads->stay = 0;
-    if ((reads->flags & (MARKDOWN_CORE_INLINE_RECORDED | MARKDOWN_CORE_INLINE_CONTEXT)) ==
-            MARKDOWN_CORE_INLINE_RECORDED &&
+    if ((reads->flags & (MARKDOWN_CORE_INLINE_LOCAL | MARKDOWN_CORE_INLINE_CONTEXT)) == MARKDOWN_CORE_INLINE_LOCAL &&
         !(reads->state & MARKDOWN_CORE_INLINE_HELD) && !(reads->rules & reads->state) && reads->until <= reads->end &&
         node->where.place.start == (uint32_t)reads->start && node->where.place.end == (uint32_t)reads->end) {
-        node->entry = markdown_core_inline_entry(reads->rules, reads->flags & MARKDOWN_CORE_INLINE_BOUNDARY,
+        node->entry = markdown_core_inline_entry(reads->flags & MARKDOWN_CORE_INLINE_RECORDED, reads->rules,
+                                                 reads->flags & MARKDOWN_CORE_INLINE_BOUNDARY,
                                                  (uint32_t)(reads->start - reads->low));
         node->reach = (uint32_t)reads->reach;
     }
