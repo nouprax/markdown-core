@@ -10,7 +10,7 @@ public sealed class Markup {
     /** Unique within its document, and numbered from 1 by a parse in the order its nodes complete, document last. */
     public abstract val id: MarkupID
 
-    /** Where the node is, relative to the node before it; [Document.scope] turns it into editor coordinates. */
+    /** Where the node is, relative to its neighbours. See [Extent]. */
     public abstract val extent: Extent
 
     /**
