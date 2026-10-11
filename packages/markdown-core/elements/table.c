@@ -2664,6 +2664,14 @@ static bool table_open_admits(markdown_core_parser *parser, const unsigned char 
                                 table_dash_count_raw(input, parser->offset, trimmed), parser->line_number + 1, false);
 }
 
+/* The table a trailing caption joins: its owner's last child, a table with
+ * no caption that a later line may still add to, open or awaiting its
+ * trailer (markdown_core_member_range_open). */
+static bool table_awaits_caption(const markdown_core_member *member) {
+    return member && member->node->kind == MARKDOWN_CORE_NODE_TABLE && member->node->opaque &&
+           !((markdown_core_table *)member->node->opaque)->caption && markdown_core_member_range_open(member);
+}
+
 /* Whether the line may begin a table table_open reads ahead for, or a
  * caption of one, under `parent`: what that lookahead needs before it is
  * worth entering. */
@@ -2676,7 +2684,7 @@ static bool table_open_matches(markdown_core_parser *parser, markdown_core_membe
     }
     /* Every opening grammar needs a later physical line. At EOF only a
      * table that awaits a trailing caption can claim one. */
-    if (!markdown_core_parser_input_continues(parser) && (!parent->last || !parent->last->awaits_trailer)) {
+    if (!markdown_core_parser_input_continues(parser) && !table_awaits_caption(parent->last)) {
         return false;
     }
     return table_open_admits(parser, input, length);
@@ -2702,9 +2710,8 @@ static markdown_core_member *table_open(table_workspace *workspace, markdown_cor
     int caption = table_caption_start(source.lines[0].data, source.lines[0].length, source.lines[0].first,
                                       source.lines[0].indent);
     size_t caption_last = 0;
-    /* A table that awaits a trailing caption is its owner's last child. */
     markdown_core_member *preceding = parent->last;
-    bool trailing = caption >= 0 && preceding && preceding->awaits_trailer;
+    bool trailing = caption >= 0 && table_awaits_caption(preceding);
     bool matched = false;
     if (caption >= 0) {
         matched = table_after_caption(&source, &caption_last, candidate, !trailing);
