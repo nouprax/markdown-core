@@ -1,0 +1,4 @@
+markdown-core edit script 1
+script identifier-after-taken-table identity
+edit 46 46 78
+expect kept Table 0 0

@@ -1060,6 +1060,11 @@ export function identityScripts() {
     add("table-header-refused", "a| b | c |\n| - | - |\n| p | d |\n| - | - |\n", (s) =>
         s.insert(23, "x").expect("changed", "Paragraph", 0)
     );
+    /* An identifier line after a table the cursor takes whole begins the
+     * block the old parse began there: the taken table awaits no trailer. */
+    add("identifier-after-taken-table", "h   j\n--- ---\na   b\n\n#simple#\n--- ---\n\nc   d\n\n", (s) =>
+        s.insert(46, "x").expect("kept", "Table", 0, 0)
+    );
     /* A star typed before the spaces that end a line stays in the Text's
      * slice when the emphasis before it is taken whole, and is cut into a
      * token of its own when the emphasis opener is read again: either way
