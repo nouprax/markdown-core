@@ -1142,6 +1142,8 @@ void markdown_core_block_rebase_content_marks(markdown_core_parser *parser, mark
     markdown_core_parser_adopt_content_marks(parser, &node->content_map, &node->content_map, dropped, remaining);
 }
 
+static void S_read_again_where_it_begins(markdown_core_parser *parser, markdown_core_member *member);
+
 /* Raises the reach of `node`, which is not numbered yet, to `reach`. */
 static inline void S_raise_reach(markdown_core_node *node, uint32_t reach) {
     node->reach = node->reach < reach ? reach : node->reach;
@@ -1173,6 +1175,7 @@ markdown_core_member *markdown_core_parser_attach_split(markdown_core_parser *pa
         markdown_core_node_pool_bytes_free(parser->pool, whole->node->lines);
         whole->node->lines = NULL;
     }
+    S_read_again_where_it_begins(parser, whole);
     return member;
 }
 
@@ -1764,6 +1767,28 @@ static void S_read_again(markdown_core_parser *parser, markdown_core_member *mem
     }
 }
 
+/* A block whose kind or start its lines changed reads again the old node of
+ * its kind that begins where it begins now: the old node it read, of the
+ * kind it was or from where it began, is another block's. */
+static void S_read_again_where_it_begins(markdown_core_parser *parser, markdown_core_member *member) {
+    const uint32_t start = member->node->where.place.start;
+    if (member->scan &&
+        (member->scan->kind != member->node->kind || markdown_core_parser_image(parser, member->scan_start) != start)) {
+        member->scan = NULL;
+        member->scan_start = member->scan_at = 0;
+        member->scan_next = 0;
+        member->scan_equal = false;
+    }
+    markdown_core_member *owner = member->owner;
+    if (!member->scan && owner && owner->scan && parser->block_root == parser->root) {
+        uint32_t old_start;
+        const markdown_core_node *old = S_old_child(parser, owner, start, &old_start);
+        if (old) {
+            S_read_again(parser, member, old, old_start);
+        }
+    }
+}
+
 /* THE CURSOR DESCENDS (5.3). A container that read no old node where it
  * began, as one whose opening line an edit moved, reads again the old node
  * of its kind its parent's cursor holds across `start`, where it is about to
@@ -1835,20 +1860,13 @@ markdown_core_member *markdown_core_parser_add_child_validated(markdown_core_par
 /* A block its lines turned into `member`'s kind reads the old node of that
  * kind which begins where it does. */
 void markdown_core_parser_kind_changed(markdown_core_parser *parser, markdown_core_member *member) {
-    markdown_core_member *owner = member->owner;
     /* One that decided as the kind it was decides again (5.9). */
     if (member->decided && member->searched && !member->taken) {
         member->decided = false;
         member->old = NULL;
         member->redo = true;
     }
-    if (!member->scan && owner && owner->scan && parser->block_root == parser->root) {
-        uint32_t old_start;
-        const markdown_core_node *old = S_old_child(parser, owner, member->node->where.place.start, &old_start);
-        if (old) {
-            S_read_again(parser, member, old, old_start);
-        }
-    }
+    S_read_again_where_it_begins(parser, member);
 }
 
 /* An open block that has not decided what it continues decides when a block

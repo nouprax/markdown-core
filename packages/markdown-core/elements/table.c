@@ -339,15 +339,16 @@ static markdown_core_member *try_opening_table_header(const markdown_core_elemen
     }
 
     if (header_row.paragraph_offset) {
-        try_inserting_table_header_paragraph(parser, parent_container, (unsigned char *)parent_string,
-                                             header_row.paragraph_offset);
         /* The table starts where its HEADER ROW was written, not where the
-         * paragraph it was split out of did. Taken before the row and cells
-         * below read start_column, because they are placed against it. */
+         * paragraph it was split out of did, which its lead begins at. Taken
+         * before the row and cells below read start_column, because they are
+         * placed against it. */
         if (markdown_core_parser_content_place(parser, &container->content_map, header_row.paragraph_offset,
                                                &header_line, &header_start)) {
             container->where.place.start = (uint32_t)header_start;
         }
+        try_inserting_table_header_paragraph(parser, parent_container, (unsigned char *)parent_string,
+                                             header_row.paragraph_offset);
     }
 
     /* Table data belongs to the element. Its cleanup accepts partial
