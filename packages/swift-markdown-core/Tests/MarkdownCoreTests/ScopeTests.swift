@@ -37,12 +37,12 @@ import Testing
     @Test("a position names a byte of its line at a scalar boundary, and finds the last node holding it")
     func hitTesting() throws {
         let source = "é🚀\r\nx"
-        // Ids, in completion order: 1 paragraph, 2 "é🚀", 3 the soft break
-        // (the CR LF, its one run), 4 "x", 5 document.
+        // Ids, in completion order: 1 "é🚀", 2 the soft break (the CR LF,
+        // its one run), 3 "x", 4 paragraph, 5 document.
         // Zero is no node.
         let expected: [(TextUnit, [UInt64])] = [
-            (.utf8, [2, 0, 2, 0, 0, 0, 3, 3, 0]),
-            (.utf16, [2, 2, 0, 3, 3, 0, 0, 0, 0]),
+            (.utf8, [1, 0, 1, 0, 0, 0, 2, 2, 0]),
+            (.utf16, [1, 1, 0, 2, 2, 0, 0, 0, 0]),
         ]
         for (unit, ids) in expected {
             let document = try Document.parse(source, unit: unit)
@@ -50,7 +50,7 @@ import Testing
                 try document.node(at: Position(line: 1, column: column), in: source)?.id.value ?? 0
             }
             #expect(found == ids, "\(unit)")
-            #expect(try document.node(at: Position(line: 2, column: 1), in: source)?.id.value == 4)
+            #expect(try document.node(at: Position(line: 2, column: 1), in: source)?.id.value == 3)
             #expect(try document.node(at: Position(line: 2, column: 2), in: source) == nil)
             #expect(try document.node(at: Position(line: 3, column: 1), in: source) == nil)
         }

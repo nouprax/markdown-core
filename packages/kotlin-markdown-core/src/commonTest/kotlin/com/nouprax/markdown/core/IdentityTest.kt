@@ -15,15 +15,17 @@ private fun nodes(root: Markup): kotlin.collections.List<Markup> = NodeVisitor()
 
 class IdentityTest {
     @Test
-    fun aFreshParseNumbersEveryOwnedNodeFromOneInCompletionOrder() {
+    fun aFreshParseNumbersEveryOwnedNodeUniquelyInCompletionOrder() {
         // Unique across every owned relation -- content, labels, titles,
         // captions, terms, bodies, affixes, inline notes, metadata -- because
-        // the walk visits every one of them; the document completes last.
+        // the walk visits every one of them; the document completes last, so
+        // its id is the largest. A root parsed again for a definition written
+        // after it leaves unused the ids its first content took.
         for (testCase in canonicalAstCases) {
             val document = Document.parse(testCase.source)
             val ids = nodes(document).map { it.id.value }
-            assertEquals((1L..ids.size).toList(), ids.sorted(), testCase.name)
-            assertEquals(ids.size.toLong(), document.id.value, testCase.name)
+            assertEquals(ids.size, ids.toSet().size, testCase.name)
+            assertEquals(ids.max(), document.id.value, testCase.name)
         }
     }
 
@@ -104,7 +106,7 @@ class IdentityTest {
     fun aDescriptionNamesTheKindAndTheId() {
         val document = Document.parse("text\n")
         assertEquals("Document(id=3)", document.toString())
-        assertEquals("Text(id=2)", assertIs<Paragraph>(document.content.single()).content.single().toString())
+        assertEquals("Text(id=1)", assertIs<Paragraph>(document.content.single()).content.single().toString())
     }
 }
 

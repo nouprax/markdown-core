@@ -155,9 +155,10 @@ for (const testCase of canonicalManifest.cases) {
     });
 
     test(`conformance: fresh parse ids of shared case ${testCase.name}`, () => {
-        // Ids are unique across every owned relation and numbered from 1 in
-        // completion order, the document last, so two fresh parses are equal,
-        // ids included.
+        // Ids are unique across every owned relation and rise in completion
+        // order, the document's the largest. A root parsed again for a
+        // definition written after it leaves unused the ids its first content
+        // took. Two fresh parses are equal, ids included.
         const document = Document.parse(testCase.source);
         const ids = [];
         walk(
@@ -171,11 +172,8 @@ for (const testCase of canonicalManifest.cases) {
                 ])
             )
         );
-        assert.deepEqual(
-            [...ids].sort((a, b) => a - b),
-            ids.map((_, index) => index + 1)
-        );
-        assert.equal(document.id, ids.length);
+        assert.equal(new Set(ids).size, ids.length);
+        assert.equal(document.id, Math.max(...ids));
         assert.ok(markupEquals(document, Document.parse(testCase.source)));
     });
 }
