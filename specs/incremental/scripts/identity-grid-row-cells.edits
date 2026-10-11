@@ -1,0 +1,4 @@
+markdown-core edit script 1
+script grid-row-cells identity
+edit 42 43 71
+expect kept TableCell 15 15

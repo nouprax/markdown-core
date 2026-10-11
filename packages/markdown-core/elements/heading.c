@@ -526,15 +526,16 @@ static bool open_atx(const markdown_core_element_instance *self, markdown_core_p
 
     bufsize_t hashpos;
     int level = 0;
-    bufsize_t heading_startpos = parser->first_nonspace;
+    bufsize_t heading_startpos = parser->input.first_nonspace;
 
-    markdown_core_block_advance_offset(parser, input, parser->first_nonspace + matched - parser->offset, false);
+    markdown_core_block_advance_offset(parser, input, parser->input.first_nonspace + matched - parser->input.offset,
+                                       false);
     *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_HEADING, heading_startpos + 1);
     if (!*container) {
         return false;
     }
 
-    hashpos = markdown_core_chunk_strchr(input, '#', parser->first_nonspace);
+    hashpos = markdown_core_chunk_strchr(input, '#', parser->input.first_nonspace);
 
     while (peek_at(input, hashpos) == '#') {
         level++;
@@ -567,7 +568,7 @@ static bool open_setext(const markdown_core_element_instance *self, markdown_cor
         }
         (*container)->node->as.heading->level = matched;
         (*container)->node->as.heading->setext = true;
-        markdown_core_block_advance_offset(parser, input, input->len - 1 - parser->offset, false);
+        markdown_core_block_advance_offset(parser, input, input->len - 1 - parser->input.offset, false);
     }
 
     return true;

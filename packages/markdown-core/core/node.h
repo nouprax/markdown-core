@@ -942,8 +942,6 @@ struct markdown_core_member {
     markdown_core_inline_reads reads;
     bool held, field, inner, decided, identified, paired, searched, redo, spine, awaits_trailer, completed, numbered,
         counted, taken;
-    /* Whether blocks are read from its node's content (markdown_core_parser_queue_block_input). */
-    bool queued;
 };
 
 /* The node `node`'s inline content is parsed into: the node itself, or the

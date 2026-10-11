@@ -14,7 +14,7 @@ void markdown_core_paragraph_finalize(const markdown_core_element_instance *self
 
 static int continue_paragraph(const markdown_core_element_instance *self, markdown_core_parser *parser,
                               unsigned char *data, int length, markdown_core_member *container) {
-    return !parser->blank;
+    return !parser->input.blank;
 }
 static bool accepts_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
                          markdown_core_member *node) {
@@ -36,14 +36,14 @@ static markdown_core_member *open_text(const markdown_core_element_instance *sel
     if (!container) {
         return NULL;
     }
-    parser->current = container;
+    parser->input.current = container;
     if (markdown_core_block_attach_identifier_line(self->state, parser, container, input) || parser->error) {
         return NULL;
     }
     container = markdown_core_parser_add_child_validated(parser, container, MARKDOWN_CORE_NODE_PARAGRAPH,
-                                                         parser->first_nonspace + 1);
+                                                         parser->input.first_nonspace + 1);
     if (container) {
-        markdown_core_block_advance_offset(parser, input, parser->first_nonspace - parser->offset, false);
+        markdown_core_block_advance_offset(parser, input, parser->input.first_nonspace - parser->input.offset, false);
     }
     return container;
 }

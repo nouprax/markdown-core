@@ -78,7 +78,7 @@ static markdown_core_member *open_block(const markdown_core_element_instance *se
     }
     markdown_core_chunk line = {input, len, 0};
     markdown_core_block_reader reader = {&lookahead, read_block_line};
-    bool closed = probe_comment_block(self, parser, &line, first_nonspace, parser->indent, &reader);
+    bool closed = probe_comment_block(self, parser, &line, first_nonspace, parser->input.indent, &reader);
     markdown_core_parser_lookahead_end(&lookahead);
     if (!closed || parser->error) {
         return NULL;

@@ -4,7 +4,7 @@
 
 void markdown_core_parse_task_prefix(markdown_core_parser *parser, markdown_core_node *item, const unsigned char *input,
                                      bufsize_t len) {
-    bufsize_t start = parser->first_nonspace;
+    bufsize_t start = parser->input.first_nonspace;
     if (len - start < 4 || input[start] != '[') {
         return;
     }
@@ -31,5 +31,5 @@ void markdown_core_parse_task_prefix(markdown_core_parser *parser, markdown_core
         return;
     }
     item->as.list->task_marker = markdown_core_optional_chunk_present(marker);
-    markdown_core_parser_advance_offset(parser, (const char *)input, end - parser->offset, false);
+    markdown_core_parser_advance_offset(parser, (const char *)input, end - parser->input.offset, false);
 }

@@ -102,21 +102,25 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identif
     }
 }
 
+bool markdown_core_block_identifier_trails(const markdown_core_node *node) {
+    const markdown_core_node_type kind = markdown_core_block_type(node);
+    return kind == MARKDOWN_CORE_NODE_LIST || kind == MARKDOWN_CORE_NODE_CALLOUT || kind == MARKDOWN_CORE_NODE_TABLE;
+}
+
 bool markdown_core_block_attach_identifier_line(markdown_core_block_identifier_work *work, markdown_core_parser *parser,
                                                 markdown_core_member *parent, markdown_core_chunk *input) {
-    /* The block before the line is closed: its node is complete. */
+    /* The block before the line is closed and awaits its trailer. */
     markdown_core_node *owner = parent->last ? parent->last->node : NULL;
     block_identifier candidate;
-    if (parser->indent >= CODE_INDENT || input->data[parser->first_nonspace] != '#' || !owner ||
-        owner->attributes.anchor.len ||
-        (markdown_core_block_type(owner) != MARKDOWN_CORE_NODE_LIST &&
-         markdown_core_block_type(owner) != MARKDOWN_CORE_NODE_CALLOUT &&
-         markdown_core_block_type(owner) != MARKDOWN_CORE_NODE_TABLE) ||
-        !S_scan_block_identifier(work, input->data + parser->first_nonspace, input->len - parser->first_nonspace,
-                                 &candidate) ||
-        !candidate.own_line || candidate.content_end || !markdown_core_block_ends_with_blank_line(owner)) {
+    if (parser->input.indent >= CODE_INDENT || input->data[parser->input.first_nonspace] != '#' || !owner ||
+        owner->attributes.anchor.len || !markdown_core_block_identifier_trails(owner) ||
+        !S_scan_block_identifier(work, input->data + parser->input.first_nonspace,
+                                 input->len - parser->input.first_nonspace, &candidate) ||
+        !candidate.own_line || candidate.content_end ||
+        !markdown_core_block_ends_with_blank_line(parser, parent->last)) {
         return false;
     }
+    assert(parent->last->awaits_trailer || parser->error);
     bool followed_by_boundary = !markdown_core_parser_input_continues(parser);
     if (!followed_by_boundary) {
         markdown_core_block_lookahead lookahead;
@@ -132,6 +136,6 @@ bool markdown_core_block_attach_identifier_line(markdown_core_block_identifier_w
     if (!followed_by_boundary || parser->error || !S_attach_block_identifier(parser, owner, &candidate)) {
         return false;
     }
-    markdown_core_parser_write_closed(parser, parent, parser->line_end);
+    markdown_core_parser_write_closed(parser, parent, parser->input.line_end);
     return true;
 }

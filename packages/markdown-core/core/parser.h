@@ -157,13 +157,112 @@ typedef struct markdown_core_inline_root {
     bool field;
 } markdown_core_inline_root;
 
-/* A CELL WHOSE CONTENT IS READ AS BLOCKS once the document's own lines are:
- * its member, which waits on the input and builds its blocks, and where the
- * cell starts, recorded when it was queued. */
-typedef struct markdown_core_block_input {
-    struct markdown_core_member *cell;
-    uint32_t start;
-} markdown_core_block_input;
+/* THE INPUT THE LINE MACHINE READS: the document's source, or the content
+ * of a cell read as blocks, which is read as its cell completes, inside the
+ * document's input, which then goes on where it was. Each input has its own
+ * lines, its own line in hand and its own open blocks; the parse's nodes,
+ * registry and content map are shared. */
+typedef struct markdown_core_parser_input {
+    /* The active block grammar boundary: the document's builder, or a cell's
+     * while its content is read. */
+    struct markdown_core_member *block_root;
+    struct markdown_core_member *matched_container;
+    /* Geometry and grammar facts for the input. The driver and lookahead
+     * extend one index; a source byte is scanned for line geometry once. The
+     * scan reads the input a chunk at a time, each chunk once: `chunks` holds
+     * the chunks read so far, in order of their starts, which cover what the
+     * parse read of the input and leave out what it took without reading
+     * (5.3), and `chunk` is the one read last or asked for last, holding
+     * `chunk_size` bytes from `chunk_start` on. */
+    markdown_core_input source;
+    struct markdown_core_input_chunk *chunks;
+    size_t chunk_count, chunk_capacity;
+    const unsigned char *chunk;
+    size_t chunk_start, chunk_size;
+    size_t length, scanned;
+    struct markdown_core_input_line *lines;
+    struct markdown_core_normalized_line *normalized_lines;
+    struct markdown_core_line_facts *facts;
+    size_t fact_count, fact_capacity;
+    size_t line_count, line_capacity;
+    /* Whether a column of the input may stand elsewhere than the same offset
+     * from its line's start in the source: true for a cell's content, and
+     * for the document once its scan finds NUL, which the block parser reads
+     * as the three bytes of U+FFFD. */
+    bool mapped;
+    int first_line;
+    /* A complete candidate may consume through a later line, `claimed_line`.
+     * The source driver advances to it after the current line has finished. */
+    bool claimed;
+    int claimed_line;
+    bufsize_t claimed_last_end;
+    /* THE PARSE'S READING OF ITS OLD TREE (docs/plans/2026-09-29-incremental-
+     * parsing.md, 5.1-5.3). `line_reach` is the high-water mark of the line
+     * being processed: the end of the furthest line any decision on it read,
+     * through its terminator, as markdown_core_parser_source_line raises it.
+     * `line_context` says whether the line was read with an open paragraph
+     * as its context: a start the line would open after a closed block was
+     * refused (markdown_core_block_start_refuses), and `previous_blank`
+     * whether the line before it was blank past its prefixes: a block closed
+     * by such a line trails (MARKDOWN_CORE_NODE__TRAILED). A take
+     * (markdown_core_parser_add_child) sets `taken`: the line ends there, and
+     * the next one read begins at `resume`, after a line whose content ended
+     * at `resume_last_end`; `resume_blank` says that line was blank, and
+     * `resume_flags` are the blank-line flags the innermost open block had
+     * there (5.3). */
+    uint32_t line_reach;
+    bool line_context, previous_blank, taken;
+    size_t resume;
+    bufsize_t resume_last_end;
+    bool resume_blank;
+    uint16_t resume_flags;
+    /* The line in hand as a leaf's line (E5): `plain` holds where its
+     * content began when it continued the current leaf as a plain line,
+     * `lines_taken` says that the line began a run of lines a leaf took, and
+     * `read_leaf` that a decision on the line read the leaf's content before
+     * it (markdown_core_parser_read_leaf), so it is no plain line. */
+    markdown_core_line plain;
+    bool lines_taken, read_leaf;
+    /* The last open block after a line is fully processed */
+    struct markdown_core_member *current;
+    /* See the documentation for markdown_core_parser_get_line_number() in markdown_core.h */
+    int line_number;
+    /* See the documentation for markdown_core_parser_get_offset() in markdown_core.h */
+    bufsize_t offset;
+    /* See the documentation for markdown_core_parser_get_column() in markdown_core.h */
+    bufsize_t column;
+    /* See the documentation for markdown_core_parser_get_first_nonspace() in markdown_core.h */
+    bufsize_t first_nonspace;
+    /* See the documentation for markdown_core_parser_get_first_nonspace_column() in markdown_core.h
+     */
+    bufsize_t first_nonspace_column;
+    bufsize_t thematic_break_kill_pos;
+    /* See the documentation for markdown_core_parser_get_indent() in markdown_core.h */
+    int indent;
+    /* See the documentation for markdown_core_parser_is_blank() in markdown_core.h */
+    bool blank;
+    /* See the documentation for markdown_core_parser_has_partially_consumed_tab() in
+     * markdown_core.h */
+    bool partially_consumed_tab;
+    /* Contains the currently processed line */
+    markdown_core_strbuf curline;
+    /* See the documentation for markdown_core_parser_get_last_line_end() in
+     * markdown-core-element-api.h */
+    bufsize_t last_line_end;
+    /* Where the line being processed ends in the source, before its line
+     * ending: the driver records it as it hands the line to the block
+     * parser, and it holds while `curline` does. */
+    bufsize_t line_end;
+    /* Where input line `line_number` starts in the input: the driver records
+     * it with `line_end`, and a claim of later lines moves it. */
+    bufsize_t line_start;
+    /* The input's last line as the block parser will see it, normalized once
+     * and reused by every lookahead that reaches it: it has no terminator of
+     * its own in the source, and a line handed to the prefix matchers must
+     * end in one. */
+    markdown_core_strbuf lookahead_last_line;
+    bool lookahead_last_line_ready;
+} markdown_core_parser_input;
 
 struct markdown_core_parser {
     /* The registry of the revision's pool (registry.h), which the facts of
@@ -203,73 +302,13 @@ struct markdown_core_parser {
     /* The builder of the document (node.h, markdown_core_member), which
      * holds the document's reference until the parse returns it. */
     struct markdown_core_member *root;
-    /* The active block grammar boundary: the document's builder, or a mapped
-     * cell's while its content is read. The document and mapped cell inputs
-     * share this parser and all document registries. Input roots stay owned by
-     * the AST; the queue only borrows them until their block content is read. */
-    struct markdown_core_member *block_root;
-    struct markdown_core_member *matched_container;
-    struct markdown_core_block_input *block_inputs;
-    size_t block_input_count, block_input_capacity, block_input_cursor;
-    /* Geometry and grammar facts for the active immutable input. The driver
-     * and lookahead extend one index; a source byte is scanned for line
-     * geometry once, whether the input is the document or a mapped cell. The
-     * scan reads the input a chunk at a time, each chunk once: `input_chunks`
-     * holds the chunks read so far, in order of their starts, which cover
-     * what the parse read of the input and leave out what it took without
-     * reading (5.3), and `input_chunk` is the one read last or asked for last,
-     * holding `input_chunk_size` bytes from `input_chunk_start` on. */
-    markdown_core_input input;
-    struct markdown_core_input_chunk *input_chunks;
-    size_t input_chunk_count, input_chunk_capacity;
-    const unsigned char *input_chunk;
-    size_t input_chunk_start, input_chunk_size;
-    size_t input_length, input_scanned;
-    struct markdown_core_input_line *input_lines;
-    struct markdown_core_normalized_line *normalized_lines;
-    struct markdown_core_line_facts *input_facts;
-    size_t input_fact_count, input_fact_capacity;
-    size_t input_line_count, input_line_capacity;
-    /* Whether a column of the active input may stand elsewhere than the
-     * same offset from its line's start in the source: true for a cell's
-     * content, and for the document once its scan finds NUL, which the block
-     * parser reads as the three bytes of U+FFFD. */
-    bool input_mapped;
-    int input_first_line;
+    /* The input being read. */
+    markdown_core_parser_input input;
+    /* The source lines the block parse handed to the line machine, for its
+     * linearity gate. */
     size_t input_line_work;
-    /* A complete candidate may consume through a later line, `claimed_line`.
-     * The source driver advances to it after the current line has finished. */
-    bool claimed;
-    int claimed_line;
-    bufsize_t claimed_last_end;
-    /* THE PARSE'S READING OF ITS OLD TREE (docs/plans/2026-09-29-incremental-
-     * parsing.md, 5.1-5.3). `line_reach` is the high-water mark of the line
-     * being processed: the end of the furthest line any decision on it read,
-     * through its terminator, as markdown_core_parser_source_line raises it.
-     * `line_context` says whether the line was read with an open paragraph
-     * as its context: a start the line would open after a closed block was
-     * refused (markdown_core_block_start_refuses), and `previous_blank` whether the line before it was blank past
-     * its prefixes: a block closed by such a line trails
-     * (MARKDOWN_CORE_NODE__TRAILED). `edit_shift` is the length change
-     * before each of the revision's edits. A take (markdown_core_parser_add_
-     * child) sets `taken`: the line ends there, and the next one read begins
-     * at `resume`, after a line whose content ended at `resume_last_end`;
-     * `resume_blank` says that line was blank, and `resume_flags` are the
-     * blank-line flags the innermost open block had there (5.3). */
-    uint32_t line_reach;
-    bool line_context, previous_blank, taken;
-    /* The line in hand as a leaf's line (E5): `plain` holds where its
-     * content began when it continued the current leaf as a plain line,
-     * `lines_taken` says that the line began a run of lines a leaf took, and
-     * `read_leaf` that a decision on the line read the leaf's content before
-     * it (markdown_core_parser_read_leaf), so it is no plain line. */
-    markdown_core_line plain;
-    bool lines_taken, read_leaf;
+    /* The length change before each of the revision's edits (5.2). */
     int64_t *edit_shift;
-    size_t resume;
-    bufsize_t resume_last_end;
-    bool resume_blank;
-    uint16_t resume_flags;
     /* THE NODES OF TAKEN SUBTREES THE PARSE REPLACES (5.7), in the order
      * found: a root whose lookups are answered otherwise now, parsed again
      * as `member`, whose node takes its place once it settles, and a heading
@@ -282,39 +321,6 @@ struct markdown_core_parser {
         struct markdown_core_member *member;
     } *replacements;
     size_t replacement_count, replacement_capacity;
-    /* The last open block after a line is fully processed */
-    struct markdown_core_member *current;
-    /* See the documentation for markdown_core_parser_get_line_number() in markdown_core.h */
-    int line_number;
-    /* See the documentation for markdown_core_parser_get_offset() in markdown_core.h */
-    bufsize_t offset;
-    /* See the documentation for markdown_core_parser_get_column() in markdown_core.h */
-    bufsize_t column;
-    /* See the documentation for markdown_core_parser_get_first_nonspace() in markdown_core.h */
-    bufsize_t first_nonspace;
-    /* See the documentation for markdown_core_parser_get_first_nonspace_column() in markdown_core.h
-     */
-    bufsize_t first_nonspace_column;
-    bufsize_t thematic_break_kill_pos;
-    /* See the documentation for markdown_core_parser_get_indent() in markdown_core.h */
-    int indent;
-    /* See the documentation for markdown_core_parser_is_blank() in markdown_core.h */
-    bool blank;
-    /* See the documentation for markdown_core_parser_has_partially_consumed_tab() in
-     * markdown_core.h */
-    bool partially_consumed_tab;
-    /* Contains the currently processed line */
-    markdown_core_strbuf curline;
-    /* See the documentation for markdown_core_parser_get_last_line_end() in
-     * markdown-core-element-api.h */
-    bufsize_t last_line_end;
-    /* Where the line being processed ends in the source, before its line
-     * ending: the driver records it as it hands the line to the block
-     * parser, and it holds while `curline` does. */
-    bufsize_t line_end;
-    /* Where input line `line_number` starts in the active input: the driver
-     * records it with `line_end`, and a claim of later lines moves it. */
-    bufsize_t line_start;
     /* Options set by the user, see the Options section in markdown_core.h */
     /* Sticky allocation-failure flag: once any parse structure is lost, the
      * one-shot transaction reports the whole parse as failed (NULL) instead of
@@ -352,12 +358,6 @@ struct markdown_core_parser {
     /* The lines the block-start lookahead visited plus the prefix bytes each
      * visit matched itself, for its linearity gate. */
     size_t block_lookahead_work;
-    /* The input's last line as the block parser will see it, normalized once
-     * and reused by every lookahead that reaches it: it has no terminator of
-     * its own in the source, and a line handed to the prefix matchers must
-     * end in one. */
-    markdown_core_strbuf lookahead_last_line;
-    bool lookahead_last_line_ready;
     /* The open containers a lookahead matches, root first, with the flags they
      * had when it began; and the per-line resume cache. Both are owned by the
      * parser so a document with many candidates allocates them once. */
@@ -605,7 +605,7 @@ void markdown_core_parser_kind_changed(markdown_core_parser *parser, markdown_co
 /* A decision on the line in hand read the content of the leaf the line would
  * continue, as a table header is tried against the paragraph so far: the
  * line is read again by every parse (E5). */
-static inline void markdown_core_parser_read_leaf(markdown_core_parser *parser) { parser->read_leaf = true; }
+static inline void markdown_core_parser_read_leaf(markdown_core_parser *parser) { parser->input.read_leaf = true; }
 
 /* Turns the block `member` holds into one of `kind`, as its lines decided. */
 static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_kind(markdown_core_parser *parser,
@@ -689,7 +689,7 @@ typedef struct markdown_core_line_facts {
 static inline size_t markdown_core_input_line_next(const markdown_core_parser *parser,
                                                    const markdown_core_input_line *line) {
     const markdown_core_input_line *next = line + 1;
-    return next < parser->input_lines + parser->input_line_count ? next->start : parser->input_scanned;
+    return next < parser->input.lines + parser->input.line_count ? next->start : parser->input.scanned;
 }
 
 /* Returned pointers are borrowed until the next request that grows the
@@ -749,16 +749,16 @@ void markdown_core_parser_write_closed(markdown_core_parser *parser, markdown_co
  * whole, through its terminator, which raises the high-water mark of the
  * line being processed (parser.h, `line_reach`). */
 static inline markdown_core_input_line *markdown_core_parser_source_line(markdown_core_parser *parser, int line) {
-    if (line < parser->input_first_line || parser->error) {
+    if (line < parser->input.first_line || parser->error) {
         return NULL;
     }
-    size_t index = (size_t)(line - parser->input_first_line);
-    markdown_core_input_line *read = index < parser->input_line_count
-                                         ? &parser->input_lines[index]
+    size_t index = (size_t)(line - parser->input.first_line);
+    markdown_core_input_line *read = index < parser->input.line_count
+                                         ? &parser->input.lines[index]
                                          : markdown_core_parser_extend_source_lines(parser, index);
     if (read) {
         const uint32_t next = (uint32_t)markdown_core_input_line_next(parser, read);
-        parser->line_reach = next > parser->line_reach ? next : parser->line_reach;
+        parser->input.line_reach = next > parser->input.line_reach ? next : parser->input.line_reach;
     }
     return read;
 }
@@ -777,7 +777,7 @@ const unsigned char *markdown_core_parser_input_view(markdown_core_parser *parse
 /* Whether the input holds a line after the line being processed: a block
  * start whose grammar needs a later line looks ahead only when it does. */
 static inline bool markdown_core_parser_input_continues(markdown_core_parser *parser) {
-    return markdown_core_parser_source_line(parser, parser->line_number + 1) != NULL;
+    return markdown_core_parser_source_line(parser, parser->input.line_number + 1) != NULL;
 }
 
 /* Optional state is sparse within the input index: properties and ordinary
@@ -790,7 +790,7 @@ static inline markdown_core_line_facts *markdown_core_parser_get_line_facts(mark
     if (!line) {
         return NULL;
     }
-    return line->facts ? &parser->input_facts[line->facts - 1] : markdown_core_parser_extend_line_facts(parser, line);
+    return line->facts ? &parser->input.facts[line->facts - 1] : markdown_core_parser_extend_line_facts(parser, line);
 }
 
 /* A NON-CONSUMING LOOKAHEAD over the lines after the one being processed.
@@ -842,11 +842,11 @@ bool markdown_core_parser_has_block_start(markdown_core_parser *parser, markdown
                                           markdown_core_chunk *input, int first, int column, int indent, bool paragraph,
                                           struct markdown_core_block_reader *reader);
 
-/* Schedule an already owned node's mapped content for the ordinary block
- * parser. No nested parse transaction, document, dialect or C recursion. */
+/* Closes the blocks the current line did not match. */
 void markdown_core_parser_finalize_unmatched_blocks(markdown_core_parser *parser);
-/* Queues the content of the cell `member` builds, which waits on it. */
-bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdown_core_member *member);
+/* The cell `member` builds reads its content as blocks, as an input of its
+ * own, and completes with them (blocks.c). */
+void markdown_core_parser_read_blocks(markdown_core_parser *parser, markdown_core_member *member);
 /* Whether `node` holds inline content (its kind's record, dialect.h). */
 bool markdown_core_parser_contains_inlines(markdown_core_parser *parser, markdown_core_node *node);
 /* `member`, a block that was open and had not decided what it continues,
@@ -884,9 +884,9 @@ bufsize_t markdown_core_parser_mapped_source_end(markdown_core_parser *parser, i
 /* The geometry of input line `line`, which the driver has already visited. */
 static inline markdown_core_input_line *markdown_core_parser_visited_line(const markdown_core_parser *parser,
                                                                           int line) {
-    size_t index = (size_t)(line - parser->input_first_line);
-    assert(line >= parser->input_first_line && index < parser->input_line_count);
-    return &parser->input_lines[index];
+    size_t index = (size_t)(line - parser->input.first_line);
+    assert(line >= parser->input.first_line && index < parser->input.line_count);
+    return &parser->input.lines[index];
 }
 
 /* An input that is not mapped is a copy of its source, so a line's column c
@@ -894,14 +894,14 @@ static inline markdown_core_input_line *markdown_core_parser_visited_line(const 
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bufsize_t
     markdown_core_parser_source_offset(markdown_core_parser *parser, int line, int column) {
     const markdown_core_input_line *geometry = markdown_core_parser_visited_line(parser, line);
-    return !parser->input_mapped ? (bufsize_t)geometry->start + column - 1
+    return !parser->input.mapped ? (bufsize_t)geometry->start + column - 1
                                  : markdown_core_parser_mapped_source_offset(parser, line, column);
 }
 
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bufsize_t
     markdown_core_parser_source_end(markdown_core_parser *parser, int line, int column) {
     const markdown_core_input_line *geometry = markdown_core_parser_visited_line(parser, line);
-    return !parser->input_mapped ? (bufsize_t)geometry->start + column
+    return !parser->input.mapped ? (bufsize_t)geometry->start + column
                                  : markdown_core_parser_mapped_source_end(parser, line, column);
 }
 /* Where the first byte of input line `line` was written: the document line's

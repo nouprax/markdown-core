@@ -67,6 +67,10 @@ document documents/identity-quote-after-definition.md
 edits documents/identity-quote-after-definition.md scripts/identity-quote-after-definition.edits
 document documents/identity-table-split-reads-table.md
 edits documents/identity-table-split-reads-table.md scripts/identity-table-split-reads-table.edits
+document documents/identity-quote-identifier-line.md
+edits documents/identity-quote-identifier-line.md scripts/identity-quote-identifier-line.edits
+document documents/identity-grid-row-cells.md
+edits documents/identity-grid-row-cells.md scripts/identity-grid-row-cells.edits
 document documents/rejections.md
 edits documents/rejections.md scripts/rejections.edits
 document ../canonical-ast/block-identifiers.md

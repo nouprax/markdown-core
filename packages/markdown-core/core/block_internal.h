@@ -25,10 +25,10 @@ markdown_core_node_type markdown_core_block_type(const markdown_core_node *node)
 bool markdown_core_block_is_blank(markdown_core_strbuf *s, bufsize_t offset);
 void markdown_core_block_rebase_content_marks(markdown_core_parser *parser, markdown_core_node *node, bufsize_t dropped,
                                               bufsize_t remaining);
-/* Whether `node` ends with a blank line: its last line was blank, or, for a
- * kind a child's blank line propagates out of, its last child the facts see
- * ends with one. */
-bool markdown_core_block_ends_with_blank_line(const markdown_core_node *node);
+/* Whether the block `member` builds, completed or not, ends with a blank
+ * line: its last line was blank, or, for a kind a child's blank line
+ * propagates out of, its last child the facts see ends with one. */
+bool markdown_core_block_ends_with_blank_line(markdown_core_parser *parser, const markdown_core_member *member);
 /* Whether a blank line separates two children of `node`, a list, or two
  * children of one of them: the list is loose. */
 bool markdown_core_block_loose(const markdown_core_node *node);

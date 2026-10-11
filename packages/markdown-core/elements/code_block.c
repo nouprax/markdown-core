@@ -47,18 +47,20 @@ static int continue_code(const markdown_core_element_instance *self, markdown_co
     bool res = false;
 
     if (!container->as.code->fenced) { // indented
-        if (parser->indent >= CODE_INDENT) {
+        if (parser->input.indent >= CODE_INDENT) {
             markdown_core_block_advance_offset(parser, input, CODE_INDENT, true);
             res = true;
-        } else if (parser->blank) {
-            markdown_core_block_advance_offset(parser, input, parser->first_nonspace - parser->offset, false);
+        } else if (parser->input.blank) {
+            markdown_core_block_advance_offset(parser, input, parser->input.first_nonspace - parser->input.offset,
+                                               false);
             res = true;
         }
     } else { // fenced
         bufsize_t matched = 0;
 
-        if (parser->indent <= 3 && (peek_at(input, parser->first_nonspace) == container->as.code->fence_char)) {
-            matched = scan_close_code_fence(input->data, input->len, parser->first_nonspace);
+        if (parser->input.indent <= 3 &&
+            (peek_at(input, parser->input.first_nonspace) == container->as.code->fence_char)) {
+            matched = scan_close_code_fence(input->data, input->len, parser->input.first_nonspace);
         }
 
         if (matched >= container->as.code->fence_length) {
@@ -68,10 +70,10 @@ static int continue_code(const markdown_core_element_instance *self, markdown_co
             markdown_core_block_advance_offset(parser, input, matched, false);
             return MARKDOWN_CORE_BLOCK_CLOSED;
         } else {
-            // skip opt. spaces of fence parser->offset
+            // skip opt. spaces of fence parser->input.offset
             int i = container->as.code->fence_offset;
 
-            while (i > 0 && markdown_core_is_space_or_tab(peek_at(input, parser->offset))) {
+            while (i > 0 && markdown_core_is_space_or_tab(peek_at(input, parser->input.offset))) {
                 markdown_core_block_advance_offset(parser, input, 1, true);
                 i--;
             }
@@ -161,22 +163,23 @@ static bool open_fenced(const markdown_core_element_instance *self, markdown_cor
     (void)self;
     bufsize_t matched = start->matched;
 
-    *container =
-        markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_CODE_BLOCK, parser->first_nonspace + 1);
+    *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_CODE_BLOCK,
+                                                parser->input.first_nonspace + 1);
     if (!*container) {
         return false;
     }
     (*container)->node->as.code->fenced = true;
-    (*container)->node->as.code->fence_char = peek_at(input, parser->first_nonspace);
+    (*container)->node->as.code->fence_char = peek_at(input, parser->input.first_nonspace);
     (*container)->node->as.code->fence_length = (matched > 255) ? 255 : (uint8_t)matched;
-    (*container)->node->as.code->fence_offset = (int8_t)(parser->first_nonspace - parser->offset);
+    (*container)->node->as.code->fence_offset = (int8_t)(parser->input.first_nonspace - parser->input.offset);
     (*container)->node->as.code->fence_closed = false;
     /* Nothing is known about an info string until the fence line is
      * read; ABSENT is the honest state, and the close either replaces
      * it or leaves it. It used to open as an empty STRING, which said
      * the source had written one. */
     (*container)->node->as.code->info = markdown_core_optional_chunk_absent();
-    markdown_core_block_advance_offset(parser, input, parser->first_nonspace + matched - parser->offset, false);
+    markdown_core_block_advance_offset(parser, input, parser->input.first_nonspace + matched - parser->input.offset,
+                                       false);
 
     return true;
 }
@@ -185,7 +188,8 @@ static bool open_indented(const markdown_core_element_instance *self, markdown_c
     (void)self;
 
     markdown_core_block_advance_offset(parser, input, CODE_INDENT, true);
-    *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_CODE_BLOCK, parser->offset + 1);
+    *container =
+        markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_CODE_BLOCK, parser->input.offset + 1);
     if (!*container) {
         return false;
     }

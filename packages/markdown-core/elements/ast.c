@@ -968,9 +968,11 @@ static bool field_search(markdown_core_parser *parser, markdown_core_publication
 
 /* `member`, a child of `owner`, which continues an old node, reads `owner`'s
  * relation from the old node `*next`, measured from `*anchor`, as far as
- * `reach`: it passes every old node whose image lies before `reach`, and
- * continues the first of its kind whose image lies at or after its start.
- * With none, it continues nothing once its whole range is passed. */
+ * `reach`: it passes every old node whose image lies before `reach` up to
+ * the first of its kind whose image lies at or after its start, which it
+ * continues. The next child reads on from there: siblings' ranges may
+ * overlap, as a grid row's cells do over their lines. With none, it
+ * continues nothing once its whole range is passed. */
 static bool pair_scan(markdown_core_parser *parser, markdown_core_publication *publication,
                       const markdown_core_member *owner, markdown_core_member *member, size_t *next, uint32_t *anchor,
                       uint32_t reach) {
@@ -989,8 +991,9 @@ static bool pair_scan(markdown_core_parser *parser, markdown_core_publication *p
         }
         (*next)++;
         *anchor = source.end;
-        if (!member->decided && anchored && image >= window.start && public_kind(old) == kind) {
+        if (anchored && image >= window.start && public_kind(old) == kind) {
             decide(member, old, source.start);
+            break;
         }
     }
     member->passed = reach;
@@ -1233,13 +1236,12 @@ static bool complete_number(const complete_context *context, markdown_core_membe
         }
         anchor->source = place.end;
     }
-    /* A node that declares or asks, an inline root, a cell read as blocks
-     * and a node its rosters list takes its order, ahead of the orders of
+    /* A node that declares or asks, an inline root and a node its rosters
+     * list takes its order, ahead of the orders of
      * what it holds, which then follow those its owner collected (5.7); an
      * old node the parse took into content brings the orders under it. */
     if ((member->taken && item->first && !order_gather(parser, member, item, false)) ||
-        ((item->facts || inlines || member->queued || (slots & SLOT_LISTED)) && !item->order &&
-         !order_own(parser, member, item))) {
+        ((item->facts || inlines || (slots & SLOT_LISTED)) && !item->order && !order_own(parser, member, item))) {
         return false;
     }
     item->first = member->order_head;
@@ -1497,12 +1499,6 @@ bool markdown_core_complete_node(markdown_core_parser *parser, markdown_core_pub
             observe(observer, parser, node);
         }
         return !parser->error && order_settle(parser, member, node->order);
-    }
-    if (!completing && node->order && markdown_core_order_joined(node->order)) {
-        /* A cell read as blocks, its order in the list: what they hold
-         * follows it, all of it new, as a cell's blocks take nothing. */
-        assert(!member->order_lead);
-        return order_settle(parser, member, node->order);
     }
     return true;
 }

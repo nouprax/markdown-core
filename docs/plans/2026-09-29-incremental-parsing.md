@@ -849,11 +849,12 @@ parse.
   in canonical field order. The document root numbers itself when it
   completes, and its extent is measured from 0. A paragraph's close makes a
   `Reference` for each reference definition it consumed and adds them to its
-  parent before it. A paragraph left with no content is not added. A table
-  that closes without a caption, as the last child of an open owner, may
-  still take a trailing caption from a later line: it completes when that
-  caption joins it, when its owner takes another child, or when its owner
-  closes, and its range stays open until then (5.9).
+  parent before it. A paragraph left with no content is not added. A list,
+  a quote or a table that closes as the last child of an open owner may
+  still take a trailing line from a later line, a separate-line block
+  identifier or a table's caption: it completes when its owner takes
+  another child or when its owner closes, and its range stays open until
+  then (5.9).
 - **Inline roots complete when their block closes.** A block's inline
   content and each inline field of a block (a definition's term, a callout's
   title, a table's caption, a directive's label) is an inline root. Closing

@@ -1143,6 +1143,25 @@ export function identityScripts() {
     add("quote-after-definition", "[d]:g\n>\n", (s) =>
         s.edit([{ start: 4, end: 5, text: "q" }]).expect("kept", "Callout", 6, 6)
     );
+    /* A table header that splits a paragraph makes the table; the table the
+     * paragraph read before is read again where it begins (5.3). */
+    add("table-split-reads-table", "p\n\n| a | c |\n| - | - |\n| [r] | b |\n\n[r]: /u\n", (s) =>
+        s
+            .edit([
+                { start: 2, end: 4, text: "x" },
+                { start: 39, end: 40, text: "" }
+            ])
+            .expect("kept", "Paragraph", 0, 0)
+    );
+    /* An identifier line after a quote joins it: the quote awaits it, so
+     * its range is final only then (5.9). */
+    add("quote-identifier-line", "> quote\n\n#callout#\n", (s) =>
+        s.edit([{ start: 0, end: 7, text: ">" }]).expect("kept", "Callout", 0, 0)
+    );
+    /* A grid row's cells overlap over its lines: each continues its own. */
+    add("grid-row-cells", "+---+---+\n| a | b |\n| c | d |\n+---+---+\n\np\n", (s) =>
+        s.edit([{ start: 42, end: 43, text: "q" }]).expect("kept", "TableCell", 15, 15)
+    );
     return cases;
 }
 

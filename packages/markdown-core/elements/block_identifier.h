@@ -12,6 +12,10 @@ typedef struct {
 
 void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identifier_work *work,
                                                      markdown_core_parser *parser, markdown_core_member *paragraph);
+/* Whether a block of `node`'s kind takes an identifier line after it: a
+ * closed one awaits that trailer (`awaits_trailer`) as its owner's last
+ * block. */
+bool markdown_core_block_identifier_trails(const markdown_core_node *node);
 bool markdown_core_block_attach_identifier_line(markdown_core_block_identifier_work *work, markdown_core_parser *parser,
                                                 markdown_core_member *parent, markdown_core_chunk *input);
 #endif

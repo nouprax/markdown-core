@@ -690,7 +690,9 @@ static void check_identity(run *state, const char *where, size_t step, history *
     /* 4.4: the root continues the root; within the relation of a matched
      * owner, a node continues the earliest old sibling of its kind whose
      * anchor's image it holds. One cursor per new owner walks the matched
-     * old owner's items, which are in relation and source order. */
+     * old owner's items, which are in relation and source order, and stops
+     * past the one a node continues: siblings' ranges may overlap, as a grid
+     * row's cells do over their lines, and the next holds what follows. */
     for (index = 0; index < after->count && !stopped(state); index++) {
         const view_node *node = &after->nodes[index];
         size_t match = SIZE_MAX;
@@ -707,11 +709,12 @@ static void check_identity(run *state, const char *where, size_t step, history *
                     (old->relation == node->relation && anchored && image >= node->range.end)) {
                     break;
                 }
-                if (old->relation == node->relation && anchored && image >= node->range.start && match == SIZE_MAX &&
-                    old->kind == node->kind) {
-                    match = before->items[owner->items + *at];
-                }
                 ++*at;
+                if (old->relation == node->relation && anchored && image >= node->range.start &&
+                    old->kind == node->kind) {
+                    match = before->items[owner->items + *at - 1];
+                    break;
+                }
             }
         }
         continues[index] = match;

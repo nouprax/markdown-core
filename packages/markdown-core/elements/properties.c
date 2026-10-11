@@ -789,6 +789,6 @@ void markdown_core_properties_parse(markdown_core_properties_work *work, markdow
         return;
     }
     parser->root->node->as.document->metadata = node;
-    parser->line_number = (int)(p.count + 2);
-    parser->last_line_end = (bufsize_t)(close + 3);
+    parser->input.line_number = (int)(p.count + 2);
+    parser->input.last_line_end = (bufsize_t)(close + 3);
 }

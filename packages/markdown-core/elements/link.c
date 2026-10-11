@@ -37,7 +37,7 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
     markdown_core_attribute_parser attributes = {
         .data = chunk.data, .length = chunk.len, .scratch = &parser->attribute_scratch};
     /* The definitions follow each other down the block's lines. */
-    int line = parser->line_number;
+    int line = parser->input.line_number;
     while (chunk.len && chunk.data[0] == '[' && !parser->error) {
         pos = S_read_reference(parser, member, &chunk, &attributes, (bufsize_t)(chunk.data - node_content->ptr), &line);
         if (!pos) {
