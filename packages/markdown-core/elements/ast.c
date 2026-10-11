@@ -1785,6 +1785,10 @@ static bool relations_same(const markdown_core_node *node, const markdown_core_n
             relation.field != old_relation.field || relation.count != old_relation.count) {
             return false;
         }
+        /* The same run of the same stem holds the same nodes. */
+        if (!relation.field && relation.stem == old_relation.stem && relation.index == old_relation.index) {
+            continue;
+        }
         markdown_core_relation_walk_begin(&nodes, &relation);
         markdown_core_relation_walk_begin(&old_nodes, &old_relation);
         for (const markdown_core_node *item; (item = markdown_core_relation_walk_next(&nodes));) {
