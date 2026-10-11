@@ -955,6 +955,12 @@ struct markdown_core_member {
     markdown_core_orders built_orders;
     markdown_core_built *entries;
     uint32_t built, built_capacity, built_nodes;
+    /* The new nodes among the children it numbered, its groups' with them,
+     * in order: they take their ids as it completes, after its fields
+     * (4.1). */
+    markdown_core_node **idless;
+    size_t idless_capacity;
+    uint32_t idless_count;
     struct {
         uint32_t place, source;
     } anchor;

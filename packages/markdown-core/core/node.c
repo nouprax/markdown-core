@@ -1686,6 +1686,7 @@ void markdown_core_member_release(markdown_core_node_pool *pool, markdown_core_m
             }
         }
         markdown_core_free(taken->entries);
+        markdown_core_free(taken->idless);
         S_member_free(pool, taken);
     }
 }

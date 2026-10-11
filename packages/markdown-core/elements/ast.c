@@ -1105,12 +1105,13 @@ static bool need(markdown_core_parser *parser, markdown_core_publication *public
     return true;
 }
 
-/* `member` takes the id of the old node it continues, or the next id. */
+/* `member` takes the id of the old node it continues, or else the next id,
+ * which a child its owner numbers takes as its owner completes (4.1). */
 static void identify(markdown_core_parser *parser, markdown_core_member *member) {
     member->identified = true;
     markdown_core_node *node = member->node;
     if (!(node->flags & MARKDOWN_CORE_NODE__GROUP)) {
-        node->id = member->old ? member->old->id : ++parser->last_id;
+        node->id = member->old ? member->old->id : member->owner && !member->field ? 0 : ++parser->last_id;
     }
     /* The old children it took are the old node's it read again (5.3). */
     node->flags =
@@ -1216,6 +1217,23 @@ static bool built_reserve(markdown_core_member *owner) {
     return true;
 }
 
+/* `owner` holds `count` new nodes from `nodes`, in order, to take their ids
+ * as it completes. False when its list could not grow. */
+static bool idless_push(markdown_core_member *owner, markdown_core_node *const *nodes, uint32_t count) {
+    if (!count) {
+        return true;
+    }
+    markdown_core_node **idless = markdown_core_reserve(owner->idless, &owner->idless_capacity,
+                                                        (size_t)owner->idless_count + count, sizeof(*idless));
+    if (!idless) {
+        return false;
+    }
+    owner->idless = idless;
+    memcpy(idless + owner->idless_count, nodes, count * sizeof(*nodes));
+    owner->idless_count += count;
+    return true;
+}
+
 /* THE OWNER NUMBERS ITS FIRST CHILD (5.8), complete: a candidate the parse
  * took whole lies as its old nodes did, and its orders come after those
  * collected so far; a group is measured along its owner's relation by the
@@ -1246,6 +1264,10 @@ static bool number_child(const complete_context *context, markdown_core_member *
         nodes = (uint32_t)markdown_core_stem_count(candidate);
         child->candidate = NULL;
     } else if (child->node->flags & MARKDOWN_CORE_NODE__GROUP) {
+        /* The group's new nodes take their ids with its owner's. */
+        if (!idless_push(owner, child->idless, child->idless_count)) {
+            return false;
+        }
         order_append(context->orders, &child->orders);
         child->numbered = true;
         markdown_core_settle_member(parser, context->publication, child);
@@ -1258,6 +1280,9 @@ static bool number_child(const complete_context *context, markdown_core_member *
         owner->anchor.place = anchor.place;
         owner->anchor.source = anchor.source;
         entry.node = child->node;
+        if (!entry.node->id && !idless_push(owner, &entry.node, 1)) {
+            return false;
+        }
     }
     if (parser->error) {
         return false;
@@ -1678,6 +1703,12 @@ bool markdown_core_complete_node(markdown_core_parser *parser, markdown_core_pub
     if (!complete_fields(&context, member, start)) {
         return false;
     }
+    /* Its new children take their ids after its fields, in canonical order
+     * (4.1). */
+    for (uint32_t i = 0; i < member->idless_count; i++) {
+        member->idless[i]->id = ++parser->last_id;
+    }
+    member->idless_count = 0;
     /* The orders of its children follow those of its fields. */
     order_append(&member->orders, &member->built_orders);
     /* A root read again in place publishes its runs last: definitions in
