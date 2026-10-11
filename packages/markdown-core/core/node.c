@@ -1577,14 +1577,9 @@ static void S_member_free(markdown_core_node_pool *pool, markdown_core_member *m
 bool markdown_core_member_freeze(markdown_core_node_pool *pool, markdown_core_member *member,
                                  const markdown_core_stem_summary *summary) {
     markdown_core_node *node = member->node;
-    if (!member->first || node->children) {
-        /* A node completes again only for a field it gains (a table's
-         * trailing caption): its children are its stem already. */
-#ifndef NDEBUG
-        for (const markdown_core_member *child = member->first; child; child = child->next) {
-            assert(!child->held);
-        }
-#endif
+    /* A node completes once. */
+    assert(!node->children);
+    if (!member->first) {
         return true;
     }
     /* The most nodes held between two candidates. */

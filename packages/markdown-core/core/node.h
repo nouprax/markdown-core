@@ -884,7 +884,10 @@ static inline uint32_t markdown_core_inline_entry_back(uint64_t entry) { return 
  * `from_next` and `from_anchor`, where that cursor stood as its search
  * began, which it reads from again to `redo` its search when its kind
  * changed after it decided; an open block that has not decided is on the
- * parser's `spine` of them. As an
+ * parser's `spine` of them. A block that closed `awaits_trailer` when a
+ * later line may still add to it, as a trailing caption joins a table: it
+ * completes once that line comes, its owner takes another child, or its
+ * owner closes; a member has `completed` once its node has. As an
  * owner it pairs the members it holds with the old node's relation
  * `pair_name`: the old nodes `pair_next` to `pair_end` of `pair_stem` not yet
  * passed, and the end of the one passed last. A member's `index` counts the
@@ -937,7 +940,8 @@ struct markdown_core_member {
     /* What the decisions about a node of an inline root's content read, and
      * whether the node is an old one its parse took whole (5.6). */
     markdown_core_inline_reads reads;
-    bool held, field, inner, decided, identified, paired, searched, redo, spine, numbered, counted, taken;
+    bool held, field, inner, decided, identified, paired, searched, redo, spine, awaits_trailer, completed, numbered, counted,
+        taken;
     /* Whether blocks are read from its node's content (markdown_core_parser_queue_block_input). */
     bool queued;
 };
@@ -946,6 +950,12 @@ struct markdown_core_member {
  * as the node takes its extent. */
 static inline markdown_core_place markdown_core_member_place(const markdown_core_member *member) {
     return member->numbered ? member->place : member->node->where.place;
+}
+
+/* Whether `member`'s range may still grow: its block is open, or closed and
+ * awaiting a trailer. */
+static inline bool markdown_core_member_range_open(const markdown_core_member *member) {
+    return (member->node->flags & MARKDOWN_CORE_NODE__OPEN) || member->awaits_trailer;
 }
 
 /* Whether `owner`'s node may hold `child`'s: its built-in containment, which

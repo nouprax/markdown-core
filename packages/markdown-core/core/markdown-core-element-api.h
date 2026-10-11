@@ -589,6 +589,10 @@ void markdown_core_parser_release_member(markdown_core_parser *parser, markdown_
  */
 void markdown_core_parser_complete_node(markdown_core_parser *parser, markdown_core_member *member);
 
+/** Complete 'member', a closed block that awaits a trailer (its
+ * `awaits_trailer`), once the trailer has joined it. */
+void markdown_core_parser_complete_trailer(markdown_core_parser *parser, markdown_core_member *member);
+
 /** Advance the 'offset' of the parser in the current line.
  *
  * See the documentation of markdown_core_parser_get_offset() and

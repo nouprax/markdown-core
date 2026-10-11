@@ -57,6 +57,9 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_parse_source(markdown_core_par
                                                                const markdown_core_input *input);
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_node *S_finish_parse(markdown_core_parser *parser);
 static void S_complete_node(markdown_core_parser *parser, markdown_core_member *member, uint32_t start);
+static void S_complete_closed(markdown_core_parser *parser, markdown_core_member *member);
+static void S_complete_trailed(markdown_core_parser *parser, markdown_core_member *owner);
+static void S_enter_spine(markdown_core_parser *parser, markdown_core_member *member);
 static inline bool S_starts_on_line(markdown_core_parser *parser, const markdown_core_node *node, int line);
 static inline int S_append_input_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
                                        bufsize_t line_start, int column, bufsize_t length, bufsize_t offset);
@@ -1321,6 +1324,7 @@ markdown_core_member *markdown_core_block_finalize(markdown_core_parser *parser,
     markdown_core_node *b = member->node;
     markdown_core_node_internal_flags held = 0;
     assert(b->flags & MARKDOWN_CORE_NODE__OPEN); // shouldn't call markdown_core_block_finalize on closed blocks
+    S_complete_trailed(parser, member);
     b->flags &= ~MARKDOWN_CORE_NODE__OPEN;
     /* Whether the line that closes it matched it: its decisions could read
      * the block, open. */
@@ -1393,9 +1397,6 @@ markdown_core_member *markdown_core_block_finalize(markdown_core_parser *parser,
 static void S_settle(markdown_core_parser *parser, markdown_core_member *member) {
     markdown_core_member *parent = member->owner;
     markdown_core_node *b = member->node;
-    /* Closed, it leaves the open blocks that have not decided (5.9); it
-     * decides as it completes. */
-    markdown_core_parser_leave_spine(parser, member);
     /* A block that takes text lines in a container has a run of its own
      * source on each of its lines, whatever its close hook makes of it; one
      * of the document itself lies on whole lines, its own source its range. */
@@ -1420,6 +1421,7 @@ static void S_settle(markdown_core_parser *parser, markdown_core_member *member)
         const markdown_core_node_internal_flags holds = MARKDOWN_CORE_NODE__HOLDS_NEXT | MARKDOWN_CORE_NODE__TRAILED;
         markdown_core_node *last = member->prev->node;
         last->flags = (markdown_core_node_internal_flags)((last->flags & ~holds) | (b->flags & holds));
+        markdown_core_parser_leave_spine(parser, member);
         markdown_core_parser_release_member(parser, member);
         return;
     }
@@ -1427,11 +1429,40 @@ static void S_settle(markdown_core_parser *parser, markdown_core_member *member)
         int line = parser->line_number;
         markdown_core_parser_place_runs(parser, b, parent, &line);
     }
-    /* The block is complete (docs/plans/2026-09-29-incremental-parsing.md,
-     * 5.8): its children become its stem, and it numbers what it holds. */
-    if (!parser->error) {
-        S_complete_node(parser, member, b->where.place.start);
+    /* The last block of an open owner that a later line may still add to
+     * completes when that line comes, its owner takes another child or its
+     * owner closes; it stays among the open blocks that have not decided
+     * (5.9) until then. */
+    if (member->awaits_trailer && parent && parent->last == member && (parent->node->flags & MARKDOWN_CORE_NODE__OPEN)) {
+        return;
     }
+    member->awaits_trailer = false;
+    S_complete_closed(parser, member);
+}
+
+/* The block is complete (docs/plans/2026-09-29-incremental-parsing.md, 5.8):
+ * it leaves the open blocks that have not decided (5.9), deciding as it
+ * completes, its children become its stem, and it numbers what it holds. */
+static void S_complete_closed(markdown_core_parser *parser, markdown_core_member *member) {
+    markdown_core_parser_leave_spine(parser, member);
+    if (!parser->error) {
+        S_complete_node(parser, member, member->node->where.place.start);
+    }
+}
+
+/* `owner`'s last block, when it awaits a trailer, has none: it completes. */
+static void S_complete_trailed(markdown_core_parser *parser, markdown_core_member *owner) {
+    markdown_core_member *last = owner->last;
+    if (last && last->awaits_trailer) {
+        last->awaits_trailer = false;
+        S_complete_closed(parser, last);
+    }
+}
+
+void markdown_core_parser_complete_trailer(markdown_core_parser *parser, markdown_core_member *member) {
+    assert(member->awaits_trailer);
+    member->awaits_trailer = false;
+    S_complete_closed(parser, member);
 }
 
 void markdown_core_block_close(markdown_core_parser *parser, markdown_core_member *b, bool holds) {
@@ -1690,6 +1721,7 @@ static bool S_take(markdown_core_parser *parser, markdown_core_member *parent, u
     }
     member->candidate = candidate;
     member->past = end;
+    S_complete_trailed(parser, parent);
     markdown_core_member_attach(parent, member, NULL);
     const markdown_core_element_instance *structure = markdown_core_parser_structure(parser, parent->node);
     if (structure && structure->element->fold_children) {
@@ -1797,25 +1829,6 @@ markdown_core_member *markdown_core_parser_add_child_validated(markdown_core_par
     if (old) {
         S_read_again(parser, member, old, old_start);
     }
-    /* An open block that has not decided what it continues decides when a
-     * block it holds completes (5.9). The blocks closed since the last one
-     * opened leave the spine first: what is left of it lies on the path to
-     * this one. */
-    while (parser->undecided_count > parser->undecided_front &&
-           !(parser->undecided[parser->undecided_count - 1]->node->flags & MARKDOWN_CORE_NODE__OPEN)) {
-        parser->undecided[--parser->undecided_count]->spine = false;
-    }
-    if (!member->decided) {
-        markdown_core_member **undecided = markdown_core_reserve(parser->undecided, &parser->undecided_capacity,
-                                                                 parser->undecided_count + 1, sizeof(*undecided));
-        if (!undecided) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            return member;
-        }
-        parser->undecided = undecided;
-        undecided[parser->undecided_count++] = member;
-        member->spine = true;
-    }
     return member;
 }
 
@@ -1838,6 +1851,29 @@ void markdown_core_parser_kind_changed(markdown_core_parser *parser, markdown_co
     }
 }
 
+/* An open block that has not decided what it continues decides when a block
+ * it holds completes (5.9): it joins the spine of them. The blocks whose
+ * ranges closed since the last one joined leave it first: what is left of it
+ * lies on the path to this one. */
+static void S_enter_spine(markdown_core_parser *parser, markdown_core_member *member) {
+    while (parser->undecided_count > parser->undecided_front &&
+           !markdown_core_member_range_open(parser->undecided[parser->undecided_count - 1])) {
+        parser->undecided[--parser->undecided_count]->spine = false;
+    }
+    if (member->decided || !markdown_core_member_range_open(member)) {
+        return;
+    }
+    markdown_core_member **undecided = markdown_core_reserve(parser->undecided, &parser->undecided_capacity,
+                                                             parser->undecided_count + 1, sizeof(*undecided));
+    if (!undecided) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return;
+    }
+    parser->undecided = undecided;
+    undecided[parser->undecided_count++] = member;
+    member->spine = true;
+}
+
 markdown_core_member *markdown_core_parser_attach(markdown_core_parser *parser, markdown_core_member *owner,
                                                   markdown_core_node *node, markdown_core_member *before) {
     markdown_core_member *member = markdown_core_parser_member(parser, node, true);
@@ -1845,7 +1881,11 @@ markdown_core_member *markdown_core_parser_attach(markdown_core_parser *parser, 
         markdown_core_parser_release_node(parser, node);
         return NULL;
     }
+    if (!before) {
+        S_complete_trailed(parser, owner);
+    }
     markdown_core_member_attach(owner, member, before);
+    S_enter_spine(parser, member);
     return member;
 }
 
@@ -2027,6 +2067,7 @@ static markdown_core_complete_result run_complete_steps(markdown_core_parser *pa
  * complete, become its stem, and the document numbers what it holds,
  * measured from `start`. */
 static void S_complete_node(markdown_core_parser *parser, markdown_core_member *member, uint32_t start) {
+    member->completed = true;
     if (!markdown_core_member_freeze(parser->pool, member, markdown_core_parser_kind(parser, member->node)->summary)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
@@ -2355,15 +2396,19 @@ static void S_parse_block_inputs(markdown_core_parser *parser) {
         parser->line_number = parser->input_first_line - 1;
         parser->last_line_end = parser->line_marks[cell->content_map.first].source;
         cell->flags |= MARKDOWN_CORE_NODE__OPEN;
+        /* Open again, it decides as the blocks it holds complete (5.9). */
+        S_enter_spine(parser, owner);
         const markdown_core_input content = markdown_core_input_buffer(cell->content.ptr, (size_t)cell->content.size);
         S_parse_source(parser, &content);
         while (parser->current != owner && !parser->error) {
             parser->current = markdown_core_block_finalize(parser, parser->current);
         }
+        S_complete_trailed(parser, owner);
         cell->flags &= ~MARKDOWN_CORE_NODE__OPEN;
         markdown_core_strbuf_clear(&cell->content);
         cell->content_map.count = 0;
         cell->content_map.offset = 0;
+        markdown_core_parser_leave_spine(parser, owner);
         if (!parser->error) {
             S_complete_node(parser, owner, input.start);
         }

@@ -578,22 +578,26 @@ static int contains_inlines(const markdown_core_element *element, markdown_core_
 
 /* A TABLE COMPLETES ITS ROWS AS IT CLOSES: each takes its cells as its stem
  * and numbers them, and the table, completing next, its rows and its
- * caption. A row its line closed completed then, and holds no cell members
- * by now; rows the cursor took are complete. The rows between the head and
- * the foot are its content. */
+ * caption. A row that closed as a block completed then; rows the cursor took
+ * are complete. The rows between the head and the foot are its content. */
 static void finalize_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
                            markdown_core_member *member) {
     (void)self;
     if (member->node->kind != MARKDOWN_CORE_NODE_TABLE) {
         return;
     }
+    /* A table without a caption may take a trailing one from a later line. */
+    const markdown_core_table *built = member->node->opaque;
+    member->awaits_trailer = built && !built->caption;
     size_t rows = 0;
     for (markdown_core_member *row = member->first; row && !parser->error; row = row->next) {
         if (row->candidate) {
             rows += markdown_core_stem_count(row->candidate);
         } else {
             rows++;
-            markdown_core_parser_complete_node(parser, row);
+            if (!row->completed) {
+                markdown_core_parser_complete_node(parser, row);
+            }
         }
     }
     markdown_core_table *table = member->node->opaque;
@@ -2536,9 +2540,6 @@ static markdown_core_member *table_build(table_source *source, markdown_core_mem
     node->where.place.start = (uint32_t)markdown_core_parser_source_offset(
         parser, first->line, table_margin_byte(first, candidate->margin) + 1);
     node->where.place.end = (uint32_t)markdown_core_parser_source_end(parser, last->line, last->length);
-    if (!candidate->pipe) {
-        node->flags &= ~MARKDOWN_CORE_NODE__OPEN;
-    }
     for (size_t i = 0; i < candidate->row_count && !parser->error; i++) {
         table_source_row *row = &candidate->rows[i];
         table_source_line *begin = &source->lines[row->first], *end = &source->lines[row->last];
@@ -2673,10 +2674,9 @@ static bool table_open_matches(markdown_core_parser *parser, markdown_core_membe
         parent_type == MARKDOWN_CORE_NODE_TABLE_ROW) {
         return false;
     }
-    /* Every opening grammar needs a later physical line. At EOF only an
-     * existing eligible table can claim a trailing caption. */
-    if (!markdown_core_parser_input_continues(parser) &&
-        (!parent->last || parent->last->node->kind != MARKDOWN_CORE_NODE_TABLE)) {
+    /* Every opening grammar needs a later physical line. At EOF only a
+     * table that awaits a trailing caption can claim one. */
+    if (!markdown_core_parser_input_continues(parser) && (!parent->last || !parent->last->awaits_trailer)) {
         return false;
     }
     return table_open_admits(parser, input, length);
@@ -2702,11 +2702,9 @@ static markdown_core_member *table_open(table_workspace *workspace, markdown_cor
     int caption = table_caption_start(source.lines[0].data, source.lines[0].length, source.lines[0].first,
                                       source.lines[0].indent);
     size_t caption_last = 0;
-    /* A closed table keeps its member among its owner's children until the
-     * owner completes, so the table a trailing caption joins is still there. */
+    /* A table that awaits a trailing caption is its owner's last child. */
     markdown_core_member *preceding = parent->last;
-    bool trailing = caption >= 0 && preceding && preceding->node->kind == MARKDOWN_CORE_NODE_TABLE &&
-                    preceding->node->opaque && !((markdown_core_table *)preceding->node->opaque)->caption;
+    bool trailing = caption >= 0 && preceding && preceding->awaits_trailer;
     bool matched = false;
     if (caption >= 0) {
         matched = table_after_caption(&source, &caption_last, candidate, !trailing);
@@ -2729,10 +2727,9 @@ static markdown_core_member *table_open(table_workspace *workspace, markdown_cor
         markdown_core_parser_write_closed(parser, parent,
                                           markdown_core_parser_source_end(parser, source.lines[caption_last].line,
                                                                           source.lines[caption_last].length));
-        /* The table completed as it closed; it completes again for the
-         * caption it gains. */
+        /* The table awaited its caption: it completes with it. */
         if (!parser->error) {
-            markdown_core_parser_complete_node(parser, result);
+            markdown_core_parser_complete_trailer(parser, result);
         }
         parser->claimed = true;
         parser->claimed_line = source.lines[caption_last].line;
@@ -2753,7 +2750,8 @@ static markdown_core_member *table_open(table_workspace *workspace, markdown_cor
         }
         /* A grid or multiline table is whole once it is built, caption and
          * all: it closes here, where a pipe table closes as its lines end. */
-        if (result && !(result->node->flags & MARKDOWN_CORE_NODE__OPEN) && !parser->error) {
+        if (result && !candidate->pipe && !parser->error) {
+            result->node->flags &= ~MARKDOWN_CORE_NODE__OPEN;
             markdown_core_block_close(parser, result, false);
         }
     }

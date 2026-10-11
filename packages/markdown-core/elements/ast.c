@@ -528,8 +528,7 @@ static inline markdown_core_node_kind public_kind(const markdown_core_node *node
  * node is complete when it is made: as it closes, or, for the nodes of an
  * inline root's content, as the root's completion leaves them. Completing a
  * node numbers each node it holds that is not numbered yet, in canonical
- * field order -- a node that gains one later, as a table gains a trailing
- * caption, completes again. Numbering a node passes the reuse cursor over
+ * field order. Numbering a node passes the reuse cursor over
  * its range, collecting the old nodes it may continue. A node continues the first of
  * those old nodes of its kind, which gives it its id, or none, and takes the
  * next id; it decides as soon as that cannot change (number_unsettled), at
@@ -891,9 +890,9 @@ static bool member_window(markdown_core_parser *parser, markdown_core_publicatio
     return true;
 }
 
-/* Whether `member`'s range is final: numbered, or a closed block's. */
+/* Whether `member`'s range is final: numbered, or one that cannot grow. */
 static inline bool range_final(const markdown_core_member *member) {
-    return member->numbered || !(member->node->flags & MARKDOWN_CORE_NODE__OPEN);
+    return member->numbered || !markdown_core_member_range_open(member);
 }
 
 /* Whether `member`'s range is final and `reach` passes all of it. */
@@ -1457,6 +1456,11 @@ bool markdown_core_complete_node(markdown_core_parser *parser, markdown_core_pub
                                                  markdown_core_node *),
                                  const markdown_core_element_instance *observer) {
     markdown_core_node *node = member->node;
+    /* Its kind and its range are final: it decides what it continues, if it
+     * has not as a node it holds asked (5.9). */
+    if (!need(parser, publication, member, markdown_core_member_place(member).end)) {
+        return false;
+    }
     if (node->flags & MARKDOWN_CORE_NODE__GROUP) {
         return true;
     }
