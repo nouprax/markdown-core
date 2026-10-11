@@ -324,10 +324,6 @@ enum markdown_core_node__internal_flags {
      * no node of the document: its owner numbers the group's nodes. */
     MARKDOWN_CORE_NODE__GROUP = (1 << 9),
 
-    /* A block that closed while the last block it holds was still open: it
-     * settles as that block does (markdown_core_block_finalize). */
-    MARKDOWN_CORE_NODE__AWAITS_CHILD = (1 << 10),
-
     /* Part of the block's parse record (docs/plans/2026-09-29-incremental-
      * parsing.md, 5.3): a candidate does not end at it, because the line
      * after it read it: that line matched it, refused a start it would open

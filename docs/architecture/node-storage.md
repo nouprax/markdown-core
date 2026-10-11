@@ -210,9 +210,9 @@ definition is numbered where it is, like any other node.
 
 A node is complete when it is made. A block settles as it closes: its
 element's `finalize_block` runs, its runs are placed, and it completes. A
-block settles once every block it holds has settled; one that closes while the
-last block under it is still open (a new list closes the old one before its
-items) settles as that block does. An owner numbers each child it holds as it
+block closes after the blocks it holds: closing it closes those still open
+under it first, the deepest first (a new list closes the old one's items,
+then the old list). An owner numbers each child it holds as it
 takes the next one, and the rest as it completes, its fields first, in
 canonical field order: each takes its extent, measured from the end of the
 node before it in its relation (a table's rows are one) or from the owner's

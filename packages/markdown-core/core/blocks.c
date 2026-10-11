@@ -1342,6 +1342,11 @@ markdown_core_member *markdown_core_block_finalize(markdown_core_parser *parser,
     markdown_core_node *b = member->node;
     markdown_core_node_internal_flags held = 0;
     assert(b->flags & MARKDOWN_CORE_NODE__OPEN); // shouldn't call markdown_core_block_finalize on closed blocks
+    /* A block closes after the blocks it holds: those still open on the
+     * current path close first, the deepest first. */
+    while (parser->input.current != member && S_holds(member, parser->input.current)) {
+        parser->input.current = markdown_core_block_finalize(parser, parser->input.current);
+    }
     S_complete_trailed(parser, member);
     b->flags &= ~MARKDOWN_CORE_NODE__OPEN;
     /* Whether the line that closes it matched it: its decisions could read
@@ -1393,21 +1398,10 @@ markdown_core_member *markdown_core_block_finalize(markdown_core_parser *parser,
      * trails when the blank lines before that line were read with it open. */
     S_record(parser, member, held);
 
-    /* A block settles once every block it holds has settled. One closed while
-     * the last block under it is still open -- a new list closes the old one
-     * before its items -- or has not settled yet settles as that block does. */
-    if (member->last && (member->last->node->flags & (MARKDOWN_CORE_NODE__OPEN | MARKDOWN_CORE_NODE__AWAITS_CHILD))) {
-        b->flags |= MARKDOWN_CORE_NODE__AWAITS_CHILD;
-        return parent;
-    }
-    for (markdown_core_member *closed = member, *owner = parent; !parser->error;) {
-        S_settle(parser, closed);
-        if (!owner || !(owner->node->flags & MARKDOWN_CORE_NODE__AWAITS_CHILD)) {
-            break;
-        }
-        owner->node->flags &= ~MARKDOWN_CORE_NODE__AWAITS_CHILD;
-        closed = owner;
-        owner = closed->owner;
+    /* Every block it holds has closed: it settles. */
+    assert(!member->last || !(member->last->node->flags & MARKDOWN_CORE_NODE__OPEN) || parser->error);
+    if (!parser->error) {
+        S_settle(parser, member);
     }
     return parent;
 }
@@ -1508,13 +1502,10 @@ static bool S_holds(const markdown_core_member *member, const markdown_core_memb
 }
 
 /* Closes the open blocks on the current path below `target`, which then
- * holds the current block. A block on the path already closed, holding
- * open ones until they settle, is passed. */
+ * holds the current block. */
 static void S_close_to(markdown_core_parser *parser, const markdown_core_member *target) {
     while (!S_holds(parser->input.current, target) && !parser->error) {
-        parser->input.current = parser->input.current->node->flags & MARKDOWN_CORE_NODE__OPEN
-                                    ? markdown_core_block_finalize(parser, parser->input.current)
-                                    : parser->input.current->owner;
+        parser->input.current = markdown_core_block_finalize(parser, parser->input.current);
     }
 }
 
