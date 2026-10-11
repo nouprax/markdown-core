@@ -6,6 +6,16 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Make session steps incremental (incremental parsing, steps 4 to 8). A step
+  no longer parses the whole text again: the parser reads the previous
+  document beside the edits, takes each block no edit meets whole, reads
+  again only the lines the edits change and the blocks that read them, and
+  reuses the unchanged inline nodes of each root it reads again. The
+  document's definitions, labels and anchors live in a session registry, and
+  a root whose lookups an edit answers otherwise is parsed again in place.
+  Each step publishes the document a fresh parse of the text gives, in which
+  every node the edits left unchanged keeps its id and is the old node.
+
 - Give every extent one rule: it is a byte offset in the input of the parser
   that produced the node. Block extents stay source offsets; an inline
   node's extent is now an offset in its inline root's content, which starts
