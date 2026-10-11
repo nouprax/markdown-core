@@ -3701,7 +3701,7 @@ static void registry_rosters_join_batches(test_batch_runner *runner) {
         }
         shaped &= roster_test_lists(registry->rosters[MARKDOWN_CORE_ROSTER_REFERENCES], listed, count);
         kept &= roster_test_lists(before, held, held_count);
-        markdown_core_roster_release(before);
+        markdown_core_roster_release(registry, before);
         for (const markdown_core_order *order = registry->orders.next, *prev = &registry->orders;
              order != &registry->orders; prev = order, order = order->next) {
             shaped &= prev == &registry->orders || prev->label < order->label;

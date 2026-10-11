@@ -74,7 +74,7 @@ markdown_core_roster *markdown_core_roster_retain(const markdown_core_roster *ro
     return held;
 }
 
-void markdown_core_roster_release(markdown_core_roster *roster) {
+void markdown_core_roster_release(markdown_core_registry *registry, markdown_core_roster *roster) {
     if (!roster || --roster->refs) {
         return;
     }
@@ -97,7 +97,7 @@ void markdown_core_roster_release(markdown_core_roster *roster) {
             continue;
         }
         markdown_core_roster *right = at->right;
-        registry_give(NULL, at);
+        registry_give(registry, at);
         at = right && --right->refs == 0 ? right : NULL;
     }
 }
@@ -517,14 +517,14 @@ static void order_unlink(markdown_core_order *order) {
     order->prev = order->next = NULL;
 }
 
-void markdown_core_order_free(markdown_core_order *order) {
+void markdown_core_order_free(markdown_core_registry *registry, markdown_core_order *order) {
     if (!order) {
         return;
     }
     if (markdown_core_order_joined(order)) {
         order_unlink(order);
     }
-    registry_give(NULL, order);
+    registry_give(registry, order);
 }
 
 bool markdown_core_order_unjoin(markdown_core_registry *registry, markdown_core_order *order) {
@@ -636,7 +636,7 @@ bool markdown_core_order_join(markdown_core_registry *registry, markdown_core_or
 
 void markdown_core_registry_dispose(markdown_core_registry *registry) {
     for (size_t i = 0; i < MARKDOWN_CORE_ROSTER_COUNT; i++) {
-        markdown_core_roster_release(registry->rosters[i]);
+        markdown_core_roster_release(registry, registry->rosters[i]);
     }
     /* The nodes outlive the registry: they hold no order now. */
     markdown_core_order *const head = &registry->orders;

@@ -424,7 +424,7 @@ static void free_node_as(markdown_core_node_pool *pool, markdown_core_node *node
         break;
     case MARKDOWN_CORE_NODE_DOCUMENT:
         for (size_t i = 0; i < MARKDOWN_CORE_ROSTER_COUNT; i++) {
-            markdown_core_roster_release(node->as.document->rosters[i]);
+            markdown_core_roster_release(pool ? &pool->registry : NULL, node->as.document->rosters[i]);
         }
         break;
     case MARKDOWN_CORE_NODE_HEADING:
@@ -537,7 +537,7 @@ static void S_release_value(markdown_core_node_pool *pool, markdown_core_node *e
     if (e->facts) {
         markdown_core_registry_unlink(e);
     }
-    markdown_core_order_free(e->order);
+    markdown_core_order_free(pool ? &pool->registry : NULL, e->order);
     /* Almost no node owns an attribute value or a content buffer: the test
      * each releaser makes first -- its own predicate, defined once beside it
      * -- is made here, so a node that owns neither pays the compares and no

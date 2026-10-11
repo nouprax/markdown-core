@@ -141,7 +141,9 @@ size_t markdown_core_roster_rank(const markdown_core_roster *roster,
                                  bool (*before)(const markdown_core_roster *entry, const void *context),
                                  const void *context);
 markdown_core_roster *markdown_core_roster_retain(const markdown_core_roster *roster);
-void markdown_core_roster_release(markdown_core_roster *roster);
+/* Drops a hold on `roster`; the entries no other roster holds go back to
+ * `registry`'s storage, or, with no registry, drop their slab's hold. */
+void markdown_core_roster_release(markdown_core_registry *registry, markdown_core_roster *roster);
 
 struct markdown_core_key {
     markdown_core_registry *registry;
@@ -236,9 +238,10 @@ markdown_core_order *markdown_core_order_new(markdown_core_registry *registry, s
 /* `order` leaves its list, if it is in one, and goes, its node out of the
  * rosters. False when a roster could not change; it goes all the same. */
 bool markdown_core_order_leave(markdown_core_registry *registry, markdown_core_order *order);
-/* `order` goes; it is in no list, or its node goes with the registry's
+/* `order` goes, back to `registry`'s storage, or, with no registry, dropping
+ * its slab's hold; it is in no list, or its node goes with the registry's
  * rosters. */
-void markdown_core_order_free(markdown_core_order *order);
+void markdown_core_order_free(markdown_core_registry *registry, markdown_core_order *order);
 /* Whether `order` is in the registry's list. */
 static inline bool markdown_core_order_joined(const markdown_core_order *order) { return order->prev != NULL; }
 /* `order` leaves the list, and its node the rosters, to join it again
