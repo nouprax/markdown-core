@@ -548,36 +548,36 @@ static int probe_directive_block(const markdown_core_element_instance *self, mar
     return matched;
 }
 
-static markdown_core_member *open_directive_block(const markdown_core_element_instance *self, int indented,
-                                                  markdown_core_parser *parser, markdown_core_member *parent_container,
-                                                  unsigned char *input, int len) {
+static markdown_core_frame *open_directive_block(const markdown_core_element_instance *self, int indented,
+                                                 markdown_core_parser *parser, markdown_core_frame *parent_container,
+                                                 unsigned char *input, int len) {
     (void)indented;
     bufsize_t first_nonspace = (bufsize_t)markdown_core_parser_get_first_nonspace(parser);
     parsed_directive parsed;
     bufsize_t colon_count =
         scan_directive_block(parser, input, len, first_nonspace, markdown_core_parser_get_indent(parser), &parsed);
-    markdown_core_member *member = NULL;
+    markdown_core_frame *frame = NULL;
     markdown_core_node *node;
     node_directive *directive;
     if (!colon_count) {
         goto done;
     }
 
-    member = markdown_core_parser_add_child(parser, parent_container, MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK,
-                                            (int)first_nonspace + 1);
-    if (!member) {
+    frame = markdown_core_parser_add_child(parser, parent_container, MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK,
+                                           (int)first_nonspace + 1);
+    if (!frame) {
         goto done;
     }
 
-    node = member->node;
+    node = frame->node;
     markdown_core_node_set_element(node, self->element);
     node->opaque = markdown_core_alloc(1, sizeof(node_directive));
     if (!node->opaque || !apply_parsed_directive(self->element, parser, node, input, &parsed,
                                                  markdown_core_parser_get_line_number(parser))) {
         /* The suffix already validated; failure here is allocation loss. */
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        markdown_core_parser_release_member(parser, member);
-        member = NULL;
+        markdown_core_parser_release_frame(parser, frame);
+        frame = NULL;
         goto done;
     }
 
@@ -588,7 +588,7 @@ static markdown_core_member *open_directive_block(const markdown_core_element_in
 
 done:
     free_parsed_directive(&parsed);
-    return member;
+    return frame;
 }
 
 /* The one closer rule of the directives module: a bare colon run at least as
@@ -604,7 +604,7 @@ static int directive_closer_line(const node_directive *directive, markdown_core_
 }
 
 static int directive_block_continues(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                     const unsigned char *input, int len, markdown_core_member *container) {
+                                     const unsigned char *input, int len, markdown_core_frame *container) {
     node_directive *directive = get_directive(container->node);
 
     if (!directive || directive->fence_length == 2) {
@@ -615,7 +615,7 @@ static int directive_block_continues(const markdown_core_element_instance *self,
 }
 
 static int directive_block_matches(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                   unsigned char *input, int len, markdown_core_member *container) {
+                                   unsigned char *input, int len, markdown_core_frame *container) {
     node_directive *directive = get_directive(container->node);
 
     if (!directive) {
@@ -666,9 +666,9 @@ static int visit_owned_subtrees(const markdown_core_element *element, markdown_c
 
 /* What a directive block carries (E3): its fence, which a closer must
  * match. */
-static uint32_t carry_save(const markdown_core_element_instance *self, const markdown_core_member *member) {
+static uint32_t carry_save(const markdown_core_element_instance *self, const markdown_core_frame *frame) {
     (void)self;
-    const node_directive *directive = member->node->opaque;
+    const node_directive *directive = frame->node->opaque;
     return directive ? (uint32_t)directive->fence_length : 0;
 }
 

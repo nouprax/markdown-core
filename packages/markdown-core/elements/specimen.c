@@ -62,7 +62,7 @@ static bufsize_t markdown_core_block_parse_specimen_marker(markdown_core_specime
 }
 
 static bool markdown_core_specimen_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                        markdown_core_member **container, markdown_core_chunk *input,
+                                        markdown_core_frame **container, markdown_core_chunk *input,
                                         block_start *start) {
     bufsize_t matched = start->matched;
     markdown_core_specimen_value specimen = start->specimen;
@@ -111,21 +111,21 @@ static bool markdown_core_specimen_scan(const markdown_core_element_instance *se
     return true;
 }
 
-bool markdown_core_specimen_continue(markdown_core_parser *parser, markdown_core_member *container,
+bool markdown_core_specimen_continue(markdown_core_parser *parser, markdown_core_frame *container,
                                      markdown_core_chunk *input) {
     return markdown_core_block_continue_indented(parser, input, 4, true);
 }
 
 static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                               markdown_core_member *node, markdown_core_chunk *input,
-                               const markdown_core_member *joining, bool *taken) {
+                               markdown_core_frame *node, markdown_core_chunk *input,
+                               const markdown_core_frame *joining, bool *taken) {
     (void)self;
     return markdown_core_specimen_continue(parser, node, input);
 }
 /* A specimen carries nothing its lines read (E3). */
-static uint32_t carry_save(const markdown_core_element_instance *self, const markdown_core_member *member) {
+static uint32_t carry_save(const markdown_core_element_instance *self, const markdown_core_frame *frame) {
     (void)self;
-    (void)member;
+    (void)frame;
     return 0;
 }
 

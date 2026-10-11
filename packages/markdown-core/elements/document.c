@@ -101,9 +101,9 @@ static void prepare_document(const markdown_core_element_instance *self, markdow
 /* A node is complete: it numbers the nodes it holds, and the headings note
  * the explicit anchors among them. */
 static void complete_node(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_member *member, uint32_t start) {
+                          markdown_core_frame *frame, uint32_t start) {
     const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
-    if (!markdown_core_complete_node(parser, &((document_state *)self->state)->publication, member, start,
+    if (!markdown_core_complete_node(parser, &((document_state *)self->state)->publication, frame, start,
                                      headings ? markdown_core_headings_observe : NULL, headings)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
@@ -111,17 +111,17 @@ static void complete_node(const markdown_core_element_instance *self, markdown_c
 /* A node takes another child: it numbers the children before it that have
  * completed, and the headings note the explicit anchors among them. */
 static void number_children(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                            markdown_core_member *member) {
+                            markdown_core_frame *frame) {
     const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
-    if (!markdown_core_number_children(parser, &((document_state *)self->state)->publication, member,
+    if (!markdown_core_number_children(parser, &((document_state *)self->state)->publication, frame,
                                        headings ? markdown_core_headings_observe : NULL, headings)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
 }
 /* A node about to read its inline content decides what it continues. */
-static void decide_member(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_member *member) {
-    if (!markdown_core_decide_member(parser, &((document_state *)self->state)->publication, member)) {
+static void decide_frame(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                         markdown_core_frame *frame) {
+    if (!markdown_core_decide_frame(parser, &((document_state *)self->state)->publication, frame)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
 }
@@ -149,11 +149,11 @@ static void finish_document(const markdown_core_element_instance *self, markdown
     for (size_t i = 0; i < parser->replacement_count && !parser->error; i++) {
         struct markdown_core_replacement *replacement = &parser->replacements[i];
         markdown_core_node *node = replacement->node;
-        if (replacement->member) {
-            node = markdown_core_node_retain(replacement->member->node);
-            markdown_core_member_release(parser->pool, replacement->member);
+        if (replacement->frame) {
+            node = markdown_core_node_retain(replacement->frame->node);
+            markdown_core_frame_release(parser->pool, replacement->frame);
         }
-        replacement->member = NULL;
+        replacement->frame = NULL;
         replacement->node = NULL;
         if (node == replacement->old) {
             markdown_core_parser_release_node(parser, node);
@@ -189,6 +189,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
     .publish_document = publish_document,
     .complete_node = complete_node,
     .number_children = number_children,
-    .decide_member = decide_member,
+    .decide_frame = decide_frame,
     .complete_draft = complete_draft,
 };

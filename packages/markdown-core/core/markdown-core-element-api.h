@@ -12,7 +12,7 @@ extern "C" {
 typedef struct markdown_core_parser markdown_core_parser;
 typedef struct markdown_core_element markdown_core_element;
 /* A node being built, and its place among the nodes being built (node.h). */
-typedef struct markdown_core_member markdown_core_member;
+typedef struct markdown_core_frame markdown_core_frame;
 /* A node of an inline root's content being built (node.h). */
 typedef struct markdown_core_draft markdown_core_draft;
 
@@ -152,13 +152,13 @@ int markdown_core_delimiter_can_close(const delimiter *delim);
  * 'input' matches a syntax rule for that block type. It is allowed
  * to modify the type of 'parent_container'.
  *
- * Should return the newly created block's member if there is one, or
+ * Should return the newly created block's frame if there is one, or
  * 'parent_container' if its type was modified, or NULL.
  */
-typedef markdown_core_member *(*markdown_core_open_block_func)(const markdown_core_element_instance *self, int indented,
-                                                               markdown_core_parser *parser,
-                                                               markdown_core_member *parent_container,
-                                                               unsigned char *input, int len);
+typedef markdown_core_frame *(*markdown_core_open_block_func)(const markdown_core_element_instance *self, int indented,
+                                                              markdown_core_parser *parser,
+                                                              markdown_core_frame *parent_container,
+                                                              unsigned char *input, int len);
 
 /** Returns the draft of the token it appended to 'parent' with
  * markdown_core_inline_state_append, or NULL. */
@@ -199,7 +199,7 @@ typedef void (*markdown_core_inline_from_delim_func)(const markdown_core_element
  *  MARKDOWN_CORE_BLOCK_PENDING_CLOSE until descendant ownership is known.
  */
 typedef int (*markdown_core_match_block_func)(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                              unsigned char *input, int len, markdown_core_member *container);
+                                              unsigned char *input, int len, markdown_core_frame *container);
 
 /** Whether 'input' would continue 'container', asked AHEAD OF TIME.
  *
@@ -217,7 +217,7 @@ typedef int (*markdown_core_match_block_func)(const markdown_core_element_instan
  */
 typedef int (*markdown_core_continues_block_func)(const markdown_core_element_instance *self,
                                                   markdown_core_parser *parser, const unsigned char *input, int len,
-                                                  markdown_core_member *container);
+                                                  markdown_core_frame *container);
 
 typedef int (*markdown_core_can_contain_func)(const markdown_core_element *element, markdown_core_node *node,
                                               markdown_core_node_type child);
@@ -551,44 +551,44 @@ int markdown_core_parser_has_partially_consumed_tab(markdown_core_parser *parser
 bufsize_t markdown_core_parser_get_last_line_end(markdown_core_parser *parser);
 
 /** Add a child to 'parent' during the parsing process, and return its
- * member.
+ * frame.
  *
  * If 'parent' isn't the kind of node that can accept this child,
  * this function will back up till it hits a node that can, closing
  * blocks as appropriate.
  */
-markdown_core_member *markdown_core_parser_add_child(markdown_core_parser *parser, markdown_core_member *parent,
-                                                     markdown_core_node_type block_type, int start_column);
+markdown_core_frame *markdown_core_parser_add_child(markdown_core_parser *parser, markdown_core_frame *parent,
+                                                    markdown_core_node_type block_type, int start_column);
 
-/** A member for the detached `node`, holding its reference, linked under
+/** A frame for the detached `node`, holding its reference, linked under
  * `owner` before `before` or last; NULL, with the parse failed and the node
  * released, when it could not be allocated. The caller has proved
  * containment. */
-markdown_core_member *markdown_core_parser_attach(markdown_core_parser *parser, markdown_core_member *owner,
-                                                  markdown_core_node *node, markdown_core_member *before);
+markdown_core_frame *markdown_core_parser_attach(markdown_core_parser *parser, markdown_core_frame *owner,
+                                                 markdown_core_node *node, markdown_core_frame *before);
 
-/** A member for the field root `node`, which `owner`'s node holds, linked as
+/** A frame for the field root `node`, which `owner`'s node holds, linked as
  * the last field root `owner` builds; NULL, with the parse failed, when it
  * could not be allocated. */
-markdown_core_member *markdown_core_parser_attach_field(markdown_core_parser *parser, markdown_core_member *owner,
-                                                        markdown_core_node *node);
+markdown_core_frame *markdown_core_parser_attach_field(markdown_core_parser *parser, markdown_core_frame *owner,
+                                                       markdown_core_node *node);
 
-/** The node that holds `member`'s node: its owner's. NULL for the
+/** The node that holds `frame`'s node: its owner's. NULL for the
  * document. */
-markdown_core_node *markdown_core_parser_owner(const markdown_core_parser *parser, const markdown_core_member *member);
+markdown_core_node *markdown_core_parser_owner(const markdown_core_parser *parser, const markdown_core_frame *frame);
 
-/** Detaches `member` from its owner and siblings when it has them, and
+/** Detaches `frame` from its owner and siblings when it has them, and
  * releases it, its subtree and the references they hold into the parse's
  * pool. */
-void markdown_core_parser_release_member(markdown_core_parser *parser, markdown_core_member *member);
+void markdown_core_parser_release_frame(markdown_core_parser *parser, markdown_core_frame *frame);
 
-/** Complete 'member''s node (docs/plans/2026-09-29-incremental-parsing.md,
+/** Complete 'frame''s node (docs/plans/2026-09-29-incremental-parsing.md,
  * 5.8): its children, each complete, become its stem, and it numbers each
  * node it holds that is not numbered yet, measured from where it starts. The
  * engine completes every block as it closes; an element completes a block it
  * holds that do not close on their own, as a table its rows.
  */
-void markdown_core_parser_complete_node(markdown_core_parser *parser, markdown_core_member *member);
+void markdown_core_parser_complete_node(markdown_core_parser *parser, markdown_core_frame *frame);
 
 /** Advance the 'offset' of the parser in the current line.
  *

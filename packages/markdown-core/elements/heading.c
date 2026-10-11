@@ -520,7 +520,7 @@ bool markdown_core_heading_claim_tail(const markdown_core_element_instance *self
 
 #define peek_at(input, at) ((input)->data[(at)])
 static bool open_atx(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                     markdown_core_member **container, markdown_core_chunk *input, block_start *start) {
+                     markdown_core_frame **container, markdown_core_chunk *input, block_start *start) {
     (void)self;
     bufsize_t matched = start->matched;
 
@@ -549,7 +549,7 @@ static bool open_atx(const markdown_core_element_instance *self, markdown_core_p
     return true;
 }
 static bool open_setext(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                        markdown_core_member **container, markdown_core_chunk *input, block_start *start) {
+                        markdown_core_frame **container, markdown_core_chunk *input, block_start *start) {
     (void)self;
     bufsize_t matched = start->matched;
     bool has_content;
@@ -588,7 +588,7 @@ static bool scan_heading(const markdown_core_element_instance *self, markdown_co
     return true;
 }
 static int continue_heading(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                            unsigned char *data, int length, markdown_core_member *container) {
+                            unsigned char *data, int length, markdown_core_frame *container) {
     return 0;
 }
 

@@ -444,8 +444,8 @@ struct markdown_core_stem {
 
 /* A NODE is a shared immutable value (5.11): one subtree may sit in the old
  * tree and the new one at once, so a node has no parent and no siblings, and
- * its children are its stem. `refs` counts the stems, fields and builders
- * (markdown_core_member) that hold it; a node held once may change in place,
+ * its children are its stem. `refs` counts the stems, fields and frames
+ * (markdown_core_frame) that hold it; a node held once may change in place,
  * and one held more often is copied before it changes. */
 struct markdown_core_node {
     uint32_t refs;
@@ -651,7 +651,7 @@ size_t markdown_core_node_release(markdown_core_node *node);
 typedef struct markdown_core_node_pool {
     markdown_core_slab_pool nodes;
     markdown_core_slab_pool resources;
-    markdown_core_slab_pool members;
+    markdown_core_slab_pool frames;
     markdown_core_bytes_pool bytes;
     /* The facts of the nodes the pool's parses made (registry.h). */
     markdown_core_registry registry;
@@ -813,7 +813,7 @@ void markdown_core_stem_walk_begin(markdown_core_stem_walk *walk, const markdown
 markdown_core_node *markdown_core_stem_walk_next(markdown_core_stem_walk *walk);
 
 /* WHAT THE DECISIONS ABOUT AN INLINE NODE READ (docs/plans/2026-09-29-
- * incremental-parsing.md, 5.6), kept by its member while its root's content
+ * incremental-parsing.md, 5.6), kept by its frame while its root's content
  * is parsed and completed. The node lies on the content offsets `start` to
  * `end`. `rules` are the delimiter rules (one bit per rule) whose stack
  * entries a decision about it counted or searched; `state` the rules that had
@@ -886,24 +886,25 @@ typedef struct {
     markdown_core_stem *candidate;
 } markdown_core_built;
 
-/* A BLOCK BEING BUILT (5.11, open blocks are builders): while the parser
- * builds a block, the block's place among the nodes being built is this
- * record's, not the node's. Its owner, its siblings and its children are the
- * members of the nodes beside it that are not numbered yet; the children it
+/* A FRAME, A BLOCK BEING BUILT (5.11): while the parser builds a block, the
+ * block's place among the nodes being built is its frame's, not the node's.
+ * A block keeps its frame while it is open, and once closed while it is the
+ * last child of an open block and a later line may still add to it. Its owner, its siblings and its children are the
+ * frames of the nodes beside it that are not numbered yet; the children it
  * numbered are its `built` entries in order, the `built_nodes` nodes of its
  * stem so far, which its completion takes as its stem, and the orders they
  * collected are `built_orders`; the next is measured from `anchor` (5.8). A child is
  * numbered once its owner takes another child or completes: until then a
- * blank line after it may still be its own. `fields` are the members of the
+ * blank line after it may still be its own. `fields` are the frames of the
  * node's field roots that are being built with it, linked through `next`: a
- * table's caption. `held` says whether the member holds the node's
- * reference: a child member does until its owner numbers it; a root, whose
+ * table's caption. `held` says whether the frame holds the node's
+ * reference: a child frame does until its owner numbers it; a root, whose
  * node a stem or the parser holds, and a field root, whose node its owner's
- * field holds, do not. A builder lives for one parse and its storage is the
+ * field holds, do not. A frame lives for one parse and its storage is the
  * pool's. The nodes of an inline root's content are built as drafts
  * (markdown_core_draft).
  *
- * A member also carries what the node continues
+ * A frame also carries what the node continues
  * (docs/plans/2026-09-29-incremental-parsing.md, 5.9): `old`, the node of
  * the previous tree it continues once `decided`, `tentative` while its range
  * or its kind is open and may still pass that node by, whether its node has taken its id
@@ -912,19 +913,19 @@ typedef struct {
  * it does once its range and its kind are final. A block that
  * closed `awaits_trailer` when a later line may still add to it, as a
  * trailing caption joins a table: it completes once that line comes, its
- * owner takes another child, or its owner closes; a member has `completed`
- * once its node has. As an owner it pairs the members it holds with the old
- * node's relation through `pair`. A member's `index` counts the children its
+ * owner takes another child, or its owner closes; a frame has `completed`
+ * once its node has. As an owner it pairs the frames it holds with the old
+ * node's relation through `pair`. A frame's `index` counts the children its
  * owner linked before it, and `children` those it has linked.
  *
  * Once numbered, a node settles (ast.c): `place` is where the node lay, its
  * own `where` now holding its extent. */
-struct markdown_core_member {
+struct markdown_core_frame {
     markdown_core_node *node;
-    struct markdown_core_member *owner;
-    struct markdown_core_member *prev, *next;
-    struct markdown_core_member *first, *last;
-    struct markdown_core_member *fields;
+    struct markdown_core_frame *owner;
+    struct markdown_core_frame *prev, *next;
+    struct markdown_core_frame *first, *last;
+    struct markdown_core_frame *fields;
     const markdown_core_node *old;
     markdown_core_pairing pair;
     markdown_core_place place;
@@ -939,9 +940,9 @@ struct markdown_core_member {
     size_t scan_next;
     bool scan_equal;
     /* A CANDIDATE, old children the parse took whole (5.3), held as one stem: the
-     * member stands for all of them, its node is the last of them, and
+     * frame stands for all of them, its node is the last of them, and
      * `past` is the index after them among the old children they were taken
-     * from. NULL for a member of one node. */
+     * from. NULL for a frame of one node. */
     markdown_core_stem *candidate;
     size_t past;
     /* The orders of its subtree, as its completion and its owner's
@@ -978,48 +979,48 @@ static inline markdown_core_node *markdown_core_node_content_holder(markdown_cor
     }
 }
 
-/* Where `member`'s node lies: its place, which numbering keeps in the member
+/* Where `frame`'s node lies: its place, which numbering keeps in the frame
  * as the node takes its extent. */
-static inline markdown_core_place markdown_core_member_place(const markdown_core_member *member) {
-    return member->numbered ? member->place : member->node->where.place;
+static inline markdown_core_place markdown_core_frame_place(const markdown_core_frame *frame) {
+    return frame->numbered ? frame->place : frame->node->where.place;
 }
 
-/* Whether `member`'s range may still grow: its block is open, or closed and
+/* Whether `frame`'s range may still grow: its block is open, or closed and
  * awaiting a trailer. */
-static inline bool markdown_core_member_range_open(const markdown_core_member *member) {
-    return (member->node->flags & MARKDOWN_CORE_NODE__OPEN) || member->awaits_trailer;
+static inline bool markdown_core_frame_range_open(const markdown_core_frame *frame) {
+    return (frame->node->flags & MARKDOWN_CORE_NODE__OPEN) || frame->awaits_trailer;
 }
 
 /* Whether `owner`'s node may hold `child`'s: its built-in containment, which
  * is pure and shares its rules with checked construction, or an element's
  * dynamic policy, decided before and never replayed. */
-bool markdown_core_member_admits(const markdown_core_member *owner, const markdown_core_member *child);
+bool markdown_core_frame_admits(const markdown_core_frame *owner, const markdown_core_frame *child);
 
-#define MARKDOWN_CORE_MEMBER_SLAB_BYTES ((size_t)16 * 1024)
+#define MARKDOWN_CORE_FRAME_SLAB_BYTES ((size_t)16 * 1024)
 
-/* A member for `node`, linked to nothing; it holds the node's reference when
+/* A frame for `node`, linked to nothing; it holds the node's reference when
  * `held`. NULL when it could not be allocated. */
-static inline markdown_core_member *markdown_core_member_new(markdown_core_node_pool *pool, markdown_core_node *node,
-                                                             bool held) {
-    markdown_core_member *member = (markdown_core_member *)markdown_core_slab_take(
-        pool ? &pool->members : NULL, sizeof(*member), MARKDOWN_CORE_MEMBER_SLAB_BYTES);
-    if (member) {
-        memset(member, 0, sizeof(*member));
-        member->node = node;
-        member->held = held;
+static inline markdown_core_frame *markdown_core_frame_new(markdown_core_node_pool *pool, markdown_core_node *node,
+                                                           bool held) {
+    markdown_core_frame *frame = (markdown_core_frame *)markdown_core_slab_take(
+        pool ? &pool->frames : NULL, sizeof(*frame), MARKDOWN_CORE_FRAME_SLAB_BYTES);
+    if (frame) {
+        memset(frame, 0, sizeof(*frame));
+        frame->node = node;
+        frame->held = held;
     }
-    return member;
+    return frame;
 }
 
 /* Links the detached `child` under `owner`, before `before` (a child of
  * `owner`) or last. The caller has proved containment. */
-static inline void markdown_core_member_attach(markdown_core_member *owner, markdown_core_member *child,
-                                               markdown_core_member *before) {
+static inline void markdown_core_frame_attach(markdown_core_frame *owner, markdown_core_frame *child,
+                                              markdown_core_frame *before) {
     assert(owner && child && owner != child);
     assert(!child->owner && !child->prev && !child->next);
     assert(!before || before->owner == owner);
-    assert(markdown_core_member_admits(owner, child));
-    markdown_core_member *previous = before ? before->prev : owner->last;
+    assert(markdown_core_frame_admits(owner, child));
+    markdown_core_frame *previous = before ? before->prev : owner->last;
     child->owner = owner;
     child->index = owner->children++;
     child->prev = previous;
@@ -1037,44 +1038,44 @@ static inline void markdown_core_member_attach(markdown_core_member *owner, mark
 }
 
 /* Links the detached `field` as the last field root `owner` builds. */
-void markdown_core_member_attach_field(markdown_core_member *owner, markdown_core_member *field);
+void markdown_core_frame_attach_field(markdown_core_frame *owner, markdown_core_frame *field);
 
-/* Detaches `member` from its owner and siblings, keeping its subtree. */
-static inline void markdown_core_member_unlink(markdown_core_member *member) {
-    markdown_core_member *owner = member->owner;
-    if (member->field) {
-        markdown_core_member **at = &owner->fields;
-        while (*at != member) {
+/* Detaches `frame` from its owner and siblings, keeping its subtree. */
+static inline void markdown_core_frame_unlink(markdown_core_frame *frame) {
+    markdown_core_frame *owner = frame->owner;
+    if (frame->field) {
+        markdown_core_frame **at = &owner->fields;
+        while (*at != frame) {
             at = &(*at)->next;
         }
-        *at = member->next;
-        member->field = false;
+        *at = frame->next;
+        frame->field = false;
     } else {
-        if (member->prev) {
-            member->prev->next = member->next;
+        if (frame->prev) {
+            frame->prev->next = frame->next;
         } else if (owner) {
-            owner->first = member->next;
+            owner->first = frame->next;
         }
-        if (member->next) {
-            member->next->prev = member->prev;
+        if (frame->next) {
+            frame->next->prev = frame->prev;
         } else if (owner) {
-            owner->last = member->prev;
+            owner->last = frame->prev;
         }
     }
-    member->owner = member->prev = member->next = NULL;
+    frame->owner = frame->prev = frame->next = NULL;
 }
 
-/* THE STEM OF A BUILDER'S NUMBERED CHILDREN: the `count` entries at
- * `built`, in order, with the `summary` of the builder's kind (E4), which
+/* THE STEM OF A FRAME'S NUMBERED CHILDREN: the `count` entries at
+ * `built`, in order, with the `summary` of the frame's kind (E4), which
  * may be NULL; NULL for none. It takes the entries' references. NULL with
  * `*failed`, the entries keeping their references, when it could not be
  * allocated. */
 markdown_core_stem *markdown_core_built_stem(markdown_core_node_pool *pool, const markdown_core_built *built,
                                              size_t count, const markdown_core_stem_summary *summary, bool *failed);
 
-/* Releases `member`, every member below it, and the references they hold;
- * `member` was detached first, or is a root. */
-void markdown_core_member_release(markdown_core_node_pool *pool, markdown_core_member *member);
+/* Releases `frame`, every frame below it, and the references they hold;
+ * `frame` was detached first, or is a root. */
+void markdown_core_frame_release(markdown_core_node_pool *pool, markdown_core_frame *frame);
 
 /* A NODE OF AN INLINE ROOT'S CONTENT BEING BUILT (docs/plans/2026-09-29-
  * incremental-parsing.md, 5.11): while the parse of an inline root builds a

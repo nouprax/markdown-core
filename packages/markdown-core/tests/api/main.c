@@ -1451,19 +1451,19 @@ static void iterator_delete(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 }
 
-/* A detached member under `owner` that holds a new node of `kind`. */
-static markdown_core_member *build_child(markdown_core_member *owner, markdown_core_node_type kind) {
-    markdown_core_member *member = markdown_core_member_new(NULL, markdown_core_node_new(kind), true);
-    markdown_core_member_attach(owner, member, NULL);
-    return member;
+/* A detached frame under `owner` that holds a new node of `kind`. */
+static markdown_core_frame *build_child(markdown_core_frame *owner, markdown_core_node_type kind) {
+    markdown_core_frame *frame = markdown_core_frame_new(NULL, markdown_core_node_new(kind), true);
+    markdown_core_frame_attach(owner, frame, NULL);
+    return frame;
 }
 
-/* `member`'s children, in the order they were linked, become its node's
+/* `frame`'s children, in the order they were linked, become its node's
  * stem, which takes their references. */
-static bool freeze(markdown_core_member *member) {
+static bool freeze(markdown_core_frame *frame) {
     markdown_core_built built[8];
     size_t count = 0;
-    for (markdown_core_member *child = member->first; child; child = child->next) {
+    for (markdown_core_frame *child = frame->first; child; child = child->next) {
         built[count++] = (markdown_core_built){child->node, NULL};
     }
     bool failed;
@@ -1471,8 +1471,8 @@ static bool freeze(markdown_core_member *member) {
     if (failed) {
         return false;
     }
-    member->node->children = stem;
-    for (markdown_core_member *child = member->first; child; child = child->next) {
+    frame->node->children = stem;
+    for (markdown_core_frame *child = frame->first; child; child = child->next) {
         child->held = false;
     }
     return true;
@@ -1480,17 +1480,17 @@ static bool freeze(markdown_core_member *member) {
 
 static void create_tree(test_batch_runner *runner) {
     markdown_core_node *doc = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
-    markdown_core_member *built = markdown_core_member_new(NULL, doc, false);
+    markdown_core_frame *built = markdown_core_frame_new(NULL, doc, false);
 
-    markdown_core_member *p = build_child(built, MARKDOWN_CORE_NODE_PARAGRAPH);
+    markdown_core_frame *p = build_child(built, MARKDOWN_CORE_NODE_PARAGRAPH);
     OK(runner, built->first == p && p->owner == built, "paragraph parent");
 
-    markdown_core_member *str1 = build_child(p, MARKDOWN_CORE_NODE_TEXT);
+    markdown_core_frame *str1 = build_child(p, MARKDOWN_CORE_NODE_TEXT);
     set_literal(str1->node, "Hello, ");
-    markdown_core_member *emph = build_child(p, MARKDOWN_CORE_NODE_EMPHASIS);
-    markdown_core_member *str2 = build_child(emph, MARKDOWN_CORE_NODE_TEXT);
+    markdown_core_frame *emph = build_child(p, MARKDOWN_CORE_NODE_EMPHASIS);
+    markdown_core_frame *str2 = build_child(emph, MARKDOWN_CORE_NODE_TEXT);
     set_literal(str2->node, "world");
-    markdown_core_member *str3 = build_child(p, MARKDOWN_CORE_NODE_TEXT);
+    markdown_core_frame *str3 = build_child(p, MARKDOWN_CORE_NODE_TEXT);
     set_literal(str3->node, "!");
     OK(runner, !markdown_core_node_can_contain_type(str1->node, MARKDOWN_CORE_NODE_TEXT),
        "a text node contains nothing");
@@ -1503,18 +1503,18 @@ static void create_tree(test_batch_runner *runner) {
     OK(runner, emph->first == str2, "emph contains str2");
     OK(runner, emph->next == str3 && p->last == str3, "str3 ends the paragraph");
 
-    markdown_core_member_unlink(emph);
-    OK(runner, !emph->owner && !emph->prev && !emph->next, "an unlinked member has no owner or siblings");
-    OK(runner, emph->first == str2, "an unlinked member keeps its children");
+    markdown_core_frame_unlink(emph);
+    OK(runner, !emph->owner && !emph->prev && !emph->next, "an unlinked frame has no owner or siblings");
+    OK(runner, emph->first == str2, "an unlinked frame keeps its children");
     OK(runner, str1->next == str3 && str3->prev == str1, "unlink closes the gap");
 
-    markdown_core_member_attach(p, emph, NULL);
+    markdown_core_frame_attach(p, emph, NULL);
     OK(runner, p->last == emph && str3->next == emph, "re-attached at the end");
 
-    /* Each member freezes once its children have: their nodes become its
-     * stem, in the order the members were linked. */
+    /* Each frame freezes once its children have: their nodes become its
+     * stem, in the order the frames were linked. */
     OK(runner, freeze(emph) && freeze(p) && freeze(built), "the built tree freezes");
-    markdown_core_member_release(NULL, built);
+    markdown_core_frame_release(NULL, built);
     INT_EQ(runner, markdown_core_node_check(doc, NULL), 0, "built tree consistent");
     markdown_core_node *paragraph = child_at(doc, 0);
     OK(runner, child_count(doc) == 1 && paragraph->kind == MARKDOWN_CORE_NODE_PARAGRAPH, "the document holds p");
@@ -1919,14 +1919,14 @@ static void element_decline_yields_turn(test_batch_runner *runner) {
     markdown_core_parser parser = {0};
     /* An instance with no record: a declining hook reads none. */
     const markdown_core_element_instance table = {&MARKDOWN_CORE_ELEMENT_TABLE, NULL, 0, NULL};
-    markdown_core_member *candidate =
-        markdown_core_member_new(NULL, markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH), true);
+    markdown_core_frame *candidate =
+        markdown_core_frame_new(NULL, markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH), true);
     markdown_core_strbuf_puts(&candidate->node->content, "text\n");
     unsigned char line[] = ":::note\n";
     OK(runner,
        MARKDOWN_CORE_ELEMENT_TABLE.try_opening_block(&table, 0, &parser, candidate, line, sizeof(line) - 1) == NULL,
        "a non-table line yields no block, independently of attach order");
-    markdown_core_member_release(NULL, candidate);
+    markdown_core_frame_release(NULL, candidate);
 
     static const char *const markdown = "text\n:::note\nbody\n:::\n";
     markdown_core_node *doc = parse(markdown);
@@ -2066,7 +2066,7 @@ static void iterator_contract_is_total(test_batch_runner *runner) {
 static markdown_core_draft *stray_delimiter_push(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
                                                  unsigned char character, markdown_core_delimiter_rule rule) {
     markdown_core_node *node;
-    markdown_core_draft *member;
+    markdown_core_draft *draft;
 
     (void)parser;
     if (character != '@') {
@@ -2080,11 +2080,11 @@ static markdown_core_draft *stray_delimiter_push(markdown_core_parser *parser, m
     set_literal(node, "@");
     int offset = markdown_core_inline_state_get_offset(inline_state);
     markdown_core_inline_state_place(inline_state, node, offset - 1, offset - 1);
-    member = markdown_core_inline_state_append(inline_state, node);
-    if (member) {
-        markdown_core_inline_state_push_delimiter(inline_state, NULL, rule, 0, 1, member);
+    draft = markdown_core_inline_state_append(inline_state, node);
+    if (draft) {
+        markdown_core_inline_state_push_delimiter(inline_state, NULL, rule, 0, 1, draft);
     }
-    return member;
+    return draft;
 }
 
 static markdown_core_draft *stray_unowned_match(const markdown_core_element_instance *self,
@@ -2386,8 +2386,8 @@ static void sweep_block_gates(const markdown_core_element_instance *self, markdo
                     for (int paragraph = 0; paragraph < 2; paragraph++) {
                         /* The instance's dialect, whose instances hold the element state. */
                         markdown_core_parser probe = {.dialect = parser->dialect};
-                        markdown_core_member *parent =
-                            markdown_core_member_new(NULL, markdown_core_node_new(containers[c]), true);
+                        markdown_core_frame *parent =
+                            markdown_core_frame_new(NULL, markdown_core_node_new(containers[c]), true);
                         markdown_core_chunk input = {line, blank ? 1 : 4, 0};
                         bool claimed = false;
                         if (!parent) {
@@ -2417,7 +2417,7 @@ static void sweep_block_gates(const markdown_core_element_instance *self, markdo
                                 sweep->first_bad_element = element->name;
                             }
                         }
-                        markdown_core_member_release(NULL, parent);
+                        markdown_core_frame_release(NULL, parent);
                     }
                 }
             }
@@ -3758,8 +3758,8 @@ static void inspect_lazy_block_content(const markdown_core_element_instance *sel
     parser->input.line_count = 1;
     for (size_t i = 0; i < sizeof(kinds) / sizeof(*kinds); i++) {
         size_t before = payload_probe_snapshot().allocations;
-        markdown_core_member *member = markdown_core_parser_add_child_validated(parser, parser->root, kinds[i], 1);
-        markdown_core_node *node = member ? member->node : NULL;
+        markdown_core_frame *frame = markdown_core_parser_add_child_validated(parser, parser->root, kinds[i], 1);
+        markdown_core_node *node = frame ? frame->node : NULL;
         OK(runner, node && node->content.ptr == markdown_core_strbuf__initbuf && !node->content.asize,
            "every empty block starts with the same borrowed empty content");
         INT_EQ(runner, payload_probe_snapshot().allocations, before,
@@ -3808,7 +3808,7 @@ static void inspect_lazy_block_content(const markdown_core_element_instance *sel
             parser->input.column = 0;
             parser->input.partially_consumed_tab = false;
         }
-        markdown_core_parser_release_member(parser, member);
+        markdown_core_parser_release_frame(parser, frame);
     }
     parser->input.line_count = 0;
 }
@@ -5782,26 +5782,26 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
     for (size_t i = 0; i < sizeof(rows) / sizeof(*rows); i++) {
         markdown_core_parser parser = {0};
         markdown_core_node table = {.kind = MARKDOWN_CORE_NODE_TABLE};
-        markdown_core_member member = {.node = &table};
+        markdown_core_frame frame = {.node = &table};
         text_allocation_calls = 0;
         int matched = MARKDOWN_CORE_ELEMENT_TABLE.last_block_matches(&table_instance, &parser, (unsigned char *)rows[i],
-                                                                     (int)strlen(rows[i]), &member);
+                                                                     (int)strlen(rows[i]), &frame);
         INT_EQ(runner, matched, i != 2, "table continuation grammar is retained");
         INT_EQ(runner, text_allocation_calls, 0, "table continuation allocates no temporary geometry");
     }
     {
         markdown_core_parser parser = {0};
-        markdown_core_member *paragraph =
-            markdown_core_member_new(NULL, markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH), true);
+        markdown_core_frame *paragraph =
+            markdown_core_frame_new(NULL, markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH), true);
         markdown_core_node_set_string_content(paragraph->node, "| a | b |\n");
         unsigned char delimiter[] = "| --- |\n";
         text_allocation_calls = 0;
-        markdown_core_member *table = MARKDOWN_CORE_ELEMENT_TABLE.try_opening_block(
+        markdown_core_frame *table = MARKDOWN_CORE_ELEMENT_TABLE.try_opening_block(
             &table_instance, 0, &parser, paragraph, delimiter, sizeof(delimiter) - 1);
         OK(runner, table == NULL && paragraph->node->kind == MARKDOWN_CORE_NODE_PARAGRAPH,
            "a mismatched header remains a paragraph");
         INT_EQ(runner, text_allocation_calls, 0, "mismatched pipe header allocates no row or cell geometry");
-        markdown_core_member_release(NULL, paragraph);
+        markdown_core_frame_release(NULL, paragraph);
     }
     for (size_t length = 64; length <= 65536; length *= 4) {
         markdown_core_parser parser = {0};
@@ -7405,15 +7405,15 @@ static void block_identifier_linear_work(test_batch_runner *runner) {
     }
 }
 
-static markdown_core_member *seed_anchor(const markdown_core_element_instance *self, int indented,
-                                         markdown_core_parser *parser, markdown_core_member *parent,
-                                         unsigned char *input, int length) {
+static markdown_core_frame *seed_anchor(const markdown_core_element_instance *self, int indented,
+                                        markdown_core_parser *parser, markdown_core_frame *parent, unsigned char *input,
+                                        int length) {
     (void)self;
     (void)indented;
     (void)parent;
     (void)input;
     (void)length;
-    markdown_core_member *owner = parser->input.current;
+    markdown_core_frame *owner = parser->input.current;
     if (parser->input.blank && owner->node->kind == MARKDOWN_CORE_NODE_PARAGRAPH) {
         if (owner->owner->node->kind == MARKDOWN_CORE_NODE_LIST_ITEM) {
             owner = owner->owner;
@@ -7425,10 +7425,9 @@ static markdown_core_member *seed_anchor(const markdown_core_element_instance *s
     return NULL;
 }
 
-static markdown_core_member *observe_definition_before_anchor(const markdown_core_element_instance *self, int indented,
-                                                              markdown_core_parser *parser,
-                                                              markdown_core_member *parent, unsigned char *input,
-                                                              int length) {
+static markdown_core_frame *observe_definition_before_anchor(const markdown_core_element_instance *self, int indented,
+                                                             markdown_core_parser *parser, markdown_core_frame *parent,
+                                                             unsigned char *input, int length) {
     (void)self;
     (void)indented;
     if (length - parser->input.first_nonspace >= 6 && memcmp(input + parser->input.first_nonspace, "#list#", 6) == 0) {
@@ -8925,11 +8924,11 @@ static void construction_checks_containment(test_batch_runner *runner) {
     pid_t child = fork();
     if (child == 0) {
         (void)freopen("/dev/null", "w", stderr);
-        markdown_core_member *parent =
-            markdown_core_member_new(NULL, markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH), true);
-        markdown_core_member *block =
-            markdown_core_member_new(NULL, markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH), true);
-        markdown_core_member_attach(parent, block, NULL);
+        markdown_core_frame *parent =
+            markdown_core_frame_new(NULL, markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH), true);
+        markdown_core_frame *block =
+            markdown_core_frame_new(NULL, markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH), true);
+        markdown_core_frame_attach(parent, block, NULL);
         _exit(0);
     }
     int status = 0;
@@ -8954,14 +8953,14 @@ static bool configure_error_observer(markdown_core_dialect_builder *builder, voi
 }
 /* The rejection count of the parse under test, from its setup context, and
  * the parse itself: while it builds the document, the document's children are
- * its builder's (node.h, markdown_core_member), not yet its stem. */
+ * its builder's (node.h, markdown_core_frame), not yet its stem. */
 static size_t *lead_policy_rejections;
 static markdown_core_parser *lead_policy_parser;
 
 static int reject_additional_paragraph(const markdown_core_element *element, markdown_core_node *node,
                                        markdown_core_node_type kind) {
     (void)element;
-    const markdown_core_member *built = lead_policy_parser->root;
+    const markdown_core_frame *built = lead_policy_parser->root;
     bool holds = built->node == node ? built->first != NULL : child_count(node) != 0;
     if (kind == MARKDOWN_CORE_NODE_PARAGRAPH && holds) {
         (*lead_policy_rejections)++;
@@ -9232,14 +9231,14 @@ static void parser_attachment_commits_one_decision(test_batch_runner *runner) {
     paragraph_root = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
     paragraph_root->element = &CONVERSION_POLICY;
     conversion_current_policy = &paragraph_policy;
-    rejected.root = rejected.input.current = markdown_core_member_new(NULL, paragraph_root, false);
+    rejected.root = rejected.input.current = markdown_core_frame_new(NULL, paragraph_root, false);
     size_t attempts = payload_allocations;
     OK(runner, !markdown_core_parser_add_child(&rejected, rejected.root, MARKDOWN_CORE_NODE_PARAGRAPH, 1),
        "root refusal terminates parent selection without walking past the root");
     INT_EQ(runner, rejected.error, MARKDOWN_CORE_PARSE_CONTAINMENT_REJECTED,
            "a rejected block parent reports semantic refusal");
     INT_EQ(runner, payload_allocations, attempts, "refused parent selection allocates no child");
-    markdown_core_member_release(NULL, rejected.root);
+    markdown_core_frame_release(NULL, rejected.root);
     markdown_core_node_free(paragraph_root);
     INT_EQ(runner, payload_live, 0, "refused parent selection releases all storage");
     payload_probe_disarm();
@@ -9405,15 +9404,15 @@ static void formula_promotion_transfers_storage(test_batch_runner *runner) {
              * by the step; a code block as a block, as it closes. */
             markdown_core_drafts area = {0};
             markdown_core_draft *draft_built = NULL, *draft_promoted = NULL;
-            markdown_core_member *built = NULL, *promoted = NULL;
+            markdown_core_frame *built = NULL, *promoted = NULL;
             if (shape == 0) {
                 draft_built = markdown_core_drafts_take(&area, root, false);
                 draft_promoted = markdown_core_drafts_take(&area, old, true);
                 markdown_core_draft_attach(draft_built, draft_promoted, NULL);
             } else {
-                built = markdown_core_member_new(NULL, root, false);
-                promoted = markdown_core_member_new(NULL, old, true);
-                markdown_core_member_attach(built, promoted, NULL);
+                built = markdown_core_frame_new(NULL, root, false);
+                promoted = markdown_core_frame_new(NULL, old, true);
+                markdown_core_frame_attach(built, promoted, NULL);
             }
             const char *before;
             void *opaque = NULL;
@@ -9465,7 +9464,7 @@ static void formula_promotion_transfers_storage(test_batch_runner *runner) {
                 }
             }
             if (built) {
-                markdown_core_member_release(NULL, built);
+                markdown_core_frame_release(NULL, built);
             }
             drafts_drop(&area);
             markdown_core_node_free(root);
@@ -10586,11 +10585,11 @@ static void absorbed_text_completes_before_observation(test_batch_runner *runner
 
 /* A completion step that does nothing, for the refusal shapes below. */
 static markdown_core_complete_result no_op_finish_step(const markdown_core_element_instance *self,
-                                                       markdown_core_parser *parser, markdown_core_draft *member,
+                                                       markdown_core_parser *parser, markdown_core_draft *draft,
                                                        markdown_core_event_type event, int is_root, void **state) {
     (void)self;
     (void)parser;
-    (void)member;
+    (void)draft;
     (void)event;
     (void)is_root;
     (void)state;

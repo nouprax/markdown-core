@@ -59,16 +59,19 @@ balanced tree of at most 32 entries per stem, each stem counting the nodes
 under it. Walks, the canonical dump and the bindings see the children in
 order, and the C API reads them through a tree cursor that holds its path
 on a stack of its own. A node or a stem counts the stems, fields and
-builders that hold it. A node held once may change in place; one held more
+frames that hold it. A node held once may change in place; one held more
 often is copied before it changes. Releasing a tree walks it on an explicit
 stack and frees each node and stem whose count reaches zero, so a subtree
 another tree still holds stays.
 
-While the parser builds a node, its place among the nodes being built is a
-builder's (`markdown_core_member`): its owner, its siblings, its children and
-the field roots it builds. Once the node's structure is complete the builder
-freezes: the nodes of its children become the node's stem, which takes the
-references their builders held. Builders live for one parse, in its pool.
+While the parser builds a block, a frame (`markdown_core_frame`) holds it:
+its owner's frame, its siblings, its children and the field roots it builds.
+A block keeps its frame while it is open, and once closed while it is the
+last child of an open block and a later line may still add to it, as blank
+lines and a trailing caption or identifier do. Its owner numbers it when it
+takes the next child or completes: the node joins the owner's children, which
+become the owner's stem as it completes, and its frame goes. Frames live for
+one parse, in its pool.
 
 A completed node holds every byte string it reads: numbering copies the
 views its record borrows from the parse (`markdown_core_node_hold_strings`),
@@ -124,8 +127,8 @@ optional value is stored inline in the occurrence's typed record, without a
 separate allocation, and its lifetime ends with that record. Cross references
 own their raw destination fields directly.
 
-Parser construction links a detached builder under its owner
-(`markdown_core_member_attach`) once the containment decision is made; it
+Parser construction links a detached frame under its owner
+(`markdown_core_frame_attach`) once the containment decision is made; it
 asserts the pure built-in containment rule in Debug/ASan. Built-in elements
 declare the parent-kind domain retained by their payload across conversion;
 an unrelated kind cannot silently inherit a different containment policy.

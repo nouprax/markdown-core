@@ -11,6 +11,6 @@ extern const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE;
 bool markdown_core_footnote_close_reference(const markdown_core_element_instance *footnote,
                                             markdown_core_parser *parser, markdown_core_inline_state *inline_state,
                                             struct bracket *opener);
-bool markdown_core_footnote_continue(markdown_core_parser *parser, markdown_core_member *container,
+bool markdown_core_footnote_continue(markdown_core_parser *parser, markdown_core_frame *container,
                                      markdown_core_chunk *input);
 #endif

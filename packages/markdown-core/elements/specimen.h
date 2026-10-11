@@ -2,7 +2,7 @@
 #define MARKDOWN_CORE_ELEMENT_SPECIMEN_H
 #include "inlines.h"
 #include "block_internal.h"
-bool markdown_core_specimen_continue(markdown_core_parser *parser, markdown_core_member *container,
+bool markdown_core_specimen_continue(markdown_core_parser *parser, markdown_core_frame *container,
                                      markdown_core_chunk *input);
 extern const markdown_core_element MARKDOWN_CORE_ELEMENT_SPECIMEN;
 

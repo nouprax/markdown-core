@@ -7,7 +7,7 @@
 static bool markdown_core_block_list_facts_match(const markdown_core_list *list, const markdown_core_list *item);
 static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *counts, markdown_core_parser *parser,
                                                        markdown_core_chunk *input, bufsize_t pos,
-                                                       markdown_core_member *container, int first_column,
+                                                       markdown_core_frame *container, int first_column,
                                                        markdown_core_list *data);
 static bool markdown_core_list_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                     block_start_context *context, block_start *start);
@@ -88,7 +88,7 @@ static bool markdown_core_block_list_facts_match(const markdown_core_list *list,
 
 static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *counts, markdown_core_parser *parser,
                                                        markdown_core_chunk *input, bufsize_t pos,
-                                                       markdown_core_member *container, int first_column,
+                                                       markdown_core_frame *container, int first_column,
                                                        markdown_core_list *data) {
     bufsize_t startpos = pos;
     unsigned char c = BLOCK_PEEK(input, pos);
@@ -157,7 +157,7 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *
             data->delimiter.kind = MARKDOWN_CORE_ORDERED_LIST_DELIMITER_DEFAULT;
         }
         if (!committed || !markdown_core_block_list_facts_match(committed, data)) {
-            for (markdown_core_member *ancestor = container; ancestor; ancestor = ancestor->owner) {
+            for (markdown_core_frame *ancestor = container; ancestor; ancestor = ancestor->owner) {
                 if ((ancestor->node->kind == MARKDOWN_CORE_NODE_LIST_ITEM ||
                      ancestor->node->kind == MARKDOWN_CORE_NODE_SPECIMEN) &&
                     data->start != 1) {
@@ -188,7 +188,7 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *
 }
 
 static bool markdown_core_list_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                    markdown_core_member **container, markdown_core_chunk *input, block_start *start) {
+                                    markdown_core_frame **container, markdown_core_chunk *input, block_start *start) {
     (void)self;
     bufsize_t matched = start->matched;
     markdown_core_list *data = &start->list;
@@ -251,13 +251,13 @@ static bool markdown_core_list_scan(const markdown_core_element_instance *self, 
     return true;
 }
 
-bool markdown_core_list_continue(markdown_core_parser *parser, markdown_core_member *member, markdown_core_chunk *input,
-                                 const markdown_core_member *joining, bool *taken) {
-    markdown_core_node *container = member->node;
+bool markdown_core_list_continue(markdown_core_parser *parser, markdown_core_frame *frame, markdown_core_chunk *input,
+                                 const markdown_core_frame *joining, bool *taken) {
+    markdown_core_node *container = frame->node;
     if (container->kind == MARKDOWN_CORE_NODE_LIST_ITEM) {
         return markdown_core_block_continue_indented(parser, input,
                                                      container->as.list->marker_offset + container->as.list->padding,
-                                                     markdown_core_member_holds_child(member) || joining == member);
+                                                     markdown_core_frame_holds_child(frame) || joining == frame);
     }
     if (parser->input.blank) {
         if ((container->flags & MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK) && parser->input.indent == 0) {
@@ -272,24 +272,24 @@ bool markdown_core_list_continue(markdown_core_parser *parser, markdown_core_mem
 }
 
 static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                               markdown_core_member *node, markdown_core_chunk *input,
-                               const markdown_core_member *joining, bool *taken) {
+                               markdown_core_frame *node, markdown_core_chunk *input,
+                               const markdown_core_frame *joining, bool *taken) {
     (void)self;
     return markdown_core_list_continue(parser, node, input, joining, taken);
 }
 static bool blank_line(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                       markdown_core_member *member) {
+                       markdown_core_frame *frame) {
     (void)self;
-    return !(member->node->kind == MARKDOWN_CORE_NODE_LIST_ITEM && !markdown_core_member_holds_child(member) &&
-             markdown_core_parser_starts_on_line(parser, member->node, parser->input.line_number));
+    return !(frame->node->kind == MARKDOWN_CORE_NODE_LIST_ITEM && !markdown_core_frame_holds_child(frame) &&
+             markdown_core_parser_starts_on_line(parser, frame->node, parser->input.line_number));
 }
 
 /* What a list or an item carries (E3): an item the indentation its later
  * lines continue by, and a list the facts an item must match to join it. */
-static uint32_t carry_save(const markdown_core_element_instance *self, const markdown_core_member *member) {
+static uint32_t carry_save(const markdown_core_element_instance *self, const markdown_core_frame *frame) {
     (void)self;
-    const markdown_core_list *list = member->node->as.list;
-    if (member->node->kind == MARKDOWN_CORE_NODE_LIST_ITEM) {
+    const markdown_core_list *list = frame->node->as.list;
+    if (frame->node->kind == MARKDOWN_CORE_NODE_LIST_ITEM) {
         return (uint32_t)list->marker_offset | (uint32_t)list->padding << 16;
     }
     return (uint32_t)list->flavor | (uint32_t)list->bullet_char << 2 | (uint32_t)list->variant.kind << 10 |
@@ -300,10 +300,10 @@ static uint32_t carry_save(const markdown_core_element_instance *self, const mar
 /* A closed list awaits its trailer: an identifier line after it may still
  * join it (block_identifier.c). */
 static void finalize_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                           markdown_core_member *member) {
+                           markdown_core_frame *frame) {
     (void)self;
     (void)parser;
-    member->awaits_trailer = markdown_core_block_identifier_trails(member->node);
+    frame->awaits_trailer = markdown_core_block_identifier_trails(frame->node);
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {

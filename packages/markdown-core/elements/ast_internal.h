@@ -172,7 +172,7 @@ void markdown_core_walk_end(markdown_core_walk *walk);
  * incremental-parsing.md, 5.8, 5.9): the runs of the inline root being
  * completed, in absolute offsets, read when a node of its content first asks
  * where its source lies.
- * For the reuse cursor it keeps the members a decision climbs through, and
+ * For the reuse cursor it keeps the frames a decision climbs through, and
  * the nodes the parse made that settled as old nodes, which go when the
  * parse does. The document element holds it for the parse. */
 
@@ -184,7 +184,7 @@ typedef struct markdown_core_publication {
     /* The source ranges of the inline node being numbered. */
     markdown_core_place *ranges;
     size_t range_capacity;
-    markdown_core_member **climb;
+    markdown_core_frame **climb;
     size_t climb_capacity;
     markdown_core_draft **draft_climb;
     size_t draft_climb_capacity;
@@ -198,19 +198,19 @@ typedef struct markdown_core_publication {
     size_t pending_capacity;
 } markdown_core_publication;
 
-/* `member`, whose kind and range are final, decides what old node it
- * continues (5.9), the members above it that have not decided first. False
+/* `frame`, whose kind and range are final, decides what old node it
+ * continues (5.9), the frames above it that have not decided first. False
  * when an allocation failed. */
-bool markdown_core_decide_member(markdown_core_parser *parser, markdown_core_publication *publication,
-                                 markdown_core_member *member);
-/* COMPLETING the node `member` builds, which begins at `start`: it decides
+bool markdown_core_decide_frame(markdown_core_parser *parser, markdown_core_publication *publication,
+                                markdown_core_frame *frame);
+/* COMPLETING the node `frame` builds, which begins at `start`: it decides
  * what old node it continues (5.9), the children it has not numbered yet
  * are numbered, each completing first, and become its stem with those it
  * numbered before, and each field not numbered yet, in canonical field
  * order, is numbered. Each takes its extent, measured from the end of the
  * node before it in its relation or from where the relation is measured, and
  * its runs; `observe` sees it. Each settles at once
- * (markdown_core_settle_member). A group (MARKDOWN_CORE_NODE__GROUP) holds a
+ * (markdown_core_settle_frame). A group (MARKDOWN_CORE_NODE__GROUP) holds a
  * relation of its owner, whose nodes it numbers from where its owner
  * begins, and its owner numbers the group. The content of the inline root being completed
  * (parser.h, `completing`) is numbered by its holder's draft
@@ -218,17 +218,17 @@ bool markdown_core_decide_member(markdown_core_parser *parser, markdown_core_pub
  * its own runs, from where it recorded its holder lies, and `observe` sees
  * it. False when an allocation failed. */
 bool markdown_core_complete_node(markdown_core_parser *parser, markdown_core_publication *publication,
-                                 markdown_core_member *member, uint32_t start,
+                                 markdown_core_frame *frame, uint32_t start,
                                  void (*observe)(const markdown_core_element_instance *, markdown_core_parser *,
                                                  markdown_core_node *),
                                  const markdown_core_element_instance *observer);
 
-/* `member` TAKES ANOTHER CHILD: the children it holds before it are
+/* `frame` TAKES ANOTHER CHILD: the children it holds before it are
  * numbered in order, as far as each has completed, as complete_node numbers
  * them, and join its numbered children (node.h, markdown_core_built); their
- * members go. False when an allocation failed. */
+ * frames go. False when an allocation failed. */
 bool markdown_core_number_children(markdown_core_parser *parser, markdown_core_publication *publication,
-                                   markdown_core_member *member,
+                                   markdown_core_frame *frame,
                                    void (*observe)(const markdown_core_element_instance *, markdown_core_parser *,
                                                    markdown_core_node *),
                                    const markdown_core_element_instance *observer);
@@ -242,7 +242,7 @@ bool markdown_core_number_children(markdown_core_parser *parser, markdown_core_p
  * and the id of the old node it continues or the next one, and the old node
  * takes its place when it equals it; `observe` sees it. A group's owner
  * numbers the group. The holder numbers the root's content, whose orders the
- * root's member collects. False when an allocation failed. */
+ * root's frame collects. False when an allocation failed. */
 bool markdown_core_complete_draft(markdown_core_parser *parser, markdown_core_publication *publication,
                                   markdown_core_draft *draft,
                                   void (*observe)(const markdown_core_element_instance *, markdown_core_parser *,
@@ -255,7 +255,7 @@ bool markdown_core_complete_draft(markdown_core_parser *parser, markdown_core_pu
  * does: in place when the new tree owns it, and else in a copy that takes
  * its order. The facts of its old content leave the registry; a root read
  * in place continues the old node it continued, and a copy continues `root`
- * when `root` continues itself. Its member replaces `root` once it settles
+ * when `root` continues itself. Its frame replaces `root` once it settles
  * (markdown_core_parser_replace). False, with the parse failed, when an
  * allocation failed. */
 bool markdown_core_parse_again(markdown_core_parser *parser, markdown_core_publication *publication,
@@ -274,10 +274,10 @@ bool markdown_core_publication_splice(markdown_core_parser *parser, markdown_cor
  * or the next one, unless it took it already; when it equals the old node it
  * continues -- its kind, extent, runs and scalars, and every relation holding
  * the same nodes -- the old node takes its place in its owner's field, as
- * the member's node, or as the document; a field root's member goes, and a
+ * the frame's node, or as the document; a field root's frame goes, and a
  * child's as its owner numbers it. */
-void markdown_core_settle_member(markdown_core_parser *parser, markdown_core_publication *publication,
-                                 markdown_core_member *member);
+void markdown_core_settle_frame(markdown_core_parser *parser, markdown_core_publication *publication,
+                                markdown_core_frame *frame);
 
 /* PUBLISHING, the last step of the parse transaction: the document numbers
  * itself, holds the registry's rosters as they are now, and it settles. The parser's root is the result. False when an

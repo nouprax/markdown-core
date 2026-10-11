@@ -72,18 +72,18 @@ static bool S_attach_block_identifier(markdown_core_parser *parser, markdown_cor
 }
 
 void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identifier_work *work,
-                                                     markdown_core_parser *parser, markdown_core_member *member) {
-    markdown_core_node *paragraph = member->node;
+                                                     markdown_core_parser *parser, markdown_core_frame *frame) {
+    markdown_core_node *paragraph = frame->node;
     block_identifier candidate;
     if (!S_scan_block_identifier(work, paragraph->content.ptr, paragraph->content.size, &candidate)) {
         return;
     }
     markdown_core_node *owner = paragraph;
-    markdown_core_member *parent = member->owner;
+    markdown_core_frame *parent = frame->owner;
     int line;
     bufsize_t source;
     if (parent && markdown_core_block_type(parent->node) == MARKDOWN_CORE_NODE_LIST_ITEM && !parent->built &&
-        parent->first == member &&
+        parent->first == frame &&
         markdown_core_parser_content_place(parser, &paragraph->content_map,
                                            (bufsize_t)(candidate.identifier.data - paragraph->content.ptr), &line,
                                            &source) &&
@@ -109,7 +109,7 @@ bool markdown_core_block_identifier_trails(const markdown_core_node *node) {
 }
 
 bool markdown_core_block_attach_identifier_line(markdown_core_block_identifier_work *work, markdown_core_parser *parser,
-                                                markdown_core_member *parent, markdown_core_chunk *input) {
+                                                markdown_core_frame *parent, markdown_core_chunk *input) {
     /* The line joins the block before it when that block is closed and
      * awaits its trailer. A block the cursor took is complete: the line after
      * it reads as the old parse read it, which did not join it (5.3). */

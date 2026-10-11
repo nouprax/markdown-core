@@ -147,7 +147,7 @@ static void S_slot_release(markdown_core_node_pool *pool, markdown_core_node *no
 void markdown_core_node_pool_dispose(markdown_core_node_pool *pool) {
     markdown_core_slab_pool_dispose(&pool->nodes);
     markdown_core_slab_pool_dispose(&pool->resources);
-    markdown_core_slab_pool_dispose(&pool->members);
+    markdown_core_slab_pool_dispose(&pool->frames);
     markdown_core_bytes_pool_dispose(&pool->bytes);
     markdown_core_registry_dispose(&pool->registry);
 }
@@ -1552,24 +1552,24 @@ bool markdown_core_definition_label(const markdown_core_node *node, markdown_cor
 
 /* THE BUILDERS. */
 
-bool markdown_core_member_admits(const markdown_core_member *owner, const markdown_core_member *child) {
+bool markdown_core_frame_admits(const markdown_core_frame *owner, const markdown_core_frame *child) {
     return (owner->node->element && owner->node->element->can_contain_func) ||
            markdown_core_node_can_contain_builtin(owner->node, (markdown_core_node_type)child->node->kind);
 }
 
-void markdown_core_member_attach_field(markdown_core_member *owner, markdown_core_member *field) {
+void markdown_core_frame_attach_field(markdown_core_frame *owner, markdown_core_frame *field) {
     assert(!field->owner && !field->next);
     field->owner = owner;
     field->field = true;
-    markdown_core_member **at = &owner->fields;
+    markdown_core_frame **at = &owner->fields;
     while (*at) {
         at = &(*at)->next;
     }
     *at = field;
 }
 
-static void S_member_free(markdown_core_node_pool *pool, markdown_core_member *member) {
-    markdown_core_slab_release(pool ? &pool->members : NULL, member);
+static void S_frame_free(markdown_core_node_pool *pool, markdown_core_frame *frame) {
+    markdown_core_slab_release(pool ? &pool->frames : NULL, frame);
 }
 
 markdown_core_stem *markdown_core_built_stem(markdown_core_node_pool *pool, const markdown_core_built *built,
@@ -1651,21 +1651,21 @@ markdown_core_stem *markdown_core_built_stem(markdown_core_node_pool *pool, cons
     return joined;
 }
 
-void markdown_core_member_release(markdown_core_node_pool *pool, markdown_core_member *member) {
-    assert(!member->owner);
-    /* A pending list threaded through `next`: each member taken from it puts
+void markdown_core_frame_release(markdown_core_node_pool *pool, markdown_core_frame *frame) {
+    assert(!frame->owner);
+    /* A pending list threaded through `next`: each frame taken from it puts
      * its children and its field roots on it before it goes. */
-    member->next = NULL;
-    markdown_core_member *pending = member;
+    frame->next = NULL;
+    markdown_core_frame *pending = frame;
     while (pending) {
-        markdown_core_member *taken = pending;
+        markdown_core_frame *taken = pending;
         pending = taken->next;
         if (taken->first) {
             taken->last->next = pending;
             pending = taken->first;
         }
         if (taken->fields) {
-            markdown_core_member *tail = taken->fields;
+            markdown_core_frame *tail = taken->fields;
             while (tail->next) {
                 tail = tail->next;
             }
@@ -1687,7 +1687,7 @@ void markdown_core_member_release(markdown_core_node_pool *pool, markdown_core_m
         }
         markdown_core_free(taken->entries);
         markdown_core_free(taken->idless);
-        S_member_free(pool, taken);
+        S_frame_free(pool, taken);
     }
 }
 

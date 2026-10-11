@@ -5,7 +5,7 @@
 
 #include "comment.h"
 static int continue_html(const markdown_core_element_instance *self, markdown_core_parser *parser, unsigned char *data,
-                         int length, markdown_core_member *container) {
+                         int length, markdown_core_frame *container) {
     bool res = false;
     int html_block_type = container->node->as.html_block->block_type;
 
@@ -29,9 +29,9 @@ static int continue_html(const markdown_core_element_instance *self, markdown_co
 }
 
 static void finalize_html(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_member *member) {
+                          markdown_core_frame *frame) {
     (void)self;
-    markdown_core_node *b = member->node;
+    markdown_core_node *b = frame->node;
     markdown_core_strbuf *node_content = &b->content;
 
     int html_block_type = b->as.html_block->block_type;
@@ -41,11 +41,11 @@ static void finalize_html(const markdown_core_element_instance *self, markdown_c
         return;
     }
     if (html_block_type == 2 && (b->flags & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION) != 0) {
-        markdown_core_block_convert_comment_block(parser, member);
+        markdown_core_block_convert_comment_block(parser, frame);
     }
 }
 static bool open_html(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                      markdown_core_member **container, markdown_core_chunk *input, block_start *start) {
+                      markdown_core_frame **container, markdown_core_chunk *input, block_start *start) {
     (void)self;
     bufsize_t matched = start->matched;
 
@@ -73,7 +73,7 @@ static bool scan_html(const markdown_core_element_instance *self, markdown_core_
     return true;
 }
 static bool ends_html(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                      markdown_core_member *container, markdown_core_chunk *input) {
+                      markdown_core_frame *container, markdown_core_chunk *input) {
     (void)self;
     switch (container->node->as.html_block->block_type) {
     case 1:
@@ -91,7 +91,7 @@ static bool ends_html(const markdown_core_element_instance *self, markdown_core_
     }
 }
 static bool blank_line(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                       markdown_core_member *node) {
+                       markdown_core_frame *node) {
     (void)self;
     return true;
 }

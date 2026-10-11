@@ -24,13 +24,11 @@ static bufsize_t markdown_core_inline_manual_scan_link_url(markdown_core_chunk *
  * `before` past the front of `b`'s content, into a Reference node put in
  * `b`'s parent before `b`, which starts on input line `*line`, an earlier
  * one or a later one, and leaves `*line` the line it ends on. Its length, 0 when there is none. */
-static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_member *member,
-                                  markdown_core_chunk *input, markdown_core_attribute_parser *attributes,
-                                  bufsize_t before, int *line);
+static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_frame *frame, markdown_core_chunk *input,
+                                  markdown_core_attribute_parser *attributes, bufsize_t before, int *line);
 
-bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser *parser,
-                                                            markdown_core_member *member) {
-    markdown_core_node *b = member->node;
+bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_frame *frame) {
+    markdown_core_node *b = frame->node;
     bufsize_t pos;
     markdown_core_strbuf *node_content = &b->content;
     markdown_core_chunk chunk = {node_content->ptr, node_content->size, 0};
@@ -39,7 +37,7 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
     /* The definitions follow each other down the block's lines. */
     int line = parser->input.line_number;
     while (chunk.len && chunk.data[0] == '[' && !parser->error) {
-        pos = S_read_reference(parser, member, &chunk, &attributes, (bufsize_t)(chunk.data - node_content->ptr), &line);
+        pos = S_read_reference(parser, frame, &chunk, &attributes, (bufsize_t)(chunk.data - node_content->ptr), &line);
         if (!pos) {
             break;
         }
@@ -361,10 +359,9 @@ bufsize_t markdown_core_reference_definition_length(markdown_core_chunk *input,
     return length;
 }
 
-static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_member *member,
-                                  markdown_core_chunk *input, markdown_core_attribute_parser *attributes,
-                                  bufsize_t before, int *line) {
-    markdown_core_node *b = member->node;
+static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_frame *frame, markdown_core_chunk *input,
+                                  markdown_core_attribute_parser *attributes, bufsize_t before, int *line) {
+    markdown_core_node *b = frame->node;
     reference_definition definition;
     bufsize_t length = S_reference_definition(input, attributes, &definition);
     if (!length) {
@@ -414,10 +411,10 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_me
     markdown_core_parser_content_place(parser, &b->content_map, before, &ignored, &start);
     markdown_core_parser_content_end_place(parser, &b->content_map, end - 1, &ignored, &stop);
     reference->where.place = (markdown_core_place){(uint32_t)start, (uint32_t)stop};
-    markdown_core_parser_place_runs(parser, reference, member->owner, line);
+    markdown_core_parser_place_runs(parser, reference, frame->owner, line);
     /* The cursor offers it where the paragraph begins (5.3). It is
      * complete. */
-    markdown_core_member *split = markdown_core_parser_attach_split(parser, member, reference);
+    markdown_core_frame *split = markdown_core_parser_attach_split(parser, frame, reference);
     if (split) {
         markdown_core_parser_complete_node(parser, split);
     }

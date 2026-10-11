@@ -131,9 +131,9 @@ struct markdown_core_element {
      * accepts the line takes it as a paragraph takes a lazy line: the starts
      * that refuse a lazy line (`block_start_context`) open no block on it, so
      * the line is lazy exactly when it would be after a paragraph's line. */
-    markdown_core_member *(*open_lazy)(const markdown_core_element_instance *, markdown_core_parser *,
-                                       markdown_core_member *, markdown_core_chunk *);
-    bool (*accepts_lazy)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *);
+    markdown_core_frame *(*open_lazy)(const markdown_core_element_instance *, markdown_core_parser *,
+                                      markdown_core_frame *, markdown_core_chunk *);
+    bool (*accepts_lazy)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_frame *);
     unsigned speculative_flags;
     markdown_core_content_mode content_mode;
     bool inline_content, paragraph, blank_opaque, blank_runs, propagates_child_blank, pending_close;
@@ -144,20 +144,20 @@ struct markdown_core_element {
     void (*read_document_prefix)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*prepare_document)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*finish_document)(const markdown_core_element_instance *, markdown_core_parser *);
-    /* The node a member builds is complete: it numbers the children it has
+    /* The node a frame builds is complete: it numbers the children it has
      * not numbered yet and then its fields, in canonical field order, and
      * gives each the id of the old node it continues or the next, and its
      * extent, measured from `start`, where the node begins
      * (docs/plans/2026-09-29-incremental-parsing.md, 5.8, 5.9). */
-    void (*complete_node)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *,
+    void (*complete_node)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_frame *,
                           uint32_t start);
-    /* The node a member builds takes another child: it numbers the children
+    /* The node a frame builds takes another child: it numbers the children
      * it holds before it, as far as each has completed (5.8). */
-    void (*number_children)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *);
+    void (*number_children)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_frame *);
     /* A node holding an inline root is about to read its content, its
      * kind and range final: it decides what old node it continues (5.9),
      * whose content it reads again (5.6). */
-    void (*decide_member)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *);
+    void (*decide_frame)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_frame *);
     /* A node of an inline root's content is complete, the nodes it holds
      * complete before it: it decides what old node it continues (5.9) and
      * numbers what it holds, as `complete_node` does. */
@@ -165,12 +165,12 @@ struct markdown_core_element {
     /* The last step of the parse: every node is complete, and the owner
      * publishes the document (identity, definition tables). */
     void (*publish_document)(const markdown_core_element_instance *, markdown_core_parser *);
-    markdown_core_member *(*open_text_block)(const markdown_core_element_instance *, markdown_core_parser *,
-                                             markdown_core_member *, markdown_core_chunk *);
+    markdown_core_frame *(*open_text_block)(const markdown_core_element_instance *, markdown_core_parser *,
+                                            markdown_core_frame *, markdown_core_chunk *);
     /* A start that precedes every scanned one, read in the line's context
      * as a scanned start is (block_start_context). */
-    markdown_core_member *(*try_interrupting_block)(const markdown_core_element_instance *, markdown_core_parser *,
-                                                    struct markdown_core_block_start_context *);
+    markdown_core_frame *(*try_interrupting_block)(const markdown_core_element_instance *, markdown_core_parser *,
+                                                   struct markdown_core_block_start_context *);
     bool interrupts_paragraph;
 
     /* THE STATE A CONTAINER CARRIES where a child of it can begin
@@ -179,16 +179,16 @@ struct markdown_core_element {
      * blocks hold blocks that a later parse may take declares it; the cursor
      * reads the old children of such a block again (5.3), and reads a block
      * of an element without it whole. */
-    uint32_t (*carry_save)(const markdown_core_element_instance *, const markdown_core_member *);
+    uint32_t (*carry_save)(const markdown_core_element_instance *, const markdown_core_frame *);
     /* WHAT ITS CHILDREN ADD TO THAT STATE, when its later lines read what
      * the children before them hold (E4): the summary its children tree
      * keeps, and the fold that adds the combined summary of old children the
      * cursor takes whole (5.3), so the state after them is the old one. */
     const markdown_core_stem_summary *children_summary;
-    void (*fold_children)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *,
+    void (*fold_children)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_frame *,
                           uint64_t);
-    bool (*continue_container)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *,
-                               markdown_core_chunk *, const markdown_core_member *, bool *);
+    bool (*continue_container)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_frame *,
+                               markdown_core_chunk *, const markdown_core_frame *, bool *);
     /* The bytes `continue_container` can strip from a line besides
      * indentation: the COMPLETE set, as a gate's is, and NULL when it strips
      * indentation only. A block-start question asked of a LATER line from raw
@@ -201,11 +201,11 @@ struct markdown_core_element {
      * from that marker in raw source, so the key hands such a line to the
      * lookahead rather than walking over it. */
     const char *container_prefix_bytes;
-    bool (*accepts_blank)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *);
-    bool (*blank_line)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *);
-    bool (*ends_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *,
+    bool (*accepts_blank)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_frame *);
+    bool (*blank_line)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_frame *);
+    bool (*ends_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_frame *,
                        markdown_core_chunk *);
-    void (*finalize_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *);
+    void (*finalize_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_frame *);
     /* Parses the inline content of the root its node holds into `builder`
      * itself, the root's source starting at `start`, in place of the inline
      * parse (a heading, whose text declares its label). */

@@ -163,12 +163,12 @@ static int probe_formula_block(const markdown_core_element_instance *self, markd
     return indent < 4 && scan_formula_block_open(input->data, input->len, first) != FORMULA_BLOCK_DELIM_NONE;
 }
 
-static markdown_core_member *try_opening_formula_block(const markdown_core_element_instance *self, int indented,
-                                                       markdown_core_parser *parser,
-                                                       markdown_core_member *parent_container, unsigned char *input,
-                                                       int len) {
+static markdown_core_frame *try_opening_formula_block(const markdown_core_element_instance *self, int indented,
+                                                      markdown_core_parser *parser,
+                                                      markdown_core_frame *parent_container, unsigned char *input,
+                                                      int len) {
     int block_delim;
-    markdown_core_member *member;
+    markdown_core_frame *frame;
     markdown_core_node *node;
     node_formula *formula;
     int first_nonspace = markdown_core_parser_get_first_nonspace(parser);
@@ -182,12 +182,12 @@ static markdown_core_member *try_opening_formula_block(const markdown_core_eleme
         return NULL;
     }
 
-    member =
+    frame =
         markdown_core_parser_add_child(parser, parent_container, MARKDOWN_CORE_NODE_FORMULA_BLOCK, first_nonspace + 1);
-    if (!member) {
+    if (!frame) {
         return NULL;
     }
-    node = member->node;
+    node = frame->node;
 
     markdown_core_node_set_element(node, self->element);
     node->opaque = markdown_core_alloc(1, sizeof(node_formula));
@@ -201,11 +201,11 @@ static markdown_core_member *try_opening_formula_block(const markdown_core_eleme
     formula->mode = MARKDOWN_CORE_FORMULA_MODE_STANDALONE;
     formula->block_delim = block_delim;
     markdown_core_parser_advance_offset(parser, (char *)input, len - markdown_core_parser_get_offset(parser), false);
-    return member;
+    return frame;
 }
 
 static int formula_block_matches(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                 unsigned char *input, int len, markdown_core_member *container) {
+                                 unsigned char *input, int len, markdown_core_frame *container) {
     node_formula *formula = get_formula(container->node);
     int first_nonspace = markdown_core_parser_get_first_nonspace(parser);
 
@@ -639,10 +639,10 @@ static bool may_become_formula_block(markdown_core_node *owner) {
 }
 
 void markdown_core_formula_take_code(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                     markdown_core_member *member) {
-    markdown_core_node *node = member->node;
+                                     markdown_core_frame *frame) {
+    markdown_core_node *node = frame->node;
     if (!info_is_formula(&node->as.code->info) ||
-        !may_become_formula_block(markdown_core_parser_owner(parser, member))) {
+        !may_become_formula_block(markdown_core_parser_owner(parser, frame))) {
         return;
     }
     node_formula *payload = markdown_core_alloc(1, sizeof(*payload));
@@ -654,14 +654,14 @@ void markdown_core_formula_take_code(const markdown_core_element_instance *self,
     payload->literal = node->as.code->literal;
     node->as.code->literal = (markdown_core_chunk)MARKDOWN_CORE_CHUNK_EMPTY;
     become_formula_block(self->element, parser, node,
-                         markdown_core_parser_set_node_kind(parser, member, MARKDOWN_CORE_NODE_FORMULA_BLOCK), payload);
+                         markdown_core_parser_set_node_kind(parser, frame, MARKDOWN_CORE_NODE_FORMULA_BLOCK), payload);
 }
 
 /* A FORMULA BLOCK HOLDS ITS LINES as it closes. */
 static void finalize_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                           markdown_core_member *member) {
+                           markdown_core_frame *frame) {
     (void)self;
-    markdown_core_node *node = member->node;
+    markdown_core_node *node = frame->node;
     node_formula *formula = get_formula(node);
     if (node->kind != MARKDOWN_CORE_NODE_FORMULA_BLOCK || !formula || formula->literal.data) {
         return;

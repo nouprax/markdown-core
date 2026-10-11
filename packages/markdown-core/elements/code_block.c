@@ -40,8 +40,8 @@ static void remove_trailing_blank_lines(markdown_core_strbuf *ln) {
 }
 
 static int continue_code(const markdown_core_element_instance *self, markdown_core_parser *parser, unsigned char *data,
-                         int length, markdown_core_member *member) {
-    markdown_core_node *container = member->node;
+                         int length, markdown_core_frame *frame) {
+    markdown_core_node *container = frame->node;
     markdown_core_chunk input_chunk = {(unsigned char *)data, length, 0};
     markdown_core_chunk *input = &input_chunk;
     bool res = false;
@@ -85,8 +85,8 @@ static int continue_code(const markdown_core_element_instance *self, markdown_co
 }
 
 static void finalize_code(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_member *member) {
-    markdown_core_node *b = member->node;
+                          markdown_core_frame *frame) {
+    markdown_core_node *b = frame->node;
     bufsize_t pos;
     markdown_core_strbuf *node_content = &b->content;
 
@@ -155,11 +155,11 @@ static void finalize_code(const markdown_core_element_instance *self, markdown_c
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     if (!parser->error && self->peers[CODE_BLOCK_FORMULA]) {
-        markdown_core_formula_take_code(self->peers[CODE_BLOCK_FORMULA], parser, member);
+        markdown_core_formula_take_code(self->peers[CODE_BLOCK_FORMULA], parser, frame);
     }
 }
 static bool open_fenced(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                        markdown_core_member **container, markdown_core_chunk *input, block_start *start) {
+                        markdown_core_frame **container, markdown_core_chunk *input, block_start *start) {
     (void)self;
     bufsize_t matched = start->matched;
 
@@ -184,7 +184,7 @@ static bool open_fenced(const markdown_core_element_instance *self, markdown_cor
     return true;
 }
 static bool open_indented(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_member **container, markdown_core_chunk *input, block_start *start) {
+                          markdown_core_frame **container, markdown_core_chunk *input, block_start *start) {
     (void)self;
 
     markdown_core_block_advance_offset(parser, input, CODE_INDENT, true);
@@ -225,9 +225,9 @@ static bool scan_code(const markdown_core_element_instance *self, markdown_core_
     return true;
 }
 static bool blank_line(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                       markdown_core_member *member) {
+                       markdown_core_frame *frame) {
     (void)self;
-    return !member->node->as.code->fenced;
+    return !frame->node->as.code->fenced;
 }
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE_BLOCK = {
     .peers = CODE_BLOCK_PEERS,

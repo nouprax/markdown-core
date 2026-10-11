@@ -96,7 +96,7 @@ static bool markdown_core_block_parse_callout_metadata(markdown_core_callout_wor
 }
 
 static bool markdown_core_callout_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                       markdown_core_member **container, markdown_core_chunk *input,
+                                       markdown_core_frame **container, markdown_core_chunk *input,
                                        block_start *start) {
 
     bufsize_t blockquote_startpos = parser->input.first_nonspace;
@@ -133,25 +133,25 @@ static bool markdown_core_callout_scan(const markdown_core_element_instance *sel
 }
 
 static bool accepts_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                         markdown_core_member *member) {
+                         markdown_core_frame *frame) {
     (void)self;
-    markdown_core_node *node = member->node;
+    markdown_core_node *node = frame->node;
     return node->kind == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->variant.has_value &&
-           !markdown_core_member_holds_child(member) &&
+           !markdown_core_frame_holds_child(frame) &&
            markdown_core_parser_starts_on_line(parser, node, parser->input.line_number - 1);
 }
 
 static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                               markdown_core_member *node, markdown_core_chunk *input,
-                               const markdown_core_member *joining, bool *taken) {
+                               markdown_core_frame *node, markdown_core_chunk *input,
+                               const markdown_core_frame *joining, bool *taken) {
     (void)self;
     return markdown_core_block_parse_callout_prefix(parser, input);
 }
 /* The marker line's text is the callout's title, so a lazy line after it
  * cannot continue a paragraph: it starts the body's first one, as the same
  * text would with the quote's prefix. */
-static markdown_core_member *open_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                       markdown_core_member *node, markdown_core_chunk *input) {
+static markdown_core_frame *open_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                      markdown_core_frame *node, markdown_core_chunk *input) {
     (void)self;
     const markdown_core_element_instance *text_block = parser->dialect->text_block_structure;
     return text_block->element->open_text_block(text_block, parser, node, input);
@@ -159,18 +159,18 @@ static markdown_core_member *open_lazy(const markdown_core_element_instance *sel
 
 /* What a quote carries (E3): whether it is a callout, whose marker line
  * decides how the line after it is read. */
-static uint32_t carry_save(const markdown_core_element_instance *self, const markdown_core_member *member) {
+static uint32_t carry_save(const markdown_core_element_instance *self, const markdown_core_frame *frame) {
     (void)self;
-    return member->node->as.callout->variant.has_value;
+    return frame->node->as.callout->variant.has_value;
 }
 
 /* A closed quote awaits its trailer: an identifier line after it may still
  * join it (block_identifier.c). */
 static void finalize_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                           markdown_core_member *member) {
+                           markdown_core_frame *frame) {
     (void)self;
     (void)parser;
-    member->awaits_trailer = markdown_core_block_identifier_trails(member->node);
+    frame->awaits_trailer = markdown_core_block_identifier_trails(frame->node);
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CALLOUT = {

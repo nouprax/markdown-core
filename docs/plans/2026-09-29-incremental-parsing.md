@@ -1002,9 +1002,13 @@ The tree is stored the way tree-sitter stores its syntax trees:
   in place. A change to a shared node first copies its header and its
   references to its children, retaining each, like `ts_subtree_make_mut`.
   An edit copies only the paths from the root to what changed.
-- **Open nodes are builders.** A block is mutable only while it is open on
-  the parser's spine. Its frame holds the children that have completed, the
-  cursor over the old relation at its place (5.3) and its match (5.9). An
+- **Open nodes are built in frames.** A block is mutable only while a frame
+  holds it: while it is open on the parser's spine, and, once closed, while
+  it is the last child of an open block and a later line may still add to
+  it, as blank lines and a trailing caption or identifier do. Its frame holds
+  the children that have completed, the cursor over the old relation at its
+  place (5.3) and its match (5.9). Its owner numbers it when it takes the
+  next child or completes, and its frame goes. An
   inline root being parsed builds its nodes in a scratch area linked by
   index, where a closer that pairs regroups a range of siblings in O(1); the
   area is reset when the root completes. A node completes in one pass over

@@ -2,8 +2,8 @@
 #define MARKDOWN_CORE_ELEMENT_LIST_H
 #include "inlines.h"
 #include "block_internal.h"
-bool markdown_core_list_continue(markdown_core_parser *parser, markdown_core_member *container,
-                                 markdown_core_chunk *input, const markdown_core_member *joining, bool *taken);
+bool markdown_core_list_continue(markdown_core_parser *parser, markdown_core_frame *container,
+                                 markdown_core_chunk *input, const markdown_core_frame *joining, bool *taken);
 extern const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST;
 
 /* THE LIST MARKER GRAMMAR'S WORK (the list element's parse record):

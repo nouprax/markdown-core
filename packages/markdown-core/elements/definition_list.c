@@ -11,17 +11,17 @@ static const markdown_core_element *const DEFINITION_LIST_PEERS[] = {
 
 static bool markdown_core_block_definition_marker(markdown_core_chunk *input, int at, int indent);
 static bool markdown_core_block_definition_prefix(const markdown_core_element_instance *self,
-                                                  markdown_core_parser *parser, markdown_core_member *parent,
+                                                  markdown_core_parser *parser, markdown_core_frame *parent,
                                                   markdown_core_chunk *input, bool *compact);
-static markdown_core_member *markdown_core_block_open_definition(markdown_core_definition_list_work *counts,
-                                                                 markdown_core_parser *parser,
-                                                                 markdown_core_member *parent,
-                                                                 markdown_core_chunk *input, bool compact);
+static markdown_core_frame *markdown_core_block_open_definition(markdown_core_definition_list_work *counts,
+                                                                markdown_core_parser *parser,
+                                                                markdown_core_frame *parent, markdown_core_chunk *input,
+                                                                bool compact);
 static bool markdown_core_definition_list_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                                block_start_context *context, block_start *start);
 static bool accepts_blank(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_member *member) {
-    markdown_core_node *body = member->node;
+                          markdown_core_frame *frame) {
+    markdown_core_node *body = frame->node;
     if (body->kind != MARKDOWN_CORE_NODE_DEFINITION_BODY) {
         return true;
     }
@@ -30,7 +30,7 @@ static bool accepts_blank(const markdown_core_element_instance *self, markdown_c
         return true;
     }
     markdown_core_block_lookahead lookahead;
-    if (!markdown_core_parser_lookahead_begin(parser, member->owner, MARKDOWN_CORE_NODE_PARAGRAPH, &lookahead)) {
+    if (!markdown_core_parser_lookahead_begin(parser, frame->owner, MARKDOWN_CORE_NODE_PARAGRAPH, &lookahead)) {
         return false;
     }
     markdown_core_chunk next;
@@ -100,7 +100,7 @@ static bool definition_next_lines_admit(markdown_core_parser *parser) {
 }
 
 static bool markdown_core_block_definition_prefix(const markdown_core_element_instance *self,
-                                                  markdown_core_parser *parser, markdown_core_member *parent,
+                                                  markdown_core_parser *parser, markdown_core_frame *parent,
                                                   markdown_core_chunk *input, bool *compact) {
     markdown_core_definition_list_work *counts = self->state;
     counts->work++;
@@ -149,10 +149,10 @@ static bool markdown_core_block_definition_prefix(const markdown_core_element_in
     return matched;
 }
 
-static markdown_core_member *markdown_core_block_open_definition(markdown_core_definition_list_work *counts,
-                                                                 markdown_core_parser *parser,
-                                                                 markdown_core_member *parent,
-                                                                 markdown_core_chunk *input, bool compact) {
+static markdown_core_frame *markdown_core_block_open_definition(markdown_core_definition_list_work *counts,
+                                                                markdown_core_parser *parser,
+                                                                markdown_core_frame *parent, markdown_core_chunk *input,
+                                                                bool compact) {
     /* A new term requires the separating blank run. If the preceding body's
      * prefix declined it, append at the existing list's definition boundary. */
     if (parent->node->kind == MARKDOWN_CORE_NODE_DEFINITION) {
@@ -165,17 +165,17 @@ static markdown_core_member *markdown_core_block_open_definition(markdown_core_d
             return NULL;
         }
     }
-    markdown_core_member *member =
+    markdown_core_frame *frame =
         markdown_core_parser_add_child(parser, parent, MARKDOWN_CORE_NODE_DEFINITION, parser->input.first_nonspace + 1);
-    if (!member) {
+    if (!frame) {
         return NULL;
     }
-    markdown_core_node *definition = member->node;
+    markdown_core_node *definition = frame->node;
     definition->as.definition->compact = compact;
     markdown_core_node *term = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_PARAGRAPH);
     if (!term) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return member;
+        return frame;
     }
     term->flags |= MARKDOWN_CORE_NODE__GROUP;
     definition->as.definition->term = term;
@@ -193,11 +193,11 @@ static markdown_core_member *markdown_core_block_open_definition(markdown_core_d
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     markdown_core_block_advance_offset(parser, input, input->len - 1 - parser->input.offset, false);
-    return member;
+    return frame;
 }
 
 static bool markdown_core_definition_list_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                               markdown_core_member **container, markdown_core_chunk *input,
+                                               markdown_core_frame **container, markdown_core_chunk *input,
                                                block_start *start) {
     (void)self;
 
@@ -229,15 +229,15 @@ static bool markdown_core_definition_list_scan(const markdown_core_element_insta
     return true;
 }
 
-bool markdown_core_definition_list_continue(markdown_core_parser *parser, markdown_core_member *container,
+bool markdown_core_definition_list_continue(markdown_core_parser *parser, markdown_core_frame *container,
                                             markdown_core_chunk *input) {
     return markdown_core_block_continue_indented(parser, input, container->node->as.definition_body->continuation,
                                                  true);
 }
 
-static markdown_core_member *try_paragraph(const markdown_core_element_instance *self, int indented,
-                                           markdown_core_parser *parser, markdown_core_member *parent,
-                                           unsigned char *data, int length) {
+static markdown_core_frame *try_paragraph(const markdown_core_element_instance *self, int indented,
+                                          markdown_core_parser *parser, markdown_core_frame *parent,
+                                          unsigned char *data, int length) {
     markdown_core_chunk input = {data, length, 0};
     bool compact = false;
     if (!markdown_core_block_definition_prefix(self, parser, parent, &input, &compact)) {
@@ -251,14 +251,14 @@ static markdown_core_member *try_paragraph(const markdown_core_element_instance 
  * the next term among them, lies after it, as a line after a list item lies
  * after that item. */
 static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                               markdown_core_member *node, markdown_core_chunk *input,
-                               const markdown_core_member *joining, bool *taken) {
+                               markdown_core_frame *node, markdown_core_chunk *input,
+                               const markdown_core_frame *joining, bool *taken) {
     (void)self;
     switch (node->node->kind) {
     case MARKDOWN_CORE_NODE_DEFINITION_BODY:
         return markdown_core_definition_list_continue(parser, node, input);
     case MARKDOWN_CORE_NODE_DEFINITION: {
-        const markdown_core_member *body = node->last;
+        const markdown_core_frame *body = node->last;
         return parser->input.blank ||
                markdown_core_block_definition_marker(input, parser->input.first_nonspace, parser->input.indent) ||
                (body && (body->node->flags & MARKDOWN_CORE_NODE__OPEN) &&
@@ -271,12 +271,12 @@ static bool continue_container(const markdown_core_element_instance *self, markd
 /* A definition list, a definition and a body end where their last child
  * ends, which closed before them; a body without one ends at its marker. */
 static void finalize_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                           markdown_core_member *member) {
+                           markdown_core_frame *frame) {
     (void)self;
     (void)parser;
-    markdown_core_node *node = member->node;
+    markdown_core_node *node = frame->node;
     uint32_t end;
-    if (markdown_core_member_children_end(member, &end)) {
+    if (markdown_core_frame_children_end(frame, &end)) {
         node->where.place.end = end;
     } else if (node->kind == MARKDOWN_CORE_NODE_DEFINITION_BODY) {
         node->where.place.end = (uint32_t)node->internal_offset;
@@ -285,9 +285,9 @@ static void finalize_block(const markdown_core_element_instance *self, markdown_
 
 /* What a definition body carries (E3): the indentation its later lines
  * continue by. A list and a definition carry nothing. */
-static uint32_t carry_save(const markdown_core_element_instance *self, const markdown_core_member *member) {
+static uint32_t carry_save(const markdown_core_element_instance *self, const markdown_core_frame *frame) {
     (void)self;
-    const markdown_core_node *node = member->node;
+    const markdown_core_node *node = frame->node;
     return node->kind == MARKDOWN_CORE_NODE_DEFINITION_BODY ? (uint32_t)node->as.definition_body->continuation : 0;
 }
 
