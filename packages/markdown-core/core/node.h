@@ -940,11 +940,25 @@ struct markdown_core_member {
     /* What the decisions about a node of an inline root's content read, and
      * whether the node is an old one its parse took whole (5.6). */
     markdown_core_inline_reads reads;
-    bool held, field, inner, decided, identified, paired, searched, redo, spine, awaits_trailer, completed, numbered, counted,
-        taken;
+    bool held, field, inner, decided, identified, paired, searched, redo, spine, awaits_trailer, completed, numbered,
+        counted, taken;
     /* Whether blocks are read from its node's content (markdown_core_parser_queue_block_input). */
     bool queued;
 };
+
+/* The node `node`'s inline content is parsed into: the node itself, or the
+ * private node its title or term hangs from, which holds the runs that read
+ * it; NULL for a callout without a title. */
+static inline markdown_core_node *markdown_core_node_content_holder(markdown_core_node *node) {
+    switch (node->kind) {
+    case MARKDOWN_CORE_NODE_CALLOUT:
+        return node->as.callout->title;
+    case MARKDOWN_CORE_NODE_DEFINITION:
+        return node->as.definition->term;
+    default:
+        return node;
+    }
+}
 
 /* Where `member`'s node lies: its place, which numbering keeps in the member
  * as the node takes its extent. */

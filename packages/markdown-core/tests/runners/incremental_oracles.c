@@ -825,28 +825,25 @@ done:
     free(cursor);
 }
 
-/* A lineage's first document: a fresh parse, whose ids are 1 through its node
- * count in completion order, the document, which completes last, holding the
- * last. */
+/* A lineage's first document: a fresh parse, whose ids are unique and rise
+ * in completion order, the document, which completes last, holding the
+ * largest. */
 static void history_open(run *state, const char *where, history *ids, const view *opened) {
+    const uint64_t last = opened->count ? opened->nodes[0].id : 0;
     size_t index;
-    if (!history_reserve(ids, opened->count + 1)) {
+    if (!history_reserve(ids, last + 1)) {
         fail(state, "harness", "%s: out of memory", where);
         return;
     }
     for (index = 0; index < opened->count; index++) {
         const uint64_t id = opened->nodes[index].id;
-        if (id < 1 || id > opened->count || ids->state[id]) {
-            fail(state, "4.2", "%s: node %zu of the opened document's walk has id %llu of %zu nodes", where, index + 1,
-                 (unsigned long long)id, opened->count);
+        if (id < 1 || id > last || (index && id == last) || ids->state[id]) {
+            fail(state, "4.2", "%s: node %zu of the opened document's walk has id %llu, the document %llu", where,
+                 index + 1, (unsigned long long)id, (unsigned long long)last);
             return;
         }
         ids->state[id] = 1;
         ids->kinds[id] = opened->nodes[index].kind;
-    }
-    if (opened->count && opened->nodes[0].id != opened->count) {
-        fail(state, "4.2", "%s: the opened document has id %llu of %zu nodes", where,
-             (unsigned long long)opened->nodes[0].id, opened->count);
     }
 }
 

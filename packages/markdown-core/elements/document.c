@@ -22,8 +22,11 @@ typedef struct {
  * a peer, which it asks through its lifecycle calls. An element the dialect
  * does not hold has nothing to finish. */
 static void init_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    (void)self;
     (void)parser;
+    const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
+    if (headings) {
+        markdown_core_headings_init(headings);
+    }
 }
 static void dispose_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
@@ -39,24 +42,24 @@ static int tree_order(const void *left, const void *right) {
     return (a > b) - (a < b);
 }
 
-/* RESOLUTION OF LOOKUPS (5.7). Every definition is declared once the blocks
- * are complete and the headings the parse made have declared their labels,
- * and the questions asked of the registry then that an earlier parse asked
- * are those of the roots the parse took. A key whose answer, whether it is
- * defined, is not the one it gave the old document has each such root
- * parsed again in place, in source order, each once: into `*roots`, with
- * their count. False when the list could not grow. */
+/* RESOLUTION OF LOOKUPS (5.7). Every definition is declared once the parse
+ * is complete, and every root it did not take has left the registry. A
+ * marked key whose answer, whether it is defined, is not the one a root that
+ * asked it was given has each such root parsed again in place, in source
+ * order, each once: into `*roots`, with their count. False when the list
+ * could not grow. */
 static bool lookups_changed(markdown_core_parser *parser, const markdown_core_node ***roots, size_t *count) {
     const markdown_core_registry *registry = parser->registry;
     size_t capacity = 0;
     *roots = NULL;
     *count = 0;
     for (const markdown_core_key *key = registry->marked; key; key = key->marked_next) {
-        if (key->group == MARKDOWN_CORE_KEY_FAMILY || key->was == markdown_core_key_defined(key)) {
+        if (key->group == MARKDOWN_CORE_KEY_FAMILY) {
             continue;
         }
+        const bool defined = markdown_core_key_defined(key);
         for (const markdown_core_fact *lookup = key->lookups; lookup; lookup = lookup->next) {
-            if (lookup->edit == registry->edit) {
+            if (lookup->answer == defined) {
                 continue;
             }
             const markdown_core_node **grown = markdown_core_reserve(*roots, &capacity, *count + 1, sizeof(*grown));
@@ -81,15 +84,10 @@ static bool lookups_changed(markdown_core_parser *parser, const markdown_core_no
     return true;
 }
 
-/* The document is prepared: the headings the parse made declare their
- * labels, and the roots whose lookups are answered otherwise now are parsed
- * again in place, their headings with the others. */
+/* Resolution: the roots whose lookups are answered otherwise now are parsed
+ * again in place (5.7). */
 static void prepare_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
     markdown_core_publication *publication = &((document_state *)self->state)->publication;
-    if (headings) {
-        markdown_core_headings_prepare(headings, parser);
-    }
     const markdown_core_node **roots = NULL;
     size_t count = 0;
     if (!parser->error && !lookups_changed(parser, &roots, &count)) {
@@ -99,9 +97,6 @@ static void prepare_document(const markdown_core_element_instance *self, markdow
         markdown_core_parse_again(parser, publication, roots[i]);
     }
     markdown_core_free((void *)roots);
-    if (headings && count && !parser->error) {
-        markdown_core_headings_prepare(headings, parser);
-    }
 }
 /* A node is complete: it numbers the nodes it holds, and the headings note
  * the explicit anchors among them. */
@@ -114,6 +109,13 @@ static void complete_node(const markdown_core_element_instance *self, markdown_c
     }
 }
 /* A numbered node waits on nothing any more: it settles. */
+/* A node about to read its inline content decides what it continues. */
+static void decide_member(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                          markdown_core_member *member) {
+    if (!markdown_core_decide_member(parser, &((document_state *)self->state)->publication, member)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+}
 static void settle_member(const markdown_core_element_instance *self, markdown_core_parser *parser,
                           markdown_core_member *member) {
     markdown_core_settle_member(parser, &((document_state *)self->state)->publication, member);
@@ -171,5 +173,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
     .finish_document = finish_document,
     .publish_document = publish_document,
     .complete_node = complete_node,
+    .decide_member = decide_member,
     .settle_member = settle_member,
 };

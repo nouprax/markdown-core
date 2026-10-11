@@ -196,31 +196,37 @@ typedef struct markdown_core_publication {
     size_t pending_capacity;
 } markdown_core_publication;
 
-/* COMPLETING the node `member` builds, which begins at `start`: each node it
- * holds that is not numbered yet, in canonical field order, is numbered. It
- * collects the old nodes it may continue (5.9), and takes its extent,
- * measured from the end of the node before it in its
- * relation or from where the relation is measured, and its runs when they
- * are not an inline root's; `observe` sees it; a node holding inline content
- * waits on the parser's list of inline roots. A node that waits on nothing
- * settles at once (markdown_core_settle_member), and one that waits keeps
- * its member, and its owner waits on it. A node that gains a node later
- * completes again and numbers only that one. A node that holds only a group
- * of its owner numbers nothing (MARKDOWN_CORE_NODE__GROUP): its owner numbers
- * the group. The inline root being completed (parser.h, `completing`) also
- * completes its own runs, from where it recorded its holder lies. False
+/* `member`, whose kind and range are final, decides what old node it
+ * continues (5.9), the members above it that have not decided first. False
  * when an allocation failed. */
+bool markdown_core_decide_member(markdown_core_parser *parser, markdown_core_publication *publication,
+                                 markdown_core_member *member);
+/* COMPLETING the node `member` builds, which begins at `start`: it decides
+ * what old node it continues (5.9), and each node it holds that is not
+ * numbered yet, in canonical field order, is numbered, a node holding an
+ * inline root outside the content of one complete first. Each takes its
+ * extent, measured from the end of the node before it in its relation or
+ * from where the relation is measured, and its runs; `observe` sees it. A
+ * node that waits on nothing settles at once (markdown_core_settle_member),
+ * and one that waits keeps its member, and its owner waits on it. A node
+ * that holds only a group of its owner numbers nothing
+ * (MARKDOWN_CORE_NODE__GROUP): its owner numbers the group. The inline root
+ * being completed (parser.h, `completing`) numbers its content; one read
+ * again in place also publishes its own runs, from where it recorded its
+ * holder lies, and `observe` sees it. False when an allocation failed. */
 bool markdown_core_complete_node(markdown_core_parser *parser, markdown_core_publication *publication,
                                  markdown_core_member *member, uint32_t start,
                                  void (*observe)(const markdown_core_element_instance *, markdown_core_parser *,
                                                  markdown_core_node *),
                                  const markdown_core_element_instance *observer);
 
-/* AN INLINE ROOT IS PARSED AGAIN IN PLACE (5.7): `root`, a node of a subtree
- * the parse took, found where it begins by its order, holds content whose lookups are answered otherwise now. Its
- * copy reads that content again from its runs, as a root the parse made
- * does, and continues `root`, whose order it takes; the facts of `root` and
- * of its content leave the registry, and the copy's member replaces `root` once it settles
+/* AN INLINE ROOT IS PARSED AGAIN IN PLACE (5.7): `root`, found where it
+ * begins by its order, holds content whose lookups are answered otherwise
+ * now. It reads that content again from its runs, as a root the parse made
+ * does: in place when the new tree owns it, and else in a copy that takes
+ * its order. The facts of its old content leave the registry; a root read
+ * in place continues the old node it continued, and a copy continues `root`
+ * when `root` continues itself. Its member replaces `root` once it settles
  * (markdown_core_parser_replace). False, with the parse failed, when an
  * allocation failed. */
 bool markdown_core_parse_again(markdown_core_parser *parser, markdown_core_publication *publication,

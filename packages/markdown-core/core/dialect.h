@@ -149,9 +149,9 @@ typedef struct markdown_core_complete_step_entry {
  * flag saying the element declares the hook, which is then asked:
  *
  * - INLINES / INLINES_ASK: `inline_content` / `contains_inlines_func` -- the
- *   kind may hold inline content (PARSES, either one), which is parsed after
- *   the block parse as an inline root; DEFERRED, `deferred_inlines`, it was
- *   parsed by the document's preparation (a heading's);
+ *   kind may hold inline content (PARSES, either one), which is parsed as an
+ *   inline root when its node completes; DEFERRED, `parse_root`, its element
+ *   parses that content itself (a heading's);
  * - LINES / LINES_ASK: the kind takes lines as content, a LITERAL
  *   `content_mode` / `accepts_lines_func`; PROSE, a PROSE `content_mode`, it
  *   takes a text line as prose; IS_PARAGRAPH, `paragraph`;

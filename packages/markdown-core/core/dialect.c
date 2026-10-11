@@ -255,7 +255,7 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
             } facts[] = {
                 {structure->inline_content, MARKDOWN_CORE_KIND_INLINES},
                 {structure->contains_inlines_func != NULL, MARKDOWN_CORE_KIND_INLINES_ASK},
-                {structure->deferred_inlines, MARKDOWN_CORE_KIND_DEFERRED},
+                {structure->parse_root != NULL, MARKDOWN_CORE_KIND_DEFERRED},
                 {structure->content_mode == MARKDOWN_CORE_CONTENT_LITERAL, MARKDOWN_CORE_KIND_LINES},
                 {structure->accepts_lines_func != NULL, MARKDOWN_CORE_KIND_LINES_ASK},
                 {structure->content_mode == MARKDOWN_CORE_CONTENT_PROSE, MARKDOWN_CORE_KIND_PROSE},

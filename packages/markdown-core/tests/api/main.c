@@ -3565,8 +3565,7 @@ static void registry_facts_live_with_their_nodes(test_batch_runner *runner) {
        markdown_core_registry_declare(registry, reference, MARKDOWN_CORE_KEY_REFERENCE, MARKDOWN_CORE_FACT_DECLARE,
                                       (const unsigned char *)"a", 1, NULL, 0) != NULL,
        "a node declares a label");
-    OK(runner, registry->marked && !registry->marked->was && markdown_core_key_defined(registry->marked),
-       "the declaration marks its key, undefined before");
+    OK(runner, registry->marked && markdown_core_key_defined(registry->marked), "the declaration marks its key");
     const markdown_core_key *key = NULL;
     bool failed = false;
     OK(runner,
@@ -3583,10 +3582,11 @@ static void registry_facts_live_with_their_nodes(test_batch_runner *runner) {
 
     markdown_core_registry_begin(registry);
     markdown_core_node_pool_release(&pool, reference);
-    OK(runner, registry->marked && registry->marked->was && !markdown_core_key_defined(registry->marked),
-       "the released declaration marks its key, defined before and undefined now");
-    OK(runner, registry->marked->lookups && registry->marked->lookups->node == root,
-       "the key's reverse index names the root that asked it");
+    OK(runner, registry->marked && !markdown_core_key_defined(registry->marked),
+       "the released declaration marks its key, undefined now");
+    OK(runner,
+       registry->marked->lookups && registry->marked->lookups->node == root && registry->marked->lookups->answer,
+       "the key's reverse index names the root that asked it, with the answer it was given");
     markdown_core_registry_settle(registry);
     markdown_core_node_pool_release(&pool, root);
     markdown_core_registry_settle(registry);
@@ -5197,7 +5197,7 @@ typedef struct {
     size_t definition_lists, citation_brace_bytes, tables, table_frontier;
     size_t table_workspace_growth, table_geometry_lines, table_separator_scans, table_horizontal_work;
     size_t physical_lines, physical_capacity, physical_facts, physical_fact_capacity, normalized_lines;
-    bool heading_collection_disposed;
+    bool heading_state_disposed;
     size_t attributes, anchors, definitions, whitespace, brackets, citations, list_markers, specimens;
     size_t inline_hooks;
     size_t properties_lines, physical_line_bytes, metadata_key_bytes, metadata_value_bytes, table_scratch_growth;
@@ -5278,7 +5278,7 @@ static void record_inline_work(const markdown_core_element_instance *self, markd
             work->definitions += key->group == MARKDOWN_CORE_KEY_REFERENCE ? key->declared : 0;
         }
     }
-    work->heading_collection_disposed = headings->headings.values == NULL && headings->headings.count == 0;
+    work->heading_state_disposed = headings->projections.values == NULL && headings->base.size == 0;
     work->footnote_body = parser->footnote_body_work;
     work->definition_lists =
         ELEMENT_STATE(parser, markdown_core_definition_list_work, MARKDOWN_CORE_ELEMENT_DEFINITION_LIST)->work;
@@ -7094,7 +7094,7 @@ static void heading_registry_invariants(test_batch_runner *runner) {
                 markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
             OK(runner, root != NULL, "heading registry handles dense future reservations");
             if (root) {
-                OK(runner, work.heading_collection_disposed, "postprocessors never observe live heading parse state");
+                OK(runner, work.heading_state_disposed, "postprocessors never observe live heading parse state");
                 for (size_t i = 0; i < count; i++) {
                     markdown_core_node *node = child_at(root, i);
                     char expected[80];

@@ -136,7 +136,7 @@ struct markdown_core_element {
     bool (*accepts_lazy)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *);
     unsigned speculative_flags;
     markdown_core_content_mode content_mode;
-    bool inline_content, deferred_inlines, paragraph, blank_opaque, blank_runs, propagates_child_blank, pending_close;
+    bool inline_content, paragraph, blank_opaque, blank_runs, propagates_child_blank, pending_close;
     int maximum_block_indent;
     void (*init_document)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*dispose_parser)(const markdown_core_element_instance *, markdown_core_parser *);
@@ -151,6 +151,10 @@ struct markdown_core_element {
      * (docs/plans/2026-09-29-incremental-parsing.md, 5.8, 5.9). */
     void (*complete_node)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *,
                           uint32_t start);
+    /* A node holding an inline root is about to read its content, its
+     * kind and range final: it decides what old node it continues (5.9),
+     * whose content it reads again (5.6). */
+    void (*decide_member)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *);
     /* A numbered node waits on nothing any more: it settles, as the old
      * node it continues when it equals it (5.9). */
     void (*settle_member)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *);
@@ -198,6 +202,11 @@ struct markdown_core_element {
     bool (*ends_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *,
                        markdown_core_chunk *);
     void (*finalize_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *);
+    /* Parses the inline content of the root its node holds into `builder`
+     * itself, the root's source starting at `start`, in place of the inline
+     * parse (a heading, whose text declares its label). */
+    void (*parse_root)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *builder,
+                       uint32_t start);
 
     bool (*scan_block_start)(const markdown_core_element_instance *, markdown_core_parser *,
                              struct markdown_core_block_start_context *, struct markdown_core_block_start *);

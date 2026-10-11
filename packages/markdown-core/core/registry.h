@@ -22,9 +22,9 @@ struct markdown_core_node;
  *
  * Facts are found through their KEY, a group and a label. A key holds its
  * declaring facts and its reverse index, the inline roots that asked it, hit
- * or miss. A key that gains or loses a fact is MARKED for the edit, and
- * remembers whether it was defined when it was first marked, so resolution
- * reads off which answers changed. The registry is the session's: it lives
+ * or miss, each with the answer it was given. A key that gains or loses a
+ * fact is MARKED for the edit, so resolution reads off which answers
+ * changed. The registry is the session's: it lives
  * in the node pool beside the slots of the nodes that hold its facts, and a
  * fresh parse fills an empty one. */
 typedef enum {
@@ -83,6 +83,8 @@ struct markdown_core_fact {
     /* The parse that made it (markdown_core_registry_begin). */
     uint64_t edit;
     uint8_t role;
+    /* Whether a fact defined the key when a lookup asked it. */
+    bool answer;
     /* A spelling, for a reservation or a base. */
     uint32_t length;
     unsigned char text[];
@@ -149,10 +151,8 @@ struct markdown_core_key {
     markdown_core_fact *facts, *lookups;
     /* How many of its facts declare it. */
     size_t declared;
-    /* The edit that marked it, 0 when none has, and whether it was defined
-     * when that edit first marked it. */
+    /* The edit that marked it, 0 when none has. */
     uint64_t marked;
-    bool was;
     uint8_t group;
     uint32_t length;
     unsigned char label[];
@@ -223,10 +223,13 @@ void markdown_core_registry_unask(struct markdown_core_node *node);
  * could not change. */
 bool markdown_core_registry_move(markdown_core_registry *registry, struct markdown_core_node *from,
                                  struct markdown_core_node *to);
-/* The facts and orders of every node of `root` that only the old tree holds
- * leave: the nodes the parse did not take. False when the walk could not
- * allocate its stack or a roster could not change. */
-bool markdown_core_registry_retire(markdown_core_registry *registry, struct markdown_core_node *root);
+/* The facts and orders of every node of `root` that leaves the document
+ * leave with it. Of an old tree, those are the nodes only the old tree
+ * holds, the nodes the parse did not take, `taken` true; of the content of
+ * a root read again, they are all its nodes, `taken` false, as no other node
+ * of the new tree holds them. False when the walk could not allocate its
+ * stack or a roster could not change. */
+bool markdown_core_registry_retire(markdown_core_registry *registry, struct markdown_core_node *root, bool taken);
 
 /* A new order for `node`, in no list; NULL when it could not be had. */
 markdown_core_order *markdown_core_order_new(markdown_core_registry *registry, struct markdown_core_node *node);

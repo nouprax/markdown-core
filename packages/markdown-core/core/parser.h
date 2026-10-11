@@ -143,14 +143,13 @@ typedef struct markdown_core_input_chunk {
 /* The input that reads `size` bytes at `bytes` as one chunk. */
 markdown_core_input markdown_core_input_buffer(const unsigned char *bytes, size_t size);
 
-/* AN INLINE ROOT WAITING FOR ITS PARSE (docs/plans/2026-09-29-incremental-
+/* AN INLINE ROOT BEING COMPLETED (docs/plans/2026-09-29-incremental-
  * parsing.md, 5.8): the node whose first relation is the content and whose
- * runs read it, and its member, which waits on the root; the node the content
- * is parsed into, the node itself or the private node its title or term hangs
- * from, and the builder the content is parsed into, that node's member;
- * where the node lies in the source, recorded when it was numbered, since a
- * numbered node holds only its extent; and whether the holder is a field,
- * which belongs to its owner and is never replaced. */
+ * runs read it, and its member; the node the content is parsed into, the
+ * node itself or the private node its title or term hangs from, and the
+ * builder the content is parsed into, that node's member; where the node
+ * lies in the source; and whether the holder is a field, which belongs to
+ * its owner and is never replaced. */
 typedef struct markdown_core_inline_root {
     struct markdown_core_node *node, *holder;
     struct markdown_core_member *member, *builder;
@@ -178,12 +177,10 @@ struct markdown_core_parser {
      * the next; the parse releases it when it ends. */
     void *walk_stack;
     size_t walk_stack_size;
-    /* THE INLINE ROOTS, in the order the nodes holding them were numbered
-     * (docs/plans/2026-09-29-incremental-parsing.md, 5.8): each is parsed
-     * and completes its own tree once every block is complete and the
-     * document is prepared. */
-    struct markdown_core_inline_root *inline_roots;
-    size_t inline_root_count, inline_root_capacity;
+    /* The state words the completion of each inline root borrows in turn
+     * (blocks.c, complete_pass), and how many frames they serve. */
+    void **complete_states;
+    size_t complete_capacity;
     /* THE OPEN BLOCKS THAT HAVE NOT DECIDED what they continue (5.9), from
      * `undecided_front` on, highest first (ast.c, spine_decide). */
     struct markdown_core_member **undecided;
@@ -852,16 +849,18 @@ void markdown_core_parser_finalize_unmatched_blocks(markdown_core_parser *parser
 bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdown_core_member *member);
 /* Whether `node` holds inline content (its kind's record, dialect.h). */
 bool markdown_core_parser_contains_inlines(markdown_core_parser *parser, markdown_core_node *node);
-/* Puts the inline root `member`'s node holds on the parser's list
- * (markdown_core_inline_root), and the member waits on it. Its builder is
- * the member, or one made for `holder` as a field root of the member's. False
- * when the list or the builder could not be allocated. */
 /* `member`, a block that was open and had not decided what it continues,
  * leaves the parser's spine of them (5.9). */
 void markdown_core_parser_leave_spine(markdown_core_parser *parser, markdown_core_member *member);
 
-bool markdown_core_parser_hold_inline_root(markdown_core_parser *parser, markdown_core_member *member,
-                                           markdown_core_node *holder, markdown_core_place place, bool field);
+/* `member`'s node, which holds an inline root in `holder` and lies at
+ * `place`, completes as the root does (docs/plans/2026-09-29-incremental-
+ * parsing.md, 5.8): its content is parsed into `holder`'s builder, the
+ * member's or one made for `holder` as a field root of the member's, every
+ * node of it completes, and then the node, which numbers it. False when the
+ * parse failed. */
+bool markdown_core_parser_complete_root(markdown_core_parser *parser, markdown_core_member *member,
+                                        markdown_core_node *holder, markdown_core_place place);
 /* `member` waits on one thing less -- an inline root, a block input, a value
  * an element gives it late -- and settles when it was numbered and waits on
  * nothing more (docs/plans/2026-09-29-incremental-parsing.md, 5.9). An

@@ -40,8 +40,7 @@ static uint64_t key_hash(markdown_core_key_group group, const unsigned char *lab
 
 void markdown_core_registry_begin(markdown_core_registry *registry) { registry->edit++; }
 
-/* A key about to gain or lose a fact is marked for the edit, and remembers
- * whether it was defined before the edit first changed it. */
+/* A key about to gain or lose a fact is marked for the edit. */
 static void key_mark(markdown_core_key *key) {
     markdown_core_registry *registry = key->registry;
     if (key->marked == registry->edit) {
@@ -52,7 +51,6 @@ static void key_mark(markdown_core_key *key) {
         registry->marked = key;
     }
     key->marked = registry->edit;
-    key->was = key->declared > 0;
 }
 
 /* THE ROSTERS (registry.h): AVL trees, each node with the size of its
@@ -802,7 +800,8 @@ bool markdown_core_registry_ask(markdown_core_registry *registry, markdown_core_
                                      .node = holder,
                                      .sibling = holder->facts,
                                      .edit = registry->edit,
-                                     .role = MARKDOWN_CORE_FACT_LOOKUP};
+                                     .role = MARKDOWN_CORE_FACT_LOOKUP,
+                                     .answer = markdown_core_key_defined(key)};
         holder->facts = fact;
         fact_join(fact);
     }
@@ -1049,7 +1048,7 @@ static int retire_field(markdown_core_node **slot, void *context) {
     return 1;
 }
 
-bool markdown_core_registry_retire(markdown_core_registry *registry, markdown_core_node *root) {
+bool markdown_core_registry_retire(markdown_core_registry *registry, markdown_core_node *root, bool taken) {
     retire_stack stack = {0};
     retire_push(&stack, (retire_item){.as.node = root});
     while (stack.count && !stack.failed) {
@@ -1057,7 +1056,7 @@ bool markdown_core_registry_retire(markdown_core_registry *registry, markdown_co
         if (item.stem) {
             /* A stem the new tree holds too holds what the parse took. */
             markdown_core_stem *stem = item.as.stem;
-            if (stem->refs > 1) {
+            if (taken && stem->refs > 1) {
                 continue;
             }
             for (uint8_t i = 0; i < stem->width; i++) {
@@ -1068,7 +1067,7 @@ bool markdown_core_registry_retire(markdown_core_registry *registry, markdown_co
         }
         markdown_core_node *node = item.as.node;
         /* A node the new tree holds too was taken, with all it holds. */
-        if (node->refs > 1) {
+        if (taken && node->refs > 1) {
             continue;
         }
         markdown_core_registry_unlink(node);

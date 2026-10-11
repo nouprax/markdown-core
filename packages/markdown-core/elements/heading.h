@@ -4,7 +4,7 @@
 #include "block_internal.h"
 #include "heading_state.h"
 /* The heading lifecycle the document element drives (document.c). */
-void markdown_core_headings_prepare(const markdown_core_element_instance *self, markdown_core_parser *parser);
+void markdown_core_headings_init(const markdown_core_element_instance *self);
 void markdown_core_headings_observe(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                     markdown_core_node *node);
 void markdown_core_headings_finish(const markdown_core_element_instance *self, markdown_core_parser *parser);
