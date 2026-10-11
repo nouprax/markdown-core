@@ -204,14 +204,15 @@ typedef struct markdown_core_publication {
 bool markdown_core_decide_member(markdown_core_parser *parser, markdown_core_publication *publication,
                                  markdown_core_member *member);
 /* COMPLETING the node `member` builds, which begins at `start`: it decides
- * what old node it continues (5.9), and each node it holds that is not
- * numbered yet, in canonical field order, is numbered, a node holding an
- * inline root outside the content of one complete first. Each takes its
- * extent, measured from the end of the node before it in its relation or
- * from where the relation is measured, and its runs; `observe` sees it.
- * Each settles at once (markdown_core_settle_member). A node that holds only
- * a group of its owner numbers nothing (MARKDOWN_CORE_NODE__GROUP): its owner
- * numbers the group. The content of the inline root being completed
+ * what old node it continues (5.9), the children it has not numbered yet
+ * are numbered, each completing first, and become its stem with those it
+ * numbered before, and each field not numbered yet, in canonical field
+ * order, is numbered. Each takes its extent, measured from the end of the
+ * node before it in its relation or from where the relation is measured, and
+ * its runs; `observe` sees it. Each settles at once
+ * (markdown_core_settle_member). A group (MARKDOWN_CORE_NODE__GROUP) holds a
+ * relation of its owner, whose nodes it numbers from where its owner
+ * begins, and its owner numbers the group. The content of the inline root being completed
  * (parser.h, `completing`) is numbered by its holder's draft
  * (markdown_core_complete_draft); a root read again in place also publishes
  * its own runs, from where it recorded its holder lies, and `observe` sees
@@ -221,6 +222,16 @@ bool markdown_core_complete_node(markdown_core_parser *parser, markdown_core_pub
                                  void (*observe)(const markdown_core_element_instance *, markdown_core_parser *,
                                                  markdown_core_node *),
                                  const markdown_core_element_instance *observer);
+
+/* `member` TAKES ANOTHER CHILD: the children it holds before it are
+ * numbered in order, as far as each has completed, as complete_node numbers
+ * them, and join its numbered children (node.h, markdown_core_built); their
+ * members go. False when an allocation failed. */
+bool markdown_core_number_children(markdown_core_parser *parser, markdown_core_publication *publication,
+                                   markdown_core_member *member,
+                                   void (*observe)(const markdown_core_element_instance *, markdown_core_parser *,
+                                                   markdown_core_node *),
+                                   const markdown_core_element_instance *observer);
 
 /* COMPLETING `draft`, a node of the content of the inline root being
  * completed, the nodes it holds complete (5.8): it decides what old node it
@@ -262,8 +273,9 @@ bool markdown_core_publication_splice(markdown_core_parser *parser, markdown_cor
  * old node it continues, unless it decided already, and takes that node's id
  * or the next one, unless it took it already; when it equals the old node it
  * continues -- its kind, extent, runs and scalars, and every relation holding
- * the same nodes -- the old node takes its place in its owner, or as the
- * document; its member goes. */
+ * the same nodes -- the old node takes its place in its owner's field, as
+ * the member's node, or as the document; a field root's member goes, and a
+ * child's as its owner numbers it. */
 void markdown_core_settle_member(markdown_core_parser *parser, markdown_core_publication *publication,
                                  markdown_core_member *member);
 

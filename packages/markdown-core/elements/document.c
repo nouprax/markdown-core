@@ -108,6 +108,16 @@ static void complete_node(const markdown_core_element_instance *self, markdown_c
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
 }
+/* A node takes another child: it numbers the children before it that have
+ * completed, and the headings note the explicit anchors among them. */
+static void number_children(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                            markdown_core_member *member) {
+    const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
+    if (!markdown_core_number_children(parser, &((document_state *)self->state)->publication, member,
+                                       headings ? markdown_core_headings_observe : NULL, headings)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+}
 /* A node about to read its inline content decides what it continues. */
 static void decide_member(const markdown_core_element_instance *self, markdown_core_parser *parser,
                           markdown_core_member *member) {
@@ -178,6 +188,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
     .finish_document = finish_document,
     .publish_document = publish_document,
     .complete_node = complete_node,
+    .number_children = number_children,
     .decide_member = decide_member,
     .complete_draft = complete_draft,
 };

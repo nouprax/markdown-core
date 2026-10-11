@@ -77,7 +77,8 @@ static bool markdown_core_specimen_open(const markdown_core_element_instance *se
         markdown_core_optional_chunk_free(&specimen.label);
         return false;
     }
-    if ((*container)->prev && (*container)->prev->node->kind == MARKDOWN_CORE_NODE_SPECIMEN) {
+    const markdown_core_node *before = markdown_core_parser_child_before(parser, *container);
+    if (before && before->kind == MARKDOWN_CORE_NODE_SPECIMEN) {
         specimen.has_start = false;
         specimen.start = 0;
     }

@@ -60,6 +60,7 @@ static void S_complete_node(markdown_core_parser *parser, markdown_core_member *
 static void S_complete_inline_root(markdown_core_parser *parser, markdown_core_inline_root *root);
 static void S_complete_closed(markdown_core_parser *parser, markdown_core_member *member);
 static void S_complete_trailed(markdown_core_parser *parser, markdown_core_member *owner);
+static void S_take_another(markdown_core_parser *parser, markdown_core_member *owner);
 static inline bool S_starts_on_line(markdown_core_parser *parser, const markdown_core_node *node, int line);
 static inline int S_append_input_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
                                        bufsize_t line_start, int column, bufsize_t length, bufsize_t offset);
@@ -1219,15 +1220,19 @@ static uint64_t S_blank_of(const markdown_core_node *node);
 static uint64_t S_blank_combine(uint64_t front, uint64_t back);
 
 /* A block that has not completed holds its children in its member: the
- * nodes it holds and the candidates it took, each a stem with the summary of
- * its run, fold as its stem will, for a kind whose stem keeps the blank
- * summary. */
+ * entries it numbered, then the nodes it holds and the candidates it took,
+ * each a stem with the summary of its run. They fold as its stem will, for a
+ * kind whose stem keeps the blank summary. */
 bool markdown_core_block_ends_with_blank_line(markdown_core_parser *parser, const markdown_core_member *member) {
     const markdown_core_node *node = member->node;
     if (member->completed || markdown_core_parser_kind(parser, node)->summary != &MARKDOWN_CORE_BLANK_SUMMARY) {
         return S_ends_with_blank_line(node, S_blank_summary(node));
     }
     uint64_t children = 0;
+    for (size_t i = 0; i < member->built; i++) {
+        const markdown_core_built *built = &member->entries[i];
+        children = S_blank_combine(children, built->candidate ? built->candidate->summary : S_blank_of(built->node));
+    }
     for (const markdown_core_member *child = member->first; child; child = child->next) {
         if (child->candidate) {
             children = S_blank_combine(children, child->candidate->summary);
@@ -1432,8 +1437,12 @@ static void S_settle(markdown_core_parser *parser, markdown_core_member *member)
      * block as the paragraph did (5.3). */
     if (b->flags & MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY) {
         const markdown_core_node_internal_flags holds = MARKDOWN_CORE_NODE__HOLDS_NEXT | MARKDOWN_CORE_NODE__TRAILED;
-        markdown_core_node *last = member->prev->node;
-        last->flags = (markdown_core_node_internal_flags)((last->flags & ~holds) | (b->flags & holds));
+        /* The last of them, unless the parse failed making them. */
+        markdown_core_member *last = member->prev;
+        assert(last || parser->error);
+        if (last) {
+            last->node->flags = (markdown_core_node_internal_flags)((last->node->flags & ~holds) | (b->flags & holds));
+        }
         markdown_core_parser_release_member(parser, member);
         return;
     }
@@ -1467,6 +1476,16 @@ static void S_complete_trailed(markdown_core_parser *parser, markdown_core_membe
     if (last && last->awaits_trailer) {
         last->awaits_trailer = false;
         S_complete_closed(parser, last);
+    }
+}
+
+/* `owner` takes another child after its last: that one has no trailer, and
+ * the children before the new one are numbered as far as they completed. */
+static void S_take_another(markdown_core_parser *parser, markdown_core_member *owner) {
+    S_complete_trailed(parser, owner);
+    if (!parser->error) {
+        const markdown_core_element_instance *document = parser->dialect->document_structure;
+        document->element->number_children(document, parser, owner);
     }
 }
 
@@ -1705,8 +1724,10 @@ static bool S_take(markdown_core_parser *parser, markdown_core_member *parent, u
     if (parser->error) {
         return false;
     }
-    const markdown_core_member *last = parent->last;
-    const uint32_t anchor = !last ? parent->node->where.place.start : markdown_core_member_place(last).end;
+    uint32_t anchor;
+    if (!markdown_core_member_children_end(parent, &anchor)) {
+        anchor = parent->node->where.place.start;
+    }
     if ((int64_t)start - anchor != first->where.extent.lead) {
         return false;
     }
@@ -1726,7 +1747,7 @@ static bool S_take(markdown_core_parser *parser, markdown_core_member *parent, u
     }
     member->candidate = candidate;
     member->past = end;
-    S_complete_trailed(parser, parent);
+    S_take_another(parser, parent);
     markdown_core_member_attach(parent, member, NULL);
     const markdown_core_element_instance *structure = markdown_core_parser_structure(parser, parent->node);
     if (structure && structure->element->fold_children) {
@@ -1819,7 +1840,7 @@ markdown_core_member *markdown_core_parser_add_child_validated(markdown_core_par
     /* The block's entry, read where the line machine starts it (5.3). */
     const bool records = parser->input.block_root == parser->root;
     const uint64_t carry =
-        records ? markdown_core_parser_carry(parser, parent, parent->last ? parent->last->node : NULL) : 0;
+        records ? markdown_core_parser_carry(parser, parent, markdown_core_parser_last_child(parser, parent)) : 0;
     const markdown_core_node *old = NULL;
     uint32_t old_start = 0;
     if (records && !parent->scan) {
@@ -1877,7 +1898,7 @@ markdown_core_member *markdown_core_parser_attach(markdown_core_parser *parser, 
         return NULL;
     }
     if (!before) {
-        S_complete_trailed(parser, owner);
+        S_take_another(parser, owner);
     }
     markdown_core_member_attach(owner, member, before);
     return member;
@@ -2108,10 +2129,6 @@ static void S_complete_node(markdown_core_parser *parser, markdown_core_member *
         markdown_core_parser_complete_root(parser, member, holder, member->node->where.place);
         return;
     }
-    if (!markdown_core_member_freeze(parser->pool, member, markdown_core_parser_kind(parser, member->node)->summary)) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return;
-    }
     const markdown_core_element_instance *document = parser->dialect->document_structure;
     document->element->complete_node(document, parser, member, start);
 }
@@ -2330,15 +2347,8 @@ static void S_complete_pass(markdown_core_parser *parser, markdown_core_inline_r
                         S_complete_draft(parser, draft);
                     }
                     if (draft == holder && !parser->error) {
-                        /* The root's content is numbered: the root takes
-                         * its stem, unless it is a root read again,
-                         * numbered already, and numbers all else it holds. */
-                        if (!root->member->numbered &&
-                            !markdown_core_member_freeze(parser->pool, root->member,
-                                                         markdown_core_parser_kind(parser, root->node)->summary)) {
-                            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-                            break;
-                        }
+                        /* The root's content is numbered: the root
+                         * completes, numbering all else it holds. */
                         document->element->complete_node(document, parser, root->member, root->place.start);
                     }
                     if (parser->error) {

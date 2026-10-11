@@ -269,15 +269,15 @@ static bool continue_container(const markdown_core_element_instance *self, markd
     }
 }
 /* A definition list, a definition and a body end where their last child
- * ends, which closed before them; a body without one ends at its marker.
- * The block is settling, so its children are still its members. */
+ * ends, which closed before them; a body without one ends at its marker. */
 static void finalize_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
                            markdown_core_member *member) {
     (void)self;
     (void)parser;
     markdown_core_node *node = member->node;
-    if (member->last) {
-        node->where.place.end = markdown_core_member_place(member->last).end;
+    uint32_t end;
+    if (markdown_core_member_children_end(member, &end)) {
+        node->where.place.end = end;
     } else if (node->kind == MARKDOWN_CORE_NODE_DEFINITION_BODY) {
         node->where.place.end = (uint32_t)node->internal_offset;
     }

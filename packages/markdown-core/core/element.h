@@ -144,13 +144,16 @@ struct markdown_core_element {
     void (*read_document_prefix)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*prepare_document)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*finish_document)(const markdown_core_element_instance *, markdown_core_parser *);
-    /* The node a member builds is complete: it numbers the nodes it holds
-     * that are not numbered yet, in canonical field order, and gives each
-     * the id of the old node it continues or the next, and its extent,
-     * measured from `start`, where the node begins
+    /* The node a member builds is complete: it numbers the children it has
+     * not numbered yet and then its fields, in canonical field order, and
+     * gives each the id of the old node it continues or the next, and its
+     * extent, measured from `start`, where the node begins
      * (docs/plans/2026-09-29-incremental-parsing.md, 5.8, 5.9). */
     void (*complete_node)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *,
                           uint32_t start);
+    /* The node a member builds takes another child: it numbers the children
+     * it holds before it, as far as each has completed (5.8). */
+    void (*number_children)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *);
     /* A node holding an inline root is about to read its content, its
      * kind and range final: it decides what old node it continues (5.9),
      * whose content it reads again (5.6). */

@@ -592,7 +592,7 @@ static void finalize_block(const markdown_core_element_instance *self, markdown_
     /* A table may take a trailing caption or identifier line from a later
      * line. */
     member->awaits_trailer = true;
-    size_t rows = 0;
+    size_t rows = member->built_nodes;
     for (markdown_core_member *row = member->first; row && !parser->error; row = row->next) {
         if (row->candidate) {
             rows += markdown_core_stem_count(row->candidate);

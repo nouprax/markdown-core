@@ -1572,93 +1572,83 @@ static void S_member_free(markdown_core_node_pool *pool, markdown_core_member *m
     markdown_core_slab_release(pool ? &pool->members : NULL, member);
 }
 
-bool markdown_core_member_freeze(markdown_core_node_pool *pool, markdown_core_member *member,
-                                 const markdown_core_stem_summary *summary) {
-    markdown_core_node *node = member->node;
-    if (!member->first) {
-        return true;
-    }
-    /* A node completes once. */
-    assert(!node->children);
-    /* The most nodes held between two candidates. */
-    size_t count = 0, most = 0, candidates = 0;
-    for (const markdown_core_member *child = member->first; child; child = child->next) {
-        count += child->held;
-        if (child->candidate) {
-            candidates++;
-            count = 0;
-        }
-        most = count > most ? count : most;
-    }
-    if (!most && !candidates) {
-        return true;
+markdown_core_stem *markdown_core_built_stem(markdown_core_node_pool *pool, const markdown_core_built *built,
+                                             size_t count, const markdown_core_stem_summary *summary, bool *failed) {
+    *failed = false;
+    /* The most nodes between two candidates. */
+    size_t run = 0, most = 0;
+    for (size_t i = 0; i < count; i++) {
+        run = built[i].candidate ? 0 : run + 1;
+        most = run > most ? run : most;
     }
     markdown_core_node *small[MARKDOWN_CORE_STEM_WIDTH];
     markdown_core_node **nodes = most <= MARKDOWN_CORE_STEM_WIDTH ? small : markdown_core_alloc(most, sizeof(*nodes));
     if (!nodes) {
-        return false;
+        *failed = true;
+        return NULL;
     }
-    /* The nodes held between two runs make a stem, and the stems and the
-     * runs join in order. `done` is the first member whose node or run the
-     * joined stem does not hold yet. */
+    /* The nodes between two candidates make a stem, and the stems and the
+     * candidates join in order. `done` counts the entries whose references
+     * the joined stem holds. */
     markdown_core_stem *joined = NULL;
-    const markdown_core_member *done = member->first;
-    bool failed = false;
-    count = 0;
-    for (const markdown_core_member *child = member->first;; child = child->next) {
-        if (child && child->held) {
-            nodes[count++] = child->node;
+    size_t done = 0;
+    run = 0;
+    for (size_t i = 0; i <= count && !*failed; i++) {
+        if (i < count && !built[i].candidate) {
+            nodes[run++] = built[i].node;
             continue;
         }
-        if (count) {
-            markdown_core_stem *made = markdown_core_stem_make(pool, nodes, count, summary, &failed);
-            markdown_core_stem *both = failed ? NULL : markdown_core_stem_join(pool, joined, made, summary, &failed);
-            if (failed) {
+        if (run) {
+            markdown_core_stem *made = markdown_core_stem_make(pool, nodes, run, summary, failed);
+            markdown_core_stem *both = *failed ? NULL : markdown_core_stem_join(pool, joined, made, summary, failed);
+            if (*failed) {
                 if (made) {
-                    for (size_t i = 0; i < count; i++) {
-                        markdown_core_node_retain(nodes[i]);
+                    for (size_t j = 0; j < run; j++) {
+                        markdown_core_node_retain(nodes[j]);
                     }
                     markdown_core_stem_release(pool, made);
                 }
                 break;
             }
             joined = both;
-            done = child;
-            count = 0;
+            done = i;
+            run = 0;
         }
-        if (!child) {
-            break;
-        }
-        if (child->candidate) {
-            markdown_core_stem *candidate = markdown_core_stem_retain(child->candidate);
-            markdown_core_stem *both = markdown_core_stem_join(pool, joined, candidate, summary, &failed);
-            if (failed) {
+        if (i < count) {
+            markdown_core_stem *candidate = markdown_core_stem_retain(built[i].candidate);
+            markdown_core_stem *both = markdown_core_stem_join(pool, joined, candidate, summary, failed);
+            if (*failed) {
                 markdown_core_stem_release(pool, candidate);
                 break;
             }
             joined = both;
-            done = child->next;
+            done = i + 1;
         }
     }
     if (nodes != small) {
         markdown_core_free(nodes);
     }
-    if (failed) {
-        /* The members keep their nodes: the joined stem gives back the
-         * references it took from them. */
-        for (const markdown_core_member *child = member->first; child != done; child = child->next) {
-            if (child->held) {
-                markdown_core_node_retain(child->node);
+    if (*failed) {
+        /* The entries keep their references: the joined stem gives back
+         * those it took from them. */
+        for (size_t i = 0; i < done; i++) {
+            if (built[i].candidate) {
+                markdown_core_stem_retain(built[i].candidate);
+            } else {
+                markdown_core_node_retain(built[i].node);
             }
         }
         markdown_core_stem_release(pool, joined);
-        return false;
+        return NULL;
     }
-    node->children = joined;
-    for (markdown_core_member *child = member->first; child; child = child->next) {
-        child->held = false;
+    /* The joined stem holds a reference of each candidate it retained: the
+     * entries give theirs back. */
+    for (size_t i = 0; i < count; i++) {
+        if (built[i].candidate) {
+            markdown_core_stem_release(pool, built[i].candidate);
+        }
     }
-    return true;
+    return joined;
 }
 
 void markdown_core_member_release(markdown_core_node_pool *pool, markdown_core_member *member) {
@@ -1688,6 +1678,14 @@ void markdown_core_member_release(markdown_core_node_pool *pool, markdown_core_m
         if (taken->candidate) {
             markdown_core_stem_release(pool, taken->candidate);
         }
+        for (uint32_t i = 0; i < taken->built; i++) {
+            if (taken->entries[i].candidate) {
+                markdown_core_stem_release(pool, taken->entries[i].candidate);
+            } else {
+                markdown_core_node_pool_release(pool, taken->entries[i].node);
+            }
+        }
+        markdown_core_free(taken->entries);
         S_member_free(pool, taken);
     }
 }

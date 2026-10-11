@@ -82,7 +82,8 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identif
     markdown_core_member *parent = member->owner;
     int line;
     bufsize_t source;
-    if (parent && markdown_core_block_type(parent->node) == MARKDOWN_CORE_NODE_LIST_ITEM && parent->first == member &&
+    if (parent && markdown_core_block_type(parent->node) == MARKDOWN_CORE_NODE_LIST_ITEM && !parent->built &&
+        parent->first == member &&
         markdown_core_parser_content_place(parser, &paragraph->content_map,
                                            (bufsize_t)(candidate.identifier.data - paragraph->content.ptr), &line,
                                            &source) &&

@@ -257,7 +257,7 @@ bool markdown_core_list_continue(markdown_core_parser *parser, markdown_core_mem
     if (container->kind == MARKDOWN_CORE_NODE_LIST_ITEM) {
         return markdown_core_block_continue_indented(parser, input,
                                                      container->as.list->marker_offset + container->as.list->padding,
-                                                     member->first != NULL || joining == member);
+                                                     markdown_core_member_holds_child(member) || joining == member);
     }
     if (parser->input.blank) {
         if ((container->flags & MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK) && parser->input.indent == 0) {
@@ -280,7 +280,7 @@ static bool continue_container(const markdown_core_element_instance *self, markd
 static bool blank_line(const markdown_core_element_instance *self, markdown_core_parser *parser,
                        markdown_core_member *member) {
     (void)self;
-    return !(member->node->kind == MARKDOWN_CORE_NODE_LIST_ITEM && !member->first &&
+    return !(member->node->kind == MARKDOWN_CORE_NODE_LIST_ITEM && !markdown_core_member_holds_child(member) &&
              markdown_core_parser_starts_on_line(parser, member->node, parser->input.line_number));
 }
 

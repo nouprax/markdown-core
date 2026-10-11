@@ -415,8 +415,12 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_me
     markdown_core_parser_content_end_place(parser, &b->content_map, end - 1, &ignored, &stop);
     reference->where.place = (markdown_core_place){(uint32_t)start, (uint32_t)stop};
     markdown_core_parser_place_runs(parser, reference, member->owner, line);
-    /* The cursor offers it where the paragraph begins (5.3). */
-    markdown_core_parser_attach_split(parser, member, reference);
+    /* The cursor offers it where the paragraph begins (5.3). It is
+     * complete. */
+    markdown_core_member *split = markdown_core_parser_attach_split(parser, member, reference);
+    if (split) {
+        markdown_core_parser_complete_node(parser, split);
+    }
     return length;
 }
 

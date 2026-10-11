@@ -882,17 +882,30 @@ typedef struct {
     markdown_core_order *first, *last, *open, *lead, *head;
 } markdown_core_orders;
 
+/* A NODE A BUILDER HAS NUMBERED (5.8): a node it holds, or a CANDIDATE,
+ * the old nodes the parse took whole as one stem (`candidate`, NULL for a
+ * node). Each entry holds the reference of its node or stem. */
+typedef struct {
+    markdown_core_node *node;
+    markdown_core_stem *candidate;
+} markdown_core_built;
+
 /* A BLOCK BEING BUILT (5.11, open blocks are builders): while the parser
  * builds a block, the block's place among the nodes being built is this
  * record's, not the node's. Its owner, its siblings and its children are the
- * members of the nodes beside it. `fields` are the members of the node's
- * field roots that are being built with it, linked through `next`: a table's
- * caption. `held` says whether the member holds the node's reference: a child
- * member does until its owner's freeze hands the reference to the owner's
- * stem; a root, whose node a stem or the parser holds, and a field root,
- * whose node its owner's field holds, do not. A builder lives for one parse
- * and its storage is the pool's. The nodes of an inline root's content are
- * built as drafts (markdown_core_draft).
+ * members of the nodes beside it that are not numbered yet; the children it
+ * numbered are its `built` entries in order, the `built_nodes` nodes of its
+ * stem so far, which its completion takes as its stem, and the orders they
+ * collected are `built_orders`; the next is measured from `anchor` (5.8). A child is
+ * numbered once its owner takes another child or completes: until then a
+ * blank line after it may still be its own. `fields` are the members of the
+ * node's field roots that are being built with it, linked through `next`: a
+ * table's caption. `held` says whether the member holds the node's
+ * reference: a child member does until its owner numbers it; a root, whose
+ * node a stem or the parser holds, and a field root, whose node its owner's
+ * field holds, do not. A builder lives for one parse and its storage is the
+ * pool's. The nodes of an inline root's content are built as drafts
+ * (markdown_core_draft).
  *
  * A member also carries what the node continues
  * (docs/plans/2026-09-29-incremental-parsing.md, 5.9): `old`, the node of
@@ -908,9 +921,8 @@ typedef struct {
  * node's relation through `pair`. A member's `index` counts the children its
  * owner linked before it, and `children` those it has linked.
  *
- * Once numbered, a node settles (ast.c): its `slot` is where its owner's
- * stem holds it, `place` where the node lay, its own `where` now holding its
- * extent. */
+ * Once numbered, a node settles (ast.c): `place` is where the node lay, its
+ * own `where` now holding its extent. */
 struct markdown_core_member {
     markdown_core_node *node;
     struct markdown_core_member *owner;
@@ -939,7 +951,14 @@ struct markdown_core_member {
     /* The orders of its subtree, as its completion and its owner's
      * numbering collect them. */
     markdown_core_orders orders;
-    uint32_t index, slot, children;
+    /* The children it numbered (above). */
+    markdown_core_orders built_orders;
+    markdown_core_built *entries;
+    uint32_t built, built_capacity, built_nodes;
+    struct {
+        uint32_t place, source;
+    } anchor;
+    uint32_t index, children;
     bool held, field, decided, tentative, identified, searched, awaits_trailer, completed, numbered;
 };
 
@@ -1043,14 +1062,13 @@ static inline void markdown_core_member_unlink(markdown_core_member *member) {
     member->owner = member->prev = member->next = NULL;
 }
 
-/* COMPLETES A BUILDER'S STRUCTURE: the nodes of `member`'s children become
- * its node's stem, which takes the references their members held and
- * shares the stems of the runs they hold; the
- * members stay, for the node's numbering, and the stem keeps the `summary`
- * of the node's kind (E4), which may be NULL. False, changing nothing, when
- * the stem could not be allocated. */
-bool markdown_core_member_freeze(markdown_core_node_pool *pool, markdown_core_member *member,
-                                 const markdown_core_stem_summary *summary);
+/* THE STEM OF A BUILDER'S NUMBERED CHILDREN: the `count` entries at
+ * `built`, in order, with the `summary` of the builder's kind (E4), which
+ * may be NULL; NULL for none. It takes the entries' references. NULL with
+ * `*failed`, the entries keeping their references, when it could not be
+ * allocated. */
+markdown_core_stem *markdown_core_built_stem(markdown_core_node_pool *pool, const markdown_core_built *built,
+                                             size_t count, const markdown_core_stem_summary *summary, bool *failed);
 
 /* Releases `member`, every member below it, and the references they hold;
  * `member` was detached first, or is a root. */

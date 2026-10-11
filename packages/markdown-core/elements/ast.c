@@ -1119,9 +1119,11 @@ static void identify(markdown_core_parser *parser, markdown_core_member *member)
                                                                                          : 0));
 }
 
-/* `old` takes the place of `node`, which `owner` holds in its field when
- * `field` and else at `slot` of its stem, or which is the document when there
- * is no `owner`: `*kept`. The node goes when the parse does. False when it
+/* `old` takes the place of `node`, which `owner` holds in a field when
+ * there is one, and which is else a child its owner numbers, a node of an
+ * inline root's content in its owner's stem at `slot`, or the document:
+ * `*kept`, whose reference the caller puts in the place of `node`'s when
+ * there is no `owner`. The node goes when the parse does. False when it
  * could not be kept for that, or a roster could not take it. */
 static bool settle_old(markdown_core_parser *parser, markdown_core_publication *publication, markdown_core_node *node,
                        markdown_core_node *owner, bool field, uint32_t slot, const markdown_core_node *old,
@@ -1130,22 +1132,20 @@ static bool settle_old(markdown_core_parser *parser, markdown_core_publication *
 /* Whether `node` equals `old` as a value. */
 static bool node_same(const markdown_core_node *node, const markdown_core_node *old);
 
-/* Numbers `member`'s node, which lies at its place, is measured from
- * `anchor` and fills `slot` of its relation: it holds its strings and keeps
- * its place, and takes its extent and its runs; a node holding an inline
- * root completes first; the observer sees it. It settles now. Returns false
- * when an allocation failed. */
-static bool complete_number(const complete_context *context, markdown_core_member *member, item_anchor *anchor,
-                            uint32_t slot) {
+/* Numbers `member`'s node, which completes first, lies at its place and is
+ * measured from `anchor`: it holds its strings and keeps its place, and
+ * takes its extent and its runs; the observer sees it. It settles now. Returns
+ * false when an allocation failed. */
+static bool complete_number(const complete_context *context, markdown_core_member *member, item_anchor *anchor) {
     markdown_core_parser *parser = context->parser;
     markdown_core_node *item = member->node;
     const unsigned slots = slot_of(item);
     const relation_shape shape = (relation_shape)(slots & SLOT_SHAPE);
-    /* A node that holds an inline root -- a cell, a caption -- is complete,
-     * its content with it, before it is numbered. */
     markdown_core_node *holder = markdown_core_node_content_holder(item);
     const bool inlines = holder && markdown_core_parser_contains_inlines(parser, holder);
-    if (inlines && !member->completed) {
+    /* A field that holds an inline root -- a label, a caption -- is
+     * complete, its content with it, before it is numbered. */
+    if (!member->completed) {
         markdown_core_parser_complete_node(parser, member);
         if (parser->error) {
             return false;
@@ -1185,25 +1185,8 @@ static bool complete_number(const complete_context *context, markdown_core_membe
         context->observe(context->observer, parser, item);
     }
     member->numbered = true;
-    member->slot = slot;
     markdown_core_settle_member(parser, context->publication, member);
     return !parser->error;
-}
-
-/* The member of `owner`'s that builds the group whose stem is `stem`: a field
- * root, or a child, whose members are a relation's. NULL when none does. */
-static markdown_core_member *group_member(markdown_core_member *owner, const markdown_core_stem *stem) {
-    for (markdown_core_member *field = owner->fields; field; field = field->next) {
-        if (field->node->children == stem) {
-            return field;
-        }
-    }
-    for (markdown_core_member *child = owner->first; child; child = child->next) {
-        if (child->node->children == stem) {
-            return child;
-        }
-    }
-    return NULL;
 }
 
 /* The member of `owner`'s field root `node`, made when the field was built
@@ -1218,11 +1201,105 @@ static markdown_core_member *field_member(markdown_core_parser *parser, markdown
     return markdown_core_parser_attach_field(parser, owner, node);
 }
 
-/* A group whose relation `owner` numbered settles with it. */
-static void group_numbered(markdown_core_parser *parser, markdown_core_publication *publication,
-                           markdown_core_member *group) {
-    group->numbered = true;
-    markdown_core_settle_member(parser, publication, group);
+/* `owner` has room for one more numbered child. False when its entries
+ * could not grow. */
+static bool built_reserve(markdown_core_member *owner) {
+    if (owner->built == owner->built_capacity) {
+        const uint32_t capacity = owner->built_capacity ? owner->built_capacity * 2 : 4;
+        markdown_core_built *entries = markdown_core_realloc(owner->entries, capacity * sizeof(*entries));
+        if (!entries) {
+            return false;
+        }
+        owner->entries = entries;
+        owner->built_capacity = capacity;
+    }
+    return true;
+}
+
+/* THE OWNER NUMBERS ITS FIRST CHILD (5.8), complete: a candidate the parse
+ * took whole lies as its old nodes did, and its orders come after those
+ * collected so far; a group is measured along its owner's relation by the
+ * nodes it holds, and only settles; every other child takes its extent from
+ * where the child before it ended, or from where its owner begins, the
+ * owner of a group where it does. The child joins the owner's numbered
+ * children, and its member goes. False when an allocation failed. */
+static bool number_child(const complete_context *context, markdown_core_member *owner) {
+    markdown_core_parser *parser = context->parser;
+    markdown_core_member *child = owner->first;
+    if (!built_reserve(owner)) {
+        return false;
+    }
+    if (!owner->built) {
+        const markdown_core_member *from = owner->node->flags & MARKDOWN_CORE_NODE__GROUP ? owner->owner : owner;
+        const uint32_t start = from->node->where.place.start;
+        owner->anchor.place = owner->anchor.source = start;
+    }
+    markdown_core_built entry = {child->node, NULL};
+    uint32_t nodes = 1;
+    if (child->candidate) {
+        markdown_core_stem *candidate = child->candidate;
+        if (candidate->first) {
+            order_follow(context->orders, candidate->first);
+        }
+        owner->anchor.place = owner->anchor.source = (uint32_t)(owner->anchor.place + candidate->length);
+        entry = (markdown_core_built){NULL, candidate};
+        nodes = (uint32_t)markdown_core_stem_count(candidate);
+        child->candidate = NULL;
+    } else if (child->node->flags & MARKDOWN_CORE_NODE__GROUP) {
+        order_append(context->orders, &child->orders);
+        child->numbered = true;
+        markdown_core_settle_member(parser, context->publication, child);
+        entry.node = child->node;
+    } else {
+        item_anchor anchor = {owner->anchor.place, owner->anchor.source};
+        if (!complete_number(context, child, &anchor)) {
+            return false;
+        }
+        owner->anchor.place = anchor.place;
+        owner->anchor.source = anchor.source;
+        entry.node = child->node;
+    }
+    if (parser->error) {
+        return false;
+    }
+    owner->entries[owner->built++] = entry;
+    owner->built_nodes += nodes;
+    /* The entry holds its reference now. */
+    child->held = false;
+    markdown_core_parser_release_member(parser, child);
+    return true;
+}
+
+/* `owner` numbers its children in order, as far as each has completed, or,
+ * as `owner` completes, all of them, each completing first. False when an
+ * allocation failed. */
+static bool number_children(const complete_context *context, markdown_core_member *owner, bool all) {
+    while (owner->first && !context->parser->error) {
+        markdown_core_member *child = owner->first;
+        if (!child->completed && !child->candidate) {
+            if (!all) {
+                return true;
+            }
+            assert(!markdown_core_member_range_open(child));
+            markdown_core_parser_complete_node(context->parser, child);
+            if (context->parser->error) {
+                return false;
+            }
+        }
+        if (!number_child(context, owner)) {
+            return false;
+        }
+    }
+    return !context->parser->error;
+}
+
+bool markdown_core_number_children(markdown_core_parser *parser, markdown_core_publication *publication,
+                                   markdown_core_member *member,
+                                   void (*observe)(const markdown_core_element_instance *, markdown_core_parser *,
+                                                   markdown_core_node *),
+                                   const markdown_core_element_instance *observer) {
+    const complete_context context = {parser, publication, observe, observer, &member->built_orders};
+    return number_children(&context, member, false);
 }
 
 /* Where the source of `node`, a numbered node of an inline root's content,
@@ -1236,111 +1313,42 @@ static uint32_t numbered_source_end(const markdown_core_node *node, uint32_t sou
     return (uint32_t)at;
 }
 
-/* Numbers what `member`'s node, which starts at `start`, holds and has not
- * numbered yet, relation by relation: each node is measured from the end of
- * the one before it in its stem, or from the owner's start, and its runs
- * likewise. The members of a relation's nodes are walked with them: the
- * node's children's, or those of the group that holds the relation, and a
- * field's own. The content of the inline root being completed, its first
- * relation, is numbered as the root's holder completes
+/* Numbers the fields of `member`'s node, which starts at `start`, that are
+ * not numbered yet, in canonical field order: each is measured from the
+ * owner's start, and its runs likewise. Its children it numbered as it took
+ * them (number_children). The content of the inline root being completed,
+ * its first relation, is numbered as the root's holder completes
  * (markdown_core_complete_draft). */
-static bool complete_relations(const complete_context *context, markdown_core_member *member, uint32_t start) {
+static bool complete_fields(const complete_context *context, markdown_core_member *member, uint32_t start) {
     markdown_core_node *node = member->node;
-    if (relations_empty(node)) {
-        /* It holds nothing to number. */
+    if (shape_of(node) == SHAPE_CHILDREN) {
         return true;
     }
     markdown_core_parser *parser = context->parser;
     const markdown_core_inline_root *completing = parser->completing;
     markdown_core_relation_cursor cursor;
     markdown_core_relation relation;
-    markdown_core_relation_walk nodes;
-    markdown_core_member *child = member->first;
     bool more = true, content = completing && completing->node == node;
-    item_anchor anchor = {start, start};
     markdown_core_relations_begin(&cursor, node);
-    /* It steps no further than its last relation. */
     while (more && relations_next(&cursor, &relation, &more)) {
         if (content) {
             content = false;
             continue;
         }
-        /* A relation that is a later run of its stem goes on from where the
-         * one before it ended. */
-        if (relation.field || !relation.index) {
-            anchor = (item_anchor){start, start};
-        }
-        if (relation.field) {
-            markdown_core_node *item = (markdown_core_node *)relation.node;
-            if (!item->id) {
-                markdown_core_member *field = field_member(parser, member, item);
-                if (!field || (!field->numbered && !complete_number(context, field, &anchor, 0))) {
-                    return false;
-                }
-            } else if (item->first && !member->numbered) {
-                order_follow(&member->orders, item->first);
-            }
+        if (!relation.field) {
             continue;
         }
-        const bool own = relation.stem == node->children;
-        markdown_core_member *group = own || !relation.count ? NULL : group_member(member, relation.stem);
-        markdown_core_member *at = own ? child : group ? group->first : NULL;
-        markdown_core_relation_walk_begin(&nodes, &relation);
-        uint32_t slot = (uint32_t)relation.index;
-        for (markdown_core_node *item; (item = (markdown_core_node *)markdown_core_relation_walk_next(&nodes));
-             slot++) {
-            if (at && at->candidate && item == markdown_core_stem_at(at->candidate, 0)) {
-                /* The first node of a candidate the parse took, all of them
-                 * numbered: the walk passes the candidate whole. */
-                const size_t taken = at->candidate->count;
-                if (at->candidate->first && !member->numbered) {
-                    order_follow(&member->orders, at->candidate->first);
-                }
-                anchor.place = (uint32_t)(anchor.place + at->candidate->length);
-                anchor.source = anchor.place;
-                markdown_core_stem_walk_begin(&nodes.stem, relation.stem, slot + taken, nodes.stem.left - (taken - 1));
-                slot += (uint32_t)(taken - 1);
-                at = at->next;
-                continue;
-            }
-            if (item->id || (at && at->node == item && at->numbered)) {
-                /* An old node it holds as it was: what it holds comes after
-                 * the orders collected so far, unless it lies outside the
-                 * content of a root read again in place, which holds it as it
-                 * did. */
-                if (item->first && !(at && at->node == item) && !member->numbered) {
-                    order_follow(&member->orders, item->first);
-                }
-                anchor.place = publish_place(item, anchor.place).end;
-                anchor.source = anchor.place;
-                if (at && at->node == item) {
-                    at = at->next;
-                }
-                continue;
-            }
-            assert(at && at->node == item);
-            markdown_core_member *next = at->next;
-            if (!complete_number(context, at, &anchor, slot)) {
+        markdown_core_node *item = (markdown_core_node *)relation.node;
+        if (!item->id) {
+            item_anchor anchor = {start, start};
+            markdown_core_member *field = field_member(parser, member, item);
+            if (!field || (!field->numbered && !complete_number(context, field, &anchor))) {
                 return false;
             }
-            at = next;
-        }
-        if (own) {
-            child = at;
-        } else if (!group) {
-            /* A group built without a member, as a block's fields are. */
-            markdown_core_stem_measure((markdown_core_stem *)relation.stem);
-        } else if (!group->numbered) {
-            /* A group holds the first order of the relation it holds. */
-            markdown_core_stem_measure((markdown_core_stem *)relation.stem);
-            group->node->first = relation.stem->first;
-            group_numbered(parser, context->publication, group);
+        } else if (item->first && !member->numbered) {
+            order_follow(&member->orders, item->first);
         }
     }
-    /* Its nodes are numbered: its own stem measures them, once every relation
-     * that is a run of it has been numbered; a group's stem measured them
-     * above. */
-    markdown_core_stem_measure(node->children);
     return true;
 }
 
@@ -1490,8 +1498,8 @@ static markdown_core_draft *draft_field(markdown_core_parser *parser, markdown_c
     return markdown_core_inline_attach_field(parser, owner, node);
 }
 
-/* Numbers what `draft`'s node holds, relation by relation, as
- * complete_relations does: each node is measured from the end of the one
+/* Numbers what `draft`'s node holds, relation by relation, as a block owner
+ * numbers its children: each node is measured from the end of the one
  * before it in its stem, or from the owner's start, and its runs from where
  * the source of the one before it ends, or the owner's begins. */
 static bool draft_relations(const complete_context *context, markdown_core_draft *draft) {
@@ -1616,6 +1624,34 @@ bool markdown_core_decide_member(markdown_core_parser *parser, markdown_core_pub
     return need(parser, publication, member);
 }
 
+/* `member`'s children, all numbered, become its node's stem, which takes
+ * their references from its entries and is measured. False when an
+ * allocation failed. */
+static bool complete_children(const complete_context *context, markdown_core_member *member) {
+    markdown_core_parser *parser = context->parser;
+    if (!number_children(context, member, true)) {
+        return false;
+    }
+    if (!member->built) {
+        return true;
+    }
+    markdown_core_node *node = member->node;
+    /* A node completes once. */
+    assert(!node->children);
+    bool failed;
+    markdown_core_stem *stem = markdown_core_built_stem(parser->pool, member->entries, member->built,
+                                                        markdown_core_parser_kind(parser, node)->summary, &failed);
+    if (failed) {
+        return false;
+    }
+    markdown_core_free(member->entries);
+    member->entries = NULL;
+    member->built = member->built_capacity = member->built_nodes = 0;
+    node->children = stem;
+    markdown_core_stem_measure(stem);
+    return true;
+}
+
 bool markdown_core_complete_node(markdown_core_parser *parser, markdown_core_publication *publication,
                                  markdown_core_member *member, uint32_t start,
                                  void (*observe)(const markdown_core_element_instance *, markdown_core_parser *,
@@ -1627,14 +1663,23 @@ bool markdown_core_complete_node(markdown_core_parser *parser, markdown_core_pub
     if (!need(parser, publication, member)) {
         return false;
     }
+    const complete_context children = {parser, publication, observe, observer, &member->built_orders};
+    if (!member->numbered && !complete_children(&children, member)) {
+        return false;
+    }
     if (node->flags & MARKDOWN_CORE_NODE__GROUP) {
+        /* A group holds the first order of the relation it holds. */
+        node->first = node->children ? node->children->first : NULL;
+        order_append(&member->orders, &member->built_orders);
         return true;
     }
     const complete_context context = {parser, publication, observe, observer, &member->orders};
     const relation_shape shape = shape_of(node);
-    if (!complete_relations(&context, member, start)) {
+    if (!complete_fields(&context, member, start)) {
         return false;
     }
+    /* The orders of its children follow those of its fields. */
+    order_append(&member->orders, &member->built_orders);
     /* A root read again in place publishes its runs last: definitions in
      * its content read them as they were. A root completed as its block
      * closes publishes them when its owner numbers it. */
@@ -1802,19 +1847,20 @@ void markdown_core_settle_member(markdown_core_parser *parser, markdown_core_pub
     }
     if (!(member->node->flags & MARKDOWN_CORE_NODE__GROUP) && member->old && node_same(member->node, member->old)) {
         markdown_core_node *kept;
-        if (!settle_old(parser, publication, member->node, member->owner ? member->owner->node : NULL, member->field,
-                        member->slot, member->old, &kept)) {
+        if (!settle_old(parser, publication, member->node, member->field ? member->owner->node : NULL, member->field, 0,
+                        member->old, &kept)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return;
         }
-        if (!member->owner) {
+        if (!member->field) {
             member->node = kept;
         }
     }
-    if (!member->owner) {
-        return;
+    /* A field root goes once settled; a child goes as its owner numbers
+     * it. */
+    if (member->field) {
+        markdown_core_parser_release_member(parser, member);
     }
-    markdown_core_parser_release_member(parser, member);
 }
 
 void markdown_core_publication_dispose(markdown_core_publication *publication, markdown_core_node_pool *pool) {

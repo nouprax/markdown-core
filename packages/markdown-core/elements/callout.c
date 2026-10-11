@@ -136,7 +136,8 @@ static bool accepts_lazy(const markdown_core_element_instance *self, markdown_co
                          markdown_core_member *member) {
     (void)self;
     markdown_core_node *node = member->node;
-    return node->kind == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->variant.has_value && !member->first &&
+    return node->kind == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->variant.has_value &&
+           !markdown_core_member_holds_child(member) &&
            markdown_core_parser_starts_on_line(parser, node, parser->input.line_number - 1);
 }
 

@@ -1458,6 +1458,26 @@ static markdown_core_member *build_child(markdown_core_member *owner, markdown_c
     return member;
 }
 
+/* `member`'s children, in the order they were linked, become its node's
+ * stem, which takes their references. */
+static bool freeze(markdown_core_member *member) {
+    markdown_core_built built[8];
+    size_t count = 0;
+    for (markdown_core_member *child = member->first; child; child = child->next) {
+        built[count++] = (markdown_core_built){child->node, NULL};
+    }
+    bool failed;
+    markdown_core_stem *stem = markdown_core_built_stem(NULL, built, count, NULL, &failed);
+    if (failed) {
+        return false;
+    }
+    member->node->children = stem;
+    for (markdown_core_member *child = member->first; child; child = child->next) {
+        child->held = false;
+    }
+    return true;
+}
+
 static void create_tree(test_batch_runner *runner) {
     markdown_core_node *doc = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
     markdown_core_member *built = markdown_core_member_new(NULL, doc, false);
@@ -1493,10 +1513,7 @@ static void create_tree(test_batch_runner *runner) {
 
     /* Each member freezes once its children have: their nodes become its
      * stem, in the order the members were linked. */
-    OK(runner,
-       markdown_core_member_freeze(NULL, emph, NULL) && markdown_core_member_freeze(NULL, p, NULL) &&
-           markdown_core_member_freeze(NULL, built, NULL),
-       "the built tree freezes");
+    OK(runner, freeze(emph) && freeze(p) && freeze(built), "the built tree freezes");
     markdown_core_member_release(NULL, built);
     INT_EQ(runner, markdown_core_node_check(doc, NULL), 0, "built tree consistent");
     markdown_core_node *paragraph = child_at(doc, 0);

@@ -548,6 +548,50 @@ static inline void markdown_core_parser_release_node(markdown_core_parser *parse
     markdown_core_node_pool_release(parser ? parser->pool : NULL, node);
 }
 
+/* The node of the last child `member` numbered; NULL for none. */
+static inline markdown_core_node *markdown_core_parser_last_built(const markdown_core_parser *parser,
+                                                                  const markdown_core_member *member) {
+    if (!member->built) {
+        return NULL;
+    }
+    (void)parser;
+    const markdown_core_built *last = &member->entries[member->built - 1];
+    return last->candidate ? markdown_core_stem_at(last->candidate, markdown_core_stem_count(last->candidate) - 1)
+                           : last->node;
+}
+
+/* The node of the last child `member` holds, numbered or not; NULL for
+ * none. */
+static inline markdown_core_node *markdown_core_parser_last_child(const markdown_core_parser *parser,
+                                                                  const markdown_core_member *member) {
+    return member->last ? member->last->node : markdown_core_parser_last_built(parser, member);
+}
+
+/* The node of the child before `member` among its owner's, numbered or not;
+ * NULL for none. */
+static inline markdown_core_node *markdown_core_parser_child_before(const markdown_core_parser *parser,
+                                                                    const markdown_core_member *member) {
+    return member->prev    ? member->prev->node
+           : member->owner ? markdown_core_parser_last_built(parser, member->owner)
+                           : NULL;
+}
+
+/* Whether `member` holds a child, numbered or not. */
+static inline bool markdown_core_member_holds_child(const markdown_core_member *member) {
+    return member->first || member->built;
+}
+
+/* Where the children `member` holds end: past its last, numbered or not.
+ * False when it holds none. */
+static inline bool markdown_core_member_children_end(const markdown_core_member *member, uint32_t *end) {
+    if (member->last) {
+        *end = markdown_core_member_place(member->last).end;
+        return true;
+    }
+    *end = member->anchor.place;
+    return member->built != 0;
+}
+
 /* A member for `node` from the parse's pool (node.h); NULL, with the parse
  * failed, when it could not be allocated. */
 static inline markdown_core_member *markdown_core_parser_member(markdown_core_parser *parser, markdown_core_node *node,
