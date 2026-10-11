@@ -597,8 +597,9 @@ static inline markdown_core_node *markdown_core_parser_make_node_with_ext(markdo
     return markdown_core_node_pool_new(parser ? parser->pool : NULL, type, element);
 }
 
-/* A block its lines turned into another kind reads the old node of that
- * kind which begins where it does (blocks.c). */
+/* A block its lines or its content turned into another kind reads the old
+ * node of that kind which begins where it does, and chooses again what it
+ * continues (blocks.c). */
 void markdown_core_parser_kind_changed(markdown_core_parser *parser, markdown_core_member *member);
 
 /* A draft for `node` from the parse's draft area (node.h); NULL, with the
@@ -633,12 +634,15 @@ static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_k
 
 /* Turns `draft`'s node, a node of the content of the inline root being
  * completed or the root's own, which its holder builds, into one of `kind`,
- * as its content decided. The root's own node is its member's: the member
- * decides again as the kind it is now (5.9). */
+ * as its content decided. The root's own node is its member's, whose choice
+ * is not final until its kind is (5.9): a step that changes its kind has
+ * consumed the content, so no node it holds keeps a choice made under the
+ * old kind. */
 static inline markdown_core_node_set_kind_result
 markdown_core_inline_set_kind(markdown_core_parser *parser, markdown_core_draft *draft, markdown_core_node_type kind) {
     if (!draft->owner) {
         assert(draft == parser->completing->builder && parser->completing->holder == parser->completing->node);
+        assert(!draft->first && !draft->fields);
         return markdown_core_parser_set_node_kind(parser, parser->completing->member, kind);
     }
     markdown_core_parser_note_kind(parser, kind);

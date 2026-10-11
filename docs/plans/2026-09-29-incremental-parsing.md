@@ -939,18 +939,21 @@ with its `O`: equal kind, equal scalars, equal extent, and every child
 relation holding the same objects. If they are equal, `N` is released and `O`
 is shared in its place.
 
-Each owner decides its match from its own place on the spine. When a read
-node `N` first needs its old node, as its first held node completes or as it
+Each node decides its match from its owner's cursor. When a read node `N`
+first needs its old node, as its first held node completes or as it
 completes, its owner's cursor proposes `T`: the first old sibling not yet
 passed whose kind is `N`'s and whose anchor image is at or after `N`'s start.
-When `N` completes, it matches `T` if `T`'s anchor image lies before `N`'s
-end, and the old siblings whose anchor images lie before `N`'s end are
-passed. This is the earliest candidate the rule above names, because anchors
+The choice is final when `N`'s range and kind are both final: `N` then
+matches the first old sibling not yet passed whose kind is its own and whose
+anchor image lies in its range, and the old siblings whose anchor images lie
+before its end are passed. This is the earliest candidate the rule above names, because anchors
 are in source order and images are monotone (5.2). A node held by `N` lies in
 `N`'s range, and the anchor of an old node held by `T` is at or after `T`'s
 anchor, so a held node matches inside `T` only when `T`'s anchor image lies in
-`N`'s range: every decision stands when it is made. A node's kind is decided
-before any node it holds completes. Within the C session, a node that differs from its predecessor as an
+`N`'s range: every decision stands when it is made. A step that changes
+`N`'s kind after its held nodes complete, as a paragraph read as a formula
+block, consumes every node `N` holds, so the result holds no decision made
+under `T`. Within the C session, a node that differs from its predecessor as an
 object therefore differs as a value, which is what R3 measures.
 
 ### 5.10 Why the result equals a fresh parse

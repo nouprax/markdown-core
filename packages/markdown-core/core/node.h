@@ -897,12 +897,10 @@ typedef struct {
  * A member also carries what the node continues
  * (docs/plans/2026-09-29-incremental-parsing.md, 5.9): `old`, the node of
  * the previous tree it continues once `decided`, `tentative` while its range
- * is open and may still pass that node by, whether its node has taken its id
+ * or its kind is open and may still pass that node by, whether its node has taken its id
  * (`identified`), where that node starts in its old coordinates, whether it
  * has `searched` its owner's cursor, in its order among the children, which
- * it does once its range is final, and `from_next` and `from_anchor`, where
- * that cursor stood as it did, which it reads from again when its kind
- * changes after it chose. A block that
+ * it does once its range and its kind are final. A block that
  * closed `awaits_trailer` when a later line may still add to it, as a
  * trailing caption joins a table: it completes once that line comes, its
  * owner takes another child, or its owner closes; a member has `completed`
@@ -941,8 +939,6 @@ struct markdown_core_member {
     /* The orders of its subtree, as its completion and its owner's
      * numbering collect them. */
     markdown_core_orders orders;
-    size_t from_next;
-    uint32_t from_anchor;
     uint32_t index, slot, children;
     bool held, field, decided, tentative, identified, searched, awaits_trailer, completed, numbered;
 };

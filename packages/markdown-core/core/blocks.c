@@ -1859,22 +1859,14 @@ markdown_core_member *markdown_core_parser_add_child_validated(markdown_core_par
 }
 
 /* A block its lines or its content turned into `member`'s kind reads the
- * old node of that kind which begins where it does. One that chose what it
- * continues as the kind it was, as a paragraph whose content makes it a
- * formula block, chooses again as the kind it is, from where its owner's
- * cursor stood as it first chose (5.9). Its kind is final before any block
- * it holds completes: its choice was final. */
+ * old node of that kind which begins where it does. Its kind was not final,
+ * so its choice was not (5.9): the choice it made as the kind it was goes,
+ * and it chooses as the kind it is when it next needs to, its owner's
+ * cursor standing where it did. */
 void markdown_core_parser_kind_changed(markdown_core_parser *parser, markdown_core_member *member) {
     S_read_again_where_it_begins(parser, member);
-    if (!member->searched) {
-        return;
-    }
-    assert(!member->tentative);
-    member->owner->pair.next = member->from_next;
-    member->owner->pair.anchor = member->from_anchor;
-    member->decided = member->searched = false;
-    const markdown_core_element_instance *document = parser->dialect->document_structure;
-    document->element->decide_member(document, parser, member);
+    assert(!member->decided || member->tentative);
+    member->decided = member->tentative = false;
 }
 
 markdown_core_member *markdown_core_parser_attach(markdown_core_parser *parser, markdown_core_member *owner,
@@ -2259,11 +2251,12 @@ static void S_complete_pass(markdown_core_parser *parser, markdown_core_inline_r
     const markdown_core_kind_record *const kinds = parser->dialect->kinds;
     const markdown_core_complete_step_entry *const *const dispatch = parser->dialect->complete_dispatch;
     markdown_core_draft *holder = root->builder;
-    /* Its kind and its range are final: it decides what it continues, whose
-     * content it reads again (5.6), before it reads its own. */
+    /* Its range is final and its kind is once its content completes: it
+     * chooses what it continues, whose content it reads again (5.6), before
+     * it reads its own, and the choice is final as it completes (5.9). */
+    parser->completing = root;
     const markdown_core_element_instance *document = parser->dialect->document_structure;
     document->element->decide_member(document, parser, root->member);
-    parser->completing = root;
     parser->asker = root->node;
     if (!parser->error) {
         const markdown_core_kind_record *kind = markdown_core_parser_kind(parser, holder->node);
