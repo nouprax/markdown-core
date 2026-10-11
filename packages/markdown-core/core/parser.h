@@ -621,12 +621,6 @@ static inline markdown_core_draft *markdown_core_parser_draft(markdown_core_pars
  * line is read again by every parse (E5). */
 static inline void markdown_core_parser_read_leaf(markdown_core_parser *parser) { parser->input.read_leaf = true; }
 
-/* Turns `draft`'s node, a node of the content of the inline root being
- * completed or the root's own, which its holder builds, into one of `kind`,
- * as its content decided (blocks.c). */
-markdown_core_node_set_kind_result
-markdown_core_inline_set_kind(markdown_core_parser *parser, markdown_core_draft *draft, markdown_core_node_type kind);
-
 /* Turns the block `member` holds into one of `kind`, as its lines decided. */
 static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_kind(markdown_core_parser *parser,
                                                                                     markdown_core_member *member,
@@ -639,6 +633,20 @@ static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_k
         markdown_core_parser_kind_changed(parser, member);
     }
     return result;
+}
+
+/* Turns `draft`'s node, a node of the content of the inline root being
+ * completed or the root's own, which its holder builds, into one of `kind`,
+ * as its content decided. The root's own node is its member's: the member
+ * decides again as the kind it is now (5.9). */
+static inline markdown_core_node_set_kind_result
+markdown_core_inline_set_kind(markdown_core_parser *parser, markdown_core_draft *draft, markdown_core_node_type kind) {
+    if (!draft->owner) {
+        assert(draft == parser->completing->builder && parser->completing->holder == parser->completing->node);
+        return markdown_core_parser_set_node_kind(parser, parser->completing->member, kind);
+    }
+    markdown_core_parser_note_kind(parser, kind);
+    return markdown_core_node_set_kind(draft->node, markdown_core_inline_owner(parser, draft), kind);
 }
 
 /* The instance of the structure element of `node`'s kind (dialect.h,

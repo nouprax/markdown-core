@@ -2021,19 +2021,6 @@ void markdown_core_inline_release(markdown_core_parser *parser, markdown_core_dr
     markdown_core_draft_release(parser ? parser->pool : NULL, draft);
 }
 
-markdown_core_node_set_kind_result
-markdown_core_inline_set_kind(markdown_core_parser *parser, markdown_core_draft *draft, markdown_core_node_type kind) {
-    if (!draft->owner) {
-        /* The root's own node: its member decides again as the kind it is
-         * now (5.9). */
-        markdown_core_inline_root *root = parser->completing;
-        assert(draft == root->builder && root->holder == root->node);
-        return markdown_core_parser_set_node_kind(parser, root->member, kind);
-    }
-    markdown_core_parser_note_kind(parser, kind);
-    return markdown_core_node_set_kind(draft->node, markdown_core_inline_owner(parser, draft), kind);
-}
-
 /* A FRAME PER ROOT THE COMPLETION PASS IS INSIDE: the inline root's holder,
  * and each field root of an inline node in its content -- a citation's note
  * and affixes, a directive's label -- which the inline parser filled as it
