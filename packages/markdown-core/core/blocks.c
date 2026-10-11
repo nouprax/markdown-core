@@ -60,7 +60,6 @@ static void S_complete_node(markdown_core_parser *parser, markdown_core_member *
 static void S_complete_inline_root(markdown_core_parser *parser, markdown_core_inline_root *root);
 static void S_complete_closed(markdown_core_parser *parser, markdown_core_member *member);
 static void S_complete_trailed(markdown_core_parser *parser, markdown_core_member *owner);
-static void S_enter_spine(markdown_core_parser *parser, markdown_core_member *member);
 static inline bool S_starts_on_line(markdown_core_parser *parser, const markdown_core_node *node, int line);
 static inline int S_append_input_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
                                        bufsize_t line_start, int column, bufsize_t length, bufsize_t offset);
@@ -157,7 +156,6 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     markdown_core_free(parser->walk_stack);
     markdown_core_free(parser->complete_states);
     markdown_core_drafts_dispose(&parser->drafts);
-    markdown_core_free(parser->undecided);
     S_input_dispose(parser);
     markdown_core_free(parser->edit_shift);
     for (size_t i = 0; i < parser->replacement_count; i++) {
@@ -1436,7 +1434,6 @@ static void S_settle(markdown_core_parser *parser, markdown_core_member *member)
         const markdown_core_node_internal_flags holds = MARKDOWN_CORE_NODE__HOLDS_NEXT | MARKDOWN_CORE_NODE__TRAILED;
         markdown_core_node *last = member->prev->node;
         last->flags = (markdown_core_node_internal_flags)((last->flags & ~holds) | (b->flags & holds));
-        markdown_core_parser_leave_spine(parser, member);
         markdown_core_parser_release_member(parser, member);
         return;
     }
@@ -1446,8 +1443,7 @@ static void S_settle(markdown_core_parser *parser, markdown_core_member *member)
     }
     /* The last block of an open owner that a later line may still add to
      * completes when that line comes, its owner takes another child or its
-     * owner closes; it stays among the open blocks that have not decided
-     * (5.9) until then. */
+     * owner closes; its range is open until then (5.9). */
     if (member->awaits_trailer && parent && parent->last == member &&
         (parent->node->flags & MARKDOWN_CORE_NODE__OPEN)) {
         return;
@@ -1457,10 +1453,9 @@ static void S_settle(markdown_core_parser *parser, markdown_core_member *member)
 }
 
 /* The block is complete (docs/plans/2026-09-29-incremental-parsing.md, 5.8):
- * it leaves the open blocks that have not decided (5.9), deciding as it
- * completes, its children become its stem, and it numbers what it holds. */
+ * it decides as it completes (5.9), its children become its stem, and it
+ * numbers what it holds. */
 static void S_complete_closed(markdown_core_parser *parser, markdown_core_member *member) {
-    markdown_core_parser_leave_spine(parser, member);
     if (!parser->error) {
         S_complete_node(parser, member, member->node->where.place.start);
     }
@@ -1863,39 +1858,23 @@ markdown_core_member *markdown_core_parser_add_child_validated(markdown_core_par
     return member;
 }
 
-/* A block its lines turned into `member`'s kind reads the old node of that
- * kind which begins where it does. */
+/* A block its lines or its content turned into `member`'s kind reads the
+ * old node of that kind which begins where it does. One that chose what it
+ * continues as the kind it was, as a paragraph whose content makes it a
+ * formula block, chooses again as the kind it is, from where its owner's
+ * cursor stood as it first chose (5.9). Its kind is final before any block
+ * it holds completes: its choice was final. */
 void markdown_core_parser_kind_changed(markdown_core_parser *parser, markdown_core_member *member) {
-    /* One that decided as the kind it was decides again (5.9). */
-    if (member->decided && member->searched) {
-        member->decided = false;
-        member->old = NULL;
-        member->redo = true;
-    }
     S_read_again_where_it_begins(parser, member);
-}
-
-/* An open block that has not decided what it continues decides when a block
- * it holds completes (5.9): it joins the spine of them. The blocks whose
- * ranges closed since the last one joined leave it first: what is left of it
- * lies on the path to this one. */
-static void S_enter_spine(markdown_core_parser *parser, markdown_core_member *member) {
-    while (parser->undecided_count > parser->undecided_front &&
-           !markdown_core_member_range_open(parser->undecided[parser->undecided_count - 1])) {
-        parser->undecided[--parser->undecided_count]->spine = false;
-    }
-    if (member->decided || !markdown_core_member_range_open(member)) {
+    if (!member->searched) {
         return;
     }
-    markdown_core_member **undecided = markdown_core_reserve(parser->undecided, &parser->undecided_capacity,
-                                                             parser->undecided_count + 1, sizeof(*undecided));
-    if (!undecided) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return;
-    }
-    parser->undecided = undecided;
-    undecided[parser->undecided_count++] = member;
-    member->spine = true;
+    assert(!member->tentative);
+    member->owner->pair.next = member->from_next;
+    member->owner->pair.anchor = member->from_anchor;
+    member->decided = member->searched = false;
+    const markdown_core_element_instance *document = parser->dialect->document_structure;
+    document->element->decide_member(document, parser, member);
 }
 
 markdown_core_member *markdown_core_parser_attach(markdown_core_parser *parser, markdown_core_member *owner,
@@ -1909,7 +1888,6 @@ markdown_core_member *markdown_core_parser_attach(markdown_core_parser *parser, 
         S_complete_trailed(parser, owner);
     }
     markdown_core_member_attach(owner, member, before);
-    S_enter_spine(parser, member);
     return member;
 }
 
@@ -1923,24 +1901,7 @@ markdown_core_member *markdown_core_parser_attach_field(markdown_core_parser *pa
     return member;
 }
 
-void markdown_core_parser_leave_spine(markdown_core_parser *parser, markdown_core_member *member) {
-    if (!member->spine) {
-        return;
-    }
-    size_t at = parser->undecided_count;
-    while (parser->undecided[--at] != member) {
-    }
-    memmove(&parser->undecided[at], &parser->undecided[at + 1],
-            (parser->undecided_count - at - 1) * sizeof(*parser->undecided));
-    parser->undecided_count--;
-    member->spine = false;
-    if (parser->undecided_count == parser->undecided_front) {
-        parser->undecided_count = parser->undecided_front = 0;
-    }
-}
-
 void markdown_core_parser_release_member(markdown_core_parser *parser, markdown_core_member *member) {
-    assert(!member->spine || (parser && parser->error));
     if (member->owner) {
         markdown_core_member_unlink(member);
     }

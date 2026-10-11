@@ -896,21 +896,19 @@ typedef struct {
  *
  * A member also carries what the node continues
  * (docs/plans/2026-09-29-incremental-parsing.md, 5.9): `old`, the node of
- * the previous tree it continues once `decided`, whether its node has taken
- * its id (`identified`), where that node starts in its old coordinates,
- * whether it has
- * `searched` its owner's cursor, in its order among the children, and
- * `from_next` and `from_anchor`, where that cursor stood as its search
- * began, which it reads from again to `redo` its search when its kind
- * changed after it decided; an open block that has not decided is on the
- * parser's `spine` of them. A block that closed `awaits_trailer` when a
- * later line may still add to it, as a trailing caption joins a table: it
- * completes once that line comes, its owner takes another child, or its
- * owner closes; a member has `completed` once its node has. As an
- * owner it pairs the members it holds with the old node's relation through
- * `pair`. A member's `index` counts the
- * children its owner linked before it, `children` those it has linked, and
- * `depth` is its distance from the root.
+ * the previous tree it continues once `decided`, `tentative` while its range
+ * is open and may still pass that node by, whether its node has taken its id
+ * (`identified`), where that node starts in its old coordinates, whether it
+ * has `searched` its owner's cursor, in its order among the children, which
+ * it does once its range is final, and `from_next` and `from_anchor`, where
+ * that cursor stood as it did, which it reads from again when its kind
+ * changes after it chose. A block that
+ * closed `awaits_trailer` when a later line may still add to it, as a
+ * trailing caption joins a table: it completes once that line comes, its
+ * owner takes another child, or its owner closes; a member has `completed`
+ * once its node has. As an owner it pairs the members it holds with the old
+ * node's relation through `pair`. A member's `index` counts the children its
+ * owner linked before it, and `children` those it has linked.
  *
  * Once numbered, a node settles (ast.c): its `slot` is where its owner's
  * stem holds it, `place` where the node lay, its own `where` now holding its
@@ -945,8 +943,8 @@ struct markdown_core_member {
     markdown_core_orders orders;
     size_t from_next;
     uint32_t from_anchor;
-    uint32_t index, depth, slot, children;
-    bool held, field, decided, identified, searched, redo, spine, awaits_trailer, completed, numbered;
+    uint32_t index, slot, children;
+    bool held, field, decided, tentative, identified, searched, awaits_trailer, completed, numbered;
 };
 
 /* The node `node`'s inline content is parsed into: the node itself, or the
@@ -996,59 +994,8 @@ static inline markdown_core_member *markdown_core_member_new(markdown_core_node_
     return member;
 }
 
-/* Whether `member` has decided to continue no old node: then nothing it holds
- * continues one either, and every member it holds has decided so too (5.9). */
-static inline bool markdown_core_member_continues_nothing(const markdown_core_member *member) {
-    return member->decided && !member->old;
-}
-
-/* The first member `member` holds: its first field root, or its first
- * child. */
-static inline markdown_core_member *markdown_core_member_first_held(const markdown_core_member *member) {
-    return member->fields ? member->fields : member->first;
-}
-
-/* The member `member`'s owner holds after it: the next field root, then the
- * first child, then the next child. */
-static inline markdown_core_member *markdown_core_member_held_after(const markdown_core_member *member) {
-    return member->next ? member->next : member->field ? member->owner->first : NULL;
-}
-
-/* `member` decides to continue nothing, and so does every member it holds
- * that had not decided: they continue nothing whatever they become. */
-static inline void markdown_core_member_continue_nothing(markdown_core_member *member) {
-    member->decided = true;
-    /* A member that had decided continues nothing, and so has everything it
-     * holds, or continues an old node, which what it holds searches. */
-    markdown_core_member *at = markdown_core_member_first_held(member);
-    while (at) {
-        markdown_core_member *below = NULL;
-        if (!at->decided) {
-            at->decided = true;
-            below = markdown_core_member_first_held(at);
-        }
-        if (below) {
-            at = below;
-            continue;
-        }
-        while (at != member && !markdown_core_member_held_after(at)) {
-            at = at->owner;
-        }
-        at = at == member ? NULL : markdown_core_member_held_after(at);
-    }
-}
-
-/* What `member` takes from the `owner` it is linked under: it continues
- * nothing when `owner` does. */
-static inline void markdown_core_member_inherit(const markdown_core_member *owner, markdown_core_member *member) {
-    if (!member->decided && markdown_core_member_continues_nothing(owner)) {
-        markdown_core_member_continue_nothing(member);
-    }
-}
-
 /* Links the detached `child` under `owner`, before `before` (a child of
- * `owner`) or last, and it inherits from `owner`. The caller has proved
- * containment. */
+ * `owner`) or last. The caller has proved containment. */
 static inline void markdown_core_member_attach(markdown_core_member *owner, markdown_core_member *child,
                                                markdown_core_member *before) {
     assert(owner && child && owner != child);
@@ -1057,9 +1004,7 @@ static inline void markdown_core_member_attach(markdown_core_member *owner, mark
     assert(markdown_core_member_admits(owner, child));
     markdown_core_member *previous = before ? before->prev : owner->last;
     child->owner = owner;
-    child->depth = owner->depth + 1;
     child->index = owner->children++;
-    markdown_core_member_inherit(owner, child);
     child->prev = previous;
     child->next = before;
     if (previous) {
@@ -1074,8 +1019,7 @@ static inline void markdown_core_member_attach(markdown_core_member *owner, mark
     }
 }
 
-/* Links the detached `field` as the last field root `owner` builds, and it
- * inherits from `owner`. */
+/* Links the detached `field` as the last field root `owner` builds. */
 void markdown_core_member_attach_field(markdown_core_member *owner, markdown_core_member *field);
 
 /* Detaches `member` from its owner and siblings, keeping its subtree. */

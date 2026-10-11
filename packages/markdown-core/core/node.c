@@ -1561,8 +1561,6 @@ void markdown_core_member_attach_field(markdown_core_member *owner, markdown_cor
     assert(!field->owner && !field->next);
     field->owner = owner;
     field->field = true;
-    field->depth = owner->depth + 1;
-    markdown_core_member_inherit(owner, field);
     markdown_core_member **at = &owner->fields;
     while (*at) {
         at = &(*at)->next;
@@ -1944,10 +1942,12 @@ markdown_core_draft *markdown_core_drafts_take(markdown_core_drafts *drafts, mar
     if (!drafts->at || drafts->used == MARKDOWN_CORE_DRAFT_CHUNK) {
         markdown_core_draft_chunk *next = drafts->at ? drafts->at->next : drafts->first;
         if (!next) {
-            next = markdown_core_alloc(1, sizeof(*next));
+            /* Each draft is cleared as it is taken, so the chunk is not. */
+            next = markdown_core_realloc(NULL, sizeof(*next));
             if (!next) {
                 return NULL;
             }
+            next->next = NULL;
             if (drafts->at) {
                 drafts->at->next = next;
             } else {

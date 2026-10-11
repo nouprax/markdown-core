@@ -281,10 +281,6 @@ struct markdown_core_parser {
      * (blocks.c, complete_pass), and how many frames they serve. */
     void **complete_states;
     size_t complete_capacity;
-    /* THE OPEN BLOCKS THAT HAVE NOT DECIDED what they continue (5.9), from
-     * `undecided_front` on, highest first (ast.c, spine_decide). */
-    struct markdown_core_member **undecided;
-    size_t undecided_front, undecided_count, undecided_capacity;
     /* The root whose content is being completed, or NULL: the nodes numbered
      * meanwhile lie in its content. */
     struct markdown_core_inline_root *completing;
@@ -877,9 +873,6 @@ void markdown_core_parser_finalize_unmatched_blocks(markdown_core_parser *parser
 void markdown_core_parser_read_blocks(markdown_core_parser *parser, markdown_core_member *member);
 /* Whether `node` holds inline content (its kind's record, dialect.h). */
 bool markdown_core_parser_contains_inlines(markdown_core_parser *parser, markdown_core_node *node);
-/* `member`, a block that was open and had not decided what it continues,
- * leaves the parser's spine of them (5.9). */
-void markdown_core_parser_leave_spine(markdown_core_parser *parser, markdown_core_member *member);
 
 /* `member`'s node, which holds an inline root in `holder` and lies at
  * `place`, completes as the root does (docs/plans/2026-09-29-incremental-
