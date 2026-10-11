@@ -17,8 +17,7 @@ hooks), so the transaction opens only where a marker can be.
 A reference-shaped line uses the reference parser's non-registering recognition
 operation. Once accepted, the one-line term owns an inline root, separate from
 its ordered block-body roots. That root is an inline root like any other: it
-is queued as its owner is numbered, and it parses its content and completes its
-tree in one pass. Destruction uses the same iterative ownership
+parses its content as its owner closes, and completes its tree in one pass. Destruction uses the same iterative ownership
 walk. Public models expose only DefinitionList, Definition, the term array and
 arrays of body content; private body roots never become public Markup.
 

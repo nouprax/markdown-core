@@ -212,23 +212,23 @@ A node is complete when it is made. A block settles as it closes: its
 element's `finalize_block` runs, its runs are placed, and it completes. A
 block settles once every block it holds has settled; one that closes while the
 last block under it is still open (a new list closes the old one before its
-items) settles as that block does. Completing a node numbers each node it holds
-that is not numbered yet, in canonical field order: its extent, measured from
-the end of the node before it in its relation (a table's rows are one) or
-from the owner's start. A numbered node settles once nothing it waits on is pending -- its inline root,
-its block input, its anchor, the nodes it holds. Its parse-time place becomes its extent. A Footnote,
-Specimen, Reference or Heading enters the document's definition tables at its
-source start as it is numbered, and a node holding inline content is queued as
-an inline root. Completion is idempotent: a node that gains a node later (a
-table gaining a trailing caption) completes again and numbers only the new
-one.
+items) settles as that block does. An owner numbers each child it holds as it
+takes the next one, and the rest as it completes, its fields first, in
+canonical field order: each takes its extent, measured from the end of the
+node before it in its relation (a table's rows are one) or from the owner's
+start, and its parse-time place becomes its extent. A Footnote, Specimen,
+Reference or Heading enters the document's definition tables at its source
+start as it is numbered.
 
-After block parsing the document is prepared; then each inline root, in the
-order it was queued, parses its content and completes its tree in one pass,
-and the root completes last. The document settles last when the tree is
-published. A fresh parse continues nothing, so each node takes its id as it
-is numbered: its ids are 1 through its node count in the order its nodes are
-numbered, and the document holds the last id. A numbered node holds only its
+A block's inline roots parse their content as the block closes, and each
+completes its tree in one pass; the root completes last. The document settles
+last when the tree is published. A fresh parse continues nothing, so each
+new node takes the next id: a block's inline content as the root completes,
+its fields as the block completes, and its new children after them. Ids are
+unique and rise in that order, and the document holds the largest. A root
+parsed again for a definition written after it leaves unused the ids its
+first content took, so ids need not run 1 through the node count. A numbered
+node holds only its
 extent, so headings and specimen definitions record their source start when
 they register (`markdown_core_source_entry`) and are ordered by that start.
 

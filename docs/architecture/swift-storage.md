@@ -66,8 +66,8 @@ scope or dump whose source ends before the node does, and a position whose
 line or column is below 1. The `SourceLines` helpers beneath them assume that
 check.
 
-Tests cover canonical dumps, fresh-parse ids numbered 1 through n in
-completion order, deep equality, both units' scopes and hit testing, the definition
+Tests cover canonical dumps, fresh-parse ids unique and rising in
+completion order with the document's the largest, deep equality, both units' scopes and hit testing, the definition
 tables and reference resolution, concurrent reads, and the last release of
 retained groups. The 30,000 and 65,536-level trees run on a thread with a
 512 KiB stack: release while a view holds a subtree, equality at the deepest

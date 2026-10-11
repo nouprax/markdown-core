@@ -128,9 +128,9 @@ Allocation failure frees continuations independently of the AST they borrow.
 
 Each populated affix owns a private inline root, exposed through the public
 Citation's prefix/suffix collections. Source trimming only changes raw edge
-whitespace; nested markup keeps its authored scope. After block parsing the
-document is prepared; then each inline root, in the order it was queued,
-parses its content and completes its tree in one pass on one explicit stack:
+whitespace; nested markup keeps its authored scope. Each inline root parses
+its content as its block closes, and completes its tree in one pass on one
+explicit stack:
 text consolidation, the completion steps (autolink's email scan, formula's
 standalone formula), Text completion (the kind's `complete_inline`), and each
 node numbering what it holds at its EXIT; the root completes last. An
