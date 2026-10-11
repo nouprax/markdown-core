@@ -353,10 +353,9 @@ static markdown_core_node *make_directive_node(const markdown_core_element *elem
  *
  * Scanning it here also means the bytes are CONSUMED here, so no other
  * element is ever offered them. There is nothing left to protect. */
-static markdown_core_member *match_colon_directive(const markdown_core_element *element, markdown_core_parser *parser,
-                                                   markdown_core_member *parent,
-                                                   markdown_core_inline_state *inline_state, markdown_core_chunk *chunk,
-                                                   bufsize_t offset) {
+static markdown_core_draft *match_colon_directive(const markdown_core_element *element, markdown_core_parser *parser,
+                                                  markdown_core_draft *parent, markdown_core_inline_state *inline_state,
+                                                  markdown_core_chunk *chunk, bufsize_t offset) {
     bufsize_t name_start;
     bufsize_t name_len;
     bufsize_t pos;
@@ -463,9 +462,9 @@ static markdown_core_member *match_colon_directive(const markdown_core_element *
  * recognised as a delimiter to pair with the opener; the label is scanned at
  * the colon now, so the bracket is nobody's business but the core's -- which
  * is what makes `[a](b)` inside a label work like any other link. */
-static markdown_core_member *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                   markdown_core_member *parent, unsigned char character,
-                                   markdown_core_inline_state *inline_state) {
+static markdown_core_draft *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                  markdown_core_draft *parent, unsigned char character,
+                                  markdown_core_inline_state *inline_state) {
     markdown_core_chunk *chunk = markdown_core_inline_state_get_chunk(inline_state);
     bufsize_t offset = (bufsize_t)markdown_core_inline_state_get_offset(inline_state);
 

@@ -8,7 +8,7 @@
  * inline cursor at its declaration dependency. */
 typedef struct {
     markdown_core_source_entry source;
-    markdown_core_member *builder;
+    markdown_core_draft *builder;
     markdown_core_inline_state *pending;
 } markdown_core_heading_parse;
 

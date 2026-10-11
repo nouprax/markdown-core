@@ -1577,11 +1577,11 @@ static void S_member_free(markdown_core_node_pool *pool, markdown_core_member *m
 bool markdown_core_member_freeze(markdown_core_node_pool *pool, markdown_core_member *member,
                                  const markdown_core_stem_summary *summary) {
     markdown_core_node *node = member->node;
-    /* A node completes once. */
-    assert(!node->children);
     if (!member->first) {
         return true;
     }
+    /* A node completes once. */
+    assert(!node->children);
     /* The most nodes held between two candidates. */
     size_t count = 0, most = 0, candidates = 0;
     for (const markdown_core_member *child = member->first; child; child = child->next) {
@@ -1938,4 +1938,122 @@ int markdown_core_node_check(markdown_core_node *node, FILE *out) {
 bool markdown_core_node_kind_set_intersects(const markdown_core_node_kind_set *a,
                                             const markdown_core_node_kind_set *b) {
     return (a->blocks & b->blocks) != 0 || (a->inlines & b->inlines) != 0;
+}
+
+markdown_core_draft *markdown_core_drafts_take(markdown_core_drafts *drafts, markdown_core_node *node, bool held) {
+    if (!drafts->at || drafts->used == MARKDOWN_CORE_DRAFT_CHUNK) {
+        markdown_core_draft_chunk *next = drafts->at ? drafts->at->next : drafts->first;
+        if (!next) {
+            next = markdown_core_alloc(1, sizeof(*next));
+            if (!next) {
+                return NULL;
+            }
+            if (drafts->at) {
+                drafts->at->next = next;
+            } else {
+                drafts->first = next;
+            }
+        }
+        drafts->at = next;
+        drafts->used = 0;
+    }
+    markdown_core_draft *draft = &drafts->at->items[drafts->used++];
+    memset(draft, 0, sizeof(*draft));
+    draft->node = node;
+    draft->held = held;
+    return draft;
+}
+
+void markdown_core_drafts_clear(markdown_core_drafts *drafts, markdown_core_node_pool *pool) {
+    if (!drafts->at) {
+        return;
+    }
+    for (markdown_core_draft_chunk *chunk = drafts->first;; chunk = chunk->next) {
+        const size_t used = chunk == drafts->at ? drafts->used : MARKDOWN_CORE_DRAFT_CHUNK;
+        for (size_t i = 0; i < used; i++) {
+            if (chunk->items[i].held) {
+                markdown_core_node_pool_release(pool, chunk->items[i].node);
+            }
+        }
+        if (chunk == drafts->at) {
+            break;
+        }
+    }
+    drafts->at = NULL;
+    drafts->used = 0;
+}
+
+void markdown_core_drafts_dispose(markdown_core_drafts *drafts) {
+    assert(!drafts->at);
+    while (drafts->first) {
+        markdown_core_draft_chunk *next = drafts->first->next;
+        markdown_core_free(drafts->first);
+        drafts->first = next;
+    }
+}
+
+void markdown_core_draft_release(markdown_core_node_pool *pool, markdown_core_draft *draft) {
+    assert(!draft->owner);
+    /* A pending list threaded through `next`: each draft taken from it puts
+     * its children and its field roots on it before it goes. */
+    draft->next = NULL;
+    markdown_core_draft *pending = draft;
+    while (pending) {
+        markdown_core_draft *taken = pending;
+        pending = taken->next;
+        if (taken->first) {
+            taken->last->next = pending;
+            pending = taken->first;
+        }
+        if (taken->fields) {
+            markdown_core_draft *tail = taken->fields;
+            while (tail->next) {
+                tail = tail->next;
+            }
+            tail->next = pending;
+            pending = taken->fields;
+        }
+        if (taken->held) {
+            markdown_core_node_pool_release(pool, taken->node);
+            taken->held = false;
+        }
+        taken->first = taken->last = taken->fields = NULL;
+    }
+}
+
+bool markdown_core_draft_freeze(markdown_core_node_pool *pool, markdown_core_draft *draft,
+                                const markdown_core_stem_summary *summary) {
+    size_t count = 0;
+    for (const markdown_core_draft *child = draft->first; child; child = child->next) {
+        count += child->held;
+    }
+    if (!count) {
+        return true;
+    }
+    /* A node completes once. */
+    assert(!draft->node->children);
+    markdown_core_node *small[MARKDOWN_CORE_STEM_WIDTH];
+    markdown_core_node **nodes = count <= MARKDOWN_CORE_STEM_WIDTH ? small : markdown_core_alloc(count, sizeof(*nodes));
+    if (!nodes) {
+        return false;
+    }
+    count = 0;
+    for (const markdown_core_draft *child = draft->first; child; child = child->next) {
+        if (child->held) {
+            nodes[count++] = child->node;
+        }
+    }
+    bool failed = false;
+    markdown_core_stem *stem = markdown_core_stem_make(pool, nodes, count, summary, &failed);
+    if (nodes != small) {
+        markdown_core_free(nodes);
+    }
+    if (failed) {
+        return false;
+    }
+    draft->node->children = stem;
+    for (markdown_core_draft *child = draft->first; child; child = child->next) {
+        child->held = false;
+    }
+    return true;
 }

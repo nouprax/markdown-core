@@ -531,8 +531,7 @@ static inline markdown_core_node_kind public_kind(const markdown_core_node *node
  * field order. Numbering a node passes the reuse cursor over
  * its range, collecting the old nodes it may continue. A node continues the first of
  * those old nodes of its kind, which gives it its id, or none, and takes the
- * next id; it decides as soon as that cannot change (number_unsettled), at
- * the latest as it settles, once it waits on nothing, its kind and range
+ * next id; it decides at the latest as it settles, its kind and range
  * final. Equal to the old node it continues, it is that node. A descendant
  * that asks which old node a node continues has it decided then. */
 
@@ -624,92 +623,92 @@ typedef struct {
     markdown_core_publication *publication;
     void (*observe)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
     const markdown_core_element_instance *observer;
-    /* The member being completed, which collects the orders of what it
-     * numbers. */
-    markdown_core_member *member;
+    /* What the node being completed collects the orders of what it numbers
+     * into. */
+    markdown_core_orders *orders;
 } complete_context;
 
-/* THE ORDERS A MEMBER COLLECTS (markdown_core_member, registry.h). An old
- * order comes after what `member` holds so far: the new orders no old one
+/* THE ORDERS A SUBTREE COLLECTS (markdown_core_orders, registry.h). An old
+ * order comes after what `orders` holds so far: the new orders no old one
  * followed are before it. */
-static void order_follow(markdown_core_member *member, markdown_core_order *old) {
-    for (markdown_core_order *order = member->order_open; order; order = order->next) {
+static void order_follow(markdown_core_orders *orders, markdown_core_order *old) {
+    for (markdown_core_order *order = orders->open; order; order = order->next) {
         order->before = old;
     }
-    member->order_open = NULL;
-    if (!member->order_lead) {
-        member->order_lead = old;
+    orders->open = NULL;
+    if (!orders->lead) {
+        orders->lead = old;
     }
-    if (!member->order_head) {
-        member->order_head = old;
+    if (!orders->head) {
+        orders->head = old;
     }
 }
 
 /* The orders `from` collected come after those `into` holds, and `from`
  * holds none. */
-static void order_append(markdown_core_member *into, markdown_core_member *from) {
-    if (!into->order_head) {
-        into->order_head = from->order_head;
+static void order_append(markdown_core_orders *into, markdown_core_orders *from) {
+    if (!into->head) {
+        into->head = from->head;
     }
-    if (from->order_lead) {
-        order_follow(into, from->order_lead);
-        into->order_open = from->order_open;
-    } else if (!into->order_open) {
-        into->order_open = from->order_first;
+    if (from->lead) {
+        order_follow(into, from->lead);
+        into->open = from->open;
+    } else if (!into->open) {
+        into->open = from->first;
     }
-    if (from->order_first) {
-        if (into->order_last) {
-            into->order_last->next = from->order_first;
+    if (from->first) {
+        if (into->last) {
+            into->last->next = from->first;
         } else {
-            into->order_first = from->order_first;
+            into->first = from->first;
         }
-        into->order_last = from->order_last;
+        into->last = from->last;
     }
-    from->order_first = from->order_last = from->order_open = from->order_lead = from->order_head = NULL;
+    *from = (markdown_core_orders){0};
 }
 
-/* `node` takes a new order, ahead of the orders `member` holds. False when
- * it could not be had. */
-static bool order_own(markdown_core_parser *parser, markdown_core_member *member, markdown_core_node *node) {
+/* `node` takes a new order, ahead of the orders of its subtree, `orders`.
+ * False when it could not be had. */
+static bool order_own(markdown_core_parser *parser, markdown_core_orders *orders, markdown_core_node *node) {
     markdown_core_order *order = markdown_core_order_new(parser->registry, node);
     if (!order) {
         return false;
     }
     node->order = order;
-    order->next = member->order_first;
-    member->order_first = order;
-    if (!member->order_last) {
-        member->order_last = order;
+    order->next = orders->first;
+    orders->first = order;
+    if (!orders->last) {
+        orders->last = order;
     }
-    if (member->order_lead) {
-        order->before = member->order_lead;
+    if (orders->lead) {
+        order->before = orders->lead;
     } else {
-        member->order_open = order;
+        orders->open = order;
     }
-    member->order_head = order;
+    orders->head = order;
     return true;
 }
 
-/* The orders `member` collected join the registry's list: the document's,
- * those no old order follows at the end of the list; the content of a node
- * whose order the list holds, `after`, all of it right after that order, in
- * tree order. False when a roster could not grow. */
-static bool order_settle(markdown_core_parser *parser, markdown_core_member *member, markdown_core_order *after) {
+/* The `orders` collected join the registry's list: the document's, those no
+ * old order follows at the end of the list; the content of a node whose
+ * order the list holds, `after`, all of it right after that order, in tree
+ * order. False when a roster could not grow. */
+static bool order_settle(markdown_core_parser *parser, markdown_core_orders *orders, markdown_core_order *after) {
     if (!after) {
-        order_follow(member, &parser->registry->orders);
+        order_follow(orders, &parser->registry->orders);
     }
-    const bool ok = markdown_core_order_join(parser->registry, member->order_first, after);
-    member->order_first = member->order_last = member->order_open = member->order_lead = member->order_head = NULL;
+    const bool ok = markdown_core_order_join(parser->registry, orders->first, after);
+    *orders = (markdown_core_orders){0};
     return ok;
 }
 
 /* THE ORDERS OF AN OLD SUBTREE IN CONTENT. The content of an inline root
  * joins the list right after the root's order, with the orders of the old
  * nodes the parse took into it (5.6): each leaves the list, and its node
- * the rosters, and `member` collects it again in tree order: the orders
+ * the rosters, and `orders` collects it again in tree order: the orders
  * under `node`, and its own when `own`. False when a roster could not
  * change or the walk could not grow. */
-static bool order_gather(markdown_core_parser *parser, markdown_core_member *member, const markdown_core_node *node,
+static bool order_gather(markdown_core_parser *parser, markdown_core_orders *orders, const markdown_core_node *node,
                          bool own) {
     const markdown_core_node **due = NULL;
     size_t count = 0, capacity = 0;
@@ -720,14 +719,14 @@ static bool order_gather(markdown_core_parser *parser, markdown_core_member *mem
             ok = markdown_core_order_unjoin(parser->registry, order);
             if (ok) {
                 order->next = NULL;
-                if (member->order_last) {
-                    member->order_last->next = order;
+                if (orders->last) {
+                    orders->last->next = order;
                 } else {
-                    member->order_first = order;
+                    orders->first = order;
                 }
-                member->order_last = order;
-                if (!member->order_head) {
-                    member->order_head = order;
+                orders->last = order;
+                if (!orders->head) {
+                    orders->head = order;
                 }
             }
         }
@@ -776,10 +775,10 @@ typedef struct {
 /* The runs of `item`, a node of the content of the root being completed, at
  * content range `place`: the source its range was read from, its window less
  * the gaps between the root's runs (markdown_core_source_runs_read), the
- * first measured from `*source`, which becomes where the last ends. `*start`
- * becomes where the first begins. False when an allocation failed. */
+ * first measured from `*source`, which becomes where the last ends. False when
+ * an allocation failed. */
 static bool inline_runs(markdown_core_parser *parser, markdown_core_publication *publication, markdown_core_node *item,
-                        markdown_core_place place, uint32_t *source, uint32_t *start) {
+                        markdown_core_place place, uint32_t *source) {
     bool failed;
     const markdown_core_source_runs *table = completing_runs(parser, publication, &failed);
     if (failed) {
@@ -810,7 +809,6 @@ static bool inline_runs(markdown_core_parser *parser, markdown_core_publication 
     }
     runs->count = (uint32_t)count;
     item->runs = runs;
-    *start = window.start;
     *source = from;
     return true;
 }
@@ -832,41 +830,71 @@ static void child_relation(const markdown_core_node *owner, markdown_core_field 
     }
 }
 
-/* Points `owner`'s cursor at its old node's relation `name`, whose first
- * old node is measured from where the old node begins. The later runs of a
- * relation's stem continue it: a table's rows are one relation. */
-static void pair_open(markdown_core_member *owner, markdown_core_field name) {
-    owner->paired = true;
-    owner->pair_name = (uint32_t)name;
-    owner->pair_stem = NULL;
-    owner->pair_next = owner->pair_end = 0;
-    owner->pair_anchor = owner->old_start;
+/* Points `pair` at the relation `name` of `old`, which begins at the old
+ * offset `start`: its first old node is measured from there. The later runs
+ * of a relation's stem continue it: a table's rows are one relation. */
+static void pair_open(markdown_core_pairing *pair, const markdown_core_node *old, uint32_t start,
+                      markdown_core_field name) {
+    *pair = (markdown_core_pairing){NULL, 0, 0, start, (uint32_t)name, true};
     markdown_core_relation_cursor cursor;
     markdown_core_relation relation;
     bool more;
-    markdown_core_relations_begin(&cursor, owner->old);
+    markdown_core_relations_begin(&cursor, old);
     while (relations_next(&cursor, &relation, &more)) {
-        const bool in_relation =
-            !relation.field && (owner->pair_stem ? relation.stem == owner->pair_stem : relation.name == name);
+        const bool in_relation = !relation.field && (pair->stem ? relation.stem == pair->stem : relation.name == name);
         if (in_relation) {
-            owner->pair_stem = relation.stem;
-            owner->pair_end = relation.index + relation.count;
-        } else if (owner->pair_stem) {
+            pair->stem = relation.stem;
+            pair->end = relation.index + relation.count;
+        } else if (pair->stem) {
             return;
         }
     }
 }
 
-/* The source window `member`'s range from its start up to `reach` covers:
- * the range itself, or, for a node of an inline root's content, where the
- * root read it. False when the root's runs could not be read. */
-static bool member_window(markdown_core_parser *parser, markdown_core_publication *publication,
-                          const markdown_core_member *member, uint32_t reach, markdown_core_place *window) {
-    const markdown_core_place place = {markdown_core_member_place(member).start, reach};
-    if (!member->owner->inner) {
-        *window = place;
-        return true;
+/* Points `pair`, the cursor of an owner of `node`'s kind that continues
+ * `old`, from `start`, at the relation its children are in. */
+static void pair_ready(markdown_core_pairing *pair, const markdown_core_node *node, const markdown_core_node *old,
+                       uint32_t start) {
+    markdown_core_field name;
+    child_relation(node, &name);
+    if (!pair->open || pair->name != (uint32_t)name) {
+        pair_open(pair, old, start, name);
     }
+}
+
+/* A child of `kind` whose source window is `window` reads `pair`'s relation
+ * from the old node `*next`, measured from `*anchor`: it passes every old
+ * node whose image lies before the window's end up to the first of its kind
+ * whose image lies at or after its start, which it continues: `*found`, at
+ * `*found_start`. The next child reads on from there: siblings' ranges may
+ * overlap, as a grid row's cells do over their lines. */
+static void pair_scan(markdown_core_parser *parser, const markdown_core_pairing *pair, size_t *next, uint32_t *anchor,
+                      markdown_core_place window, markdown_core_node_kind kind, const markdown_core_node **found,
+                      uint32_t *found_start) {
+    *found = NULL;
+    while (*next < pair->end) {
+        const markdown_core_node *old = markdown_core_stem_at(pair->stem, *next);
+        const markdown_core_place source = source_place(old, *anchor);
+        uint32_t image;
+        const bool anchored = markdown_core_parser_source_anchor(parser, source.start, source.end, &image);
+        if (anchored && image >= window.end) {
+            return;
+        }
+        (*next)++;
+        *anchor = source.end;
+        if (anchored && image >= window.start && public_kind(old) == kind) {
+            *found = old;
+            *found_start = source.start;
+            return;
+        }
+    }
+}
+
+/* The source window of a node of the content of the inline root being
+ * completed, which lies at `place` in the content: where the root read it.
+ * False when the root's runs could not be read. */
+static bool content_window(markdown_core_parser *parser, markdown_core_publication *publication,
+                           markdown_core_place place, markdown_core_place *window) {
     bool failed;
     const markdown_core_source_runs *table = completing_runs(parser, publication, &failed);
     if (failed) {
@@ -936,68 +964,65 @@ static markdown_core_node **field_slot_at(markdown_core_node *owner, size_t plac
     return find.slot;
 }
 
-/* `member`, a field of `owner`'s, continues the old owner's field in the same
- * place: a group the old group, and a node of its own the old node when it is
- * of its kind and the image of its anchor lies in its range, up to
- * `reach`. */
-static bool field_search(markdown_core_parser *parser, markdown_core_publication *publication,
-                         markdown_core_member *owner, markdown_core_member *member, uint32_t reach) {
+/* What `node`, a field of `owner`'s, continues among the fields of `old`,
+ * the old node `owner` continues, which starts at `start`: the old field in
+ * the same place, `*found` at `*found_start`, a group the old group, and a
+ * node of its own the old node when it is of its kind and the image of its
+ * anchor lies in `window`. False when that is not known yet: the image lies
+ * past the window, which is not `final`. */
+static bool field_pair(markdown_core_parser *parser, markdown_core_node *owner, const markdown_core_node *old,
+                       uint32_t start, const markdown_core_node *node, markdown_core_place window, bool final,
+                       const markdown_core_node **found, uint32_t *found_start) {
     size_t place;
-    field_slot(owner->node, member->node, &place);
-    const markdown_core_node *old = field_at(owner->old, place);
-    if (!old || (member->node->flags & MARKDOWN_CORE_NODE__GROUP)) {
-        decide(member, old, owner->old_start);
+    field_slot(owner, node, &place);
+    const markdown_core_node *field = field_at(old, place);
+    *found = field;
+    *found_start = start;
+    if (!field || (node->flags & MARKDOWN_CORE_NODE__GROUP)) {
         return true;
     }
-    const markdown_core_place source = source_place(old, owner->old_start);
-    markdown_core_place window;
-    if (!member_window(parser, publication, member, reach, &window)) {
-        return false;
-    }
+    const markdown_core_place source = source_place(field, start);
     uint32_t image;
     const bool anchored = markdown_core_parser_source_anchor(parser, source.start, source.end, &image);
-    if (anchored && image >= window.end && !passed_whole(member, reach)) {
-        member->passed = reach;
-        return true;
+    if (anchored && image >= window.end && !final) {
+        return false;
     }
     const bool continues =
-        anchored && image >= window.start && image < window.end && public_kind(old) == public_kind(member->node);
-    decide(member, continues ? old : NULL, continues ? source.start : 0);
+        anchored && image >= window.start && image < window.end && public_kind(field) == public_kind(node);
+    *found = continues ? field : NULL;
+    *found_start = continues ? source.start : 0;
+    return true;
+}
+
+/* `member`, a field of `owner`'s, continues the old owner's field in the same
+ * place (field_pair), as far as `reach`. */
+static bool field_search(markdown_core_parser *parser, markdown_core_publication *publication,
+                         markdown_core_member *owner, markdown_core_member *member, uint32_t reach) {
+    (void)publication;
+    const markdown_core_place window = {markdown_core_member_place(member).start, reach};
+    const markdown_core_node *old;
+    uint32_t old_start;
+    if (field_pair(parser, owner->node, owner->old, owner->old_start, member->node, window, passed_whole(member, reach),
+                   &old, &old_start)) {
+        decide(member, old, old_start);
+    }
     return true;
 }
 
 /* `member`, a child of `owner`, which continues an old node, reads `owner`'s
  * relation from the old node `*next`, measured from `*anchor`, as far as
- * `reach`: it passes every old node whose image lies before `reach` up to
- * the first of its kind whose image lies at or after its start, which it
- * continues. The next child reads on from there: siblings' ranges may
- * overlap, as a grid row's cells do over their lines. With none, it
- * continues nothing once its whole range is passed. */
-static bool pair_scan(markdown_core_parser *parser, markdown_core_publication *publication,
-                      const markdown_core_member *owner, markdown_core_member *member, size_t *next, uint32_t *anchor,
-                      uint32_t reach) {
-    markdown_core_place window;
-    if (!member_window(parser, publication, member, reach, &window)) {
-        return false;
-    }
-    const markdown_core_node_kind kind = public_kind(member->node);
-    while (*next < owner->pair_end) {
-        const markdown_core_node *old = markdown_core_stem_at(owner->pair_stem, *next);
-        const markdown_core_place source = source_place(old, *anchor);
-        uint32_t image;
-        const bool anchored = markdown_core_parser_source_anchor(parser, source.start, source.end, &image);
-        if (anchored && image >= window.end) {
-            break;
-        }
-        (*next)++;
-        *anchor = source.end;
-        if (anchored && image >= window.start && public_kind(old) == kind) {
-            decide(member, old, source.start);
-            break;
-        }
-    }
-    member->passed = reach;
-    if (!member->decided && passed_whole(member, reach)) {
+ * `reach` (pair_scan). With none of its kind there, it continues nothing
+ * once its whole range is passed. */
+static bool member_pair_scan(markdown_core_parser *parser, markdown_core_publication *publication,
+                             const markdown_core_member *owner, markdown_core_member *member, size_t *next,
+                             uint32_t *anchor, uint32_t reach) {
+    const markdown_core_place window = {markdown_core_member_place(member).start, reach};
+    const markdown_core_node *old;
+    uint32_t old_start;
+    pair_scan(parser, &owner->pair, next, anchor, window, public_kind(member->node), &old, &old_start);
+    if (old) {
+        decide(member, old, old_start);
+    } else if (passed_whole(member, reach)) {
         decide(member, NULL, 0);
     }
     return true;
@@ -1005,16 +1030,6 @@ static bool pair_scan(markdown_core_parser *parser, markdown_core_publication *p
 
 static bool search_step(markdown_core_parser *parser, markdown_core_publication *publication,
                         markdown_core_member *member, uint32_t reach);
-
-/* Points `owner`'s cursor at the relation the members it holds as children
- * are in. */
-static void pair_ready(markdown_core_member *owner) {
-    markdown_core_field name;
-    child_relation(owner->node, &name);
-    if (!owner->paired || owner->pair_name != (uint32_t)name) {
-        pair_open(owner, name);
-    }
-}
 
 /* `member`, a child of `owner`, which continues an old node, searches
  * `owner`'s cursor as far as `reach`. The children before it pass the
@@ -1030,11 +1045,11 @@ static bool pair_search(markdown_core_parser *parser, markdown_core_publication 
     }
     for (markdown_core_member *at = first; at != member; at = at->next) {
         if (at->candidate) {
-            pair_ready(owner);
-            if (owner->old == owner->scan && owner->pair_stem == owner->scan->children && owner->pair_next < at->past) {
+            pair_ready(&owner->pair, owner->node, owner->old, owner->old_start);
+            if (owner->old == owner->scan && owner->pair.stem == owner->scan->children && owner->pair.next < at->past) {
                 const markdown_core_node *final = at->old;
-                owner->pair_next = at->past;
-                owner->pair_anchor = source_place(final, at->old_start - (uint32_t) final->where.extent.lead).end;
+                owner->pair.next = at->past;
+                owner->pair.anchor = source_place(final, at->old_start - (uint32_t) final->where.extent.lead).end;
             }
         } else if (!search_step(parser, publication, at, markdown_core_member_place(at).end)) {
             return false;
@@ -1044,16 +1059,16 @@ static bool pair_search(markdown_core_parser *parser, markdown_core_publication 
     if (member->redo) {
         size_t next = member->from_next;
         uint32_t anchor = member->from_anchor;
-        return pair_scan(parser, publication, owner, member, &next, &anchor, reach);
+        return member_pair_scan(parser, publication, owner, member, &next, &anchor, reach);
     }
-    pair_ready(owner);
+    pair_ready(&owner->pair, owner->node, owner->old, owner->old_start);
     if (!member->searched) {
         /* It passes the cursor in its order, from here. */
         member->searched = true;
-        member->from_next = owner->pair_next;
-        member->from_anchor = owner->pair_anchor;
+        member->from_next = owner->pair.next;
+        member->from_anchor = owner->pair.anchor;
     }
-    return pair_scan(parser, publication, owner, member, &owner->pair_next, &owner->pair_anchor, reach);
+    return member_pair_scan(parser, publication, owner, member, &owner->pair.next, &owner->pair.anchor, reach);
 }
 
 /* One step of a search: `member`, whose owner has searched as far as it can,
@@ -1167,40 +1182,33 @@ static void identify(markdown_core_parser *parser, markdown_core_member *member)
                                                                                          : 0));
 }
 
-/* `member`'s node is numbered while it still waits, and its owner counts it
- * among what it waits on. It decides, and takes its id, as soon as that cannot
- * change: now when its owner continues nothing, as then it decided with its
- * owner to continue nothing whatever it becomes; otherwise as it settles, when
- * its kind and range are final. A member that waits on nothing settles as it
- * is numbered, which decides it. */
-static void number_unsettled(markdown_core_parser *parser, markdown_core_member *member) {
-    assert(member->waits && member->owner);
-    if (markdown_core_member_continues_nothing(member->owner)) {
-        assert(member->decided);
-        identify(parser, member);
-    }
-    member->counted = true;
-    member->owner->waits++;
-}
+/* `old` takes the place of `node`, which `owner` holds in its field when
+ * `field` and else at `slot` of its stem, or which is the document when there
+ * is no `owner`: `*kept`. The node goes when the parse does. False when it
+ * could not be kept for that, or a roster could not take it. */
+static bool settle_old(markdown_core_parser *parser, markdown_core_publication *publication, markdown_core_node *node,
+                       markdown_core_node *owner, bool field, uint32_t slot, const markdown_core_node *old,
+                       markdown_core_node **kept);
 
-/* Numbers `member`'s node, which `owner` holds, lies at its place, is
- * measured from `anchor` and fills `slot` of its relation, which is part of
- * the content of the root being completed when `in_content`: it holds its
- * strings and keeps its place, and takes its extent and its runs; a node
- * holding an inline root outside the content of one completes first; a
- * definition records where it was written; the observer sees it. It settles
- * now when it waits on nothing. Returns false when an allocation failed. */
+/* Whether `node` equals `old` as a value. */
+static bool node_same(const markdown_core_node *node, const markdown_core_node *old);
+
+/* Numbers `member`'s node, which lies at its place, is measured from
+ * `anchor` and fills `slot` of its relation: it holds its strings and keeps
+ * its place, and takes its extent and its runs; a node holding an inline
+ * root completes first; the observer sees it. It settles now. Returns false
+ * when an allocation failed. */
 static bool complete_number(const complete_context *context, markdown_core_member *member, item_anchor *anchor,
-                            uint32_t slot, bool in_content) {
+                            uint32_t slot) {
     markdown_core_parser *parser = context->parser;
     markdown_core_node *item = member->node;
     const unsigned slots = slot_of(item);
     const relation_shape shape = (relation_shape)(slots & SLOT_SHAPE);
-    /* A node that holds an inline root outside the content of one -- a cell,
-     * a caption -- is complete, its content with it, before it is numbered. */
-    markdown_core_node *holder = in_content ? NULL : markdown_core_node_content_holder(item);
+    /* A node that holds an inline root -- a cell, a caption -- is complete,
+     * its content with it, before it is numbered. */
+    markdown_core_node *holder = markdown_core_node_content_holder(item);
     const bool inlines = holder && markdown_core_parser_contains_inlines(parser, holder);
-    if (inlines && !member->completed && !member->taken) {
+    if (inlines && !member->completed) {
         markdown_core_parser_complete_node(parser, member);
         if (parser->error) {
             return false;
@@ -1216,46 +1224,32 @@ static bool complete_number(const complete_context *context, markdown_core_membe
     /* Its reach is measured past its end from here (5.1). */
     item->reach = item->reach > place.end ? item->reach - place.end : 0;
     anchor->place = place.end;
-    member->source = place.start;
-    if (in_content) {
-        /* A node of the content of the root being completed: its runs are
-         * the source its content range was read from. */
-        if (!inline_runs(parser, context->publication, item, place, &anchor->source, &member->source)) {
-            return false;
-        }
-    } else {
-        /* Its own runs, and those of a title or term that holds its inline
-         * content, which its content, complete, read as places. */
-        markdown_core_runs **held = inlines && holder != item ? shape_runs_at(item, shape) : NULL;
-        if (!publish_runs(parser->pool, &item->runs, place, anchor->source) ||
-            (held && !publish_runs(parser->pool, held, place, anchor->source))) {
-            return false;
-        }
-        if (inlines) {
-            context->publication->runs_node = NULL;
-        }
-        anchor->source = place.end;
-    }
-    /* A node that declares or asks, an inline root and a node its rosters
-     * list takes its order, ahead of the orders of
-     * what it holds, which then follow those its owner collected (5.7); an
-     * old node the parse took into content brings the orders under it. */
-    if ((member->taken && item->first && !order_gather(parser, member, item, false)) ||
-        ((item->facts || inlines || (slots & SLOT_LISTED)) && !item->order && !order_own(parser, member, item))) {
+    /* Its own runs, and those of a title or term that holds its inline
+     * content, which its content, complete, read as places. */
+    markdown_core_runs **held = inlines && holder != item ? shape_runs_at(item, shape) : NULL;
+    if (!publish_runs(parser->pool, &item->runs, place, anchor->source) ||
+        (held && !publish_runs(parser->pool, held, place, anchor->source))) {
         return false;
     }
-    item->first = member->order_head;
-    order_append(context->member, member);
+    if (inlines) {
+        context->publication->runs_node = NULL;
+    }
+    anchor->source = place.end;
+    /* A node that declares or asks, an inline root and a node its rosters
+     * list takes its order, ahead of the orders of what it holds, which then
+     * follow those its owner collected (5.7). */
+    if ((item->facts || inlines || (slots & SLOT_LISTED)) && !item->order &&
+        !order_own(parser, &member->orders, item)) {
+        return false;
+    }
+    item->first = member->orders.head;
+    order_append(context->orders, &member->orders);
     if (context->observe) {
         context->observe(context->observer, parser, item);
     }
     member->numbered = true;
     member->slot = slot;
-    if (member->waits) {
-        number_unsettled(parser, member);
-    } else {
-        markdown_core_settle_member(parser, context->publication, member);
-    }
+    markdown_core_settle_member(parser, context->publication, member);
     return !parser->error;
 }
 
@@ -1287,19 +1281,11 @@ static markdown_core_member *field_member(markdown_core_parser *parser, markdown
     return markdown_core_parser_attach_field(parser, owner, node);
 }
 
-/* A group whose relation `owner` numbered settles with it, or waits for the
- * members it holds that wait. */
+/* A group whose relation `owner` numbered settles with it. */
 static void group_numbered(markdown_core_parser *parser, markdown_core_publication *publication,
                            markdown_core_member *group) {
     group->numbered = true;
-    if (group->waits) {
-        if (!group->counted) {
-            group->counted = true;
-            group->owner->waits++;
-        }
-    } else {
-        markdown_core_settle_member(parser, publication, group);
-    }
+    markdown_core_settle_member(parser, publication, group);
 }
 
 /* Where the source of `node`, a numbered node of an inline root's content,
@@ -1313,28 +1299,14 @@ static uint32_t numbered_source_end(const markdown_core_node *node, uint32_t sou
     return (uint32_t)at;
 }
 
-/* An old node `member`'s node holds as it was: outside the content of the
- * root being completed, its first order is the next old one the orders
- * collected so far come before; in that content, its orders are collected
- * again. */
-static bool order_take(const complete_context *context, markdown_core_member *member, const markdown_core_node *item,
-                       bool in_content) {
-    if (in_content) {
-        return order_gather(context->parser, member, item, true);
-    }
-    order_follow(member, item->first);
-    return true;
-}
-
 /* Numbers what `member`'s node, which starts at `start`, holds and has not
  * numbered yet, relation by relation: each node is measured from the end of
- * the one before it in its stem, or from where the stem is measured -- the
- * owner's start, or 0 for the content of the inline root being completed,
- * which is its first relation -- and its runs from where the
- * source of the one before it ends, or the owner's begins (item_anchor). The
- * members of a relation's nodes are walked with them: the node's
- * children's, or those of the group that holds the relation, and a field's
- * own. */
+ * the one before it in its stem, or from the owner's start, and its runs
+ * likewise. The members of a relation's nodes are walked with them: the
+ * node's children's, or those of the group that holds the relation, and a
+ * field's own. The content of the inline root being completed, its first
+ * relation, is numbered as the root's holder completes
+ * (markdown_core_complete_draft). */
 static bool complete_relations(const complete_context *context, markdown_core_member *member, uint32_t start) {
     markdown_core_node *node = member->node;
     if (relations_empty(node)) {
@@ -1348,39 +1320,28 @@ static bool complete_relations(const complete_context *context, markdown_core_me
     markdown_core_relation_walk nodes;
     markdown_core_member *child = member->first;
     bool more = true, content = completing && completing->node == node;
-    /* A node of the root's content begins in the source where its first
-     * content byte was read from. */
-    const bool inside = completing && !content;
-    uint32_t source = start;
-    if (inside) {
-        bool failed;
-        const markdown_core_source_runs *table = completing_runs(parser, context->publication, &failed);
-        if (failed) {
-            return false;
-        }
-        source = markdown_core_source_runs_window(table, (markdown_core_place){start, start}).start;
-    }
-    item_anchor anchor = {start, source};
+    item_anchor anchor = {start, start};
     markdown_core_relations_begin(&cursor, node);
     /* It steps no further than its last relation. */
     while (more && relations_next(&cursor, &relation, &more)) {
+        if (content) {
+            content = false;
+            continue;
+        }
         /* A relation that is a later run of its stem goes on from where the
          * one before it ended. */
         if (relation.field || !relation.index) {
-            anchor = content ? (item_anchor){0, completing->place.start} : (item_anchor){start, source};
+            anchor = (item_anchor){start, start};
         }
-        const bool in_content = inside || content;
-        content = false;
         if (relation.field) {
             markdown_core_node *item = (markdown_core_node *)relation.node;
             if (!item->id) {
                 markdown_core_member *field = field_member(parser, member, item);
-                if (!field || (!field->numbered && !complete_number(context, field, &anchor, 0, in_content))) {
+                if (!field || (!field->numbered && !complete_number(context, field, &anchor, 0))) {
                     return false;
                 }
-            } else if (item->first && (in_content || !member->numbered) &&
-                       !order_take(context, member, item, in_content)) {
-                return false;
+            } else if (item->first && !member->numbered) {
+                order_follow(&member->orders, item->first);
             }
             continue;
         }
@@ -1395,9 +1356,8 @@ static bool complete_relations(const complete_context *context, markdown_core_me
                 /* The first node of a candidate the parse took, all of them
                  * numbered: the walk passes the candidate whole. */
                 const size_t taken = at->candidate->count;
-                assert(!in_content);
                 if (at->candidate->first && !member->numbered) {
-                    order_follow(member, at->candidate->first);
+                    order_follow(&member->orders, at->candidate->first);
                 }
                 anchor.place = (uint32_t)(anchor.place + at->candidate->length);
                 anchor.source = anchor.place;
@@ -1407,16 +1367,15 @@ static bool complete_relations(const complete_context *context, markdown_core_me
                 continue;
             }
             if (item->id || (at && at->node == item && at->numbered)) {
-                /* An old node it holds as it was: what it holds comes
-                 * after the orders collected so far, unless it lies outside
-                 * the content of a root read again in place, which holds it
-                 * as it did. */
-                if (item->first && !(at && at->node == item) && (in_content || !member->numbered) &&
-                    !order_take(context, member, item, in_content)) {
-                    return false;
+                /* An old node it holds as it was: what it holds comes after
+                 * the orders collected so far, unless it lies outside the
+                 * content of a root read again in place, which holds it as it
+                 * did. */
+                if (item->first && !(at && at->node == item) && !member->numbered) {
+                    order_follow(&member->orders, item->first);
                 }
                 anchor.place = publish_place(item, anchor.place).end;
-                anchor.source = in_content ? numbered_source_end(item, anchor.source) : anchor.place;
+                anchor.source = anchor.place;
                 if (at && at->node == item) {
                     at = at->next;
                 }
@@ -1424,7 +1383,7 @@ static bool complete_relations(const complete_context *context, markdown_core_me
             }
             assert(at && at->node == item);
             markdown_core_member *next = at->next;
-            if (!complete_number(context, at, &anchor, slot, in_content)) {
+            if (!complete_number(context, at, &anchor, slot)) {
                 return false;
             }
             at = next;
@@ -1448,6 +1407,271 @@ static bool complete_relations(const complete_context *context, markdown_core_me
     return true;
 }
 
+/* THE NODES OF AN INLINE ROOT'S CONTENT (5.8, 5.9). Each draft decides what
+ * it continues as it completes, at its EXIT, its range and its kind final,
+ * or earlier, when a draft it holds decides: the drafts before it in its
+ * owner have decided already, so each owner's cursor moves forward in
+ * order. The holder continues what the root's member does, or the old
+ * root's field in its place; a field root continues its old owner's field
+ * in the same place, and every other draft the earliest old node of its kind
+ * in its owner's relation whose anchor's image its source window holds. */
+
+/* `draft` decides, its owner having decided. */
+static bool draft_search(markdown_core_parser *parser, markdown_core_publication *publication,
+                         markdown_core_draft *draft) {
+    const markdown_core_draft *owner = draft->owner;
+    const markdown_core_node *old = NULL;
+    uint32_t old_start = 0;
+    if (!owner) {
+        const markdown_core_inline_root *root = parser->completing;
+        const markdown_core_member *member = root->member;
+        assert(member->decided);
+        if (member->old) {
+            size_t place;
+            old = root->holder == member->node
+                      ? member->old
+                      : (field_slot(member->node, root->holder, &place), field_at(member->old, place));
+            old_start = member->old_start;
+        }
+    } else if (owner->old) {
+        markdown_core_place window;
+        if (!content_window(parser, publication, draft->node->where.place, &window)) {
+            return false;
+        }
+        if (draft->field) {
+            field_pair(parser, owner->node, owner->old, owner->old_start, draft->node, window, true, &old, &old_start);
+        } else {
+            markdown_core_draft *pairing = draft->owner;
+            pair_ready(&pairing->pair, pairing->node, pairing->old, pairing->old_start);
+            pair_scan(parser, &pairing->pair, &pairing->pair.next, &pairing->pair.anchor, window,
+                      public_kind(draft->node), &old, &old_start);
+        }
+    }
+    draft->decided = true;
+    draft->old = old;
+    draft->old_start = old_start;
+    return true;
+}
+
+/* `draft` decides, the drafts above it that have not decided first, from
+ * the highest. False when an allocation failed. */
+static bool draft_decide(markdown_core_parser *parser, markdown_core_publication *publication,
+                         markdown_core_draft *draft) {
+    size_t count = 0;
+    for (markdown_core_draft *at = draft; at && !at->decided; at = at->owner) {
+        markdown_core_draft **climb = markdown_core_reserve(
+            publication->draft_climb, &publication->draft_climb_capacity, count + 1, sizeof(*climb));
+        if (!climb) {
+            return false;
+        }
+        publication->draft_climb = climb;
+        climb[count++] = at;
+    }
+    while (count) {
+        if (!draft_search(parser, publication, publication->draft_climb[--count])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* Numbers `draft`'s node, which lies at its place in the content, is
+ * measured from `anchor` and fills `slot` of its relation: it holds its
+ * strings and takes its extent and the source its range was read from; a
+ * node that declares or asks, or that the rosters list, takes its order,
+ * and a node the parse took brings the orders under it; the observer sees
+ * it. It takes the id of the old node it continues, or the next id, and
+ * when it equals that node, the old node takes its place in its owner.
+ * Returns false when an allocation failed. */
+static bool draft_number(const complete_context *context, markdown_core_draft *draft, item_anchor *anchor,
+                         uint32_t slot) {
+    markdown_core_parser *parser = context->parser;
+    markdown_core_node *item = draft->node;
+    if (!draft_decide(parser, context->publication, draft)) {
+        return false;
+    }
+    const markdown_core_place place = item->where.place;
+    if (!markdown_core_node_hold_strings(parser->pool, item)) {
+        return false;
+    }
+    item->where.extent =
+        (markdown_core_extent){(int32_t)((int64_t)place.start - (int64_t)anchor->place), place.end - place.start};
+    /* Its reach is measured past its end from here (5.1). */
+    item->reach = item->reach > place.end ? item->reach - place.end : 0;
+    anchor->place = place.end;
+    if (!inline_runs(parser, context->publication, item, place, &anchor->source)) {
+        return false;
+    }
+    if ((draft->taken && item->first && !order_gather(parser, &draft->orders, item, false)) ||
+        ((item->facts || (slot_of(item) & SLOT_LISTED)) && !item->order && !order_own(parser, &draft->orders, item))) {
+        return false;
+    }
+    item->first = draft->orders.head;
+    order_append(context->orders, &draft->orders);
+    if (context->observe) {
+        context->observe(context->observer, parser, item);
+    }
+    if (!(item->flags & MARKDOWN_CORE_NODE__GROUP)) {
+        item->id = draft->old ? draft->old->id : ++parser->last_id;
+    }
+    item->flags = (markdown_core_node_internal_flags)(item->flags & ~MARKDOWN_CORE_NODE__FOSTERS);
+    markdown_core_node *kept;
+    if (!(item->flags & MARKDOWN_CORE_NODE__GROUP) && draft->old && node_same(item, draft->old) &&
+        !settle_old(parser, context->publication, item, draft->owner->node, draft->field, slot, draft->old, &kept)) {
+        return false;
+    }
+    return true;
+}
+
+/* The draft of `owner`'s that builds the group whose stem is `stem`: a field
+ * root, or a child. NULL when none does. */
+static markdown_core_draft *draft_group(markdown_core_draft *owner, const markdown_core_stem *stem) {
+    for (markdown_core_draft *field = owner->fields; field; field = field->next) {
+        if (field->node->children == stem) {
+            return field;
+        }
+    }
+    for (markdown_core_draft *child = owner->first; child; child = child->next) {
+        if (child->node->children == stem) {
+            return child;
+        }
+    }
+    return NULL;
+}
+
+/* The draft of `owner`'s field root `node`, taken when the field was built
+ * without one. NULL when it could not be had. */
+static markdown_core_draft *draft_field(markdown_core_parser *parser, markdown_core_draft *owner,
+                                        markdown_core_node *node) {
+    for (markdown_core_draft *field = owner->fields; field; field = field->next) {
+        if (field->node == node) {
+            return field;
+        }
+    }
+    return markdown_core_inline_attach_field(parser, owner, node);
+}
+
+/* Numbers what `draft`'s node holds, relation by relation, as
+ * complete_relations does: each node is measured from the end of the one
+ * before it in its stem, or from the owner's start, and its runs from where
+ * the source of the one before it ends, or the owner's begins. */
+static bool draft_relations(const complete_context *context, markdown_core_draft *draft) {
+    markdown_core_node *node = draft->node;
+    if (relations_empty(node)) {
+        return true;
+    }
+    markdown_core_parser *parser = context->parser;
+    const uint32_t start = node->where.place.start;
+    markdown_core_place window;
+    if (!content_window(parser, context->publication, (markdown_core_place){start, start}, &window)) {
+        return false;
+    }
+    const item_anchor from = {start, window.start};
+    item_anchor anchor = from;
+    markdown_core_relation_cursor cursor;
+    markdown_core_relation relation;
+    markdown_core_relation_walk nodes;
+    markdown_core_draft *child = draft->first;
+    bool more = true;
+    markdown_core_relations_begin(&cursor, node);
+    while (more && relations_next(&cursor, &relation, &more)) {
+        if (relation.field || !relation.index) {
+            anchor = from;
+        }
+        if (relation.field) {
+            markdown_core_node *item = (markdown_core_node *)relation.node;
+            if (item->id) {
+                if (item->first && !order_gather(parser, context->orders, item, true)) {
+                    return false;
+                }
+                continue;
+            }
+            markdown_core_draft *field = draft_field(parser, draft, item);
+            if (!field || !draft_number(context, field, &anchor, 0)) {
+                return false;
+            }
+            continue;
+        }
+        const bool own = relation.stem == node->children;
+        markdown_core_draft *group = own || !relation.count ? NULL : draft_group(draft, relation.stem);
+        markdown_core_draft *at = own ? child : group ? group->first : NULL;
+        markdown_core_relation_walk_begin(&nodes, &relation);
+        uint32_t slot = (uint32_t)relation.index;
+        for (markdown_core_node *item; (item = (markdown_core_node *)markdown_core_relation_walk_next(&nodes));
+             slot++) {
+            if (item->id) {
+                /* An old node it holds as it was: its orders are collected
+                 * again. */
+                if (item->first && !order_gather(parser, context->orders, item, true)) {
+                    return false;
+                }
+                anchor.place = publish_place(item, anchor.place).end;
+                anchor.source = numbered_source_end(item, anchor.source);
+                continue;
+            }
+            assert(at && at->node == item);
+            markdown_core_draft *next = at->next;
+            if (!draft_number(context, at, &anchor, slot)) {
+                return false;
+            }
+            at = next;
+        }
+        if (own) {
+            child = at;
+        } else {
+            /* A group holds the first order of the relation it holds. */
+            markdown_core_stem_measure((markdown_core_stem *)relation.stem);
+            if (group) {
+                group->node->first = relation.stem->first;
+            }
+        }
+    }
+    markdown_core_stem_measure(node->children);
+    return true;
+}
+
+bool markdown_core_complete_draft(markdown_core_parser *parser, markdown_core_publication *publication,
+                                  markdown_core_draft *draft,
+                                  void (*observe)(const markdown_core_element_instance *, markdown_core_parser *,
+                                                  markdown_core_node *),
+                                  const markdown_core_element_instance *observer) {
+    if (!draft_decide(parser, publication, draft)) {
+        return false;
+    }
+    markdown_core_node *node = draft->node;
+    if (draft->owner) {
+        /* A group's owner numbers it. */
+        complete_context context = {parser, publication, observe, observer, &draft->orders};
+        return (node->flags & MARKDOWN_CORE_NODE__GROUP) || draft_relations(&context, draft);
+    }
+    /* The holder: the root's content, measured from 0 in the content and
+     * from where the root lies in the source, whose orders the root's
+     * member collects first. */
+    markdown_core_inline_root *root = parser->completing;
+    complete_context context = {parser, publication, observe, observer, &root->member->orders};
+    item_anchor anchor = {0, root->place.start};
+    markdown_core_relation_walk nodes;
+    markdown_core_relation relation;
+    relation_stem(&relation, NULL, children_field(node), node->children);
+    markdown_core_relation_walk_begin(&nodes, &relation);
+    uint32_t slot = 0;
+    markdown_core_draft *at = draft->first;
+    for (markdown_core_node *item; (item = (markdown_core_node *)markdown_core_relation_walk_next(&nodes)); slot++) {
+        assert(at && at->node == item);
+        markdown_core_draft *next = at->next;
+        if (!draft_number(&context, at, &anchor, slot)) {
+            return false;
+        }
+        at = next;
+    }
+    markdown_core_stem_measure(node->children);
+    if (node != root->node && node->children) {
+        /* A group holds the first order of the relation it holds. */
+        node->first = node->children->first;
+    }
+    return true;
+}
+
 bool markdown_core_decide_member(markdown_core_parser *parser, markdown_core_publication *publication,
                                  markdown_core_member *member) {
     return need(parser, publication, member, markdown_core_member_place(member).end);
@@ -1467,7 +1691,7 @@ bool markdown_core_complete_node(markdown_core_parser *parser, markdown_core_pub
     if (node->flags & MARKDOWN_CORE_NODE__GROUP) {
         return true;
     }
-    const complete_context context = {parser, publication, observe, observer, member};
+    const complete_context context = {parser, publication, observe, observer, &member->orders};
     const relation_shape shape = shape_of(node);
     if (!complete_relations(&context, member, start)) {
         return false;
@@ -1489,8 +1713,8 @@ bool markdown_core_complete_node(markdown_core_parser *parser, markdown_core_pub
     if (member == parser->root) {
         /* The orders of the document join the list, and it holds the
          * first. */
-        node->first = member->order_head;
-        return order_settle(parser, member, NULL);
+        node->first = member->orders.head;
+        return order_settle(parser, &member->orders, NULL);
     }
     if (root && member->numbered) {
         /* A root read again in place: the orders of its content follow its
@@ -1498,7 +1722,7 @@ bool markdown_core_complete_node(markdown_core_parser *parser, markdown_core_pub
         if (observe) {
             observe(observer, parser, node);
         }
-        return !parser->error && order_settle(parser, member, node->order);
+        return !parser->error && order_settle(parser, &member->orders, node->order);
     }
     return true;
 }
@@ -1581,19 +1805,16 @@ static int fields_trade_visit(markdown_core_node **slot, void *context) {
     return 1;
 }
 
-/* `old` takes the place of `member`'s node in its owner, or as the document,
- * and the node goes when the parse does. False when it could not be kept
- * for that, or a roster could not take it. */
-static bool settle_old(markdown_core_parser *parser, markdown_core_publication *publication,
-                       markdown_core_member *member, const markdown_core_node *old) {
+static bool settle_old(markdown_core_parser *parser, markdown_core_publication *publication, markdown_core_node *node,
+                       markdown_core_node *owner, bool field, uint32_t slot, const markdown_core_node *old,
+                       markdown_core_node **kept_node) {
     markdown_core_node **replaced = markdown_core_reserve(publication->replaced, &publication->replaced_capacity,
                                                           publication->replaced_count + 1, sizeof(*replaced));
     if (!replaced) {
         return false;
     }
     publication->replaced = replaced;
-    markdown_core_node *node = member->node, *kept = markdown_core_node_retain((markdown_core_node *)old);
-    markdown_core_member *owner = member->owner;
+    markdown_core_node *kept = markdown_core_node_retain((markdown_core_node *)old);
     /* The old node is the record of this parse now (5.1): its entry, its
      * reach, its flags and its lines (E5) are the new node's, and the node
      * takes the old lines with it when it goes. */
@@ -1615,61 +1836,54 @@ static bool settle_old(markdown_core_parser *parser, markdown_core_publication *
     /* And it declares what the new node declared: an equal node declares
      * the same, and these facts are this parse's (5.7). */
     const bool moved = markdown_core_registry_move(parser->registry, node, kept);
-    if (!owner) {
-        member->node = kept;
-    } else if (member->field) {
+    if (field) {
         size_t place;
-        *field_slot(owner->node, node, &place) = kept;
-    } else {
-        markdown_core_node *held = markdown_core_stem_put(owner->node->children, member->slot, kept);
+        *field_slot(owner, node, &place) = kept;
+    } else if (owner) {
+        markdown_core_node *held = markdown_core_stem_put(owner->children, slot, kept);
         assert(held == node);
         (void)held;
     }
     publication->replaced[publication->replaced_count++] = node;
+    *kept_node = kept;
     return moved;
 }
 
 void markdown_core_settle_member(markdown_core_parser *parser, markdown_core_publication *publication,
                                  markdown_core_member *member) {
-    for (;;) {
-        markdown_core_node *node = member->node;
-        /* Settled, its kind and its range are final: the search decides it,
-         * unless it decided already. */
-        if (!need(parser, publication, member, member->place.end)) {
+    /* Settled, its kind and its range are final: the search decides it,
+     * unless it decided already. */
+    if (!need(parser, publication, member, member->place.end)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return;
+    }
+    assert(member->decided);
+    if (!member->identified) {
+        identify(parser, member);
+    }
+    if (!(member->node->flags & MARKDOWN_CORE_NODE__GROUP) && member->old && node_same(member->node, member->old)) {
+        markdown_core_node *kept;
+        if (!settle_old(parser, publication, member->node, member->owner ? member->owner->node : NULL, member->field,
+                        member->slot, member->old, &kept)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return;
         }
-        assert(member->decided);
-        if (!member->identified) {
-            identify(parser, member);
+        if (!member->owner) {
+            member->node = kept;
         }
-        if (!(node->flags & MARKDOWN_CORE_NODE__GROUP)) {
-            if (member->old && node_same(node, member->old)) {
-                if (!settle_old(parser, publication, member, member->old)) {
-                    markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-                    return;
-                }
-                node = member->node == node ? (markdown_core_node *)member->old : member->node;
-            }
-        }
-        markdown_core_member *owner = member->owner;
-        if (!owner) {
-            return;
-        }
-        const bool counted = member->counted;
-        markdown_core_parser_leave_spine(parser, member);
-        markdown_core_parser_release_member(parser, member);
-        if (!counted || --owner->waits || !owner->numbered) {
-            return;
-        }
-        member = owner;
     }
+    if (!member->owner) {
+        return;
+    }
+    markdown_core_parser_leave_spine(parser, member);
+    markdown_core_parser_release_member(parser, member);
 }
 
 void markdown_core_publication_dispose(markdown_core_publication *publication, markdown_core_node_pool *pool) {
     markdown_core_free(publication->runs.runs);
     markdown_core_free(publication->ranges);
     markdown_core_free(publication->climb);
+    markdown_core_free(publication->draft_climb);
     for (size_t i = 0; i < publication->replaced_count; i++) {
         markdown_core_node_pool_release(pool, publication->replaced[i]);
     }
@@ -1985,8 +2199,6 @@ bool markdown_core_parse_again(markdown_core_parser *parser, markdown_core_publi
         }
     }
     member->place = place;
-    member->passed = place.end;
-    member->source = start;
     /* It settles alone, and takes the place of `root`, unless it is
      * `root`. */
     if (!markdown_core_parser_complete_root(parser, member, holder, place)) {
@@ -2073,7 +2285,6 @@ bool markdown_core_publish_tree(markdown_core_parser *parser, markdown_core_publ
     for (size_t i = 0; i < MARKDOWN_CORE_ROSTER_COUNT; i++) {
         value->rosters[i] = markdown_core_roster_retain(parser->registry->rosters[i]);
     }
-    assert(!member->waits);
     member->place = place;
     member->numbered = true;
     markdown_core_settle_member(parser, publication, member);

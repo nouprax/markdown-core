@@ -147,12 +147,13 @@ markdown_core_input markdown_core_input_buffer(const unsigned char *bytes, size_
  * parsing.md, 5.8): the node whose first relation is the content and whose
  * runs read it, and its member; the node the content is parsed into, the
  * node itself or the private node its title or term hangs from, and the
- * builder the content is parsed into, that node's member; where the node
- * lies in the source; and whether the holder is a field, which belongs to
- * its owner and is never replaced. */
+ * draft the content is parsed into, that node's; where the node lies in the
+ * source; and whether the holder is a field, which belongs to its owner and
+ * is never replaced. */
 typedef struct markdown_core_inline_root {
     struct markdown_core_node *node, *holder;
-    struct markdown_core_member *member, *builder;
+    struct markdown_core_member *member;
+    struct markdown_core_draft *builder;
     markdown_core_place place;
     bool field;
 } markdown_core_inline_root;
@@ -302,6 +303,8 @@ struct markdown_core_parser {
     /* The builder of the document (node.h, markdown_core_member), which
      * holds the document's reference until the parse returns it. */
     struct markdown_core_member *root;
+    /* The drafts of the inline root being parsed and completed (node.h). */
+    markdown_core_drafts drafts;
     /* The input being read. */
     markdown_core_parser_input input;
     /* The source lines the block parse handed to the line machine, for its
@@ -602,10 +605,27 @@ static inline markdown_core_node *markdown_core_parser_make_node_with_ext(markdo
  * kind which begins where it does (blocks.c). */
 void markdown_core_parser_kind_changed(markdown_core_parser *parser, markdown_core_member *member);
 
+/* A draft for `node` from the parse's draft area (node.h); NULL, with the
+ * parse failed, when it could not be had. */
+static inline markdown_core_draft *markdown_core_parser_draft(markdown_core_parser *parser, markdown_core_node *node,
+                                                              bool held) {
+    markdown_core_draft *draft = markdown_core_drafts_take(&parser->drafts, node, held);
+    if (!draft) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+    return draft;
+}
+
 /* A decision on the line in hand read the content of the leaf the line would
  * continue, as a table header is tried against the paragraph so far: the
  * line is read again by every parse (E5). */
 static inline void markdown_core_parser_read_leaf(markdown_core_parser *parser) { parser->input.read_leaf = true; }
+
+/* Turns `draft`'s node, a node of the content of the inline root being
+ * completed or the root's own, which its holder builds, into one of `kind`,
+ * as its content decided (blocks.c). */
+markdown_core_node_set_kind_result
+markdown_core_inline_set_kind(markdown_core_parser *parser, markdown_core_draft *draft, markdown_core_node_type kind);
 
 /* Turns the block `member` holds into one of `kind`, as its lines decided. */
 static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_kind(markdown_core_parser *parser,
@@ -861,12 +881,6 @@ void markdown_core_parser_leave_spine(markdown_core_parser *parser, markdown_cor
  * parse failed. */
 bool markdown_core_parser_complete_root(markdown_core_parser *parser, markdown_core_member *member,
                                         markdown_core_node *holder, markdown_core_place place);
-/* `member` waits on one thing less -- an inline root, a block input, a value
- * an element gives it late -- and settles when it was numbered and waits on
- * nothing more (docs/plans/2026-09-29-incremental-parsing.md, 5.9). An
- * element that gives a numbered node a value late makes its member wait by
- * counting one more in `waits` first. */
-void markdown_core_parser_release_wait(markdown_core_parser *parser, markdown_core_member *member);
 /* WHERE A BYTE OF THE ACTIVE INPUT WAS WRITTEN, as a byte offset of the
  * document source. `line` is a line of the active input and `column` a byte
  * column of that line as the block parser reads it, counted from 1: the

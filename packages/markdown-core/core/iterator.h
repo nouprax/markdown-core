@@ -14,46 +14,46 @@ extern "C" {
 #include "node.h"
 
 /* A depth-first walk over a subtree being built (node.h,
- * markdown_core_member): every member yields exactly one ENTER and one EXIT,
+ * markdown_core_draft): every draft yields exactly one ENTER and one EXIT,
  * with its descendants' events between them, and DONE follows the root's
  * EXIT. Field roots are independent roots and are never discovered by this
- * traversal. While walking, the only member that may be released is the one
+ * traversal. While walking, the only draft that may be released is the one
  * whose EXIT is current: that is the one moment the lookahead names something
- * outside its own subtree. `markdown_core_iter_reset(iter, member,
- * MARKDOWN_CORE_EVENT_EXIT)` brings a member back under that rule after
+ * outside its own subtree. `markdown_core_iter_reset(iter, draft,
+ * MARKDOWN_CORE_EVENT_EXIT)` brings a draft back under that rule after
  * mutating around it. */
 typedef struct markdown_core_iter markdown_core_iter;
 
 typedef struct {
     markdown_core_event_type ev_type;
-    markdown_core_member *member;
+    markdown_core_draft *draft;
 } markdown_core_iter_state;
 
 struct markdown_core_iter {
-    markdown_core_member *root;
+    markdown_core_draft *root;
     markdown_core_iter_state cur;
     markdown_core_iter_state next;
 };
 
 /* THE ITERATOR'S STEP, IN THE HEADER. An inline root's completion takes one
- * per event of every member of its tree, and it keeps its iterators in its
+ * per event of every draft of its tree, and it keeps its iterators in its
  * own frames rather than behind an allocation, so the step is here, where it
  * can keep the state in registers instead of calling across a translation
  * unit for it. */
-static inline void markdown_core_iter_init(markdown_core_iter *iter, markdown_core_member *root) {
+static inline void markdown_core_iter_init(markdown_core_iter *iter, markdown_core_draft *root) {
     iter->root = root;
     iter->cur.ev_type = MARKDOWN_CORE_EVENT_NONE;
-    iter->cur.member = NULL;
+    iter->cur.draft = NULL;
     iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
-    iter->next.member = root;
+    iter->next.draft = root;
 }
 
 static inline markdown_core_event_type markdown_core_iter_step(markdown_core_iter *iter) {
     markdown_core_event_type ev_type = iter->next.ev_type;
-    markdown_core_member *member = iter->next.member;
+    markdown_core_draft *draft = iter->next.draft;
 
     iter->cur.ev_type = ev_type;
-    iter->cur.member = member;
+    iter->cur.draft = draft;
 
     if (ev_type == MARKDOWN_CORE_EVENT_DONE) {
         return ev_type;
@@ -61,38 +61,38 @@ static inline markdown_core_event_type markdown_core_iter_step(markdown_core_ite
 
     /* roll forward to next item, setting both fields */
     if (ev_type == MARKDOWN_CORE_EVENT_ENTER) {
-        if (member->first == NULL) {
-            /* stay on this member but exit */
+        if (draft->first == NULL) {
+            /* stay on this draft but exit */
             iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;
         } else {
             iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
-            iter->next.member = member->first;
+            iter->next.draft = draft->first;
         }
-    } else if (member == iter->root) {
+    } else if (draft == iter->root) {
         /* don't move past root */
         iter->next.ev_type = MARKDOWN_CORE_EVENT_DONE;
-        iter->next.member = NULL;
-    } else if (member->next) {
+        iter->next.draft = NULL;
+    } else if (draft->next) {
         iter->next.ev_type = MARKDOWN_CORE_EVENT_ENTER;
-        iter->next.member = member->next;
+        iter->next.draft = draft->next;
     } else {
-        assert(member->owner);
+        assert(draft->owner);
         iter->next.ev_type = MARKDOWN_CORE_EVENT_EXIT;
-        iter->next.member = member->owner;
+        iter->next.draft = draft->owner;
     }
 
     return ev_type;
 }
 
-/* The new current member must be `root` or one of its descendants. */
-void markdown_core_iter_reset(markdown_core_iter *iter, markdown_core_member *current,
+/* The new current draft must be `root` or one of its descendants. */
+void markdown_core_iter_reset(markdown_core_iter *iter, markdown_core_draft *current,
                               markdown_core_event_type event_type);
 
 /* Whether consolidation has anything to do at `text`'s EXIT: a Text sibling
  * to absorb, or no bytes of its own to keep. The step below answers the same
  * two questions itself; this is what lets the walk ask them in place and
  * enter the step only when one holds. */
-static inline bool markdown_core_text_needs_consolidation(const markdown_core_member *text) {
+static inline bool markdown_core_text_needs_consolidation(const markdown_core_draft *text) {
     return (text->next && text->next->node->kind == MARKDOWN_CORE_NODE_TEXT) || text->node->as.literal->len == 0;
 }
 
@@ -119,7 +119,7 @@ static inline bool markdown_core_text_needs_consolidation(const markdown_core_me
  * where its completion happens. The public entry point passes none. */
 typedef void (*markdown_core_complete_node_func)(struct markdown_core_parser *, markdown_core_node *, int);
 markdown_core_complete_result markdown_core_consolidate_text_step(struct markdown_core_parser *parser,
-                                                                  markdown_core_iter *iter, markdown_core_member *cur,
+                                                                  markdown_core_iter *iter, markdown_core_draft *cur,
                                                                   markdown_core_complete_node_func complete, int depth);
 
 #ifdef __cplusplus

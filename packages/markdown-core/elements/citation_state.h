@@ -7,8 +7,8 @@
  * their owner. They retain source coordinates, never a second inline tree. */
 typedef struct citation_token {
     struct citation_token *next;
-    /* The member of the token's literal, or of the Cite it became. */
-    markdown_core_member *node;
+    /* The draft of the token's literal, or of the Cite it became. */
+    markdown_core_draft *node;
     delimiter *boundary;
     struct bracket *tail;
     bufsize_t start, key_start, key_end, end, tail_start;

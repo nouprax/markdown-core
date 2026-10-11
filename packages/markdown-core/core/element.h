@@ -106,13 +106,13 @@ struct markdown_core_element {
      * A byte's owners are asked in ascending precedence -- any value, not only
      * the named ones -- and equal precedences in descriptor order. */
     markdown_core_inline_precedence inline_precedence;
-    markdown_core_member *(*parse_text)(const markdown_core_element_instance *, markdown_core_parser *,
-                                        markdown_core_inline_state *, bufsize_t);
+    markdown_core_draft *(*parse_text)(const markdown_core_element_instance *, markdown_core_parser *,
+                                       markdown_core_inline_state *, bufsize_t);
     void (*init_inline)(const markdown_core_element_instance *, markdown_core_inline_state *);
     void (*begin_inline)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_inline_state *,
-                         markdown_core_member *);
+                         markdown_core_draft *);
     bool (*claim_inline_tail)(const markdown_core_element_instance *, markdown_core_inline_state *,
-                              markdown_core_member *);
+                              markdown_core_draft *);
     void (*finish_inline)(const markdown_core_element_instance *, markdown_core_inline_state *);
     void (*dispose_inline)(const markdown_core_element_instance *, markdown_core_inline_state *);
     /* Whether a token the element keeps open in the run -- a bracket, a
@@ -155,9 +155,10 @@ struct markdown_core_element {
      * kind and range final: it decides what old node it continues (5.9),
      * whose content it reads again (5.6). */
     void (*decide_member)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *);
-    /* A numbered node waits on nothing any more: it settles, as the old
-     * node it continues when it equals it (5.9). */
-    void (*settle_member)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *);
+    /* A node of an inline root's content is complete, the nodes it holds
+     * complete before it: it decides what old node it continues (5.9) and
+     * numbers what it holds, as `complete_node` does. */
+    void (*complete_draft)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_draft *);
     /* The last step of the parse: every node is complete, and the owner
      * publishes the document (identity, definition tables). */
     void (*publish_document)(const markdown_core_element_instance *, markdown_core_parser *);
@@ -205,7 +206,7 @@ struct markdown_core_element {
     /* Parses the inline content of the root its node holds into `builder`
      * itself, the root's source starting at `start`, in place of the inline
      * parse (a heading, whose text declares its label). */
-    void (*parse_root)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *builder,
+    void (*parse_root)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_draft *builder,
                        uint32_t start);
 
     bool (*scan_block_start)(const markdown_core_element_instance *, markdown_core_parser *,

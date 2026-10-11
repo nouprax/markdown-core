@@ -121,9 +121,9 @@ static int scan_closer(const unsigned char *data, int length, int at, markdown_c
     return 1;
 }
 
-static markdown_core_member *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                   markdown_core_member *parent, unsigned char character,
-                                   markdown_core_inline_state *inline_state) {
+static markdown_core_draft *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                  markdown_core_draft *parent, unsigned char character,
+                                  markdown_core_inline_state *inline_state) {
     markdown_core_chunk *input = markdown_core_inline_state_get_chunk(inline_state);
     int start = markdown_core_inline_state_get_offset(inline_state);
     int close;

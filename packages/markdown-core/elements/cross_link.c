@@ -10,9 +10,9 @@
  * nest or share a suffix: at most the ![[ and [[ attempts inspect the same body.
  * Recognition inspects each byte at most twice, including failed and unclosed
  * forms. A successful embed then inspects only its bounded numeric suffix. */
-static markdown_core_member *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                   markdown_core_member *parent, unsigned char character,
-                                   markdown_core_inline_state *inline_state) {
+static markdown_core_draft *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                  markdown_core_draft *parent, unsigned char character,
+                                  markdown_core_inline_state *inline_state) {
     markdown_core_chunk *input = markdown_core_inline_state_get_chunk(inline_state);
     const unsigned char *s = input->data;
     bufsize_t start = markdown_core_inline_state_get_offset(inline_state);

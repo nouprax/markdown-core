@@ -108,7 +108,6 @@ static void complete_node(const markdown_core_element_instance *self, markdown_c
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
 }
-/* A numbered node waits on nothing any more: it settles. */
 /* A node about to read its inline content decides what it continues. */
 static void decide_member(const markdown_core_element_instance *self, markdown_core_parser *parser,
                           markdown_core_member *member) {
@@ -116,9 +115,15 @@ static void decide_member(const markdown_core_element_instance *self, markdown_c
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
 }
-static void settle_member(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_member *member) {
-    markdown_core_settle_member(parser, &((document_state *)self->state)->publication, member);
+/* A node of an inline root's content is complete: it numbers the nodes it
+ * holds, and the headings note the explicit anchors among them. */
+static void complete_draft(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                           markdown_core_draft *draft) {
+    const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
+    if (!markdown_core_complete_draft(parser, &((document_state *)self->state)->publication, draft,
+                                      headings ? markdown_core_headings_observe : NULL, headings)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
 }
 /* The document is finished: the headings take their anchors, each node of a
  * subtree the parse took that it replaces gives its place to the node
@@ -174,5 +179,5 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
     .publish_document = publish_document,
     .complete_node = complete_node,
     .decide_member = decide_member,
-    .settle_member = settle_member,
+    .complete_draft = complete_draft,
 };

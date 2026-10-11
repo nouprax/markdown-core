@@ -1,8 +1,8 @@
 #include "superscript.h"
 #include "inline_internal.h"
-static markdown_core_member *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                   markdown_core_member *parent, unsigned char character,
-                                   markdown_core_inline_state *inline_state) {
+static markdown_core_draft *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                  markdown_core_draft *parent, unsigned char character,
+                                  markdown_core_inline_state *inline_state) {
     if (character != '^') {
         return NULL;
     }

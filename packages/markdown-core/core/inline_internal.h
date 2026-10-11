@@ -43,7 +43,7 @@ struct markdown_core_inline_state {
      * inline state built straight out of a chunk -- the reference-definition
      * parser -- and the map is then simply not consulted. */
     markdown_core_parser *owner_parser;
-    markdown_core_member *owner;
+    markdown_core_draft *owner;
     /* The instance of `owner`'s structure element, resolved once. The projection is a pure
      * function of `owner->kind`, `owner` does not change across a run, and a
      * run's owner does not change kind during it -- so asking per token was
@@ -83,14 +83,14 @@ struct markdown_core_inline_state {
     bufsize_t nonblank_end;
     /* WHAT THE TOKEN BEING READ READ (node.h, markdown_core_inline_reads),
      * kept when the run `records`, as the run of an inline root's content
-     * does; the member the token appended, `token_member`, takes it when the
+     * does; the draft the token appended, `token_draft`, takes it when the
      * token ends. `declared` says whether the element asked last said what
      * it read (markdown_core_inline_state_read): a token stays RECORDED while
      * every element it asks does. `now` is the content offset of the closer
      * the stack is being reduced for, where each delimiter it removes leaves
      * the stack, and INT32_MAX outside a reduction. */
     markdown_core_inline_reads token;
-    markdown_core_member *token_member;
+    markdown_core_draft *token_draft;
     bufsize_t now;
     bool records, declared;
     /* The cursor over the old content of the root the run reads again
@@ -262,12 +262,12 @@ int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_cor
 const markdown_core_key *markdown_core_inline_ask(markdown_core_inline_state *inline_state,
                                                   markdown_core_key_group group, const markdown_core_chunk *label,
                                                   bool normalize);
-void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_core_member *parent, bool root,
+void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_core_draft *parent, bool root,
                                         markdown_core_inline_state *inline_state);
 void markdown_core_inline_clear_inlines(markdown_core_inline_state *inline_state);
 bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_core_inline_state *inline_state);
-markdown_core_member *markdown_core_inline_match_delimiter(const markdown_core_element_instance *self,
-                                                           markdown_core_inline_state *inline_state);
+markdown_core_draft *markdown_core_inline_match_delimiter(const markdown_core_element_instance *self,
+                                                          markdown_core_inline_state *inline_state);
 int markdown_core_byte_set_has(const char *set, unsigned char character);
 void markdown_core_inline_push_boundary(markdown_core_inline_state *inline_state, bufsize_t position);
 #endif

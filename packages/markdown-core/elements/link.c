@@ -588,7 +588,7 @@ bool markdown_core_link_commit(const markdown_core_element_instance *link, markd
     // handler consumed for itself. Counting from the OPENING bracket instead
     // would count the label's own newlines a second time -- measured,
     // `[a\nb](/u) tail` then reports line 3 of a two-line document.
-    markdown_core_member *made = markdown_core_inline_insert_at_opener(inline_state, opener, inl);
+    markdown_core_draft *made = markdown_core_inline_insert_at_opener(inline_state, opener, inl);
     if (!made) {
         return false;
     }
@@ -601,7 +601,7 @@ bool markdown_core_link_commit(const markdown_core_element_instance *link, markd
     }
 
     // Free the bracket [:
-    markdown_core_parser_release_member(parser, opener->inl_text);
+    markdown_core_inline_release(parser, opener->inl_text);
 
     markdown_core_inline_process_delimiters(parser, inline_state, opener->position, opener->delim_end);
     markdown_core_inline_pop_bracket(link, inline_state);
@@ -620,22 +620,22 @@ bool markdown_core_link_commit(const markdown_core_element_instance *link, markd
  * and document-owned inline notes share this transfer; their callers decide
  * where the resulting owner lives and when its delimiter boundary closes. */
 void markdown_core_inline_take_bracket_content(const markdown_core_element_instance *link, markdown_core_parser *parser,
-                                               bracket *opener, markdown_core_member *owner) {
+                                               bracket *opener, markdown_core_draft *owner) {
     markdown_core_bracket_work *counts = link->state;
-    markdown_core_member *child = opener->inl_text->next;
+    markdown_core_draft *child = opener->inl_text->next;
     while (child != opener->close_text) {
-        markdown_core_member *next = child->next;
-        markdown_core_member_unlink(child);
-        markdown_core_member_attach(owner, child, NULL);
+        markdown_core_draft *next = child->next;
+        markdown_core_draft_unlink(child);
+        markdown_core_draft_attach(owner, child, NULL);
         counts->work++;
         child = next;
     }
 }
 
-markdown_core_member *markdown_core_inline_insert_at_opener(markdown_core_inline_state *inline_state, bracket *opener,
-                                                            markdown_core_node *node) {
-    markdown_core_member *made =
-        markdown_core_parser_attach(inline_state->owner_parser, opener->inl_text->owner, node, opener->inl_text);
+markdown_core_draft *markdown_core_inline_insert_at_opener(markdown_core_inline_state *inline_state, bracket *opener,
+                                                           markdown_core_node *node) {
+    markdown_core_draft *made =
+        markdown_core_inline_attach(inline_state->owner_parser, opener->inl_text->owner, node, opener->inl_text);
     if (!made) {
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
     }
@@ -667,7 +667,7 @@ void markdown_core_inline_pop_bracket(const markdown_core_element_instance *link
 
 void markdown_core_inline_push_bracket(const markdown_core_element_instance *link,
                                        markdown_core_inline_state *inline_state, bracket_kind kind,
-                                       markdown_core_member *inl_text) {
+                                       markdown_core_draft *inl_text) {
     bracket *b = (bracket *)markdown_core_alloc(1, sizeof(bracket));
     if (!b) {
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
@@ -703,19 +703,19 @@ void markdown_core_inline_push_bracket(const markdown_core_element_instance *lin
     }
 }
 
-markdown_core_member *markdown_core_inline_replace_bracket_opener(markdown_core_inline_state *inline_state,
-                                                                  bracket *opener, markdown_core_node *replacement) {
+markdown_core_draft *markdown_core_inline_replace_bracket_opener(markdown_core_inline_state *inline_state,
+                                                                 bracket *opener, markdown_core_node *replacement) {
     markdown_core_parser *parser = inline_state->owner_parser;
-    markdown_core_member *text = opener->inl_text;
-    markdown_core_member *made;
+    markdown_core_draft *text = opener->inl_text;
+    markdown_core_draft *made;
     if (opener->kind == BRACKET_IMAGE) {
         text->node->as.literal->len = 1;
         markdown_core_inline_state_place(inline_state, text->node, opener->position - 2, opener->position - 2);
-        made = markdown_core_parser_attach(parser, text->owner, replacement, text->next);
+        made = markdown_core_inline_attach(parser, text->owner, replacement, text->next);
     } else {
-        made = markdown_core_parser_attach(parser, text->owner, replacement, text);
+        made = markdown_core_inline_attach(parser, text->owner, replacement, text);
         if (made) {
-            markdown_core_parser_release_member(parser, text);
+            markdown_core_inline_release(parser, text);
         }
     }
     if (!made) {
@@ -725,14 +725,14 @@ markdown_core_member *markdown_core_inline_replace_bracket_opener(markdown_core_
 }
 
 /* The `]` read as text, appended. */
-static markdown_core_member *S_close_text(markdown_core_inline_state *inline_state, bufsize_t at) {
+static markdown_core_draft *S_close_text(markdown_core_inline_state *inline_state, bufsize_t at) {
     return markdown_core_inline_state_append(
         inline_state, make_str(inline_state, at, at, markdown_core_chunk_dup(&inline_state->input, at, 1)));
 }
 
-markdown_core_member *markdown_core_inline_handle_close_bracket(const markdown_core_element_instance *link,
-                                                                markdown_core_parser *parser,
-                                                                markdown_core_inline_state *inline_state) {
+markdown_core_draft *markdown_core_inline_handle_close_bracket(const markdown_core_element_instance *link,
+                                                               markdown_core_parser *parser,
+                                                               markdown_core_inline_state *inline_state) {
     const markdown_core_element_instance *citation = link->peers[LINK_CITATION];
     const markdown_core_element_instance *footnote = link->peers[LINK_FOOTNOTE];
     ((markdown_core_bracket_work *)link->state)->work++;
@@ -765,7 +765,7 @@ markdown_core_member *markdown_core_inline_handle_close_bracket(const markdown_c
     if (span == BRACKET_REJECTED) {
         goto no_match;
     }
-    markdown_core_member *close = NULL;
+    markdown_core_draft *close = NULL;
     if (citation && markdown_core_citation_defer_tail(citation, inline_state, opener, &close)) {
         return close;
     }
@@ -789,15 +789,15 @@ no_match:
     return S_close_text(inline_state, initial_pos - 1);
 }
 
-static markdown_core_member *match_bracket(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                           markdown_core_member *parent, unsigned char character,
-                                           markdown_core_inline_state *inline_state) {
+static markdown_core_draft *match_bracket(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                          markdown_core_draft *parent, unsigned char character,
+                                          markdown_core_inline_state *inline_state) {
     if (character == ']') {
         return markdown_core_inline_handle_close_bracket(self, parser, inline_state);
     }
     if (character == '[') {
         advance(inline_state);
-        markdown_core_member *text = S_close_text(inline_state, inline_state->pos - 1);
+        markdown_core_draft *text = S_close_text(inline_state, inline_state->pos - 1);
         if (text) {
             markdown_core_inline_push_bracket(self, inline_state, BRACKET_LINK, text);
         }

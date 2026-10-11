@@ -149,9 +149,9 @@ static markdown_core_node *handle_entity(markdown_core_inline_state *inline_stat
                     markdown_core_chunk_buf_detach(&ent));
 }
 
-static markdown_core_member *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                   markdown_core_member *parent, unsigned char character,
-                                   markdown_core_inline_state *inline_state) {
+static markdown_core_draft *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                  markdown_core_draft *parent, unsigned char character,
+                                  markdown_core_inline_state *inline_state) {
     if (character == '\\') {
         return markdown_core_inline_state_append(inline_state, handle_backslash(self, parser, inline_state));
     }
@@ -160,8 +160,8 @@ static markdown_core_member *match(const markdown_core_element_instance *self, m
     }
     return NULL;
 }
-markdown_core_member *markdown_core_text_parse(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                               markdown_core_inline_state *inline_state, bufsize_t endpos) {
+markdown_core_draft *markdown_core_text_parse(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                              markdown_core_inline_state *inline_state, bufsize_t endpos) {
     markdown_core_text_work *counts = self->state;
     markdown_core_chunk contents;
     bufsize_t startpos;

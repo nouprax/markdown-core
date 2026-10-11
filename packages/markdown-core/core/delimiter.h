@@ -35,9 +35,9 @@ typedef struct {
 struct delimiter {
     struct delimiter *previous;
     struct delimiter *next;
-    /* The member of the marker Text or of the token whose fields wait for
+    /* The draft of the marker Text or of the token whose fields wait for
      * their parse; NULL for a content boundary. */
-    markdown_core_member *member;
+    markdown_core_draft *draft;
     /** The instance of the element that pushed it, or NULL for a core rule.
      *  One load. */
     const markdown_core_element_instance *owner;

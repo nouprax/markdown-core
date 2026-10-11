@@ -40,7 +40,7 @@ static markdown_core_fact *declare_anchor(markdown_core_parser *parser, markdown
  * declaration dependency, the reference label it declares, and then the rest
  * of its inlines. */
 static void parse_heading_root(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                               markdown_core_member *builder, uint32_t start) {
+                               markdown_core_draft *builder, uint32_t start) {
     markdown_core_heading_parse heading = {.source = {builder->node, start}, .builder = builder};
     markdown_core_prepare_heading(self, parser, &heading);
     if (!parser->error) {
@@ -437,9 +437,9 @@ void markdown_core_dispose_heading(markdown_core_heading_parse *heading) {
 }
 
 void markdown_core_heading_begin_inlines(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                         markdown_core_inline_state *inline_state, markdown_core_member *member) {
+                                         markdown_core_inline_state *inline_state, markdown_core_draft *draft) {
     markdown_core_heading_run *run = markdown_core_run_state(inline_state, self);
-    markdown_core_node *parent = member->node;
+    markdown_core_node *parent = draft->node;
     if (parent->kind == MARKDOWN_CORE_NODE_HEADING) {
         /* A heading's attributes and label are read from its text: a heading
          * parsed again in place (5.7) reads them again. */
@@ -501,7 +501,7 @@ void markdown_core_heading_begin_inlines(const markdown_core_element_instance *s
 }
 
 bool markdown_core_heading_claim_tail(const markdown_core_element_instance *self,
-                                      markdown_core_inline_state *inline_state, markdown_core_member *parent) {
+                                      markdown_core_inline_state *inline_state, markdown_core_draft *parent) {
     if (inline_state->pos == inline_state->text_end) {
         markdown_core_heading_run *run = markdown_core_run_state(inline_state, self);
         bufsize_t end;

@@ -28,20 +28,20 @@ markdown_core_bracket_match markdown_core_span_close(const markdown_core_element
             markdown_core_inline_state_place(inline_state, inl, opener->position - 1, end - 1);
             markdown_core_inline_finish_citation_tokens(citation, inline_state, &opener->citations);
             markdown_core_inline_process_delimiters(parser, inline_state, opener->position, opener->delim_end);
-            markdown_core_member *span = markdown_core_inline_insert_at_opener(inline_state, opener, inl);
+            markdown_core_draft *span = markdown_core_inline_insert_at_opener(inline_state, opener, inl);
             if (span) {
                 markdown_core_inline_take_bracket_content(link, parser, opener, span);
-                markdown_core_member *text = opener->inl_text;
+                markdown_core_draft *text = opener->inl_text;
                 if (opener->kind == BRACKET_IMAGE) {
                     /* An image's bang stays the text before the span. */
                     text->node->as.literal->len = 1;
                     markdown_core_inline_state_place(inline_state, text->node, opener->position - 2,
                                                      opener->position - 2);
-                    markdown_core_member *owner = text->owner;
-                    markdown_core_member_unlink(text);
-                    markdown_core_member_attach(owner, text, span);
+                    markdown_core_draft *owner = text->owner;
+                    markdown_core_draft_unlink(text);
+                    markdown_core_draft_attach(owner, text, span);
                 } else {
-                    markdown_core_parser_release_member(parser, text);
+                    markdown_core_inline_release(parser, text);
                 }
             }
             markdown_core_inline_pop_bracket(link, inline_state);

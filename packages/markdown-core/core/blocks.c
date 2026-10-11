@@ -156,6 +156,7 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     markdown_core_source_order_dispose(&parser->source_order);
     markdown_core_free(parser->walk_stack);
     markdown_core_free(parser->complete_states);
+    markdown_core_drafts_dispose(&parser->drafts);
     markdown_core_free(parser->undecided);
     S_input_dispose(parser);
     markdown_core_free(parser->edit_shift);
@@ -1742,7 +1743,6 @@ static bool S_take(markdown_core_parser *parser, markdown_core_member *parent, u
     member->old = final_node;
     member->old_start = at - final_node->where.extent.span;
     member->place = (markdown_core_place){(uint32_t)(first_start + shift), (uint32_t)(at + shift)};
-    member->passed = member->place.end;
     parent->scan_next = end;
     parent->scan_at = at;
     parser->input.taken = true;
@@ -1867,7 +1867,7 @@ markdown_core_member *markdown_core_parser_add_child_validated(markdown_core_par
  * kind which begins where it does. */
 void markdown_core_parser_kind_changed(markdown_core_parser *parser, markdown_core_member *member) {
     /* One that decided as the kind it was decides again (5.9). */
-    if (member->decided && member->searched && !member->taken) {
+    if (member->decided && member->searched) {
         member->decided = false;
         member->old = NULL;
         member->redo = true;
@@ -1951,19 +1951,19 @@ void markdown_core_parser_release_member(markdown_core_parser *parser, markdown_
  * citation's affixes, a directive's label -- has them parsed by the parse
  * that made it, before it scans on (complete_inline_token in inlines.c), so
  * that the token can be closed on what the fields turned out to hold. That
- * parse walks the members the field builds with an iterator of its own; an
+ * parse walks the drafts the field builds with an iterator of its own; an
  * inline root's content is not parsed this way but as the root's completion
  * begins (S_complete_inline_root), which parses nothing below it. Inline
  * parsing completes fields at their owning token; the structural walk here
  * therefore skips the emitted inline tree. */
-static bool process_inline_tree(markdown_core_parser *parser, markdown_core_member *root) {
+static bool process_inline_tree(markdown_core_parser *parser, markdown_core_draft *root) {
     markdown_core_iter iter;
     markdown_core_event_type ev_type;
     bool whitespace = false;
 
     markdown_core_iter_init(&iter, root);
     while (!parser->error && (ev_type = markdown_core_iter_step(&iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_member *cur = iter.cur.member;
+        markdown_core_draft *cur = iter.cur.draft;
         if (ev_type == MARKDOWN_CORE_EVENT_ENTER) {
             const markdown_core_kind_record *kind = markdown_core_parser_kind(parser, cur->node);
             if (S_kind_contains_inlines(kind, cur->node)) {
@@ -1978,12 +1978,60 @@ static bool process_inline_tree(markdown_core_parser *parser, markdown_core_memb
     return whitespace;
 }
 
-bool markdown_core_parse_inline_subtrees(markdown_core_parser *parser, markdown_core_member *member) {
+bool markdown_core_parse_inline_subtrees(markdown_core_parser *parser, markdown_core_draft *draft) {
     bool whitespace = false;
-    for (markdown_core_member *field = member->fields; field && !parser->error; field = field->next) {
+    for (markdown_core_draft *field = draft->fields; field && !parser->error; field = field->next) {
         whitespace |= process_inline_tree(parser, field);
     }
     return whitespace;
+}
+
+markdown_core_draft *markdown_core_inline_attach(markdown_core_parser *parser, markdown_core_draft *owner,
+                                                 markdown_core_node *node, markdown_core_draft *before) {
+    markdown_core_draft *draft = markdown_core_parser_draft(parser, node, true);
+    if (!draft) {
+        markdown_core_parser_release_node(parser, node);
+        return NULL;
+    }
+    markdown_core_draft_attach(owner, draft, before);
+    return draft;
+}
+
+markdown_core_draft *markdown_core_inline_attach_field(markdown_core_parser *parser, markdown_core_draft *owner,
+                                                       markdown_core_node *node) {
+    markdown_core_draft *draft = markdown_core_parser_draft(parser, node, false);
+    if (draft) {
+        markdown_core_draft_attach_field(owner, draft);
+    }
+    return draft;
+}
+
+markdown_core_node *markdown_core_inline_owner(const markdown_core_parser *parser, const markdown_core_draft *draft) {
+    if (draft->owner) {
+        return draft->owner->node;
+    }
+    const markdown_core_inline_root *root = parser->completing;
+    return root->holder == root->node ? markdown_core_parser_owner(parser, root->member) : root->node;
+}
+
+void markdown_core_inline_release(markdown_core_parser *parser, markdown_core_draft *draft) {
+    if (draft->owner) {
+        markdown_core_draft_unlink(draft);
+    }
+    markdown_core_draft_release(parser ? parser->pool : NULL, draft);
+}
+
+markdown_core_node_set_kind_result
+markdown_core_inline_set_kind(markdown_core_parser *parser, markdown_core_draft *draft, markdown_core_node_type kind) {
+    if (!draft->owner) {
+        /* The root's own node: its member decides again as the kind it is
+         * now (5.9). */
+        markdown_core_inline_root *root = parser->completing;
+        assert(draft == root->builder && root->holder == root->node);
+        return markdown_core_parser_set_node_kind(parser, root->member, kind);
+    }
+    markdown_core_parser_note_kind(parser, kind);
+    return markdown_core_node_set_kind(draft->node, markdown_core_inline_owner(parser, draft), kind);
 }
 
 /* A FRAME PER ROOT THE COMPLETION PASS IS INSIDE: the inline root's holder,
@@ -1992,7 +2040,7 @@ bool markdown_core_parse_inline_subtrees(markdown_core_parser *parser, markdown_
  * made the token. The iterator is the frame's own, not an allocation: the
  * pass steps it in place (iterator.h). */
 typedef struct {
-    markdown_core_member *root;
+    markdown_core_draft *root;
     markdown_core_iter iter;
     int script_depth;
     bool started;
@@ -2010,7 +2058,7 @@ typedef struct {
     int script_depth;
 } complete_pass;
 
-static int push_complete_root(markdown_core_member *root, complete_pass *pass) {
+static int push_complete_root(markdown_core_draft *root, complete_pass *pass) {
     if (pass->count == pass->capacity) {
         size_t capacity = pass->capacity ? 2 * pass->capacity : 8;
         if (capacity > SIZE_MAX / sizeof(*pass->frames) ||
@@ -2061,20 +2109,20 @@ static void complete_consolidated_text(markdown_core_parser *parser, markdown_co
 
 /* The steps projected for one event, in descriptor order, each behind its
  * gate, until one of them consumes the node. A step that consumes the node
- * ends the event: the member it named is gone and there is nothing left to
+ * ends the event: the draft it named is gone and there is nothing left to
  * hand on.
  *
  * Returns CONSUMED when the node is gone, and FAILED with parser->error set. */
 static markdown_core_complete_result run_complete_steps(markdown_core_parser *parser,
                                                         const markdown_core_complete_step_entry *entry,
-                                                        markdown_core_member *member, markdown_core_event_type event,
+                                                        markdown_core_draft *draft, markdown_core_event_type event,
                                                         int is_root, void **states) {
     markdown_core_complete_result result = MARKDOWN_CORE_COMPLETE_CONTINUE;
     for (; entry->instance; entry++) {
         if (!markdown_core_complete_step_admitted(entry, parser)) {
             continue;
         }
-        result = entry->instance->element->complete_step(entry->instance, parser, member, event, is_root,
+        result = entry->instance->element->complete_step(entry->instance, parser, draft, event, is_root,
                                                          &states[entry->slot]);
         if (result != MARKDOWN_CORE_COMPLETE_CONTINUE) {
             /* A node is consumed only at its EXIT: at ENTER the lookahead
@@ -2087,18 +2135,36 @@ static markdown_core_complete_result run_complete_steps(markdown_core_parser *pa
     return result;
 }
 
-/* A NODE COMPLETES AS ITS BUILDER IS DONE (5.8, 5.11): its children, each
+/* A DRAFT IS COMPLETE once the nodes it holds are (5.8): its children become
+ * its stem, and the document decides what it continues and numbers what it
+ * holds. */
+static void S_complete_draft(markdown_core_parser *parser, markdown_core_draft *draft) {
+    if (!markdown_core_draft_freeze(parser->pool, draft, markdown_core_parser_kind(parser, draft->node)->summary)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return;
+    }
+    const markdown_core_element_instance *document = parser->dialect->document_structure;
+    document->element->complete_draft(document, parser, draft);
+}
+
+void markdown_core_inline_complete(markdown_core_parser *parser, markdown_core_draft *draft) {
+    markdown_core_iter iter;
+    markdown_core_iter_init(&iter, draft);
+    while (!parser->error && markdown_core_iter_step(&iter) != MARKDOWN_CORE_EVENT_DONE) {
+        if (iter.cur.ev_type == MARKDOWN_CORE_EVENT_EXIT) {
+            S_complete_draft(parser, iter.cur.draft);
+        }
+    }
+}
+
+/* A BLOCK COMPLETES AS ITS BUILDER IS DONE (5.8, 5.11): its children, each
  * complete, become its stem, and the document numbers what it holds,
- * measured from `start`. */
+ * measured from `start`. One that holds an inline root completes as the
+ * root does: its content is parsed and complete first. */
 static void S_complete_node(markdown_core_parser *parser, markdown_core_member *member, uint32_t start) {
     member->completed = true;
-    /* A node that holds an inline root outside the content of one completes
-     * as the root does: its content is parsed and complete first (5.8). */
-    markdown_core_node *holder = parser->completing ? NULL : markdown_core_node_content_holder(member->node);
-    if (holder && !S_kind_contains_inlines(markdown_core_parser_kind(parser, holder), holder)) {
-        holder = NULL;
-    }
-    if (holder) {
+    markdown_core_node *holder = markdown_core_node_content_holder(member->node);
+    if (holder && S_kind_contains_inlines(markdown_core_parser_kind(parser, holder), holder)) {
         markdown_core_parser_complete_root(parser, member, holder, member->node->where.place);
         return;
     }
@@ -2121,24 +2187,14 @@ bool markdown_core_parser_contains_inlines(markdown_core_parser *parser, markdow
 bool markdown_core_parser_complete_root(markdown_core_parser *parser, markdown_core_member *member,
                                         markdown_core_node *holder, markdown_core_place place) {
     assert(!parser->completing);
-    markdown_core_member *builder =
-        holder == member->node ? member : markdown_core_parser_attach_field(parser, member, holder);
+    markdown_core_draft *builder = markdown_core_parser_draft(parser, holder, false);
     if (!builder) {
         return false;
     }
-    builder->inner = true;
     markdown_core_inline_root root = {member->node, holder, member,
                                       builder,      place,  member->field || holder != member->node};
     S_complete_inline_root(parser, &root);
     return !parser->error;
-}
-
-void markdown_core_parser_release_wait(markdown_core_parser *parser, markdown_core_member *member) {
-    if (--member->waits || !member->numbered || parser->error) {
-        return;
-    }
-    const markdown_core_element_instance *document = parser->dialect->document_structure;
-    document->element->settle_member(document, parser, member);
 }
 
 markdown_core_node *markdown_core_parser_owner(const markdown_core_parser *parser, const markdown_core_member *member) {
@@ -2168,8 +2224,8 @@ static void S_join_reads(const markdown_core_parser *parser, markdown_core_inlin
 
 /* A TEXT ABSORBS THE TEXTS AFTER IT (markdown_core_consolidate_text_step),
  * and what their decisions read with them. */
-static void S_absorb_reads(const markdown_core_parser *parser, markdown_core_member *text) {
-    for (markdown_core_member *next = text->next; next && next->node->kind == MARKDOWN_CORE_NODE_TEXT;
+static void S_absorb_reads(const markdown_core_parser *parser, markdown_core_draft *text) {
+    for (markdown_core_draft *next = text->next; next && next->node->kind == MARKDOWN_CORE_NODE_TEXT;
          next = next->next) {
         S_join_reads(parser, &text->reads, &next->reads);
         text->reads.end = next->reads.end;
@@ -2186,9 +2242,9 @@ static void S_absorb_reads(const markdown_core_parser *parser, markdown_core_mem
  * old one's, and else when every decision about it said what it read. Its
  * reach is the content offset its decisions read up to. Its owner read what
  * it read. */
-static void S_settle_reads(markdown_core_parser *parser, markdown_core_member *member) {
-    markdown_core_inline_reads *reads = &member->reads;
-    markdown_core_node *node = member->node;
+static void S_settle_reads(markdown_core_parser *parser, markdown_core_draft *draft) {
+    markdown_core_inline_reads *reads = &draft->reads;
+    markdown_core_node *node = draft->node;
     reads->until = S_reads_until(parser, reads);
     reads->stay = 0;
     if ((reads->flags & (MARKDOWN_CORE_INLINE_LOCAL | MARKDOWN_CORE_INLINE_CONTEXT)) == MARKDOWN_CORE_INLINE_LOCAL &&
@@ -2199,7 +2255,7 @@ static void S_settle_reads(markdown_core_parser *parser, markdown_core_member *m
                                                  (uint32_t)(reads->start - reads->low));
         node->reach = (uint32_t)reads->reach;
     }
-    S_join_reads(parser, &member->owner->reads, reads);
+    S_join_reads(parser, &draft->owner->reads, reads);
 }
 
 /* THE OLD ROOT WHOSE CONTENT A ROOT READS AGAIN (5.6): the node of the
@@ -2219,64 +2275,58 @@ static const markdown_core_node *S_old_root(const markdown_core_inline_root *roo
 
 /* A TAKEN NODE THE ROOT'S COMPLETION CHANGES IS READ AS A NEW ONE: a Text
  * that merges with a Text beside it or holds no bytes, or one that no longer
- * lies on the bytes it was taken at. It continues nothing it has not
- * searched for, and its entry and reach are its decisions'. */
-static void S_settle_taken(markdown_core_member *member) {
-    const markdown_core_node *node = member->node;
-    if (!member->taken ||
-        (node->where.place.start == (uint32_t)member->reads.start &&
-         node->where.place.end == (uint32_t)member->reads.end &&
-         !(node->kind == MARKDOWN_CORE_NODE_TEXT && markdown_core_text_needs_consolidation(member)))) {
+ * lies on the bytes it was taken at. It continues what its search finds, and
+ * its entry and reach are its decisions'. */
+static void S_settle_taken(markdown_core_draft *draft) {
+    const markdown_core_node *node = draft->node;
+    if (!draft->taken || (node->where.place.start == (uint32_t)draft->reads.start &&
+                          node->where.place.end == (uint32_t)draft->reads.end &&
+                          !(node->kind == MARKDOWN_CORE_NODE_TEXT && markdown_core_text_needs_consolidation(draft)))) {
         return;
     }
-    member->taken = false;
-    member->old = NULL;
-    member->old_start = member->passed = 0;
-    member->searched = member->redo = false;
-    /* Under an owner that continues nothing, it has decided so too. */
-    member->decided = markdown_core_member_continues_nothing(member->owner);
-    member->node->entry = 0;
-    member->node->reach = 0;
+    draft->taken = draft->decided = false;
+    draft->old = NULL;
+    draft->old_start = 0;
+    draft->node->entry = 0;
+    draft->node->reach = 0;
 }
 
 /* AN INLINE ROOT COMPLETES ITS OWN TREE (docs/plans/2026-09-29-incremental-
- * parsing.md, 5.8): its content is parsed into its holder, unless its kind
- * defers that to its element, and one pass over the holder's tree and every
- * field root in it completes each node, on one explicit continuation stack.
- * The holder is complete and held already, by its owner's stem or field, and
- * holds nothing yet; it builds its content through the root's builder, which
- * a deferred kind's element has already parsed it into.
+ * parsing.md, 5.8): its content is parsed into its holder's draft, unless its
+ * kind defers that to its element, and one pass over the holder's tree and
+ * every field root in it completes each node, on one explicit continuation
+ * stack. The holder is held already, by its owner's stem or field, and holds
+ * nothing yet.
  *
  * At a node's ENTER the pass runs the steps projected for the ENTER,
  * completes the node itself (the element's `complete_inline` the record
- * carries) and pushes the field roots its member builds, which it passes
+ * carries) and pushes the field roots its draft builds, which it passes
  * before the node's children. At a Text's EXIT it consolidates the run when
  * there is one to merge or a Text with no bytes to drop; at every EXIT it
  * runs the steps projected for the EXIT, in descriptor order, each behind its
- * gate, and then the node, its subtree complete, takes its stem and numbers
- * what it holds. The holder's EXIT completes the root, which numbers its
- * content. */
+ * gate, and then the node, its subtree complete, takes its stem, decides what
+ * it continues and numbers what it holds. The holder's EXIT numbers the
+ * content, and the root completes. The drafts go with the pass. */
 static void S_complete_pass(markdown_core_parser *parser, markdown_core_inline_root *root, complete_pass *pass) {
     const markdown_core_kind_record *const kinds = parser->dialect->kinds;
     const markdown_core_complete_step_entry *const *const dispatch = parser->dialect->complete_dispatch;
-    markdown_core_member *holder = root->builder;
+    markdown_core_draft *holder = root->builder;
     /* Its kind and its range are final: it decides what it continues, whose
      * content it reads again (5.6), before it reads its own. */
     const markdown_core_element_instance *document = parser->dialect->document_structure;
     document->element->decide_member(document, parser, root->member);
-    if (parser->error) {
-        return;
-    }
     parser->completing = root;
     parser->asker = root->node;
-    const markdown_core_kind_record *kind = markdown_core_parser_kind(parser, holder->node);
-    if (kind->flags & MARKDOWN_CORE_KIND_DEFERRED) {
-        kind->structure->element->parse_root(kind->structure, parser, holder, root->place.start);
-        parser->asker = root->node;
-    } else {
-        uint32_t anchor = 0;
-        const markdown_core_node *old = S_old_root(root, &anchor);
-        markdown_core_parse_root_inlines(parser, holder, old, anchor);
+    if (!parser->error) {
+        const markdown_core_kind_record *kind = markdown_core_parser_kind(parser, holder->node);
+        if (kind->flags & MARKDOWN_CORE_KIND_DEFERRED) {
+            kind->structure->element->parse_root(kind->structure, parser, holder, root->place.start);
+            parser->asker = root->node;
+        } else {
+            uint32_t anchor = 0;
+            const markdown_core_node *old = S_old_root(root, &anchor);
+            markdown_core_parse_root_inlines(parser, holder, old, anchor);
+        }
     }
     pass->script_depth = 0;
     if (!parser->error) {
@@ -2298,12 +2348,12 @@ static void S_complete_pass(markdown_core_parser *parser, markdown_core_inline_r
                 pass->count--;
                 break;
             }
-            markdown_core_member *member = iter->cur.member;
-            markdown_core_node *node = member->node;
+            markdown_core_draft *draft = iter->cur.draft;
+            markdown_core_node *node = draft->node;
             size_t index = markdown_core_kind_index((markdown_core_node_type)node->kind);
             /* A field root belongs to its owner and is never replaced; so is
              * the holder of a field's content. */
-            int is_root = member == frame->root && (pass->count > 1 || root->field);
+            int is_root = draft == frame->root && (pass->count > 1 || root->field);
             if (node->element && node->element->delimiter.body == DELIMITER_WORD_BODY) {
                 frame->script_depth += event == MARKDOWN_CORE_EVENT_ENTER ? 1 : -1;
             }
@@ -2311,18 +2361,18 @@ static void S_complete_pass(markdown_core_parser *parser, markdown_core_inline_r
                 /* Consolidation goes first at a Text's EXIT and takes the
                  * pass's own iterator over the siblings it absorbs, so by the
                  * time an element step sees this event the Text holds its
-                 * whole run and the absorbed members are gone -- they were
+                 * whole run and the absorbed drafts are gone -- they were
                  * never delivered to anything else, which is what makes
                  * releasing them safe. */
                 result = MARKDOWN_CORE_COMPLETE_CONTINUE;
-                if (index == MARKDOWN_CORE_KIND_TEXT_INDEX && !member->taken &&
-                    markdown_core_text_needs_consolidation(member)) {
-                    S_absorb_reads(parser, member);
-                    result = markdown_core_consolidate_text_step(parser, iter, member, complete_consolidated_text,
+                if (index == MARKDOWN_CORE_KIND_TEXT_INDEX && !draft->taken &&
+                    markdown_core_text_needs_consolidation(draft)) {
+                    S_absorb_reads(parser, draft);
+                    result = markdown_core_consolidate_text_step(parser, iter, draft, complete_consolidated_text,
                                                                  frame->script_depth);
                 }
-                if (result == MARKDOWN_CORE_COMPLETE_CONTINUE && !member->taken && dispatch[2 * index + 1]) {
-                    result = run_complete_steps(parser, dispatch[2 * index + 1], member, event, is_root, states);
+                if (result == MARKDOWN_CORE_COMPLETE_CONTINUE && !draft->taken && dispatch[2 * index + 1]) {
+                    result = run_complete_steps(parser, dispatch[2 * index + 1], draft, event, is_root, states);
                 }
                 if (result == MARKDOWN_CORE_COMPLETE_FAILED) {
                     markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -2331,30 +2381,24 @@ static void S_complete_pass(markdown_core_parser *parser, markdown_core_inline_r
                 if (result == MARKDOWN_CORE_COMPLETE_CONTINUE) {
                     /* The nodes of the root's content keep what their
                      * decisions read; a field's are read with their token. */
-                    if (pass->count == 1 && member != holder) {
-                        S_settle_reads(parser, member);
+                    if (pass->count == 1 && draft != holder) {
+                        S_settle_reads(parser, draft);
                     }
-                    if (member->taken) {
-                        /* A taken node is complete: its owner numbers it. */
-                    } else if (member == holder) {
-                        /* The holder takes its stem, and so does the root
-                         * when it is the holder's owner and is not a root
-                         * read again, numbered already; the root numbers its
-                         * content and all else it holds. */
-                        if (!markdown_core_member_freeze(parser->pool, member,
-                                                         markdown_core_parser_kind(parser, member->node)->summary) ||
-                            (root->member != member && !root->member->numbered &&
-                             !markdown_core_member_freeze(
-                                 parser->pool, root->member,
-                                 markdown_core_parser_kind(parser, root->member->node)->summary))) {
+                    /* A taken node is complete: its owner numbers it. */
+                    if (!draft->taken) {
+                        S_complete_draft(parser, draft);
+                    }
+                    if (draft == holder && !parser->error) {
+                        /* The root's content is numbered: the root takes
+                         * its stem, unless it is a root read again,
+                         * numbered already, and numbers all else it holds. */
+                        if (!root->member->numbered &&
+                            !markdown_core_member_freeze(parser->pool, root->member,
+                                                         markdown_core_parser_kind(parser, root->node)->summary)) {
                             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
                             break;
                         }
                         document->element->complete_node(document, parser, root->member, root->place.start);
-                    } else if (member->first || member->fields) {
-                        /* A node holding no member holds nothing it has
-                         * not numbered. */
-                        S_complete_node(parser, member, node->where.place.start);
                     }
                     if (parser->error) {
                         break;
@@ -2362,13 +2406,13 @@ static void S_complete_pass(markdown_core_parser *parser, markdown_core_inline_r
                 }
                 continue;
             }
-            S_settle_taken(member);
-            if (member->taken) {
+            S_settle_taken(draft);
+            if (draft->taken) {
                 continue;
             }
             const markdown_core_kind_record *facts = &kinds[index];
             if (dispatch[2 * index]) {
-                result = run_complete_steps(parser, dispatch[2 * index], member, event, is_root, states);
+                result = run_complete_steps(parser, dispatch[2 * index], draft, event, is_root, states);
                 if (result == MARKDOWN_CORE_COMPLETE_FAILED) {
                     markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
                     break;
@@ -2377,12 +2421,12 @@ static void S_complete_pass(markdown_core_parser *parser, markdown_core_inline_r
             if (facts->complete) {
                 facts->complete(facts->structure, parser, node, frame->script_depth);
             }
-            if (!member->fields) {
+            if (!draft->fields) {
                 continue;
             }
             pass->script_depth = frame->script_depth;
             size_t first = pass->count;
-            for (markdown_core_member *field = member->fields; field; field = field->next) {
+            for (markdown_core_draft *field = draft->fields; field; field = field->next) {
                 if (!push_complete_root(field, pass)) {
                     break;
                 }
@@ -2408,6 +2452,7 @@ static void S_complete_pass(markdown_core_parser *parser, markdown_core_inline_r
     parser->completing = NULL;
     parser->asker = NULL;
     root->builder = NULL;
+    markdown_core_drafts_clear(&parser->drafts, parser->pool);
 }
 
 /* The pass borrows the parser's walk stack for its frames and keeps its
@@ -2421,6 +2466,7 @@ static void S_complete_inline_root(markdown_core_parser *parser, markdown_core_i
         pass.frames = markdown_core_parser_walk_stack(parser, pass.capacity, sizeof(*pass.frames));
         if (!pass.frames) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            markdown_core_drafts_clear(&parser->drafts, parser->pool);
             return;
         }
     }

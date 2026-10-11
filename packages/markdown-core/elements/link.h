@@ -35,26 +35,26 @@ bufsize_t markdown_core_reference_definition_length(markdown_core_chunk *input,
 void markdown_core_inline_pop_bracket(const markdown_core_element_instance *link,
                                       markdown_core_inline_state *inline_state);
 /* Reads the `]` at the cursor: closes the innermost bracket into the node its
- * grammar makes, or appends the `]` as text. The member of what it appended,
+ * grammar makes, or appends the `]` as text. The draft of what it appended,
  * or NULL when the bracket closed. */
-markdown_core_member *markdown_core_inline_handle_close_bracket(const markdown_core_element_instance *link,
-                                                                markdown_core_parser *parser,
-                                                                markdown_core_inline_state *inline_state);
-/* Moves the members after `opener`'s literal, up to its closing literal, to
+markdown_core_draft *markdown_core_inline_handle_close_bracket(const markdown_core_element_instance *link,
+                                                               markdown_core_parser *parser,
+                                                               markdown_core_inline_state *inline_state);
+/* Moves the drafts after `opener`'s literal, up to its closing literal, to
  * the end of `owner`'s children. */
 void markdown_core_inline_take_bracket_content(const markdown_core_element_instance *link, markdown_core_parser *parser,
-                                               bracket *opener, markdown_core_member *owner);
-/* Puts the detached `node` before `opener`'s literal, among the members
- * being built, and returns its member; NULL, with the parse failed, when it
+                                               bracket *opener, markdown_core_draft *owner);
+/* Puts the detached `node` before `opener`'s literal, among the drafts
+ * being built, and returns its draft; NULL, with the parse failed, when it
  * could not be allocated. */
-markdown_core_member *markdown_core_inline_insert_at_opener(markdown_core_inline_state *inline_state, bracket *opener,
-                                                            markdown_core_node *node);
+markdown_core_draft *markdown_core_inline_insert_at_opener(markdown_core_inline_state *inline_state, bracket *opener,
+                                                           markdown_core_node *node);
 /* `replacement` takes the place of `opener`'s literal (an image's `!`
- * stays); its member, or NULL when it could not be allocated. */
-markdown_core_member *markdown_core_inline_replace_bracket_opener(markdown_core_inline_state *inline_state,
-                                                                  bracket *opener, markdown_core_node *replacement);
+ * stays); its draft, or NULL when it could not be allocated. */
+markdown_core_draft *markdown_core_inline_replace_bracket_opener(markdown_core_inline_state *inline_state,
+                                                                 bracket *opener, markdown_core_node *replacement);
 void markdown_core_inline_push_bracket(const markdown_core_element_instance *link,
                                        markdown_core_inline_state *inline_state, bracket_kind kind,
-                                       markdown_core_member *inl_text);
+                                       markdown_core_draft *inl_text);
 
 #endif

@@ -4,9 +4,9 @@
 #include <parser.h>
 #include <limits.h>
 
-static markdown_core_member *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                   markdown_core_member *parent, unsigned char character,
-                                   markdown_core_inline_state *inline_state) {
+static markdown_core_draft *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                  markdown_core_draft *parent, unsigned char character,
+                                  markdown_core_inline_state *inline_state) {
     int at = markdown_core_inline_state_get_offset(inline_state);
     if (character != '~' || markdown_core_inline_state_peek_at(inline_state, at + 1) != '~') {
         markdown_core_inline_state_read(inline_state, at, at + 2);

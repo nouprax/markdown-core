@@ -266,26 +266,26 @@ static markdown_core_node *owner_in(const markdown_core_node *root, const markdo
     return owner;
 }
 
-/* A BUILDER OVER A BUILT TREE: a member for every node below `root`, linked
- * as the stems hold them and holding no reference (node.h,
- * markdown_core_member), so a test can drive the builder walk
+/* A BUILDER OVER A BUILT TREE: a draft for every node below `root`, taken
+ * from `area`, linked as the stems hold them and holding no reference
+ * (node.h, markdown_core_draft), so a test can drive the builder walk
  * (markdown_core_iter) over the shape a parse produced. Built on an explicit
- * stack; NULL when an allocation failed. markdown_core_member_release frees
- * it and leaves every node as it was. */
-static markdown_core_member *member_mirror(markdown_core_node *root) {
-    markdown_core_member *top = markdown_core_member_new(NULL, root, false);
+ * stack; NULL when an allocation failed. Clearing and disposing of `area`
+ * frees it and leaves every node as it was. */
+static markdown_core_draft *draft_mirror(markdown_core_drafts *area, markdown_core_node *root) {
+    markdown_core_draft *top = markdown_core_drafts_take(area, root, false);
     size_t capacity = 64, count = 0;
-    markdown_core_member **stack = malloc(capacity * sizeof(*stack));
+    markdown_core_draft **stack = malloc(capacity * sizeof(*stack));
     bool failed = !top || !stack;
     if (!failed) {
         stack[count++] = top;
     }
     while (count && !failed) {
-        markdown_core_member *current = stack[--count];
+        markdown_core_draft *current = stack[--count];
         size_t total = child_count(current->node);
         if (count + total > capacity) {
             capacity = (count + total) * 2;
-            markdown_core_member **more = realloc(stack, capacity * sizeof(*stack));
+            markdown_core_draft **more = realloc(stack, capacity * sizeof(*stack));
             if (!more) {
                 failed = true;
                 break;
@@ -295,21 +295,23 @@ static markdown_core_member *member_mirror(markdown_core_node *root) {
         markdown_core_stem_walk walk;
         markdown_core_stem_walk_begin(&walk, current->node->children, 0, total);
         for (markdown_core_node *item; (item = markdown_core_stem_walk_next(&walk));) {
-            markdown_core_member *member = markdown_core_member_new(NULL, item, false);
-            if (!member) {
+            markdown_core_draft *draft = markdown_core_drafts_take(area, item, false);
+            if (!draft) {
                 failed = true;
                 break;
             }
-            markdown_core_member_attach(current, member, NULL);
-            stack[count++] = member;
+            markdown_core_draft_attach(current, draft, NULL);
+            stack[count++] = draft;
         }
     }
     free(stack);
-    if (failed && top) {
-        markdown_core_member_release(NULL, top);
-        top = NULL;
-    }
-    return top;
+    return failed ? NULL : top;
+}
+
+/* Gives back every draft `area` holds, and its chunks. */
+static void drafts_drop(markdown_core_drafts *area) {
+    markdown_core_drafts_clear(area, NULL);
+    markdown_core_drafts_dispose(area);
 }
 
 /* A PREORDER WALK of the tree below a node, as the builder walk
@@ -1158,40 +1160,42 @@ static void directive_element_accessors(test_batch_runner *runner) {
     {
         markdown_core_node *expected[] = {directive, paragraph, child_at(paragraph, 0)};
         size_t entered = 0;
-        markdown_core_member *mirror = member_mirror(directive);
+        markdown_core_drafts area = {0};
+        markdown_core_draft *mirror = draft_mirror(&area, directive);
         markdown_core_iter iter;
         markdown_core_event_type event;
         markdown_core_iter_init(&iter, mirror);
         while ((event = markdown_core_iter_step(&iter)) != MARKDOWN_CORE_EVENT_DONE) {
             if (event == MARKDOWN_CORE_EVENT_ENTER) {
                 OK(runner,
-                   entered < sizeof(expected) / sizeof(expected[0]) && iter.cur.member->node == expected[entered],
+                   entered < sizeof(expected) / sizeof(expected[0]) && iter.cur.draft->node == expected[entered],
                    "iterator preserves structural child order");
                 entered++;
             }
         }
         INT_EQ(runner, (int)entered, (int)(sizeof(expected) / sizeof(expected[0])),
                "iterator visits only directive content nodes");
-        markdown_core_member_release(NULL, mirror);
+        drafts_drop(&area);
     }
     {
         markdown_core_node *expected[] = {label, child_at(label, 0)};
         size_t entered = 0;
-        markdown_core_member *mirror = member_mirror(label);
+        markdown_core_drafts area = {0};
+        markdown_core_draft *mirror = draft_mirror(&area, label);
         markdown_core_iter iter;
         markdown_core_event_type event;
         markdown_core_iter_init(&iter, mirror);
         while ((event = markdown_core_iter_step(&iter)) != MARKDOWN_CORE_EVENT_DONE) {
             if (event == MARKDOWN_CORE_EVENT_ENTER) {
                 OK(runner,
-                   entered < sizeof(expected) / sizeof(expected[0]) && iter.cur.member->node == expected[entered],
+                   entered < sizeof(expected) / sizeof(expected[0]) && iter.cur.draft->node == expected[entered],
                    "a walk rooted at the label follows its own child tree");
                 entered++;
             }
         }
         INT_EQ(runner, (int)entered, (int)(sizeof(expected) / sizeof(expected[0])),
                "the label tree is independently iterable");
-        markdown_core_member_release(NULL, mirror);
+        drafts_drop(&area);
     }
     markdown_core_node_free(doc);
 
@@ -1383,19 +1387,20 @@ static void iterator(test_batch_runner *runner) {
     markdown_core_node *doc = markdown_core_parse_document("> a *b*\n\nc", 10);
     int parnodes = 0;
     markdown_core_event_type ev_type;
-    markdown_core_member *mirror = member_mirror(doc);
+    markdown_core_drafts area = {0};
+    markdown_core_draft *mirror = draft_mirror(&area, doc);
     markdown_core_iter iter;
 
     markdown_core_iter_init(&iter, mirror);
     while ((ev_type = markdown_core_iter_step(&iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *cur = iter.cur.member->node;
+        markdown_core_node *cur = iter.cur.draft->node;
         if (cur->kind == MARKDOWN_CORE_NODE_PARAGRAPH && ev_type == MARKDOWN_CORE_EVENT_ENTER) {
             parnodes += 1;
         }
     }
     INT_EQ(runner, parnodes, 2, "iterate correctly counts paragraphs");
 
-    markdown_core_member_release(NULL, mirror);
+    drafts_drop(&area);
     markdown_core_node_free(doc);
 }
 
@@ -1410,15 +1415,16 @@ static void iterator_delete(test_batch_runner *runner) {
                              "* item1\n"
                              "* item2\n";
     markdown_core_node *doc = markdown_core_parse_document(md, sizeof(md) - 1);
-    markdown_core_member *mirror = member_mirror(doc);
+    markdown_core_drafts area = {0};
+    markdown_core_draft *mirror = draft_mirror(&area, doc);
     markdown_core_iter iter;
     markdown_core_event_type ev_type;
 
     markdown_core_iter_init(&iter, mirror);
     while ((ev_type = markdown_core_iter_step(&iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_member *member = iter.cur.member;
-        markdown_core_node *node = member->node;
-        // Release list, emph, and code members -- all at EXIT, which is Step
+        markdown_core_draft *draft = iter.cur.draft;
+        markdown_core_node *node = draft->node;
+        // Release list, emph, and code drafts -- all at EXIT, which is Step
         // 5's mutation rule. `CODE` was deleted at ENTER here until the event
         // contract became total, and that was legal only because `S_is_leaf`
         // suppressed `CODE`'s EXIT. A test that frees at ENTER is a test
@@ -1426,14 +1432,14 @@ static void iterator_delete(test_batch_runner *runner) {
         if (ev_type == MARKDOWN_CORE_EVENT_EXIT &&
             (node->kind == MARKDOWN_CORE_NODE_LIST || node->kind == MARKDOWN_CORE_NODE_EMPHASIS ||
              node->kind == MARKDOWN_CORE_NODE_CODE)) {
-            markdown_core_member_unlink(member);
-            markdown_core_member_release(NULL, member);
+            markdown_core_draft_unlink(draft);
+            markdown_core_draft_release(NULL, draft);
         }
     }
 
     // Both lists are gone and each paragraph keeps only its text slots.
-    markdown_core_member *first = mirror->first;
-    markdown_core_member *second = first->next;
+    markdown_core_draft *first = mirror->first;
+    markdown_core_draft *second = first->next;
     INT_EQ(runner, first->node->kind, MARKDOWN_CORE_NODE_PARAGRAPH, "first surviving node is a paragraph");
     INT_EQ(runner, second->node->kind, MARKDOWN_CORE_NODE_PARAGRAPH, "second surviving node is a paragraph");
     OK(runner, second->next == NULL, "deleted lists are unlinked");
@@ -1441,7 +1447,7 @@ static void iterator_delete(test_batch_runner *runner) {
     LITERAL_EQ(runner, first->first->next->node, " c", "first paragraph keeps trailing text after deleted emph");
     LITERAL_EQ(runner, second->first->next->node, " c", "second paragraph keeps trailing text after deleted code");
 
-    markdown_core_member_release(NULL, mirror);
+    drafts_drop(&area);
     markdown_core_node_free(doc);
 }
 
@@ -1972,7 +1978,8 @@ static void iterator_contract_is_total(test_batch_runner *runner) {
                              "d\n"
                              "e\n";
     markdown_core_node *doc = markdown_core_parse_document(md, sizeof(md) - 1);
-    markdown_core_member *mirror = member_mirror(doc);
+    markdown_core_drafts area = {0};
+    markdown_core_draft *mirror = draft_mirror(&area, doc);
     markdown_core_iter iter;
     markdown_core_node *stack[64];
     size_t depth = 0, enters = 0, exits = 0, mismatched = 0, overflow = 0;
@@ -1980,7 +1987,7 @@ static void iterator_contract_is_total(test_batch_runner *runner) {
 
     markdown_core_iter_init(&iter, mirror);
     while ((ev = markdown_core_iter_step(&iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *node = iter.cur.member->node;
+        markdown_core_node *node = iter.cur.draft->node;
         if (ev == MARKDOWN_CORE_EVENT_ENTER) {
             enters += 1;
             if (depth == sizeof(stack) / sizeof(stack[0])) {
@@ -2002,17 +2009,18 @@ static void iterator_contract_is_total(test_batch_runner *runner) {
     INT_EQ(runner, (int)depth, 0, "the walk ends with nothing left open");
     INT_EQ(runner, (int)overflow, 0, "the test's stack was deep enough");
 
-    markdown_core_member_release(NULL, mirror);
+    drafts_drop(&area);
     markdown_core_node_free(doc);
     const markdown_core_node_type owned_types[] = {MARKDOWN_CORE_NODE_CITATION, MARKDOWN_CORE_NODE_FOOTNOTE,
                                                    MARKDOWN_CORE_NODE_SPECIMEN, MARKDOWN_CORE_NODE_METADATA};
     for (size_t i = 0; i < sizeof(owned_types) / sizeof(*owned_types); i++) {
-        markdown_core_member *member = markdown_core_member_new(NULL, markdown_core_node_new(owned_types[i]), true);
-        markdown_core_iter_init(&iter, member);
+        markdown_core_drafts owned = {0};
+        markdown_core_draft *draft = markdown_core_drafts_take(&owned, markdown_core_node_new(owned_types[i]), true);
+        markdown_core_iter_init(&iter, draft);
         INT_EQ(runner, markdown_core_iter_step(&iter), MARKDOWN_CORE_EVENT_ENTER, "empty owned node enters");
         INT_EQ(runner, markdown_core_iter_step(&iter), MARKDOWN_CORE_EVENT_EXIT, "empty owned node exits");
         INT_EQ(runner, markdown_core_iter_step(&iter), MARKDOWN_CORE_EVENT_DONE, "empty owned node terminates");
-        markdown_core_member_release(NULL, member);
+        drafts_drop(&owned);
     }
 }
 
@@ -2038,11 +2046,10 @@ static void iterator_contract_is_total(test_batch_runner *runner) {
  * They are `static const` descriptors, like every element since 3.4. A test
  * may still build one -- what 3.4 removed is the ability to REGISTER one, look
  * one up by name, or mutate one after the fact. */
-static markdown_core_member *stray_delimiter_push(markdown_core_parser *parser,
-                                                  markdown_core_inline_state *inline_state, unsigned char character,
-                                                  markdown_core_delimiter_rule rule) {
+static markdown_core_draft *stray_delimiter_push(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
+                                                 unsigned char character, markdown_core_delimiter_rule rule) {
     markdown_core_node *node;
-    markdown_core_member *member;
+    markdown_core_draft *member;
 
     (void)parser;
     if (character != '@') {
@@ -2063,17 +2070,17 @@ static markdown_core_member *stray_delimiter_push(markdown_core_parser *parser,
     return member;
 }
 
-static markdown_core_member *stray_unowned_match(const markdown_core_element_instance *self,
-                                                 markdown_core_parser *parser, markdown_core_member *parent,
-                                                 unsigned char character, markdown_core_inline_state *inline_state) {
+static markdown_core_draft *stray_unowned_match(const markdown_core_element_instance *self,
+                                                markdown_core_parser *parser, markdown_core_draft *parent,
+                                                unsigned char character, markdown_core_inline_state *inline_state) {
     (void)self;
     (void)parent;
     return stray_delimiter_push(parser, inline_state, character, MARKDOWN_CORE_DELIM_RULE_STRIKETHROUGH);
 }
 
-static markdown_core_member *stray_unnamed_match(const markdown_core_element_instance *self,
-                                                 markdown_core_parser *parser, markdown_core_member *parent,
-                                                 unsigned char character, markdown_core_inline_state *inline_state) {
+static markdown_core_draft *stray_unnamed_match(const markdown_core_element_instance *self,
+                                                markdown_core_parser *parser, markdown_core_draft *parent,
+                                                unsigned char character, markdown_core_inline_state *inline_state) {
     (void)self;
     (void)parent;
     return stray_delimiter_push(parser, inline_state, character, (markdown_core_delimiter_rule)200);
@@ -2102,9 +2109,9 @@ typedef struct dispatch_observation {
     size_t count;
 } dispatch_observation;
 
-static markdown_core_member *observe_dispatch(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                              markdown_core_member *parent, unsigned char character,
-                                              markdown_core_inline_state *inline_state) {
+static markdown_core_draft *observe_dispatch(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                             markdown_core_draft *parent, unsigned char character,
+                                             markdown_core_inline_state *inline_state) {
     (void)parent;
     (void)character;
     dispatch_observation *observation = parser->context;
@@ -2205,7 +2212,7 @@ static const markdown_core_node_type OBSERVER_PRESENT_KINDS[] = {MARKDOWN_CORE_N
 static int step_asked[2];
 
 static markdown_core_complete_result count_step_absent(const markdown_core_element_instance *self,
-                                                       markdown_core_parser *parser, markdown_core_member *node,
+                                                       markdown_core_parser *parser, markdown_core_draft *node,
                                                        markdown_core_event_type event, int is_root, void **state) {
     (void)self;
     (void)parser;
@@ -2218,7 +2225,7 @@ static markdown_core_complete_result count_step_absent(const markdown_core_eleme
 }
 
 static markdown_core_complete_result count_step_present(const markdown_core_element_instance *self,
-                                                        markdown_core_parser *parser, markdown_core_member *node,
+                                                        markdown_core_parser *parser, markdown_core_draft *node,
                                                         markdown_core_event_type event, int is_root, void **state) {
     (void)self;
     (void)parser;
@@ -4114,10 +4121,9 @@ static int conversion_can_contain(const markdown_core_element *element, markdown
 
 /* A literal ! lets this probe set the parent policy before the following
  * delimiter, with every production element still in its fixed order. */
-static markdown_core_member *conversion_match_inline(const markdown_core_element_instance *self,
-                                                     markdown_core_parser *parser, markdown_core_member *parent,
-                                                     unsigned char character,
-                                                     markdown_core_inline_state *inline_state) {
+static markdown_core_draft *conversion_match_inline(const markdown_core_element_instance *self,
+                                                    markdown_core_parser *parser, markdown_core_draft *parent,
+                                                    unsigned char character, markdown_core_inline_state *inline_state) {
     (void)character;
     (void)inline_state;
     parent->node->element = self->element;
@@ -5790,11 +5796,12 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
         source[length - 1] = '@'; /* A failed candidate, as well as ordinary text. */
         source[length] = 0;
         set_literal(text, source);
-        markdown_core_member *built = markdown_core_member_new(NULL, root, false);
-        markdown_core_member *block = markdown_core_member_new(NULL, paragraph, true);
-        markdown_core_member *leaf = markdown_core_member_new(NULL, text, true);
-        markdown_core_member_attach(built, block, NULL);
-        markdown_core_member_attach(block, leaf, NULL);
+        markdown_core_drafts area = {0};
+        markdown_core_draft *built = markdown_core_drafts_take(&area, root, false);
+        markdown_core_draft *block = markdown_core_drafts_take(&area, paragraph, true);
+        markdown_core_draft *leaf = markdown_core_drafts_take(&area, text, true);
+        markdown_core_draft_attach(built, block, NULL);
+        markdown_core_draft_attach(block, leaf, NULL);
         const unsigned char *original = text->as.literal->data;
         void *state = NULL;
         text_allocation_calls = 0;
@@ -5807,7 +5814,7 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
         OK(runner, block->first == leaf && leaf->next == NULL && leaf->node == text,
            "failed email scan preserves the tree");
         INT_EQ(runner, text_allocation_calls, 0, "a no-hit step allocates nothing: it has no walk of its own");
-        markdown_core_member_release(NULL, built);
+        drafts_drop(&area);
         markdown_core_node_free(root);
         free(source);
     }
@@ -8232,9 +8239,9 @@ typedef struct instance_marks {
     bool inner_parsed;
 } instance_marks;
 
-static markdown_core_member *mark_percent_a(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                            markdown_core_member *parent, unsigned char character,
-                                            markdown_core_inline_state *inline_state) {
+static markdown_core_draft *mark_percent_a(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                           markdown_core_draft *parent, unsigned char character,
+                                           markdown_core_inline_state *inline_state) {
     (void)self;
     (void)parent;
     (void)character;
@@ -8242,9 +8249,9 @@ static markdown_core_member *mark_percent_a(const markdown_core_element_instance
     ((instance_marks *)parser->context)->marked_a++;
     return NULL;
 }
-static markdown_core_member *mark_percent_b(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                            markdown_core_member *parent, unsigned char character,
-                                            markdown_core_inline_state *inline_state) {
+static markdown_core_draft *mark_percent_b(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                           markdown_core_draft *parent, unsigned char character,
+                                           markdown_core_inline_state *inline_state) {
 
     (void)self;
     (void)parent;
@@ -9377,9 +9384,20 @@ static void formula_promotion_transfers_storage(test_batch_runner *runner) {
             markdown_core_node *root = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
             markdown_core_node *old =
                 markdown_core_node_new(shape == 0 ? MARKDOWN_CORE_NODE_PARAGRAPH : MARKDOWN_CORE_NODE_CODE_BLOCK);
-            markdown_core_member *built = markdown_core_member_new(NULL, root, false);
-            markdown_core_member *promoted = markdown_core_member_new(NULL, old, true);
-            markdown_core_member_attach(built, promoted, NULL);
+            /* A paragraph is promoted as a node of an inline root's content,
+             * by the step; a code block as a block, as it closes. */
+            markdown_core_drafts area = {0};
+            markdown_core_draft *draft_built = NULL, *draft_promoted = NULL;
+            markdown_core_member *built = NULL, *promoted = NULL;
+            if (shape == 0) {
+                draft_built = markdown_core_drafts_take(&area, root, false);
+                draft_promoted = markdown_core_drafts_take(&area, old, true);
+                markdown_core_draft_attach(draft_built, draft_promoted, NULL);
+            } else {
+                built = markdown_core_member_new(NULL, root, false);
+                promoted = markdown_core_member_new(NULL, old, true);
+                markdown_core_member_attach(built, promoted, NULL);
+            }
             const char *before;
             void *opaque = NULL;
             if (shape == 0) {
@@ -9387,7 +9405,7 @@ static void formula_promotion_transfers_storage(test_batch_runner *runner) {
                     markdown_core_node_new_with_ext(MARKDOWN_CORE_NODE_FORMULA, &MARKDOWN_CORE_ELEMENT_FORMULA);
                 markdown_core_elements_set_formula_mode(donor, MARKDOWN_CORE_FORMULA_MODE_STANDALONE);
                 markdown_core_elements_set_formula_literal(donor, " \t value \n ");
-                markdown_core_member_attach(promoted, markdown_core_member_new(NULL, donor, true), NULL);
+                markdown_core_draft_attach(draft_promoted, markdown_core_drafts_take(&area, donor, true), NULL);
                 before = markdown_core_elements_get_formula_literal(donor);
                 opaque = donor->opaque;
             } else {
@@ -9401,7 +9419,7 @@ static void formula_promotion_transfers_storage(test_batch_runner *runner) {
             payload_fail_at = fail ? payload_allocations + fail : 0;
             if (shape == 0) {
                 markdown_core_complete_result result = MARKDOWN_CORE_ELEMENT_FORMULA.complete_step(
-                    &formula_instance, &parser, promoted, MARKDOWN_CORE_EVENT_EXIT, 0, NULL);
+                    &formula_instance, &parser, draft_promoted, MARKDOWN_CORE_EVENT_EXIT, 0, NULL);
                 INT_EQ(runner, result == MARKDOWN_CORE_COMPLETE_FAILED, parser.error != 0,
                        "a promotion fails exactly when it reports a loss");
             } else {
@@ -9411,9 +9429,11 @@ static void formula_promotion_transfers_storage(test_batch_runner *runner) {
             if (parser.error) {
                 INT_EQ(runner, parser.error, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED, "loss is reported");
             } else {
-                OK(runner,
-                   built->first == promoted && promoted->node == old && old->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK &&
-                       !promoted->first,
+                const bool in_place =
+                    shape == 0
+                        ? draft_built->first == draft_promoted && draft_promoted->node == old && !draft_promoted->first
+                        : built->first == promoted && promoted->node == old && !promoted->first;
+                OK(runner, in_place && old->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK,
                    "promotion retypes the node in place and consumes what it replaced");
                 const char *after = markdown_core_elements_get_formula_literal(old);
                 STR_EQ(runner, after, "value", "promotion trims and NUL-terminates its literal");
@@ -9427,7 +9447,10 @@ static void formula_promotion_transfers_storage(test_batch_runner *runner) {
                     OK(runner, old->opaque == opaque, "the formula payload has one lifetime across promotion");
                 }
             }
-            markdown_core_member_release(NULL, built);
+            if (built) {
+                markdown_core_member_release(NULL, built);
+            }
+            drafts_drop(&area);
             markdown_core_node_free(root);
             INT_EQ(runner, payload_live, 0, "all transferred or rejected storage is released exactly once");
 
@@ -10496,14 +10519,14 @@ static void pipe_rows_are_one_row(test_batch_runner *runner) {
  * already holds the completed bytes. */
 typedef struct {
     markdown_core_element document;
-    void (*complete)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_member *, uint32_t);
+    void (*complete)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_draft *);
     size_t uncompleted;
 } completion_probe;
 
 static void observe_completed_text(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                   markdown_core_member *member, uint32_t start) {
+                                   markdown_core_draft *draft) {
     completion_probe *probe = parser->context;
-    const markdown_core_node *node = member->node;
+    const markdown_core_node *node = draft->node;
     markdown_core_stem_walk walk;
     markdown_core_stem_walk_begin(&walk, node->children, 0, child_count(node));
     for (markdown_core_node *child; (child = markdown_core_stem_walk_next(&walk));) {
@@ -10511,7 +10534,7 @@ static void observe_completed_text(const markdown_core_element_instance *self, m
             probe->uncompleted += (child->flags & MARKDOWN_CORE_NODE__ESCAPED_SPACE) != 0;
         }
     }
-    probe->complete(self, parser, member, start);
+    probe->complete(self, parser, draft);
 }
 
 /* Completion is the document lifecycle's, so the probe registers a document
@@ -10520,8 +10543,8 @@ static bool configure_completion_probe(markdown_core_dialect_builder *builder, v
     completion_probe *probe = context;
     probe->document = MARKDOWN_CORE_ELEMENT_DOCUMENT;
     probe->document.name = "completion-probe-document";
-    probe->complete = probe->document.complete_node;
-    probe->document.complete_node = observe_completed_text;
+    probe->complete = probe->document.complete_draft;
+    probe->document.complete_draft = observe_completed_text;
     return markdown_core_dialect_builder_attach(builder, &probe->document);
 }
 
@@ -10546,7 +10569,7 @@ static void absorbed_text_completes_before_observation(test_batch_runner *runner
 
 /* A completion step that does nothing, for the refusal shapes below. */
 static markdown_core_complete_result no_op_finish_step(const markdown_core_element_instance *self,
-                                                       markdown_core_parser *parser, markdown_core_member *member,
+                                                       markdown_core_parser *parser, markdown_core_draft *member,
                                                        markdown_core_event_type event, int is_root, void **state) {
     (void)self;
     (void)parser;
@@ -10655,10 +10678,10 @@ static void completion_step_shapes_are_checked(test_batch_runner *runner) {
     }
 }
 
-static markdown_core_member *match_nothing(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                           markdown_core_member *parent, unsigned char character,
+static markdown_core_draft *match_nothing(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                          markdown_core_draft *parent, unsigned char character,
 
-                                           markdown_core_inline_state *inline_state) {
+                                          markdown_core_inline_state *inline_state) {
     (void)self;
     (void)parser;
     (void)parent;

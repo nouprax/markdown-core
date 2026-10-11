@@ -12,7 +12,7 @@ extern "C" {
 
 /* Parses the inline content of the field root `parent`, cut from the
  * content of the root its owning token is in. */
-bool markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_member *parent);
+bool markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_draft *parent);
 
 /* Parses the content of the inline root `holder` builds, whose nodes are
  * placed in offsets of its content and keep what their decisions read
@@ -20,13 +20,13 @@ bool markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_mem
  * is the root of the previous tree whose content it reads again, its runs
  * measured from `anchor` in the previous source: the parse takes its nodes
  * whole where they are read as they were. */
-void markdown_core_parse_root_inlines(markdown_core_parser *parser, markdown_core_member *holder,
+void markdown_core_parse_root_inlines(markdown_core_parser *parser, markdown_core_draft *holder,
                                       const markdown_core_node *old, uint32_t anchor);
 
-/* Parses the field roots `member` builds (node.h, markdown_core_member) that
+/* Parses the field roots `draft` builds (node.h, markdown_core_draft) that
  * hold inline content, and theirs in turn. Parsing returns whether ordinary
  * raw whitespace occurred, including in nested fields; OOM stays on parser. */
-bool markdown_core_parse_inline_subtrees(markdown_core_parser *parser, markdown_core_member *member);
+bool markdown_core_parse_inline_subtrees(markdown_core_parser *parser, markdown_core_draft *draft);
 
 /* Release the run records finished runs gave back to `parser`. */
 void markdown_core_inline_release_records(markdown_core_parser *parser);

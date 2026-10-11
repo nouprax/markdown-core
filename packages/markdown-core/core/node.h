@@ -861,25 +861,44 @@ static inline uint64_t markdown_core_inline_entry(bool take, uint32_t rules, boo
 static inline uint32_t markdown_core_inline_entry_rules(uint64_t entry) { return (uint32_t)entry & 0xffffu; }
 static inline uint32_t markdown_core_inline_entry_back(uint64_t entry) { return (uint32_t)(entry >> 32); }
 
-/* A NODE BEING BUILT (5.11, open blocks are builders): while the parser
- * builds a node, the node's place among the nodes being built is this
+/* AN OWNER'S CURSOR INTO THE OLD NODE IT CONTINUES (docs/plans/2026-09-29-
+ * incremental-parsing.md, 5.9): the relation `name` of the old node, whose
+ * nodes `next` to `end` of `stem` are not passed yet, the one passed last
+ * ending at the old offset `anchor`. It is `open` once it points at a
+ * relation. */
+typedef struct {
+    const markdown_core_stem *stem;
+    size_t next, end;
+    uint32_t anchor, name;
+    bool open;
+} markdown_core_pairing;
+
+/* THE ORDERS OF A SUBTREE BEING BUILT (registry.h), as its completion
+ * collects them: the new ones in tree order from `first` to `last`, linked
+ * by `next`. An old order the subtree holds is the `before` of the new ones
+ * ahead of it: until the next old one comes, those from `open` on have none.
+ * `lead` is the first old one, and `head` the first one of either. */
+typedef struct {
+    markdown_core_order *first, *last, *open, *lead, *head;
+} markdown_core_orders;
+
+/* A BLOCK BEING BUILT (5.11, open blocks are builders): while the parser
+ * builds a block, the block's place among the nodes being built is this
  * record's, not the node's. Its owner, its siblings and its children are the
  * members of the nodes beside it. `fields` are the members of the node's
- * field roots that are being built with it, in canonical field order and
- * linked through `next`: a citation's note and affixes, which the inline parse
- * fills as it makes the citation. `held` says whether the member holds the
- * node's reference: a child member does until its owner's freeze hands the
- * reference to the owner's stem; a root, whose node a stem or the parser
- * holds, and a field root, whose node its owner's field holds, do not. A
- * builder lives for one parse and its storage is the pool's. A member is
- * `inner` when the members it holds lie in the content of an inline root:
- * the builder of the root's content is, and so is every member under it.
+ * field roots that are being built with it, linked through `next`: a table's
+ * caption. `held` says whether the member holds the node's reference: a child
+ * member does until its owner's freeze hands the reference to the owner's
+ * stem; a root, whose node a stem or the parser holds, and a field root,
+ * whose node its owner's field holds, do not. A builder lives for one parse
+ * and its storage is the pool's. The nodes of an inline root's content are
+ * built as drafts (markdown_core_draft).
  *
  * A member also carries what the node continues
  * (docs/plans/2026-09-29-incremental-parsing.md, 5.9): `old`, the node of
  * the previous tree it continues once `decided`, whether its node has taken
  * its id (`identified`), where that node starts in its old coordinates,
- * `passed`, the end of the range its search has passed, whether it has
+ * whether it has
  * `searched` its owner's cursor, in its order among the children, and
  * `from_next` and `from_anchor`, where that cursor stood as its search
  * began, which it reads from again to `redo` its search when its kind
@@ -888,18 +907,14 @@ static inline uint32_t markdown_core_inline_entry_back(uint64_t entry) { return 
  * later line may still add to it, as a trailing caption joins a table: it
  * completes once that line comes, its owner takes another child, or its
  * owner closes; a member has `completed` once its node has. As an
- * owner it pairs the members it holds with the old node's relation
- * `pair_name`: the old nodes `pair_next` to `pair_end` of `pair_stem` not yet
- * passed, and the end of the one passed last. A member's `index` counts the
+ * owner it pairs the members it holds with the old node's relation through
+ * `pair`. A member's `index` counts the
  * children its owner linked before it, `children` those it has linked, and
  * `depth` is its distance from the root.
  *
- * A node is final when everything it waits on is: `waits` counts the inline
- * root, block input or late value it waits on and the members it holds that
- * were numbered while they still waited (`counted`). Once numbered and with
- * nothing to wait on, it settles (ast.c): its `slot` is where its owner's
+ * Once numbered, a node settles (ast.c): its `slot` is where its owner's
  * stem holds it, `place` where the node lay, its own `where` now holding its
- * extent, and `source` where a definition was written. */
+ * extent. */
 struct markdown_core_member {
     markdown_core_node *node;
     struct markdown_core_member *owner;
@@ -907,10 +922,9 @@ struct markdown_core_member {
     struct markdown_core_member *first, *last;
     struct markdown_core_member *fields;
     const markdown_core_node *old;
-    const markdown_core_stem *pair_stem;
-    size_t pair_next, pair_end;
+    markdown_core_pairing pair;
     markdown_core_place place;
-    uint32_t old_start, passed, pair_anchor, pair_name;
+    uint32_t old_start;
     /* The old node an open block reads again (5.3), the old offset where it
      * starts, which of its children the block's cursor is at and the old
      * offset where the child before that one ends; and whether every block
@@ -926,22 +940,13 @@ struct markdown_core_member {
      * from. NULL for a member of one node. */
     markdown_core_stem *candidate;
     size_t past;
-    /* THE ORDERS OF ITS SUBTREE (registry.h), as its completion and its
-     * owner's numbering collect them: the new ones in tree order from
-     * `order_first` to `order_last`, linked by `next`. An old order the
-     * subtree holds is the `before` of the new ones ahead of it: until the
-     * next old one comes, those from `order_open` on have none.
-     * `order_lead` is the first old one, and `order_head` the first one of
-     * either. */
-    markdown_core_order *order_first, *order_last, *order_open, *order_lead, *order_head;
+    /* The orders of its subtree, as its completion and its owner's
+     * numbering collect them. */
+    markdown_core_orders orders;
     size_t from_next;
     uint32_t from_anchor;
-    uint32_t index, depth, slot, source, waits, children;
-    /* What the decisions about a node of an inline root's content read, and
-     * whether the node is an old one its parse took whole (5.6). */
-    markdown_core_inline_reads reads;
-    bool held, field, inner, decided, identified, paired, searched, redo, spine, awaits_trailer, completed, numbered,
-        counted, taken;
+    uint32_t index, depth, slot, children;
+    bool held, field, decided, identified, searched, redo, spine, awaits_trailer, completed, numbered;
 };
 
 /* The node `node`'s inline content is parsed into: the node itself, or the
@@ -1033,10 +1038,9 @@ static inline void markdown_core_member_continue_nothing(markdown_core_member *m
     }
 }
 
-/* What `member` takes from the `owner` it is linked under: it is inner when
- * `owner` is, and continues nothing when `owner` does. */
+/* What `member` takes from the `owner` it is linked under: it continues
+ * nothing when `owner` does. */
 static inline void markdown_core_member_inherit(const markdown_core_member *owner, markdown_core_member *member) {
-    member->inner = owner->inner;
     if (!member->decided && markdown_core_member_continues_nothing(owner)) {
         markdown_core_member_continue_nothing(member);
     }
@@ -1111,6 +1115,133 @@ bool markdown_core_member_freeze(markdown_core_node_pool *pool, markdown_core_me
 /* Releases `member`, every member below it, and the references they hold;
  * `member` was detached first, or is a root. */
 void markdown_core_member_release(markdown_core_node_pool *pool, markdown_core_member *member);
+
+/* A NODE OF AN INLINE ROOT'S CONTENT BEING BUILT (docs/plans/2026-09-29-
+ * incremental-parsing.md, 5.11): while the parse of an inline root builds a
+ * node, its place among the nodes being built is this draft's. Its owner,
+ * its siblings and its children are the drafts of the nodes beside it;
+ * `fields` are the drafts of the node's field roots, in the order its fields
+ * were built, linked through `next`: a citation's note and affixes, which the
+ * inline parse fills as it makes the citation, and `field` says a draft is
+ * one. `held` says whether the draft holds the node's reference: a child does
+ * until its owner's completion hands it to the owner's stem; a field root,
+ * whose node its owner's field holds, and the root's holder, which its block
+ * holds, do not. `reads` is what the decisions about the node read (5.6), and
+ * `taken` says the node is an old one the parse took whole.
+ *
+ * A draft carries what the node continues (5.9): once `decided`, the old
+ * node `old`, which starts at `old_start` in the old source, or none; as an
+ * owner, its cursor into that node's relation is `pair`. Its completion
+ * collects the `orders` of its subtree.
+ *
+ * Drafts live in the parser's draft area (markdown_core_drafts), from which
+ * the parse of one root takes them, and which the root's completion clears:
+ * a draft lives for one root. */
+struct markdown_core_draft {
+    markdown_core_node *node;
+    struct markdown_core_draft *owner, *prev, *next, *first, *last, *fields;
+    markdown_core_inline_reads reads;
+    const markdown_core_node *old;
+    uint32_t old_start;
+    markdown_core_pairing pair;
+    markdown_core_orders orders;
+    bool held, field, taken, decided;
+};
+
+/* THE DRAFT AREA: chunks of drafts at fixed addresses, so a draft is never
+ * moved while the parse links to it. `used` counts the drafts taken from
+ * `at`, the chunk in use; the chunks after it are kept for later roots. */
+#define MARKDOWN_CORE_DRAFT_CHUNK 128
+typedef struct markdown_core_draft_chunk {
+    struct markdown_core_draft_chunk *next;
+    markdown_core_draft items[MARKDOWN_CORE_DRAFT_CHUNK];
+} markdown_core_draft_chunk;
+
+typedef struct {
+    markdown_core_draft_chunk *first, *at;
+    size_t used;
+} markdown_core_drafts;
+
+/* A draft for `node`, linked to nothing, from `drafts`; it holds the node's
+ * reference when `held`. NULL when a chunk could not be allocated. */
+markdown_core_draft *markdown_core_drafts_take(markdown_core_drafts *drafts, markdown_core_node *node, bool held);
+
+/* Every draft taken from `drafts` goes, releasing into `pool` the
+ * references the drafts still hold; the chunks are kept. */
+void markdown_core_drafts_clear(markdown_core_drafts *drafts, markdown_core_node_pool *pool);
+
+/* Frees the chunks of `drafts`, which holds no draft. */
+void markdown_core_drafts_dispose(markdown_core_drafts *drafts);
+
+/* Links the detached `child` under `owner`, before `before` (a child of
+ * `owner`) or last. The caller has proved containment. */
+static inline void markdown_core_draft_attach(markdown_core_draft *owner, markdown_core_draft *child,
+                                              markdown_core_draft *before) {
+    assert(owner && child && owner != child);
+    assert(!child->owner && !child->prev && !child->next);
+    assert(!before || before->owner == owner);
+    markdown_core_draft *previous = before ? before->prev : owner->last;
+    child->owner = owner;
+    child->prev = previous;
+    child->next = before;
+    if (previous) {
+        previous->next = child;
+    } else {
+        owner->first = child;
+    }
+    if (before) {
+        before->prev = child;
+    } else {
+        owner->last = child;
+    }
+}
+
+/* Links the detached `field` as the last field root `owner` builds. */
+static inline void markdown_core_draft_attach_field(markdown_core_draft *owner, markdown_core_draft *field) {
+    assert(!field->owner && !field->next);
+    field->owner = owner;
+    field->field = true;
+    markdown_core_draft **at = &owner->fields;
+    while (*at) {
+        at = &(*at)->next;
+    }
+    *at = field;
+}
+
+/* Detaches `draft` from its owner and siblings, keeping its subtree. */
+static inline void markdown_core_draft_unlink(markdown_core_draft *draft) {
+    markdown_core_draft *owner = draft->owner;
+    if (draft->field) {
+        markdown_core_draft **at = &owner->fields;
+        while (*at != draft) {
+            at = &(*at)->next;
+        }
+        *at = draft->next;
+        draft->field = false;
+    } else {
+        if (draft->prev) {
+            draft->prev->next = draft->next;
+        } else if (owner) {
+            owner->first = draft->next;
+        }
+        if (draft->next) {
+            draft->next->prev = draft->prev;
+        } else if (owner) {
+            owner->last = draft->prev;
+        }
+    }
+    draft->owner = draft->prev = draft->next = NULL;
+}
+
+/* `draft`'s node takes its stem: the nodes its children hold, which the
+ * stem holds from then on. False when an allocation failed; the children
+ * keep their nodes. */
+bool markdown_core_draft_freeze(markdown_core_node_pool *pool, markdown_core_draft *draft,
+                                const markdown_core_stem_summary *summary);
+
+/* Releases into `pool` the references `draft`, detached, and every draft
+ * below it hold; the drafts stay in their area until it clears. */
+void markdown_core_draft_release(markdown_core_node_pool *pool, markdown_core_draft *draft);
 
 #ifdef __cplusplus
 }
