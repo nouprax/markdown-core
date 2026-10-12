@@ -1034,7 +1034,7 @@ static void formula_element_accessors(test_batch_runner *runner) {
            "formula mode setter updates mode");
     markdown_core_node_free(doc);
 
-    doc = parse("$$x+y$$\n");
+    doc = parse("$$\nx+y\n$$\n");
     formula = child_at(doc, 0);
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula_block",
            "standalone formula block type string");
@@ -1072,7 +1072,7 @@ static void formula_element_accessors(test_batch_runner *runner) {
            "LaTeX formula inline mode is standalone");
     markdown_core_node_free(doc);
 
-    doc = parse("\\\\[x+y\\\\]\n");
+    doc = parse("\\\\[\nx+y\n\\\\]\n");
     formula = child_at(doc, 0);
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula_block",
            "LaTeX standalone formula block type string");
@@ -9386,87 +9386,47 @@ static void formula_leaf_construction_work(test_batch_runner *runner) {
     }
 }
 
-/* A promotion retypes its node in place and moves the value's existing owner:
- * a standalone formula's payload, or a formula code block's literal. An
- * allocation failure is reported and releases what the promotion held;
- * borrowed code bytes are never modified. */
+/* A formula code block's promotion retypes its node in place and moves its
+ * literal's existing owner. An allocation failure is reported and releases
+ * what the promotion held; borrowed code bytes are never modified. */
 static void formula_promotion_transfers_storage(test_batch_runner *runner) {
-    for (int shape = 0; shape < 3; shape++) {
+    for (int borrowed = 0; borrowed < 2; borrowed++) {
         for (size_t fail = 0; fail < 4; fail++) {
             payload_probe_arm();
             markdown_core_parser parser = {0};
-            /* An instance with no record: the formula step keeps none. */
+            /* An instance with no record: the formula element keeps none. */
             const markdown_core_element_instance formula_instance = {&MARKDOWN_CORE_ELEMENT_FORMULA, NULL, 0, NULL};
             markdown_core_node *root = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
-            markdown_core_node *old =
-                markdown_core_node_new(shape == 0 ? MARKDOWN_CORE_NODE_PARAGRAPH : MARKDOWN_CORE_NODE_CODE_BLOCK);
-            /* A paragraph is promoted as a node of an inline root's content,
-             * by the step; a code block as a block, as it closes. */
-            markdown_core_drafts area = {0};
-            markdown_core_draft *draft_built = NULL, *draft_promoted = NULL;
-            markdown_core_frame *built = NULL, *promoted = NULL;
-            if (shape == 0) {
-                draft_built = markdown_core_drafts_take(&area, root, false);
-                draft_promoted = markdown_core_drafts_take(&area, old, true);
-                markdown_core_draft_attach(draft_built, draft_promoted, NULL);
-            } else {
-                built = markdown_core_frame_new(NULL, root, false);
-                promoted = markdown_core_frame_new(NULL, old, true);
-                markdown_core_frame_attach(built, promoted, NULL);
+            markdown_core_node *old = markdown_core_node_new(MARKDOWN_CORE_NODE_CODE_BLOCK);
+            markdown_core_frame *built = markdown_core_frame_new(NULL, root, false);
+            markdown_core_frame *promoted = markdown_core_frame_new(NULL, old, true);
+            markdown_core_frame_attach(built, promoted, NULL);
+            old->as.code->info = markdown_core_optional_chunk_present(markdown_core_chunk_literal("formula"));
+            old->as.code->literal = markdown_core_chunk_literal(" \t value \n ");
+            if (!borrowed) {
+                markdown_core_chunk_to_cstr(&old->as.code->literal);
             }
-            const char *before;
-            void *opaque = NULL;
-            if (shape == 0) {
-                markdown_core_node *donor =
-                    markdown_core_node_new_with_ext(MARKDOWN_CORE_NODE_FORMULA, &MARKDOWN_CORE_ELEMENT_FORMULA);
-                markdown_core_elements_set_formula_mode(donor, MARKDOWN_CORE_FORMULA_MODE_STANDALONE);
-                markdown_core_elements_set_formula_literal(donor, " \t value \n ");
-                markdown_core_draft_attach(draft_promoted, markdown_core_drafts_take(&area, donor, true), NULL);
-                before = markdown_core_elements_get_formula_literal(donor);
-                opaque = donor->opaque;
-            } else {
-                old->as.code->info = markdown_core_optional_chunk_present(markdown_core_chunk_literal("formula"));
-                old->as.code->literal = markdown_core_chunk_literal(" \t value \n ");
-                if (shape == 1) {
-                    markdown_core_chunk_to_cstr(&old->as.code->literal);
-                }
-                before = (const char *)old->as.code->literal.data;
-            }
+            const char *before = (const char *)old->as.code->literal.data;
             payload_fail_at = fail ? payload_allocations + fail : 0;
-            if (shape == 0) {
-                markdown_core_complete_result result = MARKDOWN_CORE_ELEMENT_FORMULA.complete_step(
-                    &formula_instance, &parser, draft_promoted, MARKDOWN_CORE_EVENT_EXIT, 0, NULL);
-                INT_EQ(runner, result == MARKDOWN_CORE_COMPLETE_FAILED, parser.error != 0,
-                       "a promotion fails exactly when it reports a loss");
-            } else {
-                markdown_core_formula_take_code(&formula_instance, &parser, promoted);
-            }
+            markdown_core_formula_take_code(&formula_instance, &parser, promoted);
             payload_fail_at = 0;
             if (parser.error) {
                 INT_EQ(runner, parser.error, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED, "loss is reported");
             } else {
-                const bool in_place =
-                    shape == 0
-                        ? draft_built->first == draft_promoted && draft_promoted->node == old && !draft_promoted->first
-                        : built->first == promoted && promoted->node == old && !promoted->first;
-                OK(runner, in_place && old->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK,
+                OK(runner,
+                   built->first == promoted && promoted->node == old && !promoted->first &&
+                       old->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK,
                    "promotion retypes the node in place and consumes what it replaced");
                 const char *after = markdown_core_elements_get_formula_literal(old);
                 STR_EQ(runner, after, "value", "promotion trims and NUL-terminates its literal");
-                if (shape < 2) {
+                if (!borrowed) {
                     OK(runner, before == after, "owned literal allocation is transferred without copying");
                 } else {
                     OK(runner, before != after, "borrowed bytes acquire independent ownership");
                     STR_EQ(runner, before, " \t value \n ", "borrowed source remains immutable");
                 }
-                if (opaque) {
-                    OK(runner, old->opaque == opaque, "the formula payload has one lifetime across promotion");
-                }
             }
-            if (built) {
-                markdown_core_frame_release(NULL, built);
-            }
-            drafts_drop(&area);
+            markdown_core_frame_release(NULL, built);
             markdown_core_node_free(root);
             INT_EQ(runner, payload_live, 0, "all transferred or rejected storage is released exactly once");
 

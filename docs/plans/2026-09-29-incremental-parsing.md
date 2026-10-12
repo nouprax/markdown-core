@@ -867,9 +867,7 @@ parse.
   complete when its root's parse ends, and the root completes its own tree
   then, in one pass over that tree: consolidation, completion, email
   autolinks, extents and ids. The root completes last, and the content of a
-  group it holds for its owner is published from where the owner starts. A
-  paragraph whose only content is a standalone formula closes as a
-  FormulaBlock; the Formula it consumes is never numbered.
+  group it holds for its owner is published from where the owner starts.
 - **Absolute positions belong to the parse.** A node holds only its extent
   once it is complete. Everything that needs an absolute position after that
   (table geometry) records it when it is made.
@@ -950,10 +948,7 @@ before its end are passed. This is the earliest candidate the rule above names, 
 are in source order and images are monotone (5.2). A node held by `N` lies in
 `N`'s range, and the anchor of an old node held by `T` is at or after `T`'s
 anchor, so a held node matches inside `T` only when `T`'s anchor image lies in
-`N`'s range: every decision stands when it is made. A step that changes
-`N`'s kind after its held nodes complete, as a paragraph read as a formula
-block, consumes every node `N` holds, so the result holds no decision made
-under `T`. Within the C session, a node that differs from its predecessor as an
+`N`'s range: every decision stands when it is made. Within the C session, a node that differs from its predecessor as an
 object therefore differs as a value, which is what R3 measures.
 
 ### 5.10 Why the result equals a fresh parse

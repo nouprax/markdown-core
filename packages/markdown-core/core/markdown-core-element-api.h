@@ -768,11 +768,6 @@ markdown_core_draft *markdown_core_inline_attach(markdown_core_parser *parser, m
 markdown_core_draft *markdown_core_inline_attach_field(markdown_core_parser *parser, markdown_core_draft *owner,
                                                        markdown_core_node *node);
 
-/** The node that holds `draft`'s node: its owner's, or, for the node the
- * content of the inline root being completed is parsed into, the node that
- * holds the root's block. */
-markdown_core_node *markdown_core_inline_owner(const markdown_core_parser *parser, const markdown_core_draft *draft);
-
 /** Detaches `draft` from its owner and siblings when it has them, and
  * releases the references it and the drafts below it hold into the parse's
  * pool. */

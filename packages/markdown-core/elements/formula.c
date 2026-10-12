@@ -672,57 +672,10 @@ static void finalize_block(const markdown_core_element_instance *self, markdown_
     }
 }
 
-/* The formula element's completion STEP, at a Paragraph's EXIT in an inline
- * root's completion, where the paragraph's content is complete: a paragraph
- * that holds nothing but a standalone formula becomes a FormulaBlock in
- * place, holding the formula's payload. Its content's runs go with the
- * content. The root of a field -- a definition's term, a callout's title --
- * belongs to its owner and stays what it is. */
-static markdown_core_complete_result complete_step(const markdown_core_element_instance *self,
-                                                   markdown_core_parser *parser, markdown_core_draft *draft,
-                                                   markdown_core_event_type event, int is_root, void **state) {
-    (void)state;
-    (void)event;
-    markdown_core_node *node = draft->node;
-    assert(event == MARKDOWN_CORE_EVENT_EXIT && node->kind == MARKDOWN_CORE_NODE_PARAGRAPH);
-    markdown_core_draft *first = draft->first;
-    markdown_core_node *donor = first ? first->node : NULL;
-    /* Only an anonymous paragraph is a removable wrapper. A declared anchor
-     * or attributes belong to that paragraph, even when its only remaining
-     * content is a standalone formula. */
-    if (is_root || node->attributes.anchor.len || node->attributes.class_count || node->attributes.record_count ||
-        !donor || first != draft->last || donor->kind != MARKDOWN_CORE_NODE_FORMULA ||
-        get_formula(donor)->mode != MARKDOWN_CORE_FORMULA_MODE_STANDALONE ||
-        !may_become_formula_block(markdown_core_inline_owner(parser, draft))) {
-        return MARKDOWN_CORE_COMPLETE_CONTINUE;
-    }
-    node_formula *payload = get_formula(donor);
-    if (!own_trimmed_literal(&payload->literal)) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return MARKDOWN_CORE_COMPLETE_FAILED;
-    }
-    donor->opaque = NULL;
-    markdown_core_inline_release(parser, first);
-    if (node->runs) {
-        markdown_core_node_pool_bytes_free(parser->pool, node->runs);
-        node->runs = NULL;
-    }
-    return become_formula_block(self->element, parser, node,
-                                markdown_core_inline_set_kind(parser, draft, MARKDOWN_CORE_NODE_FORMULA_BLOCK), payload)
-               ? MARKDOWN_CORE_COMPLETE_CONTINUE
-               : MARKDOWN_CORE_COMPLETE_FAILED;
-}
-
 /* `$` and `\\` open a formula, and that is the whole set. `\\` is in the dispatch
  * set and NOT the terminator set: `is_core_special_character` refuses it there
  * anyway, and it must stay in dispatch because `handle_backslash` asks whether any
  * element claims `\\` before taking a core fast path. */
-
-/* What the step acts on -- the gate -- and where it is asked. A Formula's
- * rewrite happens at its PARAGRAPH's EXIT (the paragraph is what becomes a
- * FormulaBlock), so the two lists differ there and agree elsewhere. */
-static const markdown_core_node_type FORMULA_ACTS_ON_KINDS[] = {MARKDOWN_CORE_NODE_FORMULA, MARKDOWN_CORE_NODE_NONE};
-static const markdown_core_node_type FORMULA_EXIT_KINDS[] = {MARKDOWN_CORE_NODE_PARAGRAPH, MARKDOWN_CORE_NODE_NONE};
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .interrupts_paragraph = true,
@@ -736,12 +689,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .open_block_gate = {.bytes = "$\\"},
     .probe_block = probe_formula_block,
     .finalize_block = finalize_block,
-    .complete_step = complete_step,
-    /* The step acts on a standalone Formula -- a document with none has
-     * nothing for it, and the gate skips it at every paragraph. It is asked
-     * at the EXIT of a Paragraph, whose only child may be that Formula. */
-    .complete_acts_on_kinds = FORMULA_ACTS_ON_KINDS,
-    .complete_exit_kinds = FORMULA_EXIT_KINDS,
     .containment_kinds = containment_kinds,
     .accepts_lines_func = accepts_lines,
     .opaque_alloc_func = formula_opaque_alloc,

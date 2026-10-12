@@ -676,23 +676,6 @@ static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_k
     return result;
 }
 
-/* Turns `draft`'s node, a node of the content of the inline root being
- * completed or the root's own, which its holder builds, into one of `kind`,
- * as its content decided. The root's own node is its frame's, whose choice
- * is not final until its kind is (5.9): a step that changes its kind has
- * consumed the content, so no node it holds keeps a choice made under the
- * old kind. */
-static inline markdown_core_node_set_kind_result
-markdown_core_inline_set_kind(markdown_core_parser *parser, markdown_core_draft *draft, markdown_core_node_type kind) {
-    if (!draft->owner) {
-        assert(draft == parser->completing->builder && parser->completing->holder == parser->completing->node);
-        assert(!draft->first && !draft->fields);
-        return markdown_core_parser_set_node_kind(parser, parser->completing->frame, kind);
-    }
-    markdown_core_parser_note_kind(parser, kind);
-    return markdown_core_node_set_kind(draft->node, markdown_core_inline_owner(parser, draft), kind);
-}
-
 /* The instance of the structure element of `node`'s kind (dialect.h,
  * markdown_core_dialect_structure): the `self` of every structure hook the
  * engine asks about the node. NULL for no node. */

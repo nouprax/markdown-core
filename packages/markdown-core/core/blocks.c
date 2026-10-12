@@ -1968,14 +1968,6 @@ markdown_core_draft *markdown_core_inline_attach_field(markdown_core_parser *par
     return draft;
 }
 
-markdown_core_node *markdown_core_inline_owner(const markdown_core_parser *parser, const markdown_core_draft *draft) {
-    if (draft->owner) {
-        return draft->owner->node;
-    }
-    const markdown_core_inline_root *root = parser->completing;
-    return root->holder == root->node ? markdown_core_parser_owner(parser, root->frame) : root->node;
-}
-
 void markdown_core_inline_release(markdown_core_parser *parser, markdown_core_draft *draft) {
     if (draft->owner) {
         markdown_core_draft_unlink(draft);
@@ -2256,12 +2248,11 @@ static void S_complete_pass(markdown_core_parser *parser, markdown_core_inline_r
     const markdown_core_kind_record *const kinds = parser->dialect->kinds;
     const markdown_core_complete_step_entry *const *const dispatch = parser->dialect->complete_dispatch;
     markdown_core_draft *holder = root->builder;
-    /* Its range is final and its kind is once its content completes: it
-     * chooses what it continues, whose content it reads again (5.6), before
-     * it reads its own, and the choice is final as it completes (5.9). */
-    parser->completing = root;
+    /* Its range and its kind are final: it chooses what it continues, whose
+     * content it reads again (5.6), before it reads its own (5.9). */
     const markdown_core_element_instance *document = parser->dialect->document_structure;
     document->element->decide_frame(document, parser, root->frame);
+    parser->completing = root;
     parser->asker = root->node;
     if (!parser->error) {
         const markdown_core_kind_record *kind = markdown_core_parser_kind(parser, holder->node);

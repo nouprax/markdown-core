@@ -131,8 +131,8 @@ Citation's prefix/suffix collections. Source trimming only changes raw edge
 whitespace; nested markup keeps its authored scope. Each inline root parses
 its content as its block closes, and completes its tree in one pass on one
 explicit stack:
-text consolidation, the completion steps (autolink's email scan, formula's
-standalone formula), Text completion (the kind's `complete_inline`), and each
+text consolidation, the completion steps (autolink's email scan), Text
+completion (the kind's `complete_inline`), and each
 node numbering what it holds at its EXIT; the root completes last. An
 element's `complete_step` is asked at the ENTER/EXIT events of the kinds it
 declares. A step that declares the kinds it acts on reads that gate at each
@@ -166,10 +166,8 @@ are shared by both construction paths.
 
 A fenced code block whose info string is `formula` becomes a FormulaBlock in
 place as it closes; its owned literal moves into a newly initialized formula
-payload. A paragraph holding only a standalone formula becomes a FormulaBlock
-in place at its EXIT in its root's completion (formula's completion step),
-keeping its id; the inline Formula it consumes transfers its opaque payload and
-literal together and was never numbered. Trimming compacts an owned buffer in
+payload. A paragraph holding only a standalone formula stays a paragraph.
+Trimming compacts an owned buffer in
 place and restores NUL termination, while a borrowed chunk obtains independent
 storage before mutation. Direct formula blocks detach their accumulated content
 buffer.

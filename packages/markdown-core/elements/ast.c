@@ -909,12 +909,6 @@ static inline bool range_final(const markdown_core_frame *frame) {
     return frame->numbered || !markdown_core_frame_range_open(frame);
 }
 
-/* Whether `frame`'s choice is final (5.9): its range is, and its kind is,
- * which it is once the content of the inline root it holds has completed. */
-static inline bool choice_final(const markdown_core_parser *parser, const markdown_core_frame *frame) {
-    return range_final(frame) && !(parser->completing && parser->completing->frame == frame);
-}
-
 /* `frame` chooses: it continues `old`, which starts at `old_start` in the
  * old source, or nothing; `tentative` while its range or its kind may still
  * pass the old node by. Its owner's cursor stands where it read it. */
@@ -1025,7 +1019,7 @@ static void pass_before(markdown_core_parser *parser, markdown_core_frame *owner
  * its place, and a group the old body at its place. */
 static void choose(markdown_core_parser *parser, markdown_core_frame *frame) {
     markdown_core_frame *owner = frame->owner;
-    const bool final = choice_final(parser, frame);
+    const bool final = range_final(frame);
     if (!owner->old) {
         decide(frame, NULL, 0, !final);
         return;
@@ -1086,7 +1080,7 @@ static void pass_before(markdown_core_parser *parser, markdown_core_frame *owner
  * the highest, each as far as its range is final. False when an allocation
  * failed. */
 static bool need(markdown_core_parser *parser, markdown_core_publication *publication, markdown_core_frame *frame) {
-    if (frame->decided && !(frame->tentative && choice_final(parser, frame))) {
+    if (frame->decided && !(frame->tentative && range_final(frame))) {
         return true;
     }
     size_t count = 0;
