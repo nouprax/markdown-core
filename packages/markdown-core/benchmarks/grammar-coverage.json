@@ -433,7 +433,7 @@
         {
             "feature": "block-identifiers",
             "specification": "docs/specs/dialect/block-identifiers.md",
-            "sha256": "ec32b1c3567103b2bd36a1d74f22c154d7fefa899b5b2675960f951ade2a9987",
+            "sha256": "380de2549725fe86903807353f2bd687bbf67656b1092fb815aa1eb4fd135dd1",
             "sections": [
                 {
                     "title": "Block identifiers",
@@ -469,7 +469,7 @@
                     "title": "Boundaries",
                     "line": 57,
                     "level": 2,
-                    "sha256": "85097437d1e66c934b8fdf16d0e8484ef1bb29f0b0ca2470ed55b71425db589c",
+                    "sha256": "ade3384c9120feaf09378490501ba151bd90c1ac054aeade19786910876961ad",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["block-id-escaped", "attribute-heading"]
@@ -1549,7 +1549,7 @@
         {
             "feature": "formulas",
             "specification": "docs/specs/dialect/formulas.md",
-            "sha256": "59099a6f4bb6e648537eecbe2a54f2b89af9f4eb4457393f5f994277741af7e8",
+            "sha256": "3d80242c16fab71f6b9740b9c7e2b75eb015e1b2e67ad396fab52de067319a54",
             "sections": [
                 {
                     "title": "Formulas",
@@ -1565,7 +1565,7 @@
                     "title": "Inline forms",
                     "line": 15,
                     "level": 2,
-                    "sha256": "991c20b587459dafe9aad5b0aa7e32ffc48c2bade0b45ce217db1757ed4a5fd3",
+                    "sha256": "eb617154f769fdff7411bc3c6fffda5833d357fff2f73f913ce1b0cab7d0a033",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": ["opaque-formula", "formula-backtick", "formula-parenthesis", "formula-bracket"]
@@ -1573,7 +1573,7 @@
                 },
                 {
                     "title": "Dollar boundaries",
-                    "line": 38,
+                    "line": 37,
                     "level": 2,
                     "sha256": "40c36cac78acbcfd90cdd7a660a875cf5708c07ef4d5c84ca9c27e4d8b49fc19",
                     "disposition": {
@@ -1583,7 +1583,7 @@
                 },
                 {
                     "title": "Formula blocks",
-                    "line": 57,
+                    "line": 56,
                     "level": 2,
                     "sha256": "f0048db1288b6c195bb37b5684eadf94bc3eac87656190e474202c4b47df20f0",
                     "disposition": {
@@ -1593,7 +1593,7 @@
                 },
                 {
                     "title": "Code fences",
-                    "line": 75,
+                    "line": 74,
                     "level": 2,
                     "sha256": "762ce890704678ef04135a62773468c7adeb7d66b697ce15f7a27e817de7bdf9",
                     "disposition": {
