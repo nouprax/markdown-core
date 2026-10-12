@@ -223,15 +223,13 @@ start, and its parse-time place becomes its extent. A Footnote, Specimen,
 Reference or Heading enters the document's definition tables at its source
 start as it is numbered.
 
-A block's inline roots parse their content as the block closes, and each
-completes its tree in one pass; the root completes last. The document settles
-last when the tree is published. A fresh parse continues nothing, so each
-new node takes the next id: a block's inline content as the root completes,
-its fields as the block completes, and its new children after them. Ids are
-unique and rise in that order, and the document holds the largest. A root
-parsed again for a definition written after it leaves unused the ids its
-first content took, so ids need not run 1 through the node count. A numbered
-node holds only its
+A block's inline roots parse their content in the inline stage, after every
+block is numbered, and each completes its tree in one pass; the root completes
+last. The document settles last when the tree is published. A fresh parse
+continues nothing, so each new node takes the next id: a block's fields as the
+block completes and its new children after them, and an inline root's content
+as the inline stage completes it. Ids are unique and rise in that order, and
+the document holds the largest. A numbered node holds only its
 extent, so headings and specimen definitions record their source start when
 they register (`markdown_core_source_entry`) and are ordered by that start.
 

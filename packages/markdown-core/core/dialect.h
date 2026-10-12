@@ -150,8 +150,7 @@ typedef struct markdown_core_complete_step_entry {
  *
  * - INLINES / INLINES_ASK: `inline_content` / `contains_inlines_func` -- the
  *   kind may hold inline content (PARSES, either one), which is parsed as an
- *   inline root when its node completes; DEFERRED, `parse_root`, its element
- *   parses that content itself (a heading's);
+ *   inline root by the inline stage;
  * - LINES / LINES_ASK: the kind takes lines as content, a LITERAL
  *   `content_mode` / `accepts_lines_func`; PROSE, a PROSE `content_mode`, it
  *   takes a text line as prose; IS_PARAGRAPH, `paragraph`;
@@ -168,7 +167,6 @@ enum {
     MARKDOWN_CORE_KIND_INLINES = 1u << 0,
     MARKDOWN_CORE_KIND_INLINES_ASK = 1u << 1,
     MARKDOWN_CORE_KIND_PARSES = MARKDOWN_CORE_KIND_INLINES | MARKDOWN_CORE_KIND_INLINES_ASK,
-    MARKDOWN_CORE_KIND_DEFERRED = 1u << 2,
     MARKDOWN_CORE_KIND_LINES = 1u << 4,
     MARKDOWN_CORE_KIND_LINES_ASK = 1u << 5,
     MARKDOWN_CORE_KIND_PROSE = 1u << 6,

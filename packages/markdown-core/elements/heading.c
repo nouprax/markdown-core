@@ -36,19 +36,6 @@ static markdown_core_fact *declare_anchor(markdown_core_parser *parser, markdown
     return fact;
 }
 
-/* A heading's text is parsed as its root completes: its inlines up to its
- * declaration dependency, the reference label it declares, and then the rest
- * of its inlines. */
-static void parse_heading_root(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                               markdown_core_draft *builder, uint32_t start) {
-    markdown_core_heading_parse heading = {.source = {builder->node, start}, .builder = builder};
-    markdown_core_prepare_heading(self, parser, &heading);
-    if (!parser->error) {
-        markdown_core_finish_heading(parser, &heading);
-    }
-    markdown_core_dispose_heading(&heading);
-}
-
 /* The headings project no anchor base yet. */
 void markdown_core_headings_init(const markdown_core_element_instance *self) {
     markdown_core_heading_state *state = self->state;
@@ -311,7 +298,7 @@ static void assign_family(markdown_core_parser *parser, markdown_core_heading_st
                     markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
                     break;
                 }
-                if (!markdown_core_parser_replace(parser, node, copy, NULL)) {
+                if (!markdown_core_parser_replace(parser, node, copy)) {
                     break;
                 }
                 anchor = &copy->attributes.anchor;
@@ -366,156 +353,134 @@ void markdown_core_headings_finish(const markdown_core_element_instance *self, m
     markdown_core_free(bases);
 }
 
-void markdown_core_prepare_heading(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                   markdown_core_heading_parse *heading) {
+/* Where an ATX heading's text in `data` ends before its closing sequence,
+ * which follows `line`, the start of its last line, or a space, and the
+ * spaces before it; `end` when it has none. */
+static bufsize_t heading_closing(const unsigned char *data, bufsize_t line, bufsize_t end) {
+    bufsize_t hashes = end;
+    while (hashes > line && data[hashes - 1] == '#') {
+        hashes--;
+    }
+    if (hashes == end || (hashes != line && !markdown_core_is_space_or_tab(data[hashes - 1]))) {
+        return end;
+    }
+    while (hashes > line && markdown_core_is_space_or_tab(data[hashes - 1])) {
+        hashes--;
+    }
+    return hashes;
+}
+
+/* THE TEXT A HEADING'S LINES HOLD (5.8): where its attribute container
+ * begins in `text`, -1 when its last line does not end with one, and where
+ * its text ends, `*end`: before the container and the spaces and an ATX
+ * heading's closing sequence before it, and, without one, before an ATX
+ * heading's closing sequence and the space before it. */
+static bufsize_t heading_text(markdown_core_attribute_parser *attributes, const markdown_core_chunk *text, bool setext,
+                              bufsize_t *end) {
+    const unsigned char *data = text->data;
+    const bufsize_t length = text->len;
+    bufsize_t line = length, start = -1;
+    /* Trailing attributes end the heading's last line with `}`. Only a
+     * heading that does is walked back to that line's start, which is where
+     * the attributes' opening brace is searched from. */
+    if (length > 0 && data[length - 1] == '}') {
+        while (line > 0 && !markdown_core_is_line_end(data[line - 1])) {
+            line--;
+        }
+        start = markdown_core_attributes_tail(attributes, line, length);
+    }
+    if (start >= 0) {
+        bufsize_t at = start;
+        while (at > line && markdown_core_is_space_or_tab(data[at - 1])) {
+            at--;
+        }
+        *end = setext ? at : heading_closing(data, line, at);
+        return start;
+    }
+    markdown_core_chunk rest = *text;
+    if (!setext && (rest.len = heading_closing(data, 0, length)) != length) {
+        markdown_core_chunk_rtrim(&rest);
+    }
+    *end = rest.len;
+    return -1;
+}
+
+/* A HEADING CLOSES on its text (5.7, 5.8). Its text is read up to its
+ * trailing attribute container with no key defined: no lookup is
+ * recorded, and the parse is dropped. When the read reaches the container
+ * at a token's end, the heading takes the attributes it writes, and its
+ * content ends where its text does; else the container is text, and only
+ * an ATX heading's closing sequence is left out. When the read meets no
+ * bracket a later parse could resolve, and no field, the text is writable
+ * as a reference label, and the heading declares it, normalized: an
+ * occurrence naming it resolves to the heading when no Reference declares
+ * it. No definition changes any of this, which is why it is read before
+ * the inline stage parses the content. */
+static void finalize_heading(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                             markdown_core_frame *frame) {
+    (void)self;
+    markdown_core_node *node = frame->node;
+    markdown_core_draft *builder = markdown_core_parser_draft(parser, node, false);
+    if (!builder) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return;
+    }
     markdown_core_inline_state inline_state;
-    parser->asker = heading->source.node;
-    markdown_core_inline_start_inlines(parser, heading->builder, true, &inline_state);
-    while (!parser->error && !inline_state.error) {
+    markdown_core_inline_start_inlines(parser, builder, &inline_state);
+    markdown_core_attribute_parser attributes = {
+        .data = inline_state.input.data, .length = inline_state.input.len, .scratch = &parser->attribute_scratch};
+    bufsize_t end;
+    const bufsize_t start = heading_text(&attributes, &inline_state.input, node->as.heading->setext, &end);
+    if (start >= 0) {
+        inline_state.text_end = end;
+    } else {
+        inline_state.input.len = end;
+    }
+    bool writable = true, claimed = false;
+    while (!parser->error && !inline_state.error && !attributes.oom) {
+        if (inline_state.pos == inline_state.text_end) {
+            bufsize_t past;
+            claimed = markdown_core_attributes_parse(&attributes, start, &node->attributes, &past);
+            break;
+        }
         unsigned char c = markdown_core_inline_peek_char(&inline_state);
         /* Attribute ownership and opaque tokens are decided by the same
-         * cursor as every inline. A live bracket makes this declaration
-         * unwritable as a reference label; only its remaining inlines depend
-         * on the document's completed symbol table. */
+         * cursor as every inline. A live bracket or a field makes the text
+         * unwritable as a reference label. */
         if ((inline_state.last_delim && inline_state.last_delim->kind == DELIMITER_FIELD) ||
-            (inline_state.pos != inline_state.text_end && inline_state.pos >= inline_state.opaque_end &&
+            (inline_state.pos < inline_state.input.len && inline_state.pos >= inline_state.opaque_end &&
              (c == '[' || c == ']' ||
               ((c == '!' || c == '^') && markdown_core_inline_peek_char_n(&inline_state, 1) == '[')))) {
-            heading->pending = markdown_core_alloc(1, sizeof(inline_state));
-            if (heading->pending) {
-                *heading->pending = inline_state;
-                parser->asker = NULL;
-                return;
+            writable = false;
+            if (start < 0) {
+                break;
             }
-            inline_state.error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
-            break;
         }
         if (markdown_core_inline_is_eof(&inline_state) || !markdown_core_inline_parse_inline(parser, &inline_state)) {
             break;
         }
     }
-    if (!parser->error && !inline_state.error) {
-        if (self->peers[HEADING_CITATION]) {
-            markdown_core_citation_finish_run_tokens(self->peers[HEADING_CITATION], &inline_state);
-        }
-        markdown_core_inline_process_delimiters(parser, &inline_state, 0, NULL);
-        const markdown_core_heading_run *run = markdown_core_run_state(&inline_state, self);
-        markdown_core_chunk label = {inline_state.input.data, run->label_end, 0};
-        /* A heading whose text is writable as a reference label declares
-         * it, normalized: an occurrence naming it resolves to the heading
-         * when no Reference declares it. */
-        if (label.len > 0 && label.len <= MAX_LINK_LABEL_LENGTH &&
-            markdown_core_inline_reference_label_length(label.data, label.len) == label.len) {
-            markdown_core_chunk *declared = &heading->source.node->as.heading->label;
-            if (!markdown_core_parser_normalize_label(parser, &label, declared)) {
-                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            } else {
-                markdown_core_parser_declare(parser, heading->source.node, MARKDOWN_CORE_KEY_REFERENCE, declared);
-            }
-        }
+    if (attributes.oom) {
+        inline_state.error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
     }
+    const bufsize_t length = claimed ? end : start >= 0 ? inline_state.input.len : end;
+    markdown_core_attribute_parser_free(&attributes);
     markdown_core_inline_clear_inlines(&inline_state);
-    parser->asker = NULL;
-}
-
-void markdown_core_finish_heading(markdown_core_parser *parser, markdown_core_heading_parse *heading) {
-    if (heading->pending) {
-        parser->asker = heading->source.node;
-        markdown_core_inline_finish_inlines(parser, heading->pending);
-        parser->asker = NULL;
-        markdown_core_free(heading->pending);
-        heading->pending = NULL;
+    markdown_core_drafts_clear(&parser->drafts, parser->pool);
+    if (parser->error) {
+        return;
     }
-}
-
-void markdown_core_dispose_heading(markdown_core_heading_parse *heading) {
-    if (heading->pending) {
-        markdown_core_inline_clear_inlines(heading->pending);
-        markdown_core_free(heading->pending);
-        heading->pending = NULL;
-    }
-}
-
-void markdown_core_heading_begin_inlines(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                         markdown_core_inline_state *inline_state, markdown_core_draft *draft) {
-    markdown_core_heading_run *run = markdown_core_run_state(inline_state, self);
-    markdown_core_node *parent = draft->node;
-    if (parent->kind == MARKDOWN_CORE_NODE_HEADING) {
-        /* A heading's attributes and label are read from its text: a heading
-         * parsed again in place (5.7) reads them again. */
-        markdown_core_attributes_free(&parent->attributes);
-        if (parent->as.heading->label.len) {
-            markdown_core_node_pool_bytes_free(parser->pool, parent->as.heading->label.data);
-        }
-        parent->as.heading->label = (markdown_core_chunk){0};
-        bufsize_t line = inline_state->input.len;
-        inline_state->attributes = (markdown_core_attribute_parser){
-            .data = inline_state->input.data, .length = inline_state->input.len, .scratch = &parser->attribute_scratch};
-        /* Trailing attributes end the heading's last line with `}`. Only a
-         * heading that does is walked back to that line's start, which is
-         * where the attributes' opening brace is searched from. */
-        run->attributes_start = -1;
-        if (line > 0 && inline_state->input.data[line - 1] == '}') {
-            while (line > 0 && !markdown_core_is_line_end(inline_state->input.data[line - 1])) {
-                line--;
-            }
-            run->attributes_start =
-                markdown_core_attributes_tail(&inline_state->attributes, line, inline_state->input.len);
-        }
-        if (run->attributes_start >= 0) {
-            bufsize_t end = run->attributes_start;
-            while (end > line && markdown_core_is_space_or_tab(inline_state->input.data[end - 1])) {
-                end--;
-            }
-            if (!parent->as.heading->setext) {
-                bufsize_t hashes = end;
-                while (hashes > line && inline_state->input.data[hashes - 1] == '#') {
-                    hashes--;
-                }
-                if (hashes < end &&
-                    (hashes == line || markdown_core_is_space_or_tab(inline_state->input.data[hashes - 1]))) {
-                    end = hashes;
-                    while (end > line && markdown_core_is_space_or_tab(inline_state->input.data[end - 1])) {
-                        end--;
-                    }
-                }
-            }
-            inline_state->text_end = end;
-        } else if (!parent->as.heading->setext) {
-            bufsize_t hashes = inline_state->input.len;
-            while (hashes > 0 && inline_state->input.data[hashes - 1] == '#') {
-                hashes--;
-            }
-            if (hashes < inline_state->input.len &&
-                (hashes == 0 || markdown_core_is_space_or_tab(inline_state->input.data[hashes - 1]))) {
-                inline_state->input.len = hashes;
-                markdown_core_chunk_rtrim(&inline_state->input);
-            }
-        }
-        if (inline_state->attributes.oom) {
-            inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
+    markdown_core_strbuf_truncate(&node->content, length);
+    markdown_core_chunk label = {node->content.ptr, length, 0};
+    if (writable && label.len > 0 && label.len <= MAX_LINK_LABEL_LENGTH &&
+        markdown_core_inline_reference_label_length(label.data, label.len) == label.len) {
+        markdown_core_chunk *declared = &node->as.heading->label;
+        if (!markdown_core_parser_normalize_label(parser, &label, declared)) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        } else {
+            markdown_core_parser_declare(parser, node, MARKDOWN_CORE_KEY_REFERENCE, declared);
         }
     }
-
-    run->label_end = inline_state->input.len;
-}
-
-bool markdown_core_heading_claim_tail(const markdown_core_element_instance *self,
-                                      markdown_core_inline_state *inline_state, markdown_core_draft *parent) {
-    if (inline_state->pos == inline_state->text_end) {
-        markdown_core_heading_run *run = markdown_core_run_state(inline_state, self);
-        bufsize_t end;
-        if (markdown_core_attributes_parse(&inline_state->attributes, run->attributes_start, &parent->node->attributes,
-                                           &end)) {
-            run->label_end = inline_state->text_end;
-            inline_state->pos = inline_state->input.len;
-        }
-        if (inline_state->attributes.oom) {
-            inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
-        }
-        return true;
-    }
-    return false;
 }
 
 #define peek_at(input, at) ((input)->data[(at)])
@@ -594,8 +559,6 @@ static int continue_heading(const markdown_core_element_instance *self, markdown
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING = {
     .peers = HEADING_PEERS,
-    .begin_inline = markdown_core_heading_begin_inlines,
-    .claim_inline_tail = markdown_core_heading_claim_tail,
 
     .name = "heading",
     .maximum_block_indent = 3,
@@ -605,8 +568,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING = {
     .last_block_matches = continue_heading,
     .content_mode = MARKDOWN_CORE_CONTENT_PROSE,
     .inline_content = true,
-    .parse_root = parse_heading_root,
+    .finalize_block = finalize_heading,
     .blank_opaque = true,
     .state_size = sizeof(markdown_core_heading_state),
-    .run_state_size = sizeof(markdown_core_heading_run),
 };

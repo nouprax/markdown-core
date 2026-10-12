@@ -23,8 +23,8 @@ static void *registry_take(markdown_core_registry *registry, size_t bytes) {
 static void registry_give(markdown_core_registry *registry, void *storage) {
     markdown_core_bytes_release(registry ? &registry->storage : NULL, storage);
 }
-/* Every role, to unlink_facts. */
-#define FACT_ANY (-1)
+/* Every role, as a set of role bits. */
+#define FACTS_ALL ((1u << (MARKDOWN_CORE_FACT_LOOKUP + 1)) - 1)
 
 static uint64_t key_hash(markdown_core_key_group group, const unsigned char *label, uint32_t length) {
     uint64_t hash = UINT64_C(1469598103934665603) ^ (uint64_t)group;
@@ -822,11 +822,11 @@ const markdown_core_strbuf *markdown_core_registry_normalize(markdown_core_regis
     return scratch;
 }
 
-/* The facts of `node` with `role`, or every fact when `role` is
- * FACT_ANY, leave their keys. */
-static void unlink_facts(markdown_core_node *node, int role) {
+/* The facts of `node` whose role is in `roles`, a set of role bits, leave
+ * their keys. */
+static void unlink_facts(markdown_core_node *node, unsigned roles) {
     for (markdown_core_fact **at = &node->facts, *fact; (fact = *at);) {
-        if (role != FACT_ANY && fact->role != role) {
+        if (!(roles & (1u << fact->role))) {
             at = &fact->sibling;
             continue;
         }
@@ -839,9 +839,33 @@ static void unlink_facts(markdown_core_node *node, int role) {
     }
 }
 
-void markdown_core_registry_unlink(markdown_core_node *node) { unlink_facts(node, FACT_ANY); }
+void markdown_core_registry_unlink(markdown_core_node *node) { unlink_facts(node, FACTS_ALL); }
 
-void markdown_core_registry_unask(markdown_core_node *node) { unlink_facts(node, MARKDOWN_CORE_FACT_LOOKUP); }
+void markdown_core_registry_unlink_content(markdown_core_node *node) {
+    unlink_facts(node, FACTS_ALL & ~(1u << MARKDOWN_CORE_FACT_DECLARE));
+}
+
+bool markdown_core_registry_holds(const markdown_core_node *node, markdown_core_fact_role role) {
+    for (const markdown_core_fact *fact = node->facts; fact; fact = fact->sibling) {
+        if (fact->role == role) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void markdown_core_registry_take_lookups(markdown_core_node *from, markdown_core_node *to) {
+    for (markdown_core_fact **at = &from->facts, *fact; (fact = *at);) {
+        if (fact->role != MARKDOWN_CORE_FACT_LOOKUP) {
+            at = &fact->sibling;
+            continue;
+        }
+        *at = fact->sibling;
+        fact->node = to;
+        fact->sibling = to->facts;
+        to->facts = fact;
+    }
+}
 
 bool markdown_core_registry_move(markdown_core_registry *registry, markdown_core_node *from, markdown_core_node *to) {
     markdown_core_registry_unlink(to);
@@ -1048,41 +1072,80 @@ static int retire_field(markdown_core_node **slot, void *context) {
     return 1;
 }
 
-bool markdown_core_registry_retire(markdown_core_registry *registry, markdown_core_node *root, bool taken) {
-    retire_stack stack = {0};
-    retire_push(&stack, (retire_item){.as.node = root});
-    while (stack.count && !stack.failed) {
-        const retire_item item = stack.items[--stack.count];
+/* Whether `stem` holds inline nodes: the content of an inline root. */
+static bool stem_inline(const markdown_core_stem *stem) {
+    return stem->count && MARKDOWN_CORE_NODE_TYPE_INLINE_P(markdown_core_stem_at(stem, 0)->kind);
+}
+
+/* The walk of retire_items: every node only the old tree holds leaves, and
+ * the content of an inline root goes to `content` instead when it is not
+ * NULL. */
+static bool retire_walk(markdown_core_registry *registry, retire_stack *stack, markdown_core_stems *content) {
+    while (stack->count && !stack->failed) {
+        const retire_item item = stack->items[--stack->count];
         if (item.stem) {
             /* A stem the new tree holds too holds what the parse took. */
             markdown_core_stem *stem = item.as.stem;
-            if (taken && stem->refs > 1) {
+            if (stem->refs > 1) {
                 continue;
             }
             for (uint8_t i = 0; i < stem->width; i++) {
-                retire_push(&stack, stem->height ? (retire_item){.as.stem = stem->entries[i].stem, .stem = true}
-                                                 : (retire_item){.as.node = stem->entries[i].node});
+                retire_push(stack, stem->height ? (retire_item){.as.stem = stem->entries[i].stem, .stem = true}
+                                                : (retire_item){.as.node = stem->entries[i].node});
             }
             continue;
         }
         markdown_core_node *node = item.as.node;
         /* A node the new tree holds too was taken, with all it holds. */
-        if (taken && node->refs > 1) {
+        if (node->refs > 1) {
             continue;
         }
         markdown_core_registry_unlink(node);
         if (!markdown_core_order_leave(registry, node->order)) {
-            stack.failed = true;
+            stack->failed = true;
         }
         node->order = NULL;
-        markdown_core_node_visit_fields(node, retire_field, &stack);
-        if (node->children) {
-            retire_push(&stack, (retire_item){.as.stem = node->children, .stem = true});
+        markdown_core_node_visit_fields(node, retire_field, stack);
+        if (!node->children) {
+            continue;
+        }
+        if (content && node->children->refs == 1 && stem_inline(node->children)) {
+            markdown_core_stem **stems =
+                markdown_core_reserve(content->stems, &content->capacity, content->count + 1, sizeof(*stems));
+            if (!stems) {
+                stack->failed = true;
+                continue;
+            }
+            content->stems = stems;
+            stems[content->count++] = node->children;
+            continue;
+        }
+        retire_push(stack, (retire_item){.as.stem = node->children, .stem = true});
+    }
+    const bool ok = !stack->failed;
+    markdown_core_free(stack->items);
+    return ok;
+}
+
+bool markdown_core_registry_retire(markdown_core_registry *registry, markdown_core_node *root,
+                                   markdown_core_stems *content) {
+    retire_stack stack = {0};
+    retire_push(&stack, (retire_item){.as.node = root});
+    return retire_walk(registry, &stack, content);
+}
+
+bool markdown_core_registry_retire_content(markdown_core_registry *registry, markdown_core_stem *const *stems,
+                                           size_t count) {
+    retire_stack stack = {0};
+    /* No new node holds a stem given: whoever gave it may hold it still. */
+    for (size_t i = 0; i < count; i++) {
+        const markdown_core_stem *stem = stems[i];
+        for (uint8_t at = 0; at < stem->width; at++) {
+            retire_push(&stack, stem->height ? (retire_item){.as.stem = stem->entries[at].stem, .stem = true}
+                                             : (retire_item){.as.node = stem->entries[at].node});
         }
     }
-    const bool ok = !stack.failed;
-    markdown_core_free(stack.items);
-    return ok;
+    return retire_walk(registry, &stack, NULL);
 }
 
 markdown_core_chunk markdown_core_anchor_stem(const unsigned char *spelling, uint32_t length) {

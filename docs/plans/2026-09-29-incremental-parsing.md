@@ -688,14 +688,15 @@ by the matching rule (5.9).
 
 ### 5.6 Inline parsing
 
-An inline root is parsed again when its block was read again, or when a
-registry winner it looked up changed (5.7). Every other root keeps its inline
-tree.
+An inline tree is a function of its root's content, its holder's kind and
+whether each key it asked is defined. An inline root is parsed again when its
+content changed, or when a key it asked changed whether it is defined (5.7).
+Every other root keeps its inline tree.
 
-A root parsed again whose content no edit touched keeps its inline tree:
-every old node whose decisions read only the root's content is taken whole
-where it lies. A node that asked a registry, or an element that did not say
-what it read, is parsed again.
+A block read again whose root's content and runs are those of the old root
+it reads again, under a holder of the same kind, keeps the old root's inline
+tree whole as it is numbered, and with it the keys the old root asked and
+their answers.
 
 A root that is parsed again holds the old inline tree of the old root it
 continues and is parsed against it by the algorithm of 5.3. Inline extents
@@ -792,47 +793,47 @@ Sleator's order maintenance), so two facts compare in O(1). The parse visits
 the document in tree order, reading some nodes and taking others, and keeps
 the last fact before its position. A new fact is labeled right after that
 fact. A candidate gives its last fact from its children tree's sums, as it
-gives its reach (5.1). An inline root is parsed when its block closes (5.8),
-at its place in the visit, so its inline facts are labeled in tree order too.
+gives its reach (5.1). An inline root takes its order as its block closes,
+and the facts of its content are labeled after it when the inline stage
+parses it.
 
-**One edit**, in order:
+**One edit runs three stages**, in the order the language fixes. Block
+structure reads no definition. Definitions come only from blocks: a
+`Reference` from the paragraph that held it, a `Footnote` or `Specimen`
+block, and a heading's label from its text before any bracket. An inline
+tree reads whether each key it asks is defined, and anchors read the
+headings' inline trees. cmark, micromark and markdown-it parse in the same
+order.
 
-- **Parse.** The parse visits the document in tree order. It declares the
-  facts of the nodes it makes and marks their keys, and it parses each
-  inline root when the root's block closes (5.8). Each old node the cursor
-  passes without taking it removes its facts and marks their keys as it is
-  passed, inline nodes of a root read against its old inline tree (5.6)
-  included. These are exactly the nodes the parse read again, so this costs
-  what the parse read. A root's lookups are answered at once from the
-  registry as it stands and are added to the reverse index of each key
-  asked.
-- **Release.** The old root is released. The old nodes the parse did not
-  take are freed.
-- **Resolution.** For each marked key, the winner is found again.
-  - **Lookups.** An occurrence names its definition by label (4.5), so
-    what an inline parse reads from a key is whether it is defined. Each
-    root on the key's reverse index whose answer differs from the key's
-    answer now is parsed again in place: a root that is not part of this
-    edit's parse, or one this parse answered before a later node declared
-    or removed the key's definition. A fresh parse handles a reference used
-    before its definition the same way. The
-    document is a snapshot of the session (4.4), and its node is the
-    session's own once the old root is released, so the node is updated in
-    place. Its extent and runs stay the same. The root leaves the reverse
-    indexes of the keys it asked before and joins those of the keys this
-    parse asks, which are answered at once from the registry.
-  - **Anchors by family.** Each marked family is assigned again in tree
-    order, with the same reservation and suffix-cursor algorithm as a
-    fresh parse. A heading whose anchor changes takes its new anchor in
-    place.
+- **Blocks.** The parse visits the document in tree order, reading some
+  nodes and taking others (5.3). It declares the facts of the blocks it
+  makes and marks their keys. A block that holds an inline root keeps the
+  old root's inline tree (5.6) or lists the root, with the old root it reads
+  again, as it is numbered. When the block stage ends, the old nodes it did
+  not take remove their facts and mark their keys, but for the inline
+  content of old roots, which the inline stage may take. These are exactly
+  the nodes the parse read again, so this costs what the parse read. The
+  definitions of every key are final then.
+- **Inlines.** Each listed root is parsed once, in place, against the
+  content of its old root (5.6). Its lookups are answered from the final
+  registry and join the reverse index of each key asked. The old inline
+  nodes the stage did not take then remove their facts. Then each marked key whose answer, whether it is defined, differs
+  from the answer a root on its reverse index was given has that root parsed
+  again by the same algorithm: in place when it is the new tree's own, and
+  else in a copy that takes its place up the path. Every answer an inline
+  parse reads is final, so each root is parsed at most once per edit.
+- **Anchors.** Each marked family is assigned again in tree order, with the
+  same reservation and suffix-cursor algorithm as a fresh parse. A heading
+  whose anchor changes takes its new anchor in place.
 
-An inline parse in resolution changes only what its root read from the
-registry. Its content and inline anchors stay the same, and the keys it asks
-are answered from the complete registry, so a root is parsed at most once in
-resolution and each stage runs once per edit. A definition's
-destination, title or anchor changes only the definition node and the
-document's tables, never an occurrence. Definitions stay in the tree, so nothing is spliced into the
-document and no ordinal is recomputed.
+The document is a snapshot of the session (4.4), and its nodes are the
+session's own once the old root is released, so a node the inline or anchor
+stage changes is changed in place. An occurrence names its definition by
+label (4.5), so a definition's destination, title or anchor changes only the
+definition node and the document's tables, never an occurrence. Definitions
+stay in the tree, so nothing is spliced into the document and no ordinal is
+recomputed. The old nodes the parse did not take are freed when the
+document is published.
 
 ### 5.8 Nodes are complete when they are made
 
@@ -855,12 +856,15 @@ parse.
   identifier or a table's caption: it completes when its owner takes
   another child or when its owner closes, and its range stays open until
   then (5.9).
-- **Inline roots complete when their block closes.** A block's inline
-  content and each inline field of a block (a definition's term, a callout's
-  title, a table's caption, a directive's label) is an inline root. Closing
-  the block parses each of its roots and completes their trees, and the
-  block completes after them and numbers them with the rest of what it
-  holds. Delimiters decide nesting only when a
+- **Inline roots complete in the inline stage.** A block's inline content
+  and each inline field of a block (a definition's term, a callout's title,
+  a table's caption, a directive's label) is an inline root. A block
+  completes when it closes, with the rest of what it holds; a root whose
+  content changed is completed by the inline stage (5.7), which parses its
+  content, completes its tree and numbers it. A heading's close reads its
+  text with no key defined: the attributes its text ends with, which its
+  content then leaves out, and the label it declares when its text holds no
+  bracket. Delimiters decide nesting only when a
   closer pairs, and the language gives an inline node meaning from what
   encloses it: an escaped space inside a word body, a Text outside a Link for
   email autolinks, and runs of Text that become one. So an inline node is
@@ -871,12 +875,12 @@ parse.
 - **Absolute positions belong to the parse.** A node holds only its extent
   once it is complete. Everything that needs an absolute position after that
   (table geometry) records it when it is made.
-- **Document facts come from the registry.** Resolution (5.7) assigns
-  anchors and destinations, and the footnote and specimen lookup tables list
-  their definitions' facts in tree order.
+- **Document facts come from the registry.** The anchor stage (5.7) assigns
+  anchors, and the footnote and specimen lookup tables list their
+  definitions' facts in tree order. The document completes last and numbers
+  itself.
 
-A fresh parse is the block parse, which parses each inline root as its block
-closes, and resolution.
+A fresh parse is the block stage, the inline stage and the anchor stage.
 `check-completion-hooks.mjs` is the audit of these hooks: a close step
 reads its block and the block's children, and a completion reads one inline
 root.
@@ -963,12 +967,13 @@ object therefore differs as a value, which is what R3 measures.
   line machine from the same lines. A container's fields are a fold of its
   children's summaries (E4), and a decision over a leaf's lines is a fold of
   its lines' summaries (E5).
-- Inline trees: a kept root's content and lookup answers are unchanged. A
-  root parsed again runs the same parser against the same registries, and
-  its taken nodes are exact by the same induction.
-- Resolution: winners and families are found again over the complete
-  registry in tree order with the same rules, and a root whose answer
-  changed is read again by the same inline parser.
+- Inline trees: every root is parsed against the final registry, as the
+  fresh parse's inline stage parses it. A kept root's content, holder kind
+  and lookup answers are unchanged, and a root whose answer changed is
+  parsed again. A root parsed again runs the same parser, and its taken
+  nodes are exact by the same induction.
+- Anchors: families are found again over the complete registry in tree
+  order with the same rules.
 - Finish: per-root steps on unchanged roots gave the same results before.
 
 This argument is also the test oracle (section 8).
@@ -1110,7 +1115,7 @@ Let `d` be the depth of the edit point, `b` the largest child count along
 the paths from the root to the changes, `h` the opening lines of the
 containers on those paths, `L` the size of the read leaves, `W` the lines
 read after the changed lines before the next take, and `k` the size of
-inline roots invalidated by resolution changes.
+the inline roots that asked a key whose definedness changed.
 
 | Operation | Block work | Inline work | Resolution | C tree changes |
 | --- | --- | --- | --- | --- |

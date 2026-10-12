@@ -44,12 +44,6 @@ struct markdown_core_inline_state {
      * parser -- and the map is then simply not consulted. */
     markdown_core_parser *owner_parser;
     markdown_core_draft *owner;
-    /* The instance of `owner`'s structure element, resolved once. The projection is a pure
-     * function of `owner->kind`, `owner` does not change across a run, and a
-     * run's owner does not change kind during it -- so asking per token was
-     * asking the same question once per inline node. Written only beside
-     * `owner`, in the one place that assigns it, so the pair cannot drift. */
-    const markdown_core_element_instance *owner_structure;
     /* The run of `owner`'s map the last placement ended in, and the frame
      * the next is measured in: the inline parser reads `input` left to right,
      * so a node that lies whole on this run is placed by arithmetic, and one
@@ -262,7 +256,7 @@ int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_cor
 const markdown_core_key *markdown_core_inline_ask(markdown_core_inline_state *inline_state,
                                                   markdown_core_key_group group, const markdown_core_chunk *label,
                                                   bool normalize);
-void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_core_draft *parent, bool root,
+void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_core_draft *parent,
                                         markdown_core_inline_state *inline_state);
 void markdown_core_inline_clear_inlines(markdown_core_inline_state *inline_state);
 bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_core_inline_state *inline_state);

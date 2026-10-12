@@ -216,22 +216,41 @@ void markdown_core_registry_unlink(struct markdown_core_node *node);
  * in its roster: its first declaring fact in tree order, a Reference before
  * a heading's target. False when a roster could not grow. */
 bool markdown_core_registry_resolve(markdown_core_registry *registry);
-/* Every question the inline root `node` asked leaves its key's reverse
- * index; the key is marked. */
-void markdown_core_registry_unask(struct markdown_core_node *node);
+/* Every fact of `node` its inline content gives -- the questions the
+ * inline root asked and the anchors its text writes -- leaves its key,
+ * which is marked; the definitions its block declares stay. */
+void markdown_core_registry_unlink_content(struct markdown_core_node *node);
+/* Whether `node` holds a fact of `role`. */
+bool markdown_core_registry_holds(const struct markdown_core_node *node, markdown_core_fact_role role);
+/* `to`, which reads the content of the inline root `from` as it was (plan
+ * 5.6), takes the questions `from` asked, with their answers. */
+void markdown_core_registry_take_lookups(struct markdown_core_node *from, struct markdown_core_node *to);
 /* `to` takes the facts and the order of `from`, the node a parse made equal
  * to it or a copy of it, and drops its own; its node takes `from`'s place in
  * the rosters, and the keys of the facts are marked. False when a roster
  * could not change. */
 bool markdown_core_registry_move(markdown_core_registry *registry, struct markdown_core_node *from,
                                  struct markdown_core_node *to);
-/* The facts and orders of every node of `root` that leaves the document
- * leave with it. Of an old tree, those are the nodes only the old tree
- * holds, the nodes the parse did not take, `taken` true; of the content of
- * a root read again, they are all its nodes, `taken` false, as no other node
- * of the new tree holds them. False when the walk could not allocate its
+/* The stems of the content of old inline roots the inline stage reads
+ * (plan 5.7). */
+typedef struct {
+    struct markdown_core_stem **stems;
+    size_t count, capacity;
+} markdown_core_stems;
+
+/* The facts and orders of every node of the old tree `root` that leaves the
+ * document leave with it: the nodes only the old tree holds, which the
+ * parse did not take. The content of an inline root among them goes to
+ * `content`, when it is not NULL, for the inline stage, which may take its
+ * nodes, to retire after it. False when the walk could not allocate its
  * stack or a roster could not change. */
-bool markdown_core_registry_retire(markdown_core_registry *registry, struct markdown_core_node *root, bool taken);
+bool markdown_core_registry_retire(markdown_core_registry *registry, struct markdown_core_node *root,
+                                   markdown_core_stems *content);
+/* The nodes of the `count` content stems `stems`, which no node of the new
+ * tree holds, leave unless the new tree holds them too, as
+ * markdown_core_registry_retire. */
+bool markdown_core_registry_retire_content(markdown_core_registry *registry, struct markdown_core_stem *const *stems,
+                                           size_t count);
 
 /* A new order for `node`, in no list; NULL when it could not be had. */
 markdown_core_order *markdown_core_order_new(markdown_core_registry *registry, struct markdown_core_node *node);

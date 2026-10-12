@@ -1392,11 +1392,6 @@ int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_cor
                      markdown_core_chunk_dup(&inline_state->input, startpos, inline_state->pos - startpos)));
         goto append;
     }
-    const markdown_core_element_instance *structure = inline_state->owner_structure;
-    if (structure && structure->element->claim_inline_tail &&
-        structure->element->claim_inline_tail(structure, inline_state, parent)) {
-        return 0;
-    }
     if (inline_state->cursor && S_take_old(parser, inline_state)) {
         goto append;
     }
@@ -1446,6 +1441,11 @@ const markdown_core_key *markdown_core_inline_ask(markdown_core_inline_state *in
     /* The question is the root's: a later parse asks it again, so no parse
      * takes the token that asked it whole. */
     markdown_core_inline_outside(inline_state);
+    /* A read that no root makes -- a heading's close reading its text --
+     * finds no key defined, and records nothing. */
+    if (!parser->asker) {
+        return NULL;
+    }
     const unsigned char *bytes = label->data;
     uint32_t length = (uint32_t)label->len;
     bool failed = false;
@@ -1469,42 +1469,40 @@ const markdown_core_key *markdown_core_inline_ask(markdown_core_inline_state *in
     return defined ? key : NULL;
 }
 
-void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_core_draft *owner, bool root,
+/* The content an inline parse of `node` reads: its buffer, less the line
+ * ending a block's buffer ends with. An inline field ends at its owner's
+ * delimiter: its trailing spaces are body content. EVERY content-bearing
+ * block has a map by the time its inlines are read. One the parser fed line
+ * by line already does; one whose content was SET -- a table cell, a
+ * directive's label -- gets one mark here, derived from where the block
+ * says it starts. That derivation IS the arithmetic this replaces: `start +
+ * internal_offset` was the block offset every inline position used to be
+ * measured from, and stating it once as a mark is what lets the term itself
+ * go. */
+static markdown_core_chunk S_inline_content(markdown_core_parser *parser, markdown_core_node *node) {
+    markdown_core_chunk content = {node->content.ptr, node->content.size, 0};
+    if (node->content_map.count == 0) {
+        markdown_core_parser_mark_content(parser, node, 0, node->where.place.start + node->internal_offset);
+    }
+    if (!MARKDOWN_CORE_NODE_TYPE_INLINE_P(node->kind)) {
+        markdown_core_chunk_rtrim(&content);
+    }
+    return content;
+}
+
+void markdown_core_inline_read_root(markdown_core_parser *parser, markdown_core_node *holder) {
+    const markdown_core_chunk content = S_inline_content(parser, holder);
+    markdown_core_parser_read_content(parser, holder, content.len);
+}
+
+void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_core_draft *owner,
                                         markdown_core_inline_state *inline_state) {
     markdown_core_node *parent = owner->node;
-    markdown_core_chunk content = {parent->content.ptr, parent->content.size, 0};
-    /* EVERY content-bearing block has a map by the time its inlines are parsed.
-     * One the parser fed line by line already does; one whose content was SET
-     * -- a table cell, a directive's label -- gets one mark here, derived from
-     * where the block says it starts. That derivation IS the arithmetic this
-     * replaces: `start + internal_offset` was the block offset every inline
-     * position used to be measured from, and stating it once as a mark is
-     * what lets the term itself go. */
-    if (parent->content_map.count == 0) {
-        markdown_core_parser_mark_content(parser, parent, 0, parent->where.place.start + parent->internal_offset);
-    }
+    markdown_core_chunk content = S_inline_content(parser, parent);
     markdown_core_inline_state_from_buf(parser, inline_state, &content);
-    /* Block buffers include their terminating line ending. An inline field
-     * ends at its owner's delimiter: its trailing spaces are body content. */
-    if (!MARKDOWN_CORE_NODE_TYPE_INLINE_P(parent->kind)) {
-        markdown_core_chunk_rtrim(&inline_state->input);
-    }
-    /* A root's nodes are placed in its content: the bytes this parse reads
-     * keep their map to the source as the root's runs. A field's nodes are
-     * placed in the content of the root it was cut from, which its map is a
-     * slice of. */
-    if (root) {
-        markdown_core_parser_read_content(parser, parent, inline_state->input.len);
-    }
     inline_state->owner = owner;
-    inline_state->owner_structure = markdown_core_parser_structure(parser, parent);
     inline_state->mark_cursor = parent->content_map.first;
     markdown_core_inline_seat_cursor(inline_state);
-
-    const markdown_core_element_instance *structure = inline_state->owner_structure;
-    if (structure && structure->element->begin_inline && S_inline_run_began(inline_state)) {
-        structure->element->begin_inline(structure, parser, inline_state, owner);
-    }
 }
 
 void markdown_core_inline_clear_inlines(markdown_core_inline_state *inline_state) {
@@ -1558,14 +1556,14 @@ bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_
 
 bool markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_draft *parent) {
     markdown_core_inline_state inline_state;
-    markdown_core_inline_start_inlines(parser, parent, false, &inline_state);
+    markdown_core_inline_start_inlines(parser, parent, &inline_state);
     return markdown_core_inline_finish_inlines(parser, &inline_state);
 }
 
 void markdown_core_parse_root_inlines(markdown_core_parser *parser, markdown_core_draft *holder,
                                       const markdown_core_node *old, uint32_t anchor) {
     markdown_core_inline_state inline_state;
-    markdown_core_inline_start_inlines(parser, holder, true, &inline_state);
+    markdown_core_inline_start_inlines(parser, holder, &inline_state);
     inline_state.records = true;
     parser->stay_count = 0;
     if (old && !inline_state.error) {

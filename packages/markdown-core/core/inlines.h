@@ -14,6 +14,11 @@ extern "C" {
  * content of the root its owning token is in. */
 bool markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_draft *parent);
 
+/* The content of the inline root `holder` holds becomes the input its nodes
+ * are placed in, as its block is numbered (markdown_core_parser_read_content):
+ * its buffer, less the line ending a block's buffer ends with. */
+void markdown_core_inline_read_root(markdown_core_parser *parser, markdown_core_node *holder);
+
 /* Parses the content of the inline root `holder` builds, whose nodes are
  * placed in offsets of its content and keep what their decisions read
  * (docs/plans/2026-09-29-incremental-parsing.md, 5.6). `old`, when not NULL,

@@ -109,10 +109,6 @@ struct markdown_core_element {
     markdown_core_draft *(*parse_text)(const markdown_core_element_instance *, markdown_core_parser *,
                                        markdown_core_inline_state *, bufsize_t);
     void (*init_inline)(const markdown_core_element_instance *, markdown_core_inline_state *);
-    void (*begin_inline)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_inline_state *,
-                         markdown_core_draft *);
-    bool (*claim_inline_tail)(const markdown_core_element_instance *, markdown_core_inline_state *,
-                              markdown_core_draft *);
     void (*finish_inline)(const markdown_core_element_instance *, markdown_core_inline_state *);
     void (*dispose_inline)(const markdown_core_element_instance *, markdown_core_inline_state *);
     /* Whether a token the element keeps open in the run -- a bracket, a
@@ -206,11 +202,6 @@ struct markdown_core_element {
     bool (*ends_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_frame *,
                        markdown_core_chunk *);
     void (*finalize_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_frame *);
-    /* Parses the inline content of the root its node holds into `builder`
-     * itself, the root's source starting at `start`, in place of the inline
-     * parse (a heading, whose text declares its label). */
-    void (*parse_root)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_draft *builder,
-                       uint32_t start);
 
     bool (*scan_block_start)(const markdown_core_element_instance *, markdown_core_parser *,
                              struct markdown_core_block_start_context *, struct markdown_core_block_start *);

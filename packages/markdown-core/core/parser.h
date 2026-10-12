@@ -148,14 +148,17 @@ markdown_core_input markdown_core_input_buffer(const unsigned char *bytes, size_
  * runs read it, and its frame; the node the content is parsed into, the
  * node itself or the private node its title or term hangs from, and the
  * draft the content is parsed into, that node's; where the node lies in the
- * source; and whether the holder is a field, which belongs to its owner and
- * is never replaced. */
+ * source; whether the holder is a field, which belongs to its owner and is
+ * never replaced; and the old root whose content it reads again (5.6), when
+ * there is one, its runs measured from `anchor` in the previous source. */
 typedef struct markdown_core_inline_root {
     struct markdown_core_node *node, *holder;
     struct markdown_core_frame *frame;
     struct markdown_core_draft *builder;
     markdown_core_place place;
     bool field;
+    const struct markdown_core_node *old;
+    uint32_t anchor;
 } markdown_core_inline_root;
 
 /* THE INPUT THE LINE MACHINE READS: the document's source, or the content
@@ -309,17 +312,30 @@ struct markdown_core_parser {
     /* The length change before each of the revision's edits (5.2). */
     int64_t *edit_shift;
     /* THE NODES OF TAKEN SUBTREES THE PARSE REPLACES (5.7), in the order
-     * found: a root whose lookups are answered otherwise now, parsed again
-     * as `frame`, whose node takes its place once it settles, and a heading
-     * whose anchor changes, whose copy `node` takes its place. `start` is
-     * where the old node begins. The document puts each in its place as it
-     * finishes (markdown_core_publication_splice). */
+     * found: a heading whose anchor changes, whose copy `node` takes its
+     * place. The document puts each in its place as it finishes
+     * (markdown_core_publication_splice). */
     struct markdown_core_replacement {
         const struct markdown_core_node *old;
         struct markdown_core_node *node;
-        struct markdown_core_frame *frame;
     } *replacements;
     size_t replacement_count, replacement_capacity;
+    /* THE INLINE ROOTS THE INLINE STAGE PARSES (5.7), in the order their
+     * blocks were numbered: each root of the new tree's own whose content
+     * its block did not keep, where it lies, the old node it continues and
+     * where that began in the previous source (5.9), and the old root whose
+     * content it reads again (5.6), when there is one, its runs measured
+     * from `anchor`. */
+    struct markdown_core_listed_root {
+        struct markdown_core_node *node;
+        markdown_core_place place;
+        const struct markdown_core_node *old, *content;
+        uint32_t old_start, anchor;
+    } *listed;
+    size_t listed_count, listed_capacity;
+    /* The content of the old inline roots the parse did not take, which
+     * leaves the registry as the inline stage ends (5.7). */
+    markdown_core_stems old_content;
     /* Options set by the user, see the Options section in markdown_core.h */
     /* Sticky allocation-failure flag: once any parse structure is lost, the
      * one-shot transaction reports the whole parse as failed (NULL) instead of
@@ -772,12 +788,12 @@ bool markdown_core_parser_touched(const markdown_core_parser *parser, uint32_t f
 bool markdown_core_parser_source_anchor(const markdown_core_parser *parser, uint32_t start, uint32_t end,
                                         uint32_t *image);
 
-/* `old`, a node of a subtree the parse took, gives its place to `node`, or
- * to the node of `frame` once it settles, which holds `old`'s order; the
- * replacement takes the reference to either. False, with the parse failed
- * and the reference released, when the list could not grow. */
-bool markdown_core_parser_replace(markdown_core_parser *parser, const markdown_core_node *old, markdown_core_node *node,
-                                  markdown_core_frame *frame);
+/* `old`, a node of a subtree the parse took, gives its place to `node`,
+ * which holds `old`'s order, as the document finishes; the replacement
+ * takes the reference to `node`. False, with the parse failed and the
+ * reference released, when the list could not grow. */
+bool markdown_core_parser_replace(markdown_core_parser *parser, const markdown_core_node *old,
+                                  markdown_core_node *node);
 
 /* THE STATE `parent` CARRIES where a child of it begins after `previous`
  * (5.3, E3): the word its element saves, the kind of the child before, and
@@ -905,14 +921,23 @@ void markdown_core_parser_read_blocks(markdown_core_parser *parser, markdown_cor
 /* Whether `node` holds inline content (its kind's record, dialect.h). */
 bool markdown_core_parser_contains_inlines(markdown_core_parser *parser, markdown_core_node *node);
 
-/* `frame`'s node, which holds an inline root in `holder` and lies at
- * `place`, completes as the root does (docs/plans/2026-09-29-incremental-
- * parsing.md, 5.8): its content is parsed into `holder`'s builder, the
- * frame's or one made for `holder` as a field root of the frame's, every
+/* THE OLD ROOT WHOSE CONTENT AN INLINE ROOT READS AGAIN (5.6): the node of
+ * the previous tree `frame` continues once decided, or else the one its
+ * block reads again (5.3), when it is of the root's kind and holds its
+ * content in `holder`, the frame's node itself; its runs are measured from
+ * `*anchor` in the previous source. NULL when there is none. */
+const markdown_core_node *markdown_core_parser_old_root(const markdown_core_frame *frame,
+                                                        const markdown_core_node *holder, uint32_t *anchor);
+/* `frame`'s node, which holds an inline root in `holder`, lies at `place`
+ * and is numbered, completes as the root does in the inline stage
+ * (docs/plans/2026-09-29-incremental-parsing.md, 5.7, 5.8): its content is
+ * parsed into `holder`'s builder, against the content of `old`, the old
+ * root its runs are measured from `anchor` of, when it is not NULL; every
  * node of it completes, and then the node, which numbers it. False when the
  * parse failed. */
 bool markdown_core_parser_complete_root(markdown_core_parser *parser, markdown_core_frame *frame,
-                                        markdown_core_node *holder, markdown_core_place place);
+                                        markdown_core_node *holder, markdown_core_place place,
+                                        const markdown_core_node *old, uint32_t anchor);
 /* WHERE A BYTE OF THE ACTIVE INPUT WAS WRITTEN, as a byte offset of the
  * document source. `line` is a line of the active input and `column` a byte
  * column of that line as the block parser reads it, counted from 1: the

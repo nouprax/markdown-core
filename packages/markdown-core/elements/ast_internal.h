@@ -249,15 +249,22 @@ bool markdown_core_complete_draft(markdown_core_parser *parser, markdown_core_pu
                                                   markdown_core_node *),
                                   const markdown_core_element_instance *observer);
 
+/* THE INLINE STAGE (5.7): each root the block stage listed is parsed in
+ * place, in the order listed, against the content of the old root it reads
+ * again, and settles; the old content the stage did not take leaves the
+ * registry. False, with the parse failed, when an allocation failed. */
+bool markdown_core_parse_listed(markdown_core_parser *parser, markdown_core_publication *publication);
+
 /* AN INLINE ROOT IS PARSED AGAIN IN PLACE (5.7): `root`, found where it
  * begins by its order, holds content whose lookups are answered otherwise
- * now. It reads that content again from its runs, as a root the parse made
- * does: in place when the new tree owns it, and else in a copy that takes
- * its order. The facts of its old content leave the registry; a root read
- * in place continues the old node it continued, and a copy continues `root`
- * when `root` continues itself. Its frame replaces `root` once it settles
- * (markdown_core_parser_replace). False, with the parse failed, when an
- * allocation failed. */
+ * now. It reads that content again from its runs, as the inline stage does:
+ * in place when the new tree owns it, and else in a copy that takes its
+ * order and its definitions. The facts its content gave leave the registry,
+ * and the old content leaves once the parse has taken what it takes of it;
+ * a root read in place continues the old node it continued, and a copy
+ * continues `root` when `root` continues itself. Its node takes `root`'s
+ * place as it settles (markdown_core_publication_splice). False, with the
+ * parse failed, when an allocation failed. */
 bool markdown_core_parse_again(markdown_core_parser *parser, markdown_core_publication *publication,
                                const markdown_core_node *root);
 

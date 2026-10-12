@@ -963,6 +963,9 @@ struct markdown_core_frame {
     } anchor;
     uint32_t index, children;
     bool held, field, decided, tentative, identified, searched, awaits_trailer, completed, numbered;
+    /* Its node holds an inline root whose content the inline stage parses
+     * (5.7): it settles there. */
+    bool listed;
 };
 
 /* The node `node`'s inline content is parsed into: the node itself, or the

@@ -211,9 +211,8 @@ is compared.
   step 3, and from step 4 in completion order, where each node's owner
   numbers the nodes it holds when it completes and the root numbers itself
   when it completes (plan 4.1, 5.8). Its ids are unique and rise in
-  completion order, the document's the largest; a root parsed again for a
-  definition written after it (plan 5.7) leaves unused the ids its first
-  content took. Two fresh parses of the same text are equal, ids included.
+  completion order, the document's the largest. Two fresh parses of the
+  same text are equal, ids included.
 
 ### 4.3 Minimal AST mutation
 

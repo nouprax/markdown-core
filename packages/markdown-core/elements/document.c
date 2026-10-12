@@ -84,12 +84,14 @@ static bool lookups_changed(markdown_core_parser *parser, const markdown_core_no
     return true;
 }
 
-/* Resolution: the roots whose lookups are answered otherwise now are parsed
- * again in place (5.7). */
+/* The inline stage (5.7): the roots the block stage listed are parsed, and
+ * then the roots whose lookups are answered otherwise now are parsed again
+ * in place. */
 static void prepare_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     markdown_core_publication *publication = &((document_state *)self->state)->publication;
     const markdown_core_node **roots = NULL;
     size_t count = 0;
+    markdown_core_parse_listed(parser, publication);
     if (!parser->error && !lookups_changed(parser, &roots, &count)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
@@ -149,11 +151,6 @@ static void finish_document(const markdown_core_element_instance *self, markdown
     for (size_t i = 0; i < parser->replacement_count && !parser->error; i++) {
         struct markdown_core_replacement *replacement = &parser->replacements[i];
         markdown_core_node *node = replacement->node;
-        if (replacement->frame) {
-            node = markdown_core_node_retain(replacement->frame->node);
-            markdown_core_frame_release(parser->pool, replacement->frame);
-        }
-        replacement->frame = NULL;
         replacement->node = NULL;
         if (node == replacement->old) {
             markdown_core_parser_release_node(parser, node);
