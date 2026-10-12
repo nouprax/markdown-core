@@ -106,7 +106,7 @@ class IdentityTest {
     fun aDescriptionNamesTheKindAndTheId() {
         val document = Document.parse("text\n")
         assertEquals("Document(id=3)", document.toString())
-        assertEquals("Text(id=1)", assertIs<Paragraph>(document.content.single()).content.single().toString())
+        assertEquals("Text(id=2)", assertIs<Paragraph>(document.content.single()).content.single().toString())
     }
 }
 

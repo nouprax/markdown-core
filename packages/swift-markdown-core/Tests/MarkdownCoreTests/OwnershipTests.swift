@@ -118,7 +118,7 @@ import Testing
     func describes() throws {
         let document = try Document.parse("# x\n")
         #expect(document.description == "Document(id=3)")
-        #expect(String(describing: document.content[0]) == "Heading(id=2)")
+        #expect(String(describing: document.content[0]) == "Heading(id=1)")
     }
 }
 
@@ -165,7 +165,7 @@ private func deepTreeFailures(depth: Int) -> [String] {
         "hit test"
     )
     check(document.description == "Document(id=\(depth * 2 + 3))", "description")
-    check(leaf.description == "Text(id=1)", "leaf description")
+    check(leaf.description == "Text(id=\(depth * 2 + 2))", "leaf description")
     return failures + deepReleaseFailures(source: source)
 }
 
