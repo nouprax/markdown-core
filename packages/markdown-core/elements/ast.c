@@ -1654,8 +1654,11 @@ static bool match_read(markdown_core_parser *parser, markdown_core_match *match)
         match->nodes[(uint32_t)match->holding[--holding]].last = match->count - 1;
     }
     qsort(match->addresses, match->count, sizeof(*match->addresses), match_compare_addresses);
-    for (uint64_t kinds = match->kinds; kinds; kinds &= kinds - 1) {
-        markdown_core_match_kind *list = &match->lists[__builtin_ctzll(kinds)];
+    for (unsigned kind = 0; kind < 64; kind++) {
+        if (!(match->kinds >> kind & 1)) {
+            continue;
+        }
+        markdown_core_match_kind *list = &match->lists[kind];
         uint64_t *keys = match->holding;
         for (uint32_t i = 0; i < list->count; i++) {
             keys[i] = (uint64_t)list->images[i] << 32 | list->nodes[i];
@@ -1701,7 +1704,10 @@ static bool match_find(markdown_core_parser *parser, markdown_core_publication *
     /* The first open node from `low` on: the one past the open ones before
      * it, found down the tree. */
     uint32_t rest = match_open_before(list, low), at = 0;
-    uint32_t step = list->count ? UINT32_C(1) << (31 - __builtin_clz(list->count)) : 0;
+    uint32_t step = list->count ? 1 : 0;
+    while (step && step <= list->count / 2) {
+        step <<= 1;
+    }
     for (; step; step >>= 1) {
         if (at + step <= list->count && list->open[at + step - 1] <= rest) {
             at += step;

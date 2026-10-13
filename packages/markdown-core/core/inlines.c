@@ -1624,8 +1624,9 @@ static unsigned S_needs(const markdown_core_parser *parser, const markdown_core_
 /* Whether a word body may still open around what `run` reduces now: an
  * opener of a rule that makes one is on its stack. */
 static bool S_rules_open(const markdown_core_inline_state *run, uint32_t rules) {
-    for (uint32_t open = run->delim_rules & rules; open; open &= open - 1) {
-        if (run->delim_openers[__builtin_ctz(open)]) {
+    const uint32_t open = run->delim_rules & rules;
+    for (int rule = 0; rule < MARKDOWN_CORE_DELIM_RULE_COUNT; rule++) {
+        if ((open >> rule & 1) && run->delim_openers[rule]) {
             return true;
         }
     }
