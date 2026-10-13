@@ -1304,6 +1304,11 @@ static bool S_take_old(markdown_core_parser *parser, markdown_core_inline_state 
         return false;
     }
     const int32_t end = pos + (int32_t)old->where.extent.span;
+    /* Where the run's text ends, its owner's tail begins, which no token
+     * reads as text: a node whose decisions read past it is read again. */
+    if (inline_state->text_end >= 0 && (int64_t)end + old->reach > inline_state->text_end) {
+        return false;
+    }
     markdown_core_node *copy = markdown_core_node_copy(parser->pool, old);
     if (!copy) {
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;

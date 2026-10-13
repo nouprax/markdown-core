@@ -1050,6 +1050,10 @@ export function identityScripts() {
             .expect("changed", "Heading", 0)
             .expect("only")
     );
+    /* A heading's text ends where the attributes it ends with begin: the
+     * old Text that read past that point is read again, and the heading
+     * takes the attributes. */
+    add("heading-tail-after-taken-text", "# g{${$}\n", (s) => s.edit([{ start: 5, end: 6, text: "" }]));
     /* A code span's closer search reads what earlier spans' searches
      * learned of the runs after them; the answer must not depend on which
      * of those spans the edit took whole. */
