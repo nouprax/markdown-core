@@ -869,8 +869,10 @@ parse.
   once, there: the read takes the attributes the text ends with when it
   reaches them at a token's end, and the tree then ends before them; the
   heading declares its text, normalized, as a reference label when the text
-  holds no bracket. A kept root takes what the read of its old root gave:
-  its tree, its questions, and a heading's attributes and label. Delimiters
+  holds no bracket. A kept root that continues its old root and equals it
+  in its block's fields is that old node, which holds what its read gave.
+  Any other kept root takes what the read of its old root gave: its tree,
+  its questions, and a heading's attributes and label. Delimiters
   decide nesting only when a
   closer pairs, and the language gives an inline node meaning from what
   encloses it: an escaped space inside a word body, a Text outside a Link for

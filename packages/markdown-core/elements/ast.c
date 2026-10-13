@@ -1124,8 +1124,13 @@ static bool settle_old(markdown_core_parser *parser, markdown_core_publication *
                        markdown_core_node *owner, bool field, uint32_t slot, const markdown_core_node *old,
                        markdown_core_node **kept);
 
+/* `old`, equal to `node`, is the record of this parse in its place. NULL
+ * when it could not be. */
+static markdown_core_node *settle_record(markdown_core_publication *publication, markdown_core_node *node,
+                                         const markdown_core_node *old);
+
 /* Whether `node` equals `old` as a value. */
-static bool node_same(const markdown_core_node *node, const markdown_core_node *old);
+static bool node_same(const markdown_core_node *node, const markdown_core_node *old, bool attributes);
 
 /* Whether the runs `a` and `b` read their sources alike from where each
  * begins: equal but for where their first is measured from. */
@@ -1147,25 +1152,43 @@ static bool runs_alike(const markdown_core_runs *a, const markdown_core_runs *b)
  * inline tree is a function of its root's content, the source its runs read
  * it from, its holder's kind and whether each key it asks is defined. A root
  * whose content and runs, published, are those of the old root it reads
- * again keeps that root's inline tree whole, what the read of it gave the
- * old root -- the questions it asked with their answers, and a heading's
- * attributes and label -- and the orders of its content, which follow the
- * root's own. Any other root is listed for the inline stage, which parses
- * its content. False when an allocation failed. */
+ * again keeps that root's inline tree whole, and the orders of its content,
+ * which follow the root's own. When the root continues that old root and
+ * equals it in all else, the old root is the node: what the read of its
+ * content gave it -- the questions it asked with their answers, and a
+ * heading's attributes and label -- it holds already, and its orders stay
+ * where they are. Else the root takes those from the old root. Any other
+ * root is listed for the inline stage, which parses its content. False when
+ * an allocation failed. */
 static bool keep_content(const complete_context *context, markdown_core_frame *frame, markdown_core_node *holder) {
     markdown_core_parser *parser = context->parser;
     markdown_core_node *const node = frame->node;
+    const markdown_core_runs *runs = holder->runs;
     uint32_t anchor = 0;
     const markdown_core_node *old = markdown_core_parser_old_root(parser, frame, holder, &anchor);
-    const markdown_core_runs *runs = holder->runs;
     if (old && runs_alike(runs, old->runs) &&
         (!runs->decoded || memcmp(holder->content.ptr, old->content.ptr, runs->decoded) == 0)) {
-        assert(!holder->children);
+        assert(!holder->children && holder == node);
+        holder->children = old->children ? markdown_core_stem_retain(old->children) : NULL;
+        if (!need(parser, context->publication, frame)) {
+            return false;
+        }
+        /* The read gives a holder that reads its content its attributes. */
+        const markdown_core_element_instance *structure = markdown_core_parser_kind(parser, node)->structure;
+        if (frame->old == old && node_same(node, old, !(structure && structure->element->read_content))) {
+            identify(parser, frame);
+            markdown_core_node *kept = settle_record(context->publication, node, old);
+            if (!kept) {
+                return false;
+            }
+            markdown_core_registry_unlink(node);
+            frame->node = kept;
+            return true;
+        }
         markdown_core_orders content = {0};
         if (old->children && old->children->first && !order_gather(parser, &content, old, false)) {
             return false;
         }
-        holder->children = old->children ? markdown_core_stem_retain(old->children) : NULL;
         markdown_core_registry_take_read((markdown_core_node *)old, node);
         if (!markdown_core_node_take_read(parser->pool, holder, old)) {
             return false;
@@ -1243,6 +1266,17 @@ static bool complete_number(const complete_context *context, markdown_core_frame
         }
     }
     anchor->source = place.end;
+    if (frame->node == frame->old) {
+        /* The old node in its place: its orders, with its facts, stay where
+         * they are, after those its owner collected. */
+        assert(!frame->orders.head && !item->order);
+        if (frame->node->first) {
+            order_follow(context->orders, frame->node->first);
+        }
+        frame->numbered = true;
+        markdown_core_settle_frame(parser, context->publication, frame);
+        return !parser->error;
+    }
     /* A node that declares or asks, an inline root and a node its rosters
      * list takes its order, ahead of the orders of what it holds, which then
      * follow those its owner collected (5.7). */
@@ -1558,7 +1592,7 @@ static bool draft_number(const complete_context *context, markdown_core_draft *d
     }
     item->flags = (markdown_core_node_internal_flags)(item->flags & ~MARKDOWN_CORE_NODE__FOSTERS);
     markdown_core_node *kept;
-    if (!(item->flags & MARKDOWN_CORE_NODE__GROUP) && draft->old && node_same(item, draft->old) &&
+    if (!(item->flags & MARKDOWN_CORE_NODE__GROUP) && draft->old && node_same(item, draft->old, true) &&
         !settle_old(parser, context->publication, item, draft->owner->node, draft->field, slot, draft->old, &kept)) {
         return false;
     }
@@ -1831,7 +1865,7 @@ static bool runs_equal(const markdown_core_runs *a, const markdown_core_runs *b)
                                 a->pieces * sizeof(markdown_core_run_piece)) == 0;
 }
 
-static bool scalars_equal(const markdown_core_node *a, const markdown_core_node *b);
+static bool scalars_equal(const markdown_core_node *a, const markdown_core_node *b, bool attributes);
 
 /* Whether every relation of `node` holds the very nodes the same relation of
  * `old` holds, and they have the same relations. */
@@ -1869,12 +1903,13 @@ static bool relations_same(const markdown_core_node *node, const markdown_core_n
 }
 
 /* Whether `node` equals `old` as a value: its kind, extent, runs and
- * scalars, and its relations holding the same nodes. */
-static bool node_same(const markdown_core_node *node, const markdown_core_node *old) {
+ * scalars, with its attributes when `attributes`, and its relations holding
+ * the same nodes. */
+static bool node_same(const markdown_core_node *node, const markdown_core_node *old, bool attributes) {
     return public_kind(node) == public_kind(old) && node->where.extent.lead == old->where.extent.lead &&
            node->where.extent.span == old->where.extent.span && runs_equal(node->runs, old->runs) &&
-           runs_equal(shape_runs(node, shape_of(node)), shape_runs(old, shape_of(old))) && scalars_equal(node, old) &&
-           relations_same(node, old);
+           runs_equal(shape_runs(node, shape_of(node)), shape_runs(old, shape_of(old))) &&
+           scalars_equal(node, old, attributes) && relations_same(node, old);
 }
 
 /* The field slots of `kept`, an old node, take what those of `node`, the
@@ -1893,36 +1928,46 @@ static int fields_trade_visit(markdown_core_node **slot, void *context) {
     return 1;
 }
 
-static bool settle_old(markdown_core_parser *parser, markdown_core_publication *publication, markdown_core_node *node,
-                       markdown_core_node *owner, bool field, uint32_t slot, const markdown_core_node *old,
-                       markdown_core_node **kept_node) {
+/* `old`, equal to `node`, the node of the parse, is the record of this parse
+ * now (5.1): its entry, its reach, its flags and its lines (E5) are the new
+ * node's, and the node takes the old lines with it when it goes, which is
+ * when the parse does. Its relations hold the very nodes the new node's do,
+ * and the groups that hold them equal: it takes the new node's, which this
+ * parse measured, the orders of the nodes under them among what they hold
+ * (5.1, 5.7). NULL when the publication could not list the node. */
+static markdown_core_node *settle_record(markdown_core_publication *publication, markdown_core_node *node,
+                                         const markdown_core_node *old) {
     markdown_core_node **replaced = markdown_core_reserve(publication->replaced, &publication->replaced_capacity,
                                                           publication->replaced_count + 1, sizeof(*replaced));
     if (!replaced) {
-        return false;
+        return NULL;
     }
     publication->replaced = replaced;
+    publication->replaced[publication->replaced_count++] = node;
     markdown_core_node *kept = markdown_core_node_retain((markdown_core_node *)old);
-    /* The old node is the record of this parse now (5.1): its entry, its
-     * reach, its flags and its lines (E5) are the new node's, and the node
-     * takes the old lines with it when it goes. */
     kept->entry = node->entry;
     kept->reach = node->reach;
     kept->flags = node->flags;
     markdown_core_lines *lines = kept->lines;
     kept->lines = node->lines;
     node->lines = lines;
-    /* Its relations hold the very nodes the new node's do, and the groups
-     * that hold them equal: it takes the new node's, which this parse
-     * measured, the orders of the nodes under them among what they hold
-     * (5.1, 5.7). */
     markdown_core_stem *children = kept->children;
     kept->children = node->children;
     node->children = children;
     fields_trade trade = {node, 0};
     markdown_core_node_visit_fields(kept, fields_trade_visit, &trade);
-    /* And it declares what the new node declared: an equal node declares
-     * the same, and these facts are this parse's (5.7). */
+    return kept;
+}
+
+static bool settle_old(markdown_core_parser *parser, markdown_core_publication *publication, markdown_core_node *node,
+                       markdown_core_node *owner, bool field, uint32_t slot, const markdown_core_node *old,
+                       markdown_core_node **kept_node) {
+    markdown_core_node *kept = settle_record(publication, node, old);
+    if (!kept) {
+        return false;
+    }
+    /* It declares what the new node declared: an equal node declares the
+     * same, and these facts are this parse's (5.7). */
     const bool moved = markdown_core_registry_move(parser->registry, node, kept);
     if (field) {
         size_t place;
@@ -1932,7 +1977,6 @@ static bool settle_old(markdown_core_parser *parser, markdown_core_publication *
         assert(held == node);
         (void)held;
     }
-    publication->replaced[publication->replaced_count++] = node;
     *kept_node = kept;
     return moved;
 }
@@ -1950,7 +1994,7 @@ void markdown_core_settle_frame(markdown_core_parser *parser, markdown_core_publ
         identify(parser, frame);
     }
     if (!(frame->node->flags & MARKDOWN_CORE_NODE__GROUP) && !frame->listed && frame->old &&
-        node_same(frame->node, frame->old)) {
+        frame->node != frame->old && node_same(frame->node, frame->old, true)) {
         markdown_core_node *kept;
         if (!settle_old(parser, publication, frame->node, frame->field ? frame->owner->node : NULL, frame->field, 0,
                         frame->old, &kept)) {
@@ -2421,7 +2465,7 @@ static bool splice_settle(markdown_core_parser *parser, markdown_core_publicatio
         if (node->flags & MARKDOWN_CORE_NODE__GROUP) {
             continue;
         }
-        if (!old || !node_same(node, old)) {
+        if (!old || !node_same(node, old, true)) {
             return true;
         }
         markdown_core_node *kept;
@@ -3482,16 +3526,16 @@ static bool referent_equal(const markdown_core_node *a, const markdown_core_node
     return false;
 }
 
-/* `a`, a node of the parse, against `b`, an old node. A heading whose text
- * wrote no anchor takes one at resolution, which gives the node it settles
- * as another when that one's is not the anchor it takes (5.7): it is
- * compared without it. */
-static bool scalars_equal(const markdown_core_node *a, const markdown_core_node *b) {
+/* `a`, a node of the parse, against `b`, an old node, with their attributes
+ * when `attributes`. A heading whose text wrote no anchor takes one at
+ * resolution, which gives the node it settles as another when that one's is
+ * not the anchor it takes (5.7): it is compared without it. */
+static bool scalars_equal(const markdown_core_node *a, const markdown_core_node *b, bool attributes) {
     markdown_core_node_kind kind = public_kind(a);
     markdown_core_optional_string x, y, x_second, y_second;
     markdown_core_string x_literal, y_literal;
-    if (!attributes_equal(&a->attributes, &b->attributes,
-                          kind != MARKDOWN_CORE_KIND_HEADING || a->attributes.anchor.len)) {
+    if (attributes && !attributes_equal(&a->attributes, &b->attributes,
+                                        kind != MARKDOWN_CORE_KIND_HEADING || a->attributes.anchor.len)) {
         return false;
     }
     switch (kind) {
