@@ -16,9 +16,10 @@ past indentation and past the prefix bytes each container element declares
 hooks), so the transaction opens only where a marker can be.
 A reference-shaped line uses the reference parser's non-registering recognition
 operation. Once accepted, the one-line term owns an inline root, separate from
-its ordered block-body roots. That root is an inline root like any other: it
-parses its content as its owner closes, and completes its tree in one pass. Destruction uses the same iterative ownership
-walk. Public models expose only DefinitionList, Definition, the term array and
+its ordered block-body roots. That root is an inline root like any other: its
+owner closes with the blocks, and the inline stage, after the block stage, parses
+the root's content and completes its tree in one pass. Destruction uses the same
+iterative ownership walk. Public models expose only DefinitionList, Definition, the term array and
 arrays of body content; private body roots never become public Markup.
 
 Blank runs continue an open body only when the next line carries its indentation.
