@@ -732,6 +732,10 @@ counted or searched, and how far before its start they read. It records its
 - a line's trailing whitespace reaches the next line, because it is a hard
   break inside a paragraph and is trimmed at its end.
 
+The parse writes what each node read to the root's parse record, in the
+order it makes the nodes, and settles the record into each node's entry and
+reach when the root's parse ends.
+
 The parser reads the content from its start with the cursor over the old
 inline children: an unchanged node is taken whole when the live delimiter
 state agrees with the part its entry records, which holds no stack entry of
@@ -872,15 +876,22 @@ parse.
   holds no bracket. A kept root that continues its old root and equals it
   in its block's fields is that old node, which holds what its read gave.
   Any other kept root takes what the read of its old root gave: its tree,
-  its questions, and a heading's attributes and label. Delimiters
-  decide nesting only when a
-  closer pairs, and the language gives an inline node meaning from what
-  encloses it: an escaped space inside a word body, a Text outside a Link for
-  email autolinks, and runs of Text that become one. So an inline node is
-  complete when its root's parse ends, and the root completes its own tree
-  then, in one pass over that tree: consolidation, completion, email
-  autolinks, extents and ids. The root completes last, and the content of a
-  group it holds for its owner is published from where the owner starts.
+  its questions, and a heading's attributes and label.
+- **Inline nodes complete when they are reduced.** The parser keeps the
+  level of a root it has not reduced as a sequence of nodes and text pieces,
+  as the delimiter algorithm needs. A node is reduced when its closer pairs
+  or its bracket closes, and the root's top level when its parse ends. The
+  node takes the part of the sequence it encloses: the adjacent text pieces
+  in it become one Text, and every child is final then. The node numbers its
+  children, each measured from the one before it or from its own start, and
+  each child that continues an old node (5.9) and equals it is that old node.
+  The language gives a node meaning from what encloses it in two places: an
+  escaped space inside a word body, and an email address in a Text outside a
+  Link. A node reduced before what encloses it is known waits, and the node
+  that decides completes it: the word body that pairs, the bracket that
+  closes, or the root when its parse ends. The root completes last, and the
+  content of a group it holds for its owner is published from where the
+  owner starts.
 - **Absolute positions belong to the parse.** A node holds only its extent
   once it is complete. Everything that needs an absolute position after that
   (table geometry) records it when it is made.
@@ -894,10 +905,6 @@ A fresh parse is the block stage, the inline stage and the anchor stage.
 reads its block and the block's children, and a completion reads one inline
 root.
 
-For a root parsed against its old inline tree (5.6), taken inline nodes are
-already complete, and completion runs over the nodes the parse read and the
-Text before and after each read run, which consolidation may merge with them.
-
 ### 5.9 Identity matching and value deduplication
 
 A taken node is the old node (5.11), so it and its whole subtree keep their
@@ -908,8 +915,8 @@ old nodes of the relation it is in, in the coordinates of the new text
 API publishes whole documents, so no comparison of the old and new trees
 follows the parse.
 
-- Matching runs per owner relation between a new owner and the old node it
-  matched, starting from the two document roots. A definition's bodies are
+- Block matching runs per owner relation between a new owner and the old
+  node it matched, starting from the two document roots. A definition's bodies are
   each a relation of it, so the cursor (5.3) continues a body only from the
   old body at its place.
 - Each old node has an **anchor byte**: the first byte of its source range
@@ -941,16 +948,27 @@ follows the parse.
   - Bytes between the edits of a batch keep their own exact images, so nodes
     there match as if each edit were alone.
 - A matched node takes its old node's id as it completes; an unmatched one
-  takes a new id. Read children of an unmatched owner take new ids. A paragraph that moves
+  takes a new id. Read block children of an unmatched owner take new ids. A paragraph that moves
   into a new blockquote is read again, because its entry changed, and is a
   new node, as it is to every UI framework.
+
+An inline node matches within its root: it continues the earliest old node
+of the old root's content, not yet matched, whose kind is its own and whose
+anchor image lies in its source window. It decides this when it is reduced
+(5.8), a Text when the level it is in is reduced. Old nodes the cursor takes
+whole continue themselves and are no candidates. Without an old root the
+node continues nothing and takes a new id. The candidates are the old nodes
+the cursor descends into, in preorder, so their anchor images never
+decrease; each item of the parse's level notes where the candidates stood
+at its start, and a matched candidate is skipped from then on, so matching a
+root is linear in the old nodes the cursor reads.
 
 As a matched read node `N` completes, after its children, it is compared
 with its `O`: equal kind, equal scalars, equal extent, and every child
 relation holding the same objects. If they are equal, `N` is released and `O`
 is shared in its place.
 
-Each node decides its match from its owner's cursor. When a read node `N`
+Each block decides its match from its owner's cursor. When a read node `N`
 first needs its old node, as its first held node completes or as it
 completes, its owner's cursor proposes `T`: the first old sibling not yet
 passed whose kind is `N`'s and whose anchor image is at or after `N`'s start.
