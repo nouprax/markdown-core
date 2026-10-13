@@ -872,6 +872,7 @@ static void pair_scan(markdown_core_parser *parser, const markdown_core_pairing 
                       markdown_core_place window, markdown_core_node_kind kind, const markdown_core_node **found,
                       uint32_t *found_start) {
     *found = NULL;
+    *found_start = 0;
     while (*next < pair->end) {
         const markdown_core_node *old = markdown_core_stem_at(pair->stem, *next);
         const markdown_core_place source = source_place(old, *anchor);
