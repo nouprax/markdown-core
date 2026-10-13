@@ -7,16 +7,13 @@ only the completed document.
 
 ## Declaration order and inline ownership
 
-Block finalization registers headings, including headings in footnote
-definitions. A heading records its source start when it registers
-(`markdown_core_source_entry`), because a numbered node holds only its extent,
-and the collected headings are ordered by that start; no final tree search is
-needed. Each heading whose text is a writable label keeps
-that label, normalized, and declares it in the ordinary reference map, as each
-`Reference` declares its own. Reference parsing asks the map only whether a
-label is declared, so it needs no heading-specific case. The published
-document resolves a `reference` destination: to the first `Reference` that
-declares the label or, when none does, to the first heading.
+The inline stage reads the headings' content first, in tree order, including
+headings in footnote definitions. Each heading whose text is a writable label
+keeps that label, normalized, and declares it in the ordinary reference map,
+as each `Reference` declares its own. Reference parsing asks the map only
+whether a label is declared, so it needs no heading-specific case. The
+published document resolves a `reference` destination: to the first
+`Reference` that declares the label or, when none does, to the first heading.
 
 Each writable heading declares its label, duplicates included. Every
 declaration owns its label in the same allocation as its record.
@@ -27,19 +24,19 @@ attributes. Merely finding a syntactically valid tail is insufficient: a code
 span, formula, HTML token, or comment may own its opening brace. Conversely,
 brackets inside an attached attribute value are not part of the heading label.
 
-Each heading starts the ordinary inline parser. It can finish and declare its
-label without reference lookup until it encounters a live unescaped bracket.
-That bracket makes the authored label unwritable under the inherited reference
-label grammar. The parser retains that same inline state, including its
-cursor and delimiter state, and resumes it after all writable heading labels
-have been declared. There is no second inline recognizer, reparsed prefix,
-placeholder AST, or later replacement of literal Text with Links.
+Each heading reads its content once, with the ordinary inline parser. Its
+read can finish and declare its label without a reference lookup. A read that
+asks a reference key before every heading label is declared stops there: the
+question it asks comes from a live bracket, which makes the authored label
+unwritable under the inherited reference label grammar, so the heading
+declares nothing, and it is read with the other inline roots once every label
+is declared. There is no second inline recognizer, placeholder AST, or later
+replacement of literal Text with Links.
 
-A consumed directive with an owned label is also a suspension boundary: that
-label has live brackets and may contain references of its own. The inline state
-retains a field-completion event on its delimiter stack, including when the
-token ends the heading.
-A directive without a label does not suspend declaration.
+A consumed directive with an owned label makes the text unwritable too: that
+label has live brackets and may contain references of its own, and a question
+its read asks stops the heading's read the same way. A directive without a
+label leaves the text writable.
 
 Opaque tokens and attached attribute containers are consumed by their existing
 owners before this boundary is tested. On completion the same raw-label
@@ -47,8 +44,9 @@ validator used by explicit references rejects brackets even when they occurred
 inside an opaque token. For example, `# Title {k="[Later]"}` can declare
 `Title`, while `# Title [Later]` cannot declare a heading label and may itself
 contain a forward reference. A valid declaration cannot depend on a reference
-lookup. This is the invariant that permits one declaration pass and one
-continuation pass, without a fixed-point resolver or general task scheduler.
+lookup. This is the invariant that permits reading the headings first and the
+other roots after them, without a fixed-point resolver or general task
+scheduler.
 
 Ordinary blocks and owned inline fields then parse against the completed map.
 Each inline token's fields finish before the enclosing cursor advances. Fields

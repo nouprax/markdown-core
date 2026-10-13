@@ -841,10 +841,6 @@ static void unlink_facts(markdown_core_node *node, unsigned roles) {
 
 void markdown_core_registry_unlink(markdown_core_node *node) { unlink_facts(node, FACTS_ALL); }
 
-void markdown_core_registry_unlink_content(markdown_core_node *node) {
-    unlink_facts(node, FACTS_ALL & ~(1u << MARKDOWN_CORE_FACT_DECLARE));
-}
-
 bool markdown_core_registry_holds(const markdown_core_node *node, markdown_core_fact_role role) {
     for (const markdown_core_fact *fact = node->facts; fact; fact = fact->sibling) {
         if (fact->role == role) {
@@ -854,9 +850,9 @@ bool markdown_core_registry_holds(const markdown_core_node *node, markdown_core_
     return false;
 }
 
-void markdown_core_registry_take_lookups(markdown_core_node *from, markdown_core_node *to) {
+void markdown_core_registry_take_read(markdown_core_node *from, markdown_core_node *to) {
     for (markdown_core_fact **at = &from->facts, *fact; (fact = *at);) {
-        if (fact->role != MARKDOWN_CORE_FACT_LOOKUP) {
+        if (fact->role != MARKDOWN_CORE_FACT_LOOKUP && fact->role != MARKDOWN_CORE_FACT_DECLARE) {
             at = &fact->sibling;
             continue;
         }
@@ -864,6 +860,10 @@ void markdown_core_registry_take_lookups(markdown_core_node *from, markdown_core
         fact->node = to;
         fact->sibling = to->facts;
         to->facts = fact;
+        /* The node a declared key resolves to may be this one. */
+        if (fact->role == MARKDOWN_CORE_FACT_DECLARE) {
+            key_mark(fact->key);
+        }
     }
 }
 

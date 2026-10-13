@@ -702,6 +702,11 @@ markdown_core_node *markdown_core_node_pool_new(markdown_core_node_pool *pool, m
  * its children and fields and owns its own copy of everything else. NULL when
  * an allocation failed. */
 markdown_core_node *markdown_core_node_copy(markdown_core_node_pool *pool, const markdown_core_node *node);
+/* `node`, which keeps the content of the inline root `old` as it was, takes
+ * its own copy of what the read of that content gave `old`: a heading's
+ * attributes and label. False when an allocation failed. */
+bool markdown_core_node_take_read(markdown_core_node_pool *pool, markdown_core_node *node,
+                                  const markdown_core_node *old);
 /* `markdown_core_node_release` into a pool: the node slots and the slots of
  * the resources the nodes held last go back to it for reuse rather than
  * dropping their slabs. A NULL pool is the plain release. */

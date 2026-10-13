@@ -274,6 +274,12 @@ struct markdown_core_parser {
      * content is being parsed, which asks it every question its runs ask. */
     markdown_core_registry *registry;
     struct markdown_core_node *asker;
+    /* The key groups whose declarations are not final yet, one bit per
+     * group (registry.h): the inline stage reads the roots that declare in
+     * them first. A read that asks a key of one WAITS: it stops, and its root
+     * is read with the others. */
+    uint32_t unsettled;
+    bool waits;
     markdown_core_source_order source_order;
     /* The stack each inline root's completion borrows in turn, growing it
      * to what it needs (markdown_core_parser_walk_stack) and leaving it to
@@ -331,6 +337,8 @@ struct markdown_core_parser {
         markdown_core_place place;
         const struct markdown_core_node *old, *content;
         uint32_t old_start, anchor;
+        /* Whether the stage has read it. */
+        bool read;
     } *listed;
     size_t listed_count, listed_capacity;
     /* The content of the old inline roots the parse did not take, which

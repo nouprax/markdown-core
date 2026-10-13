@@ -1904,7 +1904,7 @@ void markdown_core_parser_release_frame(markdown_core_parser *parser, markdown_c
 
 /* THE INLINE PARSER'S OWN FIELD PARSE. A token that owns fields -- a
  * citation's affixes, a directive's label -- has them parsed by the parse
- * that made it, before it scans on (complete_inline_token in inlines.c), so
+ * that made it, before it scans on (markdown_core_inline_complete_token), so
  * that the token can be closed on what the fields turned out to hold. That
  * parse walks the drafts the field builds with an iterator of its own; an
  * inline root's content is not parsed this way but as the root's completion
@@ -2240,8 +2240,13 @@ static void S_complete_pass(markdown_core_parser *parser, markdown_core_inline_r
     if (!parser->error) {
         markdown_core_parse_root_inlines(parser, holder, root->old, root->anchor);
     }
+    /* A read that waits completes nothing: the questions it asked go with
+     * it, and the root is read again with the other roots. */
+    if (parser->waits) {
+        markdown_core_registry_unlink(root->node);
+    }
     pass->script_depth = 0;
-    if (!parser->error) {
+    if (!parser->error && !parser->waits) {
         push_complete_root(holder, pass);
     }
     while (pass->count && !parser->error) {

@@ -260,6 +260,12 @@ void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_c
                                         markdown_core_inline_state *inline_state);
 void markdown_core_inline_clear_inlines(markdown_core_inline_state *inline_state);
 bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_core_inline_state *inline_state);
+/* THE TOKENS OF A RUN, one at a time: the token read last completes the
+ * fields it holds, before the next is read (markdown_core_inline_parse_inline)
+ * or the run ends, which processes its delimiters and releases its state, and
+ * returns whether ordinary raw whitespace occurred. */
+void markdown_core_inline_complete_token(markdown_core_parser *parser, markdown_core_inline_state *inline_state);
+bool markdown_core_inline_end_inlines(markdown_core_parser *parser, markdown_core_inline_state *inline_state);
 markdown_core_draft *markdown_core_inline_match_delimiter(const markdown_core_element_instance *self,
                                                           markdown_core_inline_state *inline_state);
 int markdown_core_byte_set_has(const char *set, unsigned char character);

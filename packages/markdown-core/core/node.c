@@ -641,6 +641,21 @@ static int S_retain_field(markdown_core_node **slot, void *context) {
     return 1;
 }
 
+bool markdown_core_node_take_read(markdown_core_node_pool *pool, markdown_core_node *node,
+                                  const markdown_core_node *old) {
+    if (node->kind != MARKDOWN_CORE_NODE_HEADING) {
+        return true;
+    }
+    markdown_core_chunk *label = &node->as.heading->label;
+    if (label->len) {
+        markdown_core_node_pool_bytes_free(pool, label->data);
+    }
+    *label = old->as.heading->label;
+    markdown_core_attributes_free(&node->attributes);
+    node->attributes = (markdown_core_attributes){0};
+    return S_copy_label(pool, label) && markdown_core_attributes_copy(&node->attributes, &old->attributes);
+}
+
 markdown_core_node *markdown_core_node_copy(markdown_core_node_pool *pool, const markdown_core_node *node) {
     assert(node->kind != MARKDOWN_CORE_NODE_DOCUMENT && node->kind != MARKDOWN_CORE_NODE_METADATA);
     markdown_core_node *copy = markdown_core_node_pool_new(pool, (markdown_core_node_type)node->kind, node->element);

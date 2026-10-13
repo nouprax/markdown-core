@@ -1147,8 +1147,9 @@ static bool runs_alike(const markdown_core_runs *a, const markdown_core_runs *b)
  * inline tree is a function of its root's content, the source its runs read
  * it from, its holder's kind and whether each key it asks is defined. A root
  * whose content and runs, published, are those of the old root it reads
- * again keeps that root's inline tree whole, the questions that root asked
- * with their answers, and the orders of its content, which follow the
+ * again keeps that root's inline tree whole, what the read of it gave the
+ * old root -- the questions it asked with their answers, and a heading's
+ * attributes and label -- and the orders of its content, which follow the
  * root's own. Any other root is listed for the inline stage, which parses
  * its content. False when an allocation failed. */
 static bool keep_content(const complete_context *context, markdown_core_frame *frame, markdown_core_node *holder) {
@@ -1165,7 +1166,16 @@ static bool keep_content(const complete_context *context, markdown_core_frame *f
             return false;
         }
         holder->children = old->children ? markdown_core_stem_retain(old->children) : NULL;
-        markdown_core_registry_take_lookups((markdown_core_node *)old, node);
+        markdown_core_registry_take_read((markdown_core_node *)old, node);
+        if (!markdown_core_node_take_read(parser->pool, holder, old)) {
+            return false;
+        }
+        /* A heading's computed anchor is the old tree's: the anchor stage
+         * gives it its own. */
+        if (markdown_core_registry_holds(old, MARKDOWN_CORE_FACT_BASE)) {
+            markdown_core_chunk_free(&holder->attributes.anchor);
+            holder->attributes.anchor = (markdown_core_chunk){0};
+        }
         order_append(&content, &frame->orders);
         frame->orders = content;
         return true;
@@ -1177,7 +1187,7 @@ static bool keep_content(const complete_context *context, markdown_core_frame *f
     }
     parser->listed = listed;
     listed[parser->listed_count++] =
-        (struct markdown_core_listed_root){node, frame->place, frame->old, old, frame->old_start, anchor};
+        (struct markdown_core_listed_root){node, frame->place, frame->old, old, frame->old_start, anchor, false};
     frame->listed = true;
     return true;
 }
@@ -2211,30 +2221,38 @@ static const markdown_core_node *splice_old(markdown_core_parser *parser, const 
  * Its frame takes the reference to `node` the caller gives. It settles
  * alone, and its node takes the place of `replaces` unless it is
  * `replaces`. False, with the parse failed, when an allocation failed. */
-static bool parse_root(markdown_core_parser *parser, markdown_core_publication *publication, markdown_core_node *node,
-                       markdown_core_node *holder, markdown_core_place place, const markdown_core_node *old,
-                       uint32_t old_start, const markdown_core_node *content, uint32_t anchor,
-                       const markdown_core_node *replaces) {
+static bool place_root(markdown_core_parser *parser, const markdown_core_node *node, markdown_core_node *holder,
+                       markdown_core_place place) {
     markdown_core_node_pool *pool = parser->pool;
     markdown_core_runs *places =
         runs_places(pool, holder->runs, (uint32_t)((int64_t)place.start - node->where.extent.lead));
-    markdown_core_frame *frame = places ? markdown_core_parser_frame(parser, node, true) : NULL;
-    if (!frame) {
-        markdown_core_node_pool_bytes_free(pool, places);
-        markdown_core_node_pool_release(pool, node);
+    if (!places) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
     markdown_core_node_pool_bytes_free(pool, holder->runs);
     holder->runs = places;
     holder->content_map = (markdown_core_content_map){MARKDOWN_CORE_IDENTITY_MARK, 1, 0};
+    return true;
+}
+
+static bool parse_root(markdown_core_parser *parser, markdown_core_publication *publication, markdown_core_node *node,
+                       markdown_core_node *holder, markdown_core_place place, const markdown_core_node *old,
+                       uint32_t old_start, const markdown_core_node *content, uint32_t anchor,
+                       const markdown_core_node *replaces) {
+    markdown_core_node_pool *pool = parser->pool;
+    markdown_core_frame *frame = markdown_core_parser_frame(parser, node, true);
+    if (!frame) {
+        markdown_core_node_pool_release(pool, node);
+        return false;
+    }
     frame->decided = frame->identified = frame->numbered = true;
     frame->old = old;
     frame->old_start = old_start;
     frame->place = place;
-    if (!markdown_core_parser_complete_root(parser, frame, holder, place, content, anchor)) {
+    if (!markdown_core_parser_complete_root(parser, frame, holder, place, content, anchor) || parser->waits) {
         markdown_core_parser_release_frame(parser, frame);
-        return false;
+        return !parser->error;
     }
     markdown_core_settle_frame(parser, publication, frame);
     if (parser->error) {
@@ -2254,12 +2272,45 @@ static bool parse_root(markdown_core_parser *parser, markdown_core_publication *
     return true;
 }
 
+/* The key groups the read of `holder`'s content declares in. */
+static uint32_t content_declares(const markdown_core_parser *parser, const markdown_core_node *holder) {
+    const markdown_core_element_instance *structure = markdown_core_parser_kind(parser, holder)->structure;
+    return structure ? structure->element->content_declares : 0;
+}
+
+/* `listed` is parsed in place: true when its read was complete, false when
+ * it waits or failed. */
+static bool parse_listed(markdown_core_parser *parser, markdown_core_publication *publication,
+                         const struct markdown_core_listed_root *listed) {
+    parse_root(parser, publication, markdown_core_node_retain(listed->node),
+               markdown_core_node_content_holder(listed->node), listed->place, listed->old, listed->old_start,
+               listed->content, listed->anchor, listed->node);
+    const bool read = !parser->waits;
+    parser->waits = false;
+    return read && !parser->error;
+}
+
+/* THE INLINE STAGE (5.7) reads each listed root's content at the places its
+ * runs give. The roots whose read declares are read first, in tree order:
+ * the keys they declare in are final once they are. A read among them that
+ * asks such a key waits, and its root is read with the others. */
 bool markdown_core_parse_listed(markdown_core_parser *parser, markdown_core_publication *publication) {
-    for (size_t i = 0; i < parser->listed_count && !parser->error; i++) {
-        const struct markdown_core_listed_root listed = parser->listed[i];
-        parse_root(parser, publication, markdown_core_node_retain(listed.node),
-                   markdown_core_node_content_holder(listed.node), listed.place, listed.old, listed.old_start,
-                   listed.content, listed.anchor, listed.node);
+    struct markdown_core_listed_root *const listed = parser->listed;
+    const size_t count = parser->listed_count;
+    for (size_t i = 0; i < count && !parser->error; i++) {
+        markdown_core_node *const holder = markdown_core_node_content_holder(listed[i].node);
+        place_root(parser, listed[i].node, holder, listed[i].place);
+        parser->unsettled |= content_declares(parser, holder);
+    }
+    for (size_t i = 0; i < count && !parser->error; i++) {
+        listed[i].read = content_declares(parser, markdown_core_node_content_holder(listed[i].node)) &&
+                         parse_listed(parser, publication, &listed[i]);
+    }
+    parser->unsettled = 0;
+    for (size_t i = 0; i < count && !parser->error; i++) {
+        if (!listed[i].read) {
+            parse_listed(parser, publication, &listed[i]);
+        }
     }
     /* The old content the stage did not take leaves the registry. */
     if (!parser->error && !markdown_core_registry_retire_content(parser->registry, parser->old_content.stems,
@@ -2307,11 +2358,7 @@ bool markdown_core_parse_again(markdown_core_parser *parser, markdown_core_publi
      * questions it asked, the anchors its text writes and the base it
      * projects to, with the anchor a heading of the old tree took from it;
      * a copy takes the rest, and the order. */
-    if (!found.own && markdown_core_registry_holds(root, MARKDOWN_CORE_FACT_BASE)) {
-        markdown_core_chunk_free(&again->attributes.anchor);
-        again->attributes.anchor = (markdown_core_chunk){0};
-    }
-    markdown_core_registry_unlink_content((markdown_core_node *)root);
+    markdown_core_registry_unlink((markdown_core_node *)root);
     if (!found.own && !markdown_core_registry_move(parser->registry, (markdown_core_node *)root, again)) {
         markdown_core_node_pool_release(pool, again);
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -2339,6 +2386,13 @@ bool markdown_core_parse_again(markdown_core_parser *parser, markdown_core_publi
     }
     const bool read = old && holder == again && old->kind == again->kind;
     const markdown_core_place place = {start, start + root->where.extent.span};
+    if (!place_root(parser, again, holder, place)) {
+        if (!found.own) {
+            markdown_core_node_pool_release(pool, again);
+        }
+        markdown_core_stem_release(pool, content);
+        return false;
+    }
     const bool parsed = parse_root(parser, publication, found.own ? markdown_core_node_retain(again) : again, holder,
                                    place, old, old_start, read ? old : NULL,
                                    read ? (uint32_t)((int64_t)old_start - old->where.extent.lead) : 0, root);

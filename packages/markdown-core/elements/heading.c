@@ -405,76 +405,76 @@ static bufsize_t heading_text(markdown_core_attribute_parser *attributes, const 
     return -1;
 }
 
-/* A HEADING CLOSES on its text (5.7, 5.8). Its text is read up to its
- * trailing attribute container with no key defined: no lookup is
- * recorded, and the parse is dropped. When the read reaches the container
- * at a token's end, the heading takes the attributes it writes, and its
- * content ends where its text does; else the container is text, and only
- * an ATX heading's closing sequence is left out. When the read meets no
- * bracket a later parse could resolve, and no field, the text is writable
- * as a reference label, and the heading declares it, normalized: an
- * occurrence naming it resolves to the heading when no Reference declares
- * it. No definition changes any of this, which is why it is read before
- * the inline stage parses the content. */
-static void finalize_heading(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                             markdown_core_frame *frame) {
+/* A HEADING READS ITS TEXT (5.7, 5.8), once, in the inline stage, with the
+ * tokens of its content. When the read reaches the attribute container its
+ * text ends with at a token's end, the heading takes the attributes it
+ * writes, and its tree ends where its text does; else the container is
+ * text, and only an ATX heading's closing sequence is left out. When the
+ * read meets no bracket a later parse could resolve, and no field, the text
+ * is writable as a reference label, and the heading declares it,
+ * normalized: an occurrence naming it resolves to the heading when no
+ * Reference declares it. A heading that asks a reference key before every
+ * heading has declared waits (parser.h, `unsettled`): its text holds a
+ * bracket, so it declares nothing. */
+static void read_heading(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                         markdown_core_inline_state *inline_state) {
     (void)self;
-    markdown_core_node *node = frame->node;
-    markdown_core_draft *builder = markdown_core_parser_draft(parser, node, false);
-    if (!builder) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return;
-    }
-    markdown_core_inline_state inline_state;
-    markdown_core_inline_start_inlines(parser, builder, &inline_state);
+    markdown_core_node *node = inline_state->owner->node;
     markdown_core_attribute_parser attributes = {
-        .data = inline_state.input.data, .length = inline_state.input.len, .scratch = &parser->attribute_scratch};
+        .data = inline_state->input.data, .length = inline_state->input.len, .scratch = &parser->attribute_scratch};
     bufsize_t end;
-    const bufsize_t start = heading_text(&attributes, &inline_state.input, node->as.heading->setext, &end);
+    const bufsize_t start = heading_text(&attributes, &inline_state->input, node->as.heading->setext, &end);
     if (start >= 0) {
-        inline_state.text_end = end;
+        inline_state->text_end = end;
     } else {
-        inline_state.input.len = end;
+        inline_state->input.len = end;
     }
+    markdown_core_attributes_free(&node->attributes);
+    node->attributes = (markdown_core_attributes){0};
     bool writable = true, claimed = false;
-    while (!parser->error && !inline_state.error && !attributes.oom) {
-        if (inline_state.pos == inline_state.text_end) {
+    for (;;) {
+        markdown_core_inline_complete_token(parser, inline_state);
+        if (parser->error || inline_state->error || parser->waits) {
+            break;
+        }
+        if (inline_state->pos == inline_state->text_end) {
             bufsize_t past;
             claimed = markdown_core_attributes_parse(&attributes, start, &node->attributes, &past);
             break;
         }
-        unsigned char c = markdown_core_inline_peek_char(&inline_state);
+        unsigned char c = markdown_core_inline_peek_char(inline_state);
         /* Attribute ownership and opaque tokens are decided by the same
          * cursor as every inline. A live bracket or a field makes the text
          * unwritable as a reference label. */
-        if ((inline_state.last_delim && inline_state.last_delim->kind == DELIMITER_FIELD) ||
-            (inline_state.pos < inline_state.input.len && inline_state.pos >= inline_state.opaque_end &&
+        if ((inline_state->last_delim && inline_state->last_delim->kind == DELIMITER_FIELD) ||
+            (inline_state->pos < inline_state->input.len && inline_state->pos >= inline_state->opaque_end &&
              (c == '[' || c == ']' ||
-              ((c == '!' || c == '^') && markdown_core_inline_peek_char_n(&inline_state, 1) == '[')))) {
+              ((c == '!' || c == '^') && markdown_core_inline_peek_char_n(inline_state, 1) == '[')))) {
             writable = false;
-            if (start < 0) {
-                break;
-            }
         }
-        if (markdown_core_inline_is_eof(&inline_state) || !markdown_core_inline_parse_inline(parser, &inline_state)) {
+        if (markdown_core_inline_is_eof(inline_state) || !markdown_core_inline_parse_inline(parser, inline_state)) {
             break;
         }
     }
     if (attributes.oom) {
-        inline_state.error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
     }
-    const bufsize_t length = claimed ? end : start >= 0 ? inline_state.input.len : end;
     markdown_core_attribute_parser_free(&attributes);
-    markdown_core_inline_clear_inlines(&inline_state);
-    markdown_core_drafts_clear(&parser->drafts, parser->pool);
-    if (parser->error) {
+    if (parser->error || inline_state->error || parser->waits) {
         return;
     }
-    markdown_core_strbuf_truncate(&node->content, length);
-    markdown_core_chunk label = {node->content.ptr, length, 0};
+    markdown_core_chunk *declared = &node->as.heading->label;
+    if (declared->len) {
+        markdown_core_node_pool_bytes_free(parser->pool, declared->data);
+    }
+    *declared = (markdown_core_chunk){0};
+    const markdown_core_chunk label = {inline_state->input.data,
+                                       claimed      ? end
+                                       : start >= 0 ? inline_state->input.len
+                                                    : end,
+                                       0};
     if (writable && label.len > 0 && label.len <= MAX_LINK_LABEL_LENGTH &&
         markdown_core_inline_reference_label_length(label.data, label.len) == label.len) {
-        markdown_core_chunk *declared = &node->as.heading->label;
         if (!markdown_core_parser_normalize_label(parser, &label, declared)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         } else {
@@ -568,7 +568,8 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING = {
     .last_block_matches = continue_heading,
     .content_mode = MARKDOWN_CORE_CONTENT_PROSE,
     .inline_content = true,
-    .finalize_block = finalize_heading,
+    .read_content = read_heading,
+    .content_declares = 1u << MARKDOWN_CORE_KEY_REFERENCE,
     .blank_opaque = true,
     .state_size = sizeof(markdown_core_heading_state),
 };

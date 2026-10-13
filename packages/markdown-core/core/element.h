@@ -202,6 +202,16 @@ struct markdown_core_element {
     bool (*ends_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_frame *,
                        markdown_core_chunk *);
     void (*finalize_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_frame *);
+    /* A block whose inline content is read in its own way: the hook reads
+     * the tokens of `inline_state`, the run of its content, one at a time
+     * (markdown_core_inline_complete_token, markdown_core_inline_parse_inline)
+     * and decides what its text gives the block -- a heading's attributes
+     * and label (docs/plans/2026-09-29-incremental-parsing.md, 5.8). NULL
+     * reads every token. A read that waits (parser.h, `unsettled`) stops. */
+    void (*read_content)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_inline_state *);
+    /* The key groups the read of the block's content declares in, one bit
+     * per group (registry.h): the inline stage reads these roots first. */
+    uint32_t content_declares;
 
     bool (*scan_block_start)(const markdown_core_element_instance *, markdown_core_parser *,
                              struct markdown_core_block_start_context *, struct markdown_core_block_start *);

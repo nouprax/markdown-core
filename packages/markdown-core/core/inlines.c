@@ -471,7 +471,7 @@ static void reduce_delimiter_range(markdown_core_inline_state *inline_state, del
 /* A token's owned fields finish before scanning its successor, preserving
  * reference occurrence order. Heading declaration can suspend with this
  * event on the same stack and resume after its symbol table is complete. */
-static void complete_inline_token(markdown_core_parser *parser, markdown_core_inline_state *inline_state) {
+void markdown_core_inline_complete_token(markdown_core_parser *parser, markdown_core_inline_state *inline_state) {
     delimiter *entry = inline_state->last_delim;
     if (!entry || entry->kind != DELIMITER_FIELD) {
         return;
@@ -936,7 +936,7 @@ static int S_attach_token_field(markdown_core_node **slot, void *context) {
 /* A TOKEN JOINS THE CONTENT BEING BUILT: its draft holds it, each field root
  * it holds is built with it, and a token with fields waits on the stack for
  * their parse, which comes before the next token is read
- * (complete_inline_token). */
+ * (markdown_core_inline_complete_token). */
 markdown_core_draft *markdown_core_inline_state_append(markdown_core_inline_state *inline_state,
                                                        markdown_core_node *token) {
     markdown_core_parser *parser = inline_state->owner_parser;
@@ -1441,9 +1441,10 @@ const markdown_core_key *markdown_core_inline_ask(markdown_core_inline_state *in
     /* The question is the root's: a later parse asks it again, so no parse
      * takes the token that asked it whole. */
     markdown_core_inline_outside(inline_state);
-    /* A read that no root makes -- a heading's close reading its text --
-     * finds no key defined, and records nothing. */
-    if (!parser->asker) {
+    /* A key whose declarations are not final has no answer yet: the read
+     * waits, and records nothing. */
+    if (parser->unsettled & (1u << group)) {
+        parser->waits = true;
         return NULL;
     }
     const unsigned char *bytes = label->data;
@@ -1533,12 +1534,16 @@ void markdown_core_inline_clear_inlines(markdown_core_inline_state *inline_state
 
 bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_core_inline_state *inline_state) {
     while (!parser->error && !inline_state->error) {
-        complete_inline_token(parser, inline_state);
+        markdown_core_inline_complete_token(parser, inline_state);
         if (parser->error || inline_state->error || markdown_core_inline_is_eof(inline_state) ||
             !markdown_core_inline_parse_inline(parser, inline_state)) {
             break;
         }
     }
+    return markdown_core_inline_end_inlines(parser, inline_state);
+}
+
+bool markdown_core_inline_end_inlines(markdown_core_parser *parser, markdown_core_inline_state *inline_state) {
     if (!parser->error && !inline_state->error) {
         const markdown_core_element_instance *const *owners =
             parser->dialect->inline_hooks[MARKDOWN_CORE_INLINE_HOOK_FINISH];
@@ -1569,7 +1574,15 @@ void markdown_core_parse_root_inlines(markdown_core_parser *parser, markdown_cor
     if (old && !inline_state.error) {
         S_cursor_open(&inline_state, old, anchor);
     }
-    markdown_core_inline_finish_inlines(parser, &inline_state);
+    /* A holder that reads its own content -- a heading, which ends its text
+     * before its attributes -- reads it with the same tokens. */
+    const markdown_core_element_instance *structure = markdown_core_parser_kind(parser, holder->node)->structure;
+    if (structure && structure->element->read_content) {
+        structure->element->read_content(structure, parser, &inline_state);
+        markdown_core_inline_end_inlines(parser, &inline_state);
+    } else {
+        markdown_core_inline_finish_inlines(parser, &inline_state);
+    }
 }
 
 void markdown_core_inline_state_set_opaque_body_end(markdown_core_inline_state *inline_state, int end) {

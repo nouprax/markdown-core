@@ -216,15 +216,12 @@ void markdown_core_registry_unlink(struct markdown_core_node *node);
  * in its roster: its first declaring fact in tree order, a Reference before
  * a heading's target. False when a roster could not grow. */
 bool markdown_core_registry_resolve(markdown_core_registry *registry);
-/* Every fact of `node` its inline content gives -- the questions the
- * inline root asked and the anchors its text writes -- leaves its key,
- * which is marked; the definitions its block declares stay. */
-void markdown_core_registry_unlink_content(struct markdown_core_node *node);
 /* Whether `node` holds a fact of `role`. */
 bool markdown_core_registry_holds(const struct markdown_core_node *node, markdown_core_fact_role role);
-/* `to`, which reads the content of the inline root `from` as it was (plan
- * 5.6), takes the questions `from` asked, with their answers. */
-void markdown_core_registry_take_lookups(struct markdown_core_node *from, struct markdown_core_node *to);
+/* `to`, which keeps the content of the inline root `from` as it was (plan
+ * 5.6), takes what the read of that content gave `from`: the questions it
+ * asked, with their answers, and the label a heading's text declares. */
+void markdown_core_registry_take_read(struct markdown_core_node *from, struct markdown_core_node *to);
 /* `to` takes the facts and the order of `from`, the node a parse made equal
  * to it or a copy of it, and drops its own; its node takes `from`'s place in
  * the rosters, and the keys of the facts are marked. False when a roster

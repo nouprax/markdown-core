@@ -798,12 +798,12 @@ and the facts of its content are labeled after it when the inline stage
 parses it.
 
 **One edit runs three stages**, in the order the language fixes. Block
-structure reads no definition. Definitions come only from blocks: a
-`Reference` from the paragraph that held it, a `Footnote` or `Specimen`
-block, and a heading's label from its text before any bracket. An inline
-tree reads whether each key it asks is defined, and anchors read the
-headings' inline trees. cmark, micromark and markdown-it parse in the same
-order.
+structure reads no definition. Definitions come from blocks and from
+headings' text: a `Reference` from the paragraph that held it, a `Footnote`
+or `Specimen` block, and a heading's label from its text when the text holds
+no bracket. An inline tree reads whether each key it asks is defined, and
+anchors read the headings' inline trees. cmark, micromark and markdown-it
+parse in the same order.
 
 - **Blocks.** The parse visits the document in tree order, reading some
   nodes and taking others (5.3). It declares the facts of the blocks it
@@ -813,10 +813,14 @@ order.
   not take remove their facts and mark their keys, but for the inline
   content of old roots, which the inline stage may take. These are exactly
   the nodes the parse read again, so this costs what the parse read. The
-  definitions of every key are final then.
+  definitions of every key a block declares are final then.
 - **Inlines.** Each listed root is parsed once, in place, against the
-  content of its old root (5.6). Its lookups are answered from the final
-  registry and join the reverse index of each key asked. The old inline
+  content of its old root (5.6). The listed headings are parsed first, in
+  tree order: a heading's text declares its label, so the reference keys are
+  final once they are read. A heading that asks a reference key holds a
+  bracket and declares nothing; its parse stops at the question, and it is
+  parsed with the other roots. Every lookup is answered from the final
+  registry and joins the reverse index of the key asked. The old inline
   nodes the stage did not take then remove their facts. Then each marked key whose answer, whether it is defined, differs
   from the answer a root on its reverse index was given has that root parsed
   again by the same algorithm: in place when it is the new tree's own, and
@@ -861,10 +865,13 @@ parse.
   a table's caption, a directive's label) is an inline root. A block
   completes when it closes, with the rest of what it holds; a root whose
   content changed is completed by the inline stage (5.7), which parses its
-  content, completes its tree and numbers it. A heading's close reads its
-  text with no key defined: the attributes its text ends with, which its
-  content then leaves out, and the label it declares when its text holds no
-  bracket. Delimiters decide nesting only when a
+  content, completes its tree and numbers it. A heading's content is read
+  once, there: the read takes the attributes the text ends with when it
+  reaches them at a token's end, and the tree then ends before them; the
+  heading declares its text, normalized, as a reference label when the text
+  holds no bracket. A kept root takes what the read of its old root gave:
+  its tree, its questions, and a heading's attributes and label. Delimiters
+  decide nesting only when a
   closer pairs, and the language gives an inline node meaning from what
   encloses it: an escaped space inside a word body, a Text outside a Link for
   email autolinks, and runs of Text that become one. So an inline node is
