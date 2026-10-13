@@ -127,6 +127,27 @@ static void decide_frame(const markdown_core_element_instance *self, markdown_co
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
 }
+/* An inline root's parse begins: the root decides what it continues, and
+ * the old nodes its content may continue are offered from the start. */
+static void open_root(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                      markdown_core_inline_root *root) {
+    if (!markdown_core_open_root(parser, &((document_state *)self->state)->publication, root)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+}
+/* The root's parse takes an old node whole: its draft continues it. */
+static void take_old(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                     markdown_core_draft *draft) {
+    if (!markdown_core_take_old(parser, &((document_state *)self->state)->publication, draft)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+}
+/* A draft that continued an old node goes: the old node may be continued
+ * again. */
+static void forget_draft(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                         markdown_core_draft *draft) {
+    markdown_core_forget_draft(&((document_state *)self->state)->publication, draft);
+}
 /* A node of an inline root's content is complete: it numbers the nodes it
  * holds, and the headings note the explicit anchors among them. */
 static void complete_draft(const markdown_core_element_instance *self, markdown_core_parser *parser,
@@ -187,5 +208,8 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
     .complete_node = complete_node,
     .number_children = number_children,
     .decide_frame = decide_frame,
+    .open_root = open_root,
     .complete_draft = complete_draft,
+    .take_old = take_old,
+    .forget_draft = forget_draft,
 };

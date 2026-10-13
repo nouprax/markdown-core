@@ -68,6 +68,7 @@ static markdown_core_draft *S_append_link(markdown_core_inline_state *inline_sta
     if (text && !markdown_core_inline_attach(inline_state->owner_parser, draft, text, NULL)) {
         return NULL;
     }
+    markdown_core_inline_reduce(inline_state->owner_parser, inline_state, draft);
     return draft;
 }
 
@@ -793,15 +794,11 @@ static markdown_core_complete_result link_text_addresses(markdown_core_parser *p
                 markdown_core_parser_release_node(parser, link_node);
                 break;
             }
-            markdown_core_draft *before = markdown_core_inline_attach(parser, draft->owner, prefix, draft);
-            if (!before) {
+            if (!markdown_core_inline_attach(parser, draft->owner, prefix, draft)) {
                 markdown_core_parser_release_node(parser, link_text);
                 markdown_core_parser_release_node(parser, link_node);
                 break;
             }
-            /* The pass has left the place it is inserted at: it completes
-             * here, before the link that follows it. */
-            markdown_core_inline_complete(parser, before);
         }
         markdown_core_draft *link = markdown_core_inline_attach(parser, draft->owner, link_node, draft);
         if (!link) {
@@ -811,9 +808,9 @@ static markdown_core_complete_result link_text_addresses(markdown_core_parser *p
         if (!markdown_core_inline_attach(parser, link, link_text, NULL)) {
             break;
         }
-        /* The pass has left the place it is inserted at: the link completes
-         * here. */
-        markdown_core_inline_complete(parser, link);
+        /* The link lies before the Text being completed, in its context: it
+         * completes here. */
+        markdown_core_inline_reduce(parser, NULL, link);
         start = post_start;
         remaining = source.len - start;
         offset = 0;
@@ -840,34 +837,15 @@ static markdown_core_complete_result link_text_addresses(markdown_core_parser *p
     return MARKDOWN_CORE_COMPLETE_CONTINUE;
 }
 
-/* The email scan is a completion STEP: it is asked, from inside an inline
- * root's completion, at a Text's EXIT (the kind it acts on) and at a Link's
- * ENTER and EXIT (the kind whose extent it tracks). The Link events set and
- * clear the per-root state word -- a Text inside a Link is never scanned, an
- * address there is already a link's text -- and a Text's EXIT outside a Link
- * is scanned. The pass has already consolidated that Text with the siblings
- * that followed it when this is asked, so the scan sees the whole run, and
- * the EXIT's lookahead already names the following survivor, so the splits
- * inserted before the Text are never visited, the links among them complete
- * as they are inserted, and the Text itself may be freed. */
-static markdown_core_complete_result complete_step(const markdown_core_element_instance *self,
-                                                   markdown_core_parser *parser, markdown_core_draft *draft,
-                                                   markdown_core_event_type event, int is_root, void **state) {
+/* The email scan completes a Text (markdown-core-element-api.h): an
+ * address in a Text no Link encloses is a link. The Text holds its whole run
+ * when it is asked, the links it splits off lie before it, and it goes when
+ * nothing is left after its last address. */
+static markdown_core_complete_result complete_text(const markdown_core_element_instance *self,
+                                                   markdown_core_parser *parser, markdown_core_draft *text) {
     (void)self;
-    (void)is_root;
-    if (draft->node->kind == MARKDOWN_CORE_NODE_LINK) {
-        *state = event == MARKDOWN_CORE_EVENT_ENTER ? draft : NULL;
-        return MARKDOWN_CORE_COMPLETE_CONTINUE;
-    }
-    assert(event == MARKDOWN_CORE_EVENT_EXIT);
-    if (*state) {
-        return MARKDOWN_CORE_COMPLETE_CONTINUE;
-    }
-    return link_text_addresses(parser, draft);
+    return link_text_addresses(parser, text);
 }
-
-static const markdown_core_node_type AUTOLINK_TEXT_KINDS[] = {MARKDOWN_CORE_NODE_TEXT, MARKDOWN_CORE_NODE_NONE};
-static const markdown_core_node_type AUTOLINK_SCOPE_KINDS[] = {MARKDOWN_CORE_NODE_LINK, MARKDOWN_CORE_NODE_NONE};
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_AUTOLINK = {
     .peers = AUTOLINK_PEERS,
@@ -875,13 +853,8 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_AUTOLINK = {
     .state_size = sizeof(markdown_core_autolink_work),
     .run_state_size = sizeof(autolink_run),
     .match_inline = match,
-    .complete_step = complete_step,
-    /* The step rewrites a Text -- the kind it acts on and the kind it is asked
-     * at are the same -- and reads a Link's ENTER and EXIT to know when a
-     * Text is inside one. */
-    .complete_acts_on_kinds = AUTOLINK_TEXT_KINDS,
-    .complete_exit_kinds = AUTOLINK_TEXT_KINDS,
-    .complete_scope_kinds = AUTOLINK_SCOPE_KINDS,
+    .complete_text = complete_text,
+    .complete_text_outside = MARKDOWN_CORE_NODE_LINK,
     .terminates_text = "<:w",
     .dispatch = "<:w",
 };

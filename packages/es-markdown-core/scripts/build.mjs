@@ -10,7 +10,6 @@ const core = [
     "alloc.c",
     "slab.c",
     "node.c",
-    "iterator.c",
     "dialect.c",
     "blocks.c",
     "inlines.c",

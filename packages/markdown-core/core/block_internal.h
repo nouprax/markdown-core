@@ -9,7 +9,6 @@
 #include "markdown_core_ctype.h"
 #include "utf8.h"
 #include "houdini.h"
-#include "iterator.h"
 #include "inlines.h"
 #include "element.h"
 #define CODE_INDENT 4

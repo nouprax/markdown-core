@@ -27,7 +27,6 @@
 #include "node.h"
 #include "buffer.h"
 #include "parser.h"
-#include "iterator.h"
 #include "element.h"
 #include "markdown-core-elements.h"
 #include "document.h"
@@ -264,48 +263,6 @@ static markdown_core_node *owner_in(const markdown_core_node *root, const markdo
     }
     free(stack);
     return owner;
-}
-
-/* A BUILDER OVER A BUILT TREE: a draft for every node below `root`, taken
- * from `area`, linked as the stems hold them and holding no reference
- * (node.h, markdown_core_draft), so a test can drive the builder walk
- * (markdown_core_iter) over the shape a parse produced. Built on an explicit
- * stack; NULL when an allocation failed. Clearing and disposing of `area`
- * frees it and leaves every node as it was. */
-static markdown_core_draft *draft_mirror(markdown_core_drafts *area, markdown_core_node *root) {
-    markdown_core_draft *top = markdown_core_drafts_take(area, root, false);
-    size_t capacity = 64, count = 0;
-    markdown_core_draft **stack = malloc(capacity * sizeof(*stack));
-    bool failed = !top || !stack;
-    if (!failed) {
-        stack[count++] = top;
-    }
-    while (count && !failed) {
-        markdown_core_draft *current = stack[--count];
-        size_t total = child_count(current->node);
-        if (count + total > capacity) {
-            capacity = (count + total) * 2;
-            markdown_core_draft **more = realloc(stack, capacity * sizeof(*stack));
-            if (!more) {
-                failed = true;
-                break;
-            }
-            stack = more;
-        }
-        markdown_core_stem_walk walk;
-        markdown_core_stem_walk_begin(&walk, current->node->children, 0, total);
-        for (markdown_core_node *item; (item = markdown_core_stem_walk_next(&walk));) {
-            markdown_core_draft *draft = markdown_core_drafts_take(area, item, false);
-            if (!draft) {
-                failed = true;
-                break;
-            }
-            markdown_core_draft_attach(current, draft, NULL);
-            stack[count++] = draft;
-        }
-    }
-    free(stack);
-    return failed ? NULL : top;
 }
 
 /* Gives back every draft `area` holds, and its chunks. */
@@ -1144,7 +1101,7 @@ static void directive_element_accessors(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 
     /* A block directive has two independent node-valued relations: `label`
-     * and block content. The ordinary cmark iterator follows only the content
+     * and block content. A walk of the children follows only the content
      * child tree; callers can start a separate walk at the label field root. */
     doc = parse(":::note[Title]\nBody\n:::\n");
     directive = child_at(doc, 0);
@@ -1160,42 +1117,30 @@ static void directive_element_accessors(test_batch_runner *runner) {
     {
         markdown_core_node *expected[] = {directive, paragraph, child_at(paragraph, 0)};
         size_t entered = 0;
-        markdown_core_drafts area = {0};
-        markdown_core_draft *mirror = draft_mirror(&area, directive);
-        markdown_core_iter iter;
-        markdown_core_event_type event;
-        markdown_core_iter_init(&iter, mirror);
-        while ((event = markdown_core_iter_step(&iter)) != MARKDOWN_CORE_EVENT_DONE) {
-            if (event == MARKDOWN_CORE_EVENT_ENTER) {
-                OK(runner,
-                   entered < sizeof(expected) / sizeof(expected[0]) && iter.cur.draft->node == expected[entered],
-                   "iterator preserves structural child order");
-                entered++;
-            }
+        tree_walk walk;
+        tree_walk_start(&walk, directive);
+        for (markdown_core_node *node; (node = tree_walk_next(&walk));) {
+            OK(runner, entered < sizeof(expected) / sizeof(expected[0]) && node == expected[entered],
+               "a walk of the children preserves structural child order");
+            entered++;
         }
+        tree_walk_end(&walk);
         INT_EQ(runner, (int)entered, (int)(sizeof(expected) / sizeof(expected[0])),
-               "iterator visits only directive content nodes");
-        drafts_drop(&area);
+               "a walk of the children visits only directive content nodes");
     }
     {
         markdown_core_node *expected[] = {label, child_at(label, 0)};
         size_t entered = 0;
-        markdown_core_drafts area = {0};
-        markdown_core_draft *mirror = draft_mirror(&area, label);
-        markdown_core_iter iter;
-        markdown_core_event_type event;
-        markdown_core_iter_init(&iter, mirror);
-        while ((event = markdown_core_iter_step(&iter)) != MARKDOWN_CORE_EVENT_DONE) {
-            if (event == MARKDOWN_CORE_EVENT_ENTER) {
-                OK(runner,
-                   entered < sizeof(expected) / sizeof(expected[0]) && iter.cur.draft->node == expected[entered],
-                   "a walk rooted at the label follows its own child tree");
-                entered++;
-            }
+        tree_walk walk;
+        tree_walk_start(&walk, label);
+        for (markdown_core_node *node; (node = tree_walk_next(&walk));) {
+            OK(runner, entered < sizeof(expected) / sizeof(expected[0]) && node == expected[entered],
+               "a walk rooted at the label follows its own child tree");
+            entered++;
         }
+        tree_walk_end(&walk);
         INT_EQ(runner, (int)entered, (int)(sizeof(expected) / sizeof(expected[0])),
-               "the label tree is independently iterable");
-        drafts_drop(&area);
+               "the label tree is walked on its own");
     }
     markdown_core_node_free(doc);
 
@@ -1381,74 +1326,6 @@ static void stem_joins_and_slices(test_batch_runner *runner) {
     }
     OK(runner, held, "every stem gone, each node is held only by the test again");
     free(nodes);
-}
-
-static void iterator(test_batch_runner *runner) {
-    markdown_core_node *doc = markdown_core_parse_document("> a *b*\n\nc", 10);
-    int parnodes = 0;
-    markdown_core_event_type ev_type;
-    markdown_core_drafts area = {0};
-    markdown_core_draft *mirror = draft_mirror(&area, doc);
-    markdown_core_iter iter;
-
-    markdown_core_iter_init(&iter, mirror);
-    while ((ev_type = markdown_core_iter_step(&iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *cur = iter.cur.draft->node;
-        if (cur->kind == MARKDOWN_CORE_NODE_PARAGRAPH && ev_type == MARKDOWN_CORE_EVENT_ENTER) {
-            parnodes += 1;
-        }
-    }
-    INT_EQ(runner, parnodes, 2, "iterate correctly counts paragraphs");
-
-    drafts_drop(&area);
-    markdown_core_node_free(doc);
-}
-
-static void iterator_delete(test_batch_runner *runner) {
-    static const char md[] = "a *b* c\n"
-                             "\n"
-                             "* item1\n"
-                             "* item2\n"
-                             "\n"
-                             "a `b` c\n"
-                             "\n"
-                             "* item1\n"
-                             "* item2\n";
-    markdown_core_node *doc = markdown_core_parse_document(md, sizeof(md) - 1);
-    markdown_core_drafts area = {0};
-    markdown_core_draft *mirror = draft_mirror(&area, doc);
-    markdown_core_iter iter;
-    markdown_core_event_type ev_type;
-
-    markdown_core_iter_init(&iter, mirror);
-    while ((ev_type = markdown_core_iter_step(&iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_draft *draft = iter.cur.draft;
-        markdown_core_node *node = draft->node;
-        // Release list, emph, and code drafts -- all at EXIT, which is Step
-        // 5's mutation rule. `CODE` was deleted at ENTER here until the event
-        // contract became total, and that was legal only because `S_is_leaf`
-        // suppressed `CODE`'s EXIT. A test that frees at ENTER is a test
-        // asserting the suppression list.
-        if (ev_type == MARKDOWN_CORE_EVENT_EXIT &&
-            (node->kind == MARKDOWN_CORE_NODE_LIST || node->kind == MARKDOWN_CORE_NODE_EMPHASIS ||
-             node->kind == MARKDOWN_CORE_NODE_CODE)) {
-            markdown_core_draft_unlink(draft);
-            markdown_core_draft_release(NULL, draft);
-        }
-    }
-
-    // Both lists are gone and each paragraph keeps only its text slots.
-    markdown_core_draft *first = mirror->first;
-    markdown_core_draft *second = first->next;
-    INT_EQ(runner, first->node->kind, MARKDOWN_CORE_NODE_PARAGRAPH, "first surviving node is a paragraph");
-    INT_EQ(runner, second->node->kind, MARKDOWN_CORE_NODE_PARAGRAPH, "second surviving node is a paragraph");
-    OK(runner, second->next == NULL, "deleted lists are unlinked");
-    LITERAL_EQ(runner, first->first->node, "a ", "first paragraph keeps leading text");
-    LITERAL_EQ(runner, first->first->next->node, " c", "first paragraph keeps trailing text after deleted emph");
-    LITERAL_EQ(runner, second->first->next->node, " c", "second paragraph keeps trailing text after deleted code");
-
-    drafts_drop(&area);
-    markdown_core_node_free(doc);
 }
 
 /* A detached frame under `owner` that holds a new node of `kind`. */
@@ -1944,103 +1821,6 @@ static void element_decline_yields_turn(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 }
 
-/* Step 5. The event contract is TOTAL: every node yields exactly one ENTER and
- * exactly one EXIT, in that order, with its descendants' events between them.
- *
- * Until Step 5 an internal `S_is_leaf` list of eight node types suppressed the
- * EXIT of a node that "cannot have children" -- a list, not a property, so a
- * `FOOTNOTE_REFERENCE` with no children got an EXIT and a `TEXT` with no
- * children did not, and every walk in the engine had to know which. Three did:
- * `consolidate_text_nodes`, the HTML-comment stripper `M0` deleted, and
- * `autolink`'s `postprocess`, and all three freed or spliced at ENTER because
- * the suppression made it safe. The input below contains one of every suppressed
- * kind. */
-static size_t total_nodes(markdown_core_node *node) {
-    size_t n = 0, capacity = 64, count = 0;
-    markdown_core_node **stack = malloc(capacity * sizeof(*stack));
-    if (!stack) {
-        return 0;
-    }
-    stack[count++] = node;
-    while (count) {
-        markdown_core_node *current = stack[--count];
-        size_t total = child_count(current);
-        n++;
-        if (count + total > capacity) {
-            capacity = (count + total) * 2;
-            markdown_core_node **more = realloc(stack, capacity * sizeof(*stack));
-            if (!more) {
-                break;
-            }
-            stack = more;
-        }
-        markdown_core_stem_walk walk;
-        markdown_core_stem_walk_begin(&walk, current->children, 0, total);
-        for (markdown_core_node *item; (item = markdown_core_stem_walk_next(&walk));) {
-            stack[count++] = item;
-        }
-    }
-    free(stack);
-    return n;
-}
-
-static void iterator_contract_is_total(test_batch_runner *runner) {
-    static const char md[] = "---\n"
-                             "\n"
-                             "<div>html block</div>\n"
-                             "\n"
-                             "    code block\n"
-                             "\n"
-                             "a `code` b <span>html</span> c\\\n"
-                             "d\n"
-                             "e\n";
-    markdown_core_node *doc = markdown_core_parse_document(md, sizeof(md) - 1);
-    markdown_core_drafts area = {0};
-    markdown_core_draft *mirror = draft_mirror(&area, doc);
-    markdown_core_iter iter;
-    markdown_core_node *stack[64];
-    size_t depth = 0, enters = 0, exits = 0, mismatched = 0, overflow = 0;
-    markdown_core_event_type ev;
-
-    markdown_core_iter_init(&iter, mirror);
-    while ((ev = markdown_core_iter_step(&iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *node = iter.cur.draft->node;
-        if (ev == MARKDOWN_CORE_EVENT_ENTER) {
-            enters += 1;
-            if (depth == sizeof(stack) / sizeof(stack[0])) {
-                overflow += 1;
-            } else {
-                stack[depth++] = node;
-            }
-        } else if (ev == MARKDOWN_CORE_EVENT_EXIT) {
-            exits += 1;
-            if (depth == 0 || stack[--depth] != node) {
-                mismatched += 1;
-            }
-        }
-    }
-
-    INT_EQ(runner, (int)enters, (int)total_nodes(doc), "every node is entered exactly once");
-    INT_EQ(runner, (int)exits, (int)enters, "every node is exited exactly once");
-    INT_EQ(runner, (int)mismatched, 0, "every EXIT closes the ENTER it belongs to");
-    INT_EQ(runner, (int)depth, 0, "the walk ends with nothing left open");
-    INT_EQ(runner, (int)overflow, 0, "the test's stack was deep enough");
-
-    drafts_drop(&area);
-    markdown_core_node_free(doc);
-    const markdown_core_node_type owned_types[] = {MARKDOWN_CORE_NODE_CITATION, MARKDOWN_CORE_NODE_FOOTNOTE,
-                                                   MARKDOWN_CORE_NODE_SPECIMEN, MARKDOWN_CORE_NODE_METADATA};
-    for (size_t i = 0; i < sizeof(owned_types) / sizeof(*owned_types); i++) {
-        markdown_core_drafts owned = {0};
-        markdown_core_draft *draft = markdown_core_drafts_take(&owned, markdown_core_node_new(owned_types[i]), true);
-        markdown_core_iter_init(&iter, draft);
-        INT_EQ(runner, markdown_core_iter_step(&iter), MARKDOWN_CORE_EVENT_ENTER, "empty owned node enters");
-        INT_EQ(runner, markdown_core_iter_step(&iter), MARKDOWN_CORE_EVENT_EXIT, "empty owned node exits");
-        INT_EQ(runner, markdown_core_iter_step(&iter), MARKDOWN_CORE_EVENT_DONE, "empty owned node terminates");
-        drafts_drop(&owned);
-    }
-}
-
 /* D33. `process_emphasis` used to choose its arm by the delimiter's BYTE:
  *
  *     if (element)                       ... else
@@ -2216,122 +1996,6 @@ static bool attach_precedence_observers(markdown_core_dialect_builder *builder, 
  * the byte set alone decides -- a gate that leans on a container kind is
  * checked for the case where that container is absent, which is the case that
  * loses documents. */
-static const markdown_core_node_type OBSERVER_ABSENT_KINDS[] = {MARKDOWN_CORE_NODE_CODE_BLOCK, MARKDOWN_CORE_NODE_NONE};
-static const markdown_core_node_type OBSERVER_PRESENT_KINDS[] = {MARKDOWN_CORE_NODE_TEXT, MARKDOWN_CORE_NODE_NONE};
-
-/* THE GATE SKIPS A STEP. A step declares the kinds it acts on apart
- * from the kinds it is asked at, because they differ for formula: it acts on
- * a Formula and is asked at the Paragraph that holds it. The gate reads the
- * former, so a document that produced none of them never asks the step at
- * all -- not at any of its paragraphs -- while a document that produced one
- * asks it at every event it was projected to. Counted, not timed: skipping
- * is invisible in the output. */
-static int step_asked[2];
-
-static markdown_core_complete_result count_step_absent(const markdown_core_element_instance *self,
-                                                       markdown_core_parser *parser, markdown_core_draft *node,
-                                                       markdown_core_event_type event, int is_root, void **state) {
-    (void)self;
-    (void)parser;
-    (void)node;
-    (void)event;
-    (void)is_root;
-    (void)state;
-    step_asked[0]++;
-    return MARKDOWN_CORE_COMPLETE_CONTINUE;
-}
-
-static markdown_core_complete_result count_step_present(const markdown_core_element_instance *self,
-                                                        markdown_core_parser *parser, markdown_core_draft *node,
-                                                        markdown_core_event_type event, int is_root, void **state) {
-    (void)self;
-    (void)parser;
-    (void)node;
-    (void)event;
-    (void)is_root;
-    (void)state;
-    step_asked[1]++;
-    return MARKDOWN_CORE_COMPLETE_CONTINUE;
-}
-
-static const markdown_core_node_type STEP_AT_PARAGRAPH[] = {MARKDOWN_CORE_NODE_PARAGRAPH, MARKDOWN_CORE_NODE_NONE};
-
-static bool attach_step_observers(markdown_core_dialect_builder *builder, void *context) {
-    /* Both steps are asked at a Paragraph's EXIT; one acts on a kind this
-     * document cannot contain, the other on the Text every paragraph holds. */
-    static const markdown_core_element absent = {.name = "step-absent-observer",
-                                                 .complete_step = count_step_absent,
-                                                 .complete_acts_on_kinds = OBSERVER_ABSENT_KINDS,
-                                                 .complete_exit_kinds = STEP_AT_PARAGRAPH};
-    static const markdown_core_element present = {.name = "step-present-observer",
-                                                  .complete_step = count_step_present,
-                                                  .complete_acts_on_kinds = OBSERVER_PRESENT_KINDS,
-                                                  .complete_exit_kinds = STEP_AT_PARAGRAPH};
-    (void)context;
-    return markdown_core_dialect_builder_attach(builder, &absent) &&
-           markdown_core_dialect_builder_attach(builder, &present);
-}
-
-static void complete_step_skips_absent_kinds(test_batch_runner *runner) {
-    static const char source[] = "just some prose\n\nand a second paragraph\n";
-    markdown_core_node *doc;
-
-    step_asked[0] = 0;
-    step_asked[1] = 0;
-    doc = markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_step_observers, NULL);
-    OK(runner, doc != NULL, "a document with observing completion steps parses");
-    INT_EQ(runner, step_asked[0], 0, "a step whose acted-on kinds never occurred is asked at no paragraph");
-    INT_EQ(runner, step_asked[1], 2, "a step whose acted-on kind occurred is asked at each paragraph's EXIT once");
-    markdown_core_node_free(doc);
-}
-
-/* THE GATE IS READ AT THE EVENT. Each inline root is parsed as its own
- * completion begins, so a kind the step acts on may first be made after the
- * first root completed; the gate opens when it is. A step asked at a
- * Paragraph's EXIT that acts on inline Code is asked at the paragraph that
- * holds the first Code and at every paragraph after it, and not at the
- * paragraphs before it -- where no Code existed and the step could have
- * found none. A scope kind's ENTER and EXIT are delivered whatever the gate
- * says, so the extent the step tracks is always in step with the tree. */
-static const markdown_core_node_type OBSERVER_LATE_KINDS[] = {MARKDOWN_CORE_NODE_CODE, MARKDOWN_CORE_NODE_NONE};
-static const markdown_core_node_type SCOPE_AT_LINK[] = {MARKDOWN_CORE_NODE_LINK, MARKDOWN_CORE_NODE_NONE};
-
-static bool attach_late_step_observers(markdown_core_dialect_builder *builder, void *context) {
-    static const markdown_core_element late = {.name = "step-late-observer",
-                                               .complete_step = count_step_absent,
-                                               .complete_acts_on_kinds = OBSERVER_LATE_KINDS,
-                                               .complete_exit_kinds = STEP_AT_PARAGRAPH};
-    static const markdown_core_element scoped = {.name = "step-scoped-observer",
-                                                 .complete_step = count_step_present,
-                                                 .complete_acts_on_kinds = OBSERVER_ABSENT_KINDS,
-                                                 .complete_scope_kinds = SCOPE_AT_LINK};
-    (void)context;
-    return markdown_core_dialect_builder_attach(builder, &late) &&
-           markdown_core_dialect_builder_attach(builder, &scoped);
-}
-
-static void complete_step_gate_opens_when_its_kind_is_made(test_batch_runner *runner) {
-    static const char source[] = "prose first\n\nthen `code` in [a link](u)\n\nand prose again\n";
-    markdown_core_node *doc;
-
-    step_asked[0] = 0;
-    step_asked[1] = 0;
-    doc = markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_late_step_observers, NULL);
-    OK(runner, doc != NULL, "a document whose acted-on kind appears in its second paragraph parses");
-    INT_EQ(
-        runner, step_asked[0], 2,
-        "a step acting on a kind first made by a later root's parse is asked from that paragraph's EXIT on: not at the "
-        "first paragraph, at the second and the third");
-    INT_EQ(runner, step_asked[1], 2,
-           "a step tracking a Link's extent receives the Link's ENTER and EXIT whatever its gate says");
-    markdown_core_node_free(doc);
-}
-
-/* A declared kind set is written with a macro, because a descriptor cannot call
- * a function, and the macro cannot tell a block kind from an inline one -- the
- * field it fills says which. So check every set the dialect declares against
- * the runtime helpers, which can: a Formula bit parked in `.blocks` would make
- * the step skip documents that do contain formulas. */
 typedef struct {
     size_t gated;
     size_t violations;
@@ -2429,75 +2093,6 @@ static bool begin_with_block_gate_sweep(markdown_core_dialect_builder *builder, 
     static markdown_core_element document;
     (void)context;
     return attach_document_owner(builder, &document, "block-gate-sweeper", sweep_block_gates);
-}
-
-typedef struct {
-    size_t declared;
-    size_t malformed;
-    size_t without_hook;
-} kind_set_sweep;
-
-static bool sweep_complete_kind_sets(markdown_core_dialect_builder *builder, void *context) {
-    kind_set_sweep *sweep = context;
-    size_t element_count;
-    const markdown_core_element *const *elements = markdown_core_dialect_builder_elements(builder, &element_count);
-
-    for (size_t i = 0; i < element_count; i++) {
-        const markdown_core_element *element = elements[i];
-        /* All of a step's lists -- the kinds it acts on, the kinds it is
-         * asked at and the kinds whose extent it tracks -- are declarations
-         * of kinds and obey the law. */
-        const markdown_core_node_type *lists[] = {element->complete_acts_on_kinds, element->complete_exit_kinds,
-                                                  element->complete_scope_kinds};
-        if (!element->complete_acts_on_kinds && !element->complete_exit_kinds && !element->complete_scope_kinds) {
-            continue;
-        }
-        sweep->declared++;
-        if (!element->complete_step) {
-            sweep->without_hook++;
-        }
-        for (size_t list = 0; list < sizeof(lists) / sizeof(*lists); list++) {
-            for (const markdown_core_node_type *kind = lists[list]; kind && *kind; kind++) {
-                /* Exactly one namespace must claim the kind. This is checkable
-                 * only because the declaration keeps the KIND: block and
-                 * inline values collide once masked -- masked 12 is a TableRow
-                 * and an Embedded alike -- so a bit set reconstructed from a
-                 * stored mask would agree with whichever namespace the reader
-                 * already assumed, and a Formula written where a block kind
-                 * belongs would pass. */
-                uint32_t as_block = markdown_core_node_block_kind_bit(*kind);
-                uint32_t as_inline = markdown_core_node_inline_kind_bit(*kind);
-                markdown_core_node_kind_set set = {0, 0};
-
-                if ((as_block == 0) == (as_inline == 0)) {
-                    sweep->malformed++;
-                    continue;
-                }
-                markdown_core_node_kind_set_add(&set, *kind);
-                if (set.blocks != as_block || set.inlines != as_inline) {
-                    sweep->malformed++;
-                }
-            }
-        }
-    }
-    return true;
-}
-
-/* A step declares the kinds it acts on, and the engine skips it when a
- * document produced none of them. A kind written into the wrong namespace
- * would skip the documents that DO feed the step, silently, so the
- * declarations are checked for well-formedness -- and separately, above, for
- * actually taking effect. */
-static void complete_kind_sets_are_well_formed(test_batch_runner *runner) {
-    kind_set_sweep sweep = {0, 0, 0};
-    static const char probe_source[] = "probe\n";
-    markdown_core_node *probe_doc = markdown_core_parse_document_with_setup(probe_source, sizeof(probe_source) - 1,
-                                                                            sweep_complete_kind_sets, &sweep);
-
-    OK(runner, sweep.declared > 0, "at least one completion step declares its kinds for this law to bind");
-    INT_EQ(runner, (int)sweep.without_hook, 0, "only a step declares the kinds it acts on");
-    INT_EQ(runner, (int)sweep.malformed, 0, "every declared completion kind belongs to exactly one namespace");
-    markdown_core_node_free(probe_doc);
 }
 
 static void block_gate_admits_every_opener(test_batch_runner *runner) {
@@ -5820,12 +5415,10 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
         markdown_core_draft_attach(built, block, NULL);
         markdown_core_draft_attach(block, leaf, NULL);
         const unsigned char *original = text->as.literal->data;
-        void *state = NULL;
         text_allocation_calls = 0;
-        /* The step as the finish walk asks it: at the Text's EXIT, outside a
-         * Link, with a fresh per-root state word. */
-        markdown_core_complete_result result = MARKDOWN_CORE_ELEMENT_AUTOLINK.complete_step(
-            &autolink_instance, &parser, leaf, MARKDOWN_CORE_EVENT_EXIT, 0, &state);
+        /* The step as a Text's completion asks it: outside a Link. */
+        markdown_core_complete_result result =
+            MARKDOWN_CORE_ELEMENT_AUTOLINK.complete_text(&autolink_instance, &parser, leaf);
         INT_EQ(runner, result, MARKDOWN_CORE_COMPLETE_CONTINUE, "a failed email scan leaves the Text in place");
         OK(runner, text->as.literal->data == original, "a failed email scan retains the original owned buffer");
         OK(runner, block->first == leaf && leaf->next == NULL && leaf->node == text,
@@ -10543,16 +10136,12 @@ static void absorbed_text_completes_before_observation(test_batch_runner *runner
     markdown_core_node_free(root);
 }
 
-/* A completion step that does nothing, for the refusal shapes below. */
-static markdown_core_complete_result no_op_finish_step(const markdown_core_element_instance *self,
-                                                       markdown_core_parser *parser, markdown_core_draft *draft,
-                                                       markdown_core_event_type event, int is_root, void **state) {
+/* A Text completion that does nothing, for the refusal shapes below. */
+static markdown_core_complete_result no_op_complete_text(const markdown_core_element_instance *self,
+                                                         markdown_core_parser *parser, markdown_core_draft *text) {
     (void)self;
     (void)parser;
-    (void)draft;
-    (void)event;
-    (void)is_root;
-    (void)state;
+    (void)text;
     return MARKDOWN_CORE_COMPLETE_CONTINUE;
 }
 
@@ -10561,37 +10150,14 @@ typedef struct {
     int attached;
 } attach_probe;
 
-static bool attach_overlapping_step(markdown_core_dialect_builder *builder, void *context) {
-    static const markdown_core_element overlapping = {.name = "step-exit-and-scope",
-                                                      .complete_step = no_op_finish_step,
-                                                      .complete_exit_kinds = STEP_AT_PARAGRAPH,
-                                                      .complete_scope_kinds = STEP_AT_PARAGRAPH};
-    attach_probe *probe = context;
-    markdown_core_dialect_builder_elements(builder, &probe->before);
-    probe->attached = markdown_core_dialect_builder_attach(builder, &overlapping);
-    markdown_core_dialect_builder_elements(builder, &probe->after);
-    return probe->attached != 0;
-}
-
-static bool attach_kindless_step(markdown_core_dialect_builder *builder, void *context) {
-    static const markdown_core_element kindless = {.name = "step-at-no-kind", .complete_step = no_op_finish_step};
-    attach_probe *probe = context;
-    markdown_core_dialect_builder_elements(builder, &probe->before);
-    probe->attached = markdown_core_dialect_builder_attach(builder, &kindless);
-    markdown_core_dialect_builder_elements(builder, &probe->after);
-    return probe->attached != 0;
-}
-
 /* An ordinal past MARKDOWN_CORE_NODE_KIND_COUNT: the shape of an extension
  * kind the dispatch table cannot index. */
-static const markdown_core_node_type STEP_AT_OUT_OF_TABLE_KIND[] = {
-    (markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_INLINE | (MARKDOWN_CORE_NODE_KIND_COUNT + 8)),
-    MARKDOWN_CORE_NODE_NONE};
-
 static bool attach_out_of_table_step(markdown_core_dialect_builder *builder, void *context) {
-    static const markdown_core_element outside = {.name = "step-outside-the-table",
-                                                  .complete_step = no_op_finish_step,
-                                                  .complete_exit_kinds = STEP_AT_OUT_OF_TABLE_KIND};
+    static const markdown_core_element outside = {
+        .name = "text-outside-the-table",
+        .complete_text = no_op_complete_text,
+        .complete_text_outside =
+            (markdown_core_node_type)(MARKDOWN_CORE_NODE_TYPE_INLINE | (MARKDOWN_CORE_NODE_KIND_COUNT + 8))};
     attach_probe *probe = context;
     markdown_core_dialect_builder_elements(builder, &probe->before);
     probe->attached = markdown_core_dialect_builder_attach(builder, &outside);
@@ -10619,25 +10185,8 @@ static void completion_step_shapes_are_checked(test_batch_runner *runner) {
     static const char source[] = "prose\n";
     attach_probe probe = {0, 0, -1};
     markdown_core_node *doc =
-        markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_overlapping_step, &probe);
-    INT_EQ(runner, probe.attached, 0, "a step declaring one kind as both an exit kind and a scope kind is refused");
-    INT_EQ(runner, (int)probe.after, (int)probe.before, "with the dialect left as it was");
-    OK(runner, doc == NULL, "so the parse whose setup tried to attach it reports the refusal");
-    if (doc) {
-        markdown_core_node_free(doc);
-    }
-    probe = (attach_probe){0, 0, -1};
-    doc = markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_kindless_step, &probe);
-    INT_EQ(runner, probe.attached, 0, "a step asked at no kind, which would never be called, is refused");
-    INT_EQ(runner, (int)probe.after, (int)probe.before, "with the dialect left as it was");
-    OK(runner, doc == NULL, "and the parse reports the refusal");
-    if (doc) {
-        markdown_core_node_free(doc);
-    }
-    probe = (attach_probe){0, 0, -1};
-    doc = markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_out_of_table_step, &probe);
-    INT_EQ(runner, probe.attached, 0,
-           "a step at a kind the dispatch table cannot index is refused rather than asked at every such node");
+        markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_out_of_table_step, &probe);
+    INT_EQ(runner, probe.attached, 0, "a Text completion outside a kind the kind table cannot index is refused");
     INT_EQ(runner, (int)probe.after, (int)probe.before, "with the dialect left as it was");
     OK(runner, doc == NULL, "and the parse reports the refusal");
     if (doc) {
@@ -11283,8 +10832,6 @@ int main(void) {
     pipe_rows_are_one_row(runner);
     node_check(runner);
     stem_joins_and_slices(runner);
-    iterator(runner);
-    iterator_delete(runner);
     create_tree(runner);
     hierarchy(runner);
     parser(runner);
@@ -11350,14 +10897,10 @@ int main(void) {
     strbuf_overflow(runner);
     strbuf_failure_is_a_transaction(runner);
     stray_delimiter(runner);
-    complete_step_skips_absent_kinds(runner);
-    complete_step_gate_opens_when_its_kind_is_made(runner);
-    complete_kind_sets_are_well_formed(runner);
     block_gate_admits_every_opener(runner);
     inline_dispatch_ownership(runner);
     inline_dispatch_orders_every_precedence(runner);
     scope_queries_count_in_the_document_unit(runner);
-    iterator_contract_is_total(runner);
     text_tree_matches_a_flat_buffer(runner);
     text_tree_refusal_changes_nothing(runner);
     session_edits_and_spans(runner);

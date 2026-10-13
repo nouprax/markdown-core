@@ -129,19 +129,16 @@ Allocation failure frees continuations independently of the AST they borrow.
 Each populated affix owns a private inline root, exposed through the public
 Citation's prefix/suffix collections. Source trimming only changes raw edge
 whitespace; nested markup keeps its authored scope. Each inline root parses
-its content in the inline stage, after the block stage, and completes its tree
-in one pass on one explicit stack:
-text consolidation, the completion steps (autolink's email scan), Text
-completion (the kind's `complete_inline`), and each
-node numbering what it holds at its EXIT; the root completes last. An
-element's `complete_step` is asked at the ENTER/EXIT events of the kinds it
-declares. A step that declares the kinds it acts on reads that gate at each
-event it is asked at, since a kind's first node may be made by the pass
-itself. A Text sibling that consolidation absorbs is completed by
-consolidation before it is read, since its ENTER is stepped over. Both paths
-use the kind's projected completion record at the inherited word depth;
-consolidation does not reinterpret the absorbed Text's element. The document
-finishes after every inline root has completed. Field order and inherited
+its content in the inline stage, after the block stage. Each inline node
+completes when the run reduces it (a pair or bracket closes, a token is made,
+the run ends): its children merge adjacent Text, complete their Text (the
+kind's `complete_inline`, at the inherited word depth) and are offered to the
+Text completions (autolink's email scan) of the elements whose
+`complete_text_outside` kind does not enclose them, and the node numbers what
+it holds. A node that a construct still open in the run can enclose (an open
+bracket that may become a Link, a word that is not yet closed) waits and
+completes with that construct or at the run's end, on one explicit stack. The
+document finishes after every inline root has completed. Field order and inherited
 script depth are retained, and a phase rewrites each root in place: a field root is the node its owner put
 there and no phase substitutes another for it. Definition families start
 independent contexts. Disposal splices the same owned roots into the existing

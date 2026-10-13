@@ -2,19 +2,19 @@
 /** A NODE IS COMPLETE WHEN IT IS MADE (docs/plans/2026-09-29-incremental-
  * parsing.md, 5.8), and an element takes part in that in two shapes
  * (core/element.h): a CLOSE step, `finalize_block`, which reads the block
- * that is closing and the blocks it holds, and a COMPLETION step,
- * `complete_step`, asked inside one inline root's completion at the events of
- * the kinds it declares. Neither walks: the close step reads one block and its
- * children, and the completion step is part of the one pass over its root.
+ * that is closing and the blocks it holds, and a TEXT COMPLETION,
+ * `complete_text`, asked of one Text as the node holding it completes.
+ * Neither walks: the close step reads one block and its children, and the
+ * Text completion reads its Text.
  *
  * So the audit holds that on the source: a translation unit whose descriptor
- * declares either step opens no iterator, and frees a node only through the
- * parse, never with the parser-less `markdown_core_node_free`.
+ * declares either step opens no walk of the tree, and frees a node only
+ * through the parse, never with the parser-less `markdown_core_node_free`.
  *
  * AND THE AUDIT MUST SEE SOMETHING: the dialect's in-tree close steps (the
  * list's layout, the definition list's extent, the table's rows) and its
- * completion steps (autolink and formula) are declared by the elements it
- * reads, and a run that finds none is reaching the wrong sources.
+ * Text completion (autolink) are declared by the elements it reads, and a run
+ * that finds none is reaching the wrong sources.
  */
 
 import path from "node:path";
@@ -26,9 +26,9 @@ const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const elementsDir = path.join(root, "packages/markdown-core/elements");
 
 const CLOSE = /\.finalize_block\s*=\s*(\w+)/;
-const COMPLETE = /\.complete_step\s*=\s*(\w+)/;
-/** Opening an iterator is the one way to walk; `<iterator.h>` is where it is declared. */
-const WALKS = /\bmarkdown_core_iter_new\s*\(|#include\s*[<"]iterator\.h[>"]/;
+const COMPLETE = /\.complete_text\s*=\s*(\w+)/;
+/** A walk of the tree begins at a walk or a cursor. */
+const WALKS = /\bmarkdown_core_(?:walk_begin\w*|cursor_open)\s*\(/;
 /** A step frees through the parse, which owns the node's slots (parser.h). */
 const BARE_FREE = /\bmarkdown_core_node_free\s*\(/;
 
@@ -48,7 +48,7 @@ for (const { symbol, file, source, body } of ordered) {
     if (walk) {
         const line = stripped.slice(0, walk.index).split("\n").length;
         failures.push(
-            `${file}:${line}: ${symbol} declares a close or completion step and opens an iterator ` +
+            `${file}:${line}: ${symbol} declares a close or completion step and opens a walk ` +
                 `(${walk[0].trim()}); a step reads its node, it never walks`
         );
     }
@@ -77,5 +77,5 @@ if (failures.length) {
 }
 console.log(
     `audit-completion-hooks: ${closes} close step${closes === 1 ? "" : "s"} and ${completions} completion ` +
-        `step${completions === 1 ? "" : "s"}, none opens an iterator or frees outside the parse`
+        `step${completions === 1 ? "" : "s"}, none opens a walk or frees outside the parse`
 );

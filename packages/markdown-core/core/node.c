@@ -2006,7 +2006,8 @@ void markdown_core_drafts_dispose(markdown_core_drafts *drafts) {
     }
 }
 
-void markdown_core_draft_release(markdown_core_node_pool *pool, markdown_core_draft *draft) {
+void markdown_core_draft_release(markdown_core_node_pool *pool, markdown_core_draft *draft,
+                                 void (*forget)(void *context, markdown_core_draft *draft), void *context) {
     assert(!draft->owner);
     /* A pending list threaded through `next`: each draft taken from it puts
      * its children and its field roots on it before it goes. */
@@ -2031,6 +2032,10 @@ void markdown_core_draft_release(markdown_core_node_pool *pool, markdown_core_dr
             markdown_core_node_pool_release(pool, taken->node);
             taken->held = false;
         }
+        if (forget && taken->match) {
+            forget(context, taken);
+        }
+        taken->taken = false;
         taken->first = taken->last = taken->fields = NULL;
     }
 }

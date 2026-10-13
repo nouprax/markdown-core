@@ -38,43 +38,20 @@ static bool S_kind_indexable(markdown_core_node_type kind) {
 
 static bool S_owns_document_lifecycle(const markdown_core_element *element) {
     return element->init_document && element->dispose_document && element->read_document_prefix &&
-           element->prepare_document && element->complete_node && element->complete_draft && element->finish_document &&
-           element->publish_document;
+           element->prepare_document && element->complete_node && element->open_root && element->complete_draft &&
+           element->take_old && element->forget_draft && element->finish_document && element->publish_document;
 }
 
 static bool S_element_refused(const markdown_core_element *element) {
-    /* Kinds to ask a completion step at, without a step. */
-    if ((element->complete_exit_kinds || element->complete_scope_kinds) && !element->complete_step) {
+    /* A Text completion outside a kind the kind table cannot index. */
+    if (element->complete_text && element->complete_text_outside != MARKDOWN_CORE_NODE_NONE &&
+        !S_kind_indexable(element->complete_text_outside)) {
         return true;
-    }
-    /* A step at a kind outside the kind table, or asked at no kind. */
-    if (element->complete_step) {
-        const markdown_core_node_type *lists[] = {element->complete_exit_kinds, element->complete_scope_kinds};
-        bool asked = false;
-        for (size_t list = 0; list < 2; list++) {
-            for (const markdown_core_node_type *kind = lists[list]; kind && *kind; kind++) {
-                if (!S_kind_indexable(*kind)) {
-                    return true;
-                }
-                asked = true;
-            }
-        }
-        if (!asked) {
-            return true;
-        }
-    }
-    /* A kind as both an exit kind and a scope kind. */
-    for (const markdown_core_node_type *exit = element->complete_exit_kinds; exit && *exit; exit++) {
-        for (const markdown_core_node_type *scope = element->complete_scope_kinds; scope && *scope; scope++) {
-            if (*exit == *scope) {
-                return true;
-            }
-        }
     }
     /* Only part of the document lifecycle. */
     if ((element->init_document || element->dispose_document || element->read_document_prefix ||
-         element->prepare_document || element->complete_node || element->complete_draft || element->finish_document ||
-         element->publish_document) &&
+         element->prepare_document || element->complete_node || element->open_root || element->complete_draft ||
+         element->take_old || element->forget_draft || element->finish_document || element->publish_document) &&
         !S_owns_document_lifecycle(element)) {
         return true;
     }
@@ -121,6 +98,15 @@ int markdown_core_dialect_builder_attach(markdown_core_dialect_builder *builder,
     if (S_element_refused(element) || count >= MARKDOWN_CORE_ELEMENT_LIMIT ||
         S_element_attached(builder->elements, count, element)) {
         return 0;
+    }
+    if (element->complete_text) {
+        size_t completers = 0;
+        for (size_t i = 0; i < count; i++) {
+            completers += builder->elements[i]->complete_text != NULL;
+        }
+        if (completers >= MARKDOWN_CORE_TEXT_COMPLETER_LIMIT) {
+            return 0;
+        }
     }
     const markdown_core_element **entries =
         markdown_core_reserve(builder->element_allocation, &builder->element_capacity, count + 1, sizeof(*entries));
@@ -202,6 +188,10 @@ static bool S_element_implements_inline(const markdown_core_element *element, ma
         return element->dispose_inline != NULL;
     case MARKDOWN_CORE_INLINE_HOOK_HOLDS:
         return element->holds_inline != NULL;
+    case MARKDOWN_CORE_INLINE_HOOK_ENCLOSES:
+        return element->encloses_inline != NULL;
+    case MARKDOWN_CORE_INLINE_HOOK_COMPLETE_TEXT:
+        return element->complete_text != NULL;
     case MARKDOWN_CORE_INLINE_HOOK_COUNT:
         break;
     }
@@ -372,100 +362,6 @@ static void S_project_inline_dispatch(markdown_core_dialect *dialect, const mark
     }
 }
 
-/* The (event, kind) keys a completion step's declaration projects to, counted
- * into `counts`: the EXIT of each kind it is asked at, and the ENTER and EXIT
- * of each kind whose extent it tracks. An element without a step projects to
- * none. Registration refused a step asked at no kind and a kind outside the
- * table (S_element_refused), so every key counted here is one the dispatch
- * indexes and none is the out-of-table key. Returns how many keys the element
- * added. */
-static size_t S_count_complete_keys(const markdown_core_element *element, size_t *counts) {
-    size_t keys = 0;
-    if (!element->complete_step) {
-        return 0;
-    }
-    for (const markdown_core_node_type *kind = element->complete_exit_kinds; kind && *kind; kind++) {
-        counts[markdown_core_complete_key(MARKDOWN_CORE_EVENT_EXIT, *kind)]++;
-        keys++;
-    }
-    for (const markdown_core_node_type *kind = element->complete_scope_kinds; kind && *kind; kind++) {
-        counts[markdown_core_complete_key(MARKDOWN_CORE_EVENT_ENTER, *kind)]++;
-        counts[markdown_core_complete_key(MARKDOWN_CORE_EVENT_EXIT, *kind)]++;
-        keys += 2;
-    }
-    return keys;
-}
-
-/* Append `instance` under `key`, once: a kind written twice in one list is
- * one declaration, and the step is asked once per event. `acts_on` is the
- * element's declared acted-on kinds as a set and `gated` whether this entry
- * reads it (markdown_core_complete_step_entry). */
-static void S_append_complete_step(const markdown_core_dialect *dialect, markdown_core_complete_step_entry **next,
-                                   size_t key, const markdown_core_element_instance *instance, size_t slot,
-                                   markdown_core_node_kind_set acts_on, bool gated) {
-    if (next[key] != dialect->complete_dispatch[key] && next[key][-1].instance == instance) {
-        return;
-    }
-    *next[key]++ = (markdown_core_complete_step_entry){instance, slot, acts_on, gated};
-}
-
-/* The completion steps by key: each declared key's list laid out in descriptor
- * order at `steps`, closed by a terminator, and one state slot per element
- * that projected anything, so the slot an entry names is always one the walk
- * keeps. The gate is the acted-on kinds as a set, read at an entry whose
- * asked-at kind is not one of them -- at one that is, the node being exited
- * is the proof the parse produced one. */
-static void S_project_complete_steps(markdown_core_dialect *dialect, const size_t *key_counts,
-                                     markdown_core_complete_step_entry *steps) {
-    markdown_core_complete_step_entry *next[MARKDOWN_CORE_COMPLETE_KEY_COUNT];
-    size_t at = 0;
-    for (size_t key = 0; key < MARKDOWN_CORE_COMPLETE_KEY_COUNT; key++) {
-        if (!key_counts[key]) {
-            next[key] = NULL;
-            continue;
-        }
-        dialect->complete_dispatch[key] = next[key] = steps + at;
-        at += key_counts[key] + 1;
-    }
-    for (size_t i = 0; i < dialect->element_count; i++) {
-        const markdown_core_element_instance *instance = &dialect->instances[i];
-        const markdown_core_element *element = instance->element;
-        size_t slot = dialect->complete_step_slots;
-        bool projected = false;
-        if (!element->complete_step) {
-            continue;
-        }
-        markdown_core_node_kind_set acts_on = {0, 0};
-        for (const markdown_core_node_type *kind = element->complete_acts_on_kinds; kind && *kind; kind++) {
-            markdown_core_node_kind_set_add(&acts_on, *kind);
-        }
-        for (const markdown_core_node_type *kind = element->complete_exit_kinds; kind && *kind; kind++) {
-            markdown_core_node_kind_set asked = {0, 0};
-            markdown_core_node_kind_set_add(&asked, *kind);
-            bool gated = element->complete_acts_on_kinds && !markdown_core_node_kind_set_intersects(&acts_on, &asked);
-            S_append_complete_step(dialect, next, markdown_core_complete_key(MARKDOWN_CORE_EVENT_EXIT, *kind), instance,
-                                   slot, acts_on, gated);
-            projected = true;
-        }
-        for (const markdown_core_node_type *kind = element->complete_scope_kinds; kind && *kind; kind++) {
-            S_append_complete_step(dialect, next, markdown_core_complete_key(MARKDOWN_CORE_EVENT_ENTER, *kind),
-                                   instance, slot, acts_on, false);
-            S_append_complete_step(dialect, next, markdown_core_complete_key(MARKDOWN_CORE_EVENT_EXIT, *kind), instance,
-                                   slot, acts_on, false);
-            projected = true;
-        }
-        dialect->complete_step_slots += projected;
-    }
-    /* A kind written twice in one list was counted twice and appended once;
-     * the terminator closes the list where it ends. The zeroed storage
-     * already holds one past the counted end. */
-    for (size_t key = 0; key < MARKDOWN_CORE_COMPLETE_KEY_COUNT; key++) {
-        if (next[key]) {
-            *next[key] = (markdown_core_complete_step_entry){NULL, 0, {0, 0}, false};
-        }
-    }
-}
-
 /* THE INSTANCES: one per element, in element order. Each element's parse
  * record is given the next aligned offset in `state`, and its run record the
  * next in a run's block, so both are laid out in descriptor order; an element
@@ -556,6 +452,29 @@ static void S_project_gate_lists(markdown_core_dialect *dialect, const markdown_
     }
 }
 
+/* WHAT ENCLOSES A TEXT, as the delimiter rules decide it: the rules whose
+ * pairs make a word body, and for each element that completes Text, the
+ * rules whose pairs make the kind it completes Text outside of. */
+static void S_project_text_contexts(markdown_core_dialect *dialect) {
+    for (int rule = MARKDOWN_CORE_DELIM_RULE_NONE + 1; rule < MARKDOWN_CORE_DELIM_RULE_COUNT; rule++) {
+        const markdown_core_element_instance *owner = dialect->delimiter_owners[rule];
+        if (!owner) {
+            continue;
+        }
+        const delimiter_rule_spec *spec = &owner->element->delimiter;
+        if (spec->body == DELIMITER_WORD_BODY) {
+            dialect->word_body_rules |= 1u << rule;
+        }
+        for (size_t i = 0; i < dialect->inline_hook_counts[MARKDOWN_CORE_INLINE_HOOK_COMPLETE_TEXT]; i++) {
+            const markdown_core_node_type outside =
+                dialect->inline_hooks[MARKDOWN_CORE_INLINE_HOOK_COMPLETE_TEXT][i]->element->complete_text_outside;
+            if (outside != MARKDOWN_CORE_NODE_NONE && (spec->single_kind == outside || spec->double_kind == outside)) {
+                dialect->text_outside_rules[i] |= 1u << rule;
+            }
+        }
+    }
+}
+
 /* MEASURE: what sealing the builder's dialect takes, counted from its element
  * list alone. A family is gated when any of its owners declares a gate: the
  * first declaration is what turns gating on, so an element that declares
@@ -581,7 +500,6 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
                 sizes->pointers++;
             }
         }
-        sizes->steps += S_count_complete_keys(elements[i], sizes->complete_key_counts);
         sizes->state_bytes += markdown_core_state_align(elements[i]->state_size);
         sizes->run_state_bytes += markdown_core_state_align(elements[i]->run_state_size);
         for (const markdown_core_element *const *peer = elements[i]->peers; peer && *peer; peer++) {
@@ -589,9 +507,6 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
         }
     }
     sizes->pointers += S_count_inline_dispatch(elements, count, sizes->inline_dispatch_offsets);
-    for (size_t key = 0; key < MARKDOWN_CORE_COMPLETE_KEY_COUNT; key++) {
-        sizes->steps += sizes->complete_key_counts[key] != 0; /* the terminator */
-    }
     /* The instance table: a power of two at least twice the elements, and
      * never empty, so a lookup always finds an empty entry to stop at. */
     for (sizes->instance_slots = 1; sizes->instance_slots < 2 * count; sizes->instance_slots *= 2) {
@@ -602,14 +517,14 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
             sizes->gate_bytes += MARKDOWN_CORE_BLOCK_GATE_KEYS * (sizes->block_totals[hook] + 1);
         }
     }
-    return sizes->steps * sizeof(markdown_core_complete_step_entry) + count * sizeof(markdown_core_element_instance) +
+    return count * sizeof(markdown_core_element_instance) +
            (sizes->pointers + sizes->instance_slots + sizes->peers) * sizeof(const markdown_core_element_instance *) +
            sizes->gate_bytes;
 }
 
 /* SEAL: every table the dialect decides, projected once, into the storage
- * `sizes` was measured for. The tail after the struct holds the completion step
- * entries, then the instances, then the instance-pointer lists (the block
+ * `sizes` was measured for. The tail after the struct holds the instances,
+ * then the instance-pointer lists (the block
  * families, the inline-content families, the inline dispatch), the
  * instance table and the resolved peers, then the gate tables. Each region's alignment is at most
  * the one before it, so each starts where the one before ends. The element
@@ -618,8 +533,7 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
 void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, const markdown_core_dialect_sizes *sizes,
                                 markdown_core_dialect *dialect, unsigned char *state) {
     size_t count = builder->element_count;
-    markdown_core_complete_step_entry *step_entries = (markdown_core_complete_step_entry *)(dialect + 1);
-    markdown_core_element_instance *instances = (markdown_core_element_instance *)(step_entries + sizes->steps);
+    markdown_core_element_instance *instances = (markdown_core_element_instance *)(dialect + 1);
     const markdown_core_element_instance **entries = (const markdown_core_element_instance **)(instances + count);
     const markdown_core_element_instance **table = entries + sizes->pointers;
     const markdown_core_element_instance **peers = table + sizes->instance_slots;
@@ -667,6 +581,6 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
     at += dialect->inline_dispatch_offsets[256];
     assert(at == sizes->pointers);
 
-    S_project_complete_steps(dialect, sizes->complete_key_counts, step_entries);
+    S_project_text_contexts(dialect);
     S_project_gate_lists(dialect, sizes, tables);
 }

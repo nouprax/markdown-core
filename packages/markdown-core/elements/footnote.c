@@ -86,6 +86,10 @@ markdown_core_draft *markdown_core_inline_close_inline_footnote(const markdown_c
     markdown_core_inline_release(parser, opener->inl_text);
     markdown_core_brackets(self->peers[FOOTNOTE_LINK], inline_state)->no_link_openers = opener->outer_no_link_openers;
     markdown_core_inline_pop_bracket(self->peers[FOOTNOTE_LINK], inline_state);
+    /* The note, its Citation and their Cite are final. */
+    markdown_core_inline_reduce(parser, inline_state, note);
+    markdown_core_inline_reduce(parser, inline_state, citation);
+    markdown_core_inline_reduce(parser, inline_state, citation->owner);
     return NULL;
 }
 
@@ -240,6 +244,8 @@ bool markdown_core_footnote_close_reference(const markdown_core_element_instance
             }
             markdown_core_inline_release(parser, opener->inl_text);
             markdown_core_inline_pop_bracket(self->peers[FOOTNOTE_LINK], inline_state);
+            markdown_core_inline_reduce(parser, inline_state, citation);
+            markdown_core_inline_reduce(parser, inline_state, citation->owner);
             return true;
         }
     }

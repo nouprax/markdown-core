@@ -212,10 +212,10 @@ projection of that contract and has one encoder:
 
 The parser's element completion is depth-independent as well: a close step
 (`finalize_block`) reads the block that is closing and the blocks it holds, a
-completion step (`complete_step`) is asked inside one inline root's completion
-pass at the events of the kinds it declares, and neither walks.
+Text completion (`complete_text`) is asked of one Text as the inline node
+holding it completes at its reduce, and neither walks.
 `scripts/audit/check-completion-hooks.mjs` holds that a translation unit
-declaring either opens no iterator and frees nodes only through the parse
+declaring either opens no walk and frees nodes only through the parse
 (`markdown_core_parser_release_node`). In particular, enabling formulas must
 not recursively visit every node in a deep document that contains no formula.
 Correctness tests parse and inspect 10,000 nested lists through every binding

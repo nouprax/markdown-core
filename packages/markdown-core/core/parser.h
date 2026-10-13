@@ -281,18 +281,18 @@ struct markdown_core_parser {
     uint32_t unsettled;
     bool waits;
     markdown_core_source_order source_order;
-    /* The stack each inline root's completion borrows in turn, growing it
-     * to what it needs (markdown_core_parser_walk_stack) and leaving it to
-     * the next; the parse releases it when it ends. */
-    void *walk_stack;
-    size_t walk_stack_size;
-    /* The state words the completion of each inline root borrows in turn
-     * (blocks.c, complete_pass), and how many frames they serve. */
-    void **complete_states;
-    size_t complete_capacity;
     /* The root whose content is being completed, or NULL: the nodes numbered
      * meanwhile lie in its content. */
     struct markdown_core_inline_root *completing;
+    /* The run being read, innermost first: a field's run reads inside the
+     * run of the token that holds the field (inline_internal.h, `outer`). */
+    struct markdown_core_inline_state *inline_run;
+    /* The nodes completing as one reduces, on an explicit stack
+     * (blocks.c), and what encloses the level being completed, which a node
+     * a completion step inserts there completes in. */
+    struct markdown_core_completion *completions;
+    size_t completion_count, completion_capacity;
+    unsigned text_context;
     /* The last id issued: a node takes the next when its owner completes. */
     uint64_t last_id;
     /* Run records released by finished runs, kept for the next run
@@ -402,18 +402,6 @@ struct markdown_core_parser {
     /* The workspace every attribute value of the parse is read into before
      * it is laid out (core/attributes.h); released with the parser. */
     markdown_core_attribute_scratch attribute_scratch;
-    /* WHICH KINDS THIS PARSE PRODUCED, recorded where they are produced.
-     *
-     * Every node creation and every `set_kind` that a parse performs writes
-     * here, so the gate on a completion step is read from a record rather
-     * than gathered by a walk: a step reads it at each event it is asked at
-     * (markdown_core_complete_step_entry). See
-     * `markdown_core_parser_note_kind` for what the set over-approximates and
-     * why that is sound.
-     *
-     * Every production creation site goes through `markdown_core_parser_note_kind`;
-     * `scripts/audit/check-parser-kind-record.mjs` holds that. */
-    markdown_core_node_kind_set kinds_created;
     /* The content-to-source map (see markdown_core_line_mark). It is read while the
      * parse is still running -- the block phase reads it as blocks close and
      * the inline phase reads it before the transaction returns -- and it is
@@ -532,37 +520,14 @@ static MARKDOWN_CORE_INLINE int markdown_core_parser_content_span(markdown_core_
     return 1;
 }
 
-/* THE PARSE'S NODE OPERATIONS, WHICH RECORD THE KIND THEY PRODUCE.
- *
- * `kinds_created` decides which completion steps run at the events they were
- * projected to, so a production site that writes a kind
- * without recording it does not fail a build or a test: it makes the gate skip
- * a hook some document needed, and the defect surfaces
- * as a missing rewrite far from the line that caused it. That is a bad thing
- * to police with an audit over twenty-one call sites, so it is not policed:
- * recording is part of producing a node, in the two operations below.
- *
+/* THE PARSE'S NODE OPERATIONS. A node the parse makes lives in the parse's
+ * pool, and one it discards gives its slots back there.
  * `markdown_core_node_new` and `markdown_core_node_set_kind` stay for callers
  * that have no parse -- the tests build trees by hand -- and production code
- * uses these instead, which `scripts/audit/check-parser-kind-record.mjs` holds.
- *
- * The record OVER-APPROXIMATES, deliberately. A node the parse creates and
- * then discards leaves its bit set although the finished tree holds no such
- * node. Making it exact would mean observing REMOVAL, and the only way to do
- * that is another walk of the whole tree -- which is the cost this record
- * exists to avoid. Over-approximating can only make the gate skip fewer
- * steps, never miss one, because a kind in the finished tree was necessarily
- * created; and a step asked at a tree holding none of its declared kinds
- * finds nothing to do. */
+ * uses these instead, which `scripts/audit/check-parser-kind-record.mjs` holds. */
 static inline void markdown_core_parser_fail(markdown_core_parser *parser, markdown_core_parse_error error) {
     if (!parser->error) {
         parser->error = error;
-    }
-}
-
-static inline void markdown_core_parser_note_kind(markdown_core_parser *parser, markdown_core_node_type kind) {
-    if (parser) {
-        markdown_core_node_kind_set_add(&parser->kinds_created, kind);
     }
 }
 
@@ -644,24 +609,14 @@ static inline void markdown_core_parser_declare(markdown_core_parser *parser, ma
 bool markdown_core_parser_normalize_label(markdown_core_parser *parser, const markdown_core_chunk *label,
                                           markdown_core_chunk *normalized);
 
-/* Whether the pass asks `entry`'s step at the event it is projected to: its
- * gate, read against the kinds the parse has produced so far. */
-static inline bool markdown_core_complete_step_admitted(const markdown_core_complete_step_entry *entry,
-                                                        const markdown_core_parser *parser) {
-    return !entry->gated || (entry->acts_on.blocks & parser->kinds_created.blocks) ||
-           (entry->acts_on.inlines & parser->kinds_created.inlines);
-}
-
 static inline markdown_core_node *markdown_core_parser_make_node(markdown_core_parser *parser,
                                                                  markdown_core_node_type type) {
-    markdown_core_parser_note_kind(parser, type);
     return markdown_core_node_pool_new(parser ? parser->pool : NULL, type, NULL);
 }
 
 static inline markdown_core_node *markdown_core_parser_make_node_with_ext(markdown_core_parser *parser,
                                                                           markdown_core_node_type type,
                                                                           const markdown_core_element *element) {
-    markdown_core_parser_note_kind(parser, type);
     return markdown_core_node_pool_new(parser ? parser->pool : NULL, type, element);
 }
 
@@ -690,7 +645,6 @@ static inline void markdown_core_parser_read_leaf(markdown_core_parser *parser) 
 static inline markdown_core_node_set_kind_result markdown_core_parser_set_node_kind(markdown_core_parser *parser,
                                                                                     markdown_core_frame *frame,
                                                                                     markdown_core_node_type kind) {
-    markdown_core_parser_note_kind(parser, kind);
     const markdown_core_node_type was = (markdown_core_node_type)frame->node->kind;
     markdown_core_node_set_kind_result result =
         markdown_core_node_set_kind(frame->node, markdown_core_parser_owner(parser, frame), kind);
@@ -907,9 +861,6 @@ typedef struct {
 
 /* Stable source-coordinate ordering, shared by deferred nodes and cell geometry. */
 void markdown_core_source_order_dispose(markdown_core_source_order *workspace);
-/* The walk stack with room for `count` entries of `size` bytes, keeping what
- * it holds, or NULL when that much cannot be allocated. */
-void *markdown_core_parser_walk_stack(markdown_core_parser *parser, size_t count, size_t size);
 int markdown_core_order_source_entries(markdown_core_source_order *workspace, void *entries, size_t count,
                                        size_t stride, uint64_t (*key)(const void *));
 

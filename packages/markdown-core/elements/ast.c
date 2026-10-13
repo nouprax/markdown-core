@@ -1481,74 +1481,302 @@ static bool complete_fields(const complete_context *context, markdown_core_frame
     return true;
 }
 
-/* THE NODES OF AN INLINE ROOT'S CONTENT (5.8, 5.9). Each draft decides what
- * it continues as it completes, at its EXIT, its range and its kind final,
- * or earlier, when a draft it holds decides: the drafts before it in its
- * owner have decided already, so each owner's cursor moves forward in
- * order. The holder continues what the root's frame does, or the old
- * root's field in its place; a field root continues its old owner's field
- * in the same place, and every other draft the earliest old node of its kind
- * in its owner's relation whose anchor's image its source window holds. */
+/* THE NODES OF AN INLINE ROOT'S CONTENT (5.8, 5.9) match within the root:
+ * each continues the earliest old node of the old root's content, in the
+ * holder's place, that no node continues yet, whose kind is its own and
+ * whose anchor's image its source window holds. An old node the parse took
+ * whole continues itself, and the nodes it holds stay under it. The ranges
+ * of a content's nodes may overlap or nest in any way (an inline note's
+ * Footnote begins before its Citation), so the match reads the old content
+ * whole when a node first asks, and orders each kind's nodes by the images
+ * of their anchors; a node discarded gives back what it continued. Without
+ * an old root every node continues nothing. */
 
-/* `draft` decides, its owner having decided. */
-static bool draft_search(markdown_core_parser *parser, markdown_core_publication *publication,
-                         markdown_core_draft *draft) {
-    const markdown_core_draft *owner = draft->owner;
-    const markdown_core_node *old = NULL;
-    uint32_t old_start = 0;
-    if (!owner) {
-        const markdown_core_inline_root *root = parser->completing;
-        markdown_core_frame *frame = root->frame;
-        if (!need(parser, publication, frame)) {
-            return false;
-        }
-        if (frame->old) {
-            size_t place;
-            old = root->holder == frame->node
-                      ? frame->old
-                      : (field_slot(frame->node, root->holder, &place), field_at(frame->old, place));
-            old_start = frame->old_start;
-        }
-    } else if (owner->old) {
-        markdown_core_place window;
-        if (!content_window(parser, publication, draft->node->where.place, &window)) {
-            return false;
-        }
-        if (draft->field) {
-            field_pair(parser, owner->node, owner->old, owner->old_start, draft->node, window, true, &old, &old_start);
-        } else {
-            markdown_core_draft *pairing = draft->owner;
-            pair_ready(&pairing->pair, pairing->node, pairing->old, pairing->old_start);
-            pair_scan(parser, &pairing->pair, &pairing->pair.next, &pairing->pair.anchor, window,
-                      public_kind(draft->node), &old, &old_start);
-        }
+enum { MATCH_OPEN, MATCH_CONTINUED, MATCH_KEPT };
+
+static inline uint32_t low_bit(uint32_t at) { return at & (0u - at); }
+
+/* How many of the first `count` old nodes of `list` no node continues. */
+static uint32_t match_open_before(const markdown_core_match_kind *list, uint32_t count) {
+    uint32_t open = 0;
+    for (uint32_t at = count; at; at -= low_bit(at)) {
+        open += list->open[at - 1];
     }
-    draft->decided = true;
-    draft->old = old;
-    draft->old_start = old_start;
+    return open;
+}
+
+/* The old node `at` of `list` is continued (`delta` -1) or given back (+1). */
+static void match_count(markdown_core_match_kind *list, uint32_t at, int32_t delta) {
+    for (uint32_t i = at + 1; i <= list->count; i += low_bit(i)) {
+        list->open[i - 1] = (uint32_t)((int32_t)list->open[i - 1] + delta);
+    }
+}
+
+/* The old node `index`, when no node continues it, is continued or kept
+ * (`state`). Whether it was. */
+static bool match_close(markdown_core_match *match, uint32_t index, uint8_t state) {
+    markdown_core_match_node *item = &match->nodes[index];
+    if (item->state != MATCH_OPEN) {
+        return false;
+    }
+    if (item->at != UINT32_MAX) {
+        match_count(&match->lists[item->kind], item->at, -1);
+    }
+    item->state = state;
     return true;
 }
 
-/* `draft` decides, the drafts above it that have not decided first, from
- * the highest. False when an allocation failed. */
-static bool draft_decide(markdown_core_parser *parser, markdown_core_publication *publication,
-                         markdown_core_draft *draft) {
-    size_t count = 0;
-    for (markdown_core_draft *at = draft; at && !at->decided; at = at->owner) {
-        markdown_core_draft **climb = markdown_core_reserve(
-            publication->draft_climb, &publication->draft_climb_capacity, count + 1, sizeof(*climb));
-        if (!climb) {
+/* The old node `index`, continued or kept as `state`, is given back. */
+static void match_reopen(markdown_core_match *match, uint32_t index, uint8_t state) {
+    markdown_core_match_node *item = &match->nodes[index];
+    if (item->state != state) {
+        return;
+    }
+    if (item->at != UINT32_MAX) {
+        match_count(&match->lists[item->kind], item->at, 1);
+    }
+    item->state = MATCH_OPEN;
+}
+
+static int match_compare_keys(const void *left, const void *right) {
+    const uint64_t a = *(const uint64_t *)left, b = *(const uint64_t *)right;
+    return (a > b) - (a < b);
+}
+
+static int match_compare_addresses(const void *left, const void *right) {
+    const uintptr_t a = ((const markdown_core_match_address *)left)->address;
+    const uintptr_t b = ((const markdown_core_match_address *)right)->address;
+    return (a > b) - (a < b);
+}
+
+/* Whether `list` holds room for one more node. */
+static bool match_list_reserve(markdown_core_match_kind *list) {
+    if (list->count < list->capacity) {
+        return true;
+    }
+    const uint32_t capacity = list->capacity ? list->capacity * 2 : 16;
+    uint32_t *nodes = markdown_core_realloc(list->nodes, capacity * sizeof(*nodes));
+    if (!nodes) {
+        return false;
+    }
+    list->nodes = nodes;
+    uint32_t *images = markdown_core_realloc(list->images, capacity * sizeof(*images));
+    if (!images) {
+        return false;
+    }
+    list->images = images;
+    uint32_t *open = markdown_core_realloc(list->open, capacity * sizeof(*open));
+    if (!open) {
+        return false;
+    }
+    list->open = open;
+    list->capacity = capacity;
+    return true;
+}
+
+/* Whether the match holds room for one more old node. */
+static bool match_reserve(markdown_core_match *match) {
+    if (match->count < match->capacity) {
+        return true;
+    }
+    const uint32_t capacity = match->capacity ? match->capacity * 2 : 32;
+    markdown_core_match_node *nodes = markdown_core_realloc(match->nodes, capacity * sizeof(*nodes));
+    if (!nodes) {
+        return false;
+    }
+    match->nodes = nodes;
+    markdown_core_match_address *addresses = markdown_core_realloc(match->addresses, capacity * sizeof(*addresses));
+    if (!addresses) {
+        return false;
+    }
+    match->addresses = addresses;
+    uint64_t *holding = markdown_core_realloc(match->holding, capacity * sizeof(*holding));
+    if (!holding) {
+        return false;
+    }
+    match->holding = holding;
+    match->capacity = capacity;
+    return true;
+}
+
+/* The match reads the old content whole: each node with the place of the
+ * last node it holds, by its address, and, when a byte of it is left, in
+ * its kind's list, which is then ordered by image and walk place, all open.
+ * False when an allocation failed. */
+static bool match_read(markdown_core_parser *parser, markdown_core_match *match) {
+    match->read = true;
+    match->count = 0;
+    match->kinds = 0;
+    if (!match->old) {
+        return true;
+    }
+    markdown_core_walk *walk = &match->walk;
+    if (!markdown_core_walk_begin_under(walk, match->old, match->old_start)) {
+        return false;
+    }
+    uint32_t holding = 0;
+    markdown_core_walk_item item;
+    while (markdown_core_walk_next(walk, &item)) {
+        if (!item.node) {
+            continue;
+        }
+        if (!match_reserve(match)) {
             return false;
         }
-        publication->draft_climb = climb;
-        climb[count++] = at;
-    }
-    while (count) {
-        if (!draft_search(parser, publication, publication->draft_climb[--count])) {
+        const uint32_t index = match->count++;
+        while (holding && (match->holding[holding - 1] >> 32) >= item.level) {
+            match->nodes[(uint32_t)match->holding[--holding]].last = index - 1;
+        }
+        match->holding[holding++] = (uint64_t)item.level << 32 | index;
+        markdown_core_match_node *node = &match->nodes[index];
+        *node = (markdown_core_match_node){
+            .node = item.node, .at = UINT32_MAX, .kind = (uint8_t)public_kind(item.node), .state = MATCH_OPEN};
+        match->addresses[index] = (markdown_core_match_address){(uintptr_t)item.node, index};
+        if (!markdown_core_parser_source_anchor(parser, item.place.start, item.place.end, &node->image)) {
+            continue;
+        }
+        markdown_core_match_kind *list = &match->lists[node->kind];
+        if (!(match->kinds >> node->kind & 1)) {
+            match->kinds |= UINT64_C(1) << node->kind;
+            list->count = 0;
+        }
+        if (!match_list_reserve(list)) {
             return false;
+        }
+        list->nodes[list->count] = index;
+        list->images[list->count++] = node->image;
+    }
+    if (walk->failed) {
+        return false;
+    }
+    while (holding) {
+        match->nodes[(uint32_t)match->holding[--holding]].last = match->count - 1;
+    }
+    qsort(match->addresses, match->count, sizeof(*match->addresses), match_compare_addresses);
+    for (uint64_t kinds = match->kinds; kinds; kinds &= kinds - 1) {
+        markdown_core_match_kind *list = &match->lists[__builtin_ctzll(kinds)];
+        uint64_t *keys = match->holding;
+        for (uint32_t i = 0; i < list->count; i++) {
+            keys[i] = (uint64_t)list->images[i] << 32 | list->nodes[i];
+        }
+        qsort(keys, list->count, sizeof(*keys), match_compare_keys);
+        for (uint32_t i = 0; i < list->count; i++) {
+            list->nodes[i] = (uint32_t)keys[i];
+            list->images[i] = (uint32_t)(keys[i] >> 32);
+            list->open[i] = low_bit(i + 1);
+            match->nodes[list->nodes[i]].at = i;
         }
     }
     return true;
+}
+
+/* `draft` continues the earliest old node of its kind that no node
+ * continues yet whose image its source window holds, or nothing. False when
+ * an allocation failed. */
+static bool match_find(markdown_core_parser *parser, markdown_core_publication *publication,
+                       markdown_core_draft *draft) {
+    markdown_core_match *match = &publication->match;
+    if (!match->read && !match_read(parser, match)) {
+        return false;
+    }
+    const markdown_core_node_kind kind = public_kind(draft->node);
+    if (!(match->kinds >> kind & 1)) {
+        return true;
+    }
+    markdown_core_place window;
+    if (!content_window(parser, publication, draft->node->where.place, &window)) {
+        return false;
+    }
+    markdown_core_match_kind *list = &match->lists[kind];
+    uint32_t low = 0, high = list->count;
+    while (low < high) {
+        const uint32_t middle = low + (high - low) / 2;
+        if (list->images[middle] < window.start) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    /* The first open node from `low` on: the one past the open ones before
+     * it, found down the tree. */
+    uint32_t rest = match_open_before(list, low), at = 0;
+    uint32_t step = list->count ? UINT32_C(1) << (31 - __builtin_clz(list->count)) : 0;
+    for (; step; step >>= 1) {
+        if (at + step <= list->count && list->open[at + step - 1] <= rest) {
+            at += step;
+            rest -= list->open[at - 1];
+        }
+    }
+    if (at < list->count && list->images[at] < window.end) {
+        const uint32_t index = list->nodes[at];
+        match_close(match, index, MATCH_CONTINUED);
+        draft->old = match->nodes[index].node;
+        draft->match = index + 1;
+    }
+    return true;
+}
+
+bool markdown_core_open_root(markdown_core_parser *parser, markdown_core_publication *publication,
+                             markdown_core_inline_root *root) {
+    markdown_core_frame *frame = root->frame;
+    if (!need(parser, publication, frame)) {
+        return false;
+    }
+    markdown_core_match *match = &publication->match;
+    match->read = false;
+    match->old_start = frame->old_start;
+    const markdown_core_node *old = frame->old;
+    if (old && root->holder != frame->node) {
+        size_t place;
+        field_slot(frame->node, root->holder, &place);
+        old = field_at(frame->old, place);
+    }
+    /* An old node that held blocks held no inline content. */
+    if (old && old->children &&
+        MARKDOWN_CORE_NODE_TYPE_BLOCK_P((markdown_core_node_type)markdown_core_stem_at(old->children, 0)->kind)) {
+        old = NULL;
+    }
+    match->old = old;
+    return true;
+}
+
+bool markdown_core_take_old(markdown_core_parser *parser, markdown_core_publication *publication,
+                            markdown_core_draft *draft) {
+    markdown_core_match *match = &publication->match;
+    if (!match->read && !match_read(parser, match)) {
+        return false;
+    }
+    uint32_t low = 0, high = match->count;
+    while (low < high) {
+        const uint32_t middle = low + (high - low) / 2;
+        if (match->addresses[middle].address < (uintptr_t)draft->old) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    assert(low < match->count && match->addresses[low].address == (uintptr_t)draft->old);
+    const uint32_t index = match->addresses[low].index;
+    if (match_close(match, index, MATCH_CONTINUED)) {
+        draft->match = index + 1;
+    }
+    for (uint32_t held = index + 1; held <= match->nodes[index].last; held++) {
+        match_close(match, held, MATCH_KEPT);
+    }
+    return true;
+}
+
+void markdown_core_forget_draft(markdown_core_publication *publication, markdown_core_draft *draft) {
+    markdown_core_match *match = &publication->match;
+    const uint32_t index = draft->match - 1;
+    if (draft->taken) {
+        for (uint32_t held = index + 1; held <= match->nodes[index].last; held++) {
+            match_reopen(match, held, MATCH_KEPT);
+        }
+    }
+    match_reopen(match, index, MATCH_CONTINUED);
+    draft->match = 0;
+    draft->old = NULL;
 }
 
 /* Numbers `draft`'s node, which lies at its place in the content, is
@@ -1563,7 +1791,8 @@ static bool draft_number(const complete_context *context, markdown_core_draft *d
                          uint32_t slot) {
     markdown_core_parser *parser = context->parser;
     markdown_core_node *item = draft->node;
-    if (!draft_decide(parser, context->publication, draft)) {
+    if (!draft->match && !(item->flags & MARKDOWN_CORE_NODE__GROUP) &&
+        !match_find(parser, context->publication, draft)) {
         return false;
     }
     const markdown_core_place place = item->where.place;
@@ -1711,9 +1940,6 @@ bool markdown_core_complete_draft(markdown_core_parser *parser, markdown_core_pu
                                   void (*observe)(const markdown_core_element_instance *, markdown_core_parser *,
                                                   markdown_core_node *),
                                   const markdown_core_element_instance *observer) {
-    if (!draft_decide(parser, publication, draft)) {
-        return false;
-    }
     markdown_core_node *node = draft->node;
     if (draft->owner) {
         /* A group's owner numbers it. */
@@ -2016,7 +2242,15 @@ void markdown_core_publication_dispose(markdown_core_publication *publication, m
     markdown_core_free(publication->runs.runs);
     markdown_core_free(publication->ranges);
     markdown_core_free(publication->climb);
-    markdown_core_free(publication->draft_climb);
+    markdown_core_walk_end(&publication->match.walk);
+    markdown_core_free(publication->match.nodes);
+    markdown_core_free(publication->match.addresses);
+    markdown_core_free(publication->match.holding);
+    for (size_t i = 0; i < sizeof(publication->match.lists) / sizeof(*publication->match.lists); i++) {
+        markdown_core_free(publication->match.lists[i].nodes);
+        markdown_core_free(publication->match.lists[i].images);
+        markdown_core_free(publication->match.lists[i].open);
+    }
     for (size_t i = 0; i < publication->replaced_count; i++) {
         markdown_core_node_pool_release(pool, publication->replaced[i]);
     }
@@ -2758,6 +2992,15 @@ static bool walk_push(markdown_core_walk *walk, const markdown_core_node *node, 
     frame->owner_start = start;
     markdown_core_relations_begin(&frame->cursor, node);
     return true;
+}
+
+bool markdown_core_walk_begin_under(markdown_core_walk *walk, const markdown_core_node *owner, uint32_t start) {
+    walk->root = owner;
+    walk->anchor = start;
+    walk->started = true;
+    walk->failed = walk->at_group = false;
+    walk->count = walk->owner = 0;
+    return walk_push(walk, owner, 0, start);
 }
 
 /* Whether the owner of `frame` has another line at its own level after the

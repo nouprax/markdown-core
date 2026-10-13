@@ -658,6 +658,57 @@ static bool kept_whole(const view *before, size_t old, const view *after, size_t
     return same;
 }
 
+/* Whether `node` of `taken` holds blocks: a cell read as blocks does. */
+static bool holds_blocks(const view *taken, const view_node *node) {
+    size_t item;
+    for (item = 0; item < node->item_count; item++) {
+        const markdown_core_node_kind kind = taken->nodes[taken->items[node->items + item]].kind;
+        if (kind <= MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK || kind == MARKDOWN_CORE_KIND_DEFINITION_LIST ||
+            kind == MARKDOWN_CORE_KIND_FOOTNOTE || kind == MARKDOWN_CORE_KIND_SPECIMEN ||
+            kind == MARKDOWN_CORE_KIND_REFERENCE) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* THE INLINE ROOT whose content holds each node of `taken`, into `roots`,
+ * SIZE_MAX for a node no root's content holds: a block that holds inline
+ * content holds all it holds, and a callout its title and a definition its
+ * term, the first relation of each; a node inside a root's content lies in
+ * that root's. */
+static void roots_of(const view *taken, size_t *roots) {
+    size_t index;
+    for (index = 0; index < taken->count; index++) {
+        const view_node *node = &taken->nodes[index];
+        size_t root = SIZE_MAX;
+        if (node->owner != SIZE_MAX) {
+            const view_node *owner = &taken->nodes[node->owner];
+            root = roots[node->owner];
+            if (root == SIZE_MAX) {
+                switch (owner->kind) {
+                case MARKDOWN_CORE_KIND_TABLE_CELL:
+                    root = holds_blocks(taken, owner) ? SIZE_MAX : node->owner;
+                    break;
+                case MARKDOWN_CORE_KIND_PARAGRAPH:
+                case MARKDOWN_CORE_KIND_HEADING:
+                case MARKDOWN_CORE_KIND_TABLE_CAPTION:
+                case MARKDOWN_CORE_KIND_DIRECTIVE_LABEL:
+                    root = node->owner;
+                    break;
+                case MARKDOWN_CORE_KIND_CALLOUT:
+                case MARKDOWN_CORE_KIND_DEFINITION:
+                    root = node->relation == 0 ? node->owner : SIZE_MAX;
+                    break;
+                default:
+                    break;
+                }
+            }
+        }
+        roots[index] = root;
+    }
+}
+
 /* 4.2 to 4.5 for one step from `before` to `after`, then the lineage takes
  * the step. `edits` are the step's edits in UTF-8 bytes, ascending. */
 static void check_identity(run *state, const char *where, size_t step, history *ids, const view *before,
@@ -666,8 +717,12 @@ static void check_identity(run *state, const char *where, size_t step, history *
     bool *changed = (bool *)calloc(after->count, sizeof(bool));
     size_t *continues = (size_t *)malloc(after->count * sizeof(size_t));
     size_t *cursor = (size_t *)calloc(after->count, sizeof(size_t));
+    size_t *old_roots = (size_t *)malloc((before->count ? before->count : 1) * sizeof(size_t));
+    size_t *new_roots = (size_t *)malloc((after->count ? after->count : 1) * sizeof(size_t));
+    bool *matched = (bool *)calloc(before->count ? before->count : 1, sizeof(bool));
     size_t index;
-    if (!changed || !continues || !cursor || !index_ids(&old_ids, before) || !index_ids(&new_ids, after) ||
+    if (!changed || !continues || !cursor || !old_roots || !new_roots || !matched || !index_ids(&old_ids, before) ||
+        !index_ids(&new_ids, after) ||
         !history_reserve(ids, (uint64_t)(new_ids.capacity > old_ids.capacity ? new_ids.capacity : old_ids.capacity))) {
         fail(state, "harness", "%s step %zu: out of memory", where, step);
         goto done;
@@ -688,14 +743,23 @@ static void check_identity(run *state, const char *where, size_t step, history *
         goto done;
     }
     /* 4.4: the root continues the root; within the relation of a matched
-     * owner, a node continues the earliest old sibling of its kind whose
+     * owner, a block continues the earliest old sibling of its kind whose
      * anchor's image it holds. One cursor per new owner walks the matched
      * old owner's items, which are in relation and source order, and stops
      * past the one a node continues: siblings' ranges may overlap, as a grid
-     * row's cells do over their lines, and the next holds what follows. */
+     * row's cells do over their lines, and the next holds what follows. A
+     * node of an inline root's content continues the earliest old node of
+     * the content of the old root its root continues, of its kind, that no
+     * node continues yet, whose anchor's image it holds: the nodes inside
+     * first, as they complete. */
+    roots_of(before, old_roots);
+    roots_of(after, new_roots);
     for (index = 0; index < after->count && !stopped(state); index++) {
         const view_node *node = &after->nodes[index];
         size_t match = SIZE_MAX;
+        if (new_roots[index] != SIZE_MAX) {
+            continue;
+        }
         if (!index) {
             match = 0;
         } else if (continues[node->owner] != SIZE_MAX) {
@@ -718,6 +782,36 @@ static void check_identity(run *state, const char *where, size_t step, history *
             }
         }
         continues[index] = match;
+    }
+    for (index = after->count; index-- > 0;) {
+        const view_node *node = &after->nodes[index];
+        size_t match = SIZE_MAX, old;
+        int64_t best = 0;
+        if (new_roots[index] == SIZE_MAX) {
+            continue;
+        }
+        continues[index] = SIZE_MAX;
+        if (continues[new_roots[index]] == SIZE_MAX) {
+            continue;
+        }
+        for (old = 0; old < before->count; old++) {
+            int64_t image = 0;
+            if (old_roots[old] == continues[new_roots[index]] && !matched[old] &&
+                before->nodes[old].kind == node->kind &&
+                anchor(edits, count, before->nodes[old].range.start, before->nodes[old].range.end, &image) &&
+                image >= node->range.start && image < node->range.end && (match == SIZE_MAX || image < best)) {
+                match = old;
+                best = image;
+            }
+        }
+        if (match != SIZE_MAX) {
+            matched[match] = true;
+        }
+        continues[index] = match;
+    }
+    for (index = 0; index < after->count && !stopped(state); index++) {
+        const view_node *node = &after->nodes[index];
+        const size_t match = continues[index];
         if (match != SIZE_MAX
                 ? node->id != before->nodes[match].id
                 : ids->state[node->id] != 0 && (id_lookup(&old_ids, node->id) == SIZE_MAX ||
@@ -826,6 +920,9 @@ done:
     free(changed);
     free(continues);
     free(cursor);
+    free(old_roots);
+    free(new_roots);
+    free(matched);
 }
 
 /* A lineage's first document: a fresh parse, whose ids are unique and rise

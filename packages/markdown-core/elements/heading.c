@@ -413,9 +413,10 @@ static bufsize_t heading_text(markdown_core_attribute_parser *attributes, const 
  * read meets no bracket a later parse could resolve, and no field, the text
  * is writable as a reference label, and the heading declares it,
  * normalized: an occurrence naming it resolves to the heading when no
- * Reference declares it. A heading that asks a reference key before every
- * heading has declared waits (parser.h, `unsettled`): its text holds a
- * bracket, so it declares nothing. */
+ * Reference declares it. Text that is not writable may ask a reference
+ * key, and declares nothing: before every heading has declared, the read
+ * waits (parser.h, `unsettled`) where its text stops being writable, before
+ * it could ask. */
 static void read_heading(const markdown_core_element_instance *self, markdown_core_parser *parser,
                          markdown_core_inline_state *inline_state) {
     (void)self;
@@ -432,9 +433,20 @@ static void read_heading(const markdown_core_element_instance *self, markdown_co
     markdown_core_attributes_free(&node->attributes);
     node->attributes = (markdown_core_attributes){0};
     bool writable = true, claimed = false;
+    const bool unsettled = (parser->unsettled & (1u << MARKDOWN_CORE_KEY_REFERENCE)) != 0;
     for (;;) {
+        /* A field makes the text unwritable as a reference label. */
+        if (inline_state->last_delim && inline_state->last_delim->kind == DELIMITER_FIELD) {
+            writable = false;
+        }
+        /* Text that is not writable may ask a reference key: before every
+         * heading has declared, the read waits before it could. */
+        if (!writable && unsettled) {
+            parser->waits = true;
+            break;
+        }
         markdown_core_inline_complete_token(parser, inline_state);
-        if (parser->error || inline_state->error || parser->waits) {
+        if (parser->error || inline_state->error) {
             break;
         }
         if (inline_state->pos == inline_state->text_end) {
@@ -444,13 +456,16 @@ static void read_heading(const markdown_core_element_instance *self, markdown_co
         }
         unsigned char c = markdown_core_inline_peek_char(inline_state);
         /* Attribute ownership and opaque tokens are decided by the same
-         * cursor as every inline. A live bracket or a field makes the text
-         * unwritable as a reference label. */
-        if ((inline_state->last_delim && inline_state->last_delim->kind == DELIMITER_FIELD) ||
-            (inline_state->pos < inline_state->input.len && inline_state->pos >= inline_state->opaque_end &&
-             (c == '[' || c == ']' ||
-              ((c == '!' || c == '^') && markdown_core_inline_peek_char_n(inline_state, 1) == '[')))) {
+         * cursor as every inline. A live bracket makes the text unwritable
+         * as a reference label. */
+        if (inline_state->pos < inline_state->input.len && inline_state->pos >= inline_state->opaque_end &&
+            (c == '[' || c == ']' ||
+             ((c == '!' || c == '^') && markdown_core_inline_peek_char_n(inline_state, 1) == '['))) {
             writable = false;
+        }
+        if (!writable && unsettled) {
+            parser->waits = true;
+            break;
         }
         if (markdown_core_inline_is_eof(inline_state) || !markdown_core_inline_parse_inline(parser, inline_state)) {
             break;

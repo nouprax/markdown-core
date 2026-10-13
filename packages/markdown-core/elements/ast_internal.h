@@ -154,6 +154,10 @@ void markdown_core_walk_begin(markdown_core_walk *walk, const markdown_core_node
 /* Begins at `root`, a node of a tree whose extent is measured from
  * `anchor`. */
 void markdown_core_walk_begin_at(markdown_core_walk *walk, const markdown_core_node *root, uint32_t anchor);
+/* Begins under `owner`, which starts at `start` in the source, at the first
+ * node it holds, keeping the walk's buffers. False, with the walk `failed`,
+ * when they could not grow. */
+bool markdown_core_walk_begin_under(markdown_core_walk *walk, const markdown_core_node *owner, uint32_t start);
 /* The next item, or false at the end or when the walk could not allocate
  * (`failed`). */
 bool markdown_core_walk_next(markdown_core_walk *walk, markdown_core_walk_item *item);
@@ -168,13 +172,58 @@ bool markdown_core_walk_ranges(markdown_core_walk *walk, const markdown_core_wal
 bool markdown_core_walk_has_next(const markdown_core_walk *walk);
 void markdown_core_walk_end(markdown_core_walk *walk);
 
+/* ONE OLD NODE of an inline root's old content (5.9), at its place in the
+ * canonical walk: the image of its anchor, the place of the last node it
+ * holds, where its kind's list holds it (UINT32_MAX when none of its bytes
+ * is left), and whether a node continues it or it is kept under a node the
+ * parse took whole. */
+typedef struct markdown_core_match_node {
+    const markdown_core_node *node;
+    uint32_t image, last, at;
+    uint8_t kind, state;
+} markdown_core_match_node;
+
+/* THE OLD NODES OF ONE KIND that the nodes of an inline root's content may
+ * continue, in the order of their anchors' images, each by its place in the
+ * walk, with its image, and a Fenwick tree over them counting those no node
+ * continues. */
+typedef struct markdown_core_match_kind {
+    uint32_t *nodes, *images, *open;
+    uint32_t count, capacity;
+} markdown_core_match_kind;
+
+/* An old node of the match by its address. */
+typedef struct markdown_core_match_address {
+    uintptr_t address;
+    uint32_t index;
+} markdown_core_match_address;
+
+/* THE ROOT'S MATCH: the old root's content, read whole when a node of the
+ * content first asks for it, in canonical walk order; the old nodes by
+ * address, for the nodes the parse takes whole; and the lists of the kinds
+ * read. */
+typedef struct markdown_core_match {
+    const markdown_core_node *old;
+    uint32_t old_start;
+    bool read;
+    markdown_core_walk walk;
+    markdown_core_match_node *nodes;
+    markdown_core_match_address *addresses;
+    /* The nodes read whose last held node is not read yet, with their
+     * levels, while the content is read. */
+    uint64_t *holding;
+    uint32_t count, capacity;
+    uint64_t kinds;
+    markdown_core_match_kind lists[64];
+} markdown_core_match;
+
 /* WHAT ONE PARSE PUBLISHES AS ITS NODES COMPLETE (docs/plans/2026-09-29-
  * incremental-parsing.md, 5.8, 5.9): the runs of the inline root being
  * completed, in absolute offsets, read when a node of its content first asks
- * where its source lies.
- * For the reuse cursor it keeps the frames a decision climbs through, and
- * the nodes the parse made that settled as old nodes, which go when the
- * parse does. The document element holds it for the parse. */
+ * where its source lies, and the root's match. For the reuse cursor it keeps
+ * the frames a decision climbs through, and the nodes the parse made that
+ * settled as old nodes, which go when the parse does. The document element
+ * holds it for the parse. */
 
 typedef struct markdown_core_publication {
     /* The runs of the inline root `runs_node` being completed, read as
@@ -186,8 +235,7 @@ typedef struct markdown_core_publication {
     size_t range_capacity;
     markdown_core_frame **climb;
     size_t climb_capacity;
-    markdown_core_draft **draft_climb;
-    size_t draft_climb_capacity;
+    markdown_core_match match;
     markdown_core_node **replaced;
     size_t replaced_count, replaced_capacity;
     /* A splice's search for the node it replaces: the nodes it reached, and
@@ -233,10 +281,23 @@ bool markdown_core_number_children(markdown_core_parser *parser, markdown_core_p
                                                    markdown_core_node *),
                                    const markdown_core_element_instance *observer);
 
+/* AN INLINE ROOT'S PARSE BEGINS: the root decides what old node it
+ * continues (5.9), and its match reads that node's content, in the holder's
+ * place, from the start. False when an allocation failed. */
+bool markdown_core_open_root(markdown_core_parser *parser, markdown_core_publication *publication,
+                             markdown_core_inline_root *root);
+/* The root's parse took `draft`'s old node whole: the match reads on to it,
+ * and the draft continues it. False when an allocation failed. */
+bool markdown_core_take_old(markdown_core_parser *parser, markdown_core_publication *publication,
+                            markdown_core_draft *draft);
+/* `draft`, which continued an old node, goes: no node continues that one. */
+void markdown_core_forget_draft(markdown_core_publication *publication, markdown_core_draft *draft);
+
 /* COMPLETING `draft`, a node of the content of the inline root being
- * completed, the nodes it holds complete (5.8): it decides what old node it
- * continues (5.9), the drafts above it that have not decided first, and each
- * node it holds, in canonical field order, is numbered: it takes its extent,
+ * completed, the nodes it holds complete (5.8): each node it holds, in
+ * canonical field order, is numbered: it continues the earliest old node of
+ * the root's match of its kind that no node continues yet and whose anchor's
+ * image its source window holds (5.9), and it takes its extent,
  * measured from the end of the node before it in its relation or from where
  * the relation is measured, the source its range was read from as its runs,
  * and the id of the old node it continues or the next one, and the old node

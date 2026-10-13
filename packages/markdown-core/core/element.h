@@ -100,6 +100,8 @@ typedef struct markdown_core_block_gate {
  * dialect as it was, rather than the projection wrapping a byte. */
 #define MARKDOWN_CORE_ELEMENT_LIMIT 255
 
+struct markdown_core_inline_root;
+
 struct markdown_core_element {
     /* Negative/zero/positive precedence separates protected tokens, ordinary
      * alternatives, and literal fallbacks without a second dispatch algorithm.
@@ -154,10 +156,21 @@ struct markdown_core_element {
      * kind and range final: it decides what old node it continues (5.9),
      * whose content it reads again (5.6). */
     void (*decide_frame)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_frame *);
+    /* An inline root's parse begins, its holder's kind and range final: the
+     * root decides what old node it continues (5.9), whose content it reads
+     * again (5.6) and whose nodes the nodes of its content may continue. */
+    void (*open_root)(const markdown_core_element_instance *, markdown_core_parser *,
+                      struct markdown_core_inline_root *);
     /* A node of an inline root's content is complete, the nodes it holds
-     * complete before it: it decides what old node it continues (5.9) and
-     * numbers what it holds, as `complete_node` does. */
+     * complete before it: it numbers what it holds, as `complete_node` does,
+     * each taking the old node it continues (5.9). */
     void (*complete_draft)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_draft *);
+    /* The root's parse takes an old node of the old root's content whole:
+     * its draft continues it (5.6, 5.9). */
+    void (*take_old)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_draft *);
+    /* A draft that matched an old node is discarded: the old node is one the
+     * root's nodes may continue again. */
+    void (*forget_draft)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_draft *);
     /* The last step of the parse: every node is complete, and the owner
      * publishes the document (identity, definition tables). */
     void (*publish_document)(const markdown_core_element_instance *, markdown_core_parser *);
@@ -271,54 +284,16 @@ struct markdown_core_element {
     markdown_core_can_contain_func can_contain_func;
     markdown_core_contains_inlines_func contains_inlines_func;
     markdown_core_accepts_lines_func accepts_lines_func;
-    /* The element's completion step (markdown-core-element-api.h), asked
-     * from inside an inline root's completion at the EXIT of every node whose
-     * kind is in `complete_exit_kinds` and at the ENTER and EXIT of every
-     * node whose kind is in `complete_scope_kinds`. It costs the root nothing
-     * at any other event: the pass projects the steps by (event, kind) once
-     * per dialect, so a step asked at Text is not so much as looked at when a
-     * Paragraph is left, nor when a Text is entered. */
-    markdown_core_complete_step_func complete_step;
-    /* The node kinds the step ACTS ON, terminated by MARKDOWN_CORE_NODE_NONE;
-     * NULL declares nothing. This is THE GATE: the set is intersected with
-     * the kinds the parse has produced, and a step that cannot find anything
-     * is skipped at every event it was projected to. A step whose trigger
-     * kind is CREATED by an earlier step must therefore name that creator
-     * kind too.
-     *
-     * The kinds a step acts on are not always the kinds it is asked at:
-     * formula rewrites a Formula, and the Formula's rewrite -- the paragraph
-     * that holds nothing else becomes a FormulaBlock -- is decided at the
-     * PARAGRAPH's EXIT. So a step says where it is asked separately, below,
-     * and the gate stays what makes a document with no formula pay nothing
-     * at each of its paragraphs.
-     *
-     * The kinds are declared as KINDS rather than as a precomputed bit set so
-     * that each one keeps its namespace: block and inline values collide once
-     * masked, and a Formula written where a block kind belongs has to be
-     * detectable rather than silently becoming some unrelated block's bit. */
-    const markdown_core_node_type *complete_acts_on_kinds;
-    /* WHERE A COMPLETION STEP IS ASKED, two lists terminated the same way;
-     * NULL declares nothing.
-     *
-     * `complete_exit_kinds`: the step receives the EXIT of these kinds, the
-     * point where the node's subtree is complete and the node may be
-     * rewritten. It names the kind of the node the step is handed --
-     * PARAGRAPH for formula's promotion, TEXT for autolink's scan.
-     *
-     * `complete_scope_kinds`: the kinds whose EXTENT the step tracks. It
-     * receives their ENTER and their EXIT and nothing else about them: it
-     * acts on nothing there, it learns that the nodes to come are inside one,
-     * and it keeps that in its per-root state word. Autolink declares LINK --
-     * an address inside a Link is already a link's text.
-     *
-     * The two are disjoint: a kind in both would be one event asked twice,
-     * and registration refuses the descriptor. It also refuses a step that
-     * names no kind in either list, which would never be asked, and a kind
-     * the dispatch table cannot index (an ordinal at or past
-     * MARKDOWN_CORE_NODE_KIND_COUNT, or a value of neither class). */
-    const markdown_core_node_type *complete_exit_kinds;
-    const markdown_core_node_type *complete_scope_kinds;
+    /* THE COMPLETION OF A TEXT (markdown-core-element-api.h): the step,
+     * asked of each Text of an inline root's content that no node of
+     * `complete_text_outside` encloses, as the node holding it completes. */
+    markdown_core_complete_text_func complete_text;
+    markdown_core_node_type complete_text_outside;
+    /* Whether a construct the element keeps open in the run -- a bracket --
+     * can still become a node of `kind` around the nodes the run reduces now
+     * (markdown_core_inline_reduce). */
+    bool (*encloses_inline)(const markdown_core_element_instance *, const markdown_core_inline_state *,
+                            markdown_core_node_type);
     markdown_core_opaque_alloc_func opaque_alloc_func;
     markdown_core_opaque_free_func opaque_free_func;
     markdown_core_opaque_copy_func opaque_copy_func;

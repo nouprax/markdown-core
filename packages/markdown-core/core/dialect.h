@@ -74,28 +74,16 @@ typedef enum {
     MARKDOWN_CORE_INLINE_HOOK_FINISH,
     MARKDOWN_CORE_INLINE_HOOK_DISPOSE,
     MARKDOWN_CORE_INLINE_HOOK_HOLDS,
+    MARKDOWN_CORE_INLINE_HOOK_ENCLOSES,
+    MARKDOWN_CORE_INLINE_HOOK_COMPLETE_TEXT,
     MARKDOWN_CORE_INLINE_HOOK_COUNT
 } markdown_core_inline_hook;
 
-/* THE COMPLETION STEPS, projected by EVENT and KIND.
- *
- * An inline root's completion delivers two events per node, and a step declares the kinds
- * it is ASKED AT (their EXIT, once the subtree is complete) and the kinds
- * whose EXTENT it tracks (their ENTER and EXIT), so the natural key of the
- * dispatch is (event, kind): a Text's EXIT reaches autolink, a Paragraph's
- * EXIT reaches formula, a Link's ENTER and EXIT reach autolink, and a Text's
- * ENTER or a List's EXIT reach nothing. The projection is one table with a
- * pointer per key to a terminated list of steps in descriptor order, NULL for
- * a key nothing declared, built once when the dialect is sealed, beside the
- * block and inline-content families, and gated on the kinds the parse
- * produced (element.h, `complete_acts_on_kinds`). One load decides the common
- * case.
- *
- * Kinds are indexed by class then ordinal, so a block and an inline kind that
- * collide once masked keep separate keys. A kind outside the table -- an
- * extension kind numbered at or past MARKDOWN_CORE_NODE_KIND_COUNT -- shares
- * one key, and registration refuses a step declared at such a kind, so that
- * key is never written and such a node's events dispatch to nothing. */
+/* THE KIND INDEX: kinds are indexed by class then ordinal, so a block and an
+ * inline kind that collide once masked keep separate records. A kind outside
+ * the table -- an extension kind numbered at or past
+ * MARKDOWN_CORE_NODE_KIND_COUNT -- shares one index, whose record answers
+ * nothing. */
 #define MARKDOWN_CORE_KIND_INDEX_COUNT (2 * MARKDOWN_CORE_NODE_KIND_COUNT)
 #define MARKDOWN_CORE_COMPLETE_KEY_COUNT (2 * (MARKDOWN_CORE_KIND_INDEX_COUNT + 1))
 
@@ -107,36 +95,15 @@ static inline size_t markdown_core_kind_index(markdown_core_node_type kind) {
     return MARKDOWN_CORE_NODE_TYPE_INLINE_P(kind) ? MARKDOWN_CORE_NODE_KIND_COUNT + ordinal : ordinal;
 }
 
-static inline size_t markdown_core_complete_key(markdown_core_event_type event, markdown_core_node_type kind) {
-    return 2 * markdown_core_kind_index(kind) + (event == MARKDOWN_CORE_EVENT_EXIT);
-}
-
-/* The kind index of the one kind the engine's own step, text consolidation,
- * acts at. A constant, so the pass compares the index it computed anyway. */
+/* The kind index of Text, whose runs merge as the node holding them
+ * completes. */
 #define MARKDOWN_CORE_KIND_TEXT_INDEX                                                                                  \
     (MARKDOWN_CORE_NODE_KIND_COUNT + ((size_t)MARKDOWN_CORE_NODE_TEXT & MARKDOWN_CORE_NODE_VALUE_MASK))
 
-/* One projected step: the element, and which of the pass's per-root state
- * words is its own. An element that declared several kinds appears under each
- * of them with the same slot, so its state is one fact per root. A list ends
- * at an entry whose element is NULL.
- *
- * THE GATE IS READ AT THE EVENT. A step that declares the kinds it acts on is
- * asked at an EXIT of a kind it declared it is asked at only once the parse
- * has produced one of the kinds it acts on, read when the event comes,
- * because inline roots are parsed one after another and a kind's first node
- * may be made by a later root. `acts_on` is that declaration as a set, and `gated` says
- * whether the test is worth making: it is false for an entry at a kind the
- * step acts on (a node of that kind is being exited, so the parse produced
- * one), for a step that declared nothing, and for a scope-kind entry (the
- * ENTER and EXIT that bound an extent are delivered whenever the extent is
- * passed, so the state the step keeps for the extent is always in step). */
-typedef struct markdown_core_complete_step_entry {
-    const markdown_core_element_instance *instance;
-    size_t slot;
-    markdown_core_node_kind_set acts_on;
-    bool gated;
-} markdown_core_complete_step_entry;
+/* A dialect completes Text with at most this many elements: what each reads
+ * of what encloses a Text is one bit of an inline node's needs (node.h,
+ * markdown_core_draft), besides whether a word body encloses it. */
+#define MARKDOWN_CORE_TEXT_COMPLETER_LIMIT 7
 
 /* WHAT THE ENGINE ASKS OF A KIND, answered once per dialect per kind so that
  * no hot path reads a descriptor to learn it. `structure` is the instance of
@@ -160,9 +127,9 @@ typedef struct markdown_core_complete_step_entry {
  * `summary` is the summary its children tree keeps (E4): the structure's
  * `children_summary`, the blank-line summary when a child's blank line
  * propagates out of the kind (`propagates_child_blank`), and NULL
- * otherwise. `complete` is the
- * structure's `complete_inline`, NULL when it declares none, which inline completion calls at every ENTER. The
- * out-of-table index answers nothing. */
+ * otherwise. `complete` is the structure's `complete_inline`, NULL when
+ * it declares none, which the completion of a Text calls with the count of
+ * the word bodies around it. The out-of-table index answers nothing. */
 enum {
     MARKDOWN_CORE_KIND_INLINES = 1u << 0,
     MARKDOWN_CORE_KIND_INLINES_ASK = 1u << 1,
@@ -279,12 +246,11 @@ typedef struct markdown_core_dialect {
     const markdown_core_element_instance *inline_start_owners[256];
     uint8_t special_chars[256];
     int8_t skip_chars[256];
-    /* The completion steps by key (see `markdown_core_complete_key`): a list
-     * terminated by a NULL element, or NULL when nothing declared the key.
-     * `complete_step_slots` is how many state words the pass keeps per root:
-     * one per element that declares a step. */
-    const markdown_core_complete_step_entry *complete_dispatch[MARKDOWN_CORE_COMPLETE_KEY_COUNT];
-    size_t complete_step_slots;
+    /* The delimiter rules whose pairs make a word body, one bit per rule;
+     * and for each element that completes Text, in the order of its family,
+     * the rules whose pairs make the kind it completes Text outside of. */
+    uint32_t word_body_rules;
+    uint32_t text_outside_rules[MARKDOWN_CORE_TEXT_COMPLETER_LIMIT];
     /* Each kind's record, by kind index (markdown_core_kind_index). */
     markdown_core_kind_record kinds[MARKDOWN_CORE_KIND_INDEX_COUNT + 1];
     /* The instances by descriptor, `instance_mask + 1` entries
@@ -330,8 +296,7 @@ typedef struct markdown_core_dialect_sizes {
     bool gated[MARKDOWN_CORE_BLOCK_HOOK_COUNT];
     size_t inline_totals[MARKDOWN_CORE_INLINE_HOOK_COUNT];
     size_t inline_dispatch_offsets[257];
-    size_t complete_key_counts[MARKDOWN_CORE_COMPLETE_KEY_COUNT];
-    size_t pointers, steps, instance_slots, gate_bytes;
+    size_t pointers, instance_slots, gate_bytes;
     /* The bytes the elements' parse records take, and one run's records. */
     size_t state_bytes, run_state_bytes;
     /* The peers the elements declare, all together. */

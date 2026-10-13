@@ -523,6 +523,8 @@ static void materialize_citation_key(const markdown_core_element_instance *self,
     markdown_core_inline_state_place(inline_state, cite->node, start, end - 1);
     markdown_core_inline_release(inline_state->owner_parser, token->node);
     token->node = cite;
+    markdown_core_inline_reduce(inline_state->owner_parser, inline_state, draft);
+    markdown_core_inline_reduce(inline_state->owner_parser, inline_state, cite);
 }
 
 void markdown_core_inline_finish_citation_tokens(const markdown_core_element_instance *self,
@@ -653,6 +655,11 @@ bool markdown_core_inline_close_bibliography(const markdown_core_element_instanc
         opener->author->end = inline_state->pos;
     }
     markdown_core_inline_pop_bracket(self->peers[CITATION_LINK], inline_state);
+    /* Each Citation, its affixes taken, and the Cite are final. */
+    for (markdown_core_draft *item = cite->first; item; item = item->next) {
+        markdown_core_inline_reduce(parser, inline_state, item);
+    }
+    markdown_core_inline_reduce(parser, inline_state, cite);
     return true;
 }
 

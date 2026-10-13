@@ -35,13 +35,15 @@ typedef struct bracket {
 
 /* ONE RUN'S BRACKETS (the link element's run record): the open
  * brackets, innermost first; the brackets whose citation tail waits for its
- * key's owner; and whether a link may open here, which a link's own text
- * forbids until a new opener. Every bracket grammar -- link, image, span,
+ * key's owner; how many of the two are link brackets; and whether a link may
+ * open here, which a link's own text forbids until a new opener. Every
+ * bracket grammar -- link, image, span,
  * footnote, citation -- reads and writes this one record, through the
  * bracket algorithm's calls below and in link.h. */
 typedef struct {
     bracket *last;
     bracket *pending;
+    size_t links;
     bool no_link_openers;
 } markdown_core_bracket_scope;
 

@@ -9,7 +9,6 @@
 #include "markdown_core_ctype.h"
 #include "utf8.h"
 #include "houdini.h"
-#include "iterator.h"
 #include "inlines.h"
 #include "element.h"
 
@@ -44,6 +43,9 @@ struct markdown_core_inline_state {
      * parser -- and the map is then simply not consulted. */
     markdown_core_parser *owner_parser;
     markdown_core_draft *owner;
+    /* The run this one reads inside, or NULL: a field's run reads inside
+     * the run of the token that holds the field, until it ends. */
+    struct markdown_core_inline_state *outer;
     /* The run of `owner`'s map the last placement ended in, and the frame
      * the next is measured in: the inline parser reads `input` left to right,
      * so a node that lies whole on this run is placed by arithmetic, and one

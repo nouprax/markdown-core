@@ -16,16 +16,6 @@ typedef struct markdown_core_frame markdown_core_frame;
 /* A node of an inline root's content being built (node.h). */
 typedef struct markdown_core_draft markdown_core_draft;
 
-/* Where a depth-first walk stands on a node: every node yields one ENTER and
- * one EXIT, and DONE follows the root's EXIT (iterator.h). Element completion
- * steps receive the event they are called at. */
-typedef enum {
-    MARKDOWN_CORE_EVENT_NONE,
-    MARKDOWN_CORE_EVENT_DONE,
-    MARKDOWN_CORE_EVENT_ENTER,
-    MARKDOWN_CORE_EVENT_EXIT
-} markdown_core_event_type;
-
 struct markdown_core_chunk;
 
 /* A borrowed slice of immutable parser-owned source runs. It owns no AST node
@@ -226,64 +216,35 @@ typedef int (*markdown_core_contains_inlines_func)(const markdown_core_element *
 
 typedef int (*markdown_core_accepts_lines_func)(const markdown_core_element *element, markdown_core_node *node);
 
-/** COMPLETION STEPS: an inline root completes its own tree when its parse
- * ends (docs/plans/2026-09-29-incremental-parsing.md, 5.8), in one pass over
- * that tree -- the content of a paragraph, a heading, a cell, or of a field
- * such as a definition term, a callout title, a table caption or a directive
- * label, with the fields of the inline nodes in it. The pass consolidates each
- * run of Text, completes each node, numbers what each node holds when the node
- * is left, and asks an element's completion step at the events of the kinds it
- * declared (`complete_exit_kinds`, `complete_scope_kinds`).
+/** THE COMPLETION OF A TEXT: an inline node completes when it is reduced
+ * (docs/plans/2026-09-29-incremental-parsing.md, 5.8) -- its closer paired,
+ * its bracket closed, or its root's parse ended -- and the run of Text it
+ * holds is merged then. What a Text means can depend on what encloses it:
+ * an address in a Text is a link's text inside a Link and an autolink of its
+ * own outside one. An element that completes Text that way declares the kind
+ * (`complete_text_outside`), and `complete_text` is asked of each Text of the
+ * content no node of that kind encloses, once that is decided.
  *
- * A step is LOCAL to the node it is handed. At EXIT it may read and rewrite
- * the current node and its complete subtree; at ENTER the subtree is untouched
- * and about to be passed. It may READ the siblings that FOLLOW the current
- * node, but never unlink, move or free one of them: the pass's lookahead
- * already names the node after the current one. It may free only the node
- * whose EXIT is current, and only when that node owns no field roots; it may
- * insert only BEFORE the current node, which the pass has left and never
- * visits again, and what it inserts it completes itself, in order
- * (`markdown_core_inline_complete`). A step never walks anything itself.
- */
+ * The step is LOCAL to the Text it is handed: it may rewrite it, insert
+ * before it among its owner's drafts what it splits off, each reduced as it
+ * is inserted (`markdown_core_inline_reduce`), and free it. It never reads or
+ * moves another node. */
 
-/** What a completion step did to the current node. */
+/** What a completion step did to the Text. */
 typedef enum {
-    /** The node is still in the tree; the steps after this one run. */
+    /** The Text is still in the tree. */
     MARKDOWN_CORE_COMPLETE_CONTINUE,
-    /** The node was freed or replaced. No later step sees this event: the
-     *  node it names is gone. Legal only at EXIT. */
+    /** The Text was freed or replaced. */
     MARKDOWN_CORE_COMPLETE_CONSUMED,
-    /** An allocation failed and 'parser->error' is set. The pass stops. */
+    /** An allocation failed and 'parser->error' is set. */
     MARKDOWN_CORE_COMPLETE_FAILED
 } markdown_core_complete_result;
 
-/** Observe one event of an inline root's completion at 'node'.
- *
- * 'event' is `MARKDOWN_CORE_EVENT_EXIT` for a node of a kind the step declared
- * in `complete_exit_kinds` (asked once the node's subtree is complete), and
- * `MARKDOWN_CORE_EVENT_ENTER` or `MARKDOWN_CORE_EVENT_EXIT` for a node of a
- * kind it declared in `complete_scope_kinds` (the kinds whose extent it
- * tracks). It is asked at no other event, and at the EXIT of a kind it is
- * asked at only once the parse has produced a kind of those it declared in
- * `complete_acts_on_kinds`, the kinds it acts on. The ENTER and EXIT of a
- * scope kind are delivered whenever the extent is passed, so the state a
- * step keeps for an extent is always in step with the tree.
- * 'is_root' is 1 when 'node' is the root of a field -- a definition's term,
- * a callout's title -- which belongs to its owner and may be rewritten in
- * place but never replaced or freed. '*state' is one word the pass keeps for
- * this element per root, zero when the root's pass starts, so a step can
- * carry a fact such as "inside a Link" across the events of one root and
- * never across roots.
- *
- * The step obeys the LOCAL contract above. It returns CONSUMED when it freed
- * or replaced 'node' (legal only at EXIT), FAILED with 'parser->error' set when
- * an allocation failed, and CONTINUE otherwise.
- */
-typedef markdown_core_complete_result (*markdown_core_complete_step_func)(const markdown_core_element_instance *self,
+/** Completes the Text 'text', which no node of the element's
+ * `complete_text_outside` encloses, obeying the LOCAL contract above. */
+typedef markdown_core_complete_result (*markdown_core_complete_text_func)(const markdown_core_element_instance *self,
                                                                           markdown_core_parser *parser,
-                                                                          markdown_core_draft *node,
-                                                                          markdown_core_event_type event, int is_root,
-                                                                          void **state);
+                                                                          markdown_core_draft *text);
 
 typedef void (*markdown_core_opaque_alloc_func)(const markdown_core_element *element, markdown_core_node *node);
 
@@ -773,10 +734,15 @@ markdown_core_draft *markdown_core_inline_attach_field(markdown_core_parser *par
  * pool. */
 void markdown_core_inline_release(markdown_core_parser *parser, markdown_core_draft *draft);
 
-/** Completes `draft`, which a completion step put before the node it is at,
- * and every draft below it, as the root's completion completes the drafts it
- * passes (docs/plans/2026-09-29-incremental-parsing.md, 5.8). */
-void markdown_core_inline_complete(markdown_core_parser *parser, markdown_core_draft *draft);
+/** `draft` is REDUCED (docs/plans/2026-09-29-incremental-parsing.md, 5.8):
+ * the nodes it holds and its field roots are final, its closer paired or its
+ * bracket closed, each that holds nodes reduced before it. Its run of Text
+ * merges, and it numbers what it holds, unless what that means reads what
+ * encloses it and that is not decided yet: the node whose reduction decides
+ * it then completes it. `inline_state` is the run that read it, or NULL for
+ * a node a completion step inserted. */
+void markdown_core_inline_reduce(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
+                                 markdown_core_draft *draft);
 
 /** Make the Text node a delimiter run stands as: its literal is the bytes
  * [from, to] of the block's content and its position is a projection of that

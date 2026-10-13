@@ -45,6 +45,9 @@ markdown_core_bracket_match markdown_core_span_close(const markdown_core_element
                 }
             }
             markdown_core_inline_pop_bracket(link, inline_state);
+            if (span) {
+                markdown_core_inline_reduce(parser, inline_state, span);
+            }
             return BRACKET_MATCHED;
         }
     }

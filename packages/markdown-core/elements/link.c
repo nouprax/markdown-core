@@ -613,7 +613,7 @@ bool markdown_core_link_commit(const markdown_core_element_instance *link, markd
     if (!is_image) {
         markdown_core_brackets(link, inline_state)->no_link_openers = true;
     }
-
+    markdown_core_inline_reduce(parser, inline_state, made);
     return true;
 }
 
@@ -663,6 +663,7 @@ void markdown_core_inline_pop_bracket(const markdown_core_element_instance *link
         markdown_core_inline_remove_delimiter(inline_state, b->delim_end);
     }
     markdown_core_inline_free_citation_tokens(inline_state, &b->citations);
+    brackets->links -= b->kind == BRACKET_LINK;
     markdown_core_free(b);
 }
 
@@ -699,6 +700,7 @@ void markdown_core_inline_push_bracket(const markdown_core_element_instance *lin
         b->in_bracket_image0 = true;
     }
     brackets->last = b;
+    brackets->links += kind == BRACKET_LINK;
     if (kind != BRACKET_IMAGE) {
         brackets->no_link_openers = false;
     }
@@ -814,6 +816,7 @@ static void dispose_inline(const markdown_core_element_instance *self, markdown_
     while (brackets->pending) {
         bracket *next = brackets->pending->pending_next;
         markdown_core_inline_free_citation_tokens(inline_state, &brackets->pending->citations);
+        brackets->links -= brackets->pending->kind == BRACKET_LINK;
         markdown_core_free(brackets->pending);
         brackets->pending = next;
     }
@@ -830,6 +833,13 @@ static bool holds_inline(const markdown_core_element_instance *self, const markd
     return brackets->last || brackets->pending;
 }
 
+/* A link bracket still open, or one whose citation tail waits, may yet
+ * become a Link around what the run reduces now. */
+static bool encloses_inline(const markdown_core_element_instance *self, const markdown_core_inline_state *inline_state,
+                            markdown_core_node_type kind) {
+    return kind == MARKDOWN_CORE_NODE_LINK && markdown_core_brackets(self, inline_state)->links;
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK = {
     .peers = LINK_PEERS,
     .init_inline = init_inline,
@@ -839,6 +849,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK = {
     .inline_precedence = MARKDOWN_CORE_INLINE_FALLBACK,
     .dispose_inline = dispose_inline,
     .holds_inline = holds_inline,
+    .encloses_inline = encloses_inline,
 
     .name = "link",
     .match_inline = match_bracket,

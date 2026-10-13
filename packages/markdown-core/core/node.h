@@ -1086,22 +1086,25 @@ markdown_core_stem *markdown_core_built_stem(markdown_core_node_pool *pool, cons
 void markdown_core_frame_release(markdown_core_node_pool *pool, markdown_core_frame *frame);
 
 /* A NODE OF AN INLINE ROOT'S CONTENT BEING BUILT (docs/plans/2026-09-29-
- * incremental-parsing.md, 5.11): while the parse of an inline root builds a
- * node, its place among the nodes being built is this draft's. Its owner,
- * its siblings and its children are the drafts of the nodes beside it;
+ * incremental-parsing.md, 5.8, 5.11): while the parse of an inline root
+ * builds a node, its place among the nodes being built is this draft's. Its
+ * owner, its siblings and its children are the drafts of the nodes beside it;
  * `fields` are the drafts of the node's field roots, in the order its fields
  * were built, linked through `next`: a citation's note and affixes, which the
  * inline parse fills as it makes the citation, and `field` says a draft is
  * one. `held` says whether the draft holds the node's reference: a child does
- * until its owner's completion hands it to the owner's stem; a field root,
+ * until its owner's reduction hands it to the owner's stem; a field root,
  * whose node its owner's field holds, and the root's holder, which its block
  * holds, do not. `reads` is what the decisions about the node read (5.6), and
  * `taken` says the node is an old one the parse took whole.
  *
- * A draft carries what the node continues (5.9): once `decided`, the old
- * node `old`, which starts at `old_start` in the old source, or none; as an
- * owner, its cursor into that node's relation is `pair`. Its completion
- * collects the `orders` of its subtree.
+ * The node is `reduced` once the nodes it holds are final: its closer paired
+ * or its bracket closed. It then completes, unless what it holds reads what
+ * encloses it (`needs`, the contexts of markdown_core_inline_reduce), which
+ * the node that decides that completes. A complete node numbers what it
+ * holds: each takes the old node it continues, `old`, which the root's match
+ * found, `match` naming it there, or its own old node when `taken`. Its
+ * completion collects the `orders` of its subtree.
  *
  * Drafts live in the parser's draft area (markdown_core_drafts), from which
  * the parse of one root takes them, and which the root's completion clears:
@@ -1111,10 +1114,10 @@ struct markdown_core_draft {
     struct markdown_core_draft *owner, *prev, *next, *first, *last, *fields;
     markdown_core_inline_reads reads;
     const markdown_core_node *old;
-    uint32_t old_start;
-    markdown_core_pairing pair;
     markdown_core_orders orders;
-    bool held, field, taken, decided;
+    uint32_t match;
+    uint8_t needs;
+    bool held, field, taken, reduced;
 };
 
 /* THE DRAFT AREA: chunks of drafts at fixed addresses, so a draft is never
@@ -1209,8 +1212,11 @@ bool markdown_core_draft_freeze(markdown_core_node_pool *pool, markdown_core_dra
                                 const markdown_core_stem_summary *summary);
 
 /* Releases into `pool` the references `draft`, detached, and every draft
- * below it hold; the drafts stay in their area until it clears. */
-void markdown_core_draft_release(markdown_core_node_pool *pool, markdown_core_draft *draft);
+ * below it hold; the drafts stay in their area until it clears. None is
+ * taken from then on, and `forget`, when given, is told of each that matched
+ * an old node, with `context`. */
+void markdown_core_draft_release(markdown_core_node_pool *pool, markdown_core_draft *draft,
+                                 void (*forget)(void *context, markdown_core_draft *draft), void *context);
 
 #ifdef __cplusplus
 }

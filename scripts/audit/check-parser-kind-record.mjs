@@ -1,15 +1,8 @@
 #!/usr/bin/env node
-/** `parser->kinds_created` decides which completion steps run -- a step at
- * every event it was projected to, when its gate is open. A production
- * site that produces a node kind without recording it does not fail a build or
- * a test: it makes the gate skip a hook some document needed, and the defect
- * surfaces as a missing rewrite far from the line that caused it.
- *
- * That used to be policed here, over twenty-one creation sites each paired
- * with a separate `markdown_core_parser_note_kind` call. It is not policed any
- * more, because recording is now part of producing a node:
+/** A NODE THE PARSE MAKES LIVES IN THE PARSE'S POOL, and a block whose kind
+ * changes reads the old node of its new kind again (5.9):
  * `markdown_core_parser_make_node`, `markdown_core_parser_make_node_with_ext`
- * and `markdown_core_parser_set_node_kind` record the kind they are given.
+ * and `markdown_core_parser_set_node_kind` are the operations that do both.
  *
  * What is left to hold is that production code uses THOSE and not the
  * parser-less forms underneath them, which exist for callers that have no
@@ -34,7 +27,7 @@ const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const pkg = path.join(root, "packages/markdown-core");
 
 /** The parser-less forms. Production code reaches them only through the
- * recording wrappers in `parser.h`. */
+ * parse's operations in `parser.h`. */
 const UNRECORDED = /\bmarkdown_core_node_(?:new(?:_with_ext)?|set_kind)\s*\(/g;
 const RECORDING = /\bmarkdown_core_parser_(?:make_node(?:_with_ext)?|set_node_kind)\s*\(/g;
 const UNCOUNTED_FREE = /\bmarkdown_core_node_free\s*\(/g;
@@ -45,7 +38,7 @@ const TEARDOWNS = new Set(["elements/ast.c:markdown_core_document_free", "core/b
 
 /** Where the parser-less forms are allowed to appear: the two headers that
  * DECLARE them, the translation unit that DEFINES them, and `parser.h`, where
- * the recording wrappers are the one thing in the library that calls them. */
+ * the parse's operations are the one thing in the library that calls them. */
 const DEFINES_THEM = new Set(["core/node.h", "core/markdown-core-element-api.h", "core/node.c", "core/parser.h"]);
 
 const failures = [];
@@ -78,7 +71,7 @@ for (const file of librarySources()) {
         const owner = enclosingFunction(stripped, match.index);
         failures.push(
             `${file}:${line}: ${owner} produces a node kind through ${match[0].replace(/\s*\($/, "")}, ` +
-                `which does not record it; use the markdown_core_parser_ form`
+                `outside the parse; use the markdown_core_parser_ form`
         );
     }
     for (const match of stripped.matchAll(UNCOUNTED_FREE)) {
@@ -93,7 +86,7 @@ for (const file of librarySources()) {
 }
 
 if (!recordingSites) {
-    failures.push("found no recording creation sites; the audit is not reaching the sources");
+    failures.push("found no creation sites through the parse; the audit is not reaching the sources");
 }
 if (!countedReleases) {
     failures.push("found no release sites through the parse; the audit is not reaching the sources");
@@ -106,6 +99,6 @@ if (failures.length) {
     process.exit(1);
 }
 console.log(
-    `audit-parser-kind-record: ${recordingSites} node-kind writes, every one through a recording operation; ` +
+    `audit-parser-kind-record: ${recordingSites} node-kind writes, every one through the parse; ` +
         `${countedReleases} releases, every one through the parse`
 );

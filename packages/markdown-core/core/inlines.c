@@ -476,7 +476,10 @@ void markdown_core_inline_complete_token(markdown_core_parser *parser, markdown_
     if (!entry || entry->kind != DELIMITER_FIELD) {
         return;
     }
-    bool whitespace = markdown_core_parse_inline_subtrees(parser, entry->draft);
+    markdown_core_draft *token = entry->draft;
+    bool whitespace = markdown_core_parse_inline_subtrees(parser, token);
+    /* Its fields are final: the token is reduced. */
+    markdown_core_inline_reduce(parser, inline_state, token);
     if (whitespace) {
         entry->kind = DELIMITER_BOUNDARY;
         entry->draft = NULL;
@@ -849,6 +852,8 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
         closer = tmp_delim;
     }
 
+    /* What the pair encloses is final: the inline is reduced. */
+    markdown_core_inline_reduce(inline_state->owner_parser, inline_state, inline_draft);
     return closer;
 }
 
@@ -1331,9 +1336,13 @@ static bool S_take_old(markdown_core_parser *parser, markdown_core_inline_state 
                                       inline_state->mark_cursor);
     }
     const bool boundary = (old->entry & MARKDOWN_CORE_INLINE_ENTRY_BOUNDARY) != 0;
-    draft->taken = draft->decided = true;
+    draft->taken = true;
     draft->old = old;
-    draft->old_start = (uint32_t)start;
+    const markdown_core_element_instance *document = parser->dialect->document_structure;
+    document->element->take_old(document, parser, draft);
+    if (parser->error) {
+        return false;
+    }
     draft->reads = (markdown_core_inline_reads){
         .rules = rules,
         .state = inline_state->token.state,
@@ -1446,12 +1455,9 @@ const markdown_core_key *markdown_core_inline_ask(markdown_core_inline_state *in
     /* The question is the root's: a later parse asks it again, so no parse
      * takes the token that asked it whole. */
     markdown_core_inline_outside(inline_state);
-    /* A key whose declarations are not final has no answer yet: the read
-     * waits, and records nothing. */
-    if (parser->unsettled & (1u << group)) {
-        parser->waits = true;
-        return NULL;
-    }
+    /* A key whose declarations are not final has no answer yet: a read
+     * that may ask one waits before it does (element.h, `read_content`). */
+    assert(!(parser->unsettled & (1u << group)));
     const unsigned char *bytes = label->data;
     uint32_t length = (uint32_t)label->len;
     bool failed = false;
@@ -1507,6 +1513,8 @@ void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_c
     markdown_core_chunk content = S_inline_content(parser, parent);
     markdown_core_inline_state_from_buf(parser, inline_state, &content);
     inline_state->owner = owner;
+    inline_state->outer = parser->inline_run;
+    parser->inline_run = inline_state;
     inline_state->mark_cursor = parent->content_map.first;
     markdown_core_inline_seat_cursor(inline_state);
 }
@@ -1532,8 +1540,457 @@ void markdown_core_inline_clear_inlines(markdown_core_inline_state *inline_state
     }
     S_cursor_free(inline_state->cursor);
     inline_state->cursor = NULL;
+    if (parser->inline_run == inline_state) {
+        parser->inline_run = inline_state->outer;
+    }
     if (inline_state->error) {
         markdown_core_parser_fail(parser, inline_state->error);
+    }
+}
+
+/* AN INLINE NODE COMPLETES AS IT IS REDUCED (docs/plans/2026-09-29-
+ * incremental-parsing.md, 5.8). */
+
+/* WHAT ENCLOSES A NODE, as far as a Text's meaning reads it (5.8): whether a
+ * word body does -- an escaped space in one is a no-break space -- and, for
+ * each element that completes Text, whether a node of the kind it completes
+ * Text outside of does. Each is one bit of a context, set when one encloses. */
+#define S_CONTEXT_WORD 1u
+
+static inline unsigned S_context_completer(size_t at) { return 2u << at; }
+
+static inline size_t S_completers(const markdown_core_parser *parser) {
+    return parser->dialect->inline_hook_counts[MARKDOWN_CORE_INLINE_HOOK_COMPLETE_TEXT];
+}
+
+/* A block begins what encloses its content anew. */
+static inline bool S_block_kind(const markdown_core_node *node) {
+    return ((unsigned)node->kind & MARKDOWN_CORE_NODE_TYPE_MASK) == MARKDOWN_CORE_NODE_TYPE_BLOCK;
+}
+
+/* What `node` encloses the nodes it holds in. */
+static unsigned S_inside(const markdown_core_parser *parser, const markdown_core_node *node) {
+    unsigned inside = node->element && node->element->delimiter.body == DELIMITER_WORD_BODY ? S_CONTEXT_WORD : 0;
+    const markdown_core_element_instance *const *completers =
+        parser->dialect->inline_hooks[MARKDOWN_CORE_INLINE_HOOK_COMPLETE_TEXT];
+    for (size_t i = 0; i < S_completers(parser); i++) {
+        if (node->kind == completers[i]->element->complete_text_outside) {
+            inside |= S_context_completer(i);
+        }
+    }
+    return inside;
+}
+
+/* What a Text's completion reads of what encloses it: whether a word body
+ * does, for an escaped space, and, for one the parse read rather than took
+ * whole, whether each element's kind does. */
+static unsigned S_text_needs(const markdown_core_parser *parser, const markdown_core_draft *text) {
+    unsigned needs = text->node->flags & MARKDOWN_CORE_NODE__ESCAPED_SPACE ? S_CONTEXT_WORD : 0;
+    if (!text->taken) {
+        needs |= S_context_completer(S_completers(parser)) - 2u;
+    }
+    return needs;
+}
+
+/* What the nodes `draft` holds read of what encloses it: what its Texts
+ * read, and what each node it holds that has not completed waits on; of a
+ * field root's, which begins every context but the word bodies anew, only
+ * that, and nothing of a block's. */
+static unsigned S_level_needs(const markdown_core_parser *parser, const markdown_core_draft *draft) {
+    unsigned needs = 0;
+    for (const markdown_core_draft *child = draft->first; child; child = child->next) {
+        assert(child->reduced || (!child->first && !child->fields));
+        needs |= child->node->kind == MARKDOWN_CORE_NODE_TEXT ? S_text_needs(parser, child) : child->needs;
+    }
+    return needs;
+}
+
+/* Whether `field` is a group its owner's reduction gathered nodes into,
+ * which no run read and so completes with its owner. */
+static inline bool S_gathers(const markdown_core_draft *field) {
+    return (field->node->flags & MARKDOWN_CORE_NODE__GROUP) && !field->reduced;
+}
+
+static unsigned S_needs(const markdown_core_parser *parser, const markdown_core_draft *draft) {
+    unsigned needs = S_level_needs(parser, draft);
+    for (const markdown_core_draft *field = draft->fields; field; field = field->next) {
+        if (!S_block_kind(field->node)) {
+            needs |= (S_gathers(field) ? S_level_needs(parser, field) : field->needs) & S_CONTEXT_WORD;
+        }
+    }
+    return needs & ~S_inside(parser, draft->node);
+}
+
+/* Whether a word body may still open around what `run` reduces now: an
+ * opener of a rule that makes one is on its stack. */
+static bool S_rules_open(const markdown_core_inline_state *run, uint32_t rules) {
+    for (uint32_t open = run->delim_rules & rules; open; open &= open - 1) {
+        if (run->delim_openers[__builtin_ctz(open)]) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* What a construct still open around `draft`, which `inline_state`'s run
+ * reduces now, may yet set: a word body whose opener is on the stack of its
+ * run, or of a run it lies in, up to a block's; and, of the run's own, an
+ * opener or a bracket that can still become a node of a kind a Text is
+ * completed outside of. A run's holder lies where the token holding it does
+ * in the run outside, and a field root begins those kinds anew. */
+static unsigned S_open(const markdown_core_parser *parser, const markdown_core_inline_state *inline_state,
+                       const markdown_core_draft *draft) {
+    const markdown_core_dialect *dialect = parser->dialect;
+    unsigned open = 0;
+    const markdown_core_inline_state *run = inline_state;
+    if (draft == inline_state->owner) {
+        if (S_block_kind(draft->node)) {
+            return 0;
+        }
+        run = inline_state->outer;
+    } else {
+        const markdown_core_element_instance *const *completers =
+            dialect->inline_hooks[MARKDOWN_CORE_INLINE_HOOK_COMPLETE_TEXT];
+        const markdown_core_element_instance *const *encloses =
+            dialect->inline_hooks[MARKDOWN_CORE_INLINE_HOOK_ENCLOSES];
+        for (size_t i = 0; i < S_completers(parser); i++) {
+            const markdown_core_node_type kind = completers[i]->element->complete_text_outside;
+            bool may = S_rules_open(inline_state, dialect->text_outside_rules[i]);
+            for (size_t e = 0; !may && e < dialect->inline_hook_counts[MARKDOWN_CORE_INLINE_HOOK_ENCLOSES]; e++) {
+                may = encloses[e]->element->encloses_inline(encloses[e], inline_state, kind);
+            }
+            open |= may ? S_context_completer(i) : 0;
+        }
+    }
+    for (; run; run = run->outer) {
+        if (S_rules_open(run, dialect->word_body_rules)) {
+            return open | S_CONTEXT_WORD;
+        }
+        if (S_block_kind(run->owner->node)) {
+            break;
+        }
+    }
+    return open;
+}
+
+/* A TEXT ABSORBS THE TEXTS AFTER IT, and what their decisions read with
+ * them (S_join_reads). */
+static int32_t S_reads_until(const markdown_core_parser *parser, const markdown_core_inline_reads *reads) {
+    const int32_t stay = reads->stay ? parser->stays[reads->stay - 1] : -1;
+    return stay > reads->until ? stay : reads->until;
+}
+
+/* `into` also read what `from` read: the decisions about a node read what
+ * those about the nodes it holds or absorbs read. */
+static void S_join_reads(const markdown_core_parser *parser, markdown_core_inline_reads *into,
+                         const markdown_core_inline_reads *from) {
+    const int32_t until = S_reads_until(parser, from);
+    into->rules |= from->rules;
+    into->low = from->low < into->low ? from->low : into->low;
+    into->reach = from->reach > into->reach ? from->reach : into->reach;
+    into->until = until > into->until ? until : into->until;
+    into->flags = (into->flags & from->flags & (MARKDOWN_CORE_INLINE_RECORDED | MARKDOWN_CORE_INLINE_LOCAL)) |
+                  ((into->flags | from->flags) & (MARKDOWN_CORE_INLINE_BOUNDARY | MARKDOWN_CORE_INLINE_CONTEXT));
+}
+
+/* Whether a Text has a Text after it to absorb, or no bytes to keep. */
+static inline bool S_text_merges(const markdown_core_draft *text) {
+    return (text->next && text->next->node->kind == MARKDOWN_CORE_NODE_TEXT) || text->node->as.literal->len == 0;
+}
+
+/* A Text completes as what encloses it says: an escaped space inside a
+ * word body is a no-break space (text.c). */
+static void S_complete_text_node(markdown_core_parser *parser, markdown_core_node *node, unsigned within) {
+    const markdown_core_kind_record *plan = &parser->dialect->kinds[MARKDOWN_CORE_KIND_TEXT_INDEX];
+    if (plan->complete) {
+        plan->complete(plan->structure, parser, node, (within & S_CONTEXT_WORD) ? 1 : 0);
+    }
+}
+
+/* THE RUN OF TEXT MERGES: `text` absorbs every Text after it -- its
+ * literal, the source runs of its map and its end, each absorbed Text
+ * completed first. The merged literal is allocated once, at the run's summed
+ * length. False when an allocation failed. */
+static bool S_merge_text(markdown_core_parser *parser, markdown_core_draft *text, unsigned within) {
+    markdown_core_node *cur = text->node;
+    for (markdown_core_draft *next = text->next; next && next->node->kind == MARKDOWN_CORE_NODE_TEXT;
+         next = next->next) {
+        S_join_reads(parser, &text->reads, &next->reads);
+        text->reads.end = next->reads.end;
+    }
+    /* THE MERGED TEXT'S MAP IS A VIEW WHEN ITS OPERANDS ARE: a Text that
+     * is a verbatim copy of its source holds a slice of its container's
+     * runs (markdown_core_inline_map_text), and while each operand's
+     * bytes begin where the one before ended and its first run is that
+     * one's last or the one after, the union is the slice from the first
+     * operand's first run to the last operand's last. A decoded operand
+     * or one with no map breaks the chain, and the union is materialized
+     * run by run. */
+    markdown_core_content_map combined_map = {0};
+    bool view = cur->content_map.count > 0;
+    int view_end = cur->content_map.first + cur->content_map.count;
+    bufsize_t view_offset = cur->content_map.offset + cur->as.literal->len;
+    size_t length = (size_t)cur->as.literal->len;
+    for (markdown_core_draft *next = text->next; next && next->node->kind == MARKDOWN_CORE_NODE_TEXT;
+         next = next->next) {
+        const markdown_core_node *tmp = next->node;
+        length += (size_t)tmp->as.literal->len;
+        if (!view) {
+            continue;
+        }
+        view = tmp->content_map.count > 0 && tmp->content_map.offset == view_offset &&
+               tmp->content_map.first >= view_end - 1 && tmp->content_map.first <= view_end;
+        view_end = tmp->content_map.first + tmp->content_map.count;
+        view_offset += tmp->as.literal->len;
+    }
+    /* The bound every literal buffer shares. */
+    if (length > (size_t)MARKDOWN_CORE_STRBUF_LIMIT) {
+        return false;
+    }
+    if (view) {
+        combined_map.first = cur->content_map.first;
+        combined_map.count = view_end - cur->content_map.first;
+        combined_map.offset = cur->content_map.offset;
+    } else if (!markdown_core_parser_append_content_marks(parser, &cur->content_map, &combined_map, 0,
+                                                          cur->as.literal->len, 0)) {
+        return false;
+    }
+    unsigned char *merged = markdown_core_bytes_take(NULL, length + 1, 0);
+    if (!merged) {
+        return false;
+    }
+    bufsize_t at = cur->as.literal->len;
+    if (at) {
+        memcpy(merged, cur->as.literal->data, (size_t)at);
+    }
+    while (text->next && text->next->node->kind == MARKDOWN_CORE_NODE_TEXT) {
+        markdown_core_draft *next = text->next;
+        markdown_core_node *tmp = next->node;
+        S_complete_text_node(parser, tmp, within);
+        if (!view && !markdown_core_parser_append_content_marks(parser, &tmp->content_map, &combined_map, 0,
+                                                                tmp->as.literal->len, at)) {
+            markdown_core_bytes_release(NULL, merged);
+            return false;
+        }
+        if (tmp->as.literal->len) {
+            memcpy(merged + at, tmp->as.literal->data, (size_t)tmp->as.literal->len);
+            at += tmp->as.literal->len;
+        }
+        /* The merged Text covers every operand's scope, an empty one's
+         * too: the operands lie left to right, each where the one before
+         * ended, so a scope does not depend on where tokens were cut. */
+        cur->where.place.end = tmp->where.place.end;
+        markdown_core_inline_release(parser, next);
+    }
+    cur->content_map = combined_map;
+    if (cur->as.literal->alloc) {
+        markdown_core_node_pool_bytes_free(parser->pool, cur->as.literal->data);
+    }
+    merged[at] = '\0';
+    *cur->as.literal = (markdown_core_chunk){merged, at, 1};
+    return true;
+}
+
+/* AN INLINE NODE'S ENTRY (docs/plans/2026-09-29-incremental-parsing.md, 5.6),
+ * once it is complete: a later parse may take it whole where the stack holds
+ * no entry of the rules its decisions counted or searched, when its
+ * decisions read nothing but the root's content, none read the nodes around
+ * it or a token held open where it begins, the rules they counted had no
+ * entry there, every delimiter it holds left the stack by its end, and it
+ * lies on the bytes it was read from: where the root's content is all the
+ * old one's, and else when every decision about it said what it read. Its
+ * reach is the content offset its decisions read up to. Its owner read what
+ * it read. */
+static void S_settle_reads(markdown_core_parser *parser, markdown_core_draft *draft) {
+    markdown_core_inline_reads *reads = &draft->reads;
+    markdown_core_node *node = draft->node;
+    reads->until = S_reads_until(parser, reads);
+    reads->stay = 0;
+    if ((reads->flags & (MARKDOWN_CORE_INLINE_LOCAL | MARKDOWN_CORE_INLINE_CONTEXT)) == MARKDOWN_CORE_INLINE_LOCAL &&
+        !(reads->state & MARKDOWN_CORE_INLINE_HELD) && !(reads->rules & reads->state) && reads->until <= reads->end &&
+        node->where.place.start == (uint32_t)reads->start && node->where.place.end == (uint32_t)reads->end) {
+        node->entry = markdown_core_inline_entry(reads->flags & MARKDOWN_CORE_INLINE_RECORDED, reads->rules,
+                                                 reads->flags & MARKDOWN_CORE_INLINE_BOUNDARY,
+                                                 (uint32_t)(reads->start - reads->low));
+        node->reach = (uint32_t)reads->reach;
+    }
+    S_join_reads(parser, &draft->owner->reads, reads);
+}
+
+/* A TAKEN NODE ITS OWNER'S COMPLETION CHANGES IS READ AS A NEW ONE: a Text
+ * that merges with a Text beside it or holds no bytes, or one that no longer
+ * lies on the bytes it was taken at. It continues what the root's match
+ * finds, and its entry and reach are its decisions'. */
+static void S_settle_taken(markdown_core_parser *parser, markdown_core_draft *draft) {
+    markdown_core_node *node = draft->node;
+    if (!draft->taken || (node->where.place.start == (uint32_t)draft->reads.start &&
+                          node->where.place.end == (uint32_t)draft->reads.end &&
+                          !(node->kind == MARKDOWN_CORE_NODE_TEXT && S_text_merges(draft)))) {
+        return;
+    }
+    draft->taken = false;
+    if (draft->match) {
+        const markdown_core_element_instance *document = parser->dialect->document_structure;
+        document->element->forget_draft(document, parser, draft);
+    }
+    draft->old = NULL;
+    node->entry = 0;
+    node->reach = 0;
+}
+
+/* THE NODES `level` HOLDS COMPLETE, in what encloses them, `within`: each
+ * taken node the completion changes is read as new, each run of Text merges,
+ * each Text completes, and each element that completes Text outside a kind
+ * not around it is asked, in order; in the root's content (`settle`), each
+ * keeps what its decisions read. A completion step inserts before the Text
+ * it is at, and what it inserts completes in the same context. The level
+ * then takes its stem. */
+static void S_complete_level(markdown_core_parser *parser, markdown_core_draft *level, unsigned within, bool settle) {
+    const markdown_core_element_instance *const *completers =
+        parser->dialect->inline_hooks[MARKDOWN_CORE_INLINE_HOOK_COMPLETE_TEXT];
+    const unsigned context = parser->text_context;
+    parser->text_context = within;
+    for (markdown_core_draft *draft = level->first; draft && !parser->error;) {
+        S_settle_taken(parser, draft);
+        if (draft->node->kind == MARKDOWN_CORE_NODE_TEXT && !draft->taken) {
+            S_complete_text_node(parser, draft->node, within);
+            if (draft->next && draft->next->node->kind == MARKDOWN_CORE_NODE_TEXT &&
+                !S_merge_text(parser, draft, within)) {
+                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+                break;
+            }
+            /* What follows the run; a step inserts only before the Text. */
+            markdown_core_draft *after = draft->next;
+            /* A Text that holds no bytes is no node. */
+            markdown_core_complete_result result =
+                draft->node->as.literal->len ? MARKDOWN_CORE_COMPLETE_CONTINUE : MARKDOWN_CORE_COMPLETE_CONSUMED;
+            if (result == MARKDOWN_CORE_COMPLETE_CONSUMED) {
+                markdown_core_inline_release(parser, draft);
+            }
+            for (size_t i = 0; i < S_completers(parser) && result == MARKDOWN_CORE_COMPLETE_CONTINUE; i++) {
+                if (!(within & S_context_completer(i))) {
+                    result = completers[i]->element->complete_text(completers[i], parser, draft);
+                }
+            }
+            if (result == MARKDOWN_CORE_COMPLETE_FAILED) {
+                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+                break;
+            }
+            if (result == MARKDOWN_CORE_COMPLETE_CONSUMED) {
+                draft = after;
+                continue;
+            }
+        }
+        if (settle) {
+            S_settle_reads(parser, draft);
+        }
+        draft = draft->next;
+    }
+    parser->text_context = context;
+    if (!parser->error &&
+        !markdown_core_draft_freeze(parser->pool, level, markdown_core_parser_kind(parser, level->node)->summary)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+}
+
+/* A NODE COMPLETES in what encloses it, `context`: its affixes and then the
+ * nodes it holds complete, and the document numbers what it holds (5.8,
+ * 5.9). A group's owner numbers it. */
+static void S_complete_node_of(markdown_core_parser *parser, markdown_core_draft *draft, unsigned context,
+                               bool settle) {
+    const unsigned within = context | S_inside(parser, draft->node);
+    for (markdown_core_draft *field = draft->fields; field && !parser->error; field = field->next) {
+        if (S_gathers(field)) {
+            S_complete_level(parser, field, S_block_kind(field->node) ? 0 : within & S_CONTEXT_WORD, false);
+        }
+    }
+    if (!parser->error) {
+        S_complete_level(parser, draft, within, settle);
+    }
+    draft->needs = 0;
+    if (!parser->error) {
+        const markdown_core_element_instance *document = parser->dialect->document_structure;
+        document->element->complete_draft(document, parser, draft);
+    }
+}
+
+/* A node and every node under it that waits on what encloses it complete,
+ * the deepest first, on the parser's explicit stack: what encloses each is
+ * what encloses its owner and its owner itself, and a field root begins every
+ * context but the word bodies anew, a block's all of them. */
+typedef struct markdown_core_completion {
+    markdown_core_draft *draft;
+    unsigned context;
+    bool settle, open;
+} markdown_core_completion;
+
+static bool S_completion_push(markdown_core_parser *parser, markdown_core_draft *draft, unsigned context, bool settle) {
+    markdown_core_completion *items = markdown_core_reserve(parser->completions, &parser->completion_capacity,
+                                                            parser->completion_count + 1, sizeof(*items));
+    if (!items) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return false;
+    }
+    parser->completions = items;
+    items[parser->completion_count++] = (markdown_core_completion){draft, context, settle, false};
+    return true;
+}
+
+static void S_complete(markdown_core_parser *parser, markdown_core_draft *draft, unsigned context, bool settle) {
+    const size_t base = parser->completion_count;
+    if (!S_completion_push(parser, draft, context, settle)) {
+        return;
+    }
+    while (parser->completion_count > base && !parser->error) {
+        markdown_core_completion *top = &parser->completions[parser->completion_count - 1];
+        if (top->open) {
+            const markdown_core_completion done = *top;
+            parser->completion_count--;
+            S_complete_node_of(parser, done.draft, done.context, done.settle);
+            continue;
+        }
+        top->open = true;
+        markdown_core_draft *node = top->draft;
+        const bool within_settle = top->settle;
+        const unsigned within = top->context | S_inside(parser, node->node);
+        for (markdown_core_draft *child = node->first; child; child = child->next) {
+            if (child->needs && !S_completion_push(parser, child, within, within_settle)) {
+                return;
+            }
+        }
+        for (markdown_core_draft *field = node->fields; field; field = field->next) {
+            const unsigned inherited = S_block_kind(field->node) ? 0 : within & S_CONTEXT_WORD;
+            if (S_gathers(field)) {
+                for (markdown_core_draft *child = field->first; child; child = child->next) {
+                    if (child->needs && !S_completion_push(parser, child, inherited, false)) {
+                        return;
+                    }
+                }
+            } else if (field->needs && !S_completion_push(parser, field, inherited, false)) {
+                return;
+            }
+        }
+    }
+    parser->completion_count = base;
+}
+
+void markdown_core_inline_reduce(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
+                                 markdown_core_draft *draft) {
+    if (parser->error) {
+        return;
+    }
+    assert(!draft->reduced);
+    draft->reduced = true;
+    const unsigned needs = S_needs(parser, draft);
+    /* A node a completion step inserted lies in the level being completed,
+     * whose context is known; one a run reduces completes now when nothing
+     * still open around it can change what it reads. */
+    if (!inline_state) {
+        S_complete(parser, draft, parser->text_context, false);
+    } else if (!needs || !(needs & S_open(parser, inline_state, draft))) {
+        S_complete(parser, draft, 0, inline_state->records && draft != inline_state->owner);
+    } else {
+        draft->needs = (uint8_t)needs;
     }
 }
 
@@ -1549,7 +2006,8 @@ bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_
 }
 
 bool markdown_core_inline_end_inlines(markdown_core_parser *parser, markdown_core_inline_state *inline_state) {
-    if (!parser->error && !inline_state->error) {
+    /* A read that waits makes nothing more. */
+    if (!parser->error && !inline_state->error && !parser->waits) {
         const markdown_core_element_instance *const *owners =
             parser->dialect->inline_hooks[MARKDOWN_CORE_INLINE_HOOK_FINISH];
         size_t count = parser->dialect->inline_hook_counts[MARKDOWN_CORE_INLINE_HOOK_FINISH];
@@ -1561,6 +2019,10 @@ bool markdown_core_inline_end_inlines(markdown_core_parser *parser, markdown_cor
     }
     bool whitespace = inline_state->last_delim && inline_state->last_delim->kind == DELIMITER_BOUNDARY;
     markdown_core_inline_clear_inlines(inline_state);
+    /* The run's holder is reduced: every delimiter has left the stack. */
+    if (!parser->error && !parser->waits) {
+        markdown_core_inline_reduce(parser, inline_state, inline_state->owner);
+    }
     return whitespace;
 }
 

@@ -954,14 +954,19 @@ follows the parse.
 
 An inline node matches within its root: it continues the earliest old node
 of the old root's content, not yet matched, whose kind is its own and whose
-anchor image lies in its source window. It decides this when it is reduced
-(5.8), a Text when the level it is in is reduced. Old nodes the cursor takes
-whole continue themselves and are no candidates. Without an old root the
-node continues nothing and takes a new id. The candidates are the old nodes
-the cursor descends into, in preorder, so their anchor images never
-decrease; each item of the parse's level notes where the candidates stood
-at its start, and a matched candidate is skipped from then on, so matching a
-root is linear in the old nodes the cursor reads.
+anchor image lies in its source window. It decides this as the node holding
+it numbers it, when that node completes at its reduce (5.8); a field root
+decides as its holder numbers it. Old nodes the cursor takes whole continue
+themselves, the nodes they hold stay under them, and none of these is a
+candidate. Without an old root, or when the old node held blocks, the node
+continues nothing and takes a new id. The ranges of a content's nodes may
+overlap or nest in any way, so the old root's content is read whole when a
+node first asks, and each kind's candidates are ordered by anchor image. A
+matched candidate is closed, and the first open candidate at or after a
+window's start is found by one search over its kind's candidates and one
+descent of a Fenwick tree over them, so matching a root costs O(m log m)
+over its m old nodes. A node released before it completes reopens its
+candidate.
 
 As a matched read node `N` completes, after its children, it is compared
 with its `O`: equal kind, equal scalars, equal extent, and every child
