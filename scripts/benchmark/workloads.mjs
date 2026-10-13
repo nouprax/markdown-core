@@ -1026,7 +1026,7 @@ export function identityScripts() {
                 { start: 1, end: 3, text: "" },
                 { start: 11, end: 12, text: "" }
             ])
-            .expect("new", "Footnote", 3)
+            .expect("kept", "Footnote", 5, 3)
     );
     {
         const text = Array.from({ length: 200 }, (_, i) => `${word(i * 3 + 1)} ${word(i * 3 + 2)}\n\n`).join("");
