@@ -2182,11 +2182,12 @@ static void S_settle_reads(markdown_core_parser *parser, markdown_core_draft *dr
     S_join_reads(parser, &draft->owner->reads, reads);
 }
 
-const markdown_core_node *markdown_core_parser_old_root(const markdown_core_frame *frame,
+const markdown_core_node *markdown_core_parser_old_root(markdown_core_parser *parser, const markdown_core_frame *frame,
                                                         const markdown_core_node *holder, uint32_t *anchor) {
     const bool decided = frame->decided && frame->old;
     const markdown_core_node *old = decided ? frame->old : frame->scan;
-    if (frame->field || holder != frame->node || !old || old->kind != frame->node->kind) {
+    if (frame->field || holder != frame->node || !old || old->kind != frame->node->kind ||
+        !markdown_core_parser_contains_inlines(parser, (markdown_core_node *)old)) {
         return NULL;
     }
     *anchor = (uint32_t)((int64_t)(decided ? frame->old_start : frame->scan_start) - old->where.extent.lead);

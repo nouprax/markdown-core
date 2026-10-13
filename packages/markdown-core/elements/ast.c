@@ -1156,7 +1156,7 @@ static bool keep_content(const complete_context *context, markdown_core_frame *f
     markdown_core_parser *parser = context->parser;
     markdown_core_node *const node = frame->node;
     uint32_t anchor = 0;
-    const markdown_core_node *old = markdown_core_parser_old_root(frame, holder, &anchor);
+    const markdown_core_node *old = markdown_core_parser_old_root(parser, frame, holder, &anchor);
     const markdown_core_runs *runs = holder->runs;
     if (old && runs_alike(runs, old->runs) &&
         (!runs->decoded || memcmp(holder->content.ptr, old->content.ptr, runs->decoded) == 0)) {

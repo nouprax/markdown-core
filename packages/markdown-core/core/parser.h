@@ -931,10 +931,11 @@ bool markdown_core_parser_contains_inlines(markdown_core_parser *parser, markdow
 
 /* THE OLD ROOT WHOSE CONTENT AN INLINE ROOT READS AGAIN (5.6): the node of
  * the previous tree `frame` continues once decided, or else the one its
- * block reads again (5.3), when it is of the root's kind and holds its
- * content in `holder`, the frame's node itself; its runs are measured from
+ * block reads again (5.3), when it is an inline root of the root's kind --
+ * a cell whose content was read as blocks holds blocks -- and the root holds
+ * its content in `holder`, the frame's node itself; its runs are measured from
  * `*anchor` in the previous source. NULL when there is none. */
-const markdown_core_node *markdown_core_parser_old_root(const markdown_core_frame *frame,
+const markdown_core_node *markdown_core_parser_old_root(markdown_core_parser *parser, const markdown_core_frame *frame,
                                                         const markdown_core_node *holder, uint32_t *anchor);
 /* `frame`'s node, which holds an inline root in `holder`, lies at `place`
  * and is numbered, completes as the root does in the inline stage

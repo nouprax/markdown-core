@@ -1054,6 +1054,11 @@ export function identityScripts() {
      * old Text that read past that point is read again, and the heading
      * takes the attributes. */
     add("heading-tail-after-taken-text", "# g{${$}\n", (s) => s.edit([{ start: 5, end: 6, text: "" }]));
+    /* A grid table whose block cells become a pipe table's cells: a cell
+     * left with no content holds none of the old cell's blocks. */
+    add("table-grid-cell-to-empty-cell", "-------\nh   j\n--- ---\na   b\nc   d\n\ne   f\n-------\n", (s) =>
+        s.edit([{ start: 0, end: 10, text: "x" }])
+    );
     /* A code span's closer search reads what earlier spans' searches
      * learned of the runs after them; the answer must not depend on which
      * of those spans the edit took whole. */

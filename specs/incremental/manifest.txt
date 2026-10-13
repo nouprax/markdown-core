@@ -37,6 +37,8 @@ document documents/identity-heading-anchor-targets.md
 edits documents/identity-heading-anchor-targets.md scripts/identity-heading-anchor-targets.edits
 document documents/identity-heading-tail-after-taken-text.md
 edits documents/identity-heading-tail-after-taken-text.md scripts/identity-heading-tail-after-taken-text.edits
+document documents/identity-table-grid-cell-to-empty-cell.md
+edits documents/identity-table-grid-cell-to-empty-cell.md scripts/identity-table-grid-cell-to-empty-cell.edits
 document documents/identity-code-closer-after-span.md
 edits documents/identity-code-closer-after-span.md scripts/identity-code-closer-after-span.edits
 document documents/identity-table-header-refused.md
