@@ -121,7 +121,6 @@ export const sectionDispositions = {
             "composition-directive-callout",
             "common-setext-two",
             "metadata-types",
-            "leaf-promotion",
             "leading-caption"
         ),
         "Inline recognition": grammar(
@@ -182,7 +181,7 @@ export const sectionDispositions = {
         Formulas: grammar("opaque-formula", "opaque-display"),
         "Inline forms": grammar("opaque-formula", "formula-backtick", "formula-parenthesis", "formula-bracket"),
         "Dollar boundaries": grammar("opaque-formula", "opaque-display", "fallback-formula"),
-        "Formula blocks": grammar("leaf-formula", "leaf-promotion", "formula-bracket-block"),
+        "Formula blocks": grammar("leaf-formula", "formula-bracket-block"),
         "Code fences": grammar("leaf-fence")
     },
     headings: {

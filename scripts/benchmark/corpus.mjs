@@ -90,7 +90,6 @@ const builtinProducts = new Set([
     "leaf-comment",
     "leaf-formula",
     "leaf-fence",
-    "leaf-promotion",
     "record-span",
     "cross-link",
     "cross-embed",
@@ -481,9 +480,7 @@ export function productGrammar(id) {
                 ? ["%%\n", "\n%%\n\n"]
                 : id === "leaf-fence"
                   ? ["```formula\n", "\n```\n\n"]
-                  : id === "leaf-promotion"
-                    ? ["$$", "$$\n\n"]
-                    : ["$$\n", "\n$$\n\n"];
+                  : ["$$\n", "\n$$\n\n"];
         return pair([open, literal, close], ["```\n", literal, "\n```\n\n"]);
     }
     if (id === "record-span")
