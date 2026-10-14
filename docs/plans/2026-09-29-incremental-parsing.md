@@ -507,19 +507,20 @@ values are final.
 
 ### 5.3 Commit
 
-`append` adds the new bytes to the end of the text and then commits:
+`append` adds the new bytes to the end of the text and then commits, in
+this order:
 
-1. Copy the builder stack and record a mark in the registry log.
-2. On the copy, process the complete lines from the commit point, one at a
-   time. A line is complete when it ends with `\n`, or with `\r` followed by
-   another byte.
-3. If a line sees the end of the input (5.1), discard the copy: the nodes the
-   copy made are released with it, and the registry rolls back to the mark.
-   Then process only the lines before that line on a new copy.
-4. The copy becomes the builder stack and the commit point moves past the
-   processed lines. Blocks that closed, and captions a trailing line added,
-   join the completion queue. Blocks that settled are finished into settled
-   nodes.
+- Copy the builder stack and record a mark in the registry log.
+- On the copy, process the complete lines from the commit point, one at a
+  time. A line is complete when it ends with `\n`, or with `\r` followed by
+  another byte.
+- If a line sees the end of the input (5.1), discard the copy: the nodes the
+  copy made are released with it, and the registry rolls back to the mark.
+  Then process only the lines before that line on a new copy.
+- The copy becomes the builder stack and the commit point moves past the
+  processed lines. Blocks that closed, and captions a trailing line added,
+  join the completion queue. Blocks that settled are finished into settled
+  nodes.
 
 The lines after the commit point are **pending**. They are of two kinds:
 
@@ -570,16 +571,16 @@ definition written after its use leaves the `[x]` before it as literal text
 until `finalize`, which is the jump in the text that the owner accepted for
 streaming (D8).
 
-**How a snapshot is made.**
+**How a snapshot is made**, in this order:
 
-1. Complete the completion queue (5.4).
-2. Copy the builder stack and record a mark in the registry log.
-3. On the copy, process the pending lines, then finish every copy at the true
-   end of the input.
-4. Complete the tail by the publish rule of 5.4, without recording the
-   lookups that find none.
-5. Publish: give ids to the nodes that have none (5.9), compute the extents
-   and runs of the tail, and assemble the document.
+- Complete the completion queue (5.4).
+- Copy the builder stack and record a mark in the registry log.
+- On the copy, process the pending lines, then finish every copy at the true
+  end of the input.
+- Complete the tail by the publish rule of 5.4, without recording the
+  lookups that find none.
+- Publish: give ids to the nodes that have none (5.9), compute the extents
+  and runs of the tail, and assemble the document.
 
 The **tail** is the nodes a snapshot makes from the copies, from the pending
 lines and from the inline content of an open paragraph. At the start of the
@@ -663,17 +664,17 @@ append, the short stretch after the settle point.
 
 ### 5.10 `finalize` and `Document.parse`
 
-`finalize`:
+`finalize`, in this order:
 
-1. Processes the pending lines at the true end of the input and closes every
-   block.
-2. Completes the completion queue, with lookups that see every definition.
-3. Checks each lookup recorded by 5.4 that found no definition; if one is
-   defined now, parses that root again in place.
-4. Assigns every heading anchor by `main`'s rule: explicit anchors reserve
-   their spellings first, then automatic anchors are numbered in source
-   order.
-5. Publishes.
+- Processes the pending lines at the true end of the input and closes every
+  block.
+- Completes the completion queue, with lookups that see every definition.
+- Checks each lookup recorded by 5.4 that found no definition; if one is
+  defined now, parses that root again in place.
+- Assigns every heading anchor by `main`'s rule: explicit anchors reserve
+  their spellings first, then automatic anchors are numbered in source
+  order.
+- Publishes.
 
 An inline parse reads from a lookup only whether its label is defined (4.5),
 so a lookup that found a definition before its root finds one with every
