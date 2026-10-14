@@ -709,6 +709,44 @@ static void roots_of(const view *taken, size_t *roots) {
     }
 }
 
+/* An old node of an inline root's content that a new node may continue:
+ * its root, kind, the image of its anchor, and where it lies in the view. */
+typedef struct candidate {
+    size_t root;
+    markdown_core_node_kind kind;
+    int64_t image;
+    size_t index;
+} candidate;
+
+static int candidate_compare(const void *left, const void *right) {
+    const candidate *a = (const candidate *)left, *b = (const candidate *)right;
+    if (a->root != b->root) {
+        return a->root < b->root ? -1 : 1;
+    }
+    if (a->kind != b->kind) {
+        return a->kind < b->kind ? -1 : 1;
+    }
+    if (a->image != b->image) {
+        return a->image < b->image ? -1 : 1;
+    }
+    return (a->index > b->index) - (a->index < b->index);
+}
+
+/* The first candidate at or after `at` that no node continues: `skip`
+ * leads past the continued ones, shortened as it is followed. */
+static size_t next_open(size_t *skip, size_t at) {
+    size_t open = at;
+    while (skip[open] != open) {
+        open = skip[open];
+    }
+    while (skip[at] != open) {
+        const size_t next = skip[at];
+        skip[at] = open;
+        at = next;
+    }
+    return open;
+}
+
 /* 4.2 to 4.5 for one step from `before` to `after`, then the lineage takes
  * the step. `edits` are the step's edits in UTF-8 bytes, ascending. */
 static void check_identity(run *state, const char *where, size_t step, history *ids, const view *before,
@@ -719,10 +757,11 @@ static void check_identity(run *state, const char *where, size_t step, history *
     size_t *cursor = (size_t *)calloc(after->count, sizeof(size_t));
     size_t *old_roots = (size_t *)malloc((before->count ? before->count : 1) * sizeof(size_t));
     size_t *new_roots = (size_t *)malloc((after->count ? after->count : 1) * sizeof(size_t));
-    bool *matched = (bool *)calloc(before->count ? before->count : 1, sizeof(bool));
-    size_t index;
-    if (!changed || !continues || !cursor || !old_roots || !new_roots || !matched || !index_ids(&old_ids, before) ||
-        !index_ids(&new_ids, after) ||
+    candidate *candidates = (candidate *)malloc((before->count ? before->count : 1) * sizeof(candidate));
+    size_t *skip = (size_t *)malloc((before->count + 1) * sizeof(size_t));
+    size_t candidate_count, index;
+    if (!changed || !continues || !cursor || !old_roots || !new_roots || !candidates || !skip ||
+        !index_ids(&old_ids, before) || !index_ids(&new_ids, after) ||
         !history_reserve(ids, (uint64_t)(new_ids.capacity > old_ids.capacity ? new_ids.capacity : old_ids.capacity))) {
         fail(state, "harness", "%s step %zu: out of memory", where, step);
         goto done;
@@ -783,10 +822,20 @@ static void check_identity(run *state, const char *where, size_t step, history *
         }
         continues[index] = match;
     }
+    candidate_count = 0;
+    for (index = 0; index < before->count; index++) {
+        int64_t image = 0;
+        if (old_roots[index] != SIZE_MAX &&
+            anchor(edits, count, before->nodes[index].range.start, before->nodes[index].range.end, &image)) {
+            candidates[candidate_count++] = (candidate){old_roots[index], before->nodes[index].kind, image, index};
+        }
+    }
+    qsort(candidates, candidate_count, sizeof(*candidates), candidate_compare);
+    for (index = 0; index <= candidate_count; index++) {
+        skip[index] = index;
+    }
     for (index = after->count; index-- > 0;) {
         const view_node *node = &after->nodes[index];
-        size_t match = SIZE_MAX, old;
-        int64_t best = 0;
         if (new_roots[index] == SIZE_MAX) {
             continue;
         }
@@ -794,20 +843,22 @@ static void check_identity(run *state, const char *where, size_t step, history *
         if (continues[new_roots[index]] == SIZE_MAX) {
             continue;
         }
-        for (old = 0; old < before->count; old++) {
-            int64_t image = 0;
-            if (old_roots[old] == continues[new_roots[index]] && !matched[old] &&
-                before->nodes[old].kind == node->kind &&
-                anchor(edits, count, before->nodes[old].range.start, before->nodes[old].range.end, &image) &&
-                image >= node->range.start && image < node->range.end && (match == SIZE_MAX || image < best)) {
-                match = old;
-                best = image;
+        const candidate key = {continues[new_roots[index]], node->kind, node->range.start, 0};
+        size_t low = 0, high = candidate_count;
+        while (low < high) {
+            const size_t middle = low + (high - low) / 2;
+            if (candidate_compare(&candidates[middle], &key) < 0) {
+                low = middle + 1;
+            } else {
+                high = middle;
             }
         }
-        if (match != SIZE_MAX) {
-            matched[match] = true;
+        const size_t at = next_open(skip, low);
+        if (at < candidate_count && candidates[at].root == key.root && candidates[at].kind == key.kind &&
+            candidates[at].image < node->range.end) {
+            continues[index] = candidates[at].index;
+            skip[at] = at + 1;
         }
-        continues[index] = match;
     }
     for (index = 0; index < after->count && !stopped(state); index++) {
         const view_node *node = &after->nodes[index];
@@ -922,7 +973,8 @@ done:
     free(cursor);
     free(old_roots);
     free(new_roots);
-    free(matched);
+    free(candidates);
+    free(skip);
 }
 
 /* A lineage's first document: a fresh parse, whose ids are unique and rise
