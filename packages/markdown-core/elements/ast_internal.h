@@ -192,12 +192,6 @@ typedef struct markdown_core_match_kind {
     uint32_t count, capacity;
 } markdown_core_match_kind;
 
-/* An old node of the match by its address. */
-typedef struct markdown_core_match_address {
-    uintptr_t address;
-    uint32_t index;
-} markdown_core_match_address;
-
 /* THE ROOT'S MATCH: the old root's content, read whole when a node of the
  * content first asks for it, in canonical walk order; the old nodes by
  * address, for the nodes the parse takes whole; and the lists of the kinds
@@ -208,11 +202,15 @@ typedef struct markdown_core_match {
     bool read;
     markdown_core_walk walk;
     markdown_core_match_node *nodes;
-    markdown_core_match_address *addresses;
     /* The nodes read whose last held node is not read yet, with their
-     * levels, while the content is read. */
-    uint64_t *holding;
+     * levels, while the content is read; then a kind's keys as they are
+     * ordered, with `scratch`. */
+    uint64_t *holding, *scratch;
     uint32_t count, capacity;
+    /* The old nodes by address: an open-addressed table of places in the
+     * walk, counted from 1, `slot_count` a power of two. */
+    uint32_t *slots;
+    uint32_t slot_count, slot_capacity;
     uint64_t kinds;
     markdown_core_match_kind lists[64];
 } markdown_core_match;

@@ -1539,15 +1539,42 @@ static void match_reopen(markdown_core_match *match, uint32_t index, uint8_t sta
     item->state = MATCH_OPEN;
 }
 
-static int match_compare_keys(const void *left, const void *right) {
-    const uint64_t a = *(const uint64_t *)left, b = *(const uint64_t *)right;
-    return (a > b) - (a < b);
+/* `keys` in ascending order, merging the ascending runs they hold pairwise
+ * through `scratch` until one is left. */
+static void match_sort(uint64_t *keys, uint64_t *scratch, uint32_t count) {
+    for (;;) {
+        uint32_t runs = 0, out = 0;
+        for (uint32_t start = 0; start < count;) {
+            uint32_t middle = start + 1;
+            while (middle < count && keys[middle - 1] <= keys[middle]) {
+                middle++;
+            }
+            uint32_t end = middle;
+            while (end < count && (end == middle || keys[end - 1] <= keys[end])) {
+                end++;
+            }
+            uint32_t left = start, right = middle;
+            while (left < middle && right < end) {
+                scratch[out++] = keys[right] < keys[left] ? keys[right++] : keys[left++];
+            }
+            while (left < middle) {
+                scratch[out++] = keys[left++];
+            }
+            while (right < end) {
+                scratch[out++] = keys[right++];
+            }
+            runs++;
+            start = end;
+        }
+        memcpy(keys, scratch, count * sizeof(*keys));
+        if (runs <= 1) {
+            return;
+        }
+    }
 }
 
-static int match_compare_addresses(const void *left, const void *right) {
-    const uintptr_t a = ((const markdown_core_match_address *)left)->address;
-    const uintptr_t b = ((const markdown_core_match_address *)right)->address;
-    return (a > b) - (a < b);
+static inline uint32_t match_slot(uintptr_t address, uint32_t slot_count) {
+    return (uint32_t)(((uint64_t)address * UINT64_C(0x9e3779b97f4a7c15)) >> 32) & (slot_count - 1);
 }
 
 /* Whether `list` holds room for one more node. */
@@ -1586,17 +1613,44 @@ static bool match_reserve(markdown_core_match *match) {
         return false;
     }
     match->nodes = nodes;
-    markdown_core_match_address *addresses = markdown_core_realloc(match->addresses, capacity * sizeof(*addresses));
-    if (!addresses) {
-        return false;
-    }
-    match->addresses = addresses;
     uint64_t *holding = markdown_core_realloc(match->holding, capacity * sizeof(*holding));
     if (!holding) {
         return false;
     }
     match->holding = holding;
+    uint64_t *scratch = markdown_core_realloc(match->scratch, capacity * sizeof(*scratch));
+    if (!scratch) {
+        return false;
+    }
+    match->scratch = scratch;
     match->capacity = capacity;
+    return true;
+}
+
+/* The match's old nodes are indexed by address. False when the table could
+ * not grow. */
+static bool match_index(markdown_core_match *match) {
+    uint32_t slot_count = 16;
+    while (slot_count < match->count * 2) {
+        slot_count *= 2;
+    }
+    if (slot_count > match->slot_capacity) {
+        uint32_t *slots = markdown_core_realloc(match->slots, slot_count * sizeof(*slots));
+        if (!slots) {
+            return false;
+        }
+        match->slots = slots;
+        match->slot_capacity = slot_count;
+    }
+    match->slot_count = slot_count;
+    memset(match->slots, 0, slot_count * sizeof(*match->slots));
+    for (uint32_t index = 0; index < match->count; index++) {
+        uint32_t slot = match_slot((uintptr_t)match->nodes[index].node, slot_count);
+        while (match->slots[slot]) {
+            slot = (slot + 1) & (slot_count - 1);
+        }
+        match->slots[slot] = index + 1;
+    }
     return true;
 }
 
@@ -1609,7 +1663,7 @@ static bool match_read(markdown_core_parser *parser, markdown_core_match *match)
     match->count = 0;
     match->kinds = 0;
     if (!match->old) {
-        return true;
+        return match_index(match);
     }
     markdown_core_walk *walk = &match->walk;
     if (!markdown_core_walk_begin_under(walk, match->old, match->old_start)) {
@@ -1632,7 +1686,6 @@ static bool match_read(markdown_core_parser *parser, markdown_core_match *match)
         markdown_core_match_node *node = &match->nodes[index];
         *node = (markdown_core_match_node){
             .node = item.node, .at = UINT32_MAX, .kind = (uint8_t)public_kind(item.node), .state = MATCH_OPEN};
-        match->addresses[index] = (markdown_core_match_address){(uintptr_t)item.node, index};
         if (!markdown_core_parser_source_anchor(parser, item.place.start, item.place.end, &node->image)) {
             continue;
         }
@@ -1653,7 +1706,9 @@ static bool match_read(markdown_core_parser *parser, markdown_core_match *match)
     while (holding) {
         match->nodes[(uint32_t)match->holding[--holding]].last = match->count - 1;
     }
-    qsort(match->addresses, match->count, sizeof(*match->addresses), match_compare_addresses);
+    if (!match_index(match)) {
+        return false;
+    }
     for (unsigned kind = 0; kind < 64; kind++) {
         if (!(match->kinds >> kind & 1)) {
             continue;
@@ -1663,7 +1718,7 @@ static bool match_read(markdown_core_parser *parser, markdown_core_match *match)
         for (uint32_t i = 0; i < list->count; i++) {
             keys[i] = (uint64_t)list->images[i] << 32 | list->nodes[i];
         }
-        qsort(keys, list->count, sizeof(*keys), match_compare_keys);
+        match_sort(keys, match->scratch, list->count);
         for (uint32_t i = 0; i < list->count; i++) {
             list->nodes[i] = (uint32_t)keys[i];
             list->images[i] = (uint32_t)(keys[i] >> 32);
@@ -1753,17 +1808,12 @@ bool markdown_core_take_old(markdown_core_parser *parser, markdown_core_publicat
     if (!match->read && !match_read(parser, match)) {
         return false;
     }
-    uint32_t low = 0, high = match->count;
-    while (low < high) {
-        const uint32_t middle = low + (high - low) / 2;
-        if (match->addresses[middle].address < (uintptr_t)draft->old) {
-            low = middle + 1;
-        } else {
-            high = middle;
-        }
+    uint32_t slot = match_slot((uintptr_t)draft->old, match->slot_count);
+    while (match->slots[slot] && match->nodes[match->slots[slot] - 1].node != draft->old) {
+        slot = (slot + 1) & (match->slot_count - 1);
     }
-    assert(low < match->count && match->addresses[low].address == (uintptr_t)draft->old);
-    const uint32_t index = match->addresses[low].index;
+    assert(match->slots[slot]);
+    const uint32_t index = match->slots[slot] - 1;
     if (match_close(match, index, MATCH_CONTINUED)) {
         draft->match = index + 1;
     }
@@ -2251,8 +2301,9 @@ void markdown_core_publication_dispose(markdown_core_publication *publication, m
     markdown_core_free(publication->climb);
     markdown_core_walk_end(&publication->match.walk);
     markdown_core_free(publication->match.nodes);
-    markdown_core_free(publication->match.addresses);
     markdown_core_free(publication->match.holding);
+    markdown_core_free(publication->match.scratch);
+    markdown_core_free(publication->match.slots);
     for (size_t i = 0; i < sizeof(publication->match.lists) / sizeof(*publication->match.lists); i++) {
         markdown_core_free(publication->match.lists[i].nodes);
         markdown_core_free(publication->match.lists[i].images);
