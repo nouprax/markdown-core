@@ -1024,10 +1024,14 @@ typedef struct {
     uint32_t source, span, decoded, content;
 } inline_piece;
 
+/* A level of the cursor's walk: its stem, the place of its next node, and,
+ * once asked, that node and where its start lies now (S_position). */
 typedef struct {
     const markdown_core_stem *stem;
     size_t next, count;
     int32_t at;
+    const markdown_core_node *node;
+    int32_t now;
 } inline_level;
 
 struct markdown_core_inline_cursor {
@@ -1051,7 +1055,7 @@ static bool S_cursor_push(markdown_core_inline_cursor *cursor, const markdown_co
         return false;
     }
     cursor->levels = levels;
-    levels[cursor->depth++] = (inline_level){stem, 0, markdown_core_stem_count(stem), at};
+    levels[cursor->depth++] = (inline_level){stem, 0, markdown_core_stem_count(stem), at, NULL, 0};
     return true;
 }
 
@@ -1252,20 +1256,24 @@ static const markdown_core_node *S_cursor_offer(markdown_core_inline_state *inli
             cursor->depth--;
             continue;
         }
-        const markdown_core_node *node = markdown_core_stem_at(level->stem, level->next);
+        if (!level->node) {
+            level->node = markdown_core_stem_at(level->stem, level->next);
+            level->now = S_position(parser, cursor, level->at + level->node->where.extent.lead);
+        }
+        const markdown_core_node *node = level->node;
         const int32_t at = level->at + node->where.extent.lead;
         const int32_t end = at + (int32_t)node->where.extent.span;
-        const int32_t now = S_position(parser, cursor, at);
-        if (now > pos) {
+        if (level->now > pos) {
             return NULL;
         }
-        if (now == pos &&
+        if (level->now == pos &&
             (node->entry & (cursor->whole ? MARKDOWN_CORE_INLINE_ENTRY_LOCAL : MARKDOWN_CORE_INLINE_ENTRY_TAKE))) {
             *start = at;
             return node;
         }
         level->next++;
         level->at = end;
+        level->node = NULL;
         if (markdown_core_stem_count(node->children) && S_position(parser, cursor, end) > pos &&
             !S_cursor_push(cursor, node->children, at)) {
             inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
@@ -1359,6 +1367,7 @@ static bool S_take_old(markdown_core_parser *parser, markdown_core_inline_state 
     inline_level *level = &inline_state->cursor->levels[inline_state->cursor->depth - 1];
     level->next++;
     level->at = start + (int32_t)old->where.extent.span;
+    level->node = NULL;
     inline_state->pos = end;
     return true;
 }

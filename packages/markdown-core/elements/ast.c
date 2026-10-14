@@ -1497,19 +1497,21 @@ enum { MATCH_OPEN, MATCH_CONTINUED, MATCH_KEPT };
 
 static inline uint32_t low_bit(uint32_t at) { return at & (0u - at); }
 
-/* How many of the first `count` old nodes of `list` no node continues. */
-static uint32_t match_open_before(const markdown_core_match_kind *list, uint32_t count) {
-    uint32_t open = 0;
+/* How many of the first `count` old nodes of `kind` no node continues. */
+static uint32_t match_open_before(const markdown_core_match *match, unsigned kind, uint32_t count) {
+    const uint32_t *open = match->open + match->first[kind];
+    uint32_t total = 0;
     for (uint32_t at = count; at; at -= low_bit(at)) {
-        open += list->open[at - 1];
+        total += open[at - 1];
     }
-    return open;
+    return total;
 }
 
-/* The old node `at` of `list` is continued (`delta` -1) or given back (+1). */
-static void match_count(markdown_core_match_kind *list, uint32_t at, int32_t delta) {
-    for (uint32_t i = at + 1; i <= list->count; i += low_bit(i)) {
-        list->open[i - 1] = (uint32_t)((int32_t)list->open[i - 1] + delta);
+/* The old node `at` of `kind` is continued (`delta` -1) or given back (+1). */
+static void match_count(markdown_core_match *match, unsigned kind, uint32_t at, int32_t delta) {
+    uint32_t *open = match->open + match->first[kind];
+    for (uint32_t i = at + 1; i <= match->total[kind]; i += low_bit(i)) {
+        open[i - 1] = (uint32_t)((int32_t)open[i - 1] + delta);
     }
 }
 
@@ -1521,7 +1523,7 @@ static bool match_close(markdown_core_match *match, uint32_t index, uint8_t stat
         return false;
     }
     if (item->at != UINT32_MAX) {
-        match_count(&match->lists[item->kind], item->at, -1);
+        match_count(match, item->kind, item->at, -1);
     }
     item->state = state;
     return true;
@@ -1534,7 +1536,7 @@ static void match_reopen(markdown_core_match *match, uint32_t index, uint8_t sta
         return;
     }
     if (item->at != UINT32_MAX) {
-        match_count(&match->lists[item->kind], item->at, 1);
+        match_count(match, item->kind, item->at, 1);
     }
     item->state = MATCH_OPEN;
 }
@@ -1577,31 +1579,6 @@ static inline uint32_t match_slot(uintptr_t address, uint32_t slot_count) {
     return (uint32_t)(((uint64_t)address * UINT64_C(0x9e3779b97f4a7c15)) >> 32) & (slot_count - 1);
 }
 
-/* Whether `list` holds room for one more node. */
-static bool match_list_reserve(markdown_core_match_kind *list) {
-    if (list->count < list->capacity) {
-        return true;
-    }
-    const uint32_t capacity = list->capacity ? list->capacity * 2 : 16;
-    uint32_t *nodes = markdown_core_realloc(list->nodes, capacity * sizeof(*nodes));
-    if (!nodes) {
-        return false;
-    }
-    list->nodes = nodes;
-    uint32_t *images = markdown_core_realloc(list->images, capacity * sizeof(*images));
-    if (!images) {
-        return false;
-    }
-    list->images = images;
-    uint32_t *open = markdown_core_realloc(list->open, capacity * sizeof(*open));
-    if (!open) {
-        return false;
-    }
-    list->open = open;
-    list->capacity = capacity;
-    return true;
-}
-
 /* Whether the match holds room for one more old node. */
 static bool match_reserve(markdown_core_match *match) {
     if (match->count < match->capacity) {
@@ -1613,16 +1590,21 @@ static bool match_reserve(markdown_core_match *match) {
         return false;
     }
     match->nodes = nodes;
-    uint64_t *holding = markdown_core_realloc(match->holding, capacity * sizeof(*holding));
-    if (!holding) {
+    uint64_t *keys = markdown_core_realloc(match->keys, capacity * sizeof(*keys));
+    if (!keys) {
         return false;
     }
-    match->holding = holding;
+    match->keys = keys;
     uint64_t *scratch = markdown_core_realloc(match->scratch, capacity * sizeof(*scratch));
     if (!scratch) {
         return false;
     }
     match->scratch = scratch;
+    uint32_t *open = markdown_core_realloc(match->open, capacity * sizeof(*open));
+    if (!open) {
+        return false;
+    }
+    match->open = open;
     match->capacity = capacity;
     return true;
 }
@@ -1679,51 +1661,56 @@ static bool match_read(markdown_core_parser *parser, markdown_core_match *match)
             return false;
         }
         const uint32_t index = match->count++;
-        while (holding && (match->holding[holding - 1] >> 32) >= item.level) {
-            match->nodes[(uint32_t)match->holding[--holding]].last = index - 1;
+        while (holding && (match->keys[holding - 1] >> 32) >= item.level) {
+            match->nodes[(uint32_t)match->keys[--holding]].last = index - 1;
         }
-        match->holding[holding++] = (uint64_t)item.level << 32 | index;
+        match->keys[holding++] = (uint64_t)item.level << 32 | index;
         markdown_core_match_node *node = &match->nodes[index];
         *node = (markdown_core_match_node){
             .node = item.node, .at = UINT32_MAX, .kind = (uint8_t)public_kind(item.node), .state = MATCH_OPEN};
         if (!markdown_core_parser_source_anchor(parser, item.place.start, item.place.end, &node->image)) {
             continue;
         }
-        markdown_core_match_kind *list = &match->lists[node->kind];
+        node->at = 0;
         if (!(match->kinds >> node->kind & 1)) {
             match->kinds |= UINT64_C(1) << node->kind;
-            list->count = 0;
+            match->total[node->kind] = 0;
         }
-        if (!match_list_reserve(list)) {
-            return false;
-        }
-        list->nodes[list->count] = index;
-        list->images[list->count++] = node->image;
+        match->total[node->kind]++;
     }
     if (walk->failed) {
         return false;
     }
     while (holding) {
-        match->nodes[(uint32_t)match->holding[--holding]].last = match->count - 1;
+        match->nodes[(uint32_t)match->keys[--holding]].last = match->count - 1;
     }
     if (!match_index(match)) {
         return false;
+    }
+    uint32_t first = 0;
+    for (unsigned kind = 0; kind < 64; kind++) {
+        if (match->kinds >> kind & 1) {
+            match->first[kind] = first;
+            first += match->total[kind];
+            match->total[kind] = 0;
+        }
+    }
+    for (uint32_t index = 0; index < match->count; index++) {
+        const markdown_core_match_node *node = &match->nodes[index];
+        if (node->at != UINT32_MAX) {
+            match->keys[match->first[node->kind] + match->total[node->kind]++] = (uint64_t)node->image << 32 | index;
+        }
     }
     for (unsigned kind = 0; kind < 64; kind++) {
         if (!(match->kinds >> kind & 1)) {
             continue;
         }
-        markdown_core_match_kind *list = &match->lists[kind];
-        uint64_t *keys = match->holding;
-        for (uint32_t i = 0; i < list->count; i++) {
-            keys[i] = (uint64_t)list->images[i] << 32 | list->nodes[i];
-        }
-        match_sort(keys, match->scratch, list->count);
-        for (uint32_t i = 0; i < list->count; i++) {
-            list->nodes[i] = (uint32_t)keys[i];
-            list->images[i] = (uint32_t)(keys[i] >> 32);
-            list->open[i] = low_bit(i + 1);
-            match->nodes[list->nodes[i]].at = i;
+        uint64_t *keys = match->keys + match->first[kind];
+        uint32_t *open = match->open + match->first[kind];
+        match_sort(keys, match->scratch, match->total[kind]);
+        for (uint32_t i = 0; i < match->total[kind]; i++) {
+            match->nodes[(uint32_t)keys[i]].at = i;
+            open[i] = low_bit(i + 1);
         }
     }
     return true;
@@ -1746,11 +1733,13 @@ static bool match_find(markdown_core_parser *parser, markdown_core_publication *
     if (!content_window(parser, publication, draft->node->where.place, &window)) {
         return false;
     }
-    markdown_core_match_kind *list = &match->lists[kind];
-    uint32_t low = 0, high = list->count;
+    const uint64_t *keys = match->keys + match->first[kind];
+    const uint32_t *open = match->open + match->first[kind];
+    const uint32_t count = match->total[kind];
+    uint32_t low = 0, high = count;
     while (low < high) {
         const uint32_t middle = low + (high - low) / 2;
-        if (list->images[middle] < window.start) {
+        if ((uint32_t)(keys[middle] >> 32) < window.start) {
             low = middle + 1;
         } else {
             high = middle;
@@ -1758,19 +1747,19 @@ static bool match_find(markdown_core_parser *parser, markdown_core_publication *
     }
     /* The first open node from `low` on: the one past the open ones before
      * it, found down the tree. */
-    uint32_t rest = match_open_before(list, low), at = 0;
-    uint32_t step = list->count ? 1 : 0;
-    while (step && step <= list->count / 2) {
+    uint32_t rest = match_open_before(match, kind, low), at = 0;
+    uint32_t step = count ? 1 : 0;
+    while (step && step <= count / 2) {
         step <<= 1;
     }
     for (; step; step >>= 1) {
-        if (at + step <= list->count && list->open[at + step - 1] <= rest) {
+        if (at + step <= count && open[at + step - 1] <= rest) {
             at += step;
-            rest -= list->open[at - 1];
+            rest -= open[at - 1];
         }
     }
-    if (at < list->count && list->images[at] < window.end) {
-        const uint32_t index = list->nodes[at];
+    if (at < count && (uint32_t)(keys[at] >> 32) < window.end) {
+        const uint32_t index = (uint32_t)keys[at];
         match_close(match, index, MATCH_CONTINUED);
         draft->old = match->nodes[index].node;
         draft->match = index + 1;
@@ -2306,14 +2295,10 @@ void markdown_core_publication_dispose(markdown_core_publication *publication, m
     markdown_core_free(publication->climb);
     markdown_core_walk_end(&publication->match.walk);
     markdown_core_free(publication->match.nodes);
-    markdown_core_free(publication->match.holding);
+    markdown_core_free(publication->match.keys);
     markdown_core_free(publication->match.scratch);
+    markdown_core_free(publication->match.open);
     markdown_core_free(publication->match.slots);
-    for (size_t i = 0; i < sizeof(publication->match.lists) / sizeof(*publication->match.lists); i++) {
-        markdown_core_free(publication->match.lists[i].nodes);
-        markdown_core_free(publication->match.lists[i].images);
-        markdown_core_free(publication->match.lists[i].open);
-    }
     for (size_t i = 0; i < publication->replaced_count; i++) {
         markdown_core_node_pool_release(pool, publication->replaced[i]);
     }

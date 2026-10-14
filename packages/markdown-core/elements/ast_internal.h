@@ -183,19 +183,12 @@ typedef struct markdown_core_match_node {
     uint8_t kind, state;
 } markdown_core_match_node;
 
-/* THE OLD NODES OF ONE KIND that the nodes of an inline root's content may
- * continue, in the order of their anchors' images, each by its place in the
- * walk, with its image, and a Fenwick tree over them counting those no node
- * continues. */
-typedef struct markdown_core_match_kind {
-    uint32_t *nodes, *images, *open;
-    uint32_t count, capacity;
-} markdown_core_match_kind;
-
 /* THE ROOT'S MATCH: the old root's content, read whole when a node of the
  * content first asks for it, in canonical walk order; the old nodes by
- * address, for the nodes the parse takes whole; and the lists of the kinds
- * read. */
+ * address, for the nodes the parse takes whole; and, for each kind read, a
+ * segment of `keys` holding its old nodes in the order of their anchors'
+ * images, each with its place in the walk, over which a Fenwick tree in the
+ * same segment of `open` counts those no node continues. */
 typedef struct markdown_core_match {
     const markdown_core_node *old;
     uint32_t old_start;
@@ -203,16 +196,17 @@ typedef struct markdown_core_match {
     markdown_core_walk walk;
     markdown_core_match_node *nodes;
     /* The nodes read whose last held node is not read yet, with their
-     * levels, while the content is read; then a kind's keys as they are
-     * ordered, with `scratch`. */
-    uint64_t *holding, *scratch;
+     * levels, while the content is read; then the kinds' segments, each key
+     * an image above a place in the walk, ordered with `scratch`. */
+    uint64_t *keys, *scratch;
+    uint32_t *open;
     uint32_t count, capacity;
     /* The old nodes by address: an open-addressed table of places in the
      * walk, counted from 1, `slot_count` a power of two. */
     uint32_t *slots;
     uint32_t slot_count, slot_capacity;
     uint64_t kinds;
-    markdown_core_match_kind lists[64];
+    uint32_t first[64], total[64];
 } markdown_core_match;
 
 /* WHAT ONE PARSE PUBLISHES AS ITS NODES COMPLETE (docs/plans/2026-09-29-
