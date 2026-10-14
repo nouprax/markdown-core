@@ -167,13 +167,6 @@
             "why": "See github-backtick-math."
         },
         {
-            "id": "github-display-math-block",
-            "input": "$$x+y$$\n",
-            "authority": "GitHub",
-            "summary": "`$$...$$` alone on a line is a block formula here; remark-math makes it inline math inside a paragraph.",
-            "why": "GitHub renders a `$$` expression on its own line as a display block. canonical-ast.md gives it FormulaBlock."
-        },
-        {
             "id": "github-formula-fence",
             "input": "```formula\nx+y\n```\n",
             "authority": "GitHub",
@@ -192,7 +185,7 @@
             "input": "text $$\nx\n$$ text\n",
             "authority": "GitHub",
             "summary": "`$$` opened and closed inside a paragraph is inline math spanning the lines; remark requires the delimiters to own their lines and leaves the text alone.",
-            "why": "Follows from `$$` being usable inline at all, which the padding rule and github-display-math-block already establish."
+            "why": "Follows from `$$` being usable inline at all, which the padding rule already establishes."
         },
         {
             "id": "directive-attribute-reference-semicolon",

@@ -796,7 +796,7 @@ static void formula_element_accessors(test_batch_runner *runner) {
            "formula mode setter updates mode");
     markdown_core_node_free(doc);
 
-    doc = parse("$$x+y$$\n");
+    doc = parse("$$\nx+y\n$$\n");
     formula = doc->first_child;
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula_block",
            "standalone formula block type string");
@@ -834,7 +834,7 @@ static void formula_element_accessors(test_batch_runner *runner) {
            "LaTeX formula inline mode is standalone");
     markdown_core_node_free(doc);
 
-    doc = parse("\\\\[x+y\\\\]\n");
+    doc = parse("\\\\[\nx+y\n\\\\]\n");
     formula = doc->first_child;
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula_block",
            "LaTeX standalone formula block type string");
@@ -9089,37 +9089,25 @@ static void formula_leaf_construction_work(test_batch_runner *runner) {
     }
 }
 
-/* Promotion moves the value's existing owner. An allocation failure before the
- * commit preserves the old subtree; borrowed code bytes are never modified. */
+/* A formula code block's promotion moves its literal's existing owner. An
+ * allocation failure before the commit preserves the old block; borrowed code
+ * bytes are never modified. */
 static void formula_promotion_transfers_storage(test_batch_runner *runner) {
-    for (int shape = 0; shape < 3; shape++) {
+    for (int borrowed = 0; borrowed < 2; borrowed++) {
         for (size_t fail = 0; fail < 4; fail++) {
             payload_probe_arm();
             markdown_core_parser parser = {0};
             /* An instance with no record: the formula step keeps none. */
             const markdown_core_element_instance formula_instance = {&MARKDOWN_CORE_ELEMENT_FORMULA, NULL, 0, NULL};
             markdown_core_node *root = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
-            markdown_core_node *old =
-                markdown_core_node_new(shape == 0 ? MARKDOWN_CORE_NODE_PARAGRAPH : MARKDOWN_CORE_NODE_CODE_BLOCK);
+            markdown_core_node *old = markdown_core_node_new(MARKDOWN_CORE_NODE_CODE_BLOCK);
             markdown_core_node_append_child(root, old);
-            markdown_core_node *donor = NULL;
-            const char *before;
-            void *opaque = NULL;
-            if (shape == 0) {
-                donor = markdown_core_node_new_with_ext(MARKDOWN_CORE_NODE_FORMULA, &MARKDOWN_CORE_ELEMENT_FORMULA);
-                markdown_core_elements_set_formula_mode(donor, MARKDOWN_CORE_FORMULA_MODE_STANDALONE);
-                markdown_core_elements_set_formula_literal(donor, " \t value \n ");
-                markdown_core_node_append_child(old, donor);
-                before = markdown_core_elements_get_formula_literal(donor);
-                opaque = donor->opaque;
-            } else {
-                old->as.code->info = markdown_core_optional_chunk_present(markdown_core_chunk_literal("formula"));
-                old->as.code->literal = markdown_core_chunk_literal(" \t value \n ");
-                if (shape == 1) {
-                    markdown_core_chunk_to_cstr(&old->as.code->literal);
-                }
-                before = (const char *)old->as.code->literal.data;
+            old->as.code->info = markdown_core_optional_chunk_present(markdown_core_chunk_literal("formula"));
+            old->as.code->literal = markdown_core_chunk_literal(" \t value \n ");
+            if (!borrowed) {
+                markdown_core_chunk_to_cstr(&old->as.code->literal);
             }
+            const char *before = (const char *)old->as.code->literal.data;
             payload_fail_at = fail ? payload_allocations + fail : 0;
             markdown_core_finish_result result = MARKDOWN_CORE_ELEMENT_FORMULA.finish_step(
                 &formula_instance, &parser, old, MARKDOWN_CORE_EVENT_EXIT, 0, NULL);
@@ -9128,22 +9116,16 @@ static void formula_promotion_transfers_storage(test_batch_runner *runner) {
                 INT_EQ(runner, parser.error, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED, "loss is reported");
                 OK(runner, root->first_child == old, "failed promotion preserves the old owner");
                 STR_EQ(runner, before, " \t value \n ", "failed promotion preserves the old literal");
-                if (donor) {
-                    OK(runner, donor->opaque == opaque, "failed promotion preserves the payload owner");
-                }
             } else {
-                INT_EQ(runner, result, MARKDOWN_CORE_FINISH_CONSUMED, "promotion consumes the replaced subtree");
+                INT_EQ(runner, result, MARKDOWN_CORE_FINISH_CONSUMED, "promotion consumes the replaced block");
                 markdown_core_node *formula = root->first_child;
                 const char *after = markdown_core_elements_get_formula_literal(formula);
                 STR_EQ(runner, after, "value", "promotion trims and NUL-terminates its literal");
-                if (shape < 2) {
+                if (!borrowed) {
                     OK(runner, before == after, "owned literal allocation is transferred without copying");
                 } else {
                     OK(runner, before != after, "borrowed bytes acquire independent ownership");
                     STR_EQ(runner, before, " \t value \n ", "borrowed source remains immutable");
-                }
-                if (opaque) {
-                    OK(runner, formula->opaque == opaque, "the formula payload has one lifetime across promotion");
                 }
             }
             markdown_core_node_free(root);
@@ -10513,7 +10495,9 @@ static void finish_stage_walks_each_root_once(test_batch_runner *runner) {
     static const char source[] = "Term a\\.b@c.io $x$\n"
                                  ": body with x\\.y@z.com and $$y$$\n"
                                  "\n"
-                                 "$$block$$\n"
+                                 "$$\n"
+                                 "block\n"
+                                 "$$\n"
                                  "\n"
                                  "```formula\n"
                                  "E=mc^2\n"
@@ -10540,12 +10524,11 @@ static void finish_stage_walks_each_root_once(test_batch_runner *runner) {
     }
     size_t finished = owned_node_census(root);
     INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_FORMULA_BLOCK), 2,
-           "formula's step promoted the standalone block and replaced the fence");
+           "the formula block and the fence formula's step replaced");
     OK(runner, work.finish_roots >= 6,
        "the document, its field roots and the inline footnote were each completed: %zu roots", work.finish_roots);
     OK(runner, work.nodes_freed - work.nodes_freed_before_finish >= 4,
-       "consolidation freed the siblings it absorbed and formula's step the fence and paragraph it replaced, "
-       "with their children: %zu freed",
+       "consolidation freed the siblings it absorbed and formula's step the fence it replaced: %zu freed",
        work.nodes_freed - work.nodes_freed_before_finish);
     OK(runner, work.nodes_created > work.nodes_created_before_finish,
        "autolink's and formula's steps made nodes inside the walk: %zu of %zu",

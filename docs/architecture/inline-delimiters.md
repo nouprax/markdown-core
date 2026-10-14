@@ -135,7 +135,7 @@ exactly once: a container's inline content is parsed at the container's ENTER
 completion (the element's `complete_inline`, the document's anchor
 reservation) runs at each node's ENTER, text consolidation and every element
 finish step (a reference-only paragraph's removal, a list's layout, autolink's
-email scan, formula's block promotion) run at the events of that one walk, and
+email scan, a formula code fence's FormulaBlock) run at the events of that one walk, and
 a global postprocess pass receives the root after its walk completes. A step
 that declares the kinds it acts on reads that gate at each event it is asked
 at, since a kind's first node may be made by the walk itself. A Text sibling that consolidation
@@ -167,12 +167,13 @@ retain their ordinary/deferred grammar contract; they are not selected by input
 size or benchmark frequency. Body decoding, padding, markers and source placement
 are shared by both construction paths.
 
-Formula block promotion reserves its destination before touching the old owner.
-An inline formula transfers its opaque payload and literal together; a code
-fence transfers its owned literal into a newly initialized formula payload.
-Trimming compacts an owned buffer in place and restores NUL termination, while a
-borrowed chunk obtains independent storage before mutation. Direct formula
-blocks detach their accumulated content buffer. Failure before commitment keeps
-the old owner intact; commitment clears the donor slot before releasing the old
-subtree. The finish walk still reports the old node as consumed, preserving
-observer and iterator ordering.
+A fenced code block whose info string is `formula` becomes a FormulaBlock at
+its EXIT. The rewrite reserves its destination before touching the old block,
+and the fence transfers its owned literal into a newly initialized formula
+payload. A paragraph whose only content is a standalone formula stays a
+paragraph. Trimming compacts an owned buffer in place and restores NUL
+termination, while a borrowed chunk obtains independent storage before
+mutation. Direct formula blocks detach their accumulated content buffer.
+Failure before commitment keeps the old block intact; commitment clears the
+fence's literal before releasing the old block. The finish walk still reports
+the old node as consumed, preserving observer and iterator ordering.

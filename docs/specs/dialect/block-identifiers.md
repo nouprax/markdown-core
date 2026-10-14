@@ -62,8 +62,7 @@ in a callout title stays literal. An escaped opening hash prevents recognition.
 
 Suffix recognition is a paragraph-level rule: inline code or an HTML comment
 does not independently shield a final identifier candidate. Opaque block
-content, including fenced code, does. An anchored paragraph containing only a
-standalone formula stays a paragraph rather than becoming `FormulaBlock`.
+content, including fenced code, does.
 
 Use `[[Note#^summary]]` or `[[#^summary]]` to refer to the block through a
 [cross link](cross-links.md). The stored reference anchor is `summary`.

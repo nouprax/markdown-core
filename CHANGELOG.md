@@ -23,6 +23,12 @@ promised to remain compatible between releases.
   `markdown_core_document_scope` writes an array and its count. MCB3 writes
   each record's runs after its extent.
 
+- Keep a paragraph whose only content is one standalone formula a
+  `Paragraph` that holds that `Formula`, as micromark-math does: `$$x$$`
+  alone on a line no longer becomes a `FormulaBlock`. Only the block forms
+  make one: `$$` or `\\[` fences on lines of their own, and a fenced code
+  block whose info string is `formula`.
+
 - Make each link reference definition a `Reference(label, dest, title)`
   leaf block where it was written, with the anchor and attributes the
   definition states; a paragraph of only definitions is its References.

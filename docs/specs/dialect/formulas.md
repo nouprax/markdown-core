@@ -30,10 +30,9 @@ formula.
 Compare \\(a+b\\) with $$c+d$$ in this sentence.
 ```
 
-Both formulas stay inside the paragraph. Their placement modes differ. When
-an anonymous paragraph with no attributes contains only one standalone
-formula, it becomes a `FormulaBlock`. An anchored or attributed paragraph is
-retained.
+Both formulas stay inside the paragraph. Their placement modes differ. A
+paragraph whose only content is one standalone formula stays a paragraph that
+holds that `Formula`; only the block forms below make a `FormulaBlock`.
 
 ## Dollar boundaries
 
