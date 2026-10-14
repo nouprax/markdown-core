@@ -612,7 +612,7 @@ static void history_free(history *ids) {
 }
 
 /* The image of the first byte of [start, end) that no edit of the step
- * replaced, or false when there is none (plan 5.2). `edits` are in UTF-8
+ * replaced, or false when there is none (gates 4.4). `edits` are in UTF-8
  * bytes against the text before the step, in ascending order. */
 static bool anchor(const eh_edit *edits, size_t count, int64_t start, int64_t end, int64_t *image) {
     int64_t x = start, shift = 0;

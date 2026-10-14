@@ -662,7 +662,8 @@ static size_t edit_after(const publish_identity *identity, uint32_t x) {
 }
 
 /* The image of the first byte of [start, end) that no edit replaced, or false
- * when every byte of it was replaced (5.2). */
+ * when every byte of it was replaced. A byte before an edit keeps its offset,
+ * and a byte after one moves by the length change of the edits before it. */
 static bool anchor_mapped(const publish_identity *identity, uint32_t start, uint32_t end, uint32_t *mapped) {
     const markdown_core_byte_edit *edits = identity->edits;
     size_t lo = edit_after(identity, start), x = start;
@@ -841,7 +842,7 @@ static inline bool publish_first(const markdown_core_node *node, relation_shape 
  * needs, the lookup tables, the last id issued and the nodes matched. Every
  * other node takes an id, so the published tree counts the ids issued and
  * the nodes matched. */
-/* THE IMAGES OF AN OLD ROOT'S CONTENT in the new root's (5.2): for each part
+/* THE IMAGES OF AN OLD ROOT'S CONTENT in the new root's: for each part
  * of the old content whose bytes the new root reads too, in content order,
  * the new content offset its first byte is read at, and whether the rest
  * follow it byte for byte. An old copied run's part reads each content byte
@@ -1196,7 +1197,7 @@ static bool content_images_read(publish_walk *walk, const markdown_core_runs *ru
 
 /* The image of an old content range [start, end): the content offset at
  * which the new root reads the first source byte that the old root read for
- * the range, that no edit replaced, and that the new root reads too (5.2).
+ * the range, that no edit replaced, and that the new root reads too.
  * False when there is none. Matching asks in content order, so the lookup
  * steps on from where the last one ended. */
 static bool content_anchor(publish_walk *walk, uint32_t start, uint32_t end, uint32_t *mapped) {
