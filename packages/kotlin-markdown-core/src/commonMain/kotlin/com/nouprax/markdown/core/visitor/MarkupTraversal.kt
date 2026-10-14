@@ -3,11 +3,15 @@ package com.nouprax.markdown.core
 /**
  * One owned node-valued field of a node: its nodes in stored order, and the
  * name of the group line the dump draws for it, or null when its nodes nest
- * directly under the owner.
+ * directly under the owner. A relation that [continues] goes on from the one
+ * before it, as a table's content and foot rows go on from its head rows, so
+ * together they are one relation: its first node is measured from the node
+ * before it in that one relation, or from the owner when there is none.
  */
 internal class Relation(
     val group: String?,
     val nodes: kotlin.collections.List<Markup>,
+    val continues: Boolean = false,
 )
 
 /**
@@ -16,13 +20,11 @@ internal class Relation(
  * entry, a group line, or a node's exit. The walk's stack is a list of
  * frames, never the call stack, so its depth is the tree's.
  *
- * It also places every node it enters: a relation's first node starts
- * `lead` bytes after its owner's start and every later one `lead` bytes after
- * the end of the node before it. The root starts `lead` bytes after 0. A node
- * whose runs read content is an inline root: its first relation is its
- * content, which starts at 0, and every node anywhere in it is placed in that
- * content; the walk holds the root's runs to read the content's source from.
- * The root's later relations are back in source offsets. Roots never nest.
+ * It also places the source of every node it enters from its runs alone: a
+ * node's first run leads from where the source of the node before it in its
+ * relation ends, or from where its owner's source starts for a relation's
+ * first node, and the root's from 0. A node's source runs from where its
+ * first run starts to where its last ends.
  */
 internal class MarkupTraversal(
     root: Markup,
@@ -34,33 +36,21 @@ internal class MarkupTraversal(
         val level: Int,
         val start: Long,
         val end: Long,
-        /** Whether the node is in an inline root's content. */
-        val outer: Boolean,
     ) {
         val relations = node.relations()
-
-        /** Whether the node is an inline root, whose first relation is its content. */
-        val root = SourceRuns.readContent(node.runs)
-
-        /** Whether the relation in hand is in an inline root's content. */
-        var content = outer
 
         /** The last relation that draws a line at the owner's level: a group, or nodes. */
         val lastDrawn = relations.indexOfLast { it.group != null || it.nodes.isNotEmpty() }
         var relation: Relation? = null
         var next = 0
         var index = 0
+
+        /** Where the first run of the next node of the relation in hand leads from. */
         var anchor = start
     }
 
     private val frames = ArrayList<Frame>()
     private var first: Markup? = root
-
-    /** The runs of the inline root whose content the walk is in, or was last. */
-    private val runs = SourceRuns()
-
-    /** The runs of the last node outside inline content asked for its places. */
-    private val own = SourceRuns()
     private val places = SourcePlaces()
 
     lateinit var step: Step
@@ -87,22 +77,18 @@ internal class MarkupTraversal(
         private set
 
     /**
-     * The byte range of the node entered or exited: absolute in the source,
-     * or in its inline root's content when [content] says so.
+     * The source of the node entered or exited, absolute in the source: from
+     * where its first run starts to where its last ends.
      */
     var start: Long = 0
         private set
     var end: Long = 0
         private set
 
-    /** Whether the node entered or exited is in an inline root's content. */
-    var content: Boolean = false
-        private set
-
     fun next(): Boolean {
         first?.let {
             first = null
-            enter(it, 0, 0, false, false)
+            enter(it, 0, 0, false)
             return true
         }
         while (frames.isNotEmpty()) {
@@ -114,16 +100,12 @@ internal class MarkupTraversal(
                     item(Step.EXIT, frame.node, frame.level, false)
                     start = frame.start
                     end = frame.end
-                    content = frame.outer
                     return true
                 }
-                // A root's first relation is its content, which starts at 0.
-                val entered = frame.root && frame.next == 0
                 val opened = frame.relations[frame.next++]
                 frame.relation = opened
                 frame.index = 0
-                frame.anchor = if (entered) 0 else frame.start
-                frame.content = frame.outer || entered
+                if (!opened.continues) frame.anchor = frame.start
                 // The group's own nodes follow it one level down, so what
                 // follows it at its own level is the owner's next relation.
                 if (opened.group != null) {
@@ -138,7 +120,7 @@ internal class MarkupTraversal(
                 val child = relation.nodes[frame.index++]
                 val direct = relation.group == null
                 val more = frame.index < relation.nodes.size || (direct && frame.next <= frame.lastDrawn)
-                enter(child, frame.anchor, frame.level + if (direct) 1 else 2, more, frame.content)
+                enter(child, frame.anchor, frame.level + if (direct) 1 else 2, more)
                 frame.anchor = end
                 return true
             }
@@ -147,36 +129,34 @@ internal class MarkupTraversal(
         return false
     }
 
+    /** Enters [child], whose first run leads from [anchor]. */
     private fun enter(
         child: Markup,
         anchor: Long,
         level: Int,
         more: Boolean,
-        content: Boolean,
     ) {
         item(Step.ENTER, child, level, more)
-        start = anchor + child.extent.lead
-        end = start + child.extent.span.toLong()
-        this.content = content
-        // A root is never in content, so its start is a source offset.
-        if (SourceRuns.readContent(child.runs)) runs.read(child.runs, start)
-        frames += Frame(child, level, start, end, content)
+        val runs = child.runs
+        start = anchor + runs[0].lead
+        end = anchor
+        for (run in runs) end += run.lead + run.span.toLong()
+        frames += Frame(child, level, start, end)
     }
 
     /**
      * The source ranges of the node entered or exited, valid until the next
-     * call: a window less the gaps between the runs that place it. In
-     * content, the window is the source its content range was read from
-     * through the root's runs; else it is its range, cut by its own runs.
+     * call: its runs, in source order.
      */
     fun places(): SourcePlaces {
-        val node = node!!
+        val runs = node!!.runs
         places.clear()
-        if (content) {
-            runs.content(start, end, places)
-        } else {
-            own.read(node.runs, start)
-            own.cut(start, end, places)
+        // [start] is where the first run starts.
+        var at = start - runs[0].lead
+        for (run in runs) {
+            at += run.lead
+            places.add(at, at + run.span.toLong())
+            at += run.span.toLong()
         }
         return places
     }

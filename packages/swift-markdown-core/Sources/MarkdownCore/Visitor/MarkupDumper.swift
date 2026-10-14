@@ -341,7 +341,7 @@ private func dump(columns value: [TableColumn]) -> String {
 }
 
 // Canonical spellings for values in the debug dump.
-/// One scope per source range, joined by commas.
+/// One scope per run, in source order, joined by commas.
 private func dump(scopes value: [Scope]) -> String {
     "scope="
         + value.map { "\($0.start.line):\($0.start.column)..\($0.end.line):\($0.end.column)" }

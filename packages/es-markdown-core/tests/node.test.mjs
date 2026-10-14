@@ -563,11 +563,11 @@ test("ast: a title is decoded before the content and dumped as a group", () => {
     // count is present exactly when a title was authored. This message is
     // written by hand: a document holding one collapsed `note` callout whose
     // title is the text `T` and whose content is empty. The title is an
-    // inline root's content: its first node leads from 0, and the callout's
-    // run reads it from the source byte 11 past the callout's start.
+    // inline root's content: its first node's extent leads from 0, and its
+    // run is its own source, 11 bytes past the start of the callout's.
     const bytes = new MessageWriter()
-        .text("T", { extent: [0, 1] })
-        .record("callout", { extent: [0, 12], runs: [[11, 1, 1]] })
+        .text("T", { extent: [0, 1], runs: [[11, 1]] })
+        .record("callout", { extent: [0, 12] })
         .optional("note", MessageWriter.prototype.string)
         .optional(true, MessageWriter.prototype.bool)
         .optional(1, MessageWriter.prototype.u32)
@@ -593,7 +593,8 @@ test("ast: a title is decoded before the content and dumped as a group", () => {
             "    └── Title children=1\n" +
             '        └── Text scope=1:12..1:12 anchor=null attributes={} literal="T" children=0\n'
     );
-    assert.deepEqual(callout.runs, [{ lead: 11, span: 1, length: 1 }]);
+    assert.deepEqual(callout.runs, [{ lead: 0, span: 12 }]);
+    assert.deepEqual(callout.title[0].runs, [{ lead: 11, span: 1 }]);
     assert.deepEqual(document.scope(callout.title[0], source), [
         { start: { line: 1, column: 12 }, end: { line: 1, column: 12 } }
     ]);
@@ -1648,7 +1649,7 @@ test("api: owned elements are Markup with finite walks and preserved labels", ()
     assert.equal(inline.referent.target.footnote.content[0].literal, "x");
 });
 
-test("api: scope queries count columns in the document's unit from the extents and the source", () => {
+test("api: scope queries count columns in the document's unit from the runs and the source", () => {
     const scope = (startLine, startColumn, endLine, endColumn) => [
         { start: { line: startLine, column: startColumn }, end: { line: endLine, column: endColumn } }
     ];
@@ -1710,38 +1711,47 @@ test("api: scope queries count columns in the document's unit from the extents a
     assert.equal(Document.parse("é🚀x\n").unit, "utf16");
 });
 
-test("api: a node's scopes are its source ranges, cut by its own runs or its inline root's runs", () => {
+test("api: a node's scopes are its own runs, one per run in source order", () => {
     const scope = (startLine, startColumn, endLine, endColumn) => ({
         start: { line: startLine, column: startColumn },
         end: { line: endLine, column: endColumn }
     });
     // A paragraph inside a block quote owns its lines past the `> ` prefixes:
-    // its content is read through one run per line, and the prefix between
-    // them is not its own.
+    // it has one run per line, and the prefix between them is not its own.
+    // A block whose own source is its range has one run, its range.
     const source = "> a *b\n> c* d\n";
     const document = Document.parse(source, { unit: "utf8" });
     const [quote] = document.content;
     const [paragraph] = quote.content;
     const [, emphasis] = paragraph.content;
     const c = emphasis.content[2];
+    assert.deepEqual(document.runs, [{ lead: 0, span: 13 }]);
+    assert.deepEqual(quote.runs, [{ lead: 0, span: 13 }]);
     assert.deepEqual(paragraph.runs, [
-        { lead: 0, span: 5, length: 5 },
-        { lead: 2, span: 4, length: 4 }
+        { lead: 2, span: 5 },
+        { lead: 2, span: 4 }
     ]);
     assert.deepEqual(document.scope(paragraph, source), [scope(1, 3, 2, 0), scope(2, 3, 2, 6)]);
-    // Inline extents are offsets in the content, which starts at 0: `c` is
-    // content byte 7 and source byte 9.
+    // Inline extents are offsets in the content, which starts at 0, and
+    // inline runs are source: `c` leads 0 from the end of the soft break
+    // before it in the content, and its run 2 from the end of the soft
+    // break's source, past the `> ` that is not its own.
     assert.deepEqual(emphasis.extent, { lead: 0, span: 5 });
+    assert.deepEqual(emphasis.runs, [
+        { lead: 0, span: 3 },
+        { lead: 2, span: 2 }
+    ]);
     assert.deepEqual(c.extent, { lead: 0, span: 1 });
+    assert.deepEqual(c.runs, [{ lead: 2, span: 1 }]);
     assert.deepEqual(document.scope(emphasis, source), [scope(1, 5, 2, 0), scope(2, 3, 2, 4)]);
     assert.deepEqual(document.scope(c, source), [scope(2, 3, 2, 3)]);
-    // A prefix byte belongs to the quote alone; a byte of a range to the last
-    // node in walk order whose ranges hold it.
+    // A prefix byte belongs to the quote alone; a byte of a run to the last
+    // node in walk order whose runs hold it.
     assert.equal(document.nodeAt({ line: 2, column: 1 }, source), quote);
     assert.equal(document.nodeAt({ line: 2, column: 3 }, source), c);
     assert.equal(document.nodeAt({ line: 2, column: 4 }, source), emphasis);
-    // A subtree's dump places its nodes in the content they are in, and its
-    // levels count from the node.
+    // A subtree's dump places its nodes in the source by the document's walk,
+    // and its levels count from the node.
     assert.equal(
         document.dump(emphasis, source),
         "Emphasis scope=1:5..2:0,2:3..2:4 anchor=null attributes={} children=3\n" +
@@ -1755,15 +1765,99 @@ test("api: a node's scopes are its source ranges, cut by its own runs or its inl
         (error) => error.code === "outOfBounds"
     );
 
-    // A callout's title is its content, and its later relations are back in
-    // source coordinates.
+    // A callout's title is an inline root's content whose nodes have runs of
+    // their own, leading from the start of the callout's source. Its content
+    // is a relation of its own, so its first block leads from there too.
     const titled = "> [!note] T *u*\n> body\n";
     const callout = Document.parse(titled, { unit: "utf8" });
     const [note] = callout.content;
-    assert.deepEqual(note.runs, [{ lead: 10, span: 5, length: 5 }]);
+    assert.deepEqual(note.runs, [{ lead: 0, span: 22 }]);
+    assert.deepEqual(note.title[0].runs, [{ lead: 10, span: 2 }]);
     assert.deepEqual(callout.scope(note.title[1].content[0], titled), [scope(1, 14, 1, 14)]);
     assert.deepEqual(note.content[0].extent, { lead: 18, span: 4 });
+    assert.deepEqual(note.content[0].runs, [{ lead: 18, span: 4 }]);
     assert.deepEqual(callout.scope(note.content[0], titled), [scope(2, 3, 2, 6)]);
+
+    // A block's first run leads from where the source of the block before it
+    // ends: the fence's source ends before its line terminator.
+    const fenced = "```\nx\n```\n---\n";
+    const blocks = Document.parse(fenced, { unit: "utf8" });
+    const [code, rule] = blocks.content;
+    assert.deepEqual(code.runs, [{ lead: 0, span: 9 }]);
+    assert.deepEqual(rule.runs, [{ lead: 1, span: 3 }]);
+    assert.deepEqual(blocks.scope(rule, fenced), [scope(4, 1, 4, 3)]);
+});
+
+test("api: a table's rows, in head, content and foot order, are one relation", () => {
+    const scope = (line, end) => [{ start: { line, column: 1 }, end: { line, column: end } }];
+    // The caption is a relation of its own, so the first head row leads from
+    // the table's start; the first body row leads from the end of the last
+    // head row, and the first foot row from the end of the last body row.
+    const source = ": Cap\n\n+---+\n| h |\n+===+\n| a |\n+===+\n| f |\n+===+\n";
+    const document = Document.parse(source, { unit: "utf8" });
+    const [table] = document.content;
+    const rows = [...table.head, ...table.content, ...table.foot];
+    assert.equal(table.caption.kind, "tableCaption");
+    assert.deepEqual(
+        rows.map((row) => [row.extent, row.runs]),
+        [
+            [{ lead: 13, span: 5 }, [{ lead: 13, span: 5 }]],
+            [{ lead: 7, span: 5 }, [{ lead: 7, span: 5 }]],
+            [{ lead: 7, span: 5 }, [{ lead: 7, span: 5 }]]
+        ]
+    );
+    assert.deepEqual(
+        rows.map((row) => document.scope(row, source)),
+        [scope(4, 5), scope(6, 5), scope(8, 5)]
+    );
+    const [foot] = table.foot[0].cells[0].content[0].content;
+    assert.deepEqual(document.scope(foot, source), [{ start: { line: 8, column: 3 }, end: { line: 8, column: 3 } }]);
+    assert.equal(document.nodeAt({ line: 8, column: 3 }, source), foot);
+    assert.ok(document.dump(source).includes("TableFoot children=1\n        └── TableRow scope=8:1..8:5 "));
+
+    // A table without head rows: its first body row is the relation's first
+    // node, which leads from the table's start.
+    const bare = "+---+\n| a |\n+---+\n| b |\n+---+\n";
+    const parsed = Document.parse(bare, { unit: "utf8" });
+    const [body] = parsed.content;
+    assert.deepEqual(body.head, []);
+    assert.deepEqual(
+        body.content.map((row) => row.runs),
+        [[{ lead: 6, span: 5 }], [{ lead: 7, span: 5 }]]
+    );
+    assert.deepEqual(
+        body.content.map((row) => parsed.scope(row, bare)),
+        [scope(2, 5), scope(4, 5)]
+    );
+});
+
+test("api: every node has runs, and its scopes are one per run in source order", () => {
+    const source =
+        "# Heading\n\n> Quote *a\n> b*\n\n- [x] task ^[note]\n\n| a | b |\n| - | - |\n| c | d |\n\n" +
+        ":::container[Title]{kind=demo}\nBody\n:::\n\n> [!note] T *u*\n> body\n\nTerm\n: body\n";
+    for (const unit of ["utf8", "utf16"]) {
+        const document = Document.parse(source, { unit });
+        let count = 0;
+        walk(
+            document,
+            walkingVisitor((node, phase) => {
+                if (phase !== "enter") return;
+                count += 1;
+                assert.ok(node.runs.length >= 1, node.kind);
+                const scopes = document.scope(node, source);
+                assert.equal(scopes.length, node.runs.length, node.kind);
+                for (let index = 1; index < scopes.length; index += 1) {
+                    const before = scopes[index - 1].end;
+                    const after = scopes[index].start;
+                    assert.ok(
+                        after.line > before.line || (after.line === before.line && after.column > before.column),
+                        node.kind
+                    );
+                }
+            })
+        );
+        assert.ok(count > 40);
+    }
 });
 
 test("api: runs take part in value equality", () => {
@@ -1776,16 +1870,17 @@ test("api: runs take part in value equality", () => {
                 .root(1, { id: 1, extent: [0, 1] })
                 .document()
         ).decode();
-    const plain = message({ runs: [[0, 1, 1]] });
-    assert.ok(markupEquals(plain, message({ runs: [[0, 1, 1]] })));
-    assert.equal(markupEquals(plain, message({ runs: [[0, 2, 1]] })), false);
+    const plain = message({ runs: [[0, 1]] });
+    assert.ok(markupEquals(plain, message({ runs: [[0, 1]] })));
+    assert.equal(markupEquals(plain, message({ runs: [[0, 2]] })), false);
+    assert.equal(markupEquals(plain, message({ runs: [[1, 1]] })), false);
     assert.equal(
         markupEquals(
             plain,
             message({
                 runs: [
-                    [0, 1, 1],
-                    [1, 1, 0]
+                    [0, 1],
+                    [1, 1]
                 ]
             })
         ),

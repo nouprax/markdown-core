@@ -492,8 +492,8 @@ static size_t S_free_nodes(markdown_core_node_pool *pool, markdown_core_node *e)
         if (markdown_core_strbuf_owns(&e->content)) {
             markdown_core_strbuf_free(&e->content);
         }
-        if (e->runs) {
-            markdown_core_node_pool_bytes_free(pool, e->runs);
+        if (e->source.runs) {
+            markdown_core_node_pool_bytes_free(pool, e->source.runs);
         }
 
         /* The node-valued fields join the same iterative free walk as

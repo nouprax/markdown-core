@@ -66,7 +66,7 @@ extension APISuite {
     }
 }
 
-/// A hand-built document holding `content`, with no source range.
+/// A hand-built document holding `content`, every node an empty run at 0.
 func document(holding content: [MarkupRecord]) -> Document {
     Document(
         record: DocumentRecord(

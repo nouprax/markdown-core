@@ -158,15 +158,22 @@ deep value equality including ids, the comparator for
 
 A node stores its `extent`, `{ lead, span }` in bytes, never a line or
 column: a block's in the UTF-8 source, an inline node's in the content of its
-inline root, which starts at 0. A node whose first relation is inline
-content has `runs`, where in the source that content was read from, and a
-node whose range holds bytes that are not its own, such as a block inside a
-container, has runs of length 0 over its own source, so the bytes between
-two runs are not the node's. `document.scope(node, source)` answers one scope per source
-range of the node, in source order, and `document.nodeAt(position, source)`
-the last node one of whose ranges holds the position; both compute them on
-request from the extents, runs and the source the document was parsed
-from, with columns in the document's unit.
+inline root, which starts at 0. Its `runs` are its own source ranges in source
+order, each `{ lead, span }` in bytes, and every node has at least one. The
+first run's lead is from the end of the source of the previous node in the
+same relation, or from the start of the owner's source for a relation's first
+node; every other run's lead is from the end of the run before. A node's
+source starts where its first run starts and ends where its last ends, and the
+bytes between two runs are not the node's, such as the `> ` prefixes between
+the lines of a paragraph in a block quote; runs that touch are one run, so a
+block whose own source is its range has one run, its range. A table's rows, in
+head, content and foot order, are one relation, so the extent and the first
+run of its first body row lead from the end of its last head row.
+`document.scope(node, source)` answers one scope per run of the node, in
+source order, and `document.nodeAt(position, source)` the last node one of
+whose runs holds the position; both compute them on request from the runs and
+the source the document was parsed from, with columns in the document's unit,
+and extents take no part.
 
 ## Sessions
 

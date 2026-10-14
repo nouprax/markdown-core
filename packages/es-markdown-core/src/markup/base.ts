@@ -8,10 +8,8 @@ export interface MarkupBase<Kind extends string> {
      * an exact number, usable directly as a list key. */
     readonly id: number;
     readonly extent: Extent;
-    /** The source it read: the runs its first relation was read from when
-     * that relation is an inline root's content, and runs of length 0 of its
-     * own source between which lies source that is not its own. None when
-     * its own source is its range and it has no inline content. */
+    /** Its own source, in source order, at least one run; the source between
+     * two runs is not its own. Scopes are computed from them. */
     readonly runs: readonly Run[];
     readonly anchor: string | null;
     readonly attributes: Attributes;

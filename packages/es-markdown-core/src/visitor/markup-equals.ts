@@ -2,7 +2,7 @@ import type { Markup } from "../markup/markup.js";
 
 /**
  * Deep value equality including `id`: two nodes are equal when they have the
- * same kind, id, extent, scalar fields and pairwise equal children in every
+ * same kind, id, extent, runs, scalar fields and pairwise equal children in every
  * relation. Nodes and values are plain objects, so this is one structural
  * comparison of every enumerable field, run over an explicit work stack: depth
  * is data, not call stack. An object shared by both sides is compared once.

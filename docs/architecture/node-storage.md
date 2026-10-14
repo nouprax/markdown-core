@@ -201,10 +201,11 @@ map and a specimen key index hold the first definition of each label. The
 finish stage visits definitions where they are, like any other node.
 
 Publishing is one canonical walk. It numbers every node from 1, rewrites the
-parse-time source place as the node's extent, and collects every Footnote and
-Specimen into the document's two definition tables, which it orders by first
-source byte with the stable linear source ordering below and indexes by
-label. Nothing reads a place after publishing.
+parse-time source place as the node's extent, gives every node its runs from
+its places -- a block's own, an inline node's from its root's -- and collects
+every Footnote and Specimen into the document's two definition tables, which
+it orders by first source byte with the stable linear source ordering below
+and indexes by label. Nothing reads a place after publishing.
 
 The bracket scanner tracks the most recent non-SP/TAB byte over disjoint
 consumed token ranges, so rejecting empty bodies never rescans nested bodies.

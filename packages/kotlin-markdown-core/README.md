@@ -112,16 +112,18 @@ A node stores no line or column. Its `extent: Extent(lead, span)` is the raw
 byte range the engine keeps, a block's in the UTF-8 source and an inline
 node's in its inline root's content, which starts at 0: `lead` is signed, from
 the end of the previous node in the same relation (or the owner's start) to
-the node's start, and `span` is its length. A node whose range is not all
-its own, such as a block inside a container, has `runs`: `Run(lead, span,
-length)`, `length` content bytes read from `span` source bytes, and the source
-between two runs is not the node's. A node whose runs read content, some run
-with `length > 0`, is an inline root, whose first relation is that content.
-A node's source ranges are one window less the gaps between the runs that
-place it: in an inline root's content, the source its content range was read
-from through the root's runs; else its own range, cut by its own runs. Scopes, one per source range in source order,
-are computed on request from those and the source the document was parsed
-from:
+the node's start, and `span` is its length. A table's rows, in head, content
+and foot order, are one relation. A node's `runs` are its own source ranges in
+source order, each `Run(lead, span)` in bytes, and every node has at least
+one. The first run's lead is from the end of the source of the previous node
+in the same relation, or from the start of the owner's source for a
+relation's first node; every other run's lead is from the end of the run
+before. A node's source starts where its first run starts and ends where its
+last ends, and the source between two runs is not the node's, such as a
+container's prefix between the lines of a block inside it; runs that touch
+are one run. Scopes, one per run in source order, are computed on request
+from the runs and the source the document was parsed from; extents take no
+part:
 
 ```kotlin
 val document = Document.parse(source)            // TextUnit.UTF16 by default

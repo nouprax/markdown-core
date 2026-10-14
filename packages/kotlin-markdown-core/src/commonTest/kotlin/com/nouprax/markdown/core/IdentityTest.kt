@@ -73,23 +73,25 @@ class IdentityTest {
         assertEquals(utf8, utf16)
         assertEquals(utf8.hashCode(), utf16.hashCode())
 
-        // Runs are values too, a run that reads no content included; inline
-        // extents are offsets in the root's content, so content read from
-        // other source bytes is equal.
+        // Runs are values too. Inline extents are offsets in the root's
+        // content, but every inline node's runs are its own source, so content
+        // read from other source bytes differs in its runs alone.
         fun paragraph(runs: kotlin.collections.List<Run>) =
             Paragraph(emptyList(), MarkupID(1), Extent(0, 3u), runs, null, Attributes.empty)
-        val runs = listOf(Run(0, 1u, 1u), Run(1, 1u, 1u))
+        val runs = listOf(Run(0, 1u), Run(1, 1u))
         assertEquals(paragraph(runs), paragraph(runs))
-        assertNotEquals(paragraph(runs), paragraph(emptyList()))
-        assertNotEquals(paragraph(runs), paragraph(listOf(Run(0, 1u, 1u), Run(1, 1u, 0u))))
-        assertNotEquals(paragraph(runs), paragraph(runs + Run(0, 1u, 0u)))
+        assertNotEquals(paragraph(runs), paragraph(runs.take(1)))
+        assertNotEquals(paragraph(runs), paragraph(listOf(Run(0, 1u), Run(1, 2u))))
+        assertNotEquals(paragraph(runs), paragraph(runs + Run(0, 1u)))
 
         fun quoted(source: String) =
             assertIs<Paragraph>(assertIs<Callout>(Document.parse(source).content.single()).content.single())
         val near = quoted("> a\n> b\n")
         val far = quoted("> a\n>  b\n")
         assertNotEquals(near.runs, far.runs)
-        assertEquals(near.content, far.content)
+        assertEquals(near.content.map { it.extent }, far.content.map { it.extent })
+        assertNotEquals(near.content.last().runs, far.content.last().runs)
+        assertNotEquals(near.content, far.content)
         // Inline notes compare through their citation's relation.
         assertEquals(Document.parse("x^[*n*]\n"), Document.parse("x^[*n*]\n"))
         assertNotEquals(Document.parse("x^[*n*]\n"), Document.parse("x^[*m*]\n"))
@@ -185,10 +187,14 @@ class ScopeTest {
         val paragraph = assertIs<Paragraph>(item.content.single())
         val emphasis = assertIs<Emphasis>(paragraph.content[2])
         // A leaf block inside a container owns each line from where the
-        // container's prefix ends: the runs its content was read from, one
-        // per line, and the source between them is not its own.
-        assertEquals(listOf(Run(0, 2u, 2u), Run(2, 3u, 3u), Run(2, 2u, 2u)), paragraph.runs)
-        assertTrue(item.runs.isEmpty() && emphasis.runs.isEmpty())
+        // container's prefix ends: one run per line, and the source between
+        // them is not its own.
+        assertEquals(listOf(Run(2, 2u), Run(2, 3u), Run(2, 2u)), paragraph.runs)
+        // A container owns its whole range, one run.
+        assertEquals(listOf(Run(0, 13u)), item.runs)
+        // An inline node's runs are its own source: the emphasis's first
+        // leads from where the soft break's source ends.
+        assertEquals(listOf(Run(2, 3u), Run(2, 2u)), emphasis.runs)
         assertEquals(
             listOf(
                 Scope(Position(1, 3), Position(2, 0)),
@@ -197,8 +203,8 @@ class ScopeTest {
             ),
             document.scope(paragraph, source),
         )
-        // An inline node's extent is in its root's content, whose runs map
-        // it to the source: the indentation between its lines is not its own.
+        // An inline node's scopes are its runs: the indentation between its
+        // lines is not its own.
         assertEquals(
             listOf(Scope(Position(2, 3), Position(3, 0)), Scope(Position(3, 3), Position(3, 4))),
             document.scope(emphasis, source),
@@ -207,7 +213,7 @@ class ScopeTest {
         assertSame(item, document.node(Position(3, 1), source))
         assertSame(emphasis, document.node(Position(3, 4), source))
         assertSame(emphasis.content.last(), document.node(Position(3, 3), source))
-        // A subtree dump places a node in content through its root's runs.
+        // A subtree dump places a node by the document's walk.
         assertEquals(
             "Emphasis scope=2:3..3:0,3:3..3:4 anchor=null attributes={} children=3\n" +
                 "├── Text scope=2:4..2:4 anchor=null attributes={} literal=\"b\" children=0\n" +
@@ -221,14 +227,14 @@ class ScopeTest {
     }
 
     @Test
-    fun theSourceBetweenRunsIsCutFromEveryNodeTheyPlace() {
+    fun theSourceBetweenRunsIsNotTheNodes() {
         val source = "> a *b\n> c* d\n"
         val document = Document.parse(source)
         val callout = assertIs<Callout>(document.content.single())
         val paragraph = assertIs<Paragraph>(callout.content.single())
         val emphasis = assertIs<Emphasis>(paragraph.content[1])
         // One run per line; the quote marker between them is the callout's.
-        assertEquals(listOf(Run(0, 5u, 5u), Run(2, 4u, 4u)), paragraph.runs)
+        assertEquals(listOf(Run(2, 5u), Run(2, 4u)), paragraph.runs)
         assertEquals(
             listOf(Scope(Position(1, 3), Position(2, 0)), Scope(Position(2, 3), Position(2, 6))),
             document.scope(paragraph, source),
@@ -241,14 +247,47 @@ class ScopeTest {
     }
 
     @Test
-    fun runsThatReadNoContentPlaceABlockThatIsNoInlineRoot() {
+    fun everyNodeHasRunsAndTheFirstLeadsFromTheSourceBefore() {
+        val titled = "> [!NOTE] Ti*t*le\n> x\n"
+        val document = Document.parse(titled)
+        val callout = assertIs<Callout>(document.content.single())
+        // A block whose own source is its range has one run, its range.
+        assertEquals(listOf(Run(0, 21u)), document.runs)
+        assertEquals(listOf(Run(0, 21u)), callout.runs)
+        // The title's first node leads from the start of the callout's
+        // source, and each later one from where the source before it ends.
+        val title = callout.title!!
+        assertEquals(listOf(Run(10, 2u)), title[0].runs)
+        val emphasis = assertIs<Emphasis>(title[1])
+        assertEquals(listOf(Run(0, 3u)), emphasis.runs)
+        assertEquals(listOf(Run(1, 1u)), emphasis.content.single().runs)
+        assertEquals(listOf(Run(0, 2u)), title[2].runs)
+        // The content is a relation of its own, so its first node leads from
+        // the start of the callout's source too.
+        val paragraph = assertIs<Paragraph>(callout.content.single())
+        assertEquals(listOf(Run(20, 1u)), paragraph.runs)
+        assertEquals(listOf(Run(0, 1u)), paragraph.content.single().runs)
+        assertEquals(listOf(Scope(Position(1, 13), Position(1, 15))), document.scope(emphasis, titled))
+
+        val fenced = "```\nx\n```\n---\n"
+        val blocks = Document.parse(fenced)
+        val code = assertIs<CodeBlock>(blocks.content[0])
+        val rule = assertIs<ThematicBreak>(blocks.content[1])
+        assertEquals(listOf(Run(0, 9u)), code.runs)
+        // A block's source ends before its line terminator.
+        assertEquals(listOf(Run(1, 3u)), rule.runs)
+        assertEquals(listOf(Scope(Position(4, 1), Position(4, 3))), blocks.scope(rule, fenced))
+    }
+
+    @Test
+    fun aBlockInAContainerHasItsOwnLinesAsRuns() {
         val source = "> ```\n> x\n> ```\n"
         val document = Document.parse(source)
         val callout = assertIs<Callout>(document.content.single())
         val code = assertIs<CodeBlock>(callout.content.single())
-        // A code block's literal is no inline content: its runs only say
-        // which source is its own, so the quote markers are the callout's.
-        assertTrue(code.runs.isNotEmpty() && code.runs.all { it.length == 0u })
+        // A code block's runs say which source is its own, so the quote
+        // markers are the callout's.
+        assertEquals(listOf(Run(2, 4u), Run(2, 2u), Run(2, 3u)), code.runs)
         assertEquals(
             listOf(
                 Scope(Position(1, 3), Position(2, 0)),
@@ -259,6 +298,30 @@ class ScopeTest {
         )
         assertSame(callout, document.node(Position(2, 1), source))
         assertSame(code, document.node(Position(2, 3), source))
+    }
+
+    @Test
+    fun tableRowsAreOneRelationInHeadContentAndFootOrder() {
+        val source =
+            "+---+---+\n| h     |\n+===+===+\n| a | b |\n+---+   +\n| c | d |\n+===+===+\n| f     |\n+===+===+\n"
+        val document = Document.parse(source)
+        val table = assertIs<Table>(document.content.single())
+        val head = table.head.single()
+        val body = table.content.first()
+        val foot = table.foot.single()
+        // The first content row leads from the end of the last head row, and
+        // the first foot row from the end of the last content row, never from
+        // the table's start: its extent and its first run alike.
+        assertEquals(listOf(Run(10, 9u)), head.runs)
+        assertEquals(Extent(11, 19u), body.extent)
+        assertEquals(listOf(Run(11, 19u)), body.runs)
+        assertEquals(Extent(11, 9u), foot.extent)
+        assertEquals(listOf(Run(11, 9u)), foot.runs)
+        assertEquals(listOf(Scope(Position(4, 1), Position(5, 9))), document.scope(body, source))
+        assertEquals(listOf(Scope(Position(8, 1), Position(8, 9))), document.scope(foot, source))
+        val cell = foot.cells.single()
+        val text = assertIs<Paragraph>(cell.content.single()).content.single()
+        assertSame(text, document.node(Position(8, 3), source))
     }
 
     @Test

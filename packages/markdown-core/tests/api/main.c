@@ -2881,19 +2881,47 @@ static int node_list_push(markdown_core_node **slot, void *context) {
     return 1;
 }
 
-/* Every node of `kind`, in canonical walk order. */
+/* Every node of `kind`, in canonical walk order, read from the relations
+ * alone: the passes that ask run before the tree is published, so its nodes
+ * have no runs for the canonical walk to read yet. */
+typedef struct {
+    markdown_core_relation_cursor cursor;
+    markdown_core_relation relation;
+    const markdown_core_node *next;
+} kind_frame;
+
 static node_list nodes_of_kind(markdown_core_node *root, markdown_core_node_type kind) {
     node_list found = {0};
-    markdown_core_walk walk;
-    markdown_core_walk_item item;
-    markdown_core_walk_begin(&walk, root);
-    while (markdown_core_walk_next(&walk, &item)) {
-        if (item.node && item.node->kind == kind) {
-            markdown_core_node *node = (markdown_core_node *)item.node;
+    if (root->kind == kind) {
+        node_list_push(&root, &found);
+    }
+    size_t depth = 1, capacity = 16;
+    kind_frame *frames = malloc(capacity * sizeof(*frames));
+    frames[0] = (kind_frame){.next = NULL};
+    markdown_core_relations_begin(&frames[0].cursor, root);
+    while (depth) {
+        kind_frame *frame = &frames[depth - 1];
+        if (frame->next == frame->relation.end) {
+            if (!markdown_core_relations_next(&frame->cursor, &frame->relation)) {
+                depth--;
+            } else {
+                frame->next = frame->relation.first;
+            }
+            continue;
+        }
+        markdown_core_node *node = (markdown_core_node *)frame->next;
+        frame->next = node->next;
+        if (node->kind == kind) {
             node_list_push(&node, &found);
         }
+        if (depth == capacity) {
+            capacity *= 2;
+            frames = realloc(frames, capacity * sizeof(*frames));
+        }
+        frames[depth] = (kind_frame){.next = NULL};
+        markdown_core_relations_begin(&frames[depth++].cursor, node);
     }
-    markdown_core_walk_end(&walk);
+    free(frames);
     return found;
 }
 
@@ -4127,6 +4155,17 @@ static void autolink_source_pos(test_batch_runner *runner) {
         "email autolink scopes are as expected");
 }
 
+/* A node built by hand into a published tree: every published node has
+ * runs, here the one `span` bytes long at its owner's start. */
+static markdown_core_node *published_node_new(markdown_core_node_type type, uint32_t span) {
+    markdown_core_node *node = markdown_core_node_new(type);
+    markdown_core_runs *runs = markdown_core_node_pool_bytes(NULL, sizeof(*runs) + sizeof(markdown_core_run));
+    runs->count = 1;
+    runs->items[0] = (markdown_core_run){0, span};
+    node->source.runs = runs;
+    return node;
+}
+
 static void table_values(test_batch_runner *runner) {
     const char source[] = "| a | b |\n| - | - |\n| c | d |\n| e | f |\n";
     markdown_core_document *document = facade_parse((const uint8_t *)source, sizeof(source) - 1);
@@ -4144,7 +4183,7 @@ static void table_values(test_batch_runner *runner) {
         markdown_core_node_free(cell->next);
         markdown_core_node_free(cell->first_child);
         cell->as.table_cell->colspan = 2;
-        markdown_core_node *block = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+        markdown_core_node *block = published_node_new(MARKDOWN_CORE_NODE_PARAGRAPH, 0);
         OK(runner, markdown_core_node_append_child(cell, block), "cell owns block content directly");
         int64_t rowspan, colspan;
         EXPECT_OK(markdown_core_node_table_cell_spans(cell, &rowspan, &colspan));
@@ -4615,7 +4654,7 @@ static void universal_values(test_batch_runner *runner) {
     const char *source = "![x](/u) ![y](/u)";
     markdown_core_document *document = facade_parse((const uint8_t *)source, strlen(source));
     markdown_core_node *root = document->root;
-    markdown_core_node *metadata = markdown_core_node_new(MARKDOWN_CORE_NODE_METADATA);
+    markdown_core_node *metadata = published_node_new(MARKDOWN_CORE_NODE_METADATA, 4);
     metadata->where.extent = (markdown_core_extent){0, 4};
     root->as.document->metadata = metadata;
     markdown_core_metadata_value *values[] = {&metadata->as.metadata->name,    &metadata->as.metadata->time,

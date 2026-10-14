@@ -274,7 +274,8 @@ a node the parse may have taken whole it computes the two ids it accepts:
   of whose bytes survived has no anchor.
 - Within the relation of a matched owner, a new node of the same kind whose
   source range contains the image of an old sibling's anchor continues the
-  earliest such sibling.
+  earliest such sibling. A node's source range runs from the start of its
+  first scope to the end of its last.
 - A new node that continues an old node has the old node's id.
 - A node the parse took whole keeps its id wherever it lands, under a
   matched owner or a new one (decision G7). Whether a node was

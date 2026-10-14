@@ -10,13 +10,13 @@ public sealed class Markup {
     /** Unique within its document, and numbered from 1 in canonical walk order by a parse. */
     public abstract val id: MarkupID
 
-    /** Where the node is, relative to the node before it; [Document.scope] turns it into editor coordinates. */
+    /** Where the node is, relative to the node before it in its relation; see [Extent]. */
     public abstract val extent: Extent
 
     /**
-     * The source the node reads, when its range is not all its own, and where
-     * the inline content its first relation is was read from, when they read
-     * content: the node is an inline root.
+     * The node's own source, in source order, at least one run; [Document.scope]
+     * turns each run into editor coordinates. The source between two runs is
+     * not the node's.
      */
     public abstract val runs: kotlin.collections.List<Run>
     public abstract val anchor: String?
@@ -79,9 +79,10 @@ public sealed class Markup {
             is Table -> {
                 listOfNotNull(
                     caption?.let { Relation(null, listOf(it)) },
+                    // A table's rows, in head, content and foot order, are one relation.
                     Relation("TableHead", head),
-                    Relation("TableBody", content),
-                    Relation("TableFoot", foot),
+                    Relation("TableBody", content, continues = true),
+                    Relation("TableFoot", foot, continues = true),
                 )
             }
 

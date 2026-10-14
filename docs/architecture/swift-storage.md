@@ -54,10 +54,11 @@ the engine's label table, so each resolving label names the `Reference` or
 A label is never compared under Unicode equivalence. There is no lazy cache
 and no lock.
 
-Scopes are not stored. `scope(of:in:)` walks the document once to the node's
-source ranges, a window less the gaps between the runs that place it: a
-block's range and its own runs, or the source a node inside an inline root's
-content was read from and the root's runs. It converts each range
+Scopes are not stored. `scope(of:in:)` walks the document once to place the
+node, whose source ranges are its own runs: its first run leads from where
+the source of the node before it in its relation ends, or from where its
+owner's source starts, and a table's rows, in head, body and foot order, are
+one relation. Extents take no part. It converts each range
 with the source's line starts to lines and columns in the document's unit;
 `node(at:in:)` converts the position to a byte offset and returns the last
 node in walk order one of whose ranges holds it. Both
@@ -69,7 +70,8 @@ line or column is below 1. The `SourceLines` helpers beneath them assume that
 check.
 
 Tests cover canonical dumps, fresh-parse ids numbered 1 through n in walk
-order, deep equality, both units' scopes and hit testing, the definition
+order, deep equality, every node's runs and a table's rows as one relation,
+both units' scopes and hit testing, the definition
 tables and reference resolution, concurrent reads, and the last release of
 retained groups. The 30,000 and 65,536-level trees run on a thread with a
 512 KiB stack: release while a view holds a subtree, equality at the deepest

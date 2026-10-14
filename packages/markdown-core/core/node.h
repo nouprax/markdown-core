@@ -220,40 +220,51 @@ typedef struct {
     uint32_t start, end;
 } markdown_core_place;
 
-/* A run of a node's source (markdown_core.h): `length` content bytes read
- * from the source bytes `span` long, `lead` from the end of the previous run,
- * or from the start of the node that holds the runs. */
+/* A run of a node's own source (markdown_core.h): a source range whose lead
+ * is from the end of the previous run, or, for the first, from where the
+ * source of the node before it in its relation ends, or where its owner's
+ * begins. */
 #ifndef MARKDOWN_CORE_RUN_TYPEDEF
 #define MARKDOWN_CORE_RUN_TYPEDEF
 typedef struct markdown_core_run {
     int32_t lead;
     uint32_t span;
-    uint32_t length;
 } markdown_core_run;
 #endif
 
-/* WHERE A NODE'S BYTES LIE when its extent alone does not say: the runs of
- * source it read, those its inline content was read from and, with length
- * 0, those that gave no content, with the source that is not its own between
- * them. While a parse builds the tree each holds an absolute source range,
- * as a node's place does; publishing rewrites them relative, as it rewrites
- * the place as the extent. The list is one owned allocation, NULL when the
- * node has none. */
+/* WHERE A NODE'S BYTES LIE. While a parse builds the tree, a node whose
+ * extent alone does not say holds places: the source it read without
+ * content, `length` 0, with the source that is not its own between them,
+ * and, for an inline root, the source its content was read from, `length`
+ * content bytes each. A place whose source is as long as its content reads
+ * each content byte from one source byte; any other reads all of its content
+ * from all of its source. Each holds an absolute source range, as a node's
+ * place does. Publishing gives every node its runs, its own source with the
+ * runs that touch joined, relative as the extent is: a block's from its
+ * places, or its range when it has none, and an inline node's from the
+ * places of its root (ast.c). Each list is one owned allocation. */
 typedef struct {
     uint32_t start, end, length;
-} markdown_core_run_place;
+} markdown_core_source_place;
 
-typedef union {
-    markdown_core_run_place place;
-    markdown_core_run run;
-} markdown_core_run_where;
+typedef struct markdown_core_places {
+    /* How many there are, and the content bytes they read: 0 for a node
+     * without inline content. */
+    uint32_t count, content;
+    markdown_core_source_place items[];
+} markdown_core_places;
 
 typedef struct markdown_core_runs {
-    /* How many runs there are, and the content bytes they read: 0 for a
-     * node without inline content, whose runs all have length 0. */
-    uint32_t count, content;
-    markdown_core_run_where items[];
+    uint32_t count;
+    markdown_core_run items[];
 } markdown_core_runs;
+
+/* A node's places while the parse builds the tree, and its runs once it is
+ * published, as its place becomes its extent. */
+typedef union {
+    markdown_core_places *places;
+    markdown_core_runs *runs;
+} markdown_core_node_source;
 
 /* WHERE A NODE IS, in bytes of the UTF-8 source, and never in lines or
  * columns. While a parse builds the tree every node holds its absolute
@@ -365,8 +376,8 @@ struct markdown_core_node {
     /* This node's slice of parser-owned content-to-source runs. Zero count
      * means there is no mapped content (for example, an empty cell). */
     markdown_core_content_map content_map;
-    /* The runs of its source (markdown_core_runs). */
-    markdown_core_runs *runs;
+    /* Its places, then its runs (markdown_core_node_source). */
+    markdown_core_node_source source;
     uint16_t kind;
     markdown_core_node_internal_flags flags;
 

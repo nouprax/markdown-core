@@ -28,7 +28,7 @@ public struct Metadata: Markup {
     public var id: MarkupID { record.id }
     /// The source extent of the complete metadata envelope.
     public var extent: Extent { record.extent }
-    /// The source it read, and where its content was read from. See ``Run``.
+    /// Its own source ranges, in source order. See ``Run``.
     public var runs: [Run] { record.runs }
     /// The optional anchor attached to this node.
     public var anchor: String? { record.anchor }

@@ -14,7 +14,7 @@ public struct Footnote: Markup {
     /// The source range, from the opening bracket of the definition or the
     /// caret of an inline note.
     public var extent: Extent { record.extent }
-    /// The source it read, and where its content was read from. See ``Run``.
+    /// Its own source ranges, in source order. See ``Run``.
     public var runs: [Run] { record.runs }
     /// The optional anchor attached to this node.
     public var anchor: String? { record.anchor }

@@ -2355,22 +2355,22 @@ static markdown_core_node *table_child(markdown_core_parser *parser, markdown_co
 }
 
 /* A cell of a grid or multiline table lies in its columns on each of its
- * lines: one run of length 0 per line, from its left column to its right one
- * or the line's end. */
-static void table_cell_runs(table_source *source, markdown_core_node *node, const table_source_cell *cell) {
+ * lines: one place of length 0 per line, from its left column to its right
+ * one or the line's end. */
+static void table_cell_places(table_source *source, markdown_core_node *node, const table_source_cell *cell) {
     markdown_core_parser *parser = source->parser;
     if (cell->last <= cell->first) {
         return;
     }
     uint32_t count = (uint32_t)(cell->last - cell->first + 1);
-    markdown_core_runs *runs =
-        markdown_core_node_pool_bytes(parser->pool, sizeof(*runs) + (size_t)count * sizeof(markdown_core_run_where));
-    if (!runs) {
+    markdown_core_places *places = markdown_core_node_pool_bytes(
+        parser->pool, sizeof(*places) + (size_t)count * sizeof(markdown_core_source_place));
+    if (!places) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
-    runs->count = count;
-    runs->content = 0;
+    places->count = count;
+    places->content = 0;
     for (uint32_t i = 0; i < count; i++) {
         const table_source_line *line = &source->lines[cell->first + i];
         int right = cell->right < line->columns ? cell->right : line->columns;
@@ -2379,12 +2379,12 @@ static void table_cell_runs(table_source *source, markdown_core_node *node, cons
                               ? markdown_core_parser_source_offset(parser, line->line, table_byte(line, left) + 1)
                               : markdown_core_parser_source_end(parser, line->line, table_byte(line, left));
         bufsize_t end = markdown_core_parser_source_end(parser, line->line, table_byte(line, right));
-        runs->items[i].place = (markdown_core_run_place){(uint32_t)start, (uint32_t)end, 0};
+        places->items[i] = (markdown_core_source_place){(uint32_t)start, (uint32_t)end, 0};
     }
-    if (node->runs) {
-        markdown_core_node_pool_bytes_free(parser->pool, node->runs);
+    if (node->source.places) {
+        markdown_core_node_pool_bytes_free(parser->pool, node->source.places);
     }
-    node->runs = runs;
+    node->source.places = places;
 }
 
 static markdown_core_node *table_build(table_source *source, markdown_core_node *parent, table_candidate *candidate) {
@@ -2440,7 +2440,7 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
             cell_node->as.table_cell->rowspan = cell->rowspan;
             cell_node->as.table_cell->colspan = cell->colspan;
             if (!candidate->pipe) {
-                table_cell_runs(source, cell_node, cell);
+                table_cell_places(source, cell_node, cell);
                 table_fill_cell(source, cell_node, cell, candidate->block_content, candidate->padding_limit);
             }
         }
@@ -2460,7 +2460,7 @@ static markdown_core_node *table_caption_build(table_source *source, const markd
         return NULL;
     }
     int from = first->line;
-    markdown_core_parser_place_runs(source->parser, node, container, &from);
+    markdown_core_parser_line_places(source->parser, node, container, &from);
     for (size_t i = 0; i <= last && !source->parser->error; i++) {
         if (!table_source_columns(source, i)) {
             break;
