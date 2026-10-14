@@ -9135,6 +9135,34 @@ static void formula_promotion_transfers_storage(test_batch_runner *runner) {
     }
 }
 
+/* A formula fence lies on the lines a code fence would: inside a quote its
+ * runs, like the code block's, leave out every line's `> ` prefix. */
+static void formula_promotion_keeps_the_fence_runs(test_batch_runner *runner) {
+    const char *sources[] = {"> ```formula\n> x\n> ```\n", "> ```haskell\n> x\n> ```\n"};
+    const markdown_core_node_type kinds[] = {MARKDOWN_CORE_NODE_FORMULA_BLOCK, MARKDOWN_CORE_NODE_CODE_BLOCK};
+    markdown_core_document *documents[2];
+    const markdown_core_run *runs[2] = {NULL, NULL};
+    size_t counts[2] = {0, 0};
+    for (int i = 0; i < 2; i++) {
+        documents[i] = facade_parse((const uint8_t *)sources[i], strlen(sources[i]));
+        OK(runner, documents[i] != NULL, "fence %d in a quote parses", i);
+        if (!documents[i]) {
+            return;
+        }
+        markdown_core_node *block = first_of_kind(documents[i]->root, kinds[i]);
+        OK(runner, block != NULL, "the quote holds the block of fence %d", i);
+        if (block) {
+            runs[i] = markdown_core_node_runs(block, &counts[i]);
+        }
+    }
+    INT_EQ(runner, counts[0], 3, "the formula block has a run per line");
+    OK(runner, counts[0] == counts[1] && runs[0] && runs[1] && !memcmp(runs[0], runs[1], counts[0] * sizeof *runs[0]),
+       "the formula block's runs are the code block's");
+    for (int i = 0; i < 2; i++) {
+        markdown_core_document_free(documents[i]);
+    }
+}
+
 /* The committed opener and a direct decode have the same recognition work.
  * A probe owns a separate lifetime and must free its memo on every outcome. */
 static void directive_recognition_survives_construction(test_batch_runner *runner) {
@@ -11484,6 +11512,7 @@ int main(void) {
     delimiter_boundary_floors(runner);
     formula_leaf_construction_work(runner);
     formula_promotion_transfers_storage(runner);
+    formula_promotion_keeps_the_fence_runs(runner);
     directive_recognition_survives_construction(runner);
     lookahead_and_driver_share_normalized_lines(runner);
     definition_open_gate_admits_only_possible_terms(runner);

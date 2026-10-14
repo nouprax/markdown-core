@@ -603,9 +603,9 @@ static int info_is_formula(const markdown_core_optional_chunk *info) {
 
 /* A code block whose info string names a formula becomes a FormulaBlock
  * holding its literal. */
-static markdown_core_finish_result replace_with_formula_block(const markdown_core_element *element,
-                                                              markdown_core_parser *parser,
-                                                              markdown_core_node *oldnode) {
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_finish_result
+    replace_with_formula_block(const markdown_core_element *element, markdown_core_parser *parser,
+                               markdown_core_node *oldnode) {
     /* Rewriting a valid block is optional. Rejection retains its complete
      * ownership; reserve the destination before moving any live payload. */
     if (!oldnode->parent || !markdown_core_node_can_contain_type(oldnode->parent, MARKDOWN_CORE_NODE_FORMULA_BLOCK)) {
@@ -624,7 +624,11 @@ static markdown_core_finish_result replace_with_formula_block(const markdown_cor
     get_formula(formula)->literal = oldnode->as.code->literal;
     oldnode->as.code->literal = (markdown_core_chunk)MARKDOWN_CORE_CHUNK_EMPTY;
     get_formula(formula)->mode = MARKDOWN_CORE_FORMULA_MODE_STANDALONE;
+    /* The formula block lies where the fence did: its range, and the places
+     * of the lines it read without the container prefixes between them. */
     formula->where = oldnode->where;
+    formula->source.places = oldnode->source.places;
+    oldnode->source.places = NULL;
     markdown_core_node_attach_validated(oldnode->parent, formula, oldnode);
     markdown_core_parser_release_node(parser, oldnode);
     return MARKDOWN_CORE_FINISH_CONSUMED;
