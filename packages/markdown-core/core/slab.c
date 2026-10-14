@@ -8,7 +8,8 @@ bool markdown_core_slab_pool_grow(markdown_core_slab_pool *pool, size_t slab_byt
     slab->head.holds = 1;
     markdown_core_slab_drop(pool->current);
     pool->current = slab;
-    pool->taken = 0;
+    pool->cut = (unsigned char *)(slab + 1);
+    pool->end = (unsigned char *)slab + slab_bytes;
     return true;
 }
 
@@ -20,7 +21,7 @@ void markdown_core_slab_pool_dispose(markdown_core_slab_pool *pool) {
     }
     markdown_core_slab_drop(pool->current);
     pool->current = NULL;
-    pool->taken = 0;
+    pool->cut = pool->end = NULL;
 }
 
 void markdown_core_bytes_pool_dispose(markdown_core_bytes_pool *pool) {
@@ -31,5 +32,4 @@ void markdown_core_bytes_pool_dispose(markdown_core_bytes_pool *pool) {
             markdown_core_slab_drop(((markdown_core_bytes_header *)storage - 1)->owner.slab);
         }
     }
-    markdown_core_slab_pool_dispose(&pool->slabs);
 }

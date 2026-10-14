@@ -33,9 +33,11 @@ extern "C" {
  * keeps its slabs. Slots of one slab are released from one thread at a time;
  * two parses never share a slab.
  *
- * A pool holds one kind of object. Its slot size and slab size are constants
- * that kind's code passes to every call, so the arithmetic folds at each
- * call and the pool itself is only its state, which starts zeroed. */
+ * A pool's slots hold one kind of object. Its slot size and slab size are
+ * constants that kind's code passes to every call, so the arithmetic folds at
+ * each call and the pool itself is only its state, which starts zeroed. Its
+ * slabs can hold storage of varied sizes too, cut through a bytes pool
+ * (below). */
 
 typedef struct markdown_core_slab {
     union {
@@ -57,9 +59,9 @@ typedef union {
 typedef struct markdown_core_slab_pool {
     /* The slab slots are being taken from, held by the pool. */
     markdown_core_slab *current;
-    /* Slots of `current` already taken, from its start; bytes, for the slabs
-     * of a pool of varied sizes. */
-    size_t taken;
+    /* Where the next slot is cut from `current`, and where `current` ends:
+     * the same before the first slab. */
+    unsigned char *cut, *end;
     /* Storage of slots released into the pool, linked through its first
      * bytes, reused before another slot is taken from a slab. */
     void *released;
@@ -74,6 +76,22 @@ typedef struct markdown_core_slab_pool {
  * pool's hold on the one it replaces. False, leaving the pool as it was, when
  * the slab cannot be allocated. */
 bool markdown_core_slab_pool_grow(markdown_core_slab_pool *pool, size_t slab_bytes);
+
+/* Whether the pool's current slab has room left for a slot of `stride`
+ * bytes. */
+static inline bool markdown_core_slab_room(const markdown_core_slab_pool *pool, size_t stride) {
+    return (uintptr_t)pool->end - (uintptr_t)pool->cut >= stride;
+}
+
+/* A slot of `stride` bytes cut from the pool's current slab, which has room
+ * for it. */
+static inline markdown_core_slot_header *markdown_core_slab_next(markdown_core_slab_pool *pool, size_t stride) {
+    markdown_core_slot_header *slot = (markdown_core_slot_header *)pool->cut;
+    pool->cut += stride;
+    slot->slab = pool->current;
+    pool->current->head.holds++;
+    return slot;
+}
 
 /* Drops what the pool holds: its released slots and its current slab. Slots
  * still in use keep their slabs alive after this. */
@@ -103,16 +121,11 @@ static inline void *markdown_core_slab_take(markdown_core_slab_pool *pool, size_
         memcpy(&pool->released, storage, sizeof(pool->released));
         return storage;
     }
-    if ((!pool->current ||
-         pool->taken == (slab_bytes - sizeof(markdown_core_slab)) / MARKDOWN_CORE_SLOT_STRIDE(bytes)) &&
+    if (!markdown_core_slab_room(pool, MARKDOWN_CORE_SLOT_STRIDE(bytes)) &&
         !markdown_core_slab_pool_grow(pool, slab_bytes)) {
         return NULL;
     }
-    slot = (markdown_core_slot_header *)((unsigned char *)(pool->current + 1) +
-                                         pool->taken++ * MARKDOWN_CORE_SLOT_STRIDE(bytes));
-    slot->slab = pool->current;
-    pool->current->head.holds++;
-    return slot + 1;
+    return markdown_core_slab_next(pool, MARKDOWN_CORE_SLOT_STRIDE(bytes)) + 1;
 }
 
 /* Gives back the slot whose storage is `storage`, whatever is in it: into the
@@ -133,10 +146,11 @@ static inline void markdown_core_slab_release(markdown_core_slab_pool *pool, voi
 /* STORAGE OF VARIED SIZES, for the objects a parse makes many of whose
  * sizes differ. A size is rounded up to a CLASS, a multiple of
  * MARKDOWN_CORE_BYTES_CLASS bytes, and storage of each class is a slot like
- * any other: taken from a slab, and released into the pool to be handed out
- * again for that class before a slab is cut further. Storage larger than the
- * largest class is a slot of its own from the allocator, as it is with no
- * pool. A slot's header names its slab and its class. */
+ * any other: cut from the slabs of a slab pool, beside whatever else that
+ * pool's slabs hold, and released into the bytes pool to be handed out again
+ * for that class before a slab is cut further. Storage larger than the
+ * largest class is a slot of its own from the allocator. A slot's header
+ * names its slab and its class. */
 #define MARKDOWN_CORE_BYTES_CLASS ((size_t)16)
 #define MARKDOWN_CORE_BYTES_CLASSES 32
 
@@ -150,19 +164,19 @@ typedef union {
 } markdown_core_bytes_header;
 
 typedef struct markdown_core_bytes_pool {
-    /* The slab storage is cut from, and how many bytes of it are cut. */
-    markdown_core_slab_pool slabs;
     /* Released storage of each class, linked through its first bytes. */
     void *released[MARKDOWN_CORE_BYTES_CLASSES];
 } markdown_core_bytes_pool;
 
 /* Uninitialized storage of `bytes`, from the pool's released storage of its
- * class, then its current slab, then a new slab of `slab_bytes`; or a slot
- * of its own from the allocator. NULL when none can be had. */
-static inline void *markdown_core_bytes_take(markdown_core_bytes_pool *pool, size_t bytes, size_t slab_bytes) {
+ * class, then the current slab of `slabs`, then a new slab of `slab_bytes`;
+ * or a slot of its own from the allocator when no class holds it. NULL when
+ * none can be had. */
+static inline void *markdown_core_bytes_take(markdown_core_bytes_pool *pool, markdown_core_slab_pool *slabs,
+                                             size_t bytes, size_t slab_bytes) {
     const size_t size_class = (bytes + MARKDOWN_CORE_BYTES_CLASS - 1) / MARKDOWN_CORE_BYTES_CLASS;
     markdown_core_bytes_header *header;
-    if (!pool || !size_class || size_class > MARKDOWN_CORE_BYTES_CLASSES) {
+    if (!size_class || size_class > MARKDOWN_CORE_BYTES_CLASSES) {
         header = (markdown_core_bytes_header *)markdown_core_realloc(NULL, sizeof(*header) + bytes);
         if (!header) {
             return NULL;
@@ -177,13 +191,11 @@ static inline void *markdown_core_bytes_take(markdown_core_bytes_pool *pool, siz
         return storage;
     }
     const size_t stride = sizeof(*header) + size_class * MARKDOWN_CORE_BYTES_CLASS;
-    markdown_core_slab_pool *slabs = &pool->slabs;
-    if ((!slabs->current || slab_bytes - sizeof(markdown_core_slab) - slabs->taken < stride) &&
-        !markdown_core_slab_pool_grow(slabs, slab_bytes)) {
+    if (!markdown_core_slab_room(slabs, stride) && !markdown_core_slab_pool_grow(slabs, slab_bytes)) {
         return NULL;
     }
-    header = (markdown_core_bytes_header *)((unsigned char *)(slabs->current + 1) + slabs->taken);
-    slabs->taken += stride;
+    header = (markdown_core_bytes_header *)slabs->cut;
+    slabs->cut += stride;
     header->owner.slab = slabs->current;
     header->owner.size_class = size_class;
     slabs->current->head.holds++;
@@ -206,7 +218,7 @@ static inline void markdown_core_bytes_release(markdown_core_bytes_pool *pool, v
     }
 }
 
-/* Drops what the pool holds: its released storage and its current slab. */
+/* Drops what the pool holds: its released storage. */
 void markdown_core_bytes_pool_dispose(markdown_core_bytes_pool *pool);
 
 #ifdef __cplusplus

@@ -4156,10 +4156,13 @@ static void autolink_source_pos(test_batch_runner *runner) {
 }
 
 /* A node built by hand into a published tree: every published node has
- * runs, here the one `span` bytes long at its owner's start. */
+ * runs, here the one `span` bytes long at its owner's start, from a pool of
+ * their own that they outlive. */
 static markdown_core_node *published_node_new(markdown_core_node_type type, uint32_t span) {
     markdown_core_node *node = markdown_core_node_new(type);
-    markdown_core_runs *runs = markdown_core_node_pool_bytes(NULL, sizeof(*runs) + sizeof(markdown_core_run));
+    markdown_core_node_pool pool = {0};
+    markdown_core_runs *runs = markdown_core_node_pool_bytes(&pool, sizeof(*runs) + sizeof(markdown_core_run));
+    markdown_core_node_pool_dispose(&pool);
     runs->count = 1;
     runs->items[0] = (markdown_core_run){0, span};
     node->source.runs = runs;

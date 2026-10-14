@@ -241,8 +241,9 @@ typedef struct markdown_core_run {
  * from all of its source. Each holds an absolute source range, as a node's
  * place does. Publishing gives every node its runs, its own source with the
  * runs that touch joined, relative as the extent is: a block's from its
- * places, or its range when it has none, and an inline node's from the
- * places of its root (ast.c). Each list is one owned allocation. */
+ * places, written over them in their list, or its range when it has none,
+ * and an inline node's from the places of its root (ast.c). Each list is
+ * storage the node owns (markdown_core_node_pool_bytes). */
 typedef struct {
     uint32_t start, end, length;
 } markdown_core_source_place;
@@ -521,18 +522,18 @@ size_t markdown_core_node_release(markdown_core_node *node);
  *
  * A node lives in a SLOT (slab.h) holding the node and room for its kind's
  * record, the resources links read through live in slots of their own, and
- * what else a node owns of its own size -- its runs, a label it
- * declares -- in storage of that size. A pool holds the slabs of all
- * three. A parse takes every slot from the pool its
- * caller lends it -- a session's, which outlives each of its edits, or one
- * the caller makes for a single parse -- and a caller with no pool takes one
- * slot from the allocator. A slot released into a pool goes back to it for
- * reuse, so a session's edits reuse the slots of the nodes they retire
- * instead of pinning a slab per edit; a slot released with no pool drops its
- * slab hold. So a subtree unlinked from a parsed document is as good as one
- * built by hand: it outlives the pool it came from and is released by
- * `markdown_core_node_free` like any other. The size of what it keeps alive
- * is the slab, not the node.
+ * what else a node owns of its own size -- the lists of its source, a label
+ * it declares -- in storage of that size, cut from the slabs its nodes are.
+ * A pool holds the slabs of all three. A parse takes every slot from the
+ * pool its caller lends it -- a session's, which outlives each of its edits,
+ * or one the caller makes for a single parse -- and a caller with no pool
+ * takes one slot from the allocator. A slot released into a pool goes back
+ * to it for reuse, so a session's edits reuse the slots of the nodes they
+ * retire instead of pinning a slab per edit; a slot released with no pool
+ * drops its slab hold. So a subtree unlinked from a parsed document is as
+ * good as one built by hand: it outlives the pool it came from and is
+ * released by `markdown_core_node_free` like any other. The size of what it
+ * keeps alive is the slab, not the node.
  *
  * Why slabs: a node's chunk was larger than the C library's fast-path size
  * classes, so every release of one walked the allocator's merge path, and the
@@ -543,12 +544,14 @@ typedef struct markdown_core_node_pool {
     markdown_core_bytes_pool bytes;
 } markdown_core_node_pool;
 
-/* Uninitialized storage of `bytes` a node owns -- its runs, a
- * label it declares -- from the pool's slabs, or from the allocator with no
- * pool; NULL when none can be had. The node releases it with itself. */
-#define MARKDOWN_CORE_NODE_BYTES_SLAB_BYTES ((size_t)16 * 1024)
+#define MARKDOWN_CORE_NODE_SLAB_BYTES ((size_t)64 * 1024)
+
+/* Uninitialized storage of `bytes` a node owns -- a list of its source, a
+ * label it declares -- cut from the slabs of the pool's nodes, which a parse
+ * always lends; NULL when none can be had. The node releases it with
+ * itself. */
 static inline void *markdown_core_node_pool_bytes(markdown_core_node_pool *pool, size_t bytes) {
-    return markdown_core_bytes_take(pool ? &pool->bytes : NULL, bytes, MARKDOWN_CORE_NODE_BYTES_SLAB_BYTES);
+    return markdown_core_bytes_take(&pool->bytes, &pool->nodes, bytes, MARKDOWN_CORE_NODE_SLAB_BYTES);
 }
 /* Gives back storage `markdown_core_node_pool_bytes` took, into `pool` for
  * reuse; a NULL pool is the plain release. */

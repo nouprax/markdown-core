@@ -144,8 +144,6 @@ typedef struct {
     unsigned char record[MARKDOWN_CORE_NODE_SLOT_RECORD_BYTES];
 } markdown_core_node_slot;
 
-#define MARKDOWN_CORE_NODE_SLAB_BYTES ((size_t)64 * 1024)
-
 static markdown_core_node_slot *S_slot_of(markdown_core_node *node) {
     return (markdown_core_node_slot *)((unsigned char *)node - offsetof(markdown_core_node_slot, node));
 }
