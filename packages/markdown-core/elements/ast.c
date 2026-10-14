@@ -1812,7 +1812,12 @@ bool markdown_core_take_old(markdown_core_parser *parser, markdown_core_publicat
     while (match->slots[slot] && match->nodes[match->slots[slot] - 1].node != draft->old) {
         slot = (slot + 1) & (match->slot_count - 1);
     }
-    assert(match->slots[slot]);
+    /* The parse reads again the content of the old node at the root's place
+     * (5.3), which the root may not continue: a node taken from it is the old
+     * node all the same, and no old node of the root's content is passed. */
+    if (!match->slots[slot]) {
+        return true;
+    }
     const uint32_t index = match->slots[slot] - 1;
     if (match_close(match, index, MATCH_CONTINUED)) {
         draft->match = index + 1;

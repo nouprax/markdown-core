@@ -1989,7 +1989,7 @@ void markdown_core_inline_reduce(markdown_core_parser *parser, markdown_core_inl
     if (!inline_state) {
         S_complete(parser, draft, parser->text_context, false);
     } else if (!needs || !(needs & S_open(parser, inline_state, draft))) {
-        S_complete(parser, draft, 0, inline_state->records && draft != inline_state->owner);
+        S_complete(parser, draft, 0, inline_state->records);
     } else {
         draft->needs = (uint8_t)needs;
     }
