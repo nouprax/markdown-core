@@ -61,9 +61,7 @@ markdown_core_draft *markdown_core_inline_close_inline_footnote(const markdown_c
         markdown_core_brackets(self->peers[FOOTNOTE_LINK], inline_state)->no_link_openers =
             opener->outer_no_link_openers;
         markdown_core_inline_pop_bracket(self->peers[FOOTNOTE_LINK], inline_state);
-        return markdown_core_inline_state_append(
-            inline_state, make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
-                                   markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1)));
+        return markdown_core_inline_append_input(inline_state, inline_state->pos - 1, inline_state->pos - 1);
     }
     markdown_core_inline_finish_citation_tokens(self->peers[FOOTNOTE_CITATION], inline_state, &opener->citations);
     markdown_core_inline_process_delimiters(parser, inline_state, opener->position, opener->delim_end);
@@ -102,9 +100,8 @@ static markdown_core_draft *match(const markdown_core_element_instance *self, ma
         return NULL;
     }
     inline_state->pos += 2;
-    markdown_core_draft *draft = markdown_core_inline_state_append(
-        inline_state, make_str(inline_state, inline_state->pos - 2, inline_state->pos - 1,
-                               markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 2, 2)));
+    markdown_core_draft *draft =
+        markdown_core_inline_append_input(inline_state, inline_state->pos - 2, inline_state->pos - 1);
     if (draft) {
         markdown_core_inline_push_bracket(self->peers[FOOTNOTE_LINK], inline_state, BRACKET_FOOTNOTE, draft);
     }
@@ -139,9 +136,9 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
 bool markdown_core_footnote_close_reference(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                             markdown_core_inline_state *inline_state, bracket *opener) {
     bufsize_t initial_pos = inline_state->pos;
-    if (opener->inl_text->next && opener->inl_text->next->node->kind == MARKDOWN_CORE_NODE_TEXT) {
+    if (opener->inl_text->next && markdown_core_draft_is_text(opener->inl_text->next)) {
 
-        markdown_core_chunk *literal = opener->inl_text->next->node->as.literal;
+        markdown_core_chunk *literal = markdown_core_draft_literal(opener->inl_text->next);
 
         // A footnote call opens with a caret the SOURCE spells literally.
         //

@@ -219,21 +219,13 @@ static int formula_block_matches(const markdown_core_element_instance *self, mar
     return 1;
 }
 
-static markdown_core_node *make_delimiter_text(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
-                                               bufsize_t len) {
+/* The run of `len` bytes at the cursor read as text, appended, and the
+ * cursor past it. */
+static markdown_core_draft *append_delimiter_text(markdown_core_inline_state *inline_state, bufsize_t len) {
     bufsize_t offset = (bufsize_t)markdown_core_inline_state_get_offset(inline_state);
-    markdown_core_node *node;
-
-    (void)parser;
-    /* The cursor is at the run's FIRST byte here, and at its last in
-     * `strikethrough` -- which is why each of them used to compute the columns
-     * from a different end. The shared constructor is told the range. */
-    node = markdown_core_inline_state_make_delimiter_text(inline_state, (int)offset, (int)(offset + len - 1));
-    if (!node) {
-        return NULL;
-    }
+    markdown_core_draft *text = markdown_core_inline_append_input(inline_state, (int)offset, (int)(offset + len - 1));
     markdown_core_inline_state_set_offset(inline_state, (int)(offset + len));
-    return node;
+    return text;
 }
 
 static int scan_formula_closer(const unsigned char *data, int length, int at, markdown_core_delimiter_rule rule,
@@ -281,8 +273,7 @@ static markdown_core_draft *match_formula_delimiter(const markdown_core_element_
      * lexical closer can be hidden by a code span or bracket scope, so retain
      * the alternating delimiter state until that grammar resolves the range.
      * Both recognized and deferred pairs use the same literal constructor. */
-    markdown_core_draft *node =
-        markdown_core_inline_state_append(inline_state, make_delimiter_text(parser, inline_state, len));
+    markdown_core_draft *node = append_delimiter_text(inline_state, len);
 
     if (!node) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);

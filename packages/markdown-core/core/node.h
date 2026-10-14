@@ -306,9 +306,6 @@ enum markdown_core_node__internal_flags {
     // layout and inline parsing observe the semantic children.
     MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY = (1 << 5),
 
-    // Deferred contextual escape token, decoded when inline ownership is final.
-    MARKDOWN_CORE_NODE__ESCAPED_SPACE = (1 << 6),
-
     /* Reference definitions have advanced this block's semantic beginning.
      * A later arrival may supply its first surviving content line. */
     MARKDOWN_CORE_NODE__REFERENCE_PREFIX = (1 << 7),
@@ -1106,19 +1103,56 @@ void markdown_core_frame_release(markdown_core_node_pool *pool, markdown_core_fr
  * found, `match` naming it there, or its own old node when `taken`. Its
  * completion collects the `orders` of its subtree.
  *
+ * A draft with no node is a TEXT PIECE: bytes the parse read as text, which
+ * are no node while the level they lie in is open, since text after them may
+ * join them and a delimiter among them may still pair. Its `piece` is what
+ * the bytes read as, `literal`, the content range they lie on, `place`, its
+ * map (markdown_core_inline_map_text), and whether it is an escaped space,
+ * which reads as a no-break space inside a word body. When its level is
+ * reduced, each run of adjacent pieces, with a Text the parse took whole
+ * among them, becomes one Text (5.8).
+ *
  * Drafts live in the parser's draft area (markdown_core_drafts), from which
  * the parse of one root takes them, and which the root's completion clears:
  * a draft lives for one root. */
+typedef struct {
+    markdown_core_chunk literal;
+    markdown_core_place place;
+    markdown_core_content_map map;
+    bool escaped;
+} markdown_core_piece;
+
 struct markdown_core_draft {
     markdown_core_node *node;
     struct markdown_core_draft *owner, *prev, *next, *first, *last, *fields;
     markdown_core_inline_reads reads;
     const markdown_core_node *old;
     markdown_core_orders orders;
+    markdown_core_piece piece;
     uint32_t match;
     uint8_t needs;
     bool held, field, taken, reduced;
 };
+
+/* Whether `draft` is text: a piece, or a Text node. */
+static inline bool markdown_core_draft_is_text(const markdown_core_draft *draft) {
+    return !draft->node || draft->node->kind == MARKDOWN_CORE_NODE_TEXT;
+}
+
+/* What the text `draft` reads as. */
+static inline markdown_core_chunk *markdown_core_draft_literal(markdown_core_draft *draft) {
+    return draft->node ? draft->node->as.literal : &draft->piece.literal;
+}
+
+/* The content range `draft` lies on. */
+static inline markdown_core_place *markdown_core_draft_place(markdown_core_draft *draft) {
+    return draft->node ? &draft->node->where.place : &draft->piece.place;
+}
+
+/* The map of the text `draft`. */
+static inline markdown_core_content_map *markdown_core_draft_map(markdown_core_draft *draft) {
+    return draft->node ? &draft->node->content_map : &draft->piece.map;
+}
 
 /* THE DRAFT AREA: chunks of drafts at fixed addresses, so a draft is never
  * moved while the parse links to it. `used` counts the drafts taken from
@@ -1135,11 +1169,13 @@ typedef struct {
 } markdown_core_drafts;
 
 /* A draft for `node`, linked to nothing, from `drafts`; it holds the node's
- * reference when `held`. NULL when a chunk could not be allocated. */
+ * reference when `held`, and is a text piece holding nothing when `node` is
+ * NULL. NULL when a chunk could not be allocated. */
 markdown_core_draft *markdown_core_drafts_take(markdown_core_drafts *drafts, markdown_core_node *node, bool held);
 
 /* Every draft taken from `drafts` goes, releasing into `pool` the
- * references the drafts still hold; the chunks are kept. */
+ * references the drafts still hold and the literals their pieces own; the
+ * chunks are kept. */
 void markdown_core_drafts_clear(markdown_core_drafts *drafts, markdown_core_node_pool *pool);
 
 /* Frees the chunks of `drafts`, which holds no draft. */
@@ -1212,7 +1248,7 @@ bool markdown_core_draft_freeze(markdown_core_node_pool *pool, markdown_core_dra
                                 const markdown_core_stem_summary *summary);
 
 /* Releases into `pool` the references `draft`, detached, and every draft
- * below it hold; the drafts stay in their area until it clears. None is
+ * below it hold, and the literals their pieces own; the drafts stay in their area until it clears. None is
  * taken from then on, and `forget`, when given, is told of each that matched
  * an old node, with `context`. */
 void markdown_core_draft_release(markdown_core_node_pool *pool, markdown_core_draft *draft,

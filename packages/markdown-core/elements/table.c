@@ -89,8 +89,8 @@ static void set_cell_content(markdown_core_parser *parser, markdown_core_node *n
                 first = markdown_core_parser_source_offset(parser, line, offset + from + 1);
                 end = markdown_core_parser_source_end(parser, line, offset + from + 2);
             }
-            markdown_core_parser_append_content_mark(parser, node, node->content.size, place, first, (int)(end - first),
-                                                     0);
+            markdown_core_parser_append_content_mark(parser, &node->content_map, node->content.size, place, first,
+                                                     (int)(end - first), 0);
             markdown_core_strbuf_putc(&node->content, '|');
             to = from + 2;
         } else {
@@ -2371,8 +2371,8 @@ static void table_append_range(table_source *source, markdown_core_node *node, s
             }
             bufsize_t original = markdown_core_parser_source_offset(parser, line->line, byte + 1);
             bufsize_t past = markdown_core_parser_source_end(parser, line->line, byte + 1);
-            markdown_core_parser_append_content_mark(parser, node, node->content.size, line->line, original,
-                                                     (int)(past - original), 0);
+            markdown_core_parser_append_content_mark(parser, &node->content_map, node->content.size, line->line,
+                                                     original, (int)(past - original), 0);
             for (int space = column; space < end; space++) {
                 markdown_core_strbuf_putc(&node->content, ' ');
             }
@@ -2380,7 +2380,7 @@ static void table_append_range(table_source *source, markdown_core_node *node, s
         } else if (escapes && column + 1 < right && data[byte] == '\\' && data[bytes[column + 1]] == '|') {
             bufsize_t first = markdown_core_parser_source_offset(parser, line->line, byte + 1);
             bufsize_t end = markdown_core_parser_source_end(parser, line->line, byte + 2);
-            markdown_core_parser_append_content_mark(parser, node, node->content.size, line->line, first,
+            markdown_core_parser_append_content_mark(parser, &node->content_map, node->content.size, line->line, first,
                                                      (int)(end - first), 0);
             markdown_core_strbuf_putc(&node->content, '|');
             column += 2;

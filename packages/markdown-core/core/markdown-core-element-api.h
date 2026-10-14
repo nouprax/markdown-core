@@ -432,8 +432,9 @@ int markdown_core_parser_content_place(markdown_core_parser *parser, const markd
  * its content is decoded from the source_width bytes at `source`, and it
  * holds one decoding -- a tab's columns, NUL's U+FFFD, an escaped pipe's
  * pipe, or a line ending's LF. Allocation failure marks the parse lost. */
-int markdown_core_parser_append_content_mark(markdown_core_parser *parser, markdown_core_node *node, bufsize_t offset,
-                                             int line, bufsize_t source, int source_width, int source_step);
+int markdown_core_parser_append_content_mark(markdown_core_parser *parser, markdown_core_content_map *map,
+                                             bufsize_t offset, int line, bufsize_t source, int source_width,
+                                             int source_step);
 /** Append the source runs covering a literal slice to a growing result map.
  * Each source run is copied once; producers use adopt_content_marks for a
  * read-only slice that needs no allocation. */
@@ -717,6 +718,33 @@ int markdown_core_inline_state_has_unmatched_opener(markdown_core_inline_state *
 markdown_core_draft *markdown_core_inline_state_append(markdown_core_inline_state *inline_state,
                                                        markdown_core_node *token);
 
+/** Appends to the content the inline state builds a TEXT PIECE (node.h,
+ * markdown_core_draft): the content bytes [from, to], read as `literal`, which
+ * the piece owns when it is allocated, and placed on those bytes. A piece is
+ * no node: the level it lies in makes each run of adjacent pieces one Text
+ * when it is reduced. NULL, with the literal freed and the parse failed, when
+ * the owner's policy refuses Text or a draft could not be had. */
+markdown_core_draft *markdown_core_inline_append_text(markdown_core_inline_state *inline_state, int from, int to,
+                                                      struct markdown_core_chunk literal);
+
+/** The text piece of the content bytes [from, to], read as `literal`
+ * (markdown_core_inline_append_text), linked under `owner` before `before`
+ * or last, where the caller has proved `owner` holds Text: an autolink's own
+ * text. NULL, with the literal freed and the parse failed, when a draft could
+ * not be had. */
+markdown_core_draft *markdown_core_inline_attach_text(markdown_core_inline_state *inline_state,
+                                                      markdown_core_draft *owner, markdown_core_draft *before, int from,
+                                                      int to, struct markdown_core_chunk literal);
+
+/** Appends the piece that reads the content bytes [from, to] as they are,
+ * a view of the content (markdown_core_inline_append_text). */
+markdown_core_draft *markdown_core_inline_append_input(markdown_core_inline_state *inline_state, int from, int to);
+
+/** Places the text `text`, a piece or a Text node, on the content bytes
+ * [from, to], as its literal now reads. */
+void markdown_core_inline_place_text(markdown_core_inline_state *inline_state, markdown_core_draft *text, int from,
+                                     int to);
+
 /** A draft for the detached `node`, holding its reference, linked under
  * `owner` before `before` or last; NULL, with the parse failed and the node
  * released, when it could not be had. The caller has proved containment. */
@@ -743,19 +771,6 @@ void markdown_core_inline_release(markdown_core_parser *parser, markdown_core_dr
  * a node a completion step inserted. */
 void markdown_core_inline_reduce(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
                                  markdown_core_draft *draft);
-
-/** Make the Text node a delimiter run stands as: its literal is the bytes
- * [from, to] of the block's content and its position is a projection of that
- * range. Returns NULL for a range outside the content.
- *
- * ONE constructor, because there were two hand-written copies of it -- one in
- * `formula`, one in `strikethrough` -- and they disagreed about where the
- * cursor was when they ran, so each computed the run's columns from a different
- * end. Passing the range says it once. The cursor is NOT moved: a caller that
- * has not consumed the run yet still has to.
- */
-markdown_core_node *markdown_core_inline_state_make_delimiter_text(markdown_core_inline_state *inline_state, int from,
-                                                                   int to);
 
 #ifdef __cplusplus
 }

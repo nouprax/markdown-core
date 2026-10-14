@@ -571,7 +571,7 @@ bool markdown_core_link_commit(const markdown_core_element_instance *link, markd
     // two need not be on the same line. Taking BOTH from inline_state->line made a link
     // start where it ENDED: `[a\nb](/u)` reported Link 2:1..2:6 around a child
     // Text at 1:2 -- a node that begins after its own first child.
-    const uint32_t start = opener->inl_text->node->where.place.start;
+    const uint32_t start = markdown_core_draft_place(opener->inl_text)->start;
     inl->where.place.start = start;
     if (explicit_tail) {
         markdown_core_inline_attach_inline_attributes(inline_state, inl, opener->position - 1);
@@ -712,8 +712,8 @@ markdown_core_draft *markdown_core_inline_replace_bracket_opener(markdown_core_i
     markdown_core_draft *text = opener->inl_text;
     markdown_core_draft *made;
     if (opener->kind == BRACKET_IMAGE) {
-        text->node->as.literal->len = 1;
-        markdown_core_inline_state_place(inline_state, text->node, opener->position - 2, opener->position - 2);
+        markdown_core_draft_literal(text)->len = 1;
+        markdown_core_inline_place_text(inline_state, text, opener->position - 2, opener->position - 2);
         made = markdown_core_inline_attach(parser, text->owner, replacement, text->next);
     } else {
         made = markdown_core_inline_attach(parser, text->owner, replacement, text);
@@ -729,8 +729,7 @@ markdown_core_draft *markdown_core_inline_replace_bracket_opener(markdown_core_i
 
 /* The `]` read as text, appended. */
 static markdown_core_draft *S_close_text(markdown_core_inline_state *inline_state, bufsize_t at) {
-    return markdown_core_inline_state_append(
-        inline_state, make_str(inline_state, at, at, markdown_core_chunk_dup(&inline_state->input, at, 1)));
+    return markdown_core_inline_append_input(inline_state, at, at);
 }
 
 markdown_core_draft *markdown_core_inline_handle_close_bracket(const markdown_core_element_instance *link,

@@ -10083,48 +10083,14 @@ static void pipe_rows_are_one_row(test_batch_runner *runner) {
 }
 
 /* A TEXT IS COMPLETE BEFORE ITS OWNER NUMBERS IT. An escaped space inside a
- * superscript becomes NBSP as its Text is completed, and the Text beside it
- * absorbs it; the superscript completes after both, so the Text it numbers
- * already holds the completed bytes. */
-typedef struct {
-    markdown_core_element document;
-    void (*complete)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_draft *);
-    size_t uncompleted;
-} completion_probe;
-
-static void observe_completed_text(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                   markdown_core_draft *draft) {
-    completion_probe *probe = parser->context;
-    const markdown_core_node *node = draft->node;
-    markdown_core_stem_walk walk;
-    markdown_core_stem_walk_begin(&walk, node->children, 0, child_count(node));
-    for (markdown_core_node *child; (child = markdown_core_stem_walk_next(&walk));) {
-        if (child->kind == MARKDOWN_CORE_NODE_TEXT && child->id == 0) {
-            probe->uncompleted += (child->flags & MARKDOWN_CORE_NODE__ESCAPED_SPACE) != 0;
-        }
-    }
-    probe->complete(self, parser, draft);
-}
-
-/* Completion is the document lifecycle's, so the probe registers a document
- * owner that keeps the core document's hooks and wraps that one. */
-static bool configure_completion_probe(markdown_core_dialect_builder *builder, void *context) {
-    completion_probe *probe = context;
-    probe->document = MARKDOWN_CORE_ELEMENT_DOCUMENT;
-    probe->document.name = "completion-probe-document";
-    probe->complete = probe->document.complete_draft;
-    probe->document.complete_draft = observe_completed_text;
-    return markdown_core_dialect_builder_attach(builder, &probe->document);
-}
-
+ * superscript is a text piece that completes as NBSP when its level is
+ * reduced, and the pieces beside it join it in one Text: the superscript
+ * holds the completed bytes. */
 static void absorbed_text_completes_before_observation(test_batch_runner *runner) {
     const char *source = "^a\\ b\\ c^ d\\*e\n";
-    completion_probe probe = {0};
-    markdown_core_node *root =
-        markdown_core_parse_document_with_setup(source, strlen(source), configure_completion_probe, &probe);
-    OK(runner, root != NULL, "normal and absorbed text completion share a successful transaction");
+    markdown_core_node *root = markdown_core_parse_document(source, strlen(source));
+    OK(runner, root != NULL, "normal and absorbed text completion share a successful parse");
     if (root) {
-        INT_EQ(runner, probe.uncompleted, 0, "no Text is numbered before kind completion");
         markdown_core_node *script = child_at(child_at(root, 0), 0);
         INT_EQ(runner, script->kind, MARKDOWN_CORE_NODE_SUPERSCRIPT, "the word owner is preserved");
         LITERAL_EQ(runner, child_at(script, 0),

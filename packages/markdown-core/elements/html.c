@@ -59,7 +59,7 @@ bufsize_t markdown_core_inline_scan_inline_html(markdown_core_inline_state *inli
     return matchlen;
 }
 
-static markdown_core_node *handle_pointy_brace(markdown_core_inline_state *inline_state) {
+static markdown_core_draft *handle_pointy_brace(markdown_core_inline_state *inline_state) {
     bufsize_t matchlen = 0;
     bool comment = false;
     markdown_core_chunk contents;
@@ -69,24 +69,24 @@ static markdown_core_node *handle_pointy_brace(markdown_core_inline_state *inlin
     matchlen = markdown_core_inline_scan_inline_html(inline_state, inline_state->pos, &inline_state->flags, &comment);
     if (matchlen > 0) {
         if (comment) {
-            return markdown_core_comment_make_html(inline_state, inline_state->pos, matchlen);
+            return markdown_core_inline_state_append(
+                inline_state, markdown_core_comment_make_html(inline_state, inline_state->pos, matchlen));
         }
         contents = markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, matchlen + 1);
         inline_state->pos += matchlen;
         markdown_core_node *node = markdown_core_inline_make_literal(
             inline_state, MARKDOWN_CORE_NODE_HTML, inline_state->pos - matchlen - 1, inline_state->pos - 1, contents);
-        return node;
+        return markdown_core_inline_state_append(inline_state, node);
     }
 
     // if nothing matches, just return the opening <:
-    return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
-                    markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
+    return markdown_core_inline_append_input(inline_state, inline_state->pos - 1, inline_state->pos - 1);
 }
 
 static markdown_core_draft *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                   markdown_core_draft *parent, unsigned char character,
                                   markdown_core_inline_state *inline_state) {
-    return character == '<' ? markdown_core_inline_state_append(inline_state, handle_pointy_brace(inline_state)) : NULL;
+    return character == '<' ? handle_pointy_brace(inline_state) : NULL;
 }
 const markdown_core_element MARKDOWN_CORE_ELEMENT_HTML = {
     .name = "html",

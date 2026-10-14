@@ -508,9 +508,10 @@ static int S_append_content_mark(markdown_core_parser *parser, markdown_core_con
     return 1;
 }
 
-int markdown_core_parser_append_content_mark(markdown_core_parser *parser, markdown_core_node *node, bufsize_t offset,
-                                             int line, bufsize_t source, int source_width, int source_step) {
-    return S_append_content_mark(parser, &node->content_map,
+int markdown_core_parser_append_content_mark(markdown_core_parser *parser, markdown_core_content_map *map,
+                                             bufsize_t offset, int line, bufsize_t source, int source_width,
+                                             int source_step) {
+    return S_append_content_mark(parser, map,
                                  (markdown_core_line_mark){offset, line, source, source_width, source_step, 0});
 }
 
@@ -595,7 +596,7 @@ int markdown_core_parser_mark_content(markdown_core_parser *parser, markdown_cor
     }
     node->content_map.count = 0;
     node->content_map.offset = 0;
-    return markdown_core_parser_append_content_mark(parser, node, 0, line, source, 1, 1);
+    return markdown_core_parser_append_content_mark(parser, &node->content_map, 0, line, source, 1, 1);
 }
 
 /* Find the immutable run containing an offset, shared by slice and lookup. */

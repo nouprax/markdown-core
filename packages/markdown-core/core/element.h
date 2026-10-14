@@ -118,7 +118,9 @@ struct markdown_core_element {
      * makes of the content that follows (docs/plans/2026-09-29-incremental-
      * parsing.md, 5.6). */
     bool (*holds_inline)(const markdown_core_element_instance *, const markdown_core_inline_state *);
-    void (*complete_inline)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *, int);
+    /* A text piece completes in what encloses it, given the count of the
+     * word bodies around it (node.h, markdown_core_piece). */
+    void (*complete_inline)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_piece *, int);
     /* A lazy line -- one that did not match every open container's prefix
      * and opened no block -- is offered to the current block. `accepts_lazy`
      * says whether it takes the line; `open_lazy` returns the block the line is

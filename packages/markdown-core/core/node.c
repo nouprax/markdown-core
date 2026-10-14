@@ -1952,6 +1952,14 @@ bool markdown_core_node_kind_set_intersects(const markdown_core_node_kind_set *a
     return (a->blocks & b->blocks) != 0 || (a->inlines & b->inlines) != 0;
 }
 
+/* The literal piece `draft` owns goes. */
+static void S_piece_free(markdown_core_node_pool *pool, markdown_core_draft *draft) {
+    if (draft->piece.literal.alloc) {
+        markdown_core_node_pool_bytes_free(pool, draft->piece.literal.data);
+    }
+    draft->piece.literal = (markdown_core_chunk){0};
+}
+
 markdown_core_draft *markdown_core_drafts_take(markdown_core_drafts *drafts, markdown_core_node *node, bool held) {
     if (!drafts->at || drafts->used == MARKDOWN_CORE_DRAFT_CHUNK) {
         markdown_core_draft_chunk *next = drafts->at ? drafts->at->next : drafts->first;
@@ -1987,6 +1995,8 @@ void markdown_core_drafts_clear(markdown_core_drafts *drafts, markdown_core_node
         for (size_t i = 0; i < used; i++) {
             if (chunk->items[i].held) {
                 markdown_core_node_pool_release(pool, chunk->items[i].node);
+            } else if (!chunk->items[i].node) {
+                S_piece_free(pool, &chunk->items[i]);
             }
         }
         if (chunk == drafts->at) {
@@ -2031,6 +2041,8 @@ void markdown_core_draft_release(markdown_core_node_pool *pool, markdown_core_dr
         if (taken->held) {
             markdown_core_node_pool_release(pool, taken->node);
             taken->held = false;
+        } else if (!taken->node) {
+            S_piece_free(pool, taken);
         }
         if (forget && taken->match) {
             forget(context, taken);
@@ -2044,6 +2056,8 @@ bool markdown_core_draft_freeze(markdown_core_node_pool *pool, markdown_core_dra
                                 const markdown_core_stem_summary *summary) {
     size_t count = 0;
     for (const markdown_core_draft *child = draft->first; child; child = child->next) {
+        /* Completion made every piece a Text. */
+        assert(child->node);
         count += child->held;
     }
     if (!count) {

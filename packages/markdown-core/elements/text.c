@@ -21,8 +21,8 @@ static int any_element_dispatches(const markdown_core_element_instance *self, ma
     return 0;
 }
 
-static markdown_core_node *handle_backslash(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                            markdown_core_inline_state *inline_state) {
+static markdown_core_draft *handle_backslash(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                             markdown_core_inline_state *inline_state) {
     markdown_core_text_work *counts = self->state;
     bufsize_t start = inline_state->pos;
     /* The line frame BEFORE anything is consumed. The hard-break arm below
@@ -47,15 +47,14 @@ static markdown_core_node *handle_backslash(const markdown_core_element_instance
         if ((end == inline_state->input.len && !MARKDOWN_CORE_NODE_TYPE_INLINE_P(inline_state->owner->node->kind)) ||
             (end < inline_state->input.len &&
              markdown_core_is_line_end(markdown_core_inline_peek_at(inline_state, end)))) {
-            return make_str(inline_state, start, start, markdown_core_chunk_dup(&inline_state->input, start, 1));
+            return markdown_core_inline_append_input(inline_state, start, start);
         }
         advance(inline_state);
-        markdown_core_node *escaped = make_str(inline_state, start, inline_state->pos - 1,
-                                               markdown_core_chunk_dup(&inline_state->input, start, 2));
+        markdown_core_draft *escaped = markdown_core_inline_append_input(inline_state, start, inline_state->pos - 1);
         if (escaped) {
             /* Contextual escape token: inline completion decodes it once the
              * delimiter/bracket engine has established its semantic owner. */
-            escaped->flags |= MARKDOWN_CORE_NODE__ESCAPED_SPACE;
+            escaped->piece.escaped = true;
             inline_state->token.flags |= MARKDOWN_CORE_INLINE_CONTEXT;
         }
         return escaped;
@@ -73,27 +72,22 @@ static markdown_core_node *handle_backslash(const markdown_core_element_instance
                 unsigned char *output = (unsigned char *)markdown_core_bytes_take(NULL, (size_t)output_len + 1, 0);
                 if (output) {
                     markdown_core_chunk contents = {output, output_len, 1};
-                    markdown_core_node *run;
                     memset(output, '\\', (size_t)output_len);
                     output[output_len] = '\0';
                     inline_state->pos = end;
-                    run = make_str(inline_state, start, end - 1, contents);
                     /* One escape per PAIR: the first backslash of each is the
                      * escape and reaches no literal, the second is the byte the
                      * literal is made of. */
-                    return run;
+                    return markdown_core_inline_append_text(inline_state, start, end - 1, contents);
                 }
             }
         }
         // only ascii symbols and newline can be escaped
         advance(inline_state);
         markdown_core_inline_state_read(inline_state, start, inline_state->pos);
-        {
-            markdown_core_node *escaped =
-                make_str(inline_state, inline_state->pos - 2, inline_state->pos - 1,
-                         markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
-            return escaped;
-        }
+        return markdown_core_inline_append_text(
+            inline_state, inline_state->pos - 2, inline_state->pos - 1,
+            markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
     } else if (!markdown_core_inline_is_eof(inline_state) && markdown_core_inline_skip_line_end(inline_state)) {
         markdown_core_inline_state_read(inline_state, start, inline_state->pos + 1);
         markdown_core_inline_push_boundary(inline_state, inline_state->pos);
@@ -116,15 +110,14 @@ static markdown_core_node *handle_backslash(const markdown_core_element_instance
              * captured before the consume is only the fallback's. */
             markdown_core_inline_state_place(inline_state, hard, start, inline_state->pos - 1);
         }
-        return hard;
+        return markdown_core_inline_state_append(inline_state, hard);
     } else {
         markdown_core_inline_state_read(inline_state, start, start + 3);
-        return make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
-                        markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
+        return markdown_core_inline_append_input(inline_state, inline_state->pos - 1, inline_state->pos - 1);
     }
 }
 
-static markdown_core_node *handle_entity(markdown_core_inline_state *inline_state) {
+static markdown_core_draft *handle_entity(markdown_core_inline_state *inline_state) {
     markdown_core_strbuf ent = MARKDOWN_CORE_BUF_INIT();
     bufsize_t len, read;
 
@@ -135,28 +128,26 @@ static markdown_core_node *handle_entity(markdown_core_inline_state *inline_stat
     markdown_core_inline_state_read(inline_state, inline_state->pos - 1, inline_state->pos + read);
 
     if (len == 0) {
-        markdown_core_node *literal = make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
-                                               markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
         /* Not an entity: the `&` IS the literal, so it is content. */
-        return literal;
+        return markdown_core_inline_append_input(inline_state, inline_state->pos - 1, inline_state->pos - 1);
     }
 
     inline_state->pos += len;
     if (ent.oom) {
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
     }
-    return make_str(inline_state, inline_state->pos - 1 - len, inline_state->pos - 1,
-                    markdown_core_chunk_buf_detach(&ent));
+    return markdown_core_inline_append_text(inline_state, inline_state->pos - 1 - len, inline_state->pos - 1,
+                                            markdown_core_chunk_buf_detach(&ent));
 }
 
 static markdown_core_draft *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                   markdown_core_draft *parent, unsigned char character,
                                   markdown_core_inline_state *inline_state) {
     if (character == '\\') {
-        return markdown_core_inline_state_append(inline_state, handle_backslash(self, parser, inline_state));
+        return handle_backslash(self, parser, inline_state);
     }
     if (character == '&') {
-        return markdown_core_inline_state_append(inline_state, handle_entity(inline_state));
+        return handle_entity(inline_state);
     }
     return NULL;
 }
@@ -204,23 +195,23 @@ markdown_core_draft *markdown_core_text_parse(const markdown_core_element_instan
         markdown_core_chunk_rtrim(&contents);
     }
 
-    markdown_core_node *new_inl = make_str(inline_state, startpos, endpos - 1, contents);
     /* `rtrim` above takes the trailing spaces before a line ending OUT of
      * the literal, and the run's SCOPE still covers them -- so they are the
      * run's, in the role a byte kept nowhere has. Giving them to the block
      * instead left the node covering eight columns and owning three, which
      * is what L5 measures. */
-    return markdown_core_inline_state_append(inline_state, new_inl);
+    return markdown_core_inline_append_text(inline_state, startpos, endpos - 1, contents);
 }
 static void complete_inline(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                            markdown_core_node *node, int word_depth) {
+                            markdown_core_piece *piece, int word_depth) {
     (void)self;
-    if (node->flags & MARKDOWN_CORE_NODE__ESCAPED_SPACE) {
+    (void)parser;
+    if (piece->escaped) {
         if (word_depth > 0) {
-            markdown_core_chunk_free(node->as.literal);
-            *node->as.literal = markdown_core_chunk_literal("\xC2\xA0");
+            markdown_core_chunk_free(&piece->literal);
+            piece->literal = markdown_core_chunk_literal("\xC2\xA0");
         }
-        node->flags &= ~MARKDOWN_CORE_NODE__ESCAPED_SPACE;
+        piece->escaped = false;
     }
 }
 

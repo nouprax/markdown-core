@@ -128,8 +128,8 @@ static inline size_t markdown_core_kind_index(markdown_core_node_type kind) {
  * `children_summary`, the blank-line summary when a child's blank line
  * propagates out of the kind (`propagates_child_blank`), and NULL
  * otherwise. `complete` is the structure's `complete_inline`, NULL when
- * it declares none, which the completion of a Text calls with the count of
- * the word bodies around it. The out-of-table index answers nothing. */
+ * it declares none, which the completion of a text piece calls with the
+ * count of the word bodies around it. The out-of-table index answers nothing. */
 enum {
     MARKDOWN_CORE_KIND_INLINES = 1u << 0,
     MARKDOWN_CORE_KIND_INLINES_ASK = 1u << 1,
@@ -145,7 +145,7 @@ enum {
 typedef struct markdown_core_kind_record {
     const markdown_core_element_instance *structure;
     const markdown_core_stem_summary *summary;
-    void (*complete)(const markdown_core_element_instance *, struct markdown_core_parser *, markdown_core_node *, int);
+    void (*complete)(const markdown_core_element_instance *, struct markdown_core_parser *, markdown_core_piece *, int);
     uint16_t flags;
 } markdown_core_kind_record;
 

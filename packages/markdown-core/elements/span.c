@@ -34,9 +34,8 @@ markdown_core_bracket_match markdown_core_span_close(const markdown_core_element
                 markdown_core_draft *text = opener->inl_text;
                 if (opener->kind == BRACKET_IMAGE) {
                     /* An image's bang stays the text before the span. */
-                    text->node->as.literal->len = 1;
-                    markdown_core_inline_state_place(inline_state, text->node, opener->position - 2,
-                                                     opener->position - 2);
+                    markdown_core_draft_literal(text)->len = 1;
+                    markdown_core_inline_place_text(inline_state, text, opener->position - 2, opener->position - 2);
                     markdown_core_draft *owner = text->owner;
                     markdown_core_draft_unlink(text);
                     markdown_core_draft_attach(owner, text, span);

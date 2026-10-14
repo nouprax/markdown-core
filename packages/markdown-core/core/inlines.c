@@ -43,36 +43,33 @@ void markdown_core_inline_state_place(markdown_core_inline_state *inline_state, 
  * parsed (`markdown_core_inline_start_inlines` gives one to any block whose
  * content was SET rather than fed), and a state with no map places nothing
  * (`mapped`, tested by the fast path before it comes here). */
-void markdown_core_inline_place_outside_frame(markdown_core_inline_state *inline_state, markdown_core_node *node,
+void markdown_core_inline_place_outside_frame(markdown_core_inline_state *inline_state, markdown_core_place *place,
+                                              markdown_core_content_map *map, const markdown_core_chunk *literal,
                                               int from, int to) {
-    markdown_core_content_span span;
+    markdown_core_content_span span = {0};
     markdown_core_parser_content_span(inline_state->owner_parser,
                                       inline_state->owner ? &inline_state->owner->node->content_map : NULL, from, to,
                                       &span, &inline_state->mark_cursor);
     markdown_core_inline_seat_cursor(inline_state);
     if (span.has_start) {
-        node->where.place.start = (uint32_t)span.start;
+        place->start = (uint32_t)span.start;
     }
     if (span.has_end) {
-        node->where.place.end = (uint32_t)span.end;
+        place->end = (uint32_t)span.end;
     }
-    if (node->kind == MARKDOWN_CORE_NODE_TEXT && node->as.literal->len > 0) {
+    if (map) {
         /* A Text placed with an end unresolved keeps no map at all: the
          * writes stay inside the verbatim gate, and a partial span names no
          * slice to take. */
         if (span.has_start && span.has_end) {
-            markdown_core_inline_map_text(inline_state, node, from, to, span.first, span.last);
-        } else {
-            const markdown_core_chunk *literal = node->as.literal;
-            if (!(literal->len == to - from + 1 &&
-                  (literal->data == inline_state->input.data + from ||
-                   memcmp(literal->data, inline_state->input.data + from, (size_t)literal->len) == 0))) {
-                node->content_map.count = 0;
-                node->content_map.offset = 0;
-                markdown_core_parser_append_content_mark(inline_state->owner_parser, node, 0, inline_state->mark_line,
-                                                         node->where.place.start,
-                                                         (int)(node->where.place.end - node->where.place.start), 0);
-            }
+            markdown_core_inline_map_text(inline_state, map, literal, place, from, to, span.first, span.last);
+        } else if (!(literal->len == to - from + 1 &&
+                     (literal->data == inline_state->input.data + from ||
+                      memcmp(literal->data, inline_state->input.data + from, (size_t)literal->len) == 0))) {
+            map->count = 0;
+            map->offset = 0;
+            markdown_core_parser_append_content_mark(inline_state->owner_parser, map, 0, inline_state->mark_line,
+                                                     place->start, (int)(place->end - place->start), 0);
         }
     }
 }
@@ -538,7 +535,7 @@ static void push_delimiter(markdown_core_inline_state *inline_state, const markd
     delim->can_open = can_open;
     delim->can_close = can_close;
     delim->draft = inl_text;
-    delim->length = inl_text->node->as.literal->len;
+    delim->length = markdown_core_draft_literal(inl_text)->len;
     if (can_open) {
         inline_state->delim_openers[rule]++;
     }
@@ -556,9 +553,7 @@ static void push_delimiter(markdown_core_inline_state *inline_state, const markd
 static markdown_core_draft *handle_delim(markdown_core_inline_state *inline_state, const delimiter_run *run) {
     assert(delimiter_needs_stack(inline_state, run));
     inline_state->pos = run->end;
-    markdown_core_draft *inl_text = markdown_core_inline_state_append(
-        inline_state, make_str(inline_state, run->start, run->end - 1,
-                               markdown_core_chunk_dup(&inline_state->input, run->start, run->end - run->start)));
+    markdown_core_draft *inl_text = markdown_core_inline_append_input(inline_state, run->start, run->end - 1);
     // One eligible maximal run owns one stack entry and cannot match itself.
     if (inl_text) {
         push_delimiter(inline_state, inline_state->dialect->delimiter_owners[run->rule], run->rule, run->can_open,
@@ -668,7 +663,8 @@ void markdown_core_inline_process_delimiters(markdown_core_parser *parser, markd
                 const delimiter_rule_spec *spec = delimiter_spec(inline_state, closer->rule);
                 if (spec->minimum_width) {
                     bufsize_t used = spec->maximum_width;
-                    if (opener->draft->node->as.literal->len < used || closer->draft->node->as.literal->len < used) {
+                    if (markdown_core_draft_literal(opener->draft)->len < used ||
+                        markdown_core_draft_literal(closer->draft)->len < used) {
                         used = spec->minimum_width;
                     }
                     markdown_core_node_type kind = used == 2 ? spec->double_kind : spec->single_kind;
@@ -739,10 +735,12 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
     delimiter *tmp_delim;
     markdown_core_draft *opener_draft = opener->draft;
     markdown_core_draft *closer_draft = closer->draft;
-    markdown_core_node *opener_inl = opener_draft->node;
-    markdown_core_node *closer_inl = closer_draft->node;
-    bufsize_t opener_num_chars = opener_inl->as.literal->len;
-    bufsize_t closer_num_chars = closer_inl->as.literal->len;
+    markdown_core_chunk *opener_literal = markdown_core_draft_literal(opener_draft);
+    markdown_core_chunk *closer_literal = markdown_core_draft_literal(closer_draft);
+    markdown_core_place *opener_place = markdown_core_draft_place(opener_draft);
+    markdown_core_place *closer_place = markdown_core_draft_place(closer_draft);
+    bufsize_t opener_num_chars = opener_literal->len;
+    bufsize_t closer_num_chars = closer_literal->len;
     markdown_core_node *inline_node;
     const bufsize_t minimum_width = delimiter_spec(inline_state, closer->rule)->minimum_width;
 
@@ -778,8 +776,8 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
     if (inline_state->records) {
         S_read_delimited(inline_draft, opener_draft, closer_draft, opener_num_chars, closer_num_chars, use_delims);
     }
-    opener_inl->as.literal->len = opener_num_chars;
-    closer_inl->as.literal->len = closer_num_chars;
+    opener_literal->len = opener_num_chars;
+    closer_literal->len = closer_num_chars;
 
     /* The drafts between the two runs become the inline's children, and
      * the inline takes their place. */
@@ -816,18 +814,18 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
     // is the opener's LEADING bytes and the closer's TRAILING ones. Taking the
     // whole run's start and end gave two nodes one byte: `***a**` reported a
     // leftover Text spanning columns 1..3 and a Strong also starting at 1.
-    inline_node->where.place.start = opener_inl->where.place.start + (uint32_t)opener_num_chars;
-    inline_node->where.place.end = closer_inl->where.place.end - (uint32_t)closer_num_chars;
+    inline_node->where.place.start = opener_place->start + (uint32_t)opener_num_chars;
+    inline_node->where.place.end = closer_place->end - (uint32_t)closer_num_chars;
     // and a leftover that SURVIVES owns only the bytes it still carries. A
     // leftover with none is freed below, and writing its end first would put a
     // reversed range in the tree for the length of two statements -- true only
     // by reading ahead, which is not a property worth relying on.
     if (opener_num_chars > 0) {
-        opener_inl->where.place.end = opener_inl->where.place.start + (uint32_t)opener_num_chars;
+        opener_place->end = opener_place->start + (uint32_t)opener_num_chars;
     }
     if (closer_num_chars > 0) {
-        closer_inl->content_map.offset += (int)use_delims;
-        closer_inl->where.place.start = closer_inl->where.place.end - (uint32_t)closer_num_chars;
+        markdown_core_draft_map(closer_draft)->offset += (int)use_delims;
+        closer_place->start = closer_place->end - (uint32_t)closer_num_chars;
     }
 
     // if opener has 0 characters, remove it and its associated inline
@@ -984,6 +982,59 @@ markdown_core_draft *markdown_core_inline_state_append(markdown_core_inline_stat
         }
     }
     return draft;
+}
+
+void markdown_core_inline_place_text(markdown_core_inline_state *inline_state, markdown_core_draft *text, int from,
+                                     int to) {
+    markdown_core_chunk *literal = markdown_core_draft_literal(text);
+    markdown_core_inline_place_range(inline_state, markdown_core_draft_place(text),
+                                     literal->len > 0 ? markdown_core_draft_map(text) : NULL, literal, from, to);
+}
+
+markdown_core_draft *markdown_core_inline_attach_text(markdown_core_inline_state *inline_state,
+                                                      markdown_core_draft *owner, markdown_core_draft *before, int from,
+                                                      int to, markdown_core_chunk literal) {
+    markdown_core_draft *draft = markdown_core_drafts_take(&inline_state->owner_parser->drafts, NULL, false);
+    if (!draft) {
+        markdown_core_chunk_free(&literal);
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
+        return NULL;
+    }
+    draft->piece.literal = literal;
+    markdown_core_inline_place_text(inline_state, draft, from, to);
+    markdown_core_draft_attach(owner, draft, before);
+    return draft;
+}
+
+markdown_core_draft *markdown_core_inline_append_text(markdown_core_inline_state *inline_state, int from, int to,
+                                                      markdown_core_chunk literal) {
+    markdown_core_draft *owner = inline_state->owner;
+    if (owner->node->element && owner->node->element->can_contain_func &&
+        !markdown_core_node_can_contain_type(owner->node, MARKDOWN_CORE_NODE_TEXT)) {
+        markdown_core_chunk_free(&literal);
+        if (!inline_state->error) {
+            inline_state->error = MARKDOWN_CORE_PARSE_CONTAINMENT_REJECTED;
+        }
+        return NULL;
+    }
+    markdown_core_draft *draft = markdown_core_inline_attach_text(inline_state, owner, NULL, from, to, literal);
+    if (!draft) {
+        return NULL;
+    }
+    /* A token is taken whole as one node: one that appends more is read
+     * again by every later parse. */
+    if (inline_state->token_draft) {
+        markdown_core_inline_outside(inline_state);
+    } else if (inline_state->records) {
+        inline_state->token_draft = draft;
+    }
+    return draft;
+}
+
+markdown_core_draft *markdown_core_inline_append_input(markdown_core_inline_state *inline_state, int from, int to) {
+    assert(from >= 0 && to >= from - 1 && to < inline_state->input.len);
+    return markdown_core_inline_append_text(inline_state, from, to,
+                                            markdown_core_chunk_dup(&inline_state->input, from, to - from + 1));
 }
 
 /* WHAT THE STACK HOLDS WHERE A TOKEN BEGINS (node.h,
@@ -1340,8 +1391,8 @@ static bool S_take_old(markdown_core_parser *parser, markdown_core_inline_state 
         return false;
     }
     if (copy->kind == MARKDOWN_CORE_NODE_TEXT && copy->as.literal->len > 0) {
-        markdown_core_inline_map_text(inline_state, copy, pos, end - 1, inline_state->mark_cursor,
-                                      inline_state->mark_cursor);
+        markdown_core_inline_map_text(inline_state, &copy->content_map, copy->as.literal, &copy->where.place, pos,
+                                      end - 1, inline_state->mark_cursor, inline_state->mark_cursor);
     }
     const bool boundary = (old->entry & MARKDOWN_CORE_INLINE_ENTRY_BOUNDARY) != 0;
     draft->taken = true;
@@ -1409,10 +1460,7 @@ int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_cor
         markdown_core_inline_unrecorded(inline_state);
         startpos = inline_state->pos;
         inline_state->pos = inline_state->opaque_end;
-        markdown_core_inline_state_append(
-            inline_state,
-            make_str(inline_state, startpos, inline_state->pos - 1,
-                     markdown_core_chunk_dup(&inline_state->input, startpos, inline_state->pos - startpos)));
+        markdown_core_inline_append_input(inline_state, startpos, inline_state->pos - 1);
         goto append;
     }
     if (inline_state->cursor && S_take_old(parser, inline_state)) {
@@ -1436,7 +1484,7 @@ append:
         /* A later parse that takes the node whole goes on where the token
          * ended, so a node that does not lie on its token's bytes is read
          * again. The root's nodes are placed at offsets of its content. */
-        const markdown_core_place place = inline_state->token_draft->node->where.place;
+        const markdown_core_place place = *markdown_core_draft_place(inline_state->token_draft);
         inline_state->token.end = inline_state->pos;
         if (place.start != (uint32_t)token_start || place.end != (uint32_t)inline_state->pos) {
             markdown_core_inline_unrecorded(inline_state);
@@ -1594,7 +1642,7 @@ static unsigned S_inside(const markdown_core_parser *parser, const markdown_core
  * does, for an escaped space, and, for one the parse read rather than took
  * whole, whether each element's kind does. */
 static unsigned S_text_needs(const markdown_core_parser *parser, const markdown_core_draft *text) {
-    unsigned needs = text->node->flags & MARKDOWN_CORE_NODE__ESCAPED_SPACE ? S_CONTEXT_WORD : 0;
+    unsigned needs = !text->node && text->piece.escaped ? S_CONTEXT_WORD : 0;
     if (!text->taken) {
         needs |= S_context_completer(S_completers(parser)) - 2u;
     }
@@ -1609,7 +1657,7 @@ static unsigned S_level_needs(const markdown_core_parser *parser, const markdown
     unsigned needs = 0;
     for (const markdown_core_draft *child = draft->first; child; child = child->next) {
         assert(child->reduced || (!child->first && !child->fields));
-        needs |= child->node->kind == MARKDOWN_CORE_NODE_TEXT ? S_text_needs(parser, child) : child->needs;
+        needs |= markdown_core_draft_is_text(child) ? S_text_needs(parser, child) : child->needs;
     }
     return needs;
 }
@@ -1703,30 +1751,50 @@ static void S_join_reads(const markdown_core_parser *parser, markdown_core_inlin
                   ((into->flags | from->flags) & (MARKDOWN_CORE_INLINE_BOUNDARY | MARKDOWN_CORE_INLINE_CONTEXT));
 }
 
-/* Whether a Text has a Text after it to absorb, or no bytes to keep. */
-static inline bool S_text_merges(const markdown_core_draft *text) {
-    return (text->next && text->next->node->kind == MARKDOWN_CORE_NODE_TEXT) || text->node->as.literal->len == 0;
+/* Whether a Text has text after it to absorb, or no bytes to keep. */
+static inline bool S_text_merges(markdown_core_draft *text) {
+    return (text->next && markdown_core_draft_is_text(text->next)) || markdown_core_draft_literal(text)->len == 0;
 }
 
-/* A Text completes as what encloses it says: an escaped space inside a
+/* A piece completes as what encloses it says: an escaped space inside a
  * word body is a no-break space (text.c). */
-static void S_complete_text_node(markdown_core_parser *parser, markdown_core_node *node, unsigned within) {
+static void S_complete_piece(markdown_core_parser *parser, markdown_core_draft *piece, unsigned within) {
     const markdown_core_kind_record *plan = &parser->dialect->kinds[MARKDOWN_CORE_KIND_TEXT_INDEX];
     if (plan->complete) {
-        plan->complete(plan->structure, parser, node, (within & S_CONTEXT_WORD) ? 1 : 0);
+        plan->complete(plan->structure, parser, &piece->piece, (within & S_CONTEXT_WORD) ? 1 : 0);
     }
 }
 
-/* THE RUN OF TEXT MERGES: `text` absorbs every Text after it -- its
- * literal, the source runs of its map and its end, each absorbed Text
- * completed first. The merged literal is allocated once, at the run's summed
- * length. False when an allocation failed. */
+/* The piece `draft` becomes the Text node it reads as, which the draft holds.
+ * False when the node could not be had. */
+static bool S_make_text(markdown_core_parser *parser, markdown_core_draft *draft) {
+    markdown_core_node *node = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_TEXT);
+    if (!node) {
+        return false;
+    }
+    *node->as.literal = draft->piece.literal;
+    node->where.place = draft->piece.place;
+    node->content_map = draft->piece.map;
+    draft->piece.literal = (markdown_core_chunk){0};
+    draft->node = node;
+    draft->held = true;
+    return true;
+}
+
+/* THE RUN OF TEXT MERGES: the Text `text` absorbs the text after it, each
+ * piece completed first -- its literal, the source runs of its map and its
+ * end. The merged literal is allocated once, at the run's summed length.
+ * False when an allocation failed. */
 static bool S_merge_text(markdown_core_parser *parser, markdown_core_draft *text, unsigned within) {
     markdown_core_node *cur = text->node;
-    for (markdown_core_draft *next = text->next; next && next->node->kind == MARKDOWN_CORE_NODE_TEXT;
-         next = next->next) {
+    size_t length = (size_t)cur->as.literal->len;
+    for (markdown_core_draft *next = text->next; next && markdown_core_draft_is_text(next); next = next->next) {
+        if (!next->node) {
+            S_complete_piece(parser, next, within);
+        }
         S_join_reads(parser, &text->reads, &next->reads);
         text->reads.end = next->reads.end;
+        length += (size_t)markdown_core_draft_literal(next)->len;
     }
     /* THE MERGED TEXT'S MAP IS A VIEW WHEN ITS OPERANDS ARE: a Text that
      * is a verbatim copy of its source holds a slice of its container's
@@ -1740,18 +1808,11 @@ static bool S_merge_text(markdown_core_parser *parser, markdown_core_draft *text
     bool view = cur->content_map.count > 0;
     int view_end = cur->content_map.first + cur->content_map.count;
     bufsize_t view_offset = cur->content_map.offset + cur->as.literal->len;
-    size_t length = (size_t)cur->as.literal->len;
-    for (markdown_core_draft *next = text->next; next && next->node->kind == MARKDOWN_CORE_NODE_TEXT;
-         next = next->next) {
-        const markdown_core_node *tmp = next->node;
-        length += (size_t)tmp->as.literal->len;
-        if (!view) {
-            continue;
-        }
-        view = tmp->content_map.count > 0 && tmp->content_map.offset == view_offset &&
-               tmp->content_map.first >= view_end - 1 && tmp->content_map.first <= view_end;
-        view_end = tmp->content_map.first + tmp->content_map.count;
-        view_offset += tmp->as.literal->len;
+    for (markdown_core_draft *next = text->next; view && next && markdown_core_draft_is_text(next); next = next->next) {
+        const markdown_core_content_map *map = markdown_core_draft_map(next);
+        view = map->count > 0 && map->offset == view_offset && map->first >= view_end - 1 && map->first <= view_end;
+        view_end = map->first + map->count;
+        view_offset += markdown_core_draft_literal(next)->len;
     }
     /* The bound every literal buffer shares. */
     if (length > (size_t)MARKDOWN_CORE_STRBUF_LIMIT) {
@@ -1765,7 +1826,7 @@ static bool S_merge_text(markdown_core_parser *parser, markdown_core_draft *text
                                                           cur->as.literal->len, 0)) {
         return false;
     }
-    unsigned char *merged = markdown_core_bytes_take(NULL, length + 1, 0);
+    unsigned char *merged = markdown_core_node_pool_bytes(parser->pool, length + 1);
     if (!merged) {
         return false;
     }
@@ -1773,23 +1834,22 @@ static bool S_merge_text(markdown_core_parser *parser, markdown_core_draft *text
     if (at) {
         memcpy(merged, cur->as.literal->data, (size_t)at);
     }
-    while (text->next && text->next->node->kind == MARKDOWN_CORE_NODE_TEXT) {
+    while (text->next && markdown_core_draft_is_text(text->next)) {
         markdown_core_draft *next = text->next;
-        markdown_core_node *tmp = next->node;
-        S_complete_text_node(parser, tmp, within);
-        if (!view && !markdown_core_parser_append_content_marks(parser, &tmp->content_map, &combined_map, 0,
-                                                                tmp->as.literal->len, at)) {
-            markdown_core_bytes_release(NULL, merged);
+        const markdown_core_chunk *literal = markdown_core_draft_literal(next);
+        if (!view && !markdown_core_parser_append_content_marks(parser, markdown_core_draft_map(next), &combined_map, 0,
+                                                                literal->len, at)) {
+            markdown_core_node_pool_bytes_free(parser->pool, merged);
             return false;
         }
-        if (tmp->as.literal->len) {
-            memcpy(merged + at, tmp->as.literal->data, (size_t)tmp->as.literal->len);
-            at += tmp->as.literal->len;
+        if (literal->len) {
+            memcpy(merged + at, literal->data, (size_t)literal->len);
+            at += literal->len;
         }
         /* The merged Text covers every operand's scope, an empty one's
          * too: the operands lie left to right, each where the one before
          * ended, so a scope does not depend on where tokens were cut. */
-        cur->where.place.end = tmp->where.place.end;
+        cur->where.place.end = markdown_core_draft_place(next)->end;
         markdown_core_inline_release(parser, next);
     }
     cur->content_map = combined_map;
@@ -1862,10 +1922,23 @@ static void S_complete_level(markdown_core_parser *parser, markdown_core_draft *
     parser->text_context = within;
     for (markdown_core_draft *draft = level->first; draft && !parser->error;) {
         S_settle_taken(parser, draft);
-        if (draft->node->kind == MARKDOWN_CORE_NODE_TEXT && !draft->taken) {
-            S_complete_text_node(parser, draft->node, within);
-            if (draft->next && draft->next->node->kind == MARKDOWN_CORE_NODE_TEXT &&
-                !S_merge_text(parser, draft, within)) {
+        if (markdown_core_draft_is_text(draft) && !draft->taken) {
+            const bool merges = draft->next && markdown_core_draft_is_text(draft->next);
+            /* A piece that holds no bytes and absorbs nothing is no node. */
+            if (!draft->node && !merges && !draft->piece.literal.len) {
+                markdown_core_draft *after = draft->next;
+                markdown_core_inline_release(parser, draft);
+                draft = after;
+                continue;
+            }
+            if (!draft->node) {
+                S_complete_piece(parser, draft, within);
+                if (!S_make_text(parser, draft)) {
+                    markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+                    break;
+                }
+            }
+            if (merges && !S_merge_text(parser, draft, within)) {
                 markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
                 break;
             }
@@ -2164,41 +2237,27 @@ void markdown_core_inline_state_set_offset(markdown_core_inline_state *inline_st
     inline_state->pos = offset;
 }
 
-markdown_core_node *markdown_core_inline_state_make_delimiter_text(markdown_core_inline_state *inline_state, int from,
-                                                                   int to) {
-    markdown_core_node *node;
-
-    if (from < 0 || to < from || to >= inline_state->input.len) {
-        return NULL;
-    }
-    node = markdown_core_inline_make_literal(inline_state, MARKDOWN_CORE_NODE_TEXT, from, to,
-                                             markdown_core_chunk_dup(&inline_state->input, from, to - from + 1));
-    return node;
-}
-
 markdown_core_chunk *markdown_core_inline_state_get_chunk(markdown_core_inline_state *inline_state) {
     return &inline_state->input;
 }
 
-static void S_update_text_sourcepos(markdown_core_parser *parser, markdown_core_node *node) {
-    if (node->as.literal->len == 0) {
-        node->where.place.end = node->where.place.start;
-        return;
-    }
-    int line;
-    bufsize_t end;
-    markdown_core_parser_content_end_place(parser, &node->content_map, node->as.literal->len - 1, &line, &end);
-    node->where.place.end = (uint32_t)end;
-}
-
 void markdown_core_node_unput(markdown_core_parser *parser, markdown_core_draft *draft, int n) {
-    for (markdown_core_draft *text = draft->last; n > 0 && text && text->node->kind == MARKDOWN_CORE_NODE_TEXT;
+    for (markdown_core_draft *text = draft->last; n > 0 && text && markdown_core_draft_is_text(text);
          text = text->prev) {
-        markdown_core_node *node = text->node;
-        bufsize_t remove = node->as.literal->len < (bufsize_t)n ? node->as.literal->len : (bufsize_t)n;
-        node->as.literal->len -= remove;
+        markdown_core_chunk *literal = markdown_core_draft_literal(text);
+        markdown_core_place *place = markdown_core_draft_place(text);
+        bufsize_t remove = literal->len < (bufsize_t)n ? literal->len : (bufsize_t)n;
+        literal->len -= remove;
         n -= (int)remove;
-        S_update_text_sourcepos(parser, node);
+        if (literal->len == 0) {
+            place->end = place->start;
+        } else {
+            int line;
+            bufsize_t end;
+            markdown_core_parser_content_end_place(parser, markdown_core_draft_map(text), literal->len - 1, &line,
+                                                   &end);
+            place->end = (uint32_t)end;
+        }
         /* What follows the Text decided its end. */
         text->reads.flags &= ~(uint32_t)MARKDOWN_CORE_INLINE_RECORDED;
     }
@@ -2240,9 +2299,7 @@ markdown_core_draft *markdown_core_inline_match_delimiter(const markdown_core_el
             return NULL;
         }
         inline_state->pos = run->end;
-        return markdown_core_inline_state_append(
-            inline_state, make_str(inline_state, run->start, run->end - 1,
-                                   markdown_core_chunk_dup(&inline_state->input, run->start, run->end - run->start)));
+        return markdown_core_inline_append_input(inline_state, run->start, run->end - 1);
     }
     return handle_delim(inline_state, run);
 }
