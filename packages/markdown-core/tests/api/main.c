@@ -179,25 +179,47 @@ static const char *facade_kind_name(markdown_core_node_kind kind) {
 /* WHERE A NODE IS, as editor coordinates. A parsed tree is published: each
  * node holds its extent, and its scope is a query over the tree and the
  * source its root was parsed from, in UTF-8 columns. Each parse this file
- * runs records its root and source; the newest record of a root is the live
- * one, since a freed root's address can return only through a later parse. A
- * node no parent chain leads to a recorded root reads against the newest
- * parse. */
+ * runs records its root and source, and freeing that root ends the record,
+ * so every record names a live tree: a node reads against the recorded tree
+ * that holds it, through its field roots too, and a node no recorded tree
+ * holds has no scope. */
 typedef struct {
-    /* The node a parent chain ends at: a parsed root, or a field root. */
-    const markdown_core_node *top;
     const markdown_core_node *root;
     const char *source;
     size_t length;
 } test_parse;
 
-#define TEST_PARSES 256
-static test_parse test_parses[TEST_PARSES];
-static size_t test_parse_count;
+static test_parse *test_parses;
+static size_t test_parse_count, test_parse_capacity;
 
 static markdown_core_node *test_remember_parse(markdown_core_node *root, const char *source, size_t length) {
-    test_parses[test_parse_count++ % TEST_PARSES] = (test_parse){root, root, source, length};
+    if (!root) {
+        return root;
+    }
+    if (test_parse_count == test_parse_capacity) {
+        size_t capacity = test_parse_capacity ? test_parse_capacity * 2 : 1;
+        test_parse *parses = realloc(test_parses, capacity * sizeof(*parses));
+        if (!parses) {
+            fprintf(stderr, "no memory to record a parse\n");
+            abort();
+        }
+        test_parses = parses;
+        test_parse_capacity = capacity;
+    }
+    test_parses[test_parse_count++] = (test_parse){root, source, length};
     return root;
+}
+
+/* Frees a node, ending the record of the parse it is the root of. */
+static void test_free_node(markdown_core_node *node) {
+    size_t kept = 0;
+    for (size_t i = 0; i < test_parse_count; i++) {
+        if (test_parses[i].root != node) {
+            test_parses[kept++] = test_parses[i];
+        }
+    }
+    test_parse_count = kept;
+    markdown_core_node_free(node);
 }
 
 #define markdown_core_parse_document(source, length)                                                                   \
@@ -205,28 +227,7 @@ static markdown_core_node *test_remember_parse(markdown_core_node *root, const c
 #define markdown_core_parse_document_with_setup(source, length, setup, context)                                        \
     test_remember_parse(markdown_core_parse_document_with_setup((source), (length), (setup), (context)), (source),     \
                         (length))
-
-static test_parse test_parse_of(const markdown_core_node *node) {
-    while (node && node->parent) {
-        node = node->parent;
-    }
-    size_t kept = test_parse_count < TEST_PARSES ? test_parse_count : TEST_PARSES;
-    for (size_t i = 1; i <= kept; i++) {
-        const test_parse *parse = &test_parses[(test_parse_count - i) % TEST_PARSES];
-        if (parse->top == node) {
-            return *parse;
-        }
-    }
-    return test_parses[(test_parse_count - 1) % TEST_PARSES];
-}
-
-/* Records a field root, which no parent chain reaches, as part of the parse
- * of the node that owns it. */
-static void test_remember_field(const markdown_core_node *field, const markdown_core_node *owner) {
-    test_parse parse = test_parse_of(owner);
-    parse.top = field;
-    test_parses[test_parse_count++ % TEST_PARSES] = parse;
-}
+#define markdown_core_node_free(node) test_free_node(node)
 
 /* The bounds of a node's scopes, which it releases: the first one's start
  * and the last one's end. */
@@ -240,12 +241,16 @@ static markdown_core_scope scope_bounds(markdown_core_scope *scopes, size_t coun
 }
 
 static markdown_core_scope test_node_scope(const markdown_core_node *node) {
-    test_parse parse = test_parse_of(node);
-    markdown_core_scope *scopes = NULL;
-    size_t count = 0;
-    markdown_core_tree_scope(parse.root, node, (const uint8_t *)parse.source, parse.length,
-                             MARKDOWN_CORE_TEXT_UNIT_UTF8, &scopes, &count);
-    return scope_bounds(scopes, count);
+    for (size_t i = test_parse_count; i-- > 0;) {
+        const test_parse *parse = &test_parses[i];
+        markdown_core_scope *scopes;
+        size_t count;
+        if (markdown_core_tree_scope(parse->root, node, (const uint8_t *)parse->source, parse->length,
+                                     MARKDOWN_CORE_TEXT_UNIT_UTF8, &scopes, &count)) {
+            return scope_bounds(scopes, count);
+        }
+    }
+    return scope_bounds(NULL, 0);
 }
 
 #define SCOPE(node) test_node_scope(node)
@@ -10155,8 +10160,6 @@ static size_t shifted_table_differences(markdown_core_node *base, markdown_core_
             const markdown_core_table *tx = x->opaque, *ty = y->opaque;
             same = same_columns(tx, ty) && !tx->caption == !ty->caption;
             if (same && tx->caption) {
-                test_remember_field(tx->caption, x);
-                test_remember_field(ty->caption, y);
                 differences += shifted_table_differences(tx->caption, ty->caption, shift);
             }
         }
