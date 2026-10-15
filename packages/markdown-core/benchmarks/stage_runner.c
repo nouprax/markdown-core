@@ -13,38 +13,53 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include "stage_runner.h"
 
+/* Read with read(2) rather than stdio. A stdio stream allocates a buffer and
+ * frees it at fclose, just before the measured parse, and the engine's first
+ * allocations would then be carved from that hole: the stages' allocator work
+ * would depend on this file's I/O. Read this way, the parse starts on a heap
+ * that holds the document and nothing the runner has freed. */
 static char *load_document(const char *path, size_t *length) {
-    FILE *file = fopen(path, "rb");
+    int file = open(path, O_RDONLY);
+    struct stat facts;
     char *buffer;
-    long size;
-    size_t read;
+    size_t done = 0;
 
-    if (!file) {
+    if (file < 0) {
         fprintf(stderr, "stage_runner: cannot open %s\n", path);
         return NULL;
     }
-    if (fseek(file, 0, SEEK_END) != 0 || (size = ftell(file)) < 0 || fseek(file, 0, SEEK_SET) != 0) {
+    if (fstat(file, &facts) != 0 || facts.st_size < 0) {
         fprintf(stderr, "stage_runner: cannot size %s\n", path);
-        fclose(file);
+        close(file);
         return NULL;
     }
-    buffer = (char *)malloc((size_t)size + 1);
+    buffer = (char *)malloc((size_t)facts.st_size + 1);
     if (!buffer) {
-        fprintf(stderr, "stage_runner: cannot allocate %ld bytes\n", size);
-        fclose(file);
+        fprintf(stderr, "stage_runner: cannot allocate %lld bytes\n", (long long)facts.st_size);
+        close(file);
         return NULL;
     }
-    read = fread(buffer, 1, (size_t)size, file);
-    fclose(file);
-    if (read != (size_t)size) {
+    while (done < (size_t)facts.st_size) {
+        ssize_t count = read(file, buffer + done, (size_t)facts.st_size - done);
+        if (count <= 0) {
+            break;
+        }
+        done += (size_t)count;
+    }
+    close(file);
+    if (done != (size_t)facts.st_size) {
         fprintf(stderr, "stage_runner: short read on %s\n", path);
         free(buffer);
         return NULL;
     }
-    buffer[read] = 0;
-    *length = read;
+    buffer[done] = 0;
+    *length = done;
     return buffer;
 }
 

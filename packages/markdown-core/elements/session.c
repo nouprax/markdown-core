@@ -26,9 +26,8 @@ struct markdown_core_session {
     size_t node_count;
 };
 
-/* The one parse of a session: it reads `text`, the session's whole text. An
- * empty text is the empty buffer. */
-static markdown_core_status session_parse(markdown_core_session *session, const uint8_t *text, size_t size) {
+/* The one parse of a session's text. An empty text is the empty buffer. */
+static markdown_core_status session_parse(markdown_core_session *session) {
     static const uint8_t empty[1] = {0};
     markdown_core_revision revision = {
         .pool = &session->pool,
@@ -36,8 +35,8 @@ static markdown_core_status session_parse(markdown_core_session *session, const 
         .last_id = session->last_id,
         .node_count = session->node_count,
     };
-    markdown_core_node *root =
-        markdown_core_parser_parse(session->parser, (const char *)(size ? text : empty), size, &revision);
+    markdown_core_node *root = markdown_core_parser_parse(
+        session->parser, (const char *)(session->size ? session->text : empty), session->size, &revision);
     if (!root) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
@@ -47,25 +46,22 @@ static markdown_core_status session_parse(markdown_core_session *session, const 
     return MARKDOWN_CORE_OK;
 }
 
-/* Whether the text stays within the capacity with `size` more bytes. This is
- * where text enters the library, so the capacity is checked here and nowhere
- * below: offsets are int32 and every buffer derived from the text stays under
- * half of that. */
-static bool session_fits(const markdown_core_session *session, size_t size) {
-    return size <= MARKDOWN_CORE_SOURCE_CAPACITY - session->size;
-}
-
-/* Adds `size` bytes to the end of the text the session keeps. The buffer at
- * least doubles when it grows, so a stream of appends copies each byte O(1)
- * times. */
-static bool session_keep(markdown_core_session *session, const uint8_t *text, size_t size) {
+/* Adds `size` bytes to the end of the text and parses it. This is where text
+ * enters the library, so the capacity is checked here and nowhere below:
+ * offsets are int32 and every buffer derived from the text stays under half
+ * of that. The buffer at least doubles when it grows, so a stream of appends
+ * copies each byte O(1) times. */
+static markdown_core_status session_append(markdown_core_session *session, const uint8_t *text, size_t size) {
+    if (size > MARKDOWN_CORE_SOURCE_CAPACITY - session->size) {
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
     const size_t needed = session->size + size;
     if (needed > session->capacity) {
         size_t grown = session->capacity * 2;
         grown = grown < needed ? needed : grown > MARKDOWN_CORE_SOURCE_CAPACITY ? MARKDOWN_CORE_SOURCE_CAPACITY : grown;
         uint8_t *resized = markdown_core_realloc(session->text, grown);
         if (!resized) {
-            return false;
+            return MARKDOWN_CORE_ALLOCATION_FAILED;
         }
         session->text = resized;
         session->capacity = grown;
@@ -74,7 +70,7 @@ static bool session_keep(markdown_core_session *session, const uint8_t *text, si
         memcpy(session->text + session->size, text, size);
     }
     session->size = needed;
-    return true;
+    return session_parse(session);
 }
 
 /* Gives back what a session holds, but not the session itself. */
@@ -87,24 +83,18 @@ static void session_close(markdown_core_session *session) {
     markdown_core_parser_destroy(session->parser);
 }
 
-/* Opens a zeroed session in place: makes its parser, parses the source, which
- * is the whole text of a session that has none yet, then keeps it for the
- * appends that follow. Nothing is copied before the parse needs it: only an
- * append, whose whole text is the kept text followed by its bytes, keeps
- * before it parses. */
+/* Opens a zeroed session in place: makes its parser and appends the source,
+ * which an empty session reads as a fresh parse. */
 static markdown_core_status session_open(markdown_core_session *session, const uint8_t *source, size_t size,
                                          markdown_core_text_unit unit) {
-    if (!session_fits(session, size)) {
-        return MARKDOWN_CORE_ALLOCATION_FAILED;
-    }
     session->document.unit = unit;
     session->parser = markdown_core_core_parser(NULL, NULL);
-    if (!session->parser || session_parse(session, source, size) != MARKDOWN_CORE_OK ||
-        !session_keep(session, source, size)) {
+    markdown_core_status status =
+        session->parser ? session_append(session, source, size) : MARKDOWN_CORE_ALLOCATION_FAILED;
+    if (status != MARKDOWN_CORE_OK) {
         session_close(session);
-        return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
-    return MARKDOWN_CORE_OK;
+    return status;
 }
 
 markdown_core_status markdown_core_session_new(const uint8_t *source, size_t size, markdown_core_text_unit unit,
@@ -124,10 +114,7 @@ markdown_core_status markdown_core_session_new(const uint8_t *source, size_t siz
 
 markdown_core_status markdown_core_session_append(markdown_core_session *session, const uint8_t *text, size_t size,
                                                   const markdown_core_document **document) {
-    if (!session_fits(session, size) || !session_keep(session, text, size)) {
-        return MARKDOWN_CORE_ALLOCATION_FAILED;
-    }
-    markdown_core_status status = session_parse(session, session->text, session->size);
+    markdown_core_status status = session_append(session, text, size);
     if (status == MARKDOWN_CORE_OK) {
         *document = &session->document;
     }
