@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ONESHOT_IR_LIMIT, STAGES, stageBudget } from "../stage-budget.mjs";
+import { STAGE_IR_LIMIT, STAGES, stageBudget } from "../stage-budget.mjs";
 
 const row = (name, source, ast = 100, sha256 = "same-input") => ({
     case: name,
@@ -13,7 +13,7 @@ const row = (name, source, ast = 100, sha256 = "same-input") => ({
     }
 });
 /* One instruction past the limit on a base of 1000. */
-const over = Math.round(1000 * ONESHOT_IR_LIMIT) + 1;
+const over = Math.round(1000 * STAGE_IR_LIMIT) + 1;
 const verdicts = (rows) => rows.map((entry) => `${entry.case} ${entry.stage} ${entry.passed}`);
 
 test("the budget covers both parse stages", () => {
@@ -32,7 +32,7 @@ test("one AST regression fails even when the source stage and the aggregate impr
     );
 });
 test("a stage exactly at the limit passes", () => {
-    const at = Math.round(1000 * ONESHOT_IR_LIMIT);
+    const at = Math.round(1000 * STAGE_IR_LIMIT);
     assert.ok(stageBudget([row("a", at, at)], [row("a", 1000, 1000)]).every((entry) => entry.passed));
 });
 test("the stage budget refuses mismatched, missing and duplicate workloads", () => {

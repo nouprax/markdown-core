@@ -7,7 +7,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parse } from "yaml";
-import { attributeSection, editSection, publish, readArchive, stageSection } from "../publish-comment.mjs";
+import { attributeSection, publish, readArchive, stageSection, streamSection } from "../publish-comment.mjs";
 import { markdownReport } from "../run.mjs";
 
 const head = "a".repeat(40);
@@ -95,57 +95,78 @@ const attributes = () => ({
     }
 });
 
-const edits = () => ({
-    schemaVersion: 2,
+const streams = () => ({
+    schemaVersion: 3,
     subjects: ["reparse", "session"],
-    workloads: { version: "incremental-workloads-v1", set: "corpus", digest: "e".repeat(64), count: 3 },
+    workloads: { version: "incremental-workloads-v2", set: "corpus", digest: "e".repeat(64), count: 3 },
+    baseline: { revision: "b".repeat(40) },
     results: [
         {
-            name: "a.typing-word",
-            family: "typing",
+            name: "a.tokens",
+            family: "tokens",
             size: null,
             windows: [10, 20, 30],
             session: { windows: [11, 20, 33] },
-            oneshot: { ir: 25 }
+            oneshot: { ir: 25 },
+            regressions: []
         },
         {
-            name: "b.typing-word",
-            family: "typing",
+            name: "b.tokens",
+            family: "tokens",
             size: null,
             windows: [40],
             session: { windows: [40] },
-            oneshot: { ir: 35 }
+            oneshot: { ir: 35 },
+            regressions: [{ subject: "session", metric: "total", ratio: 1.03 }]
         },
-        { name: "prose-ascii-16k.far", family: "far", size: 16384, windows: [7, 9], session: null, oneshot: { ir: 8 } }
+        {
+            name: "prose-ascii-16k.rows",
+            family: "rows",
+            size: 16384,
+            windows: [7, 9],
+            session: null,
+            oneshot: { ir: 8 },
+            regressions: []
+        }
     ]
 });
 
-test("the edit table reports the R and S columns by family and size, pooled over windows", () => {
-    const body = editSection(edits());
+test("the stream table reports the R and S columns by family and size, pooled over windows, and 6.4", () => {
+    const body = streamSection(streams());
     assert.match(
         body,
-        /\| Grammar corpus \| typing \| {2}\| 2 \| 4 \| 20 \| 40 \| 40 \| 100 \| 20 \| 40 \| 40 \| 104 \| 1\.100× \| 60 \|/
+        /\| Grammar corpus \| tokens \| {2}\| 2 \| 4 \| 20 \| 40 \| 40 \| 100 \| 20 \| 40 \| 40 \| 104 \| 1\.100× \| 60 \|/
     );
     assert.match(
         body,
-        /\| Shapes \| far \| 16,384 \| 1 \| 2 \| 7 \| 9 \| 9 \| 16 \| {2}\| {2}\| {2}\| {2}\| {2}\| 8 \|/
+        /\| Shapes \| rows \| 16,384 \| 1 \| 2 \| 7 \| 9 \| 9 \| 16 \| {2}\| {2}\| {2}\| {2}\| {2}\| 8 \|/
     );
-    assert.doesNotMatch(body, /a\.typing-word|prose-ascii/);
+    assert.match(body, /against `bbbbbbbbbbbb`\): \*\*2\/3 passed\*\*, 1 exceeded/);
+    assert.doesNotMatch(body, /a\.tokens|prose-ascii/);
+    const unbased = streams();
+    unbased.baseline = null;
+    unbased.results[1].regressions = [];
+    assert.doesNotMatch(streamSection(unbased), /passed/);
     for (const mutate of [
-        (r) => (r.schemaVersion = 1),
+        (r) => (r.schemaVersion = 2),
         (r) => (r.subjects = ["reparse"]),
         (r) => (r.workloads.count = 4),
-        (r) => (r.results[0].family = "<b>"),
+        (r) => (r.baseline.revision = "<b>"),
+        (r) => (r.baseline = null),
+        (r) => (r.results[0].family = "typing"),
         (r) => (r.results[0].windows = [10, "20"]),
         (r) => (r.results[0].windows = []),
         (r) => (r.results[0].session.windows = [1, 2]),
         (r) => (r.results[0].session = {}),
         (r) => (r.results[2].size = -1),
-        (r) => (r.results[1].oneshot.ir = 1.5)
+        (r) => (r.results[1].oneshot.ir = 1.5),
+        (r) => (r.results[1].regressions[0].metric = "<b>"),
+        (r) => (r.results[1].regressions[0].ratio = "1.03"),
+        (r) => delete r.results[0].regressions
     ]) {
-        const report = edits();
+        const report = streams();
         mutate(report);
-        assert.throws(() => editSection(report));
+        assert.throws(() => streamSection(report));
     }
 });
 
@@ -362,7 +383,7 @@ function fixture() {
             "benchmark-report-stages-1",
             "benchmark-report-attributes-1",
             "ci-inputs",
-            "benchmark-report-edits-1"
+            "benchmark-report-streams-1"
         ].map((name, id) => ({
             id,
             name,
@@ -372,7 +393,7 @@ function fixture() {
         jobs: [
             "Benchmark / Measure - parse stages against cmark",
             "Benchmark / Measure - the attribute grammar against lexbor",
-            "Benchmark / Measure - edits and streams"
+            "Benchmark / Measure - streams"
         ].map((name) => ({ name, status: "completed", conclusion: "success", run_attempt: 1 }))
     };
     const snapshot = (run_id) => {
@@ -409,7 +430,7 @@ function fixture() {
             read: (bytes) => {
                 if (bytes.toString() === "102") return [state.inputs];
                 if (bytes.toString() === "2") return [state.original?.inputs ?? state.inputs];
-                if (bytes.toString() === "3") return [edits()];
+                if (bytes.toString() === "3") return [streams()];
                 return bytes.toString() === "0" ? [stageReport(112), stageReport(100)] : [attributes()];
             }
         });
@@ -920,7 +941,7 @@ test("producer and publisher keep PR execution separate from write permissions",
     for (const [kind, members] of [
         ["stages", ["stages.json", "baseline/stages.json"]],
         ["attributes", ["attributes.json"]],
-        ["edits", ["edits.json"]]
+        ["streams", ["streams.json"]]
     ]) {
         const upload = producer.jobs[kind].steps.find(
             (step) => step.with?.name === `benchmark-report-${kind}-` + "${{ github.run_attempt }}"

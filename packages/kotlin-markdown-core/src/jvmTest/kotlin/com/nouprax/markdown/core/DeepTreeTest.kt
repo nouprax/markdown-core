@@ -65,38 +65,35 @@ class DeepTreeTest {
     }
 
     /**
-     * The deep documents of a session (plan gates 4.9): the edit at the
-     * deepest leaf publishes a document that compares, walks, locates and
+     * The deep documents of a session (plan gates 4.8): the append that ends
+     * the deepest leaf publishes a document that compares, walks, locates and
      * describes like a fresh one, and the previous document is released while
      * the new one is alive.
      */
     private fun deepSession(depth: Int) {
-        MarkdownSession("- ".repeat(depth) + "leaf\n").use { session ->
-            val (previous, edited) = edit(session, depth)
+        MarkdownSession("- ".repeat(depth) + "lea").use { session ->
+            val (previous, appended) = append(session)
             collect(previous)
             val text = session.text
             val visitor = NodeVisitor()
-            edited.walk(visitor)
+            appended.walk(visitor)
             assertEquals(depth * 2 + 3, visitor.nodes.size)
             val leaf = assertIs<Text>(visitor.nodes.last())
             assertEquals("lean", leaf.literal)
             val column = depth * 2 + 1
-            assertEquals(listOf(Scope(Position(1, column), Position(1, column + 3))), edited.scope(leaf, text))
-            assertSame(leaf, edited.node(Position(1, column), text))
-            assertEquals("Document(id=1)", edited.toString())
+            assertEquals(listOf(Scope(Position(1, column), Position(1, column + 3))), appended.scope(leaf, text))
+            assertSame(leaf, appended.node(Position(1, column), text))
+            assertEquals("Document(id=1)", appended.toString())
         }
     }
 
-    /** Edits the deepest leaf of [session]; the previous document is unreachable on return. */
-    private fun edit(
-        session: MarkdownSession,
-        depth: Int,
-    ): Pair<WeakReference<Document>, Document> {
+    /** Appends the end of the deepest leaf of [session]; the previous document is unreachable on return. */
+    private fun append(session: MarkdownSession): Pair<WeakReference<Document>, Document> {
         val previous = session.document
-        val edited = session.edit(listOf(TextEdit(depth * 2, depth * 2 + 4, "lean")))
-        assertNotEquals(previous, edited)
-        assertEquals(previous.content.single().id, edited.content.single().id)
-        return WeakReference(previous) to edited
+        val appended = session.append("n\n")
+        assertNotEquals(previous, appended)
+        assertEquals(previous.content.single().id, appended.content.single().id)
+        return WeakReference(previous) to appended
     }
 
     /** Parses [source] and keeps only the list [levels] levels down; the document is unreachable on return. */

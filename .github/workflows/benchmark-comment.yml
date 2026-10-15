@@ -31,7 +31,7 @@ jobs:
                       scripts/benchmark/publish-comment.mjs
                       scripts/shared/ci-inputs.mjs
                       scripts/benchmark/stage-budget.mjs
-                      scripts/benchmark/edit-gates.mjs
+                      scripts/benchmark/stream-gates.mjs
                       scripts/benchmark/callgrind.mjs
                       scripts/benchmark/report.mjs
                   sparse-checkout-cone-mode: false

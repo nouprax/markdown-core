@@ -31,7 +31,7 @@
         "audit:toolchains": "scripts/audit/check-toolchain-versions.sh",
         "benchmark": "node scripts/benchmark/run.mjs",
         "benchmark:attributes": "node scripts/benchmark/measure-attributes.mjs",
-        "benchmark:edits": "node scripts/benchmark/edits.mjs",
+        "benchmark:streams": "node scripts/benchmark/streams.mjs",
         "build:c": "cmake --preset default && cmake --build --preset default --parallel",
         "build:swift": "swift build",
         "check:contracts": "node scripts/conformance/check-canonical-ast.mjs && scripts/tooling/run-gradle.sh :packages:kotlin-markdown-core:contracts:list-naming:compileKotlin",

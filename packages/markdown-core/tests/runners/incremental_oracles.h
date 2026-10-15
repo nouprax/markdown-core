@@ -1,15 +1,15 @@
 /* The oracles of the incremental gates (docs/plans/2026-09-29-incremental-gates.md,
- * section 4), over one subject (edit_harness.h): the incremental runner checks
- * the tracked correctness set with them, and the session fuzz target checks
- * the scripts it decodes.
+ * section 4), over one subject (incremental_harness.h): the incremental runner
+ * checks the tracked correctness set with them, and the session fuzz target
+ * checks the scripts it decodes.
  *
  *   3.1  a composite document's fresh parse has as many root children as its
  *        parts' fresh parses together
  *   4.1  the subject's text equals the harness's text model; the canonical
  *        dump of its document equals the dump of a fresh parse of that text
  *        in the same unit, and so do its extents in walk order, its scope and
- *        hit-test answers and its definition tables (after every chunk of a
- *        stream too, 4.6)
+ *        hit-test answers and its definition tables (after every append of a
+ *        stream, 4.6)
  *   4.2  ids are unique; over the lineage an id keeps its kind and a retired
  *        id never returns; a fresh parse numbers its nodes from 1 in
  *        canonical walk order
@@ -18,9 +18,6 @@
  *   4.4  each node has the id of the old node the matching rule says it
  *        continues, or an id the lineage has never seen
  *   4.5  every scripted identity expectation holds
- *   4.7  a batch's dump equals the dump after its edits one at a time, in
- *        descending order of their start offsets
- *   4.8  every range that names no range of the text is rejected
  *
  * Scope and hit-test queries each walk the document, so 4.1 asks them for a
  * sample of the nodes spread evenly over the walk rather than for every node.
@@ -34,7 +31,7 @@
 
 #include <markdown_core.h>
 
-#include "edit_harness.h"
+#include "incremental_harness.h"
 
 /* The ids a lineage has issued: the kind each first named, and whether it
  * is live or retired. */
@@ -45,7 +42,7 @@ typedef struct history {
 } history;
 
 typedef struct run {
-    const eh_subject_class *subject;
+    const ih_subject_class *subject;
     /* What failed, by oracle, and the first failure's description. */
     size_t failures;
     const char *first_oracle;
@@ -70,19 +67,16 @@ void fail(run *state, const char *oracle, const char *format, ...);
 bool failed_all(const run *state);
 /* Whether a self-test run has seen every failure it needs. */
 bool stopped(const run *state);
-markdown_core_text_unit unit_of(eh_unit unit);
+markdown_core_text_unit unit_of(ih_unit unit);
 
-/* An edit script in one unit: steps are converted from the script's UTF-8
- * offsets to the unit through the text model before each step. */
-void run_edits(run *state, const char *where, eh_unit unit, const uint8_t *document, size_t length,
-               const eh_script *script);
-/* A stream from an empty session: every chunk is appended, and 4.1 to 4.4
- * hold after each one (4.6). */
-void run_stream(run *state, const char *where, eh_unit unit, const uint8_t *document, const size_t *ends, size_t count);
+/* The run's subject, opened in `unit` on `opened` and then given `steps`:
+ * 4.1 to 4.5 hold after the open and after every append (4.6). */
+void run_appends(run *state, const char *where, ih_unit unit, const uint8_t *opened, size_t opened_length,
+                 const ih_step *steps, size_t count);
 /* 3.1: parts that keep their meaning when joined. */
-void check_parts(run *state, const char *where, const uint8_t *document, size_t length, const eh_case *entry);
-/* 4.11: `size` bytes of `data` decoded as a document and an edit script
- * (incremental_fuzz.c), whose steps are checked in both units. */
+void check_parts(run *state, const char *where, const uint8_t *document, size_t length, const ih_case *entry);
+/* 4.10: `size` bytes of `data` decoded as a document and the appends that
+ * follow it (incremental_fuzz.c), checked in both units. */
 void check_script_bytes(run *state, const uint8_t *data, size_t size);
 
 #endif

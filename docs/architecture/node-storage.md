@@ -17,7 +17,7 @@ same alignment, and that padding is included in measured memory costs.
 A node's storage is a fixed-size slot: a header naming the slab it came from,
 the node, and room for its kind's record. A parse takes slots from slabs --
 one allocation holding many slots -- through a pool its caller lends it: a
-session's, which outlives each of its edits, or one made for a single parse.
+session's, which outlives each of its appends, or one made for a single parse.
 A caller with no parse takes one slot from the allocator; the header says
 which, and nothing else about the storage is visible through the node.
 
@@ -25,8 +25,8 @@ A slab lives while anything holds it: every slot taken from it, and the pool
 while that slab is the one it takes slots from. A slot released into a pool
 goes back to it and is handed out again, initialized, before another slot is
 taken from a slab, so the storage a parse holds is bounded by its peak live
-node count rather than by how many nodes it made, and a session's edits reuse
-the slots of the nodes they retire instead of pinning a slab per edit. A slot
+node count rather than by how many nodes it made, and a session's appends
+reuse the slots of the nodes they retire instead of pinning a slab per append. A slot
 released with no pool drops its hold, and the slab is freed with its last one
 -- by whichever release that turns out to be. Disposing the pool drops the
 holds the pool itself has (its released slots, its current slab) and nothing
@@ -54,7 +54,7 @@ declares -- is storage of varied sizes, cut from the node slabs beside the
 nodes. A size is rounded up to a class, and storage of each class is a slot
 like any other: released into the pool, it is handed out again for its class
 before a slab is cut further, so this storage too is bounded by what is live,
-not by how much a session's edits made. Storage larger than the largest class
+not by how much a session's appends made. Storage larger than the largest class
 is a slot from the allocator.
 
 ## A node's place and its value

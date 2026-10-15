@@ -2,7 +2,6 @@
 
 #include <jni.h>
 #include <stdint.h>
-#include <stdlib.h>
 
 /* The MCB3 message's u32 length, which counts the whole message. */
 static uint32_t message_length(const uint8_t *message) {
@@ -98,46 +97,6 @@ static jbyteArray JNICALL native_session_new(JNIEnv *environment, jobject receiv
     return result;
 }
 
-/* Applies `fields.length / 3` edits: start, end and text size each, as
- * markdown_core_wire_session_edit takes them, with their texts in `texts`. */
-static jbyteArray JNICALL native_session_edit(JNIEnv *environment, jobject receiver, jlong session, jintArray fields,
-                                              jbyteArray texts) {
-    jsize count;
-    size_t *edits;
-    jint *values;
-    jbyte *text_bytes;
-    uint8_t *message;
-    (void)receiver;
-
-    count = (*environment)->GetArrayLength(environment, fields);
-    edits = NULL;
-    if (count != 0) {
-        edits = malloc((size_t)count * sizeof(*edits));
-        if (edits == NULL) {
-            return NULL;
-        }
-        values = (*environment)->GetIntArrayElements(environment, fields, NULL);
-        if (values == NULL) {
-            free(edits);
-            return NULL;
-        }
-        for (jsize index = 0; index < count; ++index) {
-            /* A negative offset converts to a size past the end of any text. */
-            edits[index] = (size_t)values[index];
-        }
-        (*environment)->ReleaseIntArrayElements(environment, fields, values, JNI_ABORT);
-    }
-    if (!pin_bytes(environment, texts, &text_bytes)) {
-        free(edits);
-        return NULL;
-    }
-    message = markdown_core_wire_session_edit(session_address(session), edits, (size_t)count / 3,
-                                              (const uint8_t *)text_bytes);
-    unpin_bytes(environment, texts, text_bytes);
-    free(edits);
-    return message_array(environment, message);
-}
-
 static jbyteArray JNICALL native_session_append(JNIEnv *environment, jobject receiver, jlong session, jbyteArray text) {
     jbyte *text_bytes;
     uint8_t *message;
@@ -186,7 +145,6 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *virtual_machine, void *reserved) {
     static const JNINativeMethod methods[] = {
         {"parsePayload", "([B)[B", (void *)native_parse},
         {"sessionNewPayload", "([BZ[J)[B", (void *)native_session_new},
-        {"sessionEditPayload", "(J[I[B)[B", (void *)native_session_edit},
         {"sessionAppendPayload", "(J[B)[B", (void *)native_session_append},
         {"sessionText", "(J)[B", (void *)native_session_text},
         {"sessionFree", "(J)V", (void *)native_session_free},

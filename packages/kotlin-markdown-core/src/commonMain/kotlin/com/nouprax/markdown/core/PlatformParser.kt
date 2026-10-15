@@ -14,16 +14,6 @@ internal interface PlatformSession {
     /** The document the latest step published. */
     val document: Document
 
-    /**
-     * Applies a batch of `fields.size / 3` edits: each is three fields of
-     * [fields] -- start, end, and the byte size of its text -- and their
-     * texts follow one another in [texts] in the order listed.
-     */
-    fun edit(
-        fields: IntArray,
-        texts: ByteArray,
-    ): Document
-
     /** Appends the UTF-8 [text]. */
     fun append(text: ByteArray): Document
 
@@ -34,7 +24,7 @@ internal interface PlatformSession {
     fun free()
 }
 
-/** A session of the UTF-8 [source], with offsets and columns counted in [unit]. */
+/** A session of the UTF-8 [source], with columns counted in [unit]. */
 internal expect fun newPlatformSession(
     source: ByteArray,
     unit: TextUnit,

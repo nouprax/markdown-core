@@ -526,13 +526,13 @@ size_t markdown_core_node_release(markdown_core_node *node);
  * what else a node owns of its own size -- the lists of its source, a label
  * it declares -- in storage of that size, cut from the slabs its nodes are.
  * A pool holds the slabs of all three. A parse takes every slot from the
- * pool its caller lends it -- a session's, which outlives each of its edits,
- * or one the caller makes for a single parse -- and a caller with no pool
- * takes one slot from the allocator. A slot released into a pool goes back
- * to it for reuse, so a session's edits reuse the slots of the nodes they
- * retire instead of pinning a slab per edit; a slot released with no pool
- * drops its slab hold. So a subtree unlinked from a parsed document is as
- * good as one built by hand: it outlives the pool it came from and is
+ * pool its caller lends it -- a session's, which outlives each of its
+ * appends, or one the caller makes for a single parse -- and a caller with no
+ * pool takes one slot from the allocator. A slot released into a pool goes
+ * back to it for reuse, so a session's appends reuse the slots of the nodes
+ * they retire instead of pinning a slab per append; a slot released with no
+ * pool drops its slab hold. So a subtree unlinked from a parsed document is
+ * as good as one built by hand: it outlives the pool it came from and is
  * released by `markdown_core_node_free` like any other. The size of what it
  * keeps alive is the slab, not the node.
  *

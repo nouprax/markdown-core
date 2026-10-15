@@ -558,11 +558,12 @@ static markdown_core_place runs_window(const markdown_core_node *node, uint32_t 
  *
  * Matching runs within the relation of a matched owner. A node's source
  * runs from where its first run starts to where its last ends. An old node's
- * anchor is the first byte of its source that survived the edits, and a new
- * node of its kind whose source holds the anchor's image continues the
- * earliest such old sibling. Both relations are in source order, so one
- * pointer into the old relation moves forward with the new one. The root continues the old
- * root. A new node that continues nothing takes the next id.
+ * anchor is the first byte of its source, which an append leaves at its
+ * offset, and a new node of its kind whose source holds the anchor continues
+ * the earliest such old sibling; a node with no source has no anchor. Both
+ * relations are in source order, so one pointer into the old relation moves
+ * forward with the new one. The root continues the old root. A new node that
+ * continues nothing takes the next id.
  *
  * A matched node is SAME when its scalars, extent and runs equal its old
  * node's, both have the same relations, every old node of each relation was
@@ -585,49 +586,10 @@ typedef struct {
 } publish_swap;
 
 typedef struct {
-    const markdown_core_byte_edit *edits;
-    size_t count;
-    /* shift[i] is the length change of edits [0, i). */
-    int64_t *shift;
     /* Room for a pair per old node: each is matched at most once. */
     publish_swap *swaps;
     size_t swap_count;
 } publish_identity;
-
-/* The first edit that ends after old byte `x`: every one before it ends at
- * or before x, so x is past it and shifted by it. */
-static size_t edit_after(const publish_identity *identity, uint32_t x) {
-    const markdown_core_byte_edit *edits = identity->edits;
-    size_t lo = 0, hi = identity->count;
-    while (lo < hi) {
-        size_t mid = lo + (hi - lo) / 2;
-        if (edits[mid].end <= x) {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-    return lo;
-}
-
-/* The image of the first byte of [start, end) that no edit replaced, or false
- * when every byte of it was replaced. A byte before an edit keeps its offset,
- * and a byte after one moves by the length change of the edits before it. */
-static bool anchor_mapped(const publish_identity *identity, uint32_t start, uint32_t end, uint32_t *mapped) {
-    const markdown_core_byte_edit *edits = identity->edits;
-    size_t lo = edit_after(identity, start), x = start;
-    while (lo < identity->count && edits[lo].start <= x) {
-        if (x < edits[lo].end) {
-            x = edits[lo].end;
-        }
-        lo++;
-    }
-    if (x >= end) {
-        return false;
-    }
-    *mapped = (uint32_t)((int64_t)x + identity->shift[lo]);
-    return true;
-}
 
 static bool publish_reserve(void **values, size_t *capacity, size_t count, size_t size) {
     if (count < *capacity) {
@@ -1161,21 +1123,20 @@ static void publish_pair(publish_match_frame *frame, int field, bool continues) 
 
 /* The old node a node whose source is `source` continues in the old relation
  * `owner` pairs with the one in hand, stepping past every old node whose
- * anchor's image lies before the node's source ends, and where the matched
- * old node's source starts. An old node stepped past without being matched
- * makes the owner differ. */
+ * anchor lies before the node's source ends, and where the matched old
+ * node's source starts. An old node stepped past without being matched makes
+ * the owner differ. */
 static markdown_core_node *publish_match(publish_walk *walk, publish_match_frame *owner, const markdown_core_node *node,
                                          markdown_core_place source, uint32_t *old_start) {
     markdown_core_node *match = NULL;
     while (owner->old_item != owner->old_end) {
         markdown_core_node *old = owner->old_item;
         const markdown_core_place window = runs_window(old, owner->old_source);
-        uint32_t mapped;
-        bool anchored = anchor_mapped(&walk->identity, window.start, window.end, &mapped);
-        if (anchored && mapped >= source.end) {
+        const bool anchored = window.start < window.end;
+        if (anchored && window.start >= source.end) {
             break;
         }
-        if (anchored && mapped >= source.start && !match && old->kind == node->kind) {
+        if (anchored && window.start >= source.start && !match && old->kind == node->kind) {
             match = old;
             *old_start = window.start;
         } else {
@@ -1229,19 +1190,10 @@ static void publish_verdict(publish_walk *walk, publish_match_frame *owner, mark
     }
 }
 
-/* The length change before each edit, which anchor images shift by, and
- * room for a same pair per old node. */
+/* Room for a same pair per old node. */
 static bool publish_prepare(publish_identity *identity, size_t old_count) {
-    identity->shift = markdown_core_alloc(identity->count + 1, sizeof(*identity->shift));
     identity->swaps = markdown_core_realloc(NULL, old_count * sizeof(*identity->swaps));
-    if (!identity->shift || !identity->swaps) {
-        return false;
-    }
-    for (size_t i = 0; i < identity->count; i++) {
-        const markdown_core_byte_edit *edit = &identity->edits[i];
-        identity->shift[i + 1] = identity->shift[i] + (int64_t)edit->size - (int64_t)(edit->end - edit->start);
-    }
-    return true;
+    return identity->swaps != NULL;
 }
 
 /* PUBLISHING WHAT CONTINUES THE PREVIOUS TREE: the root continues the
@@ -1465,7 +1417,7 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
     publish_placed placed;
     bool ok, same = false;
     if (previous) {
-        walk.identity = (publish_identity){revision->edits, revision->edit_count, NULL, NULL, 0};
+        walk.identity = (publish_identity){NULL, 0};
         ok = publish_prepare(&walk.identity, revision->node_count) && publish_matched(&walk, root, previous, &same);
     } else {
         unsigned slot = slot_of(root);
@@ -1496,7 +1448,6 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
     }
     markdown_core_free(walk.places.items);
     if (previous) {
-        markdown_core_free(walk.identity.shift);
         markdown_core_free(walk.identity.swaps);
     }
     return ok;

@@ -174,8 +174,7 @@ static void check_session_shared_resource(void) {
 }
 
 /* A session's steps each answer with the message of the document they
- * published or of their failure, and the session's text follows the edits,
- * which a batch packs as sizes and one run of texts. */
+ * published, and the session's text follows the appends. */
 static void check_session(void) {
     static const char source[] = "# One\n\npair \xf0\x9f\x98\x80 here\n";
     markdown_core_session *session;
@@ -186,28 +185,16 @@ static void check_session(void) {
     if (session == NULL) {
         return;
     }
-    /* In UTF-16 the pair is offsets 12 and 13, so " here" starts at 14. */
-    const size_t edits[] = {14, 19, 3, 2, 5, 3};
-    message = markdown_core_wire_session_edit(session, edits, 2,
-                                              (const uint8_t *)" ok"
-                                                               "Two");
-    check(message != NULL && message_status(message) == 0, "a batch answers with its document");
-    markdown_core_wire_free(message);
     message = markdown_core_wire_session_append(session, (const uint8_t *)"\nmore", 5);
     check(message != NULL && message_status(message) == 0, "an append answers with its document");
     markdown_core_wire_free(message);
-    const char expected[] = "# Two\n\npair \xf0\x9f\x98\x80 ok\n\nmore";
+    const char expected[] = "# One\n\npair \xf0\x9f\x98\x80 here\n\nmore";
     size_t size = markdown_core_session_text_size(session);
     uint8_t text[64] = {0};
     if (size < sizeof(text)) {
         markdown_core_session_text(session, text);
     }
     check(size == strlen(expected) && memcmp(text, expected, size) == 0, "the session's text follows its steps");
-    const size_t between[] = {13, 13, 0};
-    message = markdown_core_wire_session_edit(session, between, 1, NULL);
-    check(message != NULL && message_status(message) == MARKDOWN_CORE_INSIDE_SCALAR,
-          "an offset between the units of one scalar answers INSIDE_SCALAR");
-    markdown_core_wire_free(message);
     markdown_core_session_free(session);
 }
 

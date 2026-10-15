@@ -87,12 +87,12 @@ if (declared.join("\n") !== exported.join("\n")) {
 if (declared.join("\n") !== machOExported.join("\n")) {
     throw new Error("C header declarations and the Mach-O export list differ");
 }
-// A session is the one object that changes: its text takes edits and appends
+// A session is the one object that changes: its text takes appends
 // (docs/plans/2026-09-29-incremental-parsing.md, R6 and R8).
 const sessionText = /^markdown_core_session_(?:new|append)$/;
 for (const symbol of declared) {
     if (
-        (!sessionText.test(symbol) && /_(?:set|insert|append|prepend|replace|unlink|new|render)(?:_|$)/.test(symbol)) ||
+        (!sessionText.test(symbol) && /_(?:set|insert|append|prepend|replace|unlink|edit|new|render)(?:_|$)/.test(symbol)) ||
         /_(?:feed|stream|snapshot|delta|diagnostic)(?:_|$)/.test(symbol) ||
         /_parser_(?:new|new_with_mem|feed|finish|free)$/.test(symbol) ||
         /_parse_file$/.test(symbol)
@@ -135,8 +135,8 @@ fi
 retired_surface_terms='render|feed|stream|snapshot|delta|diagnostic|concrete|Concrete|CST|ConcreteSyntax|Token|Trivia|Recovery|Walker|WalkEvent'
 # Mutation verbs end at an identifier or camel/snake-case word boundary;
 # a noun sharing a lowercase prefix does not name a mutation operation.
-mutation_surface_terms='set[A-Z]|(insert|append|prepend|replace|unlink)([A-Z_]|\b)'
-# A session is the one object that changes: its text takes edits and appends
+mutation_surface_terms='set[A-Z]|(insert|append|prepend|replace|unlink|edit)([A-Z_]|\b)'
+# A session is the one object that changes: its text takes appends
 # (docs/plans/2026-09-29-incremental-parsing.md, R6 and R8). Only its own
 # `append` is exempt from the mutation verbs.
 session_text_operation='/MarkdownSession\.(swift|kt):[0-9]+:[[:space:]]*public (func|fun) append\('

@@ -2,21 +2,16 @@ import MarkdownCoreC
 
 /// Why a call of the library failed.
 public enum ErrorCode: Sendable, Hashable {
-    /// An allocation failed, or the source or a session's edited text exceeds
-    /// the engine's 1 GiB capacity. The parse is abandoned rather than
+    /// An allocation failed, or the source or a session's text exceeds the
+    /// engine's 1 GiB capacity. The parse is abandoned rather than
     /// returning a document with something missing from it.
     case allocationFailed
-    /// The source is too short for the node a scope or dump reads, a
-    /// position's line or column is below 1, or a session rejects an edit's
-    /// range: its start after its end, its end past the text, or two edits
-    /// that overlap.
+    /// The source is too short for the node a scope or dump reads, or a
+    /// position's line or column is below 1.
     case outOfBounds
     /// A value was read as another kind. It is the engine's code, shared by
     /// every binding; typed Swift nodes never reach it.
     case kindMismatch
-    /// A session edit's offset falls inside a scalar: at a continuation byte
-    /// in UTF-8, or between the two units of one scalar in UTF-16.
-    case insideScalar
 }
 
 /// The library's one error: a call that cannot answer without crashing or

@@ -1,0 +1,11 @@
+markdown-core stream script 1
+script identity-row-appended-to-table identity
+append 7c2065207c2066207c0a
+expect changed Document 0
+expect changed Table 0
+expect changed TableRow 30
+expect changed TableCell 31
+expect changed Text 32
+expect changed TableCell 35
+expect changed Text 36
+expect only

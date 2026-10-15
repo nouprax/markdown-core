@@ -4,9 +4,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { inputVersion, sameInputs, validationSource } from "../shared/ci-inputs.mjs";
-import { groupWindows } from "./edit-gates.mjs";
+import { groupWindows, REGRESSION_LIMIT } from "./stream-gates.mjs";
 import { grammarComparisons } from "./report.mjs";
-import { stageBudget, ONESHOT_IR_LIMIT } from "./stage-budget.mjs";
+import { stageBudget, STAGE_IR_LIMIT } from "./stage-budget.mjs";
 
 const marker = "<!-- markdown-core-benchmark -->";
 const STAGE_NAMES = { source_to_buffer: "Source → buffer", buffer_to_ast: "Buffer → AST" };
@@ -28,11 +28,11 @@ const measurements = [
         render: attributeSection
     },
     {
-        kind: "edits",
-        title: "Edits and streams",
-        job: "Benchmark / Measure - edits and streams",
-        members: ["edits.json"],
-        render: editSection
+        kind: "streams",
+        title: "Streams",
+        job: "Benchmark / Measure - streams",
+        members: ["streams.json"],
+        render: streamSection
     }
 ];
 const count = (value) => {
@@ -114,7 +114,7 @@ export function stageSection(current, baseline) {
         "Totals sum this finite workload; they are not elapsed time or a general speedup claim. " +
             "Parser creation and release are not parsing and are in no figure here.",
         "",
-        `Stage budget (+${((ONESHOT_IR_LIMIT - 1) * 100).toFixed(0)}% per document and stage): **${number(rows.length - failures.length)}/${number(rows.length)} passed**, ${number(failures.length)} exceeded. Required when CI inputs require execution.`,
+        `Stage budget (+${((STAGE_IR_LIMIT - 1) * 100).toFixed(0)}% per document and stage): **${number(rows.length - failures.length)}/${number(rows.length)} passed**, ${number(failures.length)} exceeded. Required when CI inputs require execution.`,
         "",
         "<details><summary>Largest stage ratios (up to 10 document stages)</summary>",
         "",
@@ -199,41 +199,32 @@ export function attributeSection(report) {
     return lines.join("\n");
 }
 
-const EDIT_FAMILIES = [
-    "typing",
-    "lines",
-    "markers",
-    "ranges",
-    "far",
-    "batch",
-    "declarations",
-    "undo",
-    "random",
-    "tokens",
-    "scalars",
-    "rows"
-];
+const STREAM_SUBJECTS = ["reparse", "session"];
+const STREAM_FAMILIES = ["tokens", "scalars", "rows"];
+const STREAM_METRICS = ["p95", "max", "total"];
 
 // The R and S columns by family and size, the grammar corpus apart from the
-// shapes. Every workload's windows are validated counts; names never reach the
-// comment.
-export function editSection(report) {
+// shapes, and with a base revision the workloads that pass 6.4. Every
+// workload's windows are validated counts; names never reach the comment.
+export function streamSection(report) {
     if (
-        report?.schemaVersion !== 2 ||
-        JSON.stringify(report.subjects) !== JSON.stringify(["reparse", "session"]) ||
+        report?.schemaVersion !== 3 ||
+        JSON.stringify(report.subjects) !== JSON.stringify(STREAM_SUBJECTS) ||
         !Array.isArray(report.results)
     ) {
-        throw new Error("Invalid edit report");
+        throw new Error("Invalid stream report");
     }
     digest(report.workloads?.digest);
+    if (report.baseline !== null) digest(report.baseline?.revision, 40);
     if (!report.results.length || report.results.length !== report.workloads.count) {
-        throw new Error("Incomplete edit report");
+        throw new Error("Incomplete stream report");
     }
     const windows = (values) => Array.isArray(values) && values.length && values.every((value) => count(value));
+    let regressed = 0;
     for (const row of report.results) {
-        if (!EDIT_FAMILIES.includes(row.family)) throw new Error("Invalid edit family");
+        if (!STREAM_FAMILIES.includes(row.family)) throw new Error("Invalid stream family");
         if (row.size !== null) count(row.size);
-        if (!windows(row.windows)) throw new Error("Invalid edit windows");
+        if (!windows(row.windows)) throw new Error("Invalid stream windows");
         if (
             row.session !== null &&
             (!windows(row.session?.windows) || row.session.windows.length !== row.windows.length)
@@ -241,6 +232,19 @@ export function editSection(report) {
             throw new Error("Invalid session windows");
         }
         count(row.oneshot?.ir);
+        if (
+            !Array.isArray(row.regressions) ||
+            (report.baseline === null && row.regressions.length) ||
+            !row.regressions.every(
+                (entry) =>
+                    STREAM_SUBJECTS.includes(entry?.subject) &&
+                    STREAM_METRICS.includes(entry.metric) &&
+                    Number.isFinite(entry.ratio)
+            )
+        ) {
+            throw new Error("Invalid stream regressions");
+        }
+        if (row.regressions.length) regressed++;
     }
     const sources = { grammar: "Grammar corpus", shapes: "Shapes" };
     const groups = groupWindows(report.results, (row) =>
@@ -249,9 +253,17 @@ export function editSection(report) {
     const figures = (column) =>
         column ? [column.p50, column.p95, column.max, column.total].map(number) : ["", "", "", ""];
     const lines = [
-        "### Edits and streams",
+        "### Streams",
         "",
-        `Subjects: \`reparse\` (R) and \`session\` (S), Ir per window of steps; S runs the workloads of at most 1,024 steps. ${number(report.results.length)} workloads · \`${report.workloads.digest.slice(0, 16)}\`.`,
+        `Subjects: \`reparse\` (R) and \`session\` (S), Ir per window of chunks; S runs the streams of at most 1,024 chunks. ${number(report.results.length)} workloads · \`${report.workloads.digest.slice(0, 16)}\`.`
+    ];
+    if (report.baseline) {
+        lines.push(
+            "",
+            `Stream regressions (+${((REGRESSION_LIMIT - 1) * 100).toFixed(0)}% per workload and subject in p95, max and total, against \`${report.baseline.revision.slice(0, 12)}\`): **${number(report.results.length - regressed)}/${number(report.results.length)} passed**, ${number(regressed)} exceeded.`
+        );
+    }
+    lines.push(
         "",
         "| Documents | Family | Size | Workloads | Windows | R p50 | R p95 | R max | R total | S p50 | S p95 | S max | S total | Highest S / R | One-shot total |",
         "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
@@ -269,7 +281,7 @@ export function editSection(report) {
                 number(group.oneshot)
             ].join(" | ")} |`;
         })
-    ];
+    );
     return lines.join("\n");
 }
 
