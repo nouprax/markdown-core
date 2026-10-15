@@ -32,12 +32,12 @@ typedef enum {
  * continues it (docs/plans/2026-09-29-incremental-parsing.md, 5.9): every
  * node matched to an old node takes its id, every other node takes the next
  * id after `last_id`, and a matched node equal to its old node as a value is
- * that old node. On success the parse owns `previous`: it is the returned root, or it
- * is released into `pool` with every other node it retires, and `last_id` is
- * the last id issued. `node_count` is the number of nodes in `previous`,
- * and on success the number in the published tree. A fresh parse continues
- * nothing: `previous` is NULL and `last_id` is 0, so its root is 1 and every
- * node is numbered in canonical walk order.
+ * that old node. On success the parse owns `previous`: it is the returned
+ * root, or it is released into `pool` with every other node it retires, and
+ * `last_id` is the last id issued. `node_count` is the number of nodes in
+ * `previous`, and on success the number in the published tree. A fresh parse
+ * continues nothing: `previous` is NULL and `last_id` is 0, so its root is 1
+ * and every node is numbered in canonical walk order.
  *
  * `pool` lends the parse every node and resource slot it takes (node.h); it
  * outlives the parse, and its owner disposes it. */

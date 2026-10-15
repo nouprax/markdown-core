@@ -14,10 +14,10 @@ const pointerBytes = 4;
 const sessions = new FinalizationRegistry<number>((session) => native.markdown_core_session_free(session));
 
 /**
- * A text and the document parsed from it, extended together by each append.
- * The new document continues the previous one: a node that continues an old
- * node keeps its `id`. Every document a session returns is an immutable value
- * that borrows nothing.
+ * A text and the document parsed from it, extended together as text is added
+ * to its end. The new document continues the previous one: a node that
+ * continues an old node keeps its `id`. Every document a session returns is an
+ * immutable value that borrows nothing.
  *
  * The session's state lives in WebAssembly: `dispose()` releases it,
  * and a session collected without it is released then.
