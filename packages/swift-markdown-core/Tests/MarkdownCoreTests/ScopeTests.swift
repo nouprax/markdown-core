@@ -85,8 +85,8 @@ import Testing
         #expect(try document.dump(in: covering) == document.dump(in: source))
     }
 
-    @Test("a node in an inline root's content has a scope per source range its content was read from")
-    func contentSources() throws {
+    @Test("an inline node has a scope per run of its own source")
+    func inlineSources() throws {
         let source = "> a *b\n> c* d\n"
         let document = try Document.parse(source)
         let callout = try #require(document.content.first as? Callout)
@@ -95,18 +95,20 @@ import Testing
         func place(_ start: (Int32, Int32), _ end: (Int32, Int32)) -> Scope {
             Scope(start: Position(line: start.0, column: start.1), end: Position(line: end.0, column: end.1))
         }
-        // The paragraph reads its own bytes, one line each, in two copied runs;
-        // the second quote marker between them is not its own.
-        #expect(block.runs == [Run(lead: 0, span: 5, length: 5), Run(lead: 2, span: 4, length: 4)])
+        // The paragraph's runs are its own bytes, one line each, the first
+        // leading from the callout's start; the second quote marker between
+        // them is not its own.
+        #expect(block.runs == [Run(lead: 2, span: 5), Run(lead: 2, span: 4)])
         #expect(try document.scope(of: block, in: source) == [place((1, 3), (2, 0)), place((2, 3), (2, 6))])
         // The emphasis is at offset 2 of the content "a *b\nc* d", and its
-        // source skips the marker too.
+        // runs, the first leading from the end of the text before it, skip the
+        // marker too.
         #expect(emphasis.extent == Extent(lead: 0, span: 5))
-        #expect(emphasis.runs.isEmpty)
+        #expect(emphasis.runs == [Run(lead: 0, span: 3), Run(lead: 2, span: 2)])
         #expect(try document.scope(of: emphasis, in: source) == [place((1, 5), (2, 0)), place((2, 3), (2, 4))])
         #expect(try document.node(at: Position(line: 2, column: 1), in: source)?.isEqual(callout) == true)
         #expect(try document.node(at: Position(line: 2, column: 4), in: source)?.isEqual(emphasis) == true)
-        // A subtree's dump places it in its root's content and draws it from
+        // A subtree's dump places it by the document's walk and draws it from
         // its own level.
         #expect(
             try document.dump(emphasis, in: source)
@@ -115,20 +117,20 @@ import Testing
                 + "├── SoftBreak scope=1:7..2:0 anchor=null attributes={} children=0\n"
                 + "└── Text scope=2:3..2:3 anchor=null attributes={} literal=\"c\" children=0\n"
         )
-        // A continuation indent moves the paragraph's runs, never what its
-        // content holds: the stripped space is its own source without content.
+        // A continuation indent moves the runs, never the content's extents:
+        // the stripped space is the paragraph's own source, and the emphasis's
+        // second run starts at it.
         let wider = try Document.parse("> a *b\n>  c* d\n")
         let moved = try #require((wider.content.first as? Callout)?.content.first as? Paragraph)
-        let runs = [
-            Run(lead: 0, span: 5, length: 5), Run(lead: 2, span: 1, length: 0), Run(lead: 0, span: 4, length: 4),
-        ]
-        #expect(moved.runs == runs)
+        #expect(moved.runs == [Run(lead: 2, span: 5), Run(lead: 2, span: 5)])
         #expect(moved != block)
-        #expect(moved.content[1].isEqual(emphasis))
+        #expect(moved.content[1].extent == emphasis.extent)
+        #expect(moved.content[1].runs == [Run(lead: 0, span: 3), Run(lead: 2, span: 3)])
+        #expect(!moved.content[1].isEqual(emphasis))
     }
 
-    @Test("a block whose runs read no content is no inline root, and its runs cut its range")
-    func sourceWithoutContent() throws {
+    @Test("a block in a container has its own lines as runs, and the source between them is not its own")
+    func containedLines() throws {
         let source = "> ```\n> x\n> ```\n"
         let document = try Document.parse(source)
         let callout = try #require(document.content.first as? Callout)
@@ -136,20 +138,90 @@ import Testing
         func place(_ start: (Int32, Int32), _ end: (Int32, Int32)) -> Scope {
             Scope(start: Position(line: start.0, column: start.1), end: Position(line: end.0, column: end.1))
         }
-        // The code block reads its lines without content, so the quote
-        // markers between them are not its own.
+        // The code block's runs are its lines, the first leading from the
+        // callout's start, so the quote markers between them are not its own.
         #expect(code.literal == "x\n")
-        #expect(
-            code.runs == [
-                Run(lead: 0, span: 4, length: 0), Run(lead: 2, span: 2, length: 0), Run(lead: 2, span: 3, length: 0),
-            ]
-        )
+        #expect(code.runs == [Run(lead: 2, span: 4), Run(lead: 2, span: 2), Run(lead: 2, span: 3)])
         #expect(
             try document.scope(of: code, in: source)
                 == [place((1, 3), (2, 0)), place((2, 3), (3, 0)), place((3, 3), (3, 5))]
         )
         #expect(try document.node(at: Position(line: 2, column: 1), in: source)?.isEqual(callout) == true)
         #expect(try document.node(at: Position(line: 2, column: 3), in: source)?.isEqual(code) == true)
+    }
+
+    @Test("every node has runs, the first leading from where the source before it ends")
+    func everyNodeHasRuns() throws {
+        let source = "> [!NOTE] Ti*t*le\n> x\n"
+        let document = try Document.parse(source)
+        let callout = try #require(document.content.first as? Callout)
+        // A block whose own source is its range has one run, its range.
+        #expect(document.runs == [Run(lead: 0, span: 21)])
+        #expect(callout.runs == [Run(lead: 0, span: 21)])
+        // The title's nodes lead from the callout's start, then each from
+        // where the source of the one before it ends.
+        let title = try #require(callout.title)
+        let emphasis = try #require(title[1] as? Emphasis)
+        #expect(title[0].runs == [Run(lead: 10, span: 2)])
+        #expect(emphasis.runs == [Run(lead: 0, span: 3)])
+        #expect(emphasis.content[0].runs == [Run(lead: 1, span: 1)])
+        #expect(title[2].runs == [Run(lead: 0, span: 2)])
+        // The content's first node leads from the callout's start too.
+        let block = try #require(callout.content.first as? Paragraph)
+        #expect(block.runs == [Run(lead: 20, span: 1)])
+        #expect(block.content[0].runs == [Run(lead: 0, span: 1)])
+        #expect(
+            try document.scope(of: emphasis, in: source)
+                == [Scope(start: Position(line: 1, column: 13), end: Position(line: 1, column: 15))]
+        )
+
+        // The fence's source ends before its line terminator, which the
+        // thematic break's run leads past.
+        let fenced = "```\nx\n```\n---\n"
+        let blocks = try Document.parse(fenced)
+        let code = try #require(blocks.content[0] as? CodeBlock)
+        let rule = try #require(blocks.content[1] as? ThematicBreak)
+        #expect(code.runs == [Run(lead: 0, span: 9)])
+        #expect(rule.runs == [Run(lead: 1, span: 3)])
+        #expect(
+            try blocks.scope(of: rule, in: fenced)
+                == [Scope(start: Position(line: 4, column: 1), end: Position(line: 4, column: 3))]
+        )
+    }
+
+    @Test("a table's rows, in head, content and foot order, are one relation")
+    func tableRows() throws {
+        let source = "+---+\n| h |\n+===+\n| a |\n+===+\n| f |\n+===+\n\nTable: *Cap*\n"
+        let document = try Document.parse(source)
+        let table = try #require(document.content.first as? Table)
+        let caption = try #require(table.caption)
+        func place(_ start: (Int32, Int32), _ end: (Int32, Int32)) -> Scope {
+            Scope(start: Position(line: start.0, column: start.1), end: Position(line: end.0, column: end.1))
+        }
+        // The caption is a relation of its own, and the head's first row
+        // leads from the table's start, not from the caption's end.
+        #expect(caption.extent == Extent(lead: 43, span: 12))
+        #expect(caption.runs == [Run(lead: 43, span: 12)])
+        #expect(table.head[0].extent == Extent(lead: 6, span: 5))
+        #expect(table.head[0].runs == [Run(lead: 6, span: 5)])
+        // The body's first row leads from the end of the head's last, and the
+        // foot's from the end of the body's last.
+        #expect(table.content[0].extent == Extent(lead: 7, span: 5))
+        #expect(table.content[0].runs == [Run(lead: 7, span: 5)])
+        #expect(table.foot[0].extent == Extent(lead: 7, span: 5))
+        #expect(table.foot[0].runs == [Run(lead: 7, span: 5)])
+        #expect(try document.scope(of: caption, in: source) == [place((9, 1), (9, 12))])
+        #expect(try document.scope(of: table.head[0], in: source) == [place((2, 1), (2, 5))])
+        #expect(try document.scope(of: table.content[0], in: source) == [place((4, 1), (4, 5))])
+        #expect(try document.scope(of: table.foot[0], in: source) == [place((6, 1), (6, 5))])
+        #expect(try document.node(at: Position(line: 6, column: 1), in: source)?.isEqual(table.foot[0]) == true)
+        // The dump still draws each group's line.
+        #expect(
+            try document.dump(table, in: source).contains(
+                "└── TableFoot children=1\n"
+                    + "    └── TableRow scope=6:1..6:5 anchor=null attributes={} children=1\n"
+            )
+        )
     }
 
     @Test("an empty document and a lone line terminator are 1:1..1:0 and hold no byte", arguments: ["", "\n"])

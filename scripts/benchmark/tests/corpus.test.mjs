@@ -50,8 +50,8 @@ const fresh = () => ({
 
 test("catalog is a complete reviewable corpus with exact grammar/proof/example provenance", () => {
     validateGrammarCertificates();
-    assert.equal(grammarCertificates.length, 194);
-    assert.equal(full.length, 182);
+    assert.equal(grammarCertificates.length, 193);
+    assert.equal(full.length, 181);
     assert.equal(split.length, 12);
     assert.deepEqual(
         JSON.parse(fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/grammar-corpus.json"))),
@@ -166,11 +166,11 @@ test("boundary splits keep every byte and every independent field, with measured
 test("one corpus contains unique inputs, repeats derivations, keeps metadata document-initial, and records exact normal forms", () => {
     const corpus = buildGrammarCorpus();
     // Every certificate once per alphabet.
-    assert.equal(corpus.cases.length, 848);
+    assert.equal(corpus.cases.length, 844);
     for (const alphabet of ["ascii", "utf8"]) {
-        assert.equal(corpus.cases.filter((c) => c.alphabet === alphabet).length, 424);
+        assert.equal(corpus.cases.filter((c) => c.alphabet === alphabet).length, 422);
         assert.equal(corpus.cases.filter((c) => c.alphabet === alphabet && c.side === "control").length, 12);
-        assert.equal(corpus.proofs.filter((p) => p.alphabet === alphabet).length, 194);
+        assert.equal(corpus.proofs.filter((p) => p.alphabet === alphabet).length, 193);
     }
     assert.equal(new Set(corpus.cases.map((c) => c.name)).size, corpus.cases.length);
     for (const document of corpus.cases) {

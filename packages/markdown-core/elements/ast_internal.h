@@ -46,11 +46,16 @@ bool markdown_core_tree_scope(const markdown_core_node *root, const markdown_cor
  * canonical dump draws it as a group line (`Title`, `CitationPrefix`, a
  * table's row groups, a definition's term and bodies), and is NULL when its
  * nodes are drawn directly under the owner. A node's extent is relative to
- * the previous node of its relation, or to the owner's start. */
+ * the previous node of its relation, or to the owner's start, and its first
+ * run to where the source of that node ends, or the owner's begins. A
+ * relation that `continues` goes on from the one before it, as a table's
+ * content and foot rows go on from its head rows: its first node is measured
+ * from the last of the one before, or from where that one is. */
 typedef struct markdown_core_relation {
     const char *group;
     const markdown_core_node *first;
     const markdown_core_node *end;
+    bool continues;
 } markdown_core_relation;
 
 /* How many nodes `relation` holds. */
@@ -70,52 +75,20 @@ typedef struct markdown_core_relation_cursor {
 void markdown_core_relations_begin(markdown_core_relation_cursor *cursor, const markdown_core_node *owner);
 bool markdown_core_relations_next(markdown_core_relation_cursor *cursor, markdown_core_relation *relation);
 
-/* A NODE'S RUNS IN ABSOLUTE OFFSETS (node.h, markdown_core_runs): the
- * content offset each run's bytes start at, how many there are, and the
- * source range they were read from. A copied run, whose source is as long as
- * its content, reads each content byte from one source byte; any other reads
- * all of its content from all of its source, and a run of length 0 reads
- * none. Content and source both increase along the runs, and the source
- * between two runs is not the node's. */
-typedef struct {
-    uint32_t content, length, start, end;
-} markdown_core_source_run;
-
-typedef struct {
-    markdown_core_source_run *runs;
-    size_t count, capacity;
-} markdown_core_source_runs;
-
-/* Reads the published `runs`, measured from `origin`, into `table`, whose
- * storage it reuses. False when it could not grow. */
-bool markdown_core_source_runs_read(markdown_core_source_runs *table, const markdown_core_runs *runs, uint32_t origin);
-/* The source window of the content range `place`: from where its first
- * byte is read to where its last is; an empty range is the empty window
- * where its offset is read from. */
-markdown_core_place markdown_core_source_runs_window(const markdown_core_source_runs *table, markdown_core_place place);
-/* The source ranges of `window` less the gaps between the runs of `table`,
- * in source order; an empty window is one empty range. Writes at most
- * `capacity` and returns how many there are. */
-size_t markdown_core_source_runs_ranges(const markdown_core_source_runs *table, markdown_core_place window,
-                                        markdown_core_place *ranges, size_t capacity);
-
 /* THE CANONICAL WALK: every node of a published document's tree in canonical
- * walk order, each with its range, and the group lines of the canonical dump
- * between them, read from the extents. A node in an inline root's content has
- * its range in that content, and the walk holds the root's runs while it is
- * in it. An explicit stack of relation cursors, so its depth is the tree's
- * and never the C stack's. */
+ * walk order, each with its source window, and the group lines of the
+ * canonical dump between them, read from the runs. An explicit stack of
+ * relation cursors, so its depth is the tree's and never the C stack's. */
 typedef struct markdown_core_walk_item {
     /* The node, or NULL for a group line. */
     const markdown_core_node *node;
+    /* Where its source lies: from where its first run starts to where its
+     * last ends. */
     markdown_core_place place;
     const char *group;
     size_t count;
     /* The nesting level the line is drawn at (the root's is 0). */
     size_t level;
-    /* Whether `place` is in the content of the inline root whose runs the
-     * walk holds, rather than in the source. */
-    bool content;
 } markdown_core_walk_item;
 
 typedef struct markdown_core_walk_frame {
@@ -123,10 +96,9 @@ typedef struct markdown_core_walk_frame {
     markdown_core_relation_cursor cursor;
     markdown_core_relation relation;
     bool active, group_pending;
-    /* Whether the relation in hand is in an inline root's content, and
-     * whether the frame's node is that root. */
-    bool content, root;
     const markdown_core_node *next;
+    /* Where the owner's source starts, and where the first run of the next
+     * node of the relation in hand is measured from. */
     uint32_t owner_start, anchor;
 } markdown_core_walk_frame;
 
@@ -138,10 +110,7 @@ typedef struct markdown_core_walk {
     /* The frame of the owner of the item returned last, counted from 1; 0 for
      * the root. */
     size_t owner;
-    /* The runs of the inline root whose content the walk is in, those of
-     * the block whose ranges are asked for, and the source ranges
-     * markdown_core_walk_ranges answers with. */
-    markdown_core_source_runs runs, own;
+    /* The source ranges markdown_core_walk_ranges answers with. */
     markdown_core_place *ranges;
     size_t range_capacity;
 } markdown_core_walk;
@@ -150,9 +119,9 @@ void markdown_core_walk_begin(markdown_core_walk *walk, const markdown_core_node
 /* The next item, or false at the end or when the walk could not allocate
  * (`failed`). */
 bool markdown_core_walk_next(markdown_core_walk *walk, markdown_core_walk_item *item);
-/* The source ranges of `item`, the node the walk returned last, in source
- * order: its window less the gaps between the runs that place it (ast.c). They live in the walk until its next call.
- * False, with the walk `failed`, when they could not be allocated. */
+/* The source ranges of `item`, the node the walk returned last: its runs,
+ * in source order. They live in the walk until its next call. False, with the
+ * walk `failed`, when they could not be allocated. */
 bool markdown_core_walk_ranges(markdown_core_walk *walk, const markdown_core_walk_item *item,
                                const markdown_core_place **ranges, size_t *count);
 /* Whether another line follows the item the walk returned last at its level

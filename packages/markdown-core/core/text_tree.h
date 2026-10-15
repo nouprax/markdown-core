@@ -9,11 +9,10 @@
 extern "C" {
 #endif
 
-/* THE TEXT A SESSION HOLDS (docs/plans/2026-09-29-incremental-parsing.md,
- * 5.1): a balanced tree of byte pieces in source order. Each piece records
- * its bytes and UTF-16 units, and each subtree their sums, so finding an
- * offset, replacing a range and shifting everything after it cost O(log n)
- * wherever the edit is, plus the bytes the edit writes.
+/* THE TEXT A SESSION HOLDS: a balanced tree of byte pieces in source order.
+ * Each piece records its bytes and UTF-16 units, and each subtree their sums,
+ * so finding an offset, replacing a range and shifting everything after it
+ * cost O(log n) wherever the edit is, plus the bytes the edit writes.
  *
  * A byte counts the UTF-16 units of the scalar it begins: a continuation byte
  * none, a byte that begins a four-byte scalar two, any other byte one. That

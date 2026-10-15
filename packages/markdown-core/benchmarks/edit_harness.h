@@ -53,10 +53,10 @@ bool eh_unit_parse(const char *name, eh_unit *unit);
 /* The number of UTF-16 code units in the first `offset` bytes, or the byte
  * offset of `units` UTF-16 code units. A byte counts the units of the scalar
  * it begins: a continuation byte none, a byte that begins a four-byte scalar
- * two, any other byte one, whatever the bytes are (plan 4.4). The second
- * answers the first byte that begins a scalar with `units` before it, or the
- * end, and fails when `units` falls between the two units of one scalar or
- * past the end. */
+ * two, any other byte one, whatever the bytes are, as scope queries count
+ * columns. The second answers the first byte that begins a scalar with
+ * `units` before it, or the end, and fails when `units` falls between the two
+ * units of one scalar or past the end. */
 size_t eh_utf16_units(const uint8_t *bytes, size_t offset);
 bool eh_utf8_offset(const uint8_t *bytes, size_t length, size_t units, size_t *offset);
 

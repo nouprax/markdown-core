@@ -51,7 +51,7 @@ export const featureOwners = {
     footnotes: { elements: ["FOOTNOTE"], certificates: [] },
     formulas: {
         elements: ["FORMULA"],
-        certificates: ["opaque-formula", "opaque-display", "leaf-formula", "leaf-fence", "leaf-promotion"]
+        certificates: ["opaque-formula", "opaque-display", "leaf-formula", "leaf-fence"]
     },
     headings: { elements: ["HEADING"], certificates: [] },
     html: { elements: ["HTML", "HTML_BLOCK"], certificates: [] },

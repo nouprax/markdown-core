@@ -34,14 +34,14 @@ the responsibility of the existing parity and regression pipelines.
    coverage. Callgrind measures these generated documents.
 
 There are **30 specification features, 136 sections, 32 registered elements,
-194 certificates and 848 generated documents**, 424 in each of two
+193 certificates and 844 generated documents**, 422 in each of two
 [alphabets](benchmark-grammar-corpus.md#alphabets), each measured once.
 Of the 136 sections, **132 link to grammar certificates and four are explicitly
 context-only** (automatic-anchor output, anchor ownership, and two navigation
 introductions). Cross-feature links reuse the same certificate; a documentation
 heading does not demand another benchmark. Mixed sections link their source
 productions and explicitly keep output-coordinate rules in parity/regression.
-Of these, **182 certify whole declared languages and 12 certify local boundary
+Of these, **181 certify whole declared languages and 12 certify local boundary
 languages**. This is feature coverage, not a theorem that the union of these
 restricted grammars equals every possible document of the unrestricted dialect.
 In particular a boundary's residual is not proved impossible to match against
@@ -61,7 +61,7 @@ all imaginable reference grammars. The ledger exposes that distinction.
 | Strikethrough | Same-input GFM pairs, cross-syntax pairs and rejected openers. |
 | Super/subscript | Both markers, formatted content, empty superscript, escaped spaces and raw-space rejection. |
 | Comments | Inline/block percent forms, empty comments, inline/block HTML comments and fallback. |
-| Formulas | Dollar, backtick-dollar, doubled-backslash parentheses/brackets, blocks, formula fences, promotion and fallback. |
+| Formulas | Dollar, backtick-dollar, doubled-backslash parentheses/brackets, blocks, formula fences and fallback. |
 | Bracketed spans | Empty, nested, record/class forms and rejected suffixes. |
 | Links/images | Direct links/images, all reference forms, duplicate and unresolved references, angle/bare autolinks; numeric dimensions have an explicit boundary. |
 | Cross links/embeds | Absent/empty/raw labels, path/local/heading/block targets, embed forms, escaped pipes within tables and fallback; numeric dimensions remain a boundary. |

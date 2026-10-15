@@ -48,6 +48,15 @@ Its node releases it: into a pool, its slot goes back to that pool's resource
 slabs; with none, it drops its slab hold. So the tree keeps its resource slabs
 as it keeps its node slabs.
 
+What else a node owns of its own size -- the lists of its source (its places
+while the parse builds the tree, its runs once it is published), a label it
+declares -- is storage of varied sizes, cut from the node slabs beside the
+nodes. A size is rounded up to a class, and storage of each class is a slot
+like any other: released into the pool, it is handed out again for its class
+before a slab is cut further, so this storage too is bounded by what is live,
+not by how much a session's edits made. Storage larger than the largest class
+is a slot from the allocator.
+
 ## A node's place and its value
 
 A node's fields are its PLACE -- its links (`next`, `prev`, `parent`,
@@ -201,10 +210,12 @@ map and a specimen key index hold the first definition of each label. The
 finish stage visits definitions where they are, like any other node.
 
 Publishing is one canonical walk. It numbers every node from 1, rewrites the
-parse-time source place as the node's extent, and collects every Footnote and
-Specimen into the document's two definition tables, which it orders by first
-source byte with the stable linear source ordering below and indexes by
-label. Nothing reads a place after publishing.
+parse-time source place as the node's extent, gives every node its runs from
+its places -- a block's own, written over them in their list, or its range
+when it has none, and an inline node's from its root's -- and collects
+every Footnote and Specimen into the document's two definition tables, which
+it orders by first source byte with the stable linear source ordering below
+and indexes by label. Nothing reads a place after publishing.
 
 The bracket scanner tracks the most recent non-SP/TAB byte over disjoint
 consumed token ranges, so rejecting empty bodies never rescans nested bodies.

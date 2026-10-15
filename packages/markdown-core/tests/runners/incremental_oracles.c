@@ -88,12 +88,9 @@ typedef struct view_node {
     markdown_core_node_kind kind;
     const markdown_core_node *object;
     markdown_core_extent extent;
-    /* Its range in its input, and the source byte that range starts at. */
+    /* Its source window, and how many runs it has. */
     ts_ast_range range;
-    int64_t source_start;
-    /* The inline root whose content holds the range, SIZE_MAX in the source,
-     * and, for a root, its runs in the view's. */
-    size_t root, runs, run_count;
+    size_t run_count;
     size_t owner; /* SIZE_MAX for the root */
     size_t relation;
     /* The node's items, in order: every node its relations hold. */
@@ -108,19 +105,9 @@ typedef struct {
     size_t index;
 } view_object;
 
-/* An inline root's run in absolute offsets: the content it starts at and
- * reads, and the source it reads it from. */
-typedef struct {
-    int64_t content, length, start, end;
-} view_run;
-
 typedef struct view {
     view_node *nodes;
     size_t count, capacity;
-    view_run *runs;
-    size_t run_count, run_capacity;
-    /* The last inline root the walk entered. */
-    size_t root;
     size_t *items;
     char *values;
     size_t values_size;
@@ -133,62 +120,11 @@ typedef struct view {
 
 static void view_free(view *taken) {
     free(taken->nodes);
-    free(taken->runs);
     free(taken->items);
     free(taken->values);
     free(taken->objects);
     free(taken->owners);
     memset(taken, 0, sizeof(*taken));
-}
-
-static bool run_copied(const view_run *run) { return run->end - run->start == run->length; }
-
-/* The first run of root `root` that reads content past `offset`. The runs
- * are in content order. */
-static size_t content_run(const view *taken, size_t root, int64_t offset) {
-    const view_run *runs = taken->runs + taken->nodes[root].runs;
-    size_t lo = 0, hi = taken->nodes[root].run_count;
-    while (lo < hi) {
-        size_t mid = lo + (hi - lo) / 2;
-        if (runs[mid].content + runs[mid].length <= offset) {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-    return lo;
-}
-
-/* The source byte content offset `offset` of root `root` is read from: its
- * own in a copied run, the run's first in any other, and where the content
- * ends for the offset past it. */
-static int64_t content_source(const view *taken, size_t root, int64_t offset) {
-    const view_run *runs = taken->runs + taken->nodes[root].runs;
-    size_t lo = content_run(taken, root, offset);
-    if (lo == taken->nodes[root].run_count) {
-        return lo ? runs[lo - 1].end : 0;
-    }
-    return run_copied(&runs[lo]) ? runs[lo].start + (offset - runs[lo].content) : runs[lo].start;
-}
-
-/* The content offset at which root `root` reads source byte `source`, or
- * false when it does not read it. The runs are in source order too. */
-static bool source_content(const view *taken, size_t root, int64_t source, int64_t *offset) {
-    const view_run *runs = taken->runs + taken->nodes[root].runs;
-    size_t lo = 0, hi = taken->nodes[root].run_count;
-    while (lo < hi) {
-        size_t mid = lo + (hi - lo) / 2;
-        if (runs[mid].end <= source) {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-    if (lo == taken->nodes[root].run_count || runs[lo].start > source || !runs[lo].length) {
-        return false;
-    }
-    *offset = run_copied(&runs[lo]) ? runs[lo].content + (source - runs[lo].start) : runs[lo].content;
-    return true;
 }
 
 static int view_visit(const markdown_core_node *node, ts_ast_place place, void *context) {
@@ -208,26 +144,14 @@ static int view_visit(const markdown_core_node *node, ts_ast_place place, void *
         taken->owners = owners;
         taken->capacity = capacity;
     }
-    size_t run_count = 0, root = place.root ? taken->root : SIZE_MAX;
-    const markdown_core_run *runs = markdown_core_node_runs(node, &run_count);
-    if (taken->run_count + run_count > taken->run_capacity) {
-        size_t capacity = (taken->run_count + run_count) * 2;
-        view_run *grown = (view_run *)realloc(taken->runs, capacity * sizeof(*grown));
-        if (!grown) {
-            return 1;
-        }
-        taken->runs = grown;
-        taken->run_capacity = capacity;
-    }
+    size_t run_count = 0;
+    (void)markdown_core_node_runs(node, &run_count);
     taken->owners[taken->count] = place.owner;
     taken->nodes[taken->count] = (view_node){markdown_core_node_id(node),
                                              markdown_core_node_get_kind(node),
                                              node,
                                              markdown_core_node_extent(node),
                                              place.range,
-                                             place.range.start,
-                                             root,
-                                             taken->run_count,
                                              run_count,
                                              SIZE_MAX,
                                              place.relation,
@@ -235,23 +159,6 @@ static int view_visit(const markdown_core_node *node, ts_ast_place place, void *
                                              0,
                                              0,
                                              0};
-    if (root != SIZE_MAX) {
-        taken->nodes[taken->count].source_start = content_source(taken, root, place.range.start);
-    }
-    {
-        int64_t at = place.range.start, content = 0;
-        size_t index;
-        for (index = 0; index < run_count; index++) {
-            int64_t start = at + runs[index].lead;
-            at = start + (int64_t)runs[index].span;
-            taken->runs[taken->run_count++] = (view_run){content, runs[index].length, start, at};
-            content += runs[index].length;
-        }
-        /* A node whose runs read content is an inline root. */
-        if (content) {
-            taken->root = taken->count;
-        }
-    }
     taken->count++;
     return 0;
 }
@@ -289,7 +196,7 @@ static bool view_values(view *taken, const uint8_t *dump, size_t dump_length) {
     size_t index = 0, capacity = dump_length + taken->count * 64 + 1;
     /* Room for each node's runs. */
     for (index = 0; index < taken->count; index++) {
-        capacity += taken->nodes[index].run_count * 36;
+        capacity += taken->nodes[index].run_count * 24;
     }
     index = 0;
     taken->values = (char *)malloc(capacity);
@@ -330,8 +237,8 @@ static bool view_values(view *taken, const uint8_t *dump, size_t dump_length) {
                 const markdown_core_run *run = markdown_core_node_runs(entry->object, &count);
                 at += (size_t)snprintf(taken->values + at, capacity - at, " runs=");
                 for (item = 0; item < count; item++) {
-                    at += (size_t)snprintf(taken->values + at, capacity - at, "%d,%u,%u;", (int)run[item].lead,
-                                           (unsigned)run[item].span, (unsigned)run[item].length);
+                    at += (size_t)snprintf(taken->values + at, capacity - at, "%d,%u;", (int)run[item].lead,
+                                           (unsigned)run[item].span);
                 }
             }
             entry->value = taken->values_size;
@@ -612,7 +519,7 @@ static void history_free(history *ids) {
 }
 
 /* The image of the first byte of [start, end) that no edit of the step
- * replaced, or false when there is none (plan 5.2). `edits` are in UTF-8
+ * replaced, or false when there is none (gates 4.4). `edits` are in UTF-8
  * bytes against the text before the step, in ascending order. */
 static bool anchor(const eh_edit *edits, size_t count, int64_t start, int64_t end, int64_t *image) {
     int64_t x = start, shift = 0;
@@ -632,33 +539,6 @@ static bool anchor(const eh_edit *edits, size_t count, int64_t start, int64_t en
     }
     *image = x + shift;
     return true;
-}
-
-/* The image of an old node's content range: the content offset at which the
- * new root `root` reads the first source byte the old root read for the
- * range that no edit replaced and the new root reads. */
-static bool content_anchor(const view *before, const view_node *old, const view *after, size_t root,
-                           const eh_edit *edits, size_t count, int64_t *image) {
-    const view_node *holder = &before->nodes[old->root];
-    size_t index;
-    for (index = content_run(before, old->root, old->range.start);
-         index < holder->run_count && before->runs[holder->runs + index].content < old->range.end; index++) {
-        const view_run *run = &before->runs[holder->runs + index];
-        int64_t from = old->range.start > run->content ? old->range.start : run->content;
-        int64_t to = old->range.end < run->content + run->length ? old->range.end : run->content + run->length;
-        int64_t first, last, source, mapped;
-        if (from >= to) {
-            continue;
-        }
-        first = run_copied(run) ? run->start + (from - run->content) : run->start;
-        last = run_copied(run) ? run->start + (to - run->content) : run->end;
-        for (source = first; source < last; source++) {
-            if (anchor(edits, count, source, source + 1, &mapped) && source_content(after, root, mapped, image)) {
-                return true;
-            }
-        }
-    }
-    return false;
 }
 
 /* The walk index of each old node's node of the same id in `ids`, a table
@@ -691,13 +571,13 @@ static size_t id_lookup(const id_index *table, uint64_t id) {
 }
 
 /* A node's position for 4.5: the first node of the view in walk order of
- * kind `kind` whose range starts at source byte `at`. */
+ * kind `kind` whose source starts at byte `at`. */
 static size_t view_at(const view *taken, const char *kind, size_t at) {
     size_t index;
     for (index = 0; index < taken->count; index++) {
         const char *name;
         TS_OK(markdown_core_node_kind_name(taken->nodes[index].kind, &name));
-        if (taken->nodes[index].source_start == (int64_t)at && strcmp(name, kind) == 0) {
+        if (taken->nodes[index].range.start == (int64_t)at && strcmp(name, kind) == 0) {
             return index;
         }
     }
@@ -748,10 +628,7 @@ static void check_identity(run *state, const char *where, size_t step, history *
             while (*at < owner->item_count) {
                 const view_node *old = &before->nodes[before->items[owner->items + *at]];
                 int64_t image = 0;
-                bool anchored = old->root == SIZE_MAX
-                                    ? anchor(edits, count, old->range.start, old->range.end, &image)
-                                    : node->root != SIZE_MAX &&
-                                          content_anchor(before, old, after, node->root, edits, count, &image);
+                bool anchored = anchor(edits, count, old->range.start, old->range.end, &image);
                 if (old->relation > node->relation ||
                     (old->relation == node->relation && anchored && image >= node->range.end)) {
                     break;
@@ -841,7 +718,7 @@ static void check_identity(run *state, const char *where, size_t step, history *
                 const char *name;
                 TS_OK(markdown_core_node_kind_name(after->nodes[index].kind, &name));
                 fail(state, "4.5", "%s step %zu: %s at %lld changed, which the script does not name", where, step, name,
-                     (long long)after->nodes[index].source_start);
+                     (long long)after->nodes[index].range.start);
                 break;
             }
         }

@@ -17,7 +17,8 @@ public value class MarkupID(
  * it: a block's in the UTF-8 source, an inline node's in its inline root's
  * content, which starts at 0. [lead] is the signed distance from the end of
  * the previous node in the same relation, or from the owner's start for the
- * first node, to this node's start, and [span] is the length of its range.
+ * first node, to this node's start, and [span] is the length of its range. A
+ * table's rows, in head, content and foot order, are one relation.
  */
 public data class Extent(
     public val lead: Int,
@@ -25,19 +26,18 @@ public data class Extent(
 )
 
 /**
- * A run of the source a node reads: [length] content bytes read from [span]
- * source bytes, [lead] signed from the end of the previous run, or from the
- * node's start for the first. A run whose span is its length reads each
- * content byte from one source byte; any other reads all of its content from
- * all of its source, and a run of length 0 is source the node reads without
- * content. Between its first run and its last, a node's runs cover exactly its
- * own source: the source between two runs is not the node's. A node whose runs
- * read content is an inline root, and they cover its content in order.
+ * A run of a node's own source, a source range in bytes: [lead] is signed
+ * from the end of the run before, or, for the first run, from the end of the
+ * source of the previous node in the same relation (or from the start of the
+ * owner's source, for a relation's first node), and [span] is the run's
+ * length. Every node has at least one run. A node's source starts where its
+ * first run starts and ends where its last ends; between them its runs cover
+ * exactly its own source, so the source between two runs is not the node's,
+ * and runs that touch are one run.
  */
 public data class Run(
     public val lead: Int,
     public val span: UInt,
-    public val length: UInt,
 )
 
 /** How a document counts the columns of its scope queries: UTF-8 bytes or UTF-16 code units. */

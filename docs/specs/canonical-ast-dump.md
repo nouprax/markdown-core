@@ -11,7 +11,7 @@ only at `specs/canonical-ast/`. C, Swift, Kotlin, and ES conformance targets
 enumerate that same non-empty manifest. Swift, Kotlin, and ES each implement
 this tree format independently over their public immutable AST; they never
 call the native C dump or another binding output. Scopes are computed from the
-nodes' extents and the source the document was parsed from, so every dump
+nodes' runs and the source the document was parsed from, so every dump
 takes the document and that source, and a node dump names a node of that
 document for focused subtree inspection:
 
@@ -97,9 +97,9 @@ only dump syntax; it never changes the stored class or the attribute grammar.
 - Every optional and default-bearing field is printed; fields are never
   omitted because they are null, empty, false, or default.
 - The inherited fields lead: `scope`, the node's scopes computed from its
-  `extent` and `runs` and the source, one per source range in source order
-  joined by `,` (`scope=1:3..2:0,2:3..2:7`), then `anchor` and `attributes`.
-  `id` and `runs` are not printed.
+  `runs` and the source, one per run in source order joined by `,`
+  (`scope=1:3..2:0,2:3..2:7`), then `anchor` and `attributes`. `id`,
+  `extent` and `runs` are not printed.
   Kind-specific scalar fields follow; `children` is last.
 
 The dump is a scope query: it takes the source the document was parsed from

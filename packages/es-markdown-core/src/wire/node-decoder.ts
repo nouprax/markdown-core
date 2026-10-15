@@ -45,7 +45,6 @@ export const lengthOffset = 4;
 /** The byte offset of the u8 status, after the message length. */
 const statusOffset = 8;
 
-const none: readonly never[] = Object.freeze([]);
 const flows: readonly Flow[] = ["none", "left", "center", "right"];
 const placements: readonly Placement[] = ["embedded", "standalone"];
 const bibModes: readonly BibMode[] = ["normal", "authorInText", "suppressAuthor"];
@@ -121,7 +120,7 @@ export class Decoder {
         const kind = kinds[this.u8()] as NativeKind;
         const id = this.id();
         const extent = this.extent();
-        const runs = this.sparse((): Run => ({ lead: this.i32(), span: this.u32(), length: this.u32() }));
+        const runs = this.list((): Run => ({ lead: this.i32(), span: this.u32() }));
         const anchor = this.optional(() => this.string());
         const attributes = this.attributes();
         const node = this.fields(kind, { kind, id, extent, runs, anchor, attributes }) as Markup;
@@ -564,12 +563,6 @@ export class Decoder {
 
     private list<T>(read: () => T): T[] {
         return Array.from({ length: this.count() }, read);
-    }
-
-    /** A list most nodes leave empty: every empty one is the same array. */
-    private sparse<T>(read: () => T): readonly T[] {
-        const count = this.count();
-        return count === 0 ? none : Array.from({ length: count }, read);
     }
 
     private count(): number {

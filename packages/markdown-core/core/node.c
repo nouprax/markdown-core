@@ -144,8 +144,6 @@ typedef struct {
     unsigned char record[MARKDOWN_CORE_NODE_SLOT_RECORD_BYTES];
 } markdown_core_node_slot;
 
-#define MARKDOWN_CORE_NODE_SLAB_BYTES ((size_t)64 * 1024)
-
 static markdown_core_node_slot *S_slot_of(markdown_core_node *node) {
     return (markdown_core_node_slot *)((unsigned char *)node - offsetof(markdown_core_node_slot, node));
 }
@@ -492,8 +490,8 @@ static size_t S_free_nodes(markdown_core_node_pool *pool, markdown_core_node *e)
         if (markdown_core_strbuf_owns(&e->content)) {
             markdown_core_strbuf_free(&e->content);
         }
-        if (e->runs) {
-            markdown_core_node_pool_bytes_free(pool, e->runs);
+        if (e->source.runs) {
+            markdown_core_node_pool_bytes_free(pool, e->source.runs);
         }
 
         /* The node-valued fields join the same iterative free walk as

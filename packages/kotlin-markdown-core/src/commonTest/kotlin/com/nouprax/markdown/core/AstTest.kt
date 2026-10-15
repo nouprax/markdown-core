@@ -85,7 +85,7 @@ class AstTest {
                     emptyList(),
                     MarkupID(2),
                     Extent(0, 1u),
-                    emptyList(),
+                    listOf(Run(0, 1u)),
                     null,
                     Attributes.empty,
                 )
@@ -106,14 +106,14 @@ class AstTest {
                             it.content,
                             MarkupID(4),
                             Extent(0, 0u),
-                            emptyList(),
+                            listOf(Run(0, 0u)),
                             null,
                             Attributes.empty,
                         ),
                     ),
                     MarkupID(3),
                     Extent(0, 0u),
-                    emptyList(),
+                    listOf(Run(0, 0u)),
                     null,
                     Attributes.empty,
                 )
@@ -127,7 +127,7 @@ class AstTest {
                 listOf(rows[2]),
                 MarkupID(2),
                 Extent(0, 6u),
-                emptyList(),
+                listOf(Run(0, 6u)),
                 null,
                 Attributes.empty,
             )
@@ -267,7 +267,7 @@ class AstTest {
     }
 }
 
-/** A document whose only content is [table], over a source at least as long as the table's span. */
+/** A document whose only content is [table], with the table's runs, over a source at least as long as its span. */
 private fun holding(table: Table): Document =
     Document(
         listOf(table),
@@ -279,7 +279,7 @@ private fun holding(table: Table): Document =
         emptyMap(),
         MarkupID(1),
         table.extent,
-        emptyList(),
+        table.runs,
         null,
         Attributes.empty,
     )

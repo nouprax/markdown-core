@@ -1,10 +1,14 @@
 # Gates for incremental parsing
 
-Status: proposed design. Nothing in this document is implemented. It
-specifies the correctness suite and the two benchmarks that decide whether
-[incremental parsing](2026-09-29-incremental-parsing.md) is done, and it lands
-before any engine work so that every rollout step is measured against the same
-harness from its first pull request.
+Status: steps 0 to 3 of the rollout implemented this harness: the edit and
+stream workloads, the correctness runner on every platform, the edit and
+stream benchmark with rule 6.3, and the `buffer_to_ast` rule of the one-shot
+gate. On 2026-10-14 the owner narrowed the requirement to streaming
+([plan](2026-09-29-incremental-parsing.md) section 1, D7): step 5 removes the
+edit scripts and the oracles and rules that only edits use, and step 7 adds
+`finalize` and the stream oracles of 4.6. This document specifies the
+correctness suite and the benchmarks that decide whether each step of
+[incremental parsing](2026-09-29-incremental-parsing.md) is done.
 
 ## Requirement under test
 
@@ -20,22 +24,33 @@ The owner's requirement, as stated:
 > new one, I do not limit the direction to avoid you misunderstanding and add
 > some constraints I did not intended).
 
-Every gate below checks one of these properties, for the two workloads the
-requirement names (random edits and tail streaming):
+On 2026-10-14 the owner narrowed it to one workload:
 
-- **Correct AST.** The AST a session returns is the AST a fresh parse of the
-  same text returns.
+> 我仔细理了一下我们的编辑需求，我们实际只有streaming的追加token更新一种需要高吞吐的实时编辑能力，因此，鉴于现在性能的现实，你可能需要彻底放弃现在的所有design，但是那个为修正表格的scope做的node runs的设计可能需要保留，我们需要正确的表达每个node的位置的能力。然后基于llm的token streaming追加场景设计一个高度优化的markdown解析器。
+
+> 对于llm session streaming，你甚至可以在session finalize时再去做definition look up，因为token streaming过程中的文本跳变本来就是无法避免的。
+
+> 也就是你需要加一个session.finalize的API，由调用方显式结束当前session。
+
+Every gate below checks one of these properties, for tail streaming and,
+until step 5 removes them, random edits:
+
+- **Correct AST.** After `finalize`, the AST a session returns is the AST a
+  fresh parse of the same text returns. Before it, each snapshot is the AST a
+  fresh parse of the text so far returns, except where a definition lookup or
+  an automatic anchor would see text written after the node that asks (plan
+  5.5), and it does not depend on how the text was split into appends.
 - **Identifier.** A node's identifier is unique, keeps naming the same node
-  across edits, and is never handed to a different node.
+  across steps, and is never handed to a different node.
 - **Minimal AST mutation.** A node is a new value exactly when its value
   changed.
-- **Minimal re-parse.** The Ir of a local step does not grow with the
-  document, and no step costs more than parsing the whole text again.
+- **Minimal re-parse.** The Ir of an append does not grow with the text
+  already streamed, and no step costs more than parsing the whole text again.
 
 The existing one-shot benchmark (`packages/markdown-core/benchmarks/README.md`)
-answers "what does a parse cost". The gate therefore has three benchmarks
-(one-shot, edit, stream) and one correctness suite for the two new workloads.
-A step of the rollout is accepted only when all four pass at the level section
+answers "what does a parse cost". The gate therefore has the one-shot and
+stream benchmarks, the edit benchmark until step 5, and one correctness suite.
+A step of the rollout is accepted only when each passes at the level section
 7 assigns to that step.
 
 Sections 1–2 say why the gates come first and what they are measured against.
@@ -66,9 +81,10 @@ changes the subject under test, not the harness.
 ## 2. Subjects and the baseline
 
 The harness drives a **subject** through one interface: open a session in a
-coordinate unit with an initial text, call `edit` (a batch of
-non-overlapping edits against the text before the batch) or `append`, each
-of which returns the new document, and close. There are exactly two subjects:
+coordinate unit with an initial text, call `append`, `finalize` (from step 7)
+or, until step 5, `edit` (a batch of non-overlapping edits against the text
+before the batch), each of which returns the new document, and close. There
+are exactly two subjects:
 
 | Subject | What it does | Role |
 | --- | --- | --- |
@@ -120,7 +136,12 @@ document and a script; its identity is the digest of both.
   quotes edited at the deepest leaf; one definition with 10,000 references
   whose destination changes; a heading label repeated so that anchor suffixes
   shift; an unclosed `**` early in a paragraph that is then streamed for
-  64 KB; a single-line paragraph streamed to 64 KB.
+  64 KB; a single-line paragraph streamed to 64 KB. Step 7 adds the shapes
+  that streaming meets: a definition written after 10,000 of its uses, a
+  document that opens a Properties envelope and never closes it, and an
+  unclosed grid table. Step 8 adds one paragraph of short lines streamed to
+  64 KB, whose inline content the settle point keeps from being parsed again
+  per append (plan 5.8).
 
 A composite document that joins parts records, for each part, the number of
 root children a fresh parse of the part alone produces. The generator checks
@@ -128,6 +149,8 @@ that the composite's fresh parse has their sum, so a part cannot silently
 change the meaning of its neighbour and move every edit site.
 
 ### 3.2 Edit scripts
+
+Step 5 removes the edit scripts with `edit` (plan D7). Until then:
 
 A script is a sequence of steps. A step is `edit([(start, end, text)…])`, a
 single edit being a batch of one, or `append(text)`, with offsets in UTF-8
@@ -156,12 +179,13 @@ repeated sections (decision G8). A generated document repeats one section,
 so a position at a fraction of the document is the same place of the section
 at that fraction, and every size applies the same edit there. `markers`,
 `declarations` and `random` contain steps whose effect the language may spread
-(plan 7.2); the gates treat them differently (section 6).
+(decision G8); the gates treat them differently (section 6).
 
 ### 3.3 Stream scripts
 
 A stream script appends the whole of a document, starting from an empty
-session, in chunks. Every chunk is whole scalars, on every platform.
+session, in chunks, and from step 7 ends with `finalize`. Every chunk is
+whole scalars, on every platform.
 
 | Family | Chunking | Documents |
 | --- | --- | --- |
@@ -182,7 +206,10 @@ any incorrect one.
 The subject's text equals the text model, and the canonical dump of the
 subject's document equals the dump of a fresh `Document.parse` of the model
 text in the same unit. The dump prints no ids and prints absolute scopes, so
-it compares meaning and positions and nothing that depends on history.
+it compares meaning and positions and nothing that depends on history. From
+step 7 this oracle holds after `finalize`, and each snapshot before it is
+checked by 4.6, because a snapshot's lookups see only what is written before
+the node that asks (plan 5.5).
 
 A node stores its relative extent, `Extent(lead, span)` in UTF-8 bytes (plan
 4.3). `Document.scope(of:in:)` and `Document.node(at:in:)` compute absolute
@@ -207,11 +234,9 @@ is compared.
 - Ids are unique within the document, across every owned relation.
 - Over the whole lineage, the harness keeps a map from id to kind and a set of
   retired ids. An id never changes kind, and a retired id never appears again.
-- A fresh parse numbers its nodes from 1: in canonical walk order through
-  step 3, and from step 4 in completion order, where each node's owner
-  numbers the nodes it holds when it completes and the root numbers itself
-  when it completes (plan 4.1, 5.8). Its ids are 1 through its node count, and two fresh parses of
-  the same text are equal, ids included.
+- A fresh parse numbers its nodes from 1 in canonical walk order (plan 4.1).
+  Its ids are 1 through its node count, and two fresh parses of the same text
+  are equal, ids included.
 
 ### 4.3 Minimal AST mutation
 
@@ -237,21 +262,23 @@ part of the value; the absolute scope serves only the matching of 4.4.
 accept an implementation that gives a surviving node a new id and so loses its
 view state. The plan states which old node each new node continues (5.9) in
 terms the harness evaluates from the public model alone: the image of each
-position under the step's edits (plan 5.2), the absolute scopes of the snapshot and of
+position under the step's edits (a byte before an edit keeps its offset, a
+byte after it moves by the length change of the edits before it, and an
+append moves no byte), the absolute scopes of the snapshot and of
 `scope(of:in:)` on the new document, kinds, values and owner relations. The
 harness computes the expected id itself for every node of every step, and for
 a node the parse may have taken whole it computes the two ids it accepts:
 
-- The new document continues the old document (plan 5.9 starts matching
-  from the two document roots).
+- The new document continues the old document.
 - An old node's anchor is its first byte that survived the step. A node none
   of whose bytes survived has no anchor.
 - Within the relation of a matched owner, a new node of the same kind whose
   source range contains the image of an old sibling's anchor continues the
-  earliest such sibling.
+  earliest such sibling. A node's source range runs from the start of its
+  first scope to the end of its last.
 - A new node that continues an old node has the old node's id.
 - A node the parse took whole keeps its id wherever it lands, under a
-  matched owner or a new one (plan 5.9, decision G7). Whether a node was
+  matched owner or a new one (decision G7). Whether a node was
   taken is the engine's choice and not part of the public model, so a new
   node that no rule above continues is accepted with either id: the id of
   an old node whose kind and value it has, only its lead differing, with
@@ -268,9 +295,14 @@ may get a new `lead`. The oracle predicts that `lead` from the fresh parse.
 
 ### 4.5 Scripted identity
 
-Some edits have an exact expected outcome, written into the script as the sets
-of kept, new and retired ids by position. They are the consequences the plan
-lists (5.9, 8): typing at the start of a paragraph keeps its id; inserting
+Some steps have an exact expected outcome, written into the script as the sets
+of kept, new and retired ids by position. The stream cases are the
+consequences plan 5.9 and 8 list: typing at the end of a paragraph keeps its
+id; a paragraph that becomes a Setext heading and then a paragraph again
+takes a new id each time; a row appended to a table changes only the table,
+the new row and the Document; an item appended to a long list changes only
+the list, the new item and the Document. Until step 5 the edit cases hold
+too: typing at the start of a paragraph keeps its id; inserting
 `new\n\n` before a paragraph gives the new one a new id and keeps the old one's;
 deleting a first word keeps the id; deleting a sibling retires its id and does
 not hand it to the next; merging two paragraphs keeps the first id; a
@@ -283,25 +315,43 @@ paragraph, its Text nodes on the edited line and the Document.
 
 ### 4.6 Streaming
 
-After every chunk, 4.1–4.4 hold against the model text, which is everything
-appended so far.
+Until step 7 every append parses the whole text again, so after every chunk
+4.1–4.4 hold against the model text, which is everything appended so far.
+From step 7, after every chunk:
+
+- **Chunking independence.** The snapshot equals the snapshot a new session
+  returns for one append of the whole model text, ids aside: the dump,
+  every scope and every definition query.
+- **Snapshot meaning.** The snapshot equals a fresh `Document.parse` of the
+  model text everywhere except at the places plan 5.5 allows. The harness
+  computes them from the fresh parse alone, with its definition tables,
+  anchors and scopes: every inline root that names a label whose definition
+  starts after the root, every heading whose automatic anchor an explicit
+  anchor or heading written after it changes, and, in turn, every heading
+  whose text holds such a root and every root that names that heading's
+  label. Outside those places the dumps agree node for node.
+- 4.2–4.4 hold against the previous snapshot.
+
+After `finalize`, 4.1–4.4 hold against the last snapshot, and every later
+`append` or `finalize` fails with the finalized status (4.8).
 
 ### 4.7 Batches
 
-The dump after `edit(edits)` with several edits equals the dump after
+Step 5 removes batches with `edit`. Until then, the dump after `edit(edits)` with several edits equals the dump after
 applying the same edits one at a time in descending order of their start
 offsets, whatever order the batch lists them in (so the offsets not yet
 applied stay valid), and 4.1–4.4 hold for the batch as one step.
 
 ### 4.8 Errors
 
-A range whose start is after its end or whose end is past the text and two
-overlapping edits of one batch are rejected as out of bounds; an offset at a
-continuation byte in UTF-8 or between the two units of one scalar in UTF-16 is
-rejected as inside a scalar (plan 4.4). In C, the
-allocator-seam sweep of plan 8 fails a sample of steps at every allocation
-boundary; each call throws the out-of-memory error, and freeing the session
-leaks nothing.
+Until step 5, a range whose start is after its end or whose end is past the
+text and two overlapping edits of one batch are rejected as out of bounds; an
+offset at a continuation byte in UTF-8 or between the two units of one scalar
+in UTF-16 is rejected as inside a scalar. From step 7, an `append` or
+`finalize` after `finalize` fails with the finalized status (plan 4.4). In C,
+the allocator-seam sweep of plan 8 fails a sample of steps at every
+allocation boundary; each call throws the out-of-memory error, and freeing
+the session leaks nothing.
 
 ### 4.9 Deep trees
 
@@ -367,8 +417,8 @@ There is no tolerance.
 
 ### 6.2 Flatness, on Ir
 
-For every local edit family (`typing`, `lines`, `ranges`, `far`, `batch`)
-on every scale shape, **every step** costs at most 1.25 times as much at every
+Until step 5, for every local edit family (`typing`, `lines`, `ranges`,
+`far`, `batch`) on every scale shape, **every step** costs at most 1.25 times as much at every
 larger size as at 16 KB. The scripts apply the same edits at the same relative
 positions at every size, so step `i` of one size corresponds to step `i` of
 another. With `c(s)` the cost of step `i` at size `s`, each of `c(64 KB)`,
@@ -386,18 +436,21 @@ work that grows with the text already streamed, wherever in the stream it
 occurs.
 
 The same rule covers the adversarial shapes whose cost the language keeps
-local: the 10,000-item list edited in the middle and the 1,000 nested quotes
-edited at the leaf. It excludes the shapes whose cost plan 7.2 assigns to the
-language (the stray opener, the definition with 10,000 references, the shifted
-anchor suffixes, the unclosed `**`, the single-line paragraph) and streaming
-into the `table` shape, which re-reads the table at the tail per appended row.
-Those are bounded by 6.3.
+local: the 10,000-item list and the 1,000 nested quotes. It excludes the
+shapes whose cost plan 7.2 assigns to the language (the stray opener, the
+Properties envelope left open, the unclosed grid table, the unclosed `**`, the
+single-line paragraph) and the definition with 10,000 references, whose
+`finalize` parses every root that uses it again. Those are bounded by 6.3.
+From step 7 the stream rule covers the grid and multiline tables of the
+`table` shape only up to their closing border, as plan 7.2 says, and from
+step 8 it covers the paragraph of short lines (3.1).
 
 ### 6.3 Never worse than reparsing
 
-For every step of every script of at most 1,024 steps, including `markers`,
-`declarations`, `random` and every stream of at most 1,024 chunks, `step_ir`
-is at most 1.25 times `reparse_ir` of the same step (decision G2). A longer
+For every step of every script of at most 1,024 steps, including every
+stream of at most 1,024 chunks and its `finalize`, and until step 5 the edit
+families `markers`, `declarations` and `random`, `step_ir` is at most 1.25
+times `reparse_ir` of the same step (decision G2). A longer
 stream is bounded per chunk by 6.2; its `reparse_ir` column is
 reported. The margin pays for matching and deduplication when an edit really
 does change the whole document; beyond it, an incremental edit would be a
@@ -434,15 +487,16 @@ its numbers are reported with the `reparse` subject.
 | 1 Model | 4.2 for fresh parses; deep equality and 4.9 on fresh documents | One-shot budget for the model change (G1), then 1.02 per PR |
 | 2 Sessions, whole-document restart | 4.1–4.11 on the correctness set, every platform, both units | 6.3 on every workload, which sets the session baseline for 6.4 (G4) |
 | 3 Reference nodes, pieces and content runs | Unchanged | One-shot budget for the step (G5), then 1.02 per PR |
-| 4 Shared subtrees | Unchanged | Reported; no benchmark rule blocks the pull request (G9) |
-| 5 Block reuse | Unchanged | Reported, as step 4 |
-| 6 Session registries | Unchanged | Reported, as step 4 |
-| 7 Inline reuse | Unchanged | Reported, as step 4 |
-| 8 Performance | Unchanged | 6.2 for every local edit family on every scale shape and for the local steps of `declarations`, 6.2 for `tokens` and `rows`, 6.3 on every workload, and 6.4 against the revision before step 4; then 1.02 per PR |
+| 4 Node runs | Unchanged | 6.3 on every workload; one-shot budget for the step (G10), then 1.02 per PR |
+| 5 No edits | The edit scripts, the edit cases of 4.5, 4.7 and the range errors of 4.8 leave with `edit` (G11) | The edit benchmark leaves; 6.3 on every stream; 6.4 at 1.02 |
+| 6 Builders | Unchanged | As step 5 |
+| 7 Streaming session | 4.6 and 4.8 for streams and `finalize`, every platform, both units; 4.1 after `finalize`; the streaming adversarial shapes | 6.2 for `tokens` and `rows` on every scale shape and adversarial shape that 6.2 does not exclude; 6.3 and 6.4 as step 5; the binding's cost per append reported (plan D5) |
+| 8 Settle point | Unchanged | 6.2 for the paragraph of short lines too |
 
 From step 2 on, the one-shot benchmark measures `Document.parse` through the
 session path it becomes (plan 4.4), so the one-shot gate also guards what the
-session machinery costs a fresh parse.
+session machinery costs a fresh parse. From step 6 that path is a commit and a
+`finalize` (plan 5.10).
 
 ## 8. The harness proves it can fail
 
@@ -461,6 +515,8 @@ named oracle:
 | Reuses a retired id for a new node | 4.2 |
 | Accepts an offset inside a scalar | 4.8 |
 | Re-reads the whole document on every step | 6.2 |
+| From step 7: answers a snapshot's lookup from a definition that arrived in an earlier append, wherever it was written | 4.6 chunking independence |
+| From step 7: accepts an `append` after `finalize` | 4.8 |
 
 The faulty subjects wrap `reparse` (and, from step 1, fresh ids), live only in
 the harness's test sources, and are never linked into a product target. The
@@ -478,9 +534,9 @@ inputs.
 `specs/incremental/` and kept current by a `--check` audit, as the node-kind
 tables are. Its documents are the canonical AST cases, which every platform
 already consumes, and the scale and adversarial shapes at their smallest size.
-It holds every edit and stream family, `splits` on every document up to 2 KB,
-`random` with 16 seeds, the scripted-identity cases of 4.5, and the invalid
-arguments of 4.8. Scripts are offsets and short texts, so the set stays small
+It holds every stream family and, until step 5, every edit family, `splits` on
+every document up to 2 KB, `random` with 16 seeds, the scripted-identity cases
+of 4.5, and the invalid arguments of 4.8. Scripts are offsets and short texts, so the set stays small
 enough to track.
 
 - C runs it as `incremental_runner` under the `incremental` label, with
@@ -492,8 +548,10 @@ enough to track.
 
 **The benchmark workloads** are the generator's large output, built when the
 benchmark runs, as the grammar corpus is: every grammar corpus document with
-`typing`, `lines`, `markers`, `undo`, `random`, `tokens` and `scalars`, and
-every scale and adversarial shape at all four sizes with every family but
+`tokens` and `scalars`, and every scale and adversarial shape at all four
+sizes with `tokens` and `rows`. Until step 5 they also hold the edit families:
+every grammar corpus document with `typing`, `lines`, `markers`, `undo` and
+`random`, and every scale and adversarial shape with every edit family but
 `undo`. `random` runs with 16 seeds in both, so 6.3 is measured on arbitrary
 ranges and not only on the scripted families.
 
@@ -507,20 +565,20 @@ column (reparse), the speedup, and the flatness ratios by size.
 
 ## 10. Work items
 
-Step 0 is these items. Later steps activate the gates as section 7 says, in
+Step 0 was these items. Later steps activate the gates as section 7 says, in
 their own pull requests.
 
-- [ ] The workload generator: documents, edit and stream scripts, the
+- [x] The workload generator: documents, edit and stream scripts, the
       composite-part check (3.1), and its `node --test` suite.
-- [ ] The tracked correctness set under `specs/incremental/` and its
+- [x] The tracked correctness set under `specs/incremental/` and its
       `--check` audit.
-- [ ] The C `incremental_runner` with the text model, the `reparse` subject,
+- [x] The C `incremental_runner` with the text model, the `reparse` subject,
       the oracles that apply before sessions exist, and the faulty subjects
       of section 8 that wrap `reparse`.
-- [ ] The edit and stream benchmark runner, `pnpm benchmark:edits`, reporting
+- [x] The edit and stream benchmark runner, `pnpm benchmark:edits`, reporting
       the R column, with driver tests on synthetic profiles.
-- [ ] The `buffer_to_ast` regression rule in the one-shot gate (6.4, G1).
-- [ ] The "Measure - edits and streams" CI job and its tables in the PR
+- [x] The `buffer_to_ast` regression rule in the one-shot gate (6.4, G1).
+- [x] The "Measure - edits and streams" CI job and its tables in the PR
       comment.
 
 ## 11. Owner decisions
@@ -549,19 +607,20 @@ their own pull requests.
   request.
 - **G6 `flat` with the registries. Decided 2026-10-01: move to the session
   registries step.**
-  `flat` has a heading in every section, and headings are declarations
-  (plan 5.1, 5.7), so its 6.2 gate turns on with the session registries in
-  step 6 beside `prose`, `quote` and `refs` (section 7). Revised
-  2026-10-06: `flat` and every other 6.2 gate turn on in step 8 (G9).
+  `flat` has a heading in every section, and headings are declarations, so
+  its 6.2 gate turned on with the session registries beside `prose`, `quote`
+  and `refs`. Revised 2026-10-06: `flat` and every other 6.2 gate turn on in
+  step 8 (G9). Superseded 2026-10-14 with the general-edit engine (G11).
 - **G7 Ids of nodes taken into a new owner. Decided 2026-10-04: they keep
-  their ids.** The cursor finds old nodes by position (plan 5.3), so a list
-  split by an inserted line takes the items after the split whole into the
-  new list. They keep their ids there, as plan 5.9 states for every taken
-  node (4.4).
+  their ids.** The general-edit engine's cursor found old nodes by position,
+  so a list split by an inserted line took the items after the split whole
+  into the new list. They kept their ids there, as for every taken node
+  (4.4). Superseded 2026-10-14 with that engine (G11); the oracle accepts
+  either id until step 5 removes edits.
 - **G8 Positions of the local families. Decided 2026-10-04: text the
   language keeps local.** A grid table row, a table's header or border, a
   definition referenced from every section and a fence line spread an edit
-  to the whole construct (plan 7.2). The local families place their edits in
+  to the whole construct. The local families place their edits in
   paragraph, list item and pipe cell text (3.2); `markers`, `declarations`
   and `random` edit those other places, under 6.1 and 6.3.
 - **G9 Benchmarks for steps 4 to 7. Decided 2026-10-06: reported, not
@@ -570,4 +629,14 @@ their own pull requests.
   Step 8 is one performance refactor after step 7: it turns on 6.2 for every
   local edit family, `tokens` and `rows`, 6.3, and 6.4 for the one-shot and
   session subjects against the revision before step 4. After step 8, 6.4 is
-  at 1.02 per pull request.
+  at 1.02 per pull request. Superseded 2026-10-14 (G11): each step of the
+  streaming rollout meets the rules section 7 gives it.
+- **G10 One-shot budget for step 4. Decided 2026-10-14: 1.10** ("3给1.1的预算").
+  Step 4 makes every node, inline nodes included, carry runs of its own
+  source. Its pull request may raise `source_to_buffer` and `buffer_to_ast`
+  Ir up to 1.10 times the pre-step baseline per document. After step 4, both
+  stages are at 1.02 per pull request.
+- **G11 Streaming only. Decided 2026-10-14** (plan D7, "Edit删掉"). The edit
+  scripts, the edit benchmark and the oracles and rules only edits use leave
+  with `edit` in step 5. The stream gates of 4.6 and 6.2 turn on with the
+  streaming session in step 7 and the settle point in step 8 (section 7).

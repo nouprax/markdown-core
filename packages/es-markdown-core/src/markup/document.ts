@@ -37,24 +37,19 @@ export interface Document extends MarkupBase<"document"> {
      */
     readonly reference: (label: string) => Reference | Heading | null;
     /**
-     * The scopes of `node`, one per source range in source order, computed
-     * from the extents, runs and `source`, the text the document was parsed
-     * from, with columns in the document's unit. A node's source ranges are a
-     * window less the gaps between the runs that place it: its range and its
-     * own runs, or, when it is in an inline root's content, the source from
-     * where its first content byte was read to where its last was, and the
-     * root's runs. `node` is a
-     * node of this document. Throws `MarkdownCoreError` `outOfBounds` when
-     * `source` ends before the node does.
+     * The scopes of `node`, one per run in source order, computed from its
+     * runs and `source`, the text the document was parsed from, with columns
+     * in the document's unit; extents take no part. `node` is a node of this
+     * document. Throws `MarkdownCoreError` `outOfBounds` when `source` ends
+     * before the node does.
      */
     readonly scope: (node: Markup, source: string) => readonly Scope[];
     /**
-     * The last node in canonical walk order one of whose source ranges holds
-     * the byte at `position` of `source`, the text the document was parsed
-     * from, or null when no node holds it or the position names no byte of
-     * `source` or does not fall on a scalar boundary. Throws
-     * `MarkdownCoreError` `outOfBounds` unless the line and column are
-     * integers of at least 1.
+     * The last node in canonical walk order one of whose runs holds the byte
+     * at `position` of `source`, the text the document was parsed from, or
+     * null when no node holds it or the position names no byte of `source` or
+     * does not fall on a scalar boundary. Throws `MarkdownCoreError`
+     * `outOfBounds` unless the line and column are integers of at least 1.
      */
     readonly nodeAt: (position: Position, source: string) => Markup | null;
     /**

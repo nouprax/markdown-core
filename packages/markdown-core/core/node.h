@@ -220,40 +220,53 @@ typedef struct {
     uint32_t start, end;
 } markdown_core_place;
 
-/* A run of a node's source (markdown_core.h): `length` content bytes read
- * from the source bytes `span` long, `lead` from the end of the previous run,
- * or from the start of the node that holds the runs. */
+/* A run of a node's own source (markdown_core.h): a source range whose lead
+ * is from the end of the previous run, or, for the first, from where the
+ * source of the node before it in its relation ends, or where its owner's
+ * begins. */
 #ifndef MARKDOWN_CORE_RUN_TYPEDEF
 #define MARKDOWN_CORE_RUN_TYPEDEF
 typedef struct markdown_core_run {
     int32_t lead;
     uint32_t span;
-    uint32_t length;
 } markdown_core_run;
 #endif
 
-/* WHERE A NODE'S BYTES LIE when its extent alone does not say: the runs of
- * source it read, those its inline content was read from and, with length
- * 0, those that gave no content, with the source that is not its own between
- * them. While a parse builds the tree each holds an absolute source range,
- * as a node's place does; publishing rewrites them relative, as it rewrites
- * the place as the extent. The list is one owned allocation, NULL when the
- * node has none. */
+/* WHERE A NODE'S BYTES LIE. While a parse builds the tree, a node whose
+ * extent alone does not say holds places: the source it read without
+ * content, `length` 0, with the source that is not its own between them,
+ * and, for an inline root, the source its content was read from, `length`
+ * content bytes each. A place whose source is as long as its content reads
+ * each content byte from one source byte; any other reads all of its content
+ * from all of its source. Each holds an absolute source range, as a node's
+ * place does. Publishing gives every node its runs, its own source with the
+ * runs that touch joined and an empty place an empty run, relative as the
+ * extent is: a block's from its places, written over them in their list, or
+ * its range when it has none, and an inline node's from the places of its
+ * root (ast.c). Each list is storage the node owns
+ * (markdown_core_node_pool_bytes). */
 typedef struct {
     uint32_t start, end, length;
-} markdown_core_run_place;
+} markdown_core_source_place;
 
-typedef union {
-    markdown_core_run_place place;
-    markdown_core_run run;
-} markdown_core_run_where;
+typedef struct markdown_core_places {
+    /* How many there are, and the content bytes they read: 0 for a node
+     * without inline content. */
+    uint32_t count, content;
+    markdown_core_source_place items[];
+} markdown_core_places;
 
 typedef struct markdown_core_runs {
-    /* How many runs there are, and the content bytes they read: 0 for a
-     * node without inline content, whose runs all have length 0. */
-    uint32_t count, content;
-    markdown_core_run_where items[];
+    uint32_t count;
+    markdown_core_run items[];
 } markdown_core_runs;
+
+/* A node's places while the parse builds the tree, and its runs once it is
+ * published, as its place becomes its extent. */
+typedef union {
+    markdown_core_places *places;
+    markdown_core_runs *runs;
+} markdown_core_node_source;
 
 /* WHERE A NODE IS, in bytes of the UTF-8 source, and never in lines or
  * columns. While a parse builds the tree every node holds its absolute
@@ -365,8 +378,8 @@ struct markdown_core_node {
     /* This node's slice of parser-owned content-to-source runs. Zero count
      * means there is no mapped content (for example, an empty cell). */
     markdown_core_content_map content_map;
-    /* The runs of its source (markdown_core_runs). */
-    markdown_core_runs *runs;
+    /* Its places, then its runs (markdown_core_node_source). */
+    markdown_core_node_source source;
     uint16_t kind;
     markdown_core_node_internal_flags flags;
 
@@ -510,18 +523,18 @@ size_t markdown_core_node_release(markdown_core_node *node);
  *
  * A node lives in a SLOT (slab.h) holding the node and room for its kind's
  * record, the resources links read through live in slots of their own, and
- * what else a node owns of its own size -- its runs, a label it
- * declares -- in storage of that size. A pool holds the slabs of all
- * three. A parse takes every slot from the pool its
- * caller lends it -- a session's, which outlives each of its edits, or one
- * the caller makes for a single parse -- and a caller with no pool takes one
- * slot from the allocator. A slot released into a pool goes back to it for
- * reuse, so a session's edits reuse the slots of the nodes they retire
- * instead of pinning a slab per edit; a slot released with no pool drops its
- * slab hold. So a subtree unlinked from a parsed document is as good as one
- * built by hand: it outlives the pool it came from and is released by
- * `markdown_core_node_free` like any other. The size of what it keeps alive
- * is the slab, not the node.
+ * what else a node owns of its own size -- the lists of its source, a label
+ * it declares -- in storage of that size, cut from the slabs its nodes are.
+ * A pool holds the slabs of all three. A parse takes every slot from the
+ * pool its caller lends it -- a session's, which outlives each of its edits,
+ * or one the caller makes for a single parse -- and a caller with no pool
+ * takes one slot from the allocator. A slot released into a pool goes back
+ * to it for reuse, so a session's edits reuse the slots of the nodes they
+ * retire instead of pinning a slab per edit; a slot released with no pool
+ * drops its slab hold. So a subtree unlinked from a parsed document is as
+ * good as one built by hand: it outlives the pool it came from and is
+ * released by `markdown_core_node_free` like any other. The size of what it
+ * keeps alive is the slab, not the node.
  *
  * Why slabs: a node's chunk was larger than the C library's fast-path size
  * classes, so every release of one walked the allocator's merge path, and the
@@ -532,12 +545,14 @@ typedef struct markdown_core_node_pool {
     markdown_core_bytes_pool bytes;
 } markdown_core_node_pool;
 
-/* Uninitialized storage of `bytes` a node owns -- its runs, a
- * label it declares -- from the pool's slabs, or from the allocator with no
- * pool; NULL when none can be had. The node releases it with itself. */
-#define MARKDOWN_CORE_NODE_BYTES_SLAB_BYTES ((size_t)16 * 1024)
+#define MARKDOWN_CORE_NODE_SLAB_BYTES ((size_t)64 * 1024)
+
+/* Uninitialized storage of `bytes` a node owns -- a list of its source, a
+ * label it declares -- cut from the slabs of the pool's nodes, which a parse
+ * always lends; NULL when none can be had. The node releases it with
+ * itself. */
 static inline void *markdown_core_node_pool_bytes(markdown_core_node_pool *pool, size_t bytes) {
-    return markdown_core_bytes_take(pool ? &pool->bytes : NULL, bytes, MARKDOWN_CORE_NODE_BYTES_SLAB_BYTES);
+    return markdown_core_bytes_take(&pool->bytes, &pool->nodes, bytes, MARKDOWN_CORE_NODE_SLAB_BYTES);
 }
 /* Gives back storage `markdown_core_node_pool_bytes` took, into `pool` for
  * reuse; a NULL pool is the plain release. */

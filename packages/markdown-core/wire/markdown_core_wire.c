@@ -138,7 +138,7 @@ static void put_extent(wire_buffer *buffer, markdown_core_extent extent) {
     put_u32(buffer, extent.span);
 }
 
-/* runs: [Run { lead: Int32, span: UInt32, length: UInt32 }]. */
+/* runs: [Run { lead: Int32, span: UInt32 }]. */
 static void put_runs(wire_buffer *buffer, const markdown_core_node *node) {
     size_t count;
     const markdown_core_run *runs = markdown_core_node_runs(node, &count);
@@ -146,7 +146,6 @@ static void put_runs(wire_buffer *buffer, const markdown_core_node *node) {
     for (size_t i = 0; i < count; i++) {
         put_i32(buffer, runs[i].lead);
         put_u32(buffer, runs[i].span);
-        put_u32(buffer, runs[i].length);
     }
 }
 

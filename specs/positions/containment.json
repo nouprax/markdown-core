@@ -1326,7 +1326,7 @@
             ]
         },
         {
-            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:2562",
+            "source": "packages/markdown-core/tests/fixtures/dialect-tables.txt:2610",
             "input": " Name\tCount\n ----    -----\n ab\t4\n",
             "findings": [
                 {
