@@ -411,6 +411,8 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_no
     reference->where.place = (markdown_core_place){(uint32_t)start, (uint32_t)stop};
     markdown_core_parser_line_places(parser, reference, b->parent, line);
     markdown_core_node_attach_validated(b->parent, reference, b);
+    /* A definition is read whole: its block is closed as it is made. */
+    markdown_core_parser_complete_later(parser, reference);
     return length;
 }
 

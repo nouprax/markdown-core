@@ -2,8 +2,8 @@
 
 The [anchors module](../specs/dialect/anchors.md) owns the language contract.
 Parsing establishes heading labels before reference lookup, then gives each
-heading its anchor after every explicit anchor is known. Consumers and element
-postprocessors receive only the completed document.
+heading its anchor after every explicit anchor is known. Consumers receive
+only the completed document.
 
 ## Declaration order and inline ownership
 
@@ -68,8 +68,8 @@ owns. A reference occurrence holds only the label it names; the anchor it
 leads to is the heading's own, and the heading's attributes stay the
 heading's.
 
-The finish walk reserves effective explicit anchors at each node's ENTER,
-while it discovers owned label/title fields. The walk parses each container's
+Completion reserves effective explicit anchors at each node's ENTER, while
+it discovers owned label/title fields. Its walk parses each container's
 inline content at that container's ENTER, so it visits only completed child
 trees, after bracket reductions and occurrence attributes have settled; a
 temporary inline later discarded by a footnote call cannot reserve an anchor.
@@ -129,7 +129,7 @@ occurrence owns its label, so freeing a heading or a document invalidates no
 other node.
 Every failure joins the parser's terminal allocation-failure transaction and
 disposes pending inline states before their nodes. Parse-time indices are discarded
-before consolidation or element postprocessing can replace nodes.
+before consolidation or an element's finish step can replace nodes.
 
 Expected work is proportional to parsed input, visited nodes, and produced
 anchor bytes, using the shared hash index's normal bounds. Memory is

@@ -35,18 +35,18 @@ void markdown_core_iter_reset(markdown_core_iter *iter, markdown_core_node *curr
 
 markdown_core_node *markdown_core_iter_get_node(markdown_core_iter *iter) { return iter->cur.node; }
 
-/* Every iterator step a finish-stage consolidation takes is counted on the
- * parser when there is one, so the traversal count the finish stage claims
- * can be checked (see the counters in parser.h). */
+/* Every iterator step a consolidation inside completion takes is counted on
+ * the parser when there is one, so the traversal count completion claims can
+ * be checked (see the counters in parser.h). */
 static void S_count_step(markdown_core_parser *parser, markdown_core_event_type event) {
     if (!parser) {
         return;
     }
-    parser->finish_walk_events++;
+    parser->completion_events++;
     if (event == MARKDOWN_CORE_EVENT_ENTER) {
-        parser->finish_nodes_entered++;
+        parser->completion_entered++;
     } else if (event == MARKDOWN_CORE_EVENT_DONE) {
-        parser->finish_walk_roots++;
+        parser->completion_roots++;
     }
 }
 
@@ -185,9 +185,9 @@ markdown_core_finish_result markdown_core_consolidate_text_step(markdown_core_pa
     return MARKDOWN_CORE_FINISH_CONTINUE;
 }
 
-/* The same step, driven by a walk of its own. Inside a parse the finish walk
- * runs the step itself and never comes here; this is the entry point for a
- * tree built or rewritten outside a parse, and a pass that calls it with a
+/* The same step, driven by a walk of its own. Inside a parse the completion
+ * walk runs the step itself and never comes here; this is the entry point for
+ * a tree built or rewritten outside a parse, and a caller that hands it a
  * parser pays -- and is counted for -- one more traversal of the root. */
 int markdown_core_consolidate_text_nodes_with_parser(markdown_core_parser *parser, markdown_core_node *root) {
     if (root == NULL) {

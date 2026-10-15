@@ -5,19 +5,20 @@
 #include "block_internal.h"
 #include "dialect.h"
 
-/* Whether a descriptor is refused. The rule: an element takes part in
- * the finish stage as a LOCAL step or as a GLOBAL pass, never both
- * (markdown-core-element-api.h states the invariant). A descriptor that
- * declares both would run its step from inside the walk and its pass after it,
- * and nothing in either hook's contract says what the second may assume about
- * the first's work; that is two concerns, which is two elements. A step is
- * asked once per event, so a kind in both of its lists -- one EXIT declared
- * twice -- is refused rather than delivered twice. A step asked at no kind
- * would never be called, and is refused rather than silently kept. And a kind
- * the dispatch table cannot index -- an ordinal at or past
- * MARKDOWN_CORE_NODE_KIND_COUNT, or a value of neither class -- would share
- * the table's one out-of-table key and be asked at every such node's events
- * instead of its own, so it is refused too: that key is never declared.
+/* Whether a descriptor is refused. The rule: an element takes part in the
+ * finish stage through one step, asked in completion's walk where it can
+ * keep its contract (markdown-core-element-api.h states it). Completion takes
+ * the blocks in the order they closed, so the blocks below a block complete
+ * before it and its ENTER and EXIT bracket none of their events: a block kind
+ * as a scope kind would track an extent completion never walks, and is
+ * refused. A step is asked once per event, so a kind in both of its lists --
+ * one EXIT declared twice -- is refused rather than delivered twice. A step
+ * asked at no kind would never be called, and is refused rather than
+ * silently kept. And a kind the dispatch table cannot index -- an ordinal at
+ * or past MARKDOWN_CORE_NODE_KIND_COUNT, or a value of neither class -- would
+ * share the table's one out-of-table key and be asked at every such node's
+ * events instead of its own, so it is refused too: that key is never
+ * declared.
  *
  * The document lifecycle is one concern too. The engine calls every one of
  * its hooks but `observe_inline` without asking, on whichever element owns
@@ -49,10 +50,6 @@ static bool S_owns_document_lifecycle(const markdown_core_element *element) {
 }
 
 static bool S_element_refused(const markdown_core_element *element) {
-    /* Both a finish step and a postprocess pass. */
-    if (element->finish_step && element->postprocess_func) {
-        return true;
-    }
     /* Kinds to ask a finish step at, without a finish step. */
     if ((element->finish_exit_kinds || element->finish_scope_kinds) && !element->finish_step) {
         return true;
@@ -70,6 +67,13 @@ static bool S_element_refused(const markdown_core_element *element) {
             }
         }
         if (!asked) {
+            return true;
+        }
+    }
+    /* A block kind as a finish scope kind, whose extent completion never
+     * walks. */
+    for (const markdown_core_node_type *scope = element->finish_scope_kinds; scope && *scope; scope++) {
+        if (MARKDOWN_CORE_NODE_TYPE_BLOCK_P(*scope)) {
             return true;
         }
     }

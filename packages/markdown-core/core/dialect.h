@@ -78,17 +78,17 @@ typedef enum {
 
 /* THE FINISH STEPS, projected by EVENT and KIND.
  *
- * The finish walk delivers two events per node, and a step declares the kinds
- * it is ASKED AT (their EXIT, once the subtree is complete) and the kinds
- * whose EXTENT it tracks (their ENTER and EXIT), so the natural key of the
- * dispatch is (event, kind): a Text's EXIT reaches autolink, a Paragraph's
- * EXIT reaches formula, a Link's ENTER and EXIT reach autolink, and a Text's
- * ENTER or a List's EXIT reach nothing. The projection is one table with a
- * pointer per key to a terminated list of steps in descriptor order, NULL for
- * a key nothing declared, built once when the dialect is sealed, beside the
- * block and inline-content families, and gated, once the tree is complete, on the kinds
- * the parse produced (element.h, `finish_acts_on_kinds`). One load decides
- * the common case.
+ * Completion's walk delivers two events per node, and a step declares the
+ * kinds it is ASKED AT (their EXIT, once the subtree is complete) and the
+ * inline kinds whose EXTENT it tracks (their ENTER and EXIT), so the natural
+ * key of the dispatch is (event, kind): a Text's EXIT reaches autolink, a
+ * CodeBlock's EXIT reaches formula, a Link's ENTER and EXIT reach autolink,
+ * and a Text's ENTER or a Paragraph's EXIT reach nothing. The projection is one table with a pointer
+ * per key to a terminated list of steps in descriptor order, NULL for a key
+ * nothing declared, built once when the dialect is sealed, beside the block
+ * and inline-content families, and gated at the event on the kinds the parse
+ * has produced (element.h, `finish_acts_on_kinds`). One load decides the
+ * common case.
  *
  * Kinds are indexed by class then ordinal, so a block and an inline kind that
  * collide once masked keep separate keys. A kind outside the table -- an
@@ -122,15 +122,15 @@ static inline size_t markdown_core_finish_key(markdown_core_event_type event, ma
  *
  * THE GATE IS READ AT THE EVENT. A step that declares the kinds it acts on is
  * asked at an EXIT of a kind it declared it is asked at only once the parse
- * has produced one of the kinds it acts on -- the same fact a pass is gated
- * on, read when the event comes rather than before the walk, because the walk
- * parses inline content as it goes and a kind's first node may be made after
- * the walk began. `acts_on` is that declaration as a set, and `gated` says
- * whether the test is worth making: it is false for an entry at a kind the
- * step acts on (a node of that kind is being exited, so the parse produced
- * one), for a step that declared nothing, and for a scope-kind entry (the
- * ENTER and EXIT that bound an extent are delivered whenever the extent is
- * walked, so the state the step keeps for the extent is always in step). */
+ * has produced one of the kinds it acts on, read when the event comes,
+ * because completion parses each block's inline content as it reaches the
+ * block, and a kind's first node may be made after completion began.
+ * `acts_on` is that declaration as a set, and `gated` says whether the test
+ * is worth making: it is false for an entry at a kind the step acts on (a
+ * node of that kind is being exited, so the parse produced one), for a step
+ * that declared nothing, and for a scope-kind entry (the ENTER and EXIT that
+ * bound an extent are delivered whenever the extent is walked, so the state
+ * the step keeps for the extent is always in step). */
 typedef struct markdown_core_finish_step_entry {
     const markdown_core_element_instance *instance;
     size_t slot;
@@ -145,7 +145,7 @@ typedef struct markdown_core_finish_step_entry {
  * is handed -- or NULL for a kind with none or whose structure element the
  * dialect does not hold, which then has no flag but FIELDS. Each flag is a
  * fact of that element's descriptor (element.h), read with the record by the
- * line engine and the finish walk alike. A fact a hook answers per node is a
+ * line engine and completion alike. A fact a hook answers per node is a
  * flag saying the element declares the hook, which is then asked:
  *
  * - INLINES / INLINES_ASK: `inline_content` / `contains_inlines_func` -- the

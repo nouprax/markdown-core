@@ -295,9 +295,9 @@ static bool continue_container(const markdown_core_element_instance *self, markd
     (void)self;
     return markdown_core_list_continue(parser, node, input, joining, taken);
 }
-/* A LIST IS LAID OUT AT ITS EXIT, from inside the one finish walk: tight or
- * loose is read off its items and their children, which are complete
- * there. */
+/* A LIST IS LAID OUT AT ITS EXIT, as completion reaches it: tight or loose
+ * is read off its items and their children, which have completed before
+ * it. */
 static markdown_core_finish_result finish_step(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                                markdown_core_node *node, markdown_core_event_type event, int is_root,
                                                void **state) {

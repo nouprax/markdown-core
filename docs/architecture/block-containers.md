@@ -18,7 +18,7 @@ A reference-shaped line uses the reference parser's non-registering recognition
 operation. Once accepted, the one-line term owns an inline root, separate from
 its ordered block-body roots. The shared owned-inline traversal reaches that
 root in every phase, including reference resolution, explicit anchor reservation,
-inline parsing and postprocessing. Destruction uses the same iterative ownership
+inline parsing and the finish steps. Destruction uses the same iterative ownership
 walk. Public models expose only DefinitionList, Definition, the term array and
 arrays of body content; private body roots never become public Markup.
 

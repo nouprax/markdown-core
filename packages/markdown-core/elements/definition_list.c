@@ -248,8 +248,8 @@ static bool continue_container(const markdown_core_element_instance *self, markd
            markdown_core_definition_list_continue(parser, node, input);
 }
 /* A definition list, a definition and a body end where their last child
- * ends: taken at each one's EXIT, from inside the one finish walk, where the
- * children are complete. */
+ * ends: taken at each one's EXIT, as completion reaches it, when its children
+ * have completed before it. */
 static markdown_core_finish_result finish_step(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                                markdown_core_node *node, markdown_core_event_type event, int is_root,
                                                void **state) {

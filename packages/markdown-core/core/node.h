@@ -365,6 +365,9 @@ struct markdown_core_node {
     /* Intrusive list of content children. */
     struct markdown_core_node *first_child;
     struct markdown_core_node *last_child;
+    /* The block behind this one in the parser's completion queue while this
+     * one is queued, NULL otherwise (parser.h). */
+    struct markdown_core_node *queued;
 
     /* The node's identifier, unique within its document; 0 until the
      * document is published (markdown_core_publish_tree). */

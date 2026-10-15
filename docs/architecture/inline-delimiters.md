@@ -133,18 +133,20 @@ traverses all owned inline roots using one explicit stack, and walks each root
 exactly once: a container's inline content is parsed at the container's ENTER
 (the walk then continues into the children that parse produced), inline
 completion (the element's `complete_inline`, the document's anchor
-reservation) runs at each node's ENTER, text consolidation and every element
-finish step (a reference-only paragraph's removal, a list's layout, autolink's
-email scan, a formula code fence's FormulaBlock) run at the events of that one walk, and
-a global postprocess pass receives the root after its walk completes. A step
-that declares the kinds it acts on reads that gate at each event it is asked
-at, since a kind's first node may be made by the walk itself. A Text sibling that consolidation
+reservation) runs at each node's ENTER, and text consolidation and every inline
+finish step (autolink's email scan) run at the events of that one walk.
+Completion takes the blocks in the order they closed, each its own root, and
+a block kind's finish steps (a list's layout, a definition list's extents, a
+formula code fence's FormulaBlock) run at the block's EXIT as the queue
+reaches it. A step that
+declares the kinds it acts on reads that gate at each event it is asked at,
+since a kind's first node may be made by the walk itself. A Text sibling that consolidation
 absorbs is completed by consolidation before it is read, since its ENTER is
 stepped over. Both paths use the parser's projected finish-kind completion
 plan, with kind completion before document observation at the inherited word
 depth; consolidation does not reinterpret the absorbed Text's element.
 The document's finalization -- footnote and specimen ownership,
-heading anchors -- follows the walk and reads the finished tree. Field order and inherited script depth are retained,
+heading anchors -- follows completion and reads the finished tree. Field order and inherited script depth are retained,
 and a phase rewrites each root in place: a field root is the node its owner put
 there and no phase substitutes another for it. Definition families start
 independent contexts. Disposal splices the same owned roots into the existing
@@ -168,12 +170,11 @@ size or benchmark frequency. Body decoding, padding, markers and source placemen
 are shared by both construction paths.
 
 A fenced code block whose info string is `formula` becomes a FormulaBlock at
-its EXIT. The rewrite reserves its destination before touching the old block,
-and the fence transfers its owned literal into a newly initialized formula
-payload. A paragraph whose only content is a standalone formula stays a
-paragraph. Trimming compacts an owned buffer in place and restores NUL
-termination, while a borrowed chunk obtains independent storage before
-mutation. Direct formula blocks detach their accumulated content buffer.
-Failure before commitment keeps the old block intact; commitment clears the
-fence's literal before releasing the old block. The finish walk still reports
-the old node as consumed, preserving observer and iterator ordering.
+its EXIT, in place: the node keeps its place in the tree, its range and the
+places of its lines, and the fence transfers its owned literal into a newly
+initialized formula payload. A paragraph whose only content is a standalone
+formula stays a paragraph. Trimming compacts an owned buffer in place and
+restores NUL termination, while a borrowed chunk obtains independent storage
+before mutation. Direct formula blocks detach their accumulated content buffer.
+Failure before the kind changes keeps the code block intact; the kind change
+clears the fence's literal and drops its attributes and info.

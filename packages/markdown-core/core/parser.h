@@ -130,6 +130,14 @@ struct markdown_core_parser {
      * stage releases it when it ends. */
     void *walk_stack;
     size_t walk_stack_size;
+    /* THE COMPLETION QUEUE: every block of the tree, in the order it joined
+     * (markdown_core_parser_complete_later), from `completion_first` to
+     * `completion_last` through each block's `queued` link. A block joins
+     * once its block structure is final; completing it parses its own inline
+     * content and asks the finish steps at its events, after the block
+     * phase, in queue order (S_finish_parse). Every block joins on its own,
+     * so a block's completion never reaches another block. */
+    struct markdown_core_node *completion_first, *completion_last;
     /* Run records released by finished runs, kept for the next run
      * (markdown_core_inline_state_from_buf); linked through their first word
      * and released with the parser. Each is the dialect's `run_state_size`. */
@@ -146,7 +154,6 @@ struct markdown_core_parser {
      * share this parser and all document registries. Input roots stay owned by
      * the AST; the queue only borrows them until their block content is read. */
     struct markdown_core_node *block_root;
-    struct markdown_core_node *matched_container;
     struct markdown_core_node **block_inputs;
     size_t block_input_count, block_input_capacity, block_input_cursor;
     /* Geometry and grammar facts for the active immutable input. The driver
@@ -233,57 +240,62 @@ struct markdown_core_parser {
      * scanning every attached element would build the identical tree. So the
      * invariant is asserted on this counter rather than on output. */
     size_t inline_hook_work;
-    /* THE FINISH STAGE'S TRAVERSAL COUNT, in numbers the output cannot show.
-     * The stage's whole claim is that it walks each owned root ONCE and runs
-     * inline completion, consolidation and every finish step from inside that
-     * one walk; a stage that walked a root once per hook would build the
-     * identical tree, so the claim is asserted on these rather than on a dump.
+    /* COMPLETION'S TRAVERSAL COUNT, in numbers the output cannot show.
+     * Completion's whole claim is that it completes each node ONCE -- each
+     * queued block's walk steps over the blocks queued on their own -- and
+     * runs inline completion, consolidation and every inline step from inside
+     * that one walk; a completion that walked a node once per hook, or once
+     * per queued block above it, would build the identical tree, so the claim
+     * is asserted on these rather than on a dump.
      *
-     * `finish_walk_events` is every iterator step the finish stage took: the
+     * `completion_events` is every iterator step completion took: the
      * walk's own ENTER, EXIT and DONE events, plus the ENTER and EXIT that
      * consolidation advances over when it absorbs a following Text sibling
      * (those nodes are visited -- by consolidation, which completes and frees
      * them -- and counted as visited). Repositioning the cursor back to the
      * survivor's EXIT is not a step: that event was already delivered.
-     * `finish_nodes_entered` is the ENTER events among them, absorbed siblings
-     * included; `finish_walk_roots` is the DONE events, one per root walked.
+     * `completion_entered` is the ENTER events among them, absorbed siblings
+     * included; `completion_roots` is the DONE events, one per root walked:
+     * the document's, whose walk takes the queue a block at a time, and each
+     * field root's.
      *
      * The denominator is taken without a traversal, at the two seams where
      * nodes come and go. `nodes_created` counts every node a parse makes, at
      * the same operation that records the node's kind, so the audit that
      * holds one holds the other; `nodes_freed` counts every node a parse
-     * releases through `markdown_core_parser_release_node`, which the finish
-     * stage's every free takes -- consolidation's, and each step's, which the
-     * finish-hook audit holds -- and which counts the descendants and field
-     * roots that go with a node, since the release loop visits each of them.
-     * The walk notes both in `..._before_finish` as it starts. The finished
-     * tree holds every node that existed when the walk started, plus those
-     * the walk's inline parsing handed it (`finish_nodes_parsed`, which the
-     * walk enters), less those the stage freed, plus those its steps made
-     * (which it never enters), so one traversal per root is exactly
+     * releases through `markdown_core_parser_release_node`, which
+     * completion's every free takes -- consolidation's, and each step's,
+     * which the finish-hook audit holds -- and which counts the descendants
+     * and field roots that go with a node, since the release loop visits each
+     * of them. Completion notes both in `..._before_completion` as it starts.
+     * The finished tree holds every node that existed when the walk started,
+     * plus those the walk's inline parsing handed it (`completion_parsed`,
+     * which the walk enters), less those completion freed, plus those its
+     * steps made (which it never enters), so one traversal per root is
+     * exactly
      *
-     *   finish_nodes_entered == nodes in the finished tree
-     *                           + (nodes_freed - nodes_freed_before_finish)
-     *                           - (nodes_created - nodes_created_before_finish)
-     *                           + finish_nodes_parsed
+     *   completion_entered == nodes in the finished tree
+     *                           + (nodes_freed - nodes_freed_before_completion)
+     *                           - (nodes_created - nodes_created_before_completion)
+     *                           + completion_parsed
      *
      * where the finished tree is counted by whoever holds it (the api test
      * walks it with the public iterator and the owned-subtree visitors), and
-     * a stage that walked each root k times, counting as the engine's walks
-     * count, would enter k times as many. `finish_walk_events == 2 *
-     * finish_nodes_entered + finish_walk_roots` then says that every step
+     * a completion that walked each root k times, counting as the engine's walks
+     * count, would enter k times as many. `completion_events == 2 *
+     * completion_entered + completion_roots` then says that every step
      * taken was one of those events. A whole-root consolidation driven through
      * the public entry point with a parser adds exactly one traversal of that
      * root to the events, the entered and the roots.
      *
      * The count sees only the walks that report themselves: the engine's
-     * finish walk and that public entry point. A traversal that keeps no count
+     * completion walk and that public entry point. A traversal that keeps no count
      * -- an iterator a step opened over its node's subtree -- is invisible
      * here, so the other half of the invariant is held on the source:
      * scripts/audit/check-finish-hook-shapes.mjs refuses a translation unit that
      * declares a finish step and opens an iterator. */
-    size_t nodes_created, nodes_created_before_finish;
-    size_t nodes_freed, nodes_freed_before_finish;
+    size_t nodes_created, nodes_created_before_completion;
+    size_t nodes_freed, nodes_freed_before_completion;
     /* What the parse continues, and the storage it borrows from its caller
      * (the revision's pool): every node it makes and every resource a
      * definition, a link or a heading's implicit reference states is a slot
@@ -296,10 +308,10 @@ struct markdown_core_parser {
      * is why every parse-time release is counted (the kind-record audit holds
      * that). Made after the walk started, so the identity above adds them
      * back. */
-    size_t finish_nodes_parsed;
-    size_t finish_walk_events;
-    size_t finish_nodes_entered;
-    size_t finish_walk_roots;
+    size_t completion_parsed;
+    size_t completion_events;
+    size_t completion_entered;
+    size_t completion_roots;
     /* The lines the block-start lookahead visited plus the prefix bytes each
      * visit matched itself, for its linearity gate. */
     size_t block_lookahead_work;
@@ -333,13 +345,12 @@ struct markdown_core_parser {
     /* WHICH KINDS THIS PARSE PRODUCED, recorded where they are produced.
      *
      * Every node creation and every `set_kind` that a parse performs writes
-     * here, so the gate on a finish hook is read from a record rather than
-     * gathered by a walk: a pass is selected once the finish walk -- which
-     * parses the inline content -- has completed, and a step reads it at
-     * each event it is asked at (markdown_core_finish_step_entry). Gathering
-     * it by a walk instead is what forced the finish stage to traverse the
-     * document twice. See the gate in `S_finish_parse` for what the set
-     * over-approximates and why that is sound.
+     * here, so the gate on a finish step is read from a record rather than
+     * gathered by a walk: a step reads it at each event it is asked at
+     * (markdown_core_finish_step_admitted), against the kinds produced so
+     * far. Gathering it by a walk instead is what forced the finish stage to
+     * traverse the document twice. See the gate in `S_finish_parse` for what
+     * the set over-approximates and why that is sound.
      *
      * Every production creation site goes through `markdown_core_parser_note_kind`;
      * `scripts/audit/check-parser-kind-record.mjs` holds that. */
@@ -464,10 +475,10 @@ static MARKDOWN_CORE_INLINE int markdown_core_parser_content_span(markdown_core_
 
 /* THE PARSE'S NODE OPERATIONS, WHICH RECORD THE KIND THEY PRODUCE.
  *
- * `kinds_created` decides which finish hooks run -- a global pass, a step at
- * every event it was projected to -- so a production site that writes a kind
- * without recording it does not fail a build or a test: it makes the gate skip
- * a hook some document needed, and the defect surfaces
+ * `kinds_created` decides which finish steps run at the events they were
+ * projected to, so a production site that writes a kind without recording it
+ * does not fail a build or a test: it makes the gate skip a step some
+ * document needed, and the defect surfaces
  * as a missing rewrite far from the line that caused it. That is a bad thing
  * to police with an audit over twenty-one call sites, so it is not policed:
  * recording is part of producing a node, in the two operations below.
@@ -481,9 +492,9 @@ static MARKDOWN_CORE_INLINE int markdown_core_parser_content_span(markdown_core_
  * node. Making it exact would mean observing REMOVAL, and the only way to do
  * that is another walk of the whole tree -- which is the cost this record
  * exists to avoid. Over-approximating can only make the gate skip fewer
- * passes, never miss one, because a kind in the finished tree was necessarily
- * created; and a pass that runs over a tree holding none of its declared kinds
- * finds nothing to do. */
+ * steps, never miss one, because a kind in the finished tree was necessarily
+ * created; and a step asked where none of its declared kinds is finds nothing
+ * to do. */
 static inline void markdown_core_parser_fail(markdown_core_parser *parser, markdown_core_parse_error error) {
     if (!parser->error) {
         parser->error = error;
@@ -687,10 +698,27 @@ bool markdown_core_parser_has_block_start(markdown_core_parser *parser, markdown
                                           markdown_core_chunk *input, int first, int column, int indent, bool paragraph,
                                           struct markdown_core_block_reader *reader);
 
+/* Close every block open below `container`, deepest first, so the container
+ * is the deepest open block: the open blocks are one chain, and `current` is
+ * its end (THE OPEN CHAIN in blocks.c). */
+void markdown_core_parser_close_below(markdown_core_parser *parser, struct markdown_core_node *container);
 /* Schedule an already owned node's mapped content for the ordinary block
  * parser. No nested parse transaction, document, dialect or C recursion. */
-void markdown_core_parser_finalize_unmatched_blocks(markdown_core_parser *parser);
 bool markdown_core_parser_queue_block_input(markdown_core_parser *parser, markdown_core_node *owner);
+/* A block whose block structure is final joins the completion queue, at
+ * its end. A block the block parser closes joins as it settles, its element
+ * having finalized it (markdown_core_block_settle); a block made already
+ * closed -- a Reference, a table read whole, the rows and cells a table
+ * makes -- joins when it is made. A block joins once, so its own link is the
+ * queue's storage. */
+static inline void markdown_core_parser_complete_later(markdown_core_parser *parser, markdown_core_node *node) {
+    if (parser->completion_last) {
+        parser->completion_last->queued = node;
+    } else {
+        parser->completion_first = node;
+    }
+    parser->completion_last = node;
+}
 /* WHERE A BYTE OF THE ACTIVE INPUT WAS WRITTEN, as a byte offset of the
  * document source. `line` is a line of the active input and `column` a byte
  * column of that line as the block parser reads it, counted from 1: the

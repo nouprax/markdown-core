@@ -36,7 +36,6 @@ static markdown_core_node *open_text(const markdown_core_element_instance *self,
     if (!container) {
         return NULL;
     }
-    parser->current = container;
     if (markdown_core_block_attach_identifier_line(self->state, parser, container, input) || parser->error) {
         return NULL;
     }

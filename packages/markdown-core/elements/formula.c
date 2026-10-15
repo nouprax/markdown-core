@@ -602,58 +602,55 @@ static int info_is_formula(const markdown_core_optional_chunk *info) {
 }
 
 /* A code block whose info string names a formula becomes a FormulaBlock
- * holding its literal. */
+ * holding its literal, rewritten in place: the node keeps its place in the
+ * tree and in the completion queue, its range and the places of the lines it
+ * read, and holds nothing of the code block but the trimmed literal -- no
+ * attributes and no info. */
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_finish_result
-    replace_with_formula_block(const markdown_core_element *element, markdown_core_parser *parser,
-                               markdown_core_node *oldnode) {
-    /* Rewriting a valid block is optional. Rejection retains its complete
-     * ownership; reserve the destination before moving any live payload. */
-    if (!oldnode->parent || !markdown_core_node_can_contain_type(oldnode->parent, MARKDOWN_CORE_NODE_FORMULA_BLOCK)) {
+    convert_to_formula_block(const markdown_core_element *element, markdown_core_parser *parser,
+                             markdown_core_node *node) {
+    /* Rewriting a valid block is optional: a parent that cannot hold a
+     * FormulaBlock keeps the code block. */
+    if (!node->parent || !markdown_core_node_can_contain_type(node->parent, MARKDOWN_CORE_NODE_FORMULA_BLOCK)) {
         return MARKDOWN_CORE_FINISH_CONTINUE;
     }
-    markdown_core_node *formula = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_FORMULA_BLOCK);
-    if (!formula) {
+    node_formula *formula = markdown_core_alloc(1, sizeof(node_formula));
+    if (!formula || !own_trimmed_literal(&node->as.code->literal)) {
+        markdown_core_free(formula);
         goto failed;
     }
-    markdown_core_node_set_element(formula, element);
-    formula_opaque_alloc(element, formula);
-    if (!formula->opaque || !own_trimmed_literal(&oldnode->as.code->literal)) {
-        markdown_core_parser_release_node(parser, formula);
+    formula->literal = node->as.code->literal;
+    formula->mode = MARKDOWN_CORE_FORMULA_MODE_STANDALONE;
+    node->as.code->literal = (markdown_core_chunk)MARKDOWN_CORE_CHUNK_EMPTY;
+    if (markdown_core_parser_set_node_kind(parser, node, MARKDOWN_CORE_NODE_FORMULA_BLOCK) !=
+        MARKDOWN_CORE_NODE_SET_KIND_OK) {
+        markdown_core_chunk_free(&formula->literal);
+        markdown_core_free(formula);
         goto failed;
     }
-    get_formula(formula)->literal = oldnode->as.code->literal;
-    oldnode->as.code->literal = (markdown_core_chunk)MARKDOWN_CORE_CHUNK_EMPTY;
-    get_formula(formula)->mode = MARKDOWN_CORE_FORMULA_MODE_STANDALONE;
-    /* The formula block lies where the fence did: its range, and the places
-     * of the lines it read without the container prefixes between them. */
-    formula->where = oldnode->where;
-    formula->source.places = oldnode->source.places;
-    oldnode->source.places = NULL;
-    markdown_core_node_attach_validated(oldnode->parent, formula, oldnode);
-    markdown_core_parser_release_node(parser, oldnode);
-    return MARKDOWN_CORE_FINISH_CONSUMED;
+    markdown_core_attributes_free(&node->attributes);
+    node->content_map = (markdown_core_content_map){0};
+    markdown_core_node_set_element(node, element);
+    node->opaque = formula;
+    return MARKDOWN_CORE_FINISH_CONTINUE;
 
 failed:
     markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     return MARKDOWN_CORE_FINISH_FAILED;
 }
 
-/* The formula element's finish STEP: one node at its EXIT, from inside the one
- * finish walk. At EXIT the walk's lookahead already names the parent or the
- * following sibling, so replacing and freeing this node cannot invalidate the
- * walk. The walk is what makes enabled formula syntax safe for an arbitrarily
- * deep tree: nothing here recurses or traverses.
- *
- * `is_root` names the root of the walked tree, which belongs to whoever holds
- * it -- the parser for the document, the owning element for a field -- and is
+/* The formula element's finish STEP, asked at the EXIT of a FormulaBlock or
+ * a CodeBlock as completion reaches it in the queue. A FormulaBlock takes its
+ * literal from the lines it read; a code block whose info names a formula
+ * becomes one. The block is the root of its walk: it is rewritten in place,
  * never replaced. A paragraph whose only content is a standalone formula
  * stays a paragraph that holds that Formula. */
 static markdown_core_finish_result finish_step(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                                markdown_core_node *node, markdown_core_event_type event, int is_root,
                                                void **state) {
-    int may_replace = !is_root;
     (void)state;
     (void)event;
+    (void)is_root;
     assert(event == MARKDOWN_CORE_EVENT_EXIT);
     if (node->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
         node_formula *formula = get_formula(node);
@@ -666,8 +663,8 @@ static markdown_core_finish_result finish_step(const markdown_core_element_insta
         return parser->error ? MARKDOWN_CORE_FINISH_FAILED : MARKDOWN_CORE_FINISH_CONTINUE;
     }
 
-    if (may_replace && node->kind == MARKDOWN_CORE_NODE_CODE_BLOCK && info_is_formula(&node->as.code->info)) {
-        return replace_with_formula_block(self->element, parser, node);
+    if (node->kind == MARKDOWN_CORE_NODE_CODE_BLOCK && info_is_formula(&node->as.code->info)) {
+        return convert_to_formula_block(self->element, parser, node);
     }
 
     return MARKDOWN_CORE_FINISH_CONTINUE;

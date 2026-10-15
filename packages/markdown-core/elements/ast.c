@@ -704,8 +704,8 @@ typedef struct {
     bool content, root;
 } publish_frame;
 
-/* The frames live on the parser's walk stack, which the finish walk has
- * just left. */
+/* The frames live on the parser's walk stack, which completion has just
+ * left. */
 typedef struct {
     markdown_core_parser *parser;
     publish_frame *frames;

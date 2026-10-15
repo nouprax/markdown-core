@@ -34,8 +34,8 @@ struct markdown_core_iter {
     markdown_core_iter_state next;
 };
 
-/* THE ITERATOR'S STEP, IN THE HEADER. The finish walk takes one per event of
- * every node of every root, and it keeps its iterators in its own frames
+/* THE ITERATOR'S STEP, IN THE HEADER. Completion's walk takes one per event
+ * of every node of every root, and it keeps its iterators in its own frames
  * rather than behind an allocation, so the step is here, where the walk can
  * keep the state in registers instead of calling across a translation unit
  * for it: `markdown_core_iter_next` is this behind the public call, and
@@ -116,7 +116,7 @@ static inline bool markdown_core_text_needs_consolidation(const markdown_core_no
  *
  * CONSUMED when `cur` was freed, FAILED on allocation failure (the tree is
  * consistent: every absorbed operand was unlinked before it was freed), and
- * CONTINUE otherwise. The engine's finish walk runs this before any element
+ * CONTINUE otherwise. The engine's completion walk runs this before any element
  * step at a Text's EXIT, on the walk's own iterator, which is what keeps an
  * absorbed sibling's events from ever reaching a step.
  *

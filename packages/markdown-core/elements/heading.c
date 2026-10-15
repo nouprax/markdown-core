@@ -51,7 +51,7 @@ static markdown_core_key_index_slot *anchor_slot(markdown_core_parser *parser, m
     return slot;
 }
 
-/* An explicit anchor is reserved as the finish walk enters its node, before
+/* An explicit anchor is reserved as completion enters its node, before
  * any heading is given a computed one; a parse without headings reserves
  * nothing, since only a heading's computed anchor can collide. */
 void markdown_core_headings_observe(const markdown_core_element_instance *self, markdown_core_parser *parser,

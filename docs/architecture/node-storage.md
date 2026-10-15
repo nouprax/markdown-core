@@ -195,7 +195,7 @@ before what remains of the paragraph. A paragraph that held only definitions
 is released when it is finalized; its References stay, so later block
 identifiers see them in source order and cannot attach across them. The
 blank-line facts skip References, and list layout, derived at each list's
-exit in the finish walk, reads the semantic children around them. An
+EXIT as completion reaches it, reads the semantic children around them. An
 intentionally empty anchored list-item paragraph is not a definition and
 stays.
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-/** `parser->kinds_created` decides which finish hooks run -- a postprocess
- * pass, or a finish step at every event it was projected to. A production
+/** `parser->kinds_created` decides where a finish step runs -- at every
+ * event it was projected to, once a kind it acts on was made. A production
  * site that produces a node kind without recording it does not fail a build or
  * a test: it makes the gate skip a hook some document needed, and the defect
  * surfaces as a missing rewrite far from the line that caused it.
@@ -18,7 +18,7 @@
  * site cannot quietly opt out of it.
  *
  * THE SAME RULE HOLDS FOR A RELEASE. `parser->nodes_freed` is the other half
- * of the finish stage's traversal count (parser.h): the walk parses inline
+ * of the finish stage's traversal count (parser.h): completion parses inline
  * content as it goes, so a node the inline parser makes and discards is made
  * after the walk noted its starting point, and the count is only right when
  * the discard is counted where the creation was. Production code releases a

@@ -228,37 +228,24 @@ struct markdown_core_element {
     markdown_core_can_contain_func can_contain_func;
     markdown_core_contains_inlines_func contains_inlines_func;
     markdown_core_accepts_lines_func accepts_lines_func;
-    /* The two finish-stage hook shapes; an element declares at most one (the
-     * API header states the LOCAL/GLOBAL invariant that separates them, and
-     * registration refuses a descriptor that declares both).
-     *
-     * `finish_step` is asked from inside the one finish walk, at the EXIT of
-     * every node whose kind is in `finish_exit_kinds` and at the ENTER and
-     * EXIT of every node whose kind is in `finish_scope_kinds`. It costs the
-     * document nothing at any other event: the walk projects the steps by
-     * (event, kind) once per parse, so a step asked at Text is not so much as
-     * looked at when a Paragraph closes, nor when a Text opens.
-     * `postprocess_func` is handed each root after that root's walk and walks
-     * it again itself. */
+    /* The element's finish step (the API header states the contract), asked
+     * from inside completion's walk at the EXIT of every node whose kind is
+     * in `finish_exit_kinds` and at the ENTER and EXIT of every node whose
+     * kind is in `finish_scope_kinds`. It costs the document nothing at any
+     * other event: the engine projects the steps by (event, kind) once per
+     * parse, so a step asked at Text is not so much as looked at when a
+     * Paragraph exits, nor when a Text opens. */
     markdown_core_finish_step_func finish_step;
-    markdown_core_postprocess_func postprocess_func;
-    /* The node kinds the element's finish hook ACTS ON, terminated by
-     * MARKDOWN_CORE_NODE_NONE; NULL declares nothing. This is THE GATE, set
-     * by a step and by a pass alike and meaning the same for both shapes: the
-     * set is intersected with the kinds
-     * the parse actually produced, taken when the block tree is complete, and
-     * a hook that cannot find anything is skipped -- a pass along with the
-     * traversal it would have made, a step at every event it was projected
-     * to. A hook whose trigger kind is CREATED by an earlier hook must
-     * therefore name that creator kind too.
+    /* The node kinds the element's finish step ACTS ON, terminated by
+     * MARKDOWN_CORE_NODE_NONE; NULL declares nothing. This is THE GATE: the
+     * set is intersected with the kinds the parse has produced so far, read
+     * at each event the step is asked at, and a step that cannot find
+     * anything is skipped there. A step whose trigger kind is CREATED by an
+     * earlier hook must therefore name that creator kind too.
      *
-     * The kinds a hook acts on are not always the kinds it is asked at:
-     * formula rewrites a Formula, a CodeBlock and a FormulaBlock, and the
-     * Formula's rewrite -- the paragraph that holds nothing else becomes a
-     * FormulaBlock -- is decided at the PARAGRAPH's EXIT, where the paragraph
-     * may be replaced. So a step says where it is asked separately, below,
-     * and the gate stays what makes a document with no formula pay nothing
-     * at each of its paragraphs.
+     * The kinds a step acts on are not always the kinds it is asked at, so a
+     * step says where it is asked separately, below, and the gate stays what
+     * makes a document with nothing for the step pay nothing at each event.
      *
      * The kinds are declared as KINDS rather than as a precomputed bit set so
      * that each one keeps its namespace: block and inline values collide once
@@ -267,14 +254,14 @@ struct markdown_core_element {
      * The engine projects them per parse. */
     const markdown_core_node_type *finish_acts_on_kinds;
     /* WHERE A FINISH STEP IS ASKED, two lists terminated the same way; NULL
-     * declares nothing, and a pass declares neither.
+     * declares nothing.
      *
      * `finish_exit_kinds`: the step receives the EXIT of these kinds, the
-     * point where the node's subtree is complete and the node may be rewritten
-     * or replaced. It names the kind of the node the step is handed --
-     * PARAGRAPH for formula's promotion, TEXT for autolink's scan.
+     * point where the node's subtree is complete and the node may be
+     * rewritten. It names the kind of the node the step is handed -- CODEBLOCK
+     * for formula's promotion, TEXT for autolink's scan.
      *
-     * `finish_scope_kinds`: the kinds whose EXTENT the step tracks. It
+     * `finish_scope_kinds`: the inline kinds whose EXTENT the step tracks. It
      * receives their ENTER and their EXIT and nothing else about them: it acts
      * on nothing there, it learns that the nodes to come are inside one, and
      * it keeps that in its per-root state word. Autolink declares LINK -- an
@@ -282,9 +269,11 @@ struct markdown_core_element {
      *
      * The two are disjoint: a kind in both would be one event asked twice,
      * and registration refuses the descriptor. It also refuses a step that
-     * names no kind in either list, which would never be asked, and a kind
-     * the dispatch table cannot index (an ordinal at or past
-     * MARKDOWN_CORE_NODE_KIND_COUNT, or a value of neither class). */
+     * names no kind in either list, which would never be asked, a block kind
+     * as a scope kind, whose extent completion never walks (the blocks below
+     * a block complete before it), and a kind the dispatch table cannot index
+     * (an ordinal at or past MARKDOWN_CORE_NODE_KIND_COUNT, or a value of
+     * neither class). */
     const markdown_core_node_type *finish_exit_kinds;
     const markdown_core_node_type *finish_scope_kinds;
     markdown_core_opaque_alloc_func opaque_alloc_func;
@@ -314,7 +303,7 @@ struct markdown_core_element {
  * one: a second copy of "which kinds can own a subtree" drifts from the list
  * below the first time a kind is added to it. */
 /* WHICH KINDS CAN OWN A SUBTREE THROUGH THEIR OWN RECORD: the one predicate,
- * read by the visitor below and projected into the finish walk's per-kind
+ * read by the visitor below and projected into completion's per-kind
  * record (dialect.h, MARKDOWN_CORE_KIND_FIELDS), so the walk asks it
  * once per parse per kind rather than three compares per node. An element
  * that owns subtrees through `visit_owned_subtrees_func` is found through
