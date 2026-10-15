@@ -2264,6 +2264,54 @@ Document scope=1:1..4:5 anchor=null attributes={} children=1
     └── TableFoot children=0
 ````````````````````````````````
 
+# A multiline cell has a run on each of its lines
+
+A multiline cell lies in its column on each line of its row. On a line that
+ends before the cell's column, its source there is empty: an empty run at the
+line's end. The right cell below has runs on lines 4 and 6 and an empty run
+after `c` on line 5.
+
+```````````````````````````````` example
+----------------
+Left       Right
+------- --------
+        b
+c
+        e
+
+f       g
+----------------
+.
+Document scope=1:1..9:16 anchor=null attributes={} children=1
+└── Table scope=1:1..9:16 anchor=null attributes={} columns=[left:0.5,right:0.5] children=3
+    ├── TableHead children=1
+    │   └── TableRow scope=2:1..2:16 anchor=null attributes={} children=2
+    │       ├── TableCell scope=2:1..2:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       │   └── Paragraph scope=2:1..2:4 anchor=null attributes={} children=1
+    │       │       └── Text scope=2:1..2:4 anchor=null attributes={} literal="Left" children=0
+    │       └── TableCell scope=2:9..2:16 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Paragraph scope=2:12..2:16 anchor=null attributes={} children=1
+    │               └── Text scope=2:12..2:16 anchor=null attributes={} literal="Right" children=0
+    ├── TableBody children=2
+    │   ├── TableRow scope=4:1..6:9 anchor=null attributes={} children=2
+    │   │   ├── TableCell scope=4:1..4:8,5:1..5:1,6:1..6:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │   │   │   └── Paragraph scope=5:1..5:1 anchor=null attributes={} children=1
+    │   │   │       └── Text scope=5:1..5:1 anchor=null attributes={} literal="c" children=0
+    │   │   └── TableCell scope=4:9..4:9,5:2..5:1,6:9..6:9 anchor=null attributes={} rowspan=1 colspan=1 children=2
+    │   │       ├── Paragraph scope=4:9..4:9 anchor=null attributes={} children=1
+    │   │       │   └── Text scope=4:9..4:9 anchor=null attributes={} literal="b" children=0
+    │   │       └── Paragraph scope=6:9..6:9 anchor=null attributes={} children=1
+    │   │           └── Text scope=6:9..6:9 anchor=null attributes={} literal="e" children=0
+    │   └── TableRow scope=8:1..8:9 anchor=null attributes={} children=2
+    │       ├── TableCell scope=8:1..8:8 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │       │   └── Paragraph scope=8:1..8:1 anchor=null attributes={} children=1
+    │       │       └── Text scope=8:1..8:1 anchor=null attributes={} literal="f" children=0
+    │       └── TableCell scope=8:9..8:9 anchor=null attributes={} rowspan=1 colspan=1 children=1
+    │           └── Paragraph scope=8:9..8:9 anchor=null attributes={} children=1
+    │               └── Text scope=8:9..8:9 anchor=null attributes={} literal="g" children=0
+    └── TableFoot children=0
+````````````````````````````````
+
 # Table margin: indentation and container prefixes
 
 Block indentation and container prefixes never change a table's geometry or

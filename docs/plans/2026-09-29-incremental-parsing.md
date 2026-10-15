@@ -248,6 +248,9 @@ Run(lead: Int32, span: UInt32)          offsets in the source
     container prefixes between the lines of a leaf block inside a blockquote,
     callout or list item, or the other columns between the lines of a grid
     or multiline table cell. Runs that touch are one run.
+  - A node's own source on a line can be empty: a multiline table cell's is,
+    at the line's end, on a line that ends before the cell's column. Empty
+    own source is an empty run, which is one run with a run it touches.
   - A block's source starts and ends with its range.
   - An inline node's runs are its window of the source less the gaps between
     its root's runs. Its window runs from where its root read its first

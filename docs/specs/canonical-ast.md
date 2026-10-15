@@ -104,10 +104,13 @@ Between its first run and its last, a node's runs cover exactly its own
 source: the source between two runs is not the node's, such as the container
 prefixes between the lines of a leaf block inside a container, or the other
 columns between the lines of a grid or multiline table cell. Runs that touch
-are one run. An inline node's runs are its window of the source less the gaps
-between its root's runs, where its window runs from where its root read its
-first content byte to where it read its last, or is the empty range where its
-start was read when it holds no content.
+are one run. A node's own source on a line can be empty: a multiline table
+cell's is, at the line's end, on a line that ends before the cell's column.
+Empty own source is an empty run, which is one run with a run it touches. An
+inline node's runs are its window of the source less the gaps between its
+root's runs, where its window runs from where its root read its first content
+byte to where it read its last, or is the empty range where its start was read
+when it holds no content.
 
 A scope is computed on request for each source range of a node, from its runs
 and the source the document was parsed from:

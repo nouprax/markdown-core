@@ -240,10 +240,11 @@ typedef struct markdown_core_run {
  * each content byte from one source byte; any other reads all of its content
  * from all of its source. Each holds an absolute source range, as a node's
  * place does. Publishing gives every node its runs, its own source with the
- * runs that touch joined, relative as the extent is: a block's from its
- * places, written over them in their list, or its range when it has none,
- * and an inline node's from the places of its root (ast.c). Each list is
- * storage the node owns (markdown_core_node_pool_bytes). */
+ * runs that touch joined and an empty place an empty run, relative as the
+ * extent is: a block's from its places, written over them in their list, or
+ * its range when it has none, and an inline node's from the places of its
+ * root (ast.c). Each list is storage the node owns
+ * (markdown_core_node_pool_bytes). */
 typedef struct {
     uint32_t start, end, length;
 } markdown_core_source_place;

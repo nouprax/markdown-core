@@ -3,6 +3,9 @@
  * A zero-byte document's scope is 1:1..1:0: its start is the position of its
  * first byte and its end the columns before its exclusive end, and it has
  * neither.
+ * An empty range, such as a multiline table cell's on a line that ends before
+ * its column, names a place and no byte: its end is the boundary just before
+ * its start, on the same line, and is in order.
  * Ordinary coordinates retain the existing source-place checks. This audit
  * validates producers; bindings must never repair or convert their output.
  */
@@ -47,6 +50,8 @@ const fault = ([line, column], lengths, end) => {
     return column > lengths[line - 1] + 1 ? "off-column" : "place";
 };
 
+const emptyRange = (scope) => scope.end[0] === scope.start[0] && scope.end[1] === scope.start[1] - 1;
+
 const measured = [];
 const surveyed = { inline: 0, block: 0 };
 let scanned = 0;
@@ -78,7 +83,7 @@ for (const example of corpus) {
                 continue;
             const start = fault(scope.start, lengths, false);
             const end = fault(scope.end, lengths, true);
-            const order = before(scope.end, scope.start) ? "reversed" : "ordered";
+            const order = before(scope.end, scope.start) && !emptyRange(scope) ? "reversed" : "ordered";
             if (start === "place" && end === "place" && order === "ordered") continue;
             findings.push({
                 nodePath,

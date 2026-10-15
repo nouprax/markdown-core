@@ -838,36 +838,42 @@ typedef char runs_fit_in_places[sizeof(markdown_core_run) <= sizeof(markdown_cor
 
 /* A block's runs as they are published (node.h), from its places, which
  * `held` holds: its places within its place, those of length 0 clipped to
- * it, with the source before the first and after the last its own, so they
- * run from its start to its end, and the runs that touch joined; the first
- * measured from `anchor`, each other from the end of the run before. The
- * node takes its places' list as its runs, written in place: a run is no
- * larger than a place, and the first place opens no run, so each run lands
- * on places already read. The list's bytes are copied, as its storage changes
- * what it holds. */
+ * it, an empty one an empty run, with the source before the first and after
+ * the last its own, so they run from its start to its end, and the runs that
+ * touch joined; the first measured from `anchor`, each other from the end of
+ * the run before. The node takes its places' list as its runs, written in
+ * place: a run is no larger than a place, and the first place opens no run,
+ * so each run lands on places already read. The list's bytes are copied, as
+ * its storage changes what it holds. */
 static void publish_place_runs(markdown_core_node *node, markdown_core_places **held, markdown_core_place place,
                                uint32_t anchor) {
     unsigned char *const list = (unsigned char *)*held;
     const uint32_t places = (*held)->count;
     assert(places > 0);
     uint32_t count = 0, start = place.start, end = place.start, from = anchor;
+    bool first = true;
     for (uint32_t i = 0; i < places; i++) {
         markdown_core_source_place item;
         memcpy(&item, list + offsetof(markdown_core_places, items) + i * sizeof(item), sizeof(item));
         if (!item.length) {
-            item.start = item.start > place.start ? item.start : place.start;
-            item.end = item.end < place.end ? item.end : place.end;
-            if (item.start >= item.end) {
+            /* Clipped to the node's place: one that only touches it is not
+             * the node's, and an empty one within it is an empty run. */
+            const uint32_t clipped_start = item.start > place.start ? item.start : place.start;
+            const uint32_t clipped_end = item.end < place.end ? item.end : place.end;
+            if (clipped_start > clipped_end || (clipped_start == clipped_end && item.start < item.end)) {
                 continue;
             }
+            item.start = clipped_start;
+            item.end = clipped_end;
         }
         /* A place apart from the one before ends a run. */
-        if (item.start > end && end > start) {
+        if (item.start > end && !first) {
             const markdown_core_run run = {(int32_t)((int64_t)start - from), end - start};
             memcpy(list + offsetof(markdown_core_runs, items) + count++ * sizeof(run), &run, sizeof(run));
             from = end;
             start = item.start;
         }
+        first = false;
         end = item.end > end ? item.end : end;
     }
     assert(end <= place.end);
