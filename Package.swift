@@ -26,7 +26,6 @@ let package = Package(
                 "core/buffer.c",
                 "core/references.c",
                 "core/map.c",
-                "core/text_tree.c",
                 "core/houdini_html_u.c",
                 "core/markdown_core_ctype.c",
                 "elements/code.c",

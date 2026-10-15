@@ -18,7 +18,6 @@ const core = [
     "buffer.c",
     "references.c",
     "map.c",
-    "text_tree.c",
     "houdini_html_u.c",
     "markdown_core_ctype.c"
 ].map((file) => path.join(root, "packages/markdown-core/core", file));
@@ -81,7 +80,6 @@ const exported = [
     "free",
     "markdown_core_wire_parse",
     "markdown_core_wire_session_new",
-    "markdown_core_wire_session_edit",
     "markdown_core_wire_session_append",
     "markdown_core_wire_free",
     "markdown_core_session_text_size",

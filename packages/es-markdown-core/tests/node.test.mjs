@@ -660,37 +660,37 @@ test("robustness: uncapped list nesting remains traversable", () => {
 });
 
 test("robustness: a session continues a deep document", () => {
-    // Plan gates 4.9: the deep document of a session, edited at its deepest
-    // leaf, compares, walks, locates and describes like a fresh parse.
+    // Plan gates 4.8: the deep document of a session, appended to at its
+    // deepest leaf, compares, walks, locates and describes like a fresh parse.
     const depth = 10_000;
-    const source = "- ".repeat(depth) + "leaf\n";
+    const source = "- ".repeat(depth) + "lea";
     const session = new MarkdownSession(source);
     try {
         const first = session.document;
         assert.ok(markupEquals(first, Document.parse(source)));
-        const edited = session.edit([{ start: depth * 2, end: depth * 2 + 4, text: "lean" }]);
-        assert.equal(markupEquals(edited, first), false);
-        assert.equal(edited.content[0].id, first.content[0].id);
+        const appended = session.append("n\n");
+        assert.equal(markupEquals(appended, first), false);
+        assert.equal(appended.content[0].id, first.content[0].id);
         let entered = 0;
         walk(
-            edited,
+            appended,
             walkingVisitor((_node, phase) => {
                 if (phase === "enter") entered += 1;
             })
         );
         assert.equal(entered, depth * 2 + 3);
-        let node = edited.content[0];
+        let node = appended.content[0];
         while (node.kind === "list") node = node.items[0].content[0];
         const leaf = node.content[0];
         assert.equal(leaf.literal, "lean");
         const column = depth * 2 + 1;
-        assert.deepEqual(edited.scope(leaf, session.text), [
+        assert.deepEqual(appended.scope(leaf, session.text), [
             {
                 start: { line: 1, column },
                 end: { line: 1, column: column + 3 }
             }
         ]);
-        assert.equal(edited.nodeAt({ line: 1, column }, session.text), leaf);
+        assert.equal(appended.nodeAt({ line: 1, column }, session.text), leaf);
     } finally {
         session.dispose();
     }
@@ -700,7 +700,6 @@ test("errors: a disposed session takes no further call", () => {
     const session = new MarkdownSession("text\n");
     session.dispose();
     session.dispose();
-    assert.throws(() => session.edit([]), Error);
     assert.throws(() => session.append("more"), Error);
     assert.throws(() => session.text, Error);
     assert.equal(session.document.content.length, 1);
@@ -932,8 +931,7 @@ test("errors: a native failure maps its status by value across the WASM boundary
     for (const [status, code] of [
         [1, "allocationFailed"],
         [2, "outOfBounds"],
-        [3, "kindMismatch"],
-        [4, "insideScalar"]
+        [3, "kindMismatch"]
     ]) {
         assert.throws(
             () => decoder(new MessageWriter().error(status)).decode(),
@@ -2040,63 +2038,45 @@ test("robustness: deep trees are released, compared, walked and queried with a s
 });
 
 test("api: a session's documents are the parses of its text, continuing the previous document's ids", () => {
-    const session = new MarkdownSession("# One\n\nfirst 😀 here\n\nlast\n");
+    const session = new MarkdownSession("# One\n\nfirst 😀 here\n\nlast");
     try {
         const before = session.document;
         assert.equal(before.unit, "utf16");
-        // UTF-16 offsets: the pair is 13 and 14, so " here" is [15, 20).
-        const after = session.edit([
-            { start: 15, end: 20, text: " there" },
-            { start: 2, end: 5, text: "Two" }
-        ]);
+        const after = session.append(" line\n\nmore\n");
         assert.equal(session.document, after);
-        assert.equal(session.text, "# Two\n\nfirst 😀 there\n\nlast\n");
+        assert.equal(session.text, "# One\n\nfirst 😀 here\n\nlast line\n\nmore\n");
         assert.equal(after.dump(session.text), Document.parse(session.text).dump(session.text));
-        // The edited blocks continue their ids; the untouched one is unchanged.
+        // The extended paragraph continues its id; the blocks before it are unchanged.
         assert.deepEqual(
-            after.content.map((node) => node.id),
+            after.content.slice(0, 3).map((node) => node.id),
             before.content.map((node) => node.id)
         );
-        assert.ok(markupEquals(after.content[2], before.content[2]));
-        assert.equal(markupEquals(after.content[1], before.content[1]), false);
-        const appended = session.append("more\n");
-        assert.equal(session.text, "# Two\n\nfirst 😀 there\n\nlast\nmore\n");
-        assert.equal(appended.dump(session.text), Document.parse(session.text).dump(session.text));
-        assert.equal(appended.content[2].id, before.content[2].id);
+        assert.ok(markupEquals(after.content[0], before.content[0]));
+        assert.ok(markupEquals(after.content[1], before.content[1]));
+        assert.equal(markupEquals(after.content[2], before.content[2]), false);
+        assert.equal(after.content[3].kind, "paragraph");
     } finally {
         session.dispose();
     }
 });
 
-test("errors: a session refuses an edit range out of bounds or inside a scalar", () => {
-    const session = new MarkdownSession("a 😀 b\n");
-    const rejects = (subject, edits, code) =>
-        assert.throws(
-            () => subject.edit(edits),
-            (error) => error instanceof MarkdownCoreError && error.code === code
-        );
-    try {
-        rejects(session, [{ start: 3, end: 2, text: "" }], "outOfBounds");
-        rejects(session, [{ start: 0, end: 9, text: "" }], "outOfBounds");
-        rejects(
-            session,
-            [
-                { start: 0, end: 2, text: "" },
-                { start: 1, end: 4, text: "" }
-            ],
-            "outOfBounds"
-        );
-        rejects(session, [{ start: 3, end: 3, text: "x" }], "insideScalar");
-        const utf8 = new MarkdownSession("a 😀 b\n", { unit: "utf8" });
+test("api: a session's documents count columns in its unit", () => {
+    // 😀 is two UTF-16 units and four UTF-8 bytes.
+    for (const [unit, column] of [
+        ["utf16", 4],
+        ["utf8", 6]
+    ]) {
+        const session = new MarkdownSession("😀a", { unit });
         try {
-            rejects(utf8, [{ start: 3, end: 3, text: "x" }], "insideScalar");
-            rejects(utf8, [{ start: 0, end: 5, text: "" }], "insideScalar");
-            utf8.edit([{ start: 7, end: 8, text: "c" }]);
-            assert.equal(utf8.text, "a 😀 c\n");
+            const document = session.append("b\n");
+            assert.equal(session.unit, unit);
+            assert.equal(document.unit, unit);
+            const text = document.content[0].content[0];
+            assert.deepEqual(document.scope(text, session.text), [
+                { start: { line: 1, column: 1 }, end: { line: 1, column } }
+            ]);
         } finally {
-            utf8.dispose();
+            session.dispose();
         }
-    } finally {
-        session.dispose();
     }
 });

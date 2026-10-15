@@ -76,7 +76,7 @@ import {
     markTree,
     sameCompileOptions
 } from "./compile-identity.mjs";
-import { STAGES, stageBudget, ONESHOT_IR_LIMIT } from "./stage-budget.mjs";
+import { STAGES, stageBudget, STAGE_IR_LIMIT } from "./stage-budget.mjs";
 import {
     buildGrammarCorpus,
     writeGrammarCorpus,
@@ -133,18 +133,19 @@ const ENGINES = {
     }
 };
 
-/* The edit and stream benchmark's runner (edits.mjs): Markdown Core's
- * engine, measured per step rather than per stage. */
-export const EDIT_RUNNER = "packages/markdown-core/benchmarks/markdown_core_edit_runner";
+/* The stream benchmark's runner (streams.mjs): Markdown Core's engine,
+ * measured per append rather than per stage. */
+export const STREAM_RUNNER = "packages/markdown-core/benchmarks/markdown_core_stream_runner";
 
-/* The stage runners: the binaries the baseline is rebuilt for, since the
- * stage gate is the one comparison made against it. */
+/* The stage runners. */
 const STAGE_RUNNERS = Object.fromEntries(
     Object.entries(ENGINES).map(([engine, definition]) => [engine, definition.runner])
 );
 
-/* Every binary that contributes measured instructions. */
-const MEASURED_BINARIES = { ...STAGE_RUNNERS, "markdown-core edits": EDIT_RUNNER };
+/* Every binary that contributes measured instructions, and the binaries the
+ * baseline is rebuilt for: the stage gate and the stream gate each compare
+ * against it. */
+const MEASURED_BINARIES = { ...STAGE_RUNNERS, "markdown-core streams": STREAM_RUNNER };
 
 function fail(message) {
     console.error(`benchmark: ${message}`);
@@ -788,8 +789,8 @@ function buildRunners(profile, runners, cmark, cmarkBuildDir, gfm, gfmBuildDir, 
     stampTree(profile.binaryDir, profile, versions);
 }
 
-/* Rebuild the requested base's stage runners with this run's harness, preset
- * and references. Only engine source comes from the base. The current corpus is generated once
+/* Rebuild the requested base's measured binaries with this run's harness,
+ * preset and references. Only engine source comes from the base. The current corpus is generated once
  * and passed byte-for-byte to both binaries, even when a PR changes its corpus. */
 function buildBaseline(options, profile, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions) {
     if (!options.baselineRef) return null;
@@ -808,9 +809,9 @@ function buildBaseline(options, profile, cmark, cmarkBuildDir, gfm, gfmBuildDir,
     fs.cpSync(BENCHMARKS, path.join(source, "packages/markdown-core/benchmarks"), { recursive: true });
     fs.copyFileSync(path.join(root, "CMakePresets.json"), path.join(source, "CMakePresets.json"));
     const built = { ...profile, binaryDir: path.join(directory, "build") };
-    buildRunners(built, STAGE_RUNNERS, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions, source);
+    buildRunners(built, MEASURED_BINARIES, cmark, cmarkBuildDir, gfm, gfmBuildDir, versions, source);
     verifyStageSymbols(built);
-    verifyBuildProvenance(built, STAGE_RUNNERS, versions);
+    verifyBuildProvenance(built, MEASURED_BINARIES, versions);
     const compiled = Object.fromEntries(
         [["markdown-core", "libmarkdown-core-public-static"]].map(([engine, target]) => [
             engine,
@@ -831,7 +832,14 @@ function buildBaseline(options, profile, cmark, cmarkBuildDir, gfm, gfmBuildDir,
     );
     if (JSON.stringify(libraries) !== JSON.stringify(versions.libraries))
         fail("baseline uses different runtime libraries");
-    return { revision, profile: built, directory, compiled, binaries: runnerIdentity(built, STAGE_RUNNERS), cases: [] };
+    return {
+        revision,
+        profile: built,
+        directory,
+        compiled,
+        binaries: runnerIdentity(built, MEASURED_BINARIES),
+        cases: []
+    };
 }
 
 /**
@@ -1395,7 +1403,7 @@ export function markdownReport(report) {
 
 /**
  * The measurement build, shared by every driver that measures this
- * repository's runners (this one and edits.mjs): the profile preset built from
+ * repository's runners (this one and streams.mjs): the profile preset built from
  * scratch with the pinned references, every measured binary checked for one
  * compiler and the pinned flags, and the identity a report states -- toolchain,
  * compile lines, dispatch, runtime libraries and binary digests. With
@@ -1630,7 +1638,7 @@ function main() {
         fs.writeFileSync(path.join(baseline.directory, "stages.md"), `${markdownReport(previous)}\n`);
         report.stageBudget = {
             baseline: baseline.revision,
-            limit: ONESHOT_IR_LIMIT,
+            limit: STAGE_IR_LIMIT,
             rows: stageBudget(cases, baseline.cases)
         };
     }
@@ -1641,7 +1649,7 @@ function main() {
     let rendered = markdownReport(report);
     if (report.stageBudget) {
         const failed = report.stageBudget.rows.filter((row) => !row.passed);
-        rendered += `\n\n## Stage regression gate\n\nBase: ${report.stageBudget.baseline}. Both revisions use this run's corpus, harness, toolchain and runtime libraries. Each document must stay within ${((ONESHOT_IR_LIMIT - 1) * 100).toFixed(0)}% of its baseline Ir in source_to_buffer and in buffer_to_ast. ${report.stageBudget.rows.length - failed.length}/${report.stageBudget.rows.length} document stages passed. One stage's improvement does not offset the other's regression.\n`;
+        rendered += `\n\n## Stage regression gate\n\nBase: ${report.stageBudget.baseline}. Both revisions use this run's corpus, harness, toolchain and runtime libraries. Each document must stay within ${((STAGE_IR_LIMIT - 1) * 100).toFixed(0)}% of its baseline Ir in source_to_buffer and in buffer_to_ast. ${report.stageBudget.rows.length - failed.length}/${report.stageBudget.rows.length} document stages passed. One stage's improvement does not offset the other's regression.\n`;
         if (failed.length)
             rendered +=
                 "\n| Case | Stage | Base Ir | Current Ir | Ratio |\n| --- | --- | ---: | ---: | ---: |\n" +

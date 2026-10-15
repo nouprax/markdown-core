@@ -11,27 +11,22 @@ sources and never edited by hand: run the generator to rewrite the set, and
   family, and every declared family has a case. `document PATH [parts N…]` names a
   document and, for a composite, the byte length of each part it joins (3.1),
   in the `documents` family;
-  `edits PATH SCRIPTS` runs every script of a script file on the document;
-  `stream PATH FAMILY` streams the document by one family of section 3.3.
+  `script PATH SCRIPTS` opens a session on the document and runs every script
+  of a script file after it;
+  `stream PATH FAMILY` streams the document by one family of section 3.2.
   Paths are relative to this directory. The canonical AST cases are read from
   `../canonical-ast/`, and the other documents live under `documents/`.
-- `scripts/NAME.edits` holds the edit scripts of one document, in the format
+- `scripts/NAME.stream` holds the scripts of one document, in the format
   below.
 - `token-sizes.txt` is the fixed sequence of `tokens` chunk sizes. The
   `tokens`, `scalars`, `rows` and `splits` streams are rules over the document
   and this sequence, so no stream repeats the document's bytes.
 
-A script file starts with the line `markdown-core edit script 1`. Each script
-is a `script NAME FAMILY` line followed by its steps, one per line. FAMILY is
-an edit family of section 3.2, `identity` (4.5) or `rejections` (4.8).
+A script file starts with the line `markdown-core stream script 1`. Each
+script is a `script NAME FAMILY` line followed by its steps, one per line.
+FAMILY is `identity` (4.5).
 
-- `edit START END TEXT [START END TEXT…]` is one `edit` call: a batch of
-  non-overlapping edits against the text before the step. Offsets are UTF-8
-  bytes; TEXT is hexadecimal UTF-8, and `-` is the empty text. A runner in
-  another unit converts the offsets through its text model.
-- `reject UNIT STATUS edit START END TEXT [START END TEXT…]` is an edit batch
-  a subject opened in UNIT refuses with STATUS (4.8): `out-of-bounds` or
-  `inside-scalar`. Offsets are UTF-8 bytes or UTF-16 code units.
+- `append TEXT` is one `append` call; TEXT is hexadecimal UTF-8.
 - `expect kept KIND OLD NEW`, `expect new KIND AT`, `expect retired KIND AT`,
   `expect changed KIND AT` and `expect only` state the identities of the step
   above them (4.5), by the byte offset where a node's scope starts.

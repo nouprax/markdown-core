@@ -1,11 +1,12 @@
 # Incremental parsing for streaming
 
-Status: rollout steps 0 to 3 (section 9) are on `main`: the gates, the public
-model, sessions with a whole-document restart, and Reference nodes and
-content runs. On 2026-10-14 the owner narrowed the requirement to one
-workload, appending tokens from a language model, and this revision replaces
-the general-edit engine that steps 4 to 8 of the previous revision specified.
-Steps 4 to 8 now build a streaming engine.
+Status: rollout steps 0 to 5 (section 9) are on `main`: the gates, the public
+model, sessions with a whole-document restart, Reference nodes and content
+runs, node runs, and sessions that only append. On 2026-10-14 the owner
+narrowed the requirement to one workload, appending tokens from a language
+model, and this revision replaces the general-edit engine that steps 4 to 8
+of the previous revision specified. Steps 4 to 8 now build a streaming
+engine.
 
 This document specifies how a Markdown Core session turns text appended to
 its end into a new AST, while reading again only the text whose meaning is
@@ -894,12 +895,12 @@ activates for it.
    links name their label (4.5). Inline extents are offsets in their root's
    content, inline roots carry content runs, scope queries answer `[Scope]`,
    and MCB3 carries runs and the reference tables (4.3, 6.2).
-- [ ] **Step 4: Node runs.** This plan replaces the general-edit engine.
+- [x] **Step 4: Node runs.** This plan replaces the general-edit engine.
    Every node's runs are its own source and scopes come from runs only;
    `Run` loses its length; a table's rows are one relation (4.3); the spec,
    C, the three bindings and MCB3 follow. A paragraph that holds only a
    formula stays a paragraph (D9).
-- [ ] **Step 5: No edits.** `edit` and `TextEdit` leave C and every binding,
+- [x] **Step 5: No edits.** `edit` and `TextEdit` leave C and every binding,
    with the session's text tree and the harness's edit scripts and their
    oracles (D7).
 - [ ] **Step 6: Builders.** Open blocks are builders, finishing is a pure

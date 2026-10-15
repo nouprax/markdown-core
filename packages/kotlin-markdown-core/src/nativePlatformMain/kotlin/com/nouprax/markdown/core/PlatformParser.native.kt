@@ -10,7 +10,6 @@ import com.nouprax.markdown.core.internal.capi.markdown_core_session_text_size
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_free
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_parse
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_session_append
-import com.nouprax.markdown.core.internal.capi.markdown_core_wire_session_edit
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_session_new
 import kotlinx.cinterop.COpaquePointer
 import kotlinx.cinterop.COpaquePointerVar
@@ -18,17 +17,14 @@ import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.UByteVar
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.alloc
-import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.convert
 import kotlinx.cinterop.get
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.readBytes
 import kotlinx.cinterop.reinterpret
-import kotlinx.cinterop.set
 import kotlinx.cinterop.usePinned
 import kotlinx.cinterop.value
-import platform.posix.size_tVar
 
 /** The byte offset of the MCB3 message length (docs/architecture/wire-format.md). */
 private const val LENGTH_OFFSET = 4
@@ -109,23 +105,6 @@ private class CSession(
             unit,
         )
         private set
-
-    override fun edit(
-        fields: IntArray,
-        texts: ByteArray,
-    ): Document =
-        publish(
-            memScoped {
-                val edits = allocArray<size_tVar>(fields.size)
-                for (index in fields.indices) {
-                    // A negative offset converts to a size past the end of any text.
-                    edits[index] = fields[index].convert()
-                }
-                texts.withAddress {
-                    markdown_core_wire_session_edit(session?.reinterpret(), edits, (fields.size / 3).convert(), it)
-                }
-            },
-        )
 
     override fun append(text: ByteArray): Document =
         publish(text.withAddress { markdown_core_wire_session_append(session?.reinterpret(), it, text.size.convert()) })

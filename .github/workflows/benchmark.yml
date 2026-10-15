@@ -131,13 +131,15 @@ jobs:
                   if-no-files-found: error
                   retention-days: 30
 
-    # The grammar corpus's workloads: every feature under every edit and
-    # stream family it runs. They take hours of callgrind on one runner, so
-    # each shard measures the workloads at positions shard, shard + N, ...
-    # of the set on its own runner, and the job below joins the parts. The
-    # shapes are measured at their four sizes together, outside this workflow.
-    edit-shards:
-        name: Measure - edits and streams, part ${{ matrix.shard }}
+    # The grammar corpus's workloads: every feature under every stream family
+    # it runs, measured on this revision and on the base revision, which is
+    # rebuilt with this revision's harness for 6.4. They take hours of
+    # callgrind on one runner, so each shard measures the workloads at
+    # positions shard, shard + N, ... of the set on its own runner, and the job
+    # below joins the parts and applies the gates. The shapes are measured at
+    # their four sizes together, outside this workflow.
+    stream-shards:
+        name: Measure - streams, part ${{ matrix.shard }}
         runs-on: ubuntu-latest
         strategy:
             fail-fast: false
@@ -147,6 +149,7 @@ jobs:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
               with:
                   persist-credentials: false
+                  fetch-depth: 0
             - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
               with:
                   node-version: 26.8.1
@@ -154,36 +157,42 @@ jobs:
               run: |
                   sudo apt-get update
                   sudo apt-get install --no-install-recommends --yes valgrind
-            # The edit benchmark is built by the stage benchmark's own build,
+            # The stream benchmark is built by the stage benchmark's own build,
             # references included, so its binaries are the ones that report
             # describes.
             - name: Build the pinned reference checkouts
               run: scripts/tooling/setup-environment.sh --install oracle-cmark oracle-cmark-gfm
-            - name: Measure this part of the edits and streams
-              run: >-
-                  node scripts/benchmark/edits.mjs --set corpus --quiet
-                  --shard "${{ strategy.job-index }}/${{ strategy.job-total }}"
+            - name: Measure this part of the streams against the base revision
+              env:
+                  BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+              run: |
+                  if [ -z "$BASE_REVISION" ] || [ "$BASE_REVISION" = 0000000000000000000000000000000000000000 ]; then
+                      BASE_REVISION=$(git rev-parse HEAD^)
+                  fi
+                  node scripts/benchmark/streams.mjs --set corpus --quiet \
+                      --shard "${{ strategy.job-index }}/${{ strategy.job-total }}" --baseline-ref "$BASE_REVISION"
             - name: Upload this part for the join
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
-                  name: benchmark-edits-part-${{ matrix.shard }}-${{ github.sha }}-${{ github.run_attempt }}
-                  path: build/benchmark-edits/edits.json
+                  name: benchmark-streams-part-${{ matrix.shard }}-${{ github.sha }}-${{ github.run_attempt }}
+                  path: build/benchmark-streams/streams.json
                   if-no-files-found: error
                   retention-days: 30
             - name: Upload the raw profiles and workloads
               if: ${{ always() }}
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
-                  name: benchmark-edits-profiles-${{ matrix.shard }}-${{ github.sha }}-${{ github.run_attempt }}
+                  name: benchmark-streams-profiles-${{ matrix.shard }}-${{ github.sha }}-${{ github.run_attempt }}
                   path: |
-                      build/benchmark-edits/callgrind
-                      build/benchmark-edits/workloads
+                      build/benchmark-streams/callgrind
+                      build/benchmark-streams/workloads
+                      build/benchmark-streams/baseline/callgrind
                   if-no-files-found: error
                   retention-days: 30
 
-    edits:
-        name: Measure - edits and streams
-        needs: edit-shards
+    streams:
+        name: Measure - streams
+        needs: stream-shards
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -194,25 +203,25 @@ jobs:
                   node-version: 26.8.1
             - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
               with:
-                  pattern: benchmark-edits-part-*-${{ github.sha }}-${{ github.run_attempt }}
-                  path: build/benchmark-edit-parts
+                  pattern: benchmark-streams-part-*-${{ github.sha }}-${{ github.run_attempt }}
+                  path: build/benchmark-stream-parts
             - name: Join the parts into one report
-              run: node scripts/benchmark/edits.mjs --merge build/benchmark-edit-parts --quiet
+              run: node scripts/benchmark/streams.mjs --merge build/benchmark-stream-parts --quiet
             - name: Upload structured results for the PR comment
               if: ${{ always() }}
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
-                  name: benchmark-report-edits-${{ github.run_attempt }}
-                  path: build/benchmark-edits/edits.json
+                  name: benchmark-report-streams-${{ github.run_attempt }}
+                  path: build/benchmark-streams/streams.json
                   if-no-files-found: warn
                   retention-days: 30
             - name: Upload the report
               if: ${{ always() }}
               uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
               with:
-                  name: benchmark-edits-${{ github.sha }}-${{ github.run_attempt }}
+                  name: benchmark-streams-${{ github.sha }}-${{ github.run_attempt }}
                   path: |
-                      build/benchmark-edits/edits.md
-                      build/benchmark-edits/edits.json
+                      build/benchmark-streams/streams.md
+                      build/benchmark-streams/streams.json
                   if-no-files-found: error
                   retention-days: 30

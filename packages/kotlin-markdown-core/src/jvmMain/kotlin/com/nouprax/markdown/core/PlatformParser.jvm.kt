@@ -38,11 +38,6 @@ private class JniSession(
         document = decode(JniParser.sessionNewPayload(source, unit == TextUnit.UTF16, session), unit)
     }
 
-    override fun edit(
-        fields: IntArray,
-        texts: ByteArray,
-    ): Document = publish(JniParser.sessionEditPayload(session[0], fields, texts))
-
     override fun append(text: ByteArray): Document = publish(JniParser.sessionAppendPayload(session[0], text))
 
     override fun text(): ByteArray = JniParser.sessionText(session[0])
@@ -76,14 +71,6 @@ private object JniParser {
         source: ByteArray,
         utf16: Boolean,
         session: LongArray,
-    ): ByteArray?
-
-    /** The MCB3 message of an edit batch of [session] (see [PlatformSession.edit]); null as for [parsePayload]. */
-    @JvmSynthetic
-    external fun sessionEditPayload(
-        session: Long,
-        fields: IntArray,
-        texts: ByteArray,
     ): ByteArray?
 
     /** The MCB3 message of appending [text] to [session]; null as for [parsePayload]. */

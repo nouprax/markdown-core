@@ -169,29 +169,29 @@ private func deepTreeFailures(depth: Int) -> [String] {
     return failures + deepReleaseFailures(source: source)
 }
 
-/// The deep documents of a session (plan gates 4.9): the edit at the deepest
-/// leaf publishes a document that compares, walks, locates and describes like
-/// a fresh one, and the previous document is released while the new one is
-/// alive.
+/// The deep documents of a session (plan gates 4.8): the append that ends the
+/// deepest leaf publishes a document that compares, walks, locates and
+/// describes like a fresh one, and the previous document is released while
+/// the new one is alive.
 private func deepSessionFailures(depth: Int) -> [String] {
     var failures: [String] = []
     func check(_ condition: Bool, _ message: String) {
         if !condition { failures.append(message) }
     }
-    guard let session = try? MarkdownSession(String(repeating: "- ", count: depth) + "leaf\n") else {
+    guard let session = try? MarkdownSession(String(repeating: "- ", count: depth) + "lea") else {
         return ["session failed"]
     }
     weak var previous: MarkupRecord?
-    var edited: Document?
+    var appended: Document?
     do {
         let first = session.document
         previous = first.record
-        edited = try? session.edit([TextEdit(depth * 2..<depth * 2 + 4, with: "lean")])
-        check(edited != nil && edited != first, "deepest leaf difference")
-        check(edited?.content.first?.id == first.content.first?.id, "continued id")
+        appended = try? session.append("n\n")
+        check(appended != nil && appended != first, "deepest leaf difference")
+        check(appended?.content.first?.id == first.content.first?.id, "continued id")
     }
     check(previous == nil, "previous document released")
-    guard let document = edited else { return failures }
+    guard let document = appended else { return failures }
 
     var visitor = RecordingWalkingVisitor(recordEvents: false)
     document.walk(with: &visitor)
@@ -203,7 +203,7 @@ private func deepSessionFailures(depth: Int) -> [String] {
         if list == nil { deepest = item.content.first as? Paragraph }
     }
     guard let leaf = deepest?.content.first as? Text else { return failures + ["no leaf"] }
-    check(leaf.literal == "lean", "edited leaf")
+    check(leaf.literal == "lean", "appended leaf")
     let text = session.text
     let column = Int32(depth * 2 + 1)
     let scope = try? document.scope(of: leaf, in: text)

@@ -910,26 +910,6 @@ uint8_t *markdown_core_wire_session_new(const uint8_t *source, size_t length, ma
     return message;
 }
 
-uint8_t *markdown_core_wire_session_edit(markdown_core_session *session, const size_t *edits, size_t count,
-                                         const uint8_t *texts) {
-    markdown_core_text_edit *batch = count ? malloc(count * sizeof(*batch)) : NULL;
-    if (count && !batch) {
-        return error_message(MARKDOWN_CORE_ALLOCATION_FAILED);
-    }
-    for (size_t index = 0; index < count; ++index) {
-        const size_t *edit = &edits[index * 3];
-        batch[index] = (markdown_core_text_edit){edit[0], edit[1], texts, edit[2]};
-        /* With no bytes at all, `texts` may be NULL: only a text moves it. */
-        if (edit[2]) {
-            texts += edit[2];
-        }
-    }
-    const markdown_core_document *document = NULL;
-    markdown_core_status status = markdown_core_session_edit(session, batch, count, &document);
-    free(batch);
-    return step_message(status, document);
-}
-
 uint8_t *markdown_core_wire_session_append(markdown_core_session *session, const uint8_t *text, size_t size) {
     const markdown_core_document *document = NULL;
     markdown_core_status status = markdown_core_session_append(session, text, size, &document);

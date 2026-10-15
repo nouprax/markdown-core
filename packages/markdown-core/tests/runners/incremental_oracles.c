@@ -46,8 +46,8 @@ bool failed_all(const run *state) {
 
 bool stopped(const run *state) { return state->stop_at_failure && state->failures && failed_all(state); }
 
-markdown_core_text_unit unit_of(eh_unit unit) {
-    return unit == EH_UTF16 ? MARKDOWN_CORE_TEXT_UNIT_UTF16 : MARKDOWN_CORE_TEXT_UNIT_UTF8;
+markdown_core_text_unit unit_of(ih_unit unit) {
+    return unit == IH_UTF16 ? MARKDOWN_CORE_TEXT_UNIT_UTF16 : MARKDOWN_CORE_TEXT_UNIT_UTF8;
 }
 
 /* The canonical dump of a document parsed from `source`; the caller frees it. */
@@ -59,17 +59,6 @@ static uint8_t *dump_of(const markdown_core_document *document, const uint8_t *s
         return NULL;
     }
     return output;
-}
-
-static uint8_t *dump_text(const uint8_t *bytes, size_t length, size_t *dump_length) {
-    markdown_core_document *document = ts_ast_parse(bytes, length);
-    uint8_t *dump;
-    if (!document) {
-        return NULL;
-    }
-    dump = dump_of(document, bytes, length, dump_length);
-    markdown_core_document_free(document);
-    return dump;
 }
 
 static bool same(const uint8_t *left, size_t left_length, const uint8_t *right, size_t right_length) {
@@ -309,7 +298,7 @@ static size_t *line_starts(const uint8_t *text, size_t length, size_t *count) {
 
 /* One scope `L:C..L:C` of a dump in UTF-8 columns, in `unit`; `*next` is
  * past it. */
-static bool dump_scope(const char *token, const uint8_t *text, const size_t *starts, size_t lines, eh_unit unit,
+static bool dump_scope(const char *token, const uint8_t *text, const size_t *starts, size_t lines, ih_unit unit,
                        markdown_core_scope *scope, const char **next) {
     int values[4];
     int index, used = 0;
@@ -321,11 +310,11 @@ static bool dump_scope(const char *token, const uint8_t *text, const size_t *sta
         if (values[index] < 1 || (size_t)values[index] > lines) {
             return false;
         }
-        if (unit == EH_UTF16) {
+        if (unit == IH_UTF16) {
             size_t start = starts[values[index] - 1];
             /* A start column names its byte; an end column counts to it. */
             size_t bytes = (size_t)values[index + 1] - (index == 0 ? 1 : 0);
-            values[index + 1] = (int)(eh_utf16_units(text + start, bytes) + (index == 0 ? 1 : 0));
+            values[index + 1] = (int)(ih_utf16_units(text + start, bytes) + (index == 0 ? 1 : 0));
         }
     }
     *scope = (markdown_core_scope){{values[0], values[1]}, {values[2], values[3]}};
@@ -352,7 +341,7 @@ static bool same_scopes(const markdown_core_scope *a, size_t a_count, const mark
 
 /* Whether a dump's `scope=` token, its scopes joined by commas, is
  * `scopes`. */
-static bool dump_scopes(const char *token, const uint8_t *text, const size_t *starts, size_t lines, eh_unit unit,
+static bool dump_scopes(const char *token, const uint8_t *text, const size_t *starts, size_t lines, ih_unit unit,
                         const markdown_core_scope *scopes, size_t count) {
     const char *at = token + strlen("scope=");
     size_t index;
@@ -374,7 +363,7 @@ static bool dump_scopes(const char *token, const uint8_t *text, const size_t *st
  * Each step takes SCOPE_SAMPLE nodes spread over the walk, and the next step
  * the nodes after them, so consecutive steps cover the whole document: every
  * query costs a walk of the document. */
-static void check_queries(run *state, const char *where, size_t step, eh_unit unit,
+static void check_queries(run *state, const char *where, size_t step, ih_unit unit,
                           const markdown_core_document *document, const view *actual,
                           const markdown_core_document *fresh, const view *expected, const uint8_t *fresh_dump,
                           size_t fresh_dump_size, const uint8_t *text, size_t length) {
@@ -518,29 +507,6 @@ static void history_free(history *ids) {
     memset(ids, 0, sizeof(*ids));
 }
 
-/* The image of the first byte of [start, end) that no edit of the step
- * replaced, or false when there is none (gates 4.4). `edits` are in UTF-8
- * bytes against the text before the step, in ascending order. */
-static bool anchor(const eh_edit *edits, size_t count, int64_t start, int64_t end, int64_t *image) {
-    int64_t x = start, shift = 0;
-    size_t index;
-    for (index = 0; index < count; index++) {
-        if ((int64_t)edits[index].start <= x && x < (int64_t)edits[index].end) {
-            x = (int64_t)edits[index].end;
-        }
-    }
-    if (x >= end) {
-        return false;
-    }
-    for (index = 0; index < count; index++) {
-        if ((int64_t)edits[index].end <= x) {
-            shift += (int64_t)edits[index].length - (int64_t)(edits[index].end - edits[index].start);
-        }
-    }
-    *image = x + shift;
-    return true;
-}
-
 /* The walk index of each old node's node of the same id in `ids`, a table
  * over the new view's ids; SIZE_MAX for none. */
 typedef struct {
@@ -584,10 +550,10 @@ static size_t view_at(const view *taken, const char *kind, size_t at) {
     return SIZE_MAX;
 }
 
-/* 4.2 to 4.5 for one step from `before` to `after`, then the lineage takes
- * the step. `edits` are the step's edits in UTF-8 bytes, ascending. */
+/* 4.2 to 4.5 for one append from `before` to `after`, then the lineage
+ * takes the step. */
 static void check_identity(run *state, const char *where, size_t step, history *ids, const view *before,
-                           const view *after, const eh_edit *edits, size_t count, const eh_step *entry) {
+                           const view *after, const ih_step *entry) {
     id_index old_ids = {0}, new_ids = {0};
     bool *changed = (bool *)calloc(after->count, sizeof(bool));
     size_t *continues = (size_t *)malloc(after->count * sizeof(size_t));
@@ -615,8 +581,10 @@ static void check_identity(run *state, const char *where, size_t step, history *
     }
     /* 4.4: the root continues the root; within the relation of a matched
      * owner, a node continues the earliest old sibling of its kind whose
-     * anchor's image it holds. One cursor per new owner walks the matched
-     * old owner's items, which are in relation and source order. */
+     * anchor it holds. An old node's anchor is the first byte of its source,
+     * which an append leaves at its offset; a node with no source has none.
+     * One cursor per new owner walks the matched old owner's items, which
+     * are in relation and source order. */
     for (index = 0; index < after->count && !stopped(state); index++) {
         const view_node *node = &after->nodes[index];
         size_t match = SIZE_MAX;
@@ -627,14 +595,13 @@ static void check_identity(run *state, const char *where, size_t step, history *
             size_t *at = &cursor[node->owner];
             while (*at < owner->item_count) {
                 const view_node *old = &before->nodes[before->items[owner->items + *at]];
-                int64_t image = 0;
-                bool anchored = anchor(edits, count, old->range.start, old->range.end, &image);
+                const bool anchored = old->range.start < old->range.end;
                 if (old->relation > node->relation ||
-                    (old->relation == node->relation && anchored && image >= node->range.end)) {
+                    (old->relation == node->relation && anchored && old->range.start >= node->range.end)) {
                     break;
                 }
-                if (old->relation == node->relation && anchored && image >= node->range.start && match == SIZE_MAX &&
-                    old->kind == node->kind) {
+                if (old->relation == node->relation && anchored && old->range.start >= node->range.start &&
+                    match == SIZE_MAX && old->kind == node->kind) {
                     match = before->items[owner->items + *at];
                 }
                 ++*at;
@@ -682,7 +649,7 @@ static void check_identity(run *state, const char *where, size_t step, history *
         bool *named = (bool *)calloc(after->count, sizeof(bool));
         bool only = false;
         for (index = 0; named && index < entry->expectation_count; index++) {
-            const eh_expectation *expectation = &entry->expectations[index];
+            const ih_expectation *expectation = &entry->expectations[index];
             const char *verb = expectation->verb;
             bool ok;
             size_t at;
@@ -771,9 +738,9 @@ static void history_open(run *state, const char *where, history *ids, const view
 /* Every oracle after the open (`before` NULL) or a step: 4.1, then, from the
  * view it takes of the document into `after`, 4.2 to 4.5 against the
  * previous view. */
-static bool check_document(run *state, const char *where, size_t step, eh_unit unit, void *subject,
-                           const markdown_core_document *document, const eh_text *model, history *ids,
-                           const view *before, view *after, const eh_edit *edits, size_t count, const eh_step *entry) {
+static bool check_document(run *state, const char *where, size_t step, ih_unit unit, void *subject,
+                           const markdown_core_document *document, const ih_text *model, history *ids,
+                           const view *before, view *after, const ih_step *entry) {
     size_t length = 0, actual_length = 0, expected_length = 0, index;
     const uint8_t *text = state->subject->text(subject, &length);
     uint8_t *actual = NULL, *expected = NULL;
@@ -817,7 +784,7 @@ static bool check_document(run *state, const char *where, size_t step, eh_unit u
         goto done;
     }
     if (before) {
-        check_identity(state, where, step, ids, before, after, edits, count, entry);
+        check_identity(state, where, step, ids, before, after, entry);
     } else {
         history_open(state, where, ids, after);
     }
@@ -832,236 +799,48 @@ done:
     return taken;
 }
 
-/* The model applies a batch as the gates define it: every edit against the
- * text before the batch, the pieces between them copied forward. */
-static bool model_batch(eh_text *model, const eh_edit *edits, size_t count) {
-    eh_text next = {0};
-    size_t *order = (size_t *)malloc(count * sizeof(size_t));
-    size_t index, at = 0;
-    bool ok = order != NULL;
-    for (index = 0; ok && index < count; index++) {
-        size_t place = index;
-        while (place > 0 && edits[order[place - 1]].start > edits[index].start) {
-            order[place] = order[place - 1];
-            place--;
-        }
-        order[place] = index;
-    }
-    ok = ok && eh_text_assign(&next, NULL, 0);
-    for (index = 0; ok && index < count; index++) {
-        const eh_edit *edit = &edits[order[index]];
-        ok = edit->start >= at && edit->end <= model->length &&
-             eh_text_replace(&next, next.length, next.length, model->bytes + at, edit->start - at) &&
-             eh_text_replace(&next, next.length, next.length, edit->text, edit->length);
-        at = edit->end;
-    }
-    ok = ok && eh_text_replace(&next, next.length, next.length, model->bytes + at, model->length - at);
-    free(order);
-    if (ok) {
-        eh_text_free(model);
-        *model = next;
-    } else {
-        eh_text_free(&next);
-    }
-    return ok;
-}
-
-/* 4.7: the same edits one at a time, in descending order of their starts. */
-static void check_batch(run *state, const char *where, size_t step, const markdown_core_document *document,
-                        const eh_text *before, const eh_edit *edits, size_t count) {
-    eh_text text = {0};
-    bool *done = (bool *)calloc(count, sizeof(bool));
-    size_t round, actual_length = 0, expected_length = 0;
-    uint8_t *actual;
-    uint8_t *expected;
-    bool ok = done && eh_text_assign(&text, before->bytes, before->length);
-    for (round = 0; ok && round < count; round++) {
-        size_t index, pick = count;
-        for (index = 0; index < count; index++) {
-            if (!done[index] && (pick == count || edits[index].start > edits[pick].start)) {
-                pick = index;
-            }
-        }
-        done[pick] = true;
-        ok = eh_text_replace(&text, edits[pick].start, edits[pick].end, edits[pick].text, edits[pick].length);
-    }
-    free(done);
-    if (!ok) {
-        fail(state, "4.7", "%s step %zu: the edits cannot be applied one at a time", where, step);
-        eh_text_free(&text);
-        return;
-    }
-    actual = dump_of(document, text.bytes, text.length, &actual_length);
-    expected = dump_text(text.bytes, text.length, &expected_length);
-    if (!same(actual, actual_length, expected, expected_length)) {
-        fail(state, "4.7", "%s step %zu: the batch differs from its edits one at a time", where, step);
-    }
-    markdown_core_dump_free(actual);
-    markdown_core_dump_free(expected);
-    eh_text_free(&text);
-}
-
 /* ------------------------------------------------------------------ runs */
 
-/* The step's edits in UTF-8 bytes, ascending. */
-static eh_edit *sorted_edits(const eh_edit *edits, size_t count) {
-    eh_edit *sorted = (eh_edit *)malloc((count ? count : 1) * sizeof(*sorted));
-    size_t index;
-    if (!sorted) {
-        return NULL;
-    }
-    for (index = 0; index < count; index++) {
-        size_t place = index;
-        while (place > 0 && sorted[place - 1].start > edits[index].start) {
-            sorted[place] = sorted[place - 1];
-            place--;
-        }
-        sorted[place] = edits[index];
-    }
-    return sorted;
-}
-
-/* An edit script in one unit: steps are converted from the script's UTF-8
- * offsets to the unit through the text model before each step. */
-void run_edits(run *state, const char *where, eh_unit unit, const uint8_t *document, size_t length,
-               const eh_script *script) {
-    eh_text model = {0};
+void run_appends(run *state, const char *where, ih_unit unit, const uint8_t *opened, size_t opened_length,
+                 const ih_step *steps, size_t count) {
+    ih_text model = {0};
     const markdown_core_document *current = NULL;
     history ids = {0};
     view previous = {0};
-    bool viewed;
-    void *subject;
+    void *subject = state->subject->open(unit, opened, opened_length, &current);
     size_t index;
-    if (!eh_text_assign(&model, document, length)) {
-        fail(state, "harness", "%s: out of memory", where);
-        return;
-    }
-    subject = state->subject->open(unit, document, length, &current);
-    if (!subject) {
-        fail(state, "harness", "%s: the subject did not open", where);
-        eh_text_free(&model);
-        return;
-    }
-    viewed = check_document(state, where, 0, unit, subject, current, &model, &ids, NULL, &previous, NULL, 0, NULL);
-    for (index = 0; viewed && index < script->count && !stopped(state); index++) {
-        const eh_step *step = &script->steps[index];
-        const markdown_core_document *next = NULL;
-        eh_status status;
-        if (step->kind == EH_STEP_REJECT) {
-            if (step->unit != unit) {
-                continue;
-            }
-            status = state->subject->edit(subject, step->edits, step->count, &next);
-            if (status != step->refusal) {
-                fail(state, "4.8", "%s step %zu: a refused batch returned status %d, not %d", where, index + 1,
-                     (int)status, (int)step->refusal);
-            }
-            /* A subject that accepted it no longer holds the model's text. */
-            if (status == EH_OK) {
-                break;
-            }
-            continue;
-        }
-        {
-            eh_edit *converted = (eh_edit *)malloc((step->count ? step->count : 1) * sizeof(eh_edit));
-            eh_edit *bytes = sorted_edits(step->edits, step->count);
-            eh_edit appended;
-            eh_text before = {0};
-            view after;
-            size_t edit;
-            if (!converted || !bytes || !eh_text_assign(&before, model.bytes, model.length)) {
-                free(converted);
-                free(bytes);
-                fail(state, "harness", "%s: out of memory", where);
-                break;
-            }
-            for (edit = 0; edit < step->count; edit++) {
-                converted[edit] = step->edits[edit];
-                if (unit == EH_UTF16) {
-                    converted[edit].start = eh_utf16_units(model.bytes, step->edits[edit].start);
-                    converted[edit].end = eh_utf16_units(model.bytes, step->edits[edit].end);
-                }
-            }
-            appended = (eh_edit){model.length, model.length, step->edits[0].text, step->edits[0].length};
-            status = step->kind == EH_STEP_EDIT
-                         ? state->subject->edit(subject, converted, step->count, &next)
-                         : state->subject->append(subject, step->edits[0].text, step->edits[0].length, &next);
-            free(converted);
-            if (status != EH_OK ||
-                !(step->kind == EH_STEP_EDIT ? model_batch(&model, step->edits, step->count)
-                                             : eh_text_replace(&model, model.length, model.length, step->edits[0].text,
-                                                               step->edits[0].length))) {
-                fail(state, status == EH_FAILED ? "harness" : "4.8", "%s step %zu: a valid step failed", where,
-                     index + 1);
-                eh_text_free(&before);
-                free(bytes);
-                break;
-            }
-            current = next;
-            viewed = check_document(state, where, index + 1, unit, subject, current, &model, &ids, &previous, &after,
-                                    step->kind == EH_STEP_EDIT ? bytes : &appended,
-                                    step->kind == EH_STEP_EDIT ? step->count : 1, step);
-            if (viewed && step->kind == EH_STEP_EDIT && step->count > 1) {
-                check_batch(state, where, index + 1, current, &before, step->edits, step->count);
-            }
-            view_free(&previous);
-            previous = after;
-            eh_text_free(&before);
-            free(bytes);
-        }
-    }
-    view_free(&previous);
-    history_free(&ids);
-    state->subject->close(subject);
-    eh_text_free(&model);
-}
-
-/* A stream from an empty session: every chunk is appended, and 4.1 to 4.4
- * hold after each one (4.6). */
-void run_stream(run *state, const char *where, eh_unit unit, const uint8_t *document, const size_t *ends,
-                size_t count) {
-    static const eh_step chunk = {.kind = EH_STEP_APPEND};
-    eh_text model = {0};
-    const markdown_core_document *current = NULL;
-    history ids = {0};
-    view previous = {0};
-    void *subject = state->subject->open(unit, (const uint8_t *)"", 0, &current);
-    size_t index, from = 0;
     bool viewed;
-    if (!subject || !eh_text_assign(&model, NULL, 0)) {
+    if (!subject || !ih_text_assign(&model, opened, opened_length)) {
         fail(state, "harness", "%s: the subject did not open", where);
         if (subject) {
             state->subject->close(subject);
         }
+        ih_text_free(&model);
         return;
     }
-    viewed = check_document(state, where, 0, unit, subject, current, &model, &ids, NULL, &previous, NULL, 0, NULL);
+    viewed = check_document(state, where, 0, unit, subject, current, &model, &ids, NULL, &previous, NULL);
     for (index = 0; viewed && index < count && !stopped(state); index++) {
+        const ih_step *step = &steps[index];
         const markdown_core_document *next = NULL;
-        eh_edit appended = {model.length, model.length, (uint8_t *)document + from, ends[index] - from};
         view after;
-        eh_status status = state->subject->append(subject, document + from, ends[index] - from, &next);
-        if (status != EH_OK ||
-            !eh_text_replace(&model, model.length, model.length, document + from, ends[index] - from)) {
-            fail(state, status == EH_FAILED ? "harness" : "4.8", "%s chunk %zu: a valid chunk failed", where,
-                 index + 1);
+        if (!state->subject->append(subject, step->text, step->length, &next) ||
+            !ih_text_append(&model, step->text, step->length)) {
+            fail(state, "harness", "%s step %zu: an append failed", where, index + 1);
             break;
         }
         current = next;
-        viewed = check_document(state, where, index + 1, unit, subject, current, &model, &ids, &previous, &after,
-                                &appended, 1, &chunk);
+        viewed = check_document(state, where, index + 1, unit, subject, current, &model, &ids, &previous, &after, step);
         view_free(&previous);
         previous = after;
-        from = ends[index];
     }
     view_free(&previous);
     history_free(&ids);
     state->subject->close(subject);
-    eh_text_free(&model);
+    ih_text_free(&model);
 }
 
 /* 3.1: parts that keep their meaning when joined. */
-void check_parts(run *state, const char *where, const uint8_t *document, size_t length, const eh_case *entry) {
+void check_parts(run *state, const char *where, const uint8_t *document, size_t length, const ih_case *entry) {
     size_t index, from = 0, sum = 0;
     markdown_core_document *whole;
     for (index = 0; index < entry->part_count; index++) {

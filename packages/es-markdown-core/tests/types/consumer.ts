@@ -20,7 +20,6 @@ import {
     type ErrorCode,
     MarkdownCoreError,
     MarkdownSession,
-    type TextEdit,
     MarkupDumper,
     markupEquals,
     walk,
@@ -43,8 +42,6 @@ const document: Document = Document.parse("# typed");
 Document.parse("# typed", { tables: true });
 const unit: TextUnit = Document.parse("# typed", { unit: "utf8" }).unit;
 const session = new MarkdownSession("# typed", { unit: "utf16" });
-const edits: readonly TextEdit[] = [{ start: 2, end: 7, text: "edited" }];
-const edited: Document = session.edit(edits);
 const appended: Document = session.append("\n");
 const sessionText: string = session.text;
 const sessionUnit: TextUnit = session.unit;
@@ -57,7 +54,7 @@ const nodeDump: string = document.dump(document.content[0]!, "# typed");
 const explicitNodeDump: string = MarkupDumper.dump(document, document.content[0]!, "# typed");
 // @ts-expect-error a dump is computed from the source
 document.dump();
-void [unit, dump, explicitDump, nodeDump, explicitNodeDump, edited, appended, sessionText, sessionUnit];
+void [unit, dump, explicitDump, nodeDump, explicitNodeDump, appended, sessionText, sessionUnit];
 const id: number = document.id;
 const extent: Extent = document.extent;
 const runs: readonly Run[] = document.content[0]!.runs;
@@ -73,7 +70,7 @@ try {
         void [code, message];
     }
 }
-const codes: readonly ErrorCode[] = ["allocationFailed", "outOfBounds", "kindMismatch", "insideScalar"];
+const codes: readonly ErrorCode[] = ["allocationFailed", "outOfBounds", "kindMismatch"];
 // @ts-expect-error the codes are closed
 const unknownCode: ErrorCode = "invalidArgument";
 // @ts-expect-error an error's code is readonly

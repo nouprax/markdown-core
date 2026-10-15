@@ -1,0 +1,9 @@
+markdown-core stream script 1
+script identity-item-appended-to-long-list identity
+append 2d206c6173740a
+expect changed Document 0
+expect changed List 0
+expect changed ListItem 9533
+expect changed Paragraph 9535
+expect changed Text 9535
+expect only

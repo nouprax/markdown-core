@@ -53,8 +53,7 @@ const flavors: readonly ListFlavor[] = ["bullet", "ordered"];
 const errorCodes: { readonly [status: number]: ErrorCode } = {
     1: "allocationFailed",
     2: "outOfBounds",
-    3: "kindMismatch",
-    4: "insideScalar"
+    3: "kindMismatch"
 };
 
 /** The document's members that are not contract fields: the decoder adds them

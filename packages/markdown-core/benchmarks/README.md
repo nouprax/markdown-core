@@ -132,63 +132,72 @@ dimension or separate pairing registry.
 
 With `--baseline-ref`, only engine source comes from the base revision. The
 current harness, corpus, preset and reference binaries are used on both sides.
-The base revision builds only the stage runners. Markdown Core's stage
-harness calls the engine's internal parse entry, `markdown_core_parse_document`,
-which both revisions share while the public API changes.
+The base revision builds the stage runners and the stream runner. Markdown
+Core's stage harness calls the engine's internal parse entry,
+`markdown_core_parse_document`, which both revisions share while the public API
+changes; the stream harness calls the session API.
 Each document's `source_to_buffer` Ir and its `buffer_to_ast` Ir must each be
 at most 1.02 times its baseline. An improvement in one stage, another document
 or an aggregate median cannot hide a regression in the other stage. The gate
 sees only the two stages. It does not replace reviewing allocation behavior,
 or reviewing whether a change moves work into parser creation.
 
-## Edits and streams
+## Streams
 
-`pnpm benchmark:edits` measures what an application pays per edit and per
-streamed chunk, as the
+`pnpm benchmark:streams` measures what an application pays per streamed
+chunk, as the
 [incremental gates](../../../docs/plans/2026-09-29-incremental-gates.md)
 define it. `scripts/benchmark/workloads.mjs` generates its workloads: every
-grammar corpus document with the `typing`, `lines`, `markers`, `undo`,
-`random`, `tokens` and `scalars` families, and every scale and adversarial
-shape at 16 KB, 64 KB, 256 KB and 1 MB with every family but `undo`.
-`edit_runner` opens a subject on a workload's document, applies its steps
-through `bench_apply_step`, and dumps a callgrind profile after each window of
-steps; a window's cost is the edge into `bench_apply_step`. Scripts and streams
-of at most 1,024 steps have one step per window, and a longer stream has
-1,024 windows. The driver is `scripts/benchmark/edits.mjs`; it shares
-`run.mjs`'s build, provenance, isolation and callgrind invocation, so its
-binaries are the ones the stage benchmark describes.
+grammar corpus document with the `tokens` and `scalars` families, and every
+scale and adversarial shape at 16 KB, 64 KB, 256 KB and 1 MB with `tokens` and
+`rows`. `stream_runner` opens a subject on an empty text, appends the
+workload's document through `bench_apply_step` one chunk at a time, and dumps a
+callgrind profile after each window of chunks; a window's cost is the edge into
+`bench_apply_step`. A stream of at most 1,024 chunks has one chunk per window,
+and a longer stream has 1,024 windows. The driver is
+`scripts/benchmark/streams.mjs`; it shares `run.mjs`'s build, provenance,
+isolation and callgrind invocation, so its binaries are the ones the stage
+benchmark describes.
 
-The only subject until the session API exists is `reparse`, which keeps the
-text and parses the whole of it on every step: the R column. It is measured
-at each window's last step, so a long stream is not reparsed after every
-chunk. `oneshot_ir` is the stage runner's two stages on each workload's final
-text.
+Two subjects run every workload. `reparse` keeps the text and parses the whole
+of it: the R column, measured at each window's last chunk, so a long stream is
+not reparsed after every chunk. `session` appends through the engine's session:
+the S column, measured on the streams of at most 1,024 chunks, where each
+chunk costs at most 1.25 times R's (6.3). `oneshot_ir` is the stage runner's
+two stages on each workload's final text.
+
+With `--baseline-ref`, the base revision's engine is rebuilt with this run's
+harness, as the stage gate does, and measured on the same workloads. Each
+subject's p95, maximum and total Ir of each workload must be at most 1.02
+times the base's (6.4).
 
 ```sh
 scripts/tooling/setup-environment.sh --install oracle-cmark oracle-cmark-gfm
-pnpm benchmark:edits
-pnpm benchmark:edits --workload prose-ascii-16k.far
+pnpm benchmark:streams
+pnpm benchmark:streams --workload prose-ascii-16k.tokens
+pnpm benchmark:streams --set corpus --baseline-ref "$(git rev-parse origin/main)"
 ```
 
-Outputs default to `build/benchmark-edits`: `edits.md`, `edits.json` (every
-workload's per-window Ir and its p50, p95, maximum and total), the generated
-`workloads/`, and in `callgrind/` the raw profile of each workload's most
-expensive window. `scripts/benchmark/edit-gates.mjs` holds the arithmetic of
-the edit gates; later rollout steps activate them.
+Outputs default to `build/benchmark-streams`: `streams.md`, `streams.json`
+(every workload's per-window Ir and its p50, p95, maximum and total), the
+generated `workloads/`, and in `callgrind/` the raw profile of each workload's
+most expensive window; the base revision's profiles are under `baseline/`.
+`scripts/benchmark/stream-gates.mjs` holds the arithmetic of the stream gates.
 
 The grammar corpus's workloads take hours of callgrind on one runner, so CI
 measures them in parts on parallel runners and joins the parts into one
 report:
 
 ```sh
-pnpm benchmark:edits --set corpus --shard 0/8 --out build/edit-parts/0
+pnpm benchmark:streams --set corpus --shard 0/8 --out build/stream-parts/0
 # ... one run per part, on any machine with the same toolchain ...
-pnpm benchmark:edits --merge build/edit-parts
+pnpm benchmark:streams --merge build/stream-parts
 ```
 
 Part `I` of `N` measures the workloads at positions `I`, `I + N`, ... of the
-set. The join refuses parts that differ in their toolchain, binaries or
-workload set, and a set of parts that misses or repeats one.
+set. The join refuses parts that differ in their toolchain, binaries, workload
+set or base revision, and a set of parts that misses or repeats one. The
+gates apply to the joined report.
 
 ## The attribute grammar, against lexbor
 

@@ -8,11 +8,8 @@ export interface NativeExports extends WebAssembly.Exports {
     markdown_core_wire_parse(source: number, length: number): number;
     /** A session's steps, each answering with one owned MCB3 message as
      * `markdown_core_wire_parse` does. `session` receives the new session, or
-     * zero with a failure message. An edit batch is `count` triples of start,
-     * end and text size at `edits`, with the texts one after another at
-     * `texts`. */
+     * zero with a failure message. */
     markdown_core_wire_session_new(source: number, length: number, unit: number, session: number): number;
-    markdown_core_wire_session_edit(session: number, edits: number, count: number, texts: number): number;
     markdown_core_wire_session_append(session: number, text: number, size: number): number;
     markdown_core_wire_free(message: number): void;
     markdown_core_session_text_size(session: number): number;

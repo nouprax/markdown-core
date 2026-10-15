@@ -7,7 +7,6 @@
 #include "node.h"
 #include "buffer.h"
 #include "dialect.h"
-#include "text_tree.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,13 +26,13 @@ typedef enum {
 /* WHAT A PARSE CONTINUES: the storage it takes nodes from and the tree it
  * continues.
  *
- * `previous` is the root of a tree a parse published, and `edits` turn the
- * text it was parsed from into the text this parse reads, in its
- * coordinates: disjoint, in source order. The published tree continues it
- * (docs/plans/2026-09-29-incremental-parsing.md, 5.9): every node matched to
- * an old node takes its id, every other node takes the next id after
- * `last_id`, and a matched node equal to its old node as a value is that old
- * node. On success the parse owns `previous`: it is the returned root, or it
+ * `previous` is the root of a tree a parse published, and the text it was
+ * parsed from begins the text this parse reads: appends add to the end of a
+ * text, so every byte of the old text keeps its offset. The published tree
+ * continues it (docs/plans/2026-09-29-incremental-parsing.md, 5.9): every
+ * node matched to an old node takes its id, every other node takes the next
+ * id after `last_id`, and a matched node equal to its old node as a value is
+ * that old node. On success the parse owns `previous`: it is the returned root, or it
  * is released into `pool` with every other node it retires, and `last_id` is
  * the last id issued. `node_count` is the number of nodes in `previous`,
  * and on success the number in the published tree. A fresh parse continues
@@ -45,8 +44,6 @@ typedef enum {
 typedef struct markdown_core_revision {
     markdown_core_node_pool *pool;
     markdown_core_node *previous;
-    const markdown_core_byte_edit *edits;
-    size_t edit_count;
     uint64_t last_id;
     size_t node_count;
 } markdown_core_revision;
@@ -786,9 +783,9 @@ bool markdown_core_parser_register_definition(markdown_core_parser *parser,
                                               markdown_core_node *definition);
 
 /* THE LONGEST SOURCE A PARSE TAKES: offsets are int32, and every buffer
- * derived from the source stays under half of that. The public parse entry
- * (markdown_core_document_parse_in) refuses a longer one; below it, `length`
- * is within this bound. */
+ * derived from the source stays under half of that. A session refuses a text
+ * that would grow past it (session.c); below it, `length` is within this
+ * bound. */
 #define MARKDOWN_CORE_SOURCE_CAPACITY ((size_t)(INT32_MAX / 2))
 
 /* The engine has one parse operation, run by a parser instance. An instance

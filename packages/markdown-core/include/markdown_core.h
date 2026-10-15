@@ -85,14 +85,12 @@ typedef struct markdown_core_node markdown_core_node;
  *   capacity the library can represent.
  * - OUT_OF_BOUNDS: an index, position or source length names something that
  *   is not there.
- * - KIND_MISMATCH: the node or value is not of the kind the accessor reads.
- * - INSIDE_SCALAR: an offset falls inside a scalar, where none begins. */
+ * - KIND_MISMATCH: the node or value is not of the kind the accessor reads. */
 typedef enum markdown_core_status {
     MARKDOWN_CORE_OK = 0,
     MARKDOWN_CORE_ALLOCATION_FAILED = 1,
     MARKDOWN_CORE_OUT_OF_BOUNDS = 2,
     MARKDOWN_CORE_KIND_MISMATCH = 3,
-    MARKDOWN_CORE_INSIDE_SCALAR = 4,
 } markdown_core_status;
 
 /** A read-only run of UTF-8 bytes that this library owns.
@@ -397,42 +395,24 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_document_parse_in(const uin
 MARKDOWN_CORE_API void markdown_core_document_free(markdown_core_document *document);
 MARKDOWN_CORE_API markdown_core_text_unit markdown_core_document_unit(const markdown_core_document *document);
 
-/** SESSIONS. A session holds a text, counted in the unit it was made with,
- * and the document parsed from it, and changes both with each edit: the new
- * document continues the previous one, so a node that continues an old node
- * keeps its identifier, and one whose value is unchanged is the old node.
- * The document a session returns borrows from the session until its next
- * edit or its release.
+/** SESSIONS. A session holds a text and the document parsed from it, and
+ * each append adds to the end of both: the new document continues the
+ * previous one, so a node that continues an old node keeps its identifier,
+ * and one whose value is unchanged is the old node. The document a session
+ * returns borrows from the session until its next append or its release.
  *
  * `markdown_core_session_new` parses `size` bytes of `source` as
- * markdown_core_document_parse does, into a session whose offsets and
- * columns count in `unit`. */
+ * markdown_core_document_parse does, into a session whose documents count
+ * columns in `unit`. */
 typedef struct markdown_core_session markdown_core_session;
-
-/** One replacement: the text in [start, end), offsets in the session's unit
- * into the text before the batch, becomes the `size` bytes of `text`. */
-typedef struct markdown_core_text_edit {
-    size_t start;
-    size_t end;
-    const uint8_t *text;
-    size_t size;
-} markdown_core_text_edit;
 
 MARKDOWN_CORE_API markdown_core_status markdown_core_session_new(const uint8_t *source, size_t size,
                                                                  markdown_core_text_unit unit,
                                                                  markdown_core_session **session);
-/** Applies `count` disjoint edits, listed in any order, to the text and parses
- * it once; `*document` receives the new document. Two edits at one offset
- * apply in the order listed, and each text is stored as given. OUT_OF_BOUNDS
- * when an edit's start is after its end, its end is past the text or two
- * edits overlap; INSIDE_SCALAR when an offset falls inside a scalar: at a
- * continuation byte in UTF-8, or between the two units of one scalar in
- * UTF-16; ALLOCATION_FAILED when an allocation fails or the text would
- * exceed the 1 GiB a document can hold. */
-MARKDOWN_CORE_API markdown_core_status markdown_core_session_edit(markdown_core_session *session,
-                                                                  const markdown_core_text_edit *edits, size_t count,
-                                                                  const markdown_core_document **document);
-/** Appends `size` bytes of `text`: the edit at the end of the text. */
+/** Appends `size` bytes of `text` to the text and parses it; `*document`
+ * receives the new document. The bytes are stored as given, so a scalar may
+ * be split between two appends. ALLOCATION_FAILED when an allocation fails
+ * or the text would exceed the 1 GiB a document can hold. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_session_append(markdown_core_session *session, const uint8_t *text,
                                                                     size_t size,
                                                                     const markdown_core_document **document);
