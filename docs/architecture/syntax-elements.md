@@ -207,9 +207,11 @@ own. Sealing is two steps: the instance measures the builder, allocates the
 parser and the dialect's tables as one block, and seals into that block before
 the parser starts. The sealed dialect copies its element list, so the builder
 is released before any parse and the instance is released as one block. An
-instance runs one parse transaction (`markdown_core_parser_parse`) at a time,
-and each begins with the parser and the element records as the instance was
-made; a session keeps its instance for every append.
+instance runs one parse transaction at a time -- a start, a commit and a
+finalize (`markdown_core_parser_start`, `markdown_core_parser_commit`,
+`markdown_core_parser_finalize`) -- and each starts with the parser and the
+element records as the instance was made; a session keeps its instance for
+every append.
 Instances in one process may seal different dialects, and nothing about a
 dialect is process state, so no global initialization cache or lock is needed.
 

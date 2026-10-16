@@ -277,7 +277,7 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
 
     /* A table split closes this paragraph just as a later block start would:
      * reference definitions, anchor attachment and the runs of its own lines
-     * share finalization. It settles before the table it was split from. */
+     * share the close. It settles before the table it was split from. */
     markdown_core_block_close_into(parser, paragraph, markdown_core_parser_parent(parser, parent_container));
 }
 

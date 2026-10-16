@@ -68,7 +68,7 @@ typedef struct {
     int source_step;
     /* Virtual indentation after container prefixes, before block content was
      * stripped. Slices retain this line provenance, including table leads;
-     * synthetic inline runs use zero because they never finalize as blocks. */
+     * synthetic inline runs use zero because they never close as blocks. */
     int indent;
 } markdown_core_line_mark;
 
@@ -837,13 +837,17 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
  * could not be allocated. */
 markdown_core_parser *markdown_core_parser_create(const markdown_core_element *const *elements, size_t count,
                                                   markdown_core_parser_setup_func setup, void *context);
-/* One parse transaction: reads `source` as what `revision` says the parse
- * continues, with the storage it lends (above), and returns the published
- * tree, or NULL when the transaction fails. The transaction's state is
- * released before it returns, so an instance runs any number of them, one
- * at a time, each as the first. */
-markdown_core_node *markdown_core_parser_parse(markdown_core_parser *parser, const char *source, size_t length,
-                                               markdown_core_revision *revision);
+/* A PARSE IS A START, A COMMIT AND A FINALIZE, one transaction at a time on
+ * an instance. `start` begins a transaction that continues what `revision`
+ * says, with the storage it lends (above). `commit` reads the lines of
+ * `source`, which the transaction borrows until it ends. `finalize` ends the
+ * input there: every block still open closes, the closed blocks complete,
+ * and the tree is published and returned, or NULL when the transaction
+ * failed. It releases the transaction's state, so an instance runs any
+ * number of them, each as the first. */
+void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revision *revision);
+void markdown_core_parser_commit(markdown_core_parser *parser, const char *source, size_t length);
+markdown_core_node *markdown_core_parser_finalize(markdown_core_parser *parser);
 void markdown_core_parser_destroy(markdown_core_parser *parser);
 
 #ifdef __cplusplus

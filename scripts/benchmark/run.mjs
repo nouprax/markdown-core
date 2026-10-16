@@ -13,15 +13,16 @@
  * stage into parser creation makes that stage cheaper without making parsing
  * cheaper, and no number here will show it.
  *
- *   source_to_buffer   markdown-core  markdown_core_parser_parse -> S_parse_source
+ *   source_to_buffer   markdown-core  markdown_core_parser_commit -> S_parse_source
  *                      cmark          bench_parse_document -> cmark_parser_feed
- *   buffer_to_ast      markdown-core  markdown_core_parser_parse -> S_finish_parse
+ *   buffer_to_ast      markdown-core  markdown_core_parser_finalize -> S_finish_parse
  *                      cmark          bench_parse_document -> cmark_parser_finish
  *
- * Each stage is named by its boundary alone. The caller is the transaction,
- * found in each profile as the one function that calls every boundary
- * (commonCaller), so a baseline revision whose entry had another name is
- * measured at the same boundaries.
+ * Each stage is named by its boundary alone. Its entry is found in each
+ * profile as the one function that calls the boundary from outside every
+ * stage (stageEntries), so a revision whose transaction enters both stages
+ * from one function, as cmark's does, and a revision whose entries have other
+ * names are measured at the same boundaries.
  *
  * WHY cmark's FEED API. cmark splits the same two paths across two public
  * calls, so feeding the whole document and then finishing gives a boundary
@@ -62,12 +63,12 @@ import { fileURLToPath } from "node:url";
 
 import {
     baseName,
-    commonCaller,
     costRecord,
     edgesBetween,
     foldNames,
     nodesEnteredFrom,
-    parseCallgrind
+    parseCallgrind,
+    stageEntries
 } from "./callgrind.mjs";
 import {
     compiledFlags as readCompiledFlags,
@@ -1216,14 +1217,15 @@ export function measure(profile, engine, document, out) {
     });
     const stages = {};
     const boundaries = STAGES.map((stage) => definition.stages[stage].callee);
-    const transaction = commonCaller(profileByName, boundaries);
-    if (!transaction) {
+    const entries = stageEntries(profileByName, boundaries);
+    if (!entries) {
         fail(
-            `${engine}: no one function calls every stage boundary (${boundaries.join(", ")}) in ${path.basename(dump)}`
+            `${engine}: a stage boundary (${boundaries.join(", ")}) is not entered from exactly one function ` +
+                `outside the stages in ${path.basename(dump)}`
         );
     }
-    for (const stage of STAGES) {
-        const boundary = { caller: transaction, callee: definition.stages[stage].callee };
+    for (const [index, stage] of STAGES.entries()) {
+        const boundary = { caller: entries[index], callee: definition.stages[stage].callee };
         const edges = edgesBetween(profileByName, boundary.caller, boundary.callee);
         if (!edges.length) {
             fail(`${engine}: no call edge ${boundary.caller} -> ${boundary.callee} in ${path.basename(dump)}`);

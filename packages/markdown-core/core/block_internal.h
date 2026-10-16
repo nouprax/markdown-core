@@ -28,7 +28,7 @@ bool markdown_core_block_ends_with_blank_line(const markdown_core_node *node);
 /* Closes the open blocks from the current one down to `b`, which is open
  * above the active input's root, each ending where the line in hand says;
  * returns the block that is current after them. */
-markdown_core_node *markdown_core_block_finalize(markdown_core_parser *parser, markdown_core_node *b);
+markdown_core_node *markdown_core_block_close(markdown_core_parser *parser, markdown_core_node *b);
 /* `node`, a block made whole, its own children settled, settles into
  * `parent`, which has no pending child: it joins the end of the parent's
  * children and the completion queue (blocks.c, A BLOCK SETTLES). */

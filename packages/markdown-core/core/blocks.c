@@ -50,9 +50,10 @@ static void S_set_last_line_blank(markdown_core_node *node, bool markdown_core_b
     }
 }
 
-/* The parse's two stages, which the benchmark measures at these two calls
- * (scripts/benchmark/run.mjs): out of line by declaration, so a stage that
- * shrinks never folds into its caller. */
+/* The parse's two stages, the work of its commit and of its finalize, which
+ * the benchmark measures at these two calls (scripts/benchmark/run.mjs): out
+ * of line by declaration, so a stage that shrinks never folds into its
+ * caller. */
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_parse_source(markdown_core_parser *parser,
                                                                const unsigned char *source, size_t length);
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_node *S_finish_parse(markdown_core_parser *parser);
@@ -223,8 +224,8 @@ void markdown_core_parser_destroy(markdown_core_parser *parser) {
 
 static bool S_reserve_content_marks(markdown_core_parser *parser, bufsize_t count);
 
-/* Begins a transaction that continues `revision` and borrows its pool. */
-static void S_parse_begin(markdown_core_parser *parser, markdown_core_revision *revision) {
+/* Starts a transaction that continues `revision` and borrows its pool. */
+void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revision *revision) {
     markdown_core_node *document;
 
     parser->revision = revision;
@@ -263,9 +264,9 @@ static void S_parse_begin(markdown_core_parser *parser, markdown_core_revision *
     }
 }
 
-/* Ends the transaction: its parse state is released, and the parser and the
- * records are as the instance was made, for the next. */
-static void S_parse_end(markdown_core_parser *parser) {
+/* Releases the transaction's parse state: the parser and the records are as
+ * the instance was made, for the next. */
+static void S_release_parse(markdown_core_parser *parser) {
     markdown_core_instance *instance = (markdown_core_instance *)parser;
     S_parser_dispose(parser);
     markdown_core_strbuf_free(&parser->curline);
@@ -282,12 +283,12 @@ const markdown_core_element_instance *markdown_core_parser_instance(const markdo
     return markdown_core_dialect_instance(parser->dialect, element);
 }
 
-/* "This block ends on the line being processed", lifted out of `markdown_core_block_finalize` so
+/* "This block ends on the line being processed", lifted out of `markdown_core_block_close` so
  * that the element close path can say the same thing. The three kinds that
  * take it there — the document, a closed fenced code block, a setext heading —
  * are the ones whose last line IS the line in hand; every other block ended on
  * the line before. An element container closing on its own fence is a fourth,
- * and `markdown_core_block_finalize` cannot know that from the type alone. */
+ * and `markdown_core_block_close` cannot know that from the type alone. */
 void markdown_core_block_set_end_to_current_line(markdown_core_parser *parser, markdown_core_node *b) {
     b->where.place.end = (uint32_t)parser->line_end;
 }
@@ -1134,7 +1135,7 @@ void markdown_core_block_close_current(markdown_core_parser *parser) {
  * one of its children has: what its element's close hook reads is a
  * finished subtree. `b` is open above the active input's root, which only
  * the input's end closes. */
-markdown_core_node *markdown_core_block_finalize(markdown_core_parser *parser, markdown_core_node *b) {
+markdown_core_node *markdown_core_block_close(markdown_core_parser *parser, markdown_core_node *b) {
     markdown_core_node *closing;
     assert(b != markdown_core_parser_block_root(parser));
     /* The stack closes from its top down to `b`. */
@@ -1144,7 +1145,7 @@ markdown_core_node *markdown_core_block_finalize(markdown_core_parser *parser, m
         if (parser->curline.size == 0) {
             // end of input - line number has not been incremented
             closing->where.place.end = (uint32_t)parser->last_line_end;
-        } else if (/* D35: a block finalized on the line it OPENED did not end on
+        } else if (/* D35: a block closed on the line it OPENED did not end on
                     * the previous one. `line_number - 1` below assumes the block
                     * was closed by a later line, which is true of every block that
                     * needs a following line to end it -- and false of an HTML block
@@ -1177,7 +1178,7 @@ markdown_core_node *markdown_core_block_finalize(markdown_core_parser *parser, m
 void markdown_core_parser_close_below(markdown_core_parser *parser, markdown_core_node *container) {
     /* The block open inside the container is the one above it. */
     if (parser->current != container) {
-        markdown_core_block_finalize(parser, markdown_core_scaffold_last(container));
+        markdown_core_block_close(parser, markdown_core_scaffold_last(container));
     }
 }
 
@@ -1192,7 +1193,7 @@ markdown_core_node *markdown_core_block_parent_for(markdown_core_parser *parser,
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_CONTAINMENT_REJECTED);
             return NULL;
         }
-        parent = markdown_core_block_finalize(parser, parent);
+        parent = markdown_core_block_close(parser, parent);
     }
     return parent;
 }
@@ -1835,7 +1836,7 @@ static int walk_owned_trees(markdown_core_parser *parser) {
  * cells moves the line state to theirs; the document ends where the input
  * did. */
 static void S_parse_block_inputs(markdown_core_parser *parser);
-static void finalize_document(markdown_core_parser *parser) {
+static void S_close_document(markdown_core_parser *parser) {
     markdown_core_node *root = parser->root;
     markdown_core_parser_close_below(parser, root);
     S_settle_pending(parser, root);
@@ -1879,15 +1880,15 @@ static void S_parse_block_inputs(markdown_core_parser *parser) {
     parser->input_enclosing = 0;
 }
 
-markdown_core_node *markdown_core_parser_parse(markdown_core_parser *parser, const char *source, size_t length,
-                                               markdown_core_revision *revision) {
-    markdown_core_node *document = NULL;
-    S_parse_begin(parser, revision);
+void markdown_core_parser_commit(markdown_core_parser *parser, const char *source, size_t length) {
     if (!parser->error) {
         S_parse_source(parser, (const unsigned char *)source, length);
-        document = S_finish_parse(parser);
     }
-    S_parse_end(parser);
+}
+
+markdown_core_node *markdown_core_parser_finalize(markdown_core_parser *parser) {
+    markdown_core_node *document = S_finish_parse(parser);
+    S_release_parse(parser);
     return document;
 }
 
@@ -2252,10 +2253,10 @@ static bool parse_element_block(markdown_core_parser *parser, const markdown_cor
     /* The container's own closing line. Everything still open inside it ended
      * on the line before, and the container ends here. */
     *should_continue = false;
-    /* A block survives its own finalization and can still be positioned. */
+    /* A block survives its own close and can still be positioned. */
     assert(!(kind->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH));
     container->flags |= MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION;
-    markdown_core_block_finalize(parser, container);
+    markdown_core_block_close(parser, container);
     return false;
 }
 
@@ -2310,7 +2311,7 @@ done:
         /* The container ends on its own closing line, which it knows as it
          * closes; what is open inside it ended on the line before. */
         closing->flags |= MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION;
-        markdown_core_block_finalize(parser, closing);
+        markdown_core_block_close(parser, closing);
         return NULL;
     }
     /* A container whose prefix consumed bytes and then declined still read
@@ -2930,7 +2931,7 @@ static void add_text_to_container(markdown_core_parser *parser, markdown_core_no
             markdown_core_block_add_line(container, input, parser);
             if (structure->element->ends_block && structure->element->ends_block(structure, parser, container, input)) {
                 container->flags |= MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION;
-                container = markdown_core_block_finalize(parser, container);
+                container = markdown_core_block_close(parser, container);
             }
         } else if (parser->blank) {
             // ??? do nothing
@@ -3177,7 +3178,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
         return NULL;
     }
 
-    finalize_document(parser);
+    S_close_document(parser);
     if (!parser->error) {
         const markdown_core_element_instance *document = parser->dialect->document_structure;
         document->element->prepare_document(document, parser);

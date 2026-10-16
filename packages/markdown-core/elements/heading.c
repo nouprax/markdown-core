@@ -484,7 +484,7 @@ static bool open_setext(const markdown_core_element_instance *self, markdown_cor
     (void)self;
     bufsize_t matched = start->matched;
     bool has_content;
-    // markdown_core_block_finalize paragraph, resolving reference links
+    // The paragraph's reference definitions are read first; what is left becomes the heading.
     markdown_core_node *parent = markdown_core_parser_parent(parser, *container);
     has_content = markdown_core_block_resolve_reference_link_definitions(parser, *container, parent);
 

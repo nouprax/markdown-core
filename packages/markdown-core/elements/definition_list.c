@@ -156,7 +156,7 @@ static markdown_core_node *markdown_core_block_open_definition(markdown_core_def
     /* A new term requires the separating blank run. If the preceding body's
      * prefix declined it, append at the existing list's definition boundary. */
     if (parent->kind == MARKDOWN_CORE_NODE_DEFINITION) {
-        parent = markdown_core_block_finalize(parser, parent);
+        parent = markdown_core_block_close(parser, parent);
     }
     if (parent->kind != MARKDOWN_CORE_NODE_DEFINITION_LIST) {
         parent = markdown_core_parser_add_child(parser, parent, MARKDOWN_CORE_NODE_DEFINITION_LIST,

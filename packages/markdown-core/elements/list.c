@@ -200,7 +200,7 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *
 /* A list is loose when a blank line separates two of its items or two of
  * the blocks an item holds that the blank-line facts see: an item that is
  * not the last ends with one, or a child that some block follows does. */
-void markdown_core_block_finalize_list(markdown_core_node *list) {
+static void S_lay_out(markdown_core_node *list) {
     list->as.list->tight = true;
     for (uint32_t i = 0; i < list->child_count; i++) {
         markdown_core_node *item = list->children[i];
@@ -316,7 +316,7 @@ static markdown_core_finish_result finish_step(const markdown_core_element_insta
     (void)parent;
     (void)state;
     assert(event == MARKDOWN_CORE_EVENT_EXIT && node->kind == MARKDOWN_CORE_NODE_LIST);
-    markdown_core_block_finalize_list(node);
+    S_lay_out(node);
     return MARKDOWN_CORE_FINISH_CONTINUE;
 }
 static const markdown_core_node_type LIST_EXIT_KINDS[] = {MARKDOWN_CORE_NODE_LIST, MARKDOWN_CORE_NODE_NONE};

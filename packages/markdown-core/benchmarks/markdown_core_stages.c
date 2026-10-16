@@ -1,16 +1,15 @@
 /* Markdown Core's side of the stage comparison.
  *
- * The engine has ONE parse entry and no feed/finish lifecycle, and this
- * benchmark does not give it one: it calls `markdown_core_document_parse`,
- * the public entry every consumer calls, which is a session that reads its
- * source once and is then discarded (docs/plans/2026-09-29-incremental-parsing.md,
- * 4.4). The entry and the facade calls it needs exist in both revisions the
- * stage gate compares, so one harness builds against both. The stage split is
- * read afterwards out of the call graph, at the two boundaries the transaction
- * already has internally (`S_parse_source` and `S_finish_parse` inside
- * `markdown_core_parser_parse`). Nothing about the product build is
- * special-cased for measurement; only the profiling flavour's inlining flag
- * keeps those two boundaries from being folded into their caller.
+ * The benchmark calls `markdown_core_document_parse`, the public entry every
+ * consumer calls, which is a session that reads its source once and is then
+ * discarded (docs/plans/2026-09-29-incremental-parsing.md, 4.4). The entry and
+ * the facade calls it needs exist in both revisions the stage gate compares,
+ * so one harness builds against both. The stage split is read afterwards out
+ * of the call graph, at the two boundaries the transaction has internally
+ * (`S_parse_source` inside its commit and `S_finish_parse` inside its
+ * finalize). Nothing about the product build is special-cased for
+ * measurement; only the profiling flavour's inlining flag keeps those two
+ * boundaries from being folded into their callers.
  */
 #include <markdown_core.h>
 

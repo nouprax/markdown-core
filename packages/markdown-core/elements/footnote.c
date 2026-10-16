@@ -303,7 +303,7 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
      *
      * Registered where the label is READ, which is here. Whether it is
      * registered at open or at close is NOT observable and that was
-     * measured, not assumed: moving this call into `markdown_core_block_finalize` leaves
+     * measured, not assumed: moving this call into `markdown_core_block_close` leaves
      * every suite and every oracle green. It used to matter, and the
      * reason it stopped is the shape rather than the timing -- the map
      * this replaced held a NODE per entry and used registration order
