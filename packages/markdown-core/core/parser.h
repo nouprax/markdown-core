@@ -166,14 +166,11 @@ typedef struct {
 } markdown_core_definition_miss;
 
 struct markdown_core_parser {
-    /* Every definition the parse declared (registry.h): the block phase
-     * declares definitions as it reads them, and the headings declare their
-     * labels before inline content is parsed. */
+    /* Every definition and explicit anchor the parse declared (registry.h):
+     * the block phase declares definitions as it reads them, the headings
+     * declare their labels before inline content is parsed, and completion
+     * reserves explicit anchors where it meets them. */
     markdown_core_registry registry;
-    /* The names the explicit anchors of completed nodes reserve (registry.h),
-     * which completion reserves where it meets them and the headings' anchors
-     * avoid. */
-    markdown_core_reserved_anchors anchors;
     /* Whether completion runs for a snapshot rather than for the finalize
      * (docs/plans/2026-09-29-incremental-parsing.md, 5.4): a lookup sees only
      * the definitions that start before the block being completed, and one

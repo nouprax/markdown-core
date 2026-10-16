@@ -3248,26 +3248,39 @@ static void registry_kinds_and_starts(test_batch_runner *runner) {
 
 /* ROLLBACK RESTORES THE LOG AND THE INDEX EXACTLY. A model -- the records as
  * a plain array, every answer computed by scanning it -- is driven through
- * the same random declarations, marks and rollbacks, and after a random
- * third of the steps every key of a random set of the kinds is compared:
- * whether it is declared, its latest record's start, and its earliest start.
- * The index takes a kind's records only when a lookup of that kind asks, so
- * the steps between two comparisons, and the kinds a comparison skips, leave
- * records it never took, and the rollbacks pop records it took and records
- * it did not. Labels come from a small set, so keys are declared
- * again and again, and from a growing one, so the index grows and removals
- * cross the slots growth moved. A rollback to the first mark releases every
- * block the records were carved from. */
+ * the same random declarations, withdrawals, marks and rollbacks, and after
+ * a random third of the steps every key of a random set of the kinds is
+ * compared: whether it is declared, its latest record, its earliest start
+ * and how many of its declarations stand. The index takes a kind's records
+ * only when a lookup or a withdrawal of that kind asks, so the steps between
+ * two comparisons, and the kinds a comparison skips, leave records it never
+ * took, and the rollbacks pop records it took and records it did not. Labels come from a small set, so keys are
+ * declared again and again, and from a growing one, so the index grows and removals cross the slots growth moved. A
+ * rollback to the first mark releases every block the records were carved from. */
 typedef struct {
     markdown_core_registry_kind kind;
     unsigned label;
     uint32_t start;
+    bool withdraws;
 } registry_model_record;
+
+/* How many declarations of the key stand among the model's first `count`
+ * records. */
+static uint32_t registry_model_live(const registry_model_record *model, size_t count, markdown_core_registry_kind kind,
+                                    unsigned label) {
+    uint32_t live = 0;
+    for (size_t i = 0; i < count; i++) {
+        if (model[i].kind == kind && model[i].label == label) {
+            live = model[i].withdraws ? live - 1 : live + 1;
+        }
+    }
+    return live;
+}
 
 static void registry_label_text(unsigned label, char *text, size_t size) { snprintf(text, size, "k%u", label); }
 
 static void registry_rollback_matches_a_model(test_batch_runner *runner) {
-    enum { STEPS = 6000, KINDS = 3, SHARED = 23, MARKS = 16 };
+    enum { STEPS = 6000, KINDS = 4, SHARED = 23, MARKS = 16 };
     payload_probe_arm();
     markdown_core_registry registry;
     markdown_core_registry_init(&registry);
@@ -3277,7 +3290,7 @@ static void registry_rollback_matches_a_model(test_batch_runner *runner) {
     size_t model_marks[MARKS];
     uint64_t random = UINT64_C(0x9e3779b97f4a7c15);
     bool agrees = true;
-    size_t untaken = 0, taken = 0;
+    size_t untaken = 0, taken = 0, withdrawals = 0;
     for (size_t step = 0; step < STEPS && agrees; step++) {
         random ^= random << 13;
         random ^= random >> 7;
@@ -3299,11 +3312,19 @@ static void registry_rollback_matches_a_model(test_batch_runner *runner) {
         } else {
             registry_model_record record = {
                 (markdown_core_registry_kind)(MARKDOWN_CORE_REGISTRY_REFERENCE + (random >> 40) % KINDS),
-                choice < 70 ? (unsigned)((random >> 20) % SHARED) : (unsigned)fresh++, (uint32_t)(random >> 44)};
+                choice < 70 ? (unsigned)((random >> 20) % SHARED) : (unsigned)fresh++, (uint32_t)(random >> 44), false};
+            /* A declared key is withdrawn about a third of the times a
+             * shared label comes up, so declarations stand and fall again
+             * and again. */
+            record.withdraws = choice < 30 && registry_model_live(model, model_count, record.kind, record.label) > 0;
             char text[16];
             registry_label_text(record.label, text, sizeof(text));
-            agrees = markdown_core_registry_declare(&registry, record.kind, (const unsigned char *)text,
-                                                    (bufsize_t)strlen(text), record.start);
+            agrees = record.withdraws
+                         ? markdown_core_registry_withdraw(&registry, record.kind, (const unsigned char *)text,
+                                                           (bufsize_t)strlen(text), record.start)
+                         : markdown_core_registry_declare(&registry, record.kind, (const unsigned char *)text,
+                                                          (bufsize_t)strlen(text), record.start);
+            withdrawals += record.withdraws;
             model[model_count++] = record;
         }
         agrees = agrees && registry.count == model_count;
@@ -3316,15 +3337,19 @@ static void registry_rollback_matches_a_model(test_batch_runner *runner) {
                 continue;
             }
             for (unsigned label = 0; label < fresh && agrees; label++) {
+                const markdown_core_registry_kind compared_kind =
+                    (markdown_core_registry_kind)(MARKDOWN_CORE_REGISTRY_REFERENCE + kind);
                 const registry_model_record *latest = NULL;
                 uint32_t earliest = UINT32_MAX;
                 for (size_t i = 0; i < model_count; i++) {
-                    if (model[i].kind == (markdown_core_registry_kind)(MARKDOWN_CORE_REGISTRY_REFERENCE + kind) &&
-                        model[i].label == label) {
+                    if (model[i].kind == compared_kind && model[i].label == label) {
                         latest = &model[i];
-                        earliest = model[i].start < earliest ? model[i].start : earliest;
+                        if (!model[i].withdraws) {
+                            earliest = model[i].start < earliest ? model[i].start : earliest;
+                        }
                     }
                 }
+                const uint32_t live = registry_model_live(model, model_count, compared_kind, label);
                 /* Only a label some step declared can answer; the rest are
                  * sampled every few steps, which is enough to see a key
                  * left behind. */
@@ -3335,17 +3360,18 @@ static void registry_rollback_matches_a_model(test_batch_runner *runner) {
                 registry_label_text(label, text, sizeof(text));
                 bool failed = false;
                 const markdown_core_registry_record *found = markdown_core_registry_find(
-                    &registry, (markdown_core_registry_kind)(MARKDOWN_CORE_REGISTRY_REFERENCE + kind),
-                    (const unsigned char *)text, (bufsize_t)strlen(text), &failed);
-                agrees = !failed && (found != NULL) == (latest != NULL) &&
-                         (!found || (found->start == latest->start && found->earliest == earliest));
+                    &registry, compared_kind, (const unsigned char *)text, (bufsize_t)strlen(text), &failed);
+                agrees = !failed && (found != NULL) == (live > 0) &&
+                         (!found || (found->start == latest->start && found->withdraws == latest->withdraws &&
+                                     found->earliest == earliest && found->live == live));
                 if (!agrees) {
                     fprintf(stderr, "registry diverges at step %zu on kind %u label %u\n", step, kind, label);
                 }
             }
         }
     }
-    OK(runner, agrees, "the registry answers as the model after declarations, marks and rollbacks");
+    OK(runner, agrees, "the registry answers as the model after declarations, withdrawals, marks and rollbacks");
+    OK(runner, withdrawals, "declarations were withdrawn (%zu)", withdrawals);
     OK(runner, untaken && taken, "rollbacks popped records the index took and records it never took (%zu, %zu)", taken,
        untaken);
     if (mark_count == 0 || agrees) {
@@ -3358,32 +3384,6 @@ static void registry_rollback_matches_a_model(test_batch_runner *runner) {
     INT_EQ(runner, payload_live, 0, "the registry releases everything it holds");
     payload_probe_disarm();
     free(model);
-}
-
-/* A NAME STAYS RESERVED WHILE A NODE RESERVES IT. Each node that reserves a
- * name counts once, so a withdrawal leaves the name to the nodes that still
- * reserve it, and the last one gives the name up. The reserved names free
- * what they hold, a name still reserved included. */
-static void reserved_anchors_count_their_nodes(test_batch_runner *runner) {
-    payload_probe_arm();
-    markdown_core_node_pool pool = {0};
-    markdown_core_reserved_anchors anchors = {0};
-    const unsigned char *x = (const unsigned char *)"x", *y = (const unsigned char *)"y";
-    OK(runner,
-       markdown_core_reserve_anchor(&anchors, &pool, x, 1) && markdown_core_reserve_anchor(&anchors, &pool, x, 1) &&
-           markdown_core_reserve_anchor(&anchors, &pool, y, 1),
-       "two nodes reserve one name and a third another");
-    INT_EQ(runner, (int)anchors.names.size, 2, "two names are reserved");
-    markdown_core_withdraw_anchor(&anchors, &pool, x, 1);
-    OK(runner, markdown_core_key_index_find(&anchors.names, x, 1) != NULL,
-       "a name stays reserved while a node reserves it");
-    markdown_core_withdraw_anchor(&anchors, &pool, x, 1);
-    OK(runner, markdown_core_key_index_find(&anchors.names, x, 1) == NULL && anchors.names.size == 1,
-       "the last node withdrawing gives the name up");
-    markdown_core_reserved_anchors_free(&anchors, &pool);
-    markdown_core_node_pool_dispose(&pool);
-    INT_EQ(runner, payload_live, 0, "the reserved names release everything they hold");
-    payload_probe_disarm();
 }
 
 /* Run from the instance's own beginning -- a document owner's lifecycle --
@@ -11005,6 +11005,7 @@ static void session_finalize_matches_a_parse(test_batch_runner *runner) {
         "> - item [x] and [y]" FILLER "[x]: /u\n",
         ":::note{#d}\n# x [x]\n:::" FILLER "# x\n\n[x]: /u\n",
         "See [^n] here." FILLER "[^n]: note\n",
+        "See [^n]{#c} and [x][y]{#a}." FILLER "# a\n\n# c\n\n[^n]: note\n\n[y]: /u\n",
     };
 #undef FILLER
     static const size_t chunks[] = {1, 3, 0};
@@ -11134,7 +11135,6 @@ int main(void) {
     registry_records_are_carved_from_its_blocks(runner);
     registry_kinds_and_starts(runner);
     registry_rollback_matches_a_model(runner);
-    reserved_anchors_count_their_nodes(runner);
     properties_values(runner);
     properties_source_boundaries(runner);
     properties_member_work(runner);
