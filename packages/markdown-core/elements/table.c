@@ -2188,7 +2188,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool table_grammar_admits
                                                                                  int first, size_t runs, int next_line,
                                                                                  const unsigned char *cursor,
                                                                                  bool pipe) {
-    if (!cursor || cursor >= parser->lookahead_end) {
+    if (!cursor || markdown_core_parser_input_ends(parser, cursor)) {
         return false;
     }
     markdown_core_input_line *line = markdown_core_parser_source_line(parser, next_line);
@@ -2557,7 +2557,7 @@ static markdown_core_node *table_try_open(table_workspace *workspace, markdown_c
     }
     /* Every opening grammar needs a later physical line. At EOF only an
      * existing eligible table can claim a trailing caption. */
-    if (parser->lookahead_cursor == parser->lookahead_end) {
+    if (markdown_core_parser_input_ends(parser, parser->lookahead_cursor)) {
         const markdown_core_node *preceding = markdown_core_parser_last_child(parser, parent);
         if (!preceding || preceding->kind != MARKDOWN_CORE_NODE_TABLE) {
             return NULL;

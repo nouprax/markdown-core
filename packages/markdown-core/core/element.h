@@ -146,6 +146,9 @@ struct markdown_core_element {
     void (*init_document)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*dispose_parser)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*dispose_document)(const markdown_core_element_instance *, markdown_core_parser *);
+    /* Reads what the document's input opens with, before its first line:
+     * `source` and its length are the input, and a reading that reaches the
+     * length asks markdown_core_parser_input_ends (parser.h). */
     size_t (*read_document_prefix)(const markdown_core_element_instance *, markdown_core_parser *,
                                    const unsigned char *, size_t);
     void (*prepare_document)(const markdown_core_element_instance *, markdown_core_parser *);

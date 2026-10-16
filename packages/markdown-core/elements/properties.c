@@ -748,10 +748,22 @@ static void payload(properties *p) {
         line = boundary;
     }
 }
+/* Whether the input holds the fence's three dashes at `at`. Each byte asks
+ * whether the input goes on there (markdown_core_parser_input_ends). */
+static bool properties_dashes_at(markdown_core_parser *parser, const unsigned char *source, size_t at) {
+    for (size_t i = at; i < at + 3; i++) {
+        if (markdown_core_parser_input_ends(parser, source + i) || source[i] != '-') {
+            return false;
+        }
+    }
+    return true;
+}
+
 size_t markdown_core_properties_parse(markdown_core_properties_work *work, markdown_core_parser *parser,
                                       const unsigned char *source, size_t length) {
     /* The opener is exactly "---" and a line ending: a peek, not a scan. */
-    if (length < 4 || memcmp(source, "---", 3) || !markdown_core_is_line_end(source[3])) {
+    if (!properties_dashes_at(parser, source, 0) || markdown_core_parser_input_ends(parser, source + 3) ||
+        !markdown_core_is_line_end(source[3])) {
         return 0;
     }
     size_t start = next_line(source, 3, length), close = start;
@@ -765,16 +777,17 @@ size_t markdown_core_properties_parse(markdown_core_properties_work *work, markd
      * closing fence afterwards; the block driver later reuses those entries. */
     bool closed = false;
     size_t fence_work = 0;
-    while (close < length) {
+    while (!markdown_core_parser_input_ends(parser, source + close)) {
         const unsigned char *hit = memchr(source + close, '-', length - close);
         if (!hit) {
             fence_work += length - close;
-            break;
+            close = length;
+            continue;
         }
         size_t at = (size_t)(hit - source);
         fence_work += at - close + 1;
-        if (markdown_core_is_line_end(source[at - 1]) && length - at >= 3 && source[at + 1] == '-' &&
-            source[at + 2] == '-' && (at + 3 == length || markdown_core_is_line_end(source[at + 3]))) {
+        if (markdown_core_is_line_end(source[at - 1]) && properties_dashes_at(parser, source, at) &&
+            (markdown_core_parser_input_ends(parser, source + at + 3) || markdown_core_is_line_end(source[at + 3]))) {
             close = at;
             closed = true;
             break;

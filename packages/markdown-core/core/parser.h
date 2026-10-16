@@ -285,9 +285,16 @@ struct markdown_core_parser {
      * to `S_process_line`, so a block start whose grammar needs a later line --
      * the `%%` block comment's closer -- can look ahead without consuming
      * anything (see markdown_core_parser_lookahead_begin). NULL until the
-     * first line is processed; `cursor == end` once the input has run out. */
+     * first line is processed; markdown_core_parser_input_ends answers true
+     * for it once the input has run out. */
     const unsigned char *lookahead_cursor;
-    const unsigned char *lookahead_end;
+    /* Whether a reading of the document's input reached its end, and where
+     * the line that asked starts in the source: the line being processed, or
+     * the first line for the document's prefix. A line whose decisions read
+     * the end holds only while no more text follows
+     * (markdown_core_parser_input_ends). */
+    bool end_seen;
+    bufsize_t end_seen_at;
     /* The input's last line as the block parser will see it, normalized once
      * and reused by every lookahead that reaches it: it has no terminator of
      * its own in the source, and a line handed to the prefix matchers must
@@ -659,6 +666,31 @@ static inline markdown_core_input_line *markdown_core_parser_source_line(markdow
     size_t index = (size_t)(line - parser->input_first_line);
     return index < parser->input_line_count ? &parser->input_lines[index]
                                             : markdown_core_parser_extend_source_lines(parser, index);
+}
+
+/* THE END OF THE ACTIVE INPUT, learned in one place. Every reading that
+ * asks whether the input goes on past a position asks here, or asks for a
+ * line past the last one (markdown_core_parser_source_line); nothing else
+ * compares a position with the input's end. `cursor` is a position of the
+ * active input. When it is the end and the input is the document's, the
+ * parser records the line that asked (`end_seen`): its decisions hold only
+ * while no more text follows. A table cell's input is complete when it is
+ * read, so its end records nothing. */
+static inline void markdown_core_parser_see_end(markdown_core_parser *parser) {
+    if (!parser->end_seen && markdown_core_parser_block_root(parser) == parser->root) {
+        parser->end_seen = true;
+        parser->end_seen_at = parser->line_start;
+    }
+}
+
+static inline bool markdown_core_parser_input_ends(markdown_core_parser *parser, const unsigned char *cursor) {
+    const unsigned char *end = parser->input_source + parser->input_length;
+    assert(cursor >= parser->input_source && cursor <= end);
+    if (cursor != end) {
+        return false;
+    }
+    markdown_core_parser_see_end(parser);
+    return true;
 }
 
 /* Optional state is sparse within the input index: properties and ordinary

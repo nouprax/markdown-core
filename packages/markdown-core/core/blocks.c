@@ -2041,7 +2041,12 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
 /* External speculative readers share the driver's scanner. The driver calls
  * the static inline body directly, including when it advances the frontier. */
 markdown_core_input_line *markdown_core_parser_extend_source_lines(markdown_core_parser *parser, size_t index) {
-    return S_extend_source_lines(parser, index);
+    markdown_core_input_line *found = S_extend_source_lines(parser, index);
+    /* A line asked past the last one is a reading of the input's end. */
+    if (!found && !parser->error) {
+        markdown_core_parser_see_end(parser);
+    }
+    return found;
 }
 
 markdown_core_line_facts *markdown_core_parser_extend_line_facts(markdown_core_parser *parser,
@@ -2071,8 +2076,9 @@ static void S_parse_source(markdown_core_parser *parser, const unsigned char *so
     parser->input_mapped = !at_root;
     parser->input_first_line = parser->line_number + 1;
     parser->lookahead_last_line_ready = false;
-    parser->lookahead_end = source + length;
     if (at_root) {
+        parser->end_seen = false;
+        parser->line_start = 0;
         const markdown_core_element_instance *document = parser->dialect->document_structure;
         document->element->read_document_prefix(document, parser, source, length);
     }
@@ -2459,13 +2465,12 @@ bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, markdown
 int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead, markdown_core_chunk *line,
                                         int *first_nonspace, int *indent, int *blank_lines) {
     markdown_core_parser *parser = lookahead->parser;
-    const unsigned char *end = parser->lookahead_end;
 
     *blank_lines = 0;
     if (!lookahead->active) {
         return 0;
     }
-    while (lookahead->cursor && lookahead->cursor < end && !parser->error) {
+    while (lookahead->cursor && !markdown_core_parser_input_ends(parser, lookahead->cursor) && !parser->error) {
         const unsigned char *start = lookahead->cursor;
         const unsigned char *next;
         markdown_core_chunk input;
@@ -2494,9 +2499,9 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
         if (geometry->facts && parser->input_facts[geometry->facts - 1].nul_count) {
             input.data = (unsigned char *)content;
             input.len = content_length + 1;
-        } else if (next == end) {
-            /* The input's last line, normalized once: the matchers read a line
-             * through its terminator, and the source may not end in one. */
+        } else if (next == parser->input_source + geometry->end) {
+            /* A line without a terminator, the input's last, normalized once:
+             * the matchers read a line through its terminator. */
             if (!parser->lookahead_last_line_ready) {
                 markdown_core_strbuf_set(&parser->lookahead_last_line, content, content_length);
                 markdown_core_strbuf_putc(&parser->lookahead_last_line, '\n');
