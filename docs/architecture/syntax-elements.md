@@ -20,7 +20,7 @@ Commit abbreviations identify the reviewed history, not implementation layers.
 | Emphasis and Strong: asterisk and underscore rules | `emphasis.c`, declaring both spellings to the shared delimiter engine | Inherited |
 | Strikethrough: double-tilde delimiters | `strikethrough.c` | Inherited |
 | Code: backtick spans and normalized literal bodies | `code.c` | Inherited |
-| CodeBlock: indented/fenced openers, continuation, info and literal finalization | `code_block.c` | Inherited |
+| CodeBlock: indented/fenced openers, continuation, info and literal views | `code_block.c` | Inherited |
 | HTML: inline tokens and block start/end conditions | `html.c`, `html_block.c`; Comment owns comment values | Inherited |
 | ThematicBreak: marker runs and failed-suffix cache | `thematic_break.c` | Inherited |
 | Autolink: angle-delimited URI/email and bare links | `autolink.c` | Inherited |

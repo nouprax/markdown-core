@@ -606,16 +606,6 @@ typedef enum {
 markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_node *node, markdown_core_node *parent,
                                                                markdown_core_node_type kind);
 
-/** Return the string content for all types of 'node'.
- *  The pointer stays valid as long as 'node' isn't freed.
- */
-const char *markdown_core_node_get_string_content(markdown_core_node *node);
-
-/** Set the string 'content' for all types of 'node'.
- *  Copies 'content'.
- */
-int markdown_core_node_set_string_content(markdown_core_node *node, const char *content);
-
 /** Set the parser element responsible for creating 'node'.
  */
 int markdown_core_node_set_element(markdown_core_node *node, const markdown_core_element *element);

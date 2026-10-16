@@ -32,15 +32,14 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_no
 bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b,
                                                             markdown_core_node *parent) {
     bufsize_t pos;
-    markdown_core_strbuf *node_content = &b->content;
-    markdown_core_chunk chunk = {node_content->ptr, node_content->size, 0};
+    const markdown_core_chunk text = markdown_core_node_text(b);
+    markdown_core_chunk chunk = text;
     markdown_core_attribute_parser attributes = {
         .data = chunk.data, .length = chunk.len, .scratch = &parser->attribute_scratch};
     /* The definitions follow each other down the block's lines. */
     int line = parser->line_number;
     while (chunk.len && chunk.data[0] == '[' && !parser->error) {
-        pos = S_read_reference(parser, b, parent, &chunk, &attributes, (bufsize_t)(chunk.data - node_content->ptr),
-                               &line);
+        pos = S_read_reference(parser, b, parent, &chunk, &attributes, (bufsize_t)(chunk.data - text.data), &line);
         if (!pos) {
             break;
         }
@@ -51,29 +50,29 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     markdown_core_attribute_parser_free(&attributes);
-    bufsize_t dropped = node_content->size - chunk.len;
-    if (dropped) {
-        b->flags |= MARKDOWN_CORE_NODE__REFERENCE_PREFIX;
+    /* The definitions read are cut from the front of the block's text, and
+     * its map follows the cut. */
+    bufsize_t read = text.len - chunk.len;
+    if (read) {
+        markdown_core_block_rebase_content_marks(parser, b, read, chunk.len);
+        b->cut_front += read;
     }
-    if (!(b->flags & MARKDOWN_CORE_NODE__REFERENCE_PREFIX)) {
-        return !markdown_core_block_is_blank(node_content, 0);
+    if (!b->cut_front) {
+        return !markdown_core_is_blank_to_line_end(text.data, 0, text.len);
     }
     int ignored;
     bufsize_t source;
-    markdown_core_block_rebase_content_marks(parser, b, dropped, chunk.len);
-    markdown_core_strbuf_drop(node_content, dropped);
     /* The block now begins where its FIRST SURVIVING line was written, and
      * that is asked of the map rather than derived: this function can be
      * reached twice on one paragraph -- once at the setext-underline check and
-     * again at markdown_core_block_finalize -- and the first call can consume everything recorded
-     * so far, leaving the line that carries what is left still unread. Taking
-     * the answer from the surviving run rather than from the size of the cut
-     * is what makes both arrivals give the same result. On a block with no
-     * definitions in front of it this is what the block already said. */
+     * again as the block closes -- and the first call can consume everything
+     * recorded so far, leaving the line that carries what is left still
+     * unread. Taking the answer from the surviving run rather than from the
+     * size of the cut is what makes both arrivals give the same result. */
     if (markdown_core_parser_content_place(parser, &b->content_map, 0, &ignored, &source)) {
         b->where.place.start = (uint32_t)source;
     }
-    return !markdown_core_block_is_blank(&b->content, 0);
+    return !markdown_core_is_blank_to_line_end(chunk.data, 0, chunk.len);
 }
 
 /* A destination is its source less the angle brackets, with escapes and
@@ -404,14 +403,14 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_no
     reference->flags |= MARKDOWN_CORE_NODE__BLANK_TRANSPARENT;
     /* It spans its definition, through the end of its last line's content:
      * the line ending after it belongs to no block. */
-    bufsize_t end = before + length;
-    while (end > before && (b->content.ptr[end - 1] == '\n' || b->content.ptr[end - 1] == '\r')) {
+    bufsize_t end = length;
+    while (end > 0 && (input->data[end - 1] == '\n' || input->data[end - 1] == '\r')) {
         end--;
     }
     int ignored;
     bufsize_t start = b->where.place.start, stop = b->where.place.start;
     markdown_core_parser_content_place(parser, &b->content_map, before, &ignored, &start);
-    markdown_core_parser_content_end_place(parser, &b->content_map, end - 1, &ignored, &stop);
+    markdown_core_parser_content_end_place(parser, &b->content_map, before + end - 1, &ignored, &stop);
     reference->where.place = (markdown_core_place){(uint32_t)start, (uint32_t)stop};
     markdown_core_parser_line_places(parser, reference, parent, line);
     /* A definition is read whole: it settles as it is made, before the block

@@ -21,8 +21,7 @@ uint64_t markdown_core_source_key(const void *entry);
 bool markdown_core_block_last_line_blank(const markdown_core_node *node);
 markdown_core_node_type markdown_core_block_type(const markdown_core_node *node);
 void markdown_core_block_set_end_to_current_line(markdown_core_parser *parser, markdown_core_node *b);
-bool markdown_core_block_is_blank(markdown_core_strbuf *s, bufsize_t offset);
-void markdown_core_block_rebase_content_marks(markdown_core_parser *parser, markdown_core_node *node, bufsize_t dropped,
+void markdown_core_block_rebase_content_marks(markdown_core_parser *parser, markdown_core_node *node, bufsize_t cut,
                                               bufsize_t remaining);
 /* Whether `node`, a closed block, ends with a blank line (blocks.c). */
 bool markdown_core_block_ends_with_blank_line(const markdown_core_node *node);

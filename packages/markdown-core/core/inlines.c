@@ -896,7 +896,7 @@ append:
 
 void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_core_node *parent, bool root,
                                         markdown_core_inline_state *inline_state) {
-    markdown_core_chunk content = {parent->content.ptr, parent->content.size, 0};
+    markdown_core_chunk content = markdown_core_node_text(parent);
     /* EVERY content-bearing block has a map by the time its inlines are parsed.
      * One the parser fed line by line already does; one whose content was SET
      * -- a table cell, a directive's label -- gets one mark here, derived from

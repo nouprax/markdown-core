@@ -309,11 +309,6 @@ static bool S_kind_contains_inlines(const markdown_core_kind_record *kind, markd
             kind->structure->element->contains_inlines_func(kind->structure->element, node));
 }
 
-// Returns true if the line at `offset` has only spaces and tabs, else false.
-bool markdown_core_block_is_blank(markdown_core_strbuf *s, bufsize_t offset) {
-    return markdown_core_is_blank_to_line_end(s->ptr, offset, s->size);
-}
-
 /* Whether the line may be LAZY: it did not match the prefix of the current
  * block, `matched` being the deepest block whose prefix it did match, and the
  * current block takes such a line as text (`accepts_lazy`). A paragraph takes
@@ -396,9 +391,11 @@ int markdown_core_parser_append_content_mark(markdown_core_parser *parser, markd
                                  (markdown_core_line_mark){offset, line, source, source_width, source_step, 0});
 }
 
+/* The bytes land at the end of the open block's text, which its map is of. */
 static void S_record_content_mark(markdown_core_parser *parser, markdown_core_node *node, bufsize_t column,
                                   bufsize_t length) {
-    S_append_input_marks(parser, node, parser->line_number, parser->line_start, column, length, node->content.size);
+    S_append_input_marks(parser, node, parser->line_number, parser->line_start, column, length,
+                         markdown_core_node_text(node).len);
 }
 
 void markdown_core_block_add_line(markdown_core_node *node, markdown_core_chunk *ch, markdown_core_parser *parser) {
@@ -968,13 +965,14 @@ void markdown_core_parser_read_content(markdown_core_parser *parser, markdown_co
     node->source.places = places;
 }
 
-/* Drop `dropped` bytes off the FRONT of `node`'s content, leaving `remaining`
- * bytes, and keep the map describing what is left. The marks stay where they are in the vector: the
- * run's head moves past the slices that went away, and the slice the cut
- * landed inside keeps its line with its column advanced to the cut. */
-void markdown_core_block_rebase_content_marks(markdown_core_parser *parser, markdown_core_node *node, bufsize_t dropped,
+/* `cut` bytes are cut off the FRONT of `node`'s text, leaving `remaining`
+ * bytes: the map comes to describe what is left. The marks stay where they
+ * are in the vector: the run's head moves past the slices that went away,
+ * and the slice the cut landed inside keeps its line with its column
+ * advanced to the cut. */
+void markdown_core_block_rebase_content_marks(markdown_core_parser *parser, markdown_core_node *node, bufsize_t cut,
                                               bufsize_t remaining) {
-    if (node->content_map.count <= 0 || dropped <= 0) {
+    if (node->content_map.count <= 0 || cut <= 0) {
         return;
     }
     if (remaining <= 0) {
@@ -982,7 +980,7 @@ void markdown_core_block_rebase_content_marks(markdown_core_parser *parser, mark
         node->content_map.offset = 0;
         return;
     }
-    markdown_core_parser_adopt_content_marks(parser, &node->content_map, &node->content_map, dropped, remaining);
+    markdown_core_parser_adopt_content_marks(parser, &node->content_map, &node->content_map, cut, remaining);
 }
 
 /* The last child of `node`, a block whose children have settled, the
@@ -1076,11 +1074,11 @@ static inline void S_settle_pending(markdown_core_parser *parser, markdown_core_
 }
 
 /* A BLOCK CLOSES, its range settled, inside `parent`: a list and its items
- * fold whether they end with a blank line from their children, its element
- * reads it as a finished thing, and a block that takes text lines in a
- * container takes the runs of its own lines. False when the block leaves the
- * tree: a paragraph that held only reference definitions left them
- * References settled into `parent` before it, and nothing of its own. */
+ * fold whether they end with a blank line from their children, its element's
+ * close hook makes the node it settles as, and a block that takes text lines
+ * in a container takes the runs of its own lines. False when the block
+ * yields no node of its own: a paragraph that held only reference
+ * definitions yielded them as References settled into `parent` before it. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_close(markdown_core_parser *parser, markdown_core_node *b,
                                                                     markdown_core_node *parent) {
     /* A block that takes text lines in a container has a run of its own
@@ -1092,10 +1090,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_close(markdown_cor
     if (kind->flags & MARKDOWN_CORE_KIND_BLANK_PROPAGATES) {
         S_fold_ends_blank(b);
     }
-    if (structure && structure->element->finalize_block) {
-        structure->element->finalize_block(structure, parser, b, parent);
-    }
-    if (b->flags & MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY) {
+    if (structure && structure->element->close_block &&
+        !structure->element->close_block(structure, parser, b, parent)) {
         markdown_core_parser_release_node(parser, b);
         return false;
     }
@@ -1135,7 +1131,7 @@ void markdown_core_block_close_current(markdown_core_parser *parser) {
 /* THE BUILDER STACK CLOSES FROM THE TOP. A block closes after everything
  * open inside it, and a block the line machine adds to a container first
  * closes what is open inside the container, so a block closes after every
- * one of its children has: what its element's `finalize_block` reads is a
+ * one of its children has: what its element's close hook reads is a
  * finished subtree. `b` is open above the active input's root, which only
  * the input's end closes. */
 markdown_core_node *markdown_core_block_finalize(markdown_core_parser *parser, markdown_core_node *b) {
@@ -1874,7 +1870,8 @@ static void S_parse_block_inputs(markdown_core_parser *parser) {
         markdown_core_parser_close_below(parser, owner);
         S_settle_pending(parser, owner);
         owner->flags &= ~MARKDOWN_CORE_NODE__OPEN;
-        markdown_core_strbuf_clear(&owner->content);
+        /* Its content was read as its blocks, so none of it is its text. */
+        owner->cut_front = owner->content.size;
         owner->content_map.count = 0;
         owner->content_map.offset = 0;
     }

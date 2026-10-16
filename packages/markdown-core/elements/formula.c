@@ -36,8 +36,8 @@ typedef struct {
 /* A formula node's payload, its `opaque`. */
 static node_formula *get_formula(markdown_core_node *node) { return (node_formula *)node->opaque; }
 
-const char *markdown_core_elements_get_formula_literal(markdown_core_node *node) {
-    return markdown_core_chunk_to_cstr(&get_formula(node)->literal);
+markdown_core_chunk markdown_core_elements_formula_literal(const markdown_core_node *node) {
+    return ((const node_formula *)node->opaque)->literal;
 }
 
 int markdown_core_elements_set_formula_literal(markdown_core_node *node, const char *literal) {
@@ -79,7 +79,7 @@ static int set_formula_literal_bytes(markdown_core_node *node, const unsigned ch
          * caller and dies immediately: `make_formula_span` frees
          * its temporary strbuf after constructing the leaf. Keeping a borrowed pointer past that is a use-after-free
          * that every later read of the literal walks into -- ASan: heap-use-after-free in
-         * markdown_core_elements_get_formula_literal -- and `parser->error` stayed 0, so nothing downstream knew. Drop
+         * markdown_core_elements_formula_literal -- and `parser->error` stayed 0, so nothing downstream knew. Drop
          * the borrow and say so; the callers turn the 0 into the loss flag. */
         markdown_core_chunk empty = MARKDOWN_CORE_CHUNK_EMPTY;
         formula->literal = empty;
@@ -88,34 +88,18 @@ static int set_formula_literal_bytes(markdown_core_node *node, const unsigned ch
     return 1;
 }
 
-/* A literal's storage follows its semantic owner. Trimming an owned chunk
- * compacts in place and preserves its allocation base/NUL invariant. Borrowed
- * chunks acquire ownership before any mutation, leaving the old view intact
- * on allocation failure. */
-static int own_trimmed_literal(markdown_core_chunk *literal) {
+/* A block formula's literal: the view of its block's content that the
+ * block's own literal or lines are, trimmed of whitespace at both ends. */
+static markdown_core_chunk S_trimmed(markdown_core_chunk literal) {
     bufsize_t from = 0;
-    bufsize_t end = literal->len;
-    while (from < end && markdown_core_is_whitespace(literal->data[from])) {
+    bufsize_t end = literal.len;
+    while (from < end && markdown_core_is_whitespace(literal.data[from])) {
         from++;
     }
-    while (end > from && markdown_core_is_whitespace(literal->data[end - 1])) {
+    while (end > from && markdown_core_is_whitespace(literal.data[end - 1])) {
         end--;
     }
-    bufsize_t length = end - from;
-    if (literal->alloc) {
-        if (from && length) {
-            memmove(literal->data, literal->data + from, length);
-        }
-        literal->data[length] = 0;
-        literal->len = length;
-    } else {
-        markdown_core_chunk owned = {literal->data ? literal->data + from : NULL, length, 0};
-        if (!markdown_core_chunk_to_cstr(&owned)) {
-            return 0;
-        }
-        *literal = owned;
-    }
-    return 1;
+    return (markdown_core_chunk){literal.data + from, end - from, 0};
 }
 
 static int scan_formula_block_open(const unsigned char *data, bufsize_t len, bufsize_t pos) {
@@ -616,16 +600,13 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_finish_result
         return MARKDOWN_CORE_FINISH_CONTINUE;
     }
     node_formula *formula = markdown_core_alloc(1, sizeof(node_formula));
-    if (!formula || !own_trimmed_literal(&node->as.code->literal)) {
-        markdown_core_free(formula);
+    if (!formula) {
         goto failed;
     }
-    formula->literal = node->as.code->literal;
+    formula->literal = S_trimmed(node->as.code->literal);
     formula->mode = MARKDOWN_CORE_FORMULA_MODE_STANDALONE;
-    node->as.code->literal = (markdown_core_chunk)MARKDOWN_CORE_CHUNK_EMPTY;
     if (markdown_core_parser_set_node_kind(parser, node, parent, MARKDOWN_CORE_NODE_FORMULA_BLOCK) !=
         MARKDOWN_CORE_NODE_SET_KIND_OK) {
-        markdown_core_chunk_free(&formula->literal);
         markdown_core_free(formula);
         goto failed;
     }
@@ -655,10 +636,7 @@ static markdown_core_finish_result finish_step(const markdown_core_element_insta
     if (node->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
         node_formula *formula = get_formula(node);
         if (formula && !formula->literal.data) {
-            formula->literal = markdown_core_chunk_buf_detach(&node->content);
-            if (!formula->literal.data || !own_trimmed_literal(&formula->literal)) {
-                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            }
+            formula->literal = S_trimmed((markdown_core_chunk){node->content.ptr, node->content.size, 0});
         }
         return parser->error ? MARKDOWN_CORE_FINISH_FAILED : MARKDOWN_CORE_FINISH_CONTINUE;
     }

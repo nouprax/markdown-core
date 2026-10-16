@@ -597,13 +597,6 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node) {
     return type_string ? type_string : "<unknown>";
 }
 
-const char *markdown_core_node_get_string_content(markdown_core_node *node) { return (char *)node->content.ptr; }
-
-int markdown_core_node_set_string_content(markdown_core_node *node, const char *content) {
-    markdown_core_strbuf_sets(&node->content, content);
-    return true;
-}
-
 #define MARKDOWN_CORE_RESOURCE_SLAB_BYTES ((size_t)8 * 1024)
 
 markdown_core_resource *markdown_core_resource_new(markdown_core_node_pool *pool, markdown_core_chunk url,

@@ -167,11 +167,17 @@ struct markdown_core_element {
     bool (*blank_line)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
     bool (*ends_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
                        markdown_core_chunk *);
-    /* The close hook: the block, closed, and the block that holds it, which
-     * it settles into later; the hook may append blocks made closed to that
-     * holder's children, which then precede it (a paragraph's References). */
-    void (*finalize_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                           markdown_core_node *);
+    /* THE CLOSE HOOK, asked of a block as it closes inside the block that
+     * holds it, which it settles into later. It reads the block -- its
+     * content, its children and its open state -- and makes the node the
+     * block settles as from them, never writing them: what it makes of the
+     * content is a view of it, a literal or the cuts of its text. What the
+     * block yields to its holder is settled into the holder before it (a
+     * paragraph's References) or written on the holder (a block identifier
+     * on a list item's first line). False when the block yields no node of
+     * its own: a paragraph whose text was all reference definitions. */
+    bool (*close_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                        markdown_core_node *);
 
     bool (*scan_block_start)(const markdown_core_element_instance *, markdown_core_parser *,
                              struct markdown_core_block_start_context *, struct markdown_core_block_start *);

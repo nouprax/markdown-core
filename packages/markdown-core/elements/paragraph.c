@@ -3,13 +3,17 @@
 
 #include "link.h"
 #include "block_identifier.h"
-void markdown_core_paragraph_finalize(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                      markdown_core_node *paragraph, markdown_core_node *parent) {
+/* A paragraph closing inside `parent` yields the reference definitions at
+ * the front of its text, settled into `parent` before it, and then itself,
+ * less a block identifier at the back of its text, when anything of it is
+ * left. */
+static bool close_paragraph(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                            markdown_core_node *paragraph, markdown_core_node *parent) {
     if (!markdown_core_block_resolve_reference_link_definitions(parser, paragraph, parent)) {
-        paragraph->flags |= MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY;
-        return;
+        return false;
     }
     markdown_core_block_attach_paragraph_identifier(self->state, parser, paragraph, parent);
+    return true;
 }
 
 static int continue_paragraph(const markdown_core_element_instance *self, markdown_core_parser *parser,
@@ -57,6 +61,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
     .content_mode = MARKDOWN_CORE_CONTENT_PROSE,
     .inline_content = true,
     .paragraph = true,
-    .finalize_block = markdown_core_paragraph_finalize,
+    .close_block = close_paragraph,
     .open_text_block = open_text,
 };

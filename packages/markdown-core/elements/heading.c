@@ -21,25 +21,28 @@ typedef struct {
     anchor_projection *values;
     size_t count, capacity;
 } anchor_projection_stack;
-void markdown_core_block_register_heading(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                          markdown_core_node *node, markdown_core_node *parent) {
+/* A heading closes into the element's collection, which declares its label
+ * and assigns its anchor as the parse ends. */
+static bool close_heading(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                          markdown_core_node *node, markdown_core_node *parent) {
     (void)parent;
     markdown_core_heading_collection *headings = &((markdown_core_heading_state *)self->state)->headings;
     if (headings->count == headings->capacity) {
         size_t capacity = headings->capacity ? headings->capacity * 2 : 8;
         if (capacity > SIZE_MAX / sizeof(*headings->values)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            return;
+            return true;
         }
         void *values = markdown_core_realloc(headings->values, capacity * sizeof(*headings->values));
         if (!values) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            return;
+            return true;
         }
         headings->values = values;
         headings->capacity = capacity;
     }
     headings->values[headings->count++] = (markdown_core_heading_parse){.node = node};
+    return true;
 }
 
 /* Every heading's inlines up to its declaration dependency, and the implicit
@@ -150,8 +153,8 @@ static void heading_anchor_base(markdown_core_parser *parser, markdown_core_head
             project_anchor_literal(state, base, node->as.literal->data, node->as.literal->len);
             break;
         case MARKDOWN_CORE_NODE_FORMULA: {
-            const char *literal = markdown_core_elements_get_formula_literal(node);
-            project_anchor_literal(state, base, (const unsigned char *)literal, (bufsize_t)strlen(literal));
+            const markdown_core_chunk literal = markdown_core_elements_formula_literal(node);
+            project_anchor_literal(state, base, literal.data, literal.len);
             break;
         }
         case MARKDOWN_CORE_NODE_SOFT_BREAK:
@@ -535,7 +538,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING = {
     .content_mode = MARKDOWN_CORE_CONTENT_PROSE,
     .inline_content = true,
     .deferred_inlines = true,
-    .finalize_block = markdown_core_block_register_heading,
+    .close_block = close_heading,
     .blank_opaque = true,
     .state_size = sizeof(markdown_core_heading_state),
     .run_state_size = sizeof(markdown_core_heading_run),

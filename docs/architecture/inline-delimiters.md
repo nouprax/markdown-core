@@ -170,11 +170,10 @@ size or benchmark frequency. Body decoding, padding, markers and source placemen
 are shared by both construction paths.
 
 A fenced code block whose info string is `formula` becomes a FormulaBlock at
-its EXIT, in place: the node keeps its place in the tree, its range and the
-places of its lines, and the fence transfers its owned literal into a newly
-initialized formula payload. A paragraph whose only content is a standalone
-formula stays a paragraph. Trimming compacts an owned buffer in place and
-restores NUL termination, while a borrowed chunk obtains independent storage
-before mutation. Direct formula blocks detach their accumulated content buffer.
-Failure before the kind changes keeps the code block intact; the kind change
-clears the fence's literal and drops its attributes and info.
+its EXIT, in place: the node keeps its place in the tree, its range, the
+places of its lines and its content, and the new formula payload's literal is
+the fence's literal view, trimmed. A paragraph whose only content is a
+standalone formula stays a paragraph. Trimming narrows the view; no byte is
+copied or moved. A direct formula block's literal is the trimmed view of its
+content. Failure before the kind changes keeps the code block intact; the kind
+change drops the fence's literal, attributes and info.

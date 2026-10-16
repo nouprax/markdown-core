@@ -289,18 +289,8 @@ enum markdown_core_node__internal_flags {
     // than on the line before, and to know that a `-->` line really closed a
     // type-2 block rather than the input or a container running out.
     MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION = (1 << 4),
-    // A finalized paragraph consumed entirely by reference definitions,
-    // which its finalization made References before it. It retains block
-    // adjacency until block parsing ends, then is discarded before list
-    // layout and inline parsing observe the semantic children.
-    MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY = (1 << 5),
-
     // Deferred contextual escape token, decoded when inline ownership is final.
     MARKDOWN_CORE_NODE__ESCAPED_SPACE = (1 << 6),
-
-    /* Reference definitions have advanced this block's semantic beginning.
-     * A later arrival may supply its first surviving content line. */
-    MARKDOWN_CORE_NODE__REFERENCE_PREFIX = (1 << 7),
 
     /* A block the blank-line facts read through, as CommonMark reads through
      * a link reference definition: whether a block ends with a blank line,
@@ -371,7 +361,15 @@ struct markdown_core_node {
     uint64_t id;
 
     markdown_core_attributes attributes;
+    /* What the block read, only ever appended to: no close, line or step
+     * writes a byte of it again. What a block makes of it is a view of it --
+     * a literal block's literal, an inline root's text (markdown_core_node_text). */
     markdown_core_strbuf content;
+    /* The bytes at the front and at the back of `content` that the node's
+     * text leaves out, because its block read them as something else: a
+     * paragraph's leading reference definitions and its trailing block
+     * identifier. */
+    bufsize_t cut_front, cut_back;
     /* Where the node is in the source; see markdown_core_node_where. */
     markdown_core_node_where where;
     int internal_offset;
@@ -441,6 +439,13 @@ typedef struct {
     markdown_core_node_allocation node;
     unsigned char record[MARKDOWN_CORE_NODE_SLOT_RECORD_BYTES];
 } markdown_core_node_slot;
+
+/* A node's TEXT, the view of its content its inlines are parsed from: all of
+ * it but its cuts. */
+static inline markdown_core_chunk markdown_core_node_text(const markdown_core_node *node) {
+    return (markdown_core_chunk){node->content.ptr + node->cut_front,
+                                 node->content.size - node->cut_front - node->cut_back, 0};
+}
 
 static inline markdown_core_node_slot *markdown_core_node_slot_of(const markdown_core_node *node) {
     return (markdown_core_node_slot *)((unsigned char *)node - offsetof(markdown_core_node_slot, node));

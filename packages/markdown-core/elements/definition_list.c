@@ -266,13 +266,15 @@ static markdown_core_finish_result finish_step(const markdown_core_element_insta
 static const markdown_core_node_type DEFINITION_LIST_EXIT_KINDS[] = {
     MARKDOWN_CORE_NODE_DEFINITION_LIST, MARKDOWN_CORE_NODE_DEFINITION, MARKDOWN_CORE_NODE_DEFINITION_BODY,
     MARKDOWN_CORE_NODE_NONE};
-static void finalize_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                           markdown_core_node *node, markdown_core_node *parent) {
+static bool close_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                        markdown_core_node *node, markdown_core_node *parent) {
     (void)self;
+    (void)parser;
     (void)parent;
     if (node->kind == MARKDOWN_CORE_NODE_DEFINITION_BODY) {
         markdown_core_definition_list_close_body(node);
     }
+    return true;
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
@@ -280,7 +282,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
     .state_size = sizeof(markdown_core_definition_list_work),
     .finish_step = finish_step,
     .finish_exit_kinds = DEFINITION_LIST_EXIT_KINDS,
-    .finalize_block = finalize_block,
+    .close_block = close_block,
 
     .accepts_blank = accepts_blank,
 

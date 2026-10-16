@@ -112,10 +112,12 @@ consolidation, and email splitting use it directly. A mapping view is not a
 partially initialized node and owns no storage. Source operands are const;
 destination views may alias their source when taking a slice.
 
-Removing reference definitions changes a paragraph's mapping only if it has
-consumed a definition prefix. That fact persists across a setext probe and
-finalization, including when the first probe consumed the entire content and
-new content arrived later.
+A paragraph's mapping is in the coordinates of its text, its content less
+`cut_front`: marks record the text's length as each line arrives. Reading
+reference definitions grows `cut_front` by what they read and rebases the
+mapping by the same count. Content that arrives after a setext probe read
+definitions -- including a probe that read the entire content -- is marked in
+the same coordinates, so one mapping serves the probe and the close.
 
 ## Scratch lasts for the parse
 

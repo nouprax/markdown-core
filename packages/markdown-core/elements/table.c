@@ -225,8 +225,8 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
     bufsize_t source;
 
     // Four allocations, and every one of them used to be trusted. The first was
-    // a crash: an unchecked node reached markdown_core_node_set_string_content,
-    // which dereferences it -- SIGSEGV on `lead text` above a two-column table
+    // a crash: an unchecked node had its content written, which dereferences
+    // it -- SIGSEGV on `lead text` above a two-column table
     // with the allocation refused. The other three lose the lead paragraph
     // WITHOUT setting parser->error, so the document comes back short and the
     // failure bit says everything was fine.
@@ -246,9 +246,9 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
     while (first < content_end && markdown_core_is_whitespace(parent_string[first])) {
         first++;
     }
-    /* Paragraph finalization needs the complete terminated slice, including
+    /* The paragraph's close needs the complete terminated slice, including
      * the last reference definition's newline. Only the authored scope omits
-     * line endings; inline parsing trims its own input after finalization. */
+     * line endings; inline parsing trims its own input after the close. */
     while (scope_end > first && (parent_string[scope_end - 1] == '\n' || parent_string[scope_end - 1] == '\r')) {
         scope_end--;
     }
@@ -290,7 +290,7 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
                                                     unsigned char *input, int len) {
     markdown_core_node *table_header;
     pipe_row header_row, delimiter_row;
-    const char *parent_string;
+    markdown_core_chunk header_text;
     uint16_t i;
     int header_line;
     bufsize_t header_start;
@@ -309,8 +309,9 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
     }
 
     // Select the final header row and verify width before committing a table.
-    parent_string = markdown_core_node_get_string_content(parent_container);
-    if (!recognize_pipe_row((unsigned char *)parent_string, (int)strlen(parent_string), &header_row) ||
+    /* The header row is the last line of the paragraph's text. */
+    header_text = markdown_core_node_text(parent_container);
+    if (!recognize_pipe_row(header_text.data, header_text.len, &header_row) ||
         header_row.n_columns != delimiter_row.n_columns) {
         parent_container->flags |= MARKDOWN_CORE_NODE__TABLE_VISITED;
         return NULL;
@@ -334,8 +335,7 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
     }
 
     if (header_row.paragraph_offset) {
-        try_inserting_table_header_paragraph(parser, parent_container, (unsigned char *)parent_string,
-                                             header_row.paragraph_offset);
+        try_inserting_table_header_paragraph(parser, parent_container, header_text.data, header_row.paragraph_offset);
         /* The table starts where its HEADER ROW was written, not where the
          * paragraph it was split out of did. Taken before the row and cells
          * below read start_column, because they are placed against it. */
@@ -384,8 +384,7 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
      * where the block does; with a lead split off, `| a | b |` on line three
      * was reported at 1:10, a column that is not on line one. The map turns
      * each offset back into the place it was written. */
-    S_place_content_span(parser, parent_container, table_header, header_row.paragraph_offset,
-                         (bufsize_t)strlen(parent_string) - 2);
+    S_place_content_span(parser, parent_container, table_header, header_row.paragraph_offset, header_text.len - 2);
 
     table->head_count = 1;
 
@@ -398,7 +397,7 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
         }
         S_place_content_span(parser, parent_container, header_cell, cell->start_offset, cell->end_offset);
         set_cell_content(parser, header_cell, cell, parent_container, parser->line_number, parser->line_start,
-                         (bufsize_t)(cell->content.data - (unsigned char *)parent_string));
+                         (bufsize_t)(cell->content.data - header_text.data));
         markdown_core_block_settle(parser, header_cell, table_header);
     }
     markdown_core_block_settle(parser, table_header, parent_container);
@@ -561,13 +560,10 @@ static const markdown_core_node_type containment_kinds[] = {MARKDOWN_CORE_NODE_T
                                                             MARKDOWN_CORE_NODE_TABLE_CELL, MARKDOWN_CORE_NODE_NONE};
 
 static int contains_inlines(const markdown_core_element *element, markdown_core_node *node) {
-    /* Block inputs have consumed their source before the inline phase. Their
-     * children, rather than the cell wrapper, own the remaining inline text. */
-    if (node->kind == MARKDOWN_CORE_NODE_TABLE_CAPTION) {
-        return true;
-    }
+    /* A cell whose content was read as blocks has no text of its own: its
+     * blocks hold it. */
     return node->kind == MARKDOWN_CORE_NODE_TABLE_CAPTION ||
-           (node->kind == MARKDOWN_CORE_NODE_TABLE_CELL && node->content.size > 0);
+           (node->kind == MARKDOWN_CORE_NODE_TABLE_CELL && markdown_core_node_text(node).len > 0);
 }
 
 static void opaque_alloc(const markdown_core_element *self, markdown_core_node *node) {

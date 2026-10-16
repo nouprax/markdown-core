@@ -2018,7 +2018,7 @@ static void formula_properties(const markdown_core_node *node, markdown_core_pla
     *mode = markdown_core_elements_get_formula_mode((markdown_core_node *)node) == MARKDOWN_CORE_FORMULA_MODE_EMBEDDED
                 ? MARKDOWN_CORE_PLACEMENT_EMBEDDED
                 : MARKDOWN_CORE_PLACEMENT_STANDALONE;
-    *literal = cstr_string(markdown_core_elements_get_formula_literal((markdown_core_node *)node));
+    *literal = chunk_string(markdown_core_elements_formula_literal(node));
 }
 
 static const markdown_core_table *table_of(const markdown_core_node *node) { return node->opaque; }

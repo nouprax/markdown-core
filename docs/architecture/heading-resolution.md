@@ -7,8 +7,8 @@ only the completed document.
 
 ## Declaration order and inline ownership
 
-Block finalization registers headings in source order, including headings in
-footnote definitions. A heading is a leaf block, so closure order is source
+Closing a heading registers it, so headings register in source order,
+including headings in footnote definitions. A heading is a leaf block, so closure order is source
 order. The parser keeps borrowed node pointers in that order; no final tree
 search or sorting is needed. Each heading whose text is a writable label keeps
 that label, normalized, and declares it in the parse's registry

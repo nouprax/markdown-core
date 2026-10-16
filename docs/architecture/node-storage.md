@@ -100,8 +100,12 @@ is a slot from the allocator.
 
 A node's fields are its PLACE -- its children and its `id` -- and its VALUE,
 everything after them: attributes, content, extent, kind, flags, element state, the record and
-the storage all of these borrow. Inline literals are slices of their block's
-content buffer, so a value borrows from the parse that made it.
+the storage all of these borrow. A block's content is only ever appended to:
+what the block makes of it is a view. A code, HTML, comment or formula block's
+literal is a view of its content; the text its inlines are parsed from is its
+content less the bytes its block read as something else, `cut_front` at the
+front and `cut_back` at the back; inline literals are slices of that text. So
+a value borrows from the parse that made it.
 
 A session's parse continues the previous document (docs/plans/
 2026-09-29-incremental-parsing.md, 5.9). When a new node equals the old node
@@ -203,8 +207,8 @@ kind conversion. So does the attribute value.
 
 HTML blocks keep their recognition state and eventual literal in distinct
 fields of one data record throughout parsing. Converting a closed HTML comment
-to Comment transfers its owned literal only after the new record can be
-created. Setext headings also use the shared kind conversion operation.
+to Comment views the comment's body in the block's content once the new record
+exists. Setext headings also use the shared kind conversion operation.
 
 Construction and kind conversion use one record capacity/ownership model.
 Their initialization order differs because conversion must destroy the old
@@ -224,8 +228,9 @@ native alignment, and sanitizer suites exercise the same ownership paths.
 Link reference definitions are recognized during block parsing so paragraph
 content and Setext classification can use the remaining text. Each definition
 becomes a `Reference` node that settles into its parent's children where it
-was written, before what remains of the paragraph. A paragraph that held only
-definitions is released when it closes; its References stay, so later block
+was written, before what remains of the paragraph; the paragraph's `cut_front`
+grows by what the definitions read. A paragraph that held only
+definitions yields no node when it closes and is released; its References stay, so later block
 identifiers see them in source order and cannot attach across them. The
 blank-line facts skip References, and list layout, derived at each list's
 EXIT as the list settles, reads the semantic children around them. An

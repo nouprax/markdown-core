@@ -453,6 +453,15 @@ static void LITERAL_EQ(test_batch_runner *runner, const markdown_core_node *node
        (const char *)literal.data, expected);
 }
 
+/* A formula node's literal, a view of bytes its node owns, against `expected`. */
+static void FORMULA_LITERAL_EQ(test_batch_runner *runner, const markdown_core_node *formula, const char *expected,
+                               const char *msg) {
+    const markdown_core_chunk literal = markdown_core_elements_formula_literal(formula);
+    const size_t length = strlen(expected);
+    OK(runner, (size_t)literal.len == length && (!length || memcmp(literal.data, expected, length) == 0),
+       "%s (got \"%.*s\", expected \"%s\")", msg, (int)literal.len, (const char *)literal.data, expected);
+}
+
 /* Appends `node`'s literal to `buffer`, or nothing when it has none. */
 static void put_literal(markdown_core_strbuf *buffer, const markdown_core_node *node) {
     markdown_core_string literal;
@@ -936,11 +945,11 @@ static void formula_element_accessors(test_batch_runner *runner) {
     markdown_core_node *formula = child_at(paragraph, 1);
 
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula", "formula type string");
-    STR_EQ(runner, markdown_core_elements_get_formula_literal(formula), "x+y", "formula inline literal");
+    FORMULA_LITERAL_EQ(runner, formula, "x+y", "formula inline literal");
     INT_EQ(runner, markdown_core_elements_get_formula_mode(formula), MARKDOWN_CORE_FORMULA_MODE_EMBEDDED,
            "formula inline mode is embedded");
     INT_EQ(runner, markdown_core_elements_set_formula_literal(formula, "z"), 1, "set formula literal succeeds");
-    STR_EQ(runner, markdown_core_elements_get_formula_literal(formula), "z", "formula literal setter updates payload");
+    FORMULA_LITERAL_EQ(runner, formula, "z", "formula literal setter updates payload");
     markdown_core_elements_set_formula_mode(formula, MARKDOWN_CORE_FORMULA_MODE_STANDALONE);
     INT_EQ(runner, markdown_core_elements_get_formula_mode(formula), MARKDOWN_CORE_FORMULA_MODE_STANDALONE,
            "formula mode setter updates mode");
@@ -950,7 +959,7 @@ static void formula_element_accessors(test_batch_runner *runner) {
     formula = child_at(doc, 0);
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula_block",
            "standalone formula block type string");
-    STR_EQ(runner, markdown_core_elements_get_formula_literal(formula), "x+y", "standalone formula block literal");
+    FORMULA_LITERAL_EQ(runner, formula, "x+y", "standalone formula block literal");
     INT_EQ(runner, markdown_core_elements_get_formula_mode(formula), MARKDOWN_CORE_FORMULA_MODE_STANDALONE,
            "formula block mode is standalone");
     markdown_core_node_free(doc);
@@ -959,7 +968,7 @@ static void formula_element_accessors(test_batch_runner *runner) {
     paragraph = child_at(doc, 0);
     formula = child_at(paragraph, 1);
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula", "standalone formula inline type string");
-    STR_EQ(runner, markdown_core_elements_get_formula_literal(formula), "a+b", "standalone formula inline literal");
+    FORMULA_LITERAL_EQ(runner, formula, "a+b", "standalone formula inline literal");
     INT_EQ(runner, markdown_core_elements_get_formula_mode(formula), MARKDOWN_CORE_FORMULA_MODE_STANDALONE,
            "formula inline mode is standalone");
     markdown_core_node_free(doc);
@@ -968,7 +977,7 @@ static void formula_element_accessors(test_batch_runner *runner) {
     paragraph = child_at(doc, 0);
     formula = child_at(paragraph, 1);
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula", "LaTeX embedded formula inline type string");
-    STR_EQ(runner, markdown_core_elements_get_formula_literal(formula), "x+y", "LaTeX embedded formula inline literal");
+    FORMULA_LITERAL_EQ(runner, formula, "x+y", "LaTeX embedded formula inline literal");
     INT_EQ(runner, markdown_core_elements_get_formula_mode(formula), MARKDOWN_CORE_FORMULA_MODE_EMBEDDED,
            "LaTeX formula inline mode is embedded");
     markdown_core_node_free(doc);
@@ -978,8 +987,7 @@ static void formula_element_accessors(test_batch_runner *runner) {
     formula = child_at(paragraph, 1);
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula",
            "LaTeX standalone formula inline type string");
-    STR_EQ(runner, markdown_core_elements_get_formula_literal(formula), "x+y",
-           "LaTeX standalone formula inline literal");
+    FORMULA_LITERAL_EQ(runner, formula, "x+y", "LaTeX standalone formula inline literal");
     INT_EQ(runner, markdown_core_elements_get_formula_mode(formula), MARKDOWN_CORE_FORMULA_MODE_STANDALONE,
            "LaTeX formula inline mode is standalone");
     markdown_core_node_free(doc);
@@ -988,8 +996,7 @@ static void formula_element_accessors(test_batch_runner *runner) {
     formula = child_at(doc, 0);
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula_block",
            "LaTeX standalone formula block type string");
-    STR_EQ(runner, markdown_core_elements_get_formula_literal(formula), "x+y",
-           "LaTeX standalone formula block literal");
+    FORMULA_LITERAL_EQ(runner, formula, "x+y", "LaTeX standalone formula block literal");
     INT_EQ(runner, markdown_core_elements_get_formula_mode(formula), MARKDOWN_CORE_FORMULA_MODE_STANDALONE,
            "LaTeX formula block mode is standalone");
     markdown_core_node_free(doc);
@@ -998,7 +1005,7 @@ static void formula_element_accessors(test_batch_runner *runner) {
     formula = child_at(doc, 0);
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula_block",
            "formula fence becomes standalone block");
-    STR_EQ(runner, markdown_core_elements_get_formula_literal(formula), "x+y", "formula fence literal is trimmed");
+    FORMULA_LITERAL_EQ(runner, formula, "x+y", "formula fence literal is trimmed");
     markdown_core_node_free(doc);
 }
 
@@ -5447,7 +5454,7 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
     {
         markdown_core_parser parser = {0};
         markdown_core_node *paragraph = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
-        markdown_core_node_set_string_content(paragraph, "| a | b |\n");
+        markdown_core_strbuf_sets(&paragraph->content, "| a | b |\n");
         unsigned char delimiter[] = "| --- |\n";
         text_allocation_calls = 0;
         markdown_core_node *table = MARKDOWN_CORE_ELEMENT_TABLE.try_opening_block(
@@ -8905,8 +8912,7 @@ static void formula_containment_follows_recognition(test_batch_runner *runner) {
             OK(runner, expected_shape, "only the accepted formula replaces its source span");
             if (expected_shape) {
                 LITERAL_EQ(runner, prefix, cases[i].prefix, "invalid formula syntax remains literal text");
-                STR_EQ(runner, markdown_core_elements_get_formula_literal(formula), "good",
-                       "the first valid formula owns the recognized body");
+                FORMULA_LITERAL_EQ(runner, formula, "good", "the first valid formula owns the recognized body");
                 LITERAL_EQ(runner, suffix, " $later$", "the rejected formula retains its original text");
             }
             markdown_core_node_free(root);
@@ -8999,51 +9005,48 @@ static void formula_leaf_construction_work(test_batch_runner *runner) {
     }
 }
 
-/* A formula code block's promotion moves its literal's existing owner. An
- * allocation failure before the commit preserves the old block; borrowed code
- * bytes are never modified. */
-static void formula_promotion_transfers_storage(test_batch_runner *runner) {
-    for (int borrowed = 0; borrowed < 2; borrowed++) {
-        for (size_t fail = 0; fail < 4; fail++) {
-            payload_probe_arm();
-            markdown_core_parser parser = {0};
-            /* An instance with no record: the formula step keeps none. */
-            const markdown_core_element_instance formula_instance = {&MARKDOWN_CORE_ELEMENT_FORMULA, NULL, 0, NULL};
-            markdown_core_node *root = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
-            markdown_core_node *old = markdown_core_node_new(MARKDOWN_CORE_NODE_CODE_BLOCK);
-            append_child(root, old);
-            old->as.code->info = markdown_core_optional_chunk_present(markdown_core_chunk_literal("formula"));
-            old->as.code->literal = markdown_core_chunk_literal(" \t value \n ");
-            if (!borrowed) {
-                markdown_core_chunk_to_cstr(&old->as.code->literal);
-            }
-            const char *before = (const char *)old->as.code->literal.data;
-            payload_fail_at = fail ? payload_allocations + fail : 0;
-            markdown_core_finish_result result = MARKDOWN_CORE_ELEMENT_FORMULA.finish_step(
-                &formula_instance, &parser, old, root, MARKDOWN_CORE_EVENT_EXIT, NULL);
-            payload_fail_at = 0;
-            if (result == MARKDOWN_CORE_FINISH_FAILED) {
-                INT_EQ(runner, parser.error, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED, "loss is reported");
-                OK(runner, child_at(root, 0) == old, "failed promotion preserves the old owner");
-                STR_EQ(runner, before, " \t value \n ", "failed promotion preserves the old literal");
-            } else {
-                INT_EQ(runner, result, MARKDOWN_CORE_FINISH_CONTINUE, "promotion rewrites the block in place");
-                markdown_core_node *formula = child_at(root, 0);
-                OK(runner, formula == old && formula->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK,
-                   "the code block is the formula block");
-                const char *after = markdown_core_elements_get_formula_literal(formula);
-                STR_EQ(runner, after, "value", "promotion trims and NUL-terminates its literal");
-                if (!borrowed) {
-                    OK(runner, before == after, "owned literal allocation is transferred without copying");
-                } else {
-                    OK(runner, before != after, "borrowed bytes acquire independent ownership");
-                    STR_EQ(runner, before, " \t value \n ", "borrowed source remains immutable");
-                }
-            }
-            markdown_core_node_free(root);
-            INT_EQ(runner, payload_live, 0, "all transferred or rejected storage is released exactly once");
-            payload_probe_disarm();
+/* A formula code block's promotion trims its literal, a view of the block's
+ * content, to the formula's: the content's bytes are neither copied nor
+ * written. An allocation failure before the commit preserves the old block. */
+static void formula_promotion_views_content(test_batch_runner *runner) {
+    static const char written[] = " \t value \n ";
+    for (size_t fail = 0; fail < 3; fail++) {
+        payload_probe_arm();
+        markdown_core_parser parser = {0};
+        /* An instance with no record: the formula step keeps none. */
+        const markdown_core_element_instance formula_instance = {&MARKDOWN_CORE_ELEMENT_FORMULA, NULL, 0, NULL};
+        markdown_core_node *root = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
+        markdown_core_node *old = markdown_core_node_new(MARKDOWN_CORE_NODE_CODE_BLOCK);
+        append_child(root, old);
+        old->as.code->info = markdown_core_optional_chunk_present(markdown_core_chunk_literal("formula"));
+        markdown_core_strbuf_puts(&old->content, written);
+        old->as.code->literal = (markdown_core_chunk){old->content.ptr, old->content.size, 0};
+        const unsigned char *bytes = old->content.ptr;
+        payload_fail_at = fail ? payload_allocations + fail : 0;
+        markdown_core_finish_result result = MARKDOWN_CORE_ELEMENT_FORMULA.finish_step(
+            &formula_instance, &parser, old, root, MARKDOWN_CORE_EVENT_EXIT, NULL);
+        payload_fail_at = 0;
+        if (result == MARKDOWN_CORE_FINISH_FAILED) {
+            INT_EQ(runner, parser.error, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED, "loss is reported");
+            OK(runner, child_at(root, 0) == old && old->kind == MARKDOWN_CORE_NODE_CODE_BLOCK,
+               "failed promotion preserves the old block");
+            OK(runner, old->as.code->literal.data == bytes, "failed promotion preserves the old literal");
+        } else {
+            INT_EQ(runner, result, MARKDOWN_CORE_FINISH_CONTINUE, "promotion rewrites the block in place");
+            markdown_core_node *formula = child_at(root, 0);
+            OK(runner, formula == old && formula->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK,
+               "the code block is the formula block");
+            FORMULA_LITERAL_EQ(runner, formula, "value", "promotion trims its literal");
+            OK(runner, markdown_core_elements_formula_literal(formula).data == bytes + 3,
+               "the formula's literal views the block's content");
         }
+        OK(runner,
+           old->content.ptr == bytes && old->content.size == (bufsize_t)strlen(written) &&
+               memcmp(old->content.ptr, written, strlen(written)) == 0,
+           "the content is neither moved nor written");
+        markdown_core_node_free(root);
+        INT_EQ(runner, payload_live, 0, "all storage is released exactly once");
+        payload_probe_disarm();
     }
 }
 
@@ -10970,7 +10973,7 @@ int main(void) {
     formula_containment_follows_recognition(runner);
     delimiter_boundary_floors(runner);
     formula_leaf_construction_work(runner);
-    formula_promotion_transfers_storage(runner);
+    formula_promotion_views_content(runner);
     formula_promotion_keeps_the_fence_runs(runner);
     directive_recognition_survives_construction(runner);
     lookahead_and_driver_share_normalized_lines(runner);
