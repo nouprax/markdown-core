@@ -25,7 +25,6 @@ markdown_core_bracket_match markdown_core_span_close(const markdown_core_element
                 return BRACKET_MATCHED;
             }
             inl->attributes = attributes;
-            markdown_core_inline_anchor_written(inline_state, inl, initial_pos);
             inline_state->pos = end;
             markdown_core_inline_state_place(inline_state, inl, opener->position - 1, end - 1);
             markdown_core_inline_finish_citation_tokens(citation, inline_state, &opener->citations);

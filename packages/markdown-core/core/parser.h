@@ -164,8 +164,7 @@ struct markdown_core_parser {
     /* Whether the transaction ends in a snapshot rather than a finalize
      * (docs/plans/2026-09-29-incremental-parsing.md, 5.5): a lookup sees only
      * the definitions that start before the inline root that asks
-     * (markdown_core_parser_sees), and a heading's automatic anchor avoids
-     * only the explicit anchors and the headings written before it. */
+     * (markdown_core_parser_sees). */
     bool snapshot;
     markdown_core_source_order source_order;
     /* The stack the finish stage's tree walks borrow in turn, the finish

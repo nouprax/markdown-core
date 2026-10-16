@@ -1373,6 +1373,8 @@ typedef struct {
      * whether its fields are the walk's to parse. */
     int script_depth;
     bool parses;
+    /* Where the queued block being completed starts. */
+    uint32_t block_start;
 } owned_tree_walk;
 
 /* Room for one frame more than the walk holds. */
@@ -1687,13 +1689,13 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_enter_node(owned_tr
     if (facts->complete) {
         facts->complete(facts->structure, parser, node, frame->script_depth);
     }
-    /* An explicit anchor is reserved once the node is complete, at the
-     * place it is written. A FormulaBlock a fence became holds no
-     * attributes; a Text holds none either, so the siblings consolidation
-     * absorbs reserve none. */
+    /* An explicit anchor is reserved once the node is complete, as starting
+     * where the queued block it is in starts. A FormulaBlock a fence became
+     * holds no attributes; a Text holds none either, so the siblings
+     * consolidation absorbs reserve none. */
     const markdown_core_chunk *anchor = &node->attributes.anchor;
     if (anchor->len && !markdown_core_registry_declare(&parser->registry, MARKDOWN_CORE_REGISTRY_ANCHOR, anchor->data,
-                                                       anchor->len, node->anchor_start)) {
+                                                       anchor->len, walk->block_start)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return -1;
     }
@@ -1783,6 +1785,7 @@ static int walk_owned_trees(markdown_core_parser *parser) {
                 tree->next_event = MARKDOWN_CORE_EVENT_EXIT;
                 tree->next = node;
                 frame->script_depth = 0;
+                walk.block_start = node->where.place.start;
             } else {
                 if (node->element && node->element->delimiter.body == DELIMITER_WORD_BODY) {
                     frame->script_depth += event == MARKDOWN_CORE_EVENT_ENTER ? 1 : -1;

@@ -406,8 +406,7 @@ MARKDOWN_CORE_API markdown_core_text_unit markdown_core_document_unit(const mark
  *
  * Until finalize, each document is a snapshot of the text so far: a lookup
  * of a reference, footnote or specimen sees only the definitions that start
- * before the inline root asking, and a heading's automatic anchor avoids only
- * the explicit anchors and headings written before it.
+ * before the inline root asking.
  *
  * `markdown_core_session_new` parses `size` bytes of `source` into a session
  * whose documents count columns in `unit`; its document is a snapshot. */

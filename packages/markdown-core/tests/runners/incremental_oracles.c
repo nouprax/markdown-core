@@ -1078,16 +1078,9 @@ done:
     return ok;
 }
 
-/* A set of names, for the anchor rule of plan 5.5: each name keeps the two
- * latest ends, and their nodes, of the anchored nodes added under it. */
-typedef struct named {
-    markdown_core_string name;
-    int64_t end[2];
-    size_t node[2];
-} named;
-
+/* A set of the names anchors can share a base under. */
 typedef struct name_set {
-    named *names;
+    markdown_core_string *names;
     size_t count, capacity;
 } name_set;
 
@@ -1100,27 +1093,27 @@ static uint64_t name_hash(markdown_core_string name) {
     return hash;
 }
 
-static named *name_slot(const name_set *set, markdown_core_string name) {
+static markdown_core_string *name_slot(const name_set *set, markdown_core_string name) {
     size_t at = (size_t)name_hash(name) & (set->capacity - 1);
-    while (set->names[at].name.data && (set->names[at].name.length != name.length ||
-                                        memcmp(set->names[at].name.data, name.data, name.length) != 0)) {
+    while (set->names[at].data &&
+           (set->names[at].length != name.length || memcmp(set->names[at].data, name.data, name.length) != 0)) {
         at = (at + 1) & (set->capacity - 1);
     }
     return &set->names[at];
 }
 
-/* Adds `name`, ending at `end` in node `node`; false when memory ran out. */
-static bool name_add(name_set *set, markdown_core_string name, int64_t end, size_t node) {
-    named *slot;
+/* Adds `name`; false when memory ran out. */
+static bool name_add(name_set *set, markdown_core_string name) {
+    markdown_core_string *slot;
     if (2 * (set->count + 1) > set->capacity) {
         size_t capacity = set->capacity ? 2 * set->capacity : 64, at;
-        name_set grown = {(named *)calloc(capacity, sizeof(named)), 0, capacity};
+        name_set grown = {(markdown_core_string *)calloc(capacity, sizeof(markdown_core_string)), 0, capacity};
         if (!grown.names) {
             return false;
         }
         for (at = 0; at < set->capacity; at++) {
-            if (set->names[at].name.data) {
-                *name_slot(&grown, set->names[at].name) = set->names[at];
+            if (set->names[at].data) {
+                *name_slot(&grown, set->names[at]) = set->names[at];
                 grown.count++;
             }
         }
@@ -1128,25 +1121,15 @@ static bool name_add(name_set *set, markdown_core_string name, int64_t end, size
         *set = grown;
     }
     slot = name_slot(set, name);
-    if (!slot->name.data) {
-        *slot = (named){name, {-1, -1}, {SIZE_MAX, SIZE_MAX}};
+    if (!slot->data) {
+        *slot = name;
         set->count++;
-    }
-    if (end > slot->end[0]) {
-        slot->end[1] = slot->end[0];
-        slot->node[1] = slot->node[0];
-        slot->end[0] = end;
-        slot->node[0] = node;
-    } else if (end > slot->end[1]) {
-        slot->end[1] = end;
-        slot->node[1] = node;
     }
     return true;
 }
 
-static const named *name_find(const name_set *set, markdown_core_string name) {
-    const named *slot = set->capacity ? name_slot(set, name) : NULL;
-    return slot && slot->name.data ? slot : NULL;
+static bool name_find(const name_set *set, markdown_core_string name) {
+    return set->capacity && name_slot(set, name)->data;
 }
 
 /* The names an automatic anchor `name` can stand for the base of: itself,
@@ -1164,8 +1147,8 @@ static size_t anchor_bases(markdown_core_string name, markdown_core_string bases
     return 1;
 }
 
-/* Adds the bases of an anchor, ending at `end` in node `node`. */
-static bool add_bases(name_set *set, markdown_core_optional_string anchor, int64_t end, size_t node) {
+/* Adds the bases of an anchor. */
+static bool add_bases(name_set *set, markdown_core_optional_string anchor) {
     markdown_core_string bases[2];
     size_t count, at;
     if (!anchor.has_value || !anchor.value.data) {
@@ -1173,16 +1156,15 @@ static bool add_bases(name_set *set, markdown_core_optional_string anchor, int64
     }
     count = anchor_bases(anchor.value, bases);
     for (at = 0; at < count; at++) {
-        if (!name_add(set, bases[at], end, node)) {
+        if (!name_add(set, bases[at])) {
             return false;
         }
     }
     return true;
 }
 
-/* Whether the anchor shares a base with a name of the set added from a node
- * other than `node` that ends after `after`. */
-static bool shares_base(const name_set *set, markdown_core_optional_string anchor, size_t node, int64_t after) {
+/* Whether the anchor shares a base with a name of the set. */
+static bool shares_base(const name_set *set, markdown_core_optional_string anchor) {
     markdown_core_string bases[2];
     size_t count, at;
     if (!anchor.has_value || !anchor.value.data) {
@@ -1190,9 +1172,7 @@ static bool shares_base(const name_set *set, markdown_core_optional_string ancho
     }
     count = anchor_bases(anchor.value, bases);
     for (at = 0; at < count; at++) {
-        const named *found = name_find(set, bases[at]);
-        if (found &&
-            ((found->node[0] != node && found->end[0] > after) || (found->node[1] != node && found->end[1] > after))) {
+        if (name_find(set, bases[at])) {
             return true;
         }
     }
@@ -1214,35 +1194,32 @@ static int placed_order(const void *left, const void *right) {
     return a->start < b->start ? -1 : a->start > b->start ? 1 : a->index < b->index ? -1 : a->index > b->index;
 }
 
-/* Each heading's anchor equals the fresh parse's unless plan 5.5 lets it
- * differ: a snapshot's automatic anchor avoids only the explicit anchors and
- * the headings written before its heading, an explicit anchor counting as
- * written where its node ends. The harness cannot tell an automatic anchor
- * from an authored one, nor read a heading's base, so it lets a heading's
- * anchor differ when its text is a free root, or when the anchor could share
- * its base with an anchor the snapshot's heading does not avoid: one of
- * another node that ends after the heading starts, one in a free place, or
- * the fresh or the snapshot's anchor of an earlier heading whose anchor may
- * differ. */
+/* Each heading's anchor equals the fresh parse's: a snapshot assigns anchors
+ * by the rule a fresh parse does, over the anchors of its own nodes. The
+ * harness cannot tell an automatic anchor from an authored one, nor read a
+ * heading's base, so it lets a heading's anchor differ when its text is a
+ * free root, or when the anchor could share its base with an anchor of a
+ * free place or with the fresh or the snapshot's anchor of an earlier
+ * heading whose anchor may differ. */
 static void check_anchors(run *state, const char *where, size_t step, const view *actual, const view *expected,
                           const uint32_t *relations, const correspondence *pairs) {
     placed *headings = (placed *)malloc(expected->count * sizeof(*headings));
     size_t count = 0, index;
-    /* Every anchor of a free place, of a node the two documents share, and
-     * of an earlier heading whose anchor may differ. */
-    name_set loose = {0}, written = {0}, earlier = {0};
+    /* Every anchor of a free place, and of an earlier heading whose anchor
+     * may differ. */
+    name_set loose = {0}, earlier = {0};
     bool ok = headings != NULL;
     for (index = 0; ok && index < expected->count; index++) {
-        markdown_core_optional_string anchor = markdown_core_node_anchor(expected->nodes[index].object);
         if (kind_is(expected, index, "Heading")) {
             headings[count++] = (placed){expected->nodes[index].range.start, index};
         }
-        ok =
-            add_bases(pairs->expected_free[index] ? &loose : &written, anchor, expected->nodes[index].range.end, index);
+        if (pairs->expected_free[index]) {
+            ok = add_bases(&loose, markdown_core_node_anchor(expected->nodes[index].object));
+        }
     }
     for (index = 0; ok && index < actual->count; index++) {
         if (pairs->actual_free[index]) {
-            ok = add_bases(&loose, markdown_core_node_anchor(actual->nodes[index].object), INT64_MAX, SIZE_MAX);
+            ok = add_bases(&loose, markdown_core_node_anchor(actual->nodes[index].object));
         }
     }
     if (!ok) {
@@ -1258,16 +1235,13 @@ static void check_anchors(run *state, const char *where, size_t step, const view
             continue;
         }
         own = markdown_core_node_anchor(actual->nodes[mine].object);
-        may_differ = relations[heading] || shares_base(&loose, theirs, heading, -1) ||
-                     shares_base(&written, theirs, heading, headings[index].start) ||
-                     shares_base(&earlier, theirs, heading, -1);
+        may_differ = relations[heading] || shares_base(&loose, theirs) || shares_base(&earlier, theirs);
         if (!may_differ && !same_anchor(own, theirs)) {
             fail(state, "4.1", "%s step %zu: heading %zu's anchor differs from the fresh parse's", where, step,
                  heading + 1);
             break;
         }
-        if (may_differ &&
-            (!add_bases(&earlier, theirs, INT64_MAX, SIZE_MAX) || !add_bases(&earlier, own, INT64_MAX, SIZE_MAX))) {
+        if (may_differ && (!add_bases(&earlier, theirs) || !add_bases(&earlier, own))) {
             fail(state, "harness", "%s step %zu: out of memory", where, step);
             break;
         }
@@ -1275,7 +1249,6 @@ static void check_anchors(run *state, const char *where, size_t step, const view
 done:
     free(headings);
     free(loose.names);
-    free(written.names);
     free(earlier.names);
 }
 

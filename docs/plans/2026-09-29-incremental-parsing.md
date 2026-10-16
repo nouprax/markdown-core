@@ -39,9 +39,9 @@ The owner's requirement, 2026-10-14:
   and the canonical debug dump, which prints no identifiers, is
   byte-identical. Before it, each document an append returns is a
   **snapshot**: the document `Document.parse` returns for the text so far,
-  except that definition lookups and automatic heading anchors see only what
-  is written before the node that asks (5.5). A snapshot depends only on the
-  text, not on how it was split into appends.
+  except that definition lookups see only the definitions written before the
+  node that asks (5.5). A snapshot depends only on the text, not on how it
+  was split into appends.
 - **R2 Bounded work per append.** An append's work is proportional to the
   appended bytes, the depth of the open blocks and the part of the text whose
   meaning the end of the input still decides, not to the text already
@@ -124,7 +124,7 @@ current dialect. Each row names the mechanism in section 5 that handles it.
 | Container facts from children | `List.tight`, list layout, definition and definition-list scopes | Children → container | Folded into the container's builder as each child settles (5.6) |
 | Unclosed opaque leaves | Fenced code, HTML block, comment, formula block and directive block without a closer run to the end | Opener → rest of the text | The open leaf's builder holds them; its content is appended to, never copied (5.2) |
 | Registry lookups in inline parsing | `[label]` and heading labels in the reference map (`link.c`, `heading.c`), `[^label]` in the footnote label map (`footnote.c`), `@id` in the specimen id index (`citation.c`) | Any definition → any occurrence | A snapshot sees the definitions written before the asking root; `finalize` sees all of them and parses again the roots whose answer changed (5.4, 5.10) |
-| Document ordinals | Heading anchor `-N` suffixes | Earlier declarations → later values | A snapshot assigns anchors in source order from what is written before each heading; `finalize` assigns them with the full rule (5.5, 5.10) |
+| Document ordinals | Heading anchor `-N` suffixes | Every explicit anchor and every earlier heading → a heading's automatic anchor | A snapshot assigns anchors as `Document.parse` does over the text so far: explicit anchors reserve their names first, then automatic anchors are numbered in source order (5.5) |
 | Shared resources | A definition's destination, title and attributes read by every occurrence | Definition → occurrences | Occurrences name the definition's label and read it through the document's lookup tables (4.5) |
 | Absolute coordinates | Every `Scope` | Every earlier byte → every later scope | Nodes carry relative extents and runs (4.3) |
 | Mapped cell inputs | Grid and multiline cell bodies | Table → cells | The table is pending until its closing border; pipe and simple tables are read a row at a time (5.7) |
@@ -479,8 +479,9 @@ as the direct `lookahead_cursor == lookahead_end` tests in `table.c` and
   builder. When a block settles, its builder is finished into a settled node,
   the content and child arrays pass to the node, and the builder is
   released.
-- While the stream runs, settled nodes do not change. `finalize` changes
-  only two kinds of settled node in place: inline roots whose answer a later
+- While the stream runs, a settled node changes only when a later explicit
+  anchor changes a heading's automatic anchor (5.5). `finalize` changes two
+  kinds of settled node in place: inline roots whose answer a later
   definition changes, and headings whose anchor changes (5.10).
 
 The open state is all in the builders, so copying it costs O(depth). A node
@@ -561,15 +562,15 @@ definitions, then inline content, then anchors.
 ### 5.5 Snapshot
 
 **What a snapshot is.** The document an append returns equals
-`Document.parse` of the text so far, with two differences:
-
-- A definition lookup (reference link, footnote, specimen, heading label)
-  sees only the definitions that start before the inline root that asks.
-- A heading's automatic anchor avoids only the explicit anchors and the
-  headings written before it.
+`Document.parse` of the text so far, with one difference: a definition lookup
+(reference link, footnote, specimen, heading label) sees only the definitions
+that start before the inline root that asks. Headings take their anchors as
+`Document.parse` assigns them (docs/specs/dialect/anchors.md): every explicit
+anchor of the text so far reserves its name first, then automatic anchors are
+numbered in source order.
 
 The document's own tables (4.5) are those of the snapshot's nodes, as
-`Document.parse` computes them. Both differences depend only on positions, so
+`Document.parse` computes them. The difference depends only on positions, so
 a snapshot does not depend on how the text was split into appends. A
 definition written after its use leaves the `[x]` before it as literal text
 until `finalize`, which is the jump in the text that the owner accepted for
@@ -848,10 +849,9 @@ which also says at which rollout step each one becomes a gate.
   up, and small documents are split at every scalar boundary.
 - **Snapshot meaning.** After every append, the snapshot equals
   `Document.parse` of the text so far everywhere except at the inline roots
-  that use a definition written after them and the headings whose automatic
-  anchor a later anchor or heading changes. The harness finds those places
-  from the fresh parse's definition tables, anchors and scopes, not from the
-  engine.
+  that use a definition written after them and the headings whose text or
+  anchor depends on such a root. The harness finds those places from the
+  fresh parse's definition tables, anchors and scopes, not from the engine.
 - **Identity and minimality.** After every append: ids are unique; no id
   changed kind; no retired id returns; every id follows the matching rule
   (5.9); in C, every unchanged node is the previous document's node; in every
@@ -986,6 +986,9 @@ activates for it.
   only content is a standalone formula stays a paragraph holding a `Formula`;
   it does not become a `FormulaBlock`, so no block changes kind after its
   inline content is parsed.
+- **D10 Anchors while streaming. Decided 2026-10-16.** The owner: "你在这里纠结的问题我们的语法spec里有答案，attributes里的锚点事attributes修饰的对象的，title的锚点指向title本身". A snapshot's headings take their
+  anchors by docs/specs/dialect/anchors.md, as `Document.parse` does over the
+  text so far (5.5).
 
 ## 11. Rejected alternatives
 

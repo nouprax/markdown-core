@@ -32,18 +32,6 @@ void markdown_core_inline_state_place(markdown_core_inline_state *inline_state, 
     markdown_core_inline_place(inline_state, node, from, to);
 }
 
-void markdown_core_inline_anchor_written(markdown_core_inline_state *inline_state, markdown_core_node *node,
-                                         bufsize_t column) {
-    if (!node->attributes.anchor.len) {
-        return;
-    }
-    int line;
-    bufsize_t source = 0;
-    markdown_core_parser_content_place(inline_state->owner_parser, &inline_state->owner->content_map, column, &line,
-                                       &source);
-    node->anchor_start = (uint32_t)source;
-}
-
 /* A placement that leaves the frame -- the next line's first token, an
  * emphasis closed across lines, a link placed back at its opener, an end
  * the caller left unresolved -- is answered by the span, which probes from

@@ -477,11 +477,6 @@ int markdown_core_parser_append_content_marks(markdown_core_parser *parser, cons
 /** Project a logical inline range, including its Text literal mapping. */
 void markdown_core_inline_state_place(markdown_core_inline_state *inline_state, markdown_core_node *node, int from,
                                       int to);
-/** Record that `node`'s explicit anchor, when it has one, is written by the
- * attribute block at content byte `column` of the inline root being parsed
- * (markdown_core_node.anchor_start). */
-void markdown_core_inline_anchor_written(markdown_core_inline_state *inline_state, markdown_core_node *node,
-                                         bufsize_t column);
 /** The exclusive source end of the authored bytes represented by a content
  * byte. Uses the same run lookup as content_place, which returns its start. */
 int markdown_core_parser_content_end_place(markdown_core_parser *parser, const markdown_core_content_map *map,

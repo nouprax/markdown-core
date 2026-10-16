@@ -691,9 +691,8 @@ int markdown_core_inline_state_attributes(markdown_core_inline_state *inline_sta
 
 void markdown_core_inline_attach_inline_attributes(markdown_core_inline_state *inline_state, markdown_core_node *node,
                                                    bufsize_t from) {
-    bufsize_t start = inline_state->pos, end;
-    if (markdown_core_inline_state_attributes(inline_state, start, &node->attributes, &end)) {
-        markdown_core_inline_anchor_written(inline_state, node, start);
+    bufsize_t end;
+    if (markdown_core_inline_state_attributes(inline_state, inline_state->pos, &node->attributes, &end)) {
         inline_state->pos = end;
         markdown_core_inline_state_place(inline_state, node, from, end - 1);
     }
@@ -711,12 +710,6 @@ bufsize_t markdown_core_attributes_attach_tail(markdown_core_parser *parser, mar
     if (attribute_start >= 0 &&
         markdown_core_attributes_parse(&attributes, attribute_start, &node->attributes, &attribute_end)) {
         info_end = attribute_start;
-        if (node->attributes.anchor.len) {
-            int line;
-            bufsize_t written = node->where.place.start;
-            markdown_core_parser_content_place(parser, &node->content_map, attribute_start, &line, &written);
-            node->anchor_start = (uint32_t)written;
-        }
     }
     if (attributes.oom) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);

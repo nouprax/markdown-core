@@ -259,7 +259,7 @@ static void spnl(markdown_core_inline_state *inline_state) {
 }
 
 static bool reference_tail(markdown_core_inline_state *inline_state, markdown_core_attribute_parser *attributes,
-                           markdown_core_attributes *value, bufsize_t *value_at) {
+                           markdown_core_attributes *value) {
     bufsize_t before = inline_state->pos;
     spnl(inline_state);
     bufsize_t base = (bufsize_t)(inline_state->input.data - attributes->data);
@@ -269,7 +269,6 @@ static bool reference_tail(markdown_core_inline_state *inline_state, markdown_co
         inline_state->pos = end - base;
         markdown_core_inline_skip_spaces(inline_state);
         if (markdown_core_inline_skip_line_end(inline_state)) {
-            *value_at = start - base;
             return markdown_core_attributes_parse(attributes, start, value, &end) != 0;
         }
     }
@@ -284,8 +283,6 @@ static bool reference_tail(markdown_core_inline_state *inline_state, markdown_co
 typedef struct {
     markdown_core_chunk label, url, title;
     markdown_core_attributes value;
-    /* Where `value` is written in the input. */
-    bufsize_t value_at;
 } reference_definition;
 
 static bufsize_t S_reference_definition(markdown_core_chunk *input, markdown_core_attribute_parser *attributes,
@@ -334,10 +331,10 @@ static bufsize_t S_reference_definition(markdown_core_chunk *input, markdown_cor
     }
 
     // parse final spaces and newline:
-    if (!reference_tail(&inline_state, attributes, &definition->value, &definition->value_at)) {
+    if (!reference_tail(&inline_state, attributes, &definition->value)) {
         if (matchlen) { // try rewinding before title
             inline_state.pos = beforetitle;
-            if (!reference_tail(&inline_state, attributes, &definition->value, &definition->value_at)) {
+            if (!reference_tail(&inline_state, attributes, &definition->value)) {
                 return 0;
             }
             // The title candidate is un-read here: its bytes stay paragraph
@@ -415,11 +412,6 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_no
     markdown_core_parser_content_place(parser, &b->content_map, before, &ignored, &start);
     markdown_core_parser_content_end_place(parser, &b->content_map, before + end - 1, &ignored, &stop);
     reference->where.place = (markdown_core_place){(uint32_t)start, (uint32_t)stop};
-    if (reference->attributes.anchor.len) {
-        bufsize_t written = start;
-        markdown_core_parser_content_place(parser, &b->content_map, before + definition.value_at, &ignored, &written);
-        reference->anchor_start = (uint32_t)written;
-    }
     markdown_core_parser_line_places(parser, reference, parent, line);
     /* A definition is read whole: it settles as it is made, before the block
      * it was read from, which settles later if anything of it is left. */

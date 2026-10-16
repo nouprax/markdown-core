@@ -226,43 +226,15 @@ static markdown_core_key_index_slot *taken_entry(markdown_core_heading_state *st
     return markdown_core_key_index_entry(taken, name, length);
 }
 
-/* The registry's ANCHOR record at `entry`, keyed by where it is written. */
-static uint64_t anchor_end_key(const void *entry) {
-    const markdown_core_registry_record *record;
-    memcpy(&record, entry, sizeof(record));
-    return record->start;
-}
-
-/* Reserves the explicit anchors from `*next` on that are written at or
- * before `bound`, in the pass's names taken. */
-static bool reserve_anchors(markdown_core_heading_state *state, markdown_core_key_index *taken,
-                            const markdown_core_registry_record *const *anchors, size_t count, size_t *next,
-                            uint32_t bound) {
-    for (; *next < count && anchors[*next]->start <= bound; ++*next) {
-        const markdown_core_chunk name = markdown_core_registry_label(anchors[*next]);
-        markdown_core_key_index_slot *entry = taken_entry(state, taken, name.data, name.len);
-        if (!entry) {
-            return false;
-        }
-        if (!entry->key) {
-            markdown_core_key_index_commit(taken, entry, name.data);
-            entry->value = 1;
-        }
-    }
-    return true;
-}
-
 /* Each heading's anchor, in source order: an authored one stays, and a
  * computed one is the heading's own copy of the first name its text projects
- * to that no explicit anchor it avoids reserves and no heading before it was
- * given. A finalize's headings avoid every explicit anchor; a snapshot's
- * avoid the ones written before them: at the heading's start or earlier
- * (plan 5.5). The names taken are this pass's own index:
- * the registry's ANCHOR records under their own bytes, each reserved before
- * the first heading that avoids it, and each name a heading is given. A
- * taken name's entry also keeps the suffix to try next, so a run of headings
- * projecting to one name tries each suffix once, and each candidate costs one
- * entry lookup, which a vacant name the heading is given commits in place. */
+ * to that no explicit anchor reserves and no heading before it was given. The
+ * names taken are this pass's own index: first every explicit anchor, the
+ * registry's ANCHOR records under their own bytes, then each name a heading
+ * is given. A taken name's entry also keeps the suffix to try next, so a run
+ * of headings projecting to one name tries each suffix once, and each
+ * candidate costs one entry lookup, which a vacant name the heading is given
+ * commits in place. */
 void markdown_core_headings_finish(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     markdown_core_heading_state *state = self->state;
     markdown_core_heading_collection *headings = &state->headings;
@@ -275,25 +247,24 @@ void markdown_core_headings_finish(const markdown_core_element_instance *self, m
         return;
     }
     const markdown_core_registry *registry = &parser->registry;
-    markdown_core_registry_cursor cursor = markdown_core_registry_records(registry, MARKDOWN_CORE_REGISTRY_ANCHOR);
-    const size_t count = cursor.left;
-    const markdown_core_registry_record **anchors =
-        count ? markdown_core_parser_walk_stack(parser, count, sizeof(*anchors)) : NULL;
+    markdown_core_registry_cursor anchors = markdown_core_registry_records(registry, MARKDOWN_CORE_REGISTRY_ANCHOR);
     markdown_core_key_index taken;
-    if ((count && !anchors) || !markdown_core_key_index_init(&taken, headings->count + count)) {
+    if (!markdown_core_key_index_init(&taken, headings->count + anchors.left)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
-    for (size_t i = 0; i < count; i++) {
-        anchors[i] = markdown_core_registry_next(registry, &cursor);
+    for (const markdown_core_registry_record *reserved; (reserved = markdown_core_registry_next(registry, &anchors));) {
+        const markdown_core_chunk name = markdown_core_registry_label(reserved);
+        markdown_core_key_index_slot *entry = taken_entry(state, &taken, name.data, name.len);
+        if (!entry) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            break;
+        }
+        if (!entry->key) {
+            markdown_core_key_index_commit(&taken, entry, name.data);
+            entry->value = 1;
+        }
     }
-    /* A snapshot's headings reserve the anchors in the order they are
-     * written. */
-    if (parser->snapshot && !markdown_core_order_source_entries(&parser->source_order, (void *)anchors, count,
-                                                                sizeof(*anchors), anchor_end_key)) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
-    size_t next = 0;
     markdown_core_strbuf base = MARKDOWN_CORE_BUF_INIT();
     anchor_projection_stack stack = {0};
     for (size_t i = first; i < headings->count && !parser->error; i++) {
@@ -301,11 +272,6 @@ void markdown_core_headings_finish(const markdown_core_element_instance *self, m
         markdown_core_chunk *anchor = &node->attributes.anchor;
         if (anchor->len) {
             continue;
-        }
-        if (!reserve_anchors(state, &taken, anchors, count, &next,
-                             parser->snapshot ? node->where.place.start : UINT32_MAX)) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            break;
         }
         markdown_core_strbuf_clear(&base);
         heading_anchor_base(parser, state, node, &base, &stack);
@@ -477,7 +443,6 @@ bool markdown_core_heading_claim_tail(const markdown_core_element_instance *self
         bufsize_t end;
         if (markdown_core_attributes_parse(&inline_state->attributes, run->attributes_start, &parent->attributes,
                                            &end)) {
-            markdown_core_inline_anchor_written(inline_state, parent, run->attributes_start);
             run->label_end = inline_state->text_end;
             inline_state->pos = inline_state->input.len;
         }

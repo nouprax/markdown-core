@@ -256,9 +256,6 @@ static int apply_parsed_directive(const markdown_core_element *element, markdown
             if (!matched) {
                 return 0;
             }
-            /* The opening line names the anchor before the blocks inside. */
-            node->anchor_start =
-                (uint32_t)markdown_core_parser_source_offset(parser, start_line, parsed->attributes_start + 1);
         } else {
             if (!markdown_core_attributes_single_class(&node->attributes, source, parsed->attributes_len)) {
                 return 0;
@@ -391,7 +388,6 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
     }
 
     int has_attributes = 0;
-    const bufsize_t attributes_at = pos;
     if (pos < chunk->len && chunk->data[pos] == '{') {
         has_attributes = markdown_core_inline_state_attributes(inline_state, pos, &attributes, &pos);
     }
@@ -408,7 +404,6 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
     }
     directive = get_directive(node);
     node->attributes = attributes;
-    markdown_core_inline_anchor_written(inline_state, node, attributes_at);
 
     /* The directive, from its `:` to its last byte, and its label, from the
      * `[` to the `]`, are placed like every inline scope: each endpoint is

@@ -10897,18 +10897,26 @@ static bool anchor_is(const markdown_core_node *node, const char *expected) {
            memcmp(anchor.value.data, expected, anchor.value.length) == 0;
 }
 
-/* A snapshot's heading avoids the explicit anchors written before it, where
- * each is written, and the final document's heading avoids every one (plan
- * 5.5, 5.10). A container's opening attributes precede the blocks inside it;
- * a block identifier after a list follows the blocks inside the list. */
+/* The first heading under the document's first block, or inside its first
+ * item. */
+static const markdown_core_node *first_heading(const markdown_core_document *document) {
+    const markdown_core_node *heading = facade_child(facade_child(markdown_core_document_root(document), 0), 0);
+    if (heading && markdown_core_node_get_kind(heading) == MARKDOWN_CORE_KIND_LIST_ITEM) {
+        heading = facade_child(heading, 0);
+    }
+    return heading;
+}
+
+/* A snapshot's headings take their anchors as a fresh parse's do: every
+ * explicit anchor of the text is reserved first, a later one included
+ * (docs/specs/dialect/anchors.md). */
 static void session_snapshot_anchors(test_batch_runner *runner) {
     static const struct {
         const char *source;
-        const char *snapshot, *final;
         const char *message;
     } cases[] = {
-        {":::note{#x}\n# x\n:::\n", "x-1", "x-1", "a heading inside a container avoids its opening anchor"},
-        {"- # x\n\n#x#\n", "x", "x-1", "a heading inside a list keeps a name the list's identifier writes later"},
+        {":::note{#x}\n# x\n:::\n", "a heading inside a container avoids the container's anchor"},
+        {"- # x\n\n#x#\n", "a heading avoids an explicit anchor written after it"},
     };
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         markdown_core_session *session = NULL;
@@ -10917,21 +10925,13 @@ static void session_snapshot_anchors(test_batch_runner *runner) {
             OK(runner, 0, "a session opens on %s", cases[i].source);
             continue;
         }
-        const markdown_core_node *container =
-            facade_child(markdown_core_document_root(markdown_core_session_document(session)), 0);
-        const markdown_core_node *heading = facade_child(container, 0);
-        if (markdown_core_node_get_kind(heading) == MARKDOWN_CORE_KIND_LIST_ITEM) {
-            heading = facade_child(heading, 0);
-        }
-        OK(runner, anchor_is(heading, cases[i].snapshot), "snapshot: %s", cases[i].message);
+        OK(runner, anchor_is(first_heading(markdown_core_session_document(session)), "x-1"), "snapshot: %s",
+           cases[i].message);
         const markdown_core_document *final = NULL;
-        OK(runner, markdown_core_session_finalize(session, &final) == MARKDOWN_CORE_OK, "the session finalizes");
-        container = final ? facade_child(markdown_core_document_root(final), 0) : NULL;
-        heading = facade_child(container, 0);
-        if (heading && markdown_core_node_get_kind(heading) == MARKDOWN_CORE_KIND_LIST_ITEM) {
-            heading = facade_child(heading, 0);
-        }
-        OK(runner, anchor_is(heading, cases[i].final), "final: %s", cases[i].message);
+        OK(runner,
+           markdown_core_session_finalize(session, &final) == MARKDOWN_CORE_OK &&
+               anchor_is(first_heading(final), "x-1"),
+           "final: %s", cases[i].message);
         markdown_core_session_free(session);
     }
 }

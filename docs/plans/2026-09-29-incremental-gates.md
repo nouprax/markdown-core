@@ -35,9 +35,9 @@ Every gate below checks one of these properties for tail streaming:
 
 - **Correct AST.** After `finalize`, the AST a session returns is the AST a
   fresh parse of the same text returns. Before it, each snapshot is the AST a
-  fresh parse of the text so far returns, except where a definition lookup or
-  an automatic anchor would see text written after the node that asks (plan
-  5.5), and it does not depend on how the text was split into appends.
+  fresh parse of the text so far returns, except where a definition lookup
+  would see text written after the node that asks (plan 5.5), and it does not
+  depend on how the text was split into appends.
 - **Identifier.** A node's identifier is unique, keeps naming the same node
   across steps, and is never handed to a different node.
 - **Minimal AST mutation.** A node is a new value exactly when its value
@@ -268,10 +268,10 @@ From step 7, after every chunk:
   model text everywhere except at the places plan 5.5 allows. The harness
   computes them from the fresh parse alone, with its definition tables,
   anchors and scopes: every inline root that names a label whose definition
-  starts after the root, every heading whose automatic anchor an explicit
-  anchor or heading written after it changes, and, in turn, every heading
-  whose text holds such a root and every root that names that heading's
-  label. Outside those places the dumps agree node for node.
+  starts after the root, and, in turn, every heading whose text holds such a
+  root, every root that names that heading's label, and every heading whose
+  automatic anchor an anchor in those places can change. Outside those
+  places the dumps agree node for node.
 - 4.2–4.4 hold against the previous snapshot.
 
 After `finalize`, 4.1–4.4 hold against the last snapshot, and every later
