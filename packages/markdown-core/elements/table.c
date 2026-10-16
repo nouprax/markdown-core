@@ -51,31 +51,24 @@ static void init_cell(markdown_core_node *node) {
 }
 
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_node *table_child(markdown_core_parser *parser,
-                                                                                       markdown_core_node *parent,
                                                                                        markdown_core_node_type kind,
                                                                                        int first_line, int first_column,
                                                                                        int last_line, int last_column);
 
 /* A pipe cell is made whole, from its row's line, by the table that owns
  * it: like every row and cell but a pipe body row, it is never an open block.
- * Its end is its caller's to set. */
-static markdown_core_node *new_cell(markdown_core_parser *parser, markdown_core_node *row, int column) {
-    markdown_core_node *cell = table_child(parser, row, MARKDOWN_CORE_NODE_TABLE_CELL, parser->line_number, column,
-                                           parser->line_number, column);
+ * Its end is its caller's to set. THE ROWS AND CELLS A TABLE MAKES settle as
+ * every block of the tree does (block_internal.h, markdown_core_block_settle),
+ * each once it is whole: a cell into its row once its line is read, a row
+ * made whole into its table after its cells, and a pipe body row, an open
+ * block, as the table takes its next row or closes. */
+static markdown_core_node *new_cell(markdown_core_parser *parser, int column) {
+    markdown_core_node *cell =
+        table_child(parser, MARKDOWN_CORE_NODE_TABLE_CELL, parser->line_number, column, parser->line_number, column);
     if (cell) {
         init_cell(cell);
     }
     return cell;
-}
-
-/* THE ROWS AND CELLS A TABLE MAKES join the completion queue, as every block
- * of the tree does, and each is completed on its own. A row's cells are final
- * once its line is read, so they join then; a row made whole joins after its
- * cells, and a pipe body row, an open block, joins as it closes. */
-static void table_complete_cells(markdown_core_parser *parser, markdown_core_node *row) {
-    for (markdown_core_node *cell = row->first_child; cell && !parser->error; cell = cell->next) {
-        markdown_core_parser_complete_later(parser, cell);
-    }
 }
 
 /* A PIPE CELL HOLDS ITS BYTES, whichever path found its row: trimmed of the
@@ -282,12 +275,10 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
     markdown_core_parser_adopt_content_marks(parser, &parent_container->content_map, &paragraph->content_map, first,
                                              content_end - first);
 
-    markdown_core_node_attach_validated(parent_container->parent, paragraph, parent_container);
-
-    /* A table split completes this paragraph just as a later block start
-     * would: reference definitions, anchor attachment and the runs of its
-     * own lines share finalization. */
-    markdown_core_block_settle(parser, paragraph);
+    /* A table split closes this paragraph just as a later block start would:
+     * reference definitions, anchor attachment and the runs of its own lines
+     * share finalization. It settles before the table it was split from. */
+    markdown_core_block_close_into(parser, paragraph, markdown_core_parser_parent(parser, parent_container));
 }
 
 /* Return NULL when the syntax does not match or the parent rejects the table
@@ -327,13 +318,13 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
 
     /* A split introduces a new sibling. Decide before converting or allocating,
      * so refusal leaves the complete original paragraph available to grammar. */
-    if (header_row.paragraph_offset &&
-        !markdown_core_node_can_contain_type(parent_container->parent, MARKDOWN_CORE_NODE_PARAGRAPH)) {
+    markdown_core_node *parent = markdown_core_parser_parent(parser, parent_container);
+    if (header_row.paragraph_offset && !markdown_core_node_can_contain_type(parent, MARKDOWN_CORE_NODE_PARAGRAPH)) {
         return NULL;
     }
 
     markdown_core_node_set_kind_result result =
-        markdown_core_parser_set_node_kind(parser, parent_container, MARKDOWN_CORE_NODE_TABLE);
+        markdown_core_parser_set_node_kind(parser, parent_container, parent, MARKDOWN_CORE_NODE_TABLE);
     if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
         if (result == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -382,8 +373,7 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
 
     /* The header row is made whole from the paragraph's content, as its
      * cells are: it is never an open block. */
-    table_header = table_child(parser, parent_container, MARKDOWN_CORE_NODE_TABLE_ROW, parser->line_number, 1,
-                               parser->line_number, 1);
+    table_header = table_child(parser, MARKDOWN_CORE_NODE_TABLE_ROW, parser->line_number, 1, parser->line_number, 1);
     if (!table_header) {
 
         return parent_container;
@@ -402,18 +392,16 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
     pipe_row_cursor header = pipe_row_cells(&header_row);
     while (pipe_row_next(&header, &geometry)) {
         const node_cell *cell = &geometry;
-        markdown_core_node *header_cell = new_cell(parser, table_header, 1);
+        markdown_core_node *header_cell = new_cell(parser, 1);
         if (!header_cell) {
             break;
         }
         S_place_content_span(parser, parent_container, header_cell, cell->start_offset, cell->end_offset);
         set_cell_content(parser, header_cell, cell, parent_container, parser->line_number, parser->line_start,
                          (bufsize_t)(cell->content.data - (unsigned char *)parent_string));
+        markdown_core_block_settle(parser, header_cell, table_header);
     }
-    table_complete_cells(parser, table_header);
-    if (!parser->error) {
-        markdown_core_parser_complete_later(parser, table_header);
-    }
+    markdown_core_block_settle(parser, table_header, parent_container);
 
     markdown_core_parser_advance_offset(
         parser, (char *)input, (int)strlen((char *)input) - 1 - markdown_core_parser_get_offset(parser), false);
@@ -457,8 +445,7 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
         node_cell geometry;
         for (i = 0; i < table_columns && pipe_row_next(&cells, &geometry); ++i) {
             const node_cell *cell = &geometry;
-            markdown_core_node *node =
-                new_cell(parser, table_row_block, parser->first_nonspace + 1 + cell->start_offset);
+            markdown_core_node *node = new_cell(parser, parser->first_nonspace + 1 + cell->start_offset);
             if (!node) {
                 break;
             }
@@ -466,6 +453,7 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
                 parser, parser->line_number, parser->first_nonspace + 1 + cell->end_offset);
             set_cell_content(parser, node, cell, NULL, parser->line_number, parser->line_start,
                              (bufsize_t)(cell->content.data - input));
+            markdown_core_block_settle(parser, node, table_row_block);
         }
 
         table->content_count++;
@@ -489,15 +477,15 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
             completed_at--;
         }
         for (; i < table_columns; ++i) {
-            markdown_core_node *node = new_cell(parser, table_row_block, (int)completed_at);
+            markdown_core_node *node = new_cell(parser, (int)completed_at);
             if (!node) {
                 break;
             }
             node->where.place.end =
                 (uint32_t)markdown_core_parser_source_end(parser, parser->line_number, (int)completed_at);
+            markdown_core_block_settle(parser, node, table_row_block);
         }
     }
-    table_complete_cells(parser, table_row_block);
 
     markdown_core_parser_advance_offset(parser, (char *)input, len - 1 - markdown_core_parser_get_offset(parser),
                                         false);
@@ -2313,8 +2301,10 @@ static void table_append_newline(table_source *source, markdown_core_node *node,
     }
 }
 
+/* A cell whose content is blocks is read inside the blocks `enclosing` names:
+ * its table and the blocks open around it. */
 static void table_fill_cell(table_source *source, markdown_core_node *node, const table_source_cell *cell, bool blocks,
-                            int padding_limit) {
+                            int padding_limit, uint32_t enclosing) {
     int padding = padding_limit;
     for (size_t i = cell->first; i <= cell->last; i++) {
         table_source_line *line = &source->lines[i];
@@ -2337,27 +2327,11 @@ static void table_fill_cell(table_source *source, markdown_core_node *node, cons
         table_append_newline(source, node, i);
     }
     if (blocks && !source->parser->error) {
-        markdown_core_parser_queue_block_input(source->parser, node);
-    }
-}
-
-/* A pipe header found after a caption is filled as every pipe row is. The
- * iterator that recognized its line (`table_parse_pipe_header`) delimits its
- * cells again, in the order they were added as `row`'s cells, and each holds
- * its bytes. */
-static void table_fill_pipe_row(markdown_core_parser *parser, markdown_core_node *row, const table_source_line *line) {
-    pipe_row_cursor cells =
-        pipe_row_begin((unsigned char *)line->data + line->first, line->input_length - line->first, 0);
-    node_cell cell;
-    for (markdown_core_node *node = row->first_child; node && !parser->error && pipe_row_next(&cells, &cell);
-         node = node->next) {
-        set_cell_content(parser, node, &cell, NULL, line->line, markdown_core_parser_line_start(parser, line->line),
-                         (bufsize_t)(cell.content.data - line->data));
+        markdown_core_parser_queue_block_input(source->parser, node, enclosing);
     }
 }
 
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_node *table_child(markdown_core_parser *parser,
-                                                                                       markdown_core_node *parent,
                                                                                        markdown_core_node_type kind,
                                                                                        int first_line, int first_column,
                                                                                        int last_line, int last_column) {
@@ -2371,14 +2345,6 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_node *table
     }
     node->where.place.start = (uint32_t)markdown_core_parser_source_offset(parser, first_line, first_column);
     node->where.place.end = (uint32_t)markdown_core_parser_source_end(parser, last_line, last_column);
-    if (parent) {
-        /* Only TABLE -> ROW and ROW -> CELL reach this private constructor;
-         * both owners carry this element's immutable kind domain. */
-        assert(parent->element == &MARKDOWN_CORE_ELEMENT_TABLE);
-        assert((parent->kind == MARKDOWN_CORE_NODE_TABLE && kind == MARKDOWN_CORE_NODE_TABLE_ROW) ||
-               (parent->kind == MARKDOWN_CORE_NODE_TABLE_ROW && kind == MARKDOWN_CORE_NODE_TABLE_CELL));
-        markdown_core_node_attach_validated(parent, node, NULL);
-    }
     return node;
 }
 
@@ -2444,27 +2410,31 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
     node->where.place.start = (uint32_t)markdown_core_parser_source_offset(
         parser, first->line, table_margin_byte(first, candidate->margin) + 1);
     node->where.place.end = (uint32_t)markdown_core_parser_source_end(parser, last->line, last->length);
-    if (!candidate->pipe) {
-        /* A table read whole is never open: the open chain ends at its
-         * container again. */
-        node->flags &= ~MARKDOWN_CORE_NODE__OPEN;
-        parser->current = node->parent;
-    }
+    const uint32_t enclosing = candidate->block_content ? markdown_core_parser_open_kinds(parser) : 0;
     for (size_t i = 0; i < candidate->row_count && !parser->error; i++) {
         table_source_row *row = &candidate->rows[i];
         table_source_line *begin = &source->lines[row->first], *end = &source->lines[row->last];
         markdown_core_node *row_node =
-            table_child(parser, node, MARKDOWN_CORE_NODE_TABLE_ROW, begin->line,
+            table_child(parser, MARKDOWN_CORE_NODE_TABLE_ROW, begin->line,
                         table_margin_byte(begin, candidate->margin) + 1, end->line, end->length);
         if (!row_node) {
             break;
+        }
+        /* A pipe row's cells hold the bytes the iterator that recognized its
+         * line (`table_parse_pipe_header`) delimits again, in order. */
+        pipe_row_cursor pipe_cells = {0};
+        node_cell geometry;
+        bool pipe_more = candidate->pipe;
+        if (pipe_more) {
+            pipe_cells =
+                pipe_row_begin((unsigned char *)begin->data + begin->first, begin->input_length - begin->first, 0);
         }
         for (size_t j = 0; j < row->count && !parser->error; j++) {
             table_source_cell *cell = &candidate->cells[row->cell + j];
             size_t last_line = cell->last < cell->first ? cell->first : cell->last;
             markdown_core_node *cell_node =
-                table_child(parser, row_node, MARKDOWN_CORE_NODE_TABLE_CELL, source->lines[cell->first].line,
-                            cell->start_column, source->lines[last_line].line, cell->end_column);
+                table_child(parser, MARKDOWN_CORE_NODE_TABLE_CELL, source->lines[cell->first].line, cell->start_column,
+                            source->lines[last_line].line, cell->end_column);
             if (!cell_node) {
                 break;
             }
@@ -2472,21 +2442,20 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
             cell_node->as.table_cell->colspan = cell->colspan;
             if (!candidate->pipe) {
                 table_cell_places(source, cell_node, cell);
-                table_fill_cell(source, cell_node, cell, candidate->block_content, candidate->padding_limit);
+                table_fill_cell(source, cell_node, cell, candidate->block_content, candidate->padding_limit, enclosing);
+            } else if (pipe_more && (pipe_more = pipe_row_next(&pipe_cells, &geometry))) {
+                set_cell_content(parser, cell_node, &geometry, NULL, begin->line,
+                                 markdown_core_parser_line_start(parser, begin->line),
+                                 (bufsize_t)(geometry.content.data - begin->data));
             }
+            markdown_core_block_settle(parser, cell_node, row_node);
         }
-        if (candidate->pipe && row_node && !parser->error) {
-            table_fill_pipe_row(parser, row_node, begin);
-        }
-        table_complete_cells(parser, row_node);
-        if (!parser->error) {
-            markdown_core_parser_complete_later(parser, row_node);
-        }
+        markdown_core_block_settle(parser, row_node, node);
     }
-    /* A table read whole is closed as it is made; a pipe table stays open
-     * for the rows after it. */
+    /* A table read whole closes as it is made; a pipe table stays open for
+     * the rows after it. */
     if (!candidate->pipe && !parser->error) {
-        markdown_core_parser_complete_later(parser, node);
+        markdown_core_block_close_current(parser);
     }
     return node;
 }
@@ -2494,7 +2463,7 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
 static markdown_core_node *table_caption_build(table_source *source, const markdown_core_node *container, size_t last,
                                                int content) {
     table_source_line *first = &source->lines[0], *end = &source->lines[last];
-    markdown_core_node *node = table_child(source->parser, NULL, MARKDOWN_CORE_NODE_TABLE_CAPTION, first->line,
+    markdown_core_node *node = table_child(source->parser, MARKDOWN_CORE_NODE_TABLE_CAPTION, first->line,
                                            first->first + 1, end->line, end->length);
     if (!node) {
         return NULL;
@@ -2592,9 +2561,11 @@ static markdown_core_node *table_try_open(table_workspace *workspace, markdown_c
     }
     /* Every opening grammar needs a later physical line. At EOF only an
      * existing eligible table can claim a trailing caption. */
-    if (parser->lookahead_cursor == parser->lookahead_end &&
-        (!parent->last_child || parent->last_child->kind != MARKDOWN_CORE_NODE_TABLE)) {
-        return NULL;
+    if (parser->lookahead_cursor == parser->lookahead_end) {
+        const markdown_core_node *preceding = markdown_core_parser_last_child(parser, parent);
+        if (!preceding || preceding->kind != MARKDOWN_CORE_NODE_TABLE) {
+            return NULL;
+        }
     }
     if (!table_open_admits(parser, input, length)) {
         return NULL;
@@ -2618,8 +2589,8 @@ static markdown_core_node *table_try_open(table_workspace *workspace, markdown_c
     int caption = table_caption_start(source.lines[0].data, source.lines[0].length, source.lines[0].first,
                                       source.lines[0].indent);
     size_t caption_last = 0;
-    markdown_core_node *preceding = parent->last_child;
-    bool trailing = caption >= 0 && preceding && preceding->kind == MARKDOWN_CORE_NODE_TABLE && preceding->opaque &&
+    markdown_core_node *preceding = caption >= 0 ? markdown_core_parser_last_child(parser, parent) : NULL;
+    bool trailing = preceding && preceding->kind == MARKDOWN_CORE_NODE_TABLE && preceding->opaque &&
                     !((markdown_core_table *)preceding->opaque)->caption;
     bool matched = false;
     if (caption >= 0) {

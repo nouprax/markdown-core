@@ -17,14 +17,14 @@
  * of names rather than a proximity check over call sites, and a new creation
  * site cannot quietly opt out of it.
  *
- * THE SAME RULE HOLDS FOR A RELEASE. `parser->nodes_freed` is the other half
- * of the finish stage's traversal count (parser.h): completion parses inline
- * content as it goes, so a node the inline parser makes and discards is made
- * after the walk noted its starting point, and the count is only right when
- * the discard is counted where the creation was. Production code releases a
- * node through `markdown_core_parser_release_node`; the parser-less
- * `markdown_core_node_free` is for a caller with no parse, which in the
- * library is the two teardowns -- a document's, and a parser's own root.
+ * THE SAME RULE HOLDS FOR A RELEASE. A node the parse releases goes back to
+ * the parse's pool (parser.h), where the parse's next nodes take its slot;
+ * the parser-less `markdown_core_node_free` drops the slot's slab hold
+ * instead, so a parse that released through it would pin a slab per discard
+ * rather than reuse it. Production code releases a node through
+ * `markdown_core_parser_release_node`; `markdown_core_node_free` is for a
+ * caller with no parse, which in the library is the two teardowns -- a
+ * document's, and a parser's own root.
  */
 
 import fs from "node:fs";
@@ -39,8 +39,8 @@ const pkg = path.join(root, "packages/markdown-core");
  * recording wrappers in `parser.h`. */
 const UNRECORDED = /\bmarkdown_core_node_(?:new(?:_with_ext)?|set_kind)\s*\(/g;
 const RECORDING = /\bmarkdown_core_parser_(?:make_node(?:_with_ext)?|set_node_kind)\s*\(/g;
-const UNCOUNTED_FREE = /\bmarkdown_core_node_free\s*\(/g;
-const COUNTED_FREE = /\bmarkdown_core_parser_release_node\s*\(/g;
+const UNPOOLED_FREE = /\bmarkdown_core_node_free\s*\(/g;
+const POOLED_FREE = /\bmarkdown_core_parser_release_node\s*\(/g;
 /** The two releases outside any parse: the document's teardown and the
  * parser's teardown of a root it never handed out. */
 const TEARDOWNS = new Set(["elements/ast.c:markdown_core_document_free", "core/blocks.c:S_parser_dispose"]);
@@ -52,7 +52,7 @@ const DEFINES_THEM = new Set(["core/node.h", "core/markdown-core-element-api.h",
 
 const failures = [];
 let recordingSites = 0;
-let countedReleases = 0;
+let pooledReleases = 0;
 
 function librarySources() {
     return ["core", "elements"].flatMap((dir) =>
@@ -73,7 +73,7 @@ for (const file of librarySources()) {
     const source = fs.readFileSync(path.join(pkg, file), "utf8");
     const stripped = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
     recordingSites += [...stripped.matchAll(RECORDING)].length;
-    countedReleases += [...stripped.matchAll(COUNTED_FREE)].length;
+    pooledReleases += [...stripped.matchAll(POOLED_FREE)].length;
     if (DEFINES_THEM.has(file)) continue;
     for (const match of stripped.matchAll(UNRECORDED)) {
         const line = stripped.slice(0, match.index).split("\n").length;
@@ -83,12 +83,12 @@ for (const file of librarySources()) {
                 `which does not record it; use the markdown_core_parser_ form`
         );
     }
-    for (const match of stripped.matchAll(UNCOUNTED_FREE)) {
+    for (const match of stripped.matchAll(UNPOOLED_FREE)) {
         const owner = enclosingFunction(stripped, match.index);
         if (TEARDOWNS.has(`${file}:${owner}`)) continue;
         const line = stripped.slice(0, match.index).split("\n").length;
         failures.push(
-            `${file}:${line}: ${owner} releases a node through markdown_core_node_free, which does not count it; ` +
+            `${file}:${line}: ${owner} releases a node through markdown_core_node_free, which does not return it to the parse's pool; ` +
                 `use markdown_core_parser_release_node`
         );
     }
@@ -97,8 +97,8 @@ for (const file of librarySources()) {
 if (!recordingSites) {
     failures.push("found no recording creation sites; the audit is not reaching the sources");
 }
-if (!countedReleases) {
-    failures.push("found no counted release sites; the audit is not reaching the sources");
+if (!pooledReleases) {
+    failures.push("found no pooled release sites; the audit is not reaching the sources");
 }
 
 if (failures.length) {
@@ -109,5 +109,5 @@ if (failures.length) {
 }
 console.log(
     `audit-parser-kind-record: ${recordingSites} node-kind writes, every one through a recording operation; ` +
-        `${countedReleases} releases, every one counted`
+        `${pooledReleases} releases, every one into the parse's pool`
 );

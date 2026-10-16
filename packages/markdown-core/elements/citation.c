@@ -296,22 +296,17 @@ markdown_core_node *markdown_core_inline_new_cite(markdown_core_inline_state *in
 }
 
 markdown_core_node *markdown_core_inline_new_citation(markdown_core_inline_state *inline_state,
-                                                      markdown_core_node *cite, markdown_core_node *last) {
+                                                      markdown_core_node *cite) {
     markdown_core_node *item = markdown_core_inline_make_simple_with_state(inline_state, MARKDOWN_CORE_NODE_CITATION);
     if (item) {
-        item->prev = last;
-        if (last) {
-            last->next = item;
-        } else {
-            cite->as.cite->citations = item;
-        }
+        markdown_core_scaffold_append(cite, item);
     }
     return item;
 }
 
 static markdown_core_node *new_bib_item(markdown_core_inline_state *inline_state, markdown_core_node *cite,
-                                        markdown_core_node *last, const citation_token *key, bool normal) {
-    markdown_core_node *item = markdown_core_inline_new_citation(inline_state, cite, last);
+                                        const citation_token *key, bool normal) {
+    markdown_core_node *item = markdown_core_inline_new_citation(inline_state, cite);
     if (!item) {
         return NULL;
     }
@@ -406,7 +401,7 @@ static void take_citation_affix(const markdown_core_element_instance *self, mark
     trim_citation_source(self, inline_state, &start, &end);
     markdown_core_citation_work *counts = citation_work(self);
     while (first != after && !inline_state->error) {
-        markdown_core_node *next = first->next;
+        markdown_core_node *next = markdown_core_scaffold_next(first);
         counts->work++;
         if (trim_affix_node(inline_state, first, start, end)) {
             if (!*slot) {
@@ -416,8 +411,8 @@ static void take_citation_affix(const markdown_core_element_instance *self, mark
                 }
                 markdown_core_inline_state_place(inline_state, *slot, start, end - 1);
             }
-            markdown_core_node_unlink(first);
-            markdown_core_node_attach_validated(*slot, first, NULL);
+            markdown_core_scaffold_unlink(first);
+            markdown_core_scaffold_append(*slot, first);
         } else {
             markdown_core_parser_release_node(inline_state->owner_parser, first);
         }
@@ -460,11 +455,11 @@ static void materialize_citation_key(const markdown_core_element_instance *self,
     if (!token->key || token->node->kind == MARKDOWN_CORE_NODE_CITE || inline_state->error) {
         return;
     }
-    if (!markdown_core_node_can_contain_type(token->node->parent, MARKDOWN_CORE_NODE_CITE)) {
+    if (!markdown_core_node_can_contain_type(markdown_core_scaffold_parent(token->node), MARKDOWN_CORE_NODE_CITE)) {
         return;
     }
     markdown_core_node *cite = markdown_core_inline_new_cite(inline_state);
-    markdown_core_node *item = cite ? new_bib_item(inline_state, cite, NULL, token, false) : NULL;
+    markdown_core_node *item = cite ? new_bib_item(inline_state, cite, token, false) : NULL;
     if (!item) {
         if (cite) {
             markdown_core_parser_release_node(inline_state->owner_parser, cite);
@@ -488,16 +483,18 @@ static void materialize_citation_key(const markdown_core_element_instance *self,
     bufsize_t start = token->start, end = token->end;
     if (specimen && start && markdown_core_inline_peek_at(inline_state, start - 1) == '(' &&
         markdown_core_inline_peek_at(inline_state, end) == ')') {
-        if (!source_escaped(self, inline_state, start - 1, 0) && token->node->prev && token->node->next &&
-            token->node->prev->kind == MARKDOWN_CORE_NODE_TEXT && token->node->next->kind == MARKDOWN_CORE_NODE_TEXT) {
-            remove_specimen_parenthesis(inline_state, token->node->prev, false);
-            remove_specimen_parenthesis(inline_state, token->node->next, true);
+        markdown_core_node *before = markdown_core_scaffold_prev(token->node);
+        markdown_core_node *after = markdown_core_scaffold_next(token->node);
+        if (!source_escaped(self, inline_state, start - 1, 0) && before && after &&
+            before->kind == MARKDOWN_CORE_NODE_TEXT && after->kind == MARKDOWN_CORE_NODE_TEXT) {
+            remove_specimen_parenthesis(inline_state, before, false);
+            remove_specimen_parenthesis(inline_state, after, true);
             start--;
             end++;
         }
     }
     markdown_core_inline_state_place(inline_state, cite, start, end - 1);
-    markdown_core_node_attach_validated(token->node->parent, cite, token->node);
+    markdown_core_scaffold_insert_before(token->node, cite);
     markdown_core_parser_release_node(inline_state->owner_parser, token->node);
     token->node = cite;
 }
@@ -532,7 +529,8 @@ bool markdown_core_inline_close_bibliography(const markdown_core_element_instanc
                 markdown_core_inline_peek_char(inline_state) != '[';
     if (markdown_core_inline_peek_at(inline_state, opener->position) == '^' ||
         !markdown_core_inline_citation_group_valid(&opener->citations, tail) ||
-        !markdown_core_node_can_contain_type(opener->inl_text->parent, MARKDOWN_CORE_NODE_CITE)) {
+        !markdown_core_node_can_contain_type(markdown_core_scaffold_parent(opener->inl_text),
+                                             MARKDOWN_CORE_NODE_CITE)) {
         return false;
     }
     bool first = true;
@@ -562,12 +560,12 @@ bool markdown_core_inline_close_bibliography(const markdown_core_element_instanc
     }
     markdown_core_inline_state_place(inline_state, cite, tail ? opener->author->start : opener->position - 1,
                                      inline_state->pos - 1);
-    markdown_core_node *content = opener->inl_text->next;
+    markdown_core_node *content = markdown_core_scaffold_next(opener->inl_text);
     if (tail) {
         markdown_core_node *old = opener->author->node;
-        markdown_core_node_attach_validated(old->parent, cite, old);
+        markdown_core_scaffold_insert_before(old, cite);
         while (old != content) {
-            markdown_core_node *next = old->next;
+            markdown_core_node *next = markdown_core_scaffold_next(old);
             markdown_core_parser_release_node(parser, old);
             old = next;
         }
@@ -577,7 +575,6 @@ bool markdown_core_inline_close_bibliography(const markdown_core_element_instanc
     }
     bufsize_t item_start = opener->position;
     citation_token *token = opener->citations.first;
-    markdown_core_node *last = NULL;
     bool author_item = tail;
     /* A key in the first tail section gives that section to a normal item.
      * Only a key-free section contributes a suffix to the external author. */
@@ -593,16 +590,15 @@ bool markdown_core_inline_close_bibliography(const markdown_core_element_instanc
         bufsize_t scope_start = author_item ? key->start : item_start;
         bufsize_t scope_end = author_item && tail_starts_item ? key->end : item_end;
         trim_citation_source(self, inline_state, &scope_start, &scope_end);
-        markdown_core_node *item = new_bib_item(inline_state, cite, last, key, !author_item);
+        markdown_core_node *item = new_bib_item(inline_state, cite, key, !author_item);
         if (!item) {
             break;
         }
-        last = item;
         markdown_core_inline_state_place(inline_state, item, scope_start, scope_end - 1);
         if (!author_item) {
             take_citation_affix(self, inline_state, &item->as.citation->prefix, content, key->node, item_start,
                                 key->start);
-            content = key->node->next;
+            content = markdown_core_scaffold_next(key->node);
             markdown_core_parser_release_node(parser, key->node);
         }
         if (author_item && tail_starts_item) {
@@ -614,7 +610,7 @@ bool markdown_core_inline_close_bibliography(const markdown_core_element_instanc
                             item_end);
         author_item = false;
         if (separator) {
-            content = separator->node->next;
+            content = markdown_core_scaffold_next(separator->node);
             markdown_core_parser_release_node(parser, separator->node);
             item_start = separator->end;
             token = separator->next;

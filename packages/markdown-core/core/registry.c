@@ -96,14 +96,23 @@ bool markdown_core_registry_declare(markdown_core_registry *registry, markdown_c
     record->start = record->earliest = start;
     record->previous = 0;
     registry->records[registry->count++] = record;
-    registry->kind_records[kind]++;
+    registry->spaces[kind].records++;
     return true;
 }
 
-/* The index takes the records the log holds beyond it, in log order. */
-static bool S_index_log(markdown_core_registry *registry) {
-    while (registry->indexed < registry->count) {
-        markdown_core_registry_record *record = registry->records[registry->indexed];
+/* The index takes the kind's records the log holds beyond its cursor, in log
+ * order, with room made for all of them first. */
+static bool S_index_space(markdown_core_registry *registry, markdown_core_registry_kind kind) {
+    markdown_core_registry_space *space = &registry->spaces[kind];
+    if (space->indexed < space->records &&
+        !markdown_core_key_index_reserve(&registry->index, registry->index.size + space->records - space->indexed)) {
+        return false;
+    }
+    for (; space->indexed < space->records; space->cursor++) {
+        markdown_core_registry_record *record = registry->records[space->cursor];
+        if (record->key[0] != (unsigned char)kind) {
+            continue;
+        }
         markdown_core_key_index_slot *slot =
             markdown_core_key_index_entry(&registry->index, record->key, record->key_len);
         if (!slot) {
@@ -117,13 +126,16 @@ static bool S_index_log(markdown_core_registry *registry) {
         } else {
             markdown_core_key_index_commit(&registry->index, slot, record->key);
         }
-        slot->value = registry->indexed++;
+        slot->value = space->cursor;
+        space->indexed++;
     }
+    space->cursor = registry->count;
     return true;
 }
 
-static const markdown_core_registry_record *S_find_key(markdown_core_registry *registry, bool *failed) {
-    if (registry->key.oom || !S_index_log(registry)) {
+static const markdown_core_registry_record *S_find_key(markdown_core_registry *registry,
+                                                       markdown_core_registry_kind kind, bool *failed) {
+    if (registry->key.oom || !S_index_space(registry, kind)) {
         *failed = true;
         return NULL;
     }
@@ -136,19 +148,19 @@ const markdown_core_registry_record *markdown_core_registry_find(markdown_core_r
                                                                  markdown_core_registry_kind kind,
                                                                  const unsigned char *label, bufsize_t length,
                                                                  bool *failed) {
-    if (length <= 0 || !registry->kind_records[kind]) {
+    if (length <= 0 || !registry->spaces[kind].records) {
         return NULL;
     }
     markdown_core_strbuf_clear(&registry->key);
     markdown_core_strbuf_putc(&registry->key, (int)kind);
     markdown_core_strbuf_put(&registry->key, label, length);
-    return S_find_key(registry, failed);
+    return S_find_key(registry, kind, failed);
 }
 
 const markdown_core_registry_record *markdown_core_registry_find_label(markdown_core_registry *registry,
                                                                        markdown_core_registry_kind kind,
                                                                        const markdown_core_chunk *label, bool *failed) {
-    if (label->len < 1 || label->len > MAX_LINK_LABEL_LENGTH || !registry->kind_records[kind]) {
+    if (label->len < 1 || label->len > MAX_LINK_LABEL_LENGTH || !registry->spaces[kind].records) {
         return NULL;
     }
     markdown_core_strbuf_clear(&registry->key);
@@ -157,7 +169,7 @@ const markdown_core_registry_record *markdown_core_registry_find_label(markdown_
     if (registry->key.size == 1 && !registry->key.oom) {
         return NULL;
     }
-    return S_find_key(registry, failed);
+    return S_find_key(registry, kind, failed);
 }
 
 bool markdown_core_registry_normal_label(markdown_core_registry *registry, markdown_core_node_pool *pool,
@@ -192,10 +204,11 @@ void markdown_core_registry_rollback(markdown_core_registry *registry, markdown_
     assert(mark.count <= registry->count);
     while (registry->count > mark.count) {
         const markdown_core_registry_record *record = registry->records[--registry->count];
-        registry->kind_records[record->key[0]]--;
+        markdown_core_registry_space *space = &registry->spaces[record->key[0]];
+        space->records--;
         /* A record the index never took leaves only the log. */
-        if (registry->count < registry->indexed) {
-            registry->indexed = registry->count;
+        if (registry->count < space->cursor) {
+            space->indexed--;
             markdown_core_key_index_slot *slot =
                 markdown_core_key_index_find(&registry->index, record->key, record->key_len);
             assert(slot && slot->value == registry->count);
@@ -205,6 +218,11 @@ void markdown_core_registry_rollback(markdown_core_registry *registry, markdown_
             } else {
                 markdown_core_key_index_remove(&registry->index, slot);
             }
+        }
+    }
+    for (size_t kind = 0; kind < sizeof(registry->spaces) / sizeof(*registry->spaces); kind++) {
+        if (registry->spaces[kind].cursor > registry->count) {
+            registry->spaces[kind].cursor = registry->count;
         }
     }
     while (registry->blocks != mark.blocks) {

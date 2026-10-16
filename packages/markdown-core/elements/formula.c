@@ -435,7 +435,7 @@ static void free_nodes_through(markdown_core_parser *parser, markdown_core_node 
     markdown_core_node *node = first;
 
     while (node) {
-        markdown_core_node *next = node->next;
+        markdown_core_node *next = markdown_core_scaffold_next(node);
         markdown_core_parser_release_node(parser, node);
         if (node == last) {
             break;
@@ -570,22 +570,23 @@ static void insert_formula(const markdown_core_element_instance *self, markdown_
     markdown_core_node *opener_node = markdown_core_delimiter_node(opener);
     markdown_core_node *closer_node = markdown_core_delimiter_node(closer);
     markdown_core_delimiter_rule rule = markdown_core_delimiter_rule_of(opener);
+    markdown_core_node *holder = markdown_core_scaffold_parent(opener_node);
     bufsize_t from = markdown_core_delimiter_position(opener);
     bufsize_t close = markdown_core_delimiter_position(closer) - markdown_core_delimiter_length(closer);
     if (rule != markdown_core_delimiter_rule_of(closer) ||
         (is_backslash_delim(rule) &&
          markdown_core_delimiter_length(opener) != markdown_core_delimiter_length(closer)) ||
-        !formula_body_admitted(rule, chunk->data + from, close - from) || !opener_node->parent ||
-        !markdown_core_node_can_contain_type(opener_node->parent, MARKDOWN_CORE_NODE_FORMULA)) {
+        !formula_body_admitted(rule, chunk->data + from, close - from) || !holder ||
+        !markdown_core_node_can_contain_type(holder, MARKDOWN_CORE_NODE_FORMULA)) {
         return;
     }
-    markdown_core_node *formula = make_formula_span(self->element, parser, inline_state, opener_node->parent, rule,
+    markdown_core_node *formula = make_formula_span(self->element, parser, inline_state, holder, rule,
                                                     from - markdown_core_delimiter_length(opener), from, close,
                                                     markdown_core_delimiter_position(closer));
     if (!formula) {
         return;
     }
-    markdown_core_node_attach_validated(opener_node->parent, formula, opener_node);
+    markdown_core_scaffold_insert_before(opener_node, formula);
     free_nodes_through(parser, opener_node, closer_node);
 }
 
@@ -602,16 +603,16 @@ static int info_is_formula(const markdown_core_optional_chunk *info) {
 }
 
 /* A code block whose info string names a formula becomes a FormulaBlock
- * holding its literal, rewritten in place: the node keeps its place in the
- * tree and in the completion queue, its range and the places of the lines it
- * read, and holds nothing of the code block but the trimmed literal -- no
- * attributes and no info. */
+ * holding its literal, rewritten in place: the node keeps its place in
+ * `parent`'s children, its range and the places of the lines it read, and
+ * holds nothing of the code block but the trimmed literal -- no attributes
+ * and no info. */
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_finish_result
     convert_to_formula_block(const markdown_core_element *element, markdown_core_parser *parser,
-                             markdown_core_node *node) {
+                             markdown_core_node *node, markdown_core_node *parent) {
     /* Rewriting a valid block is optional: a parent that cannot hold a
      * FormulaBlock keeps the code block. */
-    if (!node->parent || !markdown_core_node_can_contain_type(node->parent, MARKDOWN_CORE_NODE_FORMULA_BLOCK)) {
+    if (!parent || !markdown_core_node_can_contain_type(parent, MARKDOWN_CORE_NODE_FORMULA_BLOCK)) {
         return MARKDOWN_CORE_FINISH_CONTINUE;
     }
     node_formula *formula = markdown_core_alloc(1, sizeof(node_formula));
@@ -622,7 +623,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_finish_result
     formula->literal = node->as.code->literal;
     formula->mode = MARKDOWN_CORE_FORMULA_MODE_STANDALONE;
     node->as.code->literal = (markdown_core_chunk)MARKDOWN_CORE_CHUNK_EMPTY;
-    if (markdown_core_parser_set_node_kind(parser, node, MARKDOWN_CORE_NODE_FORMULA_BLOCK) !=
+    if (markdown_core_parser_set_node_kind(parser, node, parent, MARKDOWN_CORE_NODE_FORMULA_BLOCK) !=
         MARKDOWN_CORE_NODE_SET_KIND_OK) {
         markdown_core_chunk_free(&formula->literal);
         markdown_core_free(formula);
@@ -640,17 +641,16 @@ failed:
 }
 
 /* The formula element's finish STEP, asked at the EXIT of a FormulaBlock or
- * a CodeBlock as completion reaches it in the queue. A FormulaBlock takes its
- * literal from the lines it read; a code block whose info names a formula
- * becomes one. The block is the root of its walk: it is rewritten in place,
- * never replaced. A paragraph whose only content is a standalone formula
- * stays a paragraph that holds that Formula. */
+ * a CodeBlock as completion reaches it in the queue, with `parent`, the block
+ * it settled into. A FormulaBlock takes its literal from the lines it read; a
+ * code block whose info names a formula becomes one. The block is the root of
+ * its walk: it is rewritten in place, never replaced. A paragraph whose only
+ * content is a standalone formula stays a paragraph that holds that Formula. */
 static markdown_core_finish_result finish_step(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                               markdown_core_node *node, markdown_core_event_type event, int is_root,
-                                               void **state) {
+                                               markdown_core_node *node, markdown_core_node *parent,
+                                               markdown_core_event_type event, void **state) {
     (void)state;
     (void)event;
-    (void)is_root;
     assert(event == MARKDOWN_CORE_EVENT_EXIT);
     if (node->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
         node_formula *formula = get_formula(node);
@@ -664,7 +664,7 @@ static markdown_core_finish_result finish_step(const markdown_core_element_insta
     }
 
     if (node->kind == MARKDOWN_CORE_NODE_CODE_BLOCK && info_is_formula(&node->as.code->info)) {
-        return convert_to_formula_block(self->element, parser, node);
+        return convert_to_formula_block(self->element, parser, node, parent);
     }
 
     return MARKDOWN_CORE_FINISH_CONTINUE;

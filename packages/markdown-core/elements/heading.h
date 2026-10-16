@@ -4,7 +4,7 @@
 #include "block_internal.h"
 #include "heading_state.h"
 void markdown_core_block_register_heading(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                          markdown_core_node *node);
+                                          markdown_core_node *node, markdown_core_node *parent);
 /* The heading lifecycle the document element drives (document.c). */
 void markdown_core_headings_prepare(const markdown_core_element_instance *self, markdown_core_parser *parser);
 void markdown_core_headings_finish(const markdown_core_element_instance *self, markdown_core_parser *parser);

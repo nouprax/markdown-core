@@ -14,6 +14,7 @@
  */
 #include <markdown_core.h>
 
+#include "markdown_core_receipt.h"
 #include "stage_runner.h"
 
 const char *bench_engine_name(void) { return "markdown-core"; }
@@ -24,7 +25,7 @@ int bench_parse_document(const char *source, size_t length, bench_receipt *recei
         return 1;
     }
     receipt->bytes = length;
-    receipt->root_children = markdown_core_node_child_count(markdown_core_document_root(document));
+    bool counted = bench_root_children(document, (const uint8_t *)source, length, &receipt->root_children);
     markdown_core_document_free(document);
-    return 0;
+    return !counted;
 }

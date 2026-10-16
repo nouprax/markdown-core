@@ -4,12 +4,12 @@
 #include "link.h"
 #include "block_identifier.h"
 void markdown_core_paragraph_finalize(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                      markdown_core_node *paragraph) {
-    if (!markdown_core_block_resolve_reference_link_definitions(parser, paragraph)) {
+                                      markdown_core_node *paragraph, markdown_core_node *parent) {
+    if (!markdown_core_block_resolve_reference_link_definitions(parser, paragraph, parent)) {
         paragraph->flags |= MARKDOWN_CORE_NODE__REFERENCE_DEFINITION_ONLY;
         return;
     }
-    markdown_core_block_attach_paragraph_identifier(self->state, parser, paragraph);
+    markdown_core_block_attach_paragraph_identifier(self->state, parser, paragraph, parent);
 }
 
 static int continue_paragraph(const markdown_core_element_instance *self, markdown_core_parser *parser,

@@ -22,7 +22,8 @@ typedef struct {
     size_t count, capacity;
 } anchor_projection_stack;
 void markdown_core_block_register_heading(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                          markdown_core_node *node) {
+                                          markdown_core_node *node, markdown_core_node *parent) {
+    (void)parent;
     markdown_core_heading_collection *headings = &((markdown_core_heading_state *)self->state)->headings;
     if (headings->count == headings->capacity) {
         size_t capacity = headings->capacity ? headings->capacity * 2 : 8;
@@ -102,6 +103,18 @@ static bool push_anchor_projection(markdown_core_parser *parser, anchor_projecti
     return true;
 }
 
+/* `node`'s children, pushed last first so that they are projected in order;
+ * none for no node. */
+static bool push_anchor_children(markdown_core_parser *parser, anchor_projection_stack *stack,
+                                 const markdown_core_node *node, anchor_projection_kind kind) {
+    for (uint32_t i = node ? node->child_count : 0; i > 0; i--) {
+        if (!push_anchor_projection(parser, stack, node->children[i - 1], kind)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 /* The heading's anchor base, projected from its inlines and appended to
  * `base`. The stack's storage is the caller's and serves every heading of the
  * pass, as `base` does; each heading starts it empty. */
@@ -110,7 +123,7 @@ static void heading_anchor_base(markdown_core_parser *parser, markdown_core_head
                                 anchor_projection_stack *stack) {
     const bufsize_t start = base->size;
     stack->count = 0;
-    push_anchor_projection(parser, stack, heading->first_child, ANCHOR_CONTENT);
+    push_anchor_children(parser, stack, heading, ANCHOR_CONTENT);
     while (stack->count && !parser->error && !base->oom) {
         anchor_projection projection = stack->values[--stack->count];
         markdown_core_node *node = projection.node;
@@ -120,13 +133,12 @@ static void heading_anchor_base(markdown_core_parser *parser, markdown_core_head
             project_anchor_literal(state, base, node->as.citation->value.data, node->as.citation->value.len);
             continue;
         }
-        push_anchor_projection(parser, stack, node->next, projection.kind);
         if (projection.kind == ANCHOR_CITATIONS) {
             markdown_core_citation_item *item = node->as.citation;
             if (item->referent == MARKDOWN_CORE_NODE_REFERENT_BIB) {
-                push_anchor_projection(parser, stack, item->suffix ? item->suffix->first_child : NULL, ANCHOR_CONTENT);
+                push_anchor_children(parser, stack, item->suffix, ANCHOR_CONTENT);
                 push_anchor_projection(parser, stack, node, ANCHOR_KEY);
-                push_anchor_projection(parser, stack, item->prefix ? item->prefix->first_child : NULL, ANCHOR_CONTENT);
+                push_anchor_children(parser, stack, item->prefix, ANCHOR_CONTENT);
             } else if (item->referent == MARKDOWN_CORE_NODE_REFERENT_SPECIMEN) {
                 push_anchor_projection(parser, stack, node, ANCHOR_KEY);
             }
@@ -160,7 +172,7 @@ static void heading_anchor_base(markdown_core_parser *parser, markdown_core_head
             break;
         }
         case MARKDOWN_CORE_NODE_CITE:
-            push_anchor_projection(parser, stack, node->as.cite->citations, ANCHOR_CITATIONS);
+            push_anchor_children(parser, stack, node, ANCHOR_CITATIONS);
             break;
         case MARKDOWN_CORE_NODE_EMPHASIS:
         case MARKDOWN_CORE_NODE_STRONG:
@@ -173,11 +185,10 @@ static void heading_anchor_base(markdown_core_parser *parser, markdown_core_head
         case MARKDOWN_CORE_NODE_LINK:
         case MARKDOWN_CORE_NODE_EMBEDDED:
         case MARKDOWN_CORE_NODE_DIRECTIVE_LABEL:
-            push_anchor_projection(parser, stack, node->first_child, ANCHOR_CONTENT);
+            push_anchor_children(parser, stack, node, ANCHOR_CONTENT);
             break;
         case MARKDOWN_CORE_NODE_DIRECTIVE: {
-            markdown_core_node *label = markdown_core_directive_label(node);
-            push_anchor_projection(parser, stack, label ? label->first_child : NULL, ANCHOR_CONTENT);
+            push_anchor_children(parser, stack, markdown_core_directive_label(node), ANCHOR_CONTENT);
             break;
         }
         default:
@@ -471,12 +482,13 @@ static bool open_setext(const markdown_core_element_instance *self, markdown_cor
     bufsize_t matched = start->matched;
     bool has_content;
     // markdown_core_block_finalize paragraph, resolving reference links
-    has_content = markdown_core_block_resolve_reference_link_definitions(parser, *container);
+    markdown_core_node *parent = markdown_core_parser_parent(parser, *container);
+    has_content = markdown_core_block_resolve_reference_link_definitions(parser, *container, parent);
 
     if (has_content) {
 
         markdown_core_node_set_kind_result result =
-            markdown_core_parser_set_node_kind(parser, *container, MARKDOWN_CORE_NODE_HEADING);
+            markdown_core_parser_set_node_kind(parser, *container, parent, MARKDOWN_CORE_NODE_HEADING);
         if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
             if (result == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED) {
                 markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);

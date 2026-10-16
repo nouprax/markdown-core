@@ -29,6 +29,7 @@
 #include <markdown_core.h>
 
 #include "incremental_harness.h"
+#include "markdown_core_receipt.h"
 
 #define WINDOWS 1024
 
@@ -62,7 +63,7 @@ int main(int argc, char **argv) {
     ih_sizes tokens = {0};
     ih_step *steps = NULL;
     size_t *ends = NULL;
-    size_t length = 0, count = 0, windows, window, index, final_length = 0;
+    size_t length = 0, count = 0, windows, window, index, final_length = 0, root_children = 0;
     void *handle;
     int i, status = 1;
 
@@ -136,8 +137,12 @@ int main(int argc, char **argv) {
             goto close;
         }
     }
+    if (!bench_root_children(current, text, final_length, &root_children)) {
+        fputs("stream_runner: cannot read the final document's receipt\n", stderr);
+        goto close;
+    }
     printf("stream-runner subject=%s steps=%zu windows=%zu bytes=%zu root_children=%zu\n", subject_name, count, windows,
-           final_length, markdown_core_node_child_count(markdown_core_document_root(current)));
+           final_length, root_children);
     status = 0;
 close:
     measured->subject->close(handle);

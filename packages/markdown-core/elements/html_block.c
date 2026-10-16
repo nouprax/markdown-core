@@ -29,7 +29,7 @@ static int continue_html(const markdown_core_element_instance *self, markdown_co
 }
 
 static void finalize_html(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_node *b) {
+                          markdown_core_node *b, markdown_core_node *parent) {
     (void)self;
     markdown_core_strbuf *node_content = &b->content;
 
@@ -40,7 +40,7 @@ static void finalize_html(const markdown_core_element_instance *self, markdown_c
         return;
     }
     if (html_block_type == 2 && (b->flags & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION) != 0) {
-        markdown_core_block_convert_comment_block(parser, b);
+        markdown_core_block_convert_comment_block(parser, b, parent);
     }
 }
 static bool open_html(const markdown_core_element_instance *self, markdown_core_parser *parser,

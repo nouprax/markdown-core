@@ -36,17 +36,26 @@ static markdown_core_key_index_slot *find_key_slot(markdown_core_key_index_slot 
     return NULL;
 }
 
-static int grow_key_index(markdown_core_key_index *index) {
+/* The least capacity that holds `size` keys at most half full, or zero when
+ * none can be had. */
+static size_t S_capacity_for(size_t size) {
+    size_t capacity = KEY_INDEX_MIN_CAPACITY;
+    if (size > SIZE_MAX / 2) {
+        return 0;
+    }
+    while (capacity < size * 2) {
+        if (capacity > SIZE_MAX / 2) {
+            return 0;
+        }
+        capacity *= 2;
+    }
+    return capacity <= SIZE_MAX / sizeof(markdown_core_key_index_slot) ? capacity : 0;
+}
+
+/* Move every entry to a table of `capacity` slots, more than the index has. */
+static int S_rehash(markdown_core_key_index *index, size_t capacity) {
     markdown_core_key_index_slot *slots;
-    size_t capacity;
     size_t i;
-    if (index->capacity > SIZE_MAX / 2) {
-        return 0;
-    }
-    capacity = index->capacity ? index->capacity * 2 : KEY_INDEX_MIN_CAPACITY;
-    if (capacity > SIZE_MAX / sizeof(*slots)) {
-        return 0;
-    }
     slots = (markdown_core_key_index_slot *)markdown_core_alloc(capacity, sizeof(*slots));
     if (!slots) {
         return 0;
@@ -71,29 +80,19 @@ static int grow_key_index(markdown_core_key_index *index) {
 }
 
 int markdown_core_key_index_init(markdown_core_key_index *index, size_t expected_size) {
-    size_t capacity = KEY_INDEX_MIN_CAPACITY;
     memset(index, 0, sizeof(*index));
-    if (!expected_size) {
+    return markdown_core_key_index_reserve(index, expected_size);
+}
+
+int markdown_core_key_index_reserve(markdown_core_key_index *index, size_t size) {
+    if (!size) {
         return 1;
     }
-    if (expected_size > SIZE_MAX / 2) {
+    const size_t capacity = S_capacity_for(size);
+    if (!capacity) {
         return 0;
     }
-    while (capacity < expected_size * 2) {
-        if (capacity > SIZE_MAX / 2) {
-            return 0;
-        }
-        capacity *= 2;
-    }
-    if (capacity > SIZE_MAX / sizeof(*index->slots)) {
-        return 0;
-    }
-    index->slots = (markdown_core_key_index_slot *)markdown_core_alloc(capacity, sizeof(*index->slots));
-    if (!index->slots) {
-        return 0;
-    }
-    index->capacity = capacity;
-    return 1;
+    return capacity <= index->capacity || S_rehash(index, capacity);
 }
 
 void markdown_core_key_index_free(markdown_core_key_index *index) {
@@ -106,7 +105,7 @@ void markdown_core_key_index_free(markdown_core_key_index *index) {
 markdown_core_key_index_slot *markdown_core_key_index_entry(markdown_core_key_index *index, const unsigned char *key,
                                                             bufsize_t key_len) {
     uint64_t hash = hash_key(key, key_len);
-    if (!index->capacity && !grow_key_index(index)) {
+    if (!index->capacity && !markdown_core_key_index_reserve(index, 1)) {
         return NULL;
     }
     markdown_core_key_index_slot *slot = find_key_slot(index->slots, index->capacity, hash, key, key_len);
@@ -114,7 +113,7 @@ markdown_core_key_index_slot *markdown_core_key_index_entry(markdown_core_key_in
         return slot;
     }
     if (index->size + 1 > index->capacity / 2) {
-        if (!grow_key_index(index)) {
+        if (!markdown_core_key_index_reserve(index, index->size + 1)) {
             return NULL;
         }
         slot = find_key_slot(index->slots, index->capacity, hash, key, key_len);

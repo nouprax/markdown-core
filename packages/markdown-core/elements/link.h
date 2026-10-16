@@ -5,10 +5,11 @@
 bufsize_t markdown_core_inline_reference_label_length(const unsigned char *data, bufsize_t length);
 int markdown_core_inline_link_label(markdown_core_inline_state *inline_state, markdown_core_chunk *raw_label);
 /* Reads the link reference definitions at the front of `b`'s content into
- * Reference nodes, put in `b`'s parent before `b` in source order, and drops
- * their bytes from the content. Whether any content is left that is not
- * blank. */
-bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b);
+ * Reference nodes, settled in source order into `parent`, the block that
+ * holds `b`, and drops their bytes from the content. Whether any content is
+ * left that is not blank. */
+bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b,
+                                                            markdown_core_node *parent);
 typedef enum { LINK_UNMATCHED, LINK_SHORTCUT, LINK_EXPLICIT } markdown_core_link_match;
 typedef struct {
     /* The normalized label a reference names; empty for a direct link. */

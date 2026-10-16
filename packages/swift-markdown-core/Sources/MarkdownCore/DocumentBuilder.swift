@@ -59,30 +59,33 @@ struct DocumentBuilder {
     // Enumerate each facade-owned relation alongside its native kind.
     private mutating func scan(_ node: OpaquePointer) -> Relations {
         var relations = Relations()
-        relations.children = enqueue(chain: markdown_core_node_get_first_child(node))
+        relations.children = enqueue(nodes: markdown_core_node_children(node))
         switch markdown_core_node_get_kind(node) {
         case MARKDOWN_CORE_KIND_TABLE:
             relations.caption = enqueue(field: answer { markdown_core_node_table_caption(node, $0) })
         case MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, MARKDOWN_CORE_KIND_DIRECTIVE:
             relations.label = enqueue(field: answer { markdown_core_node_directive_label(node, $0) })
         case MARKDOWN_CORE_KIND_CALLOUT:
-            relations.title = enqueue(chain: answer { markdown_core_node_callout_title(node, $0) })
+            relations.title = enqueue(
+                nodes: answer(markdown_core_nodes()) { markdown_core_node_callout_title(node, $0) })
         case MARKDOWN_CORE_KIND_DEFINITION:
-            relations.term = enqueue(chain: answer { markdown_core_node_definition_term(node, $0) })
-            var body = answer { markdown_core_node_definition_bodies(node, $0) }
-            while let current = body {
-                relations.bodies.append(enqueue(chain: markdown_core_definition_body_content(current)))
-                body = markdown_core_definition_body_next(current)
+            relations.term = enqueue(
+                nodes: answer(markdown_core_nodes()) { markdown_core_node_definition_term(node, $0) })
+            let bodies = answer(0) { markdown_core_node_definition_body_count(node, $0) }
+            for index in 0..<bodies {
+                let body = answer(markdown_core_nodes()) { markdown_core_node_definition_body_at(node, index, $0) }
+                relations.bodies.append(enqueue(nodes: body))
             }
         case MARKDOWN_CORE_KIND_DOCUMENT:
             relations.metadata = enqueue(field: answer { markdown_core_node_document_metadata(node, $0) })
         case MARKDOWN_CORE_KIND_CITE:
-            relations.citations = enqueue(chain: answer { markdown_core_node_cite_citations(node, $0) })
+            relations.citations = enqueue(
+                nodes: answer(markdown_core_nodes()) { markdown_core_node_cite_citations(node, $0) })
         case MARKDOWN_CORE_KIND_CITATION:
             let referent = answer(markdown_core_referent()) { markdown_core_citation_referent(node, $0) }
             relations.note = enqueue(field: referent.note)
-            relations.prefix = enqueue(chain: answer { markdown_core_citation_prefix(node, $0) })
-            relations.suffix = enqueue(chain: answer { markdown_core_citation_suffix(node, $0) })
+            relations.prefix = enqueue(nodes: answer(markdown_core_nodes()) { markdown_core_citation_prefix(node, $0) })
+            relations.suffix = enqueue(nodes: answer(markdown_core_nodes()) { markdown_core_citation_suffix(node, $0) })
         default:
             break
         }
@@ -99,12 +102,13 @@ struct DocumentBuilder {
         node.map { enqueue($0) }
     }
 
-    private mutating func enqueue(chain first: OpaquePointer?) -> [Int] {
+    private mutating func enqueue(nodes: markdown_core_nodes) -> [Int] {
         var indices: [Int] = []
-        var node = first
-        while let current = node {
-            indices.append(enqueue(current))
-            node = markdown_core_node_get_next_sibling(current)
+        indices.reserveCapacity(nodes.count)
+        for index in 0..<nodes.count {
+            // A sequence holds `count` nodes, none of them NULL.
+            // swift-format-ignore: NeverForceUnwrap
+            indices.append(enqueue(nodes.items[index]!))
         }
         return indices
     }

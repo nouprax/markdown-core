@@ -28,7 +28,8 @@ static bool accepts_blank(const markdown_core_element_instance *self, markdown_c
         return true;
     }
     markdown_core_block_lookahead lookahead;
-    if (!markdown_core_parser_lookahead_begin(parser, body->parent, MARKDOWN_CORE_NODE_PARAGRAPH, &lookahead)) {
+    if (!markdown_core_parser_lookahead_begin(parser, markdown_core_parser_parent(parser, body),
+                                              MARKDOWN_CORE_NODE_PARAGRAPH, &lookahead)) {
         return false;
     }
     markdown_core_chunk next;
@@ -249,14 +250,14 @@ static bool continue_container(const markdown_core_element_instance *self, markd
 }
 /* A definition list, a definition and a body end where their last child
  * ends: taken at each one's EXIT, as completion reaches it, when its children
- * have completed before it. */
+ * have settled before it. */
 static markdown_core_finish_result finish_step(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                               markdown_core_node *node, markdown_core_event_type event, int is_root,
-                                               void **state) {
+                                               markdown_core_node *node, markdown_core_node *parent,
+                                               markdown_core_event_type event, void **state) {
     (void)self;
     (void)parser;
     (void)event;
-    (void)is_root;
+    (void)parent;
     (void)state;
     assert(event == MARKDOWN_CORE_EVENT_EXIT);
     markdown_core_definition_list_complete(node);
@@ -266,8 +267,9 @@ static const markdown_core_node_type DEFINITION_LIST_EXIT_KINDS[] = {
     MARKDOWN_CORE_NODE_DEFINITION_LIST, MARKDOWN_CORE_NODE_DEFINITION, MARKDOWN_CORE_NODE_DEFINITION_BODY,
     MARKDOWN_CORE_NODE_NONE};
 static void finalize_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                           markdown_core_node *node) {
+                           markdown_core_node *node, markdown_core_node *parent) {
     (void)self;
+    (void)parent;
     if (node->kind == MARKDOWN_CORE_NODE_DEFINITION_BODY) {
         markdown_core_definition_list_close_body(node);
     }
@@ -291,7 +293,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
 };
 
 void markdown_core_definition_list_close_body(markdown_core_node *node) {
-    if (!node->last_child) {
+    if (!node->child_count) {
         node->where.place.end = (uint32_t)node->internal_offset;
     }
 }
@@ -299,7 +301,7 @@ void markdown_core_definition_list_close_body(markdown_core_node *node) {
 void markdown_core_definition_list_complete(markdown_core_node *node) {
     if ((node->kind == MARKDOWN_CORE_NODE_DEFINITION_LIST || node->kind == MARKDOWN_CORE_NODE_DEFINITION ||
          node->kind == MARKDOWN_CORE_NODE_DEFINITION_BODY) &&
-        node->last_child) {
-        node->where.place.end = node->last_child->where.place.end;
+        node->child_count) {
+        node->where.place.end = node->children[node->child_count - 1]->where.place.end;
     }
 }

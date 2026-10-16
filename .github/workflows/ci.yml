@@ -61,7 +61,6 @@ jobs:
                   pnpm check:element-inventory
                   pnpm audit:element-special-chars
                   pnpm audit:element-attach-order
-                  pnpm audit:finish-hook-shapes
                   pnpm audit:parser-kind-record
                   pnpm audit:allocator-seam
                   pnpm audit:source-lists
@@ -95,8 +94,8 @@ jobs:
                   pnpm format:cmake:check
             - name: Lint C
               run: pnpm lint:c
-            - name: Audit the node integrity check
-              run: pnpm audit:node-integrity-check
+            - name: Audit the construction assertions
+              run: pnpm audit:construction-assertions
 
     health-check-es:
         needs: changes

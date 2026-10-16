@@ -22,8 +22,8 @@ typedef int (*markdown_core_probe_block_func)(const markdown_core_element_instan
                                               markdown_core_block_reader *reader);
 
 /* Node-valued fields are independent child-tree roots. This internal hook
- * exposes their owning slots only to parser phases; it does not change the
- * public child iterator or make a field a parent/child edge. Destruction
+ * exposes their owning slots only to parser phases; it does not change a
+ * node's public children or make a field a parent/child edge. Destruction
  * transfers these roots to the shared iterative walk and clears their slots
  * before opaque_free_func releases the element payload. That callback must
  * not recursively destroy node-valued fields. The slots are in the element
@@ -167,7 +167,11 @@ struct markdown_core_element {
     bool (*blank_line)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
     bool (*ends_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
                        markdown_core_chunk *);
-    void (*finalize_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
+    /* The close hook: the block, closed, and the block that holds it, which
+     * it settles into later; the hook may append blocks made closed to that
+     * holder's children, which then precede it (a paragraph's References). */
+    void (*finalize_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                           markdown_core_node *);
 
     bool (*scan_block_start)(const markdown_core_element_instance *, markdown_core_parser *,
                              struct markdown_core_block_start_context *, struct markdown_core_block_start *);
@@ -309,33 +313,42 @@ struct markdown_core_element {
  * the node's `element`, which the walk tests beside the flag. */
 static inline bool markdown_core_kind_owns_fields(markdown_core_node_type kind) {
     return kind == MARKDOWN_CORE_NODE_DEFINITION || kind == MARKDOWN_CORE_NODE_CALLOUT ||
-           kind == MARKDOWN_CORE_NODE_CITE;
+           kind == MARKDOWN_CORE_NODE_CITATION;
 }
 
-static inline int markdown_core_visit_inline_subtrees(markdown_core_node *node,
-                                                      markdown_core_owned_subtree_visitor visitor, void *context) {
-    if (markdown_core_kind_owns_fields((markdown_core_node_type)node->kind)) {
-        if (node->kind == MARKDOWN_CORE_NODE_DEFINITION && node->as.definition->term &&
-            !visitor(&node->as.definition->term, context)) {
-            return 0;
-        }
-        if (node->kind == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->title &&
-            !visitor(&node->as.callout->title, context)) {
-            return 0;
-        }
-        if (node->kind == MARKDOWN_CORE_NODE_CITE) {
-            for (markdown_core_node *item = node->as.cite->citations; item; item = item->next) {
-                if ((item->as.citation->note && !visitor(&item->as.citation->note, context)) ||
-                    (item->as.citation->prefix && !visitor(&item->as.citation->prefix, context)) ||
-                    (item->as.citation->suffix && !visitor(&item->as.citation->suffix, context))) {
-                    return 0;
-                }
-            }
-        }
+/* The subtrees `node`, of a kind that owns them through its record, holds,
+ * in source order. */
+static inline int markdown_core_visit_kind_fields(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor,
+                                                  void *context) {
+    if (node->kind == MARKDOWN_CORE_NODE_DEFINITION && node->as.definition->term &&
+        !visitor(&node->as.definition->term, context)) {
+        return 0;
     }
+    if (node->kind == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->title &&
+        !visitor(&node->as.callout->title, context)) {
+        return 0;
+    }
+    return node->kind != MARKDOWN_CORE_NODE_CITATION ||
+           ((!node->as.citation->note || visitor(&node->as.citation->note, context)) &&
+            (!node->as.citation->prefix || visitor(&node->as.citation->prefix, context)) &&
+            (!node->as.citation->suffix || visitor(&node->as.citation->suffix, context)));
+}
+
+/* The subtrees the element of `node` owns through its hook. */
+static inline int markdown_core_visit_element_subtrees(markdown_core_node *node,
+                                                       markdown_core_owned_subtree_visitor visitor, void *context) {
     const markdown_core_element *element = node->element;
     return !element || !element->visit_owned_subtrees_func ||
            element->visit_owned_subtrees_func(element, node, visitor, context);
+}
+
+/* Every subtree `node` owns: its kind's, then its element's. Completion, which
+ * holds the kind's answer in its record, asks the two halves itself. */
+static inline int markdown_core_visit_inline_subtrees(markdown_core_node *node,
+                                                      markdown_core_owned_subtree_visitor visitor, void *context) {
+    return (!markdown_core_kind_owns_fields((markdown_core_node_type)node->kind) ||
+            markdown_core_visit_kind_fields(node, visitor, context)) &&
+           markdown_core_visit_element_subtrees(node, visitor, context);
 }
 
 #endif

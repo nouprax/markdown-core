@@ -186,18 +186,13 @@ static size_t traverse(const markdown_core_node *node) {
         return 0;
     }
 
-    size_t children = 0;
-    const markdown_core_node *child = markdown_core_node_get_first_child(node);
-    for (; child; child = markdown_core_node_get_next_sibling(child)) {
-        size_t below = traverse(child);
+    const markdown_core_nodes children = markdown_core_node_children(node);
+    for (size_t index = 0; index < children.count; index++) {
+        size_t below = traverse(children.items[index]);
         if (!below) {
             return 0;
         }
         visited += below;
-        children += 1;
-    }
-    if (children != markdown_core_node_child_count(node)) {
-        return 0;
     }
     return visited;
 }

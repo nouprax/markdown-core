@@ -9,7 +9,6 @@
 #include "markdown_core_ctype.h"
 #include "utf8.h"
 #include "houdini.h"
-#include "iterator.h"
 #include "inlines.h"
 #include "element.h"
 #define CODE_INDENT 4
@@ -25,16 +24,23 @@ void markdown_core_block_set_end_to_current_line(markdown_core_parser *parser, m
 bool markdown_core_block_is_blank(markdown_core_strbuf *s, bufsize_t offset);
 void markdown_core_block_rebase_content_marks(markdown_core_parser *parser, markdown_core_node *node, bufsize_t dropped,
                                               bufsize_t remaining);
-bool markdown_core_block_ends_with_blank_line(const markdown_core_parser *parser, markdown_core_node *node);
-/* The sibling after `node` the blank-line facts see: the next one that is
- * not MARKDOWN_CORE_NODE__BLANK_TRANSPARENT, or NULL. */
-markdown_core_node *markdown_core_block_next_seen(const markdown_core_node *node);
+/* Whether `node`, a closed block, ends with a blank line (blocks.c). */
+bool markdown_core_block_ends_with_blank_line(const markdown_core_node *node);
+/* Closes the open blocks from the current one down to `b`, which is open
+ * above the active input's root, each ending where the line in hand says;
+ * returns the block that is current after them. */
 markdown_core_node *markdown_core_block_finalize(markdown_core_parser *parser, markdown_core_node *b);
-/* A FINISHED BLOCK'S LAST WORD, once its range is settled: its element reads
- * it as a finished thing, a paragraph that held only reference definitions
- * leaves the tree to the References before it, and a block that takes text
- * lines in a container takes the runs of its own lines. */
-void markdown_core_block_settle(markdown_core_parser *parser, markdown_core_node *b);
+/* `node`, a block made whole, its own children settled, settles into
+ * `parent`, which has no pending child: it joins the end of the parent's
+ * children and the completion queue (blocks.c, A BLOCK SETTLES). */
+void markdown_core_block_settle(markdown_core_parser *parser, markdown_core_node *node, markdown_core_node *parent);
+/* `b`, a block made whole that is on no stack, closes inside `parent` as a
+ * block the line machine closes does -- its element reads it as a finished
+ * thing, and it takes the runs of its own lines -- and settles into it. */
+void markdown_core_block_close_into(markdown_core_parser *parser, markdown_core_node *b, markdown_core_node *parent);
+/* The current block, its range settled, closes and becomes the pending child
+ * of the block below it. */
+void markdown_core_block_close_current(markdown_core_parser *parser);
 void markdown_core_block_advance_offset(markdown_core_parser *parser, markdown_core_chunk *input, bufsize_t count,
                                         bool columns);
 typedef struct markdown_core_block_start_context {

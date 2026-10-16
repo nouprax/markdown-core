@@ -163,7 +163,8 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
 }
 
 /* `%` ends a text run and is offered to the scanner, and that is the whole set. */
-static void finalize_comment(const markdown_core_element_instance *self, markdown_core_parser *, markdown_core_node *);
+static void finalize_comment(const markdown_core_element_instance *self, markdown_core_parser *, markdown_core_node *,
+                             markdown_core_node *);
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
     .state_size = sizeof(markdown_core_comment_work),
@@ -184,7 +185,8 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
     .dispatch = "%",
 };
 
-void markdown_core_block_convert_comment_block(markdown_core_parser *parser, markdown_core_node *b) {
+void markdown_core_block_convert_comment_block(markdown_core_parser *parser, markdown_core_node *b,
+                                               markdown_core_node *parent) {
     markdown_core_chunk *literal = &b->as.html_block->literal;
     unsigned char *data = literal->data;
     bufsize_t len = literal->len;
@@ -230,7 +232,7 @@ void markdown_core_block_convert_comment_block(markdown_core_parser *parser, mar
     markdown_core_chunk owned_literal = *literal;
     *literal = (markdown_core_chunk)MARKDOWN_CORE_CHUNK_EMPTY;
     markdown_core_node_set_kind_result result =
-        markdown_core_parser_set_node_kind(parser, b, MARKDOWN_CORE_NODE_COMMENT_BLOCK);
+        markdown_core_parser_set_node_kind(parser, b, parent, MARKDOWN_CORE_NODE_COMMENT_BLOCK);
     if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
         *literal = owned_literal;
         if (result == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED) {
@@ -251,8 +253,9 @@ markdown_core_node *markdown_core_comment_make_inline(markdown_core_inline_state
 }
 
 static void finalize_comment(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                             markdown_core_node *b) {
+                             markdown_core_node *b, markdown_core_node *parent) {
     (void)self;
+    (void)parent;
     markdown_core_strbuf *node_content = &b->content;
 
     /* O3: a `%%` block comment arrives here with its lines in `content`:

@@ -13,8 +13,8 @@ typedef struct markdown_core_parser markdown_core_parser;
 typedef struct markdown_core_element markdown_core_element;
 
 /* Where a depth-first walk stands on a node: every node yields one ENTER and
- * one EXIT, and DONE follows the root's EXIT (iterator.h). Element finish
- * steps receive the event they are called at. */
+ * one EXIT, with its children's events between them, and DONE follows the
+ * root's EXIT. Element finish steps receive the event they are called at. */
 typedef enum {
     MARKDOWN_CORE_EVENT_NONE,
     MARKDOWN_CORE_EVENT_DONE,
@@ -222,17 +222,18 @@ typedef int (*markdown_core_accepts_lines_func)(const markdown_core_element *ele
 
 /** THE FINISH STEP, and the contract that keeps it local.
  *
- * Every block joins the completion queue as it closes, and completion takes
- * the queue in that order after the block phase, walking each queued block
- * once -- its ENTER, its inline content and its field roots: a definition
- * term, callout title, citation affix, table caption or directive label --
- * and its EXIT, stepping over the blocks below it, each queued on its own as
- * it closes. An element takes part in that walk through one step, asked at
- * the events of the kinds it declared (`finish_exit_kinds`,
- * `finish_scope_kinds`). A queued block is the root of its walk: a step at
- * its EXIT may rewrite it in place -- its kind, its literal, its record --
- * and read its block structure, which is final, and never frees or replaces
- * it.
+ * Every block joins the completion queue as it SETTLES -- as the block that
+ * holds it takes its next child or closes, when its own children have
+ * settled before it -- and completion takes the queue in that order after
+ * the block phase, walking each queued block once -- its ENTER, its inline
+ * content and its field roots: a definition term, callout title, citation
+ * affix, table caption or directive label -- and its EXIT, stepping over the
+ * blocks below it, each queued on its own as it settles. An element takes
+ * part in that walk through one step, asked at the events of the kinds it
+ * declared (`finish_exit_kinds`, `finish_scope_kinds`). A queued block is the
+ * root of its walk: a step at its EXIT may rewrite it in place -- its kind,
+ * its literal, its record -- and read its block structure, which is final,
+ * and never frees or replaces it.
  *
  * Inside a root, the step may touch only what the walk guarantees is
  * settled at that moment: the current node and, at EXIT, the current node's
@@ -253,7 +254,7 @@ typedef enum {
     /** The node is still in the tree; the steps after this one run. */
     MARKDOWN_CORE_FINISH_CONTINUE,
     /** The node was freed or replaced. No later step sees this event: the
-     *  node it names is gone. Legal only at EXIT. */
+     *  node it names is gone. Legal only at an inline node's EXIT. */
     MARKDOWN_CORE_FINISH_CONSUMED,
     /** An allocation failed and 'parser->error' is set. The walk stops. */
     MARKDOWN_CORE_FINISH_FAILED
@@ -272,12 +273,13 @@ typedef enum {
  * the block and a kind's first node may be made after completion began. The
  * ENTER and EXIT of a scope kind are delivered whenever the extent is walked,
  * so the state a step keeps for an extent is always in step with the tree.
- * 'is_root' is 1 when 'node' is the root of the tree being walked -- a queued
- * block or a field root; a root belongs to whoever holds it and may be
- * rewritten in place but never replaced or freed. '*state' is one word the
- * walk keeps for this element per root, zero when the root's walk starts, so
- * a step can carry a fact such as "inside a Link" across the events of one
- * root and never across roots.
+ * 'parent' is the node that holds 'node': for a queued block, the block it
+ * settled into, NULL for the document; NULL for a field root; and inside a
+ * root, the inline node or root whose children it is among. A root belongs to
+ * whoever holds it and may be rewritten in place but never replaced or
+ * freed. '*state' is one word the walk keeps for this element per root, zero
+ * when the root's walk starts, so a step can carry a fact such as "inside a
+ * Link" across the events of one root and never across roots.
  *
  * The step obeys the contract above. It returns CONSUMED when it freed or
  * replaced 'node' (legal only at EXIT, and never for a root), FAILED with
@@ -286,8 +288,8 @@ typedef enum {
 typedef markdown_core_finish_result (*markdown_core_finish_step_func)(const markdown_core_element_instance *self,
                                                                       markdown_core_parser *parser,
                                                                       markdown_core_node *node,
-                                                                      markdown_core_event_type event, int is_root,
-                                                                      void **state);
+                                                                      markdown_core_node *parent,
+                                                                      markdown_core_event_type event, void **state);
 
 typedef void (*markdown_core_opaque_alloc_func)(const markdown_core_element *element, markdown_core_node *node);
 
@@ -589,18 +591,20 @@ typedef enum {
     MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED,
 } markdown_core_node_set_kind_result;
 
-/** Change 'node' to the internal kind encoded by 'kind'.
+/** Change 'node', which 'parent' holds, to the internal kind encoded by 'kind'.
  *
- * Return OK on success, REJECTED when parent containment disallows the change,
- * or ALLOCATION_FAILED when replacement node data cannot be allocated.
- * Either failure preserves the original kind, data, and tree links.
+ * Return OK on success, REJECTED when 'parent' is NULL or its containment
+ * disallows the change, or ALLOCATION_FAILED when replacement node data
+ * cannot be allocated. Either failure preserves the original kind, data, and
+ * children.
  *
  * A change releases values owned by the old kind and installs the new kind's
  * defaults. Node identity and element-owned opaque data are preserved.
  * A record that fits the node's existing cell needs no allocation.
  * Setting the current kind succeeds without allocating or changing its data.
  */
-markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_node *node, markdown_core_node_type kind);
+markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_node *node, markdown_core_node *parent,
+                                                               markdown_core_node_type kind);
 
 /** Return the string content for all types of 'node'.
  *  The pointer stays valid as long as 'node' isn't freed.

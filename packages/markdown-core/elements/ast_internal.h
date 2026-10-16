@@ -40,9 +40,10 @@ bool markdown_core_tree_scope(const markdown_core_node *root, const markdown_cor
                               size_t length, markdown_core_text_unit unit, markdown_core_scope **scopes, size_t *count);
 
 /* ONE RELATION of a node: a node-valued field of the canonical AST, in the
- * canonical field order. `first` is its first node and the rest follow by
- * `next` up to `end`, the node after its last (NULL at a chain's end; a
- * table's row groups share one chain). `group` names the list when the
+ * canonical field order. Its `count` nodes are `items`, the storage that
+ * holds them: the children array of `holder`, a slice of it, or the owner's
+ * field that holds a single node, for which `holder` is NULL. A relation
+ * with no nodes may have no storage. `group` names the list when the
  * canonical dump draws it as a group line (`Title`, `CitationPrefix`, a
  * table's row groups, a definition's term and bodies), and is NULL when its
  * nodes are drawn directly under the owner. A node's extent is relative to
@@ -53,13 +54,11 @@ bool markdown_core_tree_scope(const markdown_core_node *root, const markdown_cor
  * from the last of the one before, or from where that one is. */
 typedef struct markdown_core_relation {
     const char *group;
-    const markdown_core_node *first;
-    const markdown_core_node *end;
+    markdown_core_node **items;
+    size_t count;
     bool continues;
+    const markdown_core_node *holder;
 } markdown_core_relation;
-
-/* How many nodes `relation` holds. */
-size_t markdown_core_relation_count(const markdown_core_relation *relation);
 
 /* The relations of one node, one at a time. This is the one place that knows
  * which fields each kind owns and in what order: publishing, scope queries
@@ -69,7 +68,9 @@ typedef struct markdown_core_relation_cursor {
     /* The owner kind's shape of relations (ast.c), read once. */
     uint8_t shape;
     int step;
-    const markdown_core_node *next;
+    /* Where the next of a table's row groups starts among its rows, or the
+     * next of a definition's bodies among its children. */
+    uint32_t index;
 } markdown_core_relation_cursor;
 
 void markdown_core_relations_begin(markdown_core_relation_cursor *cursor, const markdown_core_node *owner);
@@ -96,7 +97,8 @@ typedef struct markdown_core_walk_frame {
     markdown_core_relation_cursor cursor;
     markdown_core_relation relation;
     bool active, group_pending;
-    const markdown_core_node *next;
+    /* The next node of the relation in hand, counted from 0. */
+    size_t next;
     /* Where the owner's source starts, and where the first run of the next
      * node of the relation in hand is measured from. */
     uint32_t owner_start, anchor;

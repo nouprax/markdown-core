@@ -487,11 +487,12 @@ static void S_project_finish_steps(markdown_core_dialect *dialect, const size_t 
  * every lookup ends. */
 static void S_project_instances(markdown_core_dialect *dialect, const markdown_core_element *const *elements,
                                 markdown_core_element_instance *instances, const markdown_core_element_instance **table,
-                                size_t slots, unsigned char *state) {
+                                unsigned bits, unsigned char *state) {
+    const size_t mask = ((size_t)1 << bits) - 1;
     size_t state_at = 0;
     dialect->instances = instances;
     dialect->instance_table = table;
-    dialect->instance_mask = slots - 1;
+    dialect->instance_bits = bits;
     for (size_t i = 0; i < dialect->element_count; i++) {
         const markdown_core_element *element = elements[i];
         markdown_core_element_instance *instance = &instances[i];
@@ -500,10 +501,10 @@ static void S_project_instances(markdown_core_dialect *dialect, const markdown_c
         instance->run_offset = dialect->run_state_size;
         state_at += markdown_core_state_align(element->state_size);
         dialect->run_state_size += markdown_core_state_align(element->run_state_size);
-        size_t at = markdown_core_instance_hash(element, dialect->instance_mask);
+        size_t at = markdown_core_instance_hash(element, bits);
         while (table[at]) {
             assert(table[at]->element != element);
-            at = (at + 1) & dialect->instance_mask;
+            at = (at + 1) & mask;
         }
         table[at] = instance;
     }
@@ -604,9 +605,10 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
     for (size_t key = 0; key < MARKDOWN_CORE_FINISH_KEY_COUNT; key++) {
         sizes->steps += sizes->finish_key_counts[key] != 0; /* the terminator */
     }
-    /* The instance table: a power of two at least twice the elements, and
-     * never empty, so a lookup always finds an empty entry to stop at. */
-    for (sizes->instance_slots = 1; sizes->instance_slots < 2 * count; sizes->instance_slots *= 2) {
+    /* The instance table: a power of two at least twice the elements, so a
+     * lookup always finds an empty entry to stop at, and at least two, so the
+     * hash takes a bit. */
+    for (sizes->instance_bits = 1; ((size_t)1 << sizes->instance_bits) < 2 * count; sizes->instance_bits++) {
     }
     /* A family with no declared gate keeps no table and every owner is asked. */
     for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
@@ -615,7 +617,8 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
         }
     }
     return sizes->steps * sizeof(markdown_core_finish_step_entry) + count * sizeof(markdown_core_element_instance) +
-           (sizes->pointers + sizes->instance_slots + sizes->peers) * sizeof(const markdown_core_element_instance *) +
+           (sizes->pointers + ((size_t)1 << sizes->instance_bits) + sizes->peers) *
+               sizeof(const markdown_core_element_instance *) +
            sizes->gate_bytes;
 }
 
@@ -634,11 +637,11 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
     markdown_core_element_instance *instances = (markdown_core_element_instance *)(step_entries + sizes->steps);
     const markdown_core_element_instance **entries = (const markdown_core_element_instance **)(instances + count);
     const markdown_core_element_instance **table = entries + sizes->pointers;
-    const markdown_core_element_instance **peers = table + sizes->instance_slots;
+    const markdown_core_element_instance **peers = table + ((size_t)1 << sizes->instance_bits);
     uint8_t *tables = (uint8_t *)(peers + sizes->peers);
 
     dialect->element_count = count;
-    S_project_instances(dialect, builder->elements, instances, table, sizes->instance_slots, state);
+    S_project_instances(dialect, builder->elements, instances, table, sizes->instance_bits, state);
     assert(dialect->run_state_size == sizes->run_state_bytes);
     S_resolve_peers(dialect, instances, peers);
     S_resolve_owners(dialect);

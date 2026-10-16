@@ -27,7 +27,6 @@
 #include "node.h"
 #include "buffer.h"
 #include "parser.h"
-#include "iterator.h"
 #include "element.h"
 #include "markdown-core-elements.h"
 #include "document.h"
@@ -56,6 +55,124 @@
 
 #include "harness.h"
 #include "cplusplus.h"
+
+/* The child of `node` at `index`, or NULL past its children. */
+static markdown_core_node *child_at(const markdown_core_node *node, size_t index) {
+    return index < node->child_count ? node->children[index] : NULL;
+}
+
+/* `child`, a node nothing holds, at the end of `parent`'s children when
+ * `parent` can contain it: 1, or 0 having appended nothing. */
+static int append_child(markdown_core_node *parent, markdown_core_node *child) {
+    return markdown_core_node_can_contain_type(parent, (markdown_core_node_type)child->kind) &&
+           markdown_core_node_push_child(NULL, parent, child);
+}
+
+/* The last child of `node`, or NULL when it has none. */
+static markdown_core_node *last_child_of(const markdown_core_node *node) {
+    return node->child_count ? node->children[node->child_count - 1] : NULL;
+}
+
+/* `node`'s last child, out of its children: the caller holds it. The array
+ * goes with the last of them, as a node with no children has none. */
+static markdown_core_node *take_last_child(markdown_core_node *node) {
+    markdown_core_node *child = node->children[--node->child_count];
+    if (!node->child_count) {
+        markdown_core_node_pool_bytes_free(NULL, node->children);
+        node->children = NULL;
+    }
+    return child;
+}
+
+/* A DEPTH-FIRST WALK over a subtree's children arrays: every node yields one
+ * ENTER and one EXIT with its descendants' events between them, and DONE
+ * follows the root's EXIT. Node-valued fields are independent roots the walk
+ * never discovers. A node may be freed at its EXIT: the walk never reads it
+ * again. */
+typedef struct {
+    markdown_core_node *node;
+    uint32_t next;
+} tree_frame;
+
+typedef struct {
+    markdown_core_node *root, *node;
+    tree_frame *frames;
+    size_t depth, capacity;
+    bool started;
+} tree_iter;
+
+static tree_iter *tree_iter_new(markdown_core_node *root) {
+    tree_iter *iter = calloc(1, sizeof(*iter));
+    if (!iter) {
+        abort();
+    }
+    iter->root = root;
+    return iter;
+}
+
+static void tree_iter_free(tree_iter *iter) {
+    if (iter) {
+        free(iter->frames);
+        free(iter);
+    }
+}
+
+static void tree_iter_enter(tree_iter *iter, markdown_core_node *node) {
+    if (iter->depth == iter->capacity) {
+        iter->capacity = iter->capacity ? iter->capacity * 2 : 16;
+        iter->frames = realloc(iter->frames, iter->capacity * sizeof(*iter->frames));
+        if (!iter->frames) {
+            abort();
+        }
+    }
+    iter->frames[iter->depth++] = (tree_frame){node, 0};
+    iter->node = node;
+}
+
+static markdown_core_event_type tree_iter_next(tree_iter *iter) {
+    if (!iter->started) {
+        iter->started = true;
+        tree_iter_enter(iter, iter->root);
+        return MARKDOWN_CORE_EVENT_ENTER;
+    }
+    if (!iter->depth) {
+        iter->node = NULL;
+        return MARKDOWN_CORE_EVENT_DONE;
+    }
+    tree_frame *top = &iter->frames[iter->depth - 1];
+    if (top->next < top->node->child_count) {
+        tree_iter_enter(iter, top->node->children[top->next++]);
+        return MARKDOWN_CORE_EVENT_ENTER;
+    }
+    iter->node = top->node;
+    iter->depth--;
+    return MARKDOWN_CORE_EVENT_EXIT;
+}
+
+static markdown_core_node *tree_iter_get_node(const tree_iter *iter) { return iter->node; }
+
+/* The node whose children the walk's current node is among, or NULL for the
+ * root: the frame below the node's own at its ENTER, the top one at its EXIT,
+ * which already took the node off. */
+static markdown_core_node *tree_iter_parent(const tree_iter *iter) {
+    size_t below = iter->depth && iter->frames[iter->depth - 1].node == iter->node ? 1 : 0;
+    return iter->depth > below ? iter->frames[iter->depth - 1 - below].node : NULL;
+}
+
+/* The node whose children `node` is among in the tree under `root`, or NULL
+ * when it is the root or not in the tree. */
+static markdown_core_node *parent_in(markdown_core_node *root, const markdown_core_node *node) {
+    tree_iter *iter = tree_iter_new(root);
+    markdown_core_node *parent = NULL;
+    for (markdown_core_event_type event; (event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE;) {
+        if (event == MARKDOWN_CORE_EVENT_ENTER && tree_iter_get_node(iter) == node) {
+            parent = tree_iter_parent(iter);
+            break;
+        }
+    }
+    tree_iter_free(iter);
+    return parent;
+}
 
 /* A FACADE CALL THE CASE EXPECTS TO SUCCEED. Any other status names the call
  * and aborts the suite, so no case reads an out-parameter the call did not
@@ -91,6 +208,22 @@ static const markdown_core_node *facade_field(const markdown_core_node *node, fa
     const markdown_core_node *value;
     EXPECT_OK(accessor(node, &value));
     return value;
+}
+
+/* The facade's slice for a node of the kind each accessor reads. */
+typedef markdown_core_status (*facade_nodes_field)(const markdown_core_node *, markdown_core_nodes *);
+
+static markdown_core_nodes facade_nodes(const markdown_core_node *node, facade_nodes_field accessor) {
+    markdown_core_nodes value;
+    EXPECT_OK(accessor(node, &value));
+    return value;
+}
+
+/* The child the facade answers for `node` at `index`, or NULL past its
+ * children. */
+static const markdown_core_node *facade_child(const markdown_core_node *node, size_t index) {
+    markdown_core_nodes children = markdown_core_node_children(node);
+    return index < children.count ? children.items[index] : NULL;
 }
 
 static const markdown_core_metadata_value *facade_metadata(const markdown_core_node *node,
@@ -741,27 +874,27 @@ static void accessors(test_batch_runner *runner) {
     markdown_core_string literal;
     bool fenced = false, closed = false;
 
-    markdown_core_node *heading = doc->first_child;
+    markdown_core_node *heading = child_at(doc, 0);
     OK(runner, facade_heading_level(heading) == 2, "heading level");
 
-    markdown_core_node *bullet_list = heading->next;
+    markdown_core_node *bullet_list = child_at(doc, 1);
     EXPECT_OK(markdown_core_node_list_properties(bullet_list, &flavor, &start, &variant, &delimiter, &tight));
     OK(runner, flavor == MARKDOWN_CORE_LIST_FLAVOR_BULLET && !start.has_value && tight, "tight bullet list");
 
-    markdown_core_node *ordered_list = bullet_list->next;
+    markdown_core_node *ordered_list = child_at(doc, 2);
     EXPECT_OK(markdown_core_node_list_properties(ordered_list, &flavor, &start, &variant, &delimiter, &tight));
     OK(runner,
        flavor == MARKDOWN_CORE_LIST_FLAVOR_ORDERED && start.has_value && start.value == 2 &&
            delimiter.kind == MARKDOWN_CORE_ORDERED_LIST_DELIMITER_PERIOD && !tight,
        "loose ordered list from 2 with a period");
 
-    markdown_core_node *fenced_code = ordered_list->next;
+    markdown_core_node *fenced_code = child_at(doc, 3);
     EXPECT_OK(markdown_core_node_code_block_properties(fenced_code, &info, &language, &literal, &fenced, &closed));
     OK(runner, fenced && closed && info.has_value && info.value.length == 4 && memcmp(info.value.data, "lang", 4) == 0,
        "closed fenced code with its info string");
     LITERAL_EQ(runner, fenced_code, "fenced\n", "fenced code literal");
 
-    markdown_core_node *code = fenced_code->next;
+    markdown_core_node *code = child_at(doc, 4);
     EXPECT_OK(markdown_core_node_code_block_properties(code, &info, &language, &literal, &fenced, &closed));
     OK(runner, !fenced && !info.has_value, "indented code has no fence");
     LITERAL_EQ(runner, code, "code\n", "indented code literal");
@@ -769,19 +902,19 @@ static void accessors(test_batch_runner *runner) {
     static const char unclosed_markdown[] = "``` lang\n"
                                             "unclosed\n";
     markdown_core_node *unclosed_doc = markdown_core_parse_document(unclosed_markdown, sizeof(unclosed_markdown) - 1);
-    EXPECT_OK(markdown_core_node_code_block_properties(unclosed_doc->first_child, &info, &language, &literal, &fenced,
+    EXPECT_OK(markdown_core_node_code_block_properties(child_at(unclosed_doc, 0), &info, &language, &literal, &fenced,
                                                        &closed));
     OK(runner, fenced && !closed, "an unclosed fence reports open");
     markdown_core_node_free(unclosed_doc);
 
-    markdown_core_node *html = code->next;
+    markdown_core_node *html = child_at(doc, 5);
     LITERAL_EQ(runner, html, "<div>html</div>\n", "html block literal");
 
-    markdown_core_node *paragraph = html->next;
+    markdown_core_node *paragraph = child_at(doc, 6);
     markdown_core_scope scope = SCOPE(paragraph);
     OK(runner, scope.start.line == 17 && scope.start.column == 1 && scope.end.line == 17, "paragraph scope");
 
-    markdown_core_node *link = paragraph->first_child;
+    markdown_core_node *link = child_at(paragraph, 0);
     markdown_core_destination destination = facade_destination(link);
     markdown_core_optional_string title = facade_title(link);
     OK(runner,
@@ -790,7 +923,7 @@ static void accessors(test_batch_runner *runner) {
        "a parsed link's destination is read through the facade");
     OK(runner, title.has_value && title.value.length == 5 && memcmp(title.value.data, "title", 5) == 0,
        "a parsed link's title is read through the facade");
-    LITERAL_EQ(runner, link->first_child, "link", "link text literal");
+    LITERAL_EQ(runner, child_at(link, 0), "link", "link text literal");
 
     markdown_core_node_free(doc);
 }
@@ -799,8 +932,8 @@ static markdown_core_node *parse(const char *source) { return markdown_core_pars
 
 static void formula_element_accessors(test_batch_runner *runner) {
     markdown_core_node *doc = parse("Inline $x+y$ end.\n");
-    markdown_core_node *paragraph = doc->first_child;
-    markdown_core_node *formula = paragraph->first_child->next;
+    markdown_core_node *paragraph = child_at(doc, 0);
+    markdown_core_node *formula = child_at(paragraph, 1);
 
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula", "formula type string");
     STR_EQ(runner, markdown_core_elements_get_formula_literal(formula), "x+y", "formula inline literal");
@@ -814,7 +947,7 @@ static void formula_element_accessors(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 
     doc = parse("$$\nx+y\n$$\n");
-    formula = doc->first_child;
+    formula = child_at(doc, 0);
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula_block",
            "standalone formula block type string");
     STR_EQ(runner, markdown_core_elements_get_formula_literal(formula), "x+y", "standalone formula block literal");
@@ -823,8 +956,8 @@ static void formula_element_accessors(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 
     doc = parse("Display $$a+b$$ end.\n");
-    paragraph = doc->first_child;
-    formula = paragraph->first_child->next;
+    paragraph = child_at(doc, 0);
+    formula = child_at(paragraph, 1);
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula", "standalone formula inline type string");
     STR_EQ(runner, markdown_core_elements_get_formula_literal(formula), "a+b", "standalone formula inline literal");
     INT_EQ(runner, markdown_core_elements_get_formula_mode(formula), MARKDOWN_CORE_FORMULA_MODE_STANDALONE,
@@ -832,8 +965,8 @@ static void formula_element_accessors(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 
     doc = parse("Inline \\\\(x+y\\\\) end.\n");
-    paragraph = doc->first_child;
-    formula = paragraph->first_child->next;
+    paragraph = child_at(doc, 0);
+    formula = child_at(paragraph, 1);
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula", "LaTeX embedded formula inline type string");
     STR_EQ(runner, markdown_core_elements_get_formula_literal(formula), "x+y", "LaTeX embedded formula inline literal");
     INT_EQ(runner, markdown_core_elements_get_formula_mode(formula), MARKDOWN_CORE_FORMULA_MODE_EMBEDDED,
@@ -841,8 +974,8 @@ static void formula_element_accessors(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 
     doc = parse("Display \\\\[x+y\\\\] end.\n");
-    paragraph = doc->first_child;
-    formula = paragraph->first_child->next;
+    paragraph = child_at(doc, 0);
+    formula = child_at(paragraph, 1);
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula",
            "LaTeX standalone formula inline type string");
     STR_EQ(runner, markdown_core_elements_get_formula_literal(formula), "x+y",
@@ -852,7 +985,7 @@ static void formula_element_accessors(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 
     doc = parse("\\\\[\nx+y\n\\\\]\n");
-    formula = doc->first_child;
+    formula = child_at(doc, 0);
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula_block",
            "LaTeX standalone formula block type string");
     STR_EQ(runner, markdown_core_elements_get_formula_literal(formula), "x+y",
@@ -862,7 +995,7 @@ static void formula_element_accessors(test_batch_runner *runner) {
     markdown_core_node_free(doc);
 
     doc = parse("```formula\nx+y\n```\n");
-    formula = doc->first_child;
+    formula = child_at(doc, 0);
     STR_EQ(runner, markdown_core_node_get_type_string(formula), "formula_block",
            "formula fence becomes standalone block");
     STR_EQ(runner, markdown_core_elements_get_formula_literal(formula), "x+y", "formula fence literal is trimmed");
@@ -890,16 +1023,14 @@ static void directive_element_accessors(test_batch_runner *runner) {
      * keeps the first occurrence of each name in source order. */
     markdown_core_node *doc = parse(":a[]{id=first muted=true title=\"My Video\" bare= dup=first dup=last "
                                     "class=red class=green class=blue id=123}\n");
-    markdown_core_node *paragraph = doc->first_child;
-    markdown_core_node *directive = paragraph->first_child;
+    markdown_core_node *paragraph = child_at(doc, 0);
+    markdown_core_node *directive = child_at(paragraph, 0);
     markdown_core_node *label = markdown_core_directive_label(directive);
 
     STR_EQ(runner, markdown_core_node_get_type_string(directive), "directive", "directive inline type string");
     OK(runner, label != NULL && label->kind == MARKDOWN_CORE_NODE_DIRECTIVE_LABEL,
        "an explicit directive label is a typed node field");
-    OK(runner, directive->first_child == NULL, "an inline directive label is not a content child");
-    OK(runner, label->parent == NULL && label->prev == NULL && label->next == NULL,
-       "a directive label is a detached field root, not a child or sibling");
+    OK(runner, child_at(directive, 0) == NULL, "an inline directive label is not a content child");
     STR_EQ(runner, markdown_core_elements_get_directive_name(directive), "a", "directive name getter");
     markdown_core_optional_string anchor = markdown_core_node_anchor(directive);
     OK(runner, anchor.has_value && anchor.value.length == 3 && memcmp(anchor.value.data, "123", 3) == 0,
@@ -927,141 +1058,61 @@ static void directive_element_accessors(test_batch_runner *runner) {
      * and block content. The ordinary cmark iterator follows only the content
      * child tree; callers can start a separate walk at the label field root. */
     doc = parse(":::note[Title]\nBody\n:::\n");
-    directive = doc->first_child;
+    directive = child_at(doc, 0);
     label = markdown_core_directive_label(directive);
-    paragraph = directive->first_child;
+    paragraph = child_at(directive, 0);
     OK(runner, label != NULL && paragraph != NULL && paragraph->kind == MARKDOWN_CORE_NODE_PARAGRAPH,
        "a block directive exposes label and content as distinct relations");
-    OK(runner, label->next == NULL && label->prev == NULL && directive->first_child == paragraph,
+    OK(runner, directive->child_count == 1 && child_at(directive, 0) == paragraph,
        "the label is not mixed into the block content list");
-    OK(runner, label->parent == NULL, "the directive label is a detached field root");
-    INT_EQ(runner, markdown_core_node_check(doc, NULL), 0, "the document child tree is structurally valid");
-    INT_EQ(runner, markdown_core_node_check(label, NULL), 0, "the label child tree is structurally valid");
     {
-        markdown_core_node *expected[] = {directive, paragraph, paragraph->first_child};
+        markdown_core_node *expected[] = {directive, paragraph, child_at(paragraph, 0)};
         size_t entered = 0;
-        markdown_core_iter *iter = markdown_core_iter_new(directive);
+        tree_iter *iter = tree_iter_new(directive);
         markdown_core_event_type event;
-        while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        while ((event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
             if (event == MARKDOWN_CORE_EVENT_ENTER) {
                 OK(runner,
-                   entered < sizeof(expected) / sizeof(expected[0]) &&
-                       markdown_core_iter_get_node(iter) == expected[entered],
+                   entered < sizeof(expected) / sizeof(expected[0]) && tree_iter_get_node(iter) == expected[entered],
                    "iterator preserves structural child order");
                 entered++;
             }
         }
         INT_EQ(runner, (int)entered, (int)(sizeof(expected) / sizeof(expected[0])),
                "iterator visits only directive content nodes");
-        markdown_core_iter_free(iter);
+        tree_iter_free(iter);
     }
     {
-        markdown_core_node *expected[] = {label, label->first_child};
+        markdown_core_node *expected[] = {label, child_at(label, 0)};
         size_t entered = 0;
-        markdown_core_iter *iter = markdown_core_iter_new(label);
+        tree_iter *iter = tree_iter_new(label);
         markdown_core_event_type event;
-        while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        while ((event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
             if (event == MARKDOWN_CORE_EVENT_ENTER) {
                 OK(runner,
-                   entered < sizeof(expected) / sizeof(expected[0]) &&
-                       markdown_core_iter_get_node(iter) == expected[entered],
+                   entered < sizeof(expected) / sizeof(expected[0]) && tree_iter_get_node(iter) == expected[entered],
                    "a walk rooted at the label follows its own child tree");
                 entered++;
             }
         }
         INT_EQ(runner, (int)entered, (int)(sizeof(expected) / sizeof(expected[0])),
                "the label tree is independently iterable");
-        markdown_core_iter_free(iter);
+        tree_iter_free(iter);
     }
     markdown_core_node_free(doc);
 
     /* Missing and authored-empty containers have the same public value. */
     doc = parse(":plain[] :empty{}\n");
-    paragraph = doc->first_child;
-    directive = paragraph->first_child;
+    paragraph = child_at(doc, 0);
+    directive = child_at(paragraph, 0);
     for (int i = 0; i < 2; i++) {
         OK(runner, !markdown_core_node_anchor(directive).has_value, "empty value has no anchor");
         INT_EQ(runner, (int)markdown_core_node_attribute_class_count(directive), 0, "empty classes");
         INT_EQ(runner, (int)markdown_core_node_attribute_record_count(directive), 0, "empty records");
         if (i == 0) {
-            directive = directive->next->next;
+            directive = child_at(paragraph, 2);
         }
     }
-    markdown_core_node_free(doc);
-}
-
-static void node_check(test_batch_runner *runner) {
-    // Construct an incomplete tree.
-    markdown_core_node *doc = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
-    markdown_core_node *p1 = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
-    markdown_core_node *p2 = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
-    doc->first_child = p1;
-    p1->next = p2;
-
-    INT_EQ(runner, markdown_core_node_check(doc, NULL), 4, "node_check works");
-    INT_EQ(runner, markdown_core_node_check(doc, NULL), 0, "node_check fixes tree");
-
-    markdown_core_node_free(doc);
-}
-
-static void iterator(test_batch_runner *runner) {
-    markdown_core_node *doc = markdown_core_parse_document("> a *b*\n\nc", 10);
-    int parnodes = 0;
-    markdown_core_event_type ev_type;
-    markdown_core_iter *iter = markdown_core_iter_new(doc);
-    markdown_core_node *cur;
-
-    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        cur = markdown_core_iter_get_node(iter);
-        if (cur->kind == MARKDOWN_CORE_NODE_PARAGRAPH && ev_type == MARKDOWN_CORE_EVENT_ENTER) {
-            parnodes += 1;
-        }
-    }
-    INT_EQ(runner, parnodes, 2, "iterate correctly counts paragraphs");
-
-    markdown_core_iter_free(iter);
-    markdown_core_node_free(doc);
-}
-
-static void iterator_delete(test_batch_runner *runner) {
-    static const char md[] = "a *b* c\n"
-                             "\n"
-                             "* item1\n"
-                             "* item2\n"
-                             "\n"
-                             "a `b` c\n"
-                             "\n"
-                             "* item1\n"
-                             "* item2\n";
-    markdown_core_node *doc = markdown_core_parse_document(md, sizeof(md) - 1);
-    markdown_core_iter *iter = markdown_core_iter_new(doc);
-    markdown_core_event_type ev_type;
-
-    while ((ev_type = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *node = markdown_core_iter_get_node(iter);
-        // Delete list, emph, and code nodes -- all at EXIT, which is Step 5's
-        // mutation rule. `CODE` was deleted at ENTER here until the event
-        // contract became total, and that was legal only because `S_is_leaf`
-        // suppressed `CODE`'s EXIT. A test that frees at ENTER is a test
-        // asserting the suppression list.
-        if (ev_type == MARKDOWN_CORE_EVENT_EXIT &&
-            (node->kind == MARKDOWN_CORE_NODE_LIST || node->kind == MARKDOWN_CORE_NODE_EMPHASIS ||
-             node->kind == MARKDOWN_CORE_NODE_CODE)) {
-            markdown_core_node_free(node);
-        }
-    }
-
-    // Both lists are gone and each paragraph keeps only its text slots.
-    markdown_core_node *first = doc->first_child;
-    markdown_core_node *second = first->next;
-    INT_EQ(runner, first->kind, MARKDOWN_CORE_NODE_PARAGRAPH, "first surviving node is a paragraph");
-    INT_EQ(runner, second->kind, MARKDOWN_CORE_NODE_PARAGRAPH, "second surviving node is a paragraph");
-    OK(runner, second->next == NULL, "deleted lists are unlinked");
-    LITERAL_EQ(runner, first->first_child, "a ", "first paragraph keeps leading text");
-    LITERAL_EQ(runner, first->first_child->next, " c", "first paragraph keeps trailing text after deleted emph");
-    LITERAL_EQ(runner, second->first_child->next, " c", "second paragraph keeps trailing text after deleted code");
-
-    markdown_core_iter_free(iter);
     markdown_core_node_free(doc);
 }
 
@@ -1069,9 +1120,8 @@ static void create_tree(test_batch_runner *runner) {
     markdown_core_node *doc = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
 
     markdown_core_node *p = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
-    OK(runner, markdown_core_node_append_child(doc, p), "append paragraph");
-    INT_EQ(runner, markdown_core_node_check(doc, NULL), 0, "append paragraph consistent");
-    OK(runner, p->parent == doc, "paragraph parent");
+    OK(runner, append_child(doc, p), "append paragraph");
+    OK(runner, doc->child_count == 1 && child_at(doc, 0) == p, "the document holds the paragraph");
 
     markdown_core_node *str1 = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
     set_literal(str1, "Hello, ");
@@ -1080,38 +1130,30 @@ static void create_tree(test_batch_runner *runner) {
     set_literal(str2, "world");
     markdown_core_node *str3 = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
     set_literal(str3, "!");
-    OK(runner, markdown_core_node_append_child(p, str1), "append str1");
-    OK(runner, markdown_core_node_append_child(p, emph), "append emph");
-    OK(runner, markdown_core_node_append_child(emph, str2), "append str2");
-    OK(runner, markdown_core_node_append_child(p, str3), "append str3");
-    INT_EQ(runner, markdown_core_node_check(doc, NULL), 0, "built tree consistent");
-    OK(runner, !markdown_core_node_append_child(str1, str3), "a text node contains nothing");
-    OK(runner, !markdown_core_node_append_child(emph, p), "an inline contains no block");
+    OK(runner, append_child(p, str1), "append str1");
+    OK(runner, append_child(p, emph), "append emph");
+    OK(runner, append_child(emph, str2), "append str2");
+    OK(runner, append_child(p, str3), "append str3");
+    markdown_core_node *orphan = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
+    markdown_core_node *block = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+    OK(runner, !append_child(str1, orphan) && !str1->child_count, "a text node contains nothing");
+    OK(runner, !append_child(emph, block) && emph->child_count == 1, "an inline contains no block");
+    markdown_core_node_free(orphan);
+    markdown_core_node_free(block);
 
     // Built tree: p -> [str1 "Hello, ", emph(str2 "world"), str3 "!"]
-    OK(runner, p->first_child == str1, "built tree starts with str1");
-    OK(runner, str1->next == emph, "emph follows str1");
-    OK(runner, emph->first_child == str2, "emph contains str2");
-    OK(runner, emph->next == str3 && p->last_child == str3, "str3 ends the paragraph");
+    OK(runner, p->child_count == 3 && child_at(p, 0) == str1 && child_at(p, 1) == emph && child_at(p, 2) == str3,
+       "the paragraph holds its children in order");
+    OK(runner, emph->child_count == 1 && child_at(emph, 0) == str2, "emph contains str2");
     LITERAL_EQ(runner, str1, "Hello, ", "str1 literal");
     LITERAL_EQ(runner, str2, "world", "str2 literal");
     LITERAL_EQ(runner, str3, "!", "str3 literal");
-
-    markdown_core_node_unlink(emph);
-    INT_EQ(runner, markdown_core_node_check(doc, NULL), 0, "unlink consistent");
-    OK(runner, !emph->parent && !emph->prev && !emph->next, "an unlinked node has no owner or siblings");
-    OK(runner, emph->first_child == str2, "an unlinked node keeps its children");
-    OK(runner, str1->next == str3 && str3->prev == str1, "unlink closes the gap");
-
-    OK(runner, markdown_core_node_append_child(p, emph), "an unlinked node attaches again");
-    OK(runner, p->last_child == emph && str3->next == emph, "re-attached at the end");
-    INT_EQ(runner, markdown_core_node_check(doc, NULL), 0, "re-attach consistent");
 
     markdown_core_node_free(doc);
 }
 
 typedef struct {
-    markdown_core_node *child, *owner;
+    bool accepts;
     size_t calls;
 } attachment_policy;
 
@@ -1125,7 +1167,7 @@ static int attachment_can_contain(const markdown_core_element *element, markdown
     (void)node;
     attachment_policy *policy = attachment_current_policy;
     policy->calls++;
-    return child_kind == MARKDOWN_CORE_NODE_TEXT && policy->child->parent == policy->owner;
+    return child_kind == MARKDOWN_CORE_NODE_TEXT && policy->accepts;
 }
 
 static const markdown_core_element ATTACHMENT_POLICY = {
@@ -1133,70 +1175,30 @@ static const markdown_core_element ATTACHMENT_POLICY = {
     .can_contain_func = attachment_can_contain,
 };
 
-static void check_children(test_batch_runner *runner, markdown_core_node *parent, markdown_core_node **children,
-                           size_t count) {
-    OK(runner, parent->first_child == children[0] && parent->last_child == children[count - 1],
-       "parent retains the expected endpoints");
-    for (size_t i = 0; i < count; i++) {
-        OK(runner,
-           children[i]->parent == parent && children[i]->prev == (i ? children[i - 1] : NULL) &&
-               children[i]->next == (i + 1 < count ? children[i + 1] : NULL),
-           "child %zu retains the expected owner and siblings", i);
-    }
-}
-
-/* A containment policy may inspect the current tree. Every rejecting check
- * must finish before detaching anything, including during same-parent moves. */
+/* A containment policy decides an append once, before the parent's children
+ * change: a refused child is not appended, and an accepted one joins the end. */
 static void attachment_containment(test_batch_runner *runner) {
-    for (int same_parent = 0; same_parent <= 1; same_parent++) {
-        for (int accepted = 0; accepted <= 1; accepted++) {
-            markdown_core_node *root = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
-            markdown_core_node *source = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
-            markdown_core_node *destination =
-                same_parent ? source : markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
-            markdown_core_node *child = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
-            markdown_core_node *anchor = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
-            markdown_core_node *first = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
-            markdown_core_node *last = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
-            markdown_core_node_append_child(root, source);
-            if (!same_parent) {
-                markdown_core_node_append_child(root, destination);
-            }
-            markdown_core_node_append_child(source, first);
-            markdown_core_node_append_child(source, child);
-            markdown_core_node_append_child(source, last);
-            markdown_core_node_append_child(destination, anchor);
-            attachment_policy policy = {child, accepted ? source : NULL, 0};
-            destination->element = &ATTACHMENT_POLICY;
-            attachment_current_policy = &policy;
+    for (int accepted = 0; accepted <= 1; accepted++) {
+        markdown_core_node *parent = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
+        markdown_core_node *anchor = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
+        markdown_core_node *child = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
+        append_child(parent, anchor);
+        attachment_policy policy = {accepted != 0, 0};
+        parent->element = &ATTACHMENT_POLICY;
+        attachment_current_policy = &policy;
 
-            INT_EQ(runner, markdown_core_node_append_child(destination, child), accepted,
-                   "append honors containment before changing ownership");
-            INT_EQ(runner, policy.calls, 1, "containment is validated exactly once");
-            if (!accepted) {
-                markdown_core_node *original[] = {first, child, last, anchor};
-                check_children(runner, source, original, same_parent ? 4 : 3);
-                if (!same_parent) {
-                    check_children(runner, destination, &anchor, 1);
-                }
-            } else if (same_parent) {
-                markdown_core_node *expected[] = {first, last, anchor, child};
-                check_children(runner, destination, expected, 4);
-            } else {
-                markdown_core_node *remaining[] = {first, last};
-                markdown_core_node *expected[] = {anchor, child};
-                check_children(runner, source, remaining, 2);
-                check_children(runner, destination, expected, 2);
-            }
-            attachment_current_policy = NULL;
-            /* Free known nodes individually so a regression that detaches
-             * one still leaves the test's ownership complete. */
+        INT_EQ(runner, append_child(parent, child), accepted, "append honors containment before changing ownership");
+        INT_EQ(runner, policy.calls, 1, "containment is validated exactly once");
+        OK(runner,
+           accepted ? parent->child_count == 2 && child_at(parent, 0) == anchor && child_at(parent, 1) == child
+                    : parent->child_count == 1 && child_at(parent, 0) == anchor,
+           "the parent's children change only when the policy accepts");
+        attachment_current_policy = NULL;
+        parent->element = NULL;
+        if (!accepted) {
             markdown_core_node_free(child);
-            markdown_core_node_free(anchor);
-            markdown_core_node_free(first);
-            markdown_core_node_free(last);
-            markdown_core_node_free(root);
         }
+        markdown_core_node_free(parent);
     }
 }
 
@@ -1205,10 +1207,8 @@ void hierarchy(test_batch_runner *runner) {
     markdown_core_node *bquote2 = markdown_core_node_new(MARKDOWN_CORE_NODE_CALLOUT);
     markdown_core_node *bquote3 = markdown_core_node_new(MARKDOWN_CORE_NODE_CALLOUT);
 
-    OK(runner, markdown_core_node_append_child(bquote1, bquote2), "append bquote2");
-    OK(runner, markdown_core_node_append_child(bquote2, bquote3), "append bquote3");
-    OK(runner, !markdown_core_node_append_child(bquote3, bquote3), "adding a node as child of itself fails");
-    OK(runner, !markdown_core_node_append_child(bquote3, bquote1), "adding a parent as child fails");
+    OK(runner, append_child(bquote1, bquote2), "append bquote2");
+    OK(runner, append_child(bquote2, bquote3), "append bquote3");
 
     markdown_core_node_free(bquote1);
 
@@ -1258,7 +1258,7 @@ static void test_content(test_batch_runner *runner, markdown_core_node_type type
         markdown_core_node_type child_type = node_types[i];
         markdown_core_node *child = markdown_core_node_new(child_type);
 
-        int got = markdown_core_node_append_child(node, child);
+        int got = append_child(node, child);
         int expected = 0;
         if (allowed_content) {
             for (unsigned int *p = allowed_content; *p; ++p) {
@@ -1268,7 +1268,7 @@ static void test_content(test_batch_runner *runner, markdown_core_node_type type
 
         INT_EQ(runner, got, expected, "add %d as child of %d", child_type, type);
 
-        markdown_core_node_free(child);
+        markdown_core_node_free(got ? take_last_child(node) : child);
     }
 
     markdown_core_node_free(node);
@@ -1298,7 +1298,7 @@ static void utf8(test_batch_runner *runner) {
     // Test NUL followed by newline
     static const char string_with_nul_lf[] = "```\n\0\n```\n";
     markdown_core_node *doc = markdown_core_parse_document(string_with_nul_lf, sizeof(string_with_nul_lf) - 1);
-    markdown_core_node *code_block = doc->first_child;
+    markdown_core_node *code_block = child_at(doc, 0);
     INT_EQ(runner, code_block->kind, MARKDOWN_CORE_NODE_CODE_BLOCK, "utf8 with \\0\\n parses a code block");
     LITERAL_EQ(runner, code_block, UTF8_REPL "\n", "utf8 with \\0\\n");
     markdown_core_node_free(doc);
@@ -1306,9 +1306,9 @@ static void utf8(test_batch_runner *runner) {
     // A leading U+FEFF is an ordinary character: it is text, not a marker to skip.
     static const char string_with_bom[] = "\xef\xbb\xbf# Hello\n";
     doc = markdown_core_parse_document(string_with_bom, sizeof(string_with_bom) - 1);
-    markdown_core_node *paragraph = doc->first_child;
+    markdown_core_node *paragraph = child_at(doc, 0);
     INT_EQ(runner, paragraph->kind, MARKDOWN_CORE_NODE_PARAGRAPH, "a leading U+FEFF keeps its line a paragraph");
-    LITERAL_EQ(runner, paragraph->first_child, "\xef\xbb\xbf# Hello", "a leading U+FEFF stays in the text");
+    LITERAL_EQ(runner, child_at(paragraph, 0), "\xef\xbb\xbf# Hello", "a leading U+FEFF stays in the text");
     markdown_core_node_free(doc);
 }
 
@@ -1326,15 +1326,15 @@ static void line_endings(test_batch_runner *runner) {
     static const char list_with_endings[] = "- a\n- b\r\n- c\r- d";
     static const char *const expected_items[] = {"a", "b", "c", "d"};
     markdown_core_node *doc = markdown_core_parse_document(list_with_endings, sizeof(list_with_endings) - 1);
-    markdown_core_node *list = doc->first_child;
-    markdown_core_node *item = list->first_child;
+    markdown_core_node *list = child_at(doc, 0);
+    markdown_core_node *item = child_at(list, 0);
     INT_EQ(runner, list->kind, MARKDOWN_CORE_NODE_LIST, "list with different line endings parses one list");
     for (size_t i = 0; i < 4; i++) {
         OK(runner, item != NULL, "list item %zu exists", i);
         if (item) {
-            markdown_core_node *paragraph = item->first_child;
-            LITERAL_EQ(runner, paragraph->first_child, expected_items[i], "list item %zu text", i);
-            item = item->next;
+            markdown_core_node *paragraph = child_at(item, 0);
+            LITERAL_EQ(runner, child_at(paragraph, 0), expected_items[i], "list item %zu text", i);
+            item = child_at(list, i + 1);
         }
     }
     OK(runner, item == NULL, "list has exactly four items");
@@ -1343,16 +1343,16 @@ static void line_endings(test_batch_runner *runner) {
     // A CRLF line ending is a SoftBreak between the two texts.
     static const char crlf_lines[] = "line\r\nline\r\n";
     doc = markdown_core_parse_document(crlf_lines, sizeof(crlf_lines) - 1);
-    markdown_core_node *paragraph = doc->first_child;
-    markdown_core_node *middle = paragraph->first_child->next;
-    LITERAL_EQ(runner, paragraph->first_child, "line", "crlf line splits into text");
+    markdown_core_node *paragraph = child_at(doc, 0);
+    markdown_core_node *middle = child_at(paragraph, 1);
+    LITERAL_EQ(runner, child_at(paragraph, 0), "line", "crlf line splits into text");
     INT_EQ(runner, middle->kind, MARKDOWN_CORE_NODE_SOFT_BREAK, "crlf endings produce a softbreak");
-    LITERAL_EQ(runner, middle->next, "line", "crlf trailing text follows the softbreak");
+    LITERAL_EQ(runner, child_at(paragraph, 2), "line", "crlf trailing text follows the softbreak");
     markdown_core_node_free(doc);
 
     static const char no_line_ending[] = "```\nline\n```";
     doc = markdown_core_parse_document(no_line_ending, sizeof(no_line_ending) - 1);
-    markdown_core_node *code_block = doc->first_child;
+    markdown_core_node *code_block = child_at(doc, 0);
     INT_EQ(runner, code_block->kind, MARKDOWN_CORE_NODE_CODE_BLOCK, "fenced code block with no final newline parses");
     LITERAL_EQ(runner, code_block, "line\n", "fenced code block with no final newline");
     markdown_core_node_free(doc);
@@ -1398,15 +1398,15 @@ static void comment_nodes(test_batch_runner *runner) {
                                    "<!-->\n";
 
     markdown_core_node *doc = markdown_core_parse_document(markdown, sizeof(markdown) - 1);
-    markdown_core_node *paragraph = doc->first_child;
-    markdown_core_node *text = paragraph->first_child;
-    markdown_core_node *comment = text->next;
-    markdown_core_node *after = comment->next;
-    markdown_core_node *inline_html = after->next;
-    markdown_core_node *block_comment = paragraph->next;
-    markdown_core_node *block_html = block_comment->next;
-    markdown_core_node *trailing = block_html->next;
-    markdown_core_node *empties = trailing->next;
+    markdown_core_node *paragraph = child_at(doc, 0);
+    markdown_core_node *text = child_at(paragraph, 0);
+    markdown_core_node *comment = child_at(paragraph, 1);
+    markdown_core_node *after = child_at(paragraph, 2);
+    markdown_core_node *inline_html = child_at(paragraph, 3);
+    markdown_core_node *block_comment = child_at(doc, 1);
+    markdown_core_node *block_html = child_at(doc, 2);
+    markdown_core_node *trailing = child_at(doc, 3);
+    markdown_core_node *empties = child_at(doc, 4);
     markdown_core_node *empty;
 
     LITERAL_EQ(runner, text, "before ", "text before an inline comment");
@@ -1433,21 +1433,21 @@ static void comment_nodes(test_batch_runner *runner) {
 
     INT_EQ(runner, empties->kind, MARKDOWN_CORE_NODE_COMMENT_BLOCK, "`<!-->` opens a block comment");
     LITERAL_EQ(runner, empties, "", "`<!-->` as a block has an empty literal");
-    OK(runner, empties->first_child == NULL, "a block comment is a leaf");
+    OK(runner, child_at(empties, 0) == NULL, "a block comment is a leaf");
 
     markdown_core_node_free(doc);
 
     doc = markdown_core_parse_document("a <!--> b <!---> c <!----> d\n", 29);
-    paragraph = doc->first_child;
-    empty = paragraph->first_child->next;
+    paragraph = child_at(doc, 0);
+    empty = child_at(paragraph, 1);
     INT_EQ(runner, empty->kind, MARKDOWN_CORE_NODE_COMMENT, "`<!-->` is an inline comment");
     LITERAL_EQ(runner, empty, "", "`<!-->` has an empty literal");
     INT_EQ(runner, START_COLUMN(empty), 3, "`<!-->` starts at its `<`");
     INT_EQ(runner, END_COLUMN(empty), 7, "`<!-->` ends at its `>`");
-    empty = empty->next->next;
+    empty = child_at(paragraph, 3);
     INT_EQ(runner, empty->kind, MARKDOWN_CORE_NODE_COMMENT, "`<!--->` is an inline comment");
     LITERAL_EQ(runner, empty, "", "`<!--->` has an empty literal");
-    empty = empty->next->next;
+    empty = child_at(paragraph, 5);
     INT_EQ(runner, empty->kind, MARKDOWN_CORE_NODE_COMMENT, "`<!---->` is an inline comment");
     LITERAL_EQ(runner, empty, "", "`<!---->` has an empty literal");
     markdown_core_node_free(doc);
@@ -1463,10 +1463,10 @@ static void comment_nodes(test_batch_runner *runner) {
         static const char cr[] = "a <!--x\ry--> b\r\r<!--\rx\r-->\r";
         markdown_core_node *code;
         doc = markdown_core_parse_document(crlf, sizeof(crlf) - 1);
-        paragraph = doc->first_child;
-        comment = paragraph->first_child->next;
-        block_comment = paragraph->next;
-        code = block_comment->next;
+        paragraph = child_at(doc, 0);
+        comment = child_at(paragraph, 1);
+        block_comment = child_at(doc, 1);
+        code = child_at(doc, 2);
         INT_EQ(runner, comment->kind, MARKDOWN_CORE_NODE_COMMENT, "CRLF: inline comment");
         LITERAL_EQ(runner, comment, "x\ny", "CRLF inside an inline comment is stored as LF");
         INT_EQ(runner, END_LINE(comment), 2, "CRLF: the inline comment ends on line 2");
@@ -1478,9 +1478,9 @@ static void comment_nodes(test_batch_runner *runner) {
         markdown_core_node_free(doc);
 
         doc = markdown_core_parse_document(cr, sizeof(cr) - 1);
-        paragraph = doc->first_child;
-        comment = paragraph->first_child->next;
-        block_comment = paragraph->next;
+        paragraph = child_at(doc, 0);
+        comment = child_at(paragraph, 1);
+        block_comment = child_at(doc, 1);
         LITERAL_EQ(runner, comment, "x\ny", "a lone CR inside an inline comment is stored as LF");
         LITERAL_EQ(runner, block_comment, "\nx\n", "a lone CR inside a block comment is stored as LF");
         INT_EQ(runner, END_LINE(block_comment), 6, "CR: the block comment ends on its closer line");
@@ -1495,17 +1495,18 @@ static void comment_nodes(test_batch_runner *runner) {
 static void test_md_paragraph_bytes(test_batch_runner *runner, const char *markdown, size_t markdown_length,
                                     const char *expected_text, const char *msg) {
     markdown_core_node *doc = markdown_core_parse_document(markdown, markdown_length);
-    markdown_core_node *paragraph = doc->first_child;
+    markdown_core_node *paragraph = child_at(doc, 0);
     char text[4096] = "";
     size_t length = 0;
     markdown_core_node *child;
 
-    if (paragraph->kind != MARKDOWN_CORE_NODE_PARAGRAPH || paragraph->next != NULL) {
+    if (paragraph->kind != MARKDOWN_CORE_NODE_PARAGRAPH || child_at(doc, 1) != NULL) {
         OK(runner, 0, "%s (document is a single paragraph)", msg);
         markdown_core_node_free(doc);
         return;
     }
-    for (child = paragraph->first_child; child; child = child->next) {
+    for (uint32_t index = 0; index < paragraph->child_count; index++) {
+        child = paragraph->children[index];
         markdown_core_string literal;
         size_t literal_length;
         if (child->kind != MARKDOWN_CORE_NODE_TEXT || !literal_of(child, &literal)) {
@@ -1535,7 +1536,7 @@ static void test_md_paragraph_text(test_batch_runner *runner, const char *markdo
 static void test_crlf_line_ending(test_batch_runner *runner) {
     const char *source = "line1\r\nline2\r\n";
     markdown_core_node *document = markdown_core_parse_document(source, strlen(source));
-    OK(runner, document->first_child->next == NULL, "document has one paragraph");
+    OK(runner, child_at(document, 1) == NULL, "document has one paragraph");
     markdown_core_node_free(document);
 }
 
@@ -1620,108 +1621,13 @@ static void element_decline_yields_turn(test_batch_runner *runner) {
         return;
     }
 
-    markdown_core_node *paragraph = doc->first_child;
-    markdown_core_node *block = paragraph ? paragraph->next : NULL;
+    markdown_core_node *paragraph = child_at(doc, 0);
+    markdown_core_node *block = paragraph ? child_at(doc, 1) : NULL;
     INT_EQ(runner, paragraph->kind, MARKDOWN_CORE_NODE_PARAGRAPH, "the lead paragraph survives table declining");
     OK(runner, block != NULL, "the directive interrupts the ordinary paragraph");
     STR_EQ(runner, block ? markdown_core_node_get_type_string(block) : "", "directive_block",
            "a declining table does not swallow the directive block");
     markdown_core_node_free(doc);
-}
-
-/* Step 5. The event contract is TOTAL: every node yields exactly one ENTER and
- * exactly one EXIT, in that order, with its descendants' events between them.
- *
- * Until Step 5 an internal `S_is_leaf` list of eight node types suppressed the
- * EXIT of a node that "cannot have children" -- a list, not a property, so a
- * `FOOTNOTE_REFERENCE` with no children got an EXIT and a `TEXT` with no
- * children did not, and every walk in the engine had to know which. Three did:
- * `consolidate_text_nodes`, the HTML-comment stripper `M0` deleted, and
- * `autolink`'s `postprocess`, and all three freed or spliced at ENTER because
- * the suppression made it safe. The input below contains one of every suppressed
- * kind. */
-static size_t total_nodes(markdown_core_node *node) {
-    size_t n = 1;
-    for (markdown_core_node *c = node->first_child; c; c = c->next) {
-        n += total_nodes(c);
-    }
-    return n;
-}
-
-static void iterator_contract_is_total(test_batch_runner *runner) {
-    static const char md[] = "---\n"
-                             "\n"
-                             "<div>html block</div>\n"
-                             "\n"
-                             "    code block\n"
-                             "\n"
-                             "a `code` b <span>html</span> c\\\n"
-                             "d\n"
-                             "e\n";
-    markdown_core_node *doc = markdown_core_parse_document(md, sizeof(md) - 1);
-    markdown_core_iter *iter = markdown_core_iter_new(doc);
-    markdown_core_node *stack[64];
-    size_t depth = 0, enters = 0, exits = 0, mismatched = 0, overflow = 0;
-    markdown_core_event_type ev;
-
-    while ((ev = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *node = markdown_core_iter_get_node(iter);
-        if (ev == MARKDOWN_CORE_EVENT_ENTER) {
-            enters += 1;
-            if (depth == sizeof(stack) / sizeof(stack[0])) {
-                overflow += 1;
-            } else {
-                stack[depth++] = node;
-            }
-        } else if (ev == MARKDOWN_CORE_EVENT_EXIT) {
-            exits += 1;
-            if (depth == 0 || stack[--depth] != node) {
-                mismatched += 1;
-            }
-        }
-    }
-
-    INT_EQ(runner, (int)enters, (int)total_nodes(doc), "every node is entered exactly once");
-    INT_EQ(runner, (int)exits, (int)enters, "every node is exited exactly once");
-    INT_EQ(runner, (int)mismatched, 0, "every EXIT closes the ENTER it belongs to");
-    INT_EQ(runner, (int)depth, 0, "the walk ends with nothing left open");
-    INT_EQ(runner, (int)overflow, 0, "the test's stack was deep enough");
-
-    markdown_core_iter_free(iter);
-    markdown_core_node_free(doc);
-    const markdown_core_node_type owned_types[] = {MARKDOWN_CORE_NODE_CITATION, MARKDOWN_CORE_NODE_FOOTNOTE,
-                                                   MARKDOWN_CORE_NODE_SPECIMEN, MARKDOWN_CORE_NODE_METADATA};
-    for (size_t i = 0; i < sizeof(owned_types) / sizeof(*owned_types); i++) {
-        markdown_core_node *node = markdown_core_node_new(owned_types[i]);
-        iter = markdown_core_iter_new(node);
-        INT_EQ(runner, markdown_core_iter_next(iter), MARKDOWN_CORE_EVENT_ENTER, "empty owned node enters");
-        INT_EQ(runner, markdown_core_iter_next(iter), MARKDOWN_CORE_EVENT_EXIT, "empty owned node exits");
-        INT_EQ(runner, markdown_core_iter_next(iter), MARKDOWN_CORE_EVENT_DONE, "empty owned node terminates");
-        markdown_core_iter_free(iter);
-        markdown_core_node_free(node);
-    }
-}
-
-/* 3b. The ancestor check is unconditional, so the shipped library answers the
- * same as the test suite. It used to sit behind
- * `markdown_core_enable_safety_checks`, which defaulted to OFF and which only
- * `main()` here ever turned on -- so what shipped made `q->parent == q` on
- * request and returned success, while the tests that denied it flipped a flag
- * nothing else flipped. */
-static void no_node_is_its_own_ancestor(test_batch_runner *runner) {
-    markdown_core_node *q = markdown_core_node_new(MARKDOWN_CORE_NODE_CALLOUT);
-    markdown_core_node *a = markdown_core_node_new(MARKDOWN_CORE_NODE_CALLOUT);
-    markdown_core_node *b = markdown_core_node_new(MARKDOWN_CORE_NODE_CALLOUT);
-
-    INT_EQ(runner, markdown_core_node_append_child(q, q), 0, "a node cannot be appended to itself");
-    OK(runner, q->parent != q, "and it is not left as its own parent");
-
-    INT_EQ(runner, markdown_core_node_append_child(a, b), 1, "b becomes a child of a");
-    INT_EQ(runner, markdown_core_node_append_child(b, a), 0, "and a cannot then become a child of b");
-    OK(runner, a->parent == NULL, "so there is no two-node cycle");
-
-    markdown_core_node_free(a);
-    markdown_core_node_free(q);
 }
 
 /* D33. `process_emphasis` used to choose its arm by the delimiter's BYTE:
@@ -1908,12 +1814,13 @@ static int step_asked[2];
 
 static markdown_core_finish_result count_step_absent(const markdown_core_element_instance *self,
                                                      markdown_core_parser *parser, markdown_core_node *node,
-                                                     markdown_core_event_type event, int is_root, void **state) {
+                                                     markdown_core_node *parent, markdown_core_event_type event,
+                                                     void **state) {
     (void)self;
     (void)parser;
     (void)node;
     (void)event;
-    (void)is_root;
+    (void)parent;
     (void)state;
     step_asked[0]++;
     return MARKDOWN_CORE_FINISH_CONTINUE;
@@ -1921,12 +1828,13 @@ static markdown_core_finish_result count_step_absent(const markdown_core_element
 
 static markdown_core_finish_result count_step_present(const markdown_core_element_instance *self,
                                                       markdown_core_parser *parser, markdown_core_node *node,
-                                                      markdown_core_event_type event, int is_root, void **state) {
+                                                      markdown_core_node *parent, markdown_core_event_type event,
+                                                      void **state) {
     (void)self;
     (void)parser;
     (void)node;
     (void)event;
-    (void)is_root;
+    (void)parent;
     (void)state;
     step_asked[1]++;
     return MARKDOWN_CORE_FINISH_CONTINUE;
@@ -2205,7 +2113,7 @@ static void block_gate_admits_every_opener(test_batch_runner *runner) {
     markdown_core_node *doc = parse(simple_table);
     OK(runner, doc != NULL, "a simple table with a prose header parses");
     if (doc) {
-        markdown_core_node *first = doc->first_child;
+        markdown_core_node *first = child_at(doc, 0);
         STR_EQ(runner, first ? markdown_core_node_get_type_string(first) : "", "table",
                "a block opened by a later line survives first-line gating");
         markdown_core_node_free(doc);
@@ -2221,10 +2129,10 @@ static void inline_dispatch_ownership(test_batch_runner *runner) {
     STR_EQ(runner, observation.calls, "dc",
            "each matching owner runs once in precedence order; consuming NULL commits the token");
     if (root) {
-        markdown_core_node *code = root->first_child->first_child;
+        markdown_core_node *code = child_at(child_at(root, 0), 0);
         INT_EQ(runner, code->kind, MARKDOWN_CORE_NODE_CODE, "protected tokens retain their contents");
         LITERAL_EQ(runner, code, "!", "dispatch does not inspect an opaque token body");
-        LITERAL_EQ(runner, code->next, "  tail", "consumed input is not offered to fallbacks");
+        LITERAL_EQ(runner, child_at(child_at(root, 0), 1), "  tail", "consumed input is not offered to fallbacks");
     }
     markdown_core_node_free(root);
 }
@@ -2240,7 +2148,7 @@ static void inline_dispatch_orders_every_precedence(test_batch_runner *runner) {
     OK(runner, root != NULL, "owners at unnamed precedences complete the parse");
     STR_EQ(runner, observation.calls, "etdfyz", "owners are asked in ascending precedence, ties in descriptor order");
     if (root) {
-        LITERAL_EQ(runner, root->first_child->first_child, "a % b", "a byte every owner declines stays text");
+        LITERAL_EQ(runner, child_at(child_at(root, 0), 0), "a % b", "a byte every owner declines stays text");
     }
     markdown_core_node_free(root);
 }
@@ -2477,15 +2385,15 @@ static void citation_and_footnote_values(test_batch_runner *runner) {
         return;
     }
     root = markdown_core_document_root(document);
-    INT_EQ(runner, (int)markdown_core_node_child_count(root), 5, "every definition is a block where it was written");
-    paragraph = markdown_core_node_get_first_child(root);
-    cite = markdown_core_node_get_first_child(paragraph);
+    INT_EQ(runner, (int)markdown_core_node_children(root).count, 5, "every definition is a block where it was written");
+    paragraph = facade_child(root, 0);
+    cite = facade_child(paragraph, 0);
     INT_EQ(runner, markdown_core_node_get_kind(cite), MARKDOWN_CORE_KIND_CITE, "a defined call is a Cite");
-    INT_EQ(runner, (int)markdown_core_node_child_count(cite), 0, "a cite has no children");
-    item = facade_field(cite, markdown_core_node_cite_citations);
+    INT_EQ(runner, (int)markdown_core_node_children(cite).count, 0, "a cite has no children");
+    markdown_core_nodes citations = facade_nodes(cite, markdown_core_node_cite_citations);
+    item = citations.count ? citations.items[0] : NULL;
     OK(runner, item != NULL, "a cite holds an item");
-    OK(runner, item != NULL && markdown_core_node_get_next_sibling(item) == NULL,
-       "an inherited call holds exactly one item");
+    OK(runner, citations.count == 1, "an inherited call holds exactly one item");
     referent = facade_referent(item);
     INT_EQ(runner, referent.kind, MARKDOWN_CORE_REFERENT_FOOTNOTE, "an inherited call names a footnote");
     OK(runner, referent.label.length == 4 && memcmp(referent.label.data, "note", 4) == 0 && referent.note == NULL,
@@ -2493,8 +2401,8 @@ static void citation_and_footnote_values(test_batch_runner *runner) {
     OK(runner, referent.key.length == 0 && referent.key.data == NULL && referent.mode == 0,
        "the footnote branch zeroes the bib fields");
     OK(runner,
-       facade_field(item, markdown_core_citation_prefix) == NULL &&
-           facade_field(item, markdown_core_citation_suffix) == NULL,
+       facade_nodes(item, markdown_core_citation_prefix).count == 0 &&
+           facade_nodes(item, markdown_core_citation_suffix).count == 0,
        "an inherited call has empty affixes");
     OK(runner, ((scope = document_scope_of(document, cite, markdown)).start.line > 0), "the cite has a scope");
     OK(runner, scope.start.line == 1 && scope.start.column == 1 && scope.end.line == 1 && scope.end.column == 7,
@@ -2505,8 +2413,7 @@ static void citation_and_footnote_values(test_batch_runner *runner) {
 
     INT_EQ(runner, (int)markdown_core_document_footnote_count(document), 4,
            "the winner, its duplicate, the referenced, and the unreferenced definitions are footnotes");
-    for (footnote = markdown_core_node_get_next_sibling(paragraph); footnote;
-         footnote = markdown_core_node_get_next_sibling(footnote)) {
+    for (size_t at = 1; (footnote = facade_child(root, at)); at++) {
         OK(runner, count < 4 && facade_footnote_at(document, count) == footnote,
            "the document lists footnote %zu in source order", count);
         label = facade_footnote_label(footnote);
@@ -2521,14 +2428,14 @@ static void citation_and_footnote_values(test_batch_runner *runner) {
         count++;
     }
     INT_EQ(runner, (int)count, 4, "four footnotes follow the paragraph");
-    footnote = markdown_core_node_get_next_sibling(paragraph);
+    footnote = facade_child(root, 1);
     OK(runner,
        markdown_core_document_footnote_for(document, referent.label) == footnote &&
            markdown_core_document_footnote_for(document, (markdown_core_string){(const uint8_t *)"missing", 7}) == NULL,
        "a label finds the first definition in source order, and no other");
     OK(runner,
-       facade_field(footnote, markdown_core_footnote_content) != NULL &&
-           markdown_core_node_get_kind(facade_field(footnote, markdown_core_footnote_content)) ==
+       facade_nodes(footnote, markdown_core_footnote_content).count != 0 &&
+           markdown_core_node_get_kind(facade_nodes(footnote, markdown_core_footnote_content).items[0]) ==
                MARKDOWN_CORE_KIND_PARAGRAPH,
        "a footnote's content is its block content");
     markdown_core_document_free(document);
@@ -2546,19 +2453,19 @@ static void link_resource_lifecycle(test_batch_runner *runner) {
     markdown_core_node *image = markdown_core_node_new(MARKDOWN_CORE_NODE_EMBEDDED);
     markdown_core_node *converted = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
 
-    OK(runner, markdown_core_node_append_child(paragraph, link), "hand-built link joins a paragraph");
-    OK(runner, markdown_core_node_append_child(paragraph, image), "hand-built image joins a paragraph");
-    OK(runner, markdown_core_node_append_child(paragraph, converted), "text joins a paragraph");
+    OK(runner, append_child(paragraph, link), "hand-built link joins a paragraph");
+    OK(runner, append_child(paragraph, image), "hand-built image joins a paragraph");
+    OK(runner, append_child(paragraph, converted), "text joins a paragraph");
 
     OK(runner, link->as.link->resource == NULL, "a hand-built link has no resource");
     OK(runner, image->as.link->resource == NULL, "a hand-built image has no resource");
 
     OK(runner, set_literal(converted, "~~"), "the text to convert has a literal");
-    INT_EQ(runner, markdown_core_node_set_kind(converted, MARKDOWN_CORE_NODE_LINK), MARKDOWN_CORE_NODE_SET_KIND_OK,
-           "set_kind converts text into a link");
+    INT_EQ(runner, markdown_core_node_set_kind(converted, paragraph, MARKDOWN_CORE_NODE_LINK),
+           MARKDOWN_CORE_NODE_SET_KIND_OK, "set_kind converts text into a link");
     OK(runner, converted->as.link->resource == NULL, "a converted link starts without a resource");
-    INT_EQ(runner, markdown_core_node_set_kind(converted, MARKDOWN_CORE_NODE_TEXT), MARKDOWN_CORE_NODE_SET_KIND_OK,
-           "set_kind converts the link back");
+    INT_EQ(runner, markdown_core_node_set_kind(converted, paragraph, MARKDOWN_CORE_NODE_TEXT),
+           MARKDOWN_CORE_NODE_SET_KIND_OK, "set_kind converts the link back");
     LITERAL_EQ(runner, converted, "", "converting back starts the literal empty");
 
     markdown_core_node_free(paragraph);
@@ -2568,10 +2475,10 @@ static void link_resource_lifecycle(test_batch_runner *runner) {
      * with the same bytes states its own. */
     static const char markdown[] = "[a]: /shared \"t\"\n\n[A] [a] [d](/shared \"t\")\n";
     markdown_core_node *doc = markdown_core_parse_document(markdown, sizeof(markdown) - 1);
-    markdown_core_node *reference = doc->first_child;
-    markdown_core_node *first = reference->next->first_child;
-    markdown_core_node *second = first->next->next;
-    markdown_core_node *direct = second->next->next;
+    markdown_core_node *reference = child_at(doc, 0);
+    markdown_core_node *first = child_at(child_at(doc, 1), 0);
+    markdown_core_node *second = child_at(child_at(doc, 1), 2);
+    markdown_core_node *direct = child_at(child_at(doc, 1), 4);
     INT_EQ(runner, markdown_core_node_get_kind(reference), MARKDOWN_CORE_KIND_REFERENCE,
            "the definition is a Reference where it was written");
     markdown_core_destination destination = facade_destination(reference);
@@ -2597,9 +2504,9 @@ static void link_resource_lifecycle(test_batch_runner *runner) {
 static void reference_attribute_lifecycle(test_batch_runner *runner) {
     const char source[] = "[r][] [r][]{#own .same k=2}\n\n[r]: /u {#definition .same k=1 k=1}\n";
     markdown_core_node *root = markdown_core_parse_document(source, sizeof(source) - 1);
-    markdown_core_node *first = root->first_child->first_child;
-    markdown_core_node *second = first->next->next;
-    markdown_core_node *reference = root->first_child->next;
+    markdown_core_node *first = child_at(child_at(root, 0), 0);
+    markdown_core_node *second = child_at(child_at(root, 0), 2);
+    markdown_core_node *reference = child_at(root, 1);
     INT_EQ(runner, markdown_core_node_get_kind(reference), MARKDOWN_CORE_KIND_REFERENCE, "the definition is a node");
     INT_EQ(runner, markdown_core_node_attribute_class_count(first), 0, "a bare occurrence has no attributes");
     OK(runner, !markdown_core_node_anchor(first).has_value, "a bare occurrence has no anchor");
@@ -2688,8 +2595,8 @@ static void node_slots_come_from_slabs_and_go_back_to_the_pool(test_batch_runner
         }
         OK(runner, j < 8, "the slot taken is one released into the pool");
         OK(runner,
-           node && node->kind == MARKDOWN_CORE_NODE_PARAGRAPH && !node->as.data && !node->next && !node->first_child &&
-               node->content.size == 0,
+           node && node->kind == MARKDOWN_CORE_NODE_PARAGRAPH && !node->as.data && !markdown_core_scaffold_next(node) &&
+               !node->children && !node->child_count && node->content.size == 0,
            "a reused slot is zeroed before it is a node again");
         taken[count++] = node;
     }
@@ -2761,17 +2668,20 @@ static void node_reuse_initializes_the_active_record(test_batch_runner *runner) 
         /* A released slot is retained by the pool. Use a DIFFERENT poison
          * from fresh allocations, so omitted initialization cannot compare
          * equal by accident. Keep the pool's idle free-list link, which it
-         * keeps in the released storage's first bytes (slab.h). */
+         * keeps in the released slot's first bytes (slab.h). */
+        unsigned char *slot = (unsigned char *)markdown_core_node_slot_of(dirty);
         void *link;
-        memcpy(&link, dirty, sizeof(link));
-        memset(dirty, 0x5a, sizeof(*dirty));
-        memcpy(dirty, &link, sizeof(link));
+        memcpy(&link, slot, sizeof(link));
+        memset(slot, 0x5a, offsetof(markdown_core_node_slot, node) + sizeof(*dirty));
+        memcpy(slot, &link, sizeof(link));
         memset(record, 0x5a, sizeof(markdown_core_list));
         markdown_core_node *node = markdown_core_node_pool_new(&pool, cases[i].kind, NULL);
         markdown_core_node *control = markdown_core_node_new(cases[i].kind);
         OK(runner, node == dirty && control, "a dirty slot is reused for kind %d", cases[i].kind);
         OK(runner,
-           !node->parent && !node->prev && !node->next && !node->first_child && !node->last_child && !node->id &&
+           !markdown_core_scaffold_parent(node) && !markdown_core_scaffold_prev(node) &&
+               !markdown_core_scaffold_next(node) && !markdown_core_scaffold_first(node) &&
+               !markdown_core_scaffold_last(node) && !node->children && !node->child_count && !node->id &&
                !node->where.place.start && !node->where.place.end && !node->flags && !node->element &&
                node->content.ptr == markdown_core_strbuf__initbuf && !node->content.size && !node->content.asize &&
                !node->content.oom,
@@ -2847,7 +2757,7 @@ static int node_list_push(markdown_core_node **slot, void *context) {
 typedef struct {
     markdown_core_relation_cursor cursor;
     markdown_core_relation relation;
-    const markdown_core_node *next;
+    size_t next;
 } kind_frame;
 
 static node_list nodes_of_kind(markdown_core_node *root, markdown_core_node_type kind) {
@@ -2857,20 +2767,22 @@ static node_list nodes_of_kind(markdown_core_node *root, markdown_core_node_type
     }
     size_t depth = 1, capacity = 16;
     kind_frame *frames = malloc(capacity * sizeof(*frames));
-    frames[0] = (kind_frame){.next = NULL};
+    frames[0] = (kind_frame){0};
     markdown_core_relations_begin(&frames[0].cursor, root);
     while (depth) {
         kind_frame *frame = &frames[depth - 1];
-        if (frame->next == frame->relation.end) {
+        if (frame->next == frame->relation.count) {
             if (!markdown_core_relations_next(&frame->cursor, &frame->relation)) {
                 depth--;
             } else {
-                frame->next = frame->relation.first;
+                frame->next = 0;
             }
             continue;
         }
-        markdown_core_node *node = (markdown_core_node *)frame->next;
-        frame->next = node->next;
+        markdown_core_node *node = frame->relation.items[frame->next++];
+        if (!node) {
+            continue;
+        }
         if (node->kind == kind) {
             node_list_push(&node, &found);
         }
@@ -2878,7 +2790,7 @@ static node_list nodes_of_kind(markdown_core_node *root, markdown_core_node_type
             capacity *= 2;
             frames = realloc(frames, capacity * sizeof(*frames));
         }
-        frames[depth] = (kind_frame){.next = NULL};
+        frames[depth] = (kind_frame){0};
         markdown_core_relations_begin(&frames[depth++].cursor, node);
     }
     free(frames);
@@ -2905,7 +2817,8 @@ static void heading_reference_resolves_to_the_heading(test_batch_runner *runner)
         return;
     }
     markdown_core_node *heading = first_of_kind(document->root, MARKDOWN_CORE_NODE_HEADING);
-    markdown_core_node *links[] = {heading->next->first_child, heading->next->last_child};
+    markdown_core_node *paragraph = child_at(document->root, 1);
+    markdown_core_node *links[] = {child_at(paragraph, 0), last_child_of(paragraph)};
     for (int i = 0; i < 2; i++) {
         markdown_core_destination destination = facade_destination(links[i]);
         OK(runner,
@@ -3327,12 +3240,13 @@ static void registry_kinds_and_starts(test_batch_runner *runner) {
 
 /* ROLLBACK RESTORES THE LOG AND THE INDEX EXACTLY. A model -- the records as
  * a plain array, every answer computed by scanning it -- is driven through
- * the same random declarations, marks and rollbacks, and every key's answer
- * is compared after a random third of the steps: whether it is declared, its
- * latest record's start, and its earliest start. The index takes the log
- * only when a lookup asks, so the steps between two comparisons leave
- * records it never took, and the rollbacks among them pop records it took
- * and records it did not. Labels come from a small set, so keys are declared
+ * the same random declarations, marks and rollbacks, and after a random
+ * third of the steps every key of a random set of the kinds is compared:
+ * whether it is declared, its latest record's start, and its earliest start.
+ * The index takes a kind's records only when a lookup of that kind asks, so
+ * the steps between two comparisons, and the kinds a comparison skips, leave
+ * records it never took, and the rollbacks pop records it took and records
+ * it did not. Labels come from a small set, so keys are declared
  * again and again, and from a growing one, so the index grows and removals
  * cross the slots growth moved. A rollback to the first mark releases every
  * block the records were carved from. */
@@ -3366,8 +3280,11 @@ static void registry_rollback_matches_a_model(test_batch_runner *runner) {
             marks[mark_count++] = markdown_core_registry_mark_now(&registry);
         } else if (choice < 10 && mark_count) {
             size_t to = (size_t)(random >> 32) % mark_count;
-            untaken += registry.indexed < registry.count && model_marks[to] < registry.count;
-            taken += registry.indexed > model_marks[to];
+            for (size_t popped = model_marks[to]; popped < registry.count; popped++) {
+                const bool indexed = popped < registry.spaces[registry.records[popped]->key[0]].cursor;
+                taken += indexed;
+                untaken += !indexed;
+            }
             markdown_core_registry_rollback(&registry, marks[to]);
             model_count = model_marks[to];
             mark_count = to;
@@ -3383,7 +3300,13 @@ static void registry_rollback_matches_a_model(test_batch_runner *runner) {
         }
         agrees = agrees && registry.count == model_count;
         const bool compare = (random >> 52) % 3 == 0 || step == STEPS - 1;
+        /* The kinds compared: a random set, so one kind's records are taken
+         * while another's wait; every kind at the last step. */
+        const unsigned compared = step == STEPS - 1 ? (1u << KINDS) - 1 : (unsigned)(random >> 56) % (1u << KINDS);
         for (unsigned kind = 0; kind < KINDS && agrees && compare; kind++) {
+            if (!(compared & (1u << kind))) {
+                continue;
+            }
             for (unsigned label = 0; label < fresh && agrees; label++) {
                 const registry_model_record *latest = NULL;
                 uint32_t earliest = UINT32_MAX;
@@ -3494,9 +3417,10 @@ static void inspect_lazy_block_content(const markdown_core_element_instance *sel
             parser->column = 0;
             parser->partially_consumed_tab = false;
         }
-        /* The probe block leaves the open chain as it is released: the root
-         * is the deepest open block again. */
+        /* The probe block leaves the builder stack as it is released: the
+         * root is the deepest open block again. */
         parser->current = parser->root;
+        markdown_core_scaffold_of(parser->root)->last = NULL;
         markdown_core_parser_release_node(parser, node);
     }
     parser->input_line_count = 0;
@@ -3564,19 +3488,18 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
     payload_fail_at = 0;
     markdown_core_node *parent = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
     markdown_core_node *text = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
-    OK(runner, markdown_core_node_append_child(parent, text), "text joins its parent");
+    OK(runner, append_child(parent, text), "text joins its parent");
     OK(runner, set_literal(text, "retained"), "text owns a literal");
     markdown_core_chunk *original_payload = text->as.literal;
     size_t before = payload_live;
     payload_fail_at = payload_allocations + 1;
-    INT_EQ(runner, markdown_core_node_set_kind(text, MARKDOWN_CORE_NODE_TEXT), MARKDOWN_CORE_NODE_SET_KIND_OK,
+    INT_EQ(runner, markdown_core_node_set_kind(text, parent, MARKDOWN_CORE_NODE_TEXT), MARKDOWN_CORE_NODE_SET_KIND_OK,
            "setting the current kind preserves its data without allocation");
     INT_EQ(runner, payload_allocations + 1, payload_fail_at, "setting the current kind allocates nothing");
-    INT_EQ(runner, markdown_core_node_set_kind(text, MARKDOWN_CORE_NODE_CROSS_EMBEDDED),
+    INT_EQ(runner, markdown_core_node_set_kind(text, parent, MARKDOWN_CORE_NODE_CROSS_EMBEDDED),
            MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED, "conversion reports replacement allocation failure");
     OK(runner,
-       text->kind == MARKDOWN_CORE_NODE_TEXT && text->as.literal == original_payload && text->parent == parent &&
-           parent->first_child == text,
+       text->kind == MARKDOWN_CORE_NODE_TEXT && text->as.literal == original_payload && child_at(parent, 0) == text,
        "failed kind conversion preserves data, identity, and tree links");
     LITERAL_EQ(runner, text, "retained", "failed retyping retains owned bytes");
     INT_EQ(runner, payload_live, before, "failed retyping neither frees nor leaks an allocation");
@@ -3584,7 +3507,7 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
      * is armed to fail. Its cell is already owned by this node. */
     payload_fail_at = payload_allocations + 1;
     size_t inline_attempts = payload_allocations;
-    INT_EQ(runner, markdown_core_node_set_kind(text, MARKDOWN_CORE_NODE_LINK), MARKDOWN_CORE_NODE_SET_KIND_OK,
+    INT_EQ(runner, markdown_core_node_set_kind(text, parent, MARKDOWN_CORE_NODE_LINK), MARKDOWN_CORE_NODE_SET_KIND_OK,
            "successful kind conversion installs new defaults");
     OK(runner, text->as.link && !text->as.link->resource && !text->node_data_allocation,
        "converted link reuses its cell with empty defaults");
@@ -3592,22 +3515,21 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
     size_t attempts = payload_allocations;
     markdown_core_link *original_link = text->as.link;
     payload_fail_at = attempts + 1;
-    INT_EQ(runner, markdown_core_node_set_kind(text, MARKDOWN_CORE_NODE_CODE_BLOCK),
+    INT_EQ(runner, markdown_core_node_set_kind(text, parent, MARKDOWN_CORE_NODE_CODE_BLOCK),
            MARKDOWN_CORE_NODE_SET_KIND_REJECTED, "containment rejects a block in a paragraph");
     INT_EQ(runner, payload_allocations, attempts, "invalid containment allocates nothing");
-    OK(runner,
-       text->kind == MARKDOWN_CORE_NODE_LINK && text->as.link == original_link && text->parent == parent &&
-           parent->first_child == text,
+    OK(runner, text->kind == MARKDOWN_CORE_NODE_LINK && text->as.link == original_link && child_at(parent, 0) == text,
        "containment rejection preserves kind, data, identity, and tree links");
     payload_fail_at = 0;
     OK(runner,
-       markdown_core_node_set_kind(text, MARKDOWN_CORE_NODE_STRONG) == MARKDOWN_CORE_NODE_SET_KIND_OK && !text->as.data,
+       markdown_core_node_set_kind(text, parent, MARKDOWN_CORE_NODE_STRONG) == MARKDOWN_CORE_NODE_SET_KIND_OK &&
+           !text->as.data,
        "a fieldless kind releases the old payload without creating an empty record");
 
     markdown_core_node *empty = markdown_core_node_new(MARKDOWN_CORE_NODE_EMPHASIS);
-    OK(runner, markdown_core_node_append_child(parent, empty), "a fieldless node joins the parent");
-    INT_EQ(runner, markdown_core_node_set_kind(empty, MARKDOWN_CORE_NODE_CROSS_LINK), MARKDOWN_CORE_NODE_SET_KIND_OK,
-           "a node constructed without fields acquires an inline replacement record");
+    OK(runner, append_child(parent, empty), "a fieldless node joins the parent");
+    INT_EQ(runner, markdown_core_node_set_kind(empty, parent, MARKDOWN_CORE_NODE_CROSS_LINK),
+           MARKDOWN_CORE_NODE_SET_KIND_OK, "a node constructed without fields acquires an inline replacement record");
     OK(runner, !empty->node_data_allocation, "a previously unused cell record becomes active");
     markdown_core_destination destination = facade_destination(empty);
     markdown_core_optional_string label = facade_cross_label(empty);
@@ -3617,21 +3539,21 @@ static void node_payload_lifecycle(test_batch_runner *runner) {
     markdown_core_node *cite = markdown_core_node_new(MARKDOWN_CORE_NODE_CITE);
     markdown_core_node *item = markdown_core_node_new(MARKDOWN_CORE_NODE_CITATION);
     markdown_core_node *prefix = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
-    OK(runner, markdown_core_node_append_child(parent, cite), "cite joins its parent");
-    cite->as.cite->citations = item;
+    OK(runner, append_child(parent, cite), "cite joins its parent");
+    OK(runner, append_child(cite, item), "the citation joins its cite");
     item->as.citation->prefix = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
-    markdown_core_node_append_child(item->as.citation->prefix, prefix);
+    append_child(item->as.citation->prefix, prefix);
     OK(runner, set_literal(prefix, "prefix"), "citation owns an affix subtree");
     payload_fail_at = payload_allocations + 1;
     before = payload_live;
     OK(runner,
-       markdown_core_node_set_kind(cite, MARKDOWN_CORE_NODE_CROSS_EMBEDDED) ==
+       markdown_core_node_set_kind(cite, parent, MARKDOWN_CORE_NODE_CROSS_EMBEDDED) ==
                MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED &&
-           cite->as.cite->citations == item && item->as.citation->prefix->first_child == prefix,
-       "failed retyping preserves node-valued fields");
+           child_at(cite, 0) == item && child_at(item->as.citation->prefix, 0) == prefix,
+       "failed retyping preserves children and node-valued fields");
     INT_EQ(runner, payload_live, before, "failed retyping leaves the owned subtree alive");
     payload_fail_at = 0;
-    INT_EQ(runner, markdown_core_node_set_kind(cite, MARKDOWN_CORE_NODE_TEXT), MARKDOWN_CORE_NODE_SET_KIND_OK,
+    INT_EQ(runner, markdown_core_node_set_kind(cite, parent, MARKDOWN_CORE_NODE_TEXT), MARKDOWN_CORE_NODE_SET_KIND_OK,
            "kind conversion releases the old owned subtrees");
     markdown_core_node_free(parent);
     INT_EQ(runner, payload_live, 0, "conversion and destruction release payloads, fields, and affixes exactly once");
@@ -3645,27 +3567,26 @@ static void kind_conversion_reuses_cell_storage(test_batch_runner *runner) {
         markdown_core_node_pool *source = pooled ? &pool : NULL;
         markdown_core_node *parent = markdown_core_node_pool_new(source, MARKDOWN_CORE_NODE_PARAGRAPH, NULL);
         markdown_core_node *node = markdown_core_node_pool_new(source, MARKDOWN_CORE_NODE_TEXT, NULL);
-        OK(runner, markdown_core_node_append_child(parent, node), "the convertible node joins its parent");
+        OK(runner, append_child(parent, node), "the convertible node joins its parent");
         void *cell_record = node->as.data;
         markdown_core_node_pool_dispose(&pool);
         OK(runner, set_literal(node, "owned text"), "the old inline record owns bytes");
 
         size_t attempts = payload_allocations;
         payload_fail_at = attempts + 1;
-        INT_EQ(runner, markdown_core_node_set_kind(node, MARKDOWN_CORE_NODE_LINK), MARKDOWN_CORE_NODE_SET_KIND_OK,
+        INT_EQ(runner, markdown_core_node_set_kind(node, parent, MARKDOWN_CORE_NODE_LINK),
+               MARKDOWN_CORE_NODE_SET_KIND_OK,
                "inline replacement succeeds with allocation refused, even after pool disposal");
         OK(runner, node->as.data == cell_record && !node->node_data_allocation && !node->as.link->resource,
            "inline replacement reuses the original record address with new defaults");
         INT_EQ(runner, payload_allocations, attempts, "inline replacement makes no allocator call");
-        INT_EQ(runner, markdown_core_node_set_kind(node, MARKDOWN_CORE_NODE_CROSS_EMBEDDED),
+        INT_EQ(runner, markdown_core_node_set_kind(node, parent, MARKDOWN_CORE_NODE_CROSS_EMBEDDED),
                MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED, "external replacement can still fail atomically");
-        OK(runner,
-           node->kind == MARKDOWN_CORE_NODE_LINK && node->as.data == cell_record && node->parent == parent &&
-               parent->first_child == node,
+        OK(runner, node->kind == MARKDOWN_CORE_NODE_LINK && node->as.data == cell_record && child_at(parent, 0) == node,
            "failed external replacement retains the inline record and tree links");
 
         payload_fail_at = 0;
-        INT_EQ(runner, markdown_core_node_set_kind(node, MARKDOWN_CORE_NODE_CROSS_EMBEDDED),
+        INT_EQ(runner, markdown_core_node_set_kind(node, parent, MARKDOWN_CORE_NODE_CROSS_EMBEDDED),
                MARKDOWN_CORE_NODE_SET_KIND_OK, "a record exceeding capacity obtains external storage");
         void *external = node->node_data_allocation;
         OK(runner, external && node->as.data == external && external != cell_record,
@@ -3674,21 +3595,21 @@ static void kind_conversion_reuses_cell_storage(test_batch_runner *runner) {
            "the external record owns a string");
         attempts = payload_allocations;
         payload_fail_at = attempts + 1;
-        INT_EQ(runner, markdown_core_node_set_kind(node, MARKDOWN_CORE_NODE_CROSS_EMBEDDED),
+        INT_EQ(runner, markdown_core_node_set_kind(node, parent, MARKDOWN_CORE_NODE_CROSS_EMBEDDED),
                MARKDOWN_CORE_NODE_SET_KIND_OK, "the same external kind preserves its record without allocation");
         OK(runner, node->node_data_allocation == external, "no-op conversion preserves external ownership");
         STR_EQ(runner, (char *)node->as.cross_embedded->reference.path.data, "owned path",
                "no-op conversion preserves external fields");
 
         size_t releases = payload_releases;
-        INT_EQ(runner, markdown_core_node_set_kind(node, MARKDOWN_CORE_NODE_TEXT), MARKDOWN_CORE_NODE_SET_KIND_OK,
-               "external to inline conversion succeeds with allocation refused");
+        INT_EQ(runner, markdown_core_node_set_kind(node, parent, MARKDOWN_CORE_NODE_TEXT),
+               MARKDOWN_CORE_NODE_SET_KIND_OK, "external to inline conversion succeeds with allocation refused");
         INT_EQ(runner, payload_allocations, attempts, "returning to the cell makes no allocation");
         INT_EQ(runner, payload_releases, releases + 2, "the external record and its string are each released once");
         OK(runner, node->as.data == cell_record && !node->node_data_allocation && !node->as.literal->data,
            "returning to the cell reinitializes its former record bytes");
-        INT_EQ(runner, markdown_core_node_set_kind(node, MARKDOWN_CORE_NODE_STRONG), MARKDOWN_CORE_NODE_SET_KIND_OK,
-               "a fieldless kind releases its active record without storage work");
+        INT_EQ(runner, markdown_core_node_set_kind(node, parent, MARKDOWN_CORE_NODE_STRONG),
+               MARKDOWN_CORE_NODE_SET_KIND_OK, "a fieldless kind releases its active record without storage work");
         OK(runner, !node->as.data && !node->node_data_allocation, "a fieldless kind owns no record");
         payload_fail_at = 0;
         markdown_core_node_free(parent);
@@ -3751,15 +3672,15 @@ static void element_owned_field_lifecycle(test_batch_runner *runner) {
         owned_field_probe *fields = owner->opaque;
         fields->first = root;
         fields->second = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
-        markdown_core_node_append_child(owner, markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT));
+        append_child(owner, markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT));
         root = owner;
     }
     markdown_core_node *document = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
-    markdown_core_node_append_child(document, root);
+    append_child(document, root);
     owned_field_probe *retained = root->opaque;
     markdown_core_node *retained_first = retained->first;
     OK(runner,
-       markdown_core_node_set_kind(root, MARKDOWN_CORE_NODE_HEADING) == MARKDOWN_CORE_NODE_SET_KIND_OK &&
+       markdown_core_node_set_kind(root, document, MARKDOWN_CORE_NODE_HEADING) == MARKDOWN_CORE_NODE_SET_KIND_OK &&
            root->opaque == retained && retained->first == retained_first,
        "kind conversion preserves the element's opaque state and owned fields");
     size_t before = payload_allocations;
@@ -3774,11 +3695,11 @@ static void element_owned_field_lifecycle(test_batch_runner *runner) {
     document = markdown_core_parse_document_with_setup(source, strlen(source), NULL, NULL);
     OK(runner, document != NULL, "directive with an owned label parses using the tracked allocator");
     if (document) {
-        markdown_core_node *directive = document->first_child->first_child;
+        markdown_core_node *directive = child_at(child_at(document, 0), 0);
         markdown_core_node *label = markdown_core_directive_label(directive);
         OK(runner,
-           label &&
-               markdown_core_node_set_kind(directive, MARKDOWN_CORE_NODE_EMPHASIS) == MARKDOWN_CORE_NODE_SET_KIND_OK,
+           label && markdown_core_node_set_kind(directive, child_at(document, 0), MARKDOWN_CORE_NODE_EMPHASIS) ==
+                        MARKDOWN_CORE_NODE_SET_KIND_OK,
            "directive kind conversion preserves its element-owned label");
         before = payload_allocations;
         payload_fail_at = before + 1;
@@ -3891,10 +3812,10 @@ static void kind_conversion_containment(test_batch_runner *runner) {
         if (!root) {
             continue;
         }
-        markdown_core_node *block = root->first_child;
-        const markdown_core_node *after = block ? block->next : NULL;
+        markdown_core_node *block = child_at(root, 0);
+        const markdown_core_node *after = block ? child_at(root, 1) : NULL;
         if (cases[i].defines && after && after->kind == MARKDOWN_CORE_NODE_FOOTNOTE) {
-            after = after->next;
+            after = child_at(root, 2);
         } else if (cases[i].defines) {
             after = block;
         }
@@ -3903,7 +3824,8 @@ static void kind_conversion_containment(test_batch_runner *runner) {
         if (block && (block->kind == MARKDOWN_CORE_NODE_HTML_BLOCK || block->kind == MARKDOWN_CORE_NODE_CODE_BLOCK)) {
             put_literal(&literal, block);
         } else if (block) {
-            for (markdown_core_node *child = block->first_child; child; child = child->next) {
+            for (size_t child_index = 0; child_index < block->child_count; child_index++) {
+                markdown_core_node *child = block->children[child_index];
                 OK(runner, child->kind == MARKDOWN_CORE_NODE_TEXT || child->kind == MARKDOWN_CORE_NODE_SOFT_BREAK,
                    "case %zu retains text and line breaks", i);
                 if (child->kind == MARKDOWN_CORE_NODE_TEXT) {
@@ -3956,7 +3878,7 @@ static bool task_block_facts_equal(markdown_core_node *a, markdown_core_node *b)
     if (!a || !b) {
         return a == b;
     }
-    if (a->kind != b->kind) {
+    if (a->kind != b->kind || a->child_count != b->child_count) {
         return false;
     }
     markdown_core_string a_literal, b_literal;
@@ -3972,7 +3894,12 @@ static bool task_block_facts_equal(markdown_core_node *a, markdown_core_node *b)
          a->as.list->variant.lowercased != b->as.list->variant.lowercased || a->as.list->tight != b->as.list->tight)) {
         return false;
     }
-    return task_block_facts_equal(a->first_child, b->first_child) && task_block_facts_equal(a->next, b->next);
+    for (size_t i = 0; i < a->child_count; i++) {
+        if (!task_block_facts_equal(a->children[i], b->children[i])) {
+            return false;
+        }
+    }
+    return true;
 }
 
 static void task_marker_tab_structure(test_batch_runner *runner) {
@@ -4015,19 +3942,19 @@ static void task_marker_ownership(test_batch_runner *runner) {
         return;
     }
     memset(source, '?', sizeof(source) - 1);
-    markdown_core_node *item = document->root->first_child->first_child;
+    markdown_core_node *item = child_at(child_at(document->root, 0), 0);
     markdown_core_optional_string marker = facade_list_item_marker(item);
     OK(runner, marker.has_value && marker.value.length == 1 && marker.value.data[0] == ' ',
        "incomplete marker survives input reuse");
     OK(runner, item->as.list->task_marker.value.alloc, "parsed task owns its marker bytes");
-    marker = facade_list_item_marker(item->next);
+    marker = facade_list_item_marker(child_at(child_at(document->root, 0), 1));
     OK(runner, marker.has_value && marker.value.length == 1 && marker.value.data[0] == 'X',
        "completed marker retains authored case");
-    marker = facade_list_item_marker(item->next->next);
+    marker = facade_list_item_marker(child_at(child_at(document->root, 0), 2));
     OK(runner, !marker.has_value && marker.value.data == NULL && marker.value.length == 0,
        "ordinary item has an absent marker");
 
-    marker = facade_list_item_marker(item->next->next->next);
+    marker = facade_list_item_marker(child_at(child_at(document->root, 0), 3));
     OK(runner, marker.has_value && marker.value.length == 4 && memcmp(marker.value.data, "🚀", 4) == 0,
        "parsed custom marker survives input reuse with its complete UTF-8 spelling");
     uint8_t *dump = NULL;
@@ -4064,16 +3991,17 @@ static void specimen_values(test_batch_runner *runner) {
         return;
     }
     const markdown_core_node *root = markdown_core_document_root(document);
-    const markdown_core_node *value = markdown_core_node_get_first_child(root);
+    const markdown_core_node *value = facade_child(root, 0);
     INT_EQ(runner, markdown_core_node_get_kind(value), MARKDOWN_CORE_KIND_SPECIMEN, "a definition is content");
     EXPECT_OK(markdown_core_specimen_properties(value, &label, &start));
     OK(runner, label.has_value && label.value.length == 6 && memcmp(label.value.data, "étude", 6) == 0,
        "specimen label retains owned UTF-8 bytes");
     OK(runner, start.has_value && start.value == 5, "specimen retains effective reset");
     OK(runner,
-       markdown_core_node_get_kind(facade_field(value, markdown_core_specimen_content)) == MARKDOWN_CORE_KIND_PARAGRAPH,
+       markdown_core_node_get_kind(facade_nodes(value, markdown_core_specimen_content).items[0]) ==
+           MARKDOWN_CORE_KIND_PARAGRAPH,
        "specimen retains its content relation");
-    const markdown_core_node *anonymous = markdown_core_node_get_next_sibling(value);
+    const markdown_core_node *anonymous = facade_child(root, 1);
     OK(runner, anonymous != NULL, "anonymous definition remains present");
     EXPECT_OK(markdown_core_specimen_properties(anonymous, &label, &start));
     OK(runner, !label.has_value && !start.has_value, "anonymous label and absent reset remain absent");
@@ -4081,8 +4009,7 @@ static void specimen_values(test_batch_runner *runner) {
     OK(runner, facade_specimen_at(document, 0) == value && facade_specimen_at(document, 1) == anonymous,
        "the list is in source order");
     const markdown_core_node *citation =
-        facade_field(markdown_core_node_get_first_child(markdown_core_node_get_next_sibling(anonymous)),
-                     markdown_core_node_cite_citations);
+        facade_nodes(facade_child(facade_child(root, 2), 0), markdown_core_node_cite_citations).items[0];
     markdown_core_referent referent = facade_referent(citation);
     OK(runner,
        referent.kind == MARKDOWN_CORE_REFERENT_SPECIMEN && referent.label.length == 6 && referent.key.data == NULL &&
@@ -4141,12 +4068,12 @@ static void definition_blank_continuation(test_batch_runner *runner) {
                         }
                         markdown_core_node *value =
                             first_of_kind(root, family ? MARKDOWN_CORE_NODE_FOOTNOTE : MARKDOWN_CORE_NODE_SPECIMEN);
-                        markdown_core_node *first = value->first_child;
-                        markdown_core_node *second = first->next;
-                        OK(runner, value && first && second && !second->next,
+                        markdown_core_node *first = child_at(value, 0);
+                        markdown_core_node *second = child_at(value, 1);
+                        OK(runner, value && first && second && !child_at(value, 2),
                            "definition owns exactly two blocks: family=%zu shape=%zu ending=%zu blank=%zu list=%d",
                            family, shape, ending, blank, definition_list);
-                        LITERAL_EQ(runner, first->first_child, "first", "blank line ends the first paragraph");
+                        LITERAL_EQ(runner, child_at(first, 0), "first", "blank line ends the first paragraph");
                         INT_EQ(runner, second->kind,
                                definition_list ? MARKDOWN_CORE_NODE_DEFINITION_LIST : MARKDOWN_CORE_NODE_PARAGRAPH,
                                "continued body and lookahead retain the block kind");
@@ -4155,7 +4082,7 @@ static void definition_blank_continuation(test_batch_runner *runner) {
                             INT_EQ(runner, END_LINE(second), definition_list ? 5 : 3,
                                    "unindented text stays outside the definition body");
                             if (!definition_list) {
-                                LITERAL_EQ(runner, second->first_child, "second",
+                                LITERAL_EQ(runner, child_at(second, 0), "second",
                                            "continued paragraph retains its text");
                             }
                         }
@@ -4175,12 +4102,12 @@ static void set_kind_keeps_element_data_beside_the_arm(test_batch_runner *runner
     markdown_core_node *formula;
 
     OK(runner, document != NULL, "the formula document parses");
-    formula = document->root->first_child->first_child;
+    formula = child_at(child_at(document->root, 0), 0);
     INT_EQ(runner, markdown_core_node_get_kind(formula), MARKDOWN_CORE_KIND_FORMULA,
            "the paragraph opens with a formula");
     OK(runner, formula->opaque != NULL, "the formula's element owns per-node data");
-    INT_EQ(runner, markdown_core_node_set_kind(formula, MARKDOWN_CORE_NODE_LINK), MARKDOWN_CORE_NODE_SET_KIND_OK,
-           "set_kind converts the formula into a link");
+    INT_EQ(runner, markdown_core_node_set_kind(formula, child_at(document->root, 0), MARKDOWN_CORE_NODE_LINK),
+           MARKDOWN_CORE_NODE_SET_KIND_OK, "set_kind converts the formula into a link");
     OK(runner, formula->opaque != NULL, "the element's data stays with the node");
     OK(runner, formula->as.link->resource == NULL, "the converted link starts without a resource");
     markdown_core_document_free(document);
@@ -4206,10 +4133,10 @@ static void ref_source_pos(test_batch_runner *runner) {
                      "dest=url(\"https://github.com\") title=\"GitHub\" children=0\n",
                      "reference link scopes are as expected");
     markdown_core_node *root = parse("[r]: /u\n===\ntext\n");
-    markdown_core_node *paragraph = root && root->first_child ? root->first_child->next : NULL;
+    markdown_core_node *paragraph = root && child_at(root, 0) ? child_at(root, 1) : NULL;
     OK(runner,
        paragraph && paragraph->kind == MARKDOWN_CORE_NODE_PARAGRAPH && START_LINE(paragraph) == 2 &&
-           END_LINE(paragraph) == 3 && paragraph->first_child && START_LINE(paragraph->first_child) == 2,
+           END_LINE(paragraph) == 3 && child_at(paragraph, 0) && START_LINE(child_at(paragraph, 0)) == 2,
        "a consumed definition prefix still relocates content arriving after the setext probe");
     if (root) {
         markdown_core_node_free(root);
@@ -4285,17 +4212,20 @@ static void table_values(test_batch_runner *runner) {
         return;
     }
     markdown_core_node *root = document->root;
-    markdown_core_node *table = root->first_child;
+    markdown_core_node *table = child_at(root, 0);
     markdown_core_table *properties = (markdown_core_table *)table->opaque;
     properties->content_count = 1;
     properties->foot_count = 1;
-    for (markdown_core_node *row = table->first_child; row; row = row->next) {
-        markdown_core_node *cell = row->first_child;
-        markdown_core_node_free(cell->next);
-        markdown_core_node_free(cell->first_child);
+    for (uint32_t r = 0; r < table->child_count; r++) {
+        markdown_core_node *row = table->children[r];
+        markdown_core_node *cell = child_at(row, 0);
+        markdown_core_node_free(take_last_child(row));
+        while (cell->child_count) {
+            markdown_core_node_free(take_last_child(cell));
+        }
         cell->as.table_cell->colspan = 2;
         markdown_core_node *block = published_node_new(MARKDOWN_CORE_NODE_PARAGRAPH, 0);
-        OK(runner, markdown_core_node_append_child(cell, block), "cell owns block content directly");
+        OK(runner, append_child(cell, block), "cell owns block content directly");
         int64_t rowspan, colspan;
         EXPECT_OK(markdown_core_node_table_cell_spans(cell, &rowspan, &colspan));
         OK(runner, rowspan == 1 && colspan == 2, "facade retains non-unit spans");
@@ -4368,10 +4298,11 @@ static void table_source_map_growth(test_batch_runner *runner) {
             // even as the number of links and remaining runs both increase.
             OK(runner, observed_source_marks > 0 && (size_t)observed_source_marks <= 16 * count + 16,
                "source map storage is linear at %zu repeats (%d runs)", count, observed_source_marks);
-            markdown_core_node *table = root->first_child;
-            markdown_core_node *cell = table->first_child->next->first_child;
+            markdown_core_node *table = child_at(root, 0);
+            markdown_core_node *cell = child_at(child_at(table, 1), 0);
             size_t links = 0;
-            for (markdown_core_node *node = cell->first_child; node; node = node->next) {
+            for (size_t node_index = 0; node_index < cell->child_count; node_index++) {
+                markdown_core_node *node = cell->children[node_index];
                 if (node->kind != MARKDOWN_CORE_NODE_LINK) {
                     continue;
                 }
@@ -4444,7 +4375,7 @@ static void properties_values(test_batch_runner *runner) {
            scalar.value.string.length == 9 && !memcmp(scalar.value.string.data, "one\n\ntwo\n", 9),
        "literal prose keeps internal newlines and a clipped final newline");
     INT_EQ(runner, document_scope_of(document, metadata, source).end.line, 20, "metadata ends at the closing fence");
-    INT_EQ(runner, document_scope_of(document, markdown_core_node_get_first_child(root), source).start.line, 21,
+    INT_EQ(runner, document_scope_of(document, facade_child(root, 0), source).start.line, 21,
            "body stays outside metadata");
     markdown_core_document_free(document);
 }
@@ -4563,7 +4494,7 @@ static void properties_source_boundaries(test_batch_runner *runner) {
                                      value.value.string.length == 5 && !memcmp(value.value.string.data, "ready", 5)
                                : state == NULL,
            "only a closed bracketed member allows the next independent field");
-        INT_EQ(runner, document_scope_of(doc, markdown_core_node_get_first_child(root), source).start.line,
+        INT_EQ(runner, document_scope_of(doc, facade_child(root, 0), source).start.line,
                document_scope_of(doc, metadata, source).end.line + 1, "the closing fence always separates the body");
         markdown_core_document_free(doc);
     }
@@ -4831,7 +4762,7 @@ static void universal_values(test_batch_runner *runner) {
     }
     OK(runner, !facade_metadata(metadata, markdown_core_metadata_subtitle), "absent field differs from explicit null");
     OK(runner, facade_metadata(metadata, markdown_core_metadata_name) != NULL, "explicit null field is present");
-    markdown_core_node *image = root->first_child->first_child;
+    markdown_core_node *image = child_at(child_at(root, 0), 0);
     OK(runner, facade_dimensions(image) == NULL, "unsized image has no dimensions");
     image->as.link->dimensions.has_value = true;
     image->as.link->dimensions.value = (markdown_core_dimensions){640, {true, 480}};
@@ -4865,11 +4796,6 @@ typedef struct {
     size_t attributes, anchors, definitions, whitespace, brackets, citations, list_markers, specimens;
     size_t inline_hooks;
     size_t properties_lines, physical_line_bytes, metadata_key_bytes, metadata_value_bytes, table_scratch_growth;
-    /* Completion's traversal count and its denominator (parser.h):
-     * recorded by a document finisher, which runs once completion has walked
-     * every queued block, so these are the stage's totals. */
-    size_t completion_events, completion_entered, completion_roots, completion_parsed;
-    size_t nodes_created, nodes_created_before_completion, nodes_freed, nodes_freed_before_completion;
     size_t delimiter_pushes;
     size_t pooled_delimiters;
     size_t content_mark_queries;
@@ -4889,14 +4815,6 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
         markdown_core_table_work_in(markdown_core_parser_instance(parser, &MARKDOWN_CORE_ELEMENT_TABLE));
     const markdown_core_heading_state *headings =
         ELEMENT_STATE(parser, markdown_core_heading_state, MARKDOWN_CORE_ELEMENT_HEADING);
-    work->completion_events = parser->completion_events;
-    work->completion_entered = parser->completion_entered;
-    work->completion_roots = parser->completion_roots;
-    work->completion_parsed = parser->completion_parsed;
-    work->nodes_created = parser->nodes_created;
-    work->nodes_created_before_completion = parser->nodes_created_before_completion;
-    work->nodes_freed = parser->nodes_freed;
-    work->nodes_freed_before_completion = parser->nodes_freed_before_completion;
     work->cross_link = ELEMENT_STATE(parser, markdown_core_cross_link_work, MARKDOWN_CORE_ELEMENT_CROSS_LINK)->scan;
     work->autolink_domains =
         ELEMENT_STATE(parser, markdown_core_autolink_work, MARKDOWN_CORE_ELEMENT_AUTOLINK)->domains;
@@ -4990,20 +4908,19 @@ static void deep_inline_construction(test_batch_runner *runner) {
                 markdown_core_node *root = markdown_core_parse_document((char *)source.ptr, source.size);
                 OK(runner, root != NULL, "depth/width construction succeeds");
                 size_t containers = 0, links = 0;
-                markdown_core_iter *iter = markdown_core_iter_new(root);
+                tree_iter *iter = tree_iter_new(root);
                 markdown_core_event_type event;
-                while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+                while ((event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
                     if (event != MARKDOWN_CORE_EVENT_ENTER) {
                         continue;
                     }
-                    markdown_core_node *node = markdown_core_iter_get_node(iter);
+                    markdown_core_node *node = tree_iter_get_node(iter);
                     containers += node->kind == (shape ? MARKDOWN_CORE_NODE_SPAN : MARKDOWN_CORE_NODE_EMBEDDED);
                     links += node->kind == MARKDOWN_CORE_NODE_LINK;
                 }
                 INT_EQ(runner, containers, sizes[d], "all nesting survives construction");
                 INT_EQ(runner, links, sizes[w], "all independent autolinks survive construction");
-                INT_EQ(runner, markdown_core_node_check(root, NULL), 0, "all parent and sibling relations agree");
-                markdown_core_iter_free(iter);
+                tree_iter_free(iter);
                 markdown_core_node_free(root);
                 markdown_core_strbuf_free(&source);
             }
@@ -5025,7 +4942,7 @@ static void autolink_domain_linear_work(test_batch_runner *runner) {
                 markdown_core_strbuf_puts(&source, suffixes[suffix]);
                 markdown_core_node *root = parse((const char *)source.ptr);
                 OK(runner, root != NULL, "host suffix candidate parses");
-                INT_EQ(runner, root->first_child->first_child->kind,
+                INT_EQ(runner, child_at(child_at(root, 0), 0)->kind,
                        suffix == 2 ? MARKDOWN_CORE_NODE_LINK : MARKDOWN_CORE_NODE_TEXT,
                        "the last two segments alone determine underscore rejection");
                 markdown_core_node_free(root);
@@ -5045,7 +4962,8 @@ static void autolink_domain_linear_work(test_batch_runner *runner) {
                                                                                measure_inline_work, &work);
             OK(runner, root != NULL, "overlapping domain candidates parse");
             size_t links = 0;
-            for (markdown_core_node *node = root->first_child->first_child; node; node = node->next) {
+            for (size_t node_index = 0; node_index < child_at(root, 0)->child_count; node_index++) {
+                markdown_core_node *node = child_at(root, 0)->children[node_index];
                 if (node->kind == MARKDOWN_CORE_NODE_LINK) {
                     links++;
                     STR_EQ(runner, markdown_core_chunk_to_cstr(&node->as.link->resource->url), "http://www.com",
@@ -5071,7 +4989,7 @@ static void ordered_numeral_ceiling(test_batch_runner *runner) {
     markdown_core_node *root =
         markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
     OK(runner,
-       root && root->first_child->kind == MARKDOWN_CORE_NODE_LIST && root->first_child->as.list->start == 999999999,
+       root && child_at(root, 0)->kind == MARKDOWN_CORE_NODE_LIST && child_at(root, 0)->as.list->start == 999999999,
        "Roman numeral accepts the exact nine-digit ceiling");
     OK(runner, work.list_markers <= 4 * (size_t)source.size, "ceiling accumulation inspects bounded source");
     if (root) {
@@ -5083,7 +5001,7 @@ static void ordered_numeral_ceiling(test_batch_runner *runner) {
         markdown_core_strbuf_puts(&source, overflow[i]);
         markdown_core_strbuf_puts(&source, ".  overflow\n");
         root = markdown_core_parse_document((char *)source.ptr, source.size);
-        OK(runner, root && root->first_child->kind == MARKDOWN_CORE_NODE_PARAGRAPH,
+        OK(runner, root && child_at(root, 0)->kind == MARKDOWN_CORE_NODE_PARAGRAPH,
            "Roman M/C/X/I accumulation rejects overflow without wrapping: case=%zu", i);
         if (root) {
             markdown_core_node_free(root);
@@ -5138,16 +5056,16 @@ static void definition_list_linear_work(test_batch_runner *runner) {
         OK(runner, work.definition_lists + work.lookahead <= 32 * (size_t)source.size,
            "nested definition blank runs keep bounded work: depth=%zu", depth);
         size_t definitions = 0;
-        markdown_core_iter *iter = root ? markdown_core_iter_new(root) : NULL;
+        tree_iter *iter = root ? tree_iter_new(root) : NULL;
         if (iter) {
             markdown_core_event_type event;
-            while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+            while ((event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
                 if (event == MARKDOWN_CORE_EVENT_ENTER &&
-                    markdown_core_iter_get_node(iter)->kind == MARKDOWN_CORE_NODE_DEFINITION) {
+                    tree_iter_get_node(iter)->kind == MARKDOWN_CORE_NODE_DEFINITION) {
                     definitions++;
                 }
             }
-            markdown_core_iter_free(iter);
+            tree_iter_free(iter);
         }
         INT_EQ(runner, definitions, depth, "one association per committed nested term");
         if (root) {
@@ -5221,8 +5139,9 @@ static void citation_sparse_brace_storage(test_batch_runner *runner) {
                length, work.citation_brace_bytes);
             OK(runner, work.citations <= 20 * (size_t)source.size, "sparse index keeps linear scan work");
             size_t citations = 0;
-            markdown_core_node *paragraph = root->first_child;
-            for (markdown_core_node *node = paragraph->first_child; node; node = node->next) {
+            markdown_core_node *paragraph = child_at(root, 0);
+            for (size_t node_index = 0; node_index < paragraph->child_count; node_index++) {
+                markdown_core_node *node = paragraph->children[node_index];
                 citations += node->kind == MARKDOWN_CORE_NODE_CITE;
             }
             INT_EQ(runner, citations, 1,
@@ -5314,13 +5233,19 @@ static void inline_footnote_linear_work(test_batch_runner *runner) {
                work.footnote_body);
             if (root) {
                 node_list notes = footnotes_of(root);
-                bool unlabeled = true;
+                node_list citations = nodes_of_kind(root, MARKDOWN_CORE_NODE_CITATION);
+                size_t owned = 0;
+                for (size_t i = 0; i < citations.count; i++) {
+                    owned += citations.nodes[i]->as.citation->note != NULL;
+                }
+                bool unlabeled = owned == notes.count;
                 for (size_t i = 0; i < notes.count; i++) {
-                    unlabeled &= footnote_label_of(notes.nodes[i]) == NULL && notes.nodes[i]->parent == NULL;
+                    unlabeled &= footnote_label_of(notes.nodes[i]) == NULL;
                 }
                 OK(runner, unlabeled, "every inline note is an unlabeled Footnote its citation owns");
                 INT_EQ(runner, notes.count, count * cases[c].notes_per_unit,
                        "all and only completed notes are retained");
+                free(citations.nodes);
                 free(notes.nodes);
                 markdown_core_node_free(root);
             }
@@ -5392,20 +5317,20 @@ static void standalone_formula_as_owned_root(test_batch_runner *runner) {
         return;
     }
     markdown_core_node *found = NULL;
-    markdown_core_iter *iter = markdown_core_iter_new(root);
+    tree_iter *iter = tree_iter_new(root);
     markdown_core_event_type event;
-    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *node = markdown_core_iter_get_node(iter);
+    while ((event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = tree_iter_get_node(iter);
         if (event == MARKDOWN_CORE_EVENT_ENTER && node->kind == MARKDOWN_CORE_NODE_DEFINITION) {
             found = node->as.definition->term;
             break;
         }
     }
-    markdown_core_iter_free(iter);
+    tree_iter_free(iter);
     OK(runner, found != NULL, "the definition carries a term");
     if (found) {
         INT_EQ(runner, found->kind, MARKDOWN_CORE_NODE_PARAGRAPH, "the term root is still its owner's paragraph");
-        OK(runner, found->first_child && found->first_child->kind == MARKDOWN_CORE_NODE_FORMULA,
+        OK(runner, child_at(found, 0) && child_at(found, 0)->kind == MARKDOWN_CORE_NODE_FORMULA,
            "the term holds the inline formula");
     }
     markdown_core_node_free(root);
@@ -5419,17 +5344,27 @@ static size_t remove_footnotes(markdown_core_node *root) {
     node_list notes = footnotes_of(root);
     node_list cites = nodes_of_kind(root, MARKDOWN_CORE_NODE_CITE);
     /* Detach every note from its owner first, so freeing one never reaches
-     * another through it. */
+     * another through it: an inline note from its citation, and a definition
+     * from the children of the block that holds it. */
     for (size_t i = 0; i < cites.count; i++) {
-        for (markdown_core_node *item = cites.nodes[i]->as.cite->citations; item; item = item->next) {
-            item->as.citation->note = NULL;
+        for (size_t at = 0; at < cites.nodes[i]->child_count; at++) {
+            cites.nodes[i]->children[at]->as.citation->note = NULL;
         }
     }
-    for (size_t i = 0; i < notes.count; i++) {
-        if (notes.nodes[i]->parent) {
-            markdown_core_node_unlink(notes.nodes[i]);
+    tree_iter *iter = tree_iter_new(root);
+    for (markdown_core_event_type event; (event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE;) {
+        markdown_core_node *node = tree_iter_get_node(iter);
+        if (event == MARKDOWN_CORE_EVENT_ENTER) {
+            uint32_t kept = 0;
+            for (uint32_t at = 0; at < node->child_count; at++) {
+                if (node->children[at]->kind != MARKDOWN_CORE_NODE_FOOTNOTE) {
+                    node->children[kept++] = node->children[at];
+                }
+            }
+            node->child_count = kept;
         }
     }
+    tree_iter_free(iter);
     for (size_t i = 0; i < notes.count; i++) {
         markdown_core_node_free(notes.nodes[i]);
         removed++;
@@ -5445,13 +5380,15 @@ static void footnote_removal(test_batch_runner *runner) {
     OK(runner, root != NULL, "a document with nested footnotes parses");
     if (root) {
         INT_EQ(runner, remove_footnotes(root), 5, "the caller reaches every definition and inline note");
-        markdown_core_node *cite = root->first_child->first_child;
+        markdown_core_node *cite = child_at(child_at(root, 0), 0);
         node_list notes = footnotes_of(root);
-        OK(runner, notes.count == 0 && !cite->first_child && !cite->as.cite->citations->as.citation->note,
-           "no footnote remains and a Cite has no structural body");
+        OK(runner,
+           notes.count == 0 && child_at(cite, 0)->kind == MARKDOWN_CORE_NODE_CITATION &&
+               !child_at(cite, 0)->as.citation->note,
+           "no footnote remains and a Cite holds only its citations");
         free(notes.nodes);
         markdown_core_node *note = markdown_core_node_new(MARKDOWN_CORE_NODE_FOOTNOTE);
-        OK(runner, !markdown_core_node_append_child(cite, note), "Cite containment rejects a Footnote child");
+        OK(runner, !append_child(cite, note), "Cite containment rejects a Footnote child");
         markdown_core_node_free(note);
         markdown_core_node_free(root);
     }
@@ -5522,7 +5459,6 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
     }
     for (size_t length = 64; length <= 65536; length *= 4) {
         markdown_core_parser parser = {0};
-        markdown_core_node *root = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
         markdown_core_node *paragraph = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
         markdown_core_node *text = markdown_core_node_new(MARKDOWN_CORE_NODE_TEXT);
         char *source = malloc(length + 1);
@@ -5530,20 +5466,23 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
         source[length - 1] = '@'; /* A failed candidate, as well as ordinary text. */
         source[length] = 0;
         set_literal(text, source);
-        markdown_core_node_attach_validated(root, paragraph, NULL);
-        markdown_core_node_attach_validated(paragraph, text, NULL);
+        /* The Text sits in its paragraph's inline tree under construction. */
+        markdown_core_scaffold_append(paragraph, text);
         const unsigned char *original = text->as.literal->data;
         void *state = NULL;
         text_allocation_calls = 0;
         /* The step as completion asks it: at the Text's EXIT, outside a
          * Link, with a fresh per-root state word. */
         markdown_core_finish_result result = MARKDOWN_CORE_ELEMENT_AUTOLINK.finish_step(
-            &autolink_instance, &parser, text, MARKDOWN_CORE_EVENT_EXIT, 0, &state);
+            &autolink_instance, &parser, text, paragraph, MARKDOWN_CORE_EVENT_EXIT, &state);
         INT_EQ(runner, result, MARKDOWN_CORE_FINISH_CONTINUE, "a failed email scan leaves the Text in place");
         OK(runner, text->as.literal->data == original, "a failed email scan retains the original owned buffer");
-        OK(runner, paragraph->first_child == text && text->next == NULL, "failed email scan preserves the tree");
+        OK(runner, markdown_core_scaffold_first(paragraph) == text && !markdown_core_scaffold_next(text),
+           "failed email scan preserves the tree");
         INT_EQ(runner, text_allocation_calls, 0, "a no-hit step allocates nothing: it has no walk of its own");
-        markdown_core_node_free(root);
+        markdown_core_scaffold_unlink(text);
+        markdown_core_node_free(text);
+        markdown_core_node_free(paragraph);
         free(source);
     }
     text_counting = 0;
@@ -5644,13 +5583,13 @@ static void literal_text_allocations(test_batch_runner *runner) {
                 INT_EQ(runner, work.delimiters, ordinary_work + delimiter_bytes,
                        "known-literal delimiter runs are scanned once without matching work");
                 if (root) {
-                    markdown_core_node *text = root->first_child->last_child;
+                    markdown_core_node *text = last_child_of(child_at(root, 0));
                     if (!pass) {
                         ordinary_text_start = START_COLUMN(text);
                     }
                     size_t text_offset = (size_t)ordinary_text_start - 1;
                     OK(runner,
-                       text->kind == MARKDOWN_CORE_NODE_TEXT && !text->next &&
+                       text->kind == MARKDOWN_CORE_NODE_TEXT &&
                            text->as.literal->len == (bufsize_t)(length - text_offset) &&
                            memcmp(text->as.literal->data, source + text_offset, length - text_offset) == 0,
                        "one Text retains every literal byte");
@@ -5695,14 +5634,14 @@ static void paired_delimiter_linear_work(test_batch_runner *runner, markdown_cor
                "brackets=%zu",
                c, source.size, work.delimiters, work.attributes, work.whitespace, work.brackets);
             size_t nodes = 0;
-            markdown_core_iter *iter = markdown_core_iter_new(root);
+            tree_iter *iter = tree_iter_new(root);
             markdown_core_event_type event;
-            while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-                if (event == MARKDOWN_CORE_EVENT_ENTER && markdown_core_iter_get_node(iter)->kind == kind) {
+            while ((event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+                if (event == MARKDOWN_CORE_EVENT_ENTER && tree_iter_get_node(iter)->kind == kind) {
                     nodes++;
                 }
             }
-            markdown_core_iter_free(iter);
+            tree_iter_free(iter);
             size_t expected = count * cases[c].nodes_per_unit;
             INT_EQ(runner, nodes, expected, "pairwise matching preserves the semantic paired-delimiter count");
             markdown_core_node_free(root);
@@ -5824,7 +5763,7 @@ static void span_and_script_linear_work(test_batch_runner *runner) {
             markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
         OK(runner, root != NULL, "deep Span/script headings parse successfully");
         if (root) {
-            STR_EQ(runner, (const char *)root->first_child->attributes.anchor.data, "a-b-x-1",
+            STR_EQ(runner, (const char *)child_at(root, 0)->attributes.anchor.data, "a-b-x-1",
                    "heading projection includes script bodies and reserves the later Span anchor");
             OK(runner,
                work.anchors < 25 * (size_t)source.size && work.brackets <= 8 * (size_t)source.size &&
@@ -5838,14 +5777,14 @@ static void span_and_script_linear_work(test_batch_runner *runner) {
 
 static size_t count_kind(markdown_core_node *root, markdown_core_node_type kind) {
     size_t found = 0;
-    markdown_core_iter *iter = markdown_core_iter_new(root);
+    tree_iter *iter = tree_iter_new(root);
     markdown_core_event_type event;
-    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        if (event == MARKDOWN_CORE_EVENT_ENTER && markdown_core_iter_get_node(iter)->kind == kind) {
+    while ((event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        if (event == MARKDOWN_CORE_EVENT_ENTER && tree_iter_get_node(iter)->kind == kind) {
             found++;
         }
     }
-    markdown_core_iter_free(iter);
+    tree_iter_free(iter);
     return found;
 }
 
@@ -6048,15 +5987,14 @@ static void percent_comment_nodes(test_batch_runner *runner) {
     /* The engine entry with the dialect attached: `%%` is an element's
      * syntax, unlike the HTML comment of `comment_nodes` above. */
     markdown_core_node *doc = markdown_core_parse_document_with_setup(markdown, sizeof(markdown) - 1, NULL, NULL);
-    markdown_core_node *paragraph = doc->first_child;
-    markdown_core_node *text = paragraph->first_child;
-    markdown_core_node *comment = text->next;
-    markdown_core_node *empty = comment->next->next;
-    markdown_core_node *spanning = empty->next->next;
-    markdown_core_node *block = paragraph->next;
-    markdown_core_node *quote = block->next;
-    markdown_core_node *quoted = quote->first_child;
-    markdown_core_node *open = quote->next;
+    markdown_core_node *paragraph = child_at(doc, 0);
+    markdown_core_node *comment = child_at(paragraph, 1);
+    markdown_core_node *empty = child_at(paragraph, 3);
+    markdown_core_node *spanning = child_at(paragraph, 5);
+    markdown_core_node *block = child_at(doc, 1);
+    markdown_core_node *quote = child_at(doc, 2);
+    markdown_core_node *quoted = child_at(quote, 0);
+    markdown_core_node *open = child_at(doc, 3);
 
     INT_EQ(runner, comment->kind, MARKDOWN_CORE_NODE_COMMENT, "inline `%%` comment type");
     STR_EQ(runner, markdown_core_node_get_type_string(comment), "comment", "inline `%%` comment type string");
@@ -6077,7 +6015,7 @@ static void percent_comment_nodes(test_batch_runner *runner) {
     INT_EQ(runner, START_LINE(block), 4, "block starts on its opener line");
     INT_EQ(runner, END_LINE(block), 7, "block ends on its closer line");
     INT_EQ(runner, END_COLUMN(block), 3, "block ends at its closer line's last byte");
-    OK(runner, block->first_child == NULL, "a block comment is a leaf");
+    OK(runner, child_at(block, 0) == NULL, "a block comment is a leaf");
 
     INT_EQ(runner, quote->kind, MARKDOWN_CORE_NODE_CALLOUT, "the quoted form is inside its container");
     INT_EQ(runner, quoted->kind, MARKDOWN_CORE_NODE_COMMENT_BLOCK, "a quoted block comment");
@@ -6085,8 +6023,8 @@ static void percent_comment_nodes(test_batch_runner *runner) {
     INT_EQ(runner, START_COLUMN(quoted), 3, "a quoted block starts after the prefix");
 
     INT_EQ(runner, open->kind, MARKDOWN_CORE_NODE_PARAGRAPH, "an unclosed candidate is a paragraph");
-    LITERAL_EQ(runner, open->first_child, "%%", "an unmatched opener is text");
-    OK(runner, open->next == NULL, "nothing follows the unclosed candidate");
+    LITERAL_EQ(runner, child_at(open, 0), "%%", "an unmatched opener is text");
+    OK(runner, child_at(doc, 4) == NULL, "nothing follows the unclosed candidate");
 
     markdown_core_node_free(doc);
 }
@@ -6095,8 +6033,8 @@ static void cross_link_fields(test_batch_runner *runner) {
     const char *source = "[[ Note ]] [[Note|]] ![[#^block|raw *label*]]";
     markdown_core_document *doc = facade_parse((const uint8_t *)source, strlen(source));
     OK(runner, doc != NULL, "cross links parse through facade");
-    const markdown_core_node *node = markdown_core_node_get_first_child(markdown_core_document_root(doc));
-    node = markdown_core_node_get_first_child(node);
+    const markdown_core_node *paragraph = facade_child(markdown_core_document_root(doc), 0);
+    const markdown_core_node *node = facade_child(paragraph, 0);
     markdown_core_destination dest = facade_destination(node);
     markdown_core_optional_string label = facade_cross_label(node);
     OK(runner, dest.kind == MARKDOWN_CORE_DESTINATION_CROSS, "cross links produce the cross destination branch");
@@ -6104,11 +6042,11 @@ static void cross_link_fields(test_batch_runner *runner) {
        "path bytes are preserved and anchor is absent");
     OK(runner, markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_CROSS_LINK && !label.has_value,
        "no separator means absent label");
-    OK(runner, markdown_core_node_get_first_child(node) == NULL, "a cross link is an occurrence-owned leaf");
-    node = markdown_core_node_get_next_sibling(markdown_core_node_get_next_sibling(node));
+    OK(runner, markdown_core_node_children(node).count == 0, "a cross link is an occurrence-owned leaf");
+    node = facade_child(paragraph, 2);
     label = facade_cross_label(node);
     OK(runner, label.has_value && label.value.length == 0, "an authored empty label remains present");
-    node = markdown_core_node_get_next_sibling(markdown_core_node_get_next_sibling(node));
+    node = facade_child(paragraph, 4);
     OK(runner, markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_CROSS_EMBEDDED, "transclusion has its own kind");
     OK(runner,
        strcmp(facade_kind_name(MARKDOWN_CORE_KIND_CROSS_EMBEDDED), "CrossEmbedded") == 0 &&
@@ -6498,16 +6436,16 @@ static void delimiter_entries_are_pooled_across_inline_containers(test_batch_run
             markdown_core_parse_document_with_setup((const char *)source.ptr, source.size, measure_inline_work, &work);
         OK(runner, root != NULL, "the document parses");
         size_t emphases = 0;
-        markdown_core_iter *iter = markdown_core_iter_new(root);
+        tree_iter *iter = tree_iter_new(root);
         markdown_core_event_type ev;
-        while ((ev = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-            markdown_core_node *node = markdown_core_iter_get_node(iter);
+        while ((ev = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+            markdown_core_node *node = tree_iter_get_node(iter);
             if (ev == MARKDOWN_CORE_EVENT_ENTER &&
                 (node->kind == MARKDOWN_CORE_NODE_EMPHASIS || node->kind == MARKDOWN_CORE_NODE_STRONG)) {
                 emphases++;
             }
         }
-        markdown_core_iter_free(iter);
+        tree_iter_free(iter);
         if (count == 1) {
             pushes_per_paragraph = work.delimiter_pushes;
             pooled_for_one = work.pooled_delimiters;
@@ -6787,7 +6725,7 @@ static void heading_completion_invariants(test_batch_runner *runner) {
         markdown_core_node *root = parse(cases[i].source);
         OK(runner, root != NULL, "completed inline ownership preserves anchor reservations");
         if (root) {
-            STR_EQ(runner, (char *)root->first_child->attributes.anchor.data, cases[i].anchor,
+            STR_EQ(runner, (char *)child_at(root, 0)->attributes.anchor.data, cases[i].anchor,
                    "only final effective anchors on emitted nodes reserve names");
         }
         markdown_core_node_free(root);
@@ -6849,9 +6787,9 @@ static void heading_registry_invariants(test_batch_runner *runner) {
                 markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
             OK(runner, root != NULL, "heading registry handles dense future reservations");
             if (root) {
-                markdown_core_node *node = root->first_child;
+                markdown_core_node *node = child_at(root, 0);
                 OK(runner, work.heading_collection_disposed, "the finished document holds no live heading parse state");
-                for (size_t i = 0; i < count; i++, node = node->next) {
+                for (size_t i = 0; i < count; i++, node = child_at(root, i)) {
                     char expected[80];
                     size_t ordinal = reserve ? count + i + 1 : i;
                     if (ordinal) {
@@ -6865,7 +6803,8 @@ static void heading_registry_invariants(test_batch_runner *runner) {
                 OK(runner, work.anchors > count && work.anchors < 25 * (size_t)source.size,
                    "registry work is linear in input and generated spelling bytes: %zu/%d", work.anchors, source.size);
                 bool named = true;
-                for (markdown_core_node *node = root->last_child->first_child; node; node = node->next) {
+                for (size_t node_index = 0; node_index < last_child_of(root)->child_count; node_index++) {
+                    markdown_core_node *node = last_child_of(root)->children[node_index];
                     if (node->kind == MARKDOWN_CORE_NODE_LINK) {
                         markdown_core_link *link = node->as.link;
                         named =
@@ -6925,7 +6864,8 @@ static void reference_occurrences_hold_the_label_alone(test_batch_runner *runner
         }
         size_t references = 0;
         bool alone = true;
-        for (markdown_core_node *node = root->last_child->first_child; node; node = node->next) {
+        for (size_t node_index = 0; node_index < last_child_of(root)->child_count; node_index++) {
+            markdown_core_node *node = last_child_of(root)->children[node_index];
             if (node->kind != MARKDOWN_CORE_NODE_LINK) {
                 continue;
             }
@@ -6958,7 +6898,7 @@ static void heading_label_length_boundary(test_batch_runner *runner) {
         if (root) {
             INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LINK), length == MAX_LINK_LABEL_LENGTH,
                    "declaration and occurrence use the same raw-label limit");
-            INT_EQ(runner, root->first_child->attributes.anchor.len, length,
+            INT_EQ(runner, child_at(root, 0)->attributes.anchor.len, length,
                    "label eligibility never limits generated heading anchors");
         }
         markdown_core_node_free(root);
@@ -6968,14 +6908,14 @@ static void heading_label_length_boundary(test_batch_runner *runner) {
 
 static size_t count_anchors(markdown_core_node *root) {
     size_t count = 0;
-    markdown_core_iter *iter = markdown_core_iter_new(root);
+    tree_iter *iter = tree_iter_new(root);
     markdown_core_event_type event;
-    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        if (event == MARKDOWN_CORE_EVENT_ENTER && markdown_core_iter_get_node(iter)->attributes.anchor.len) {
+    while ((event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        if (event == MARKDOWN_CORE_EVENT_ENTER && tree_iter_get_node(iter)->attributes.anchor.len) {
             count++;
         }
     }
-    markdown_core_iter_free(iter);
+    tree_iter_free(iter);
     return count;
 }
 
@@ -7008,15 +6948,16 @@ static void image_dimension_linear_work(test_batch_runner *runner) {
             OK(runner, work.dimensions > 0 && work.dimensions <= 3 * (size_t)source.size,
                "image dimension work is linear: shape=%d bytes=%d work=%zu", shape, source.size, work.dimensions);
             if (root) {
-                markdown_core_node *node = root->first_child->first_child;
                 size_t images = 0, sized = 0;
-                while (node) {
-                    if (node->kind == MARKDOWN_CORE_NODE_EMBEDDED) {
+                tree_iter *iter = tree_iter_new(child_at(root, 0));
+                for (markdown_core_event_type event; (event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE;) {
+                    markdown_core_node *node = tree_iter_get_node(iter);
+                    if (event == MARKDOWN_CORE_EVENT_ENTER && node->kind == MARKDOWN_CORE_NODE_EMBEDDED) {
                         images++;
                         sized += node->as.link->dimensions.has_value;
                     }
-                    node = node->first_child ? node->first_child : node->next;
                 }
+                tree_iter_free(iter);
                 INT_EQ(runner, images, shape < 2 ? 1 : count, "nested image depth is preserved");
                 INT_EQ(runner, sized,
                        shape == 0   ? 0
@@ -7066,16 +7007,16 @@ static void callout_linear_work(test_batch_runner *runner) {
             OK(runner, work.callout > 0 && work.callout <= 2 * (size_t)source.size,
                "callout recognition is linear: shape=%d bytes=%d work=%zu", shape, source.size, work.callout);
             if (root && shape == 0) {
-                markdown_core_node *node = root->first_child;
+                markdown_core_node *node = child_at(root, 0);
                 size_t depth = 1;
-                while (node->first_child) {
-                    node = node->first_child;
+                while (child_at(node, 0)) {
+                    node = child_at(node, 0);
                     depth++;
                 }
                 INT_EQ(runner, depth, count, "no quote depth truncation");
                 STR_EQ(runner, (const char *)node->as.callout->variant.value.data, "deep", "deepest metadata retained");
                 OK(runner,
-                   node->as.callout->title && node->as.callout->title->first_child->kind == MARKDOWN_CORE_NODE_MARK,
+                   node->as.callout->title && child_at(node->as.callout->title, 0)->kind == MARKDOWN_CORE_NODE_MARK,
                    "deep title parsed through shared inlines");
             }
             markdown_core_node_free(root);
@@ -7138,10 +7079,11 @@ static markdown_core_node *seed_anchor(const markdown_core_element_instance *sel
     (void)parent;
     (void)input;
     (void)length;
-    markdown_core_node *owner = parser->current;
+    markdown_core_node *owner = markdown_core_parser_current(parser);
     if (parser->blank && owner->kind == MARKDOWN_CORE_NODE_PARAGRAPH) {
-        if (owner->parent->kind == MARKDOWN_CORE_NODE_LIST_ITEM) {
-            owner = owner->parent;
+        markdown_core_node *holder = markdown_core_parser_parent(parser, owner);
+        if (holder->kind == MARKDOWN_CORE_NODE_LIST_ITEM) {
+            owner = holder;
         }
         if (!markdown_core_chunk_set_cstr(&owner->attributes.anchor, "existing")) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -7156,7 +7098,7 @@ static markdown_core_node *observe_definition_before_anchor(const markdown_core_
     (void)self;
     (void)indented;
     if (length - parser->first_nonspace >= 6 && memcmp(input + parser->first_nonspace, "#list#", 6) == 0) {
-        markdown_core_node *previous = parent->last_child;
+        markdown_core_node *previous = markdown_core_parser_last_child(parser, parent);
         *(bool *)parser->context = previous && previous->kind == MARKDOWN_CORE_NODE_REFERENCE;
     }
     return NULL;
@@ -7293,17 +7235,17 @@ static void reference_definition_lifetime(test_batch_runner *runner) {
     OK(runner, root != NULL, "deferred reference definition parses");
     OK(runner, retained_at_anchor, "the finalized definition remains a sibling when anchor syntax is reached");
     if (root) {
-        markdown_core_node *reference = root->first_child ? root->first_child->next : NULL;
+        markdown_core_node *reference = child_at(root, 0) ? child_at(root, 1) : NULL;
         OK(runner, reference && reference->kind == MARKDOWN_CORE_NODE_REFERENCE,
            "the definition is a Reference where it was written");
-        markdown_core_node *marker = reference ? reference->next : NULL;
+        markdown_core_node *marker = child_at(root, 2);
         OK(runner,
-           marker && marker->kind == MARKDOWN_CORE_NODE_PARAGRAPH && marker->first_child &&
-               marker->first_child->kind == MARKDOWN_CORE_NODE_TEXT && literal_is(marker->first_child, "#list#"),
+           marker && marker->kind == MARKDOWN_CORE_NODE_PARAGRAPH && child_at(marker, 0) &&
+               child_at(marker, 0)->kind == MARKDOWN_CORE_NODE_TEXT && literal_is(child_at(marker, 0), "#list#"),
            "the marker's paragraph follows the Reference");
         OK(runner,
-           marker && marker->next && marker->next->first_child &&
-               marker->next->first_child->kind == MARKDOWN_CORE_NODE_LINK && !marker->next->next,
+           child_at(root, 3) && child_at(child_at(root, 3), 0) &&
+               child_at(child_at(root, 3), 0)->kind == MARKDOWN_CORE_NODE_LINK && root->child_count == 4,
            "the definition resolves links without leaking a paragraph into the completed tree");
         markdown_core_node_free(root);
     }
@@ -7315,13 +7257,13 @@ static void block_identifier_ownership(test_batch_runner *runner) {
     const char *sources[] = {"text #candidate#\n\n", "- text #candidate#\n\n"};
     for (size_t i = 0; i < sizeof(sources) / sizeof(*sources); i++) {
         markdown_core_node *root = parse_with_probes(sources[i], strlen(sources[i]), probes, 1);
-        markdown_core_node *owner = root->first_child;
+        markdown_core_node *owner = child_at(root, 0);
         if (owner->kind == MARKDOWN_CORE_NODE_LIST) {
-            owner = owner->first_child;
+            owner = child_at(owner, 0);
         }
         STR_EQ(runner, (const char *)owner->attributes.anchor.data, "existing", "an existing anchor is never replaced");
-        markdown_core_node *paragraph = owner->kind == MARKDOWN_CORE_NODE_PARAGRAPH ? owner : owner->first_child;
-        LITERAL_EQ(runner, paragraph->first_child, "text #candidate#",
+        markdown_core_node *paragraph = owner->kind == MARKDOWN_CORE_NODE_PARAGRAPH ? owner : child_at(owner, 0);
+        LITERAL_EQ(runner, child_at(paragraph, 0), "text #candidate#",
                    "a refused attachment keeps the complete marker visible");
         INT_EQ(runner, count_anchors(root), 1, "a refused item anchor is not transferred to its paragraph");
         markdown_core_node_free(root);
@@ -7333,11 +7275,11 @@ static void block_identifier_ownership(test_batch_runner *runner) {
             snprintf(source, sizeof(source), "- text #item#%s%s#list#%s", endings[i], endings[i],
                      final_newline ? endings[i] : "");
             markdown_core_node *root = markdown_core_parse_document(source, strlen(source));
-            markdown_core_node *list = root->first_child;
-            markdown_core_node *item = list->first_child;
+            markdown_core_node *list = child_at(root, 0);
+            markdown_core_node *item = child_at(list, 0);
             INT_EQ(runner, END_LINE(list), 3, "detached line belongs to the list scope for every line ending");
             INT_EQ(runner, END_COLUMN(list), 6, "list scope includes the closing hash at EOF");
-            INT_EQ(runner, END_COLUMN(item->first_child->first_child), 6, "text scope ends before the separator");
+            INT_EQ(runner, END_COLUMN(child_at(child_at(item, 0), 0)), 6, "text scope ends before the separator");
             memset(source, 'x', strlen(source));
             STR_EQ(runner, (const char *)list->attributes.anchor.data, "list",
                    "detached EOF identifier owns its bytes");
@@ -7406,7 +7348,7 @@ static void grid_border_recognition_work(test_batch_runner *runner) {
         INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE_CELL), partial[i].cells,
                "partial and mixed borders retain their own interval grammar");
         if (partial[i].cells) {
-            markdown_core_node *cell = root->first_child->first_child->first_child;
+            markdown_core_node *cell = child_at(child_at(child_at(root, 0), 0), 0);
             int64_t rowspan, colspan;
             EXPECT_OK(markdown_core_node_table_cell_spans(cell, &rowspan, &colspan));
             OK(runner, rowspan == partial[i].rowspan, "the partial boundary alone determines spanning");
@@ -7439,7 +7381,7 @@ static void grid_opening_memory(test_batch_runner *runner) {
                            "invalid opener and continuation remain one paragraph");
                     markdown_core_string literal;
                     OK(runner,
-                       literal_of(root->first_child->first_child, &literal) &&
+                       literal_of(child_at(child_at(root, 0), 0), &literal) &&
                            literal.length == (size_t)source.size - 6 &&
                            !memcmp(literal.data, source.ptr, (size_t)source.size - 6),
                        "fallback preserves the complete opening line");
@@ -7678,7 +7620,7 @@ static void grid_caption_search_work(test_batch_runner *runner) {
             if (root) {
                 INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), shape == 3 ? 0 : 1,
                        "negative grid facts preserve the valid suffix: shape=%zu n=%zu", shape, n);
-                const markdown_core_node *owner = shape == 1 ? root->first_child->first_child : root->first_child;
+                const markdown_core_node *owner = shape == 1 ? child_at(child_at(root, 0), 0) : child_at(root, 0);
                 OK(runner,
                    (owner->kind == MARKDOWN_CORE_NODE_TABLE &&
                     facade_field(owner, markdown_core_node_table_caption) != NULL) == (shape != 3),
@@ -8596,7 +8538,7 @@ static void construction_checks_containment(test_batch_runner *runner) {
         (void)freopen("/dev/null", "w", stderr);
         markdown_core_node *parent = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
         markdown_core_node *block = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
-        markdown_core_node_attach_validated(parent, block, NULL);
+        markdown_core_node_push_child(NULL, parent, block);
         _exit(0);
     }
     int status = 0;
@@ -8619,14 +8561,19 @@ static bool configure_error_observer(markdown_core_dialect_builder *builder, voi
     return configure_conversion_policy(builder, context) &&
            markdown_core_dialect_builder_attach(builder, &ERROR_OBSERVER);
 }
-/* The rejection count of the parse under test, from its setup context. */
-static size_t *lead_policy_rejections;
+/* The policy of the parse under test, from its setup context: the document
+ * accepts one paragraph, the one its source opens with, and refuses every
+ * paragraph after it. */
+typedef struct {
+    size_t accepted, rejections;
+} lead_policy;
+static lead_policy *lead_policy_current;
 
 static int reject_additional_paragraph(const markdown_core_element *element, markdown_core_node *node,
                                        markdown_core_node_type kind) {
     (void)element;
-    if (kind == MARKDOWN_CORE_NODE_PARAGRAPH && node->first_child) {
-        (*lead_policy_rejections)++;
+    if (kind == MARKDOWN_CORE_NODE_PARAGRAPH && lead_policy_current->accepted++) {
+        lead_policy_current->rejections++;
         return 0;
     }
     return markdown_core_node_can_contain_builtin(node, kind);
@@ -8636,7 +8583,7 @@ static const markdown_core_element LEAD_POLICY = {.name = "lead-policy",
 static void begin_lead_policy(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     MARKDOWN_CORE_ELEMENT_DOCUMENT.init_document(self, parser);
     parser->root->element = &LEAD_POLICY;
-    lead_policy_rejections = parser->context;
+    lead_policy_current = parser->context;
 }
 static bool configure_lead_policy(markdown_core_dialect_builder *builder, void *context) {
     static markdown_core_element document;
@@ -8687,10 +8634,10 @@ static void semantic_rejection_preserves_its_cause(test_batch_runner *runner) {
     markdown_core_parser_fail(&parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     INT_EQ(runner, parser.error, MARKDOWN_CORE_PARSE_CONTAINMENT_REJECTED, "cleanup cannot overwrite the first cause");
 
-    size_t rejections = 0;
+    lead_policy lead = {0};
     source = "lead\n| h |\n| - |\n";
-    root = markdown_core_parse_document_with_setup(source, strlen(source), configure_lead_policy, &rejections);
-    OK(runner, root && rejections, "refused table lead leaves the original parse available");
+    root = markdown_core_parse_document_with_setup(source, strlen(source), configure_lead_policy, &lead);
+    OK(runner, root && lead.rejections, "refused table lead leaves the original parse available");
     if (!root) {
         return;
     }
@@ -8722,9 +8669,8 @@ static bool probe_table_transactions(const markdown_core_element_instance *self,
     for (int pass = 0; pass < 4; pass++) {
         payload_probe_calls before = payload_probe_snapshot();
         size_t geometry =
-                   markdown_core_table_work_in(markdown_core_parser_instance(parser, &MARKDOWN_CORE_ELEMENT_TABLE))
-                       ->geometry_lines,
-               nodes = parser->nodes_created;
+            markdown_core_table_work_in(markdown_core_parser_instance(parser, &MARKDOWN_CORE_ELEMENT_TABLE))
+                ->geometry_lines;
         size_t lookahead_work = parser->block_lookahead_work;
         markdown_core_block_lookahead lookahead;
         bool begun =
@@ -8735,7 +8681,6 @@ static bool probe_table_transactions(const markdown_core_element_instance *self,
         payload_probe_calls after = payload_probe_snapshot();
         OK(probe->runner, begun && !parser->error && matched == probe->matches,
            "cold and warm table transactions agree on recognition");
-        INT_EQ(probe->runner, parser->nodes_created, nodes, "a table query constructs no AST nodes");
         if (probe->bounded_lookahead) {
             OK(probe->runner, parser->block_lookahead_work - lookahead_work <= probe->lookahead_limit,
                "a grammar-impossible successor is not replayed: work=%zu limit=%zu",
@@ -8895,7 +8840,8 @@ static void parser_attachment_commits_one_decision(test_batch_runner *runner) {
     paragraph_root = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
     paragraph_root->element = &CONVERSION_POLICY;
     conversion_current_policy = &paragraph_policy;
-    rejected.root = rejected.current = paragraph_root;
+    rejected.root = paragraph_root;
+    rejected.block_root = rejected.current = paragraph_root;
     size_t attempts = payload_allocations;
     OK(runner, !markdown_core_parser_add_child(&rejected, paragraph_root, MARKDOWN_CORE_NODE_PARAGRAPH, 1),
        "root refusal terminates parent selection without walking past the root");
@@ -8949,12 +8895,13 @@ static void formula_containment_follows_recognition(test_batch_runner *runner) {
         if (root) {
             INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_FORMULA), 1,
                    "invalid candidates never prevent the first valid formula from attaching");
-            markdown_core_node *prefix = root->first_child ? root->first_child->first_child : NULL;
-            markdown_core_node *formula = prefix ? prefix->next : NULL;
-            markdown_core_node *suffix = formula ? formula->next : NULL;
+            markdown_core_node *paragraph = child_at(root, 0);
+            markdown_core_node *prefix = paragraph ? child_at(paragraph, 0) : NULL;
+            markdown_core_node *formula = paragraph ? child_at(paragraph, 1) : NULL;
+            markdown_core_node *suffix = paragraph ? child_at(paragraph, 2) : NULL;
             bool expected_shape = prefix && prefix->kind == MARKDOWN_CORE_NODE_TEXT && formula &&
                                   formula->kind == MARKDOWN_CORE_NODE_FORMULA && suffix &&
-                                  suffix->kind == MARKDOWN_CORE_NODE_TEXT && !suffix->next;
+                                  suffix->kind == MARKDOWN_CORE_NODE_TEXT && paragraph->child_count == 3;
             OK(runner, expected_shape, "only the accepted formula replaces its source span");
             if (expected_shape) {
                 LITERAL_EQ(runner, prefix, cases[i].prefix, "invalid formula syntax remains literal text");
@@ -8962,7 +8909,6 @@ static void formula_containment_follows_recognition(test_batch_runner *runner) {
                        "the first valid formula owns the recognized body");
                 LITERAL_EQ(runner, suffix, " $later$", "the rejected formula retains its original text");
             }
-            INT_EQ(runner, markdown_core_node_check(root, NULL), 0, "formula attachment keeps the tree consistent");
             markdown_core_node_free(root);
         }
         INT_EQ(runner, payload_live, 0, "accepted and rejected formula candidates release all allocations");
@@ -8992,9 +8938,10 @@ static void delimiter_boundary_floors(test_batch_runner *runner) {
         INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_EMPHASIS), 2 * count,
                "ordinary boundaries preserve emphasis in the enclosing range");
         size_t cites = 0;
-        for (markdown_core_node *node = root->first_child->first_child; node; node = node->next) {
+        for (size_t node_index = 0; node_index < child_at(root, 0)->child_count; node_index++) {
+            markdown_core_node *node = child_at(root, 0)->children[node_index];
             if (node->kind == MARKDOWN_CORE_NODE_CITE) {
-                markdown_core_node *item = node->as.cite->citations;
+                markdown_core_node *item = child_at(node, 0);
                 size_t emphasis = count_kind(item->as.citation->prefix, MARKDOWN_CORE_NODE_EMPHASIS) +
                                   count_kind(item->as.citation->suffix, MARKDOWN_CORE_NODE_EMPHASIS);
                 INT_EQ(runner, emphasis, cites % 2 ? 0 : 2, "pairs stay within each committed citation affix");
@@ -9013,6 +8960,11 @@ static void delimiter_boundary_floors(test_batch_runner *runner) {
         markdown_core_strbuf_free(&source);
     }
 }
+
+/* EVERY NODE OF A TREE, counted by the test's own walk: the children
+ * arrays, and each node's owned field roots, an inline note's included,
+ * through the inline-subtree visitor. */
+static size_t owned_node_census(markdown_core_node *root);
 
 /* Opaque bodies are leaves, not three disposable Text nodes per formula.
  * Exercise every delimiter form, multiline placement, padding and escapes at
@@ -9038,9 +8990,8 @@ static void formula_leaf_construction_work(test_batch_runner *runner) {
                 markdown_core_parse_document_with_setup((char *)source.ptr, source.size, measure_inline_work, &work);
             OK(runner, root != NULL, "opaque formula constructs at every size and delimiter form");
             INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_FORMULA), count, "every body is one opaque leaf");
-            INT_EQ(runner, work.nodes_created, 2 * count + 3,
-                   "only document, paragraph, formula leaves and surrounding text are constructed");
-            INT_EQ(runner, work.nodes_freed, 0, "recognized opaque bodies have no transient AST ownership");
+            INT_EQ(runner, owned_node_census(root), 2 * count + 3,
+                   "the tree is the document, its paragraph, the formula leaves and the text around them");
             OK(runner, work.opaque <= 4 * (size_t)source.size, "opaque search remains linear");
             markdown_core_node_free(root);
             markdown_core_strbuf_free(&source);
@@ -9060,7 +9011,7 @@ static void formula_promotion_transfers_storage(test_batch_runner *runner) {
             const markdown_core_element_instance formula_instance = {&MARKDOWN_CORE_ELEMENT_FORMULA, NULL, 0, NULL};
             markdown_core_node *root = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
             markdown_core_node *old = markdown_core_node_new(MARKDOWN_CORE_NODE_CODE_BLOCK);
-            markdown_core_node_append_child(root, old);
+            append_child(root, old);
             old->as.code->info = markdown_core_optional_chunk_present(markdown_core_chunk_literal("formula"));
             old->as.code->literal = markdown_core_chunk_literal(" \t value \n ");
             if (!borrowed) {
@@ -9069,15 +9020,15 @@ static void formula_promotion_transfers_storage(test_batch_runner *runner) {
             const char *before = (const char *)old->as.code->literal.data;
             payload_fail_at = fail ? payload_allocations + fail : 0;
             markdown_core_finish_result result = MARKDOWN_CORE_ELEMENT_FORMULA.finish_step(
-                &formula_instance, &parser, old, MARKDOWN_CORE_EVENT_EXIT, 0, NULL);
+                &formula_instance, &parser, old, root, MARKDOWN_CORE_EVENT_EXIT, NULL);
             payload_fail_at = 0;
             if (result == MARKDOWN_CORE_FINISH_FAILED) {
                 INT_EQ(runner, parser.error, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED, "loss is reported");
-                OK(runner, root->first_child == old, "failed promotion preserves the old owner");
+                OK(runner, child_at(root, 0) == old, "failed promotion preserves the old owner");
                 STR_EQ(runner, before, " \t value \n ", "failed promotion preserves the old literal");
             } else {
                 INT_EQ(runner, result, MARKDOWN_CORE_FINISH_CONTINUE, "promotion rewrites the block in place");
-                markdown_core_node *formula = root->first_child;
+                markdown_core_node *formula = child_at(root, 0);
                 OK(runner, formula == old && formula->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK,
                    "the code block is the formula block");
                 const char *after = markdown_core_elements_get_formula_literal(formula);
@@ -9169,8 +9120,8 @@ static void scope_queries_count_in_the_document_unit(test_batch_runner *runner) 
         if (!document) {
             continue;
         }
-        const markdown_core_node *paragraph = markdown_core_node_get_first_child(markdown_core_document_root(document));
-        const markdown_core_node *text = markdown_core_node_get_first_child(paragraph);
+        const markdown_core_node *paragraph = facade_child(markdown_core_document_root(document), 0);
+        const markdown_core_node *text = facade_child(paragraph, 0);
         markdown_core_scope scope = document_scope_of(document, text, source);
         OK(runner,
            scope.start.line == 1 && scope.start.column == 1 && scope.end.line == 1 &&
@@ -9403,11 +9354,11 @@ static int census_owned_root(markdown_core_node **slot, void *context) {
 }
 
 static void census_mailto_links(markdown_core_node *root, mailto_census *census) {
-    markdown_core_iter *iter = markdown_core_iter_new(root);
+    tree_iter *iter = tree_iter_new(root);
     markdown_core_event_type event;
     bool seen_link = false;
-    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *node = markdown_core_iter_get_node(iter);
+    while ((event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = tree_iter_get_node(iter);
         if (event != MARKDOWN_CORE_EVENT_ENTER) {
             continue;
         }
@@ -9424,20 +9375,20 @@ static void census_mailto_links(markdown_core_node *root, mailto_census *census)
         census->merged += strcmp(url, "mailto:x.y@z.com") == 0;
         census->after_link += seen_link && strcmp(url, "mailto:q@r.st") == 0;
     }
-    markdown_core_iter_free(iter);
+    tree_iter_free(iter);
 }
 
 static markdown_core_node *first_of_kind(markdown_core_node *root, markdown_core_node_type kind) {
-    markdown_core_iter *iter = markdown_core_iter_new(root);
+    tree_iter *iter = tree_iter_new(root);
     markdown_core_node *found = NULL;
     markdown_core_event_type event;
-    while (!found && (event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *node = markdown_core_iter_get_node(iter);
+    while (!found && (event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = tree_iter_get_node(iter);
         if (event == MARKDOWN_CORE_EVENT_ENTER && node->kind == kind) {
             found = node;
         }
     }
-    markdown_core_iter_free(iter);
+    tree_iter_free(iter);
     return found;
 }
 
@@ -9466,11 +9417,11 @@ static bool scope_within(const markdown_core_node *inner, const markdown_core_no
 /* Every node under `label` lies between its brackets: from the byte after the
  * `[` to the byte before the `]`. */
 static bool label_holds_its_content(markdown_core_node *label) {
-    markdown_core_iter *iter = markdown_core_iter_new(label);
+    tree_iter *iter = tree_iter_new(label);
     markdown_core_event_type event;
     bool held = true;
-    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *node = markdown_core_iter_get_node(iter);
+    while ((event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = tree_iter_get_node(iter);
         if (event != MARKDOWN_CORE_EVENT_ENTER || node == label) {
             continue;
         }
@@ -9479,7 +9430,7 @@ static bool label_holds_its_content(markdown_core_node *label) {
                 (END_LINE(node) < END_LINE(label) ||
                  (END_LINE(node) == END_LINE(label) && END_COLUMN(node) < END_COLUMN(label)));
     }
-    markdown_core_iter_free(iter);
+    tree_iter_free(iter);
     return held;
 }
 
@@ -9542,17 +9493,18 @@ static void directive_scopes_are_editor_positions(test_batch_runner *runner) {
         markdown_core_node *roots[16] = {doc};
         size_t root_count = 1, directives = 0;
         while (root_count) {
-            markdown_core_iter *iter = markdown_core_iter_new(roots[--root_count]);
+            tree_iter *iter = tree_iter_new(roots[--root_count]);
             markdown_core_event_type event;
-            while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-                markdown_core_node *node = markdown_core_iter_get_node(iter);
+            while ((event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+                markdown_core_node *node = tree_iter_get_node(iter);
                 if (event != MARKDOWN_CORE_EVENT_ENTER ||
                     (node->kind != MARKDOWN_CORE_NODE_DIRECTIVE && node->kind != MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK)) {
                     continue;
                 }
                 directives++;
-                OK(runner, !node->parent || scope_within(node, node->parent), "a directive in %.*s lies in its parent",
-                   shown, source);
+                markdown_core_node *parent = tree_iter_parent(iter);
+                OK(runner, !parent || scope_within(node, parent), "a directive in %.*s lies in its parent", shown,
+                   source);
                 markdown_core_node *label = markdown_core_directive_label(node);
                 if (node->kind == MARKDOWN_CORE_NODE_DIRECTIVE) {
                     /* Attributes follow the label's `]` directly, or stand
@@ -9569,7 +9521,7 @@ static void directive_scopes_are_editor_positions(test_batch_runner *runner) {
                 if (!label) {
                     continue;
                 }
-                markdown_core_node *content = label->first_child;
+                markdown_core_node *content = child_at(label, 0);
                 OK(runner,
                    source_byte_at(source, START_LINE(label), START_COLUMN(label)) == '[' &&
                        source_byte_at(source, END_LINE(label), END_COLUMN(label)) == ']',
@@ -9585,7 +9537,7 @@ static void directive_scopes_are_editor_positions(test_batch_runner *runner) {
                     roots[root_count++] = label;
                 }
             }
-            markdown_core_iter_free(iter);
+            tree_iter_free(iter);
         }
         OK(runner, directives > 0, "%.*s holds a directive", shown, source);
         markdown_core_node_free(doc);
@@ -9617,17 +9569,17 @@ static void paragraphs_start_on_their_first_byte(test_batch_runner *runner) {
         const char *source = sources[i];
         const int shown = (int)strcspn(source, "\n");
         markdown_core_node *doc = parse(source);
-        markdown_core_iter *iter = markdown_core_iter_new(doc);
+        tree_iter *iter = tree_iter_new(doc);
         markdown_core_event_type event;
         size_t paragraphs = 0;
-        while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-            markdown_core_node *node = markdown_core_iter_get_node(iter);
+        while ((event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+            markdown_core_node *node = tree_iter_get_node(iter);
             if (event != MARKDOWN_CORE_EVENT_ENTER || node->kind != MARKDOWN_CORE_NODE_PARAGRAPH) {
                 continue;
             }
             paragraphs++;
             const int first = source_byte_at(source, START_LINE(node), START_COLUMN(node));
-            markdown_core_node *text = node->first_child;
+            markdown_core_node *text = child_at(node, 0);
             markdown_core_string literal;
             OK(runner, first > 0 && first != ' ' && first != '\t', "a paragraph in %.*s starts on a non-space byte",
                shown, source);
@@ -9637,7 +9589,7 @@ static void paragraphs_start_on_their_first_byte(test_batch_runner *runner) {
                    literal.data[0] == first,
                "a paragraph in %.*s starts with its text", shown, source);
         }
-        markdown_core_iter_free(iter);
+        tree_iter_free(iter);
         OK(runner, paragraphs > 0, "%.*s holds a paragraph", shown, source);
         markdown_core_node_free(doc);
     }
@@ -9722,26 +9674,27 @@ static void lazy_lines_parse_as_prefixed(test_batch_runner *runner) {
 /* The innermost callout of `doc`: the last one a walk enters. */
 static markdown_core_node *innermost_callout(markdown_core_node *doc) {
     markdown_core_node *callout = NULL;
-    markdown_core_iter *iter = markdown_core_iter_new(doc);
+    tree_iter *iter = tree_iter_new(doc);
     markdown_core_event_type event;
-    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *node = markdown_core_iter_get_node(iter);
+    while ((event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = tree_iter_get_node(iter);
         if (event == MARKDOWN_CORE_EVENT_ENTER && node->kind == MARKDOWN_CORE_NODE_CALLOUT) {
             callout = node;
         }
     }
-    markdown_core_iter_free(iter);
+    tree_iter_free(iter);
     return callout;
 }
 
 /* Every node after `doc`'s first child, as kind, scope and literal. */
 static char *describe_after_first(markdown_core_node *doc) {
     markdown_core_strbuf out = MARKDOWN_CORE_BUF_INIT();
-    for (markdown_core_node *top = doc->first_child ? doc->first_child->next : NULL; top; top = top->next) {
-        markdown_core_iter *iter = markdown_core_iter_new(top);
+    for (size_t at = 1; at < doc->child_count; at++) {
+        markdown_core_node *top = doc->children[at];
+        tree_iter *iter = tree_iter_new(top);
         markdown_core_event_type event;
-        while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-            markdown_core_node *node = markdown_core_iter_get_node(iter);
+        while ((event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+            markdown_core_node *node = tree_iter_get_node(iter);
             if (event != MARKDOWN_CORE_EVENT_ENTER) {
                 continue;
             }
@@ -9752,7 +9705,7 @@ static char *describe_after_first(markdown_core_node *doc) {
             put_literal(&out, node);
             markdown_core_strbuf_putc(&out, '\n');
         }
-        markdown_core_iter_free(iter);
+        tree_iter_free(iter);
     }
     return (char *)markdown_core_strbuf_detach(&out);
 }
@@ -9836,13 +9789,15 @@ static bool cell_holds_place(const markdown_core_node *cell, int line, int colum
            column <= END_COLUMN(cell);
 }
 
+/* Whether `node` is `ancestor` or in its subtree. */
 static bool node_holds(const markdown_core_node *ancestor, const markdown_core_node *node) {
-    for (; node; node = node->parent) {
-        if (node == ancestor) {
-            return true;
-        }
+    tree_iter *iter = tree_iter_new((markdown_core_node *)ancestor);
+    bool held = false;
+    for (markdown_core_event_type event; !held && (event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE;) {
+        held = event == MARKDOWN_CORE_EVENT_ENTER && tree_iter_get_node(iter) == node;
     }
-    return false;
+    tree_iter_free(iter);
+    return held;
 }
 
 /* A BLOCK IN A CELL ENDS IN ITS CELL. The parser reads a grid or multiline
@@ -9878,22 +9833,22 @@ static void cell_blocks_end_in_their_cell(test_batch_runner *runner) {
         const markdown_core_node *cells[32];
         size_t cell_count = 0, checked = 0;
         {
-            markdown_core_iter *iter = markdown_core_iter_new(doc);
+            tree_iter *iter = tree_iter_new(doc);
             markdown_core_event_type event;
-            while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-                markdown_core_node *node = markdown_core_iter_get_node(iter);
+            while ((event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+                markdown_core_node *node = tree_iter_get_node(iter);
                 if (event == MARKDOWN_CORE_EVENT_ENTER && node->kind == MARKDOWN_CORE_NODE_TABLE_CELL &&
                     cell_count < sizeof(cells) / sizeof(cells[0])) {
                     cells[cell_count++] = node;
                 }
             }
-            markdown_core_iter_free(iter);
+            tree_iter_free(iter);
         }
         {
-            markdown_core_iter *iter = markdown_core_iter_new(doc);
+            tree_iter *iter = tree_iter_new(doc);
             markdown_core_event_type event;
-            while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-                markdown_core_node *node = markdown_core_iter_get_node(iter);
+            while ((event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+                markdown_core_node *node = tree_iter_get_node(iter);
                 if (event != MARKDOWN_CORE_EVENT_ENTER || START_LINE(node) <= 0) {
                     continue;
                 }
@@ -9916,7 +9871,7 @@ static void cell_blocks_end_in_their_cell(test_batch_runner *runner) {
                    START_COLUMN(node), shown, source, START_LINE(cell), START_COLUMN(cell), END_LINE(cell),
                    END_COLUMN(cell), END_LINE(node), END_COLUMN(node));
             }
-            markdown_core_iter_free(iter);
+            tree_iter_free(iter);
         }
         OK(runner, checked > 0, "%.*s puts nodes in a cell", shown, source);
         markdown_core_node_free(doc);
@@ -9960,15 +9915,15 @@ static bool same_columns(const markdown_core_table *a, const markdown_core_table
  * spans and columns, and every scope moved by exactly `shift` bytes. Returns
  * the number of nodes that differ. */
 static size_t shifted_table_differences(markdown_core_node *base, markdown_core_node *moved, int shift) {
-    markdown_core_iter *a = markdown_core_iter_new(base), *b = markdown_core_iter_new(moved);
+    tree_iter *a = tree_iter_new(base), *b = tree_iter_new(moved);
     markdown_core_event_type event;
     size_t differences = 0;
-    while ((event = markdown_core_iter_next(a)) != MARKDOWN_CORE_EVENT_DONE) {
-        if (markdown_core_iter_next(b) != event) {
+    while ((event = tree_iter_next(a)) != MARKDOWN_CORE_EVENT_DONE) {
+        if (tree_iter_next(b) != event) {
             differences++;
             break;
         }
-        markdown_core_node *x = markdown_core_iter_get_node(a), *y = markdown_core_iter_get_node(b);
+        markdown_core_node *x = tree_iter_get_node(a), *y = tree_iter_get_node(b);
         if (event != MARKDOWN_CORE_EVENT_ENTER) {
             continue;
         }
@@ -9990,23 +9945,24 @@ static size_t shifted_table_differences(markdown_core_node *base, markdown_core_
         }
         differences += !same;
     }
-    differences += markdown_core_iter_next(b) != MARKDOWN_CORE_EVENT_DONE;
-    markdown_core_iter_free(a);
-    markdown_core_iter_free(b);
+    differences += tree_iter_next(b) != MARKDOWN_CORE_EVENT_DONE;
+    tree_iter_free(a);
+    tree_iter_free(b);
     return differences;
 }
 
 static bool table_nodes_nest(markdown_core_node *table) {
-    markdown_core_iter *iter = markdown_core_iter_new(table);
+    tree_iter *iter = tree_iter_new(table);
     markdown_core_event_type event;
     bool nested = true;
-    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *node = markdown_core_iter_get_node(iter);
-        if (event == MARKDOWN_CORE_EVENT_ENTER && node->parent) {
-            nested &= scope_within(node, node->parent);
+    while ((event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = tree_iter_get_node(iter);
+        markdown_core_node *parent = tree_iter_parent(iter);
+        if (event == MARKDOWN_CORE_EVENT_ENTER && parent) {
+            nested &= scope_within(node, parent);
         }
     }
-    markdown_core_iter_free(iter);
+    tree_iter_free(iter);
     return nested;
 }
 
@@ -10071,7 +10027,7 @@ static void table_geometry_ignores_indentation(test_batch_runner *runner) {
             OK(runner, moved && !shifted_table_differences(base, moved, (int)strlen(prefixes[p].first)),
                "%.*s under %s reads as it does unprefixed, every scope moved by the prefix", shown, source,
                prefixes[p].first);
-            OK(runner, moved && table_nodes_nest(moved) && scope_within(moved, moved->parent),
+            OK(runner, moved && table_nodes_nest(moved) && scope_within(moved, parent_in(moved_doc, moved)),
                "%.*s under %s nests in its container", shown, source, prefixes[p].first);
             markdown_core_node_free(moved_doc);
             markdown_core_strbuf_free(&moved_source);
@@ -10121,7 +10077,7 @@ static void table_margin_is_shared_indentation(test_batch_runner *runner) {
         OK(runner, table != NULL, "%.*s is a table", shown, source);
         if (table) {
             const markdown_core_table *value = table->opaque;
-            markdown_core_node *row = table->first_child, *cell = row ? row->first_child : NULL;
+            markdown_core_node *row = child_at(table, 0), *cell = row ? child_at(row, 0) : NULL;
             OK(runner, value->columns[0].flow == cases[i].flows[0] && value->columns[1].flow == cases[i].flows[1],
                "%.*s aligns against its dash runs", shown, source);
             OK(runner, START_LINE(table) == cases[i].table[0] && START_COLUMN(table) == cases[i].table[1],
@@ -10156,23 +10112,23 @@ static void table_margin_is_shared_indentation(test_batch_runner *runner) {
  * them: kind, literal, and scope, with lines counted from the row's. */
 static char *describe_row_on(markdown_core_node *doc, int line) {
     markdown_core_node *row = NULL;
-    markdown_core_iter *iter = markdown_core_iter_new(doc);
+    tree_iter *iter = tree_iter_new(doc);
     markdown_core_event_type event;
-    while (!row && (event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *node = markdown_core_iter_get_node(iter);
+    while (!row && (event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = tree_iter_get_node(iter);
         if (event == MARKDOWN_CORE_EVENT_ENTER && node->kind == MARKDOWN_CORE_NODE_TABLE_ROW &&
             START_LINE(node) == line) {
             row = node;
         }
     }
-    markdown_core_iter_free(iter);
+    tree_iter_free(iter);
     if (!row) {
         return NULL;
     }
     markdown_core_strbuf out = MARKDOWN_CORE_BUF_INIT();
-    iter = markdown_core_iter_new(row);
-    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-        markdown_core_node *node = markdown_core_iter_get_node(iter);
+    iter = tree_iter_new(row);
+    while ((event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+        markdown_core_node *node = tree_iter_get_node(iter);
         if (event != MARKDOWN_CORE_EVENT_ENTER) {
             continue;
         }
@@ -10183,7 +10139,7 @@ static char *describe_row_on(markdown_core_node *doc, int line) {
         put_literal(&out, node);
         markdown_core_strbuf_putc(&out, '\n');
     }
-    markdown_core_iter_free(iter);
+    tree_iter_free(iter);
     return (char *)markdown_core_strbuf_detach(&out);
 }
 
@@ -10224,12 +10180,6 @@ static void pipe_rows_are_one_row(test_batch_runner *runner) {
     }
 }
 
-/* EVERY NODE THE FINISH STAGE WAS HANDED, counted by the test's own walk:
- * the root's children through the public iterator, and each node's owned
- * field roots, an inline note's included, through the inline-subtree
- * visitor. */
-static size_t owned_node_census(markdown_core_node *root);
-
 static int census_owned_nodes(markdown_core_node **slot, void *context) {
     if (slot && *slot) {
         *(size_t *)context += owned_node_census(*slot);
@@ -10238,28 +10188,18 @@ static int census_owned_nodes(markdown_core_node **slot, void *context) {
 }
 
 static size_t owned_node_census(markdown_core_node *root) {
-    markdown_core_iter *iter = markdown_core_iter_new(root);
+    tree_iter *iter = tree_iter_new(root);
     markdown_core_event_type event;
     size_t count = 0;
-    while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+    while ((event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
         if (event == MARKDOWN_CORE_EVENT_ENTER) {
-            markdown_core_node *node = markdown_core_iter_get_node(iter);
+            markdown_core_node *node = tree_iter_get_node(iter);
             count++;
             markdown_core_visit_inline_subtrees(node, census_owned_nodes, &count);
         }
     }
-    markdown_core_iter_free(iter);
+    tree_iter_free(iter);
     return count;
-}
-
-/* The one-traversal identity (parser.h): completion entered each node it
- * was handed exactly once, and the finished tree is those nodes less the
- * ones completion freed plus the ones its steps made. The nodes the walk's own
- * inline parsing made are handed to it -- made at a container's ENTER, they
- * are the next events -- so they come out of the "made" term. */
-static size_t nodes_handed_to_completion(const inline_work *work, size_t finished_tree) {
-    return finished_tree + (work->nodes_freed - work->nodes_freed_before_completion) -
-           (work->nodes_created - work->nodes_created_before_completion - work->completion_parsed);
 }
 
 /* An escaped space a Text beside it absorbs is completed (into NBSP) before
@@ -10270,10 +10210,10 @@ static void absorbed_text_completes_once(test_batch_runner *runner) {
     OK(runner, root != NULL, "normal and absorbed text completion share a successful parse");
     if (root) {
         size_t uncompleted = 0, spaces = 0;
-        markdown_core_iter *iter = markdown_core_iter_new(root);
+        tree_iter *iter = tree_iter_new(root);
         markdown_core_event_type event;
-        while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
-            const markdown_core_node *node = markdown_core_iter_get_node(iter);
+        while ((event = tree_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+            const markdown_core_node *node = tree_iter_get_node(iter);
             if (event != MARKDOWN_CORE_EVENT_ENTER || node->kind != MARKDOWN_CORE_NODE_TEXT) {
                 continue;
             }
@@ -10283,12 +10223,12 @@ static void absorbed_text_completes_once(test_batch_runner *runner) {
                 spaces += text->data[i] == 0xc2 && text->data[i + 1] == 0xa0;
             }
         }
-        markdown_core_iter_free(iter);
+        tree_iter_free(iter);
         INT_EQ(runner, uncompleted, 0, "no Text leaves completion with an escaped space pending");
         INT_EQ(runner, spaces, 2, "both absorbed escaped spaces complete exactly once at their word depth");
-        markdown_core_node *script = root->first_child->first_child;
+        markdown_core_node *script = child_at(child_at(root, 0), 0);
         INT_EQ(runner, script->kind, MARKDOWN_CORE_NODE_SUPERSCRIPT, "the word owner is preserved");
-        LITERAL_EQ(runner, script->first_child,
+        LITERAL_EQ(runner, child_at(script, 0),
                    "a\xc2\xa0"
                    "b\xc2\xa0"
                    "c",
@@ -10297,47 +10237,20 @@ static void absorbed_text_completes_once(test_batch_runner *runner) {
     markdown_core_node_free(root);
 }
 
-/* ONE TRAVERSAL PER ROOT, AND EVERY FINISH HOOK INSIDE IT.
- *
- * The finish stage used to walk each root once to find the owned roots, once
- * more for consolidation, once more for autolink and once more for formula --
- * three or four private iterators over every node -- and the inline stage
- * walked every root once more before it to complete the nodes, and once more
- * before that to find the containers whose inline content to parse, and the
- * block stage once more to lay out the lists. Completion walks each root
- * ONCE now: inline parsing and completion are the walk's ENTER, and
- * consolidation, the list layout, autolink and formula are steps of that
- * walk.
- *
- * Nothing in the output can tell the shapes apart: seven walks build the
- * same tree as one. So the invariant is asserted on the parser's own counters
- * (parser.h) against a census the test takes itself. The nodes completion
- * ENTERED must equal the nodes it was handed: the finished tree, plus the
- * nodes completion freed, less the nodes its steps made, plus the nodes
- * its own inline parsing made (which it enters: they are the next events
- * after the ENTER that made them) -- one traversal enters each of them
- * exactly once, a step never enters the nodes it inserts, and a completion
- * that walked each root k times enters k times as many. Then every iterator
- * step completion took must be one of those
- * events, `events == 2 * entered + roots`, which is what says consolidation's
- * advances over the siblings it absorbs are the only steps beyond the walk's
- * own. The identity alone would not do: a second whole-root walk that counted
- * itself the same way keeps it, and only the denominator catches it.
- *
- * The document is chosen so that every fused hook actually acts, and on
- * nested owned roots: emails inside a definition term, a callout title, a
- * citation affix, a table caption, a footnote body and an inline footnote
- * (autolink, on field roots, a block definition, a parentless definition and
- * the document); escapes that leave adjacent Text nodes for consolidation to
- * merge before autolink sees them (`x\.y@z.com` must come out as ONE
- * address); a standalone `$$` block and a `formula` fence for formula's
- * promotion and replacement; a Link inside a field root followed by an
- * address outside it, which a per-walk rather than per-root "inside a link"
- * fact would silently swallow; and an escaped space inside a superscript,
- * which completion turns into NBSP and which must therefore be completed
- * before the Text beside it absorbs it. */
-
-static void completion_walks_each_root_once(test_batch_runner *runner) {
+/* EVERY FINISH HOOK ACTS ON EVERY ROOT. Completion makes each settled
+ * block's inline content and runs the finish steps over it, on the block's
+ * own content and on every field root it owns, so the document is chosen so
+ * that every step actually acts, and on nested owned roots: emails inside a
+ * definition term, a callout title, a citation affix, a table caption, a
+ * footnote body and an inline footnote; escapes that leave adjacent Text
+ * nodes for consolidation to merge before autolink sees them (`x\.y@z.com`
+ * must come out as ONE address); a standalone `$$` block and a `formula`
+ * fence for formula's promotion and replacement; a Link inside a field root
+ * followed by an address outside it, which a per-walk rather than per-root
+ * "inside a link" fact would silently swallow; and an escaped space inside a
+ * superscript, which completion turns into NBSP and which must therefore be
+ * completed before the Text beside it absorbs it. */
+static void completion_acts_on_every_root(test_batch_runner *runner) {
     static const char source[] = "Term a\\.b@c.io $x$\n"
                                  ": body with x\\.y@z.com and $$y$$\n"
                                  "\n"
@@ -10361,44 +10274,13 @@ static void completion_walks_each_root_once(test_batch_runner *runner) {
                                  "| b |\n"
                                  "\n"
                                  "Table: cap e@f.gh\n";
-    inline_work work = {0};
-    markdown_core_node *root =
-        markdown_core_parse_document_with_setup(source, sizeof(source) - 1, measure_inline_work, &work);
+    markdown_core_node *root = markdown_core_parse_document(source, sizeof(source) - 1);
     OK(runner, root != NULL, "the document that feeds every finish hook parses");
     if (!root) {
         return;
     }
-    size_t finished = owned_node_census(root);
     INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_FORMULA_BLOCK), 2,
            "the formula block and the fence formula's step replaced");
-    OK(runner, work.completion_roots >= 6,
-       "the document, its field roots and the inline footnote were each completed: %zu roots", work.completion_roots);
-    OK(runner, work.nodes_freed - work.nodes_freed_before_completion >= 4,
-       "consolidation freed the siblings it absorbed: %zu freed",
-       work.nodes_freed - work.nodes_freed_before_completion);
-    OK(runner, work.nodes_created > work.nodes_created_before_completion,
-       "autolink's step and the walk's inline parsing made nodes inside it: %zu of %zu",
-       work.nodes_created - work.nodes_created_before_completion, work.nodes_created);
-    OK(runner, work.completion_entered == nodes_handed_to_completion(&work, finished),
-       "completion entered every node it was handed exactly once: %zu entered, %zu in the finished tree, "
-       "%zu freed, %zu made",
-       work.completion_entered, finished, work.nodes_freed - work.nodes_freed_before_completion,
-       work.nodes_created - work.nodes_created_before_completion);
-    OK(runner, work.completion_events == 2 * work.completion_entered + work.completion_roots,
-       "and every step it took was one of those events: %zu events, %zu entered, %zu roots", work.completion_events,
-       work.completion_entered, work.completion_roots);
-    OK(runner, work.completion_events < 2 * (2 * finished + work.completion_roots),
-       "so it took fewer steps than two traversals of the finished tree: %zu events for %zu nodes",
-       work.completion_events, finished);
-    /* The inline content was parsed by the walk, not before it: the nodes
-     * that parsing made were made after the walk noted its starting point,
-     * and every one of them is a node the walk entered. */
-    OK(runner,
-       work.completion_parsed > 0 &&
-           work.completion_parsed <= work.nodes_created - work.nodes_created_before_completion,
-       "the walk parsed the inline content itself: %zu nodes made by its parsing of the %zu made inside it",
-       work.completion_parsed, work.nodes_created - work.nodes_created_before_completion);
-
     /* Every address became a link -- seven of them, four on field roots the
      * public iterator does not descend into -- including the one
      * consolidation had to assemble first and the one after a Link. */
@@ -10410,10 +10292,10 @@ static void completion_walks_each_root_once(test_batch_runner *runner) {
      * ONE Text reading `a b` with the NBSP between. */
     markdown_core_node *superscript = first_of_kind(root, MARKDOWN_CORE_NODE_SUPERSCRIPT);
     OK(runner,
-       superscript && superscript->first_child && !superscript->first_child->next &&
-           superscript->first_child->kind == MARKDOWN_CORE_NODE_TEXT &&
-           superscript->first_child->as.literal->len == 4 &&
-           memcmp(superscript->first_child->as.literal->data,
+       superscript && child_at(superscript, 0) && !child_at(superscript, 1) &&
+           child_at(superscript, 0)->kind == MARKDOWN_CORE_NODE_TEXT &&
+           child_at(superscript, 0)->as.literal->len == 4 &&
+           memcmp(child_at(superscript, 0)->as.literal->data,
                   "a\xC2\xA0"
                   "b",
                   4) == 0,
@@ -10426,11 +10308,9 @@ static void completion_walks_each_root_once(test_batch_runner *runner) {
 
 /* The shape that defeats a per-hook walk: depth and width vary independently
  * -- `deep_inline_construction`'s generator, Span or Embedded nesting around
- * a run of addresses that autolink's step links -- and completion's
- * count must stay at exactly one traversal whatever they are. A stage that
- * walked once per hook enters three or four times the nodes the inline stage
- * completed, at every size, which is what the equality refuses. */
-static void completion_is_one_traversal_at_any_depth(test_batch_runner *runner) {
+ * a run of addresses that autolink's step links -- and every address is
+ * linked whatever they are. */
+static void completion_links_at_any_depth(test_batch_runner *runner) {
     const size_t sizes[] = {1, 64, 1024, 8192};
     for (size_t shape = 0; shape < 2; shape++) {
         for (size_t d = 0; d < 4; d++) {
@@ -10446,26 +10326,11 @@ static void completion_is_one_traversal_at_any_depth(test_batch_runner *runner) 
                     markdown_core_strbuf_puts(&source, shape ? "]{}" : "](u)");
                 }
                 markdown_core_strbuf_putc(&source, '\n');
-                inline_work work = {0};
-                markdown_core_node *root = markdown_core_parse_document_with_setup(
-                    (const char *)source.ptr, source.size, measure_inline_work, &work);
+                markdown_core_node *root = markdown_core_parse_document((const char *)source.ptr, source.size);
                 OK(runner, root != NULL, "shape %zu depth %zu width %zu parses", shape, sizes[d], sizes[w]);
                 if (root) {
                     INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_LINK), sizes[w],
                            "autolink's step linked every address at depth %zu", sizes[d]);
-                    /* Document, Paragraph, the nesting, and the addresses as
-                     * ONE Text: the Links are autolink's, made from inside
-                     * completion's walk and never entered by it. */
-                    size_t census = owned_node_census(root), handed = nodes_handed_to_completion(&work, census);
-                    OK(runner, handed >= sizes[d] + 3,
-                       "the walk was handed the nesting: %zu nodes at depth %zu width %zu", handed, sizes[d], sizes[w]);
-                    OK(runner, work.completion_entered == handed,
-                       "one traversal at depth %zu width %zu: %zu entered, %zu handed", sizes[d], sizes[w],
-                       work.completion_entered, handed);
-                    OK(runner, work.completion_events == 2 * work.completion_entered + work.completion_roots,
-                       "and every step was one of its events at depth %zu width %zu: %zu events, %zu entered, "
-                       "%zu roots",
-                       sizes[d], sizes[w], work.completion_events, work.completion_entered, work.completion_roots);
                     markdown_core_node_free(root);
                 }
                 markdown_core_strbuf_free(&source);
@@ -10474,71 +10339,19 @@ static void completion_is_one_traversal_at_any_depth(test_batch_runner *runner) 
     }
 }
 
-/* THE NEGATIVE CONTROL: the counter measures traversals.
- *
- * Consolidating the finished document again through the public entry point
- * pays one more traversal of that root, and the counter must say so --
- * exactly 2n + 1 for a root of n nodes, since completion has already merged
- * every run and this second walk absorbs nothing. If the counter did not
- * move, the assertion above would be vacuous. */
-static size_t control_root_nodes;
-
-static void consolidate_document_again(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    MARKDOWN_CORE_ELEMENT_DOCUMENT.finish_document(self, parser);
-    if (parser->error) {
-        return;
-    }
-    control_root_nodes = total_nodes(parser->root);
-    if (!markdown_core_consolidate_text_nodes_with_parser(parser, parser->root)) {
-        return;
-    }
-    record_work(self, parser);
-}
-
-static bool attach_control_then_recorder(markdown_core_dialect_builder *builder, void *context) {
-    static markdown_core_element control;
-    (void)context;
-    return attach_document_finisher(builder, &control, "consolidate-again", consolidate_document_again);
-}
-
-static void a_whole_root_consolidation_costs_one_traversal(test_batch_runner *runner) {
-    static const char source[] = "Term a\\.b@c.io\n: body with x\\.y@z.com\n\n> [!note] title q@r.st\n> body\n";
-    inline_work plain = {0}, controlled = {0};
-    markdown_core_node *root =
-        markdown_core_parse_document_with_setup(source, sizeof(source) - 1, measure_inline_work, &plain);
-    OK(runner, root != NULL, "the control document parses");
-    markdown_core_node_free(root);
-    control_root_nodes = 0;
-    root =
-        markdown_core_parse_document_with_setup(source, sizeof(source) - 1, attach_control_then_recorder, &controlled);
-    OK(runner, root != NULL, "the control document parses with the second consolidation attached");
-    OK(runner, control_root_nodes > 0, "the control saw the document root");
-    INT_EQ(runner, (int)(controlled.completion_events - plain.completion_events), (int)(2 * control_root_nodes + 1),
-           "a whole-root consolidation costs exactly one traversal of its root: 2n+1 for n=%zu", control_root_nodes);
-    INT_EQ(runner, (int)(controlled.completion_roots - plain.completion_roots), 1, "and completes that root once more");
-    INT_EQ(runner, (int)(controlled.completion_entered - plain.completion_entered), (int)control_root_nodes,
-           "entering each of its nodes once");
-    size_t census = owned_node_census(root), handed = nodes_handed_to_completion(&controlled, census);
-    INT_EQ(runner, (int)plain.completion_entered, (int)handed,
-           "while the denominator, the nodes the stage was handed, is the same tree either way");
-    OK(runner, controlled.completion_entered > handed,
-       "so the extra traversal is exactly what the one-traversal equality refuses: %zu entered, %zu handed",
-       controlled.completion_entered, handed);
-    markdown_core_node_free(root);
-}
-
 /* A descriptor whose finish step could never keep its contract is refused at
  * attachment, with the dialect untouched, so the parse that tried to attach
  * it reports the refusal rather than running a step that is asked where it
  * can find nothing. */
 static markdown_core_finish_result no_op_finish_step(const markdown_core_element_instance *self,
                                                      markdown_core_parser *parser, markdown_core_node *node,
-                                                     markdown_core_event_type event, int is_root, void **state) {
+                                                     markdown_core_node *parent, markdown_core_event_type event,
+                                                     void **state) {
     (void)self;
     (void)parser;
     (void)node;
     (void)event;
-    (void)is_root;
+    (void)parent;
     (void)state;
     return MARKDOWN_CORE_FINISH_CONTINUE;
 }
@@ -10740,14 +10553,15 @@ static void simple_table_body_boundaries(test_batch_runner *runner) {
                         }
                     }
                     markdown_core_node *root = parse((const char *)source.ptr),
-                                       *table = root ? root->first_child : NULL;
+                                       *table = root ? child_at(root, 0) : NULL;
                     OK(runner, table && table->kind == MARKDOWN_CORE_NODE_TABLE,
                        "simple body survives line ending and EOF");
                     if (table && table->kind == MARKDOWN_CORE_NODE_TABLE) {
                         markdown_core_table *value = table->opaque;
                         INT_EQ(runner, value->content_count, gap ? 1 : (tail == 2 ? 4 : 3),
                                "body owns every adjacent source line");
-                        OK(runner, gap ? table->next && table->next->kind == kinds[tail] : !table->next,
+                        markdown_core_node *after = child_at(root, 1);
+                        OK(runner, gap ? after && after->kind == kinds[tail] : !after,
                            "only blank-separated block syntax opens a sibling");
                         INT_EQ(runner, END_LINE(table), gap ? 3 : (tail == 2 ? 6 : 5),
                                "simple table retains authored scope");
@@ -10804,22 +10618,23 @@ static void table_caption_boundaries(test_batch_runner *runner) {
                     markdown_core_strbuf_putc(&source, input.ptr[at]);
                 }
                 markdown_core_node *root = parse((char *)source.ptr);
-                markdown_core_node *owner = root && quoted ? root->first_child : root;
-                markdown_core_node *table = owner ? owner->first_child : NULL;
+                markdown_core_node *owner = root && quoted ? child_at(root, 0) : root;
+                markdown_core_node *table = owner ? child_at(owner, 0) : NULL;
                 OK(runner, table && table->kind == MARKDOWN_CORE_NODE_TABLE,
                    "caption table survives interruption: table=%zu block=%zu quoted=%d", t, b, quoted);
                 if (table && table->kind == MARKDOWN_CORE_NODE_TABLE) {
                     markdown_core_node *caption = ((markdown_core_table *)table->opaque)->caption;
-                    OK(runner, caption && caption->first_child, "caption owns its paragraph content");
-                    if (caption && caption->first_child) {
-                        LITERAL_EQ(runner, caption->first_child, "cap", "block bytes do not enter caption text");
+                    OK(runner, caption && child_at(caption, 0), "caption owns its paragraph content");
+                    if (caption && child_at(caption, 0)) {
+                        LITERAL_EQ(runner, child_at(caption, 0), "cap", "block bytes do not enter caption text");
                         INT_EQ(runner, END_LINE(caption), caption_line, "caption scope ends before the block");
                     }
                     INT_EQ(runner, END_LINE(table), caption_line, "table scope ends with its caption");
-                    OK(runner, table->next && table->next->kind == blocks[b].kind,
+                    markdown_core_node *after = child_at(owner, 1);
+                    OK(runner, after && after->kind == blocks[b].kind,
                        "ordinary block owns its source: table=%zu block=%zu quoted=%d", t, b, quoted);
-                    if (table->next) {
-                        INT_EQ(runner, START_LINE(table->next), caption_line + 1, "block retains source line");
+                    if (after) {
+                        INT_EQ(runner, START_LINE(after), caption_line + 1, "block retains source line");
                     }
                 }
                 markdown_core_node_free(root);
@@ -10836,8 +10651,8 @@ static void table_caption_boundaries(test_batch_runner *runner) {
         markdown_core_strbuf_puts(&source, ": cap\n");
         markdown_core_strbuf_puts(&source, continuations[i]);
         markdown_core_node *root = parse((char *)source.ptr);
-        markdown_core_node *table = root ? root->first_child : NULL;
-        OK(runner, table && table->kind == MARKDOWN_CORE_NODE_TABLE && !table->next,
+        markdown_core_node *table = root ? child_at(root, 0) : NULL;
+        OK(runner, table && table->kind == MARKDOWN_CORE_NODE_TABLE && !child_at(root, 1),
            "non-interrupting source stays in caption: case=%zu", i);
         if (table && table->kind == MARKDOWN_CORE_NODE_TABLE) {
             markdown_core_node *caption = ((markdown_core_table *)table->opaque)->caption;
@@ -10862,21 +10677,22 @@ static void table_mapped_ownership(test_batch_runner *runner) {
     }
     /* Columns are read from the parse's places, which a bare parse keeps. */
     markdown_core_node *root = markdown_core_parse_document(source, strlen(source));
-    markdown_core_node *table = root->first_child, *row = table->first_child;
-    markdown_core_node *resolved_row = document->root->first_child->first_child;
-    markdown_core_node *first = row->first_child, *second = first->next;
-    STR_EQ(runner, (const char *)first->first_child->next->attributes.anchor.data, "same",
+    markdown_core_node *table = child_at(root, 0), *row = child_at(table, 0);
+    markdown_core_node *resolved_row = child_at(child_at(document->root, 0), 0);
+    markdown_core_node *first = child_at(row, 0), *second = child_at(row, 1);
+    STR_EQ(runner, (const char *)child_at(first, 1)->attributes.anchor.data, "same",
            "first cell heading owns unsuffixed anchor");
-    STR_EQ(runner, (const char *)second->first_child->next->attributes.anchor.data, "same-1",
+    STR_EQ(runner, (const char *)child_at(second, 1)->attributes.anchor.data, "same-1",
            "same-line later heading is ordered by original column");
-    INT_EQ(runner, START_COLUMN(second->first_child->next), 28, "mapped block starts in original source column");
-    INT_EQ(runner, START_COLUMN(second->first_child), 28, "a cell's Reference starts in its original column");
-    for (markdown_core_node *cell = resolved_row->first_child; cell; cell = cell->next) {
-        markdown_core_destination dest = facade_destination(cell->last_child->first_child);
+    INT_EQ(runner, START_COLUMN(child_at(second, 1)), 28, "mapped block starts in original source column");
+    INT_EQ(runner, START_COLUMN(child_at(second, 0)), 28, "a cell's Reference starts in its original column");
+    for (size_t cell_index = 0; cell_index < resolved_row->child_count; cell_index++) {
+        markdown_core_node *cell = resolved_row->children[cell_index];
+        markdown_core_destination dest = facade_destination(child_at(last_child_of(cell), 0));
         const markdown_core_node *target = dest.kind == MARKDOWN_CORE_DESTINATION_REFERENCE
                                                ? markdown_core_document_reference_for(document, dest.label)
                                                : NULL;
-        OK(runner, target == resolved_row->first_child->first_child,
+        OK(runner, target == child_at(child_at(resolved_row, 0), 0),
            "first authored definition wins across queued cells");
     }
     node_list notes = footnotes_of(root);
@@ -10928,8 +10744,8 @@ static void table_nested_inputs(test_batch_runner *runner) {
         if (root) {
             INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_TABLE), depth, "one table per authored grid");
             markdown_core_node *leaf = root;
-            while (leaf->first_child) {
-                leaf = leaf->first_child;
+            while (child_at(leaf, 0)) {
+                leaf = child_at(leaf, 0);
             }
             INT_EQ(runner, START_LINE(leaf), depth + 1, "nested physical line is preserved");
             INT_EQ(runner, START_COLUMN(leaf), 2 * depth + 1, "nested physical column is preserved");
@@ -10958,14 +10774,14 @@ static void session_appends(test_batch_runner *runner) {
         return;
     }
     document = markdown_core_session_document(session);
-    const markdown_core_node *first = markdown_core_node_get_first_child(markdown_core_document_root(document));
+    const markdown_core_node *first = facade_child(markdown_core_document_root(document), 0);
     OK(runner,
        markdown_core_session_append(session, NULL, MARKDOWN_CORE_SOURCE_CAPACITY, &document) ==
            MARKDOWN_CORE_ALLOCATION_FAILED,
        "a text past the capacity is refused before it is read");
     OK(runner,
        markdown_core_session_append(session, (const uint8_t *)"s", 1, &document) == MARKDOWN_CORE_OK &&
-           markdown_core_node_get_first_child(markdown_core_document_root(document)) == first,
+           facade_child(markdown_core_document_root(document), 0) == first,
        "an append to the second paragraph keeps the first's object");
     OK(runner,
        markdown_core_session_append(session, (const uint8_t *)"\xe4\xb8", 2, &document) == MARKDOWN_CORE_OK &&
@@ -11105,9 +10921,6 @@ int main(void) {
     table_geometry_ignores_indentation(runner);
     table_margin_is_shared_indentation(runner);
     pipe_rows_are_one_row(runner);
-    node_check(runner);
-    iterator(runner);
-    iterator_delete(runner);
     create_tree(runner);
     attachment_containment(runner);
     hierarchy(runner);
@@ -11162,9 +10975,8 @@ int main(void) {
     directive_recognition_survives_construction(runner);
     lookahead_and_driver_share_normalized_lines(runner);
     definition_open_gate_admits_only_possible_terms(runner);
-    completion_walks_each_root_once(runner);
-    completion_is_one_traversal_at_any_depth(runner);
-    a_whole_root_consolidation_costs_one_traversal(runner);
+    completion_acts_on_every_root(runner);
+    completion_links_at_any_depth(runner);
     a_finish_step_is_asked_where_it_can_act(runner);
     a_flanking_transparent_byte_is_ascii(runner);
     standalone_formula_as_owned_root(runner);
@@ -11183,9 +10995,7 @@ int main(void) {
     block_gate_admits_every_opener(runner);
     inline_dispatch_ownership(runner);
     inline_dispatch_orders_every_precedence(runner);
-    no_node_is_its_own_ancestor(runner);
     scope_queries_count_in_the_document_unit(runner);
-    iterator_contract_is_total(runner);
     session_appends(runner);
     session_allocation_failures(runner);
 

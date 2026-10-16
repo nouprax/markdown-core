@@ -6,6 +6,22 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Read a node's children, and every node-valued field, as a sequence
+  (incremental parsing, step 6). The C facade's `markdown_core_nodes`, a
+  borrowed `items` array and its `count`, replaces the sibling chain:
+  `markdown_core_node_children` returns a node's children, and
+  `markdown_core_node_callout_title`, `markdown_core_node_definition_term`,
+  `markdown_core_node_cite_citations`, `markdown_core_citation_prefix`,
+  `markdown_core_citation_suffix`, `markdown_core_footnote_content` and
+  `markdown_core_specimen_content` write one. A definition's bodies are
+  `markdown_core_node_definition_body_count` and
+  `markdown_core_node_definition_body_at`. `markdown_core_node_get_first_child`,
+  `markdown_core_node_get_next_sibling`, `markdown_core_node_child_count`,
+  `markdown_core_node_definition_bodies`, `markdown_core_definition_body_next`
+  and `markdown_core_definition_body_content` are removed. A `Cite`'s
+  children are empty, as the canonical AST states: its items are its
+  `citations`. The bindings and MCB3 are unchanged.
+
 - Give every extent one rule: it is a byte offset in the input of the parser
   that produced the node. Block extents stay source offsets; an inline
   node's extent is now an offset in its inline root's content, which starts

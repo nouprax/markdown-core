@@ -653,10 +653,11 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
     bufsize_t opener_num_chars = opener_inl->as.literal->len;
     bufsize_t closer_num_chars = closer_inl->as.literal->len;
     markdown_core_node *tmp, *tmpnext, *inline_node;
+    markdown_core_node *holder = markdown_core_scaffold_parent(opener_inl);
     const bufsize_t minimum_width = delimiter_spec(inline_state, closer->rule)->minimum_width;
 
     /* A rejected container leaves its authored text intact for every rule. */
-    if (!markdown_core_node_can_contain_type(opener_inl->parent, kind)) {
+    if (!markdown_core_node_can_contain_type(holder, kind)) {
         delimiter *next = closer->next;
         markdown_core_inline_remove_delimiter(inline_state, opener);
         markdown_core_inline_remove_delimiter(inline_state, closer);
@@ -679,30 +680,34 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
     opener_inl->as.literal->len = opener_num_chars;
     closer_inl->as.literal->len = closer_num_chars;
 
-    tmp = opener_inl->next;
+    /* The nodes between the two runs become the new inline's scaffold
+     * children, and it takes their place between the runs. */
+    markdown_core_scaffold *inner = markdown_core_scaffold_of(inline_node);
+    tmp = markdown_core_scaffold_next(opener_inl);
     if (tmp && tmp != closer_inl) {
-        inline_node->first_child = tmp;
-        tmp->prev = NULL;
+        inner->first = tmp;
+        markdown_core_scaffold_of(tmp)->prev = NULL;
 
         while (tmp && tmp != closer_inl) {
-            tmpnext = tmp->next;
+            markdown_core_scaffold *link = markdown_core_scaffold_of(tmp);
+            tmpnext = link->next;
             if (inline_state->owner_parser) {
                 inline_state->owner_parser->delimiter_work++;
             }
-            tmp->parent = inline_node;
+            link->parent = inline_node;
             if (tmpnext == closer_inl) {
-                inline_node->last_child = tmp;
-                tmp->next = NULL;
+                inner->last = tmp;
+                link->next = NULL;
             }
             tmp = tmpnext;
         }
     }
 
-    opener_inl->next = inline_node;
-    closer_inl->prev = inline_node;
-    inline_node->prev = opener_inl;
-    inline_node->next = closer_inl;
-    inline_node->parent = opener_inl->parent;
+    markdown_core_scaffold_of(opener_inl)->next = inline_node;
+    markdown_core_scaffold_of(closer_inl)->prev = inline_node;
+    inner->prev = opener_inl;
+    inner->next = closer_inl;
+    inner->parent = holder;
 
     /* REQUIREMENT 11b: the delimiters the inline USED are now its markers.
      * They were claimed CONTENT when they were read, because a `*` that matches
@@ -875,7 +880,7 @@ append:
             }
             return 0;
         }
-        markdown_core_node_attach_validated(parent, new_inl, NULL);
+        markdown_core_scaffold_append(parent, new_inl);
         bool has_fields = false;
         markdown_core_visit_inline_subtrees(new_inl, has_inline_field, &has_fields);
         if (has_fields) {
@@ -1100,13 +1105,13 @@ static void S_update_text_sourcepos(markdown_core_parser *parser, markdown_core_
 }
 
 void markdown_core_node_unput(markdown_core_parser *parser, markdown_core_node *node, int n) {
-    node = node->last_child;
+    node = markdown_core_scaffold_last(node);
     while (n > 0 && node && node->kind == MARKDOWN_CORE_NODE_TEXT) {
         bufsize_t remove = node->as.literal->len < (bufsize_t)n ? node->as.literal->len : (bufsize_t)n;
         node->as.literal->len -= remove;
         n -= (int)remove;
         S_update_text_sourcepos(parser, node);
-        node = node->prev;
+        node = markdown_core_scaffold_prev(node);
     }
 }
 

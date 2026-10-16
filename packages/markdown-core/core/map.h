@@ -24,6 +24,9 @@ typedef struct markdown_core_key_index {
 } markdown_core_key_index;
 
 int markdown_core_key_index_init(markdown_core_key_index *index, size_t expected_size);
+/* Make room for `size` keys in all, so that taking that many grows the index
+ * no further. Zero means allocation failure. */
+int markdown_core_key_index_reserve(markdown_core_key_index *index, size_t size);
 void markdown_core_key_index_free(markdown_core_key_index *index);
 /* Find an occupied or vacant entry, growing only for a new key. NULL means
  * allocation failure. The entry is borrowed until the next insertion; a

@@ -209,11 +209,14 @@ static inline size_t markdown_core_state_align(size_t size) {
 /* THE INSTANCES BY DESCRIPTOR: an open-addressed table of the dialect's
  * instances keyed by their descriptor's address, at least twice as large as
  * the elements it holds, so a lookup ends at the element or at an empty entry.
+ * A table of 1 << `bits` entries takes the top `bits` bits of the address
+ * times 2^64 / phi (Fibonacci hashing), which every bit of the address moves,
+ * so descriptors spread over the table at whatever stride they are laid out.
  * It answers markdown_core_parser_instance -- one element reading another's
  * state. The engine and an element's own hooks never search it: the
  * projections hold instances. */
-static inline size_t markdown_core_instance_hash(const markdown_core_element *element, size_t mask) {
-    return (size_t)(((uint64_t)(uintptr_t)element * UINT64_C(0x9E3779B97F4A7C15)) >> 32) & mask;
+static inline size_t markdown_core_instance_hash(const markdown_core_element *element, unsigned bits) {
+    return (size_t)(((uint64_t)(uintptr_t)element * UINT64_C(0x9E3779B97F4A7C15)) >> (64 - bits));
 }
 
 /* The dialect as setup extends it. The core dialect is borrowed; the first
@@ -290,11 +293,11 @@ typedef struct markdown_core_dialect {
     size_t finish_step_slots;
     /* Each kind's record, by kind index (markdown_core_finish_kind_index). */
     markdown_core_kind_record kinds[MARKDOWN_CORE_FINISH_KIND_COUNT + 1];
-    /* The instances by descriptor, `instance_mask + 1` entries
+    /* The instances by descriptor, 1 << `instance_bits` entries
      * (markdown_core_instance_hash), and the bytes of one inline run's block
      * of records. */
     const markdown_core_element_instance *const *instance_table;
-    size_t instance_mask;
+    unsigned instance_bits;
     size_t run_state_size;
 } markdown_core_dialect;
 
@@ -315,8 +318,8 @@ markdown_core_dialect_structure(const markdown_core_dialect *dialect, const mark
  * code never does, since every instance a hook reaches is already resolved. */
 static inline const markdown_core_element_instance *
 markdown_core_dialect_instance(const markdown_core_dialect *dialect, const markdown_core_element *element) {
-    size_t mask = dialect->instance_mask;
-    for (size_t at = markdown_core_instance_hash(element, mask);; at = (at + 1) & mask) {
+    const size_t mask = ((size_t)1 << dialect->instance_bits) - 1;
+    for (size_t at = markdown_core_instance_hash(element, dialect->instance_bits);; at = (at + 1) & mask) {
         const markdown_core_element_instance *instance = dialect->instance_table[at];
         if (!instance || instance->element == element) {
             return instance;
@@ -334,7 +337,9 @@ typedef struct markdown_core_dialect_sizes {
     size_t inline_totals[MARKDOWN_CORE_INLINE_HOOK_COUNT];
     size_t inline_dispatch_offsets[257];
     size_t finish_key_counts[MARKDOWN_CORE_FINISH_KEY_COUNT];
-    size_t pointers, steps, instance_slots, gate_bytes;
+    size_t pointers, steps, gate_bytes;
+    /* The instance table holds 1 << `instance_bits` entries. */
+    unsigned instance_bits;
     /* The bytes the elements' parse records take, and one run's records. */
     size_t state_bytes, run_state_bytes;
     /* The peers the elements declare, all together. */

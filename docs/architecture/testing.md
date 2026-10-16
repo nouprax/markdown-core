@@ -149,12 +149,13 @@ ctest --preset correctness-asan
 Use the corresponding preset names for other sanitizers. Where TSan is
 unsupported, default builds still run the native concurrency regressions.
 
-## The node integrity check
+## The construction assertion
 
-`markdown_core_node_check` walks a finished root and reports every parent,
-sibling and containment relation that disagrees with its counterpart. It is the
-only structural self-check this tree has, and it is compiled in by
-`MARKDOWN_CORE_DEBUG_NODES`, which the `debug` preset alone defines:
+The engine attaches a child, to a children array or to the scaffold an inline
+tree is built with, only where its parent may hold it: by the fixed grammar, or
+by a dynamic containment policy decided before the child was made. A build
+without `NDEBUG` asserts so at every attachment (`core/node.h`), and it is the
+only structural self-check this tree has. The `debug` preset is that build:
 
 ```sh
 cmake --preset debug
@@ -162,17 +163,13 @@ cmake --build --preset debug --parallel
 ctest --preset correctness-debug
 ```
 
-The engine runs it on each field root once completion's walk of that root
-completes, and on the document's tree once completion has walked the
-document, the last block queued. Inline completion, text consolidation and
-every finish step run from inside that one walk, so a break one of them
-introduced is caught before the document is finalized. A configuration
-that does not define the macro is indistinguishable from one where the check
-passes, which is how it stayed dead for the whole of its life: the define was
-set in `core/`, where `set()` cannot reach the sibling directory that builds the
-archive the test runners link, and no preset configured `Debug` at all.
-`pnpm audit:node-integrity-check` holds both halves against the generated
-compiler flags and the CI graph rather than against the source text.
+A configuration that compiles the assertion out is indistinguishable from one
+where it holds, which is how the self-check this one replaced stayed dead for
+the whole of its life: its define was set in `core/`, where `set()` cannot
+reach the sibling directory that builds the archive the test runners link, and
+no preset configured `Debug` at all. `pnpm audit:construction-assertions` holds
+the configuration against the generated compiler flags and the CI graph rather
+than against the source text.
 Tests must not silently skip. Swift time limits belong to Swift Testing traits;
 other timeouts belong to their native runner declarations.
 

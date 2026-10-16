@@ -33,10 +33,12 @@ extern "C" {
  * and whether some declaration of it starts before a position, and a
  * rollback pops records back to a mark, each pop pointing the index at what
  * it pointed at before that record was taken. A declaration only appends to
- * the log: the index takes the records beyond it, in log order, when a
- * lookup asks, so the declarations a parse makes before its first lookup are
- * indexed together and a record rolled back before any lookup never is. The
- * log holds no node: a record's label is the registry's own copy. */
+ * the log: a lookup of a kind has the index take that kind's records beyond
+ * it, in log order, room for all of them made at once. So the declarations
+ * of a kind a parse makes before its first lookup of that kind are indexed
+ * together, a kind no lookup asks for is never indexed, and a record rolled
+ * back before a lookup of its kind never is. The log holds no node: a
+ * record's label is the registry's own copy. */
 typedef enum {
     MARKDOWN_CORE_REGISTRY_REFERENCE = 1,
     MARKDOWN_CORE_REGISTRY_FOOTNOTE,
@@ -60,17 +62,24 @@ typedef struct markdown_core_registry_record {
 /* Storage records are carved from, newest first (registry.c). */
 typedef struct markdown_core_registry_block markdown_core_registry_block;
 
+/* One kind's records in the log. */
+typedef struct {
+    /* How many records are of the kind: a kind none declares answers every
+     * lookup without its key being assembled. */
+    size_t records;
+    /* How many of them the index has taken: every one before `cursor` in
+     * the log, and none after it. */
+    size_t indexed, cursor;
+} markdown_core_registry_space;
+
 typedef struct {
     markdown_core_registry_record **records;
     size_t count, capacity;
-    /* How many of the records are of each kind: a kind none declares
-     * answers every lookup without its key being assembled. */
-    size_t kind_records[MARKDOWN_CORE_REGISTRY_ANCHOR + 1];
-    /* Each key's latest record among the first `indexed` of the log, as its
-     * position in the log. The index borrows the key bytes from that
+    markdown_core_registry_space spaces[MARKDOWN_CORE_REGISTRY_ANCHOR + 1];
+    /* Each key's latest record among the records the index has taken, as
+     * its position in the log. The index borrows the key bytes from that
      * record. */
     markdown_core_key_index index;
-    size_t indexed;
     markdown_core_registry_block *blocks;
     size_t block_used, block_size;
     /* Where a lookup assembles its key. */

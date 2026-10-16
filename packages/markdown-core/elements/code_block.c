@@ -76,8 +76,9 @@ static int continue_code(const markdown_core_element_instance *self, markdown_co
 }
 
 static void finalize_code(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_node *b) {
+                          markdown_core_node *b, markdown_core_node *parent) {
     (void)self;
+    (void)parent;
     bufsize_t pos;
     markdown_core_strbuf *node_content = &b->content;
 
