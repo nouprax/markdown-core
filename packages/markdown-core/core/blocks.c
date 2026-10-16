@@ -1868,6 +1868,12 @@ static void S_parse_block_inputs(markdown_core_parser *parser) {
         parser->last_line_end = parser->line_marks[owner->content_map.first].source;
         owner->flags |= MARKDOWN_CORE_NODE__OPEN;
         S_parse_source(parser, owner->content.ptr, (size_t)owner->content.size);
+        /* A failed read ends the parse where it failed, as a failed commit
+         * does: nothing open closes, and the builders open in the cell are
+         * released with the parse. */
+        if (parser->error) {
+            return;
+        }
         markdown_core_parser_close_below(parser, owner);
         S_settle_pending(parser, owner);
         owner->flags &= ~MARKDOWN_CORE_NODE__OPEN;
