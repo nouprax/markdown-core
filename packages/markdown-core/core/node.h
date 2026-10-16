@@ -380,6 +380,12 @@ struct markdown_core_node {
     markdown_core_node_source source;
     uint16_t kind;
     markdown_core_node_internal_flags flags;
+    /* Where `attributes.anchor` is written: the source offset of the syntax
+     * that names it, which completion reserves it at (plan 5.5). An anchor
+     * written in a container's opening line precedes the blocks inside the
+     * container, and one written after a node's content follows them. Read
+     * only while the node has an explicit anchor. */
+    uint32_t anchor_start;
 
     const markdown_core_element *element;
     /* Element-owned data, allocated by opaque_alloc_func and released by

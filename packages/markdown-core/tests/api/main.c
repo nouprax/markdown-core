@@ -10830,6 +10830,52 @@ static void session_appends(test_batch_runner *runner) {
     markdown_core_session_free(session);
 }
 
+/* The anchor `node` has, compared with `expected`. */
+static bool anchor_is(const markdown_core_node *node, const char *expected) {
+    markdown_core_optional_string anchor = node ? markdown_core_node_anchor(node) : (markdown_core_optional_string){0};
+    return anchor.has_value && anchor.value.length == strlen(expected) &&
+           memcmp(anchor.value.data, expected, anchor.value.length) == 0;
+}
+
+/* A snapshot's heading avoids the explicit anchors written before it, where
+ * each is written, and the final document's heading avoids every one (plan
+ * 5.5, 5.10). A container's opening attributes precede the blocks inside it;
+ * a block identifier after a list follows the blocks inside the list. */
+static void session_snapshot_anchors(test_batch_runner *runner) {
+    static const struct {
+        const char *source;
+        const char *snapshot, *final;
+        const char *message;
+    } cases[] = {
+        {":::note{#x}\n# x\n:::\n", "x-1", "x-1", "a heading inside a container avoids its opening anchor"},
+        {"- # x\n\n#x#\n", "x", "x-1", "a heading inside a list keeps a name the list's identifier writes later"},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        markdown_core_session *session = NULL;
+        if (markdown_core_session_new((const uint8_t *)cases[i].source, strlen(cases[i].source),
+                                      MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) != MARKDOWN_CORE_OK) {
+            OK(runner, 0, "a session opens on %s", cases[i].source);
+            continue;
+        }
+        const markdown_core_node *container =
+            facade_child(markdown_core_document_root(markdown_core_session_document(session)), 0);
+        const markdown_core_node *heading = facade_child(container, 0);
+        if (markdown_core_node_get_kind(heading) == MARKDOWN_CORE_KIND_LIST_ITEM) {
+            heading = facade_child(heading, 0);
+        }
+        OK(runner, anchor_is(heading, cases[i].snapshot), "snapshot: %s", cases[i].message);
+        const markdown_core_document *final = NULL;
+        OK(runner, markdown_core_session_finalize(session, &final) == MARKDOWN_CORE_OK, "the session finalizes");
+        container = final ? facade_child(markdown_core_document_root(final), 0) : NULL;
+        heading = facade_child(container, 0);
+        if (heading && markdown_core_node_get_kind(heading) == MARKDOWN_CORE_KIND_LIST_ITEM) {
+            heading = facade_child(heading, 0);
+        }
+        OK(runner, anchor_is(heading, cases[i].final), "final: %s", cases[i].message);
+        markdown_core_session_free(session);
+    }
+}
+
 /* The allocator-seam sweep (plan 8, gates 4.7): an append and a finalize
  * fail at every allocation, report ALLOCATION_FAILED, and the session frees
  * everything it holds. */
@@ -11058,6 +11104,7 @@ int main(void) {
     inline_dispatch_orders_every_precedence(runner);
     scope_queries_count_in_the_document_unit(runner);
     session_appends(runner);
+    session_snapshot_anchors(runner);
     session_allocation_failures(runner);
 
     test_print_summary(runner);

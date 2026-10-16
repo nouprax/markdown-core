@@ -226,15 +226,15 @@ static markdown_core_key_index_slot *taken_entry(markdown_core_heading_state *st
     return markdown_core_key_index_entry(taken, name, length);
 }
 
-/* The registry's ANCHOR record at `entry`, keyed by where its node ends. */
+/* The registry's ANCHOR record at `entry`, keyed by where it is written. */
 static uint64_t anchor_end_key(const void *entry) {
     const markdown_core_registry_record *record;
     memcpy(&record, entry, sizeof(record));
     return record->start;
 }
 
-/* Reserves the explicit anchors from `*next` on that end at or before
- * `bound`, in the pass's names taken. */
+/* Reserves the explicit anchors from `*next` on that are written at or
+ * before `bound`, in the pass's names taken. */
 static bool reserve_anchors(markdown_core_heading_state *state, markdown_core_key_index *taken,
                             const markdown_core_registry_record *const *anchors, size_t count, size_t *next,
                             uint32_t bound) {
@@ -256,8 +256,8 @@ static bool reserve_anchors(markdown_core_heading_state *state, markdown_core_ke
  * computed one is the heading's own copy of the first name its text projects
  * to that no explicit anchor it avoids reserves and no heading before it was
  * given. A finalize's headings avoid every explicit anchor; a snapshot's
- * avoid the ones written before them, whose nodes end where the heading
- * starts or earlier (plan 5.5). The names taken are this pass's own index:
+ * avoid the ones written before them: at the heading's start or earlier
+ * (plan 5.5). The names taken are this pass's own index:
  * the registry's ANCHOR records under their own bytes, each reserved before
  * the first heading that avoids it, and each name a heading is given. A
  * taken name's entry also keeps the suffix to try next, so a run of headings
@@ -287,7 +287,8 @@ void markdown_core_headings_finish(const markdown_core_element_instance *self, m
     for (size_t i = 0; i < count; i++) {
         anchors[i] = markdown_core_registry_next(registry, &cursor);
     }
-    /* A snapshot's headings reserve the anchors in the order they end. */
+    /* A snapshot's headings reserve the anchors in the order they are
+     * written. */
     if (parser->snapshot && !markdown_core_order_source_entries(&parser->source_order, (void *)anchors, count,
                                                                 sizeof(*anchors), anchor_end_key)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -476,6 +477,7 @@ bool markdown_core_heading_claim_tail(const markdown_core_element_instance *self
         bufsize_t end;
         if (markdown_core_attributes_parse(&inline_state->attributes, run->attributes_start, &parent->attributes,
                                            &end)) {
+            markdown_core_inline_anchor_written(inline_state, parent, run->attributes_start);
             run->label_end = inline_state->text_end;
             inline_state->pos = inline_state->input.len;
         }

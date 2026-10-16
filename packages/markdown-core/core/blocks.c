@@ -1680,13 +1680,13 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_enter_node(owned_tr
     if (facts->complete) {
         facts->complete(facts->structure, parser, node, frame->script_depth);
     }
-    /* An explicit anchor is reserved once the node is complete, as written
-     * where the node ends. A FormulaBlock a fence became holds no
+    /* An explicit anchor is reserved once the node is complete, at the
+     * place it is written. A FormulaBlock a fence became holds no
      * attributes; a Text holds none either, so the siblings consolidation
      * absorbs reserve none. */
     const markdown_core_chunk *anchor = &node->attributes.anchor;
     if (anchor->len && !markdown_core_registry_declare(&parser->registry, MARKDOWN_CORE_REGISTRY_ANCHOR, anchor->data,
-                                                       anchor->len, node->where.place.end)) {
+                                                       anchor->len, node->anchor_start)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return -1;
     }

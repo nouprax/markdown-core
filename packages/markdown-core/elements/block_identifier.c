@@ -57,7 +57,7 @@ static bool S_scan_block_identifier(markdown_core_block_identifier_work *counts,
 }
 
 static bool S_attach_block_identifier(markdown_core_parser *parser, markdown_core_node *owner,
-                                      const block_identifier *candidate) {
+                                      const block_identifier *candidate, bufsize_t written) {
     if (owner->attributes.anchor.len) {
         return false;
     }
@@ -68,6 +68,7 @@ static bool S_attach_block_identifier(markdown_core_parser *parser, markdown_cor
     }
     markdown_core_chunk_free(&owner->attributes.anchor);
     owner->attributes.anchor = identifier;
+    owner->anchor_start = (uint32_t)written;
     return true;
 }
 
@@ -81,11 +82,11 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identif
     }
     markdown_core_node *owner = paragraph;
     int line;
-    bufsize_t source;
+    bufsize_t source = paragraph->where.place.start;
+    bool placed = markdown_core_parser_content_place(
+        parser, &paragraph->content_map, (bufsize_t)(candidate.identifier.data - text.data), &line, &source);
     if (parent && markdown_core_block_type(parent) == MARKDOWN_CORE_NODE_LIST_ITEM && parent->child_count == 0 &&
-        markdown_core_parser_content_place(parser, &paragraph->content_map,
-                                           (bufsize_t)(candidate.identifier.data - text.data), &line, &source) &&
-        markdown_core_parser_starts_on_line(parser, parent, line)) {
+        placed && markdown_core_parser_starts_on_line(parser, parent, line)) {
         owner = parent;
     }
     bufsize_t at = (bufsize_t)(candidate.identifier.data - text.data) + paragraph->content_map.offset;
@@ -98,7 +99,7 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identif
     }
     /* The identifier and what follows it are cut from the back of the
      * paragraph's text. */
-    if (S_attach_block_identifier(parser, owner, &candidate)) {
+    if (S_attach_block_identifier(parser, owner, &candidate, source)) {
         paragraph->cut_back += text.len - candidate.content_end;
     }
 }
@@ -129,7 +130,10 @@ bool markdown_core_block_attach_identifier_line(markdown_core_block_identifier_w
         followed_by_boundary = blank_lines > 0;
         markdown_core_parser_lookahead_end(&lookahead);
     }
-    if (!followed_by_boundary || parser->error || !S_attach_block_identifier(parser, owner, &candidate)) {
+    if (!followed_by_boundary || parser->error ||
+        !S_attach_block_identifier(
+            parser, owner, &candidate,
+            markdown_core_parser_source_offset(parser, parser->line_number, parser->first_nonspace + 1))) {
         return false;
     }
     markdown_core_block_set_end_to_current_line(parser, owner);
