@@ -2462,7 +2462,7 @@ static void S_lookahead_close_run(markdown_core_block_lookahead *lookahead, int 
         markdown_core_line_facts *entry = markdown_core_parser_get_line_facts(lookahead->parser, lookahead->run_start);
         if (entry) {
             entry->run_end = line;
-            entry->run_end_cursor = cursor;
+            entry->run_end_at = (size_t)(cursor - lookahead->parser->input.source);
         }
         lookahead->run_start = 0;
     }
@@ -2662,7 +2662,7 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
             if (resumed && entry->run_end > this_line + 1 &&
                 S_lookahead_extras_accept_blank(parser, from, lookahead->depth)) {
                 *blank_lines += entry->run_end - this_line - 1;
-                lookahead->cursor = entry->run_end_cursor;
+                lookahead->cursor = parser->input.source + entry->run_end_at;
                 lookahead->line = entry->run_end;
             }
             continue;

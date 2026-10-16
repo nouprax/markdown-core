@@ -656,12 +656,15 @@ typedef struct markdown_core_line_facts {
     /* Blank after the recorded container's prefix. */
     bool blank;
     /* On the first line of a run of blank lines: the number of the first line
-     * after the run and where it begins, so a later scan whose extra containers
-     * accept every blank line steps over the run at once. 0 when not a run. */
+     * after the run and where it begins (`run_end_at`), so a later scan
+     * whose extra containers accept every blank line steps over the run at
+     * once. 0 when not a run. */
     int run_end;
     /* Only NUL-bearing lines need this count; it occupies former padding. */
     uint32_t nul_count;
-    const unsigned char *run_end_cursor;
+    /* Where the first line after the run begins, as an offset in the input:
+     * a session's text moves when it grows, and the facts stay. */
+    size_t run_end_at;
 } markdown_core_line_facts;
 /* The index is a contiguous prefix. Its next record already owns this line's
  * continuation; at the frontier the scanner owns it. No newline bytes need

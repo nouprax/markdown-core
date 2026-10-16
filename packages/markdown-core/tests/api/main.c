@@ -5975,6 +5975,66 @@ static void comment_block_linear_work(test_batch_runner *runner) {
     }
 }
 
+/* A transaction's line facts outlive the text they were read from: a
+ * session's text moves when it grows, and the next commit reads the facts an
+ * earlier one recorded. Nested candidates over a blank run are the shape
+ * whose later scans step over the run the first scan recorded. The first
+ * commit reads one line from a copy of the text that is then overwritten,
+ * and the second reads the rest from another copy; the document is the one
+ * parsed whole. */
+static void line_facts_survive_moved_text(test_batch_runner *runner) {
+    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+    const size_t depth = 16;
+    for (size_t i = 1; i <= depth; i++) {
+        for (size_t j = 1; j < i; j++) {
+            markdown_core_strbuf_puts(&source, "  ");
+        }
+        markdown_core_strbuf_puts(&source, "- %%\n");
+    }
+    for (size_t i = 0; i < depth; i++) {
+        for (size_t j = 0; j < depth; j++) {
+            markdown_core_strbuf_puts(&source, "\n");
+        }
+        for (size_t j = 0; j < depth; j++) {
+            markdown_core_strbuf_puts(&source, "  ");
+        }
+        markdown_core_strbuf_puts(&source, "x\n");
+    }
+    const size_t size = (size_t)source.size;
+    const size_t first_line = (size_t)((const unsigned char *)memchr(source.ptr, '\n', size) - source.ptr) + 1;
+    char *before = malloc(size), *after = malloc(size);
+    markdown_core_parser *parser = markdown_core_core_parser(NULL, NULL);
+    markdown_core_node_pool pool = {0};
+    markdown_core_revision revision = {.pool = &pool};
+    markdown_core_node *moved = NULL;
+    if (before && after && parser) {
+        memcpy(before, source.ptr, size);
+        markdown_core_parser_start(parser, &revision);
+        markdown_core_parser_commit(parser, before, size, first_line);
+        memcpy(after, source.ptr, size);
+        memset(before, 'x', size);
+        markdown_core_parser_commit(parser, after, size, size);
+        moved = markdown_core_parser_finalize(parser);
+    }
+    markdown_core_node *whole = markdown_core_parse_document((const char *)source.ptr, size);
+    OK(runner, moved && whole, "both parses succeed");
+    if (moved && whole) {
+        INT_EQ(runner, count_kind(moved, MARKDOWN_CORE_NODE_PARAGRAPH), count_kind(whole, MARKDOWN_CORE_NODE_PARAGRAPH),
+               "the commits after the text moved read the paragraphs a whole parse reads");
+        INT_EQ(runner, count_kind(moved, MARKDOWN_CORE_NODE_LIST_ITEM), count_kind(whole, MARKDOWN_CORE_NODE_LIST_ITEM),
+               "the commits after the text moved read the items a whole parse reads");
+    }
+    markdown_core_node_free(moved);
+    markdown_core_node_free(whole);
+    if (parser) {
+        markdown_core_parser_destroy(parser);
+    }
+    markdown_core_node_pool_dispose(&pool);
+    free(before);
+    free(after);
+    markdown_core_strbuf_free(&source);
+}
+
 /* O3: the `%%` forms produce the `Comment` kind M0 added, on the engine's own
  * accessors, with the type strings and positions the HTML forms have. */
 static void percent_comment_nodes(test_batch_runner *runner) {
@@ -11009,6 +11069,7 @@ int main(void) {
     span_and_script_linear_work(runner);
     comment_inline_linear_work(runner);
     comment_block_linear_work(runner);
+    line_facts_survive_moved_text(runner);
     percent_comment_nodes(runner);
     cross_link_fields(runner);
     node_payload_lifecycle(runner);
