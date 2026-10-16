@@ -104,16 +104,17 @@ case conversion and whitespace replacement. Its generator verifies both the
 pinned UnicodeData SHA-256 and Node Unicode version. Builds need no download.
 
 A spelling is taken when the registry holds it as an explicit anchor or a
-heading before was given it. Finalization's own exact-string index holds the
-spellings taken: each one given, and each reserved spelling a candidate met,
-entered under the registry's copy of its bytes. Each projected base's slot
-keeps one increasing suffix cursor. Every candidate, the base first, costs one
-entry lookup, which returns an occupied or a vacant slot; only a vacant one
-asks the registry, and a vacant one the heading is given is committed in place
-with the final node-owned spelling, without hashing it again. Only a new key
-can grow the index, and the base's cursor is advanced before each suffixed
-lookup, so the base's slot is read again only after a reserved spelling is
-entered, and then found afresh. This keeps slot lifetimes valid through
+heading before was given it. When some heading's anchor is to be computed,
+finalization's own exact-string index holds both: it first takes every
+explicit anchor, reading the registry's anchor records in log order under the
+registry's copy of their bytes, and then each spelling a heading is given.
+Each occupied base has one increasing suffix cursor stored directly in its
+index slot. Every candidate, the base first, costs one entry lookup, which
+returns an occupied or a vacant slot; a vacant one the heading is given is
+committed in place with the final node-owned spelling, without hashing it
+again. Only a new key can grow the index. Synthesis advances the base cursor
+before querying its next candidate and never reads that borrowed slot again
+after a vacant candidate returns. This keeps slot lifetimes valid through
 rehashing without allocating a stable object per anchor. Once `base-N` is known
 to be occupied, later duplicates of that base never retry it. A spelling of the
 form `base-N` has one such base, so occupied candidate work is amortized over

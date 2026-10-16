@@ -37,8 +37,10 @@ extern "C" {
  * it, in log order, room for all of them made at once. So the declarations
  * of a kind a parse makes before its first lookup of that kind are indexed
  * together, a kind no lookup asks for is never indexed, and a record rolled
- * back before a lookup of its kind never is. The log holds no node: a
- * record's label is the registry's own copy. */
+ * back before a lookup of its kind never is. A kind's records can also be
+ * read in log order (markdown_core_registry_records), which asks nothing of
+ * the index. The log holds no node: a record's label is the registry's own
+ * copy. */
 typedef enum {
     MARKDOWN_CORE_REGISTRY_REFERENCE = 1,
     MARKDOWN_CORE_REGISTRY_FOOTNOTE,
@@ -129,6 +131,33 @@ bool markdown_core_registry_normal_label(markdown_core_registry *registry, markd
 static inline markdown_core_chunk markdown_core_registry_label(const markdown_core_registry_record *record) {
     markdown_core_chunk label = {(unsigned char *)record->key + 1, record->key_len - 1, 0};
     return label;
+}
+
+/* A reading of one kind's records in log order: where the next one is
+ * looked for, and how many are left. */
+typedef struct {
+    markdown_core_registry_kind kind;
+    size_t at, left;
+} markdown_core_registry_cursor;
+
+/* A reading of `kind`'s records from the start of the log. */
+static inline markdown_core_registry_cursor markdown_core_registry_records(const markdown_core_registry *registry,
+                                                                           markdown_core_registry_kind kind) {
+    markdown_core_registry_cursor cursor = {kind, 0, registry->spaces[kind].records};
+    return cursor;
+}
+
+/* The cursor's next record, or NULL when none of its kind is left. */
+static inline const markdown_core_registry_record *markdown_core_registry_next(const markdown_core_registry *registry,
+                                                                               markdown_core_registry_cursor *cursor) {
+    if (!cursor->left) {
+        return NULL;
+    }
+    while (registry->records[cursor->at]->key[0] != (unsigned char)cursor->kind) {
+        cursor->at++;
+    }
+    cursor->left--;
+    return registry->records[cursor->at++];
 }
 
 /* Whether some declaration of the record's key, up to the record, starts

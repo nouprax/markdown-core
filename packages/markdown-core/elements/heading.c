@@ -218,39 +218,56 @@ static void append_anchor_suffix(markdown_core_strbuf *base, size_t ordinal) {
     markdown_core_strbuf_put(base, (const unsigned char *)start, (bufsize_t)(end - start));
 }
 
-/* The explicit anchor the parse reserved under `name`, or NULL. */
-static const markdown_core_registry_record *
-reserved_anchor(markdown_core_parser *parser, markdown_core_heading_state *state, const markdown_core_strbuf *name) {
-    state->anchor_work += (size_t)name->size + 1;
-    bool failed = false;
-    const markdown_core_registry_record *record =
-        markdown_core_registry_find(&parser->registry, MARKDOWN_CORE_REGISTRY_ANCHOR, name->ptr, name->size, &failed);
-    if (failed) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
-    return record;
+/* The entry for `name` among the names taken, occupied or vacant, or NULL
+ * when the index could not grow. */
+static markdown_core_key_index_slot *taken_entry(markdown_core_heading_state *state, markdown_core_key_index *taken,
+                                                 const unsigned char *name, bufsize_t length) {
+    state->anchor_work += (size_t)length + 1;
+    return markdown_core_key_index_entry(taken, name, length);
 }
 
 /* Each heading's anchor, in source order: an authored one stays, and a
  * computed one is the heading's own copy of the first name its text projects
- * to that no explicit anchor reserves (the registry's ANCHOR records) and no
- * heading before it was given. The names taken are this pass's own index:
- * the names given, and each reserved name a candidate met, under the
- * reservation's bytes. A projected name's entry also keeps the suffix to try
- * next, so a run of headings projecting to one name tries each suffix once,
- * and each candidate costs one entry lookup, which a vacant name the heading
- * is given commits in place. */
+ * to that no explicit anchor reserves and no heading before it was given. The
+ * names taken are this pass's own index: first every explicit anchor, the
+ * registry's ANCHOR records under their own bytes, then each name a heading
+ * is given. A taken name's entry also keeps the suffix to try next, so a run
+ * of headings projecting to one name tries each suffix once, and each
+ * candidate costs one entry lookup, which a vacant name the heading is given
+ * commits in place. */
 void markdown_core_headings_finish(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     markdown_core_heading_state *state = self->state;
     markdown_core_heading_collection *headings = &state->headings;
+    /* A pass whose headings all have authored anchors chooses no name. */
+    size_t first = 0;
+    while (first < headings->count && headings->values[first].node->attributes.anchor.len) {
+        first++;
+    }
+    if (first == headings->count) {
+        return;
+    }
+    const markdown_core_registry *registry = &parser->registry;
+    markdown_core_registry_cursor anchors = markdown_core_registry_records(registry, MARKDOWN_CORE_REGISTRY_ANCHOR);
     markdown_core_key_index taken;
-    if (!markdown_core_key_index_init(&taken, headings->count)) {
+    if (!markdown_core_key_index_init(&taken, headings->count + anchors.left)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
+    for (const markdown_core_registry_record *reserved; (reserved = markdown_core_registry_next(registry, &anchors));) {
+        const markdown_core_chunk name = markdown_core_registry_label(reserved);
+        markdown_core_key_index_slot *entry = taken_entry(state, &taken, name.data, name.len);
+        if (!entry) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            break;
+        }
+        if (!entry->key) {
+            markdown_core_key_index_commit(&taken, entry, name.data);
+            entry->value = 1;
+        }
+    }
     markdown_core_strbuf base = MARKDOWN_CORE_BUF_INIT();
     anchor_projection_stack stack = {0};
-    for (size_t i = 0; i < headings->count && !parser->error; i++) {
+    for (size_t i = first; i < headings->count && !parser->error; i++) {
         markdown_core_node *node = headings->values[i].node;
         markdown_core_chunk *anchor = &node->attributes.anchor;
         if (anchor->len) {
@@ -262,33 +279,20 @@ void markdown_core_headings_finish(const markdown_core_element_instance *self, m
             break;
         }
         const bufsize_t base_length = base.size;
-        state->anchor_work += (size_t)base_length + 1;
-        /* The projected name's entry, which keeps its next suffix. */
-        markdown_core_key_index_slot *projected = markdown_core_key_index_entry(&taken, base.ptr, base.size);
+        /* The projected name's entry, which keeps its next suffix. Only a
+         * vacant candidate can grow the index, and the suffix is advanced
+         * before each candidate's lookup, so the entry is never read after
+         * a lookup that could have moved it. */
+        markdown_core_key_index_slot *projected = taken_entry(state, &taken, base.ptr, base.size);
         markdown_core_key_index_slot *candidate = projected;
-        while (candidate) {
-            const markdown_core_registry_record *reserved =
-                candidate->key ? NULL : reserved_anchor(parser, state, &base);
-            if (parser->error || (!candidate->key && !reserved)) {
-                break;
-            }
-            if (reserved) {
-                markdown_core_key_index_commit(&taken, candidate, markdown_core_registry_label(reserved).data);
-                candidate->value = 1;
-                /* Committing a vacant entry may have moved the projected
-                 * name's. */
-                projected = markdown_core_key_index_find(&taken, base.ptr, base_length);
-            }
+        while (candidate && candidate->key) {
             markdown_core_strbuf_truncate(&base, base_length);
             append_anchor_suffix(&base, projected->value++);
             if (base.oom) {
                 markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
                 break;
             }
-            /* The projected name's suffix is advanced before this lookup,
-             * which moves entries only when it returns a vacant one. */
-            state->anchor_work += (size_t)base.size + 1;
-            candidate = markdown_core_key_index_entry(&taken, base.ptr, base.size);
+            candidate = taken_entry(state, &taken, base.ptr, base.size);
         }
         if (!candidate) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
