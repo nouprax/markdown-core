@@ -78,17 +78,17 @@ typedef enum {
 
 /* THE FINISH STEPS, projected by EVENT and KIND.
  *
- * The finish walk delivers two events per node, and a step declares the kinds
- * it is ASKED AT (their EXIT, once the subtree is complete) and the kinds
- * whose EXTENT it tracks (their ENTER and EXIT), so the natural key of the
- * dispatch is (event, kind): a Text's EXIT reaches autolink, a Paragraph's
- * EXIT reaches formula, a Link's ENTER and EXIT reach autolink, and a Text's
- * ENTER or a List's EXIT reach nothing. The projection is one table with a
- * pointer per key to a terminated list of steps in descriptor order, NULL for
- * a key nothing declared, built once when the dialect is sealed, beside the
- * block and inline-content families, and gated, once the tree is complete, on the kinds
- * the parse produced (element.h, `finish_acts_on_kinds`). One load decides
- * the common case.
+ * Completion's walk delivers two events per node, and a step declares the
+ * kinds it is ASKED AT (their EXIT, once the subtree is complete) and the
+ * inline kinds whose EXTENT it tracks (their ENTER and EXIT), so the natural
+ * key of the dispatch is (event, kind): a Text's EXIT reaches autolink, a
+ * CodeBlock's EXIT reaches formula, a Link's ENTER and EXIT reach autolink,
+ * and a Text's ENTER or a Paragraph's EXIT reach nothing. The projection is one table with a pointer
+ * per key to a terminated list of steps in descriptor order, NULL for a key
+ * nothing declared, built once when the dialect is sealed, beside the block
+ * and inline-content families, and gated at the event on the kinds the parse
+ * has produced (element.h, `finish_acts_on_kinds`). One load decides the
+ * common case.
  *
  * Kinds are indexed by class then ordinal, so a block and an inline kind that
  * collide once masked keep separate keys. A kind outside the table -- an
@@ -122,15 +122,15 @@ static inline size_t markdown_core_finish_key(markdown_core_event_type event, ma
  *
  * THE GATE IS READ AT THE EVENT. A step that declares the kinds it acts on is
  * asked at an EXIT of a kind it declared it is asked at only once the parse
- * has produced one of the kinds it acts on -- the same fact a pass is gated
- * on, read when the event comes rather than before the walk, because the walk
- * parses inline content as it goes and a kind's first node may be made after
- * the walk began. `acts_on` is that declaration as a set, and `gated` says
- * whether the test is worth making: it is false for an entry at a kind the
- * step acts on (a node of that kind is being exited, so the parse produced
- * one), for a step that declared nothing, and for a scope-kind entry (the
- * ENTER and EXIT that bound an extent are delivered whenever the extent is
- * walked, so the state the step keeps for the extent is always in step). */
+ * has produced one of the kinds it acts on, read when the event comes,
+ * because completion parses each block's inline content as it reaches the
+ * block, and a kind's first node may be made after completion began.
+ * `acts_on` is that declaration as a set, and `gated` says whether the test
+ * is worth making: it is false for an entry at a kind the step acts on (a
+ * node of that kind is being exited, so the parse produced one), for a step
+ * that declared nothing, and for a scope-kind entry (the ENTER and EXIT that
+ * bound an extent are delivered whenever the extent is walked, so the state
+ * the step keeps for the extent is always in step). */
 typedef struct markdown_core_finish_step_entry {
     const markdown_core_element_instance *instance;
     size_t slot;
@@ -145,7 +145,7 @@ typedef struct markdown_core_finish_step_entry {
  * is handed -- or NULL for a kind with none or whose structure element the
  * dialect does not hold, which then has no flag but FIELDS. Each flag is a
  * fact of that element's descriptor (element.h), read with the record by the
- * line engine and the finish walk alike. A fact a hook answers per node is a
+ * line engine and completion alike. A fact a hook answers per node is a
  * flag saying the element declares the hook, which is then asked:
  *
  * - INLINES / INLINES_ASK: `inline_content` / `contains_inlines_func` -- the
@@ -161,7 +161,7 @@ typedef struct markdown_core_finish_step_entry {
  *   (`markdown_core_kind_owns_fields`, element.h -- a subtree an element owns
  *   is found through the node's `element`, which the walk tests beside this).
  *
- * `complete` is the structure's `complete_inline`, NULL when it declares
+ * `complete` is the structure's `complete_node`, NULL when it declares
  * none, which the walk calls at every ENTER. The out-of-table index answers
  * nothing. */
 enum {
@@ -209,11 +209,14 @@ static inline size_t markdown_core_state_align(size_t size) {
 /* THE INSTANCES BY DESCRIPTOR: an open-addressed table of the dialect's
  * instances keyed by their descriptor's address, at least twice as large as
  * the elements it holds, so a lookup ends at the element or at an empty entry.
+ * A table of 1 << `bits` entries takes the top `bits` bits of the address
+ * times 2^64 / phi (Fibonacci hashing), which every bit of the address moves,
+ * so descriptors spread over the table at whatever stride they are laid out.
  * It answers markdown_core_parser_instance -- one element reading another's
  * state. The engine and an element's own hooks never search it: the
  * projections hold instances. */
-static inline size_t markdown_core_instance_hash(const markdown_core_element *element, size_t mask) {
-    return (size_t)(((uint64_t)(uintptr_t)element * UINT64_C(0x9E3779B97F4A7C15)) >> 32) & mask;
+static inline size_t markdown_core_instance_hash(const markdown_core_element *element, unsigned bits) {
+    return (size_t)(((uint64_t)(uintptr_t)element * UINT64_C(0x9E3779B97F4A7C15)) >> (64 - bits));
 }
 
 /* The dialect as setup extends it. The core dialect is borrowed; the first
@@ -290,11 +293,11 @@ typedef struct markdown_core_dialect {
     size_t finish_step_slots;
     /* Each kind's record, by kind index (markdown_core_finish_kind_index). */
     markdown_core_kind_record kinds[MARKDOWN_CORE_FINISH_KIND_COUNT + 1];
-    /* The instances by descriptor, `instance_mask + 1` entries
+    /* The instances by descriptor, 1 << `instance_bits` entries
      * (markdown_core_instance_hash), and the bytes of one inline run's block
      * of records. */
     const markdown_core_element_instance *const *instance_table;
-    size_t instance_mask;
+    unsigned instance_bits;
     size_t run_state_size;
 } markdown_core_dialect;
 
@@ -315,8 +318,8 @@ markdown_core_dialect_structure(const markdown_core_dialect *dialect, const mark
  * code never does, since every instance a hook reaches is already resolved. */
 static inline const markdown_core_element_instance *
 markdown_core_dialect_instance(const markdown_core_dialect *dialect, const markdown_core_element *element) {
-    size_t mask = dialect->instance_mask;
-    for (size_t at = markdown_core_instance_hash(element, mask);; at = (at + 1) & mask) {
+    const size_t mask = ((size_t)1 << dialect->instance_bits) - 1;
+    for (size_t at = markdown_core_instance_hash(element, dialect->instance_bits);; at = (at + 1) & mask) {
         const markdown_core_element_instance *instance = dialect->instance_table[at];
         if (!instance || instance->element == element) {
             return instance;
@@ -334,7 +337,9 @@ typedef struct markdown_core_dialect_sizes {
     size_t inline_totals[MARKDOWN_CORE_INLINE_HOOK_COUNT];
     size_t inline_dispatch_offsets[257];
     size_t finish_key_counts[MARKDOWN_CORE_FINISH_KEY_COUNT];
-    size_t pointers, steps, instance_slots, gate_bytes;
+    size_t pointers, steps, gate_bytes;
+    /* The instance table holds 1 << `instance_bits` entries. */
+    unsigned instance_bits;
     /* The bytes the elements' parse records take, and one run's records. */
     size_t state_bytes, run_state_bytes;
     /* The peers the elements declare, all together. */

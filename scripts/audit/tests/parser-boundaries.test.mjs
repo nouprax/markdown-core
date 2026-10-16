@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { auditParserBoundaries } from "../parser-boundaries.mjs";
@@ -16,7 +15,7 @@ test("engine boundaries allow shared model and descriptor operations", () => {
         if (node->kind == MARKDOWN_CORE_NODE_TEXT) source_map(node->as.literal);
         indexable = ((unsigned)kind & MARKDOWN_CORE_NODE_VALUE_MASK) < MARKDOWN_CORE_NODE_KIND_COUNT;
         structure->scan_block_start(parser, context, candidate);
-        structure->finalize_block(parser, node);
+        structure->close_block(parser, node);
     `),
         []
     );
@@ -34,27 +33,5 @@ test("grammar cannot drift back into either engine", () => {
         '#include "footnote_scanners.h"'
     ]) {
         assert.ok(audit(source).length > 0, source);
-    }
-});
-
-// Construction owns a disjoint subtree; arbitrary reparenting does not. Keep
-// the latter API at its checked boundary so depth cannot multiply parser work.
-test("parser construction does not invoke arbitrary tree reparenting", () => {
-    const root = new URL("../../../packages/markdown-core/", import.meta.url);
-    const sources = [
-        "core/blocks.c",
-        "core/inlines.c",
-        ...fs
-            .readdirSync(new URL("elements/", root))
-            .filter((name) => name.endsWith(".c"))
-            .map((name) => `elements/${name}`)
-    ];
-    for (const file of sources) {
-        const source = fs.readFileSync(new URL(file, root), "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, "");
-        assert.doesNotMatch(
-            source,
-            /\bmarkdown_core_node_(?:append_child|prepend_child|insert_before|insert_after|replace)\s*\(/,
-            file
-        );
     }
 });

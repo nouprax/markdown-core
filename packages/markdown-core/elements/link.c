@@ -21,22 +21,25 @@ static const markdown_core_element *const LINK_PEERS[] = {[LINK_EMBEDDED] = &MAR
 static bufsize_t markdown_core_inline_manual_scan_link_url(markdown_core_chunk *input, bufsize_t offset,
                                                            markdown_core_chunk *output);
 /* Reads the link reference definition at the front of `input`, its bytes
- * `before` past the front of `b`'s content, into a Reference node put in
- * `b`'s parent before `b`, which starts on input line `*line`, an earlier
- * one or a later one, and leaves `*line` the line it ends on. Its length, 0 when there is none. */
-static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_node *b, markdown_core_chunk *input,
-                                  markdown_core_attribute_parser *attributes, bufsize_t before, int *line);
+ * `before` past the front of `b`'s content, into a Reference node settled
+ * into `parent`, the block that holds `b`, which starts on input line
+ * `*line`, an earlier one or a later one, and leaves `*line` the line it ends
+ * on. Its length, 0 when there is none. */
+static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_node *b, markdown_core_node *parent,
+                                  markdown_core_chunk *input, markdown_core_attribute_parser *attributes,
+                                  bufsize_t before, int *line);
 
-bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b) {
+bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser *parser, markdown_core_node *b,
+                                                            markdown_core_node *parent) {
     bufsize_t pos;
-    markdown_core_strbuf *node_content = &b->content;
-    markdown_core_chunk chunk = {node_content->ptr, node_content->size, 0};
+    const markdown_core_chunk text = markdown_core_node_text(b);
+    markdown_core_chunk chunk = text;
     markdown_core_attribute_parser attributes = {
         .data = chunk.data, .length = chunk.len, .scratch = &parser->attribute_scratch};
     /* The definitions follow each other down the block's lines. */
     int line = parser->line_number;
     while (chunk.len && chunk.data[0] == '[' && !parser->error) {
-        pos = S_read_reference(parser, b, &chunk, &attributes, (bufsize_t)(chunk.data - node_content->ptr), &line);
+        pos = S_read_reference(parser, b, parent, &chunk, &attributes, (bufsize_t)(chunk.data - text.data), &line);
         if (!pos) {
             break;
         }
@@ -47,29 +50,29 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     markdown_core_attribute_parser_free(&attributes);
-    bufsize_t dropped = node_content->size - chunk.len;
-    if (dropped) {
-        b->flags |= MARKDOWN_CORE_NODE__REFERENCE_PREFIX;
+    /* The definitions read are cut from the front of the block's text, and
+     * its map follows the cut. */
+    bufsize_t read = text.len - chunk.len;
+    if (read) {
+        markdown_core_block_rebase_content_marks(parser, b, read, chunk.len);
+        b->cut_front += read;
     }
-    if (!(b->flags & MARKDOWN_CORE_NODE__REFERENCE_PREFIX)) {
-        return !markdown_core_block_is_blank(node_content, 0);
+    if (!b->cut_front) {
+        return !markdown_core_is_blank_to_line_end(text.data, 0, text.len);
     }
     int ignored;
     bufsize_t source;
-    markdown_core_block_rebase_content_marks(parser, b, dropped, chunk.len);
-    markdown_core_strbuf_drop(node_content, dropped);
     /* The block now begins where its FIRST SURVIVING line was written, and
      * that is asked of the map rather than derived: this function can be
      * reached twice on one paragraph -- once at the setext-underline check and
-     * again at markdown_core_block_finalize -- and the first call can consume everything recorded
-     * so far, leaving the line that carries what is left still unread. Taking
-     * the answer from the surviving run rather than from the size of the cut
-     * is what makes both arrivals give the same result. On a block with no
-     * definitions in front of it this is what the block already said. */
+     * again as the block closes -- and the first call can consume everything
+     * recorded so far, leaving the line that carries what is left still
+     * unread. Taking the answer from the surviving run rather than from the
+     * size of the cut is what makes both arrivals give the same result. */
     if (markdown_core_parser_content_place(parser, &b->content_map, 0, &ignored, &source)) {
         b->where.place.start = (uint32_t)source;
     }
-    return !markdown_core_block_is_blank(&b->content, 0);
+    return !markdown_core_is_blank_to_line_end(chunk.data, 0, chunk.len);
 }
 
 /* A destination is its source less the angle brackets, with escapes and
@@ -290,7 +293,7 @@ static bufsize_t S_reference_definition(markdown_core_chunk *input, markdown_cor
     bufsize_t beforetitle;
     *definition = (reference_definition){0};
 
-    markdown_core_inline_state_from_buf(NULL, &inline_state, input, NULL);
+    markdown_core_inline_state_from_buf(NULL, &inline_state, input);
 
     // parse label:
     if (!markdown_core_inline_link_label(&inline_state, &definition->label) || definition->label.len == 0) {
@@ -358,8 +361,9 @@ bufsize_t markdown_core_reference_definition_length(markdown_core_chunk *input,
     return length;
 }
 
-static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_node *b, markdown_core_chunk *input,
-                                  markdown_core_attribute_parser *attributes, bufsize_t before, int *line) {
+static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_node *b, markdown_core_node *parent,
+                                  markdown_core_chunk *input, markdown_core_attribute_parser *attributes,
+                                  bufsize_t before, int *line) {
     reference_definition definition;
     bufsize_t length = S_reference_definition(input, attributes, &definition);
     if (!length) {
@@ -371,7 +375,7 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_no
     markdown_core_chunk clean_url = markdown_core_clean_url(&definition.url, &lost);
     markdown_core_optional_chunk clean_title = markdown_core_clean_title(&definition.title, &lost);
     markdown_core_chunk label;
-    if (!markdown_core_label_normalize(parser->refmap, parser->pool, &definition.label, &label)) {
+    if (!markdown_core_registry_normal_label(&parser->registry, parser->pool, &definition.label, &label)) {
         lost = 1;
     }
     markdown_core_resource *resource = lost ? NULL : markdown_core_resource_new(parser->pool, clean_url, clean_title);
@@ -397,20 +401,26 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_no
     reference->as.reference->label = label;
     reference->attributes = definition.value;
     reference->flags |= MARKDOWN_CORE_NODE__BLANK_TRANSPARENT;
-    markdown_core_label_declare(parser->refmap, &reference->as.reference->label);
     /* It spans its definition, through the end of its last line's content:
      * the line ending after it belongs to no block. */
-    bufsize_t end = before + length;
-    while (end > before && (b->content.ptr[end - 1] == '\n' || b->content.ptr[end - 1] == '\r')) {
+    bufsize_t end = length;
+    while (end > 0 && (input->data[end - 1] == '\n' || input->data[end - 1] == '\r')) {
         end--;
     }
     int ignored;
     bufsize_t start = b->where.place.start, stop = b->where.place.start;
     markdown_core_parser_content_place(parser, &b->content_map, before, &ignored, &start);
-    markdown_core_parser_content_end_place(parser, &b->content_map, end - 1, &ignored, &stop);
+    markdown_core_parser_content_end_place(parser, &b->content_map, before + end - 1, &ignored, &stop);
     reference->where.place = (markdown_core_place){(uint32_t)start, (uint32_t)stop};
-    markdown_core_parser_line_places(parser, reference, b->parent, line);
-    markdown_core_node_attach_validated(b->parent, reference, b);
+    markdown_core_parser_line_places(parser, reference, parent, line);
+    /* A definition is read whole: it settles as it is made, before the block
+     * it was read from, which settles later if anything of it is left. */
+    markdown_core_block_settle(parser, reference, parent);
+    /* The document defines the label from where the definition starts. */
+    if (!parser->error && !markdown_core_registry_declare(&parser->registry, MARKDOWN_CORE_REGISTRY_REFERENCE,
+                                                          label.data, label.len, start)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
     return length;
 }
 
@@ -421,7 +431,7 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
     markdown_core_chunk url_chunk, title_chunk, raw_label;
     markdown_core_chunk url = MARKDOWN_CORE_CHUNK_EMPTY;
     markdown_core_optional_chunk title = {MARKDOWN_CORE_CHUNK_EMPTY, false};
-    markdown_core_map_record *record = NULL;
+    const markdown_core_registry_record *record = NULL;
     int found_label;
     bool explicit_tail = false;
     // If we got here, we matched a potential link/image text.
@@ -476,7 +486,7 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
         }
     }
 
-    // Next, look for a following [link label] that matches in refmap.
+    // Next, look for a following [link label] that a definition declares.
     // skip spaces
     raw_label = markdown_core_chunk_literal("");
     found_label = markdown_core_inline_link_label(inline_state, &raw_label);
@@ -498,11 +508,15 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
      * three spellings the author wrote, and nothing downstream can recover it
      * -- the module states one node for every successful form. */
     if (link_allowed && found_label) {
-        record = markdown_core_map_lookup(inline_state->refmap, &raw_label);
+        bool failed = false;
+        record = markdown_core_registry_find_label(&inline_state->owner_parser->registry,
+                                                   MARKDOWN_CORE_REGISTRY_REFERENCE, &raw_label, &failed);
+        if (failed) {
+            inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
+        }
     }
     markdown_core_chunk_free(&raw_label);
-    candidate->label =
-        record ? (markdown_core_chunk){record->label, record->label_len, 0} : markdown_core_chunk_literal("");
+    candidate->label = record ? markdown_core_registry_label(record) : markdown_core_chunk_literal("");
     candidate->explicit_tail = explicit_tail;
     return record ? (explicit_tail ? LINK_EXPLICIT : LINK_SHORTCUT) : LINK_UNMATCHED;
 }
@@ -517,7 +531,7 @@ bool markdown_core_link_commit(const markdown_core_element_instance *link, markd
     markdown_core_optional_chunk title = candidate->title;
     markdown_core_node *inl;
     markdown_core_inline_finish_citation_tokens(link->peers[LINK_CITATION], inline_state, &opener->citations);
-    if (!markdown_core_node_can_contain_type(opener->inl_text->parent,
+    if (!markdown_core_node_can_contain_type(markdown_core_scaffold_parent(opener->inl_text),
                                              is_image ? MARKDOWN_CORE_NODE_EMBEDDED : MARKDOWN_CORE_NODE_LINK)) {
         markdown_core_chunk_free(&url);
         markdown_core_optional_chunk_free(&title);
@@ -581,7 +595,7 @@ bool markdown_core_link_commit(const markdown_core_element_instance *link, markd
     // handler consumed for itself. Counting from the OPENING bracket instead
     // would count the label's own newlines a second time -- measured,
     // `[a\nb](/u) tail` then reports line 3 of a two-line document.
-    markdown_core_node_attach_validated(opener->inl_text->parent, inl, opener->inl_text);
+    markdown_core_scaffold_insert_before(opener->inl_text, inl);
     markdown_core_inline_take_bracket_content(link, parser, opener, inl);
 
     /* Only the embedded element opens an image bracket. */
@@ -612,11 +626,11 @@ bool markdown_core_link_commit(const markdown_core_element_instance *link, markd
 void markdown_core_inline_take_bracket_content(const markdown_core_element_instance *link, markdown_core_parser *parser,
                                                bracket *opener, markdown_core_node *owner) {
     markdown_core_bracket_work *counts = link->state;
-    markdown_core_node *child = opener->inl_text->next;
+    markdown_core_node *child = markdown_core_scaffold_next(opener->inl_text);
     while (child != opener->close_text) {
-        markdown_core_node *next = child->next;
-        markdown_core_node_unlink(child);
-        markdown_core_node_attach_validated(owner, child, NULL);
+        markdown_core_node *next = markdown_core_scaffold_next(child);
+        markdown_core_scaffold_unlink(child);
+        markdown_core_scaffold_append(owner, child);
         counts->work++;
         child = next;
     }
@@ -688,9 +702,15 @@ void markdown_core_inline_replace_bracket_opener(markdown_core_inline_state *inl
     if (opener->kind == BRACKET_IMAGE) {
         opener->inl_text->as.literal->len = 1;
         markdown_core_inline_state_place(inline_state, opener->inl_text, opener->position - 2, opener->position - 2);
-        markdown_core_node_attach_validated(opener->inl_text->parent, replacement, opener->inl_text->next);
+        /* The replacement follows the `!`, which stays as text. */
+        markdown_core_node *after = markdown_core_scaffold_next(opener->inl_text);
+        if (after) {
+            markdown_core_scaffold_insert_before(after, replacement);
+        } else {
+            markdown_core_scaffold_append(markdown_core_scaffold_parent(opener->inl_text), replacement);
+        }
     } else {
-        markdown_core_node_attach_validated(opener->inl_text->parent, replacement, opener->inl_text);
+        markdown_core_scaffold_insert_before(opener->inl_text, replacement);
         markdown_core_parser_release_node(inline_state->owner_parser, opener->inl_text);
     }
 }

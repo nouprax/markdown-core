@@ -13,8 +13,8 @@ typedef struct markdown_core_parser markdown_core_parser;
 typedef struct markdown_core_element markdown_core_element;
 
 /* Where a depth-first walk stands on a node: every node yields one ENTER and
- * one EXIT, and DONE follows the root's EXIT (iterator.h). Element finish
- * steps receive the event they are called at. */
+ * one EXIT, with its children's events between them, and DONE follows the
+ * root's EXIT. Element finish steps receive the event they are called at. */
 typedef enum {
     MARKDOWN_CORE_EVENT_NONE,
     MARKDOWN_CORE_EVENT_DONE,
@@ -220,37 +220,33 @@ typedef int (*markdown_core_contains_inlines_func)(const markdown_core_element *
 
 typedef int (*markdown_core_accepts_lines_func)(const markdown_core_element *element, markdown_core_node *node);
 
-/** THE TWO SHAPES OF A FINISH HOOK, and the invariant that keeps them apart.
+/** THE FINISH STEP, and the contract that keeps it local.
  *
- * The finish stage walks every owned root of the document exactly once --
- * the content tree, each definition term, callout title, citation affix,
- * table caption and directive label -- and an element can take part in that
- * walk in one of two ways.
+ * Every block joins the completion queue as it SETTLES -- as the block that
+ * holds it takes its next child or closes, when its own children have
+ * settled before it -- and completion takes the queue in that order after
+ * the block phase, walking each queued block once -- its ENTER, its inline
+ * content and its field roots: a definition term, callout title, citation
+ * affix, table caption or directive label -- and its EXIT, stepping over the
+ * blocks below it, each queued on its own as it settles. An element takes
+ * part in that walk through one step, asked at the events of the kinds it
+ * declared (`finish_exit_kinds`, `finish_scope_kinds`). A queued block is the
+ * root of its walk: a step at its EXIT may rewrite it in place -- its kind,
+ * its literal, its record -- and read its block structure, which is final,
+ * and never frees or replaces it.
  *
- * A finish STEP is LOCAL. It is called from inside the walk, at the events of
- * the kinds it declared (`finish_exit_kinds`, `finish_scope_kinds`), and it
- * may touch only what the walk guarantees is settled at that moment: the
- * current node and, at EXIT, the current node's complete subtree (at ENTER
- * the subtree is untouched and about to be walked). It may READ the siblings
- * that FOLLOW the current node, but never unlink, move or free one of them:
- * the walk's lookahead already names the node after the current one. It may
- * free only the node whose EXIT is current, and only when that node owns no
- * field roots (the walk pushed those at its ENTER and keeps them for the
- * passes); it may insert only BEFORE the current node, which the walk has
- * passed and never visits again. A step never walks anything itself; the walk
- * it is part of is the one traversal the finish stage makes.
+ * Inside a root, the step may touch only what the walk guarantees is
+ * settled at that moment: the current node and, at EXIT, the current node's
+ * complete subtree (at ENTER the subtree is untouched and about to be
+ * walked). It may READ the siblings that FOLLOW the current node, but never
+ * unlink, move or free one of them: the walk's lookahead already names the
+ * node after the current one. It may free only the node whose EXIT is
+ * current, and only when that node owns no field roots (the walk pushed those
+ * at its ENTER); it may insert only BEFORE the current node, which the walk
+ * has passed and never visits again.
  *
- * A postprocess PASS is GLOBAL. It receives a whole root after every root's
- * walk has completed and the document has been finalized -- the footnotes
- * and specimens in their chains, the headings holding their anchors -- walks
- * it itself, and may read state outside that root (the document's footnotes,
- * say). It costs a traversal of the root per pass, which is why the element
- * hooks that rewrite one node at a time are steps and only a rewrite that
- * needs the whole finished root is a pass.
- *
- * One element declares one or the other, never both: an element that needs
- * both shapes has two concerns, and `markdown_core_dialect_builder_attach`
- * refuses the descriptor.
+ * A step never walks anything itself; the walk it is part of is the one
+ * traversal the finish stage makes.
  */
 
 /** What a finish step did to the current node. */
@@ -258,63 +254,42 @@ typedef enum {
     /** The node is still in the tree; the steps after this one run. */
     MARKDOWN_CORE_FINISH_CONTINUE,
     /** The node was freed or replaced. No later step sees this event: the
-     *  node it names is gone. Legal only at EXIT. */
+     *  node it names is gone. Legal only at an inline node's EXIT. */
     MARKDOWN_CORE_FINISH_CONSUMED,
     /** An allocation failed and 'parser->error' is set. The walk stops. */
     MARKDOWN_CORE_FINISH_FAILED
 } markdown_core_finish_result;
 
-/** Observe one event of the finish walk at 'node'.
+/** Observe one event of the finish stage at 'node'.
  *
  * 'event' is `MARKDOWN_CORE_EVENT_EXIT` for a node of a kind the step declared
  * in `finish_exit_kinds` (asked once the node's subtree is complete), and
- * `MARKDOWN_CORE_EVENT_ENTER` or `MARKDOWN_CORE_EVENT_EXIT` for a node of a
- * kind it declared in `finish_scope_kinds` (the kinds whose extent it tracks).
- * It is asked at no other event, and at the EXIT of a kind it is asked at
- * only once the parse has produced a kind of those it declared in
- * `finish_acts_on_kinds`, the kinds it acts on: the same gate that skips a
- * pass skips a step, read at the event rather than before the walk, because
- * the walk parses each container's inline content at that container's ENTER
- * and a kind's first node may be made after the walk began. The ENTER and
- * EXIT of a scope kind are delivered whenever the extent is walked, so the
- * state a step keeps for an extent is always in step with the tree.
- * 'is_root' is 1 when 'node' is the root of the tree being walked; a root
- * belongs to whoever holds it and may be rewritten in place but never
- * replaced or freed. '*state' is one word the walk keeps for this element
- * per root, zero when the root's walk starts, so a step can carry a fact
- * such as "inside a Link" across the events of one root and never across
- * roots.
+ * `MARKDOWN_CORE_EVENT_ENTER` or `MARKDOWN_CORE_EVENT_EXIT` for a node of an
+ * inline kind it declared in `finish_scope_kinds` (the kinds whose extent it
+ * tracks). It is asked at no other event, and at the EXIT of a kind it is
+ * asked at only once the parse has produced a kind of those it declared in
+ * `finish_acts_on_kinds`, the kinds it acts on: the gate is read at the
+ * event, because completion parses each block's inline content as it reaches
+ * the block and a kind's first node may be made after completion began. The
+ * ENTER and EXIT of a scope kind are delivered whenever the extent is walked,
+ * so the state a step keeps for an extent is always in step with the tree.
+ * 'parent' is the node that holds 'node': for a queued block, the block it
+ * settled into, NULL for the document; NULL for a field root; and inside a
+ * root, the inline node or root whose children it is among. A root belongs to
+ * whoever holds it and may be rewritten in place but never replaced or
+ * freed. '*state' is one word the walk keeps for this element per root, zero
+ * when the root's walk starts, so a step can carry a fact such as "inside a
+ * Link" across the events of one root and never across roots.
  *
- * The step obeys the LOCAL contract above. It returns CONSUMED when it freed
- * or replaced 'node' (legal only at EXIT), FAILED with 'parser->error' set when
- * an allocation failed, and CONTINUE otherwise.
+ * The step obeys the contract above. It returns CONSUMED when it freed or
+ * replaced 'node' (legal only at EXIT, and never for a root), FAILED with
+ * 'parser->error' set when an allocation failed, and CONTINUE otherwise.
  */
 typedef markdown_core_finish_result (*markdown_core_finish_step_func)(const markdown_core_element_instance *self,
                                                                       markdown_core_parser *parser,
                                                                       markdown_core_node *node,
-                                                                      markdown_core_event_type event, int is_root,
-                                                                      void **state);
-
-/** Rewrite the tree rooted at 'root' in place, after its finish walk.
- *
- * Return 1 on success and 0 on failure, having set 'parser->error' to report it.
- *
- * 'root' itself belongs to whoever holds it: the parser for the document, and
- * the owning element for a node-valued field such as a definition term or a
- * table caption. A pass may rewrite 'root' in place -- change its kind, its
- * literal, its children -- but it may NOT substitute a different node for it,
- * and the signature does not let it try. A field root's kind is part of its
- * owner's contract, and substituting one cannot even be expressed: the field
- * root is detached, so the attach a substitution needs has no parent to take.
- *
- * The pass is handed each root once its own walk -- text consolidation and
- * every finish step -- has completed. What it may read of OTHER roots is not
- * part of the contract: a pass that reads the document root while it is handed
- * a field root sees that document in whatever state the finish stage has
- * reached, which is not the state any pass is promised.
- */
-typedef int (*markdown_core_postprocess_func)(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                              markdown_core_node *root);
+                                                                      markdown_core_node *parent,
+                                                                      markdown_core_event_type event, void **state);
 
 typedef void (*markdown_core_opaque_alloc_func)(const markdown_core_element *element, markdown_core_node *node);
 
@@ -591,9 +566,9 @@ void markdown_core_parser_advance_offset(markdown_core_parser *parser, const cha
  *
  *  Returns 'true' if the 'element' was registered, 'false' otherwise: on
  *  allocation failure, for a descriptor the registration rule refuses -- one
- *  that declares both a finish step and a postprocess pass (see the two
- *  shapes above), or where a step is asked without a step, or one kind as
- *  both an exit and a scope kind, or only part of the document lifecycle,
+ *  that asks a step without a step, or a block kind as a scope kind, or one
+ *  kind as both an exit and a scope kind, or only part of the document
+ *  lifecycle,
  *  or a flanking-transparent byte outside ASCII -- and once the dialect holds
  *  255 elements (the block-start projection lists a family's owners by byte),
  *  with the builder left as it was.
@@ -616,28 +591,20 @@ typedef enum {
     MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED,
 } markdown_core_node_set_kind_result;
 
-/** Change 'node' to the internal kind encoded by 'kind'.
+/** Change 'node', which 'parent' holds, to the internal kind encoded by 'kind'.
  *
- * Return OK on success, REJECTED when parent containment disallows the change,
- * or ALLOCATION_FAILED when replacement node data cannot be allocated.
- * Either failure preserves the original kind, data, and tree links.
+ * Return OK on success, REJECTED when 'parent' is NULL or its containment
+ * disallows the change, or ALLOCATION_FAILED when replacement node data
+ * cannot be allocated. Either failure preserves the original kind, data, and
+ * children.
  *
  * A change releases values owned by the old kind and installs the new kind's
  * defaults. Node identity and element-owned opaque data are preserved.
  * A record that fits the node's existing cell needs no allocation.
  * Setting the current kind succeeds without allocating or changing its data.
  */
-markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_node *node, markdown_core_node_type kind);
-
-/** Return the string content for all types of 'node'.
- *  The pointer stays valid as long as 'node' isn't freed.
- */
-const char *markdown_core_node_get_string_content(markdown_core_node *node);
-
-/** Set the string 'content' for all types of 'node'.
- *  Copies 'content'.
- */
-int markdown_core_node_set_string_content(markdown_core_node *node, const char *content);
+markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_node *node, markdown_core_node *parent,
+                                                               markdown_core_node_type kind);
 
 /** Set the parser element responsible for creating 'node'.
  */

@@ -5,25 +5,25 @@
 #include "block_internal.h"
 #include "dialect.h"
 
-/* Whether a descriptor is refused. The rule: an element takes part in
- * the finish stage as a LOCAL step or as a GLOBAL pass, never both
- * (markdown-core-element-api.h states the invariant). A descriptor that
- * declares both would run its step from inside the walk and its pass after it,
- * and nothing in either hook's contract says what the second may assume about
- * the first's work; that is two concerns, which is two elements. A step is
- * asked once per event, so a kind in both of its lists -- one EXIT declared
- * twice -- is refused rather than delivered twice. A step asked at no kind
- * would never be called, and is refused rather than silently kept. And a kind
- * the dispatch table cannot index -- an ordinal at or past
- * MARKDOWN_CORE_NODE_KIND_COUNT, or a value of neither class -- would share
- * the table's one out-of-table key and be asked at every such node's events
- * instead of its own, so it is refused too: that key is never declared.
+/* Whether a descriptor is refused. The rule: an element takes part in the
+ * finish stage through one step, asked in completion's walk where it can
+ * keep its contract (markdown-core-element-api.h states it). Completion takes
+ * the blocks in the order they closed, so the blocks below a block complete
+ * before it and its ENTER and EXIT bracket none of their events: a block kind
+ * as a scope kind would track an extent completion never walks, and is
+ * refused. A step is asked once per event, so a kind in both of its lists --
+ * one EXIT declared twice -- is refused rather than delivered twice. A step
+ * asked at no kind would never be called, and is refused rather than
+ * silently kept. And a kind the dispatch table cannot index -- an ordinal at
+ * or past MARKDOWN_CORE_NODE_KIND_COUNT, or a value of neither class -- would
+ * share the table's one out-of-table key and be asked at every such node's
+ * events instead of its own, so it is refused too: that key is never
+ * declared.
  *
  * The document lifecycle is one concern too. The engine calls every one of
- * its hooks but `observe_inline` without asking, on whichever element owns
- * it, so an element that declares part of it would have the engine call
- * through a NULL the moment it became the owner: it declares all of them or
- * none.
+ * its hooks without asking, on whichever element owns it, so an element that
+ * declares part of it would have the engine call through a NULL the moment it
+ * became the owner: it declares all of them or none.
  *
  * A flanking-transparent byte is ASCII. Flanking tests a decoded scalar
  * against these bytes, and only a scalar below 0x80 is its own byte. Its walk
@@ -49,10 +49,6 @@ static bool S_owns_document_lifecycle(const markdown_core_element *element) {
 }
 
 static bool S_element_refused(const markdown_core_element *element) {
-    /* Both a finish step and a postprocess pass. */
-    if (element->finish_step && element->postprocess_func) {
-        return true;
-    }
     /* Kinds to ask a finish step at, without a finish step. */
     if ((element->finish_exit_kinds || element->finish_scope_kinds) && !element->finish_step) {
         return true;
@@ -73,6 +69,13 @@ static bool S_element_refused(const markdown_core_element *element) {
             return true;
         }
     }
+    /* A block kind as a finish scope kind, whose extent completion never
+     * walks. */
+    for (const markdown_core_node_type *scope = element->finish_scope_kinds; scope && *scope; scope++) {
+        if (MARKDOWN_CORE_NODE_TYPE_BLOCK_P(*scope)) {
+            return true;
+        }
+    }
     /* A kind as both a finish exit kind and a finish scope kind. */
     for (const markdown_core_node_type *exit = element->finish_exit_kinds; exit && *exit; exit++) {
         for (const markdown_core_node_type *scope = element->finish_scope_kinds; scope && *scope; scope++) {
@@ -83,8 +86,7 @@ static bool S_element_refused(const markdown_core_element *element) {
     }
     /* Only part of the document lifecycle. */
     if ((element->init_document || element->dispose_document || element->read_document_prefix ||
-         element->prepare_document || element->finish_document || element->publish_document ||
-         element->observe_inline) &&
+         element->prepare_document || element->finish_document || element->publish_document) &&
         !S_owns_document_lifecycle(element)) {
         return true;
     }
@@ -278,7 +280,7 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
                     record.flags |= (uint16_t)facts[i].flag;
                 }
             }
-            record.complete = structure->complete_inline;
+            record.complete = structure->complete_node;
         }
         if (markdown_core_kind_owns_fields(kind)) {
             record.flags |= MARKDOWN_CORE_KIND_FIELDS;
@@ -485,11 +487,12 @@ static void S_project_finish_steps(markdown_core_dialect *dialect, const size_t 
  * every lookup ends. */
 static void S_project_instances(markdown_core_dialect *dialect, const markdown_core_element *const *elements,
                                 markdown_core_element_instance *instances, const markdown_core_element_instance **table,
-                                size_t slots, unsigned char *state) {
+                                unsigned bits, unsigned char *state) {
+    const size_t mask = ((size_t)1 << bits) - 1;
     size_t state_at = 0;
     dialect->instances = instances;
     dialect->instance_table = table;
-    dialect->instance_mask = slots - 1;
+    dialect->instance_bits = bits;
     for (size_t i = 0; i < dialect->element_count; i++) {
         const markdown_core_element *element = elements[i];
         markdown_core_element_instance *instance = &instances[i];
@@ -498,10 +501,10 @@ static void S_project_instances(markdown_core_dialect *dialect, const markdown_c
         instance->run_offset = dialect->run_state_size;
         state_at += markdown_core_state_align(element->state_size);
         dialect->run_state_size += markdown_core_state_align(element->run_state_size);
-        size_t at = markdown_core_instance_hash(element, dialect->instance_mask);
+        size_t at = markdown_core_instance_hash(element, bits);
         while (table[at]) {
             assert(table[at]->element != element);
-            at = (at + 1) & dialect->instance_mask;
+            at = (at + 1) & mask;
         }
         table[at] = instance;
     }
@@ -602,9 +605,10 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
     for (size_t key = 0; key < MARKDOWN_CORE_FINISH_KEY_COUNT; key++) {
         sizes->steps += sizes->finish_key_counts[key] != 0; /* the terminator */
     }
-    /* The instance table: a power of two at least twice the elements, and
-     * never empty, so a lookup always finds an empty entry to stop at. */
-    for (sizes->instance_slots = 1; sizes->instance_slots < 2 * count; sizes->instance_slots *= 2) {
+    /* The instance table: a power of two at least twice the elements, so a
+     * lookup always finds an empty entry to stop at, and at least two, so the
+     * hash takes a bit. */
+    for (sizes->instance_bits = 1; ((size_t)1 << sizes->instance_bits) < 2 * count; sizes->instance_bits++) {
     }
     /* A family with no declared gate keeps no table and every owner is asked. */
     for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
@@ -613,7 +617,8 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
         }
     }
     return sizes->steps * sizeof(markdown_core_finish_step_entry) + count * sizeof(markdown_core_element_instance) +
-           (sizes->pointers + sizes->instance_slots + sizes->peers) * sizeof(const markdown_core_element_instance *) +
+           (sizes->pointers + ((size_t)1 << sizes->instance_bits) + sizes->peers) *
+               sizeof(const markdown_core_element_instance *) +
            sizes->gate_bytes;
 }
 
@@ -632,11 +637,11 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
     markdown_core_element_instance *instances = (markdown_core_element_instance *)(step_entries + sizes->steps);
     const markdown_core_element_instance **entries = (const markdown_core_element_instance **)(instances + count);
     const markdown_core_element_instance **table = entries + sizes->pointers;
-    const markdown_core_element_instance **peers = table + sizes->instance_slots;
+    const markdown_core_element_instance **peers = table + ((size_t)1 << sizes->instance_bits);
     uint8_t *tables = (uint8_t *)(peers + sizes->peers);
 
     dialect->element_count = count;
-    S_project_instances(dialect, builder->elements, instances, table, sizes->instance_slots, state);
+    S_project_instances(dialect, builder->elements, instances, table, sizes->instance_bits, state);
     assert(dialect->run_state_size == sizes->run_state_bytes);
     S_resolve_peers(dialect, instances, peers);
     S_resolve_owners(dialect);

@@ -1,6 +1,6 @@
 # Node storage and lifetime
 
-The engine node contains its tree links, source mapping, attributes, element
+The engine node contains its children, source mapping, attributes, element
 state, and a union of typed node data pointers. Every union arm is a pointer;
 adding fields to one kind cannot enlarge the common node. A kind with no
 kind-specific fields has no data record. Field-bearing kinds own a
@@ -11,6 +11,45 @@ from the slot through `node_data_allocation`. Kind conversion uses the same
 capacity and ownership rule. A C99 union provides scalar alignment
 for the node and the record; the slot's header before them is padded to the
 same alignment, and that padding is included in measured memory costs.
+
+## Children, builders and the scaffold
+
+A node holds its children in an array, in order: `children` and
+`child_count`. The array is storage the node owns, cut from the pool like its
+other storage of its own size. Its capacity is the smallest power of two, and
+at least two, that holds its count, so the count alone says when the array is
+full; an append to a full array moves it to the next class. Nothing else
+records the relation: a node holds no pointer to its parent or its siblings,
+and whatever holds a node holds it in an array or a node-valued field. A
+cite's citations and a definition's bodies are their children in storage; the
+public model reads them through their own accessors, so their public children
+are empty.
+
+The block parse builds the tree on the parser's builder stack, one entry per
+open block from the block root to the deepest open block. The stack is linked
+through the open blocks' scaffolds (below): an open block's scaffold parent is
+the block it is open inside, and its scaffold last child the block open inside
+it. Finding a block's parent and walking its ancestors walk the stack. A block
+that closes is the stack top's pending child until the top takes its next
+child or closes itself; then the pending child settles: it is appended to its
+parent's array and joins the completion queue with the parent it settled
+into. Completion asks the finish steps of its block kind at its EXIT with
+that parent. A list and a list item fold whether they end with a blank line
+from their last child as they close, after their children have settled. A
+reference definition and a table's lead paragraph settle as they close. A
+block on the stack or pending belongs to the parse, and a failed parse
+releases it with the rest of its state.
+
+An inline tree is built with a scaffold: parent, sibling and first and last
+child links kept in the node's slot beside the node, valid while that tree's
+inline parse and completion run. Delimiter and bracket reduction and every
+element's rewrite link and relink through it. Completion's walk turns each
+container's scaffold children into its children array at the container's
+EXIT and empties the scaffold. An open block's scaffold links it into the
+builder stack. A settled block's scaffold links it into the completion queue
+-- to the block queued after it and to the block it settled into -- until
+completion reaches it, and the release walk's stack is linked through the
+scaffolds of the nodes it takes.
 
 ## Slots, slabs and the pool
 
@@ -59,11 +98,14 @@ is a slot from the allocator.
 
 ## A node's place and its value
 
-A node's fields are its PLACE -- its links (`next`, `prev`, `parent`,
-`first_child`, `last_child`) and its `id` -- and its VALUE, everything after
-them: attributes, content, extent, kind, flags, element state, the record and
-the storage all of these borrow. Inline literals are slices of their block's
-content buffer, so a value borrows from the parse that made it.
+A node's fields are its PLACE -- its children and its `id` -- and its VALUE,
+everything after them: attributes, content, extent, kind, flags, element state, the record and
+the storage all of these borrow. A block's content is only ever appended to:
+what the block makes of it is a view. A code, HTML, comment or formula block's
+literal is a view of its content; the text its inlines are parsed from is its
+content less the bytes its block read as something else, `cut_front` at the
+front and `cut_back` at the back; inline literals are slices of that text. So
+a value borrows from the parse that made it.
 
 A session's parse continues the previous document (docs/plans/
 2026-09-29-incremental-parsing.md, 5.9). When a new node equals the old node
@@ -76,9 +118,9 @@ which are places. After the exchanges the new tree holds only the new
 parse's storage and the retired tree only the old, and each is released as a
 whole.
 
-Reference-map records are not slots. Every record lives exactly as long as
-its map, so records are carved from blocks the map owns and freed with it,
-rather than allocated one each.
+Registry records are not slots. A record lives until the registry is freed
+or a rollback pops it, newest first, so records are carved one after another
+from blocks the registry owns, rather than allocated one each.
 
 All block, inline, and manual construction uses the same node constructor.
 It takes one slot for the node and its kind's record, establishes defaults,
@@ -116,28 +158,24 @@ optional value is stored inline in the occurrence's typed record, without a
 separate allocation, and its lifetime ends with that record. Cross references
 own their raw destination fields directly.
 
-Parser construction transfers a detached, independently owned subtree. The
-caller establishes disjoint ownership by creating the subtree or detaching it
-from a known separate owner; merely having no parent is not proof of
-disjointness. `markdown_core_node_attach_validated` is the one non-failing
-splice for callers with an established containment decision. The unused
-checked-detached wrapper has been removed; unproven trees use checked mutation.
-It asserts local links and the pure built-in containment rule in Debug/ASan.
-Checked mutation and assertions share that rule. Built-in elements declare the
-parent-kind domain retained by their payload across conversion; an unrelated
-kind cannot silently inherit a different containment policy. Dynamic callbacks
-remain decision operations and are never replayed by an assertion.
+Construction attaches a child only where its parent may hold it. The
+containment decision (`markdown_core_node_can_contain_type`) is made before
+the child is made, by the fixed grammar, an element's retained kind domain or
+a dynamic policy callback. An attachment -- `markdown_core_node_push_child`
+onto an array, or the scaffold's append and insert -- does not decide again:
+a build without `NDEBUG` asserts the pure built-in rule, or that a dynamic
+policy holds the parent, and never replays the callback. Built-in elements
+declare the parent-kind domain retained by their payload across conversion;
+an unrelated kind cannot silently inherit a different containment policy.
 Internal inline constructors must return a detached token admitted by their
 fixed grammar owner. The private element API states this obligation; arbitrary
 third-party descriptors are not an installed or supported extension surface.
-The arbitrary mutation API checks ancestry and containment once before
-unlinking, then commits through the same splice. A custom predicate therefore
-observes the original tree and is never called again after detachment.
-Rejection leaves both trees unchanged. Optional rewrites, including formula
-promotion and email splitting, validate before allocating or consuming the
-old node; rejection preserves the authored content. A constructed inline
-token rejected by its destination remains owned by the parser and is released
-before the parse fails with `MARKDOWN_CORE_PARSE_CONTAINMENT_REJECTED`.
+There is no tree mutation API: a settled tree is never relinked. Optional
+rewrites, including formula promotion and email splitting, validate before
+allocating or consuming the old node; rejection preserves the authored
+content. A constructed inline token rejected by its destination remains owned
+by the parser and is released before the parse fails with
+`MARKDOWN_CORE_PARSE_CONTAINMENT_REJECTED`.
 Parser and inline transactions use the same error enum; allocation failures use
 `MARKDOWN_CORE_PARSE_ALLOCATION_FAILED`, and propagation preserves the first
 cause. Buffer allocation flags remain allocation-only. Table lead splitting
@@ -145,10 +183,9 @@ checks acceptance before conversion, so a refused optional split preserves the
 complete original paragraph. There is no per-node allocator identity to check.
 Kind conversion changes no edges and checks only containment.
 There is no safety mode, ancestry cache, or separate inline splice algorithm.
-A source-boundary audit keeps arbitrary reparenting out of parser construction;
-regression inputs vary nesting depth and autolink count independently.
+Regression inputs vary nesting depth and autolink count independently.
 
-Kind conversion preserves node identity and tree links. After containment
+Kind conversion preserves node identity and children. After containment
 validation, it reserves an external replacement before releasing the old
 fields if the new record exceeds slot capacity. A record that fits already
 has storage: the conversion releases the old fields, zeroes the new active
@@ -170,8 +207,8 @@ kind conversion. So does the attribute value.
 
 HTML blocks keep their recognition state and eventual literal in distinct
 fields of one data record throughout parsing. Converting a closed HTML comment
-to Comment transfers its owned literal only after the new record can be
-created. Setext headings also use the shared kind conversion operation.
+to Comment views the comment's body in the block's content once the new record
+exists. Setext headings also use the shared kind conversion operation.
 
 Construction and kind conversion use one record capacity/ownership model.
 Their initialization order differs because conversion must destroy the old
@@ -190,12 +227,13 @@ native alignment, and sanitizer suites exercise the same ownership paths.
 
 Link reference definitions are recognized during block parsing so paragraph
 content and Setext classification can use the remaining text. Each definition
-becomes a `Reference` node in its parent's child chain where it was written,
-before what remains of the paragraph. A paragraph that held only definitions
-is released when it is finalized; its References stay, so later block
+becomes a `Reference` node that settles into its parent's children where it
+was written, before what remains of the paragraph; the paragraph's `cut_front`
+grows by what the definitions read. A paragraph that held only
+definitions yields no node when it closes and is released; its References stay, so later block
 identifiers see them in source order and cannot attach across them. The
 blank-line facts skip References, and list layout, derived at each list's
-exit in the finish walk, reads the semantic children around them. An
+EXIT as the list settles, reads the semantic children around them. An
 intentionally empty anchored list-item paragraph is not a definition and
 stays.
 
@@ -205,8 +243,9 @@ Cite's Citation owns as its `note` field, as it owns its affixes. Authored
 definitions are Footnote and Specimen blocks in the tree where they were
 read. In both cases the tree owns the node, including on parse failure.
 
-Calls resolve through the parser's label maps while parsing; a footnote label
-map and a specimen key index hold the first definition of each label. The
+Calls resolve through the parse's registry (`core/registry.h`) while
+parsing: each footnote and specimen definition declares its label there as it
+is read, and a call asks whether its label is declared. The
 finish stage visits definitions where they are, like any other node.
 
 Publishing is one canonical walk. It numbers every node from 1, rewrites the
@@ -244,7 +283,7 @@ occupied-coordinate matrix becomes part of the public AST.
 Multiline and grid cell bodies enqueue mapped inputs on their owning nodes.
 The parser drains that queue, including newly discovered nested cells, before
 running document-wide completion and inline parsing. Each input uses the same
-block parser, reference map, heading registry and definition owner. The active
+block parser, registry, heading collection and definition owner. The active
 block root bounds finalization without creating a second Document or recursing
 into the document parser. Content marks compose through nested slices when
 blocks and inline payloads are created; scopes are never repaired afterward.

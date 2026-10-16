@@ -14,12 +14,11 @@ set(HEADERS
     buffer.h
     node.h
     node_type.h
-    iterator.h
     chunk.h
     attributes.h
     slab.h
     metadata.h
-    references.h
+    registry.h
     map.h
     utf8.h
     inlines.h
@@ -33,13 +32,12 @@ set(LIBRARY_SOURCES
     alloc.c
     slab.c
     node.c
-    iterator.c
     dialect.c
     blocks.c
     inlines.c
     utf8.c
     buffer.c
-    references.c
+    registry.c
     map.c
     houdini_html_u.c
     markdown_core_ctype.c

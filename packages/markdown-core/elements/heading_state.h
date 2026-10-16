@@ -1,6 +1,6 @@
 #ifndef MARKDOWN_CORE_HEADING_STATE_H
 #define MARKDOWN_CORE_HEADING_STATE_H
-#include "references.h"
+#include "map.h"
 #include "inline_internal.h"
 
 /* A heading is registered once when its block closes. Source order is settled
@@ -17,17 +17,11 @@ typedef struct {
     size_t count, capacity;
 } markdown_core_heading_collection;
 
-typedef struct {
-    markdown_core_key_index index;
-} anchor_registry;
-
 /* THE HEADINGS OF ONE PARSE (the heading element's parse record): each
- * heading as its block closed, the anchors the document reserves and assigns
- * once the tree is complete, and the projection and registry work that
- * assignment did, for its complexity gate. */
+ * heading as its block closed, and the projection and lookup work the
+ * assignment of their anchors did, for its complexity gate. */
 typedef struct {
     markdown_core_heading_collection headings;
-    anchor_registry anchors;
     size_t anchor_work;
 } markdown_core_heading_state;
 

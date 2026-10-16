@@ -9,7 +9,6 @@
 #include "markdown_core_ctype.h"
 #include "utf8.h"
 #include "houdini.h"
-#include "iterator.h"
 #include "inlines.h"
 #include "element.h"
 
@@ -64,7 +63,6 @@ struct markdown_core_inline_state {
     int mark_line, mark_step, mark_width;
     bufsize_t mark_source;
     bool mapped;
-    markdown_core_map *refmap;
     delimiter *last_delim;
     delimiter_run cached_run;
     /* How many delimiters of each rule on the stack can open, and how many
@@ -201,7 +199,7 @@ markdown_core_node *markdown_core_inline_make_simple(markdown_core_inline_state 
 markdown_core_node *markdown_core_inline_make_simple_with_state(markdown_core_inline_state *inline_state,
                                                                 markdown_core_node_type t);
 void markdown_core_inline_state_from_buf(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
-                                         markdown_core_chunk *chunk, markdown_core_map *refmap);
+                                         markdown_core_chunk *chunk);
 unsigned char markdown_core_inline_peek_char_n(markdown_core_inline_state *inline_state, bufsize_t n);
 unsigned char markdown_core_inline_peek_char(markdown_core_inline_state *inline_state);
 unsigned char markdown_core_inline_peek_at(markdown_core_inline_state *inline_state, bufsize_t pos);
@@ -215,7 +213,7 @@ void markdown_core_inline_process_delimiters(markdown_core_parser *parser, markd
                                              bufsize_t stack_bottom, delimiter *after);
 int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_core_inline_state *inline_state);
 void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_core_node *parent, bool root,
-                                        markdown_core_map *refmap, markdown_core_inline_state *inline_state);
+                                        markdown_core_inline_state *inline_state);
 void markdown_core_inline_clear_inlines(markdown_core_inline_state *inline_state);
 bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_core_inline_state *inline_state);
 markdown_core_node *markdown_core_inline_match_delimiter(const markdown_core_element_instance *self,

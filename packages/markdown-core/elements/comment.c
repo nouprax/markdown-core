@@ -163,13 +163,14 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
 }
 
 /* `%` ends a text run and is offered to the scanner, and that is the whole set. */
-static void finalize_comment(const markdown_core_element_instance *self, markdown_core_parser *, markdown_core_node *);
+static bool close_comment(const markdown_core_element_instance *self, markdown_core_parser *, markdown_core_node *,
+                          markdown_core_node *);
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
     .state_size = sizeof(markdown_core_comment_work),
     .interrupts_paragraph = true,
 
-    .finalize_block = finalize_comment,
+    .close_block = close_comment,
 
     .name = "comment",
     .match_inline = match,
@@ -184,10 +185,10 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_COMMENT = {
     .dispatch = "%",
 };
 
-void markdown_core_block_convert_comment_block(markdown_core_parser *parser, markdown_core_node *b) {
-    markdown_core_chunk *literal = &b->as.html_block->literal;
-    unsigned char *data = literal->data;
-    bufsize_t len = literal->len;
+void markdown_core_block_convert_comment_block(markdown_core_parser *parser, markdown_core_node *b,
+                                               markdown_core_node *parent) {
+    const unsigned char *data = b->content.ptr;
+    bufsize_t len = b->content.size;
     bufsize_t open = 0;
     bufsize_t close;
     bufsize_t body_start;
@@ -224,25 +225,16 @@ void markdown_core_block_convert_comment_block(markdown_core_parser *parser, mar
 
     body_start = open + 4;
     body_len = close > body_start ? close - body_start : 0;
-    /* Keep ownership of the HTML literal across the kind change. Restore it
-     * on failure; on success the comment record takes it before trimming. */
-    assert(literal->alloc);
-    markdown_core_chunk owned_literal = *literal;
-    *literal = (markdown_core_chunk)MARKDOWN_CORE_CHUNK_EMPTY;
     markdown_core_node_set_kind_result result =
-        markdown_core_parser_set_node_kind(parser, b, MARKDOWN_CORE_NODE_COMMENT_BLOCK);
+        markdown_core_parser_set_node_kind(parser, b, parent, MARKDOWN_CORE_NODE_COMMENT_BLOCK);
     if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
-        *literal = owned_literal;
         if (result == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
         return;
     }
-    *b->as.literal = owned_literal;
-    literal = b->as.literal;
-    memmove(data, data + body_start, body_len);
-    data[body_len] = '\0';
-    literal->len = body_len;
+    /* The comment's literal is the view of the body between its delimiters. */
+    *b->as.literal = (markdown_core_chunk){b->content.ptr + body_start, body_len, 0};
 }
 
 markdown_core_node *markdown_core_comment_make_inline(markdown_core_inline_state *inline_state, int from, int to,
@@ -250,23 +242,21 @@ markdown_core_node *markdown_core_comment_make_inline(markdown_core_inline_state
     return markdown_core_inline_make_literal(inline_state, MARKDOWN_CORE_NODE_COMMENT, from, to, literal);
 }
 
-static void finalize_comment(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                             markdown_core_node *b) {
+static bool close_comment(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                          markdown_core_node *b, markdown_core_node *parent) {
     (void)self;
-    markdown_core_strbuf *node_content = &b->content;
-
+    (void)parser;
+    (void)parent;
     /* O3: a `%%` block comment arrives here with its lines in `content`:
      * the opener line contributed nothing, because the element that
      * opened it consumed the line, and the closer line is not there,
      * because its matcher closed the block before the line could be
-     * added. The literal is those lines, indentation and line endings as
-     * written after container-prefix removal. An HTML block comment never
-     * takes this arm: it is finalized as the HTML block it was parsed as
-     * and retyped above. */
-    *b->as.literal = markdown_core_chunk_buf_detach(node_content);
-    if (!b->as.literal->data) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
+     * added. The literal is the view of those lines, indentation and line
+     * endings as written after container-prefix removal. An HTML block
+     * comment never takes this arm: it is closed as the HTML block it was
+     * parsed as and becomes a CommentBlock there. */
+    *b->as.literal = (markdown_core_chunk){b->content.ptr, b->content.size, 0};
+    return true;
 }
 
 bool markdown_core_comment_scan_html(markdown_core_inline_state *inline_state, bufsize_t pos, unsigned *flags,

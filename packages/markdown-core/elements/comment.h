@@ -16,7 +16,10 @@ typedef struct {
 #ifdef __cplusplus
 }
 #endif
-void markdown_core_block_convert_comment_block(markdown_core_parser *parser, markdown_core_node *b);
+/* `b`, an HTML block that is one HTML comment, closing inside `parent`,
+ * becomes a CommentBlock in place. */
+void markdown_core_block_convert_comment_block(markdown_core_parser *parser, markdown_core_node *b,
+                                               markdown_core_node *parent);
 markdown_core_node *markdown_core_comment_make_inline(markdown_core_inline_state *inline_state, int from, int to,
                                                       markdown_core_chunk literal);
 bool markdown_core_comment_scan_html(markdown_core_inline_state *inline_state, bufsize_t pos, unsigned *flags,

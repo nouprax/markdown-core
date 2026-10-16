@@ -2,18 +2,19 @@
 
 The [anchors module](../specs/dialect/anchors.md) owns the language contract.
 Parsing establishes heading labels before reference lookup, then gives each
-heading its anchor after every explicit anchor is known. Consumers and element
-postprocessors receive only the completed document.
+heading its anchor after every explicit anchor is known. Consumers receive
+only the completed document.
 
 ## Declaration order and inline ownership
 
-Block finalization registers headings in source order, including headings in
-footnote definitions. A heading is a leaf block, so closure order is source
+Closing a heading registers it, so headings register in source order,
+including headings in footnote definitions. A heading is a leaf block, so closure order is source
 order. The parser keeps borrowed node pointers in that order; no final tree
 search or sorting is needed. Each heading whose text is a writable label keeps
-that label, normalized, and declares it in the ordinary reference map, as each
-`Reference` declares its own. Reference parsing asks the map only whether a
-label is declared, so it needs no heading-specific case. The published
+that label, normalized, and declares it in the parse's registry
+(`core/registry.h`) as a reference label, as each `Reference` declares its
+own. Reference parsing asks the registry only whether a label is declared, so
+it needs no heading-specific case. The published
 document resolves a `reference` destination: to the first `Reference` that
 declares the label or, when none does, to the first heading.
 
@@ -68,8 +69,13 @@ owns. A reference occurrence holds only the label it names; the anchor it
 leads to is the heading's own, and the heading's attributes stay the
 heading's.
 
-The finish walk reserves effective explicit anchors at each node's ENTER,
-while it discovers owned label/title fields. The walk parses each container's
+Completion declares effective explicit anchors in the registry at each
+node's ENTER, once the node is complete, while it discovers owned label/title
+fields. A node's attributes are settled by then: a block's as it closes, an
+inline's as its root's content is parsed, and a fence that names a formula
+becomes a FormulaBlock, which holds none, as its element completes it at that
+ENTER. A finish step rewrites a node's kind, literal or record, never its
+attributes. Its walk parses each container's
 inline content at that container's ENTER, so it visits only completed child
 trees, after bracket reductions and occurrence attributes have settled; a
 temporary inline later discarded by a footnote call cannot reserve an anchor.
@@ -102,10 +108,15 @@ offset. Missing ranges mean omission. Each scalar needs one lookup, including
 case conversion and whitespace replacement. Its generator verifies both the
 pinned UnicodeData SHA-256 and Node Unicode version. Builds need no download.
 
-The exact-string anchor index reserves both explicit and synthesized spellings.
+A spelling is taken when the registry holds it as an explicit anchor or a
+heading before was given it. When some heading's anchor is to be computed,
+finalization's own exact-string index holds both: it first takes every
+explicit anchor, reading the registry's anchor records in log order under the
+registry's copy of their bytes, and then each spelling a heading is given.
 Each occupied base has one increasing suffix cursor stored directly in its
-index slot. An entry lookup returns either an occupied or a vacant slot; the
-latter is committed using the final node-owned spelling without hashing it
+index slot. Every candidate, the base first, costs one entry lookup, which
+returns an occupied or a vacant slot; a vacant one the heading is given is
+committed in place with the final node-owned spelling, without hashing it
 again. Only a new key can grow the index. Synthesis advances the base cursor
 before querying its next candidate and never reads that borrowed slot again
 after a vacant candidate returns. This keeps slot lifetimes valid through
@@ -122,14 +133,15 @@ headings rather than discarded when a value is attached.
 
 ## Lifetime and bounds
 
-The heading collection and anchor indices borrow nodes and strings only until
-finalization completes. Pending inline states own their temporary parser state.
+The heading collection and finalization's anchor index borrow nodes and
+strings only until finalization completes; the registry holds its own copy of
+every label it records. Pending inline states own their temporary parser state.
 Each heading owns its computed anchor and its label, and a reference
 occurrence owns its label, so freeing a heading or a document invalidates no
 other node.
 Every failure joins the parser's terminal allocation-failure transaction and
 disposes pending inline states before their nodes. Parse-time indices are discarded
-before consolidation or element postprocessing can replace nodes.
+before consolidation or an element's finish step can replace nodes.
 
 Expected work is proportional to parsed input, visited nodes, and produced
 anchor bytes, using the shared hash index's normal bounds. Memory is

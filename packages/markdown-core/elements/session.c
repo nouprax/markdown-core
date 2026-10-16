@@ -26,7 +26,8 @@ struct markdown_core_session {
     size_t node_count;
 };
 
-/* The one parse of a session's text. An empty text is the empty buffer. */
+/* The one parse of a session's text: a start, a commit of the whole text
+ * and a finalize. An empty text is the empty buffer. */
 static markdown_core_status session_parse(markdown_core_session *session) {
     static const uint8_t empty[1] = {0};
     markdown_core_revision revision = {
@@ -35,8 +36,9 @@ static markdown_core_status session_parse(markdown_core_session *session) {
         .last_id = session->last_id,
         .node_count = session->node_count,
     };
-    markdown_core_node *root = markdown_core_parser_parse(
-        session->parser, (const char *)(session->size ? session->text : empty), session->size, &revision);
+    markdown_core_parser_start(session->parser, &revision);
+    markdown_core_parser_commit(session->parser, (const char *)(session->size ? session->text : empty), session->size);
+    markdown_core_node *root = markdown_core_parser_finalize(session->parser);
     if (!root) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }

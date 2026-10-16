@@ -6,6 +6,7 @@ extern "C" {
 #endif
 
 #include "markdown-core-element-api.h"
+#include "chunk.h"
 #include <stddef.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -45,8 +46,9 @@ markdown_core_node *markdown_core_parse_document_with_setup(const char *source, 
  *  `markdown_core_node_free`. */
 markdown_core_node *markdown_core_parse_document(const char *buffer, size_t len);
 
-/** Returns the literal formula payload of a formula element node. */
-const char *markdown_core_elements_get_formula_literal(markdown_core_node *node);
+/** The literal formula payload of a formula element node: owned by the node
+ *  and not NUL-terminated. */
+markdown_core_chunk markdown_core_elements_formula_literal(const markdown_core_node *node);
 
 /** Sets the literal formula payload of a formula element node, returning 0
  * when the copy could not be allocated. */

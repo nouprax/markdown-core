@@ -242,23 +242,44 @@ export function nodesEnteredFrom(profile, callee, caller) {
 }
 
 /**
- * The one function that calls every one of `callees`, or null unless exactly
- * one does. A stage is the work its boundary does inside the transaction that
- * runs all of the stages, so the transaction is found from the boundaries
- * rather than named: a rename of the entry cannot make a baseline revision
- * unmeasurable, and a boundary reached from elsewhere too (a nested parse)
- * still counts only the transaction's own calls.
+ * The function that enters each of `boundaries` from outside every stage, in
+ * their order, or null unless each is entered from exactly one. A stage is the
+ * work its boundary does when the transaction enters it, so the entries are
+ * found from the boundaries rather than named: a transaction that enters both
+ * stages from one function and one that enters them from two (a commit and a
+ * finalize) are measured alike, a rename of an entry cannot make a baseline
+ * revision unmeasurable, and a boundary reached again from inside a stage (a
+ * nested parse) counts only in the stage that reached it.
  */
-export function commonCaller(profile, callees) {
-    let common = null;
-    for (const callee of callees) {
+export function stageEntries(profile, boundaries) {
+    const stages = new Set(boundaries);
+    const callees = new Map();
+    const inside = new Set();
+    for (const edge of profile.edges.values()) {
+        if (!callees.has(edge.caller)) callees.set(edge.caller, []);
+        callees.get(edge.caller).push(edge.callee);
+        for (const node of [edge.caller, edge.callee]) {
+            if (stages.has(baseName(node))) inside.add(node);
+        }
+    }
+    /* Inside a stage is every node a boundary's node reaches. */
+    const pending = [...inside];
+    while (pending.length) {
+        for (const callee of callees.get(pending.pop()) ?? []) {
+            if (!inside.has(callee)) {
+                inside.add(callee);
+                pending.push(callee);
+            }
+        }
+    }
+    const entries = boundaries.map((boundary) => {
         const callers = new Set();
         for (const edge of profile.edges.values()) {
-            if (baseName(edge.callee) === callee) callers.add(baseName(edge.caller));
+            if (baseName(edge.callee) === boundary && !inside.has(edge.caller)) callers.add(baseName(edge.caller));
         }
-        common = common ? new Set([...common].filter((caller) => callers.has(caller))) : callers;
-    }
-    return common && common.size === 1 ? [...common][0] : null;
+        return callers;
+    });
+    return entries.every((callers) => callers.size === 1) ? entries.map((callers) => [...callers][0]) : null;
 }
 
 /** Every recorded call into `callee`, whatever the caller. */

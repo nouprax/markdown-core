@@ -2,35 +2,26 @@
 #include "code_block.h"
 #include "block_internal.h"
 #include "attributes.h"
+#include "formula.h"
 #define peek_at(input, at) ((input)->data[(at)])
 
-static void remove_trailing_blank_lines(markdown_core_strbuf *ln) {
-    bufsize_t i;
-    unsigned char c;
+/* The elements whose state this element reads, as `self->peers` holds them:
+ * the formula element, which a fence naming a formula becomes. */
+enum { CODE_FORMULA };
+static const markdown_core_element *const CODE_PEERS[] = {[CODE_FORMULA] = &MARKDOWN_CORE_ELEMENT_FORMULA, NULL};
 
-    for (i = ln->size - 1; i >= 0; --i) {
-        c = ln->ptr[i];
-
-        if (!markdown_core_is_whitespace(c)) {
-            break;
-        }
+/* The end of an indented code block's literal: past the line ending of its
+ * last line that is not blank. Every line it read ends with one, and its
+ * first line is not blank. */
+static bufsize_t S_indented_literal_end(const markdown_core_strbuf *content) {
+    bufsize_t i = content->size - 1;
+    while (markdown_core_is_whitespace(content->ptr[i])) {
+        i--;
     }
-
-    if (i < 0) {
-        markdown_core_strbuf_clear(ln);
-        return;
+    while (content->ptr[i] != '\n') {
+        i++;
     }
-
-    for (; i < ln->size; ++i) {
-        c = ln->ptr[i];
-
-        if (!markdown_core_is_line_end(c)) {
-            continue;
-        }
-
-        markdown_core_strbuf_truncate(ln, i);
-        break;
-    }
+    return i + 1;
 }
 
 static int continue_code(const markdown_core_element_instance *self, markdown_core_parser *parser, unsigned char *data,
@@ -75,38 +66,37 @@ static int continue_code(const markdown_core_element_instance *self, markdown_co
     return res;
 }
 
-static void finalize_code(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_node *b) {
+/* A code block's literal is a view of its content: an indented block's
+ * through its last line that is not blank, a fenced block's after its first
+ * line, which is the rest of the fence line and gives the info string. */
+static bool close_code(const markdown_core_element_instance *self, markdown_core_parser *parser, markdown_core_node *b,
+                       markdown_core_node *parent) {
     (void)self;
-    bufsize_t pos;
-    markdown_core_strbuf *node_content = &b->content;
+    (void)parent;
+    const markdown_core_strbuf *content = &b->content;
+    bufsize_t start = 0, end = content->size;
 
-    if (!b->as.code->fenced) { // indented code
-        remove_trailing_blank_lines(node_content);
-        markdown_core_strbuf_putc(node_content, '\n');
+    if (!b->as.code->fenced) {
+        end = S_indented_literal_end(content);
     } else {
-        // first line of contents becomes info
-        for (pos = 0; pos < node_content->size; ++pos) {
-            if (markdown_core_is_line_end(node_content->ptr[pos])) {
-                break;
-            }
-        }
-        assert(pos < node_content->size);
+        const unsigned char *line_end = memchr(content->ptr, '\n', (size_t)content->size);
+        assert(line_end);
+        bufsize_t pos = (bufsize_t)(line_end - content->ptr);
 
         /* The info string is the rest of the fence line, less an attribute
          * tail, trimmed of spaces and tabs as written. References and
          * escapes are decoded after the trim, so a space one of them spells
          * is the info string's own. */
         markdown_core_strbuf tmp = MARKDOWN_CORE_BUF_INIT();
-        bufsize_t info_end = markdown_core_attributes_attach_tail(parser, b, node_content->ptr, pos);
+        bufsize_t info_end = markdown_core_attributes_attach_tail(parser, b, content->ptr, pos);
         bufsize_t info_start = 0;
-        while (info_start < info_end && markdown_core_is_space_or_tab(node_content->ptr[info_start])) {
+        while (info_start < info_end && markdown_core_is_space_or_tab(content->ptr[info_start])) {
             info_start++;
         }
-        while (info_end > info_start && markdown_core_is_space_or_tab(node_content->ptr[info_end - 1])) {
+        while (info_end > info_start && markdown_core_is_space_or_tab(content->ptr[info_end - 1])) {
             info_end--;
         }
-        houdini_unescape_html_f(&tmp, node_content->ptr + info_start, info_end - info_start);
+        houdini_unescape_html_f(&tmp, content->ptr + info_start, info_end - info_start);
         markdown_core_strbuf_unescape(&tmp);
         /* WHETHER THE SOURCE WROTE AN INFO STRING IS DECIDED HERE, ONCE.
          * A fence with nothing but whitespace after it wrote none, and
@@ -132,18 +122,21 @@ static void finalize_code(const markdown_core_element_instance *self, markdown_c
             }
             b->as.code->info = markdown_core_optional_chunk_present(info);
         }
-
-        if (node_content->ptr[pos] == '\r') {
-            pos += 1;
-        }
-        if (node_content->ptr[pos] == '\n') {
-            pos += 1;
-        }
-        markdown_core_strbuf_drop(node_content, pos);
+        start = pos + 1;
     }
-    b->as.code->literal = markdown_core_chunk_buf_detach(node_content);
-    if (!b->as.code->literal.data) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    b->as.code->literal = (markdown_core_chunk){content->ptr + start, end - start, 0};
+    return true;
+}
+/* A fence whose info string names a formula becomes a FormulaBlock as
+ * completion reaches it, in a dialect that holds formulas, inside the block
+ * it settled into: before its explicit anchor is reserved, so the anchor of
+ * the fence, which the FormulaBlock does not hold, is never taken. */
+static void complete_code(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                          markdown_core_node *node, int depth) {
+    (void)depth;
+    const markdown_core_element_instance *formula = self->peers[CODE_FORMULA];
+    if (formula && node->as.code->fenced) {
+        markdown_core_formula_promote_fence(formula, parser, node, markdown_core_scaffold_parent(node));
     }
 }
 static bool open_fenced(const markdown_core_element_instance *self, markdown_core_parser *parser,
@@ -222,6 +215,8 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE_BLOCK = {
     .scan_block_gate = {.bytes = "`~"},
     .last_block_matches = continue_code,
     .content_mode = MARKDOWN_CORE_CONTENT_LITERAL,
-    .finalize_block = finalize_code,
+    .close_block = close_code,
+    .complete_node = complete_code,
     .blank_line = blank_line,
+    .peers = CODE_PEERS,
 };

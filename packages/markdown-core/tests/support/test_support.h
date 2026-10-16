@@ -70,6 +70,12 @@ void ts_require_ok(markdown_core_status status, const char *call);
 /* A node-valued field read through its accessor, which must succeed. */
 typedef markdown_core_status (*ts_node_field)(const markdown_core_node *node, const markdown_core_node **field);
 const markdown_core_node *ts_field(const markdown_core_node *node, ts_node_field accessor);
+/* A node-valued field holding a sequence of nodes, read through its
+ * accessor, which must succeed. */
+typedef markdown_core_status (*ts_nodes_field)(const markdown_core_node *node, markdown_core_nodes *field);
+markdown_core_nodes ts_nodes(const markdown_core_node *node, ts_nodes_field accessor);
+/* The child of `node` at `index`, or NULL past its children. */
+const markdown_core_node *ts_child(const markdown_core_node *node, size_t index);
 
 /* A node's source window in bytes, from where its first run starts to where
  * its last ends, resolved from the runs by the walk itself rather than by the

@@ -87,8 +87,13 @@ establishes grammar equivalence.
 
 | Stage | Core entry | Reference entry |
 | --- | --- | --- |
-| `source_to_buffer` | `markdown_core_parser_parse → S_parse_source` | `bench_parse_document → cmark_parser_feed` |
-| `buffer_to_ast` | `markdown_core_parser_parse → S_finish_parse` | `bench_parse_document → cmark_parser_finish` |
+| `source_to_buffer` | `markdown_core_parser_commit → S_parse_source` | `bench_parse_document → cmark_parser_feed` |
+| `buffer_to_ast` | `markdown_core_parser_finalize → S_finish_parse` | `bench_parse_document → cmark_parser_finish` |
+
+A stage is the call into its boundary from the one function that enters it
+from outside every stage: Markdown Core's commit and finalize each enter one,
+cmark's caller enters both, and a boundary entered again from inside a stage
+counts only in that stage.
 
 These two stages are everything the benchmark measures, and ratios use their
 sum. Creating the parser (allocating it, sealing its dialect, discovering

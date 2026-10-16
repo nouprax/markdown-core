@@ -32,7 +32,7 @@ parent stack because each field has its own inline state. No script cursor bound
 
 A heading can suspend with a field event on its ordinary stack. Its label
 contains live brackets, so it cannot declare an implicit reference; its
-remaining content resumes after the shared reference map is ready. Completing
+remaining content resumes once every writable heading has declared its label. Completing
 fields before scanning the next token preserves source order for references
 and inline footnotes. See [heading resolution](heading-resolution.md).
 
@@ -131,20 +131,21 @@ Citation's prefix/suffix collections. Source trimming only changes raw edge
 whitespace; nested markup keeps its authored scope. The finish stage
 traverses all owned inline roots using one explicit stack, and walks each root
 exactly once: a container's inline content is parsed at the container's ENTER
-(the walk then continues into the children that parse produced), inline
-completion (the element's `complete_inline`, the document's anchor
-reservation) runs at each node's ENTER, text consolidation and every element
-finish step (a reference-only paragraph's removal, a list's layout, autolink's
-email scan, a formula code fence's FormulaBlock) run at the events of that one walk, and
-a global postprocess pass receives the root after its walk completes. A step
-that declares the kinds it acts on reads that gate at each event it is asked
-at, since a kind's first node may be made by the walk itself. A Text sibling that consolidation
+(the walk then continues into the children that parse produced), a node's
+completion (the element's `complete_node`, the document's anchor
+reservation) runs at each node's ENTER, and text consolidation and every inline
+finish step (autolink's email scan) run at the events of that one walk.
+Completion takes the blocks in the order they closed, each its own root, and
+a block kind's finish steps (a list's layout, a definition list's extents)
+run at the block's EXIT as the queue reaches it. A step that
+declares the kinds it acts on reads that gate at each event it is asked at,
+since a kind's first node may be made by the walk itself. A Text sibling that consolidation
 absorbs is completed by consolidation before it is read, since its ENTER is
 stepped over. Both paths use the parser's projected finish-kind completion
 plan, with kind completion before document observation at the inherited word
 depth; consolidation does not reinterpret the absorbed Text's element.
 The document's finalization -- footnote and specimen ownership,
-heading anchors -- follows the walk and reads the finished tree. Field order and inherited script depth are retained,
+heading anchors -- follows completion and reads the finished tree. Field order and inherited script depth are retained,
 and a phase rewrites each root in place: a field root is the node its owner put
 there and no phase substitutes another for it. Definition families start
 independent contexts. Disposal splices the same owned roots into the existing
@@ -167,13 +168,11 @@ retain their ordinary/deferred grammar contract; they are not selected by input
 size or benchmark frequency. Body decoding, padding, markers and source placement
 are shared by both construction paths.
 
-A fenced code block whose info string is `formula` becomes a FormulaBlock at
-its EXIT. The rewrite reserves its destination before touching the old block,
-and the fence transfers its owned literal into a newly initialized formula
-payload. A paragraph whose only content is a standalone formula stays a
-paragraph. Trimming compacts an owned buffer in place and restores NUL
-termination, while a borrowed chunk obtains independent storage before
-mutation. Direct formula blocks detach their accumulated content buffer.
-Failure before commitment keeps the old block intact; commitment clears the
-fence's literal before releasing the old block. The finish walk still reports
-the old node as consumed, preserving observer and iterator ordering.
+A fenced code block whose info string is `formula` becomes a FormulaBlock as
+completion reaches it, in place: the node keeps its place in the tree, its range, the
+places of its lines and its content, and the new formula payload's literal is
+the fence's literal view, trimmed. A paragraph whose only content is a
+standalone formula stays a paragraph. Trimming narrows the view; no byte is
+copied or moved. A direct formula block's literal is the trimmed view of its
+content. Failure before the kind changes keeps the code block intact; the kind
+change drops the fence's literal, attributes and info.

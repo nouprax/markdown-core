@@ -28,20 +28,17 @@ static int continue_html(const markdown_core_element_instance *self, markdown_co
     return res;
 }
 
-static void finalize_html(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_node *b) {
+/* An HTML block's literal is its content; a type-2 block its own end
+ * condition closed and that holds one comment and nothing else is that
+ * comment. */
+static bool close_html(const markdown_core_element_instance *self, markdown_core_parser *parser, markdown_core_node *b,
+                       markdown_core_node *parent) {
     (void)self;
-    markdown_core_strbuf *node_content = &b->content;
-
-    int html_block_type = b->as.html_block->block_type;
-    b->as.html_block->literal = markdown_core_chunk_buf_detach(node_content);
-    if (!b->as.html_block->literal.data) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return;
+    b->as.html_block->literal = (markdown_core_chunk){b->content.ptr, b->content.size, 0};
+    if (b->as.html_block->block_type == 2 && (b->flags & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION) != 0) {
+        markdown_core_block_convert_comment_block(parser, b, parent);
     }
-    if (html_block_type == 2 && (b->flags & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION) != 0) {
-        markdown_core_block_convert_comment_block(parser, b);
-    }
+    return true;
 }
 static bool open_html(const markdown_core_element_instance *self, markdown_core_parser *parser,
                       markdown_core_node **container, markdown_core_chunk *input, block_start *start) {
@@ -104,6 +101,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_HTML_BLOCK = {
     .scan_block_gate = {.bytes = "<"},
     .last_block_matches = continue_html,
     .content_mode = MARKDOWN_CORE_CONTENT_LITERAL,
-    .finalize_block = finalize_html,
+    .close_block = close_html,
     .ends_block = ends_html,
 };

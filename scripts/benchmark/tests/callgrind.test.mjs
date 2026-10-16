@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { callEdge, calleesOf, callersOf, costRecord, parseCallgrind } from "../callgrind.mjs";
+import { callEdge, calleesOf, callersOf, costRecord, parseCallgrind, stageEntries } from "../callgrind.mjs";
 
 /**
  * A dump exercising every piece of the format the stage benchmark depends on:
@@ -100,6 +100,63 @@ test("callees are enumerated for a stage breakdown", () => {
         .map((edge) => edge.callee)
         .sort();
     assert.deepEqual(callees, ["consolidate", "read_source"]);
+});
+
+/* A transaction that enters its two stages from two functions, a commit and a
+ * finalize, the second of which reads source again from inside its stage. */
+const PHASES = `events: Ir
+fn=session
+1 10
+cfn=commit
+calls=1 1
+1 100
+cfn=finalize
+calls=1 1
+1 300
+fn=commit
+1 10
+cfn=read_source
+calls=1 1
+1 90
+fn=finalize
+1 10
+cfn=build_tree
+calls=1 1
+1 290
+fn=build_tree
+1 200
+cfn=read_cell
+calls=1 1
+1 90
+fn=read_cell
+1 10
+cfn=read_source
+calls=1 1
+1 80
+fn=read_source
+1 170
+`;
+
+test("a stage is entered by the one function that calls its boundary from outside every stage", () => {
+    const profile = parseCallgrind(DUMP);
+    // build_tree also calls read_source, but from inside its own stage.
+    assert.deepEqual(stageEntries(profile, ["read_source", "build_tree"]), ["parse_document", "parse_document"]);
+});
+
+test("stages entered from two functions are each measured from their own", () => {
+    const profile = parseCallgrind(PHASES);
+    // read_cell reaches read_source from inside the build_tree stage, two calls deep.
+    assert.deepEqual(stageEntries(profile, ["read_source", "build_tree"]), ["commit", "finalize"]);
+});
+
+test("a boundary entered from two functions outside the stages has no entry", () => {
+    const profile = parseCallgrind(`${PHASES}fn=session
+2 5
+cfn=read_source
+calls=1 1
+2 170
+`);
+    assert.equal(stageEntries(profile, ["read_source", "build_tree"]), null);
 });
 
 test("costs are named by the declared events", () => {

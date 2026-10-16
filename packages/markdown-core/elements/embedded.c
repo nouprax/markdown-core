@@ -66,7 +66,7 @@ void markdown_core_inline_apply_image_dimensions(const markdown_core_element_ins
     /* A successful suffix contains only ordinary ASCII text and belongs to
      * the final text run at this bracket depth. Remove it before delimiter
      * reduction; the prefix keeps its nodes and its original source map. */
-    markdown_core_node *tail = image->last_child;
+    markdown_core_node *tail = markdown_core_scaffold_last(image);
     assert(tail && tail->kind == MARKDOWN_CORE_NODE_TEXT && tail->as.literal->len >= end - suffix);
     bufsize_t start = end - tail->as.literal->len;
     tail->as.literal->len -= end - suffix;
