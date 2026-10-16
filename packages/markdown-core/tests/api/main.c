@@ -3370,9 +3370,9 @@ static void inspect_lazy_block_content(const markdown_core_element_instance *sel
                                              MARKDOWN_CORE_NODE_PARAGRAPH, MARKDOWN_CORE_NODE_DEFINITION_LIST};
     /* Blocks open and take content on the line the driver visits; no input
      * has begun, so stand on an empty line at the start of the source. */
-    parser->input_lines[0] = (markdown_core_input_line){0};
-    parser->input_first_line = parser->line_number;
-    parser->input_line_count = 1;
+    parser->input.lines[0] = (markdown_core_input_line){0};
+    parser->input.first_line = parser->line_number;
+    parser->input.line_count = 1;
     for (size_t i = 0; i < sizeof(kinds) / sizeof(*kinds); i++) {
         size_t before = payload_probe_snapshot().allocations;
         markdown_core_node *node = markdown_core_parser_add_child_validated(parser, parser->root, kinds[i], 1);
@@ -3430,7 +3430,7 @@ static void inspect_lazy_block_content(const markdown_core_element_instance *sel
         markdown_core_scaffold_of(parser->root)->last = NULL;
         markdown_core_parser_release_node(parser, node);
     }
-    parser->input_line_count = 0;
+    parser->input.line_count = 0;
 }
 
 static bool begin_with_lazy_block_inspection(markdown_core_dialect_builder *builder, void *context) {
@@ -4839,13 +4839,13 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
     work->inline_hooks = parser->inline_hook_work;
     work->properties_lines = properties->line_work;
     work->physical_line_bytes = parser->input_line_work;
-    work->physical_lines = parser->input_line_count;
-    work->physical_capacity = parser->input_line_capacity;
-    work->physical_facts = parser->input_fact_count;
-    work->physical_fact_capacity = parser->input_fact_capacity;
+    work->physical_lines = parser->input.line_count;
+    work->physical_capacity = parser->input.line_capacity;
+    work->physical_facts = parser->input.fact_count;
+    work->physical_fact_capacity = parser->input.fact_capacity;
     work->normalized_lines = 0;
-    for (size_t i = 0; i < parser->input_fact_count; i++) {
-        work->normalized_lines += parser->input_facts[i].normalized != NULL;
+    for (size_t i = 0; i < parser->input.fact_count; i++) {
+        work->normalized_lines += parser->input.facts[i].normalized != NULL;
     }
     work->metadata_key_bytes = properties->key_work;
     work->metadata_value_bytes = properties->decoded_bytes;
@@ -8413,31 +8413,31 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
             memset(bytes, 'a', sizeof(bytes));
             bytes[position] = (unsigned char)value;
             bytes[sizeof(bytes) - 1] = '\n';
-            markdown_core_parser input = {0};
-            input.input_source = bytes;
-            input.input_length = sizeof(bytes);
-            input.input_first_line = 1;
-            markdown_core_input_line *first = markdown_core_parser_source_line(&input, 1);
+            markdown_core_parser reader = {0};
+            reader.input.source = bytes;
+            reader.input.size = sizeof(bytes);
+            reader.input.first_line = 1;
+            markdown_core_input_line *first = markdown_core_parser_source_line(&reader, 1);
             bool split = value == '\r' || value == '\n';
             OK(runner, first && first->start == 0 && first->end == (split ? position : sizeof(bytes) - 1),
                "only CR and LF end a physical line: byte %u at %zu", value, position);
-            OK(runner, first && ((first->facts && input.input_facts[first->facts - 1].nul_count == 1) == (value == 0)),
+            OK(runner, first && ((first->facts && reader.input.facts[first->facts - 1].nul_count == 1) == (value == 0)),
                "only NUL requests normalization: byte %u", value);
-            markdown_core_input_line *second = markdown_core_parser_source_line(&input, 2);
+            markdown_core_input_line *second = markdown_core_parser_source_line(&reader, 2);
             bool remaining = split && !(value == '\r' && position == sizeof(bytes) - 2);
             OK(runner,
                remaining ? second && second->start == position + 1 && second->end == sizeof(bytes) - 1 : !second,
                "content after a word or tail boundary belongs to exactly one line: byte %u at %zu", value, position);
-            INT_EQ(runner, input.input_line_work, sizeof(bytes), "span search advances the frontier exactly once");
-            markdown_core_free(input.input_facts);
-            markdown_core_free(input.input_lines);
+            INT_EQ(runner, reader.input_line_work, sizeof(bytes), "span search advances the frontier exactly once");
+            markdown_core_free(reader.input.facts);
+            markdown_core_free(reader.input.lines);
         }
     }
     static const unsigned char source[] = "a\0b\r\nc\rd\nlast";
     markdown_core_parser parser = {0};
-    parser.input_source = source;
-    parser.input_length = sizeof(source) - 1;
-    parser.input_first_line = 7;
+    parser.input.source = source;
+    parser.input.size = sizeof(source) - 1;
+    parser.input.first_line = 7;
     static const size_t starts[] = {0, 5, 7, 9}, ends[] = {3, 6, 8, 13}, next[] = {5, 7, 9, 13};
     for (int pass = 0; pass < 3; pass++) {
         for (int i = 3; i >= 0; i--) {
@@ -8446,14 +8446,14 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
                line && line->start == starts[i] && line->end == ends[i] &&
                    markdown_core_input_line_next(&parser, line) == next[i],
                "physical line geometry is stable across lookahead and replay: %d/%d", pass, i);
-            OK(runner, line && (line->facts && parser.input_facts[line->facts - 1].nul_count != 0) == (i == 0),
+            OK(runner, line && (line->facts && parser.input.facts[line->facts - 1].nul_count != 0) == (i == 0),
                "NUL normalization is a line fact");
         }
         INT_EQ(runner, parser.input_line_work, sizeof(source) - 1, "replay never scans source geometry again");
     }
     OK(runner, !markdown_core_parser_source_line(&parser, 6) && !markdown_core_parser_source_line(&parser, 11),
        "the active input has an explicit line range");
-    INT_EQ(runner, parser.input_fact_count, 1, "only the NUL-bearing line needs optional geometry state");
+    INT_EQ(runner, parser.input.fact_count, 1, "only the NUL-bearing line needs optional geometry state");
     markdown_core_line_facts *first = markdown_core_parser_get_line_facts(&parser, 7);
     OK(runner, first != NULL, "a grammar query attaches facts to its physical line");
     if (first) {
@@ -8462,10 +8462,10 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
     markdown_core_line_facts *last = markdown_core_parser_get_line_facts(&parser, 10);
     OK(runner, last && !last->run_end && markdown_core_parser_get_line_facts(&parser, 7)->run_end == 10,
        "unrelated line queries preserve their own facts");
-    INT_EQ(runner, parser.input_fact_count, 2, "only queried lines own speculative facts");
+    INT_EQ(runner, parser.input.fact_count, 2, "only queried lines own speculative facts");
     INT_EQ(runner, parser.input_line_work, sizeof(source) - 1, "facts do not rediscover geometry");
-    markdown_core_free(parser.input_facts);
-    markdown_core_free(parser.input_lines);
+    markdown_core_free(parser.input.facts);
+    markdown_core_free(parser.input.lines);
 }
 
 static void short_line_storage_is_bounded(test_batch_runner *runner) {

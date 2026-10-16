@@ -55,7 +55,8 @@ static void S_set_last_line_blank(markdown_core_node *node, bool markdown_core_b
  * of line by declaration, so a stage that shrinks never folds into its
  * caller. */
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_parse_source(markdown_core_parser *parser,
-                                                               const unsigned char *source, size_t length);
+                                                               const unsigned char *source, size_t length,
+                                                               size_t limit);
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_node *S_finish_parse(markdown_core_parser *parser);
 static inline bool S_starts_on_line(markdown_core_parser *parser, const markdown_core_node *node, int line);
 static inline int S_append_input_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
@@ -100,12 +101,19 @@ typedef struct markdown_core_normalized_line {
     unsigned char bytes[];
 } markdown_core_normalized_line;
 
-static void S_clear_normalized_lines(markdown_core_parser *parser) {
-    while (parser->normalized_lines) {
-        markdown_core_normalized_line *line = parser->normalized_lines;
-        parser->normalized_lines = line->next;
+static void S_clear_normalized_lines(markdown_core_parser_input *input) {
+    while (input->normalized) {
+        markdown_core_normalized_line *line = input->normalized;
+        input->normalized = line->next;
         markdown_core_free(line);
     }
+}
+
+static void S_release_input(markdown_core_parser_input *input) {
+    S_clear_normalized_lines(input);
+    markdown_core_free(input->lines);
+    markdown_core_free(input->facts);
+    markdown_core_strbuf_free(&input->last_line);
 }
 
 /* A parse that ends before the end of its input leaves builders no block
@@ -136,9 +144,8 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     markdown_core_source_order_dispose(&parser->source_order);
     markdown_core_free(parser->walk_stack);
     markdown_core_free(parser->block_inputs);
-    S_clear_normalized_lines(parser);
-    markdown_core_free(parser->input_lines);
-    markdown_core_free(parser->input_facts);
+    S_release_input(&parser->input);
+    S_release_input(&parser->idle_input);
     S_release_builders(parser);
     if (parser->root) {
         markdown_core_node_free(parser->root);
@@ -231,12 +238,13 @@ void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revi
     parser->revision = revision;
     parser->pool = revision->pool;
     markdown_core_strbuf_init(&parser->curline, 256);
-    markdown_core_strbuf_init(&parser->lookahead_last_line, 0);
+    markdown_core_strbuf_init(&parser->input.last_line, 0);
+    markdown_core_strbuf_init(&parser->idle_input.last_line, 0);
     markdown_core_registry_init(&parser->registry);
     /* The line index is a parse-owned workspace, like curline. Establish its
      * initial capacity before any input; inputs reset length, never
      * ownership. */
-    parser->input_lines = markdown_core_reserve(NULL, &parser->input_line_capacity, 1, sizeof(*parser->input_lines));
+    parser->input.lines = markdown_core_reserve(NULL, &parser->input.line_capacity, 1, sizeof(*parser->input.lines));
     /* The first run of the content map is the identity an inline root's
      * parse places on (parser.h, MARKDOWN_CORE_IDENTITY_MARK): first, so that
      * no map appended after it ends with it. */
@@ -255,7 +263,7 @@ void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revi
      * failed transaction. Disposal does not depend on it having begun: the
      * lifecycle's own allocations can fail halfway, so its release already
      * takes whatever state it finds. */
-    if (!parser->root || !parser->input_lines || parser->curline.oom || parser->lookahead_last_line.oom ||
+    if (!parser->root || !parser->input.lines || parser->curline.oom || parser->input.last_line.oom ||
         parser->root->content.oom) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     } else {
@@ -270,7 +278,6 @@ static void S_release_parse(markdown_core_parser *parser) {
     markdown_core_instance *instance = (markdown_core_instance *)parser;
     S_parser_dispose(parser);
     markdown_core_strbuf_free(&parser->curline);
-    markdown_core_strbuf_free(&parser->lookahead_last_line);
     void *context = parser->context;
     memset(parser, 0, sizeof(*parser));
     parser->dialect = &instance->dialect;
@@ -511,14 +518,14 @@ int markdown_core_parser_append_content_marks(markdown_core_parser *parser, cons
  * NUL; a cell's content was copied from a normalized line. */
 static const markdown_core_normalized_line *S_nul_view_read(markdown_core_parser *parser,
                                                             markdown_core_input_line *geometry) {
-    if (!parser->input_facts[geometry->facts - 1].nul_count) {
+    if (!parser->input.facts[geometry->facts - 1].nul_count) {
         return NULL;
     }
     bufsize_t length;
     if (!S_input_line_content(parser, geometry, &length)) {
         return NULL;
     }
-    return parser->input_facts[geometry->facts - 1].normalized;
+    return parser->input.facts[geometry->facts - 1].normalized;
 }
 
 /* Only a document line with facts can carry NUL. */
@@ -576,7 +583,7 @@ bufsize_t markdown_core_parser_mapped_source_offset(markdown_core_parser *parser
  * none. */
 static bufsize_t S_mapped_line_end(markdown_core_parser *parser, bufsize_t input_offset) {
     const markdown_core_content_map *map = &markdown_core_parser_block_root(parser)->content_map;
-    const unsigned char *content = parser->input_source;
+    const unsigned char *content = parser->input.source;
     bufsize_t at = input_offset;
     int ignored;
     bufsize_t source = 0;
@@ -630,7 +637,7 @@ static inline bufsize_t S_line_offset(markdown_core_parser *parser, int line) {
 }
 
 static inline bool S_starts_on_line(markdown_core_parser *parser, const markdown_core_node *node, int line) {
-    if (line < parser->input_first_line || line > parser->line_number) {
+    if (line < parser->input.first_line || line > parser->line_number) {
         return false;
     }
     uint32_t start = node->where.place.start;
@@ -707,10 +714,10 @@ void markdown_core_parser_line_places(markdown_core_parser *parser, markdown_cor
     if (container == parser->root) {
         return;
     }
-    const int visited = parser->input_first_line + (int)parser->input_line_count - 1;
+    const int visited = parser->input.first_line + (int)parser->input.line_count - 1;
     const uint32_t start = node->where.place.start, end = node->where.place.end;
     int first = *line;
-    while (first > parser->input_first_line && (uint32_t)S_line_offset(parser, first) > start) {
+    while (first > parser->input.first_line && (uint32_t)S_line_offset(parser, first) > start) {
         first--;
     }
     /* Down the lines from there: one that begins at or before the start is
@@ -790,7 +797,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) int S_append_nul_line_marks(markdown_
  * starts at `line_start` in the active input. */
 static inline int S_append_input_marks(markdown_core_parser *parser, markdown_core_node *node, int line,
                                        bufsize_t line_start, int column, bufsize_t length, bufsize_t offset) {
-    if (!parser->input_mapped) {
+    if (!parser->input.mapped) {
         return S_append_copied_mark(parser, node, line, line_start + column - 1, offset);
     }
     if (markdown_core_parser_block_root(parser) == parser->root) {
@@ -1831,20 +1838,18 @@ static int walk_owned_trees(markdown_core_parser *parser) {
 
 /* THE END OF THE BLOCK PHASE: every block still open closes at the end of
  * the input, the blocks of the table cells queued for it are read, and the
- * document closes last, so it is the last block the queue holds. Reading the
- * cells moves the line state to theirs; the document ends where the input
- * did. */
+ * document closes last, so it is the last block the queue holds, where its
+ * input ended. */
 static void S_parse_block_inputs(markdown_core_parser *parser);
 static void S_close_document(markdown_core_parser *parser) {
     markdown_core_node *root = parser->root;
     markdown_core_parser_close_below(parser, root);
     S_settle_pending(parser, root);
-    bufsize_t input_end = parser->last_line_end;
     S_parse_block_inputs(parser);
     if (parser->error) {
         return;
     }
-    root->where.place.end = (uint32_t)input_end;
+    root->where.place.end = (uint32_t)parser->last_line_end;
     root->flags &= ~MARKDOWN_CORE_NODE__OPEN;
     if (S_close(parser, root, NULL)) {
         S_complete_later(parser, root, NULL);
@@ -1853,25 +1858,32 @@ static void S_close_document(markdown_core_parser *parser) {
 
 /* Each queued cell is the root of its own input: the stack holds only the
  * cell while its content is read, and its blocks settle into it as the input
- * ends. */
+ * ends. The cells are read on the idle input's storage, and the document's
+ * input and line state wait unchanged until they are read. */
 static void S_parse_block_inputs(markdown_core_parser *parser) {
+    if (parser->block_input_cursor == parser->block_input_count) {
+        return;
+    }
+    const markdown_core_parser_input document = parser->input;
+    const int line_number = parser->line_number;
+    const bufsize_t line_start = parser->line_start, line_end = parser->line_end;
+    const bufsize_t last_line_end = parser->last_line_end;
+    const unsigned char *lookahead_cursor = parser->lookahead_cursor;
+    parser->input = parser->idle_input;
     while (parser->block_input_cursor < parser->block_input_count && !parser->error) {
         const markdown_core_block_input input = parser->block_inputs[parser->block_input_cursor++];
         markdown_core_node *owner = input.owner;
         parser->block_root = parser->current = owner;
         parser->input_enclosing = input.enclosing;
-        parser->input_line_count = 0;
-        parser->input_fact_count = 0;
-        parser->input_first_line = parser->line_marks[owner->content_map.first].line;
-        parser->line_number = parser->input_first_line - 1;
+        parser->line_number = parser->line_marks[owner->content_map.first].line - 1;
         parser->last_line_end = parser->line_marks[owner->content_map.first].source;
         owner->flags |= MARKDOWN_CORE_NODE__OPEN;
-        S_parse_source(parser, owner->content.ptr, (size_t)owner->content.size);
+        S_parse_source(parser, owner->content.ptr, (size_t)owner->content.size, (size_t)owner->content.size);
         /* A failed read ends the parse where it failed, as a failed commit
          * does: nothing open closes, and the builders open in the cell are
          * released with the parse. */
         if (parser->error) {
-            return;
+            break;
         }
         markdown_core_parser_close_below(parser, owner);
         S_settle_pending(parser, owner);
@@ -1881,14 +1893,28 @@ static void S_parse_block_inputs(markdown_core_parser *parser) {
         owner->content_map.count = 0;
         owner->content_map.offset = 0;
     }
-    parser->block_root = parser->current = parser->root;
-    parser->input_enclosing = 0;
+    parser->idle_input = parser->input;
+    parser->input = document;
+    parser->line_number = line_number;
+    parser->line_start = line_start;
+    parser->line_end = line_end;
+    parser->last_line_end = last_line_end;
+    parser->lookahead_cursor = lookahead_cursor;
+    if (!parser->error) {
+        parser->block_root = parser->current = parser->root;
+        parser->input_enclosing = 0;
+    }
 }
 
-void markdown_core_parser_commit(markdown_core_parser *parser, const char *source, size_t length) {
+bool markdown_core_parser_commit(markdown_core_parser *parser, const char *source, size_t length, size_t limit) {
     if (!parser->error) {
-        S_parse_source(parser, (const unsigned char *)source, length);
+        S_parse_source(parser, (const unsigned char *)source, length, limit);
     }
+    return !parser->error;
+}
+
+size_t markdown_core_parser_commit_point(const markdown_core_parser *parser) {
+    return parser->end_seen ? (size_t)parser->end_seen_at : parser->input.complete;
 }
 
 markdown_core_node *markdown_core_parser_finalize(markdown_core_parser *parser) {
@@ -1896,6 +1922,8 @@ markdown_core_node *markdown_core_parser_finalize(markdown_core_parser *parser) 
     S_release_parse(parser);
     return document;
 }
+
+void markdown_core_parser_discard(markdown_core_parser *parser) { S_release_parse(parser); }
 
 markdown_core_node *markdown_core_parser_snapshot(markdown_core_parser *parser) {
     parser->snapshot = true;
@@ -1916,7 +1944,7 @@ static const unsigned char *S_normalize_input_line(markdown_core_parser *parser,
     view->nuls = (uint32_t *)(void *)(view->bytes + bytes);
     unsigned char *out = view->bytes;
     for (size_t at = line->start; at < line->end; at++) {
-        unsigned char byte = parser->input_source[at];
+        unsigned char byte = parser->input.source[at];
         if (byte) {
             *out++ = byte;
         } else {
@@ -1928,8 +1956,8 @@ static const unsigned char *S_normalize_input_line(markdown_core_parser *parser,
     }
     *out++ = '\n';
     *out = 0;
-    view->next = parser->normalized_lines;
-    parser->normalized_lines = view;
+    view->next = parser->input.normalized;
+    parser->input.normalized = view;
     facts->normalized = view;
     return view->bytes;
 }
@@ -1937,13 +1965,13 @@ static const unsigned char *S_normalize_input_line(markdown_core_parser *parser,
 static inline const unsigned char *S_input_line_content(markdown_core_parser *parser, markdown_core_input_line *line,
                                                         bufsize_t *length) {
     size_t size = line->end - line->start;
-    markdown_core_line_facts *facts = line->facts ? &parser->input_facts[line->facts - 1] : NULL;
+    markdown_core_line_facts *facts = line->facts ? &parser->input.facts[line->facts - 1] : NULL;
     uint32_t nul_count = facts ? facts->nul_count : 0;
     /* Raw geometry is bounded when its input is installed. Only expansion
      * needs an additional bound at this allocation boundary. */
     *length = (bufsize_t)size;
     if (!nul_count) {
-        return parser->input_source + line->start;
+        return parser->input.source + line->start;
     }
     if (nul_count > ((size_t)(INT32_MAX / 2) - size) / 2) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
@@ -1990,22 +2018,22 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) const
  * is explicit: both GCC and Clang may otherwise outline this per-line step. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
     markdown_core_input_line *S_extend_source_lines(markdown_core_parser *parser, size_t index) {
-    assert(parser->input_length <= MARKDOWN_CORE_SOURCE_CAPACITY);
-    while (index >= parser->input_line_count && parser->input_scanned < parser->input_length) {
-        if (parser->input_line_count == parser->input_line_capacity) {
-            void *lines = markdown_core_reserve(parser->input_lines, &parser->input_line_capacity,
-                                                parser->input_line_count + 1, sizeof(*parser->input_lines));
+    assert(parser->input.size <= MARKDOWN_CORE_SOURCE_CAPACITY);
+    while (index >= parser->input.line_count && parser->input.scanned < parser->input.size) {
+        if (parser->input.line_count == parser->input.line_capacity) {
+            void *lines = markdown_core_reserve(parser->input.lines, &parser->input.line_capacity,
+                                                parser->input.line_count + 1, sizeof(*parser->input.lines));
             if (!lines) {
                 markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
                 return NULL;
             }
-            parser->input_lines = lines;
+            parser->input.lines = lines;
         }
-        markdown_core_input_line entry = {.start = (uint32_t)parser->input_scanned};
+        markdown_core_input_line entry = {.start = (uint32_t)parser->input.scanned};
         uint32_t nul_count = 0;
-        const unsigned char *source = parser->input_source;
+        const unsigned char *source = parser->input.source;
         const unsigned char *cursor = source + entry.start;
-        const unsigned char *end = source + parser->input_length;
+        const unsigned char *end = source + parser->input.size;
         /* Scan spans ending at a line boundary or a normalization boundary.
          * The NUL count changes only at the latter, not on every source byte. */
         for (;;) {
@@ -2029,21 +2057,22 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
                 return NULL;
             }
             facts->nul_count = nul_count;
-            parser->input_mapped = true;
+            parser->input.mapped = true;
         }
-        parser->input_scanned = (size_t)(cursor - source);
-        parser->input_line_work += parser->input_scanned - entry.start;
-        parser->input_lines[parser->input_line_count++] = entry;
+        parser->input.scanned = (size_t)(cursor - source);
+        parser->input_line_work += parser->input.scanned - entry.start;
+        parser->input.lines[parser->input.line_count++] = entry;
     }
-    return index < parser->input_line_count ? &parser->input_lines[index] : NULL;
+    return index < parser->input.line_count ? &parser->input.lines[index] : NULL;
 }
 
 /* External speculative readers share the driver's scanner. The driver calls
  * the static inline body directly, including when it advances the frontier. */
 markdown_core_input_line *markdown_core_parser_extend_source_lines(markdown_core_parser *parser, size_t index) {
     markdown_core_input_line *found = S_extend_source_lines(parser, index);
-    /* A line asked past the last one is a reading of the input's end. */
-    if (!found && !parser->error) {
+    /* A line asked past the last one, or the last one before it is complete,
+     * is a reading of the input's end. */
+    if (found ? found->start >= parser->input.complete : !parser->error) {
         markdown_core_parser_see_end(parser);
     }
     return found;
@@ -2051,39 +2080,66 @@ markdown_core_input_line *markdown_core_parser_extend_source_lines(markdown_core
 
 markdown_core_line_facts *markdown_core_parser_extend_line_facts(markdown_core_parser *parser,
                                                                  markdown_core_input_line *line) {
-    void *facts = markdown_core_reserve(parser->input_facts, &parser->input_fact_capacity, parser->input_fact_count + 1,
-                                        sizeof(*parser->input_facts));
+    void *facts = markdown_core_reserve(parser->input.facts, &parser->input.fact_capacity, parser->input.fact_count + 1,
+                                        sizeof(*parser->input.facts));
     if (!facts) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return NULL;
     }
-    parser->input_facts = facts;
-    markdown_core_line_facts *entry = &parser->input_facts[parser->input_fact_count++];
+    parser->input.facts = facts;
+    markdown_core_line_facts *entry = &parser->input.facts[parser->input.fact_count++];
     *entry = (markdown_core_line_facts){0};
-    line->facts = (uint32_t)parser->input_fact_count;
+    line->facts = (uint32_t)parser->input.fact_count;
     return entry;
 }
 
-static void S_parse_source(markdown_core_parser *parser, const unsigned char *source, size_t length) {
+/* Where the last complete line of `source` ends (parser.h, input_complete). */
+static size_t S_complete_end(const unsigned char *source, size_t length) {
+    size_t end = length;
+    if (end && source[end - 1] == '\r') {
+        end--;
+    }
+    while (end && source[end - 1] != '\n' && source[end - 1] != '\r') {
+        end--;
+    }
+    return end;
+}
+
+/* THE DRIVER: reads the lines of `source` that start before `limit` as the
+ * active input. A cell's content is an input of its own, installed and read
+ * whole. The document's text is installed at its first commit and grows at
+ * its end from one commit to the next, so its lines keep their geometry and
+ * facts and the driver continues from the line it stopped before; the
+ * envelope at its start is read with its first line. */
+static void S_parse_source(markdown_core_parser *parser, const unsigned char *source, size_t length, size_t limit) {
     assert(length <= MARKDOWN_CORE_SOURCE_CAPACITY);
-    S_clear_normalized_lines(parser);
-    parser->input_source = source;
-    parser->input_length = length;
-    parser->input_scanned = 0;
-    parser->input_line_count = 0;
-    parser->input_fact_count = 0;
     bool at_root = markdown_core_parser_block_root(parser) == parser->root;
-    parser->input_mapped = !at_root;
-    parser->input_first_line = parser->line_number + 1;
-    parser->lookahead_last_line_ready = false;
-    if (at_root) {
-        parser->end_seen = false;
-        parser->line_start = 0;
+    if (!at_root || !parser->input.source) {
+        S_clear_normalized_lines(&parser->input);
+        parser->input.scanned = 0;
+        parser->input.line_count = 0;
+        parser->input.fact_count = 0;
+        parser->input.mapped = !at_root;
+        parser->input.first_line = parser->line_number + 1;
+        if (at_root) {
+            parser->end_seen = false;
+            parser->line_start = 0;
+        }
+    }
+    parser->input.source = source;
+    parser->input.size = length;
+    parser->input.complete = at_root ? S_complete_end(source, length) : length;
+    parser->input.last_line_ready = false;
+    if (at_root && !parser->line_number && limit) {
         const markdown_core_element_instance *document = parser->dialect->document_structure;
         document->element->read_document_prefix(document, parser, source, length);
     }
     while (!parser->error) {
-        size_t index = (size_t)(parser->line_number + 1 - parser->input_first_line);
+        size_t index = (size_t)(parser->line_number + 1 - parser->input.first_line);
+        size_t start = index < parser->input.line_count ? parser->input.lines[index].start : parser->input.scanned;
+        if (start >= limit) {
+            break;
+        }
         markdown_core_input_line *found = S_extend_source_lines(parser, index);
         if (!found) {
             break;
@@ -2494,25 +2550,25 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
         if (!content) {
             return 0;
         }
-        next = parser->input_source + markdown_core_input_line_next(parser, geometry);
+        next = parser->input.source + markdown_core_input_line_next(parser, geometry);
         parser->block_lookahead_work++;
-        if (geometry->facts && parser->input_facts[geometry->facts - 1].nul_count) {
+        if (geometry->facts && parser->input.facts[geometry->facts - 1].nul_count) {
             input.data = (unsigned char *)content;
             input.len = content_length + 1;
-        } else if (next == parser->input_source + geometry->end) {
+        } else if (next == parser->input.source + geometry->end) {
             /* A line without a terminator, the input's last, normalized once:
              * the matchers read a line through its terminator. */
-            if (!parser->lookahead_last_line_ready) {
-                markdown_core_strbuf_set(&parser->lookahead_last_line, content, content_length);
-                markdown_core_strbuf_putc(&parser->lookahead_last_line, '\n');
-                if (parser->lookahead_last_line.oom) {
+            if (!parser->input.last_line_ready) {
+                markdown_core_strbuf_set(&parser->input.last_line, content, content_length);
+                markdown_core_strbuf_putc(&parser->input.last_line, '\n');
+                if (parser->input.last_line.oom) {
                     markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
                     return 0;
                 }
-                parser->lookahead_last_line_ready = true;
+                parser->input.last_line_ready = true;
             }
-            input.data = parser->lookahead_last_line.ptr;
-            input.len = parser->lookahead_last_line.size;
+            input.data = parser->input.last_line.ptr;
+            input.len = parser->input.last_line.size;
         } else {
             input.data = (unsigned char *)start;
             input.len = (bufsize_t)(next - start);

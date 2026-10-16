@@ -4,16 +4,17 @@
  * reading reached the end of the document's input decided something only
  * while no more text follows, so the parser records it: every reading that
  * asks whether the input goes on asks `markdown_core_parser_input_ends`, or
- * asks for a line past the last one, and both record the line that asked
- * (parser.h).
+ * asks the line index for a line, and both record the line that asked when
+ * it reads past the last complete line (parser.h).
  *
  * A reading that compares a position with the input's end itself decides
  * from the end without the record, and the commit then keeps a decision the
  * next append can change. Nothing fails at once: the stream diverges from a
  * fresh parse only when text arrives after that line. So the rule is held
  * here, over a closed set of names: the parser's view of the end -- the
- * input's length, how far its scanner has read, and the record -- is read
- * only by the entry, the scanner and the driver that installs an input.
+ * input's length, where its last complete line ends, how far its scanner has
+ * read, and the record -- is read only by the entry, the line index, the
+ * driver that installs an input and the commit point.
  */
 
 import fs from "node:fs";
@@ -24,17 +25,20 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const pkg = path.join(root, "packages/markdown-core");
 
-const END_VIEW = /\bparser->(input_length|input_scanned|end_seen_at|end_seen)\b/g;
+const END_VIEW = /\bparser->(input\.(size|complete|scanned)|end_seen_at|end_seen)\b/g;
 
 /** The functions that own the end: the entry and its record (parser.h), the
- * line index's frontier, the physical-line scanner and the driver that
- * installs an input (blocks.c). */
+ * line index's frontier, the physical-line scanner, the line index's entry
+ * for readers, the driver that installs an input and the commit point the
+ * record leaves (blocks.c). */
 const OWNERS = new Set([
     "core/parser.h:markdown_core_parser_see_end",
     "core/parser.h:markdown_core_parser_input_ends",
     "core/parser.h:markdown_core_input_line_next",
     "core/blocks.c:S_extend_source_lines",
-    "core/blocks.c:S_parse_source"
+    "core/blocks.c:markdown_core_parser_extend_source_lines",
+    "core/blocks.c:S_parse_source",
+    "core/blocks.c:markdown_core_parser_commit_point"
 ]);
 
 function librarySources() {

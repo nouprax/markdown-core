@@ -122,6 +122,39 @@ typedef struct markdown_core_block_input {
     uint32_t enclosing;
 } markdown_core_block_input;
 
+/* AN INPUT the block parser reads: its bytes, and the geometry and grammar
+ * facts of its lines. The driver and lookahead extend one index; a source
+ * byte is scanned for line geometry once, whether the input is the
+ * document or a mapped cell. A cell's content is read as an input of its
+ * own, beside the document's, which keeps its index (blocks.c,
+ * S_parse_block_inputs). */
+typedef struct markdown_core_parser_input {
+    const unsigned char *source;
+    size_t size, scanned;
+    /* Where the input's last complete line ends: a line ending with `\n`,
+     * or with `\r` and another byte after it. A reading at or past it reads
+     * the end of the input (markdown_core_parser_input_ends). A cell's
+     * content is complete when it is read, so this is its size. */
+    size_t complete;
+    struct markdown_core_input_line *lines;
+    struct markdown_core_normalized_line *normalized;
+    struct markdown_core_line_facts *facts;
+    size_t fact_count, fact_capacity;
+    size_t line_count, line_capacity;
+    /* Whether a column of the input may stand elsewhere than the same
+     * offset from its line's start in the source: true for a cell's content,
+     * and for the document once its scan finds NUL, which the block parser
+     * reads as the three bytes of U+FFFD. */
+    bool mapped;
+    int first_line;
+    /* The input's last line as the block parser will see it, normalized once
+     * and reused by every lookahead that reaches it: it has no terminator of
+     * its own in the source, and a line handed to the prefix matchers must
+     * end in one. */
+    markdown_core_strbuf last_line;
+    bool last_line_ready;
+} markdown_core_parser_input;
+
 struct markdown_core_parser {
     /* Every definition and explicit anchor the parse declared (registry.h):
      * the block phase declares definitions as it reads them, the headings
@@ -190,22 +223,12 @@ struct markdown_core_parser {
      * none for the document, and a cell's `enclosing` while its content is
      * read. */
     uint32_t input_enclosing;
-    /* Geometry and grammar facts for the active immutable input. The driver
-     * and lookahead extend one index; a source byte is scanned for line
-     * geometry once, whether the input is the document or a mapped cell. */
-    const unsigned char *input_source;
-    size_t input_length, input_scanned;
-    struct markdown_core_input_line *input_lines;
-    struct markdown_core_normalized_line *normalized_lines;
-    struct markdown_core_line_facts *input_facts;
-    size_t input_fact_count, input_fact_capacity;
-    size_t input_line_count, input_line_capacity;
-    /* Whether a column of the active input may stand elsewhere than the
-     * same offset from its line's start in the source: true for a cell's
-     * content, and for the document once its scan finds NUL, which the block
-     * parser reads as the three bytes of U+FFFD. */
-    bool input_mapped;
-    int input_first_line;
+    /* The active input: the document's text, or a table cell's content
+     * while its blocks are read. */
+    markdown_core_parser_input input;
+    /* The input that is not active: the storage the cells' inputs reuse
+     * while the document's input is read, kept for the next cell. */
+    markdown_core_parser_input idle_input;
     size_t input_line_work;
     /* A complete candidate may consume through a later source boundary. The
      * source driver advances to it after the current line has finished. */
@@ -295,12 +318,6 @@ struct markdown_core_parser {
      * (markdown_core_parser_input_ends). */
     bool end_seen;
     bufsize_t end_seen_at;
-    /* The input's last line as the block parser will see it, normalized once
-     * and reused by every lookahead that reaches it: it has no terminator of
-     * its own in the source, and a line handed to the prefix matchers must
-     * end in one. */
-    markdown_core_strbuf lookahead_last_line;
-    bool lookahead_last_line_ready;
     /* The open containers a lookahead matches, root first, with the flags
      * each had when it began: the builders from the active input's root to
      * the block's parent (markdown_core_parser_lookahead_begin). Owned by the
@@ -652,7 +669,7 @@ typedef struct markdown_core_line_facts {
 static inline size_t markdown_core_input_line_next(const markdown_core_parser *parser,
                                                    const markdown_core_input_line *line) {
     const markdown_core_input_line *next = line + 1;
-    return next < parser->input_lines + parser->input_line_count ? next->start : parser->input_scanned;
+    return next < parser->input.lines + parser->input.line_count ? next->start : parser->input.scanned;
 }
 
 /* Returned pointers are borrowed until the next request that grows the
@@ -660,22 +677,23 @@ static inline size_t markdown_core_input_line_next(const markdown_core_parser *p
 markdown_core_input_line *markdown_core_parser_extend_source_lines(markdown_core_parser *parser, size_t index);
 
 static inline markdown_core_input_line *markdown_core_parser_source_line(markdown_core_parser *parser, int line) {
-    if (line < parser->input_first_line || parser->error) {
+    if (line < parser->input.first_line || parser->error) {
         return NULL;
     }
-    size_t index = (size_t)(line - parser->input_first_line);
-    return index < parser->input_line_count ? &parser->input_lines[index]
+    size_t index = (size_t)(line - parser->input.first_line);
+    return index < parser->input.line_count ? &parser->input.lines[index]
                                             : markdown_core_parser_extend_source_lines(parser, index);
 }
 
 /* THE END OF THE ACTIVE INPUT, learned in one place. Every reading that
  * asks whether the input goes on past a position asks here, or asks for a
- * line past the last one (markdown_core_parser_source_line); nothing else
- * compares a position with the input's end. `cursor` is a position of the
- * active input. When it is the end and the input is the document's, the
- * parser records the line that asked (`end_seen`): its decisions hold only
- * while no more text follows. A table cell's input is complete when it is
- * read, so its end records nothing. */
+ * line after the ones the driver reached (markdown_core_parser_source_line);
+ * nothing else compares a position with the input's end. `cursor` is a
+ * position of the active input. A reading at or past the end of the last
+ * complete line reads what more text can change, so when the input is the
+ * document's the parser records the line that asked (`end_seen`): its
+ * decisions hold only while no more text follows. A table cell's input is
+ * complete when it is read, so its end records nothing. */
 static inline void markdown_core_parser_see_end(markdown_core_parser *parser) {
     if (!parser->end_seen && markdown_core_parser_block_root(parser) == parser->root) {
         parser->end_seen = true;
@@ -684,13 +702,12 @@ static inline void markdown_core_parser_see_end(markdown_core_parser *parser) {
 }
 
 static inline bool markdown_core_parser_input_ends(markdown_core_parser *parser, const unsigned char *cursor) {
-    const unsigned char *end = parser->input_source + parser->input_length;
-    assert(cursor >= parser->input_source && cursor <= end);
-    if (cursor != end) {
-        return false;
+    const unsigned char *end = parser->input.source + parser->input.size;
+    assert(cursor >= parser->input.source && cursor <= end);
+    if (cursor >= parser->input.source + parser->input.complete) {
+        markdown_core_parser_see_end(parser);
     }
-    markdown_core_parser_see_end(parser);
-    return true;
+    return cursor == end;
 }
 
 /* Optional state is sparse within the input index: properties and ordinary
@@ -703,7 +720,7 @@ static inline markdown_core_line_facts *markdown_core_parser_get_line_facts(mark
     if (!line) {
         return NULL;
     }
-    return line->facts ? &parser->input_facts[line->facts - 1] : markdown_core_parser_extend_line_facts(parser, line);
+    return line->facts ? &parser->input.facts[line->facts - 1] : markdown_core_parser_extend_line_facts(parser, line);
 }
 
 /* A container of a lookahead's chain, and its flags as the lookahead began. */
@@ -789,9 +806,9 @@ bufsize_t markdown_core_parser_mapped_source_end(markdown_core_parser *parser, i
 /* The geometry of input line `line`, which the driver has already visited. */
 static inline markdown_core_input_line *markdown_core_parser_visited_line(const markdown_core_parser *parser,
                                                                           int line) {
-    size_t index = (size_t)(line - parser->input_first_line);
-    assert(line >= parser->input_first_line && index < parser->input_line_count);
-    return &parser->input_lines[index];
+    size_t index = (size_t)(line - parser->input.first_line);
+    assert(line >= parser->input.first_line && index < parser->input.line_count);
+    return &parser->input.lines[index];
 }
 
 /* An input that is not mapped is a copy of its source, so a line's column c
@@ -799,14 +816,14 @@ static inline markdown_core_input_line *markdown_core_parser_visited_line(const 
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bufsize_t
     markdown_core_parser_source_offset(markdown_core_parser *parser, int line, int column) {
     const markdown_core_input_line *geometry = markdown_core_parser_visited_line(parser, line);
-    return !parser->input_mapped ? (bufsize_t)geometry->start + column - 1
+    return !parser->input.mapped ? (bufsize_t)geometry->start + column - 1
                                  : markdown_core_parser_mapped_source_offset(parser, line, column);
 }
 
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bufsize_t
     markdown_core_parser_source_end(markdown_core_parser *parser, int line, int column) {
     const markdown_core_input_line *geometry = markdown_core_parser_visited_line(parser, line);
-    return !parser->input_mapped ? (bufsize_t)geometry->start + column
+    return !parser->input.mapped ? (bufsize_t)geometry->start + column
                                  : markdown_core_parser_mapped_source_end(parser, line, column);
 }
 /* Where the first byte of input line `line` was written: the document line's
@@ -883,17 +900,28 @@ static inline bool markdown_core_parser_sees(const markdown_core_parser *parser,
  * could not be allocated. */
 markdown_core_parser *markdown_core_parser_create(const markdown_core_element *const *elements, size_t count,
                                                   markdown_core_parser_setup_func setup, void *context);
-/* A PARSE IS A START, A COMMIT AND A FINALIZE, one transaction at a time on
+/* A PARSE IS A START, COMMITS AND A FINALIZE, one transaction at a time on
  * an instance. `start` begins a transaction that continues what `revision`
  * says, with the storage it lends (above). `commit` reads the lines of
- * `source`, which the transaction borrows until it ends. `finalize` ends the
- * input there: every block still open closes, the closed blocks complete,
- * and the tree is published and returned, or NULL when the transaction
- * failed. It releases the transaction's state, so an instance runs any
- * number of them, each as the first. */
+ * `source` that start before `limit`, from where the transaction's last
+ * commit stopped: the text of every commit of a transaction is the one
+ * before it with bytes added at its end, and it is borrowed until the next
+ * commit or the end of the transaction; false when the transaction failed.
+ * `finalize` ends the input there:
+ * every block still open closes, the closed blocks complete, and the tree is
+ * published and returned, or NULL when the transaction failed. `discard`
+ * ends a transaction and returns nothing. Both release the transaction's
+ * state, so an instance runs any number of them, each as the first. */
 void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revision *revision);
-void markdown_core_parser_commit(markdown_core_parser *parser, const char *source, size_t length);
+bool markdown_core_parser_commit(markdown_core_parser *parser, const char *source, size_t length, size_t limit);
 markdown_core_node *markdown_core_parser_finalize(markdown_core_parser *parser);
+void markdown_core_parser_discard(markdown_core_parser *parser);
+/* THE COMMIT POINT the lines read so far leave (plan 5.1, 5.3): where the
+ * first line that read the end of the input starts, or the end of the last
+ * complete line when none did. Every line before it decided only from bytes
+ * that more text leaves as they are, so a commit with this limit reads them
+ * as a parse of any longer text does. */
+size_t markdown_core_parser_commit_point(const markdown_core_parser *parser);
 /* A finalize whose tree is a snapshot (`snapshot` above). */
 markdown_core_node *markdown_core_parser_snapshot(markdown_core_parser *parser);
 void markdown_core_parser_destroy(markdown_core_parser *parser);

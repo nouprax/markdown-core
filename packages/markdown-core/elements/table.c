@@ -2195,7 +2195,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool table_grammar_admits
     if (!line) {
         return false;
     }
-    const unsigned char *end = parser->input_source + line->end;
+    const unsigned char *end = parser->input.source + line->end;
     const unsigned char *byte = cursor;
     while (byte < end && markdown_core_is_space_or_tab(*byte)) {
         byte++;
