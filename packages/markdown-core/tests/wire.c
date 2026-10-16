@@ -195,6 +195,17 @@ static void check_session(void) {
         markdown_core_session_text(session, text);
     }
     check(size == strlen(expected) && memcmp(text, expected, size) == 0, "the session's text follows its steps");
+    message = markdown_core_wire_session_finalize(session);
+    check(message != NULL && message_status(message) == 0, "finalize answers with the final document");
+    markdown_core_wire_free(message);
+    message = markdown_core_wire_session_append(session, (const uint8_t *)"x", 1);
+    check(message != NULL && message_status(message) == MARKDOWN_CORE_SESSION_FINALIZED,
+          "an append after finalize answers SESSION_FINALIZED");
+    markdown_core_wire_free(message);
+    message = markdown_core_wire_session_finalize(session);
+    check(message != NULL && message_status(message) == MARKDOWN_CORE_SESSION_FINALIZED,
+          "a finalize after finalize answers SESSION_FINALIZED");
+    markdown_core_wire_free(message);
     markdown_core_session_free(session);
 }
 

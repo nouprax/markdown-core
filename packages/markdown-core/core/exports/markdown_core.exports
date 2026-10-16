@@ -82,6 +82,7 @@ _markdown_core_reference_label
 _markdown_core_scopes_free
 _markdown_core_session_append
 _markdown_core_session_document
+_markdown_core_session_finalize
 _markdown_core_session_free
 _markdown_core_session_new
 _markdown_core_session_text

@@ -19,6 +19,11 @@ const sessions = new FinalizationRegistry<number>((session) => native.markdown_c
  * continues an old node keeps its `id`. Every document a session returns is an
  * immutable value that borrows nothing.
  *
+ * The caller ends the text with `finalize()`, which returns the final
+ * document; nothing ends a session implicitly. Afterwards `document` and
+ * `text` stay readable, and adding text or finalizing again throws
+ * `MarkdownCoreError` `sessionFinalized`.
+ *
  * The session's state lives in WebAssembly: `dispose()` releases it,
  * and a session collected without it is released then.
  */
@@ -75,7 +80,7 @@ export class MarkdownSession {
 
     /** Appends `text` and parses the result. Throws `MarkdownCoreError`
      * `allocationFailed` when an allocation fails or the text would exceed
-     * 1 GiB. */
+     * 1 GiB, and `sessionFinalized` after `finalize()`. */
     append(text: string): Document {
         const session = this.#open();
         const bytes = utf8Encoder.encode(text);
@@ -87,6 +92,15 @@ export class MarkdownSession {
         } finally {
             if (textPointer) native.free(textPointer);
         }
+    }
+
+    /** Ends the text and returns the final document, which equals
+     * `Document.parse` of `text` in everything but ids. Throws
+     * `MarkdownCoreError` `allocationFailed` when an allocation fails, and
+     * `sessionFinalized` when the session was already finalized. */
+    finalize(): Document {
+        const message = native.markdown_core_wire_session_finalize(this.#open());
+        return (this.#document = decodeMessage(native, message, this.unit));
     }
 
     /** Releases the session's WebAssembly state; a second call does nothing.

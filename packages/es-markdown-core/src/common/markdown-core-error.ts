@@ -8,9 +8,11 @@
  *   not an integer of at least 1;
  * - `"kindMismatch"`: a value is not of the kind the call reads; no call of
  *   this binding reads a kind the tree has not already typed, so none reports
- *   it.
+ *   it;
+ * - `"sessionFinalized"`: a session was asked for another step after its
+ *   `finalize()`.
  */
-export type ErrorCode = "allocationFailed" | "outOfBounds" | "kindMismatch";
+export type ErrorCode = "allocationFailed" | "outOfBounds" | "kindMismatch" | "sessionFinalized";
 
 /** The one error every public call of the library throws, carrying its code. */
 export class MarkdownCoreError extends Error {

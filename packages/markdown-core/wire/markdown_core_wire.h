@@ -30,10 +30,11 @@ uint8_t *markdown_core_wire_parse(const uint8_t *source, size_t length);
  * markdown_core_wire_session_new makes `*session` from `length` bytes of
  * `source`, columns counted in `unit`; `*session` is NULL unless the message
  * is its document. markdown_core_wire_session_append appends `size` bytes of
- * `text`. */
+ * `text`, and markdown_core_wire_session_finalize ends the session's text. */
 uint8_t *markdown_core_wire_session_new(const uint8_t *source, size_t length, markdown_core_text_unit unit,
                                         markdown_core_session **session);
 uint8_t *markdown_core_wire_session_append(markdown_core_session *session, const uint8_t *text, size_t size);
+uint8_t *markdown_core_wire_session_finalize(markdown_core_session *session);
 
 /* Releases a message returned by any function above. */
 void markdown_core_wire_free(uint8_t *message);

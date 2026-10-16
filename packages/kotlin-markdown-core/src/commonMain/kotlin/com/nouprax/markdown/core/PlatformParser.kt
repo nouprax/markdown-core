@@ -17,6 +17,9 @@ internal interface PlatformSession {
     /** Appends the UTF-8 [text]. */
     fun append(text: ByteArray): Document
 
+    /** Ends the text: the final document. */
+    fun end(): Document
+
     /** The session's text in UTF-8. */
     fun text(): ByteArray
 
