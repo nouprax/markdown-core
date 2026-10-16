@@ -5,12 +5,13 @@
 #include "../include/markdown_core.h"
 #include "../core/parser.h"
 
-/* Children are one owned row chain; group counts partition it. The parser
- * appends head, content, then foot rows in that order. */
+/* Children are the table's rows; the group counts partition them and are
+ * counted as children are. The parser appends head, content, then foot rows
+ * in that order. */
 typedef struct {
     size_t column_count;
     markdown_core_table_column *columns;
-    size_t head_count, content_count, foot_count;
+    uint32_t head_count, content_count, foot_count;
     size_t autocompleted_cells;
     markdown_core_node *caption;
 } markdown_core_table;

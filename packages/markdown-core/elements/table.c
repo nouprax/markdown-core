@@ -2399,9 +2399,9 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
     }
     memcpy(table->columns, candidate->columns, candidate->column_count * sizeof(*table->columns));
     table->column_count = candidate->column_count;
-    table->head_count = candidate->head_count;
-    table->foot_count = candidate->foot_count;
-    table->content_count = candidate->row_count - table->head_count - table->foot_count;
+    table->head_count = (uint32_t)candidate->head_count;
+    table->foot_count = (uint32_t)candidate->foot_count;
+    table->content_count = (uint32_t)(candidate->row_count - candidate->head_count - candidate->foot_count);
     /* The table and each of its rows begin at the margin on their first line. */
     node->where.place.start = (uint32_t)markdown_core_parser_source_offset(
         parser, first->line, table_margin_byte(first, candidate->margin) + 1);
