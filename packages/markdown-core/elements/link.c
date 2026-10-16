@@ -514,6 +514,9 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
         if (failed) {
             inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         }
+        if (!markdown_core_parser_sees(inline_state->owner_parser, inline_state->owner, record)) {
+            record = NULL;
+        }
     }
     markdown_core_chunk_free(&raw_label);
     candidate->label = record ? markdown_core_registry_label(record) : markdown_core_chunk_literal("");

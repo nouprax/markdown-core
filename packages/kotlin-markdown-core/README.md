@@ -91,11 +91,15 @@ MarkdownSession("# Title\n\nfir").use { session ->   // TextUnit.UTF16 by defaul
     session.append("st\n")
     session.append("\n> quote\n")
     val document = session.document             // the tree of Document.parse(session.text), ids aside
+    val final = session.finalize()              // the text ends here
 }
 ```
 
-A session's `unit` is how its documents count scope columns. `close` releases
-the engine's session; the documents it returned stay complete values.
+A session's `unit` is how its documents count scope columns. The caller ends
+the text with `finalize`, which returns the final document; afterwards
+`append` and `finalize` throw `ErrorCode.SESSION_FINALIZED`, and `document`
+and `text` stay readable. `close` releases the engine's session; the
+documents it returned stay complete values.
 
 ### Identity, equality and scopes
 
@@ -147,6 +151,8 @@ why:
   position past the source, or one no node holds, answers `null`.
 - `ErrorCode.KIND_MISMATCH`: the engine's code for a value read as the wrong
   kind. It is shared by every binding; the typed Kotlin nodes never reach it.
+- `ErrorCode.SESSION_FINALIZED`: a session's `append` or `finalize` after its
+  `finalize`.
 
 A node of another document is not checked, and the answer for it means
 nothing.

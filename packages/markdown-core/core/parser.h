@@ -128,6 +128,12 @@ struct markdown_core_parser {
      * declare their labels before inline content is parsed, and completion
      * reserves explicit anchors where it meets them. */
     markdown_core_registry registry;
+    /* Whether the transaction ends in a snapshot rather than a finalize
+     * (docs/plans/2026-09-29-incremental-parsing.md, 5.5): a lookup sees only
+     * the definitions that start before the inline root that asks
+     * (markdown_core_parser_sees), and a heading's automatic anchor avoids
+     * only the explicit anchors and the headings written before it. */
+    bool snapshot;
     markdown_core_source_order source_order;
     /* The stack the finish stage's tree walks borrow in turn, the finish
      * walk's frames and then publishing's: each grows it to what it needs
@@ -819,6 +825,14 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
                                         int *first_nonspace, int *indent, int *blank_lines);
 void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead);
 
+/* Whether `record`, a lookup's answer, answers it for the inline root
+ * `root`: at a finalize every declaration does, and in a snapshot only one
+ * whose key some definition declares before the root starts. */
+static inline bool markdown_core_parser_sees(const markdown_core_parser *parser, const markdown_core_node *root,
+                                             const markdown_core_registry_record *record) {
+    return record && (!parser->snapshot || markdown_core_registry_starts_before(record, root->where.place.start));
+}
+
 /* THE LONGEST SOURCE A PARSE TAKES: offsets are int32, and every buffer
  * derived from the source stays under half of that. A session refuses a text
  * that would grow past it (session.c); below it, `length` is within this
@@ -848,6 +862,8 @@ markdown_core_parser *markdown_core_parser_create(const markdown_core_element *c
 void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revision *revision);
 void markdown_core_parser_commit(markdown_core_parser *parser, const char *source, size_t length);
 markdown_core_node *markdown_core_parser_finalize(markdown_core_parser *parser);
+/* A finalize whose tree is a snapshot (`snapshot` above). */
+markdown_core_node *markdown_core_parser_snapshot(markdown_core_parser *parser);
 void markdown_core_parser_destroy(markdown_core_parser *parser);
 
 #ifdef __cplusplus

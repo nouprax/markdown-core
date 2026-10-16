@@ -29,6 +29,7 @@ call returns.
 uint8_t *markdown_core_wire_session_new(const uint8_t *source, size_t length, markdown_core_text_unit unit,
                                         markdown_core_session **session);
 uint8_t *markdown_core_wire_session_append(markdown_core_session *session, const uint8_t *text, size_t size);
+uint8_t *markdown_core_wire_session_finalize(markdown_core_session *session);
 ```
 
 A session's steps answer the same way: each returns one caller-owned message
@@ -61,9 +62,10 @@ a reader that received only a pointer knows where the message ends.
 
 - Status 1 is a failure. The body is one `u32`, the facade's
   `markdown_core_status` (`ALLOCATION_FAILED` 1, `OUT_OF_BOUNDS` 2,
-  `KIND_MISMATCH` 3), and the message ends. A parse fails only with
-  `ALLOCATION_FAILED`, which also reports a document too large for the
-  message length.
+  `KIND_MISMATCH` 3, `SESSION_FINALIZED` 4), and the message ends. A parse
+  fails only with `ALLOCATION_FAILED`, which also reports a document too
+  large for the message length; a session's append or finalize after its
+  finalize fails with `SESSION_FINALIZED`.
 - Status 0 is a document. The body is a sequence of node records in
   **post-order**, ending with the `Document`'s record, followed by the
   document's definition tables.

@@ -10791,12 +10791,48 @@ static void session_appends(test_batch_runner *runner) {
     uint8_t text[64];
     markdown_core_session_text(session, text);
     OK(runner, memcmp(text, "one\n\ntwo \xf0\xa0\x80\x80\ns\xe4\xb8", sizeof(source) + 2) == 0, "the text");
+    const markdown_core_document *final = NULL;
+    OK(runner,
+       markdown_core_session_finalize(session, &final) == MARKDOWN_CORE_OK && final &&
+           final == markdown_core_session_document(session),
+       "finalize answers the session's final document");
+    document = NULL;
+    OK(runner,
+       markdown_core_session_append(session, (const uint8_t *)"x", 1, &document) == MARKDOWN_CORE_SESSION_FINALIZED &&
+           !document && markdown_core_session_text_size(session) == sizeof(source) + 2,
+       "an append after finalize is SESSION_FINALIZED and takes nothing");
+    OK(runner, markdown_core_session_finalize(session, &document) == MARKDOWN_CORE_SESSION_FINALIZED && !document,
+       "a second finalize is SESSION_FINALIZED");
+    OK(runner, facade_child(markdown_core_document_root(markdown_core_session_document(session)), 0) != NULL,
+       "the final document stays readable");
+    markdown_core_session_free(session);
+
+    /* A snapshot's lookup sees the definitions written before its root, and
+     * the final document's every one (plan 5.5, 5.10). */
+    static const char later[] = "[x]\n\n[x]: /u\n";
+    session = NULL;
+    OK(runner,
+       markdown_core_session_new((const uint8_t *)later, sizeof(later) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
+           MARKDOWN_CORE_OK,
+       "a session opens on a use before its definition");
+    if (!session) {
+        return;
+    }
+    const markdown_core_node *use =
+        facade_child(facade_child(markdown_core_document_root(markdown_core_session_document(session)), 0), 0);
+    OK(runner, use && markdown_core_node_get_kind(use) == MARKDOWN_CORE_KIND_TEXT,
+       "a snapshot leaves a use before its definition as text");
+    final = NULL;
+    OK(runner, markdown_core_session_finalize(session, &final) == MARKDOWN_CORE_OK, "the session finalizes");
+    use = final ? facade_child(facade_child(markdown_core_document_root(final), 0), 0) : NULL;
+    OK(runner, use && markdown_core_node_get_kind(use) == MARKDOWN_CORE_KIND_LINK,
+       "the final document resolves a use before its definition");
     markdown_core_session_free(session);
 }
 
-/* The allocator-seam sweep (plan 8, gates 4.7): an append fails at every
- * allocation, reports ALLOCATION_FAILED, and the session frees everything it
- * holds. */
+/* The allocator-seam sweep (plan 8, gates 4.7): an append and a finalize
+ * fail at every allocation, report ALLOCATION_FAILED, and the session frees
+ * everything it holds. */
 static void session_allocation_failures(test_batch_runner *runner) {
     static const char source[] = "# Head\n\nSome *text* [a][r].\n\n- item\n- item\n\n[r]: /url\n";
     payload_probe_arm();
@@ -10825,6 +10861,30 @@ static void session_allocation_failures(test_batch_runner *runner) {
         failed &= payload_live == 0;
     }
     OK(runner, needed > 0 && failed, "an append fails at each of its %zu allocations and leaks nothing", needed);
+    needed = 0;
+    failed = 1;
+    for (size_t fail = 0; fail == 0 || fail <= needed; fail++) {
+        markdown_core_session *session = NULL;
+        const markdown_core_document *document = NULL;
+        if (markdown_core_session_new((const uint8_t *)source, sizeof(source) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                      &session) != MARKDOWN_CORE_OK) {
+            failed = 0;
+            break;
+        }
+        size_t before = payload_allocations;
+        payload_fail_at = fail ? before + fail : 0;
+        markdown_core_status status = markdown_core_session_finalize(session, &document);
+        payload_fail_at = 0;
+        if (!fail) {
+            needed = payload_allocations - before;
+            failed &= status == MARKDOWN_CORE_OK;
+        } else {
+            failed &= status == MARKDOWN_CORE_ALLOCATION_FAILED;
+        }
+        markdown_core_session_free(session);
+        failed &= payload_live == 0;
+    }
+    OK(runner, needed > 0 && failed, "a finalize fails at each of its %zu allocations and leaks nothing", needed);
     payload_probe_disarm();
 }
 

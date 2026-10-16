@@ -934,4 +934,10 @@ uint8_t *markdown_core_wire_session_append(markdown_core_session *session, const
     return step_message(status, document);
 }
 
+uint8_t *markdown_core_wire_session_finalize(markdown_core_session *session) {
+    const markdown_core_document *document = NULL;
+    markdown_core_status status = markdown_core_session_finalize(session, &document);
+    return step_message(status, document);
+}
+
 void markdown_core_wire_free(uint8_t *message) { free(message); }

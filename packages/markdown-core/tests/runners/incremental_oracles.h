@@ -6,10 +6,11 @@
  *   3.1  a composite document's fresh parse has as many root children as its
  *        parts' fresh parses together
  *   4.1  the subject's text equals the harness's text model; the canonical
- *        dump of its document equals the dump of a fresh parse of that text
- *        in the same unit, and so do its extents in walk order, its scope and
- *        hit-test answers and its definition tables (after every append of a
- *        stream, 4.6)
+ *        dump of its finalized document equals the dump of a fresh parse of
+ *        that text in the same unit, and so do its extents in walk order, its
+ *        scope and hit-test answers and its definition tables; a snapshot
+ *        equals the fresh parse in all of these but where plan 5.5 lets it
+ *        differ (4.6's snapshot meaning)
  *   4.2  ids are unique; over the lineage an id keeps its kind and a retired
  *        id never returns; a fresh parse numbers its nodes from 1 in
  *        canonical walk order
@@ -18,6 +19,11 @@
  *   4.4  each node has the id of the old node the matching rule says it
  *        continues, or an id the lineage has never seen
  *   4.5  every scripted identity expectation holds
+ *   4.6  the snapshot the open and every append return equals the snapshot
+ *        a new subject returns for one append of the text, ids aside, in
+ *        all of the above
+ *   4.7  after the script's `finalize`, an append or a finalize fails with
+ *        the finalized status
  *
  * Scope and hit-test queries each walk the document, so 4.1 asks them for a
  * sample of the nodes spread evenly over the walk rather than for every node.
@@ -69,8 +75,9 @@ bool failed_all(const run *state);
 bool stopped(const run *state);
 markdown_core_text_unit unit_of(ih_unit unit);
 
-/* The run's subject, opened in `unit` on `opened` and then given `steps`:
- * 4.1 to 4.5 hold after the open and after every append (4.6). */
+/* The run's subject, opened in `unit` on `opened`, given `steps` and then
+ * finalized: 4.6 and 4.2 to 4.5 hold after the open and after every append,
+ * 4.1 to 4.5 after the finalize, and 4.7 after that. */
 void run_appends(run *state, const char *where, ih_unit unit, const uint8_t *opened, size_t opened_length,
                  const ih_step *steps, size_t count);
 /* 3.1: parts that keep their meaning when joined. */

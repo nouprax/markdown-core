@@ -903,7 +903,7 @@ activates for it.
 - [x] **Step 5: No edits.** `edit` and `TextEdit` leave C and every binding,
    with the session's text tree and the harness's edit scripts and their
    oracles (D7).
-- [ ] **Step 6: Builders.** Open blocks are builders, finishing is a pure
+- [x] **Step 6: Builders.** Open blocks are builders, finishing is a pure
    function and settled nodes are immutable (5.2); the completion queue
    replaces the finish walk (5.4); the registry is a log with rollback marks;
    `Document.parse` is a commit and a `finalize` (5.10).

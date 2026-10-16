@@ -11,6 +11,7 @@ export interface NativeExports extends WebAssembly.Exports {
      * zero with a failure message. */
     markdown_core_wire_session_new(source: number, length: number, unit: number, session: number): number;
     markdown_core_wire_session_append(session: number, text: number, size: number): number;
+    markdown_core_wire_session_finalize(session: number): number;
     markdown_core_wire_free(message: number): void;
     markdown_core_session_text_size(session: number): number;
     markdown_core_session_text(session: number, bytes: number): void;

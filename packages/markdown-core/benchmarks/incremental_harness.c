@@ -658,10 +658,17 @@ static void *session_open(ih_unit unit, const uint8_t *text, size_t length, cons
     return subject;
 }
 
-static bool session_append(void *handle, const uint8_t *text, size_t length, const markdown_core_document **document) {
+static markdown_core_status session_append(void *handle, const uint8_t *text, size_t length,
+                                           const markdown_core_document **document) {
     session_subject *subject = (session_subject *)handle;
     *document = NULL;
-    return markdown_core_session_append(subject->session, text, length, document) == MARKDOWN_CORE_OK;
+    return markdown_core_session_append(subject->session, text, length, document);
+}
+
+static markdown_core_status session_finalize(void *handle, const markdown_core_document **document) {
+    session_subject *subject = (session_subject *)handle;
+    *document = NULL;
+    return markdown_core_session_finalize(subject->session, document);
 }
 
 static const uint8_t *session_text(const void *handle, size_t *length) {
@@ -684,7 +691,12 @@ static void session_close(void *handle) {
     }
 }
 
-const ih_subject_class ih_session = {"session", session_open, session_append, session_text, session_close};
+const ih_subject_class ih_session = {.name = "session",
+                                     .open = session_open,
+                                     .append = session_append,
+                                     .finalize = session_finalize,
+                                     .text = session_text,
+                                     .close = session_close};
 
 /* ---------------------------------------------------------------- reparse */
 
@@ -692,6 +704,7 @@ typedef struct reparse_subject {
     ih_unit unit;
     ih_text text;
     markdown_core_document *document;
+    bool finalized;
 } reparse_subject;
 
 bool ih_reparse_extend(void *handle, const uint8_t *text, size_t length) {
@@ -730,9 +743,27 @@ static void *reparse_open(ih_unit unit, const uint8_t *text, size_t length, cons
     return subject;
 }
 
-static bool reparse_append(void *subject, const uint8_t *text, size_t length, const markdown_core_document **document) {
+static markdown_core_status reparse_append(void *handle, const uint8_t *text, size_t length,
+                                           const markdown_core_document **document) {
     *document = NULL;
-    return ih_reparse_extend(subject, text, length) && ih_reparse_parse(subject, document);
+    if (((reparse_subject *)handle)->finalized) {
+        return MARKDOWN_CORE_SESSION_FINALIZED;
+    }
+    return ih_reparse_extend(handle, text, length) && ih_reparse_parse(handle, document)
+               ? MARKDOWN_CORE_OK
+               : MARKDOWN_CORE_ALLOCATION_FAILED;
+}
+
+/* The last parse is of the whole text, so it is the final document. */
+static markdown_core_status reparse_finalize(void *handle, const markdown_core_document **document) {
+    reparse_subject *subject = (reparse_subject *)handle;
+    *document = NULL;
+    if (subject->finalized) {
+        return MARKDOWN_CORE_SESSION_FINALIZED;
+    }
+    subject->finalized = true;
+    *document = subject->document;
+    return MARKDOWN_CORE_OK;
 }
 
 static const uint8_t *reparse_text(const void *handle, size_t *length) {
@@ -750,4 +781,9 @@ static void reparse_close(void *handle) {
     }
 }
 
-const ih_subject_class ih_reparse = {"reparse", reparse_open, reparse_append, reparse_text, reparse_close};
+const ih_subject_class ih_reparse = {.name = "reparse",
+                                     .open = reparse_open,
+                                     .append = reparse_append,
+                                     .finalize = reparse_finalize,
+                                     .text = reparse_text,
+                                     .close = reparse_close};

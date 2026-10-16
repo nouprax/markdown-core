@@ -9,8 +9,13 @@ import kotlin.jvm.JvmOverloads
  * session has never issued. Every column a scope query of its documents takes
  * or returns counts in [unit].
  *
+ * The caller ends the text with [finalize], which returns the final
+ * document; nothing ends a session implicitly. Afterwards [document] and
+ * [text] stay readable, and [append] and [finalize] throw
+ * [MarkdownCoreException] with [ErrorCode.SESSION_FINALIZED].
+ *
  * A session has one writer at a time. [close] releases the engine's session:
- * an append or a read of [text] after it throws [IllegalStateException], and
+ * a step or a read of [text] after it throws [IllegalStateException], and
  * every document it returned stays a complete value.
  *
  * @throws MarkdownCoreException [ErrorCode.ALLOCATION_FAILED] when the engine
@@ -41,9 +46,22 @@ public class MarkdownSession
          * @return the new [document].
          * @throws MarkdownCoreException [ErrorCode.ALLOCATION_FAILED] when the
          *   engine cannot allocate, the text would exceed 1 GiB of UTF-8, or the
-         *   tree a byte array's capacity.
+         *   tree a byte array's capacity; [ErrorCode.SESSION_FINALIZED] after
+         *   [finalize].
          */
         public fun append(text: String): Document = open().append(text.encodeToByteArray())
+
+        /**
+         * Ends the text and returns the final document, which equals
+         * [Document.parse] of [text] in everything but identifiers.
+         *
+         * @return the final [document].
+         * @throws MarkdownCoreException [ErrorCode.ALLOCATION_FAILED] when the
+         *   engine cannot allocate or the tree exceeds a byte array's capacity;
+         *   [ErrorCode.SESSION_FINALIZED] when the session was already
+         *   finalized.
+         */
+        public fun finalize(): Document = open().end()
 
         /** Releases the engine's session; a second call does nothing. */
         override fun close() {

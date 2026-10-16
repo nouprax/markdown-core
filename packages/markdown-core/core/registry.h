@@ -13,8 +13,9 @@ extern "C" {
 /* THE REGISTRY: everything a parse declares that a later lookup asks for, as
  * one append-only log and one index over it.
  *
- * A record states a kind, a label in that kind's normal form, and the source
- * offset where the declaring definition starts. The kinds are lookup spaces:
+ * A record states a kind, a label in that kind's normal form, and a source
+ * offset: where the declaring definition starts, or, for an anchor, where the
+ * node that writes it ends. The kinds are lookup spaces:
  *
  *   REFERENCE  the label of a link reference definition, and the label a
  *              heading's text declares -- one space, which a reference
@@ -54,7 +55,7 @@ typedef struct markdown_core_registry_record {
      * first; and the earliest start among this key's records up to this
      * one. */
     size_t previous;
-    /* Where the declaring definition starts, and the earliest start. */
+    /* The record's source offset, and the earliest among the key's. */
     uint32_t start, earliest;
     /* The key: the kind's byte, then the label, then NUL. */
     bufsize_t key_len;
@@ -99,8 +100,8 @@ void markdown_core_registry_init(markdown_core_registry *registry);
 void markdown_core_registry_free(markdown_core_registry *registry);
 
 /* Append a record of `kind` for `label`, already in the kind's normal form,
- * declared by a definition starting at `start`. An empty label declares
- * nothing. False when storage could not be had. */
+ * at the source offset `start`. An empty label declares nothing. False when
+ * storage could not be had. */
 bool markdown_core_registry_declare(markdown_core_registry *registry, markdown_core_registry_kind kind,
                                     const unsigned char *label, bufsize_t length, uint32_t start);
 

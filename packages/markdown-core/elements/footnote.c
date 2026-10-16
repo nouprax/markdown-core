@@ -20,7 +20,7 @@ static markdown_core_node *markdown_core_inline_make_footnote_cite(markdown_core
 static bool markdown_core_footnote_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                         block_start_context *context, block_start *start);
 /* The definition record a call's label names, or NULL when the document
- * defines no such label. The record's label IS the call's normal form -- the
+ * defines no such label that the call's root sees. The record's label IS the call's normal form -- the
  * lookup matched it byte for byte -- so the call takes its id from there
  * rather than normalizing the same label a second time. */
 static const markdown_core_registry_record *
@@ -40,7 +40,7 @@ markdown_core_inline_footnote_definition(markdown_core_inline_state *inline_stat
     if (failed) {
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
     }
-    return record;
+    return markdown_core_parser_sees(inline_state->owner_parser, inline_state->owner, record) ? record : NULL;
 }
 
 static markdown_core_node *markdown_core_inline_make_footnote_cite(markdown_core_inline_state *inline_state,
