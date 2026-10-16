@@ -70,7 +70,12 @@ leads to is the heading's own, and the heading's attributes stay the
 heading's.
 
 Completion declares effective explicit anchors in the registry at each
-node's ENTER, while it discovers owned label/title fields. Its walk parses each container's
+node's ENTER, once the node is complete, while it discovers owned label/title
+fields. A node's attributes are settled by then: a block's as it closes, an
+inline's as its root's content is parsed, and a fence that names a formula
+becomes a FormulaBlock, which holds none, as its element completes it at that
+ENTER. A finish step rewrites a node's kind, literal or record, never its
+attributes. Its walk parses each container's
 inline content at that container's ENTER, so it visits only completed child
 trees, after bracket reductions and occurrence attributes have settled; a
 temporary inline later discarded by a footnote call cannot reserve an anchor.

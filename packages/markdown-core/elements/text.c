@@ -202,8 +202,8 @@ markdown_core_node *markdown_core_text_parse(const markdown_core_element_instanc
      * is what L5 measures. */
     return new_inl;
 }
-static void complete_inline(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                            markdown_core_node *node, int word_depth) {
+static void complete_node(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                          markdown_core_node *node, int word_depth) {
     (void)self;
     if (node->flags & MARKDOWN_CORE_NODE__ESCAPED_SPACE) {
         if (word_depth > 0) {
@@ -219,7 +219,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_TEXT = {
     .inline_precedence = MARKDOWN_CORE_INLINE_FALLBACK,
     .state_size = sizeof(markdown_core_text_work),
     .parse_text = markdown_core_text_parse,
-    .complete_inline = complete_inline,
+    .complete_node = complete_node,
 
     .name = "text",
     .match_inline = match,

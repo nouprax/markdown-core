@@ -1428,13 +1428,14 @@ static int push_owned_root(markdown_core_node *root, owned_tree_walk *walk) {
     return 1;
 }
 
-/* INLINE COMPLETION IS THE COMPLETION WALK'S ENTER. A node is completed once,
- * the first time completion reaches it: the element's `complete_inline`
- * (text.c turns an escaped space into NBSP inside a word) reads the node and
- * its ancestors' word depth and nothing else, so the ENTER of the walk is
- * where it belongs. The walk reads the hook through its per-kind record;
- * this form is for the sibling consolidation absorbs at a Text's EXIT, whose
- * ENTER is stepped over, so consolidation completes it first. */
+/* A NODE'S COMPLETION IS THE COMPLETION WALK'S ENTER. A node is completed
+ * once, the first time completion reaches it: the element's `complete_node`
+ * (text.c turns an escaped space into NBSP inside a word; code_block.c makes
+ * a fence that names a formula a FormulaBlock) reads the node, its links and
+ * its ancestors' word depth, so the ENTER of the walk is where it belongs.
+ * The walk reads the hook through its per-kind record; this form is for the
+ * sibling consolidation absorbs at a Text's EXIT, whose ENTER is stepped
+ * over, so consolidation completes it first. */
 static void complete_consolidated_text(markdown_core_parser *parser, markdown_core_node *node, int script_depth) {
     const markdown_core_kind_record *plan = &parser->dialect->kinds[MARKDOWN_CORE_FINISH_TEXT_INDEX];
     assert(node->kind == MARKDOWN_CORE_NODE_TEXT);
@@ -1647,7 +1648,7 @@ static int push_owned_tree(markdown_core_node **slot, void *context) {
  * (`parses`, see owned_tree_frame; the content of a kind the record marks
  * PARSES, not DEFERRED, that the structure says holds inlines) and points the
  * frame's walk into that content; it runs the steps projected for the
- * ENTER, completes the node (the element's `complete_inline` the record
+ * ENTER, completes the node (the element's `complete_node` the record
  * carries), reserves its explicit anchor and pushes the node's field roots,
  * which are walked before anything below the node. Returns 1 when it
  * pushed a field root, 0 when it pushed none, and -1 with parser->error set. */
@@ -1682,8 +1683,9 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_enter_node(owned_tr
         facts->complete(facts->structure, parser, node, frame->script_depth);
     }
     /* An explicit anchor is reserved once the node is complete, as starting
-     * where the queued block it is in starts; a Text holds no attributes, so
-     * the siblings consolidation absorbs reserve none. */
+     * where the queued block it is in starts. A FormulaBlock a fence became
+     * holds no attributes; a Text holds none either, so the siblings
+     * consolidation absorbs reserve none. */
     const markdown_core_chunk *anchor = &node->attributes.anchor;
     if (anchor->len && !markdown_core_registry_declare(&parser->registry, MARKDOWN_CORE_REGISTRY_ANCHOR, anchor->data,
                                                        anchor->len, walk->block_start)) {

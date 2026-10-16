@@ -586,77 +586,49 @@ static int info_is_formula(const markdown_core_optional_chunk *info) {
     return info->has_value && info->value.len == 7 && memcmp(info->value.data, "formula", 7) == 0;
 }
 
-/* A code block whose info string names a formula becomes a FormulaBlock
- * holding its literal, rewritten in place: the node keeps its place in
- * `parent`'s children, its range and the places of the lines it read, and
- * holds nothing of the code block but the trimmed literal -- no attributes
- * and no info. */
-static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_finish_result
-    convert_to_formula_block(const markdown_core_element *element, markdown_core_parser *parser,
-                             markdown_core_node *node, markdown_core_node *parent) {
+void markdown_core_formula_promote_fence(const markdown_core_element_instance *formula, markdown_core_parser *parser,
+                                         markdown_core_node *node, markdown_core_node *parent) {
     /* Rewriting a valid block is optional: a parent that cannot hold a
      * FormulaBlock keeps the code block. */
-    if (!parent || !markdown_core_node_can_contain_type(parent, MARKDOWN_CORE_NODE_FORMULA_BLOCK)) {
-        return MARKDOWN_CORE_FINISH_CONTINUE;
+    if (!info_is_formula(&node->as.code->info) || !parent ||
+        !markdown_core_node_can_contain_type(parent, MARKDOWN_CORE_NODE_FORMULA_BLOCK)) {
+        return;
     }
-    node_formula *formula = markdown_core_alloc(1, sizeof(node_formula));
-    if (!formula) {
-        goto failed;
+    node_formula *payload = markdown_core_alloc(1, sizeof(node_formula));
+    if (!payload) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return;
     }
-    formula->literal = S_trimmed(node->as.code->literal);
-    formula->mode = MARKDOWN_CORE_FORMULA_MODE_STANDALONE;
+    payload->literal = S_trimmed(node->as.code->literal);
+    payload->mode = MARKDOWN_CORE_FORMULA_MODE_STANDALONE;
     if (markdown_core_parser_set_node_kind(parser, node, parent, MARKDOWN_CORE_NODE_FORMULA_BLOCK) !=
         MARKDOWN_CORE_NODE_SET_KIND_OK) {
-        markdown_core_free(formula);
-        goto failed;
+        markdown_core_free(payload);
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return;
     }
     markdown_core_attributes_free(&node->attributes);
     node->content_map = (markdown_core_content_map){0};
-    markdown_core_node_set_element(node, element);
-    node->opaque = formula;
-    return MARKDOWN_CORE_FINISH_CONTINUE;
-
-failed:
-    markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    return MARKDOWN_CORE_FINISH_FAILED;
+    markdown_core_node_set_element(node, formula->element);
+    node->opaque = payload;
 }
 
-/* The formula element's finish STEP, asked at the EXIT of a FormulaBlock or
- * a CodeBlock as completion reaches it in the queue, with `parent`, the block
- * it settled into. A FormulaBlock takes its literal from the lines it read; a
- * code block whose info names a formula becomes one. The block is the root of
- * its walk: it is rewritten in place, never replaced. A paragraph whose only
- * content is a standalone formula stays a paragraph that holds that Formula. */
-static markdown_core_finish_result finish_step(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                               markdown_core_node *node, markdown_core_node *parent,
-                                               markdown_core_event_type event, void **state) {
-    (void)state;
-    (void)event;
-    assert(event == MARKDOWN_CORE_EVENT_EXIT);
-    if (node->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK) {
-        node_formula *formula = get_formula(node);
-        if (formula && !formula->literal.data) {
-            formula->literal = S_trimmed((markdown_core_chunk){node->content.ptr, node->content.size, 0});
-        }
-        return parser->error ? MARKDOWN_CORE_FINISH_FAILED : MARKDOWN_CORE_FINISH_CONTINUE;
-    }
-
-    if (node->kind == MARKDOWN_CORE_NODE_CODE_BLOCK && info_is_formula(&node->as.code->info)) {
-        return convert_to_formula_block(self->element, parser, node, parent);
-    }
-
-    return MARKDOWN_CORE_FINISH_CONTINUE;
+/* A FormulaBlock's literal is the trimmed view of the lines it read. A
+ * paragraph whose only content is a standalone formula stays a paragraph that
+ * holds that Formula. */
+static bool close_formula_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                markdown_core_node *node, markdown_core_node *parent) {
+    (void)self;
+    (void)parser;
+    (void)parent;
+    get_formula(node)->literal = S_trimmed((markdown_core_chunk){node->content.ptr, node->content.size, 0});
+    return true;
 }
 
 /* `$` and `\\` open a formula, and that is the whole set. `\\` is in the dispatch
  * set and NOT the terminator set: `is_core_special_character` refuses it there
  * anyway, and it must stay in dispatch because `handle_backslash` asks whether any
  * element claims `\\` before taking a core fast path. */
-
-/* What the step acts on -- the gate -- and where it is asked: the same
- * kinds. */
-static const markdown_core_node_type FORMULA_KINDS[] = {MARKDOWN_CORE_NODE_FORMULA_BLOCK, MARKDOWN_CORE_NODE_CODE_BLOCK,
-                                                        MARKDOWN_CORE_NODE_NONE};
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .interrupts_paragraph = true,
@@ -669,12 +641,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     /* `scan_formula_block_open` accepts only `$$` and `\\[`. */
     .open_block_gate = {.bytes = "$\\"},
     .probe_block = probe_formula_block,
-    .finish_step = finish_step,
-    /* The step acts on a FormulaBlock and on a CodeBlock whose info string
-     * names a formula, at their EXIT; a document with neither has nothing
-     * for it. */
-    .finish_acts_on_kinds = FORMULA_KINDS,
-    .finish_exit_kinds = FORMULA_KINDS,
+    .close_block = close_formula_block,
     .containment_kinds = containment_kinds,
     .accepts_lines_func = accepts_lines,
     .opaque_alloc_func = formula_opaque_alloc,

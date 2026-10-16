@@ -161,7 +161,7 @@ typedef struct markdown_core_finish_step_entry {
  *   (`markdown_core_kind_owns_fields`, element.h -- a subtree an element owns
  *   is found through the node's `element`, which the walk tests beside this).
  *
- * `complete` is the structure's `complete_inline`, NULL when it declares
+ * `complete` is the structure's `complete_node`, NULL when it declares
  * none, which the walk calls at every ENTER. The out-of-table index answers
  * nothing. */
 enum {

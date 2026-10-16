@@ -2,7 +2,13 @@
 #include "code_block.h"
 #include "block_internal.h"
 #include "attributes.h"
+#include "formula.h"
 #define peek_at(input, at) ((input)->data[(at)])
+
+/* The elements whose state this element reads, as `self->peers` holds them:
+ * the formula element, which a fence naming a formula becomes. */
+enum { CODE_FORMULA };
+static const markdown_core_element *const CODE_PEERS[] = {[CODE_FORMULA] = &MARKDOWN_CORE_ELEMENT_FORMULA, NULL};
 
 /* The end of an indented code block's literal: past the line ending of its
  * last line that is not blank. Every line it read ends with one, and its
@@ -121,6 +127,18 @@ static bool close_code(const markdown_core_element_instance *self, markdown_core
     b->as.code->literal = (markdown_core_chunk){content->ptr + start, end - start, 0};
     return true;
 }
+/* A fence whose info string names a formula becomes a FormulaBlock as
+ * completion reaches it, in a dialect that holds formulas, inside the block
+ * it settled into: before its explicit anchor is reserved, so the anchor of
+ * the fence, which the FormulaBlock does not hold, is never taken. */
+static void complete_code(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                          markdown_core_node *node, int depth) {
+    (void)depth;
+    const markdown_core_element_instance *formula = self->peers[CODE_FORMULA];
+    if (formula && node->as.code->fenced) {
+        markdown_core_formula_promote_fence(formula, parser, node, markdown_core_scaffold_parent(node));
+    }
+}
 static bool open_fenced(const markdown_core_element_instance *self, markdown_core_parser *parser,
                         markdown_core_node **container, markdown_core_chunk *input, block_start *start) {
     (void)self;
@@ -198,5 +216,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE_BLOCK = {
     .last_block_matches = continue_code,
     .content_mode = MARKDOWN_CORE_CONTENT_LITERAL,
     .close_block = close_code,
+    .complete_node = complete_code,
     .blank_line = blank_line,
+    .peers = CODE_PEERS,
 };

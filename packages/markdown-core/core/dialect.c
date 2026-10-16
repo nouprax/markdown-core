@@ -280,7 +280,7 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
                     record.flags |= (uint16_t)facts[i].flag;
                 }
             }
-            record.complete = structure->complete_inline;
+            record.complete = structure->complete_node;
         }
         if (markdown_core_kind_owns_fields(kind)) {
             record.flags |= MARKDOWN_CORE_KIND_FIELDS;

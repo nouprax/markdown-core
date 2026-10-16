@@ -131,14 +131,13 @@ Citation's prefix/suffix collections. Source trimming only changes raw edge
 whitespace; nested markup keeps its authored scope. The finish stage
 traverses all owned inline roots using one explicit stack, and walks each root
 exactly once: a container's inline content is parsed at the container's ENTER
-(the walk then continues into the children that parse produced), inline
-completion (the element's `complete_inline`, the document's anchor
+(the walk then continues into the children that parse produced), a node's
+completion (the element's `complete_node`, the document's anchor
 reservation) runs at each node's ENTER, and text consolidation and every inline
 finish step (autolink's email scan) run at the events of that one walk.
 Completion takes the blocks in the order they closed, each its own root, and
-a block kind's finish steps (a list's layout, a definition list's extents, a
-formula code fence's FormulaBlock) run at the block's EXIT as the queue
-reaches it. A step that
+a block kind's finish steps (a list's layout, a definition list's extents)
+run at the block's EXIT as the queue reaches it. A step that
 declares the kinds it acts on reads that gate at each event it is asked at,
 since a kind's first node may be made by the walk itself. A Text sibling that consolidation
 absorbs is completed by consolidation before it is read, since its ENTER is
@@ -169,8 +168,8 @@ retain their ordinary/deferred grammar contract; they are not selected by input
 size or benchmark frequency. Body decoding, padding, markers and source placement
 are shared by both construction paths.
 
-A fenced code block whose info string is `formula` becomes a FormulaBlock at
-its EXIT, in place: the node keeps its place in the tree, its range, the
+A fenced code block whose info string is `formula` becomes a FormulaBlock as
+completion reaches it, in place: the node keeps its place in the tree, its range, the
 places of its lines and its content, and the new formula payload's literal is
 the fence's literal view, trimmed. A paragraph whose only content is a
 standalone formula stays a paragraph. Trimming narrows the view; no byte is

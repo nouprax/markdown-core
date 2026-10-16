@@ -9013,7 +9013,7 @@ static void formula_promotion_views_content(test_batch_runner *runner) {
     for (size_t fail = 0; fail < 3; fail++) {
         payload_probe_arm();
         markdown_core_parser parser = {0};
-        /* An instance with no record: the formula step keeps none. */
+        /* An instance with no record: the formula element keeps none. */
         const markdown_core_element_instance formula_instance = {&MARKDOWN_CORE_ELEMENT_FORMULA, NULL, 0, NULL};
         markdown_core_node *root = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
         markdown_core_node *old = markdown_core_node_new(MARKDOWN_CORE_NODE_CODE_BLOCK);
@@ -9023,16 +9023,14 @@ static void formula_promotion_views_content(test_batch_runner *runner) {
         old->as.code->literal = (markdown_core_chunk){old->content.ptr, old->content.size, 0};
         const unsigned char *bytes = old->content.ptr;
         payload_fail_at = fail ? payload_allocations + fail : 0;
-        markdown_core_finish_result result = MARKDOWN_CORE_ELEMENT_FORMULA.finish_step(
-            &formula_instance, &parser, old, root, MARKDOWN_CORE_EVENT_EXIT, NULL);
+        markdown_core_formula_promote_fence(&formula_instance, &parser, old, root);
         payload_fail_at = 0;
-        if (result == MARKDOWN_CORE_FINISH_FAILED) {
+        if (parser.error) {
             INT_EQ(runner, parser.error, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED, "loss is reported");
             OK(runner, child_at(root, 0) == old && old->kind == MARKDOWN_CORE_NODE_CODE_BLOCK,
                "failed promotion preserves the old block");
             OK(runner, old->as.code->literal.data == bytes, "failed promotion preserves the old literal");
         } else {
-            INT_EQ(runner, result, MARKDOWN_CORE_FINISH_CONTINUE, "promotion rewrites the block in place");
             markdown_core_node *formula = child_at(root, 0);
             OK(runner, formula == old && formula->kind == MARKDOWN_CORE_NODE_FORMULA_BLOCK,
                "the code block is the formula block");
@@ -10248,7 +10246,7 @@ static void absorbed_text_completes_once(test_batch_runner *runner) {
  * footnote body and an inline footnote; escapes that leave adjacent Text
  * nodes for consolidation to merge before autolink sees them (`x\.y@z.com`
  * must come out as ONE address); a standalone `$$` block and a `formula`
- * fence for formula's promotion and replacement; a Link inside a field root
+ * fence, which completion promotes; a Link inside a field root
  * followed by an address outside it, which a per-walk rather than per-root
  * "inside a link" fact would silently swallow; and an escaped space inside a
  * superscript, which completion turns into NBSP and which must therefore be
@@ -10283,7 +10281,7 @@ static void completion_acts_on_every_root(test_batch_runner *runner) {
         return;
     }
     INT_EQ(runner, count_kind(root, MARKDOWN_CORE_NODE_FORMULA_BLOCK), 2,
-           "the formula block and the fence formula's step replaced");
+           "the formula block and the fence completion promoted");
     /* Every address became a link -- seven of them, four on field roots the
      * public iterator does not descend into -- including the one
      * consolidation had to assemble first and the one after a Link. */

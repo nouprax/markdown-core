@@ -115,7 +115,17 @@ struct markdown_core_element {
                               markdown_core_node *);
     void (*finish_inline)(const markdown_core_element_instance *, markdown_core_inline_state *);
     void (*dispose_inline)(const markdown_core_element_instance *, markdown_core_inline_state *);
-    void (*complete_inline)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *, int);
+    /* The element's completion of a node, which completion's walk asks at the
+     * ENTER of every node of a kind the element is the structure of, after
+     * the node's inline content is parsed and before its explicit anchor is
+     * reserved; `depth` is the word depth of the node's ancestors. Text turns
+     * an escaped space inside a word into NBSP; a fenced code block whose
+     * info string names a formula becomes a FormulaBlock. The hook may give
+     * a node that holds no inline content and owns no fields another kind
+     * that holds and owns none either. A failure fails the parse
+     * (markdown_core_parser_fail), and the walk ends at its next check. */
+    void (*complete_node)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                          int depth);
     /* A lazy line -- one that did not match every open container's prefix
      * and opened no block -- is offered to the current block. `accepts_lazy`
      * says whether it takes the line; `open_lazy` returns the block the line is
@@ -267,8 +277,8 @@ struct markdown_core_element {
      *
      * `finish_exit_kinds`: the step receives the EXIT of these kinds, the
      * point where the node's subtree is complete and the node may be
-     * rewritten. It names the kind of the node the step is handed -- CODEBLOCK
-     * for formula's promotion, TEXT for autolink's scan.
+     * rewritten. It names the kind of the node the step is handed -- LIST
+     * for a list's layout, TEXT for autolink's scan.
      *
      * `finish_scope_kinds`: the inline kinds whose EXTENT the step tracks. It
      * receives their ENTER and their EXIT and nothing else about them: it acts
