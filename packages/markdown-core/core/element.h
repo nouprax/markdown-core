@@ -126,6 +126,12 @@ struct markdown_core_element {
      * (markdown_core_parser_fail), and the walk ends at its next check. */
     void (*complete_node)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
                           int depth);
+    /* A kind whose inline content is parsed before completion's walk
+     * (`deferred_inlines`, by the document's preparation) parses one node's
+     * again: a block completed again (blocks.c, A LOOKUP THAT FOUND NOTHING)
+     * asks it once the node's inline content is released, and the walk then
+     * completes the node as it completed it the first time. */
+    void (*reparse_inlines)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
     /* A lazy line -- one that did not match every open container's prefix
      * and opened no block -- is offered to the current block. `accepts_lazy`
      * says whether it takes the line; `open_lazy` returns the block the line is

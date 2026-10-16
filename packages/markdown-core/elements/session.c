@@ -17,11 +17,13 @@
  *
  * THE COMMITTED PARSE is one transaction of `committed` across the
  * session's appends (plan 5.3): it has read the lines before `commit_point`,
- * each as a parse of any longer text reads it. An append commits the lines
- * up to the commit point the last snapshot left and then takes a snapshot of
- * the whole text, which leaves the next commit point; the finalize commits
- * every line that is left and ends the committed parse at the end of the
- * text. A snapshot reads the text whole, as a transaction of `snapshots`.
+ * each as a parse of any longer text reads it, and completed the blocks that
+ * settled in them (plan 5.4). An append commits the lines up to the commit
+ * point the last snapshot left, completes what settled, and then takes a
+ * snapshot of the whole text, which leaves the next commit point; the
+ * finalize commits every line that is left and ends the committed parse at
+ * the end of the text. A snapshot reads the text whole, as a transaction of
+ * `snapshots`.
  * Each new document continues the old one (parser.h, `revision`): the
  * revision lends the session's pool, names the document published last and
  * counts the ids it issued. */
@@ -52,11 +54,13 @@ static markdown_core_status session_publish(markdown_core_session *session, mark
     return MARKDOWN_CORE_OK;
 }
 
-/* Commits the lines before the commit point, then publishes a snapshot of
- * the whole text, which leaves the next commit point. */
+/* Commits the lines before the commit point and completes the blocks that
+ * settled in them, then publishes a snapshot of the whole text, which leaves
+ * the next commit point. */
 static markdown_core_status session_snapshot(markdown_core_session *session) {
     if (!markdown_core_parser_commit(session->committed, session_source(session), session->size,
-                                     session->commit_point)) {
+                                     session->commit_point) ||
+        !markdown_core_parser_complete(session->committed)) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     /* The lines committed read nothing of the end, as they did in the

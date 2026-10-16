@@ -466,14 +466,12 @@ static void materialize_citation_key(const markdown_core_element_instance *self,
         }
         return;
     }
-    /* A bare key names a specimen when a specimen definition the root sees
+    /* A bare key names a specimen when a specimen definition the lookup sees
      * declares it. */
     bool failed = false, specimen = false;
     if (!token->suppress && token->key_start == token->start + 1) {
-        const markdown_core_registry_record *record =
-            markdown_core_registry_find(&inline_state->owner_parser->registry, MARKDOWN_CORE_REGISTRY_SPECIMEN,
-                                        item->as.citation->value.data, item->as.citation->value.len, &failed);
-        specimen = markdown_core_parser_sees(inline_state->owner_parser, inline_state->owner, record);
+        specimen = markdown_core_parser_find_definition(inline_state->owner_parser, MARKDOWN_CORE_REGISTRY_SPECIMEN,
+                                                        &item->as.citation->value, &failed) != NULL;
     }
     if (failed) {
         markdown_core_parser_release_node(inline_state->owner_parser, cite);

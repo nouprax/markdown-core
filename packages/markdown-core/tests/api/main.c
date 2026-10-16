@@ -3219,7 +3219,8 @@ static void registry_kinds_and_starts(test_batch_runner *runner) {
        "a reference is declared");
     OK(runner, !markdown_core_registry_find(&registry, MARKDOWN_CORE_REGISTRY_FOOTNOTE, x, 1, &failed),
        "a reference label is no footnote");
-    OK(runner, !markdown_core_registry_find(&registry, MARKDOWN_CORE_REGISTRY_ANCHOR, x, 1, &failed), "nor an anchor");
+    OK(runner, !markdown_core_registry_find(&registry, MARKDOWN_CORE_REGISTRY_SPECIMEN, x, 1, &failed),
+       "nor a specimen");
     const markdown_core_registry_record *record =
         markdown_core_registry_find(&registry, MARKDOWN_CORE_REGISTRY_REFERENCE, x, 1, &failed);
     OK(runner,
@@ -3266,7 +3267,7 @@ typedef struct {
 static void registry_label_text(unsigned label, char *text, size_t size) { snprintf(text, size, "k%u", label); }
 
 static void registry_rollback_matches_a_model(test_batch_runner *runner) {
-    enum { STEPS = 6000, KINDS = 4, SHARED = 23, MARKS = 16 };
+    enum { STEPS = 6000, KINDS = 3, SHARED = 23, MARKS = 16 };
     payload_probe_arm();
     markdown_core_registry registry;
     markdown_core_registry_init(&registry);
@@ -3357,6 +3358,32 @@ static void registry_rollback_matches_a_model(test_batch_runner *runner) {
     INT_EQ(runner, payload_live, 0, "the registry releases everything it holds");
     payload_probe_disarm();
     free(model);
+}
+
+/* A NAME STAYS RESERVED WHILE A NODE RESERVES IT. Each node that reserves a
+ * name counts once, so a withdrawal leaves the name to the nodes that still
+ * reserve it, and the last one gives the name up. The reserved names free
+ * what they hold, a name still reserved included. */
+static void reserved_anchors_count_their_nodes(test_batch_runner *runner) {
+    payload_probe_arm();
+    markdown_core_node_pool pool = {0};
+    markdown_core_reserved_anchors anchors = {0};
+    const unsigned char *x = (const unsigned char *)"x", *y = (const unsigned char *)"y";
+    OK(runner,
+       markdown_core_reserve_anchor(&anchors, &pool, x, 1) && markdown_core_reserve_anchor(&anchors, &pool, x, 1) &&
+           markdown_core_reserve_anchor(&anchors, &pool, y, 1),
+       "two nodes reserve one name and a third another");
+    INT_EQ(runner, (int)anchors.names.size, 2, "two names are reserved");
+    markdown_core_withdraw_anchor(&anchors, &pool, x, 1);
+    OK(runner, markdown_core_key_index_find(&anchors.names, x, 1) != NULL,
+       "a name stays reserved while a node reserves it");
+    markdown_core_withdraw_anchor(&anchors, &pool, x, 1);
+    OK(runner, markdown_core_key_index_find(&anchors.names, x, 1) == NULL && anchors.names.size == 1,
+       "the last node withdrawing gives the name up");
+    markdown_core_reserved_anchors_free(&anchors, &pool);
+    markdown_core_node_pool_dispose(&pool);
+    INT_EQ(runner, payload_live, 0, "the reserved names release everything they hold");
+    payload_probe_disarm();
 }
 
 /* Run from the instance's own beginning -- a document owner's lifecycle --
@@ -10936,6 +10963,97 @@ static void session_snapshot_anchors(test_batch_runner *runner) {
     }
 }
 
+/* The canonical dump of `document` over `source`, or NULL. */
+static uint8_t *dump_of(const markdown_core_document *document, const char *source, size_t length,
+                        size_t *dump_length) {
+    uint8_t *dump = NULL;
+    if (!document ||
+        markdown_core_document_dump(document, markdown_core_document_root(document), (const uint8_t *)source, length,
+                                    &dump, dump_length) != MARKDOWN_CORE_OK) {
+        return NULL;
+    }
+    return dump;
+}
+
+/* A STREAMED SESSION FINALIZES TO WHAT A FRESH PARSE OF ITS TEXT IS (plan
+ * 5.4, 5.10). The text arrives byte by byte, three bytes at a time and line
+ * by line. A block that completes at a commit sees only the definitions
+ * written before it, so each use below is defined after it, past enough
+ * paragraphs that the use's block completes at a commit before the
+ * definition arrives; finalize looks the use up again. The uses sit in each
+ * holder of inline content: a paragraph, a heading and its trailing
+ * attributes, a callout title, a definition term, a table caption, a pipe
+ * cell and a grid cell, a list item inside a quote, and a heading inside a
+ * container. Some uses stay undefined, and a heading whose anchor depends on
+ * whether its use resolves comes before a heading of the resolved text. A
+ * grid table followed by a paragraph of several lines appends to the
+ * paragraph's content after the table's cells. */
+static void session_finalize_matches_a_parse(test_batch_runner *runner) {
+#define FILLER "\n\nfiller one\n\nfiller two\n\nfiller three\n\n"
+    static const char *const sources[] = {
+        "See [x], [^n] and @s." FILLER "[x]: /u\n\n[^n]: note\n\n(@s) sample\n",
+        "# Head [x]\n\ntext" FILLER "[x]: /u\n",
+        "# Title [x][]{#a}\n\n# a" FILLER "[x]: /u\n",
+        "# Head [foo][x]" FILLER "# Head foo\n\n[x]: /u\n",
+        "# Head @s here" FILLER "(@s) sample\n",
+        "> [!NOTE] Title [x]\n> body" FILLER "[x]: /u\n",
+        "Term [x]\n: def" FILLER "[x]: /u\n",
+        "Table: Caption [x]\n\n| a | b |\n|---|---|\n| c | d |" FILLER "[x]: /u\n",
+        "| a | b |\n|---|---|\n| [x] | y |" FILLER "[x]: /u\n",
+        "+---+---+\n| a | b |\n+===+===+\n| [x] | y |\n+---+---+\n\npara line one\nline two\nline three" FILLER
+        "[x]: /u\n",
+        "> - item [x] and [y]" FILLER "[x]: /u\n",
+        ":::note{#d}\n# x [x]\n:::" FILLER "# x\n\n[x]: /u\n",
+        "See [^n] here." FILLER "[^n]: note\n",
+    };
+#undef FILLER
+    static const size_t chunks[] = {1, 3, 0};
+    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        const char *source = sources[i];
+        size_t length = strlen(source), expected_length = 0;
+        markdown_core_document *parsed = NULL;
+        uint8_t *expected = NULL;
+        if (markdown_core_document_parse((const uint8_t *)source, length, &parsed) == MARKDOWN_CORE_OK) {
+            expected = dump_of(parsed, source, length, &expected_length);
+        }
+        for (size_t c = 0; c < sizeof(chunks) / sizeof(chunks[0]); c++) {
+            markdown_core_session *session = NULL;
+            bool appended = markdown_core_session_new((const uint8_t *)source, 0, MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                                      &session) == MARKDOWN_CORE_OK;
+            for (size_t at = 0; appended && at < length;) {
+                size_t step = chunks[c];
+                if (!step) {
+                    const char *newline = memchr(source + at, '\n', length - at);
+                    step = newline ? (size_t)(newline - (source + at)) + 1 : length - at;
+                }
+                if (step > length - at) {
+                    step = length - at;
+                }
+                const markdown_core_document *document = NULL;
+                appended = markdown_core_session_append(session, (const uint8_t *)source + at, step, &document) ==
+                           MARKDOWN_CORE_OK;
+                at += step;
+            }
+            const markdown_core_document *final = NULL;
+            size_t actual_length = 0;
+            uint8_t *actual = appended && markdown_core_session_finalize(session, &final) == MARKDOWN_CORE_OK
+                                  ? dump_of(final, source, length, &actual_length)
+                                  : NULL;
+            OK(runner,
+               expected && actual && expected_length == actual_length && memcmp(expected, actual, expected_length) == 0,
+               "a session streamed in %s finalizes as a parse: %s",
+               chunks[c] == 1   ? "bytes"
+               : chunks[c] == 3 ? "three bytes"
+                                : "lines",
+               source);
+            markdown_core_dump_free(actual);
+            markdown_core_session_free(session);
+        }
+        markdown_core_dump_free(expected);
+        markdown_core_document_free(parsed);
+    }
+}
+
 /* The allocator-seam sweep (plan 8, gates 4.7): an append and a finalize
  * fail at every allocation, report ALLOCATION_FAILED, and the session frees
  * everything it holds. */
@@ -11016,6 +11134,7 @@ int main(void) {
     registry_records_are_carved_from_its_blocks(runner);
     registry_kinds_and_starts(runner);
     registry_rollback_matches_a_model(runner);
+    reserved_anchors_count_their_nodes(runner);
     properties_values(runner);
     properties_source_boundaries(runner);
     properties_member_work(runner);
@@ -11166,6 +11285,7 @@ int main(void) {
     scope_queries_count_in_the_document_unit(runner);
     session_appends(runner);
     session_snapshot_anchors(runner);
+    session_finalize_matches_a_parse(runner);
     session_allocation_failures(runner);
 
     test_print_summary(runner);

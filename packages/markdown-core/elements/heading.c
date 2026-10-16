@@ -45,24 +45,52 @@ static bool close_heading(const markdown_core_element_instance *self, markdown_c
     return true;
 }
 
-/* Every heading's inlines up to its declaration dependency, and the implicit
- * reference each declares, in source order. */
+/* The inline content of every heading that settled since the last
+ * completion: first, in source order, each one's inlines up to its
+ * declaration dependency and the implicit reference it declares, then the
+ * rest of their inlines. The headings before the collection's `parsed` come
+ * before every later one in source order, so only the headings after them
+ * are put in order: those that closed since, and those the last completion
+ * left because they had not settled. */
 void markdown_core_headings_prepare(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     markdown_core_heading_state *state = self->state;
     markdown_core_heading_collection *headings = &state->headings;
-    if (!markdown_core_order_source_entries(&parser->source_order, headings->values, headings->count,
-                                            sizeof(*headings->values), markdown_core_source_key)) {
+    markdown_core_heading_parse *const rest = headings->values + headings->parsed;
+    const size_t count = headings->count - headings->parsed;
+    if (!markdown_core_order_source_entries(&parser->source_order, rest, count, sizeof(*rest),
+                                            markdown_core_source_key)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
     /* Anchors are numbered in source order, whatever order mapped inputs were
      * scheduled and headings closed in. */
-    for (size_t i = 0; i < headings->count && !parser->error; i++) {
-        markdown_core_prepare_heading(self, parser, &headings->values[i]);
+    for (size_t i = 0; i < count && !parser->error; i++) {
+        if (!rest[i].parsed && markdown_core_parser_settled(parser, rest[i].node)) {
+            parser->completing = rest[i].node;
+            markdown_core_prepare_heading(self, parser, &rest[i]);
+        }
     }
-    for (size_t i = 0; i < headings->count && !parser->error; i++) {
-        markdown_core_finish_heading(parser, &headings->values[i]);
+    for (size_t i = 0; i < count && !parser->error; i++) {
+        if (!rest[i].parsed && markdown_core_parser_settled(parser, rest[i].node)) {
+            parser->completing = rest[i].node;
+            markdown_core_finish_heading(parser, &rest[i]);
+            rest[i].parsed = true;
+        }
     }
+    while (headings->parsed < headings->count && headings->values[headings->parsed].parsed) {
+        headings->parsed++;
+    }
+}
+
+/* A heading parsed again (element.h, `reparse_inlines`): the attributes its
+ * last line ends with are its inline content's and go with it, and the label
+ * its text declares, whatever a lookup answers, stays declared. */
+static void reparse_inlines(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                            markdown_core_node *node) {
+    markdown_core_attributes_free(&node->attributes);
+    markdown_core_heading_parse heading = {.node = node};
+    markdown_core_prepare_heading(self, parser, &heading);
+    markdown_core_finish_heading(parser, &heading);
 }
 
 /* Release the headings. The anchors are assigned by then, or the parse
@@ -229,9 +257,9 @@ static markdown_core_key_index_slot *taken_entry(markdown_core_heading_state *st
 /* Each heading's anchor, in source order: an authored one stays, and a
  * computed one is the heading's own copy of the first name its text projects
  * to that no explicit anchor reserves and no heading before it was given. The
- * names taken are this pass's own index: first every explicit anchor, the
- * registry's ANCHOR records under their own bytes, then each name a heading
- * is given. A taken name's entry also keeps the suffix to try next, so a run
+ * names taken are this pass's own index: first every name the explicit
+ * anchors reserve (registry.h, THE RESERVED ANCHORS), then each name a
+ * heading is given. A taken name's entry also keeps the suffix to try next, so a run
  * of headings projecting to one name tries each suffix once, and each
  * candidate costs one entry lookup, which a vacant name the heading is given
  * commits in place. */
@@ -246,24 +274,24 @@ void markdown_core_headings_finish(const markdown_core_element_instance *self, m
     if (first == headings->count) {
         return;
     }
-    const markdown_core_registry *registry = &parser->registry;
-    markdown_core_registry_cursor anchors = markdown_core_registry_records(registry, MARKDOWN_CORE_REGISTRY_ANCHOR);
+    const markdown_core_key_index *reserved = &parser->anchors.names;
     markdown_core_key_index taken;
-    if (!markdown_core_key_index_init(&taken, headings->count + anchors.left)) {
+    if (!markdown_core_key_index_init(&taken, headings->count + reserved->size)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
-    for (const markdown_core_registry_record *reserved; (reserved = markdown_core_registry_next(registry, &anchors));) {
-        const markdown_core_chunk name = markdown_core_registry_label(reserved);
-        markdown_core_key_index_slot *entry = taken_entry(state, &taken, name.data, name.len);
+    for (size_t i = 0; i < reserved->capacity; i++) {
+        const markdown_core_key_index_slot *name = &reserved->slots[i];
+        if (!name->key) {
+            continue;
+        }
+        markdown_core_key_index_slot *entry = taken_entry(state, &taken, name->key, name->key_len);
         if (!entry) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             break;
         }
-        if (!entry->key) {
-            markdown_core_key_index_commit(&taken, entry, name.data);
-            entry->value = 1;
-        }
+        markdown_core_key_index_commit(&taken, entry, name->key);
+        entry->value = 1;
     }
     markdown_core_strbuf base = MARKDOWN_CORE_BUF_INIT();
     anchor_projection_stack stack = {0};
@@ -350,10 +378,11 @@ void markdown_core_prepare_heading(const markdown_core_element_instance *self, m
         markdown_core_chunk label = {inline_state.input.data, run->label_end, 0};
         /* A heading whose text is writable as a reference label declares
          * it, normalized: an occurrence naming it resolves to the heading
-         * when no Reference declares it. */
-        if (label.len > 0 && label.len <= MAX_LINK_LABEL_LENGTH &&
+         * when no Reference declares it. It declares it once: a heading
+         * parsed again has. */
+        markdown_core_chunk *declared = &heading->node->as.heading->label;
+        if (!declared->len && label.len > 0 && label.len <= MAX_LINK_LABEL_LENGTH &&
             markdown_core_inline_reference_label_length(label.data, label.len) == label.len) {
-            markdown_core_chunk *declared = &heading->node->as.heading->label;
             if (!markdown_core_registry_normal_label(&parser->registry, parser->pool, &label, declared) ||
                 !markdown_core_registry_declare(&parser->registry, MARKDOWN_CORE_REGISTRY_REFERENCE, declared->data,
                                                 declared->len, heading->node->where.place.start)) {
@@ -532,6 +561,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING = {
     .peers = HEADING_PEERS,
     .begin_inline = markdown_core_heading_begin_inlines,
     .claim_inline_tail = markdown_core_heading_claim_tail,
+    .reparse_inlines = reparse_inlines,
 
     .name = "heading",
     .maximum_block_indent = 3,

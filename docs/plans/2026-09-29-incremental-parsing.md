@@ -462,7 +462,8 @@ as the direct `lookahead_cursor == lookahead_end` tests in `table.c` and
 | Line index | The geometry of each complete line (start, end, normalized view for NUL), append-only |
 | Builder stack | One builder for each open block, from the document to the deepest |
 | Settled nodes | Immutable nodes, owned by the session |
-| Registry log | Every definition (reference, footnote, specimen, heading label) and anchor, in source order, with marks that it can roll back to |
+| Registry log | Every definition (reference, footnote, specimen, heading label), in source order, with marks that it can roll back to |
+| Reserved anchors | The name of each explicit anchor of a completed node, with how many nodes reserve it |
 | Completion queue | The closed blocks whose inline roots are not yet parsed |
 | Previous tail | The previous document's tail nodes (5.5), used only to give the next document's tail its ids (5.9) |
 
@@ -589,8 +590,8 @@ streaming (D8).
 
 The **tail** is the nodes a snapshot makes from the copies, from the pending
 lines and from the inline content of an open paragraph. At the start of the
-next call the copies and their scratch are discarded and the registry rolls
-back to the mark.
+next call the copies and their scratch are discarded, the registry rolls back
+to the mark, and the anchors the tail reserved are withdrawn.
 
 ### 5.6 Container folds
 

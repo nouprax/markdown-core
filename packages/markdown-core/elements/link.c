@@ -509,13 +509,10 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
      * -- the module states one node for every successful form. */
     if (link_allowed && found_label) {
         bool failed = false;
-        record = markdown_core_registry_find_label(&inline_state->owner_parser->registry,
-                                                   MARKDOWN_CORE_REGISTRY_REFERENCE, &raw_label, &failed);
+        record = markdown_core_parser_find_definition(inline_state->owner_parser, MARKDOWN_CORE_REGISTRY_REFERENCE,
+                                                      &raw_label, &failed);
         if (failed) {
             inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
-        }
-        if (!markdown_core_parser_sees(inline_state->owner_parser, inline_state->owner, record)) {
-            record = NULL;
         }
     }
     markdown_core_chunk_free(&raw_label);

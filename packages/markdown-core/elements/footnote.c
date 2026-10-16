@@ -35,12 +35,12 @@ markdown_core_inline_footnote_definition(markdown_core_inline_state *inline_stat
     markdown_core_chunk label =
         markdown_core_chunk_dup(&inline_state->input, label_start + 1, after_close - label_start - 2);
     bool failed = false;
-    const markdown_core_registry_record *record = markdown_core_registry_find_label(
-        &inline_state->owner_parser->registry, MARKDOWN_CORE_REGISTRY_FOOTNOTE, &label, &failed);
+    const markdown_core_registry_record *record = markdown_core_parser_find_definition(
+        inline_state->owner_parser, MARKDOWN_CORE_REGISTRY_FOOTNOTE, &label, &failed);
     if (failed) {
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
     }
-    return markdown_core_parser_sees(inline_state->owner_parser, inline_state->owner, record) ? record : NULL;
+    return record;
 }
 
 static markdown_core_node *markdown_core_inline_make_footnote_cite(markdown_core_inline_state *inline_state,

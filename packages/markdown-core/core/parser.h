@@ -155,17 +155,41 @@ typedef struct markdown_core_parser_input {
     bool last_line_ready;
 } markdown_core_parser_input;
 
+/* A definition lookup a snapshot's completion found nothing for
+ * (markdown_core_parser_find_definition): the block being completed, the
+ * block it settled into, and the lookup's kind and label, as written, at
+ * `label_start` in the parser's `miss_labels`. */
+typedef struct {
+    struct markdown_core_node *block, *holder;
+    markdown_core_registry_kind kind;
+    bufsize_t label_start, label_length;
+} markdown_core_definition_miss;
+
 struct markdown_core_parser {
-    /* Every definition and explicit anchor the parse declared (registry.h):
-     * the block phase declares definitions as it reads them, the headings
-     * declare their labels before inline content is parsed, and completion
-     * reserves explicit anchors where it meets them. */
+    /* Every definition the parse declared (registry.h): the block phase
+     * declares definitions as it reads them, and the headings declare their
+     * labels before inline content is parsed. */
     markdown_core_registry registry;
-    /* Whether the transaction ends in a snapshot rather than a finalize
-     * (docs/plans/2026-09-29-incremental-parsing.md, 5.5): a lookup sees only
-     * the definitions that start before the inline root that asks
-     * (markdown_core_parser_sees). */
+    /* The names the explicit anchors of completed nodes reserve (registry.h),
+     * which completion reserves where it meets them and the headings' anchors
+     * avoid. */
+    markdown_core_reserved_anchors anchors;
+    /* Whether completion runs for a snapshot rather than for the finalize
+     * (docs/plans/2026-09-29-incremental-parsing.md, 5.4): a lookup sees only
+     * the definitions that start before the block being completed, and one
+     * that finds none is recorded (markdown_core_parser_find_definition). */
     bool snapshot;
+    /* The block being completed: the queued block the completion walk is in
+     * (blocks.c, COMPLETION), or the heading whose inline content the
+     * document's preparation parses. */
+    struct markdown_core_node *completing;
+    /* THE LOOKUPS A SNAPSHOT'S COMPLETION FOUND NOTHING FOR, in the order
+     * they were made (plan 5.4). The finalize asks each again with every
+     * definition visible, and completes again each block whose answer is one
+     * now (blocks.c, A LOOKUP THAT FOUND NOTHING). */
+    markdown_core_definition_miss *misses;
+    size_t miss_count, miss_capacity;
+    markdown_core_strbuf miss_labels;
     markdown_core_source_order source_order;
     /* The stack the finish stage's tree walks borrow in turn, the finish
      * walk's frames and then publishing's: each grows it to what it needs
@@ -537,6 +561,12 @@ static inline markdown_core_node *markdown_core_parser_current(const markdown_co
     return parser->current;
 }
 
+/* Whether a block that closed has settled: every one has but the pending
+ * block, which a later line can still write. */
+static inline bool markdown_core_parser_settled(const markdown_core_parser *parser, const markdown_core_node *node) {
+    return node != parser->pending;
+}
+
 /* The active input's root: the document, or the table cell whose content the
  * input is. */
 static inline markdown_core_node *markdown_core_parser_block_root(const markdown_core_parser *parser) {
@@ -876,13 +906,18 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
                                         int *first_nonspace, int *indent, int *blank_lines);
 void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead);
 
-/* Whether `record`, a lookup's answer, answers it for the inline root
- * `root`: at a finalize every declaration does, and in a snapshot only one
- * whose key some definition declares before the root starts. */
-static inline bool markdown_core_parser_sees(const markdown_core_parser *parser, const markdown_core_node *root,
-                                             const markdown_core_registry_record *record) {
-    return record && (!parser->snapshot || markdown_core_registry_starts_before(record, root->where.place.start));
-}
+/* THE DEFINITION LOOKUP of inline content: the record of `kind` that
+ * declares `label`, as written, for the block being completed, or NULL.
+ * Reference and footnote labels are looked up in their normal form, and a
+ * specimen label as its bytes (registry.h). At a finalize every declaration
+ * answers; at a snapshot only one whose key some definition declares before
+ * the block starts, which is before its inline roots start, and a lookup that
+ * finds none is recorded for the finalize. `*failed` is set when storage
+ * could not be had, and the answer is then NULL. */
+const markdown_core_registry_record *markdown_core_parser_find_definition(markdown_core_parser *parser,
+                                                                          markdown_core_registry_kind kind,
+                                                                          const markdown_core_chunk *label,
+                                                                          bool *failed);
 
 /* THE LONGEST SOURCE A PARSE TAKES: offsets are int32, and every buffer
  * derived from the source stays under half of that. A session refuses a text
@@ -924,6 +959,12 @@ void markdown_core_parser_discard(markdown_core_parser *parser);
  * that more text leaves as they are, so a commit with this limit reads them
  * as a parse of any longer text does. */
 size_t markdown_core_parser_commit_point(const markdown_core_parser *parser);
+/* Completes the blocks that have settled, for a snapshot (plan 5.4): the
+ * cells of the tables that closed are read, the document prepares the
+ * headings that settled, and the completion queue is completed with a
+ * snapshot's lookups. What it completes stays complete. False when the
+ * transaction failed. */
+bool markdown_core_parser_complete(markdown_core_parser *parser);
 /* A finalize whose tree is a snapshot (`snapshot` above). */
 markdown_core_node *markdown_core_parser_snapshot(markdown_core_parser *parser);
 void markdown_core_parser_destroy(markdown_core_parser *parser);

@@ -141,6 +141,9 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     }
     dialect->document_structure->element->dispose_document(dialect->document_structure, parser);
     markdown_core_registry_free(&parser->registry);
+    markdown_core_reserved_anchors_free(&parser->anchors, parser->pool);
+    markdown_core_free(parser->misses);
+    markdown_core_strbuf_free(&parser->miss_labels);
     markdown_core_source_order_dispose(&parser->source_order);
     markdown_core_free(parser->walk_stack);
     markdown_core_free(parser->block_inputs);
@@ -240,6 +243,7 @@ void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revi
     markdown_core_strbuf_init(&parser->curline, 256);
     markdown_core_strbuf_init(&parser->input.last_line, 0);
     markdown_core_strbuf_init(&parser->idle_input.last_line, 0);
+    markdown_core_strbuf_init(&parser->miss_labels, 0);
     markdown_core_registry_init(&parser->registry);
     /* The line index is a parse-owned workspace, like curline. Establish its
      * initial capacity before any input; inputs reset length, never
@@ -367,9 +371,32 @@ static bool S_reserve_content_marks(markdown_core_parser *parser, bufsize_t coun
     return true;
 }
 
+/* A map's marks are contiguous and a map grows at the end of the vector. An
+ * open block's map can find the end taken: the parse completes the blocks
+ * that settled after each commit (plan 5.4), and their inline content takes
+ * marks of its own. The map then moves its marks to the end first; the marks
+ * it leaves behind stay as they are, where a map that shares them reads
+ * them. Completion after a commit completes the blocks that settled in it,
+ * and a block settles as the block after it opens or as a block closes, so
+ * an open block whose map moves opened in that commit, and no mark moves
+ * twice. */
+static bool S_move_content_marks(markdown_core_parser *parser, markdown_core_content_map *map) {
+    if (!S_reserve_content_marks(parser, map->count)) {
+        return false;
+    }
+    memcpy(parser->line_marks + parser->line_marks_size, parser->line_marks + map->first,
+           (size_t)map->count * sizeof(*parser->line_marks));
+    map->first = parser->line_marks_size;
+    parser->line_marks_size += map->count;
+    return true;
+}
+
 static int S_append_content_mark(markdown_core_parser *parser, markdown_core_content_map *map,
                                  markdown_core_line_mark mark) {
     if (!parser || !map) {
+        return 0;
+    }
+    if (map->count && map->first + map->count != parser->line_marks_size && !S_move_content_marks(parser, map)) {
         return 0;
     }
     mark.content_offset += map->offset;
@@ -901,9 +928,14 @@ static inline void S_places_add_own(markdown_core_places *places, uint32_t start
  * between them: the rest of each line its places of length 0 cover
  * (markdown_core_parser_line_places), or, when it has none, all of the
  * source between its content places. The root's map becomes the identity,
- * so the parse places its nodes at offsets of the content. */
+ * so the parse places its nodes at offsets of the content; a root is read
+ * once, and a root parsed again (A LOOKUP THAT FOUND NOTHING) is placed in
+ * the content it was read as. */
 void markdown_core_parser_read_content(markdown_core_parser *parser, markdown_core_node *node, bufsize_t length) {
     const markdown_core_content_map map = node->content_map;
+    if (map.first == MARKDOWN_CORE_IDENTITY_MARK) {
+        return;
+    }
     node->content_map = (markdown_core_content_map){MARKDOWN_CORE_IDENTITY_MARK, 1, 0};
     if (length <= 0 || map.count <= 0) {
         return;
@@ -1373,8 +1405,6 @@ typedef struct {
      * whether its fields are the walk's to parse. */
     int script_depth;
     bool parses;
-    /* Where the queued block being completed starts. */
-    uint32_t block_start;
 } owned_tree_walk;
 
 /* Room for one frame more than the walk holds. */
@@ -1689,13 +1719,11 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_enter_node(owned_tr
     if (facts->complete) {
         facts->complete(facts->structure, parser, node, frame->script_depth);
     }
-    /* An explicit anchor is reserved once the node is complete, as starting
-     * where the queued block it is in starts. A FormulaBlock a fence became
-     * holds no attributes; a Text holds none either, so the siblings
-     * consolidation absorbs reserve none. */
+    /* An explicit anchor is reserved once the node is complete. A
+     * FormulaBlock a fence became holds no attributes; a Text holds none
+     * either, so the siblings consolidation absorbs reserve none. */
     const markdown_core_chunk *anchor = &node->attributes.anchor;
-    if (anchor->len && !markdown_core_registry_declare(&parser->registry, MARKDOWN_CORE_REGISTRY_ANCHOR, anchor->data,
-                                                       anchor->len, walk->block_start)) {
+    if (anchor->len && !markdown_core_reserve_anchor(&parser->anchors, parser->pool, anchor->data, anchor->len)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return -1;
     }
@@ -1785,7 +1813,7 @@ static int walk_owned_trees(markdown_core_parser *parser) {
                 tree->next_event = MARKDOWN_CORE_EVENT_EXIT;
                 tree->next = node;
                 frame->script_depth = 0;
-                walk.block_start = node->where.place.start;
+                parser->completing = node;
             } else {
                 if (node->element && node->element->delimiter.body == DELIMITER_WORD_BODY) {
                     frame->script_depth += event == MARKDOWN_CORE_EVENT_ENTER ? 1 : -1;
@@ -1862,7 +1890,10 @@ static void S_close_document(markdown_core_parser *parser) {
 /* Each queued cell is the root of its own input: the stack holds only the
  * cell while its content is read, and its blocks settle into it as the input
  * ends. The cells are read on the idle input's storage, and the document's
- * input and line state wait unchanged until they are read. */
+ * input, line state and builders wait unchanged until they are read, so the
+ * cells can be read wherever the document's parse stands. A failed read
+ * releases the builders open in the cell, as a failed commit's are, and
+ * leaves the document's to be released with the parse. */
 static void S_parse_block_inputs(markdown_core_parser *parser) {
     if (parser->block_input_cursor == parser->block_input_count) {
         return;
@@ -1872,7 +1903,11 @@ static void S_parse_block_inputs(markdown_core_parser *parser) {
     const bufsize_t line_start = parser->line_start, line_end = parser->line_end;
     const bufsize_t last_line_end = parser->last_line_end;
     const unsigned char *lookahead_cursor = parser->lookahead_cursor;
+    markdown_core_node *const block_root = parser->block_root, *const current = parser->current;
+    markdown_core_node *const pending = parser->pending;
+    const uint32_t enclosing = parser->input_enclosing;
     parser->input = parser->idle_input;
+    parser->pending = NULL;
     while (parser->block_input_cursor < parser->block_input_count && !parser->error) {
         const markdown_core_block_input input = parser->block_inputs[parser->block_input_cursor++];
         markdown_core_node *owner = input.owner;
@@ -1882,10 +1917,8 @@ static void S_parse_block_inputs(markdown_core_parser *parser) {
         parser->last_line_end = parser->line_marks[owner->content_map.first].source;
         owner->flags |= MARKDOWN_CORE_NODE__OPEN;
         S_parse_source(parser, owner->content.ptr, (size_t)owner->content.size, (size_t)owner->content.size);
-        /* A failed read ends the parse where it failed, as a failed commit
-         * does: nothing open closes, and the builders open in the cell are
-         * released with the parse. */
         if (parser->error) {
+            S_release_builders(parser);
             break;
         }
         markdown_core_parser_close_below(parser, owner);
@@ -1903,10 +1936,10 @@ static void S_parse_block_inputs(markdown_core_parser *parser) {
     parser->line_end = line_end;
     parser->last_line_end = last_line_end;
     parser->lookahead_cursor = lookahead_cursor;
-    if (!parser->error) {
-        parser->block_root = parser->current = parser->root;
-        parser->input_enclosing = 0;
-    }
+    parser->block_root = block_root;
+    parser->current = current;
+    parser->pending = pending;
+    parser->input_enclosing = enclosing;
 }
 
 bool markdown_core_parser_commit(markdown_core_parser *parser, const char *source, size_t length, size_t limit) {
@@ -3110,6 +3143,176 @@ static void S_complete_queue(markdown_core_parser *parser) {
     }
 }
 
+/* The blocks that have settled are completed: the cells of the tables that
+ * closed are read, as blocks of their own, the document prepares the
+ * headings that settled (heading.c), and the queue is completed. */
+static void S_complete_settled(markdown_core_parser *parser) {
+    S_parse_block_inputs(parser);
+    if (!parser->error) {
+        const markdown_core_element_instance *document = parser->dialect->document_structure;
+        document->element->prepare_document(document, parser);
+    }
+    if (!parser->error) {
+        S_complete_queue(parser);
+    }
+}
+
+bool markdown_core_parser_complete(markdown_core_parser *parser) {
+    if (!parser->error) {
+        parser->snapshot = true;
+        S_complete_settled(parser);
+        parser->snapshot = false;
+    }
+    return !parser->error;
+}
+
+static const markdown_core_registry_record *S_find_definition(markdown_core_parser *parser,
+                                                              markdown_core_registry_kind kind,
+                                                              const markdown_core_chunk *label, bool *failed) {
+    return kind == MARKDOWN_CORE_REGISTRY_SPECIMEN
+               ? markdown_core_registry_find(&parser->registry, kind, label->data, label->len, failed)
+               : markdown_core_registry_find_label(&parser->registry, kind, label, failed);
+}
+
+const markdown_core_registry_record *markdown_core_parser_find_definition(markdown_core_parser *parser,
+                                                                          markdown_core_registry_kind kind,
+                                                                          const markdown_core_chunk *label,
+                                                                          bool *failed) {
+    const markdown_core_registry_record *record = S_find_definition(parser, kind, label, failed);
+    markdown_core_node *block = parser->completing;
+    if (!parser->snapshot || *failed ||
+        (record && markdown_core_registry_starts_before(record, block->where.place.start))) {
+        return record;
+    }
+    markdown_core_definition_miss *misses =
+        markdown_core_reserve(parser->misses, &parser->miss_capacity, parser->miss_count + 1, sizeof(*misses));
+    if (!misses) {
+        *failed = true;
+        return NULL;
+    }
+    parser->misses = misses;
+    misses[parser->miss_count++] = (markdown_core_definition_miss){block, markdown_core_scaffold_parent(block), kind,
+                                                                   parser->miss_labels.size, label->len};
+    markdown_core_strbuf_put(&parser->miss_labels, label->data, label->len);
+    *failed = parser->miss_labels.oom;
+    return NULL;
+}
+
+/* The roots of what completion made of a block, gathered for its release. */
+typedef struct {
+    markdown_core_parser *parser;
+    size_t count;
+} completion_release;
+
+static int S_gather_completed(markdown_core_node **slot, void *context) {
+    completion_release *release = context;
+    if (!*slot) {
+        return 1;
+    }
+    markdown_core_node **stack =
+        markdown_core_parser_walk_stack(release->parser, release->count + 1, sizeof(markdown_core_node *));
+    if (!stack) {
+        return 0;
+    }
+    stack[release->count++] = *slot;
+    return 1;
+}
+
+/* The inline content of `root`, released: the root stays, its content read
+ * as it was (markdown_core_parser_read_content), to be parsed again. */
+static void S_release_inline_content(markdown_core_parser *parser, markdown_core_node *root) {
+    for (uint32_t i = 0; i < root->child_count; i++) {
+        markdown_core_parser_release_node(parser, root->children[i]);
+    }
+    if (root->children) {
+        markdown_core_node_pool_bytes_free(parser->pool, root->children);
+    }
+    root->children = NULL;
+    root->child_count = 0;
+}
+
+static int S_release_field_content(markdown_core_node **slot, void *context) {
+    if (*slot) {
+        S_release_inline_content(context, *slot);
+    }
+    return 1;
+}
+
+/* WHAT COMPLETING A BLOCK MADE, released for the block to be completed
+ * again: the names it reserved -- the block's own anchor, its field roots'
+ * and those of every node of their inline content and of the block's -- and
+ * that inline content. The block and its field roots stay, as the block
+ * phase made them. The block's children are inline content when it holds
+ * inlines, and blocks with completions of their own otherwise. */
+static void S_release_completion(markdown_core_parser *parser, markdown_core_node *block) {
+    completion_release release = {.parser = parser};
+    const bool inlines = S_kind_contains_inlines(markdown_core_parser_kind(parser, block), block);
+    bool gathered = markdown_core_visit_inline_subtrees(block, S_gather_completed, &release);
+    for (uint32_t i = 0; gathered && inlines && i < block->child_count; i++) {
+        gathered = S_gather_completed(&block->children[i], &release);
+    }
+    if (block->attributes.anchor.len) {
+        markdown_core_withdraw_anchor(&parser->anchors, parser->pool, block->attributes.anchor.data,
+                                      block->attributes.anchor.len);
+    }
+    while (gathered && release.count) {
+        markdown_core_node *node = ((markdown_core_node **)parser->walk_stack)[--release.count];
+        if (node->attributes.anchor.len) {
+            markdown_core_withdraw_anchor(&parser->anchors, parser->pool, node->attributes.anchor.data,
+                                          node->attributes.anchor.len);
+        }
+        gathered = markdown_core_visit_inline_subtrees(node, S_gather_completed, &release);
+        for (uint32_t i = 0; gathered && i < node->child_count; i++) {
+            gathered = S_gather_completed(&node->children[i], &release);
+        }
+    }
+    if (!gathered) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return;
+    }
+    markdown_core_visit_inline_subtrees(block, S_release_field_content, parser);
+    if (inlines) {
+        S_release_inline_content(parser, block);
+    }
+}
+
+/* A LOOKUP THAT FOUND NOTHING at a snapshot's completion is asked again as
+ * the finalize ends the completion, with every definition visible (plan
+ * 5.10). A block one of whose lookups finds a definition now is completed
+ * again: what its first completion made is released, the element of a kind
+ * whose inline content is parsed before the walk parses it again, and the
+ * block joins the queue, with the block it settled into, which completes
+ * it as the finalize completes every block. A block joins once, however
+ * many of its lookups changed. */
+static void S_complete_misses(markdown_core_parser *parser) {
+    for (size_t i = 0; i < parser->miss_count && !parser->error; i++) {
+        const markdown_core_definition_miss miss = parser->misses[i];
+        if (miss.block == parser->completion_last || markdown_core_scaffold_next(miss.block)) {
+            continue;
+        }
+        const markdown_core_chunk label = {parser->miss_labels.ptr + miss.label_start, miss.label_length, 0};
+        bool failed = false;
+        const markdown_core_registry_record *record = S_find_definition(parser, miss.kind, &label, &failed);
+        if (failed) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            break;
+        }
+        if (!record) {
+            continue;
+        }
+        S_release_completion(parser, miss.block);
+        const markdown_core_kind_record *kind = markdown_core_parser_kind(parser, miss.block);
+        if (!parser->error && (kind->flags & MARKDOWN_CORE_KIND_DEFERRED)) {
+            parser->completing = miss.block;
+            kind->structure->element->reparse_inlines(kind->structure, parser, miss.block);
+        }
+        S_complete_later(parser, miss.block, miss.holder);
+    }
+    if (!parser->error && parser->completion_first) {
+        S_complete_queue(parser);
+    }
+}
+
 uint64_t markdown_core_source_key(const void *entry) {
     markdown_core_node *node;
     memcpy(&node, entry, sizeof(node));
@@ -3227,6 +3430,11 @@ int markdown_core_order_source_entries(markdown_core_source_order *workspace, vo
  * node's ENTER, text consolidation at a Text's EXIT, and every step at the
  * events of the kinds it declared.
  *
+ * A session's commits completed the blocks that settled before them
+ * (markdown_core_parser_complete). The stage completes the rest, and a
+ * finalize then asks again each lookup that found nothing at a commit (A
+ * LOOKUP THAT FOUND NOTHING) before the document's finalization.
+ *
  * What makes fusing them safe is the order the walk fixes. A Text's EXIT
  * comes after every Text sibling it will absorb has been produced and before
  * any step reads it, so a step at that EXIT sees the merged run. And an
@@ -3254,11 +3462,10 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
 
     S_close_document(parser);
     if (!parser->error) {
-        const markdown_core_element_instance *document = parser->dialect->document_structure;
-        document->element->prepare_document(document, parser);
+        S_complete_settled(parser);
     }
-    if (!parser->error) {
-        S_complete_queue(parser);
+    if (!parser->error && !parser->snapshot) {
+        S_complete_misses(parser);
     }
 
     /* The document's finalization reads the finished tree: the headings take

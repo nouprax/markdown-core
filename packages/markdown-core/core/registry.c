@@ -233,3 +233,42 @@ void markdown_core_registry_rollback(markdown_core_registry *registry, markdown_
     registry->block_used = mark.block_used;
     registry->block_size = mark.block_size;
 }
+
+bool markdown_core_reserve_anchor(markdown_core_reserved_anchors *anchors, markdown_core_node_pool *pool,
+                                  const unsigned char *name, bufsize_t length) {
+    markdown_core_key_index_slot *slot = markdown_core_key_index_entry(&anchors->names, name, length);
+    if (!slot) {
+        return false;
+    }
+    if (!slot->key) {
+        unsigned char *copy = markdown_core_node_pool_bytes(pool, (size_t)length);
+        if (!copy) {
+            return false;
+        }
+        memcpy(copy, name, (size_t)length);
+        markdown_core_key_index_commit(&anchors->names, slot, copy);
+        slot->value = 0;
+    }
+    slot->value++;
+    return true;
+}
+
+void markdown_core_withdraw_anchor(markdown_core_reserved_anchors *anchors, markdown_core_node_pool *pool,
+                                   const unsigned char *name, bufsize_t length) {
+    markdown_core_key_index_slot *slot = markdown_core_key_index_find(&anchors->names, name, length);
+    assert(slot && slot->value);
+    if (--slot->value == 0) {
+        unsigned char *copy = (unsigned char *)slot->key;
+        markdown_core_key_index_remove(&anchors->names, slot);
+        markdown_core_node_pool_bytes_free(pool, copy);
+    }
+}
+
+void markdown_core_reserved_anchors_free(markdown_core_reserved_anchors *anchors, markdown_core_node_pool *pool) {
+    for (size_t i = 0; i < anchors->names.capacity; i++) {
+        if (anchors->names.slots[i].key) {
+            markdown_core_node_pool_bytes_free(pool, (unsigned char *)anchors->names.slots[i].key);
+        }
+    }
+    markdown_core_key_index_free(&anchors->names);
+}
