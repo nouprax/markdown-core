@@ -131,10 +131,14 @@ typedef struct markdown_core_block_input {
 typedef struct markdown_core_parser_input {
     const unsigned char *source;
     size_t size, scanned;
-    /* Where the input's last complete line ends: a line ending with `\n`,
-     * or with `\r` and another byte after it. A reading at or past it reads
-     * the end of the input (markdown_core_parser_input_ends). A cell's
-     * content is complete when it is read, so this is its size. */
+    /* How far the input's complete lines are known to reach: a complete
+     * line ends with `\n`, or with `\r` and another byte after it. The scan
+     * shows it without reading a byte twice: every line it passed before the
+     * input's end is complete, the last line is complete when the input ends
+     * with `\n`, and otherwise the complete lines end where the last line
+     * starts. A reading at or past this asks the scan whether it reads the
+     * end of the input (markdown_core_parser_input_ends). A cell's content
+     * is complete when it is read, so this is its size. */
     size_t complete;
     struct markdown_core_input_line *lines;
     struct markdown_core_normalized_line *normalized;
@@ -702,7 +706,9 @@ static inline size_t markdown_core_input_line_next(const markdown_core_parser *p
 }
 
 /* Returned pointers are borrowed until the next request that grows the
- * index. Keep line numbers or copies across such a request. */
+ * index, which includes asking whether the input ends
+ * (markdown_core_parser_input_ends). Keep line numbers or copies across such
+ * a request. */
 markdown_core_input_line *markdown_core_parser_extend_source_lines(markdown_core_parser *parser, size_t index);
 
 static inline markdown_core_input_line *markdown_core_parser_source_line(markdown_core_parser *parser, int line) {
@@ -722,7 +728,10 @@ static inline markdown_core_input_line *markdown_core_parser_source_line(markdow
  * complete line reads what more text can change, so when the input is the
  * document's the parser records the line that asked (`end_seen`): its
  * decisions hold only while no more text follows. A table cell's input is
- * complete when it is read, so its end records nothing. */
+ * complete when it is read, so its end records nothing. A reading past
+ * where the complete lines are known to reach (`input.complete`) has the
+ * scan go on until a complete line ends after it or the input ends
+ * (markdown_core_parser_see_end_at). */
 static inline void markdown_core_parser_see_end(markdown_core_parser *parser) {
     if (!parser->end_seen && markdown_core_parser_block_root(parser) == parser->root) {
         parser->end_seen = true;
@@ -730,11 +739,13 @@ static inline void markdown_core_parser_see_end(markdown_core_parser *parser) {
     }
 }
 
+void markdown_core_parser_see_end_at(markdown_core_parser *parser, size_t offset);
+
 static inline bool markdown_core_parser_input_ends(markdown_core_parser *parser, const unsigned char *cursor) {
     const unsigned char *end = parser->input.source + parser->input.size;
     assert(cursor >= parser->input.source && cursor <= end);
     if (cursor >= parser->input.source + parser->input.complete) {
-        markdown_core_parser_see_end(parser);
+        markdown_core_parser_see_end_at(parser, (size_t)(cursor - parser->input.source));
     }
     return cursor == end;
 }

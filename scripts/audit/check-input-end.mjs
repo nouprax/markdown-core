@@ -12,9 +12,10 @@
  * next append can change. Nothing fails at once: the stream diverges from a
  * fresh parse only when text arrives after that line. So the rule is held
  * here, over a closed set of names: the parser's view of the end -- the
- * input's length, where its last complete line ends, how far its scanner has
- * read, and the record -- is read only by the entry, the line index, the
- * driver that installs an input and the commit point.
+ * input's length, how far its complete lines are known to reach, how far its
+ * scanner has read, and the record -- is read only by the entry, the line
+ * index, the scan that learns where complete lines end, the driver that
+ * installs an input and the commit point.
  */
 
 import fs from "node:fs";
@@ -29,14 +30,17 @@ const END_VIEW = /\bparser->(input\.(size|complete|scanned)|end_seen_at|end_seen
 
 /** The functions that own the end: the entry and its record (parser.h), the
  * line index's frontier, the physical-line scanner, the line index's entry
- * for readers, the driver that installs an input and the commit point the
- * record leaves (blocks.c). */
+ * for readers, how far the complete lines are known to reach and the scan
+ * that goes on to learn it, the driver that installs an input and the commit
+ * point the record leaves (blocks.c). */
 const OWNERS = new Set([
     "core/parser.h:markdown_core_parser_see_end",
     "core/parser.h:markdown_core_parser_input_ends",
     "core/parser.h:markdown_core_input_line_next",
     "core/blocks.c:S_extend_source_lines",
     "core/blocks.c:markdown_core_parser_extend_source_lines",
+    "core/blocks.c:S_complete_known",
+    "core/blocks.c:markdown_core_parser_see_end_at",
     "core/blocks.c:S_parse_source",
     "core/blocks.c:markdown_core_parser_commit_point"
 ]);
