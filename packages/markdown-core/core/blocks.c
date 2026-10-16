@@ -1953,21 +1953,8 @@ bool markdown_core_parser_commit(markdown_core_parser *parser, const char *sourc
     return !parser->error;
 }
 
-/* How far the complete lines of the document's input are known to reach
- * (parser.h, `input.complete`): the input's end when it ends with `\n`, the
- * scan's end while the scan has not reached the input's end, and otherwise
- * where the last line starts. */
-static inline size_t S_complete_known(const markdown_core_parser *parser) {
-    const size_t size = parser->input.size;
-    if (!size || parser->input.source[size - 1] == '\n') {
-        return size;
-    }
-    return parser->input.scanned < size ? parser->input.scanned
-                                        : parser->input.lines[parser->input.line_count - 1].start;
-}
-
 size_t markdown_core_parser_commit_point(const markdown_core_parser *parser) {
-    return parser->end_seen ? (size_t)parser->end_seen_at : S_complete_known(parser);
+    return parser->end_seen ? (size_t)parser->end_seen_at : parser->input.complete;
 }
 
 markdown_core_node *markdown_core_parser_finalize(markdown_core_parser *parser) {
@@ -2124,30 +2111,11 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
 markdown_core_input_line *markdown_core_parser_extend_source_lines(markdown_core_parser *parser, size_t index) {
     markdown_core_input_line *found = S_extend_source_lines(parser, index);
     /* A line asked past the last one, or the last one before it is complete,
-     * is a reading of the input's end. A line found is scanned, so asking
-     * about its start scans nothing more and `found` stays valid. */
+     * is a reading of the input's end. */
     if (found ? found->start >= parser->input.complete : !parser->error) {
-        markdown_core_parser_see_end_at(parser, found ? found->start : parser->input.size);
-    }
-    return found;
-}
-
-/* A reading at `offset` of the document's input, at or past where its
- * complete lines are known to reach: the scan goes on a line at a time until
- * a complete line ends after `offset` or the input ends, so each byte is
- * still scanned once. A cell's content, and a document that ends with `\n`,
- * are known complete to their end. */
-void markdown_core_parser_see_end_at(markdown_core_parser *parser, size_t offset) {
-    if (parser->input.complete < parser->input.size) {
-        parser->input.complete = S_complete_known(parser);
-        while (offset >= parser->input.complete && parser->input.scanned < parser->input.size &&
-               S_extend_source_lines(parser, parser->input.line_count)) {
-            parser->input.complete = S_complete_known(parser);
-        }
-    }
-    if (offset >= parser->input.complete) {
         markdown_core_parser_see_end(parser);
     }
+    return found;
 }
 
 markdown_core_line_facts *markdown_core_parser_extend_line_facts(markdown_core_parser *parser,
@@ -2163,6 +2131,38 @@ markdown_core_line_facts *markdown_core_parser_extend_line_facts(markdown_core_p
     *entry = (markdown_core_line_facts){0};
     line->facts = (uint32_t)parser->input.fact_count;
     return entry;
+}
+
+/* Where the last complete line of `source` ends (parser.h, input_complete):
+ * after the last CR or LF, leaving out a CR that ends the text. A text that
+ * does not end with LF can end in a long line, so the search compares a
+ * machine word at a time against the two bytes, as S_source_span_end does
+ * forward, and steps bytewise only through the word that holds the
+ * boundary. */
+static size_t S_complete_end(const unsigned char *source, size_t length) {
+    size_t end = length;
+    if (end && source[end - 1] == '\n') {
+        return end;
+    }
+    if (end && source[end - 1] == '\r') {
+        end--;
+    }
+    const uint64_t ones = UINT64_C(0x0101010101010101);
+    const uint64_t highs = UINT64_C(0x8080808080808080);
+    while (end >= sizeof(uint64_t)) {
+        uint64_t word;
+        memcpy(&word, source + end - sizeof(word), sizeof(word));
+        const uint64_t cr = word ^ (ones * '\r');
+        const uint64_t lf = word ^ (ones * '\n');
+        if ((((cr - ones) & ~cr) | ((lf - ones) & ~lf)) & highs) {
+            break;
+        }
+        end -= sizeof(word);
+    }
+    while (end && source[end - 1] != '\n' && source[end - 1] != '\r') {
+        end--;
+    }
+    return end;
 }
 
 /* THE DRIVER: reads the lines of `source` that start before `limit` as the
@@ -2188,7 +2188,7 @@ static void S_parse_source(markdown_core_parser *parser, const unsigned char *so
     }
     parser->input.source = source;
     parser->input.size = length;
-    parser->input.complete = at_root ? S_complete_known(parser) : length;
+    parser->input.complete = at_root ? S_complete_end(source, length) : length;
     parser->input.last_line_ready = false;
     if (at_root && !parser->line_number && limit) {
         const markdown_core_element_instance *document = parser->dialect->document_structure;
