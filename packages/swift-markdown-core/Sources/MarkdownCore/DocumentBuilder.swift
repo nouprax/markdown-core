@@ -67,10 +67,12 @@ struct DocumentBuilder {
             relations.label = enqueue(field: answer { markdown_core_node_directive_label(node, $0) })
         case MARKDOWN_CORE_KIND_CALLOUT:
             relations.title = enqueue(
-                nodes: answer(markdown_core_nodes()) { markdown_core_node_callout_title(node, $0) })
+                nodes: answer(markdown_core_nodes()) { markdown_core_node_callout_title(node, $0) }
+            )
         case MARKDOWN_CORE_KIND_DEFINITION:
             relations.term = enqueue(
-                nodes: answer(markdown_core_nodes()) { markdown_core_node_definition_term(node, $0) })
+                nodes: answer(markdown_core_nodes()) { markdown_core_node_definition_term(node, $0) }
+            )
             let bodies = answer(0) { markdown_core_node_definition_body_count(node, $0) }
             for index in 0..<bodies {
                 let body = answer(markdown_core_nodes()) { markdown_core_node_definition_body_at(node, index, $0) }
@@ -80,7 +82,8 @@ struct DocumentBuilder {
             relations.metadata = enqueue(field: answer { markdown_core_node_document_metadata(node, $0) })
         case MARKDOWN_CORE_KIND_CITE:
             relations.citations = enqueue(
-                nodes: answer(markdown_core_nodes()) { markdown_core_node_cite_citations(node, $0) })
+                nodes: answer(markdown_core_nodes()) { markdown_core_node_cite_citations(node, $0) }
+            )
         case MARKDOWN_CORE_KIND_CITATION:
             let referent = answer(markdown_core_referent()) { markdown_core_citation_referent(node, $0) }
             relations.note = enqueue(field: referent.note)
