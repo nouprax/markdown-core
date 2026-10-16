@@ -118,7 +118,8 @@ bool markdown_core_registry_normal_label(markdown_core_registry *registry, markd
 
 /* The record's label, borrowed from the registry. */
 static inline markdown_core_chunk markdown_core_registry_label(const markdown_core_registry_record *record) {
-    return (markdown_core_chunk){(unsigned char *)record->key + 1, record->key_len - 1, 0};
+    markdown_core_chunk label = {(unsigned char *)record->key + 1, record->key_len - 1, 0};
+    return label;
 }
 
 /* Whether some declaration of the record's key, up to the record, starts
