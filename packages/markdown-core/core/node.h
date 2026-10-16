@@ -443,8 +443,9 @@ typedef struct {
 /* A node's TEXT, the view of its content its inlines are parsed from: all of
  * it but its cuts. */
 static inline markdown_core_chunk markdown_core_node_text(const markdown_core_node *node) {
-    return (markdown_core_chunk){node->content.ptr + node->cut_front,
-                                 node->content.size - node->cut_front - node->cut_back, 0};
+    markdown_core_chunk text = {node->content.ptr + node->cut_front,
+                                node->content.size - node->cut_front - node->cut_back, 0};
+    return text;
 }
 
 static inline markdown_core_node_slot *markdown_core_node_slot_of(const markdown_core_node *node) {
