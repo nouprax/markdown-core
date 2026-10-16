@@ -696,7 +696,7 @@ test("robustness: a session continues a deep document", () => {
     }
 });
 
-test("sessions: finalize returns the final document and ends the session", () => {
+test("api: a session's finalize returns the final document and ends the session", () => {
     for (const unit of ["utf8", "utf16"]) {
         const session = new MarkdownSession("[a]\n\n", { unit });
         try {
