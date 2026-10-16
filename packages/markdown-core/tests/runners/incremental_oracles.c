@@ -385,13 +385,11 @@ static void correspondence_free(correspondence *pairs) {
  * corresponding node does, and the expected document's own scopes are its
  * dump's. Each step takes SCOPE_SAMPLE nodes spread over the walk, and the
  * next step the nodes after them, so consecutive steps cover the whole
- * document: every query costs a walk of the document. A hit where the two
- * may differ is not compared. */
+ * document: every query costs a walk of the document. */
 static void check_queries(run *state, const char *oracle, const char *where, size_t step, ih_unit unit,
                           const markdown_core_document *document, const view *actual,
                           const markdown_core_document *expected_document, const view *expected,
-                          const correspondence *pairs, const uint8_t *expected_dump, size_t expected_dump_size,
-                          const uint8_t *text, size_t length) {
+                          const uint8_t *expected_dump, size_t expected_dump_size, const uint8_t *text, size_t length) {
     size_t lines = 0, stride = expected->count / SCOPE_SAMPLE + 1, index, line = 0;
     size_t *starts = line_starts(text, length, &lines);
     const char *cursor = (const char *)expected_dump, *end = cursor + expected_dump_size;
@@ -401,7 +399,7 @@ static void check_queries(run *state, const char *oracle, const char *where, siz
     }
     for (index = 0; index < expected->count && !stopped(state); index++) {
         markdown_core_scope *mine = NULL, *theirs = NULL;
-        size_t mine_count = 0, theirs_count = 0, range, own = corresponding(pairs, index);
+        size_t mine_count = 0, theirs_count = 0, range;
         const char *scope = NULL;
         /* The expected dump's line of node `index`. */
         while (cursor < end) {
@@ -416,10 +414,10 @@ static void check_queries(run *state, const char *oracle, const char *where, siz
                 break;
             }
         }
-        if (index % stride != step % stride || own == SIZE_MAX) {
+        if (index % stride != step % stride) {
             continue;
         }
-        if (markdown_core_document_scope(document, actual->nodes[own].object, text, length, &mine, &mine_count) !=
+        if (markdown_core_document_scope(document, actual->nodes[index].object, text, length, &mine, &mine_count) !=
                 MARKDOWN_CORE_OK ||
             markdown_core_document_scope(expected_document, expected->nodes[index].object, text, length, &theirs,
                                          &theirs_count) != MARKDOWN_CORE_OK) {
@@ -451,11 +449,7 @@ static void check_queries(run *state, const char *oracle, const char *where, siz
                 }
                 hit_index = view_find(actual, hit);
                 expected_index = view_find(expected, expected_hit);
-                if (pairs &&
-                    (free_node(pairs->actual_free, hit_index) || free_node(pairs->expected_free, expected_index))) {
-                    continue;
-                }
-                if (hit_index != corresponding(pairs, expected_index)) {
+                if (hit_index != expected_index) {
                     fail(state, oracle, "%s step %zu: node(at: %d:%d) differs from the expected document's", where,
                          step, positions[at].line, positions[at].column);
                     break;
@@ -1316,7 +1310,7 @@ static void check_equal(run *state, const char *oracle, const char *where, size_
              index + 1);
         goto done;
     }
-    check_queries(state, oracle, where, step, unit, document, after, expected, &expected_view, NULL, expected_dump,
+    check_queries(state, oracle, where, step, unit, document, after, expected, &expected_view, expected_dump,
                   expected_length, model->bytes, model->length);
     check_tables(state, oracle, where, step, document, after, expected, &expected_view, NULL);
 done:
@@ -1326,7 +1320,9 @@ done:
 
 /* 4.6's snapshot meaning: the subject's snapshot, viewed in `after`, equals
  * `fresh`, the fresh parse of the text, everywhere but where plan 5.5 lets
- * it differ. Failures are 4.1's: the snapshot equals the fresh parse there. */
+ * it differ: node for node in the dumps, which carry every scope, and in the
+ * definition tables. The position queries are chunking independence's.
+ * Failures are 4.1's: the snapshot equals the fresh parse there. */
 static void check_meaning(run *state, const char *where, size_t step, ih_unit unit,
                           const markdown_core_document *document, const view *after,
                           const markdown_core_document *fresh, const ih_text *model) {
@@ -1348,8 +1344,6 @@ static void check_meaning(run *state, const char *where, size_t step, ih_unit un
         goto done;
     }
     check_anchors(state, where, step, after, &expected, relations, &pairs);
-    check_queries(state, "4.1", where, step, unit, document, after, fresh, &expected, &pairs, fresh_dump, fresh_length,
-                  model->bytes, model->length);
     check_tables(state, "4.1", where, step, document, after, fresh, &expected, &pairs);
 done:
     correspondence_free(&pairs);
