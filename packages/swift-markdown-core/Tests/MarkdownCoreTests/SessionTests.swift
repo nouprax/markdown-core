@@ -48,4 +48,28 @@ import Testing
         }
         #expect(session.text == chunks.joined())
     }
+
+    @Test("finalize returns the final document and ends the session", arguments: [TextUnit.utf8, .utf16])
+    func finalize(unit: TextUnit) throws {
+        let session = try MarkdownSession("[a]\n\n", unit: unit)
+        _ = try session.append("[a]: /url\n")
+        let final = try session.finalize()
+        let text = session.text
+        #expect(final == session.document)
+        #expect(try final.dump(in: text) == Document.parse(text, unit: unit).dump(in: text))
+        #expect(finalized { try session.append("more") })
+        #expect(finalized { try session.finalize() })
+        #expect(session.text == text)
+        #expect(session.document == final)
+    }
+}
+
+/// Whether `call` throws the library's error with ``ErrorCode/sessionFinalized``.
+private func finalized(_ call: () throws -> Document) -> Bool {
+    do {
+        _ = try call()
+        return false
+    } catch {
+        return (error as? MarkdownCoreError)?.code == .sessionFinalized
+    }
 }

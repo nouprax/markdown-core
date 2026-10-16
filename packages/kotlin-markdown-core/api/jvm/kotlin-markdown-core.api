@@ -279,6 +279,7 @@ public final class com/nouprax/markdown/core/ErrorCode : java/lang/Enum {
 	public static final field ALLOCATION_FAILED Lcom/nouprax/markdown/core/ErrorCode;
 	public static final field KIND_MISMATCH Lcom/nouprax/markdown/core/ErrorCode;
 	public static final field OUT_OF_BOUNDS Lcom/nouprax/markdown/core/ErrorCode;
+	public static final field SESSION_FINALIZED Lcom/nouprax/markdown/core/ErrorCode;
 	public static fun getEntries ()Lkotlin/enums/EnumEntries;
 	public static fun valueOf (Ljava/lang/String;)Lcom/nouprax/markdown/core/ErrorCode;
 	public static fun values ()[Lcom/nouprax/markdown/core/ErrorCode;
@@ -466,6 +467,7 @@ public final class com/nouprax/markdown/core/MarkdownSession : java/lang/AutoClo
 	public synthetic fun <init> (Ljava/lang/String;Lcom/nouprax/markdown/core/TextUnit;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun append (Ljava/lang/String;)Lcom/nouprax/markdown/core/Document;
 	public fun close ()V
+	public final fun finalize ()Lcom/nouprax/markdown/core/Document;
 	public final fun getDocument ()Lcom/nouprax/markdown/core/Document;
 	public final fun getText ()Ljava/lang/String;
 	public final fun getUnit ()Lcom/nouprax/markdown/core/TextUnit;

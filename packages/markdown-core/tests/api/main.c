@@ -10791,6 +10791,20 @@ static void session_appends(test_batch_runner *runner) {
     uint8_t text[64];
     markdown_core_session_text(session, text);
     OK(runner, memcmp(text, "one\n\ntwo \xf0\xa0\x80\x80\ns\xe4\xb8", sizeof(source) + 2) == 0, "the text");
+    const markdown_core_document *final = NULL;
+    OK(runner,
+       markdown_core_session_finalize(session, &final) == MARKDOWN_CORE_OK && final &&
+           final == markdown_core_session_document(session),
+       "finalize answers the session's final document");
+    document = NULL;
+    OK(runner,
+       markdown_core_session_append(session, (const uint8_t *)"x", 1, &document) == MARKDOWN_CORE_SESSION_FINALIZED &&
+           !document && markdown_core_session_text_size(session) == sizeof(source) + 2,
+       "an append after finalize is SESSION_FINALIZED and takes nothing");
+    OK(runner, markdown_core_session_finalize(session, &document) == MARKDOWN_CORE_SESSION_FINALIZED && !document,
+       "a second finalize is SESSION_FINALIZED");
+    OK(runner, facade_child(markdown_core_document_root(markdown_core_session_document(session)), 0) != NULL,
+       "the final document stays readable");
     markdown_core_session_free(session);
 }
 

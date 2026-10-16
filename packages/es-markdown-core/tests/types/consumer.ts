@@ -43,6 +43,7 @@ Document.parse("# typed", { tables: true });
 const unit: TextUnit = Document.parse("# typed", { unit: "utf8" }).unit;
 const session = new MarkdownSession("# typed", { unit: "utf16" });
 const appended: Document = session.append("\n");
+const final: Document = session.finalize();
 const sessionText: string = session.text;
 const sessionUnit: TextUnit = session.unit;
 session.dispose();
@@ -54,7 +55,7 @@ const nodeDump: string = document.dump(document.content[0]!, "# typed");
 const explicitNodeDump: string = MarkupDumper.dump(document, document.content[0]!, "# typed");
 // @ts-expect-error a dump is computed from the source
 document.dump();
-void [unit, dump, explicitDump, nodeDump, explicitNodeDump, appended, sessionText, sessionUnit];
+void [unit, dump, explicitDump, nodeDump, explicitNodeDump, appended, final, sessionText, sessionUnit];
 const id: number = document.id;
 const extent: Extent = document.extent;
 const runs: readonly Run[] = document.content[0]!.runs;
@@ -70,7 +71,7 @@ try {
         void [code, message];
     }
 }
-const codes: readonly ErrorCode[] = ["allocationFailed", "outOfBounds", "kindMismatch"];
+const codes: readonly ErrorCode[] = ["allocationFailed", "outOfBounds", "kindMismatch", "sessionFinalized"];
 // @ts-expect-error the codes are closed
 const unknownCode: ErrorCode = "invalidArgument";
 // @ts-expect-error an error's code is readonly

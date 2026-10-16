@@ -85,12 +85,14 @@ typedef struct markdown_core_node markdown_core_node;
  *   capacity the library can represent.
  * - OUT_OF_BOUNDS: an index, position or source length names something that
  *   is not there.
- * - KIND_MISMATCH: the node or value is not of the kind the accessor reads. */
+ * - KIND_MISMATCH: the node or value is not of the kind the accessor reads.
+ * - SESSION_FINALIZED: the session was finalized, and takes no more text. */
 typedef enum markdown_core_status {
     MARKDOWN_CORE_OK = 0,
     MARKDOWN_CORE_ALLOCATION_FAILED = 1,
     MARKDOWN_CORE_OUT_OF_BOUNDS = 2,
     MARKDOWN_CORE_KIND_MISMATCH = 3,
+    MARKDOWN_CORE_SESSION_FINALIZED = 4,
 } markdown_core_status;
 
 /** A read-only run of UTF-8 bytes that this library owns.
@@ -399,7 +401,8 @@ MARKDOWN_CORE_API markdown_core_text_unit markdown_core_document_unit(const mark
  * each append adds to the end of both: the new document continues the
  * previous one, so a node that continues an old node keeps its identifier,
  * and one whose value is unchanged is the old node. The document a session
- * returns borrows from the session until its next append or its release.
+ * returns borrows from the session until its next append, its finalize or
+ * its release.
  *
  * `markdown_core_session_new` parses `size` bytes of `source` as
  * markdown_core_document_parse does, into a session whose documents count
@@ -412,10 +415,19 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_session_new(const uint8_t *
 /** Appends `size` bytes of `text` to the text and parses it; `*document`
  * receives the new document. The bytes are stored as given, so a scalar may
  * be split between two appends. ALLOCATION_FAILED when an allocation fails
- * or the text would exceed the 1 GiB a document can hold. */
+ * or the text would exceed the 1 GiB a document can hold; SESSION_FINALIZED
+ * after markdown_core_session_finalize. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_session_append(markdown_core_session *session, const uint8_t *text,
                                                                     size_t size,
                                                                     const markdown_core_document **document);
+/** Ends the session's text; `*document` receives the final document, which
+ * equals markdown_core_document_parse_in of the text in everything but node
+ * identifiers. The caller ends a session explicitly: nothing ends it
+ * implicitly. Afterwards the session's document and text stay readable, and
+ * markdown_core_session_append and markdown_core_session_finalize answer
+ * SESSION_FINALIZED. ALLOCATION_FAILED when an allocation fails. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_session_finalize(markdown_core_session *session,
+                                                                      const markdown_core_document **document);
 MARKDOWN_CORE_API const markdown_core_document *markdown_core_session_document(const markdown_core_session *session);
 MARKDOWN_CORE_API markdown_core_text_unit markdown_core_session_unit(const markdown_core_session *session);
 /** The size of the session's text in bytes, and a copy of it into `bytes`,

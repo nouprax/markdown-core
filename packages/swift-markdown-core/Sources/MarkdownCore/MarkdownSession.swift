@@ -8,6 +8,11 @@ import MarkdownCoreC
 /// each step; it borrows nothing from the session, so it is safe to hold, copy
 /// and send across isolation boundaries.
 ///
+/// The caller ends the text with ``finalize()``, which returns the final
+/// document; nothing ends a session implicitly. Afterwards ``document`` and
+/// ``text`` stay readable, and ``append(_:)`` and ``finalize()`` throw
+/// ``ErrorCode/sessionFinalized``.
+///
 /// A session has one writer. It is not `Sendable`.
 public final class MarkdownSession {
     private let session: OpaquePointer
@@ -56,7 +61,8 @@ public final class MarkdownSession {
     /// - Parameter text: the Markdown to append. It is read as UTF-8.
     /// - Returns: the new ``document``.
     /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/allocationFailed``
-    ///   when an allocation fails or the text would exceed 1 GiB of UTF-8.
+    ///   when an allocation fails or the text would exceed 1 GiB of UTF-8,
+    ///   and with ``ErrorCode/sessionFinalized`` after ``finalize()``.
     @discardableResult
     public func append(_ text: String) throws -> Document {
         var native: OpaquePointer?
@@ -64,6 +70,20 @@ public final class MarkdownSession {
         let status = appended.withUTF8 { bytes in
             markdown_core_session_append(session, bytes.baseAddress, bytes.count, &native)
         }
+        return try publish(status, native)
+    }
+
+    /// Ends the text and returns the final document, which equals
+    /// ``Document/parse(_:unit:)`` of ``text`` in everything but ids.
+    ///
+    /// - Returns: the final ``document``.
+    /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/allocationFailed``
+    ///   when an allocation fails, and with ``ErrorCode/sessionFinalized``
+    ///   when the session was already finalized.
+    @discardableResult
+    public func finalize() throws -> Document {
+        var native: OpaquePointer?
+        let status = markdown_core_session_finalize(session, &native)
         return try publish(status, native)
     }
 

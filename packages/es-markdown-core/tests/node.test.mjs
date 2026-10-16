@@ -696,11 +696,32 @@ test("robustness: a session continues a deep document", () => {
     }
 });
 
+test("api: a session's finalize returns the final document and ends the session", () => {
+    for (const unit of ["utf8", "utf16"]) {
+        const session = new MarkdownSession("[a]\n\n", { unit });
+        try {
+            session.append("[a]: /url\n");
+            const final = session.finalize();
+            const text = session.text;
+            assert.equal(final, session.document);
+            assert.equal(final.dump(text), Document.parse(text, { unit }).dump(text));
+            const finalized = (error) => error instanceof MarkdownCoreError && error.code === "sessionFinalized";
+            assert.throws(() => session.append("more"), finalized);
+            assert.throws(() => session.finalize(), finalized);
+            assert.equal(session.text, text);
+            assert.equal(session.document, final);
+        } finally {
+            session.dispose();
+        }
+    }
+});
+
 test("errors: a disposed session takes no further call", () => {
     const session = new MarkdownSession("text\n");
     session.dispose();
     session.dispose();
     assert.throws(() => session.append("more"), Error);
+    assert.throws(() => session.finalize(), Error);
     assert.throws(() => session.text, Error);
     assert.equal(session.document.content.length, 1);
 });
@@ -931,7 +952,8 @@ test("errors: a native failure maps its status by value across the WASM boundary
     for (const [status, code] of [
         [1, "allocationFailed"],
         [2, "outOfBounds"],
-        [3, "kindMismatch"]
+        [3, "kindMismatch"],
+        [4, "sessionFinalized"]
     ]) {
         assert.throws(
             () => decoder(new MessageWriter().error(status)).decode(),

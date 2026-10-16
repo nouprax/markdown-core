@@ -10,8 +10,8 @@
 #include <parser.h>
 
 /* A SESSION: the text, the parser instance that reads it, the document
- * parsed from it, the storage its nodes live in, the last id it issued and
- * the document's node count. Each append adds to the end of the text and
+ * parsed from it, the storage its nodes live in, the last id it issued, the
+ * document's node count and whether it was finalized. Each append adds to the end of the text and
  * parses the whole text again as a revision of the document (parser.h), so
  * the new document continues the old one and the old one's nodes go back to
  * the session's pool. The text is one buffer of `capacity` bytes, `size` of
@@ -24,6 +24,7 @@ struct markdown_core_session {
     markdown_core_document document;
     uint64_t last_id;
     size_t node_count;
+    bool finalized;
 };
 
 /* The one parse of a session's text: a start, a commit of the whole text
@@ -116,11 +117,26 @@ markdown_core_status markdown_core_session_new(const uint8_t *source, size_t siz
 
 markdown_core_status markdown_core_session_append(markdown_core_session *session, const uint8_t *text, size_t size,
                                                   const markdown_core_document **document) {
+    if (session->finalized) {
+        return MARKDOWN_CORE_SESSION_FINALIZED;
+    }
     markdown_core_status status = session_append(session, text, size);
     if (status == MARKDOWN_CORE_OK) {
         *document = &session->document;
     }
     return status;
+}
+
+/* Every parse of a session reads the whole text, so its document is already
+ * the final one. */
+markdown_core_status markdown_core_session_finalize(markdown_core_session *session,
+                                                    const markdown_core_document **document) {
+    if (session->finalized) {
+        return MARKDOWN_CORE_SESSION_FINALIZED;
+    }
+    session->finalized = true;
+    *document = &session->document;
+    return MARKDOWN_CORE_OK;
 }
 
 const markdown_core_document *markdown_core_session_document(const markdown_core_session *session) {

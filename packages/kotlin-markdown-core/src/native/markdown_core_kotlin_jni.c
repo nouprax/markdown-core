@@ -111,6 +111,11 @@ static jbyteArray JNICALL native_session_append(JNIEnv *environment, jobject rec
     return message_array(environment, message);
 }
 
+static jbyteArray JNICALL native_session_finalize(JNIEnv *environment, jobject receiver, jlong session) {
+    (void)receiver;
+    return message_array(environment, markdown_core_wire_session_finalize(session_address(session)));
+}
+
 /* A copy of the session's text, which the 1 GiB limit keeps within a JVM
  * array. NULL leaves the JVM's exception pending. */
 static jbyteArray JNICALL native_session_text(JNIEnv *environment, jobject receiver, jlong session) {
@@ -146,6 +151,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *virtual_machine, void *reserved) {
         {"parsePayload", "([B)[B", (void *)native_parse},
         {"sessionNewPayload", "([BZ[J)[B", (void *)native_session_new},
         {"sessionAppendPayload", "(J[B)[B", (void *)native_session_append},
+        {"sessionFinalizePayload", "(J)[B", (void *)native_session_finalize},
         {"sessionText", "(J)[B", (void *)native_session_text},
         {"sessionFree", "(J)V", (void *)native_session_free},
     };

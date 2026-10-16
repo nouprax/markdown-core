@@ -64,11 +64,35 @@ class SessionTest {
     }
 
     @Test
+    fun finalizeReturnsTheFinalDocumentAndEndsTheSession() {
+        for (unit in listOf(TextUnit.UTF8, TextUnit.UTF16)) {
+            MarkdownSession("[a]\n\n", unit).use { session ->
+                session.append("[a]: /url\n")
+                val final = session.finalize()
+                val text = session.text
+                assertEquals(final, session.document)
+                assertEquals(Document.parse(text, unit).dump(text), final.dump(text))
+                assertEquals(
+                    ErrorCode.SESSION_FINALIZED,
+                    assertFailsWith<MarkdownCoreException> { session.append("more") }.code,
+                )
+                assertEquals(
+                    ErrorCode.SESSION_FINALIZED,
+                    assertFailsWith<MarkdownCoreException> { session.finalize() }.code,
+                )
+                assertEquals(text, session.text)
+                assertEquals(final, session.document)
+            }
+        }
+    }
+
+    @Test
     fun aClosedSessionTakesNoFurtherCall() {
         val session = MarkdownSession("text\n")
         session.close()
         session.close()
         assertFailsWith<IllegalStateException> { session.append("more") }
+        assertFailsWith<IllegalStateException> { session.finalize() }
         assertFailsWith<IllegalStateException> { session.text }
         assertEquals(1, session.document.content.size)
     }
