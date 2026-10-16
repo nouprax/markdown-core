@@ -41,41 +41,8 @@ void markdown_core_block_register_heading(const markdown_core_element_instance *
     headings->values[headings->count++] = (markdown_core_heading_parse){.node = node};
 }
 
-static markdown_core_key_index_slot *anchor_slot(markdown_core_parser *parser, markdown_core_heading_state *state,
-                                                 markdown_core_chunk key) {
-    state->anchor_work += (size_t)key.len + 1;
-    markdown_core_key_index_slot *slot = markdown_core_key_index_entry(&state->anchors.index, key.data, key.len);
-    if (!slot) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
-    return slot;
-}
-
-/* An explicit anchor is reserved as completion enters its node, before
- * any heading is given a computed one; a parse without headings reserves
- * nothing, since only a heading's computed anchor can collide. */
-void markdown_core_headings_observe(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                    markdown_core_node *node) {
-    markdown_core_heading_state *state = self->state;
-    anchor_registry *registry = &state->anchors;
-    if (!state->headings.count) {
-        return;
-    }
-    const markdown_core_chunk *anchor = &node->attributes.anchor;
-    if (!anchor->len) {
-        return;
-    }
-    state->anchor_work++;
-    markdown_core_key_index_slot *slot = anchor_slot(parser, state, *anchor);
-    if (slot && !slot->key) {
-        markdown_core_key_index_commit(&registry->index, slot, anchor->data);
-        slot->value.counter = 1;
-    }
-}
-
 /* Every heading's inlines up to its declaration dependency, and the implicit
- * reference each declares, in source order; then the anchor registry sized
- * for them. */
+ * reference each declares, in source order. */
 void markdown_core_headings_prepare(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     markdown_core_heading_state *state = self->state;
     markdown_core_heading_collection *headings = &state->headings;
@@ -84,24 +51,18 @@ void markdown_core_headings_prepare(const markdown_core_element_instance *self, 
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
-    /* The reference map compares explicitness and original source positions,
-     * independently of mapped-input scheduling and declaration closure order. */
+    /* Anchors are numbered in source order, whatever order mapped inputs were
+     * scheduled and headings closed in. */
     for (size_t i = 0; i < headings->count && !parser->error; i++) {
         markdown_core_prepare_heading(self, parser, &headings->values[i]);
-        if (parser->refmap->oom) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        }
     }
     for (size_t i = 0; i < headings->count && !parser->error; i++) {
         markdown_core_finish_heading(parser, &headings->values[i]);
     }
-    if (!parser->error && !markdown_core_key_index_init(&state->anchors.index, headings->count)) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
 }
 
-/* Release the headings and their registry. The anchors are assigned by then,
- * or the parse failed; either way nothing reads them again. */
+/* Release the headings. The anchors are assigned by then, or the parse
+ * failed; either way nothing reads them again. */
 void markdown_core_headings_dispose(const markdown_core_element_instance *self) {
     markdown_core_heading_state *state = self->state;
     markdown_core_heading_collection *headings = &state->headings;
@@ -110,7 +71,6 @@ void markdown_core_headings_dispose(const markdown_core_element_instance *self) 
     }
     markdown_core_free(headings->values);
     *headings = (markdown_core_heading_collection){0};
-    markdown_core_key_index_free(&state->anchors.index);
 }
 
 static void project_anchor_literal(markdown_core_heading_state *state, markdown_core_strbuf *base,
@@ -244,12 +204,36 @@ static void append_anchor_suffix(markdown_core_strbuf *base, size_t ordinal) {
     markdown_core_strbuf_put(base, (const unsigned char *)start, (bufsize_t)(end - start));
 }
 
-/* Each heading's anchor: an authored one stays, and a computed one is the
- * heading's own copy of the first free name its text projects to. */
+/* The explicit anchor the parse reserved under `name`, or NULL. */
+static const markdown_core_registry_record *
+reserved_anchor(markdown_core_parser *parser, markdown_core_heading_state *state, const markdown_core_strbuf *name) {
+    state->anchor_work += (size_t)name->size + 1;
+    bool failed = false;
+    const markdown_core_registry_record *record =
+        markdown_core_registry_find(&parser->registry, MARKDOWN_CORE_REGISTRY_ANCHOR, name->ptr, name->size, &failed);
+    if (failed) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+    return record;
+}
+
+/* Each heading's anchor, in source order: an authored one stays, and a
+ * computed one is the heading's own copy of the first name its text projects
+ * to that no explicit anchor reserves (the registry's ANCHOR records) and no
+ * heading before it was given. The names taken are this pass's own index:
+ * the names given, and each reserved name a candidate met, under the
+ * reservation's bytes. A projected name's entry also keeps the suffix to try
+ * next, so a run of headings projecting to one name tries each suffix once,
+ * and each candidate costs one entry lookup, which a vacant name the heading
+ * is given commits in place. */
 void markdown_core_headings_finish(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     markdown_core_heading_state *state = self->state;
     markdown_core_heading_collection *headings = &state->headings;
-    anchor_registry *registry = &state->anchors;
+    markdown_core_key_index taken;
+    if (!markdown_core_key_index_init(&taken, headings->count)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return;
+    }
     markdown_core_strbuf base = MARKDOWN_CORE_BUF_INIT();
     anchor_projection_stack stack = {0};
     for (size_t i = 0; i < headings->count && !parser->error; i++) {
@@ -263,22 +247,37 @@ void markdown_core_headings_finish(const markdown_core_element_instance *self, m
         if (parser->error) {
             break;
         }
-        bufsize_t base_length = base.size;
-        markdown_core_key_index_slot *entry = anchor_slot(parser, state, (markdown_core_chunk){base.ptr, base.size, 0});
-        markdown_core_key_index_slot *candidate = entry;
-        if (entry && entry->key) {
-            do {
-                markdown_core_strbuf_truncate(&base, base_length);
-                append_anchor_suffix(&base, entry->value.counter++);
-                if (base.oom) {
-                    markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-                    break;
-                }
-                /* Only a vacant candidate can grow the index. The base
-                 * cursor is updated before that call and never used after
-                 * it returns a vacant entry, so no pointer survives growth. */
-                candidate = anchor_slot(parser, state, (markdown_core_chunk){base.ptr, base.size, 0});
-            } while (candidate && candidate->key);
+        const bufsize_t base_length = base.size;
+        state->anchor_work += (size_t)base_length + 1;
+        /* The projected name's entry, which keeps its next suffix. */
+        markdown_core_key_index_slot *projected = markdown_core_key_index_entry(&taken, base.ptr, base.size);
+        markdown_core_key_index_slot *candidate = projected;
+        while (candidate) {
+            const markdown_core_registry_record *reserved =
+                candidate->key ? NULL : reserved_anchor(parser, state, &base);
+            if (parser->error || (!candidate->key && !reserved)) {
+                break;
+            }
+            if (reserved) {
+                markdown_core_key_index_commit(&taken, candidate, markdown_core_registry_label(reserved).data);
+                candidate->value = 1;
+                /* Committing a vacant entry may have moved the projected
+                 * name's. */
+                projected = markdown_core_key_index_find(&taken, base.ptr, base_length);
+            }
+            markdown_core_strbuf_truncate(&base, base_length);
+            append_anchor_suffix(&base, projected->value++);
+            if (base.oom) {
+                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+                break;
+            }
+            /* The projected name's suffix is advanced before this lookup,
+             * which moves entries only when it returns a vacant one. */
+            state->anchor_work += (size_t)base.size + 1;
+            candidate = markdown_core_key_index_entry(&taken, base.ptr, base.size);
+        }
+        if (!candidate) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
         if (parser->error) {
             break;
@@ -290,9 +289,10 @@ void markdown_core_headings_finish(const markdown_core_element_instance *self, m
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             break;
         }
-        markdown_core_key_index_commit(&registry->index, candidate, anchor->data);
-        candidate->value.counter = 1;
+        markdown_core_key_index_commit(&taken, candidate, anchor->data);
+        candidate->value = 1;
     }
+    markdown_core_key_index_free(&taken);
     markdown_core_free(stack.values);
     markdown_core_strbuf_free(&base);
 }
@@ -300,7 +300,7 @@ void markdown_core_headings_finish(const markdown_core_element_instance *self, m
 void markdown_core_prepare_heading(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                    markdown_core_heading_parse *heading) {
     markdown_core_inline_state inline_state;
-    markdown_core_inline_start_inlines(parser, heading->node, true, parser->refmap, &inline_state);
+    markdown_core_inline_start_inlines(parser, heading->node, true, &inline_state);
     while (!parser->error && !inline_state.error) {
         unsigned char c = markdown_core_inline_peek_char(&inline_state);
         /* Attribute ownership and opaque tokens are decided by the same
@@ -336,10 +336,10 @@ void markdown_core_prepare_heading(const markdown_core_element_instance *self, m
         if (label.len > 0 && label.len <= MAX_LINK_LABEL_LENGTH &&
             markdown_core_inline_reference_label_length(label.data, label.len) == label.len) {
             markdown_core_chunk *declared = &heading->node->as.heading->label;
-            if (!markdown_core_label_normalize(parser->refmap, parser->pool, &label, declared)) {
+            if (!markdown_core_registry_normal_label(&parser->registry, parser->pool, &label, declared) ||
+                !markdown_core_registry_declare(&parser->registry, MARKDOWN_CORE_REGISTRY_REFERENCE, declared->data,
+                                                declared->len, heading->node->where.place.start)) {
                 markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            } else {
-                markdown_core_label_declare(parser->refmap, declared);
             }
         }
     }

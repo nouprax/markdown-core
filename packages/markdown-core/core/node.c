@@ -5,7 +5,6 @@
 #include "alloc.h"
 #include "config.h"
 #include "node.h"
-#include "references.h"
 #include "element.h"
 
 static void S_node_unlink(markdown_core_node *node);
@@ -394,7 +393,9 @@ static void free_node_as(markdown_core_node_pool *pool, markdown_core_node *node
         markdown_core_optional_chunk_free(&node->as.specimen->label);
         break;
     case MARKDOWN_CORE_NODE_FOOTNOTE:
-        markdown_core_optional_chunk_free(&node->as.footnote->label);
+        if (node->as.footnote->label.has_value) {
+            markdown_core_node_pool_bytes_free(pool, node->as.footnote->label.value.data);
+        }
         break;
     case MARKDOWN_CORE_NODE_LINK:
     case MARKDOWN_CORE_NODE_EMBEDDED:

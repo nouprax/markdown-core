@@ -21,10 +21,9 @@
  * declared.
  *
  * The document lifecycle is one concern too. The engine calls every one of
- * its hooks but `observe_inline` without asking, on whichever element owns
- * it, so an element that declares part of it would have the engine call
- * through a NULL the moment it became the owner: it declares all of them or
- * none.
+ * its hooks without asking, on whichever element owns it, so an element that
+ * declares part of it would have the engine call through a NULL the moment it
+ * became the owner: it declares all of them or none.
  *
  * A flanking-transparent byte is ASCII. Flanking tests a decoded scalar
  * against these bytes, and only a scalar below 0x80 is its own byte. Its walk
@@ -87,8 +86,7 @@ static bool S_element_refused(const markdown_core_element *element) {
     }
     /* Only part of the document lifecycle. */
     if ((element->init_document || element->dispose_document || element->read_document_prefix ||
-         element->prepare_document || element->finish_document || element->publish_document ||
-         element->observe_inline) &&
+         element->prepare_document || element->finish_document || element->publish_document) &&
         !S_owns_document_lifecycle(element)) {
         return true;
     }

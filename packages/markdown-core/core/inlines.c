@@ -8,8 +8,6 @@
 #include "config.h"
 #include "node.h"
 #include "parser.h"
-#include "references.h"
-#include "map.h"
 #include "node_type.h"
 #include "buffer.h"
 #include "houdini.h"
@@ -150,11 +148,10 @@ static bool S_inline_run_began(const markdown_core_inline_state *inline_state) {
 }
 
 void markdown_core_inline_state_from_buf(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
-                                         markdown_core_chunk *chunk, markdown_core_map *refmap) {
+                                         markdown_core_chunk *chunk) {
     memset(inline_state, 0, sizeof(*inline_state));
     inline_state->input = *chunk;
     inline_state->owner_parser = parser;
-    inline_state->refmap = refmap;
     inline_state->text_end = -1;
     if (parser) {
         inline_state->dialect = parser->dialect;
@@ -453,7 +450,7 @@ static void complete_inline_token(markdown_core_parser *parser, markdown_core_in
     if (!entry || entry->kind != DELIMITER_FIELD) {
         return;
     }
-    bool whitespace = markdown_core_parse_inline_subtrees(parser, entry->node, inline_state->refmap);
+    bool whitespace = markdown_core_parse_inline_subtrees(parser, entry->node);
     if (whitespace) {
         entry->kind = DELIMITER_BOUNDARY;
         entry->node = NULL;
@@ -893,7 +890,7 @@ append:
 }
 
 void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_core_node *parent, bool root,
-                                        markdown_core_map *refmap, markdown_core_inline_state *inline_state) {
+                                        markdown_core_inline_state *inline_state) {
     markdown_core_chunk content = {parent->content.ptr, parent->content.size, 0};
     /* EVERY content-bearing block has a map by the time its inlines are parsed.
      * One the parser fed line by line already does; one whose content was SET
@@ -905,7 +902,7 @@ void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_c
     if (parent->content_map.count == 0) {
         markdown_core_parser_mark_content(parser, parent, 0, parent->where.place.start + parent->internal_offset);
     }
-    markdown_core_inline_state_from_buf(parser, inline_state, &content, refmap);
+    markdown_core_inline_state_from_buf(parser, inline_state, &content);
     /* Block buffers include their terminating line ending. An inline field
      * ends at its owner's delimiter: its trailing spaces are body content. */
     if (!MARKDOWN_CORE_NODE_TYPE_INLINE_P(parent->kind)) {
@@ -975,10 +972,9 @@ bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_
     return whitespace;
 }
 
-bool markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, bool root,
-                                 markdown_core_map *refmap) {
+bool markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, bool root) {
     markdown_core_inline_state inline_state;
-    markdown_core_inline_start_inlines(parser, parent, root, refmap, &inline_state);
+    markdown_core_inline_start_inlines(parser, parent, root, &inline_state);
     return markdown_core_inline_finish_inlines(parser, &inline_state);
 }
 

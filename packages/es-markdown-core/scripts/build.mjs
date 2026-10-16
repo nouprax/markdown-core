@@ -16,7 +16,7 @@ const core = [
     "inlines.c",
     "utf8.c",
     "buffer.c",
-    "references.c",
+    "registry.c",
     "map.c",
     "houdini_html_u.c",
     "markdown_core_ctype.c"

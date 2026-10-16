@@ -11,9 +11,10 @@ Block finalization registers headings in source order, including headings in
 footnote definitions. A heading is a leaf block, so closure order is source
 order. The parser keeps borrowed node pointers in that order; no final tree
 search or sorting is needed. Each heading whose text is a writable label keeps
-that label, normalized, and declares it in the ordinary reference map, as each
-`Reference` declares its own. Reference parsing asks the map only whether a
-label is declared, so it needs no heading-specific case. The published
+that label, normalized, and declares it in the parse's registry
+(`core/registry.h`) as a reference label, as each `Reference` declares its
+own. Reference parsing asks the registry only whether a label is declared, so
+it needs no heading-specific case. The published
 document resolves a `reference` destination: to the first `Reference` that
 declares the label or, when none does, to the first heading.
 
@@ -68,8 +69,8 @@ owns. A reference occurrence holds only the label it names; the anchor it
 leads to is the heading's own, and the heading's attributes stay the
 heading's.
 
-Completion reserves effective explicit anchors at each node's ENTER, while
-it discovers owned label/title fields. Its walk parses each container's
+Completion declares effective explicit anchors in the registry at each
+node's ENTER, while it discovers owned label/title fields. Its walk parses each container's
 inline content at that container's ENTER, so it visits only completed child
 trees, after bracket reductions and occurrence attributes have settled; a
 temporary inline later discarded by a footnote call cannot reserve an anchor.
@@ -102,13 +103,17 @@ offset. Missing ranges mean omission. Each scalar needs one lookup, including
 case conversion and whitespace replacement. Its generator verifies both the
 pinned UnicodeData SHA-256 and Node Unicode version. Builds need no download.
 
-The exact-string anchor index reserves both explicit and synthesized spellings.
-Each occupied base has one increasing suffix cursor stored directly in its
-index slot. An entry lookup returns either an occupied or a vacant slot; the
-latter is committed using the final node-owned spelling without hashing it
-again. Only a new key can grow the index. Synthesis advances the base cursor
-before querying its next candidate and never reads that borrowed slot again
-after a vacant candidate returns. This keeps slot lifetimes valid through
+A spelling is taken when the registry holds it as an explicit anchor or a
+heading before was given it. Finalization's own exact-string index holds the
+spellings taken: each one given, and each reserved spelling a candidate met,
+entered under the registry's copy of its bytes. Each projected base's slot
+keeps one increasing suffix cursor. Every candidate, the base first, costs one
+entry lookup, which returns an occupied or a vacant slot; only a vacant one
+asks the registry, and a vacant one the heading is given is committed in place
+with the final node-owned spelling, without hashing it again. Only a new key
+can grow the index, and the base's cursor is advanced before each suffixed
+lookup, so the base's slot is read again only after a reserved spelling is
+entered, and then found afresh. This keeps slot lifetimes valid through
 rehashing without allocating a stable object per anchor. Once `base-N` is known
 to be occupied, later duplicates of that base never retry it. A spelling of the
 form `base-N` has one such base, so occupied candidate work is amortized over
@@ -122,8 +127,9 @@ headings rather than discarded when a value is attached.
 
 ## Lifetime and bounds
 
-The heading collection and anchor indices borrow nodes and strings only until
-finalization completes. Pending inline states own their temporary parser state.
+The heading collection and finalization's anchor index borrow nodes and
+strings only until finalization completes; the registry holds its own copy of
+every label it records. Pending inline states own their temporary parser state.
 Each heading owns its computed anchor and its label, and a reference
 occurrence owns its label, so freeing a heading or a document invalidates no
 other node.

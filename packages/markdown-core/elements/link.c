@@ -290,7 +290,7 @@ static bufsize_t S_reference_definition(markdown_core_chunk *input, markdown_cor
     bufsize_t beforetitle;
     *definition = (reference_definition){0};
 
-    markdown_core_inline_state_from_buf(NULL, &inline_state, input, NULL);
+    markdown_core_inline_state_from_buf(NULL, &inline_state, input);
 
     // parse label:
     if (!markdown_core_inline_link_label(&inline_state, &definition->label) || definition->label.len == 0) {
@@ -371,7 +371,7 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_no
     markdown_core_chunk clean_url = markdown_core_clean_url(&definition.url, &lost);
     markdown_core_optional_chunk clean_title = markdown_core_clean_title(&definition.title, &lost);
     markdown_core_chunk label;
-    if (!markdown_core_label_normalize(parser->refmap, parser->pool, &definition.label, &label)) {
+    if (!markdown_core_registry_normal_label(&parser->registry, parser->pool, &definition.label, &label)) {
         lost = 1;
     }
     markdown_core_resource *resource = lost ? NULL : markdown_core_resource_new(parser->pool, clean_url, clean_title);
@@ -397,7 +397,6 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_no
     reference->as.reference->label = label;
     reference->attributes = definition.value;
     reference->flags |= MARKDOWN_CORE_NODE__BLANK_TRANSPARENT;
-    markdown_core_label_declare(parser->refmap, &reference->as.reference->label);
     /* It spans its definition, through the end of its last line's content:
      * the line ending after it belongs to no block. */
     bufsize_t end = before + length;
@@ -411,6 +410,12 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_no
     reference->where.place = (markdown_core_place){(uint32_t)start, (uint32_t)stop};
     markdown_core_parser_line_places(parser, reference, b->parent, line);
     markdown_core_node_attach_validated(b->parent, reference, b);
+    /* The document defines the label from where the definition starts. */
+    if (!markdown_core_registry_declare(&parser->registry, MARKDOWN_CORE_REGISTRY_REFERENCE, label.data, label.len,
+                                        start)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return length;
+    }
     /* A definition is read whole: its block is closed as it is made. */
     markdown_core_parser_complete_later(parser, reference);
     return length;
@@ -423,7 +428,7 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
     markdown_core_chunk url_chunk, title_chunk, raw_label;
     markdown_core_chunk url = MARKDOWN_CORE_CHUNK_EMPTY;
     markdown_core_optional_chunk title = {MARKDOWN_CORE_CHUNK_EMPTY, false};
-    markdown_core_map_record *record = NULL;
+    const markdown_core_registry_record *record = NULL;
     int found_label;
     bool explicit_tail = false;
     // If we got here, we matched a potential link/image text.
@@ -478,7 +483,7 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
         }
     }
 
-    // Next, look for a following [link label] that matches in refmap.
+    // Next, look for a following [link label] that a definition declares.
     // skip spaces
     raw_label = markdown_core_chunk_literal("");
     found_label = markdown_core_inline_link_label(inline_state, &raw_label);
@@ -500,11 +505,15 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
      * three spellings the author wrote, and nothing downstream can recover it
      * -- the module states one node for every successful form. */
     if (link_allowed && found_label) {
-        record = markdown_core_map_lookup(inline_state->refmap, &raw_label);
+        bool failed = false;
+        record = markdown_core_registry_find_label(&inline_state->owner_parser->registry,
+                                                   MARKDOWN_CORE_REGISTRY_REFERENCE, &raw_label, &failed);
+        if (failed) {
+            inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
+        }
     }
     markdown_core_chunk_free(&raw_label);
-    candidate->label =
-        record ? (markdown_core_chunk){record->label, record->label_len, 0} : markdown_core_chunk_literal("");
+    candidate->label = record ? markdown_core_registry_label(record) : markdown_core_chunk_literal("");
     candidate->explicit_tail = explicit_tail;
     return record ? (explicit_tail ? LINK_EXPLICIT : LINK_SHORTCUT) : LINK_UNMATCHED;
 }

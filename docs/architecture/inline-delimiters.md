@@ -32,7 +32,7 @@ parent stack because each field has its own inline state. No script cursor bound
 
 A heading can suspend with a field event on its ordinary stack. Its label
 contains live brackets, so it cannot declare an implicit reference; its
-remaining content resumes after the shared reference map is ready. Completing
+remaining content resumes once every writable heading has declared its label. Completing
 fields before scanning the next token preserves source order for references
 and inline footnotes. See [heading resolution](heading-resolution.md).
 

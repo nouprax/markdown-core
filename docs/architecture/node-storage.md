@@ -76,9 +76,9 @@ which are places. After the exchanges the new tree holds only the new
 parse's storage and the retired tree only the old, and each is released as a
 whole.
 
-Reference-map records are not slots. Every record lives exactly as long as
-its map, so records are carved from blocks the map owns and freed with it,
-rather than allocated one each.
+Registry records are not slots. A record lives until the registry is freed
+or a rollback pops it, newest first, so records are carved one after another
+from blocks the registry owns, rather than allocated one each.
 
 All block, inline, and manual construction uses the same node constructor.
 It takes one slot for the node and its kind's record, establishes defaults,
@@ -205,8 +205,9 @@ Cite's Citation owns as its `note` field, as it owns its affixes. Authored
 definitions are Footnote and Specimen blocks in the tree where they were
 read. In both cases the tree owns the node, including on parse failure.
 
-Calls resolve through the parser's label maps while parsing; a footnote label
-map and a specimen key index hold the first definition of each label. The
+Calls resolve through the parse's registry (`core/registry.h`) while
+parsing: each footnote and specimen definition declares its label there as it
+is read, and a call asks whether its label is declared. The
 finish stage visits definitions where they are, like any other node.
 
 Publishing is one canonical walk. It numbers every node from 1, rewrites the
@@ -244,7 +245,7 @@ occupied-coordinate matrix becomes part of the public AST.
 Multiline and grid cell bodies enqueue mapped inputs on their owning nodes.
 The parser drains that queue, including newly discovered nested cells, before
 running document-wide completion and inline parsing. Each input uses the same
-block parser, reference map, heading registry and definition owner. The active
+block parser, registry, heading collection and definition owner. The active
 block root bounds finalization without creating a second Document or recursing
 into the document parser. Content marks compose through nested slices when
 blocks and inline payloads are created; scopes are never repaired afterward.

@@ -3,7 +3,7 @@
 
 #include <assert.h>
 #include <stdint.h>
-#include "references.h"
+#include "registry.h"
 #include "node.h"
 #include "buffer.h"
 #include "dialect.h"
@@ -100,15 +100,6 @@ typedef struct {
     bool has_start, has_end;
 } markdown_core_content_span;
 
-/* The specimen definitions of one parse, in the order they were committed,
- * for the index citations resolve against. Every definition is owned by the
- * block tree; the collection only borrows it until the document finishes. */
-typedef struct {
-    struct markdown_core_node **values;
-    size_t count;
-    size_t capacity;
-} markdown_core_definition_collection;
-
 /* Sequential source-order operations share scratch, such as an element's
  * deferred registrations or a table's regions. Space depends on entries, never on the
  * area of a sparse table or the numeric range of source coordinates. */
@@ -121,8 +112,11 @@ typedef struct {
 } markdown_core_source_order;
 
 struct markdown_core_parser {
-    /* A hashtable of urls in the current document for cross-references */
-    struct markdown_core_map *refmap;
+    /* Every definition and explicit anchor the parse declared (registry.h):
+     * the block phase declares definitions as it reads them, the headings
+     * declare their labels before inline content is parsed, and completion
+     * reserves explicit anchors where it meets them. */
+    markdown_core_registry registry;
     markdown_core_source_order source_order;
     /* The stack the finish stage's tree walks borrow in turn, the finish
      * walk's frames and then publishing's: each grows it to what it needs
@@ -220,7 +214,6 @@ struct markdown_core_parser {
      * element counts its own work in its own state record. */
     size_t opaque_scan_work;
     size_t footnote_body_work;
-    size_t definition_registration_work;
     /* Run bytes, opener comparisons, and child moves in the shared delimiter algorithm. */
     size_t delimiter_work;
     /* Delimiter entries pushed, against which the pool's growth is measured. */
@@ -803,12 +796,6 @@ bool markdown_core_parser_lookahead_begin(markdown_core_parser *parser, struct m
 int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead, markdown_core_chunk *line,
                                         int *first_nonspace, int *indent, int *blank_lines);
 void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead);
-
-/* Register an element's committed definition in its borrowed parse index.
- * The block tree keeps ownership. Allocation failure aborts the transaction. */
-bool markdown_core_parser_register_definition(markdown_core_parser *parser,
-                                              markdown_core_definition_collection *collection,
-                                              markdown_core_node *definition);
 
 /* THE LONGEST SOURCE A PARSE TAKES: offsets are int32, and every buffer
  * derived from the source stays under half of that. A session refuses a text

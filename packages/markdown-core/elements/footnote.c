@@ -12,55 +12,35 @@ enum { FOOTNOTE_LINK, FOOTNOTE_CITATION };
 static const markdown_core_element *const FOOTNOTE_PEERS[] = {
     [FOOTNOTE_LINK] = &MARKDOWN_CORE_ELEMENT_LINK, [FOOTNOTE_CITATION] = &MARKDOWN_CORE_ELEMENT_CITATION, NULL};
 
-static const markdown_core_map_record *
-markdown_core_inline_footnote_definition(const markdown_core_element_instance *self,
-                                         markdown_core_inline_state *inline_state, bufsize_t label_start,
+static const markdown_core_registry_record *
+markdown_core_inline_footnote_definition(markdown_core_inline_state *inline_state, bufsize_t label_start,
                                          bufsize_t after_close);
 static markdown_core_node *markdown_core_inline_make_footnote_cite(markdown_core_inline_state *inline_state,
                                                                    bracket *opener, bufsize_t after_close);
 static bool markdown_core_footnote_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                         block_start_context *context, block_start *start);
-void markdown_core_footnotes_begin(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    markdown_core_footnote_state *state = self->state;
-    state->labels = markdown_core_footnote_definition_map_new();
-    if (!state->labels) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
-}
-
-/* Whether the label set lost an entry to a failed allocation, which it
- * records rather than reports. */
-bool markdown_core_footnotes_lost(const markdown_core_element_instance *self) {
-    const markdown_core_footnote_state *state = self->state;
-    return state->labels && state->labels->oom;
-}
-
-void markdown_core_footnotes_dispose(const markdown_core_element_instance *self) {
-    markdown_core_footnote_state *state = self->state;
-    if (state->labels) {
-        markdown_core_map_free(state->labels);
-        state->labels = NULL;
-    }
-}
-
 /* The definition record a call's label names, or NULL when the document
- * defines no such label. The record's key IS the call's normal form -- the
+ * defines no such label. The record's label IS the call's normal form -- the
  * lookup matched it byte for byte -- so the call takes its id from there
  * rather than normalizing the same label a second time. */
-static const markdown_core_map_record *
-markdown_core_inline_footnote_definition(const markdown_core_element_instance *self,
-                                         markdown_core_inline_state *inline_state, bufsize_t label_start,
+static const markdown_core_registry_record *
+markdown_core_inline_footnote_definition(markdown_core_inline_state *inline_state, bufsize_t label_start,
                                          bufsize_t after_close) {
-    markdown_core_chunk label;
-
     if (after_close - label_start < 2) {
         return NULL;
     }
     /* A borrowed slice of the block's own content: `markdown_core_chunk_dup`
-     * aliases, so the only allocation in here is the map's own normalization,
-     * and that one reports itself through the map's sticky flag. */
-    label = markdown_core_chunk_dup(&inline_state->input, label_start + 1, after_close - label_start - 2);
-    return markdown_core_map_lookup(((markdown_core_footnote_state *)self->state)->labels, &label);
+     * aliases, so the only allocation in here is the registry's own
+     * normalization. */
+    markdown_core_chunk label =
+        markdown_core_chunk_dup(&inline_state->input, label_start + 1, after_close - label_start - 2);
+    bool failed = false;
+    const markdown_core_registry_record *record = markdown_core_registry_find_label(
+        &inline_state->owner_parser->registry, MARKDOWN_CORE_REGISTRY_FOOTNOTE, &label, &failed);
+    if (failed) {
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
+    }
+    return record;
 }
 
 static markdown_core_node *markdown_core_inline_make_footnote_cite(markdown_core_inline_state *inline_state,
@@ -144,7 +124,6 @@ static bool continue_container(const markdown_core_element_instance *self, markd
 const markdown_core_element MARKDOWN_CORE_ELEMENT_FOOTNOTE = {
     .peers = FOOTNOTE_PEERS,
     .name = "footnote",
-    .state_size = sizeof(markdown_core_footnote_state),
     .continue_container = continue_container,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_footnote_scan,
@@ -204,8 +183,8 @@ bool markdown_core_footnote_close_reference(const markdown_core_element_instance
         bool caret_written = opener->position < inline_state->input.len &&
                              inline_state->input.data[opener->position] == '^' &&
                              (literal->len > 1 || opener->inl_text->next->next);
-        const markdown_core_map_record *definition =
-            caret_written ? markdown_core_inline_footnote_definition(self, inline_state, opener->position, initial_pos)
+        const markdown_core_registry_record *definition =
+            caret_written ? markdown_core_inline_footnote_definition(inline_state, opener->position, initial_pos)
                           : NULL;
         if (definition) {
             if (!markdown_core_node_can_contain_type(opener->inl_text->parent, MARKDOWN_CORE_NODE_CITE)) {
@@ -225,17 +204,18 @@ bool markdown_core_footnote_close_reference(const markdown_core_element_instance
             }
             /* The call's label is its normal form: the key the lookup
              * matched, copied rather than computed again. */
-            unsigned char *id = markdown_core_alloc(1, (size_t)definition->label_len + 1);
+            const markdown_core_chunk defined = markdown_core_registry_label(definition);
+            unsigned char *id = markdown_core_alloc(1, (size_t)defined.len + 1);
             if (!id) {
                 inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
                 markdown_core_parser_release_node(parser, fnref);
                 markdown_core_inline_pop_bracket(self->peers[FOOTNOTE_LINK], inline_state);
                 return true;
             }
-            memcpy(id, definition->label, (size_t)definition->label_len + 1);
+            memcpy(id, defined.data, (size_t)defined.len + 1);
             markdown_core_chunk *value = &fnref->as.cite->citations->as.citation->value;
             value->data = id;
-            value->len = definition->label_len;
+            value->len = defined.len;
             value->alloc = 1;
 
             markdown_core_inline_process_delimiters(parser, inline_state, opener->position, opener->delim_end);
@@ -277,8 +257,6 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
     bufsize_t matched = start->matched;
 
     markdown_core_chunk c = markdown_core_chunk_dup(input, parser->first_nonspace + 2, matched - 2);
-    unsigned char *id;
-    int lost = 0;
 
     while (c.data[c.len - 1] != ']') {
         --c.len;
@@ -305,23 +283,19 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
         markdown_core_chunk_free(&c);
         return false;
     }
-    /* The label is under the map's own normalization and WITHOUT a caret
+    /* The label is in the reference-label normal form and WITHOUT a caret
      * (M4): the key every call's referent names. The
      * caret that kept a footnote apart from a link definition in a
      * consumer's single map went with the association -- a
      * `Footnote` and a resolved `Link` are different values now. */
-    id = normalize_map_label(&c, &lost);
-    if (!id) {
+    markdown_core_node *footnote = *container;
+    markdown_core_chunk normal;
+    if (!markdown_core_registry_normal_label(&parser->registry, parser->pool, &c, &normal) || !normal.len) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         markdown_core_chunk_free(&c);
         return false;
     }
-    markdown_core_optional_chunk *label = &(*container)->as.footnote->label;
-    label->has_value = true;
-    label->value.data = id;
-    label->value.len = (bufsize_t)strlen((const char *)id);
-    label->value.alloc = 1;
-    markdown_core_footnote_state *state = self->state;
+    footnote->as.footnote->label = markdown_core_optional_chunk_present(normal);
 
     /* The document defines this label from here on.
      *
@@ -336,7 +310,12 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
      * one was freed with everything written in it (D11). A set of
      * labels owns no node and picks no winner, so order decides
      * nothing left to get wrong. */
-    markdown_core_label_declare(state->labels, &label->value);
+    if (!markdown_core_registry_declare(&parser->registry, MARKDOWN_CORE_REGISTRY_FOOTNOTE, normal.data, normal.len,
+                                        footnote->where.place.start)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        markdown_core_chunk_free(&c);
+        return false;
+    }
     markdown_core_chunk_free(&c);
 
     (*container)->internal_offset = matched;

@@ -1,7 +1,8 @@
+#include <assert.h>
+#include <stdint.h>
+#include <string.h>
 #include "alloc.h"
 #include "map.h"
-#include "utf8.h"
-#include "parser.h"
 
 #define KEY_INDEX_MIN_CAPACITY 16
 
@@ -133,180 +134,32 @@ void markdown_core_key_index_commit(markdown_core_key_index *index, markdown_cor
     index->size++;
 }
 
-int markdown_core_key_index_insert(markdown_core_key_index *index, const unsigned char *key, bufsize_t key_len,
-                                   void *value, int replace, void **existing) {
-    markdown_core_key_index_slot *slot = markdown_core_key_index_entry(index, key, key_len);
-    if (existing) {
-        *existing = slot && slot->key ? slot->value.pointer : NULL;
-    }
-    if (!slot) {
-        return 0;
-    }
-    if (!slot->key) {
-        markdown_core_key_index_commit(index, slot, key);
-        slot->value.pointer = value;
-    } else if (replace) {
-        slot->value.pointer = value;
-    }
-    return 1;
-}
-
-void *markdown_core_key_index_lookup(const markdown_core_key_index *index, const unsigned char *key,
-                                     bufsize_t key_len) {
-    uint64_t hash;
-    size_t position;
-    size_t probe;
-    if (!index || !index->slots || !index->capacity) {
+markdown_core_key_index_slot *markdown_core_key_index_find(const markdown_core_key_index *index,
+                                                           const unsigned char *key, bufsize_t key_len) {
+    if (!index->capacity) {
         return NULL;
     }
-    hash = hash_key(key, key_len);
-    position = (size_t)hash & (index->capacity - 1);
-    for (probe = 0; probe < index->capacity; probe++) {
-        const markdown_core_key_index_slot *slot = &index->slots[position];
-        if (!slot->key) {
-            return NULL;
-        }
-        if (slot->hash == hash && slot->key_len == key_len && memcmp(slot->key, key, (size_t)key_len) == 0) {
-            return slot->value.pointer;
-        }
-        position = (position + 1) & (index->capacity - 1);
-    }
-    return NULL;
+    markdown_core_key_index_slot *slot =
+        find_key_slot(index->slots, index->capacity, hash_key(key, key_len), key, key_len);
+    return slot && slot->key ? slot : NULL;
 }
 
-// normalize map label:  collapse internal whitespace to single space,
-// remove leading/trailing whitespace, case fold
-// Return NULL if the label is actually empty (i.e. composed solely from
-// whitespace)
-int normalize_map_label_into(markdown_core_strbuf *normalized, markdown_core_chunk *ref) {
-    markdown_core_strbuf_clear(normalized);
-    if (!ref || !ref->len) {
-        return 0;
-    }
-    markdown_core_utf8proc_normalize_label(normalized, ref->data, ref->len);
-    return normalized->size && !normalized->oom;
-}
-
-unsigned char *normalize_map_label(markdown_core_chunk *ref, int *lost) {
-    markdown_core_strbuf normalized = MARKDOWN_CORE_BUF_INIT();
-    if (!normalize_map_label_into(&normalized, ref)) {
-        if (normalized.oom && lost) {
-            *lost = 1;
-        }
-        markdown_core_strbuf_free(&normalized);
-        return NULL;
-    }
-    return markdown_core_strbuf_detach(&normalized);
-}
-
-static int index_map(markdown_core_map *map) {
-    markdown_core_map_record *record;
-    if (!markdown_core_key_index_init(&map->index, map->size)) {
-        return 0;
-    }
-    /* A label is defined once any record declares it. */
-    for (record = map->records; record; record = record->next) {
-        markdown_core_key_index_slot *slot =
-            markdown_core_key_index_entry(&map->index, record->label, record->label_len);
-        if (!slot) {
-            markdown_core_key_index_free(&map->index);
-            return 0;
-        }
-        if (!slot->key) {
-            markdown_core_key_index_commit(&map->index, slot, record->label);
-            slot->value.pointer = record;
+/* REMOVAL KEEPS EVERY PROBE CHAIN WHOLE. An occupied run is what a lookup
+ * walks, so the hole a removal leaves is filled by the next entry of the run
+ * that may stand there -- one whose home is not between the hole and itself
+ * -- and the hole moves to where that entry was, until the run ends. No
+ * entry is ever marked deleted, so the table is exactly the one its live
+ * keys would have built. */
+void markdown_core_key_index_remove(markdown_core_key_index *index, markdown_core_key_index_slot *slot) {
+    const size_t mask = index->capacity - 1;
+    size_t hole = (size_t)(slot - index->slots);
+    for (size_t next = (hole + 1) & mask; index->slots[next].key; next = (next + 1) & mask) {
+        size_t home = (size_t)index->slots[next].hash & mask;
+        if (((next - home) & mask) >= ((next - hole) & mask)) {
+            index->slots[hole] = index->slots[next];
+            hole = next;
         }
     }
-    map->size = map->index.size;
-    map->prepared = 1;
-    return 1;
-}
-
-markdown_core_map_record *markdown_core_map_lookup(markdown_core_map *map, markdown_core_chunk *label) {
-    if (label->len < 1 || label->len > MAX_LINK_LABEL_LENGTH || !map || !map->size || map->oom) {
-        return NULL;
-    }
-    if (!normalize_map_label_into(&map->label_buffer, label)) {
-        map->oom = map->label_buffer.oom;
-        return NULL;
-    }
-    if (!map->prepared && !index_map(map)) {
-        map->oom = 1;
-        return NULL;
-    }
-    return markdown_core_key_index_lookup(&map->index, map->label_buffer.ptr, map->label_buffer.size);
-}
-
-/* THE MAP'S RECORD STORAGE. A record lives exactly as long as its map -- none
- * is ever freed alone -- so records are carved one after another from blocks
- * the map owns, and the blocks go when the map does. A block starts small, so
- * a map that holds a few headings' records costs one small allocation, and
- * doubles up to a cap, so a document with many definitions pays for its
- * records in a few allocations rather than one each. A record larger than
- * the next block gets a block of its own size. */
-struct markdown_core_map_block {
-    union {
-        markdown_core_map_block *next;
-        long double alignment;
-        int64_t integer_alignment;
-    } head;
-};
-
-#define MAP_BLOCK_MIN_BYTES ((size_t)1024)
-#define MAP_BLOCK_MAX_BYTES ((size_t)16 * 1024)
-
-void *markdown_core_map_carve(markdown_core_map *map, size_t size) {
-    const size_t align = sizeof(markdown_core_map_block);
-    if (size > SIZE_MAX - align) {
-        return NULL;
-    }
-    size = (size + align - 1) / align * align;
-    if (!map->blocks || map->block_size - map->block_used < size) {
-        size_t capacity = map->block_size ? map->block_size * 2 : MAP_BLOCK_MIN_BYTES;
-        if (capacity > MAP_BLOCK_MAX_BYTES) {
-            capacity = MAP_BLOCK_MAX_BYTES;
-        }
-        if (capacity < size) {
-            capacity = size;
-        }
-        if (capacity > SIZE_MAX - sizeof(markdown_core_map_block)) {
-            return NULL;
-        }
-        markdown_core_map_block *block =
-            (markdown_core_map_block *)markdown_core_realloc(NULL, sizeof(markdown_core_map_block) + capacity);
-        if (!block) {
-            return NULL;
-        }
-        block->head.next = map->blocks;
-        map->blocks = block;
-        map->block_size = capacity;
-        map->block_used = 0;
-    }
-    void *storage = (unsigned char *)(map->blocks + 1) + map->block_used;
-    map->block_used += size;
-    return storage;
-}
-
-void markdown_core_map_free(markdown_core_map *map) {
-    if (map == NULL) {
-        return;
-    }
-    while (map->blocks) {
-        markdown_core_map_block *next = map->blocks->head.next;
-        markdown_core_free(map->blocks);
-        map->blocks = next;
-    }
-
-    markdown_core_key_index_free(&map->index);
-    markdown_core_strbuf_free(&map->label_buffer);
-    markdown_core_free(map);
-}
-
-markdown_core_map *markdown_core_map_new(void) {
-    markdown_core_map *map = (markdown_core_map *)markdown_core_alloc(1, sizeof(markdown_core_map));
-    if (!map) {
-        return NULL;
-    }
-    map->label_buffer = (markdown_core_strbuf)MARKDOWN_CORE_BUF_INIT();
-    return map;
+    index->slots[hole] = (markdown_core_key_index_slot){0};
+    index->size--;
 }

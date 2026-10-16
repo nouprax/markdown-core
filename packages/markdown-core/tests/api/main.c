@@ -3254,34 +3254,179 @@ static void whitespace_is_space_tab_and_line_ending(test_batch_runner *runner) {
     }
 }
 
-/* A MAP'S RECORDS ARE CARVED FROM BLOCKS IT OWNS: a run of definitions is a
- * few block allocations rather than one each, and the blocks go with the map. */
-static void map_records_are_carved_from_its_blocks(test_batch_runner *runner) {
-    enum { COUNT = 400 };
+/* THE REGISTRY'S RECORDS ARE CARVED FROM BLOCKS IT OWNS: a run of
+ * declarations costs allocations logarithmic in its length -- the blocks, the
+ * log's array and the index each double -- rather than one each, and all of
+ * them go with the registry. */
+static void registry_records_are_carved_from_its_blocks(test_batch_runner *runner) {
+    enum { COUNT = 4096 };
     payload_probe_arm();
-    markdown_core_map *map = markdown_core_reference_map_new();
-    OK(runner, map != NULL, "a map is made");
-    if (!map) {
-        payload_probe_disarm();
-        return;
-    }
-    size_t before = payload_allocations;
+    markdown_core_registry registry;
+    markdown_core_registry_init(&registry);
     char label[32];
+    bool declared = true;
     for (size_t i = 0; i < COUNT; i++) {
         snprintf(label, sizeof(label), "label %zu", i);
-        markdown_core_chunk chunk = {(unsigned char *)label, (bufsize_t)strlen(label), 0};
-        markdown_core_label_declare(map, &chunk);
-        OK(runner, !map->oom && map->records && map->records->label_len == chunk.len, "record %zu is carved", i);
+        declared = declared &&
+                   markdown_core_registry_declare(&registry, MARKDOWN_CORE_REGISTRY_REFERENCE,
+                                                  (const unsigned char *)label, (bufsize_t)strlen(label), (uint32_t)i);
     }
-    /* Only the blocks the records are carved from. */
-    size_t blocks = payload_allocations - before;
-    OK(runner, blocks <= 8, "%d records took %zu blocks", COUNT, blocks);
-    markdown_core_chunk lookup = {(unsigned char *)"LABEL 399", 9, 0};
-    markdown_core_map_record *found = markdown_core_map_lookup(map, &lookup);
-    OK(runner, found && found->label_len == 9 && !memcmp(found->label, "label 399", 9), "a carved record is found");
-    markdown_core_map_free(map);
-    INT_EQ(runner, payload_live, 0, "the map's blocks and index are all released");
+    OK(runner, declared && registry.count == COUNT, "every declaration is a record");
+    /* Twelve doublings reach COUNT; each of the three structures doubles
+     * at most once per doubling. */
+    OK(runner, payload_allocations <= 3 * 13, "%d records took %zu allocations", COUNT, payload_allocations);
+    bool failed = false;
+    markdown_core_chunk lookup = {(unsigned char *)"LABEL  4095", 11, 0};
+    const markdown_core_registry_record *found =
+        markdown_core_registry_find_label(&registry, MARKDOWN_CORE_REGISTRY_REFERENCE, &lookup, &failed);
+    markdown_core_chunk name = found ? markdown_core_registry_label(found) : (markdown_core_chunk){0};
+    OK(runner, !failed && name.len == 10 && !memcmp(name.data, "label 4095", 10),
+       "a carved record is found by its label's normal form");
+    markdown_core_registry_free(&registry);
+    INT_EQ(runner, payload_live, 0, "the registry's blocks, log and index are all released");
     payload_probe_disarm();
+}
+
+/* THE KINDS ARE SEPARATE LOOKUP SPACES, and a key's records answer for the
+ * earliest of them: a label declared as a reference is not a footnote, and
+ * a key declared twice starts where its earlier declaration starts. */
+static void registry_kinds_and_starts(test_batch_runner *runner) {
+    markdown_core_registry registry;
+    markdown_core_registry_init(&registry);
+    const unsigned char *x = (const unsigned char *)"x";
+    bool failed = false;
+    OK(runner, markdown_core_registry_declare(&registry, MARKDOWN_CORE_REGISTRY_REFERENCE, x, 1, 40),
+       "a reference is declared");
+    OK(runner, !markdown_core_registry_find(&registry, MARKDOWN_CORE_REGISTRY_FOOTNOTE, x, 1, &failed),
+       "a reference label is no footnote");
+    OK(runner, !markdown_core_registry_find(&registry, MARKDOWN_CORE_REGISTRY_ANCHOR, x, 1, &failed), "nor an anchor");
+    const markdown_core_registry_record *record =
+        markdown_core_registry_find(&registry, MARKDOWN_CORE_REGISTRY_REFERENCE, x, 1, &failed);
+    OK(runner,
+       record && !markdown_core_registry_starts_before(record, 40) && markdown_core_registry_starts_before(record, 41),
+       "a declaration starts where its definition starts");
+    OK(runner,
+       markdown_core_registry_declare(&registry, MARKDOWN_CORE_REGISTRY_REFERENCE, x, 1, 90) &&
+           markdown_core_registry_declare(&registry, MARKDOWN_CORE_REGISTRY_REFERENCE, x, 1, 10),
+       "the key is declared twice more");
+    record = markdown_core_registry_find(&registry, MARKDOWN_CORE_REGISTRY_REFERENCE, x, 1, &failed);
+    OK(runner,
+       record && record->start == 10 && markdown_core_registry_starts_before(record, 11) &&
+           !markdown_core_registry_starts_before(record, 10),
+       "the latest record answers for the earliest start of its key");
+    markdown_core_registry_mark mark = markdown_core_registry_mark_now(&registry);
+    OK(runner, markdown_core_registry_declare(&registry, MARKDOWN_CORE_REGISTRY_REFERENCE, x, 1, 2),
+       "a declaration after the mark");
+    markdown_core_registry_rollback(&registry, mark);
+    record = markdown_core_registry_find(&registry, MARKDOWN_CORE_REGISTRY_REFERENCE, x, 1, &failed);
+    OK(runner, record && record->start == 10 && !markdown_core_registry_starts_before(record, 10),
+       "a rollback takes the earlier start back with the record");
+    OK(runner, !failed, "and no lookup failed");
+    markdown_core_registry_free(&registry);
+}
+
+/* ROLLBACK RESTORES THE LOG AND THE INDEX EXACTLY. A model -- the records as
+ * a plain array, every answer computed by scanning it -- is driven through
+ * the same random declarations, marks and rollbacks, and every key's answer
+ * is compared after a random third of the steps: whether it is declared, its
+ * latest record's start, and its earliest start. The index takes the log
+ * only when a lookup asks, so the steps between two comparisons leave
+ * records it never took, and the rollbacks among them pop records it took
+ * and records it did not. Labels come from a small set, so keys are declared
+ * again and again, and from a growing one, so the index grows and removals
+ * cross the slots growth moved. A rollback to the first mark releases every
+ * block the records were carved from. */
+typedef struct {
+    markdown_core_registry_kind kind;
+    unsigned label;
+    uint32_t start;
+} registry_model_record;
+
+static void registry_label_text(unsigned label, char *text, size_t size) { snprintf(text, size, "k%u", label); }
+
+static void registry_rollback_matches_a_model(test_batch_runner *runner) {
+    enum { STEPS = 6000, KINDS = 4, SHARED = 23, MARKS = 16 };
+    payload_probe_arm();
+    markdown_core_registry registry;
+    markdown_core_registry_init(&registry);
+    registry_model_record *model = malloc(STEPS * sizeof(*model));
+    size_t model_count = 0, fresh = SHARED, mark_count = 0;
+    markdown_core_registry_mark marks[MARKS];
+    size_t model_marks[MARKS];
+    uint64_t random = UINT64_C(0x9e3779b97f4a7c15);
+    bool agrees = true;
+    size_t untaken = 0, taken = 0;
+    for (size_t step = 0; step < STEPS && agrees; step++) {
+        random ^= random << 13;
+        random ^= random >> 7;
+        random ^= random << 17;
+        unsigned choice = (unsigned)(random % 100);
+        if (choice < 6 && mark_count < MARKS) {
+            model_marks[mark_count] = model_count;
+            marks[mark_count++] = markdown_core_registry_mark_now(&registry);
+        } else if (choice < 10 && mark_count) {
+            size_t to = (size_t)(random >> 32) % mark_count;
+            untaken += registry.indexed < registry.count && model_marks[to] < registry.count;
+            taken += registry.indexed > model_marks[to];
+            markdown_core_registry_rollback(&registry, marks[to]);
+            model_count = model_marks[to];
+            mark_count = to;
+        } else {
+            registry_model_record record = {
+                (markdown_core_registry_kind)(MARKDOWN_CORE_REGISTRY_REFERENCE + (random >> 40) % KINDS),
+                choice < 70 ? (unsigned)((random >> 20) % SHARED) : (unsigned)fresh++, (uint32_t)(random >> 44)};
+            char text[16];
+            registry_label_text(record.label, text, sizeof(text));
+            agrees = markdown_core_registry_declare(&registry, record.kind, (const unsigned char *)text,
+                                                    (bufsize_t)strlen(text), record.start);
+            model[model_count++] = record;
+        }
+        agrees = agrees && registry.count == model_count;
+        const bool compare = (random >> 52) % 3 == 0 || step == STEPS - 1;
+        for (unsigned kind = 0; kind < KINDS && agrees && compare; kind++) {
+            for (unsigned label = 0; label < fresh && agrees; label++) {
+                const registry_model_record *latest = NULL;
+                uint32_t earliest = UINT32_MAX;
+                for (size_t i = 0; i < model_count; i++) {
+                    if (model[i].kind == (markdown_core_registry_kind)(MARKDOWN_CORE_REGISTRY_REFERENCE + kind) &&
+                        model[i].label == label) {
+                        latest = &model[i];
+                        earliest = model[i].start < earliest ? model[i].start : earliest;
+                    }
+                }
+                /* Only a label some step declared can answer; the rest are
+                 * sampled every few steps, which is enough to see a key
+                 * left behind. */
+                if (!latest && label >= SHARED && (label + step) % 64) {
+                    continue;
+                }
+                char text[16];
+                registry_label_text(label, text, sizeof(text));
+                bool failed = false;
+                const markdown_core_registry_record *found = markdown_core_registry_find(
+                    &registry, (markdown_core_registry_kind)(MARKDOWN_CORE_REGISTRY_REFERENCE + kind),
+                    (const unsigned char *)text, (bufsize_t)strlen(text), &failed);
+                agrees = !failed && (found != NULL) == (latest != NULL) &&
+                         (!found || (found->start == latest->start && found->earliest == earliest));
+                if (!agrees) {
+                    fprintf(stderr, "registry diverges at step %zu on kind %u label %u\n", step, kind, label);
+                }
+            }
+        }
+    }
+    OK(runner, agrees, "the registry answers as the model after declarations, marks and rollbacks");
+    OK(runner, untaken && taken, "rollbacks popped records the index took and records it never took (%zu, %zu)", taken,
+       untaken);
+    if (mark_count == 0 || agrees) {
+        markdown_core_registry_rollback(&registry, (markdown_core_registry_mark){0});
+    }
+    INT_EQ(runner, (int)registry.count, 0, "a rollback to the start empties the log");
+    INT_EQ(runner, (int)registry.index.size, 0, "and the index");
+    OK(runner, registry.blocks == NULL, "and releases every block");
+    markdown_core_registry_free(&registry);
+    INT_EQ(runner, payload_live, 0, "the registry releases everything it holds");
+    payload_probe_disarm();
+    free(model);
 }
 
 /* Run from the instance's own beginning -- a document owner's lifecycle --
@@ -3771,7 +3916,7 @@ static void kind_conversion_containment(test_batch_runner *runner) {
         STR_EQ(runner, (char *)literal.ptr, cases[i].retained_literal, "case %zu preserves authored content", i);
         markdown_core_strbuf_free(&literal);
         markdown_core_node_free(root);
-        INT_EQ(runner, payload_live, live_before, "rejected containers release every allocation");
+        INT_EQ(runner, payload_live, live_before, "case %zu: rejected containers release every allocation", i);
     }
     payload_probe_disarm();
 }
@@ -4713,7 +4858,7 @@ static void universal_values(test_batch_runner *runner) {
 typedef struct {
     size_t autolink_domains;
     size_t cross_link, opaque, delimiters, comment, lookahead, footnote_body, block_identifier, callout, dimensions;
-    size_t registered_definitions, definition_lists, citation_brace_bytes, tables, table_frontier;
+    size_t definition_lists, citation_brace_bytes, tables, table_frontier;
     size_t table_workspace_growth, table_geometry_lines, table_separator_scans, table_horizontal_work;
     size_t physical_lines, physical_capacity, physical_facts, physical_fact_capacity, normalized_lines;
     bool heading_collection_disposed;
@@ -4803,12 +4948,11 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
     work->attributes = parser->attribute_scratch.work;
     work->anchors = headings->anchor_work;
     work->definitions = 0;
-    for (markdown_core_map_record *record = parser->refmap->records; record; record = record->next) {
-        work->definitions++;
+    for (size_t i = 0; i < parser->registry.count; i++) {
+        work->definitions += parser->registry.records[i]->key[0] == MARKDOWN_CORE_REGISTRY_REFERENCE;
     }
     work->heading_collection_disposed = headings->headings.values == NULL && headings->headings.count == 0;
     work->footnote_body = parser->footnote_body_work;
-    work->registered_definitions = parser->definition_registration_work;
     work->definition_lists =
         ELEMENT_STATE(parser, markdown_core_definition_list_work, MARKDOWN_CORE_ELEMENT_DEFINITION_LIST)->work;
 }
@@ -7025,6 +7169,13 @@ static bool observe_reference_definition_lifetime(markdown_core_dialect_builder 
     return markdown_core_dialect_builder_attach(builder, &observer);
 }
 
+/* `label`'s normal form into `normal`; false when it has none. */
+static bool label_normal_form(markdown_core_strbuf *normal, const markdown_core_chunk *label) {
+    markdown_core_strbuf_clear(normal);
+    markdown_core_utf8proc_normalize_label(normal, label->data, label->len);
+    return normal->size && !normal->oom;
+}
+
 /* THE REFERENCE-LABEL NORMAL FORM is one pass (utf8.c) that folds, trims and
  * collapses whitespace runs; these are the cases each former pass owned, and
  * the one the single reservation rests on: U+0390 folds two bytes to six, so a
@@ -7047,11 +7198,11 @@ static void reference_label_normal_form(test_batch_runner *runner) {
     markdown_core_strbuf normal = MARKDOWN_CORE_BUF_INIT();
     for (size_t i = 0; i < sizeof(cases) / sizeof(*cases); i++) {
         markdown_core_chunk label = markdown_core_chunk_literal(cases[i].label);
-        OK(runner, normalize_map_label_into(&normal, &label), "label %zu has a normal form", i);
+        OK(runner, label_normal_form(&normal, &label), "label %zu has a normal form", i);
         STR_EQ(runner, (const char *)normal.ptr, cases[i].normal, "label %zu normalizes in one pass", i);
     }
     markdown_core_chunk blank = markdown_core_chunk_literal(" \t\n ");
-    OK(runner, !normalize_map_label_into(&normal, &blank), "a whitespace-only label has no normal form");
+    OK(runner, !label_normal_form(&normal, &blank), "a whitespace-only label has no normal form");
     INT_EQ(runner, normal.size, 0, "and leaves the buffer empty");
 
     markdown_core_strbuf widest = MARKDOWN_CORE_BUF_INIT();
@@ -7059,7 +7210,7 @@ static void reference_label_normal_form(test_batch_runner *runner) {
         markdown_core_strbuf_puts(&widest, "\xCE\x90");
     }
     markdown_core_chunk label = {widest.ptr, widest.size, 0};
-    OK(runner, normalize_map_label_into(&normal, &label), "the widest fold has a normal form");
+    OK(runner, label_normal_form(&normal, &label), "the widest fold has a normal form");
     INT_EQ(runner, normal.size, 3 * widest.size, "and it is exactly three times the label");
     OK(runner,
        normal.ptr[normal.size] == 0 && memcmp(normal.ptr, "\xCE\xB9\xCC\x88\xCC\x81", 6) == 0 &&
@@ -10111,6 +10262,41 @@ static size_t nodes_handed_to_completion(const inline_work *work, size_t finishe
            (work->nodes_created - work->nodes_created_before_completion - work->completion_parsed);
 }
 
+/* An escaped space a Text beside it absorbs is completed (into NBSP) before
+ * consolidation copies it, once, at its own word depth. */
+static void absorbed_text_completes_once(test_batch_runner *runner) {
+    const char *source = "^a\\ b\\ c^ d\\*e\n";
+    markdown_core_node *root = markdown_core_parse_document(source, strlen(source));
+    OK(runner, root != NULL, "normal and absorbed text completion share a successful parse");
+    if (root) {
+        size_t uncompleted = 0, spaces = 0;
+        markdown_core_iter *iter = markdown_core_iter_new(root);
+        markdown_core_event_type event;
+        while ((event = markdown_core_iter_next(iter)) != MARKDOWN_CORE_EVENT_DONE) {
+            const markdown_core_node *node = markdown_core_iter_get_node(iter);
+            if (event != MARKDOWN_CORE_EVENT_ENTER || node->kind != MARKDOWN_CORE_NODE_TEXT) {
+                continue;
+            }
+            uncompleted += (node->flags & MARKDOWN_CORE_NODE__ESCAPED_SPACE) != 0;
+            const markdown_core_chunk *text = node->as.literal;
+            for (bufsize_t i = 0; i + 1 < text->len; i++) {
+                spaces += text->data[i] == 0xc2 && text->data[i + 1] == 0xa0;
+            }
+        }
+        markdown_core_iter_free(iter);
+        INT_EQ(runner, uncompleted, 0, "no Text leaves completion with an escaped space pending");
+        INT_EQ(runner, spaces, 2, "both absorbed escaped spaces complete exactly once at their word depth");
+        markdown_core_node *script = root->first_child->first_child;
+        INT_EQ(runner, script->kind, MARKDOWN_CORE_NODE_SUPERSCRIPT, "the word owner is preserved");
+        LITERAL_EQ(runner, script->first_child,
+                   "a\xc2\xa0"
+                   "b\xc2\xa0"
+                   "c",
+                   "consolidation copies already completed operands");
+    }
+    markdown_core_node_free(root);
+}
+
 /* ONE TRAVERSAL PER ROOT, AND EVERY FINISH HOOK INSIDE IT.
  *
  * The finish stage used to walk each root once to find the owned roots, once
@@ -10150,55 +10336,6 @@ static size_t nodes_handed_to_completion(const inline_work *work, size_t finishe
  * fact would silently swallow; and an escaped space inside a superscript,
  * which completion turns into NBSP and which must therefore be completed
  * before the Text beside it absorbs it. */
-
-typedef struct {
-    markdown_core_element document;
-    void (*observe)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
-    size_t spaces, uncompleted;
-} completion_probe;
-
-static void observe_completed_text(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                   markdown_core_node *node) {
-    completion_probe *probe = parser->context;
-    if (node->kind == MARKDOWN_CORE_NODE_TEXT) {
-        probe->uncompleted += (node->flags & MARKDOWN_CORE_NODE__ESCAPED_SPACE) != 0;
-        probe->spaces += node->as.literal->len == 2 && !memcmp(node->as.literal->data, "\xc2\xa0", 2);
-    }
-    if (probe->observe) {
-        probe->observe(self, parser, node);
-    }
-}
-
-/* The observer is the document lifecycle's, so the probe registers a document
- * owner that keeps the core document's hooks and wraps that one. */
-static bool configure_completion_probe(markdown_core_dialect_builder *builder, void *context) {
-    completion_probe *probe = context;
-    probe->document = MARKDOWN_CORE_ELEMENT_DOCUMENT;
-    probe->document.name = "completion-probe-document";
-    probe->observe = probe->document.observe_inline;
-    probe->document.observe_inline = observe_completed_text;
-    return markdown_core_dialect_builder_attach(builder, &probe->document);
-}
-
-static void absorbed_text_completes_before_observation(test_batch_runner *runner) {
-    const char *source = "^a\\ b\\ c^ d\\*e\n";
-    completion_probe probe = {0};
-    markdown_core_node *root =
-        markdown_core_parse_document_with_setup(source, strlen(source), configure_completion_probe, &probe);
-    OK(runner, root != NULL, "normal and absorbed text completion share a successful transaction");
-    if (root) {
-        INT_EQ(runner, probe.uncompleted, 0, "the observer never sees a Text before kind completion");
-        INT_EQ(runner, probe.spaces, 2, "both absorbed escaped spaces complete exactly once at their word depth");
-        markdown_core_node *script = root->first_child->first_child;
-        INT_EQ(runner, script->kind, MARKDOWN_CORE_NODE_SUPERSCRIPT, "the word owner is preserved");
-        LITERAL_EQ(runner, script->first_child,
-                   "a\xc2\xa0"
-                   "b\xc2\xa0"
-                   "c",
-                   "consolidation copies already completed operands");
-    }
-    markdown_core_node_free(root);
-}
 
 static void completion_walks_each_root_once(test_batch_runner *runner) {
     static const char source[] = "Term a\\.b@c.io $x$\n"
@@ -10467,7 +10604,7 @@ static void begin_nothing(const markdown_core_element_instance *self, markdown_c
 }
 
 /* An element that declares the document lifecycle is asked for all of it: the
- * engine calls every hook but `observe_inline` on the owner without asking. */
+ * engine calls every hook on the owner without asking. */
 static bool attach_partial_document(markdown_core_dialect_builder *builder, void *context) {
     static const markdown_core_element partial = {.name = "partial-document", .init_document = begin_nothing};
     attach_probe *probe = context;
@@ -10879,7 +11016,7 @@ int main(void) {
     test_batch_runner *runner = test_batch_runner_new();
 
     universal_values(runner);
-    absorbed_text_completes_before_observation(runner);
+    absorbed_text_completes_once(runner);
     strbuf_growth_preserves_termination(runner);
     node_reuse_initializes_the_active_record(runner);
     block_content_storage_follows_writes(runner);
@@ -10893,7 +11030,9 @@ int main(void) {
     unicode_classes_are_total(runner);
     anchor_images_only_scalars(runner);
     whitespace_is_space_tab_and_line_ending(runner);
-    map_records_are_carved_from_its_blocks(runner);
+    registry_records_are_carved_from_its_blocks(runner);
+    registry_kinds_and_starts(runner);
+    registry_rollback_matches_a_model(runner);
     properties_values(runner);
     properties_source_boundaries(runner);
     properties_member_work(runner);

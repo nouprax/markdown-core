@@ -143,7 +143,6 @@ struct markdown_core_element {
     /* The last step of the parse: the tree is final, and the owner publishes
      * it (ids, extents, definition tables). */
     void (*publish_document)(const markdown_core_element_instance *, markdown_core_parser *);
-    void (*observe_inline)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
     markdown_core_node *(*open_text_block)(const markdown_core_element_instance *, markdown_core_parser *,
                                            markdown_core_node *, markdown_core_chunk *);
     markdown_core_node *(*try_interrupting_block)(const markdown_core_element_instance *, markdown_core_parser *,

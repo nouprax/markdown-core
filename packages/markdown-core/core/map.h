@@ -7,24 +7,14 @@
 extern "C" {
 #endif
 
-/* A record is a normalized LABEL a definition or a heading declares. */
-struct markdown_core_map_record {
-    struct markdown_core_map_record *next;
-    /* The normalized label and its length; the bytes are NUL-terminated. */
-    bufsize_t label_len;
-    unsigned char label[];
-};
-
-typedef struct markdown_core_map_record markdown_core_map_record;
-
+/* AN OPEN-ADDRESSED INDEX FROM BYTE KEYS TO A WORD, by linear probing. It
+ * borrows its keys: a key's bytes stay where the caller keeps them for as
+ * long as the key is in the index. */
 typedef struct markdown_core_key_index_slot {
     uint64_t hash;
     const unsigned char *key;
     bufsize_t key_len;
-    union {
-        void *pointer;
-        size_t counter;
-    } value;
+    size_t value;
 } markdown_core_key_index_slot;
 
 typedef struct markdown_core_key_index {
@@ -33,28 +23,6 @@ typedef struct markdown_core_key_index {
     size_t size;
 } markdown_core_key_index;
 
-/* Storage records are carved from; see markdown_core_map_carve. */
-typedef struct markdown_core_map_block markdown_core_map_block;
-
-struct markdown_core_map {
-    markdown_core_map_record *records;
-    /* The blocks records are carved from, newest first, and how much of the
-     * newest is used. They go with the map. */
-    markdown_core_map_block *blocks;
-    size_t block_used, block_size;
-    markdown_core_key_index index;
-    size_t size;
-    int prepared;
-    markdown_core_strbuf label_buffer;
-    /* Sticky flag: any allocation failure is terminal for the owning parse. */
-    int oom;
-};
-
-typedef struct markdown_core_map markdown_core_map;
-
-/* Reuses caller-owned scratch; returns false for empty labels or OOM. */
-int normalize_map_label_into(markdown_core_strbuf *normalized, markdown_core_chunk *ref);
-unsigned char *normalize_map_label(markdown_core_chunk *ref, int *lost);
 int markdown_core_key_index_init(markdown_core_key_index *index, size_t expected_size);
 void markdown_core_key_index_free(markdown_core_key_index *index);
 /* Find an occupied or vacant entry, growing only for a new key. NULL means
@@ -64,16 +32,12 @@ markdown_core_key_index_slot *markdown_core_key_index_entry(markdown_core_key_in
                                                             bufsize_t key_len);
 void markdown_core_key_index_commit(markdown_core_key_index *index, markdown_core_key_index_slot *entry,
                                     const unsigned char *key);
-int markdown_core_key_index_insert(markdown_core_key_index *index, const unsigned char *key, bufsize_t key_len,
-                                   void *value, int replace, void **existing);
-void *markdown_core_key_index_lookup(const markdown_core_key_index *index, const unsigned char *key, bufsize_t key_len);
-markdown_core_map *markdown_core_map_new(void);
-/* `size` bytes of storage aligned for any record, owned by the map, or NULL
- * when it cannot be allocated. */
-void *markdown_core_map_carve(markdown_core_map *map, size_t size);
-/* Frees the map and its records. */
-void markdown_core_map_free(markdown_core_map *map);
-markdown_core_map_record *markdown_core_map_lookup(markdown_core_map *map, markdown_core_chunk *label);
+/* The occupied entry for `key`, or NULL; never grows the index. */
+markdown_core_key_index_slot *markdown_core_key_index_find(const markdown_core_key_index *index,
+                                                           const unsigned char *key, bufsize_t key_len);
+/* Remove an occupied entry. Every other entry stays findable; entries the
+ * index holds may move, so no entry pointer survives the call. */
+void markdown_core_key_index_remove(markdown_core_key_index *index, markdown_core_key_index_slot *entry);
 
 #ifdef __cplusplus
 }

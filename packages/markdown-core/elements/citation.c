@@ -4,16 +4,13 @@
 #include "code.h"
 #include "html.h"
 #include "citation.h"
-#include "specimen.h"
 #include "inline_internal.h"
 #include "block_internal.h"
 
 /* The elements whose state this element reads, as `self->peers` holds them. */
-enum { CITATION_LINK, CITATION_CODE, CITATION_SPECIMEN };
-static const markdown_core_element *const CITATION_PEERS[] = {[CITATION_LINK] = &MARKDOWN_CORE_ELEMENT_LINK,
-                                                              [CITATION_CODE] = &MARKDOWN_CORE_ELEMENT_CODE,
-                                                              [CITATION_SPECIMEN] = &MARKDOWN_CORE_ELEMENT_SPECIMEN,
-                                                              NULL};
+enum { CITATION_LINK, CITATION_CODE };
+static const markdown_core_element *const CITATION_PEERS[] = {
+    [CITATION_LINK] = &MARKDOWN_CORE_ELEMENT_LINK, [CITATION_CODE] = &MARKDOWN_CORE_ELEMENT_CODE, NULL};
 
 static bool markdown_core_inline_citation_opener(markdown_core_inline_state *inline_state, bufsize_t pos);
 static bool markdown_core_inline_citation_key_follows(markdown_core_inline_state *inline_state, bufsize_t at);
@@ -474,11 +471,16 @@ static void materialize_citation_key(const markdown_core_element_instance *self,
         }
         return;
     }
-    const markdown_core_element_instance *specimen_element = self->peers[CITATION_SPECIMEN];
-    const markdown_core_specimen_state *specimens = specimen_element ? specimen_element->state : NULL;
-    bool specimen =
-        !token->suppress && token->key_start == token->start + 1 && specimens &&
-        markdown_core_key_index_lookup(&specimens->ids, item->as.citation->value.data, item->as.citation->value.len);
+    /* A bare key names a specimen when a specimen definition declares it. */
+    bool failed = false;
+    bool specimen = !token->suppress && token->key_start == token->start + 1 &&
+                    markdown_core_registry_find(&inline_state->owner_parser->registry, MARKDOWN_CORE_REGISTRY_SPECIMEN,
+                                                item->as.citation->value.data, item->as.citation->value.len, &failed);
+    if (failed) {
+        markdown_core_parser_release_node(inline_state->owner_parser, cite);
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
+        return;
+    }
     if (specimen) {
         item->as.citation->referent = MARKDOWN_CORE_NODE_REFERENT_SPECIMEN;
         item->as.citation->mode = 0;
