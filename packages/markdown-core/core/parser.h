@@ -803,6 +803,12 @@ static inline const markdown_core_kind_record *markdown_core_parser_kind(const m
     return markdown_core_dialect_kind(parser->dialect, (markdown_core_node_type)node->kind);
 }
 
+/* The same of a block (dialect.h, markdown_core_dialect_block_kind). */
+static inline const markdown_core_kind_record *markdown_core_parser_block_kind(const markdown_core_parser *parser,
+                                                                               const markdown_core_node *block) {
+    return markdown_core_dialect_block_kind(parser->dialect, (markdown_core_node_type)block->kind);
+}
+
 /* Physical geometry is present for every visited line. Optional normalized
  * views and grammar facts share one lazily created record for that line. */
 typedef struct markdown_core_input_line {

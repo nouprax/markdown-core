@@ -1,6 +1,7 @@
 #ifndef MARKDOWN_CORE_DIALECT_H
 #define MARKDOWN_CORE_DIALECT_H
 
+#include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -98,12 +99,20 @@ typedef enum {
 #define MARKDOWN_CORE_FINISH_KIND_COUNT (2 * MARKDOWN_CORE_NODE_KIND_COUNT)
 #define MARKDOWN_CORE_FINISH_KEY_COUNT (2 * (MARKDOWN_CORE_FINISH_KIND_COUNT + 1))
 
+/* The kind index of a kind of no inline class, as of a block: its ordinal,
+ * or the out-of-table index. The block parser reads the records of the blocks
+ * it holds by it, their class known. */
+static inline size_t markdown_core_block_kind_index(markdown_core_node_type kind) {
+    const size_t ordinal = (size_t)kind & MARKDOWN_CORE_NODE_VALUE_MASK;
+    return ordinal < MARKDOWN_CORE_NODE_KIND_COUNT ? ordinal : MARKDOWN_CORE_FINISH_KIND_COUNT;
+}
+
+/* The kind index of any kind: an inline kind's follows the block kinds'. */
 static inline size_t markdown_core_finish_kind_index(markdown_core_node_type kind) {
-    size_t ordinal = (size_t)kind & MARKDOWN_CORE_NODE_VALUE_MASK;
-    if (ordinal >= MARKDOWN_CORE_NODE_KIND_COUNT) {
-        return MARKDOWN_CORE_FINISH_KIND_COUNT;
-    }
-    return MARKDOWN_CORE_NODE_TYPE_INLINE_P(kind) ? MARKDOWN_CORE_NODE_KIND_COUNT + ordinal : ordinal;
+    const size_t index = markdown_core_block_kind_index(kind);
+    return MARKDOWN_CORE_NODE_TYPE_INLINE_P(kind) && index < MARKDOWN_CORE_NODE_KIND_COUNT
+               ? MARKDOWN_CORE_NODE_KIND_COUNT + index
+               : index;
 }
 
 static inline size_t markdown_core_finish_key(markdown_core_event_type event, markdown_core_node_type kind) {
@@ -312,6 +321,13 @@ typedef struct markdown_core_dialect {
 static inline const markdown_core_kind_record *markdown_core_dialect_kind(const markdown_core_dialect *dialect,
                                                                           markdown_core_node_type kind) {
     return &dialect->kinds[markdown_core_finish_kind_index(kind)];
+}
+
+/* The same of a kind of no inline class (markdown_core_block_kind_index). */
+static inline const markdown_core_kind_record *markdown_core_dialect_block_kind(const markdown_core_dialect *dialect,
+                                                                                markdown_core_node_type kind) {
+    assert(!MARKDOWN_CORE_NODE_TYPE_INLINE_P(kind));
+    return &dialect->kinds[markdown_core_block_kind_index(kind)];
 }
 
 static inline const markdown_core_element_instance *

@@ -377,7 +377,7 @@ static inline bool S_may_be_lazy(markdown_core_parser *parser, const markdown_co
     if (current == matched) {
         return false;
     }
-    const markdown_core_element_instance *structure = markdown_core_parser_structure(parser, current);
+    const markdown_core_element_instance *structure = markdown_core_parser_block_kind(parser, current)->structure;
     return structure && structure->element->accepts_lazy &&
            structure->element->accepts_lazy(structure, parser, current);
 }
@@ -1179,7 +1179,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_close(markdown_cor
     /* A block that takes text lines in a container has a run of its own
      * source on each of its lines, whatever its close hook makes of it; one
      * of the document itself lies on whole lines, its own source its range. */
-    const markdown_core_kind_record *kind = markdown_core_parser_kind(parser, b);
+    const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, b);
     const bool lines = parent && parent != parser->root && S_kind_takes_text(kind, b);
     const markdown_core_element_instance *structure = kind->structure;
     if (kind->flags & MARKDOWN_CORE_KIND_BLANK_PROPAGATES) {
@@ -3160,7 +3160,7 @@ static markdown_core_node *check_open_blocks(markdown_core_parser *parser, markd
 
         markdown_core_block_find_first_nonspace(parser, input);
 
-        const markdown_core_kind_record *kind = markdown_core_parser_kind(parser, container);
+        const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, container);
         const markdown_core_element_instance *structure = kind->structure;
         if (structure && structure->element->last_block_matches) {
             if (!parse_element_block(parser, kind, container, input, &should_continue, &closing)) {
@@ -3177,7 +3177,7 @@ static markdown_core_node *check_open_blocks(markdown_core_parser *parser, markd
             }
             if (taken) {
                 markdown_core_node *current = markdown_core_parser_current(parser);
-                if (S_kind_accepts_lines(markdown_core_parser_kind(parser, current), current)) {
+                if (S_kind_accepts_lines(markdown_core_parser_block_kind(parser, current), current)) {
                     markdown_core_block_add_line(current, input, parser);
                 }
                 return NULL;
@@ -3281,7 +3281,7 @@ static void S_lookahead_close_run(markdown_core_block_lookahead *lookahead, int 
 static bool S_lookahead_extras_accept_blank(const markdown_core_parser *parser, int from, int depth) {
     int i;
     for (i = from; i < depth; i++) {
-        if (!(markdown_core_parser_kind(parser, parser->lookahead_chain[i].node)->flags &
+        if (!(markdown_core_parser_block_kind(parser, parser->lookahead_chain[i].node)->flags &
               MARKDOWN_CORE_KIND_BLANK_RUNS)) {
             return false;
         }
@@ -3416,7 +3416,8 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
         for (i = from; i < lookahead->depth && carried && !taken; i++) {
             markdown_core_node *container = parser->lookahead_chain[i].node;
             markdown_core_block_find_first_nonspace(parser, &input);
-            const markdown_core_element_instance *structure = markdown_core_parser_structure(parser, container);
+            const markdown_core_element_instance *structure =
+                markdown_core_parser_block_kind(parser, container)->structure;
             if (structure && structure->element->last_block_matches) {
                 int match =
                     structure->element->continues_block
@@ -3496,7 +3497,7 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
     }
     for (i = 0; i < lookahead->depth; i++) {
         markdown_core_node *node = parser->lookahead_chain[i].node;
-        const markdown_core_element_instance *structure = markdown_core_parser_structure(parser, node);
+        const markdown_core_element_instance *structure = markdown_core_parser_block_kind(parser, node)->structure;
         unsigned mask = structure ? structure->element->speculative_flags : 0;
         node->flags =
             (markdown_core_node_internal_flags)((node->flags & ~mask) | (parser->lookahead_chain[i].flags & mask));
@@ -3622,7 +3623,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
      * either: a block opened here holds the rest of the line. */
     bool maybe_lazy = S_may_be_lazy(parser, *container);
     size_t depth = 0;
-    const markdown_core_kind_record *kind = markdown_core_parser_kind(parser, *container);
+    const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, *container);
     /* The instance's dialect is sealed: read its families through one local. */
     const markdown_core_dialect *const dialect = parser->dialect;
 
@@ -3741,7 +3742,7 @@ static void open_new_blocks(markdown_core_parser *parser, markdown_core_node **c
          * `[^label]:`. Claimed once per turn of the loop -- once per block
          * opened -- and before a block that takes the text line breaks out. */
 
-        kind = markdown_core_parser_kind(parser, *container);
+        kind = markdown_core_parser_block_kind(parser, *container);
         if (S_kind_takes_text(kind, *container)) {
             // if it's a line container, it can't contain other containers
             break;
@@ -3773,7 +3774,7 @@ static void add_text_to_container(markdown_core_parser *parser, markdown_core_no
     // and we don't count blanks in fenced code for purposes of tight/loose
     // lists or breaking out of lists.  we also don't set last_line_blank
     // on an empty list item.
-    const markdown_core_kind_record *kind = markdown_core_parser_kind(parser, container);
+    const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, container);
     const markdown_core_element_instance *structure = kind->structure;
     const bool accepts_lines = S_kind_accepts_lines(kind, container);
     const bool last_line_blank =
@@ -3792,7 +3793,7 @@ static void add_text_to_container(markdown_core_parser *parser, markdown_core_no
     // line: the current block takes it.
     if (container == last_matched_container && !parser->blank && S_may_be_lazy(parser, last_matched_container)) {
         markdown_core_node *current = markdown_core_parser_current(parser);
-        const markdown_core_element_instance *taker = markdown_core_parser_structure(parser, current);
+        const markdown_core_element_instance *taker = markdown_core_parser_block_kind(parser, current)->structure;
         markdown_core_node *lazy = taker->element->open_lazy(taker, parser, current, input);
         if (!lazy) {
             return;
@@ -4072,7 +4073,7 @@ static bool S_withdraw_anchor(markdown_core_parser *parser, const markdown_core_
  * with completions of their own otherwise. */
 static void S_withdraw_completion(markdown_core_parser *parser, markdown_core_node *block, uint32_t start) {
     completion_collect collect = {.parser = parser};
-    const bool inlines = S_kind_contains_inlines(markdown_core_parser_kind(parser, block), block);
+    const bool inlines = S_kind_contains_inlines(markdown_core_parser_block_kind(parser, block), block);
     bool withdrawn = S_withdraw_anchor(parser, block, start) &&
                      markdown_core_visit_inline_subtrees(block, S_collect_completed, &collect);
     for (uint32_t i = 0; withdrawn && inlines && i < block->child_count; i++) {
@@ -4130,7 +4131,7 @@ static markdown_core_node *S_complete_anew(markdown_core_parser *parser, const m
     }
     markdown_core_miss_position *positions = &parser->miss_positions[record->first_position];
     S_withdraw_completion(parser, block, positions->place.start);
-    const markdown_core_kind_record *kind = markdown_core_parser_kind(parser, block);
+    const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, block);
     markdown_core_node *candidate =
         parser->error ? NULL : markdown_core_node_candidate(parser->pool, block, S_kind_contains_inlines(kind, block));
     if (!candidate) {
@@ -4162,7 +4163,7 @@ static markdown_core_node *S_complete_anew(markdown_core_parser *parser, const m
 static void S_withdraw_defined(markdown_core_parser *parser, const markdown_core_miss_block *record,
                                markdown_core_node *block) {
     const markdown_core_miss_position *positions = &parser->miss_positions[record->first_position];
-    const bool inlines = S_kind_contains_inlines(markdown_core_parser_kind(parser, block), block);
+    const bool inlines = S_kind_contains_inlines(markdown_core_parser_block_kind(parser, block), block);
     for (size_t i = inlines ? 0 : 1; i < record->position_count; i++) {
         const markdown_core_place place = positions[i].place;
         const markdown_core_key_entry from = markdown_core_key_number(place.start);
