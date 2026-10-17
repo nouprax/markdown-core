@@ -208,12 +208,27 @@ typedef enum {
 typedef struct {
     void *storage;
     markdown_core_retired_kind kind;
+    /* Where the block whose state moved starts, for a slot. */
+    uint32_t start;
 } markdown_core_retired;
 
-/* A DEFINITION THE PUBLISHED DOCUMENT HOLDS AS COMMITTED (ast.c, THE
- * DEFINITION TABLES A STREAMING PARSE KEEPS): where it starts in the source,
- * the table that lists it and the object the document holds, which every
- * later publish lists without walking it. */
+/* THE COMMITTED TABLES (ast.c, THE DEFINITION TABLES A STREAMING PARSE
+ * KEEPS): the definitions the published document holds as COMMITTED. Each
+ * of the document's tables -- Footnotes, Specimens, References, Headings --
+ * by where they start, an entry's number its start and its pointer the
+ * object the document holds; and the labeled Footnotes, the labeled
+ * Specimens and the reference targets by label, an entry's pointer the
+ * label's definition and its number where that starts. */
+enum { MARKDOWN_CORE_DEFINITION_TABLES = 4, MARKDOWN_CORE_LABEL_TABLES = 3 };
+
+typedef struct markdown_core_committed_tables {
+    markdown_core_key_tree starts[MARKDOWN_CORE_DEFINITION_TABLES];
+    markdown_core_key_tree labels[MARKDOWN_CORE_LABEL_TABLES];
+} markdown_core_committed_tables;
+
+/* A DEFINITION A CANDIDATE LISTS (blocks.c, A LOOKUP THAT FOUND NOTHING):
+ * where it starts in the source, its table and the object the document
+ * holds. */
 typedef struct {
     uint32_t start, table;
     const struct markdown_core_node *node;
@@ -278,12 +293,15 @@ struct markdown_core_parser {
     size_t level_count, level_capacity;
     markdown_core_retired *retired;
     size_t retired_count, retired_capacity;
-    /* The definitions the published document holds as committed, in source
-     * order (ast.c), and room for those a publish lists as it walks. */
-    markdown_core_defined *defined;
-    size_t defined_count, defined_capacity;
+    /* The definitions the published document holds as committed (ast.c),
+     * room for those a publish lists as it walks, and the definitions the
+     * candidates of a finalize list, which join the committed tables once
+     * every candidate is placed (blocks.c). */
+    markdown_core_committed_tables committed;
     markdown_core_kept *kept;
     size_t kept_capacity;
+    markdown_core_defined *defined;
+    size_t defined_count, defined_capacity;
     /* THE PATHS (blocks.c): the root's, and the blocks the rest are cut
      * from. */
     markdown_core_path root_path;

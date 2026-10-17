@@ -3207,6 +3207,131 @@ static void registry_records_are_carved_from_its_blocks(test_batch_runner *runne
     payload_probe_disarm();
 }
 
+/* Two byte strings in byte order, the shorter first on a common prefix,
+ * written apart from the index's own order. */
+static int key_bytes_order(const char *a, size_t a_size, const char *b, size_t b_size) {
+    const size_t common = a_size < b_size ? a_size : b_size;
+    const int order = common ? memcmp(a, b, common) : 0;
+    return order ? order : (a_size > b_size) - (a_size < b_size);
+}
+
+static int key_model_order(const void *a, const void *b) {
+    const char *x = *(const char *const *)a, *y = *(const char *const *)b;
+    return key_bytes_order(x, strlen(x), y, strlen(y));
+}
+
+static markdown_core_key_entry key_of(const char *key) {
+    const bufsize_t size = (bufsize_t)strlen(key);
+    const unsigned char *bytes = (const unsigned char *)key;
+    return (markdown_core_key_entry){markdown_core_key_head(bytes, size), bytes, size, 0, NULL};
+}
+
+/* THE ORDERED INDEX AGREES WITH A SORTED MODEL whichever order the keys
+ * arrive in -- rising, falling or scattered, through splits at every level:
+ * one entry per key, each key's entry and rank, each rank's entry, a walk
+ * from any key, a missing key's rank. Keys share heads, so the bytes past the
+ * eighth and the lengths decide among them too. An insertion whose storage
+ * cannot be had leaves the tree as it was, and the free releases every
+ * node. */
+static void key_tree_matches_a_sorted_model(test_batch_runner *runner) {
+    enum { COUNT = 3000, ORDERS = 3 };
+    static char keys[COUNT][32];
+    static const char *sorted[COUNT];
+    for (size_t i = 0; i < COUNT; i++) {
+        if (i % 3 == 0) {
+            snprintf(keys[i], sizeof(keys[i]), "%zu", i);
+        } else if (i % 3 == 1) {
+            snprintf(keys[i], sizeof(keys[i]), "headings/%zu", i * 7);
+        } else {
+            snprintf(keys[i], sizeof(keys[i]), "headings/%zu/%zu", i, i % 11);
+        }
+        sorted[i] = keys[i];
+    }
+    qsort(sorted, COUNT, sizeof(*sorted), key_model_order);
+    payload_probe_arm();
+    for (size_t order = 0; order < ORDERS; order++) {
+        markdown_core_key_tree tree = {0};
+        bool ok = true;
+        for (size_t step = 0; step < COUNT && ok; step++) {
+            const size_t i = order == 0 ? step : order == 1 ? COUNT - 1 - step : step * 1999 % COUNT;
+            const markdown_core_key_entry key = key_of(keys[i]);
+            bool made = false;
+            markdown_core_key_entry *entry = markdown_core_key_tree_entry(&tree, &key, &made);
+            ok = entry && made && entry->key == key.key;
+            if (ok) {
+                entry->value = keys[i];
+                entry = markdown_core_key_tree_entry(&tree, &key, &made);
+                ok = entry && !made && entry->value == keys[i];
+            }
+        }
+        OK(runner, ok && tree.count == COUNT, "order %zu: every key has one entry", order);
+        bool agrees = true;
+        for (size_t rank = 0; rank < COUNT && agrees; rank++) {
+            const markdown_core_key_entry key = key_of(sorted[rank]);
+            size_t found_rank = SIZE_MAX;
+            const markdown_core_key_entry *found = markdown_core_key_tree_find(&tree, &key, &found_rank);
+            agrees = found && found->value == sorted[rank] && found_rank == rank &&
+                     markdown_core_key_tree_at(&tree, rank)->value == sorted[rank];
+            char missing[40];
+            snprintf(missing, sizeof(missing), "%s~", sorted[rank]);
+            const markdown_core_key_entry absent = key_of(missing);
+            agrees = agrees && !markdown_core_key_tree_find(&tree, &absent, &found_rank);
+            const size_t expected = rank + 1 < COUNT && key_model_order(&sorted[rank + 1], &(const char *){missing}) < 0
+                                        ? SIZE_MAX
+                                        : rank + 1;
+            agrees = agrees && (expected == SIZE_MAX || found_rank == expected);
+        }
+        OK(runner, agrees, "order %zu: each key's entry and rank, and each rank's entry, agree", order);
+        bool walks = true;
+        for (size_t from = 0; from < COUNT && walks; from += 97) {
+            const markdown_core_key_entry key = key_of(sorted[from]);
+            markdown_core_key_tree_cursor cursor;
+            markdown_core_key_tree_seek(&tree, &key, &cursor);
+            size_t at = from;
+            for (const markdown_core_key_entry *entry; (entry = markdown_core_key_tree_next(&cursor)); at++) {
+                walks = walks && at < COUNT && entry->value == sorted[at];
+            }
+            walks = walks && at == COUNT;
+        }
+        OK(runner, walks, "order %zu: a walk from any key visits the rest in order", order);
+        /* A key past every other, which splits the rightmost node at each
+         * level that is full, refused at each allocation it makes. */
+        bool kept = true;
+        for (size_t fail = 1; fail <= 4 && kept; fail++) {
+            const markdown_core_key_entry key = key_of("~");
+            payload_fail_at = payload_allocations + fail;
+            bool made = false;
+            const markdown_core_key_entry *entry = markdown_core_key_tree_entry(&tree, &key, &made);
+            payload_fail_at = 0;
+            if (entry) {
+                kept = kept && made && tree.count == COUNT + 1;
+                break;
+            }
+            kept = tree.count == COUNT && markdown_core_key_tree_at(&tree, COUNT - 1)->value == sorted[COUNT - 1];
+        }
+        OK(runner, kept, "order %zu: a refused insertion leaves the tree as it was", order);
+        markdown_core_key_tree_free(&tree);
+    }
+    markdown_core_key_tree numbers = {0};
+    bool ok = true;
+    for (uint32_t i = 0; i < COUNT && ok; i++) {
+        const markdown_core_key_entry key = markdown_core_key_number(COUNT - i);
+        bool made = false;
+        markdown_core_key_entry *entry = markdown_core_key_tree_entry(&numbers, &key, &made);
+        ok = entry && made;
+        if (ok) {
+            entry->extra = COUNT - i;
+        }
+    }
+    for (uint32_t rank = 0; rank < COUNT && ok; rank++) {
+        ok = markdown_core_key_tree_at(&numbers, rank)->extra == rank + 1;
+    }
+    OK(runner, ok, "numbers are keys in numeric order");
+    markdown_core_key_tree_free(&numbers);
+    INT_EQ(runner, payload_live, 0, "the trees' nodes are all released");
+    payload_probe_disarm();
+}
+
 /* THE KINDS ARE SEPARATE LOOKUP SPACES, and a key's records answer for the
  * earliest of them: a label declared as a reference is not a footnote, and
  * a key declared twice starts where its earlier declaration starts. */
@@ -11072,6 +11197,222 @@ static void session_finalize_matches_a_parse(test_batch_runner *runner) {
     }
 }
 
+/* EVERY SNAPSHOT NAMES ITS HEADINGS AS A PARSE OF THE TEXT SO FAR DOES
+ * (step 7, 4.5): the text arrives byte by byte, and after each append the
+ * snapshot's dump is a fresh parse's of the same text. An explicit anchor
+ * written after headings that took its name displaces the first of them,
+ * which displaces the next along its own sequence: while the anchor is in a
+ * snapshot's tail, a committed heading shows another name, and the commit
+ * that reaches the anchor gives it that name for good. An anchor in an
+ * unclosed code span is gone once the span closes, and the heading shows its
+ * own name again. The headings sit at the top, in a footnote, as a setext
+ * heading the last paragraph becomes, and with authored anchors. No text
+ * here looks a definition up, so a snapshot's lookups change nothing. */
+static void session_snapshot_names(test_batch_runner *runner) {
+    static const char *const sources[] = {
+        "# A\n\n# A\n\n# A\n\ntext :n{#a} more\n\n# A\n",
+        "# A\n\none\n\ntwo\n\npara `x :n{#a}\nline` after\n\n# A\n\nthree\n\n`:n{#a-1}` and :n{#a-2}\n",
+        "# A\n\n# A-1\n\n# A\n\n:n{#a}\n\n# A-1\n",
+        "[^n]: # A\n\n    # A\n\n# A\n\n:n{#a}\n",
+        "# A\n\n# A\n\n# A\n\n# A\n\n# A\n\n# A\n\n# A\n\n:n{#a-2}\n\n# A\n\n:n{#a}\n",
+        "# A\n\n# B {#a}\n\n# A\n\nA\n=\n\nA {#a-1}\n-\n",
+        "- # A\n\n  # A\n\n> :n{#a-1}\n> # A\n",
+    };
+    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        const char *source = sources[i];
+        const size_t length = strlen(source);
+        markdown_core_session *session = NULL;
+        bool same = markdown_core_session_new((const uint8_t *)source, 0, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
+                    MARKDOWN_CORE_OK;
+        size_t at = 0;
+        while (same && at < length) {
+            const markdown_core_document *document = NULL;
+            same =
+                markdown_core_session_append(session, (const uint8_t *)source + at, 1, &document) == MARKDOWN_CORE_OK;
+            at++;
+            markdown_core_document *parsed = NULL;
+            size_t expected_length = 0, actual_length = 0;
+            uint8_t *expected = markdown_core_document_parse((const uint8_t *)source, at, &parsed) == MARKDOWN_CORE_OK
+                                    ? dump_of(parsed, source, at, &expected_length)
+                                    : NULL;
+            uint8_t *actual = same ? dump_of(document, source, at, &actual_length) : NULL;
+            same = expected && actual && expected_length == actual_length &&
+                   memcmp(expected, actual, expected_length) == 0;
+            markdown_core_dump_free(expected);
+            markdown_core_dump_free(actual);
+            markdown_core_document_free(parsed);
+        }
+        const markdown_core_document *final = NULL;
+        OK(runner, same && markdown_core_session_finalize(session, &final) == MARKDOWN_CORE_OK,
+           "every snapshot names its headings as a parse of its text, up to byte %zu of %zu: %s", at, length, source);
+        markdown_core_session_free(session);
+    }
+}
+
+/* WHERE A NODE IS in the source, which names a node of one document in
+ * another parsed from the same source even where their trees differ: its
+ * kind, and the start of its first run and the end of its last; the kind
+ * alone, zero, for NULL. */
+typedef struct {
+    int kind;
+    markdown_core_position start;
+    markdown_core_position end;
+} node_where;
+
+static bool node_where_of(const markdown_core_document *document, const markdown_core_node *node, const char *source,
+                          size_t length, node_where *where) {
+    memset(where, 0, sizeof(*where));
+    if (!node) {
+        return true;
+    }
+    markdown_core_scope *scopes = NULL;
+    size_t count = 0;
+    if (markdown_core_document_scope(document, node, (const uint8_t *)source, length, &scopes, &count) !=
+            MARKDOWN_CORE_OK ||
+        !count) {
+        markdown_core_scopes_free(scopes);
+        return false;
+    }
+    where->kind = (int)markdown_core_node_get_kind(node) + 1;
+    where->start = scopes[0].start;
+    where->end = scopes[count - 1].end;
+    markdown_core_scopes_free(scopes);
+    return true;
+}
+
+/* The label of a definition of table `table` (0 Footnotes, 1 Specimens, 2
+ * References), and whether it has one. */
+static bool definition_label_of(int table, const markdown_core_node *node, markdown_core_string *label) {
+    markdown_core_optional_string optional = {0};
+    markdown_core_optional_i64 start;
+    if (table == 2) {
+        optional.has_value = markdown_core_reference_label(node, &optional.value) == MARKDOWN_CORE_OK;
+    } else if (table == 1) {
+        markdown_core_specimen_properties(node, &optional, &start);
+    } else {
+        markdown_core_footnote_label(node, &optional);
+    }
+    *label = optional.value;
+    return optional.has_value;
+}
+
+static size_t definition_count(int table, const markdown_core_document *document) {
+    return table == 0   ? markdown_core_document_footnote_count(document)
+           : table == 1 ? markdown_core_document_specimen_count(document)
+                        : markdown_core_document_reference_count(document);
+}
+
+static const markdown_core_node *definition_entry(int table, const markdown_core_document *document, size_t index) {
+    const markdown_core_node *node = NULL;
+    const markdown_core_status status = table == 0   ? markdown_core_document_footnote_at(document, index, &node)
+                                        : table == 1 ? markdown_core_document_specimen_at(document, index, &node)
+                                                     : markdown_core_document_reference_at(document, index, &node);
+    return status == MARKDOWN_CORE_OK ? node : NULL;
+}
+
+static const markdown_core_node *definition_lookup(int table, const markdown_core_document *document,
+                                                   markdown_core_string label) {
+    return table == 0   ? markdown_core_document_footnote_for(document, label)
+           : table == 1 ? markdown_core_document_specimen_for(document, label)
+                        : markdown_core_document_reference_for(document, label);
+}
+
+/* Whether two documents parsed from `length` bytes of `source` have tables
+ * that agree, entry for entry, by where their nodes are: every list, the
+ * lookup of every label a list holds and of a label none does, and the
+ * reference label table. */
+static bool same_node(const markdown_core_document *actual, const markdown_core_node *mine,
+                      const markdown_core_document *expected, const markdown_core_node *theirs, const char *source,
+                      size_t length) {
+    node_where a, b;
+    return node_where_of(actual, mine, source, length, &a) && node_where_of(expected, theirs, source, length, &b) &&
+           a.kind == b.kind && a.start.line == b.start.line && a.start.column == b.start.column &&
+           a.end.line == b.end.line && a.end.column == b.end.column;
+}
+
+static bool tables_agree(const markdown_core_document *actual, const markdown_core_document *expected,
+                         const char *source, size_t length) {
+    bool same = true;
+#define SAME_NODE(a, b) same_node(actual, (a), expected, (b), source, length)
+    for (int table = 0; same && table < 3; table++) {
+        const size_t count = definition_count(table, expected);
+        same = definition_count(table, actual) == count;
+        for (size_t i = 0; same && i < count; i++) {
+            const markdown_core_node *entry = definition_entry(table, expected, i);
+            markdown_core_string label;
+            same = entry && SAME_NODE(definition_entry(table, actual, i), entry) &&
+                   (!definition_label_of(table, entry, &label) ||
+                    SAME_NODE(definition_lookup(table, actual, label), definition_lookup(table, expected, label)));
+        }
+        const markdown_core_string absent = {(const uint8_t *)"absent label", 12};
+        same = same && !definition_lookup(table, actual, absent) && !definition_lookup(table, expected, absent);
+    }
+    const size_t labels = markdown_core_document_reference_label_count(expected);
+    same = same && markdown_core_document_reference_label_count(actual) == labels;
+    for (size_t i = 0; same && i < labels; i++) {
+        markdown_core_string label, expected_label;
+        const markdown_core_node *target = NULL, *expected_target = NULL;
+        same = markdown_core_document_reference_label_at(actual, i, &label, &target) == MARKDOWN_CORE_OK &&
+               markdown_core_document_reference_label_at(expected, i, &expected_label, &expected_target) ==
+                   MARKDOWN_CORE_OK &&
+               label.length == expected_label.length && !memcmp(label.data, expected_label.data, label.length) &&
+               SAME_NODE(target, expected_target) &&
+               SAME_NODE(markdown_core_document_reference_for(actual, label), expected_target);
+    }
+#undef SAME_NODE
+    return same;
+}
+
+/* EVERY SNAPSHOT'S TABLES ARE A PARSE'S OF THE TEXT SO FAR (step 7, 4.5):
+ * the text arrives byte by byte, and after each append the snapshot's
+ * definition tables -- the lists, the lookups by label and the reference
+ * labels -- name the nodes a fresh parse of the same text names, by where
+ * they are in the text, since the snapshot's inline roots resolve only
+ * definitions before them and its tree differs from the parse's. The committed definitions sit in the committed tables
+ * and the tail's are the snapshot's own: footnotes nested in an open
+ * footnote, inline notes, labels written twice, a Reference and Headings
+ * declaring one label in either order, the tail's labels between committed
+ * ones and over a committed Heading's, specimens, and a heading in a
+ * footnote that a later anchor renames, which moves the footnote and the
+ * heading to objects of their own while their entries stay committed. */
+static void session_snapshot_tables(test_batch_runner *runner) {
+    static const char *const sources[] = {
+        "[^a]: one\n\n    [^b]: inner\n\n    more\n\n[^a]: again\n\ntext [^a] ^[inline] [^b]\n\n[^c]: last\n",
+        "# Foo\n\n[foo]: /u\n\n# Foo\n\n[Foo] and [bar]\n\n[bar]: /b\n\n# Bar\n\n[foo]: /again\n",
+        "[^n]: # A\n\n    # A\n\n# A\n\n[A] and [a-1]\n\n:n{#a}\n\n[x]: /x\n",
+        "(5@etude) Body.\n(@) Anonymous.\n\n(@etude) Again.\n\n@etude and (@next) Next.\n",
+        "- [r]: /r\n- # R\n\n> [^q]: quote\n>\n> # Q\n\n[R] [Q] [^q]\n",
+        "[a]: /a\n\n# D\n\n[c]: /c\n\n# G\n\n[b]: /b\n[d]: /d\n[f]: /f\n\n[B] [D] [G]\n",
+    };
+    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        const char *source = sources[i];
+        const size_t length = strlen(source);
+        markdown_core_session *session = NULL;
+        bool same = markdown_core_session_new((const uint8_t *)source, 0, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
+                    MARKDOWN_CORE_OK;
+        size_t at = 0;
+        while (same && at < length) {
+            const markdown_core_document *document = NULL;
+            same =
+                markdown_core_session_append(session, (const uint8_t *)source + at, 1, &document) == MARKDOWN_CORE_OK;
+            at++;
+            markdown_core_document *parsed = NULL;
+            same = same && markdown_core_document_parse((const uint8_t *)source, at, &parsed) == MARKDOWN_CORE_OK &&
+                   tables_agree(document, parsed, source, at);
+            markdown_core_document_free(parsed);
+        }
+        const markdown_core_document *final = NULL;
+        markdown_core_document *parsed = NULL;
+        same = same && markdown_core_session_finalize(session, &final) == MARKDOWN_CORE_OK &&
+               markdown_core_document_parse((const uint8_t *)source, length, &parsed) == MARKDOWN_CORE_OK &&
+               tables_agree(final, parsed, source, length);
+        OK(runner, same, "every snapshot's tables are a parse's of its text, up to byte %zu of %zu: %s", at, length,
+           source);
+        markdown_core_document_free(parsed);
+        markdown_core_session_free(session);
+    }
+}
+
 /* The allocator-seam sweep (plan 8, gates 4.7): an append and a finalize
  * fail at every allocation, report ALLOCATION_FAILED, and the session frees
  * everything it holds. */
@@ -11150,6 +11491,7 @@ int main(void) {
     anchor_images_only_scalars(runner);
     whitespace_is_space_tab_and_line_ending(runner);
     registry_records_are_carved_from_its_blocks(runner);
+    key_tree_matches_a_sorted_model(runner);
     registry_kinds_and_starts(runner);
     registry_rollback_matches_a_model(runner);
     properties_values(runner);
@@ -11302,6 +11644,8 @@ int main(void) {
     scope_queries_count_in_the_document_unit(runner);
     session_appends(runner);
     session_snapshot_anchors(runner);
+    session_snapshot_names(runner);
+    session_snapshot_tables(runner);
     session_finalize_matches_a_parse(runner);
     session_allocation_failures(runner);
 

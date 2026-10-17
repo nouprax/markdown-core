@@ -177,6 +177,24 @@ static inline const markdown_core_registry_record *markdown_core_registry_next(c
     return registry->records[cursor->at++];
 }
 
+/* The cursor's next record before position `end` of the log, or NULL, with
+ * the cursor at `end`, when none of its kind is left before it. */
+static inline const markdown_core_registry_record *
+markdown_core_registry_next_before(const markdown_core_registry *registry, markdown_core_registry_cursor *cursor,
+                                   size_t end) {
+    while (cursor->left && cursor->at < end) {
+        const markdown_core_registry_record *record = registry->records[cursor->at++];
+        if (record->key[0] == (unsigned char)cursor->kind) {
+            cursor->left--;
+            return record;
+        }
+    }
+    if (cursor->at < end) {
+        cursor->at = end;
+    }
+    return NULL;
+}
+
 /* Whether some declaration of the record's key, up to the record, starts
  * before `position`. */
 static inline bool markdown_core_registry_starts_before(const markdown_core_registry_record *record,

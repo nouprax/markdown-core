@@ -188,8 +188,14 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     markdown_core_free(parser->retired);
     markdown_core_free(parser->copies);
     markdown_core_free(parser->rooms);
-    markdown_core_free(parser->defined);
+    for (size_t table = 0; table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
+        markdown_core_key_tree_free(&parser->committed.starts[table]);
+    }
+    for (size_t table = 0; table < MARKDOWN_CORE_LABEL_TABLES; table++) {
+        markdown_core_key_tree_free(&parser->committed.labels[table]);
+    }
     markdown_core_free(parser->kept);
+    markdown_core_free(parser->defined);
     S_release_paths(parser);
 
     /* The content-to-source map outlives every block that indexes it and
@@ -2027,13 +2033,15 @@ void markdown_core_parser_discard(markdown_core_parser *parser) { S_release_pars
  * the blocks that hold it lead down to the builders: a settled block holds
  * its index in the block it settled into, which its scaffold names, and a
  * builder or the pending block is at the index its parent's next child
- * takes, which nothing takes before it settles there. A block that has not
- * settled keeps its path once asked; the paths are cut from blocks the
- * parser owns and live as long as it. */
+ * takes, which nothing takes before it settles there. Each still holds its
+ * place, so the path records where the block starts too, which a block
+ * superseded later gives its table entries (A BLOCK SUPERSEDED). A block
+ * that has not settled keeps its path once asked; the paths are cut from
+ * blocks the parser owns and live as long as it. */
 #define S_PATH_BLOCK_ITEMS 255
 
 static const markdown_core_path *S_path_cut(markdown_core_parser *parser, const markdown_core_path *parent,
-                                            uint32_t index) {
+                                            uint32_t index, uint32_t start) {
     markdown_core_path_block *block = parser->paths;
     if (!block || block->used == S_PATH_BLOCK_ITEMS) {
         block = markdown_core_alloc(1, sizeof(*block) + S_PATH_BLOCK_ITEMS * sizeof(markdown_core_path));
@@ -2045,7 +2053,7 @@ static const markdown_core_path *S_path_cut(markdown_core_parser *parser, const 
         parser->paths = block;
     }
     markdown_core_path *path = &block->items[block->used++];
-    *path = (markdown_core_path){parent, index};
+    *path = (markdown_core_path){parent, index, start};
     return path;
 }
 
@@ -2064,7 +2072,7 @@ const markdown_core_path *markdown_core_parser_path(markdown_core_parser *parser
         return NULL;
     }
     const markdown_core_path *path =
-        S_path_cut(parser, parent, unsettled ? link->parent->child_count : link->prev.index);
+        S_path_cut(parser, parent, unsettled ? link->parent->child_count : link->prev.index, block->where.place.start);
     if (unsettled) {
         link->prev.path = path;
     }
@@ -2266,7 +2274,7 @@ static bool S_retire(markdown_core_parser *parser, void *storage, markdown_core_
         return false;
     }
     parser->retired = retired;
-    retired[parser->retired_count++] = (markdown_core_retired){storage, kind};
+    retired[parser->retired_count++] = (markdown_core_retired){storage, kind, 0};
     return true;
 }
 
@@ -2558,10 +2566,12 @@ const markdown_core_node *markdown_core_parser_level_object(const markdown_core_
  * does each block between it and the deepest level whose object holds it:
  * each moves to a slot of its own (markdown_core_node_move), which the
  * children array holding it names in its place, while its old slot keeps
- * what the published document reads until the next publish. The levels down
- * to that one then differ (`touched_levels`), and the publish finds each
- * moved block, by its id, to differ from the object it continues. Any other
- * block is no object of the published document, and changes as it is.
+ * what the published document reads until the next publish, retired with
+ * where the block starts, which its path records: the publish finds the
+ * block's entries in the committed tables there (ast.c). The levels down to
+ * that one then differ (`touched_levels`), and the publish finds each moved
+ * block, by its id, to differ from the object it continues. Any other block
+ * is no object of the published document, and changes as it is.
  *
  * A level's builder writes its own children array, and its spare, which the
  * published document reads, comes back to it after the publish with the
@@ -2573,15 +2583,19 @@ markdown_core_node *markdown_core_parser_supersede(markdown_core_parser *parser,
     for (const markdown_core_path *at = path; at->parent; at = at->parent) {
         depth++;
     }
-    markdown_core_node **chain = markdown_core_parser_walk_stack(parser, depth + 1, sizeof(*chain) + sizeof(uint32_t));
+    markdown_core_node **chain =
+        markdown_core_parser_walk_stack(parser, depth + 1, sizeof(*chain) + 2 * sizeof(uint32_t));
     if (!chain) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return NULL;
     }
-    uint32_t *indices = (uint32_t *)(void *)(chain + depth + 1);
+    /* The index of each block of the chain below the root, and where each
+     * starts. */
+    uint32_t *indices = (uint32_t *)(void *)(chain + depth + 1), *starts = indices + depth;
     size_t at = depth;
     for (const markdown_core_path *step = path; step->parent; step = step->parent) {
         indices[--at] = step->index;
+        starts[at] = step->start;
     }
     chain[0] = parser->root;
     for (size_t i = 0; i < depth; i++) {
@@ -2616,7 +2630,7 @@ markdown_core_node *markdown_core_parser_supersede(markdown_core_parser *parser,
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return NULL;
         }
-        retired[parser->retired_count++] = (markdown_core_retired){chain[i + 1], MARKDOWN_CORE_RETIRED_SLOT};
+        retired[parser->retired_count++] = (markdown_core_retired){chain[i + 1], MARKDOWN_CORE_RETIRED_SLOT, starts[i]};
         holder->children[indices[i]] = moved;
         if (i == level && indices[i] < spine->spare_valid) {
             spine->spare[indices[i]] = moved;
@@ -4137,57 +4151,51 @@ static markdown_core_node *S_complete_anew(markdown_core_parser *parser, const m
 
 /* THE DEFINITIONS A BLOCK COMPLETED AGAIN MAKES AGAIN. The candidate makes
  * its inline content anew: its own, when its kind holds inline content, and
- * that of its field roots. The definitions the published document keeps in
- * that content (parser.h, `defined`) lie in its source, at the places the
- * block's record kept, and go as the candidate is published, which keeps the
- * ones it makes there; the block's own entry stays, naming the object that
- * holds its state. The first `ordered` kept definitions are in source order,
- * those the finalize's completion found kept, so a search by halves finds
- * the ones a place holds; each one going is emptied, and what is left is
- * ordered with what the candidates kept once every candidate is placed
- * (S_order_defined). */
+ * that of its field roots. The definitions the published document holds as
+ * COMMITTED in that content (parser.h, `committed`) lie in its source, at
+ * the places the block's record kept, and go as the candidate is published,
+ * which lists the ones it makes there; the block's own entry stays, naming
+ * the object that holds its state. A table finds the ones a place holds by
+ * where they start, and each one going is emptied; what the candidates list
+ * joins the tables once every candidate is placed (S_keep_defined), so no
+ * candidate empties another's. */
 static void S_withdraw_defined(markdown_core_parser *parser, const markdown_core_miss_block *record,
-                               markdown_core_node *block, size_t ordered) {
+                               markdown_core_node *block) {
     const markdown_core_miss_position *positions = &parser->miss_positions[record->first_position];
     const bool inlines = S_kind_contains_inlines(markdown_core_parser_kind(parser, block), block);
     for (size_t i = inlines ? 0 : 1; i < record->position_count; i++) {
         const markdown_core_place place = positions[i].place;
-        size_t low = 0, high = ordered;
-        while (low < high) {
-            const size_t middle = low + (high - low) / 2;
-            if (parser->defined[middle].start < place.start) {
-                low = middle + 1;
-            } else {
-                high = middle;
-            }
-        }
-        for (size_t at = low; at < ordered && parser->defined[at].start < place.end; at++) {
-            markdown_core_defined *defined = &parser->defined[at];
-            if (defined->node && markdown_core_node_moved(defined->node) != block) {
-                defined->node = NULL;
+        const markdown_core_key_entry from = markdown_core_key_number(place.start);
+        for (size_t table = 0; table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
+            markdown_core_key_tree_cursor cursor;
+            markdown_core_key_tree_seek(&parser->committed.starts[table], &from, &cursor);
+            for (markdown_core_key_entry *entry;
+                 (entry = markdown_core_key_tree_next(&cursor)) && entry->extra < place.end;) {
+                if (entry->value && markdown_core_node_moved(entry->value) != block) {
+                    entry->value = NULL;
+                }
             }
         }
     }
 }
 
-static uint64_t S_defined_key(const void *entry) {
-    const markdown_core_defined *defined = entry;
-    return defined->start;
-}
-
-/* The kept definitions, those emptied gone, in source order anew. */
-static void S_order_defined(markdown_core_parser *parser) {
-    size_t count = 0;
+/* The definitions the candidates listed, in the committed tables: each at
+ * the entry of where it starts, which one emptied may already hold. */
+static void S_keep_defined(markdown_core_parser *parser) {
     for (size_t i = 0; i < parser->defined_count; i++) {
-        if (parser->defined[i].node) {
-            parser->defined[count++] = parser->defined[i];
+        const markdown_core_defined *defined = &parser->defined[i];
+        const markdown_core_key_entry key = markdown_core_key_number(defined->start);
+        bool made;
+        markdown_core_key_entry *entry =
+            markdown_core_key_tree_entry(&parser->committed.starts[defined->table], &key, &made);
+        if (!entry) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            return;
         }
+        entry->extra = defined->start;
+        entry->value = defined->node;
     }
-    parser->defined_count = count;
-    if (!markdown_core_order_source_entries(&parser->source_order, parser->defined, count, sizeof(*parser->defined),
-                                            S_defined_key)) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
+    parser->defined_count = 0;
 }
 
 /* A candidate completed, published against the object that holds its
@@ -4197,13 +4205,13 @@ static void S_order_defined(markdown_core_parser *parser) {
  * storage the candidate and its field roots borrowed from the block's is
  * theirs (markdown_core_node_take_borrowed); the block's tree goes after the
  * next publish, which no longer reads it. */
-static void S_complete_place(markdown_core_parser *parser, const S_completion_anew *anew, size_t ordered) {
+static void S_complete_place(markdown_core_parser *parser, const S_completion_anew *anew) {
     markdown_core_node *candidate = anew->candidate;
     markdown_core_node *block = markdown_core_parser_resolve(parser, anew->record->path);
     const markdown_core_element_instance *document = parser->dialect->document_structure;
     bool same = false;
     if (block) {
-        S_withdraw_defined(parser, anew->record, block, ordered);
+        S_withdraw_defined(parser, anew->record, block);
         document->element->publish_candidate(document, parser, candidate, block, &same);
     }
     if (parser->error) {
@@ -4262,10 +4270,9 @@ static void S_complete_misses(markdown_core_parser *parser) {
     if (!parser->error && parser->completion_first) {
         S_complete_queue(parser);
     }
-    const size_t ordered = parser->defined_count;
     size_t placed = 0;
     for (; placed < count && !parser->error; placed++) {
-        S_complete_place(parser, &anew[placed], ordered);
+        S_complete_place(parser, &anew[placed]);
     }
     /* A candidate a failure left unplaced is no block's. */
     for (; placed < count; placed++) {
@@ -4273,7 +4280,7 @@ static void S_complete_misses(markdown_core_parser *parser) {
     }
     markdown_core_free(anew);
     if (!parser->error && count) {
-        S_order_defined(parser);
+        S_keep_defined(parser);
     }
 }
 

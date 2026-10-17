@@ -24,6 +24,11 @@ typedef struct {
     bufsize_t base_size, name_size;
     uint32_t start;
     bool parsed, authored;
+    /* A heading a streaming commit named whose node a snapshot gave another
+     * name (heading.c, A COMMITTED HEADING UNDER ANOTHER NAME): `holds_name`
+     * says the entry owns the bytes of `name`, which the node no longer
+     * shows; `renamed` says the snapshot under way gave it its name. */
+    bool holds_name, renamed;
 } markdown_core_heading_parse;
 
 /* The headings in the order they closed, and `parsed`, how many come first
@@ -36,11 +41,20 @@ typedef struct {
 /* THE HEADINGS OF ONE PARSE (the heading element's parse record): each
  * heading as its block closed, the collection's count and how many were
  * parsed as the snapshot being taken found them
- * (markdown_core_headings_start_snapshot), and the projection and lookup
- * work the assignment of their anchors did, for its complexity gate. */
+ * (markdown_core_headings_start_snapshot), with the registry's length then;
+ * the committed names (heading.c, THE COMMITTED NAMES): the names taken,
+ * where the reading of the registry's ANCHOR records stands and how many it
+ * read, how many headings are named, and the committed headings that show
+ * another name, from the last snapshot and then from the one under way; and
+ * the projection and lookup work the assignment of their anchors did, for
+ * its complexity gate. */
 typedef struct {
     markdown_core_heading_collection headings;
-    size_t snapshot_count, snapshot_parsed;
+    size_t snapshot_count, snapshot_parsed, snapshot_records;
+    markdown_core_key_index taken;
+    size_t records_at, records_read, named;
+    uint32_t *renamed;
+    size_t renamed_count, renamed_capacity;
     size_t anchor_work;
 } markdown_core_heading_state;
 

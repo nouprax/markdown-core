@@ -296,6 +296,19 @@ markdown_core_node *markdown_core_node_new(markdown_core_node_type type) {
     return markdown_core_node_pool_new(NULL, type, NULL);
 }
 
+/* A document's definition tables. Out of line, so that the free of every
+ * other kind keeps its own registers. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void free_document_tables(markdown_core_document_value *document) {
+    markdown_core_definitions *const tables[] = {&document->footnotes, &document->specimens, &document->references};
+    for (size_t i = 0; i < sizeof(tables) / sizeof(*tables); i++) {
+        markdown_core_free((void *)tables[i]->all.nodes);
+        markdown_core_free(tables[i]->all.places);
+        markdown_core_free((void *)tables[i]->labeled);
+    }
+    markdown_core_free((void *)document->reference_targets.nodes);
+    markdown_core_free(document->reference_targets.places);
+}
+
 static void free_node_as(markdown_core_node_pool *pool, markdown_core_node *node) {
     markdown_core_slab_pool *resources = pool ? &pool->resources : NULL;
     switch (node->kind) {
@@ -338,13 +351,7 @@ static void free_node_as(markdown_core_node_pool *pool, markdown_core_node *node
         break;
 
     case MARKDOWN_CORE_NODE_DOCUMENT:
-        markdown_core_free((void *)node->as.document->footnotes.nodes);
-        markdown_core_free((void *)node->as.document->footnotes.labeled);
-        markdown_core_free((void *)node->as.document->specimens.nodes);
-        markdown_core_free((void *)node->as.document->specimens.labeled);
-        markdown_core_free((void *)node->as.document->references.nodes);
-        markdown_core_free((void *)node->as.document->references.labeled);
-        markdown_core_free((void *)node->as.document->reference_targets);
+        free_document_tables(node->as.document);
         break;
     case MARKDOWN_CORE_NODE_HEADING:
         if (node->as.heading->label.len) {

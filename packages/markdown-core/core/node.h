@@ -172,14 +172,29 @@ typedef struct {
     int continuation_line;
 } markdown_core_definition_body_value;
 
-/* A DEFINITION TABLE of a published document: every Footnote, every
- * Specimen, or every Reference, in source order, borrowed from the tree. */
-typedef struct markdown_core_definitions {
-    /* Every definition of the kind, in source order. */
+/* Where an entry a snapshot's document lists lies in a table it shares
+ * with the committed parse (ast.c, A SNAPSHOT'S TABLES): its index among the
+ * document's entries, and the index of the committed entry after it. */
+typedef struct markdown_core_table_place {
+    size_t at, next;
+} markdown_core_table_place;
+
+/* A TABLE of a published document, borrowed from the tree: `count` nodes,
+ * every one of which `nodes` holds, or, in a snapshot's document, `own` of
+ * them, each where `places` says, and the committed table's in between. */
+typedef struct markdown_core_node_table {
     const struct markdown_core_node **nodes;
-    size_t count;
+    size_t count, own;
+    markdown_core_table_place *places;
+} markdown_core_node_table;
+
+/* A DEFINITION TABLE of a published document: every Footnote, every
+ * Specimen, or every Reference, in source order. */
+typedef struct markdown_core_definitions {
+    markdown_core_node_table all;
     /* The labeled ones by label, in source order among equal labels: the
-     * Footnotes and Specimens a lookup by label answers from. A label a
+     * Footnotes and Specimens a lookup by label answers from, every one, or
+     * a snapshot's own that no committed definition comes before. A label a
      * reference occurrence names resolves through the reference targets. */
     const struct markdown_core_node **labeled;
     size_t labeled_count;
@@ -190,14 +205,15 @@ typedef struct markdown_core_definitions {
  * were written; publishing the document records its definition tables here,
  * and the nodes reference occurrences resolve to, by label: for each label,
  * the first Reference declaring it, or, when none does, the first Heading
- * whose text declares it. */
+ * whose text declares it. A snapshot's document shares the committed parse's
+ * tables, `committed`, and lists what it adds to them; NULL in any other. */
 typedef struct {
     struct markdown_core_node *metadata;
     markdown_core_definitions footnotes;
     markdown_core_definitions specimens;
     markdown_core_definitions references;
-    const struct markdown_core_node **reference_targets;
-    size_t reference_target_count;
+    markdown_core_node_table reference_targets;
+    const struct markdown_core_committed_tables *committed;
 } markdown_core_document_value;
 
 /* A node's source extent in UTF-8 bytes (the published form of its place). */
@@ -412,11 +428,12 @@ struct markdown_core_node {
 
 /* A PATH: where a block of a streaming parse's committed tree is, as the
  * path of the block that holds it and its index in that block's children
- * (blocks.c, THE PATHS). The root's path holds nothing. A path names a place
- * of the tree, which keeps its meaning while the objects there change. */
+ * (blocks.c, THE PATHS), and where the block starts in the source. The
+ * root's path holds nothing. A path names a place of the tree, which keeps
+ * its meaning while the objects there change. */
 typedef struct markdown_core_path {
     const struct markdown_core_path *parent;
-    uint32_t index;
+    uint32_t index, start;
 } markdown_core_path;
 
 /* THE SCAFFOLD: a node's links while something is built of it, kept in the
