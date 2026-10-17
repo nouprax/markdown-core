@@ -255,7 +255,7 @@ export function streamSection(report) {
     const lines = [
         "### Streams",
         "",
-        `Subjects: \`reparse\` (R) and \`session\` (S), Ir per window of chunks; S runs the streams of at most 1,024 chunks. ${number(report.results.length)} workloads · \`${report.workloads.digest.slice(0, 16)}\`.`
+        `Subjects: \`reparse\` (R) and \`session\` (S), Ir per window of chunks and for the finalize, parser creation excluded; S runs the streams of at most 1,024 chunks. ${number(report.results.length)} workloads · \`${report.workloads.digest.slice(0, 16)}\`.`
     ];
     if (report.baseline) {
         lines.push(

@@ -156,19 +156,21 @@ define it. `scripts/benchmark/workloads.mjs` generates its workloads: every
 grammar corpus document with the `tokens` and `scalars` families, and every
 scale and adversarial shape at 16 KB, 64 KB, 256 KB and 1 MB with `tokens` and
 `rows`. `stream_runner` opens a subject on an empty text, appends the
-workload's document through `bench_apply_step` one chunk at a time, and dumps a
-callgrind profile after each window of chunks; a window's cost is the edge into
-`bench_apply_step`. A stream of at most 1,024 chunks has one chunk per window,
-and a longer stream has 1,024 windows. The driver is
+workload's document through `bench_apply_step` one chunk at a time, finalizes
+it through `bench_finalize`, and dumps a callgrind profile after each window of
+chunks and after the finalize; a window's cost is the edge into
+`bench_apply_step` or `bench_finalize`, less parser creation, which is not
+parsing. A stream of at most 1,024 chunks has one chunk per window, and a
+longer stream has 1,024 windows; the finalize is one more. The driver is
 `scripts/benchmark/streams.mjs`; it shares `run.mjs`'s build, provenance,
 isolation and callgrind invocation, so its binaries are the ones the stage
 benchmark describes.
 
 Two subjects run every workload. `reparse` keeps the text and parses the whole
 of it: the R column, measured at each window's last chunk, so a long stream is
-not reparsed after every chunk. `session` appends through the engine's session:
-the S column, measured on the streams of at most 1,024 chunks, where each
-chunk costs at most 1.25 times R's (6.3). `oneshot_ir` is the stage runner's
+not reparsed after every chunk, and at the finalize. `session` appends through
+the engine's session: the S column, measured on the streams of at most 1,024
+chunks, where each chunk and the finalize cost at most 1.25 times R's (6.3). `oneshot_ir` is the stage runner's
 two stages on each workload's final text.
 
 With `--baseline-ref`, the base revision's engine is rebuilt with this run's

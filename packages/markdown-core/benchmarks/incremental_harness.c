@@ -754,15 +754,17 @@ static markdown_core_status reparse_append(void *handle, const uint8_t *text, si
                : MARKDOWN_CORE_ALLOCATION_FAILED;
 }
 
-/* The last parse is of the whole text, so it is the final document. */
+/* Like every step, the finalize parses the whole text. */
 static markdown_core_status reparse_finalize(void *handle, const markdown_core_document **document) {
     reparse_subject *subject = (reparse_subject *)handle;
     *document = NULL;
     if (subject->finalized) {
         return MARKDOWN_CORE_SESSION_FINALIZED;
     }
+    if (!ih_reparse_parse(handle, document)) {
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
     subject->finalized = true;
-    *document = subject->document;
     return MARKDOWN_CORE_OK;
 }
 

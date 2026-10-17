@@ -5,9 +5,10 @@
  *
  * It measures what an application pays per streamed chunk: each benchmark
  * workload of workloads.mjs, run through a subject by `stream_runner`, under
- * callgrind, one dump per window. A window's cost is the edge into
- * `bench_apply_step`; everything else in the process, including opening the
- * subject, is outside every window.
+ * callgrind, one dump per window and one for the finalize. A window's cost is
+ * the edge into `bench_apply_step` or `bench_finalize`, less parser creation;
+ * everything else in the process, including opening the subject, is outside
+ * every window.
  *
  * The build, its provenance and identity, the measurement's isolation and the
  * callgrind invocation are run.mjs's own (`prepareBuild`, `profileRun`), so a
@@ -19,8 +20,9 @@
  * Two subjects run every workload: `reparse`, the R column, and `session`,
  * the S column. The session takes every step of its windows, so it is
  * measured on the workloads of at most 1,024 steps, where 6.3 holds every
- * step to 1.25 times `reparse` on the same step; a longer stream is bounded
- * per chunk by 6.2 from the step that makes its chunks local (section 7).
+ * step and the finalize to 1.25 times `reparse` on the same step; a longer
+ * stream is bounded per chunk by 6.2 from the step that makes its chunks
+ * local (section 7).
  * With `--baseline-ref`, the base revision's engine is rebuilt with this
  * run's harness and measured on the same workloads, and 6.4 holds each
  * subject's p95, maximum and total to 1.02 times the base's. The report is
@@ -144,7 +146,8 @@ function measureSubject(profile, out, into, workload, subject, final) {
     const receipt = /steps=(\d+) windows=(\d+) bytes=(\d+) root_children=(\d+)/u.exec(stdout);
     if (!receipt) throw new Error(`${workload.name} produced no receipt from ${subject}`);
     const [steps, windows, bytes, rootChildren] = receipt.slice(1).map(Number);
-    if (windows !== windowEnds(steps).length) throw new Error(`${workload.name} reported ${windows} windows`);
+    /* Every chunk window, then the finalize's. */
+    if (windows !== windowEnds(steps).length + 1) throw new Error(`${workload.name} reported ${windows} windows`);
     const costs = [];
     let highest = 0;
     for (let window = 1; window <= windows; window++) {
@@ -209,7 +212,7 @@ function measureWorkload(profile, baseline, out, workload) {
         windows: reparse.windows,
         reparse: reparse.summary,
         session: session && { windows: session.windows, ...session.summary },
-        neverWorse: session ? neverWorse(session.windows, reparse.windows) : [],
+        neverWorse: session && reparse.steps <= WINDOWS ? neverWorse(session.windows, reparse.windows) : [],
         oneshot: { ir: STAGES.reduce((sum, stage) => sum + oneshot.stages[stage].cost.Ir, 0) },
         base,
         regressions: base
@@ -302,7 +305,7 @@ export function markdownReport(report) {
         "# Stream benchmark",
         "",
         `Subjects: ${report.subjects.map((subject) => `\`${subject}\``).join(", ")}. Workloads: ${number(report.results.length)} (\`${report.workloads.version}\`, digest \`${report.workloads.digest.slice(0, 16)}\`).`,
-        "Every figure is Ir per window, the edge into `bench_apply_step`; the one-shot column parses each workload's final text once, both stages.",
+        "Every figure is Ir per window, the edge into `bench_apply_step` or, for the finalize, `bench_finalize`, less parser creation; the one-shot column parses each workload's final text once, both stages.",
         `S is measured on the workloads of at most ${number(WINDOWS)} steps, where each step costs at most 1.25 times R's (6.3).`,
         "",
         "| Documents | Family | Size | Workloads | Windows | R p50 | R p95 | R max | R total | S p50 | S p95 | S max | S total | Highest S / R | One-shot total |",

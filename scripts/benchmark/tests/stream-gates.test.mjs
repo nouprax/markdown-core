@@ -5,8 +5,9 @@ import { parseCallgrind } from "../callgrind.mjs";
 import { flatStream, neverWorse, regressions, summary, windowCost, windowEnds, WINDOWS } from "../stream-gates.mjs";
 
 /* A synthetic per-window dump, in callgrind's own format: the runner's main
- * calling the step entry once with the given inclusive cost. */
-const window = (ir, { calls = 1, entry = "bench_apply_step'main" } = {}) =>
+ * calling the step entry once with the given inclusive cost, of which
+ * `creation` is spent creating a parser. */
+const window = (ir, { calls = 1, entry = "bench_apply_step'main", creation = 0 } = {}) =>
     parseCallgrind(
         [
             "version: 1",
@@ -18,15 +19,40 @@ const window = (ir, { calls = 1, entry = "bench_apply_step'main" } = {}) =>
             `calls=${calls} 0`,
             `0 ${ir} ${ir / 4} ${ir / 8}`,
             "fn=(2)",
-            `0 ${ir} ${ir / 4} ${ir / 8}`,
+            `0 ${ir - creation} ${(ir - creation) / 4} ${(ir - creation) / 8}`,
+            ...(creation
+                ? [
+                      "cfn=(3) markdown_core_core_parser'session_open",
+                      "calls=1 0",
+                      `0 ${creation} ${creation / 4} ${creation / 8}`,
+                      "fn=(3)",
+                      `0 ${creation} ${creation / 4} ${creation / 8}`
+                  ]
+                : []),
             ""
         ].join("\n")
     );
 const costs = (values) => values.map((ir) => windowCost(window(ir)).Ir);
 
-test("a window's cost is the inclusive cost of its calls into the step entry", () => {
+test("a window's cost is the inclusive cost of its calls into a step entry", () => {
     assert.deepEqual(windowCost(window(8000)), { calls: 1, Ir: 8000, Dr: 2000, Dw: 1000 });
     assert.deepEqual(windowCost(window(8000, { calls: 3 })), { calls: 3, Ir: 8000, Dr: 2000, Dw: 1000 });
+    assert.deepEqual(windowCost(window(8000, { entry: "bench_finalize'main" })), {
+        calls: 1,
+        Ir: 8000,
+        Dr: 2000,
+        Dw: 1000
+    });
+});
+
+test("parser creation is in no window's cost", () => {
+    assert.deepEqual(windowCost(window(8000, { creation: 2000 })), { calls: 1, Ir: 6000, Dr: 1500, Dw: 750 });
+    assert.deepEqual(windowCost(window(8000, { entry: "bench_finalize'main", creation: 2000 })), {
+        calls: 1,
+        Ir: 6000,
+        Dr: 1500,
+        Dw: 750
+    });
 });
 
 test("a window that never entered the step, or counted nothing, is refused", () => {
@@ -80,19 +106,17 @@ test("6.2 rejects stream windows whose cost grows with the text already streamed
     );
 });
 
-test("6.3 rejects a step above 1.25 times reparse on streams of at most 1,024 steps", () => {
+test("6.3 rejects a step or a finalize above 1.25 times reparse on the same step", () => {
     assert.deepEqual(neverWorse(costs([125, 10]), costs([100, 100])), []);
     assert.deepEqual(
         neverWorse(costs([126, 10]), costs([100, 100])).map((entry) => entry.step),
         [0]
     );
-    const long = Array.from({ length: WINDOWS + 1 }, () => 1000);
+    /* The finalize is the last window: a stream of 1,024 chunks has 1,025. */
+    const full = Array.from({ length: WINDOWS + 1 }, () => 100);
     assert.deepEqual(
-        neverWorse(
-            long,
-            long.map(() => 1)
-        ),
-        []
+        neverWorse([...full.slice(0, -1), 126], full).map((entry) => entry.step),
+        [WINDOWS]
     );
     assert.throws(() => neverWorse([1], [1, 2]), /different step counts/);
 });

@@ -2,17 +2,19 @@
  * document through it in the chunks of one stream family, report.
  *
  * Nothing here is timed. The driver reads each window's cost out of the
- * callgrind call graph, from the edges into `bench_apply_step`, and the runner
- * marks the windows with `CALLGRIND_DUMP_STATS`, a no-op outside valgrind
+ * callgrind call graph, from the edges into `bench_apply_step` and
+ * `bench_finalize`, and the runner marks the windows with
+ * `CALLGRIND_DUMP_STATS` and `CALLGRIND_ZERO_STATS`, no-ops outside valgrind
  * (docs/plans/2026-09-29-incremental-gates.md, section 5.1). The subject is
- * opened before the first window, so opening is in no window's edge.
+ * opened before the counts are zeroed, so opening is in no window's dump.
  *
  * A stream of at most 1,024 chunks has one chunk per window. A longer stream
  * splits into 1,024 contiguous windows whose chunk counts differ by at most
  * one. The `reparse` subject is measured at each window's last chunk: the
  * chunks before it only extend its text, because reparsing after every chunk
  * of a long stream is the quadratic cost the design removes. The `session`
- * subject takes every chunk in its window.
+ * subject takes every chunk in its window. The stream's finalize is one more
+ * window, after the last chunk's.
  *
  *   stream_runner --subject reparse|session --document PATH --stream FAMILY
  *                 --tokens FILE [--final PATH]
@@ -42,11 +44,16 @@ typedef struct measured_subject {
 
 static const measured_subject SUBJECTS[] = {{&ih_reparse, ih_reparse_extend}, {&ih_session, NULL}};
 
-/* The measured edge: one chunk, from its bytes to the subject's new
- * document. */
+/* The measured edges: one chunk, from its bytes to the subject's new
+ * document, and the finalize, to the final document. */
 __attribute__((noinline)) bool bench_apply_step(const ih_subject_class *subject, void *handle, const ih_step *step,
                                                 const markdown_core_document **document) {
     return subject->append(handle, step->text, step->length, document) == MARKDOWN_CORE_OK;
+}
+
+__attribute__((noinline)) bool bench_finalize(const ih_subject_class *subject, void *handle,
+                                              const markdown_core_document **document) {
+    return subject->finalize(handle, document) == MARKDOWN_CORE_OK;
 }
 
 static int usage(void) {
@@ -107,6 +114,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "stream_runner: %s did not open\n", subject_name);
         goto done;
     }
+    CALLGRIND_ZERO_STATS;
     windows = count < WINDOWS ? count : WINDOWS;
     for (window = 0, index = 0; window < windows; window++) {
         size_t end = (window + 1) * count / windows;
@@ -125,6 +133,11 @@ int main(int argc, char **argv) {
         }
         CALLGRIND_DUMP_STATS;
     }
+    if (!bench_finalize(measured->subject, handle, &current)) {
+        fputs("stream_runner: the finalize failed\n", stderr);
+        goto close;
+    }
+    CALLGRIND_DUMP_STATS;
     text = measured->subject->text(handle, &final_length);
     if (final_length != length || memcmp(text, document, length) != 0) {
         fputs("stream_runner: the stream did not rebuild its document\n", stderr);
@@ -141,8 +154,9 @@ int main(int argc, char **argv) {
         fputs("stream_runner: cannot read the final document's receipt\n", stderr);
         goto close;
     }
-    printf("stream-runner subject=%s steps=%zu windows=%zu bytes=%zu root_children=%zu\n", subject_name, count, windows,
-           final_length, root_children);
+    /* The windows of the chunks and the finalize's. */
+    printf("stream-runner subject=%s steps=%zu windows=%zu bytes=%zu root_children=%zu\n", subject_name, count,
+           windows + 1, final_length, root_children);
     status = 0;
 close:
     measured->subject->close(handle);

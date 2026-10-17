@@ -178,7 +178,8 @@ extern const ih_subject_class ih_reparse;
 
 /* The reparse subject's two halves, for the harness that measures it: extend
  * its text, and parse the whole text, releasing the previous document.
- * `append` is exactly the one followed by the other, before `finalize`. */
+ * `append` is exactly the one followed by the other, and `finalize` the parse
+ * alone. */
 bool ih_reparse_extend(void *subject, const uint8_t *text, size_t length);
 bool ih_reparse_parse(void *subject, const markdown_core_document **document);
 

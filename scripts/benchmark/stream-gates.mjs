@@ -4,15 +4,21 @@
  * synthetic profiles without building or measuring anything.
  *
  * A workload's costs are its windows' costs: the inclusive cost of the calls
- * into `bench_apply_step` in each of the runner's per-window dumps. Every rule
- * compares Ir; data references are reported beside it.
+ * into `bench_apply_step` and `bench_finalize` in each of the runner's
+ * per-window dumps, less parser creation. Every rule compares Ir; data
+ * references are reported beside it.
  */
 
 import { baseName, costRecord } from "./callgrind.mjs";
 import { STAGE_IR_LIMIT } from "./stage-budget.mjs";
 
-/** The measured edge's callee, as stream_runner.c names it. */
-export const STEP_ENTRY = "bench_apply_step";
+/** The measured edges' callees, as stream_runner.c names them: a chunk and the finalize. */
+export const STEP_ENTRIES = Object.freeze(["bench_apply_step", "bench_finalize"]);
+/**
+ * Parser creation, which `Document.parse` does on every call: it is not
+ * parsing, and is in no window's cost (5.1).
+ */
+export const CREATION_ENTRY = "markdown_core_core_parser";
 /** The most windows a workload is split into (5.1). */
 export const WINDOWS = 1024;
 /** 6.2: a later window of a stream against an earlier one. */
@@ -23,19 +29,26 @@ export const REPARSE_LIMIT = 1.25;
 export const REGRESSION_LIMIT = STAGE_IR_LIMIT;
 
 /**
- * One window's cost from its parsed profile: every edge into the step entry,
- * whatever its caller's context. A window that made no call is a runner that
+ * One window's cost from its parsed profile: every edge into a step entry,
+ * whatever its caller's context, less every edge into parser creation. The
+ * runner zeroes the counts after opening the subject, so every creation in a
+ * window is inside its step. A window that made no call is a runner that
  * measured nothing, and is refused rather than counted as free.
  */
 export function windowCost(profile) {
     const cost = [];
+    const add = (edge, sign) => edge.cost.forEach((value, index) => (cost[index] = (cost[index] ?? 0) + sign * value));
     let calls = 0;
     for (const edge of profile.edges.values()) {
-        if (baseName(edge.callee) !== STEP_ENTRY) continue;
-        calls += edge.calls;
-        edge.cost.forEach((value, index) => (cost[index] = (cost[index] ?? 0) + value));
+        const callee = baseName(edge.callee);
+        if (STEP_ENTRIES.includes(callee)) {
+            calls += edge.calls;
+            add(edge, 1);
+        } else if (callee === CREATION_ENTRY) {
+            add(edge, -1);
+        }
     }
-    if (!calls) throw new Error(`a window made no call to ${STEP_ENTRY}`);
+    if (!calls) throw new Error(`a window made no call to ${STEP_ENTRIES.join(" or ")}`);
     const record = costRecord(profile, cost);
     if (!Number.isSafeInteger(record.Ir) || record.Ir <= 0) {
         throw new Error("a window's instruction count is not a positive integer");
@@ -43,7 +56,10 @@ export function windowCost(profile) {
     return { calls, Ir: record.Ir, Dr: record.Dr ?? 0, Dw: record.Dw ?? 0 };
 }
 
-/** The window partition of 5.1: window k ends after step floor((k + 1) n / W). */
+/**
+ * The chunk windows of 5.1: window k ends after step floor((k + 1) n / W).
+ * The finalize's window follows the last.
+ */
 export function windowEnds(steps) {
     const windows = Math.min(steps, WINDOWS);
     return Array.from({ length: windows }, (_, window) => Math.floor(((window + 1) * steps) / windows));
@@ -82,12 +98,12 @@ export function flatStream(windows, length) {
 }
 
 /**
- * 6.3: for a stream of at most 1,024 steps, every step costs at most 1.25
- * times `reparse` on the same step. A longer stream is bounded by 6.2.
+ * 6.3, for a stream of at most 1,024 chunks: every step, the finalize
+ * included, costs at most 1.25 times `reparse` on the same step. A longer
+ * stream is bounded by 6.2.
  */
 export function neverWorse(steps, reparse) {
     if (steps.length !== reparse.length) throw new Error("the subjects ran different step counts");
-    if (steps.length > WINDOWS) return [];
     return steps
         .map((cost, step) => ({ step, ratio: cost / reparse[step] }))
         .filter((entry) => entry.ratio > REPARSE_LIMIT);

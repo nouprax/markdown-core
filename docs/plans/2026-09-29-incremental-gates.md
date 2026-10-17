@@ -311,7 +311,8 @@ The runners follow the one-shot benchmark's rules: callgrind instruction and
 data-reference counts, the benchmark preset, the same build provenance and
 isolation, and a measured edge instead of a timer. The stream runner loads a
 document and a stream family, opens the subject on an empty text outside the
-measurement, and calls `bench_apply_step` once per chunk.
+measurement, calls `bench_apply_step` once per chunk and then
+`bench_finalize` once.
 
 Costs come from callgrind client requests (`CALLGRIND_DUMP_STATS`), which are
 no-ops outside valgrind. The runner dumps after each of at most 1,024
@@ -320,7 +321,9 @@ step per window, so a window's cost is that step's cost. A longer stream (a stre
 `tokens` or `rows`) splits into 1,024 contiguous windows of equal step count.
 Its `reparse` column is measured at each window's last step, because
 reparsing after every chunk of a megabyte stream is the quadratic cost the
-design removes.
+design removes. The finalize is one more window, after the last. Parser
+creation is in no window: `Document.parse` creates a parser on every call,
+and creating it is not parsing.
 
 The gates measure the C engine. A binding builds its platform values from what
 the engine returns (plan 6.1); bindings are gated for correctness (section 4).
@@ -553,3 +556,7 @@ their own pull requests.
   scripts, the edit benchmark and the oracles and rules only edits use leave
   with `edit` in step 5. The stream gates of 4.6 and 6.2 turn on with the
   streaming session in step 7 and the settle point in step 8 (section 7).
+- **G12 Parser creation. Decided 2026-10-17: in no window** ("不计建实例").
+  `Document.parse` creates a parser on every call, so the `reparse` subject
+  creates one on every step. Creating a parser is not parsing, and no window
+  of either subject counts it, on either side of 6.4 (5.1).

@@ -78,6 +78,7 @@ import {
     sameCompileOptions
 } from "./compile-identity.mjs";
 import { STAGES, stageBudget, STAGE_IR_LIMIT } from "./stage-budget.mjs";
+import { CREATION_ENTRY, STEP_ENTRIES } from "./stream-gates.mjs";
 import {
     buildGrammarCorpus,
     writeGrammarCorpus,
@@ -892,7 +893,9 @@ function verifyBuildProvenance(profile, runners, versions) {
 /**
  * A stage boundary that the compiler folded into its caller is not a smaller
  * number, it is a missing one; the profile flags exist to prevent it and this
- * is where that contract is checked instead of discovered as a zero.
+ * is where that contract is checked instead of discovered as a zero. The
+ * stream runner's step entries and the parser creation its windows leave out
+ * are checked the same way.
  */
 function verifyStageSymbols(profile) {
     const symbolsOf = (engine, runner) => {
@@ -916,6 +919,15 @@ function verifyStageSymbols(profile) {
                     );
                 }
             }
+        }
+    }
+    const streamSymbols = symbolsOf("markdown-core streams", STREAM_RUNNER);
+    for (const name of [...STEP_ENTRIES, CREATION_ENTRY]) {
+        if (!streamSymbols.has(name)) {
+            fail(
+                `markdown-core streams: ${name} is absent from ${STREAM_RUNNER}. The profile build must keep the ` +
+                    `stream windows' entries out of line; check CMAKE_C_FLAGS_RELEASE in the benchmark preset.`
+            );
         }
     }
 }
