@@ -37,6 +37,9 @@ typedef struct {
      * absent, and `js` is present. */
     markdown_core_optional_chunk info;
     markdown_core_chunk literal;
+    /* Where the literal starts in the content: past the fence line, which
+     * gives the info string, in a fenced block, and at its start otherwise. */
+    bufsize_t literal_start;
     uint8_t fence_length;
     uint8_t fence_offset;
     unsigned char fence_char;
@@ -821,16 +824,24 @@ static inline const markdown_core_node *markdown_core_node_moved(const markdown_
  * and nothing it held. */
 void markdown_core_node_slot_release(markdown_core_node_pool *pool, markdown_core_node *node);
 /* A COPY OF A BLOCK THE BLOCK PHASE STILL WRITES (blocks.c, THE COPIES):
- * a node of `node`'s kind in a slot of `pool`'s, holding a copy of each
- * thing `node` owns -- its attributes, its record and what the record owns,
- * its element's payload, its places -- and of each node its fields hold that
- * is not COMMITTED; it shares those that are (SHARES_FIELDS). Its children
- * array, when `node` has
+ * a node of `node`'s kind in a slot of `pool`'s, with a record and a payload
+ * of its own, that VIEWS what `node` owns where its holder marks it -- its
+ * attributes, the strings its record owns, the storage its element's payload
+ * owns -- and holds a copy of the rest: its labels and its places; and of
+ * each node its fields hold that is not COMMITTED, a copy of its own, and it
+ * shares those that are (SHARES_FIELDS). Its children array, when `node` has
  * children, and its content buffer, when `node` holds content storage, are
  * `node`'s, which it borrows (BORROWS_CHILDREN, BORROWS_CONTENT); its
  * scaffold is empty. NULL, having taken nothing, when storage could not be
  * had. */
 markdown_core_node *markdown_core_node_copy(markdown_core_node_pool *pool, const markdown_core_node *node);
+/* What `copy`, a copy of `original` (markdown_core_node_copy) that a publish
+ * placed, and the copies its fields hold still view of what `original` and
+ * its field roots own, copied into storage of their own: as `original` is
+ * to change, its copy stops reading it (blocks.c, THE COPIES). False when
+ * storage could not be had, with what was not copied still viewed. */
+bool markdown_core_node_own_viewed(markdown_core_node_pool *pool, markdown_core_node *copy,
+                                   const markdown_core_node *original);
 /* A CANDIDATE FOR A BLOCK COMPLETED AGAIN (blocks.c, A LOOKUP THAT FOUND
  * NOTHING): a node of `node`'s kind in a slot of `pool`'s, holding what the
  * block phase made of `node` and nothing its completion or its publish made:

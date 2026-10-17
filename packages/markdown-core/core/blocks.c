@@ -1103,6 +1103,8 @@ static inline void S_complete_later(markdown_core_parser *parser, markdown_core_
 }
 
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_drop_block(markdown_core_parser *parser, markdown_core_node *block);
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_own_published(markdown_core_parser *parser,
+                                                                const markdown_core_node *block);
 
 /* A block the parent's children had no room for: the parse is lost, and the
  * block, which nothing holds, goes with it. */
@@ -1152,6 +1154,9 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_settle_pending_as(
     markdown_core_node *pending = parser->pending;
     if (pending) {
         parser->pending = NULL;
+        if (parser->stream && !parser->snapshot) {
+            S_own_published(parser, pending);
+        }
         S_settle(parser, pending, holder, kind);
     }
 }
@@ -1171,6 +1176,9 @@ static inline void S_settle_pending(markdown_core_parser *parser, markdown_core_
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_close(markdown_core_parser *parser, markdown_core_node *b,
                                                                     const markdown_core_kind_record *kind,
                                                                     markdown_core_node *parent) {
+    if (parser->stream && !parser->snapshot) {
+        S_own_published(parser, b);
+    }
     /* A block that takes text lines in a container has a run of its own
      * source on each of its lines, whatever its close hook makes of it; one
      * of the document itself lies on whole lines, its own source its range. */
@@ -2154,8 +2162,15 @@ static void S_release_paths(markdown_core_parser *parser) {
  * bytes it shares stay as the commit left them. A copy whose growth moved
  * the storage holds the storage the original continues with, which the
  * original takes back as the document closes, or as the snapshot lets the
- * copy go. Everything else a snapshot writes in the parser it puts back
- * (S_snapshot_mark). */
+ * copy go. A copy views the rest of what its original owns -- its
+ * attributes, its record's strings, its payload's storage -- so what a
+ * snapshot costs does not grow with the block's opening line. A commit lets
+ * none of it go while the block is a builder or the pending block, and
+ * writes only the parts the block lacks; so as a builder closes and as the
+ * pending block settles, the copy the published document holds, which reads
+ * them until the next publish, first takes copies of its own, once for the
+ * block (S_own_published). Everything else a snapshot writes in the parser it
+ * puts back (S_snapshot_mark). */
 typedef struct {
     markdown_core_node *root, *block_root, *current, *pending;
     int line_number, indent;
@@ -2417,6 +2432,22 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_drop_block(markdown_core_parse
                 *level = (markdown_core_level){0};
             }
             parser->stream->level_count = depth;
+            return;
+        }
+    }
+}
+
+/* A builder that closes, or the pending block as it settles: the copy of it
+ * the published document holds takes its own copies of what it views of it
+ * (THE COPIES). */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_own_published(markdown_core_parser *parser,
+                                                                const markdown_core_node *block) {
+    for (size_t depth = parser->stream->level_count; depth-- > 0;) {
+        const markdown_core_level *level = &parser->stream->levels[depth];
+        if (level->node == block) {
+            if (level->published && !markdown_core_node_own_viewed(parser->pool, level->published, block)) {
+                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            }
             return;
         }
     }

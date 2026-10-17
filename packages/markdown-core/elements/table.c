@@ -41,7 +41,9 @@ static void free_node_table(markdown_core_table *table) {
     if (!table) {
         return;
     }
-    markdown_core_free(table->columns);
+    if (!table->views_columns) {
+        markdown_core_free(table->columns);
+    }
     markdown_core_free(table);
 }
 
@@ -578,24 +580,31 @@ static void opaque_alloc(const markdown_core_element *self, markdown_core_node *
 
 static void opaque_free(const markdown_core_element *self, markdown_core_node *node) { free_node_table(node->opaque); }
 
-static bool opaque_copy(const markdown_core_element *self, markdown_core_node *copy, const markdown_core_node *node) {
-    const markdown_core_table *table = node->opaque;
+static bool opaque_view(const markdown_core_element *self, markdown_core_node *copy, const markdown_core_node *node) {
     markdown_core_table *made = markdown_core_realloc(NULL, sizeof(*made));
     if (!made) {
         copy->opaque = NULL;
         return false;
     }
-    *made = *table;
-    if (table->columns) {
-        made->columns = markdown_core_realloc(NULL, table->column_count * sizeof(*made->columns));
-        if (!made->columns) {
-            markdown_core_free(made);
-            copy->opaque = NULL;
-            return false;
-        }
-        memcpy(made->columns, table->columns, table->column_count * sizeof(*made->columns));
-    }
+    *made = *(const markdown_core_table *)node->opaque;
+    made->views_columns = made->columns != NULL;
     copy->opaque = made;
+    return true;
+}
+
+static bool opaque_own(const markdown_core_element *self, markdown_core_node *copy, const markdown_core_node *node) {
+    markdown_core_table *table = copy->opaque;
+    if (!table->views_columns) {
+        return true;
+    }
+    assert(table->columns == ((const markdown_core_table *)node->opaque)->columns);
+    markdown_core_table_column *columns = markdown_core_realloc(NULL, table->column_count * sizeof(*columns));
+    if (!columns) {
+        return false;
+    }
+    memcpy(columns, table->columns, table->column_count * sizeof(*columns));
+    table->columns = columns;
+    table->views_columns = false;
     return true;
 }
 
@@ -2708,6 +2717,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .contains_inlines_func = contains_inlines,
     .opaque_alloc_func = opaque_alloc,
     .opaque_free_func = opaque_free,
-    .opaque_copy_func = opaque_copy,
+    .opaque_view_func = opaque_view,
+    .opaque_own_func = opaque_own,
     .visit_owned_subtrees_func = visit_owned_subtrees,
 };

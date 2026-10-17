@@ -61,7 +61,7 @@ markdown_core_formula_mode markdown_core_elements_get_formula_mode(markdown_core
 void markdown_core_elements_set_formula_mode(markdown_core_node *node, markdown_core_formula_mode mode);
 
 /** Returns the directive name, or NULL for a nameless block. */
-const char *markdown_core_elements_get_directive_name(markdown_core_node *node);
+const char *markdown_core_elements_get_directive_name(const markdown_core_node *node);
 
 /** Sets the directive name of a directive element node, returning 0 when
  * the copy could not be allocated. NULL makes the directive nameless. */

@@ -569,9 +569,16 @@ void markdown_core_node_slot_release(markdown_core_node_pool *pool, markdown_cor
     S_slot_release(pool, node);
 }
 
-/* A COPY'S OWN STORAGE. Each part a copy owns is copied where the original
- * owns it; once one cannot be had, every later part is left owned by nobody,
- * so releasing the copy gives back exactly what it took. */
+/* WHAT A COPY HOLDS OF ITS ORIGINAL'S. A copy VIEWS each part its original
+ * owns whose holder marks what it owns -- a chunk's `alloc`, an attribute
+ * value's block and anchor, the element payload's own marks: it holds the
+ * part and owns none of it, so releasing the copy frees none of it, and it
+ * writes a part of its own only where it lets the viewed one go
+ * (markdown_core_chunk_view, markdown_core_attributes_view, opaque_view_func).
+ * It copies what its kind owns with no mark: the labels a record holds in the
+ * pool's storage, each at most a label's length, and its places, which its
+ * completion replaces. Once a part cannot be had, every later part is left
+ * owned by nobody, so releasing the copy gives back exactly what it took. */
 typedef struct {
     markdown_core_node_pool *pool;
     bool failed;
@@ -579,13 +586,9 @@ typedef struct {
     bool shares;
 } S_copy_state;
 
-/* The chunk's bytes, copied when it owns them. */
-static void S_chunk_own(S_copy_state *state, markdown_core_chunk *chunk) {
-    if (!chunk->alloc) {
-        return;
-    }
-    chunk->alloc = 0;
-    if (!state->failed && !markdown_core_chunk_to_cstr(chunk)) {
+/* The bytes `view` still reads of what `chunk` owns, copied. */
+static void S_chunk_own(S_copy_state *state, markdown_core_chunk *view, const markdown_core_chunk *chunk) {
+    if (!state->failed && !markdown_core_chunk_own(view, chunk)) {
         state->failed = true;
     }
 }
@@ -606,29 +609,30 @@ static bool S_label_own(S_copy_state *state, markdown_core_chunk *label) {
     return true;
 }
 
-/* The parts of the record the kind owns, as free_node_as releases them. A
- * copy is of a block the block phase still writes or of a field it holds
- * (markdown_core_node_copy) -- a paragraph, or a directive's label, whose
- * record owns nothing: of no kind made whole as it settles -- a Reference --
- * or held only by the document, which holds its metadata committed once its
- * prefix is read, and of no kind whose record owns an inline's storage. */
-static void S_copy_node_as(S_copy_state *state, markdown_core_node *copy) {
+/* The parts of the record the kind owns, as free_node_as releases them: its
+ * strings viewed and its labels copied. A copy is of a block the block phase
+ * still writes or of a field it holds (markdown_core_node_copy) -- a
+ * paragraph, or a directive's label, whose record owns nothing: of no kind
+ * made whole as it settles -- a Reference -- or held only by the document,
+ * which holds its metadata committed once its prefix is read, and of no kind
+ * whose record owns an inline's storage. */
+static void S_view_node_as(S_copy_state *state, markdown_core_node *copy) {
     switch (copy->kind) {
     case MARKDOWN_CORE_NODE_CALLOUT:
-        S_chunk_own(state, &copy->as.callout->variant.value);
+        markdown_core_chunk_view(&copy->as.callout->variant.value);
         break;
     case MARKDOWN_CORE_NODE_LIST_ITEM:
-        S_chunk_own(state, &copy->as.list->task_marker.value);
+        markdown_core_chunk_view(&copy->as.list->task_marker.value);
         break;
     case MARKDOWN_CORE_NODE_CODE_BLOCK:
-        S_chunk_own(state, &copy->as.code->info.value);
-        S_chunk_own(state, &copy->as.code->literal);
+        markdown_core_chunk_view(&copy->as.code->info.value);
+        markdown_core_chunk_view(&copy->as.code->literal);
         break;
     case MARKDOWN_CORE_NODE_COMMENT_BLOCK:
-        S_chunk_own(state, copy->as.literal);
+        markdown_core_chunk_view(copy->as.literal);
         break;
     case MARKDOWN_CORE_NODE_HTML_BLOCK:
-        S_chunk_own(state, &copy->as.html_block->literal);
+        markdown_core_chunk_view(&copy->as.html_block->literal);
         break;
     case MARKDOWN_CORE_NODE_DOCUMENT:
         /* Its lookup tables are made as it is published, which no block the
@@ -640,7 +644,7 @@ static void S_copy_node_as(S_copy_state *state, markdown_core_node *copy) {
         }
         break;
     case MARKDOWN_CORE_NODE_SPECIMEN:
-        S_chunk_own(state, &copy->as.specimen->label.value);
+        markdown_core_chunk_view(&copy->as.specimen->label.value);
         break;
     case MARKDOWN_CORE_NODE_FOOTNOTE:
         if (copy->as.footnote->label.has_value && !S_label_own(state, &copy->as.footnote->label.value)) {
@@ -654,6 +658,37 @@ static void S_copy_node_as(S_copy_state *state, markdown_core_node *copy) {
                copy->kind != MARKDOWN_CORE_NODE_CROSS_LINK && copy->kind != MARKDOWN_CORE_NODE_CROSS_EMBEDDED &&
                copy->kind != MARKDOWN_CORE_NODE_CITATION && copy->kind != MARKDOWN_CORE_NODE_LINK &&
                copy->kind != MARKDOWN_CORE_NODE_EMBEDDED);
+        break;
+    }
+}
+
+/* The strings the record of `copy` still views of `node`'s record, copied. A
+ * copy whose kind changed holds a record of its own. */
+static void S_own_node_as(S_copy_state *state, markdown_core_node *copy, const markdown_core_node *node) {
+    if (copy->kind != node->kind) {
+        return;
+    }
+    switch (copy->kind) {
+    case MARKDOWN_CORE_NODE_CALLOUT:
+        S_chunk_own(state, &copy->as.callout->variant.value, &node->as.callout->variant.value);
+        break;
+    case MARKDOWN_CORE_NODE_LIST_ITEM:
+        S_chunk_own(state, &copy->as.list->task_marker.value, &node->as.list->task_marker.value);
+        break;
+    case MARKDOWN_CORE_NODE_CODE_BLOCK:
+        S_chunk_own(state, &copy->as.code->info.value, &node->as.code->info.value);
+        S_chunk_own(state, &copy->as.code->literal, &node->as.code->literal);
+        break;
+    case MARKDOWN_CORE_NODE_COMMENT_BLOCK:
+        S_chunk_own(state, copy->as.literal, node->as.literal);
+        break;
+    case MARKDOWN_CORE_NODE_HTML_BLOCK:
+        S_chunk_own(state, &copy->as.html_block->literal, &node->as.html_block->literal);
+        break;
+    case MARKDOWN_CORE_NODE_SPECIMEN:
+        S_chunk_own(state, &copy->as.specimen->label.value, &node->as.specimen->label.value);
+        break;
+    default:
         break;
     }
 }
@@ -697,20 +732,31 @@ static void S_copy_borrow(markdown_core_node *copy, const markdown_core_node *no
                               (markdown_core_strbuf_owns(&node->content) ? MARKDOWN_CORE_NODE__BORROWS_CONTENT : 0));
 }
 
-/* The parts a copy owns of its own where `node` owns them: its attributes,
- * its element's payload and what its record owns. */
-static void S_copy_owned(S_copy_state *state, markdown_core_node *copy, const markdown_core_node *node) {
-    if (markdown_core_attributes_owns(&node->attributes) &&
-        !markdown_core_attributes_copy(&copy->attributes, &node->attributes)) {
-        state->failed = true;
-    }
+/* The parts a copy holds of `node`'s: its attributes, its element's payload
+ * and what its record owns, viewed, and its labels copied. */
+static void S_view_owned(S_copy_state *state, markdown_core_node *copy, const markdown_core_node *node) {
+    markdown_core_attributes_view(&copy->attributes);
     if (copy->opaque) {
-        if (state->failed || !copy->element->opaque_copy_func(copy->element, copy, node)) {
+        if (state->failed || !copy->element->opaque_view_func(copy->element, copy, node)) {
             copy->opaque = NULL;
             state->failed = true;
         }
     }
-    S_copy_node_as(state, copy);
+    S_view_node_as(state, copy);
+}
+
+/* What a copy still views of the parts `node` owns, copied: then the copy
+ * owns everything it holds of them. A payload of another element is the
+ * copy's own. */
+static void S_own_viewed(S_copy_state *state, markdown_core_node *copy, const markdown_core_node *node) {
+    if (!state->failed && !markdown_core_attributes_own(&copy->attributes, &node->attributes)) {
+        state->failed = true;
+    }
+    if (copy->opaque && node->opaque && copy->element == node->element && !state->failed &&
+        !copy->element->opaque_own_func(copy->element, copy, node)) {
+        state->failed = true;
+    }
+    S_own_node_as(state, copy, node);
 }
 
 static markdown_core_node *S_copy(markdown_core_node_pool *pool, const markdown_core_node *node,
@@ -745,7 +791,7 @@ static markdown_core_node *S_copy(markdown_core_node_pool *pool, const markdown_
     assert((borrows & MARKDOWN_CORE_NODE__BORROWS_CHILDREN) || !node->child_count);
     S_copy_state state = {pool, false, false};
     copy->source.places = NULL;
-    S_copy_owned(&state, copy, node);
+    S_view_owned(&state, copy, node);
     if (node->source.places && !state.failed) {
         const size_t bytes =
             sizeof(markdown_core_places) + node->source.places->count * sizeof(markdown_core_source_place);
@@ -800,7 +846,8 @@ static markdown_core_node *S_candidate(markdown_core_node_pool *pool, const mark
                   inlines ? MARKDOWN_CORE_NODE__BORROWS_CONTENT
                           : MARKDOWN_CORE_NODE__BORROWS_CHILDREN | MARKDOWN_CORE_NODE__BORROWS_CONTENT);
     S_copy_state state = {pool, false, false};
-    S_copy_owned(&state, copy, node);
+    S_view_owned(&state, copy, node);
+    S_own_viewed(&state, copy, node);
     S_visit_fields(copy, S_candidate_field, &state);
     if (state.failed) {
         markdown_core_node_pool_release(pool, copy);
@@ -867,6 +914,46 @@ void markdown_core_node_take_borrowed(markdown_core_node *taker, markdown_core_n
         pair = (S_field_pair){taker->opaque, lender->opaque};
         taker->element->visit_owned_subtrees_func(taker->element, taker, S_field_take, &pair);
     }
+}
+
+/* A field of a copy that is a copy of the field of the original in the same
+ * place owns what it views of it, as its holder does; a field the two share,
+ * COMMITTED, is the original's. */
+typedef struct {
+    S_copy_state *state;
+    S_field_pair pair;
+} S_own_pair;
+
+static void S_own_tree(S_copy_state *state, markdown_core_node *copy, const markdown_core_node *original);
+
+static int S_field_own(markdown_core_node **slot, void *context) {
+    S_own_pair *own = context;
+    const markdown_core_node *field =
+        *(markdown_core_node **)(own->pair.original + ((const unsigned char *)slot - own->pair.storage));
+    if (*slot && field && *slot != field) {
+        S_own_tree(own->state, *slot, field);
+    }
+    return 1;
+}
+
+static void S_own_tree(S_copy_state *state, markdown_core_node *copy, const markdown_core_node *original) {
+    S_own_viewed(state, copy, original);
+    S_own_pair own = {state, {copy->as.data, original->as.data}};
+    if (copy->kind == original->kind) {
+        S_visit_record_fields(copy, S_field_own, &own);
+    }
+    if (copy->element && copy->element == original->element && copy->element->visit_owned_subtrees_func &&
+        copy->opaque && original->opaque) {
+        own.pair = (S_field_pair){copy->opaque, original->opaque};
+        copy->element->visit_owned_subtrees_func(copy->element, copy, S_field_own, &own);
+    }
+}
+
+bool markdown_core_node_own_viewed(markdown_core_node_pool *pool, markdown_core_node *copy,
+                                   const markdown_core_node *original) {
+    S_copy_state state = {pool, false, false};
+    S_own_tree(&state, copy, original);
+    return !state.failed;
 }
 
 markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_node *node, markdown_core_node *parent,

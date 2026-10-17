@@ -127,6 +127,17 @@ static MARKDOWN_CORE_INLINE const char *markdown_core_chunk_to_cstr(markdown_cor
     return (char *)str;
 }
 
+/* A VIEW OF A CHUNK holds the chunk's bytes and owns none of them: it reads
+ * them for as long as the chunk keeps them, and releasing it frees nothing.
+ * `chunk`, a copy of another chunk, becomes a view of it. */
+static MARKDOWN_CORE_INLINE void markdown_core_chunk_view(markdown_core_chunk *chunk) { chunk->alloc = 0; }
+
+/* What `view` still reads of the bytes `chunk` owns, of which it is a view,
+ * copied: false when they could not be, with `view` still reading them. */
+static MARKDOWN_CORE_INLINE bool markdown_core_chunk_own(markdown_core_chunk *view, const markdown_core_chunk *chunk) {
+    return !chunk->alloc || view->alloc || view->data != chunk->data || markdown_core_chunk_to_cstr(view);
+}
+
 /* Returns 0 when the copy could not be allocated; the chunk then keeps its
  * previous value. */
 static MARKDOWN_CORE_INLINE int markdown_core_chunk_set_cstr(markdown_core_chunk *c, const char *str) {

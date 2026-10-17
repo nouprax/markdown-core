@@ -11497,6 +11497,231 @@ static void session_snapshot_lists(test_batch_runner *runner) {
     }
 }
 
+/* WHAT A BLOCK'S OPENING LINE GIVES IT, IN EVERY SNAPSHOT (step 7, THE
+ * COPIES): the text arrives byte by byte, and after each append the
+ * snapshot's dump is a fresh parse's of the same text. The blocks own what
+ * their opening lines give them -- the attributes and name of a directive,
+ * the info string and attributes of a fence, a callout's variant, a
+ * footnote's label, a table's columns, a task's marker -- which the copies a
+ * snapshot reads view, while the block is open, while it is the pending
+ * block a blank line or an identifier still writes, and after a commit
+ * closes it, settles it or makes a formula of it. No text here looks a
+ * definition up, so a snapshot's lookups change nothing. */
+static void session_snapshot_openers(test_batch_runner *runner) {
+    static const char *const sources[] = {
+        ":::note{#d .c key=v}\nbody one\n\nbody two\n:::\n\nafter\n",
+        ":::note[Label *x*]{#d}\nbody\n:::\n\n\n\nafter\n",
+        "```js {#c .x key=v}\ncode one\ncode two\n```\n\nafter\n",
+        "```formula {#f}\nx^2\n```\n\nafter\n",
+        "> [!NOTE] Title *x*\n> body\n\nafter\n",
+        "- > [!TIP] Tip title\n  > body\n- next\n",
+        "[^n]: note one\n\n    note two\n\nafter\n",
+        "| a | b |\n|---|---|\n| c | d |\n| e | f |\n\n#t#\n\nafter\n",
+        "- [ ] task one #one#\n- [x] task two\n\n  more\n\nafter\n",
+        "> ```js {#c}\n> code\n> ```\n>\n> after\n\n:::note{#d}\n> q\n:::\n",
+        "(@s) sample one\n\n(@t) sample two\n",
+        "Term\n: def one\n: def two\n\nafter\n",
+        "<div>\nhtml\n</div>\n\n~~~ {.x}\ncode\n~~~\n",
+    };
+    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        const char *source = sources[i];
+        const size_t length = strlen(source);
+        markdown_core_session *session = NULL;
+        bool same = markdown_core_session_new((const uint8_t *)source, 0, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
+                    MARKDOWN_CORE_OK;
+        size_t at = 0;
+        while (same && at < length) {
+            const markdown_core_document *document = NULL;
+            same =
+                markdown_core_session_append(session, (const uint8_t *)source + at, 1, &document) == MARKDOWN_CORE_OK;
+            at++;
+            markdown_core_document *parsed = NULL;
+            size_t expected_length = 0, actual_length = 0;
+            uint8_t *expected = markdown_core_document_parse((const uint8_t *)source, at, &parsed) == MARKDOWN_CORE_OK
+                                    ? dump_of(parsed, source, at, &expected_length)
+                                    : NULL;
+            uint8_t *actual = same ? dump_of(document, source, at, &actual_length) : NULL;
+            same = expected && actual && expected_length == actual_length &&
+                   memcmp(expected, actual, expected_length) == 0;
+            markdown_core_dump_free(expected);
+            markdown_core_dump_free(actual);
+            markdown_core_document_free(parsed);
+        }
+        const markdown_core_document *final = NULL;
+        size_t expected_length = 0, actual_length = 0;
+        markdown_core_document *parsed = NULL;
+        uint8_t *expected = markdown_core_document_parse((const uint8_t *)source, length, &parsed) == MARKDOWN_CORE_OK
+                                ? dump_of(parsed, source, length, &expected_length)
+                                : NULL;
+        uint8_t *actual = same && markdown_core_session_finalize(session, &final) == MARKDOWN_CORE_OK
+                              ? dump_of(final, source, length, &actual_length)
+                              : NULL;
+        OK(runner,
+           expected && actual && expected_length == actual_length && memcmp(expected, actual, expected_length) == 0,
+           "every snapshot holds what its blocks' opening lines give them as a parse of its text, up to byte %zu "
+           "of %zu: %s",
+           at, length, source);
+        markdown_core_dump_free(expected);
+        markdown_core_dump_free(actual);
+        markdown_core_document_free(parsed);
+        markdown_core_session_free(session);
+    }
+}
+
+/* Where the bytes a block owns of each part a copy of it views are: its
+ * attributes' anchor, classes and records, its record's string and its
+ * payload's storage. */
+typedef struct {
+    const void *anchor, *classes, *records, *text, *payload;
+} owned_parts;
+
+static owned_parts parts_of(const markdown_core_node *node) {
+    owned_parts parts = {node->attributes.anchor.data, node->attributes.classes, node->attributes.records, NULL, NULL};
+    switch (node->kind) {
+    case MARKDOWN_CORE_NODE_CODE_BLOCK:
+        parts.text = node->as.code->info.value.data;
+        break;
+    case MARKDOWN_CORE_NODE_CALLOUT:
+        parts.text = node->as.callout->variant.value.data;
+        break;
+    case MARKDOWN_CORE_NODE_LIST_ITEM:
+        parts.text = node->as.list->task_marker.value.data;
+        break;
+    case MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK:
+        parts.payload = markdown_core_elements_get_directive_name(node);
+        break;
+    case MARKDOWN_CORE_NODE_TABLE:
+        parts.payload = ((const markdown_core_table *)node->opaque)->columns;
+        break;
+    default:
+        break;
+    }
+    return parts;
+}
+
+/* Whether each part `a` holds is at the bytes `b` holds it at when `viewed`,
+ * and at bytes of its own otherwise. */
+static bool parts_alike(const owned_parts *a, const owned_parts *b, bool viewed) {
+    const void *const x[] = {a->anchor, a->classes, a->records, a->text, a->payload};
+    const void *const y[] = {b->anchor, b->classes, b->records, b->text, b->payload};
+    for (size_t i = 0; i < sizeof(x) / sizeof(x[0]); i++) {
+        if (x[i] && (x[i] == y[i]) != viewed) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool chunks_equal(markdown_core_chunk a, markdown_core_chunk b) {
+    return a.len == b.len && (!a.len || memcmp(a.data, b.data, (size_t)a.len) == 0);
+}
+
+/* Whether `a` holds what `b` does in each part a copy views. */
+static bool parts_equal(const markdown_core_node *a, const markdown_core_node *b) {
+    const markdown_core_attributes *x = &a->attributes, *y = &b->attributes;
+    bool same = a->kind == b->kind && chunks_equal(x->anchor, y->anchor) && x->class_count == y->class_count &&
+                x->record_count == y->record_count;
+    for (uint32_t i = 0; same && i < x->class_count; i++) {
+        same = chunks_equal(x->classes[i], y->classes[i]);
+    }
+    for (uint32_t i = 0; same && i < x->record_count; i++) {
+        same = chunks_equal(x->records[i].name, y->records[i].name) &&
+               chunks_equal(x->records[i].value, y->records[i].value);
+    }
+    if (!same) {
+        return false;
+    }
+    switch (a->kind) {
+    case MARKDOWN_CORE_NODE_CODE_BLOCK:
+        return chunks_equal(a->as.code->info.value, b->as.code->info.value);
+    case MARKDOWN_CORE_NODE_CALLOUT:
+        return chunks_equal(a->as.callout->variant.value, b->as.callout->variant.value);
+    case MARKDOWN_CORE_NODE_LIST_ITEM:
+        return chunks_equal(a->as.list->task_marker.value, b->as.list->task_marker.value);
+    case MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK:
+        return strcmp(markdown_core_elements_get_directive_name(a), markdown_core_elements_get_directive_name(b)) == 0;
+    case MARKDOWN_CORE_NODE_TABLE: {
+        const markdown_core_table *t = a->opaque, *u = b->opaque;
+        return t->column_count == u->column_count &&
+               memcmp(t->columns, u->columns, t->column_count * sizeof(*t->columns)) == 0;
+    }
+    default:
+        return true;
+    }
+}
+
+/* A copy lets go of the children array and content buffer it borrows,
+ * which stay its original's, as a snapshot lets a copy go (blocks.c, THE
+ * COPIES); the copies here make no children of their own. */
+static void let_go_borrowed(markdown_core_node *copy) {
+    copy->children = NULL;
+    copy->child_count = 0;
+    markdown_core_strbuf_init_zeroed(&copy->content);
+    copy->flags &= (markdown_core_node_internal_flags) ~(MARKDOWN_CORE_NODE__BORROWS_CHILDREN |
+                                                         MARKDOWN_CORE_NODE__BORROWS_CONTENT);
+}
+
+/* A COPY VIEWS WHAT ITS ORIGINAL OWNS (markdown_core_node_copy): it holds
+ * the original's bytes of each part, and releasing it leaves the original
+ * whole. Once it owns what it viewed (markdown_core_node_own_viewed), it
+ * holds bytes of its own, which it reads after the original is gone. */
+static void node_copy_views(test_batch_runner *runner) {
+    static const char source[] = "```js {#c .x key=v}\ncode\n```\n\n"
+                                 ":::note{#d .y k=w}\nbody\n:::\n\n"
+                                 "> [!NOTE]\n> callout\n\n"
+                                 "- [x] done\n\n"
+                                 "| a | b |\n|:-|-:|\n| 1 | 2 |\n";
+    enum { BLOCKS = 5 };
+    markdown_core_document *viewed = NULL, *kept = NULL;
+    if (markdown_core_document_parse((const uint8_t *)source, sizeof(source) - 1, &viewed) != MARKDOWN_CORE_OK ||
+        markdown_core_document_parse((const uint8_t *)source, sizeof(source) - 1, &kept) != MARKDOWN_CORE_OK) {
+        OK(runner, false, "the copied blocks parse");
+        markdown_core_document_free(viewed);
+        return;
+    }
+    const markdown_core_node *blocks[BLOCKS], *alike[BLOCKS];
+    for (size_t i = 0; i < BLOCKS; i++) {
+        blocks[i] = child_at(markdown_core_document_root(viewed), i);
+        alike[i] = child_at(markdown_core_document_root(kept), i);
+        if (blocks[i]->kind == MARKDOWN_CORE_NODE_LIST) {
+            blocks[i] = child_at(blocks[i], 0);
+            alike[i] = child_at(alike[i], 0);
+        }
+    }
+    markdown_core_node_pool pool = {0};
+    markdown_core_node *owners[BLOCKS] = {0};
+    for (size_t i = 0; i < BLOCKS; i++) {
+        const owned_parts original = parts_of(blocks[i]);
+        markdown_core_node *copy = markdown_core_node_copy(&pool, blocks[i]);
+        owned_parts parts = copy ? parts_of(copy) : (owned_parts){0};
+        OK(runner, copy && parts_alike(&original, &parts, true) && parts_equal(copy, alike[i]),
+           "a copy of block %zu holds its original's bytes of each part", i);
+        if (copy) {
+            let_go_borrowed(copy);
+            markdown_core_node_pool_release(&pool, copy);
+        }
+        OK(runner, parts_equal(blocks[i], alike[i]), "releasing a copy of block %zu leaves its original whole", i);
+        owners[i] = markdown_core_node_copy(&pool, blocks[i]);
+        const bool owned = owners[i] && markdown_core_node_own_viewed(&pool, owners[i], blocks[i]);
+        parts = owned ? parts_of(owners[i]) : (owned_parts){0};
+        OK(runner, owned && parts_alike(&original, &parts, false) && parts_equal(owners[i], alike[i]),
+           "a copy of block %zu that owns what it viewed holds bytes of its own", i);
+        if (owners[i]) {
+            let_go_borrowed(owners[i]);
+        }
+    }
+    markdown_core_document_free(viewed);
+    for (size_t i = 0; i < BLOCKS; i++) {
+        OK(runner, owners[i] && parts_equal(owners[i], alike[i]),
+           "a copy of block %zu that owns what it viewed reads it after its original is gone", i);
+        if (owners[i]) {
+            markdown_core_node_pool_release(&pool, owners[i]);
+        }
+    }
+    markdown_core_node_pool_dispose(&pool);
+    markdown_core_document_free(kept);
+}
+
 /* The allocator-seam sweep (plan 8, gates 4.7): an append and a finalize
  * fail at every allocation, report ALLOCATION_FAILED, and the session frees
  * everything it holds. */
@@ -11731,6 +11956,8 @@ int main(void) {
     session_snapshot_names(runner);
     session_snapshot_tables(runner);
     session_snapshot_lists(runner);
+    session_snapshot_openers(runner);
+    node_copy_views(runner);
     session_finalize_matches_a_parse(runner);
     session_allocation_failures(runner);
 

@@ -12,6 +12,9 @@ typedef struct {
     size_t column_count;
     markdown_core_table_column *columns;
     uint32_t head_count, content_count, foot_count;
+    /* The columns are those of the table this one is a view of
+     * (opaque_view_func), which it reads and does not free. */
+    bool views_columns;
     size_t autocompleted_cells;
     markdown_core_node *caption;
 } markdown_core_table;

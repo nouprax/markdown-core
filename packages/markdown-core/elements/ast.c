@@ -2558,7 +2558,7 @@ static void formula_properties(const markdown_core_node *node, markdown_core_pla
 static const markdown_core_table *table_of(const markdown_core_node *node) { return node->opaque; }
 
 static markdown_core_optional_string directive_name(const markdown_core_node *node) {
-    const char *value = markdown_core_elements_get_directive_name((markdown_core_node *)node);
+    const char *value = markdown_core_elements_get_directive_name(node);
     return value ? (markdown_core_optional_string){true, cstr_string(value)} : (markdown_core_optional_string){0};
 }
 
