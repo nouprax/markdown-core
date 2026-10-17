@@ -443,7 +443,10 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_visit_fields(markdo
 /* A COPY LETS GO of the storage it borrows and of the COMMITTED nodes it
  * shares (markdown_core_node_copy) as its release begins, which then gives
  * back what the copy still holds as it does for any node: exactly what the
- * copy owns. Its unshared children leave its borrowed array for the walk. */
+ * copy owns. Its unshared children leave its borrowed array for the walk:
+ * the copy writes only past the children it borrows, which are COMMITTED,
+ * so its own are the ones after the last COMMITTED child, and letting go
+ * costs what releasing them does. */
 static int S_let_go_shared(markdown_core_node **slot, void *context) {
     (void)context;
     if (*slot && ((*slot)->flags & MARKDOWN_CORE_NODE__COMMITTED)) {
@@ -460,10 +463,8 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_let_go(markdown_core_node *cop
         S_visit_fields(copy, S_let_go_shared, NULL);
     }
     if (copy->flags & MARKDOWN_CORE_NODE__BORROWS_CHILDREN) {
-        for (uint32_t i = 0; i < copy->child_count; i++) {
-            if (!(copy->children[i]->flags & MARKDOWN_CORE_NODE__COMMITTED)) {
-                S_push_release(&markdown_core_scaffold_of(copy)->next, copy->children[i]);
-            }
+        for (uint32_t i = copy->child_count; i-- > 0 && !(copy->children[i]->flags & MARKDOWN_CORE_NODE__COMMITTED);) {
+            S_push_release(&markdown_core_scaffold_of(copy)->next, copy->children[i]);
         }
         copy->children = NULL;
         copy->child_count = 0;
