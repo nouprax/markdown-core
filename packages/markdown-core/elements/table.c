@@ -1229,10 +1229,8 @@ enum {
 static markdown_core_line_facts *table_search_fact(table_source *source, size_t index) {
     table_source_line *line = &source->lines[index];
     markdown_core_line_facts *fact = markdown_core_parser_get_line_facts(source->parser, line->line);
-    if (fact && (fact->table_container != source->lookahead.parent || fact->table_offset != line->offset ||
-                 fact->table_epoch != source->parser->fact_epoch)) {
+    if (fact && (fact->table_container != source->lookahead.parent || fact->table_offset != line->offset)) {
         fact->table_container = source->lookahead.parent;
-        fact->table_epoch = source->parser->fact_epoch;
         fact->table_offset = line->offset;
         fact->table_absent = 0;
     }

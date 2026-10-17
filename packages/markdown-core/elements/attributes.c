@@ -325,29 +325,38 @@ void markdown_core_attributes_free(markdown_core_attributes *v) {
     memset(v, 0, sizeof(*v));
 }
 
-/* The end of a chunk of the value's block, past its terminating NUL, when
- * it lies in the block and past `end`. */
-static const unsigned char *block_end(const markdown_core_chunk *chunk, const unsigned char *start,
-                                      const unsigned char *end) {
-    const unsigned char *past = chunk->data + chunk->len + 1;
-    return !chunk->alloc && chunk->data >= start && past > end ? past : end;
+/* Where the block must reach to hold `chunk`'s bytes and the NUL past them,
+ * as an offset from its start: a chunk the value does not own, and not
+ * empty, points into the block (lay_out). */
+static size_t block_end(const markdown_core_chunk *chunk, const unsigned char *start, size_t end) {
+    if (chunk->alloc || !chunk->data) {
+        return end;
+    }
+    const size_t past = (size_t)(chunk->data - start) + (size_t)chunk->len + 1;
+    return past > end ? past : end;
+}
+
+/* The place in the copy that lies where `data` lies in the block. */
+static void *in_copy(unsigned char *copy, const unsigned char *start, const void *data) {
+    return copy + ((const unsigned char *)data - start);
 }
 
 /* THE VALUE'S BLOCK IS ITS TABLES AND THEN ITS STRINGS (lay_out), each
  * string terminated, so the block ends past the last string's NUL, and past
- * its tables when it holds no string. Copying it and moving every chunk that
- * points into it by the distance the copy lies at keeps its layout. */
+ * its tables when it holds no string. Copying it and pointing every chunk
+ * that points into it at the same offset in the copy keeps its layout. */
 bool markdown_core_attributes_copy(markdown_core_attributes *copy, const markdown_core_attributes *value) {
     *copy = *value;
     copy->storage = NULL;
     if (value->storage) {
         const unsigned char *const start = value->storage;
-        const unsigned char *end = start;
+        size_t end = 0;
         if (value->records) {
-            end = (const unsigned char *)(value->records + value->record_count);
+            end = (size_t)((const unsigned char *)(value->records + value->record_count) - start);
         }
-        if (value->classes && (const unsigned char *)(value->classes + value->class_count) > end) {
-            end = (const unsigned char *)(value->classes + value->class_count);
+        if (value->classes) {
+            const size_t past = (size_t)((const unsigned char *)(value->classes + value->class_count) - start);
+            end = past > end ? past : end;
         }
         end = block_end(&value->anchor, start, end);
         for (uint32_t i = 0; i < value->class_count; i++) {
@@ -357,27 +366,24 @@ bool markdown_core_attributes_copy(markdown_core_attributes *copy, const markdow
             end = block_end(&value->records[i].name, start, end);
             end = block_end(&value->records[i].value, start, end);
         }
-        unsigned char *storage = markdown_core_realloc(NULL, (size_t)(end - start));
-        if (!storage) {
+        unsigned char *block = markdown_core_realloc(NULL, end);
+        if (!block) {
             *copy = (markdown_core_attributes){0};
             return false;
         }
-        memcpy(storage, start, (size_t)(end - start));
-        const ptrdiff_t moved = storage - start;
-        copy->storage = storage;
-        copy->records =
-            value->records ? (markdown_core_record *)(void *)((unsigned char *)value->records + moved) : NULL;
-        copy->classes =
-            value->classes ? (markdown_core_chunk *)(void *)((unsigned char *)value->classes + moved) : NULL;
+        memcpy(block, start, end);
+        copy->storage = block;
+        copy->records = value->records ? in_copy(block, start, value->records) : NULL;
+        copy->classes = value->classes ? in_copy(block, start, value->classes) : NULL;
         for (uint32_t i = 0; i < copy->class_count; i++) {
-            copy->classes[i].data += moved;
+            copy->classes[i].data = in_copy(block, start, value->classes[i].data);
         }
         for (uint32_t i = 0; i < copy->record_count; i++) {
-            copy->records[i].name.data += moved;
-            copy->records[i].value.data += moved;
+            copy->records[i].name.data = in_copy(block, start, value->records[i].name.data);
+            copy->records[i].value.data = in_copy(block, start, value->records[i].value.data);
         }
-        if (!value->anchor.alloc && value->anchor.data >= start && value->anchor.data < end) {
-            copy->anchor.data += moved;
+        if (!value->anchor.alloc && value->anchor.data) {
+            copy->anchor.data = in_copy(block, start, value->anchor.data);
         }
     }
     if (value->anchor.alloc) {

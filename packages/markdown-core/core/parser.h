@@ -134,8 +134,8 @@ typedef struct markdown_core_parser_input {
     /* Where the input's last complete line ends: a line ending with `\n`,
      * or with `\r` and another byte after it. A reading at or past it reads
      * the end of the input (markdown_core_parser_input_ends). A cell's
-     * content is complete when it is read, so this is its size. */
-    size_t complete;
+     * content is complete when it is read, so this is its end. */
+    const unsigned char *complete;
     struct markdown_core_input_line *lines;
     struct markdown_core_normalized_line *normalized;
     struct markdown_core_line_facts *facts;
@@ -164,8 +164,10 @@ typedef struct markdown_core_copy {
 /* A LEVEL OF THE SPINE (blocks.c, THE LEVELS): a builder of the committed
  * parse as the last publish left it, at its depth, or, one past the last
  * builder, the pending block; the object the published document holds for
- * it, NULL when it holds none; how many of its children the document
- * publishes as they are, and where the last of them ends in the source. A
+ * it, NULL when it holds none, and, while a publish is made, the object the
+ * new tree holds at its depth (ast.c, A STREAMING PUBLISH); how many of its
+ * children the document publishes as they are, and where the last of them
+ * ends in the source. A
  * builder writes a children array and a content buffer the document does
  * not read: `spare` and `spare_content` are the ones the document reads,
  * of which the first `spare_valid` entries and `spare_content_valid` bytes
@@ -173,6 +175,7 @@ typedef struct markdown_core_copy {
  * array's room is at least, and `spare_size` the buffer's room. */
 typedef struct markdown_core_level {
     struct markdown_core_node *node, *published;
+    const struct markdown_core_node *object;
     uint32_t count, end;
     struct markdown_core_node **spare;
     uint32_t spare_capacity, spare_valid;
@@ -216,6 +219,12 @@ typedef struct {
     const struct markdown_core_node *node;
 } markdown_core_defined;
 
+/* A COMMITTED DEFINITION A PUBLISH LISTS as it walks: its table and its
+ * entry there, which name the object the publish places once it is done. */
+typedef struct {
+    uint32_t table, entry;
+} markdown_core_kept;
+
 /* THE PATHS a streaming commit's records hold (blocks.c), cut from blocks
  * of the parser's own. */
 typedef struct markdown_core_path_block {
@@ -254,12 +263,6 @@ struct markdown_core_parser {
     /* The flags a block takes as it settles (blocks.c, A BLOCK SETTLES):
      * COMMITTED in a commit, nothing in a snapshot. */
     markdown_core_node_internal_flags settle_flags;
-    /* The epoch the line facts written now carry, one of its own for each
-     * commit and each snapshot (`epochs` counts them): the container and
-     * table facts name blocks, which a block that closed in a commit or a
-     * copy a snapshot made stop being once a publish replaces them, so a
-     * reading trusts only the facts written in its own commit or snapshot. */
-    uint32_t fact_epoch, epochs;
     /* Whether the parse is a session's, which takes snapshots between its
      * commits: its records of committed blocks name them by path, and its
      * publishes keep levels and the committed definitions. */
@@ -276,9 +279,11 @@ struct markdown_core_parser {
     markdown_core_retired *retired;
     size_t retired_count, retired_capacity;
     /* The definitions the published document holds as committed, in source
-     * order (ast.c). */
+     * order (ast.c), and room for those a publish lists as it walks. */
     markdown_core_defined *defined;
     size_t defined_count, defined_capacity;
+    markdown_core_kept *kept;
+    size_t kept_capacity;
     /* THE PATHS (blocks.c): the root's, and the blocks the rest are cut
      * from. */
     markdown_core_path root_path;
@@ -693,9 +698,9 @@ static inline bool markdown_core_parser_settled(const markdown_core_parser *pars
     return node != parser->pending;
 }
 
-/* A node an element installs in a field of an open block, which holds as a
- * settled block does from then on (blocks.c, A BLOCK SETTLES): the
- * document's metadata, which its prefix makes. */
+/* A block an element installs in a field, which holds as a settled block
+ * does from then on (blocks.c, A BLOCK SETTLES): the document's metadata,
+ * which its prefix makes, and an inline note, which its Citation holds. */
 static inline void markdown_core_parser_settle_field(const markdown_core_parser *parser, markdown_core_node *node) {
     node->flags |= parser->settle_flags;
 }
@@ -824,9 +829,6 @@ typedef struct markdown_core_line_facts {
     int run_end;
     /* Only NUL-bearing lines need this count; it occupies former padding. */
     uint32_t nul_count;
-    /* The epochs of the parses that wrote the container facts and the
-     * table facts (`fact_epoch`): a reader whose epoch differs finds none. */
-    uint32_t epoch, table_epoch;
     /* Where the first line after the run begins, as an offset in the input:
      * a session's text moves when it grows, and the facts stay. */
     size_t run_end_at;
@@ -870,12 +872,12 @@ static inline void markdown_core_parser_see_end(markdown_core_parser *parser) {
 }
 
 static inline bool markdown_core_parser_input_ends(markdown_core_parser *parser, const unsigned char *cursor) {
-    const unsigned char *end = parser->input.source + parser->input.size;
-    assert(cursor >= parser->input.source && cursor <= end);
-    if (cursor >= parser->input.source + parser->input.complete) {
-        markdown_core_parser_see_end(parser);
+    assert(cursor >= parser->input.source && cursor <= parser->input.source + parser->input.size);
+    if (cursor < parser->input.complete) {
+        return false;
     }
-    return cursor == end;
+    markdown_core_parser_see_end(parser);
+    return cursor == parser->input.source + parser->input.size;
 }
 
 /* Optional state is sparse within the input index: properties and ordinary
@@ -1049,11 +1051,23 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
  * answers; at a snapshot only one whose key some definition declares before
  * the block starts, which is before its inline roots start, and a lookup that
  * finds none is recorded for the finalize. `*failed` is set when storage
- * could not be had, and the answer is then NULL. */
-const markdown_core_registry_record *markdown_core_parser_find_definition(markdown_core_parser *parser,
-                                                                          markdown_core_registry_kind kind,
-                                                                          const markdown_core_chunk *label,
-                                                                          bool *failed);
+ * could not be had, and the answer is then NULL. A snapshot's lookup goes on
+ * from what the registry answered in markdown_core_parser_find_at_snapshot. */
+const markdown_core_registry_record *markdown_core_parser_find_at_snapshot(markdown_core_parser *parser,
+                                                                           markdown_core_registry_kind kind,
+                                                                           const markdown_core_chunk *label,
+                                                                           const markdown_core_registry_record *record,
+                                                                           bool *failed);
+static inline const markdown_core_registry_record *
+markdown_core_parser_find_definition(markdown_core_parser *parser, markdown_core_registry_kind kind,
+                                     const markdown_core_chunk *label, bool *failed) {
+    const markdown_core_registry_record *record =
+        kind == MARKDOWN_CORE_REGISTRY_SPECIMEN
+            ? markdown_core_registry_find(&parser->registry, kind, label->data, label->len, failed)
+            : markdown_core_registry_find_label(&parser->registry, kind, label, failed);
+    return parser->snapshot && !*failed ? markdown_core_parser_find_at_snapshot(parser, kind, label, record, failed)
+                                        : record;
+}
 
 /* THE LONGEST SOURCE A PARSE TAKES: offsets are int32, and every buffer
  * derived from the source stays under half of that. A session refuses a text

@@ -3277,6 +3277,15 @@ static uint32_t registry_model_live(const registry_model_record *model, size_t c
     return live;
 }
 
+/* The model's answer for one key: its latest record, its earliest standing
+ * start and how many of its declarations stand, taken for every label of a
+ * kind in one pass over the records. */
+typedef struct {
+    const registry_model_record *latest;
+    uint32_t earliest;
+    uint32_t live;
+} model_answer;
+
 static void registry_label_text(unsigned label, char *text, size_t size) { snprintf(text, size, "k%u", label); }
 
 static void registry_rollback_matches_a_model(test_batch_runner *runner) {
@@ -3285,6 +3294,7 @@ static void registry_rollback_matches_a_model(test_batch_runner *runner) {
     markdown_core_registry registry;
     markdown_core_registry_init(&registry);
     registry_model_record *model = malloc(STEPS * sizeof(*model));
+    model_answer *answers = malloc((SHARED + STEPS) * sizeof(*answers));
     size_t model_count = 0, fresh = SHARED, mark_count = 0;
     markdown_core_registry_mark marks[MARKS];
     size_t model_marks[MARKS];
@@ -3336,20 +3346,26 @@ static void registry_rollback_matches_a_model(test_batch_runner *runner) {
             if (!(compared & (1u << kind))) {
                 continue;
             }
-            for (unsigned label = 0; label < fresh && agrees; label++) {
-                const markdown_core_registry_kind compared_kind =
-                    (markdown_core_registry_kind)(MARKDOWN_CORE_REGISTRY_REFERENCE + kind);
-                const registry_model_record *latest = NULL;
-                uint32_t earliest = UINT32_MAX;
-                for (size_t i = 0; i < model_count; i++) {
-                    if (model[i].kind == compared_kind && model[i].label == label) {
-                        latest = &model[i];
-                        if (!model[i].withdraws) {
-                            earliest = model[i].start < earliest ? model[i].start : earliest;
-                        }
+            const markdown_core_registry_kind compared_kind =
+                (markdown_core_registry_kind)(MARKDOWN_CORE_REGISTRY_REFERENCE + kind);
+            for (unsigned label = 0; label < fresh; label++) {
+                answers[label] = (model_answer){NULL, UINT32_MAX, 0};
+            }
+            for (size_t i = 0; i < model_count; i++) {
+                if (model[i].kind == compared_kind) {
+                    model_answer *answer = &answers[model[i].label];
+                    answer->latest = &model[i];
+                    if (model[i].withdraws) {
+                        answer->live--;
+                    } else {
+                        answer->live++;
+                        answer->earliest = model[i].start < answer->earliest ? model[i].start : answer->earliest;
                     }
                 }
-                const uint32_t live = registry_model_live(model, model_count, compared_kind, label);
+            }
+            for (unsigned label = 0; label < fresh && agrees; label++) {
+                const registry_model_record *latest = answers[label].latest;
+                const uint32_t earliest = answers[label].earliest, live = answers[label].live;
                 /* Only a label some step declared can answer; the rest are
                  * sampled every few steps, which is enough to see a key
                  * left behind. */
@@ -3384,6 +3400,7 @@ static void registry_rollback_matches_a_model(test_batch_runner *runner) {
     INT_EQ(runner, payload_live, 0, "the registry releases everything it holds");
     payload_probe_disarm();
     free(model);
+    free(answers);
 }
 
 /* Run from the instance's own beginning -- a document owner's lifecycle --

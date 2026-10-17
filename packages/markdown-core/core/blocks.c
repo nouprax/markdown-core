@@ -189,6 +189,7 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     markdown_core_free(parser->copies);
     markdown_core_free(parser->rooms);
     markdown_core_free(parser->defined);
+    markdown_core_free(parser->kept);
     S_release_paths(parser);
 
     /* The content-to-source map outlives every block that indexes it and
@@ -1927,7 +1928,7 @@ static int walk_owned_trees(markdown_core_parser *parser) {
  * document closes last, so it is the last block the queue holds, where its
  * input ended. */
 static void S_parse_block_inputs(markdown_core_parser *parser);
-static void S_close_document(markdown_core_parser *parser) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_close_document(markdown_core_parser *parser) {
     markdown_core_node *root = parser->root;
     markdown_core_parser_close_below(parser, root);
     S_settle_pending(parser, root);
@@ -1999,14 +2000,13 @@ static void S_parse_block_inputs(markdown_core_parser *parser) {
 
 bool markdown_core_parser_commit(markdown_core_parser *parser, const char *source, size_t length, size_t limit) {
     if (!parser->error) {
-        parser->fact_epoch = ++parser->epochs;
         S_parse_source(parser, (const unsigned char *)source, length, limit);
     }
     return !parser->error;
 }
 
 size_t markdown_core_parser_commit_point(const markdown_core_parser *parser) {
-    return parser->end_seen ? (size_t)parser->end_seen_at : parser->input.complete;
+    return parser->end_seen ? (size_t)parser->end_seen_at : (size_t)(parser->input.complete - parser->input.source);
 }
 
 markdown_core_node *markdown_core_parser_finalize(markdown_core_parser *parser) {
@@ -2173,8 +2173,9 @@ static void S_mark(const markdown_core_parser *parser, S_snapshot_mark *mark) {
 /* Puts back what the snapshot wrote: the builders and the root, the line
  * state, the input's index -- the lines it scanned, the facts it gave lines
  * the commit had scanned, the normalized lines it made -- the content map,
- * the registry, the completion queue and the cell inputs. The facts it gave
- * lines the commit keeps carry its epoch, which no commit trusts. */
+ * the registry, the completion queue and the cell inputs. The container and
+ * table facts of those lines go too: they name blocks, which a copy the
+ * snapshot made or a block the publish replaced stops being. */
 static void S_rollback(markdown_core_parser *parser, const S_snapshot_mark *mark) {
     parser->root = mark->root;
     parser->block_root = mark->block_root;
@@ -2208,6 +2209,10 @@ static void S_rollback(markdown_core_parser *parser, const S_snapshot_mark *mark
     for (size_t i = first; i < mark->line_count; i++) {
         if (input->lines[i].facts > mark->fact_count) {
             input->lines[i].facts = 0;
+        } else if (input->lines[i].facts) {
+            markdown_core_line_facts *facts = &input->facts[input->lines[i].facts - 1];
+            facts->container = NULL;
+            facts->table_container = NULL;
         }
     }
     input->line_count = mark->line_count;
@@ -2653,7 +2658,6 @@ markdown_core_node *markdown_core_parser_snapshot(markdown_core_parser *parser, 
     S_snapshot_mark mark;
     S_mark(parser, &mark);
     parser->settle_flags = 0;
-    parser->fact_epoch = ++parser->epochs;
     parser->snapshot = true;
     markdown_core_node *result = NULL;
     const bool copied = S_copy_spine(parser);
@@ -2843,7 +2847,7 @@ markdown_core_input_line *markdown_core_parser_extend_source_lines(markdown_core
     markdown_core_input_line *found = S_extend_source_lines(parser, index);
     /* A line asked past the last one, or the last one before it is complete,
      * is a reading of the input's end. */
-    if (found ? found->start >= parser->input.complete : !parser->error) {
+    if (found ? parser->input.source + found->start >= parser->input.complete : !parser->error) {
         markdown_core_parser_see_end(parser);
     }
     return found;
@@ -2919,7 +2923,7 @@ static void S_parse_source(markdown_core_parser *parser, const unsigned char *so
     }
     parser->input.source = source;
     parser->input.size = length;
-    parser->input.complete = at_root ? S_complete_end(source, length) : length;
+    parser->input.complete = source + (at_root ? S_complete_end(source, length) : length);
     parser->input.last_line_ready = false;
     if (at_root && !parser->line_number && limit) {
         const markdown_core_element_instance *document = parser->dialect->document_structure;
@@ -3380,7 +3384,7 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
         if (!entry && parser->error) {
             return 0;
         }
-        if (entry && entry->container && entry->epoch == parser->fact_epoch && entry->depth < lookahead->depth &&
+        if (entry && entry->container && entry->depth < lookahead->depth &&
             parser->lookahead_chain[entry->depth].node == entry->container) {
             resumed = true;
             from = entry->depth + 1;
@@ -3437,7 +3441,6 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
         if (entry) {
             markdown_core_parser_visited_line(parser, this_line)->own = (uint32_t)parser->offset;
             entry->container = lookahead->parent;
-            entry->epoch = parser->fact_epoch;
             entry->depth = lookahead->depth - 1;
             entry->offset = parser->offset;
             entry->column = parser->column;
@@ -3989,22 +3992,13 @@ static bool S_miss_block(markdown_core_parser *parser, markdown_core_node *block
     return kept;
 }
 
-static const markdown_core_registry_record *S_find_definition(markdown_core_parser *parser,
-                                                              markdown_core_registry_kind kind,
-                                                              const markdown_core_chunk *label, bool *failed) {
-    return kind == MARKDOWN_CORE_REGISTRY_SPECIMEN
-               ? markdown_core_registry_find(&parser->registry, kind, label->data, label->len, failed)
-               : markdown_core_registry_find_label(&parser->registry, kind, label, failed);
-}
-
-const markdown_core_registry_record *markdown_core_parser_find_definition(markdown_core_parser *parser,
-                                                                          markdown_core_registry_kind kind,
-                                                                          const markdown_core_chunk *label,
-                                                                          bool *failed) {
-    const markdown_core_registry_record *record = S_find_definition(parser, kind, label, failed);
+const markdown_core_registry_record *markdown_core_parser_find_at_snapshot(markdown_core_parser *parser,
+                                                                           markdown_core_registry_kind kind,
+                                                                           const markdown_core_chunk *label,
+                                                                           const markdown_core_registry_record *record,
+                                                                           bool *failed) {
     markdown_core_node *block = parser->completing;
-    if (!parser->snapshot || *failed ||
-        (record && markdown_core_registry_starts_before(record, block->where.place.start))) {
+    if (record && markdown_core_registry_starts_before(record, block->where.place.start)) {
         return record;
     }
     /* Only a committed block is asked again: a snapshot's own are gone with
@@ -4167,10 +4161,10 @@ static void S_withdraw_defined(markdown_core_parser *parser, const markdown_core
                 high = middle;
             }
         }
-        for (markdown_core_defined *at = &parser->defined[low]; at < parser->defined + ordered && at->start < place.end;
-             at++) {
-            if (at->node && markdown_core_node_moved(at->node) != block) {
-                at->node = NULL;
+        for (size_t at = low; at < ordered && parser->defined[at].start < place.end; at++) {
+            markdown_core_defined *defined = &parser->defined[at];
+            if (defined->node && markdown_core_node_moved(defined->node) != block) {
+                defined->node = NULL;
             }
         }
     }
@@ -4253,7 +4247,7 @@ static void S_complete_misses(markdown_core_parser *parser) {
             const markdown_core_definition_miss *at = &parser->misses[miss];
             const markdown_core_chunk label = {parser->miss_labels.ptr + at->label_start, at->label_length, 0};
             bool failed = false;
-            found = found || S_find_definition(parser, at->kind, &label, &failed);
+            found = found || markdown_core_parser_find_definition(parser, at->kind, &label, &failed);
             if (failed) {
                 markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
                 break;

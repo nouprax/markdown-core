@@ -617,9 +617,6 @@ typedef struct {
     /* Whether the relation in hand is in an inline root's content, and
      * whether this frame's node is the root whose content it is. */
     bool content, root;
-    /* Whether the frame's node lies in the subtree of a COMMITTED block,
-     * which no later publish walks. */
-    bool committed;
 } publish_frame;
 
 /* The frames live on the parser's walk stack, which completion has just
@@ -699,36 +696,20 @@ static inline publish_relation publish_next(const publish_frame *frame, const pu
     return next;
 }
 
-/* A LEVEL OF THE SPINE as a publish reads it (A STREAMING PUBLISH, below):
- * the object of the new tree at the level's depth, the object of the
- * previous tree the level names, how many of its children the previous
- * tree published as they are, and where the last of them ends. */
-typedef struct {
-    const markdown_core_node *node, *old;
-    uint32_t count, end;
-} publish_level;
-
-/* A COMMITTED definition a streaming publish lists as it walks: its table
- * and its entry there (THE DEFINITION TABLES a streaming parse keeps). */
-typedef struct {
-    uint32_t table, entry;
-} publish_kept;
-
 /* What one publish carries through its walks: the walk stack, what matching
- * needs, the lookup tables, the last id issued, the spine and the committed
- * definitions it lists. */
+ * needs, the lookup tables, the last id issued, the levels of the spine (A
+ * STREAMING PUBLISH, below) and how many committed definitions it lists. */
 typedef struct {
     publish_stack stack;
     publish_identity identity;
     definition_table tables[TABLE_COUNT];
     uint64_t next_id;
-    publish_level *levels;
+    const markdown_core_level *levels;
     size_t level_count;
     /* How many levels from the root differ whatever the walk finds
      * (parser.h, `touched_levels`). */
     size_t touched_levels;
-    publish_kept *kept;
-    size_t kept_count, kept_capacity;
+    size_t kept_count;
     /* The places of the inline root whose content the walk is in, which
      * give its nodes their runs: roots never nest, so one table serves every
      * root in turn. */
@@ -738,12 +719,11 @@ typedef struct {
 } publish_walk;
 
 /* Where a node published from `hand` lies: its range, in the content of the
- * root whose places the walk holds when it is in one, its source, whether it
- * is an inline root, whose places the walk now holds, and whether it lies in
- * the subtree of a COMMITTED block. */
+ * root whose places the walk holds when it is in one, its source, and
+ * whether it is an inline root, whose places the walk now holds. */
 typedef struct {
     markdown_core_place place, source;
-    bool root, committed;
+    bool root;
 } publish_placed;
 
 /* The bytes of a list of `count` runs. */
@@ -885,42 +865,41 @@ static inline bool publish_inline_runs(publish_walk *walk, markdown_core_node *n
 /* Lists the entry `entry` of table `table` as a COMMITTED definition the
  * streaming parse keeps once the publish is committed. */
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool publish_keep(publish_walk *walk, uint32_t table, size_t entry) {
-    publish_kept *kept = markdown_core_reserve(walk->kept, &walk->kept_capacity, walk->kept_count + 1, sizeof(*kept));
+    markdown_core_parser *parser = walk->stack.parser;
+    markdown_core_kept *kept =
+        markdown_core_reserve(parser->kept, &parser->kept_capacity, walk->kept_count + 1, sizeof(*kept));
     if (!kept) {
         return false;
     }
-    walk->kept = kept;
-    kept[walk->kept_count++] = (publish_kept){table, (uint32_t)entry};
+    parser->kept = kept;
+    kept[walk->kept_count++] = (markdown_core_kept){table, (uint32_t)entry};
     return true;
 }
 
 /* Records `node` in table `table` at `start`: a streaming parse keeps it
- * there too when it lies in the subtree of a COMMITTED block, which `kept`
- * says. */
-static inline bool publish_list(publish_walk *walk, markdown_core_node *node, uint32_t table, uint32_t start,
-                                bool kept) {
+ * there too when it is COMMITTED. A definition is a block, and every block
+ * in the subtree of a COMMITTED block settled in a commit, so it is one
+ * (blocks.c, A BLOCK SETTLES). */
+static inline bool publish_list(publish_walk *walk, markdown_core_node *node, uint32_t table, uint32_t start) {
     definition_table *values = &walk->tables[table];
     return table_add(values, node, start) &&
-           (!walk->stack.parser->streaming || !kept || publish_keep(walk, table, values->count - 1));
+           (!walk->stack.parser->streaming || !(node->flags & MARKDOWN_CORE_NODE__COMMITTED) ||
+            publish_keep(walk, table, values->count - 1));
 }
 
 /* Gives `node`, of slot `slot`, its extent against the relation in hand and
  * its runs, and records it in its lookup table when its slot says the tables
  * find it, at its source start. Its place is in the content of the root whose
  * places the walk holds when `content` says so; a block whose places read
- * content is an inline root, and the walk takes its places first. It lies in
- * the subtree of a COMMITTED block when it is one or its holder lies in one,
- * which `committed` says. */
+ * content is an inline root, and the walk takes its places first. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_node(publish_walk *walk, markdown_core_node *node,
                                                                          unsigned slot, const publish_relation *hand,
-                                                                         bool content, bool committed,
-                                                                         publish_placed *placed) {
+                                                                         bool content, publish_placed *placed) {
     const markdown_core_place place = node->where.place;
     node->where.extent =
         (markdown_core_extent){(int32_t)((int64_t)place.start - (int64_t)hand->anchor), place.end - place.start};
     placed->place = place;
     placed->root = false;
-    placed->committed = committed || (node->flags & MARKDOWN_CORE_NODE__COMMITTED);
     if (content) {
         if (!publish_inline_runs(walk, node, place, hand->source, &placed->source)) {
             return false;
@@ -941,7 +920,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_node(publish
             return false;
         }
     }
-    return !SLOT_TABLE(slot) || publish_list(walk, node, SLOT_TABLE(slot) - 1, placed->source.start, placed->committed);
+    return !SLOT_TABLE(slot) || publish_list(walk, node, SLOT_TABLE(slot) - 1, placed->source.start);
 }
 
 /* The relation in hand becomes the first of a node placed as `placed`: an
@@ -951,7 +930,6 @@ static inline void publish_enter(publish_frame *frame, const publish_placed *pla
                                  bool content) {
     frame->root = placed->root;
     frame->content = content || frame->root;
-    frame->committed = placed->committed;
     frame->start = placed->place.start;
     frame->source_start = placed->source.start;
     hand->anchor = frame->root ? 0 : placed->place.start;
@@ -1012,7 +990,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_fresh(publis
         /* Every node it publishes is new: a node the previous tree published
          * is matched, or skipped as one it shares (A STREAMING PUBLISH). */
         assert(!child->id);
-        if (!publish_node(walk, child, slot, &hand, content, frame->committed, &child_placed)) {
+        if (!publish_node(walk, child, slot, &hand, content, &child_placed)) {
             return false;
         }
         child->id = ++next_id;
@@ -1104,10 +1082,10 @@ static inline int relation_field(const markdown_core_relation_cursor *cursor, re
  * node's own, or, for a definition's body, the next. -1 for none. */
 static inline int publish_level_of(const publish_walk *walk, int spine, const markdown_core_node *holder) {
     if (spine >= 0 && holder) {
-        if (walk->levels[spine].node == holder) {
+        if (walk->levels[spine].object == holder) {
             return spine;
         }
-        if ((size_t)spine + 1 < walk->level_count && walk->levels[spine + 1].node == holder) {
+        if ((size_t)spine + 1 < walk->level_count && walk->levels[spine + 1].object == holder) {
             return spine + 1;
         }
     }
@@ -1116,13 +1094,13 @@ static inline int publish_level_of(const publish_walk *walk, int spine, const ma
 
 /* The relation in hand, which the object of level `level` holds, past the
  * children the level published as they are: its next node is measured from
- * where the last of them ends. */
+ * where the last of them ends. A level that published none skips none. */
 static inline void publish_skip(const publish_walk *walk, int level, publish_relation *hand) {
-    if (level < 0) {
+    if (level < 0 || !walk->levels[level].count) {
         return;
     }
-    const publish_level *at = &walk->levels[level];
-    markdown_core_node **past = at->node->children + at->count;
+    const markdown_core_level *at = &walk->levels[level];
+    markdown_core_node **past = at->object->children + at->count;
     if (hand->item < past) {
         hand->item = past < hand->end ? past : hand->end;
         hand->anchor = hand->source = at->end;
@@ -1132,11 +1110,11 @@ static inline void publish_skip(const publish_walk *walk, int level, publish_rel
 /* The old relation paired with the one in hand, which the level's old
  * object holds, past the same children. */
 static inline void publish_old_skip(const publish_walk *walk, publish_match_frame *frame) {
-    if (frame->level < 0) {
+    if (frame->level < 0 || !walk->levels[frame->level].count) {
         return;
     }
-    const publish_level *at = &walk->levels[frame->level];
-    markdown_core_node **past = at->old->children + at->count;
+    const markdown_core_level *at = &walk->levels[frame->level];
+    markdown_core_node **past = at->published->children + at->count;
     if (frame->old_item < past) {
         frame->old_item = past < frame->old_end ? past : frame->old_end;
         frame->old_source = at->end;
@@ -1175,7 +1153,7 @@ static void publish_pair(const publish_walk *walk, publish_match_frame *frame, i
     if (frame->old_field == field) {
         markdown_core_node **items = frame->old_relation.items;
         size_t count = frame->old_relation.count;
-        assert(frame->level < 0 || frame->old_relation.holder == walk->levels[frame->level].old);
+        assert(frame->level < 0 || frame->old_relation.holder == walk->levels[frame->level].published);
         frame->old_source = frame->old_start;
         old_relation_next(frame);
         while (frame->old_field != INT_MAX && frame->old_relation.continues) {
@@ -1259,13 +1237,13 @@ static markdown_core_node **publish_match(publish_match_frame *owner, const mark
  * relation skipped. NULL when the level published none. */
 static markdown_core_node **publish_spine_match(const publish_walk *walk, publish_match_frame *owner, int spine,
                                                 uint32_t *old_start) {
-    const publish_level *at = &walk->levels[spine];
-    if (!at->count || owner->old_item == owner->old_end || *owner->old_item != at->old) {
+    const markdown_core_level *at = &walk->levels[spine];
+    if (!at->count || owner->old_item == owner->old_end || *owner->old_item != at->published) {
         return NULL;
     }
-    assert(at->old->kind == at->node->kind);
+    assert(at->published->kind == at->object->kind);
     markdown_core_node **slot = owner->old_item++;
-    const markdown_core_place window = runs_window(at->old, owner->old_source);
+    const markdown_core_place window = runs_window(at->published, owner->old_source);
     *old_start = window.start;
     owner->old_source = window.end;
     return slot;
@@ -1358,7 +1336,7 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, markdo
     bool more, old_more, ok = true;
     unsigned slot = slot_of(root);
     relation_shape shape = (relation_shape)(slot & SLOT_SHAPE);
-    if (!publish_node(walk, root, slot, &hand, false, false, &placed)) {
+    if (!publish_node(walk, root, slot, &hand, false, &placed)) {
         return false;
     }
     root->id = previous->id;
@@ -1375,7 +1353,7 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, markdo
     size_t entry = 0;
     bool content = false;
     /* The spine of a streaming publish starts at the roots. */
-    int spine = walk->level_count && walk->levels[0].node == root && walk->levels[0].old == previous ? 0 : -1;
+    int spine = walk->level_count && walk->levels[0].object == root && walk->levels[0].published == previous ? 0 : -1;
     /* Enters a matched node that has relations: its frame waits for its
      * verdict while they are published. */
     for (;;) {
@@ -1446,7 +1424,7 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, markdo
             slot = slot_of(child);
             shape = (relation_shape)(slot & SLOT_SHAPE);
             content = frame->walk.content;
-            if (!(ok = publish_node(walk, child, slot, &hand, content, frame->walk.committed, &placed))) {
+            if (!(ok = publish_node(walk, child, slot, &hand, content, &placed))) {
                 break;
             }
             entry = SLOT_TABLE(slot) ? walk->tables[SLOT_TABLE(slot) - 1].count : 0;
@@ -1455,13 +1433,13 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, markdo
             /* The spine's object at the next depth is the first node past
              * those the level holding the relation published as they are. */
             spine = frame->level >= 0 && (size_t)frame->level + 1 < walk->level_count &&
-                            walk->levels[frame->level + 1].node == child
+                            walk->levels[frame->level + 1].object == child
                         ? frame->level + 1
                         : -1;
             markdown_core_node **match_slot = spine >= 0 ? publish_spine_match(walk, frame, spine, &old_start) : NULL;
             if (!match_slot) {
                 match_slot = publish_match(frame, child, placed.source, &old_start);
-                if (spine >= 0 && (!match_slot || *match_slot != walk->levels[spine].old)) {
+                if (spine >= 0 && (!match_slot || *match_slot != walk->levels[spine].published)) {
                     spine = -1;
                 }
             }
@@ -1583,34 +1561,29 @@ static bool reference_targets(markdown_core_parser *parser, markdown_core_docume
     return true;
 }
 
-/* THE SPINE of a streaming publish (A STREAMING PUBLISH): a level for each
- * the publish before left, as deep as the previous tree holds an object for
- * one and the new tree has its object. False when it could not be had. */
-static bool publish_spine(publish_walk *walk, const markdown_core_parser *parser) {
-    if (!parser->revision->previous || !parser->level_count) {
-        return true;
-    }
-    publish_level *levels = markdown_core_realloc(NULL, parser->level_count * sizeof(*levels));
-    if (!levels) {
-        return false;
+/* THE SPINE of a streaming publish (A STREAMING PUBLISH): the levels the
+ * publish before left, as deep as the previous tree holds an object for one
+ * and the new tree has its object, which each of them names while the
+ * publish is made. */
+static void publish_spine(publish_walk *walk, markdown_core_parser *parser) {
+    if (!parser->revision->previous) {
+        return;
     }
     size_t depth = 0;
-    for (const markdown_core_node *node; (node = markdown_core_parser_level_object(parser, depth)); depth++) {
-        const markdown_core_level *level = &parser->levels[depth];
-        levels[depth] = (publish_level){node, level->published, level->count, level->end};
+    for (const markdown_core_node *object; (object = markdown_core_parser_level_object(parser, depth)); depth++) {
+        parser->levels[depth].object = object;
     }
-    walk->levels = levels;
+    walk->levels = parser->levels;
     walk->level_count = depth;
     walk->touched_levels = parser->touched_levels;
-    return true;
 }
 
 /* THE DEFINITION TABLES A STREAMING PARSE KEEPS (parser.h, `defined`): the
  * definitions the published document holds as COMMITTED, in source order,
  * each the object the publish placed, which no later publish walks, or the
  * object it moved to since (blocks.c, A BLOCK SUPERSEDED), which it names
- * from then on. A publish lists them first, and keeps those its walk lists
- * in the subtree of a COMMITTED block once it is committed. */
+ * from then on. A publish lists them first, and keeps the COMMITTED ones
+ * its walk lists once it is committed. */
 static bool publish_prefill(publish_walk *walk, markdown_core_parser *parser) {
     for (size_t i = 0; i < parser->defined_count; i++) {
         markdown_core_defined *defined = &parser->defined[i];
@@ -1636,7 +1609,7 @@ static bool publish_keep_room(markdown_core_parser *parser, const publish_walk *
     }
     parser->defined = defined;
     for (size_t i = 0; i < walk->kept_count; i++) {
-        const publish_kept kept = walk->kept[i];
+        const markdown_core_kept kept = parser->kept[i];
         const definition_entry *entry = &walk->tables[kept.table].values[kept.entry];
         defined[parser->defined_count + i] = (markdown_core_defined){(uint32_t)entry->start, kept.table, entry->node};
     }
@@ -1669,19 +1642,19 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
     walk.next_id = revision->last_id;
     walk.levels = NULL;
     walk.level_count = walk.touched_levels = 0;
-    walk.kept = NULL;
-    walk.kept_count = walk.kept_capacity = 0;
+    walk.kept_count = 0;
     walk.places = (content_places){0};
     walk.pool = parser->pool;
     publish_placed placed;
-    bool same = false, ok = publish_spine(&walk, parser) && publish_prefill(&walk, parser);
+    publish_spine(&walk, parser);
+    bool same = false, ok = publish_prefill(&walk, parser);
     if (ok && previous) {
         const publish_relation start = {0};
         ok = publish_matched(&walk, root, previous, &start, &same);
     } else if (ok) {
         unsigned slot = slot_of(root);
         const publish_relation hand = {0};
-        ok = publish_node(&walk, root, slot, &hand, false, false, &placed);
+        ok = publish_node(&walk, root, slot, &hand, false, &placed);
         root->id = ++walk.next_id;
         ok = ok && publish_fresh(&walk, root, (relation_shape)(slot & SLOT_SHAPE), &placed, false);
     }
@@ -1709,9 +1682,9 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
         markdown_core_free(walk.tables[table].values);
     }
     markdown_core_free(walk.places.items);
-    markdown_core_free(walk.identity.swaps);
-    markdown_core_free(walk.levels);
-    markdown_core_free(walk.kept);
+    if (previous) {
+        markdown_core_free(walk.identity.swaps);
+    }
     return ok;
 }
 
@@ -1734,8 +1707,7 @@ bool markdown_core_publish_candidate(markdown_core_parser *parser, markdown_core
     walk.next_id = parser->revision->last_id;
     walk.levels = NULL;
     walk.level_count = walk.touched_levels = 0;
-    walk.kept = NULL;
-    walk.kept_count = walk.kept_capacity = 0;
+    walk.kept_count = 0;
     walk.places = (content_places){0};
     walk.pool = parser->pool;
     const uint32_t start = candidate->where.place.start;
@@ -1760,7 +1732,6 @@ bool markdown_core_publish_candidate(markdown_core_parser *parser, markdown_core
     }
     markdown_core_free(walk.places.items);
     markdown_core_free(walk.identity.swaps);
-    markdown_core_free(walk.kept);
     return ok;
 }
 

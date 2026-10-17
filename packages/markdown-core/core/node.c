@@ -405,15 +405,11 @@ static int S_release_owned_subtree(markdown_core_node **slot, void *context) {
     return 1;
 }
 
-/* A field of a copy, released unless the copy shares it. */
-static int S_release_unshared_subtree(markdown_core_node **slot, void *context) {
-    return !*slot || ((*slot)->flags & MARKDOWN_CORE_NODE__COMMITTED) || S_release_owned_subtree(slot, context);
-}
-
 /* THE NODE-VALUED FIELDS OF A NODE'S RECORD, each slot visited whether or
  * not it holds a node. An element's own are visited by its
  * `visit_owned_subtrees_func`; `S_visit_fields` visits both. */
-static int S_visit_record_fields(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor, void *context) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_visit_record_fields(
+    markdown_core_node *node, markdown_core_owned_subtree_visitor visitor, void *context) {
     switch (node->kind) {
     case MARKDOWN_CORE_NODE_DEFINITION:
         return visitor(&node->as.definition->term, context);
@@ -429,16 +425,53 @@ static int S_visit_record_fields(markdown_core_node *node, markdown_core_owned_s
     }
 }
 
-static int S_visit_fields(markdown_core_node *node, markdown_core_owned_subtree_visitor visitor, void *context) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_visit_fields(markdown_core_node *node,
+                                                                          markdown_core_owned_subtree_visitor visitor,
+                                                                          void *context) {
     return S_visit_record_fields(node, visitor, context) &&
            (!node->element || !node->element->visit_owned_subtrees_func ||
             node->element->visit_owned_subtrees_func(node->element, node, visitor, context));
 }
 
+/* A COPY LETS GO of the storage it borrows and of the COMMITTED nodes it
+ * shares (markdown_core_node_copy) as its release begins, which then gives
+ * back what the copy still holds as it does for any node: exactly what the
+ * copy owns. Its unshared children leave its borrowed array for the walk. */
+static int S_let_go_shared(markdown_core_node **slot, void *context) {
+    (void)context;
+    if (*slot && ((*slot)->flags & MARKDOWN_CORE_NODE__COMMITTED)) {
+        *slot = NULL;
+    }
+    return 1;
+}
+
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_let_go(markdown_core_node *copy) {
+    if (copy->flags & MARKDOWN_CORE_NODE__BORROWS_CONTENT) {
+        markdown_core_strbuf_init_zeroed(&copy->content);
+    }
+    if (copy->flags & MARKDOWN_CORE_NODE__SHARES_FIELDS) {
+        S_visit_fields(copy, S_let_go_shared, NULL);
+    }
+    if (copy->flags & MARKDOWN_CORE_NODE__BORROWS_CHILDREN) {
+        for (uint32_t i = 0; i < copy->child_count; i++) {
+            if (!(copy->children[i]->flags & MARKDOWN_CORE_NODE__COMMITTED)) {
+                S_push_release(&markdown_core_scaffold_of(copy)->next, copy->children[i]);
+            }
+        }
+        copy->children = NULL;
+        copy->child_count = 0;
+    }
+}
+
 /* Releases the nodes on `stack` and everything they hold. */
-static inline void S_free_stack(markdown_core_node_pool *pool, markdown_core_node *stack) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_free_stack(markdown_core_node_pool *pool,
+                                                                         markdown_core_node *stack) {
     while (stack) {
         markdown_core_node *e = stack;
+        if (e->flags & (MARKDOWN_CORE_NODE__BORROWS_CHILDREN | MARKDOWN_CORE_NODE__BORROWS_CONTENT |
+                        MARKDOWN_CORE_NODE__SHARES_FIELDS)) {
+            S_let_go(e);
+        }
         /* Almost no node owns an attribute value or a content buffer: the
          * test each releaser makes first -- its own predicate, defined once
          * beside it -- is made here, so a node that owns neither pays the
@@ -446,12 +479,7 @@ static inline void S_free_stack(markdown_core_node_pool *pool, markdown_core_nod
         if (markdown_core_attributes_owns(&e->attributes)) {
             markdown_core_attributes_free(&e->attributes);
         }
-        /* A copy gives back neither the storage it borrows nor the
-         * COMMITTED nodes it shares (markdown_core_node_copy). */
-        const markdown_core_node_internal_flags borrows =
-            e->flags & (MARKDOWN_CORE_NODE__BORROWS_CHILDREN | MARKDOWN_CORE_NODE__BORROWS_CONTENT |
-                        MARKDOWN_CORE_NODE__SHARES_FIELDS);
-        if (markdown_core_strbuf_owns(&e->content) && !(borrows & MARKDOWN_CORE_NODE__BORROWS_CONTENT)) {
+        if (markdown_core_strbuf_owns(&e->content)) {
             markdown_core_strbuf_free(&e->content);
         }
         if (e->source.runs) {
@@ -461,9 +489,7 @@ static inline void S_free_stack(markdown_core_node_pool *pool, markdown_core_nod
         /* The node-valued fields join the same iterative free walk as
          * content: they are pushed onto the rest of the stack, which `e`'s
          * scaffold links until `e` leaves it. */
-        S_visit_fields(
-            e, (borrows & MARKDOWN_CORE_NODE__SHARES_FIELDS) ? S_release_unshared_subtree : S_release_owned_subtree,
-            &markdown_core_scaffold_of(e)->next);
+        S_visit_fields(e, S_release_owned_subtree, &markdown_core_scaffold_of(e)->next);
         stack = markdown_core_scaffold_next(e);
         if (e->opaque && e->element && e->element->opaque_free_func) {
             e->element->opaque_free_func(e->element, e);
@@ -472,19 +498,11 @@ static inline void S_free_stack(markdown_core_node_pool *pool, markdown_core_nod
 
         /* Its children: those of its array, and those an inline parse still
          * links through its scaffold. */
-        if (borrows & MARKDOWN_CORE_NODE__BORROWS_CHILDREN) {
-            for (uint32_t i = 0; i < e->child_count; i++) {
-                if (!(e->children[i]->flags & MARKDOWN_CORE_NODE__COMMITTED)) {
-                    S_push_release(&stack, e->children[i]);
-                }
-            }
-        } else {
-            for (uint32_t i = 0; i < e->child_count; i++) {
-                S_push_release(&stack, e->children[i]);
-            }
-            if (e->children) {
-                markdown_core_node_pool_bytes_free(pool, e->children);
-            }
+        for (uint32_t i = 0; i < e->child_count; i++) {
+            S_push_release(&stack, e->children[i]);
+        }
+        if (e->children) {
+            markdown_core_node_pool_bytes_free(pool, e->children);
         }
         for (markdown_core_node *child = markdown_core_scaffold_first(e); child;) {
             markdown_core_node *next = markdown_core_scaffold_next(child);
@@ -501,7 +519,7 @@ static void S_free_nodes(markdown_core_node_pool *pool, markdown_core_node *root
 }
 
 void markdown_core_node_pool_release(markdown_core_node_pool *pool, markdown_core_node *node) {
-    if (MARKDOWN_CORE_NODE_INLINE_P(node)) {
+    if (MARKDOWN_CORE_NODE_TYPE_INLINE_P((markdown_core_node_type)node->kind)) {
         markdown_core_scaffold_unlink(node);
     }
     S_free_nodes(pool, node);

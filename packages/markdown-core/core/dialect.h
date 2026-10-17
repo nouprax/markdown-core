@@ -210,13 +210,19 @@ static inline size_t markdown_core_state_align(size_t size) {
  * instances keyed by their descriptor's address, at least twice as large as
  * the elements it holds, so a lookup ends at the element or at an empty entry.
  * A table of 1 << `bits` entries takes the top `bits` bits of the address
- * times 2^64 / phi (Fibonacci hashing), which every bit of the address moves,
- * so descriptors spread over the table at whatever stride they are laid out.
- * It answers markdown_core_parser_instance -- one element reading another's
- * state. The engine and an element's own hooks never search it: the
- * projections hold instances. */
+ * times 2^64 / phi with its high half folded into its low, times 2^64 / phi
+ * again. Descriptors lie at a fixed stride, and the top bits of one product
+ * step by the stride over phi: a stride whose quotient lies near a whole
+ * number puts neighbouring descriptors in neighbouring entries. The fold
+ * lets every bit of the first product move the second, so descriptors spread
+ * over the table at whatever stride they are laid out. It answers
+ * markdown_core_parser_instance -- one element reading another's state. The
+ * engine and an element's own hooks never search it: the projections hold
+ * instances. */
 static inline size_t markdown_core_instance_hash(const markdown_core_element *element, unsigned bits) {
-    return (size_t)(((uint64_t)(uintptr_t)element * UINT64_C(0x9E3779B97F4A7C15)) >> (64 - bits));
+    uint64_t product = (uint64_t)(uintptr_t)element * UINT64_C(0x9E3779B97F4A7C15);
+    product ^= product >> 32;
+    return (size_t)((product * UINT64_C(0x9E3779B97F4A7C15)) >> (64 - bits));
 }
 
 /* The dialect as setup extends it. The core dialect is borrowed; the first
