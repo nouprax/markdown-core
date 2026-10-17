@@ -20,17 +20,18 @@
  * each as a parse of any longer text reads it, and completed the blocks that
  * settled in them (plan 5.4). An append commits the lines up to the commit
  * point the last snapshot left, completes what settled, and then takes a
- * snapshot of the whole text, which leaves the next commit point; the
- * finalize commits every line that is left and ends the committed parse at
- * the end of the text. A snapshot reads the text whole, as a transaction of
- * `snapshots`.
+ * snapshot of the whole text on the committed parse, which leaves the next
+ * commit point (blocks.c, THE SNAPSHOT); the finalize commits every line that
+ * is left and ends the committed parse at the end of the text.
  * Each new document continues the old one (parser.h, `revision`): the
  * revision lends the session's pool, names the document published last and
- * counts the ids it issued. */
+ * counts the ids it issued. The document shares the committed blocks with
+ * the committed parse, and borrows storage it keeps: the parse owns it, and
+ * releases it before them, until the finalize returns the last document. */
 struct markdown_core_session {
     uint8_t *text;
     size_t size, capacity;
-    markdown_core_parser *committed, *snapshots;
+    markdown_core_parser *committed;
     size_t commit_point;
     markdown_core_node_pool pool;
     markdown_core_revision revision;
@@ -66,13 +67,10 @@ static markdown_core_status session_snapshot(markdown_core_session *session) {
     /* The lines committed read nothing of the end, as they did in the
      * snapshot that left the commit point. */
     assert(markdown_core_parser_commit_point(session->committed) >= session->commit_point);
-    if (!session->snapshots && !(session->snapshots = markdown_core_core_parser(NULL, NULL))) {
-        return MARKDOWN_CORE_ALLOCATION_FAILED;
-    }
-    markdown_core_parser_start(session->snapshots, &session->revision);
-    markdown_core_parser_commit(session->snapshots, session_source(session), session->size, session->size);
-    size_t commit_point = markdown_core_parser_commit_point(session->snapshots);
-    markdown_core_status status = session_publish(session, markdown_core_parser_snapshot(session->snapshots));
+    size_t commit_point = session->commit_point;
+    markdown_core_status status =
+        session_publish(session, markdown_core_parser_snapshot(session->committed, session_source(session),
+                                                               session->size, &commit_point));
     if (status == MARKDOWN_CORE_OK) {
         session->commit_point = commit_point;
     }
@@ -84,7 +82,9 @@ static markdown_core_status session_snapshot(markdown_core_session *session) {
 static markdown_core_status session_finalize(markdown_core_session *session) {
     markdown_core_parser_commit(session->committed, session_source(session), session->size, session->size);
     session->finalized = true;
-    return session_publish(session, markdown_core_parser_finalize(session->committed));
+    markdown_core_node *root = markdown_core_parser_finalize(session->committed);
+    session->document.root = session->revision.previous = root;
+    return root ? MARKDOWN_CORE_OK : MARKDOWN_CORE_ALLOCATION_FAILED;
 }
 
 /* Adds `size` bytes to the end of the text. This is where text enters the
@@ -115,27 +115,26 @@ static markdown_core_status session_take(markdown_core_session *session, const u
 }
 
 /* Gives back what a session holds, but not the session itself. The
- * committed parse of a session that was not finalized ends with nothing. */
+ * committed parse of a session that was not finalized ends with nothing, and
+ * releases the document it published last with what it keeps; the document
+ * a finalize returned is the session's. Both go back to the pool before the
+ * pool goes. */
 static void session_close(markdown_core_session *session) {
-    if (session->committed && !session->finalized) {
-        markdown_core_parser_discard(session->committed);
+    if (session->committed) {
+        if (!session->finalized) {
+            markdown_core_parser_discard(session->committed);
+        }
+        markdown_core_parser_destroy(session->committed);
     }
-    if (session->document.root) {
+    if (session->finalized && session->document.root) {
         markdown_core_node_pool_release(&session->pool, session->document.root);
     }
     markdown_core_node_pool_dispose(&session->pool);
     markdown_core_free(session->text);
-    if (session->committed) {
-        markdown_core_parser_destroy(session->committed);
-    }
-    if (session->snapshots) {
-        markdown_core_parser_destroy(session->snapshots);
-    }
 }
 
 /* Opens a zeroed session in place: makes its parser, starts its committed
- * parse and takes the source. The parser for snapshots is made with the
- * first. */
+ * parse and takes the source. */
 static markdown_core_status session_open(markdown_core_session *session, const uint8_t *source, size_t size,
                                          markdown_core_text_unit unit) {
     session->document.unit = unit;
@@ -156,6 +155,7 @@ markdown_core_status markdown_core_session_new(const uint8_t *source, size_t siz
     }
     markdown_core_status status = session_open(made, source, size, unit);
     if (status == MARKDOWN_CORE_OK) {
+        made->committed->streaming = true;
         status = session_snapshot(made);
     }
     if (status != MARKDOWN_CORE_OK) {

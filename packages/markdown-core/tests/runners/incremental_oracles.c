@@ -683,7 +683,13 @@ static void check_identity(run *state, const char *where, size_t step, history *
      * anchor it holds. An old node's anchor is the first byte of its source,
      * which an append leaves at its offset; a node with no source has none.
      * One cursor per new owner walks the matched old owner's items, which
-     * are in relation and source order. */
+     * are in relation and source order, and stands at the earliest not yet
+     * passed: a node that continues one passes it and every old sibling
+     * before it, and the ones after it its source holds remain for the next
+     * new sibling, as the cells of a grid table that span rows start inside
+     * the sources of the cells before them (plan 5.9). A node that continues
+     * none passes the old siblings no later sibling, starting no earlier,
+     * can hold. */
     for (index = 0; index < after->count && !stopped(state); index++) {
         const view_node *node = &after->nodes[index];
         size_t match = SIZE_MAX;
@@ -691,17 +697,26 @@ static void check_identity(run *state, const char *where, size_t step, history *
             match = 0;
         } else if (continues[node->owner] != SIZE_MAX) {
             const view_node *owner = &before->nodes[continues[node->owner]];
-            size_t *at = &cursor[node->owner];
-            while (*at < owner->item_count) {
-                const view_node *old = &before->nodes[before->items[owner->items + *at]];
+            size_t *at = &cursor[node->owner], scan;
+            for (scan = *at; scan < owner->item_count; scan++) {
+                const view_node *old = &before->nodes[before->items[owner->items + scan]];
                 const bool anchored = old->range.start < old->range.end;
                 if (old->relation > node->relation ||
                     (old->relation == node->relation && anchored && old->range.start >= node->range.end)) {
                     break;
                 }
                 if (old->relation == node->relation && anchored && old->range.start >= node->range.start &&
-                    match == SIZE_MAX && old->kind == node->kind) {
-                    match = before->items[owner->items + *at];
+                    old->kind == node->kind) {
+                    match = before->items[owner->items + scan];
+                    *at = scan + 1;
+                    break;
+                }
+            }
+            while (match == SIZE_MAX && *at < scan) {
+                const view_node *old = &before->nodes[before->items[owner->items + *at]];
+                if (old->relation == node->relation && old->range.start < old->range.end &&
+                    old->range.start >= node->range.start) {
+                    break;
                 }
                 ++*at;
             }

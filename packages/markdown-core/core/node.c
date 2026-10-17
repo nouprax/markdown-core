@@ -405,6 +405,11 @@ static int S_release_owned_subtree(markdown_core_node **slot, void *context) {
     return 1;
 }
 
+/* A field of a copy, released unless the copy shares it. */
+static int S_release_unshared_subtree(markdown_core_node **slot, void *context) {
+    return !*slot || ((*slot)->flags & MARKDOWN_CORE_NODE__COMMITTED) || S_release_owned_subtree(slot, context);
+}
+
 /* THE NODE-VALUED FIELDS OF A NODE'S RECORD, each slot visited whether or
  * not it holds a node. An element's own are visited by its
  * `visit_owned_subtrees_func`; `S_visit_fields` visits both. */
@@ -441,7 +446,12 @@ static inline void S_free_stack(markdown_core_node_pool *pool, markdown_core_nod
         if (markdown_core_attributes_owns(&e->attributes)) {
             markdown_core_attributes_free(&e->attributes);
         }
-        if (markdown_core_strbuf_owns(&e->content)) {
+        /* A copy gives back neither the storage it borrows nor the
+         * COMMITTED nodes it shares (markdown_core_node_copy). */
+        const markdown_core_node_internal_flags borrows =
+            e->flags & (MARKDOWN_CORE_NODE__BORROWS_CHILDREN | MARKDOWN_CORE_NODE__BORROWS_CONTENT |
+                        MARKDOWN_CORE_NODE__SHARES_FIELDS);
+        if (markdown_core_strbuf_owns(&e->content) && !(borrows & MARKDOWN_CORE_NODE__BORROWS_CONTENT)) {
             markdown_core_strbuf_free(&e->content);
         }
         if (e->source.runs) {
@@ -451,7 +461,9 @@ static inline void S_free_stack(markdown_core_node_pool *pool, markdown_core_nod
         /* The node-valued fields join the same iterative free walk as
          * content: they are pushed onto the rest of the stack, which `e`'s
          * scaffold links until `e` leaves it. */
-        S_visit_fields(e, S_release_owned_subtree, &markdown_core_scaffold_of(e)->next);
+        S_visit_fields(
+            e, (borrows & MARKDOWN_CORE_NODE__SHARES_FIELDS) ? S_release_unshared_subtree : S_release_owned_subtree,
+            &markdown_core_scaffold_of(e)->next);
         stack = markdown_core_scaffold_next(e);
         if (e->opaque && e->element && e->element->opaque_free_func) {
             e->element->opaque_free_func(e->element, e);
@@ -460,11 +472,19 @@ static inline void S_free_stack(markdown_core_node_pool *pool, markdown_core_nod
 
         /* Its children: those of its array, and those an inline parse still
          * links through its scaffold. */
-        for (uint32_t i = 0; i < e->child_count; i++) {
-            S_push_release(&stack, e->children[i]);
-        }
-        if (e->children) {
-            markdown_core_node_pool_bytes_free(pool, e->children);
+        if (borrows & MARKDOWN_CORE_NODE__BORROWS_CHILDREN) {
+            for (uint32_t i = 0; i < e->child_count; i++) {
+                if (!(e->children[i]->flags & MARKDOWN_CORE_NODE__COMMITTED)) {
+                    S_push_release(&stack, e->children[i]);
+                }
+            }
+        } else {
+            for (uint32_t i = 0; i < e->child_count; i++) {
+                S_push_release(&stack, e->children[i]);
+            }
+            if (e->children) {
+                markdown_core_node_pool_bytes_free(pool, e->children);
+            }
         }
         for (markdown_core_node *child = markdown_core_scaffold_first(e); child;) {
             markdown_core_node *next = markdown_core_scaffold_next(child);
@@ -481,58 +501,345 @@ static void S_free_nodes(markdown_core_node_pool *pool, markdown_core_node *root
 }
 
 void markdown_core_node_pool_release(markdown_core_node_pool *pool, markdown_core_node *node) {
-    markdown_core_scaffold_unlink(node);
+    if (MARKDOWN_CORE_NODE_INLINE_P(node)) {
+        markdown_core_scaffold_unlink(node);
+    }
     S_free_nodes(pool, node);
 }
 
 void markdown_core_node_free(markdown_core_node *node) { markdown_core_node_pool_release(NULL, node); }
 
-/* A visit of one node's fields that exchanges each with the field of
- * `other` in the same place: fields of one kind sit at one offset from the
- * storage that holds them, the record or the element's payload. */
-typedef struct {
-    const unsigned char *storage;
-    unsigned char *other;
-} S_field_pair;
+/* SWAPPING TWO NODES moves every byte of their slots, so each record in a
+ * slot moves with the node it belongs to, and each node's view of it is
+ * pointed at the slot the node now lies in. */
+static inline void S_record_follow(markdown_core_node *node) {
+    if (node->as.data && !node->node_data_allocation) {
+        node->as.data = S_slot_of(node)->record;
+    }
+}
 
-static int S_field_swap(markdown_core_node **slot, void *context) {
-    S_field_pair *pair = context;
-    markdown_core_node **at = (markdown_core_node **)(pair->other + ((const unsigned char *)slot - pair->storage));
-    markdown_core_node *held = *slot;
-    *slot = *at;
-    *at = held;
+void markdown_core_node_swap(markdown_core_node *a, markdown_core_node *b) {
+    markdown_core_node_slot held;
+    memcpy(&held, S_slot_of(a), sizeof(held));
+    memcpy(S_slot_of(a), S_slot_of(b), sizeof(held));
+    memcpy(S_slot_of(b), &held, sizeof(held));
+    S_record_follow(a);
+    S_record_follow(b);
+}
+
+markdown_core_node *markdown_core_node_move(markdown_core_node_pool *pool, markdown_core_node *node) {
+    markdown_core_node_slot *slot = S_slot_take(pool);
+    if (!slot) {
+        return NULL;
+    }
+    memcpy(slot, S_slot_of(node), sizeof(*slot));
+    markdown_core_node *moved = &slot->node.node;
+    S_record_follow(moved);
+    markdown_core_scaffold_of(node)->next = moved;
+    return moved;
+}
+
+void markdown_core_node_slot_release(markdown_core_node_pool *pool, markdown_core_node *node) {
+    S_slot_release(pool, node);
+}
+
+/* A COPY'S OWN STORAGE. Each part a copy owns is copied where the original
+ * owns it; once one cannot be had, every later part is left owned by nobody,
+ * so releasing the copy gives back exactly what it took. */
+typedef struct {
+    markdown_core_node_pool *pool;
+    bool failed;
+    /* Whether a field of the copy holds a COMMITTED node it shares. */
+    bool shares;
+} S_copy_state;
+
+/* The chunk's bytes, copied when it owns them. */
+static void S_chunk_own(S_copy_state *state, markdown_core_chunk *chunk) {
+    if (!chunk->alloc) {
+        return;
+    }
+    chunk->alloc = 0;
+    if (!state->failed && !markdown_core_chunk_to_cstr(chunk)) {
+        state->failed = true;
+    }
+}
+
+/* A label in storage of the pool's, `length` bytes and a NUL, copied: false
+ * when it could not be. */
+static bool S_label_own(S_copy_state *state, markdown_core_chunk *label) {
+    if (state->failed) {
+        return false;
+    }
+    unsigned char *bytes = markdown_core_node_pool_bytes(state->pool, (size_t)label->len + 1);
+    if (!bytes) {
+        state->failed = true;
+        return false;
+    }
+    memcpy(bytes, label->data, (size_t)label->len + 1);
+    label->data = bytes;
+    return true;
+}
+
+/* The parts of the record the kind owns, as free_node_as releases them. A
+ * copy is of a block the block phase still writes or of a field it holds
+ * (markdown_core_node_copy) -- a paragraph, or a directive's label, whose
+ * record owns nothing: of no kind made whole as it settles -- a Reference --
+ * or held only by the document, which holds its metadata committed once its
+ * prefix is read, and of no kind whose record owns an inline's storage. */
+static void S_copy_node_as(S_copy_state *state, markdown_core_node *copy) {
+    switch (copy->kind) {
+    case MARKDOWN_CORE_NODE_CALLOUT:
+        S_chunk_own(state, &copy->as.callout->variant.value);
+        break;
+    case MARKDOWN_CORE_NODE_LIST_ITEM:
+        S_chunk_own(state, &copy->as.list->task_marker.value);
+        break;
+    case MARKDOWN_CORE_NODE_CODE_BLOCK:
+        S_chunk_own(state, &copy->as.code->info.value);
+        S_chunk_own(state, &copy->as.code->literal);
+        break;
+    case MARKDOWN_CORE_NODE_COMMENT_BLOCK:
+        S_chunk_own(state, copy->as.literal);
+        break;
+    case MARKDOWN_CORE_NODE_HTML_BLOCK:
+        S_chunk_own(state, &copy->as.html_block->literal);
+        break;
+    case MARKDOWN_CORE_NODE_DOCUMENT:
+        /* Its lookup tables are made as it is published, which no block the
+         * block phase writes has been. */
+        break;
+    case MARKDOWN_CORE_NODE_HEADING:
+        if (copy->as.heading->label.len && !S_label_own(state, &copy->as.heading->label)) {
+            copy->as.heading->label = (markdown_core_chunk){0};
+        }
+        break;
+    case MARKDOWN_CORE_NODE_SPECIMEN:
+        S_chunk_own(state, &copy->as.specimen->label.value);
+        break;
+    case MARKDOWN_CORE_NODE_FOOTNOTE:
+        if (copy->as.footnote->label.has_value && !S_label_own(state, &copy->as.footnote->label.value)) {
+            copy->as.footnote->label = markdown_core_optional_chunk_absent();
+        }
+        break;
+    default:
+        assert(copy->kind != MARKDOWN_CORE_NODE_METADATA && copy->kind != MARKDOWN_CORE_NODE_REFERENCE &&
+               copy->kind != MARKDOWN_CORE_NODE_TEXT && copy->kind != MARKDOWN_CORE_NODE_HTML &&
+               copy->kind != MARKDOWN_CORE_NODE_CODE && copy->kind != MARKDOWN_CORE_NODE_COMMENT &&
+               copy->kind != MARKDOWN_CORE_NODE_CROSS_LINK && copy->kind != MARKDOWN_CORE_NODE_CROSS_EMBEDDED &&
+               copy->kind != MARKDOWN_CORE_NODE_CITATION && copy->kind != MARKDOWN_CORE_NODE_LINK &&
+               copy->kind != MARKDOWN_CORE_NODE_EMBEDDED);
+        break;
+    }
+}
+
+/* A NODE'S SLOT, COPIED: a node in a slot of `pool` holding `node`'s state,
+ * its record in storage of its own, and its scaffold empty. Everything else
+ * it holds is still `node`'s, which the caller makes its own, borrows or
+ * drops before it can be released. NULL, having taken nothing, when storage
+ * could not be had. */
+static markdown_core_node *S_copy_slot(markdown_core_node_pool *pool, const markdown_core_node *node) {
+    markdown_core_node_slot *slot = S_slot_take(pool);
+    if (!slot) {
+        return NULL;
+    }
+    memcpy(slot, S_slot_of(node), sizeof(*slot));
+    memset(&slot->scaffold, 0, sizeof(slot->scaffold));
+    markdown_core_node *copy = &slot->node.node;
+    if (node->node_data_allocation) {
+        const size_t size = S_node_payload_size((markdown_core_node_type)node->kind);
+        copy->node_data_allocation = markdown_core_realloc(NULL, size);
+        if (!copy->node_data_allocation) {
+            S_slot_release(pool, copy);
+            return NULL;
+        }
+        memcpy(copy->node_data_allocation, node->node_data_allocation, size);
+        copy->as.data = copy->node_data_allocation;
+    } else {
+        S_record_follow(copy);
+    }
+    return copy;
+}
+
+/* The children array and the content buffer a copy borrows from `node`:
+ * only storage there is, for the first child or the first byte it writes
+ * into none is storage of its own. */
+static void S_copy_borrow(markdown_core_node *copy, const markdown_core_node *node,
+                          markdown_core_node_internal_flags borrows) {
+    assert(!(node->flags & (MARKDOWN_CORE_NODE__BORROWS_CHILDREN | MARKDOWN_CORE_NODE__BORROWS_CONTENT |
+                            MARKDOWN_CORE_NODE__SHARES_FIELDS)));
+    copy->flags |= borrows & ((node->child_count ? MARKDOWN_CORE_NODE__BORROWS_CHILDREN : 0) |
+                              (markdown_core_strbuf_owns(&node->content) ? MARKDOWN_CORE_NODE__BORROWS_CONTENT : 0));
+}
+
+/* The parts a copy owns of its own where `node` owns them: its attributes,
+ * its element's payload and what its record owns. */
+static void S_copy_owned(S_copy_state *state, markdown_core_node *copy, const markdown_core_node *node) {
+    if (markdown_core_attributes_owns(&node->attributes) &&
+        !markdown_core_attributes_copy(&copy->attributes, &node->attributes)) {
+        state->failed = true;
+    }
+    if (copy->opaque) {
+        if (state->failed || !copy->element->opaque_copy_func(copy->element, copy, node)) {
+            copy->opaque = NULL;
+            state->failed = true;
+        }
+    }
+    S_copy_node_as(state, copy);
+}
+
+static markdown_core_node *S_copy(markdown_core_node_pool *pool, const markdown_core_node *node,
+                                  markdown_core_node_internal_flags borrows);
+
+/* A field of a copy: a node the copy shares when it is COMMITTED, and a copy
+ * of its own otherwise, which borrows the field's content. */
+static int S_copy_field(markdown_core_node **slot, void *context) {
+    S_copy_state *state = context;
+    const markdown_core_node *held = *slot;
+    if (!held) {
+        return 1;
+    }
+    if (held->flags & MARKDOWN_CORE_NODE__COMMITTED) {
+        state->shares = true;
+        return 1;
+    }
+    *slot = state->failed ? NULL : S_copy(state->pool, held, MARKDOWN_CORE_NODE__BORROWS_CONTENT);
+    state->failed = !*slot;
     return 1;
 }
 
-/* Exchanges `size` bytes at `a` and `b`, through a buffer of `capacity`. */
-#define S_SWAP_BYTES(a, b, capacity)                                                                                   \
-    do {                                                                                                               \
-        unsigned char held[capacity];                                                                                  \
-        memcpy(held, (a), sizeof(held));                                                                               \
-        memcpy((a), (b), sizeof(held));                                                                                \
-        memcpy((b), held, sizeof(held));                                                                               \
-    } while (0)
-
-#define S_NODE_VALUE_OFFSET offsetof(markdown_core_node, attributes)
-
-void markdown_core_node_swap_values(markdown_core_node *a, markdown_core_node *b) {
-    S_SWAP_BYTES((unsigned char *)a + S_NODE_VALUE_OFFSET, (unsigned char *)b + S_NODE_VALUE_OFFSET,
-                 sizeof(markdown_core_node) - S_NODE_VALUE_OFFSET);
-    /* A record in the slot stays in the slot: the bytes move, not the view.
-     * The kind is the same, so either both records are in their slots or
-     * neither is. */
-    if (a->as.data && !a->node_data_allocation) {
-        unsigned char *p = S_slot_of(a)->record, *q = S_slot_of(b)->record;
-        S_SWAP_BYTES(p, q, MARKDOWN_CORE_NODE_SLOT_RECORD_BYTES);
-        a->as.data = p;
-        b->as.data = q;
+static markdown_core_node *S_copy(markdown_core_node_pool *pool, const markdown_core_node *node,
+                                  markdown_core_node_internal_flags borrows) {
+    markdown_core_node *copy = S_copy_slot(pool, node);
+    if (!copy) {
+        return NULL;
     }
-    /* The node-valued fields are places: each node takes its own back. */
-    S_field_pair pair = {a->as.data, b->as.data};
-    S_visit_record_fields(a, S_field_swap, &pair);
-    if (a->element && a->element->visit_owned_subtrees_func) {
-        pair = (S_field_pair){a->opaque, b->opaque};
-        a->element->visit_owned_subtrees_func(a->element, a, S_field_swap, &pair);
+    S_copy_borrow(copy, node, borrows);
+    /* A field holds no children: its holder, which completes it, has not
+     * completed (markdown_core_node_copy). */
+    assert((borrows & MARKDOWN_CORE_NODE__BORROWS_CHILDREN) || !node->child_count);
+    S_copy_state state = {pool, false, false};
+    copy->source.places = NULL;
+    S_copy_owned(&state, copy, node);
+    if (node->source.places && !state.failed) {
+        const size_t bytes =
+            sizeof(markdown_core_places) + node->source.places->count * sizeof(markdown_core_source_place);
+        copy->source.places = markdown_core_node_pool_bytes(pool, bytes);
+        if (copy->source.places) {
+            memcpy(copy->source.places, node->source.places, bytes);
+        } else {
+            state.failed = true;
+        }
+    }
+    S_visit_fields(copy, S_copy_field, &state);
+    if (state.shares) {
+        copy->flags |= MARKDOWN_CORE_NODE__SHARES_FIELDS;
+    }
+    if (state.failed) {
+        markdown_core_node_pool_release(pool, copy);
+        return NULL;
+    }
+    return copy;
+}
+
+markdown_core_node *markdown_core_node_copy(markdown_core_node_pool *pool, const markdown_core_node *node) {
+    return S_copy(pool, node, MARKDOWN_CORE_NODE__BORROWS_CHILDREN | MARKDOWN_CORE_NODE__BORROWS_CONTENT);
+}
+
+static markdown_core_node *S_candidate(markdown_core_node_pool *pool, const markdown_core_node *node, bool inlines);
+
+/* A field of a candidate: a candidate of its own, whose content is inline
+ * content its completion makes. */
+static int S_candidate_field(markdown_core_node **slot, void *context) {
+    S_copy_state *state = context;
+    if (*slot) {
+        *slot = state->failed ? NULL : S_candidate(state->pool, *slot, true);
+        state->failed = !*slot;
+    }
+    return 1;
+}
+
+static markdown_core_node *S_candidate(markdown_core_node_pool *pool, const markdown_core_node *node, bool inlines) {
+    markdown_core_node *copy = S_copy_slot(pool, node);
+    if (!copy) {
+        return NULL;
+    }
+    copy->id = 0;
+    copy->where.place = (markdown_core_place){0, 0};
+    copy->source.places = NULL;
+    if (inlines) {
+        copy->children = NULL;
+        copy->child_count = 0;
+    }
+    S_copy_borrow(copy, node,
+                  inlines ? MARKDOWN_CORE_NODE__BORROWS_CONTENT
+                          : MARKDOWN_CORE_NODE__BORROWS_CHILDREN | MARKDOWN_CORE_NODE__BORROWS_CONTENT);
+    S_copy_state state = {pool, false, false};
+    S_copy_owned(&state, copy, node);
+    S_visit_fields(copy, S_candidate_field, &state);
+    if (state.failed) {
+        markdown_core_node_pool_release(pool, copy);
+        return NULL;
+    }
+    return copy;
+}
+
+markdown_core_node *markdown_core_node_candidate(markdown_core_node_pool *pool, const markdown_core_node *node,
+                                                 bool inlines) {
+    return S_candidate(pool, node, inlines);
+}
+
+/* A visit of the fields of a copy that takes each COMMITTED node it holds
+ * into the field of the original in the same place: fields of one kind sit
+ * at one offset from the storage that holds them, the record or the
+ * element's payload. */
+typedef struct {
+    const unsigned char *storage;
+    unsigned char *original;
+} S_field_pair;
+
+static int S_field_share(markdown_core_node **slot, void *context) {
+    S_field_pair *pair = context;
+    if (*slot && ((*slot)->flags & MARKDOWN_CORE_NODE__COMMITTED)) {
+        markdown_core_node **at =
+            (markdown_core_node **)(pair->original + ((const unsigned char *)slot - pair->storage));
+        *at = *slot;
+    }
+    return 1;
+}
+
+void markdown_core_node_share_fields(markdown_core_node *original, markdown_core_node *copy) {
+    S_field_pair pair = {copy->as.data, original->as.data};
+    S_visit_record_fields(copy, S_field_share, &pair);
+    if (copy->element && copy->element->visit_owned_subtrees_func) {
+        pair = (S_field_pair){copy->opaque, original->opaque};
+        copy->element->visit_owned_subtrees_func(copy->element, copy, S_field_share, &pair);
+    }
+}
+
+/* A field root of a candidate takes what it borrows from the field root of
+ * the lender in the same place, as its holder does: a candidate's field
+ * roots are candidates of the lender's (markdown_core_node_candidate), which
+ * hold no field roots of their own but a directive's label. */
+static int S_field_take(markdown_core_node **slot, void *context) {
+    S_field_pair *pair = context;
+    markdown_core_node *lender =
+        *(markdown_core_node **)(pair->original + ((const unsigned char *)slot - pair->storage));
+    if (*slot) {
+        markdown_core_node_take_borrowed(*slot, lender);
+    }
+    return 1;
+}
+
+void markdown_core_node_take_borrowed(markdown_core_node *taker, markdown_core_node *lender) {
+    const markdown_core_node_internal_flags borrowed =
+        taker->flags & (MARKDOWN_CORE_NODE__BORROWS_CHILDREN | MARKDOWN_CORE_NODE__BORROWS_CONTENT);
+    taker->flags &= (markdown_core_node_internal_flags)~borrowed;
+    lender->flags |= borrowed;
+    S_field_pair pair = {taker->as.data, lender->as.data};
+    S_visit_record_fields(taker, S_field_take, &pair);
+    if (taker->element && taker->element->visit_owned_subtrees_func) {
+        pair = (S_field_pair){taker->opaque, lender->opaque};
+        taker->element->visit_owned_subtrees_func(taker->element, taker, S_field_take, &pair);
     }
 }
 

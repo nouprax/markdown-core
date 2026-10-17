@@ -325,6 +325,71 @@ void markdown_core_attributes_free(markdown_core_attributes *v) {
     memset(v, 0, sizeof(*v));
 }
 
+/* The end of a chunk of the value's block, past its terminating NUL, when
+ * it lies in the block and past `end`. */
+static const unsigned char *block_end(const markdown_core_chunk *chunk, const unsigned char *start,
+                                      const unsigned char *end) {
+    const unsigned char *past = chunk->data + chunk->len + 1;
+    return !chunk->alloc && chunk->data >= start && past > end ? past : end;
+}
+
+/* THE VALUE'S BLOCK IS ITS TABLES AND THEN ITS STRINGS (lay_out), each
+ * string terminated, so the block ends past the last string's NUL, and past
+ * its tables when it holds no string. Copying it and moving every chunk that
+ * points into it by the distance the copy lies at keeps its layout. */
+bool markdown_core_attributes_copy(markdown_core_attributes *copy, const markdown_core_attributes *value) {
+    *copy = *value;
+    copy->storage = NULL;
+    if (value->storage) {
+        const unsigned char *const start = value->storage;
+        const unsigned char *end = start;
+        if (value->records) {
+            end = (const unsigned char *)(value->records + value->record_count);
+        }
+        if (value->classes && (const unsigned char *)(value->classes + value->class_count) > end) {
+            end = (const unsigned char *)(value->classes + value->class_count);
+        }
+        end = block_end(&value->anchor, start, end);
+        for (uint32_t i = 0; i < value->class_count; i++) {
+            end = block_end(&value->classes[i], start, end);
+        }
+        for (uint32_t i = 0; i < value->record_count; i++) {
+            end = block_end(&value->records[i].name, start, end);
+            end = block_end(&value->records[i].value, start, end);
+        }
+        unsigned char *storage = markdown_core_realloc(NULL, (size_t)(end - start));
+        if (!storage) {
+            *copy = (markdown_core_attributes){0};
+            return false;
+        }
+        memcpy(storage, start, (size_t)(end - start));
+        const ptrdiff_t moved = storage - start;
+        copy->storage = storage;
+        copy->records =
+            value->records ? (markdown_core_record *)(void *)((unsigned char *)value->records + moved) : NULL;
+        copy->classes =
+            value->classes ? (markdown_core_chunk *)(void *)((unsigned char *)value->classes + moved) : NULL;
+        for (uint32_t i = 0; i < copy->class_count; i++) {
+            copy->classes[i].data += moved;
+        }
+        for (uint32_t i = 0; i < copy->record_count; i++) {
+            copy->records[i].name.data += moved;
+            copy->records[i].value.data += moved;
+        }
+        if (!value->anchor.alloc && value->anchor.data >= start && value->anchor.data < end) {
+            copy->anchor.data += moved;
+        }
+    }
+    if (value->anchor.alloc) {
+        copy->anchor.alloc = 0;
+        if (!markdown_core_chunk_to_cstr(&copy->anchor)) {
+            markdown_core_attributes_free(copy);
+            return false;
+        }
+    }
+    return true;
+}
+
 /* The memo exists only once recognition ran (see the recogniser above): a
  * parser that never asked owns nothing and releases nothing. The scratch is
  * borrowed and released by its owner, and totals the work of every

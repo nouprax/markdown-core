@@ -578,6 +578,27 @@ static void opaque_alloc(const markdown_core_element *self, markdown_core_node *
 
 static void opaque_free(const markdown_core_element *self, markdown_core_node *node) { free_node_table(node->opaque); }
 
+static bool opaque_copy(const markdown_core_element *self, markdown_core_node *copy, const markdown_core_node *node) {
+    const markdown_core_table *table = node->opaque;
+    markdown_core_table *made = markdown_core_realloc(NULL, sizeof(*made));
+    if (!made) {
+        copy->opaque = NULL;
+        return false;
+    }
+    *made = *table;
+    if (table->columns) {
+        made->columns = markdown_core_realloc(NULL, table->column_count * sizeof(*made->columns));
+        if (!made->columns) {
+            markdown_core_free(made);
+            copy->opaque = NULL;
+            return false;
+        }
+        memcpy(made->columns, table->columns, table->column_count * sizeof(*made->columns));
+    }
+    copy->opaque = made;
+    return true;
+}
+
 static int visit_owned_subtrees(const markdown_core_element *self, markdown_core_node *node,
                                 markdown_core_owned_subtree_visitor visitor, void *context) {
     markdown_core_table *table = node->opaque;
@@ -1208,8 +1229,10 @@ enum {
 static markdown_core_line_facts *table_search_fact(table_source *source, size_t index) {
     table_source_line *line = &source->lines[index];
     markdown_core_line_facts *fact = markdown_core_parser_get_line_facts(source->parser, line->line);
-    if (fact && (fact->table_container != source->lookahead.parent || fact->table_offset != line->offset)) {
+    if (fact && (fact->table_container != source->lookahead.parent || fact->table_offset != line->offset ||
+                 fact->table_epoch != source->parser->fact_epoch)) {
         fact->table_container = source->lookahead.parent;
+        fact->table_epoch = source->parser->fact_epoch;
         fact->table_offset = line->offset;
         fact->table_absent = 0;
     }
@@ -2687,5 +2710,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .contains_inlines_func = contains_inlines,
     .opaque_alloc_func = opaque_alloc,
     .opaque_free_func = opaque_free,
+    .opaque_copy_func = opaque_copy,
     .visit_owned_subtrees_func = visit_owned_subtrees,
 };

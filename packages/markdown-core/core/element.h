@@ -159,9 +159,21 @@ struct markdown_core_element {
                                    const unsigned char *, size_t);
     void (*prepare_document)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*finish_document)(const markdown_core_element_instance *, markdown_core_parser *);
+    /* A SNAPSHOT (blocks.c, THE SNAPSHOT) begins once its copies stand in
+     * for the builders and the pending block, and ends once the parse is
+     * back at its commit: what the document's elements keep across the
+     * parse names the copies while it lasts, and keeps nothing it made. */
+    void (*start_snapshot)(const markdown_core_element_instance *, markdown_core_parser *);
+    void (*end_snapshot)(const markdown_core_element_instance *, markdown_core_parser *);
     /* The last step of the parse: the tree is final, and the owner publishes
      * it (ids, extents, definition tables). */
     void (*publish_document)(const markdown_core_element_instance *, markdown_core_parser *);
+    /* A candidate the finalize completed again for a block the parse's
+     * revision published (blocks.c, A LOOKUP THAT FOUND NOTHING), published
+     * against that block: `*same` says whether the candidate equals it. A
+     * failure fails the parse. */
+    void (*publish_candidate)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                              markdown_core_node *, bool *);
     markdown_core_node *(*open_text_block)(const markdown_core_element_instance *, markdown_core_parser *,
                                            markdown_core_node *, markdown_core_chunk *);
     markdown_core_node *(*try_interrupting_block)(const markdown_core_element_instance *, markdown_core_parser *,
@@ -306,6 +318,7 @@ struct markdown_core_element {
     const markdown_core_node_type *finish_scope_kinds;
     markdown_core_opaque_alloc_func opaque_alloc_func;
     markdown_core_opaque_free_func opaque_free_func;
+    markdown_core_opaque_copy_func opaque_copy_func;
     markdown_core_visit_owned_subtrees_func visit_owned_subtrees_func;
     /* The bytes of the element's parse record and of its record in each
      * inline run (markdown-core-element-api.h, "AN ELEMENT AS ONE PARSE HOLDS

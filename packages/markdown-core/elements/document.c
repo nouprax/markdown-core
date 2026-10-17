@@ -33,18 +33,40 @@ static void prepare_document(const markdown_core_element_instance *self, markdow
         markdown_core_headings_prepare(headings, parser);
     }
 }
+/* The headings take their anchors at each snapshot and at the finalize, and
+ * a snapshot's commit keeps them for the next: only the finalize, the parse's
+ * last, lets them go. */
 static void finish_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
     if (!parser->error && headings) {
         markdown_core_headings_finish(headings, parser);
     }
-    if (headings) {
+    if (headings && !parser->snapshot) {
         markdown_core_headings_dispose(headings);
+    }
+}
+static void start_snapshot(const markdown_core_element_instance *self, markdown_core_parser *parser) {
+    const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
+    if (headings) {
+        markdown_core_headings_start_snapshot(headings, parser);
+    }
+}
+static void end_snapshot(const markdown_core_element_instance *self, markdown_core_parser *parser) {
+    const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
+    if (headings) {
+        markdown_core_headings_end_snapshot(headings, parser);
     }
 }
 static void publish_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     (void)self;
     if (!markdown_core_publish_tree(parser)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+}
+static void publish_candidate(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                              markdown_core_node *candidate, markdown_core_node *block, bool *same) {
+    (void)self;
+    if (!markdown_core_publish_candidate(parser, candidate, block, same)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
 }
@@ -62,5 +84,8 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
     .read_document_prefix = read_document_prefix,
     .prepare_document = prepare_document,
     .finish_document = finish_document,
+    .start_snapshot = start_snapshot,
+    .end_snapshot = end_snapshot,
     .publish_document = publish_document,
+    .publish_candidate = publish_candidate,
 };

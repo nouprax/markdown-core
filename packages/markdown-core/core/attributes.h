@@ -84,6 +84,10 @@ static MARKDOWN_CORE_INLINE bool markdown_core_attributes_owns(const markdown_co
 }
 /* Releases what the value owns, leaving it empty. */
 void markdown_core_attributes_free(markdown_core_attributes *value);
+/* `copy` as a value equal to `value` that owns a block and an anchor string
+ * of its own where `value` does. False, with `copy` empty, when storage could
+ * not be had. */
+bool markdown_core_attributes_copy(markdown_core_attributes *copy, const markdown_core_attributes *value);
 /* A value holding one class, `bytes`, and nothing else: the value an element
  * makes when its syntax names a class without an attribute container. The
  * caller supplies an empty value. Returns 0 on allocation failure, leaving it

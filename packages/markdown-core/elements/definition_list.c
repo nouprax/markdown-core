@@ -250,30 +250,17 @@ static bool continue_container(const markdown_core_element_instance *self, markd
            markdown_core_definition_list_continue(parser, node, input);
 }
 /* A definition list, a definition and a body end where their last child
- * ends: taken at each one's EXIT, as completion reaches it, when its children
- * have settled before it. */
-static markdown_core_finish_result finish_step(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                               markdown_core_node *node, markdown_core_node *parent,
-                                               markdown_core_event_type event, void **state) {
-    (void)self;
-    (void)parser;
-    (void)event;
-    (void)parent;
-    (void)state;
-    assert(event == MARKDOWN_CORE_EVENT_EXIT);
-    markdown_core_definition_list_complete(node);
-    return MARKDOWN_CORE_FINISH_CONTINUE;
-}
-static const markdown_core_node_type DEFINITION_LIST_EXIT_KINDS[] = {
-    MARKDOWN_CORE_NODE_DEFINITION_LIST, MARKDOWN_CORE_NODE_DEFINITION, MARKDOWN_CORE_NODE_DEFINITION_BODY,
-    MARKDOWN_CORE_NODE_NONE};
+ * ends, and a body without children ends with its marker's line: taken as
+ * each closes, once its children have settled. */
 static bool close_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
                         markdown_core_node *node, markdown_core_node *parent) {
     (void)self;
     (void)parser;
     (void)parent;
-    if (node->kind == MARKDOWN_CORE_NODE_DEFINITION_BODY) {
-        markdown_core_definition_list_close_body(node);
+    if (node->child_count) {
+        node->where.place.end = node->children[node->child_count - 1]->where.place.end;
+    } else if (node->kind == MARKDOWN_CORE_NODE_DEFINITION_BODY) {
+        node->where.place.end = (uint32_t)node->internal_offset;
     }
     return true;
 }
@@ -281,8 +268,6 @@ static bool close_block(const markdown_core_element_instance *self, markdown_cor
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
     .peers = DEFINITION_LIST_PEERS,
     .state_size = sizeof(markdown_core_definition_list_work),
-    .finish_step = finish_step,
-    .finish_exit_kinds = DEFINITION_LIST_EXIT_KINDS,
     .close_block = close_block,
 
     .accepts_blank = accepts_blank,
@@ -294,17 +279,3 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
     .scan_block_gate = {.bytes = ":~"},
     .try_opening_paragraph = try_paragraph,
 };
-
-void markdown_core_definition_list_close_body(markdown_core_node *node) {
-    if (!node->child_count) {
-        node->where.place.end = (uint32_t)node->internal_offset;
-    }
-}
-
-void markdown_core_definition_list_complete(markdown_core_node *node) {
-    if ((node->kind == MARKDOWN_CORE_NODE_DEFINITION_LIST || node->kind == MARKDOWN_CORE_NODE_DEFINITION ||
-         node->kind == MARKDOWN_CORE_NODE_DEFINITION_BODY) &&
-        node->child_count) {
-        node->where.place.end = node->children[node->child_count - 1]->where.place.end;
-    }
-}

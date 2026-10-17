@@ -295,6 +295,14 @@ typedef void (*markdown_core_opaque_alloc_func)(const markdown_core_element *ele
 
 typedef void (*markdown_core_opaque_free_func)(const markdown_core_element *element, markdown_core_node *node);
 
+/* `copy`'s payload as a copy of `node`'s, which `copy->opaque` still
+ * names: what the payload owns is copied, and the nodes its fields hold are
+ * left as they are, which the engine copies after it (node.h,
+ * markdown_core_node_copy). False, with `copy->opaque` NULL, when storage
+ * could not be had. */
+typedef bool (*markdown_core_opaque_copy_func)(const markdown_core_element *element, markdown_core_node *copy,
+                                               const markdown_core_node *node);
+
 /** A parser element is a `static const` descriptor in a fixed compile-time
  * table (`elements/core-elements.c`), not an object built at run time.
  *

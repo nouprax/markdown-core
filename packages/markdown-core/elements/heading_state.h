@@ -3,16 +3,27 @@
 #include "map.h"
 #include "inline_internal.h"
 
-/* A heading is registered once when its block closes. Source order is settled
- * before resolution, independently of the order in which mapped inputs close.
- * Pending holds the ordinary inline cursor at its declaration dependency;
- * `parsed` says the heading has declared its label and its inline content is
- * parsed, which a completion does once, for the headings that settled since
- * the last (markdown_core_headings_prepare); nodes remain owned by the tree. */
+/* A heading is registered once when its block closes, with where it starts.
+ * Source order is settled before resolution, independently of the order in
+ * which mapped inputs close. Pending holds the ordinary inline cursor at its
+ * declaration dependency; `parsed` says the heading has declared its label
+ * and its inline content is parsed, which a completion does once, for the
+ * headings that settled since the last (markdown_core_headings_prepare);
+ * nodes remain owned by the tree. A heading a streaming commit settled is
+ * named by its path once it is parsed, and its node by no address
+ * (blocks.c, THE PATHS); any other by its node. `authored` says its
+ * attributes wrote its anchor. `name` is the anchor the headings computed
+ * for it, the node's own bytes, `name_size` of them, of which the first
+ * `base_size` are the base its text projects to; NULL when it holds none,
+ * or when its inline content was made again since. */
 typedef struct {
     markdown_core_node *node;
+    const markdown_core_path *path;
     markdown_core_inline_state *pending;
-    bool parsed;
+    const unsigned char *name;
+    bufsize_t base_size, name_size;
+    uint32_t start;
+    bool parsed, authored;
 } markdown_core_heading_parse;
 
 /* The headings in the order they closed, and `parsed`, how many come first
@@ -23,10 +34,13 @@ typedef struct {
 } markdown_core_heading_collection;
 
 /* THE HEADINGS OF ONE PARSE (the heading element's parse record): each
- * heading as its block closed, and the projection and lookup work the
- * assignment of their anchors did, for its complexity gate. */
+ * heading as its block closed, the collection's count and how many were
+ * parsed as the snapshot being taken found them
+ * (markdown_core_headings_start_snapshot), and the projection and lookup
+ * work the assignment of their anchors did, for its complexity gate. */
 typedef struct {
     markdown_core_heading_collection headings;
+    size_t snapshot_count, snapshot_parsed;
     size_t anchor_work;
 } markdown_core_heading_state;
 
