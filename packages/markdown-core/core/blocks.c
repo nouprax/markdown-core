@@ -161,7 +161,10 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     markdown_core_free(parser->walk_stack);
     markdown_core_free(parser->block_inputs);
     S_release_input(&parser->input);
-    S_release_input(&parser->idle_input);
+    if (parser->cell_input) {
+        S_release_input(parser->cell_input);
+        markdown_core_free(parser->cell_input);
+    }
     S_release_builders(parser);
     if (parser->root) {
         markdown_core_node_free(parser->root);
@@ -259,7 +262,6 @@ void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revi
     parser->settle_flags = MARKDOWN_CORE_NODE__COMMITTED;
     markdown_core_strbuf_init(&parser->curline, 256);
     markdown_core_strbuf_init(&parser->input.last_line, 0);
-    markdown_core_strbuf_init(&parser->idle_input.last_line, 0);
     markdown_core_registry_init(&parser->registry);
     /* The line index is a parse-owned workspace, like curline. Establish its
      * initial capacity before any input; inputs reset length, never
@@ -1944,7 +1946,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_close_document(mar
 
 /* Each queued cell is the root of its own input: the stack holds only the
  * cell while its content is read, and its blocks settle into it as the input
- * ends. The cells are read on the idle input's storage, and the document's
+ * ends. The cells are read on the cell input's storage, and the document's
  * input, line state and builders wait unchanged until they are read, so the
  * cells can be read wherever the document's parse stands. A failed read
  * releases the builders open in the cell, as a failed commit's are, and
@@ -1952,6 +1954,14 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_close_document(mar
 static void S_parse_block_inputs(markdown_core_parser *parser) {
     if (parser->block_input_cursor == parser->block_input_count) {
         return;
+    }
+    if (!parser->cell_input) {
+        parser->cell_input = markdown_core_alloc(1, sizeof(*parser->cell_input));
+        if (!parser->cell_input) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            return;
+        }
+        markdown_core_strbuf_init(&parser->cell_input->last_line, 0);
     }
     const markdown_core_parser_input document = parser->input;
     const int line_number = parser->line_number;
@@ -1961,7 +1971,7 @@ static void S_parse_block_inputs(markdown_core_parser *parser) {
     markdown_core_node *const block_root = parser->block_root, *const current = parser->current;
     markdown_core_node *const pending = parser->pending;
     const uint32_t enclosing = parser->input_enclosing;
-    parser->input = parser->idle_input;
+    parser->input = *parser->cell_input;
     parser->pending = NULL;
     while (parser->block_input_cursor < parser->block_input_count && !parser->error) {
         const markdown_core_block_input input = parser->block_inputs[parser->block_input_cursor++];
@@ -1984,7 +1994,7 @@ static void S_parse_block_inputs(markdown_core_parser *parser) {
         owner->content_map.count = 0;
         owner->content_map.offset = 0;
     }
-    parser->idle_input = parser->input;
+    *parser->cell_input = parser->input;
     parser->input = document;
     parser->line_number = line_number;
     parser->line_start = line_start;

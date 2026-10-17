@@ -133,8 +133,8 @@ static void session_close(markdown_core_session *session) {
     markdown_core_free(session->text);
 }
 
-/* Opens a zeroed session in place: makes its parser, starts its committed
- * parse and takes the source. */
+/* Opens a zeroed session in place: makes its parser, takes the source and
+ * starts its committed parse. */
 static markdown_core_status session_open(markdown_core_session *session, const uint8_t *source, size_t size,
                                          markdown_core_text_unit unit) {
     session->document.unit = unit;
@@ -143,8 +143,9 @@ static markdown_core_status session_open(markdown_core_session *session, const u
     if (!session->committed) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
+    markdown_core_status status = session_take(session, source, size);
     markdown_core_parser_start(session->committed, &session->revision);
-    return session_take(session, source, size);
+    return status;
 }
 
 markdown_core_status markdown_core_session_new(const uint8_t *source, size_t size, markdown_core_text_unit unit,

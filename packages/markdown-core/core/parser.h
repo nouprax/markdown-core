@@ -329,6 +329,11 @@ struct markdown_core_parser {
     /* The flags a block takes as it settles (blocks.c, A BLOCK SETTLES):
      * COMMITTED in a commit, nothing in a snapshot. */
     markdown_core_node_internal_flags settle_flags;
+    /* Whether completion runs for a snapshot rather than for the finalize
+     * (docs/plans/2026-09-29-incremental-parsing.md, 5.4): a lookup sees only
+     * the definitions that start before the block being completed, and one
+     * that finds none is recorded (markdown_core_parser_find_definition). */
+    bool snapshot;
     /* What the parse keeps as a session's (markdown_core_parser_stream), or
      * NULL: a one-shot parse keeps none of it. */
     markdown_core_stream *stream;
@@ -337,11 +342,6 @@ struct markdown_core_parser {
      * declare their labels before inline content is parsed, and completion
      * reserves explicit anchors where it meets them. */
     markdown_core_registry registry;
-    /* Whether completion runs for a snapshot rather than for the finalize
-     * (docs/plans/2026-09-29-incremental-parsing.md, 5.4): a lookup sees only
-     * the definitions that start before the block being completed, and one
-     * that finds none is recorded (markdown_core_parser_find_definition). */
-    bool snapshot;
     /* The block being completed: the queued block the completion walk is in
      * (blocks.c, COMPLETION), or the heading whose inline content the
      * document's preparation parses. */
@@ -405,9 +405,9 @@ struct markdown_core_parser {
     /* The active input: the document's text, or a table cell's content
      * while its blocks are read. */
     markdown_core_parser_input input;
-    /* The input that is not active: the storage the cells' inputs reuse
-     * while the document's input is read, kept for the next cell. */
-    markdown_core_parser_input idle_input;
+    /* The storage the cells' inputs are read on, made as the first cell is
+     * read and kept for the next while the document's input is read. */
+    markdown_core_parser_input *cell_input;
     size_t input_line_work;
     /* A complete candidate may consume through a later source boundary. The
      * source driver advances to it after the current line has finished. */

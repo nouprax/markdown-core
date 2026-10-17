@@ -271,27 +271,18 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
         const markdown_core_element *structure = markdown_core_structure_for_kind(kind);
         record.structure = structure ? markdown_core_dialect_instance(dialect, structure) : NULL;
         if (record.structure) {
-            const struct {
-                bool fact;
-                unsigned flag;
-            } facts[] = {
-                {structure->inline_content, MARKDOWN_CORE_KIND_INLINES},
-                {structure->contains_inlines_func != NULL, MARKDOWN_CORE_KIND_INLINES_ASK},
-                {structure->deferred_inlines, MARKDOWN_CORE_KIND_DEFERRED},
-                {structure->content_mode == MARKDOWN_CORE_CONTENT_LITERAL, MARKDOWN_CORE_KIND_LINES},
-                {structure->accepts_lines_func != NULL, MARKDOWN_CORE_KIND_LINES_ASK},
-                {structure->content_mode == MARKDOWN_CORE_CONTENT_PROSE, MARKDOWN_CORE_KIND_PROSE},
-                {structure->paragraph, MARKDOWN_CORE_KIND_IS_PARAGRAPH},
-                {structure->blank_opaque, MARKDOWN_CORE_KIND_BLANK_OPAQUE},
-                {structure->blank_line != NULL, MARKDOWN_CORE_KIND_BLANK_ASK},
-                {structure->blank_runs, MARKDOWN_CORE_KIND_BLANK_RUNS},
-                {structure->propagates_child_blank, MARKDOWN_CORE_KIND_BLANK_PROPAGATES},
-            };
-            for (size_t i = 0; i < sizeof(facts) / sizeof(facts[0]); i++) {
-                if (facts[i].fact) {
-                    record.flags |= (uint16_t)facts[i].flag;
-                }
-            }
+            record.flags =
+                (uint16_t)((structure->inline_content ? MARKDOWN_CORE_KIND_INLINES : 0) |
+                           (structure->contains_inlines_func ? MARKDOWN_CORE_KIND_INLINES_ASK : 0) |
+                           (structure->deferred_inlines ? MARKDOWN_CORE_KIND_DEFERRED : 0) |
+                           (structure->content_mode == MARKDOWN_CORE_CONTENT_LITERAL ? MARKDOWN_CORE_KIND_LINES : 0) |
+                           (structure->accepts_lines_func ? MARKDOWN_CORE_KIND_LINES_ASK : 0) |
+                           (structure->content_mode == MARKDOWN_CORE_CONTENT_PROSE ? MARKDOWN_CORE_KIND_PROSE : 0) |
+                           (structure->paragraph ? MARKDOWN_CORE_KIND_IS_PARAGRAPH : 0) |
+                           (structure->blank_opaque ? MARKDOWN_CORE_KIND_BLANK_OPAQUE : 0) |
+                           (structure->blank_line ? MARKDOWN_CORE_KIND_BLANK_ASK : 0) |
+                           (structure->blank_runs ? MARKDOWN_CORE_KIND_BLANK_RUNS : 0) |
+                           (structure->propagates_child_blank ? MARKDOWN_CORE_KIND_BLANK_PROPAGATES : 0));
             record.complete = structure->complete_node;
         }
         if (markdown_core_kind_owns_fields(kind)) {
