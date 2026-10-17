@@ -166,6 +166,8 @@ typedef struct markdown_core_finish_step_entry {
  *   takes a text line as prose; IS_PARAGRAPH, `paragraph`;
  * - BLANK_OPAQUE, BLANK_ASK (`blank_line`), BLANK_RUNS and BLANK_PROPAGATES
  *   (`propagates_child_blank`): what a blank line means inside it;
+ * - FOLDS: the kind is one of `fold_kinds`, and `fold_child` is asked as a
+ *   child settles into a block of it;
  * - FIELDS: the kind can own a field root through its own record
  *   (`markdown_core_kind_owns_fields`, element.h -- a subtree an element owns
  *   is found through the node's `element`, which the walk tests beside this).
@@ -186,7 +188,8 @@ enum {
     MARKDOWN_CORE_KIND_BLANK_OPAQUE = 1u << 8,
     MARKDOWN_CORE_KIND_BLANK_ASK = 1u << 9,
     MARKDOWN_CORE_KIND_BLANK_RUNS = 1u << 10,
-    MARKDOWN_CORE_KIND_BLANK_PROPAGATES = 1u << 11
+    MARKDOWN_CORE_KIND_BLANK_PROPAGATES = 1u << 11,
+    MARKDOWN_CORE_KIND_FOLDS = 1u << 12
 };
 typedef struct markdown_core_kind_record {
     const markdown_core_element_instance *structure;

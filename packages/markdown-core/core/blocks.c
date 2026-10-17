@@ -1071,36 +1071,44 @@ void markdown_core_block_rebase_content_marks(markdown_core_parser *parser, mark
     markdown_core_parser_adopt_content_marks(parser, &node->content_map, &node->content_map, cut, remaining);
 }
 
-/* The last child of `node`, a block whose children have settled, the
- * blank-line facts see, or NULL. */
-static markdown_core_node *S_last_seen_child(const markdown_core_node *node) {
-    for (uint32_t i = node->child_count; i > 0; i--) {
-        if (!(node->children[i - 1]->flags & MARKDOWN_CORE_NODE__BLANK_TRANSPARENT)) {
-            return node->children[i - 1];
-        }
-    }
-    return NULL;
+/* ENDS_BLANK when `node`, a closed block, ends with a blank line, and none
+ * otherwise: its own last line was blank, or, for a block of a kind whose
+ * answer is its children's, the last child the facts see that settled into
+ * it ends with one (S_fold). */
+static inline markdown_core_node_internal_flags S_closed_ends_blank(const markdown_core_node *node) {
+    const markdown_core_node_internal_flags flags = node->flags;
+    return (flags & MARKDOWN_CORE_NODE__BLANK_FOLDED)      ? flags & MARKDOWN_CORE_NODE__ENDS_BLANK
+           : (flags & MARKDOWN_CORE_NODE__LAST_LINE_BLANK) ? MARKDOWN_CORE_NODE__ENDS_BLANK
+                                                           : 0;
 }
 
-/* Whether `node`, a closed block, ends with a blank line: its own last line
- * was blank, or, for a list and its items, the last child they see ends with
- * one, which is folded into the block as it closes (S_fold_ends_blank). */
+/* The same of any block: an open block answers with its own last line. */
 static inline bool S_ends_with_blank_line(const markdown_core_node *node) {
-    return (node->flags & MARKDOWN_CORE_NODE__BLANK_FOLDED) ? (node->flags & MARKDOWN_CORE_NODE__ENDS_BLANK) != 0
-                                                            : (node->flags & MARKDOWN_CORE_NODE__LAST_LINE_BLANK) != 0;
+    return (node->flags & MARKDOWN_CORE_NODE__OPEN) ? (node->flags & MARKDOWN_CORE_NODE__LAST_LINE_BLANK) != 0
+                                                    : S_closed_ends_blank(node) != 0;
 }
 
 bool markdown_core_block_ends_with_blank_line(const markdown_core_node *node) { return S_ends_with_blank_line(node); }
 
-/* A block of a kind whose blank-line answer is its children's, closing: its
- * children have settled, and the last one the facts see has its own answer,
- * which is the block's. A block with no such child answers with its own last
- * line, which a blank line can still write until it settles. */
-static void S_fold_ends_blank(markdown_core_node *node) {
-    const markdown_core_node *last = S_last_seen_child(node);
-    if (last) {
-        node->flags |=
-            MARKDOWN_CORE_NODE__BLANK_FOLDED | (S_ends_with_blank_line(last) ? MARKDOWN_CORE_NODE__ENDS_BLANK : 0);
+/* `node` settled into `parent`, a block of kind `kind` that folds its
+ * children (A BLOCK SETTLES): a child the blank-line facts see gives a block
+ * whose answer is its children's that answer, and spaces it when the child
+ * before it ended with a blank line; then the kind's fold hook takes it. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_fold(markdown_core_parser *parser,
+                                                                   const markdown_core_kind_record *kind,
+                                                                   markdown_core_node *parent,
+                                                                   const markdown_core_node *node) {
+    if ((kind->flags & MARKDOWN_CORE_KIND_BLANK_PROPAGATES) && !(node->flags & MARKDOWN_CORE_NODE__BLANK_TRANSPARENT)) {
+        const markdown_core_node_internal_flags flags = parent->flags;
+        parent->flags = (markdown_core_node_internal_flags)((flags & ~MARKDOWN_CORE_NODE__ENDS_BLANK) |
+                                                            MARKDOWN_CORE_NODE__BLANK_FOLDED |
+                                                            ((flags & MARKDOWN_CORE_NODE__ENDS_BLANK)
+                                                                 ? MARKDOWN_CORE_NODE__BLANK_SPACED
+                                                                 : 0) |
+                                                            S_closed_ends_blank(node));
+    }
+    if (kind->flags & MARKDOWN_CORE_KIND_FOLDS) {
+        kind->structure->element->fold_child(kind->structure, parser, parent, node);
     }
 }
 
@@ -1136,55 +1144,65 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_settle_failed(markdown_core_pa
  * end of the parent's children, and the completion queue with its parent. It
  * takes the parser's `settle_flags` -- COMMITTED in a commit, which a
  * snapshot reads and never writes -- and keeps its index among the parent's
- * children (THE PATHS).
+ * children (THE PATHS). A parent of a kind that folds its children takes
+ * what it reads of the child at once (S_fold).
  * Nothing writes it after this but completion, which makes its inline content
  * and asks the finish steps of its kind (markdown-core-element-api.h, THE
  * FINISH STEP). The document settles into nothing as the input ends: it joins
  * the queue last, and nothing holds it. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_settle(markdown_core_parser *parser,
                                                                      markdown_core_node *node,
-                                                                     markdown_core_node *parent) {
+                                                                     markdown_core_node *parent,
+                                                                     const markdown_core_kind_record *kind) {
     if (!markdown_core_node_push_child(parser->pool, parent, node)) {
         S_settle_failed(parser, node);
         return;
     }
     node->flags |= parser->settle_flags;
     markdown_core_scaffold_of(node)->prev.index = parent->child_count - 1;
+    if (kind->flags & (MARKDOWN_CORE_KIND_BLANK_PROPAGATES | MARKDOWN_CORE_KIND_FOLDS)) {
+        S_fold(parser, kind, parent, node);
+    }
     S_complete_later(parser, node, parent);
 }
 
 void markdown_core_block_settle(markdown_core_parser *parser, markdown_core_node *node, markdown_core_node *parent) {
     assert(parent != markdown_core_parser_current(parser) || !parser->pending);
-    S_settle(parser, node, parent);
+    S_settle(parser, node, parent, markdown_core_parser_block_kind(parser, parent));
 }
 
-/* The pending block settles into `holder`, the current block, as it takes
- * its next child or closes. */
-static inline void S_settle_pending(markdown_core_parser *parser, markdown_core_node *holder) {
+/* The pending block settles into `holder`, the current block of kind
+ * `kind`, as it takes its next child or closes. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_settle_pending_as(markdown_core_parser *parser,
+                                                                                markdown_core_node *holder,
+                                                                                const markdown_core_kind_record *kind) {
     markdown_core_node *pending = parser->pending;
     if (pending) {
         parser->pending = NULL;
-        S_settle(parser, pending, holder);
+        S_settle(parser, pending, holder, kind);
     }
 }
 
-/* A BLOCK CLOSES, its range settled, inside `parent`: a list and its items
- * fold whether they end with a blank line from their children, its element's
- * close hook makes the node it settles as, and a block that takes text lines
+/* The same, the holder's kind read only when a block is pending. */
+static inline void S_settle_pending(markdown_core_parser *parser, markdown_core_node *holder) {
+    if (parser->pending) {
+        S_settle_pending_as(parser, holder, markdown_core_parser_block_kind(parser, holder));
+    }
+}
+
+/* A BLOCK CLOSES, its range settled, inside `parent`: its element's close
+ * hook makes the node it settles as, and a block that takes text lines
  * in a container takes the runs of its own lines. False when the block
  * yields no node of its own: a paragraph that held only reference
  * definitions yielded them as References settled into `parent` before it. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_close(markdown_core_parser *parser, markdown_core_node *b,
+                                                                    const markdown_core_kind_record *kind,
                                                                     markdown_core_node *parent) {
     /* A block that takes text lines in a container has a run of its own
      * source on each of its lines, whatever its close hook makes of it; one
      * of the document itself lies on whole lines, its own source its range. */
-    const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, b);
     const bool lines = parent && parent != parser->root && S_kind_takes_text(kind, b);
     const markdown_core_element_instance *structure = kind->structure;
-    if (kind->flags & MARKDOWN_CORE_KIND_BLANK_PROPAGATES) {
-        S_fold_ends_blank(b);
-    }
     if (structure && structure->element->close_block &&
         !structure->element->close_block(structure, parser, b, parent)) {
         S_drop_block(parser, b);
@@ -1199,7 +1217,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_close(markdown_cor
 }
 
 void markdown_core_block_close_into(markdown_core_parser *parser, markdown_core_node *b, markdown_core_node *parent) {
-    if (S_close(parser, b, parent)) {
+    if (S_close(parser, b, markdown_core_parser_block_kind(parser, b), parent)) {
         markdown_core_block_settle(parser, b, parent);
     }
 }
@@ -1211,9 +1229,10 @@ static void S_close_current(markdown_core_parser *parser) {
     markdown_core_node *closing = parser->current;
     markdown_core_node *parent = markdown_core_scaffold_parent(closing);
     assert(closing->flags & MARKDOWN_CORE_NODE__OPEN);
-    S_settle_pending(parser, closing);
+    const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, closing);
+    S_settle_pending_as(parser, closing, kind);
     closing->flags &= ~MARKDOWN_CORE_NODE__OPEN;
-    bool kept = S_close(parser, closing, parent);
+    bool kept = S_close(parser, closing, kind, parent);
     markdown_core_scaffold_of(parent)->last = NULL;
     parser->current = parent;
     parser->pending = kept ? closing : NULL;
@@ -1937,14 +1956,15 @@ static void S_parse_block_inputs(markdown_core_parser *parser);
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_close_document(markdown_core_parser *parser) {
     markdown_core_node *root = parser->root;
     markdown_core_parser_close_below(parser, root);
-    S_settle_pending(parser, root);
+    const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, root);
+    S_settle_pending_as(parser, root, kind);
     S_parse_block_inputs(parser);
     if (parser->error) {
         return;
     }
     root->where.place.end = (uint32_t)parser->last_line_end;
     root->flags &= ~MARKDOWN_CORE_NODE__OPEN;
-    if (S_close(parser, root, NULL)) {
+    if (S_close(parser, root, kind, NULL)) {
         S_complete_later(parser, root, NULL);
     }
 }

@@ -294,12 +294,15 @@ typedef union {
 enum markdown_core_node__internal_flags {
     MARKDOWN_CORE_NODE__OPEN = (1 << 0),
     MARKDOWN_CORE_NODE__LAST_LINE_BLANK = (1 << 1),
-    /* The answer of a list or a list item with a child the blank-line facts
-     * see to whether it ends with a blank line: that child's, folded as the
-     * block closes, when its children have settled, and marked by
-     * BLANK_FOLDED (markdown_core_block_ends_with_blank_line). */
+    /* Whether the last child the blank-line facts see that settled into a
+     * block of a kind whose blank-line answer is its children's ends with a
+     * blank line; the block's answer once it has closed, with BLANK_FOLDED
+     * (markdown_core_block_ends_with_blank_line). */
     MARKDOWN_CORE_NODE__ENDS_BLANK = (1 << 2),
-    MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK = (1 << 3),
+    /* A blank line separates two children the blank-line facts see in such
+     * a block: one that settled into it ended with a blank line, and a later
+     * one settled after it. */
+    MARKDOWN_CORE_NODE__BLANK_SPACED = (1 << 3),
     // An HTML block whose own end condition matched on the line being
     // processed. `markdown_core_block_close` reads it to end the block on that line rather
     // than on the line before, and to know that a `-->` line really closed a
@@ -321,7 +324,8 @@ enum markdown_core_node__internal_flags {
      * and whether another block follows it, are answered by the blocks
      * around it. */
     MARKDOWN_CORE_NODE__BLANK_TRANSPARENT = (1 << 8),
-    /* ENDS_BLANK holds the block's answer, folded as it closed. */
+    /* A child the blank-line facts see has settled into the block, and
+     * ENDS_BLANK holds that child's answer. */
     MARKDOWN_CORE_NODE__BLANK_FOLDED = (1 << 9),
     MARKDOWN_CORE_NODE__BORROWS_CONTENT = (1 << 10),
     /* A heading's anchor that the headings computed rather than one its

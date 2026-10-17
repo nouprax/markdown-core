@@ -85,6 +85,16 @@ static bool S_element_refused(const markdown_core_element *element) {
             }
         }
     }
+    /* A fold hook asked at no kind, kinds without one to ask, or a kind to
+     * ask it at that is not a block kind of the element's structure. */
+    if (!element->fold_child != !(element->fold_kinds && *element->fold_kinds)) {
+        return true;
+    }
+    for (const markdown_core_node_type *kind = element->fold_kinds; kind && *kind; kind++) {
+        if (!MARKDOWN_CORE_NODE_TYPE_BLOCK_P(*kind) || markdown_core_structure_for_kind(*kind) != element) {
+            return true;
+        }
+    }
     /* Only part of the document lifecycle. */
     if ((element->init_document || element->dispose_document || element->read_document_prefix ||
          element->prepare_document || element->finish_document || element->publish_document ||
@@ -288,6 +298,13 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
             record.flags |= MARKDOWN_CORE_KIND_FIELDS;
         }
         dialect->kinds[index] = record;
+    }
+    /* A structure's fold hook is asked at the kinds it lists, each a block
+     * kind it is the structure of (S_element_refused). */
+    for (size_t i = 0; i < dialect->element_count; i++) {
+        for (const markdown_core_node_type *kind = dialect->instances[i].element->fold_kinds; kind && *kind; kind++) {
+            dialect->kinds[markdown_core_block_kind_index(*kind)].flags |= MARKDOWN_CORE_KIND_FOLDS;
+        }
     }
     /* The out-of-table index answers nothing; the storage is zeroed. */
 }

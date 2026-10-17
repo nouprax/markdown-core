@@ -11413,6 +11413,88 @@ static void session_snapshot_tables(test_batch_runner *runner) {
     }
 }
 
+/* The lists of a document in canonical walk order, into `lists`, which
+ * holds `capacity`; their count, or SIZE_MAX when the walk could not
+ * allocate. */
+static size_t document_lists(const markdown_core_document *document, const markdown_core_node **lists,
+                             size_t capacity) {
+    markdown_core_walk walk;
+    markdown_core_walk_item item;
+    size_t count = 0;
+    markdown_core_walk_begin(&walk, markdown_core_document_root(document));
+    while (markdown_core_walk_next(&walk, &item)) {
+        if (item.node && markdown_core_node_get_kind(item.node) == MARKDOWN_CORE_KIND_LIST && count < capacity) {
+            lists[count++] = item.node;
+        }
+    }
+    const bool failed = walk.failed;
+    markdown_core_walk_end(&walk);
+    return failed ? SIZE_MAX : count;
+}
+
+static bool list_tight(const markdown_core_node *list) {
+    markdown_core_list_flavor flavor;
+    markdown_core_optional_i64 start;
+    markdown_core_ordered_list_variant variant;
+    markdown_core_ordered_list_delimiter delimiter;
+    bool tight = false;
+    markdown_core_node_list_properties(list, &flavor, &start, &variant, &delimiter, &tight);
+    return tight;
+}
+
+/* EVERY SNAPSHOT LAYS ITS LISTS OUT AS A PARSE OF ITS TEXT (step 7, plan
+ * 5.6): the text arrives byte by byte, and after each append every list of
+ * the snapshot is where a fresh parse of the same text has one, and is
+ * tight exactly when that one is. Each item and each child an item holds
+ * folds into its list as it settles, and a snapshot closes copies of the
+ * open list and item whose folds hold the committed children: a blank line
+ * between items or between an item's children, a last item or child ending
+ * with one, a nested list ending with one, a reference definition the
+ * blank-line facts read through, a blank line inside a fence, an empty item
+ * and lists that a later line ends. */
+static void session_snapshot_lists(test_batch_runner *runner) {
+    static const char *const sources[] = {
+        "- a\n- b\n- c\n\nafter\n",    "- a\n\n- b\n- c\n",          "- a\n\n  b\n- c\n\n  d\n",
+        "- a\n  - b\n\n- c\n",         "- a\n  - b\n\n  c\n",        "- a\n\n  [r]: /r\n- b\n\n- [s]: /s\n\n  e\n",
+        "- a\n\n  [r]: /r\n\n[r]\n",   "- ```\n  x\n\n  ```\n- b\n", "-\n- b\n\n-\n\n  c\n",
+        "1. a\n2. b\n\n\n3. c\n- d\n",
+    };
+    enum { LISTS = 16 };
+    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        const char *source = sources[i];
+        const size_t length = strlen(source);
+        markdown_core_session *session = NULL;
+        bool same = markdown_core_session_new((const uint8_t *)source, 0, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
+                    MARKDOWN_CORE_OK;
+        size_t at = 0;
+        while (same && at <= length) {
+            const markdown_core_document *document = NULL;
+            if (at < length) {
+                same = markdown_core_session_append(session, (const uint8_t *)source + at, 1, &document) ==
+                       MARKDOWN_CORE_OK;
+            } else {
+                same = markdown_core_session_finalize(session, &document) == MARKDOWN_CORE_OK;
+            }
+            const size_t parsed_length = at < length ? at + 1 : length;
+            markdown_core_document *parsed = NULL;
+            same = same &&
+                   markdown_core_document_parse((const uint8_t *)source, parsed_length, &parsed) == MARKDOWN_CORE_OK;
+            const markdown_core_node *mine[LISTS], *theirs[LISTS];
+            const size_t count = same ? document_lists(parsed, theirs, LISTS) : 0;
+            same = same && count < LISTS && document_lists(document, mine, LISTS) == count;
+            for (size_t k = 0; same && k < count; k++) {
+                same = same_node(document, mine[k], parsed, theirs[k], source, parsed_length) &&
+                       list_tight(mine[k]) == list_tight(theirs[k]);
+            }
+            markdown_core_document_free(parsed);
+            at++;
+        }
+        OK(runner, same, "every snapshot lays its lists out as a parse of its text, up to byte %zu of %zu: %s", at,
+           length, source);
+        markdown_core_session_free(session);
+    }
+}
+
 /* The allocator-seam sweep (plan 8, gates 4.7): an append and a finalize
  * fail at every allocation, report ALLOCATION_FAILED, and the session frees
  * everything it holds. */
@@ -11646,6 +11728,7 @@ int main(void) {
     session_snapshot_anchors(runner);
     session_snapshot_names(runner);
     session_snapshot_tables(runner);
+    session_snapshot_lists(runner);
     session_finalize_matches_a_parse(runner);
     session_allocation_failures(runner);
 
