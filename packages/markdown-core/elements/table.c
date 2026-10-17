@@ -681,10 +681,12 @@ typedef struct {
     size_t first, last;
     /* `pipe`: a pipe table's header. Its cells hold their bytes, as every
      * pipe cell does (`set_cell_content`), and the table stays open for the
-     * body rows `try_opening_table_row` adds. `simple`: a simple table, whose
-     * last line here is its dashes. It stays open, and reads each row after
-     * them on its own (`table_take_line`), cut at their runs. */
+     * body rows `try_opening_table_row` adds. `simple`: a simple table its
+     * opening lines leave open. It reads each later row on its own
+     * (`table_take_line`), cut at its dash runs, which start at `runs` in
+     * the workspace's dashes. */
     bool block_content, pipe, simple;
+    size_t runs;
     int padding_limit;
     /* The table's left edge, in geometry columns (`table_margin`): the
      * table, each row and the first column begin here, not at the
@@ -1433,12 +1435,12 @@ done:
     return;
 }
 
-/* A SIMPLE TABLE OPENS ON THE LINES THAT FIX ITS GEOMETRY: its header, its
- * dashes and the line after them, its first row or its footer. It claims its
- * header and dashes and stays open, and reads each line after them on its
- * own as that line comes (`matches`, `table_take_line`). A headerless table
- * is a table only if a footer closes it, so it finds that footer before it
- * opens; it then reads its rows the same way. */
+/* A SIMPLE TABLE OPENS ON THE LINES THAT DECIDE IT: its header, its dashes
+ * and the line after them, which is its first row or its footer, or, with no
+ * header, its dashes and every line through the footer such a table needs.
+ * It makes a row of each line it read after its dashes, and a footer closes
+ * it. A table its opening lines leave open reads each later line on its own
+ * as that line comes (`matches`, `table_take_line`). */
 static bool table_parse_simple(table_source *source, size_t start, table_candidate *candidate) {
     size_t count = table_dash_count(source, start);
     bool headerless = count > 1;
@@ -1451,43 +1453,45 @@ static bool table_parse_simple(table_source *source, size_t start, table_candida
             goto failed;
         }
     }
-    size_t delimiter = start + (headerless ? 0 : 1), body = delimiter + 1;
+    size_t delimiter = start + (headerless ? 0 : 1), body = delimiter + 1, end = delimiter;
+    size_t deciding = headerless ? SIZE_MAX : body;
     if (!table_prepare_dashes(source, delimiter)) {
         goto failed;
     }
-    if (headerless) {
-        size_t end = delimiter;
-        bool footer = false;
-        for (size_t i = body; table_source_get(source, i) && !source->lines[i].blanks; i++) {
-            end = i;
-            if (table_same_dashes(source, delimiter, i)) {
-                footer = true;
-                break;
-            }
-        }
-        if (source->parser->error) {
-            goto failed;
-        }
-        if (!footer) {
-            table_simple_search_finish(source, delimiter, end);
-            goto failed;
-        }
-    } else if (!table_source_get(source, body) || source->lines[body].blanks) {
+    bool footer = false;
+    for (size_t i = body; i <= deciding && !footer && table_source_get(source, i) && !source->lines[i].blanks; i++) {
+        end = i;
+        footer = table_same_dashes(source, delimiter, i);
+    }
+    if (source->parser->error) {
+        goto failed;
+    }
+    if (headerless && !footer) {
+        table_simple_search_finish(source, delimiter, end);
+        goto failed;
+    }
+    if (end == delimiter) {
         goto failed;
     }
     size_t runs = source->lines[delimiter].dash_offset;
     if (!table_set_columns(source, candidate, runs, count, headerless ? body : start, false)) {
         goto failed;
     }
-    candidate->simple = true;
+    candidate->simple = !footer;
+    candidate->runs = runs;
     candidate->first = start;
-    candidate->last = delimiter;
+    candidate->last = end;
     /* The line after the dashes is the first row, or a footer, which has the
      * indentation of the dashes it repeats. */
     candidate->margin = table_margin(source, start, body);
     candidate->head_count = headerless ? 0 : 1;
     if (!headerless && !table_rectangular_row(source, candidate, start, start, source->workspace->dashes + runs)) {
         goto failed;
+    }
+    for (size_t i = body; i <= end - (footer ? 1u : 0u); i++) {
+        if (!table_rectangular_row(source, candidate, i, i, source->workspace->dashes + runs)) {
+            goto failed;
+        }
     }
     return true;
 failed:
@@ -2525,7 +2529,7 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return node;
         }
-        memcpy(table->runs, source->workspace->dashes + last->dash_offset,
+        memcpy(table->runs, source->workspace->dashes + candidate->runs,
                candidate->column_count * sizeof(*table->runs));
         table->left = candidate->margin;
     }
@@ -2540,8 +2544,8 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
     for (size_t i = 0; i < candidate->row_count && !parser->error; i++) {
         table_build_row(source, node, candidate, &candidate->rows[i], enclosing);
     }
-    /* A table read whole closes as it is made; a pipe or simple table stays
-     * open for the rows after it. */
+    /* A table read whole closes as it is made; a pipe table, and a simple
+     * table its opening lines leave open, stay open for the rows after them. */
     if (!candidate->pipe && !candidate->simple && !parser->error) {
         markdown_core_block_close_current(parser);
     }

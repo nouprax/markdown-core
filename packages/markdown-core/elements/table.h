@@ -16,10 +16,10 @@ typedef struct {
 typedef struct {
     size_t column_count;
     markdown_core_table_column *columns;
-    /* A simple table's dash runs, one per column, and its margin `left`, in
-     * geometry columns: the table reads each row after its dashes on its own,
-     * cut at the runs, and a line with the same runs is its footer. NULL in
-     * any other table. */
+    /* The dash runs, one per column, and the margin `left`, in geometry
+     * columns, of a simple table its opening lines leave open: the table
+     * reads each later row on its own, cut at the runs, and a line with the
+     * same runs is its footer. NULL in any other table. */
     markdown_core_table_interval *runs;
     int left;
     uint32_t head_count, content_count, foot_count;
