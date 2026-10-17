@@ -123,9 +123,12 @@ static int set_chunk_bytes(markdown_core_chunk *chunk, const unsigned char *data
     return 1;
 }
 
-const char *markdown_core_elements_get_directive_name(markdown_core_node *node) {
-    node_directive *directive = node->opaque;
-    return directive->name.len ? markdown_core_chunk_to_cstr(&directive->name) : NULL;
+/* A directive's name is made NUL-terminated (set_chunk_bytes,
+ * markdown_core_elements_set_directive_name), and a copy views those bytes
+ * (directive_opaque_view). */
+const char *markdown_core_elements_get_directive_name(const markdown_core_node *node) {
+    const node_directive *directive = node->opaque;
+    return directive->name.len ? (const char *)directive->name.data : NULL;
 }
 
 int markdown_core_elements_set_directive_name(markdown_core_node *node, const char *name) {
@@ -148,6 +151,25 @@ static void directive_opaque_free(const markdown_core_element *element, markdown
     markdown_core_chunk_free(&directive->name);
     markdown_core_free(directive);
     node->opaque = NULL;
+}
+
+static bool directive_opaque_view(const markdown_core_element *element, markdown_core_node *copy,
+                                  const markdown_core_node *node) {
+    node_directive *made = markdown_core_realloc(NULL, sizeof(*made));
+    if (!made) {
+        copy->opaque = NULL;
+        return false;
+    }
+    *made = *(const node_directive *)node->opaque;
+    markdown_core_chunk_view(&made->name);
+    copy->opaque = made;
+    return true;
+}
+
+static bool directive_opaque_own(const markdown_core_element *element, markdown_core_node *copy,
+                                 const markdown_core_node *node) {
+    return markdown_core_chunk_own(&((node_directive *)copy->opaque)->name,
+                                   &((const node_directive *)node->opaque)->name);
 }
 
 /* Recognize the shared attribute grammar without constructing semantic
@@ -664,6 +686,8 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
     .accepts_lines_func = accepts_lines,
     .opaque_alloc_func = directive_opaque_alloc,
     .opaque_free_func = directive_opaque_free,
+    .opaque_view_func = directive_opaque_view,
+    .opaque_own_func = directive_opaque_own,
     .visit_owned_subtrees_func = visit_owned_subtrees,
     .terminates_text = ":",
     .dispatch = ":",

@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -9,52 +10,89 @@
 
 #include <parser.h>
 
-/* A SESSION: the text, the parser instance that reads it, the document
- * parsed from it, the storage its nodes live in, the last id it issued, the
- * document's node count and whether it was finalized. Each append adds to the end of the text and
- * parses the whole text again as a revision of the document (parser.h), so
- * the new document continues the old one and the old one's nodes go back to
- * the session's pool. The text is one buffer of `capacity` bytes, `size` of
- * them written. */
+/* A SESSION: the text, the parse that has committed its lines, the document
+ * published from it, the storage its nodes live in and whether it was
+ * finalized. The text is one buffer of `capacity` bytes, `size` of them
+ * written, and only grows at its end.
+ *
+ * THE COMMITTED PARSE is one transaction of `committed` across the
+ * session's appends (plan 5.3): it has read the lines before `commit_point`,
+ * each as a parse of any longer text reads it, and completed the blocks that
+ * settled in them (plan 5.4). An append commits the lines up to the commit
+ * point the last snapshot left, completes what settled, and then takes a
+ * snapshot of the whole text on the committed parse, which leaves the next
+ * commit point (blocks.c, THE SNAPSHOT); the finalize commits every line that
+ * is left and ends the committed parse at the end of the text.
+ * Each new document continues the old one (parser.h, `revision`): the
+ * revision lends the session's pool, names the document published last and
+ * counts the ids it issued. The document shares the committed blocks with
+ * the committed parse, and borrows storage it keeps: the parse owns it, and
+ * releases it before them, until the finalize returns the last document. */
 struct markdown_core_session {
     uint8_t *text;
     size_t size, capacity;
-    markdown_core_parser *parser;
+    markdown_core_parser *committed;
+    size_t commit_point;
     markdown_core_node_pool pool;
+    markdown_core_revision revision;
     markdown_core_document document;
-    uint64_t last_id;
-    size_t node_count;
     bool finalized;
 };
 
-/* The one parse of a session's text: a start, a commit of the whole text
- * and a finalize. An empty text is the empty buffer. */
-static markdown_core_status session_parse(markdown_core_session *session) {
+/* The text a parser reads: an empty text is the empty buffer. */
+static const char *session_source(const markdown_core_session *session) {
     static const uint8_t empty[1] = {0};
-    markdown_core_revision revision = {
-        .pool = &session->pool,
-        .previous = session->document.root,
-        .last_id = session->last_id,
-        .node_count = session->node_count,
-    };
-    markdown_core_parser_start(session->parser, &revision);
-    markdown_core_parser_commit(session->parser, (const char *)(session->size ? session->text : empty), session->size);
-    markdown_core_node *root = markdown_core_parser_finalize(session->parser);
+    return (const char *)(session->size ? session->text : empty);
+}
+
+/* Publishes `root`, the document a transaction returned, or NULL when the
+ * transaction failed. */
+static markdown_core_status session_publish(markdown_core_session *session, markdown_core_node *root) {
     if (!root) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
-    session->document.root = root;
-    session->last_id = revision.last_id;
-    session->node_count = revision.node_count;
+    session->document.root = session->revision.previous = root;
     return MARKDOWN_CORE_OK;
 }
 
-/* Adds `size` bytes to the end of the text and parses it. This is where text
- * enters the library, so the capacity is checked here and nowhere below:
- * offsets are int32 and every buffer derived from the text stays under half
- * of that. The buffer at least doubles when it grows, so a stream of appends
- * copies each byte O(1) times. */
-static markdown_core_status session_append(markdown_core_session *session, const uint8_t *text, size_t size) {
+/* Commits the lines before the commit point and completes the blocks that
+ * settled in them, then publishes a snapshot of the whole text, which leaves
+ * the next commit point. */
+static markdown_core_status session_snapshot(markdown_core_session *session) {
+    if (!markdown_core_parser_commit(session->committed, session_source(session), session->size,
+                                     session->commit_point) ||
+        !markdown_core_parser_complete(session->committed)) {
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    /* The lines committed read nothing of the end, as they did in the
+     * snapshot that left the commit point. */
+    assert(markdown_core_parser_commit_point(session->committed) >= session->commit_point);
+    size_t commit_point = session->commit_point;
+    markdown_core_status status =
+        session_publish(session, markdown_core_parser_snapshot(session->committed, session_source(session),
+                                                               session->size, &commit_point));
+    if (status == MARKDOWN_CORE_OK) {
+        session->commit_point = commit_point;
+    }
+    return status;
+}
+
+/* Commits every line of the text and publishes the committed parse ended
+ * there, which ends the session's appends. */
+static markdown_core_status session_finalize(markdown_core_session *session) {
+    markdown_core_parser_commit(session->committed, session_source(session), session->size, session->size);
+    session->finalized = true;
+    markdown_core_node *root = markdown_core_parser_finalize(session->committed);
+    session->document.root = session->revision.previous = root;
+    return root ? MARKDOWN_CORE_OK : MARKDOWN_CORE_ALLOCATION_FAILED;
+}
+
+/* Adds `size` bytes to the end of the text. This is where text enters the
+ * library, so the capacity is checked here and nowhere below: offsets are
+ * int32 and every buffer derived from the text stays under half of that.
+ * The buffer at least doubles when it grows, so a stream of appends copies
+ * each byte O(1) times. */
+static markdown_core_status session_take(markdown_core_session *session, const uint8_t *text, size_t size) {
     if (size > MARKDOWN_CORE_SOURCE_CAPACITY - session->size) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
@@ -73,30 +111,40 @@ static markdown_core_status session_append(markdown_core_session *session, const
         memcpy(session->text + session->size, text, size);
     }
     session->size = needed;
-    return session_parse(session);
+    return MARKDOWN_CORE_OK;
 }
 
-/* Gives back what a session holds, but not the session itself. */
+/* Gives back what a session holds, but not the session itself. The
+ * committed parse of a session that was not finalized ends with nothing, and
+ * releases the document it published last with what it keeps; the document
+ * a finalize returned is the session's. Both go back to the pool before the
+ * pool goes. */
 static void session_close(markdown_core_session *session) {
-    if (session->document.root) {
+    if (session->committed) {
+        if (!session->finalized) {
+            markdown_core_parser_discard(session->committed);
+        }
+        markdown_core_parser_destroy(session->committed);
+    }
+    if (session->finalized && session->document.root) {
         markdown_core_node_pool_release(&session->pool, session->document.root);
     }
     markdown_core_node_pool_dispose(&session->pool);
     markdown_core_free(session->text);
-    markdown_core_parser_destroy(session->parser);
 }
 
-/* Opens a zeroed session in place: makes its parser and appends the source,
- * which an empty session reads as a fresh parse. */
+/* Opens a zeroed session in place: makes its parser, takes the source and
+ * starts its committed parse. */
 static markdown_core_status session_open(markdown_core_session *session, const uint8_t *source, size_t size,
                                          markdown_core_text_unit unit) {
     session->document.unit = unit;
-    session->parser = markdown_core_core_parser(NULL, NULL);
-    markdown_core_status status =
-        session->parser ? session_append(session, source, size) : MARKDOWN_CORE_ALLOCATION_FAILED;
-    if (status != MARKDOWN_CORE_OK) {
-        session_close(session);
+    session->revision.pool = &session->pool;
+    session->committed = markdown_core_core_parser(NULL, NULL);
+    if (!session->committed) {
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
+    markdown_core_status status = session_take(session, source, size);
+    markdown_core_parser_start(session->committed, &session->revision);
     return status;
 }
 
@@ -107,7 +155,12 @@ markdown_core_status markdown_core_session_new(const uint8_t *source, size_t siz
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     markdown_core_status status = session_open(made, source, size, unit);
+    if (status == MARKDOWN_CORE_OK) {
+        status =
+            markdown_core_parser_stream(made->committed) ? session_snapshot(made) : MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
     if (status != MARKDOWN_CORE_OK) {
+        session_close(made);
         markdown_core_free(made);
         return status;
     }
@@ -120,23 +173,26 @@ markdown_core_status markdown_core_session_append(markdown_core_session *session
     if (session->finalized) {
         return MARKDOWN_CORE_SESSION_FINALIZED;
     }
-    markdown_core_status status = session_append(session, text, size);
+    markdown_core_status status = session_take(session, text, size);
+    if (status == MARKDOWN_CORE_OK) {
+        status = session_snapshot(session);
+    }
     if (status == MARKDOWN_CORE_OK) {
         *document = &session->document;
     }
     return status;
 }
 
-/* Every parse of a session reads the whole text, so its document is already
- * the final one. */
 markdown_core_status markdown_core_session_finalize(markdown_core_session *session,
                                                     const markdown_core_document **document) {
     if (session->finalized) {
         return MARKDOWN_CORE_SESSION_FINALIZED;
     }
-    session->finalized = true;
-    *document = &session->document;
-    return MARKDOWN_CORE_OK;
+    markdown_core_status status = session_finalize(session);
+    if (status == MARKDOWN_CORE_OK) {
+        *document = &session->document;
+    }
+    return status;
 }
 
 const markdown_core_document *markdown_core_session_document(const markdown_core_session *session) {
@@ -163,9 +219,9 @@ void markdown_core_session_free(markdown_core_session *session) {
     markdown_core_free(session);
 }
 
-/* A fresh parse is a session that reads its source once and is then
- * discarded: the document leaves the session with its nodes, which hold
- * their slabs. */
+/* A fresh parse is a session that reads its source once, is finalized and
+ * is then discarded: the document leaves the session with its nodes, which
+ * hold their slabs. */
 markdown_core_status markdown_core_document_parse_in(const uint8_t *source, size_t length, markdown_core_text_unit unit,
                                                      markdown_core_document **document) {
     markdown_core_document *parsed = markdown_core_alloc(1, sizeof(*parsed));
@@ -174,7 +230,11 @@ markdown_core_status markdown_core_document_parse_in(const uint8_t *source, size
     }
     markdown_core_session session = {0};
     markdown_core_status status = session_open(&session, source, length, unit);
+    if (status == MARKDOWN_CORE_OK) {
+        status = session_finalize(&session);
+    }
     if (status != MARKDOWN_CORE_OK) {
+        session_close(&session);
         markdown_core_free(parsed);
         return status;
     }

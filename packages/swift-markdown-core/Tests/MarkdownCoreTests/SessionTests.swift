@@ -52,7 +52,9 @@ import Testing
     @Test("finalize returns the final document and ends the session", arguments: [TextUnit.utf8, .utf16])
     func finalize(unit: TextUnit) throws {
         let session = try MarkdownSession("[a]\n\n", unit: unit)
-        _ = try session.append("[a]: /url\n")
+        let snapshot = try session.append("[a]: /url\n")
+        // A snapshot's lookup sees only the definitions written before it.
+        #expect(try snapshot.dump(in: session.text) != Document.parse(session.text, unit: unit).dump(in: session.text))
         let final = try session.finalize()
         let text = session.text
         #expect(final == session.document)

@@ -126,6 +126,12 @@ struct markdown_core_element {
      * (markdown_core_parser_fail), and the walk ends at its next check. */
     void (*complete_node)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
                           int depth);
+    /* A kind whose inline content is parsed before completion's walk
+     * (`deferred_inlines`, by the document's preparation) parses one node's
+     * again: a block completed again (blocks.c, A LOOKUP THAT FOUND NOTHING)
+     * asks it once the node's inline content is released, and the walk then
+     * completes the node as it completed it the first time. */
+    void (*reparse_inlines)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
     /* A lazy line -- one that did not match every open container's prefix
      * and opened no block -- is offered to the current block. `accepts_lazy`
      * says whether it takes the line; `open_lazy` returns the block the line is
@@ -146,13 +152,28 @@ struct markdown_core_element {
     void (*init_document)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*dispose_parser)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*dispose_document)(const markdown_core_element_instance *, markdown_core_parser *);
+    /* Reads what the document's input opens with, before its first line:
+     * `source` and its length are the input, and a reading that reaches the
+     * length asks markdown_core_parser_input_ends (parser.h). */
     size_t (*read_document_prefix)(const markdown_core_element_instance *, markdown_core_parser *,
                                    const unsigned char *, size_t);
     void (*prepare_document)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*finish_document)(const markdown_core_element_instance *, markdown_core_parser *);
+    /* A SNAPSHOT (blocks.c, THE SNAPSHOT) begins once its copies stand in
+     * for the builders and the pending block, and ends once the parse is
+     * back at its commit: what the document's elements keep across the
+     * parse names the copies while it lasts, and keeps nothing it made. */
+    void (*start_snapshot)(const markdown_core_element_instance *, markdown_core_parser *);
+    void (*end_snapshot)(const markdown_core_element_instance *, markdown_core_parser *);
     /* The last step of the parse: the tree is final, and the owner publishes
      * it (ids, extents, definition tables). */
     void (*publish_document)(const markdown_core_element_instance *, markdown_core_parser *);
+    /* A candidate the finalize completed again for a block the parse's
+     * revision published (blocks.c, A LOOKUP THAT FOUND NOTHING), published
+     * against that block: `*same` says whether the candidate equals it. A
+     * failure fails the parse. */
+    void (*publish_candidate)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                              markdown_core_node *, bool *);
     markdown_core_node *(*open_text_block)(const markdown_core_element_instance *, markdown_core_parser *,
                                            markdown_core_node *, markdown_core_chunk *);
     markdown_core_node *(*try_interrupting_block)(const markdown_core_element_instance *, markdown_core_parser *,
@@ -177,6 +198,11 @@ struct markdown_core_element {
     bool (*blank_line)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
     bool (*ends_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
                        markdown_core_chunk *);
+    /* Reads a line its block took whole (MARKDOWN_CORE_BLOCK_TAKEN), from
+     * the parser's cursor, which the block's matcher left where the blocks
+     * above it end. Required of an element whose matcher returns that. */
+    void (*take_line)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                      markdown_core_chunk *);
     /* THE CLOSE HOOK, asked of a block as it closes inside the block that
      * holds it, which it settles into later. It reads the block -- its
      * content, its children and its open state -- and makes the node the
@@ -188,6 +214,20 @@ struct markdown_core_element {
      * its own: a paragraph whose text was all reference definitions. */
     bool (*close_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
                         markdown_core_node *);
+    /* THE FOLD HOOK (docs/plans/2026-09-29-incremental-parsing.md, 5.6),
+     * asked of a block of a kind in `fold_kinds` as a child settles into it
+     * (blocks.c, A BLOCK SETTLES), after the child's blank-line answer is
+     * folded into a block whose answer is its children's: it folds what the
+     * block's own values take from the child into the block, so that what
+     * the block reads as it closes or completes is there without a walk of
+     * its children, and a snapshot that closes a copy of it adds only the
+     * children the snapshot settled. */
+    void (*fold_child)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                       const markdown_core_node *);
+    /* The block kinds the fold hook is asked at, kinds whose structure is
+     * the element, terminated by MARKDOWN_CORE_NODE_NONE; an element with a
+     * fold hook declares at least one, and one without declares NULL. */
+    const markdown_core_node_type *fold_kinds;
 
     bool (*scan_block_start)(const markdown_core_element_instance *, markdown_core_parser *,
                              struct markdown_core_block_start_context *, struct markdown_core_block_start *);
@@ -297,6 +337,8 @@ struct markdown_core_element {
     const markdown_core_node_type *finish_scope_kinds;
     markdown_core_opaque_alloc_func opaque_alloc_func;
     markdown_core_opaque_free_func opaque_free_func;
+    markdown_core_opaque_view_func opaque_view_func;
+    markdown_core_opaque_own_func opaque_own_func;
     markdown_core_visit_owned_subtrees_func visit_owned_subtrees_func;
     /* The bytes of the element's parse record and of its record in each
      * inline run (markdown-core-element-api.h, "AN ELEMENT AS ONE PARSE HOLDS

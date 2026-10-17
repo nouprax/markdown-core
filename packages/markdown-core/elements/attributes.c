@@ -325,6 +325,76 @@ void markdown_core_attributes_free(markdown_core_attributes *v) {
     memset(v, 0, sizeof(*v));
 }
 
+/* Where the block must reach to hold `chunk`'s bytes and the NUL past them,
+ * as an offset from its start: a chunk the value does not own, and not
+ * empty, points into the block (lay_out). */
+static size_t block_end(const markdown_core_chunk *chunk, const unsigned char *start, size_t end) {
+    if (chunk->alloc || !chunk->data) {
+        return end;
+    }
+    const size_t past = (size_t)(chunk->data - start) + (size_t)chunk->len + 1;
+    return past > end ? past : end;
+}
+
+/* The place in the copy that lies where `data` lies in the block. */
+static void *in_copy(unsigned char *copy, const unsigned char *start, const void *data) {
+    return copy + ((const unsigned char *)data - start);
+}
+
+/* THE VALUE'S BLOCK IS ITS TABLES AND THEN ITS STRINGS (lay_out), each
+ * string terminated, so the block ends past the last string's NUL, and past
+ * its tables when it holds no string. Copying it and pointing every member
+ * the view kept in it at the same offset in the copy keeps its layout. A view
+ * keeps a member of the value's until it lets the whole value go, or, the
+ * anchor, until it writes one where the value has none. */
+bool markdown_core_attributes_own(markdown_core_attributes *view, const markdown_core_attributes *value) {
+    const unsigned char *const start = value->storage;
+    const bool records = view->records && view->records == value->records;
+    const bool classes = view->classes && view->classes == value->classes;
+    const bool anchor = view->anchor.data && view->anchor.data == value->anchor.data && !view->anchor.alloc;
+    if (start && !view->storage && (records || classes || (anchor && !value->anchor.alloc))) {
+        size_t end = 0;
+        if (value->records) {
+            end = (size_t)((const unsigned char *)(value->records + value->record_count) - start);
+        }
+        if (value->classes) {
+            const size_t past = (size_t)((const unsigned char *)(value->classes + value->class_count) - start);
+            end = past > end ? past : end;
+        }
+        end = block_end(&value->anchor, start, end);
+        for (uint32_t i = 0; i < value->class_count; i++) {
+            end = block_end(&value->classes[i], start, end);
+        }
+        for (uint32_t i = 0; i < value->record_count; i++) {
+            end = block_end(&value->records[i].name, start, end);
+            end = block_end(&value->records[i].value, start, end);
+        }
+        unsigned char *block = markdown_core_realloc(NULL, end);
+        if (!block) {
+            return false;
+        }
+        memcpy(block, start, end);
+        view->storage = block;
+        if (records) {
+            view->records = in_copy(block, start, value->records);
+            for (uint32_t i = 0; i < view->record_count; i++) {
+                view->records[i].name.data = in_copy(block, start, value->records[i].name.data);
+                view->records[i].value.data = in_copy(block, start, value->records[i].value.data);
+            }
+        }
+        if (classes) {
+            view->classes = in_copy(block, start, value->classes);
+            for (uint32_t i = 0; i < view->class_count; i++) {
+                view->classes[i].data = in_copy(block, start, value->classes[i].data);
+            }
+        }
+        if (anchor && !value->anchor.alloc) {
+            view->anchor.data = in_copy(block, start, value->anchor.data);
+        }
+    }
+    return !(anchor && value->anchor.alloc) || markdown_core_chunk_to_cstr(&view->anchor);
+}
+
 /* The memo exists only once recognition ran (see the recogniser above): a
  * parser that never asked owns nothing and releases nothing. The scratch is
  * borrowed and released by its owner, and totals the work of every

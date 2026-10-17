@@ -5,13 +5,27 @@
 #include "../include/markdown_core.h"
 #include "../core/parser.h"
 
+/* A dash run, in geometry columns: from its first dash to past its last. */
+typedef struct {
+    int start, end;
+} markdown_core_table_interval;
+
 /* Children are the table's rows; the group counts partition them and are
  * counted as children are. The parser appends head, content, then foot rows
  * in that order. */
 typedef struct {
     size_t column_count;
     markdown_core_table_column *columns;
+    /* The dash runs, one per column, and the margin `left`, in geometry
+     * columns, of a simple table its opening lines leave open: the table
+     * reads each later row on its own, cut at the runs, and a line with the
+     * same runs is its footer. NULL in any other table. */
+    markdown_core_table_interval *runs;
+    int left;
     uint32_t head_count, content_count, foot_count;
+    /* The columns and runs are those of the table this one is a view of
+     * (opaque_view_func), which it reads and does not free. */
+    bool views_columns;
     size_t autocompleted_cells;
     markdown_core_node *caption;
 } markdown_core_table;

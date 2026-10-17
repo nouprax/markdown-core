@@ -45,7 +45,8 @@ static bool S_finish_kind_indexable(markdown_core_node_type kind) {
 
 static bool S_owns_document_lifecycle(const markdown_core_element *element) {
     return element->init_document && element->dispose_document && element->read_document_prefix &&
-           element->prepare_document && element->finish_document && element->publish_document;
+           element->prepare_document && element->finish_document && element->publish_document &&
+           element->publish_candidate;
 }
 
 static bool S_element_refused(const markdown_core_element *element) {
@@ -84,9 +85,20 @@ static bool S_element_refused(const markdown_core_element *element) {
             }
         }
     }
+    /* A fold hook asked at no kind, kinds without one to ask, or a kind to
+     * ask it at that is not a block kind of the element's structure. */
+    if (!element->fold_child != !(element->fold_kinds && *element->fold_kinds)) {
+        return true;
+    }
+    for (const markdown_core_node_type *kind = element->fold_kinds; kind && *kind; kind++) {
+        if (!MARKDOWN_CORE_NODE_TYPE_BLOCK_P(*kind) || markdown_core_structure_for_kind(*kind) != element) {
+            return true;
+        }
+    }
     /* Only part of the document lifecycle. */
     if ((element->init_document || element->dispose_document || element->read_document_prefix ||
-         element->prepare_document || element->finish_document || element->publish_document) &&
+         element->prepare_document || element->finish_document || element->publish_document ||
+         element->publish_candidate) &&
         !S_owns_document_lifecycle(element)) {
         return true;
     }
@@ -259,33 +271,31 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
         const markdown_core_element *structure = markdown_core_structure_for_kind(kind);
         record.structure = structure ? markdown_core_dialect_instance(dialect, structure) : NULL;
         if (record.structure) {
-            const struct {
-                bool fact;
-                unsigned flag;
-            } facts[] = {
-                {structure->inline_content, MARKDOWN_CORE_KIND_INLINES},
-                {structure->contains_inlines_func != NULL, MARKDOWN_CORE_KIND_INLINES_ASK},
-                {structure->deferred_inlines, MARKDOWN_CORE_KIND_DEFERRED},
-                {structure->content_mode == MARKDOWN_CORE_CONTENT_LITERAL, MARKDOWN_CORE_KIND_LINES},
-                {structure->accepts_lines_func != NULL, MARKDOWN_CORE_KIND_LINES_ASK},
-                {structure->content_mode == MARKDOWN_CORE_CONTENT_PROSE, MARKDOWN_CORE_KIND_PROSE},
-                {structure->paragraph, MARKDOWN_CORE_KIND_IS_PARAGRAPH},
-                {structure->blank_opaque, MARKDOWN_CORE_KIND_BLANK_OPAQUE},
-                {structure->blank_line != NULL, MARKDOWN_CORE_KIND_BLANK_ASK},
-                {structure->blank_runs, MARKDOWN_CORE_KIND_BLANK_RUNS},
-                {structure->propagates_child_blank, MARKDOWN_CORE_KIND_BLANK_PROPAGATES},
-            };
-            for (size_t i = 0; i < sizeof(facts) / sizeof(facts[0]); i++) {
-                if (facts[i].fact) {
-                    record.flags |= (uint16_t)facts[i].flag;
-                }
-            }
+            record.flags =
+                (uint16_t)((structure->inline_content ? MARKDOWN_CORE_KIND_INLINES : 0) |
+                           (structure->contains_inlines_func ? MARKDOWN_CORE_KIND_INLINES_ASK : 0) |
+                           (structure->deferred_inlines ? MARKDOWN_CORE_KIND_DEFERRED : 0) |
+                           (structure->content_mode == MARKDOWN_CORE_CONTENT_LITERAL ? MARKDOWN_CORE_KIND_LINES : 0) |
+                           (structure->accepts_lines_func ? MARKDOWN_CORE_KIND_LINES_ASK : 0) |
+                           (structure->content_mode == MARKDOWN_CORE_CONTENT_PROSE ? MARKDOWN_CORE_KIND_PROSE : 0) |
+                           (structure->paragraph ? MARKDOWN_CORE_KIND_IS_PARAGRAPH : 0) |
+                           (structure->blank_opaque ? MARKDOWN_CORE_KIND_BLANK_OPAQUE : 0) |
+                           (structure->blank_line ? MARKDOWN_CORE_KIND_BLANK_ASK : 0) |
+                           (structure->blank_runs ? MARKDOWN_CORE_KIND_BLANK_RUNS : 0) |
+                           (structure->propagates_child_blank ? MARKDOWN_CORE_KIND_BLANK_PROPAGATES : 0));
             record.complete = structure->complete_node;
         }
         if (markdown_core_kind_owns_fields(kind)) {
             record.flags |= MARKDOWN_CORE_KIND_FIELDS;
         }
         dialect->kinds[index] = record;
+    }
+    /* A structure's fold hook is asked at the kinds it lists, each a block
+     * kind it is the structure of (S_element_refused). */
+    for (size_t i = 0; i < dialect->element_count; i++) {
+        for (const markdown_core_node_type *kind = dialect->instances[i].element->fold_kinds; kind && *kind; kind++) {
+            dialect->kinds[markdown_core_block_kind_index(*kind)].flags |= MARKDOWN_CORE_KIND_FOLDS;
+        }
     }
     /* The out-of-table index answers nothing; the storage is zeroed. */
 }
@@ -481,13 +491,13 @@ static void S_project_finish_steps(markdown_core_dialect *dialect, const size_t 
 /* THE INSTANCES: one per element, in element order. Each element's parse
  * record is given the next aligned offset in `state`, and its run record the
  * next in a run's block, so both are laid out in descriptor order; an element
- * that declares no parse record has none. Each instance is entered in the
- * table by descriptor, which registration made unique, and the table
- * measured at least twice the elements, so an entry is always empty and
- * every lookup ends. */
+ * that declares no parse record has none. Each instance's ordinal is
+ * entered in the table by descriptor, which registration made unique, and the
+ * table measured at least eight times the elements, so an entry is always
+ * empty and every lookup ends. */
 static void S_project_instances(markdown_core_dialect *dialect, const markdown_core_element *const *elements,
-                                markdown_core_element_instance *instances, const markdown_core_element_instance **table,
-                                unsigned bits, unsigned char *state) {
+                                markdown_core_element_instance *instances, uint8_t *table, unsigned bits,
+                                unsigned char *state) {
     const size_t mask = ((size_t)1 << bits) - 1;
     size_t state_at = 0;
     dialect->instances = instances;
@@ -503,10 +513,10 @@ static void S_project_instances(markdown_core_dialect *dialect, const markdown_c
         dialect->run_state_size += markdown_core_state_align(element->run_state_size);
         size_t at = markdown_core_instance_hash(element, bits);
         while (table[at]) {
-            assert(table[at]->element != element);
+            assert(instances[table[at] - 1].element != element);
             at = (at + 1) & mask;
         }
-        table[at] = instance;
+        table[at] = (uint8_t)(i + 1);
     }
 }
 
@@ -605,10 +615,10 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
     for (size_t key = 0; key < MARKDOWN_CORE_FINISH_KEY_COUNT; key++) {
         sizes->steps += sizes->finish_key_counts[key] != 0; /* the terminator */
     }
-    /* The instance table: a power of two at least twice the elements, so a
-     * lookup always finds an empty entry to stop at, and at least two, so the
-     * hash takes a bit. */
-    for (sizes->instance_bits = 1; ((size_t)1 << sizes->instance_bits) < 2 * count; sizes->instance_bits++) {
+    /* The instance table: a power of two at least eight times the elements
+     * (markdown_core_instance_hash), so a lookup always finds an empty entry
+     * to stop at, and at least two, so the hash takes a bit. */
+    for (sizes->instance_bits = 1; ((size_t)1 << sizes->instance_bits) < 8 * count; sizes->instance_bits++) {
     }
     /* A family with no declared gate keeps no table and every owner is asked. */
     for (size_t hook = 0; hook < MARKDOWN_CORE_BLOCK_HOOK_COUNT; hook++) {
@@ -617,16 +627,15 @@ size_t markdown_core_dialect_measure(const markdown_core_dialect_builder *builde
         }
     }
     return sizes->steps * sizeof(markdown_core_finish_step_entry) + count * sizeof(markdown_core_element_instance) +
-           (sizes->pointers + ((size_t)1 << sizes->instance_bits) + sizes->peers) *
-               sizeof(const markdown_core_element_instance *) +
-           sizes->gate_bytes;
+           (sizes->pointers + sizes->peers) * sizeof(const markdown_core_element_instance *) +
+           ((size_t)1 << sizes->instance_bits) + sizes->gate_bytes;
 }
 
 /* SEAL: every table the dialect decides, projected once, into the storage
  * `sizes` was measured for. The tail after the struct holds the finish step
  * entries, then the instances, then the instance-pointer lists (the block
- * families, the inline-content families, the inline dispatch), the
- * instance table and the resolved peers, then the gate tables. Each region's alignment is at most
+ * families, the inline-content families, the inline dispatch) and the
+ * resolved peers, then the instance table and the gate tables. Each region's alignment is at most
  * the one before it, so each starts where the one before ends. The element
  * list is copied into the instances rather than taken, so the dialect owns
  * nothing apart from its storage and the builder still owns what it did. */
@@ -636,9 +645,9 @@ void markdown_core_dialect_seal(const markdown_core_dialect_builder *builder, co
     markdown_core_finish_step_entry *step_entries = (markdown_core_finish_step_entry *)(dialect + 1);
     markdown_core_element_instance *instances = (markdown_core_element_instance *)(step_entries + sizes->steps);
     const markdown_core_element_instance **entries = (const markdown_core_element_instance **)(instances + count);
-    const markdown_core_element_instance **table = entries + sizes->pointers;
-    const markdown_core_element_instance **peers = table + ((size_t)1 << sizes->instance_bits);
-    uint8_t *tables = (uint8_t *)(peers + sizes->peers);
+    const markdown_core_element_instance **peers = entries + sizes->pointers;
+    uint8_t *table = (uint8_t *)(peers + sizes->peers);
+    uint8_t *tables = table + ((size_t)1 << sizes->instance_bits);
 
     dialect->element_count = count;
     S_project_instances(dialect, builder->elements, instances, table, sizes->instance_bits, state);

@@ -46,7 +46,7 @@ static const measured_subject SUBJECTS[] = {{&ih_reparse, ih_reparse_extend}, {&
  * document. */
 __attribute__((noinline)) bool bench_apply_step(const ih_subject_class *subject, void *handle, const ih_step *step,
                                                 const markdown_core_document **document) {
-    return subject->append(handle, step->text, step->length, document);
+    return subject->append(handle, step->text, step->length, document) == MARKDOWN_CORE_OK;
 }
 
 static int usage(void) {

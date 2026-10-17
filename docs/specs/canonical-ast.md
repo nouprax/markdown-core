@@ -202,16 +202,18 @@ includes parentheses, while its item covers `@label`.
 
 A table includes its claimed caption, whose scope includes the caption marker.
 A simple, multiline, or grid table and each of its rows begin at the table's
-margin on their first line: the indentation all of its lines share, measured
+margin on their first line: the indentation shared by a simple table's header,
+dashes and first row, or by all of a multiline or grid table's lines, measured
 after container prefixes, so a table scope starts after the block indentation
-its lines share and its container's prefix. When the margin falls inside a tab,
+those lines share and its container's prefix. A later simple row indented less
+begins at its first non-space byte. When the margin falls inside a tab,
 whether a container prefix consumed part of it or it is a line's own
 indentation, that tab is the byte there. A pipe row covers its physical line
 from its first non-space byte; cells cover the segments between pipes, and
 synthesized empty cells use the row's end. A simple row covers its line from
-the margin, and a simple cell covers its trimmed segment. An empty segment uses
-its start byte, or the line's last byte if the segment starts beyond the line;
-the first column's segment starts at the margin.
+where it begins, and a simple cell covers its trimmed segment. An empty segment
+uses its start byte, or the line's last byte if the segment starts beyond the
+line; the first column's segment starts where the row begins.
 
 Multiline rows cover their lines from the margin. Grid rows cover the lines
 following their opening boundary through the line before the next row begins,

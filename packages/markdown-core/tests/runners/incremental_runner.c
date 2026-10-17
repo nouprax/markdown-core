@@ -225,35 +225,55 @@ static bool faulty_fresh(faulty *subject, const uint8_t *text, size_t length, co
     return true;
 }
 
+static markdown_core_status faulty_status(bool done) {
+    return done ? MARKDOWN_CORE_OK : MARKDOWN_CORE_ALLOCATION_FAILED;
+}
+
+/* A faulty subject ends its text as its session does. */
+static markdown_core_status faulty_finalize(void *handle, const markdown_core_document **document) {
+    return ih_session.finalize(((faulty *)handle)->inner, document);
+}
+
 /* Returns the previous document for one step: its third, in every run. */
-static bool stale_append(void *handle, const uint8_t *text, size_t length, const markdown_core_document **document) {
+static markdown_core_status stale_append(void *handle, const uint8_t *text, size_t length,
+                                         const markdown_core_document **document) {
     faulty *subject = (faulty *)handle;
     size_t before = 0;
     const uint8_t *previous = ih_session.text(subject->inner, &before);
-    if (!previous || !ih_text_assign(&subject->text, previous, before) ||
-        !ih_session.append(subject->inner, text, length, document)) {
-        return false;
+    markdown_core_status status;
+    if (!previous || !ih_text_assign(&subject->text, previous, before)) {
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
-    return ++subject->steps != 3 || faulty_fresh(subject, subject->text.bytes, subject->text.length, document);
+    if ((status = ih_session.append(subject->inner, text, length, document)) != MARKDOWN_CORE_OK) {
+        return status;
+    }
+    return faulty_status(++subject->steps != 3 ||
+                         faulty_fresh(subject, subject->text.bytes, subject->text.length, document));
 }
 
-static const ih_subject_class stale = {"returns the previous document for one step", faulty_open, stale_append,
-                                       faulty_text, faulty_close};
+static const ih_subject_class stale = {"returns the previous document for one step",
+                                       faulty_open,
+                                       stale_append,
+                                       faulty_finalize,
+                                       faulty_text,
+                                       faulty_close};
 
 /* Renumbers every id on every step: a fresh parse of the session's text. */
-static bool renumber_append(void *handle, const uint8_t *text, size_t length, const markdown_core_document **document) {
+static markdown_core_status renumber_append(void *handle, const uint8_t *text, size_t length,
+                                            const markdown_core_document **document) {
     faulty *subject = (faulty *)handle;
     size_t after = 0;
     const uint8_t *current;
-    if (!ih_session.append(subject->inner, text, length, document)) {
-        return false;
+    markdown_core_status status = ih_session.append(subject->inner, text, length, document);
+    if (status != MARKDOWN_CORE_OK) {
+        return status;
     }
     current = ih_session.text(subject->inner, &after);
-    return current && faulty_fresh(subject, current, after, document);
+    return faulty_status(current && faulty_fresh(subject, current, after, document));
 }
 
-static const ih_subject_class renumber = {"renumbers every id on every step", faulty_open, renumber_append, faulty_text,
-                                          faulty_close};
+static const ih_subject_class renumber = {
+    "renumbers every id on every step", faulty_open, renumber_append, faulty_finalize, faulty_text, faulty_close};
 
 /* Rewrites every node with the same ids: two sessions take every step, and
  * the subject answers with each in turn. */
@@ -267,21 +287,22 @@ static void *rewrite_open(ih_unit unit, const uint8_t *text, size_t length, cons
     return subject;
 }
 
-static bool rewrite_append(void *handle, const uint8_t *text, size_t length, const markdown_core_document **document) {
+static markdown_core_status rewrite_append(void *handle, const uint8_t *text, size_t length,
+                                           const markdown_core_document **document) {
     faulty *subject = (faulty *)handle;
     const markdown_core_document *twin = NULL;
-    if (!ih_session.append(subject->inner, text, length, document) ||
-        !ih_session.append(subject->other, text, length, &twin)) {
-        return false;
+    markdown_core_status status = ih_session.append(subject->inner, text, length, document);
+    if (status != MARKDOWN_CORE_OK || (status = ih_session.append(subject->other, text, length, &twin))) {
+        return status;
     }
     if (++subject->steps % 2) {
         *document = twin;
     }
-    return true;
+    return MARKDOWN_CORE_OK;
 }
 
-static const ih_subject_class rewrite = {"rewrites every node with the same ids", rewrite_open, rewrite_append,
-                                         faulty_text, faulty_close};
+static const ih_subject_class rewrite = {
+    "rewrites every node with the same ids", rewrite_open, rewrite_append, faulty_finalize, faulty_text, faulty_close};
 
 /* Keeps a node whose text changed: a second session takes every step but
  * the second the first accepts, and the subject answers with its document
@@ -304,53 +325,121 @@ static void *keep_open(ih_unit unit, const uint8_t *text, size_t length, const m
     return subject;
 }
 
-static bool keep_append(void *handle, const uint8_t *text, size_t length, const markdown_core_document **document) {
+static markdown_core_status keep_append(void *handle, const uint8_t *text, size_t length,
+                                        const markdown_core_document **document) {
     keep_subject *subject = (keep_subject *)handle;
     const markdown_core_document *twin = NULL;
-    if (!ih_session.append(subject->base.inner, text, length, document)) {
-        return false;
+    markdown_core_status status = ih_session.append(subject->base.inner, text, length, document);
+    if (status != MARKDOWN_CORE_OK) {
+        return status;
     }
     if (++subject->base.steps != 2) {
-        if (!ih_session.append(subject->base.other, text, length, &twin)) {
-            return false;
+        if ((status = ih_session.append(subject->base.other, text, length, &twin)) != MARKDOWN_CORE_OK) {
+            return status;
         }
         subject->kept = twin;
     }
     *document = subject->kept;
-    return true;
+    return MARKDOWN_CORE_OK;
 }
 
-static const ih_subject_class keep = {"keeps a node whose text changed", keep_open, keep_append, faulty_text,
-                                      faulty_close};
+static const ih_subject_class keep = {
+    "keeps a node whose text changed", keep_open, keep_append, faulty_finalize, faulty_text, faulty_close};
 
 /* Reuses a retired id for a new node: from its second step the subject is a
  * new session on the text, whose ids start again from 1. */
-static bool revive_append(void *handle, const uint8_t *text, size_t length, const markdown_core_document **document) {
+static markdown_core_status revive_append(void *handle, const uint8_t *text, size_t length,
+                                          const markdown_core_document **document) {
     faulty *subject = (faulty *)handle;
     size_t after = 0;
     const uint8_t *current;
     void *reopened;
-    if (!ih_session.append(subject->inner, text, length, document)) {
-        return false;
+    markdown_core_status status = ih_session.append(subject->inner, text, length, document);
+    if (status != MARKDOWN_CORE_OK) {
+        return status;
     }
     if (++subject->steps != 2) {
-        return true;
+        return MARKDOWN_CORE_OK;
     }
     current = ih_session.text(subject->inner, &after);
     if (!current || !ih_text_assign(&subject->text, current, after)) {
-        return false;
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     reopened = ih_session.open(subject->unit, subject->text.bytes, subject->text.length, document);
     if (!reopened) {
-        return false;
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     ih_session.close(subject->inner);
     subject->inner = reopened;
-    return true;
+    return MARKDOWN_CORE_OK;
 }
 
-static const ih_subject_class revive = {"reuses a retired id for a new node", faulty_open, revive_append, faulty_text,
-                                        faulty_close};
+static const ih_subject_class revive = {
+    "reuses a retired id for a new node", faulty_open, revive_append, faulty_finalize, faulty_text, faulty_close};
+
+/* Answers a snapshot's lookup from a definition that arrived in an earlier
+ * append, wherever it was written: from its second append on it returns the
+ * fresh parse of the text, whose lookups see every definition. */
+static markdown_core_status early_append(void *handle, const uint8_t *text, size_t length,
+                                         const markdown_core_document **document) {
+    faulty *subject = (faulty *)handle;
+    size_t after = 0;
+    markdown_core_status status = ih_session.append(subject->inner, text, length, document);
+    const uint8_t *current = status == MARKDOWN_CORE_OK ? ih_session.text(subject->inner, &after) : NULL;
+    if (status != MARKDOWN_CORE_OK || ++subject->steps < 2) {
+        return status;
+    }
+    return faulty_status(current && faulty_fresh(subject, current, after, document));
+}
+
+static const ih_subject_class early = {"answers a snapshot's lookup from a definition that arrived in an earlier "
+                                       "append, wherever it was written",
+                                       faulty_open,
+                                       early_append,
+                                       faulty_finalize,
+                                       faulty_text,
+                                       faulty_close};
+
+/* Accepts an append after finalize: it answers with the final document and
+ * takes none of the text. */
+typedef struct lenient_subject {
+    faulty base;
+    const markdown_core_document *final;
+} lenient_subject;
+
+static void *lenient_open(ih_unit unit, const uint8_t *text, size_t length, const markdown_core_document **document) {
+    lenient_subject *subject = (lenient_subject *)calloc(1, sizeof(*subject));
+    faulty *base = subject ? (faulty *)faulty_open(unit, text, length, document) : NULL;
+    if (!base) {
+        free(subject);
+        return NULL;
+    }
+    subject->base = *base;
+    free(base);
+    return subject;
+}
+
+static markdown_core_status lenient_append(void *handle, const uint8_t *text, size_t length,
+                                           const markdown_core_document **document) {
+    lenient_subject *subject = (lenient_subject *)handle;
+    if (subject->final) {
+        *document = subject->final;
+        return MARKDOWN_CORE_OK;
+    }
+    return ih_session.append(subject->base.inner, text, length, document);
+}
+
+static markdown_core_status lenient_finalize(void *handle, const markdown_core_document **document) {
+    lenient_subject *subject = (lenient_subject *)handle;
+    markdown_core_status status = ih_session.finalize(subject->base.inner, document);
+    if (status == MARKDOWN_CORE_OK) {
+        subject->final = *document;
+    }
+    return status;
+}
+
+static const ih_subject_class lenient = {
+    "accepts an append after finalize", lenient_open, lenient_append, lenient_finalize, faulty_text, faulty_close};
 
 /* ------------------------------------------------------------ unit checks */
 
@@ -455,7 +544,8 @@ int main(int argc, char **argv) {
         static const struct {
             const ih_subject_class *subject;
             const char *oracle;
-        } faulty[] = {{&stale, "4.1"}, {&renumber, "4.2 4.4 4.5"}, {&rewrite, "4.3"}, {&keep, "4.1"}, {&revive, "4.2"}};
+        } faulty[] = {{&stale, "4.1"}, {&renumber, "4.2 4.4 4.5"}, {&rewrite, "4.3"}, {&keep, "4.1"}, {&revive, "4.2"},
+                      {&early, "4.6"}, {&lenient, "4.7"}};
         int failures = 0;
         size_t which;
         for (which = 0; which < sizeof(faulty) / sizeof(faulty[0]); which++) {

@@ -1,6 +1,7 @@
 #ifndef MARKDOWN_CORE_DIALECT_H
 #define MARKDOWN_CORE_DIALECT_H
 
+#include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -98,12 +99,20 @@ typedef enum {
 #define MARKDOWN_CORE_FINISH_KIND_COUNT (2 * MARKDOWN_CORE_NODE_KIND_COUNT)
 #define MARKDOWN_CORE_FINISH_KEY_COUNT (2 * (MARKDOWN_CORE_FINISH_KIND_COUNT + 1))
 
+/* The kind index of a kind of no inline class, as of a block: its ordinal,
+ * or the out-of-table index. The block parser reads the records of the blocks
+ * it holds by it, their class known. */
+static inline size_t markdown_core_block_kind_index(markdown_core_node_type kind) {
+    const size_t ordinal = (size_t)kind & MARKDOWN_CORE_NODE_VALUE_MASK;
+    return ordinal < MARKDOWN_CORE_NODE_KIND_COUNT ? ordinal : MARKDOWN_CORE_FINISH_KIND_COUNT;
+}
+
+/* The kind index of any kind: an inline kind's follows the block kinds'. */
 static inline size_t markdown_core_finish_kind_index(markdown_core_node_type kind) {
-    size_t ordinal = (size_t)kind & MARKDOWN_CORE_NODE_VALUE_MASK;
-    if (ordinal >= MARKDOWN_CORE_NODE_KIND_COUNT) {
-        return MARKDOWN_CORE_FINISH_KIND_COUNT;
-    }
-    return MARKDOWN_CORE_NODE_TYPE_INLINE_P(kind) ? MARKDOWN_CORE_NODE_KIND_COUNT + ordinal : ordinal;
+    const size_t index = markdown_core_block_kind_index(kind);
+    return MARKDOWN_CORE_NODE_TYPE_INLINE_P(kind) && index < MARKDOWN_CORE_NODE_KIND_COUNT
+               ? MARKDOWN_CORE_NODE_KIND_COUNT + index
+               : index;
 }
 
 static inline size_t markdown_core_finish_key(markdown_core_event_type event, markdown_core_node_type kind) {
@@ -157,6 +166,8 @@ typedef struct markdown_core_finish_step_entry {
  *   takes a text line as prose; IS_PARAGRAPH, `paragraph`;
  * - BLANK_OPAQUE, BLANK_ASK (`blank_line`), BLANK_RUNS and BLANK_PROPAGATES
  *   (`propagates_child_blank`): what a blank line means inside it;
+ * - FOLDS: the kind is one of `fold_kinds`, and `fold_child` is asked as a
+ *   child settles into a block of it;
  * - FIELDS: the kind can own a field root through its own record
  *   (`markdown_core_kind_owns_fields`, element.h -- a subtree an element owns
  *   is found through the node's `element`, which the walk tests beside this).
@@ -177,7 +188,8 @@ enum {
     MARKDOWN_CORE_KIND_BLANK_OPAQUE = 1u << 8,
     MARKDOWN_CORE_KIND_BLANK_ASK = 1u << 9,
     MARKDOWN_CORE_KIND_BLANK_RUNS = 1u << 10,
-    MARKDOWN_CORE_KIND_BLANK_PROPAGATES = 1u << 11
+    MARKDOWN_CORE_KIND_BLANK_PROPAGATES = 1u << 11,
+    MARKDOWN_CORE_KIND_FOLDS = 1u << 12
 };
 typedef struct markdown_core_kind_record {
     const markdown_core_element_instance *structure;
@@ -206,15 +218,22 @@ static inline size_t markdown_core_state_align(size_t size) {
     return (size + MARKDOWN_CORE_STATE_ALIGN - 1) / MARKDOWN_CORE_STATE_ALIGN * MARKDOWN_CORE_STATE_ALIGN;
 }
 
-/* THE INSTANCES BY DESCRIPTOR: an open-addressed table of the dialect's
- * instances keyed by their descriptor's address, at least twice as large as
- * the elements it holds, so a lookup ends at the element or at an empty entry.
- * A table of 1 << `bits` entries takes the top `bits` bits of the address
- * times 2^64 / phi (Fibonacci hashing), which every bit of the address moves,
- * so descriptors spread over the table at whatever stride they are laid out.
- * It answers markdown_core_parser_instance -- one element reading another's
- * state. The engine and an element's own hooks never search it: the
- * projections hold instances. */
+/* THE INSTANCES BY DESCRIPTOR: an open-addressed table keyed by each
+ * descriptor's address whose entries are instance ordinals of one byte
+ * (MARKDOWN_CORE_ELEMENT_LIMIT): 0 for an empty entry, i + 1 for the instance
+ * at i. Sealing runs at every parse and asks it for the structure of every
+ * kind and for every declared peer. A table of 1 << `bits` entries takes the
+ * top `bits` bits of the address times 2^64 / phi (Fibonacci hashing), which
+ * every bit of the address moves. A linear-probing table's runs of occupied
+ * entries grow with its load, and a stride whose product with 1/phi lies near
+ * a whole number puts neighbouring descriptors in neighbouring entries, so the
+ * table is at least eight times the elements: at a load of at most an eighth
+ * the runs stay short at whatever stride the descriptors lie, and a lookup
+ * reads little more than one entry before it ends at the element or at an
+ * empty entry. A byte per entry keeps the table smaller than a table of
+ * pointers twice the elements. It answers markdown_core_parser_instance --
+ * one element reading another's state. The engine and an element's own hooks
+ * never search it: the projections hold instances. */
 static inline size_t markdown_core_instance_hash(const markdown_core_element *element, unsigned bits) {
     return (size_t)(((uint64_t)(uintptr_t)element * UINT64_C(0x9E3779B97F4A7C15)) >> (64 - bits));
 }
@@ -293,10 +312,10 @@ typedef struct markdown_core_dialect {
     size_t finish_step_slots;
     /* Each kind's record, by kind index (markdown_core_finish_kind_index). */
     markdown_core_kind_record kinds[MARKDOWN_CORE_FINISH_KIND_COUNT + 1];
-    /* The instances by descriptor, 1 << `instance_bits` entries
+    /* The instance ordinals by descriptor, 1 << `instance_bits` entries
      * (markdown_core_instance_hash), and the bytes of one inline run's block
      * of records. */
-    const markdown_core_element_instance *const *instance_table;
+    const uint8_t *instance_table;
     unsigned instance_bits;
     size_t run_state_size;
 } markdown_core_dialect;
@@ -306,6 +325,13 @@ typedef struct markdown_core_dialect {
 static inline const markdown_core_kind_record *markdown_core_dialect_kind(const markdown_core_dialect *dialect,
                                                                           markdown_core_node_type kind) {
     return &dialect->kinds[markdown_core_finish_kind_index(kind)];
+}
+
+/* The same of a kind of no inline class (markdown_core_block_kind_index). */
+static inline const markdown_core_kind_record *markdown_core_dialect_block_kind(const markdown_core_dialect *dialect,
+                                                                                markdown_core_node_type kind) {
+    assert(!MARKDOWN_CORE_NODE_TYPE_INLINE_P(kind));
+    return &dialect->kinds[markdown_core_block_kind_index(kind)];
 }
 
 static inline const markdown_core_element_instance *
@@ -320,16 +346,19 @@ static inline const markdown_core_element_instance *
 markdown_core_dialect_instance(const markdown_core_dialect *dialect, const markdown_core_element *element) {
     const size_t mask = ((size_t)1 << dialect->instance_bits) - 1;
     for (size_t at = markdown_core_instance_hash(element, dialect->instance_bits);; at = (at + 1) & mask) {
-        const markdown_core_element_instance *instance = dialect->instance_table[at];
-        if (!instance || instance->element == element) {
-            return instance;
+        const unsigned ordinal = dialect->instance_table[at];
+        if (!ordinal) {
+            return NULL;
+        }
+        if (dialect->instances[ordinal - 1].element == element) {
+            return &dialect->instances[ordinal - 1];
         }
     }
 }
 
 /* What sealing a builder takes, counted from its element list alone: how
- * many finish step entries, projected instance pointers, instance-table
- * entries, resolved peers and gate-table bytes follow the struct beside one instance per
+ * many finish step entries, projected instance pointers, resolved peers,
+ * instance-table entries and gate-table bytes follow the struct beside one instance per
  * element, and the counts that place each projection among them. */
 typedef struct markdown_core_dialect_sizes {
     size_t block_totals[MARKDOWN_CORE_BLOCK_HOOK_COUNT];

@@ -700,7 +700,9 @@ test("api: a session's finalize returns the final document and ends the session"
     for (const unit of ["utf8", "utf16"]) {
         const session = new MarkdownSession("[a]\n\n", { unit });
         try {
-            session.append("[a]: /url\n");
+            const snapshot = session.append("[a]: /url\n");
+            // A snapshot's lookup sees only the definitions written before it.
+            assert.notEqual(snapshot.dump(session.text), Document.parse(session.text, { unit }).dump(session.text));
             const final = session.finalize();
             const text = session.text;
             assert.equal(final, session.document);

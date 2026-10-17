@@ -32,12 +32,13 @@ typedef enum {
  * continues it (docs/plans/2026-09-29-incremental-parsing.md, 5.9): every
  * node matched to an old node takes its id, every other node takes the next
  * id after `last_id`, and a matched node equal to its old node as a value is
- * that old node. On success the parse owns `previous`: it is the returned
- * root, or it is released into `pool` with every other node it retires, and
- * `last_id` is the last id issued. `node_count` is the number of nodes in
- * `previous`, and on success the number in the published tree. A fresh parse
- * continues nothing: `previous` is NULL and `last_id` is 0, so its root is 1
- * and every node is numbered in canonical walk order.
+ * that old node. The parse owns `previous`, which reads the blocks it
+ * committed (blocks.c, THE LEVELS): a publish makes it the returned root or
+ * releases it into `pool` with every other node it retires, and empties
+ * `previous`, and `last_id` is then the last id issued; a parse that ends
+ * without publishing again releases it first. A fresh parse continues nothing:
+ * `previous` is NULL and `last_id` is 0, so its root is 1 and every node is
+ * numbered in canonical walk order.
  *
  * `pool` lends the parse every node and resource slot it takes (node.h); it
  * outlives the parse, and its owner disposes it. */
@@ -45,7 +46,6 @@ typedef struct markdown_core_revision {
     markdown_core_node_pool *pool;
     markdown_core_node *previous;
     uint64_t last_id;
-    size_t node_count;
 } markdown_core_revision;
 
 /* Immutable runs map logical content bytes to authored byte intervals.
@@ -122,12 +122,230 @@ typedef struct markdown_core_block_input {
     uint32_t enclosing;
 } markdown_core_block_input;
 
+/* AN INPUT the block parser reads: its bytes, and the geometry and grammar
+ * facts of its lines. The driver and lookahead extend one index; a source
+ * byte is scanned for line geometry once, whether the input is the
+ * document or a mapped cell. A cell's content is read as an input of its
+ * own, beside the document's, which keeps its index (blocks.c,
+ * S_parse_block_inputs). */
+typedef struct markdown_core_parser_input {
+    const unsigned char *source;
+    size_t size, scanned;
+    /* Where the input's last complete line ends: a line ending with `\n`,
+     * or with `\r` and another byte after it. A reading at or past it reads
+     * the end of the input (markdown_core_parser_input_ends). A cell's
+     * content is complete when it is read, so this is its end. */
+    const unsigned char *complete;
+    struct markdown_core_input_line *lines;
+    struct markdown_core_normalized_line *normalized;
+    struct markdown_core_line_facts *facts;
+    size_t fact_count, fact_capacity;
+    size_t line_count, line_capacity;
+    /* Whether a column of the input may stand elsewhere than the same
+     * offset from its line's start in the source: true for a cell's content,
+     * and for the document once its scan finds NUL, which the block parser
+     * reads as the three bytes of U+FFFD. */
+    bool mapped;
+    int first_line;
+    /* The input's last line as the block parser will see it, normalized once
+     * and reused by every lookahead that reaches it: it has no terminator of
+     * its own in the source, and a line handed to the prefix matchers must
+     * end in one. */
+    markdown_core_strbuf last_line;
+    bool last_line_ready;
+} markdown_core_parser_input;
+
+/* A COPY A SNAPSHOT MADE (blocks.c, THE COPIES): the copy, NULL once the
+ * snapshot released it, and the block it copies, whose storage it borrows. */
+typedef struct markdown_core_copy {
+    struct markdown_core_node *copy, *original;
+} markdown_core_copy;
+
+/* A LEVEL OF THE SPINE (blocks.c, THE LEVELS): a builder of the committed
+ * parse as the last publish left it, at its depth, or, one past the last
+ * builder, the pending block; the object the published document holds for
+ * it, NULL when it holds none, and, while a publish is made, the object the
+ * new tree holds at its depth (ast.c, A STREAMING PUBLISH); how many of its
+ * children the document publishes as they are, and where the last of them
+ * ends in the source. A
+ * builder writes a children array and a content buffer the document does
+ * not read: `spare` and `spare_content` are the ones the document reads,
+ * of which the first `spare_valid` entries and `spare_content_valid` bytes
+ * are what the builder has committed. `spare_capacity` is a bound the
+ * array's room is at least, and `spare_size` the buffer's room. */
+typedef struct markdown_core_level {
+    struct markdown_core_node *node, *published;
+    const struct markdown_core_node *object;
+    uint32_t count, end;
+    struct markdown_core_node **spare;
+    uint32_t spare_capacity, spare_valid;
+    unsigned char *spare_content;
+    bufsize_t spare_size, spare_content_valid;
+} markdown_core_level;
+
+/* WHAT A LEVEL TAKES BEFORE A PUBLISH (blocks.c, THE LEVELS), at the depth
+ * of a copy: the children array and the content buffer the builder takes
+ * after the publish, when the spare cannot serve, and where its last
+ * published child ends. Nothing after a publish can fail. */
+typedef struct markdown_core_level_room {
+    struct markdown_core_node **children;
+    unsigned char *content;
+    bufsize_t content_size;
+    uint32_t end;
+} markdown_core_level_room;
+
+/* STORAGE THE PUBLISHED DOCUMENT STILL READS that the committed parse let
+ * go (blocks.c, THE LEVELS): a children array, a content buffer or a
+ * string, the slot of a node that moved, or a tree a block completed again
+ * replaced; released after the next publish. */
+typedef enum {
+    MARKDOWN_CORE_RETIRED_CHILDREN,
+    MARKDOWN_CORE_RETIRED_CONTENT,
+    MARKDOWN_CORE_RETIRED_SLOT,
+    MARKDOWN_CORE_RETIRED_TREE
+} markdown_core_retired_kind;
+
+typedef struct {
+    void *storage;
+    markdown_core_retired_kind kind;
+    /* Where the block whose state moved starts, for a slot. */
+    uint32_t start;
+} markdown_core_retired;
+
+/* THE COMMITTED TABLES (ast.c, THE DEFINITION TABLES A STREAMING PARSE
+ * KEEPS): the definitions the published document holds as COMMITTED. Each
+ * of the document's tables -- Footnotes, Specimens, References, Headings --
+ * by where they start, an entry's number its start and its pointer the
+ * object the document holds; and the labeled Footnotes, the labeled
+ * Specimens and the reference targets by label, an entry's pointer the
+ * label's definition and its number where that starts. */
+enum { MARKDOWN_CORE_DEFINITION_TABLES = 4, MARKDOWN_CORE_LABEL_TABLES = 3 };
+
+typedef struct markdown_core_committed_tables {
+    markdown_core_key_tree starts[MARKDOWN_CORE_DEFINITION_TABLES];
+    markdown_core_key_tree labels[MARKDOWN_CORE_LABEL_TABLES];
+} markdown_core_committed_tables;
+
+/* A DEFINITION A CANDIDATE LISTS (blocks.c, A LOOKUP THAT FOUND NOTHING):
+ * where it starts in the source, its table and the object the document
+ * holds. */
+typedef struct {
+    uint32_t start, table;
+    const struct markdown_core_node *node;
+} markdown_core_defined;
+
+/* A COMMITTED DEFINITION A PUBLISH LISTS as it walks: its table and its
+ * entry there, which name the object the publish places once it is done. */
+typedef struct {
+    uint32_t table, entry;
+} markdown_core_kept;
+
+/* THE PATHS a streaming commit's records hold (blocks.c), cut from blocks
+ * of the parser's own. */
+typedef struct markdown_core_path_block {
+    struct markdown_core_path_block *next;
+    size_t used;
+    markdown_core_path items[];
+} markdown_core_path_block;
+
+/* A BLOCK A LOOKUP FOUND NOTHING FOR at a commit's completion
+ * (markdown_core_parser_find_definition; blocks.c, A LOOKUP THAT FOUND
+ * NOTHING): its path, and where it and each of its field roots lay as the
+ * block phase left them, `position_count` of the parser's `miss_positions`
+ * from `first_position`, in the order their visit finds them. */
+typedef struct {
+    const markdown_core_path *path;
+    size_t first_position, position_count;
+} markdown_core_miss_block;
+
+/* Where a block or a field root lay as the block phase left it: its place,
+ * and its places, which the parser owns until a candidate takes them. */
+typedef struct {
+    markdown_core_place place;
+    markdown_core_places *places;
+} markdown_core_miss_position;
+
+/* A definition lookup a commit's completion found nothing for: the block it
+ * was made for, among the parser's `miss_blocks`, and the lookup's kind and
+ * label, as written, at `label_start` in the parser's `miss_labels`. */
+typedef struct {
+    size_t block;
+    markdown_core_registry_kind kind;
+    bufsize_t label_start, label_length;
+} markdown_core_definition_miss;
+
+/* WHAT A STREAMING PARSE KEEPS: a session's parse, which takes snapshots
+ * between its commits (blocks.c, THE SNAPSHOT). Its records of committed
+ * blocks name them by path, and its publishes keep levels and the committed
+ * definitions. The parser owns it from markdown_core_parser_stream until the
+ * parse is released. */
+typedef struct markdown_core_stream {
+    /* THE COPIES of the snapshot being taken, the builders' from the root
+     * up, `builder_count` of them, and then the pending block's
+     * (blocks.c), with what each level takes before the publish. */
+    markdown_core_copy *copies;
+    markdown_core_level_room *rooms;
+    size_t copy_count, builder_count, copy_capacity;
+    /* THE LEVELS of the spine the last publish left (blocks.c). */
+    markdown_core_level *levels;
+    size_t level_count, level_capacity;
+    markdown_core_retired *retired;
+    size_t retired_count, retired_capacity;
+    /* The definitions the published document holds as committed (ast.c),
+     * room for those a publish lists as it walks, and the definitions the
+     * candidates of a finalize list, which join the committed tables once
+     * every candidate is placed (blocks.c). */
+    markdown_core_committed_tables committed;
+    markdown_core_kept *kept;
+    size_t kept_capacity;
+    markdown_core_defined *defined;
+    size_t defined_count, defined_capacity;
+    /* THE PATHS (blocks.c): the root's, and the blocks the rest are cut
+     * from. */
+    markdown_core_path root_path;
+    markdown_core_path_block *paths;
+    /* THE LOOKUPS A COMMIT'S COMPLETION FOUND NOTHING FOR, in the order
+     * they were made (plan 5.4), and the blocks they were made for, the last
+     * of which is `miss_block` while its completion lasts. The finalize asks
+     * each again with every definition visible, and completes again each
+     * block whose answer is one now (blocks.c, A LOOKUP THAT FOUND
+     * NOTHING). */
+    markdown_core_definition_miss *misses;
+    size_t miss_count, miss_capacity;
+    markdown_core_strbuf miss_labels;
+    markdown_core_miss_block *miss_blocks;
+    size_t miss_block_count, miss_block_capacity;
+    markdown_core_miss_position *miss_positions;
+    size_t miss_position_count, miss_position_capacity;
+    const struct markdown_core_node *miss_block;
+    /* How many levels of THE LEVELS, from the root, hold below the children
+     * they published as they are a block that has changed since
+     * (markdown_core_parser_supersede): the next publish finds each of them
+     * differs. */
+    size_t touched_levels;
+} markdown_core_stream;
+
 struct markdown_core_parser {
+    /* The flags a block takes as it settles (blocks.c, A BLOCK SETTLES):
+     * COMMITTED in a commit, nothing in a snapshot. */
+    markdown_core_node_internal_flags settle_flags;
+    /* Whether completion runs for a snapshot rather than for the finalize
+     * (docs/plans/2026-09-29-incremental-parsing.md, 5.4): a lookup sees only
+     * the definitions that start before the block being completed, and one
+     * that finds none is recorded (markdown_core_parser_find_definition). */
+    bool snapshot;
+    /* What the parse keeps as a session's (markdown_core_parser_stream), or
+     * NULL: a one-shot parse keeps none of it. */
+    markdown_core_stream *stream;
     /* Every definition and explicit anchor the parse declared (registry.h):
      * the block phase declares definitions as it reads them, the headings
      * declare their labels before inline content is parsed, and completion
      * reserves explicit anchors where it meets them. */
     markdown_core_registry registry;
+    /* The block being completed: the queued block the completion walk is in
+     * (blocks.c, COMPLETION), or the heading whose inline content the
+     * document's preparation parses. */
+    struct markdown_core_node *completing;
     markdown_core_source_order source_order;
     /* The stack the finish stage's tree walks borrow in turn, the finish
      * walk's frames and then publishing's: each grows it to what it needs
@@ -184,22 +402,12 @@ struct markdown_core_parser {
      * none for the document, and a cell's `enclosing` while its content is
      * read. */
     uint32_t input_enclosing;
-    /* Geometry and grammar facts for the active immutable input. The driver
-     * and lookahead extend one index; a source byte is scanned for line
-     * geometry once, whether the input is the document or a mapped cell. */
-    const unsigned char *input_source;
-    size_t input_length, input_scanned;
-    struct markdown_core_input_line *input_lines;
-    struct markdown_core_normalized_line *normalized_lines;
-    struct markdown_core_line_facts *input_facts;
-    size_t input_fact_count, input_fact_capacity;
-    size_t input_line_count, input_line_capacity;
-    /* Whether a column of the active input may stand elsewhere than the
-     * same offset from its line's start in the source: true for a cell's
-     * content, and for the document once its scan finds NUL, which the block
-     * parser reads as the three bytes of U+FFFD. */
-    bool input_mapped;
-    int input_first_line;
+    /* The active input: the document's text, or a table cell's content
+     * while its blocks are read. */
+    markdown_core_parser_input input;
+    /* The storage the cells' inputs are read on, made as the first cell is
+     * read and kept for the next while the document's input is read. */
+    markdown_core_parser_input *cell_input;
     size_t input_line_work;
     /* A complete candidate may consume through a later source boundary. The
      * source driver advances to it after the current line has finished. */
@@ -279,15 +487,16 @@ struct markdown_core_parser {
      * to `S_process_line`, so a block start whose grammar needs a later line --
      * the `%%` block comment's closer -- can look ahead without consuming
      * anything (see markdown_core_parser_lookahead_begin). NULL until the
-     * first line is processed; `cursor == end` once the input has run out. */
+     * first line is processed; markdown_core_parser_input_ends answers true
+     * for it once the input has run out. */
     const unsigned char *lookahead_cursor;
-    const unsigned char *lookahead_end;
-    /* The input's last line as the block parser will see it, normalized once
-     * and reused by every lookahead that reaches it: it has no terminator of
-     * its own in the source, and a line handed to the prefix matchers must
-     * end in one. */
-    markdown_core_strbuf lookahead_last_line;
-    bool lookahead_last_line_ready;
+    /* Whether a reading of the document's input reached its end, and where
+     * the line that asked starts in the source: the line being processed, or
+     * the first line for the document's prefix. A line whose decisions read
+     * the end holds only while no more text follows
+     * (markdown_core_parser_input_ends). */
+    bool end_seen;
+    bufsize_t end_seen_at;
     /* The open containers a lookahead matches, root first, with the flags
      * each had when it began: the builders from the active input's root to
      * the block's parent (markdown_core_parser_lookahead_begin). Owned by the
@@ -508,6 +717,19 @@ static inline markdown_core_node *markdown_core_parser_current(const markdown_co
     return parser->current;
 }
 
+/* Whether a block that closed has settled: every one has but the pending
+ * block, which a later line can still write. */
+static inline bool markdown_core_parser_settled(const markdown_core_parser *parser, const markdown_core_node *node) {
+    return node != parser->pending;
+}
+
+/* A block an element installs in a field, which holds as a settled block
+ * does from then on (blocks.c, A BLOCK SETTLES): the document's metadata,
+ * which its prefix makes, and an inline note, which its Citation holds. */
+static inline void markdown_core_parser_settle_field(const markdown_core_parser *parser, markdown_core_node *node) {
+    node->flags |= parser->settle_flags;
+}
+
 /* The active input's root: the document, or the table cell whose content the
  * input is. */
 static inline markdown_core_node *markdown_core_parser_block_root(const markdown_core_parser *parser) {
@@ -588,6 +810,12 @@ static inline const markdown_core_kind_record *markdown_core_parser_kind(const m
     return markdown_core_dialect_kind(parser->dialect, (markdown_core_node_type)node->kind);
 }
 
+/* The same of a block (dialect.h, markdown_core_dialect_block_kind). */
+static inline const markdown_core_kind_record *markdown_core_parser_block_kind(const markdown_core_parser *parser,
+                                                                               const markdown_core_node *block) {
+    return markdown_core_dialect_block_kind(parser->dialect, (markdown_core_node_type)block->kind);
+}
+
 /* Physical geometry is present for every visited line. Optional normalized
  * views and grammar facts share one lazily created record for that line. */
 typedef struct markdown_core_input_line {
@@ -626,12 +854,15 @@ typedef struct markdown_core_line_facts {
     /* Blank after the recorded container's prefix. */
     bool blank;
     /* On the first line of a run of blank lines: the number of the first line
-     * after the run and where it begins, so a later scan whose extra containers
-     * accept every blank line steps over the run at once. 0 when not a run. */
+     * after the run and where it begins (`run_end_at`), so a later scan
+     * whose extra containers accept every blank line steps over the run at
+     * once. 0 when not a run. */
     int run_end;
     /* Only NUL-bearing lines need this count; it occupies former padding. */
     uint32_t nul_count;
-    const unsigned char *run_end_cursor;
+    /* Where the first line after the run begins, as an offset in the input:
+     * a session's text moves when it grows, and the facts stay. */
+    size_t run_end_at;
 } markdown_core_line_facts;
 /* The index is a contiguous prefix. Its next record already owns this line's
  * continuation; at the frontier the scanner owns it. No newline bytes need
@@ -639,7 +870,7 @@ typedef struct markdown_core_line_facts {
 static inline size_t markdown_core_input_line_next(const markdown_core_parser *parser,
                                                    const markdown_core_input_line *line) {
     const markdown_core_input_line *next = line + 1;
-    return next < parser->input_lines + parser->input_line_count ? next->start : parser->input_scanned;
+    return next < parser->input.lines + parser->input.line_count ? next->start : parser->input.scanned;
 }
 
 /* Returned pointers are borrowed until the next request that grows the
@@ -647,12 +878,37 @@ static inline size_t markdown_core_input_line_next(const markdown_core_parser *p
 markdown_core_input_line *markdown_core_parser_extend_source_lines(markdown_core_parser *parser, size_t index);
 
 static inline markdown_core_input_line *markdown_core_parser_source_line(markdown_core_parser *parser, int line) {
-    if (line < parser->input_first_line || parser->error) {
+    if (line < parser->input.first_line || parser->error) {
         return NULL;
     }
-    size_t index = (size_t)(line - parser->input_first_line);
-    return index < parser->input_line_count ? &parser->input_lines[index]
+    size_t index = (size_t)(line - parser->input.first_line);
+    return index < parser->input.line_count ? &parser->input.lines[index]
                                             : markdown_core_parser_extend_source_lines(parser, index);
+}
+
+/* THE END OF THE ACTIVE INPUT, learned in one place. Every reading that
+ * asks whether the input goes on past a position asks here, or asks for a
+ * line after the ones the driver reached (markdown_core_parser_source_line);
+ * nothing else compares a position with the input's end. `cursor` is a
+ * position of the active input. A reading at or past the end of the last
+ * complete line reads what more text can change, so when the input is the
+ * document's the parser records the line that asked (`end_seen`): its
+ * decisions hold only while no more text follows. A table cell's input is
+ * complete when it is read, so its end records nothing. */
+static inline void markdown_core_parser_see_end(markdown_core_parser *parser) {
+    if (!parser->end_seen && markdown_core_parser_block_root(parser) == parser->root) {
+        parser->end_seen = true;
+        parser->end_seen_at = parser->line_start;
+    }
+}
+
+static inline bool markdown_core_parser_input_ends(markdown_core_parser *parser, const unsigned char *cursor) {
+    assert(cursor >= parser->input.source && cursor <= parser->input.source + parser->input.size);
+    if (cursor < parser->input.complete) {
+        return false;
+    }
+    markdown_core_parser_see_end(parser);
+    return cursor == parser->input.source + parser->input.size;
 }
 
 /* Optional state is sparse within the input index: properties and ordinary
@@ -665,7 +921,7 @@ static inline markdown_core_line_facts *markdown_core_parser_get_line_facts(mark
     if (!line) {
         return NULL;
     }
-    return line->facts ? &parser->input_facts[line->facts - 1] : markdown_core_parser_extend_line_facts(parser, line);
+    return line->facts ? &parser->input.facts[line->facts - 1] : markdown_core_parser_extend_line_facts(parser, line);
 }
 
 /* A container of a lookahead's chain, and its flags as the lookahead began. */
@@ -751,9 +1007,9 @@ bufsize_t markdown_core_parser_mapped_source_end(markdown_core_parser *parser, i
 /* The geometry of input line `line`, which the driver has already visited. */
 static inline markdown_core_input_line *markdown_core_parser_visited_line(const markdown_core_parser *parser,
                                                                           int line) {
-    size_t index = (size_t)(line - parser->input_first_line);
-    assert(line >= parser->input_first_line && index < parser->input_line_count);
-    return &parser->input_lines[index];
+    size_t index = (size_t)(line - parser->input.first_line);
+    assert(line >= parser->input.first_line && index < parser->input.line_count);
+    return &parser->input.lines[index];
 }
 
 /* An input that is not mapped is a copy of its source, so a line's column c
@@ -761,14 +1017,14 @@ static inline markdown_core_input_line *markdown_core_parser_visited_line(const 
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bufsize_t
     markdown_core_parser_source_offset(markdown_core_parser *parser, int line, int column) {
     const markdown_core_input_line *geometry = markdown_core_parser_visited_line(parser, line);
-    return !parser->input_mapped ? (bufsize_t)geometry->start + column - 1
+    return !parser->input.mapped ? (bufsize_t)geometry->start + column - 1
                                  : markdown_core_parser_mapped_source_offset(parser, line, column);
 }
 
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bufsize_t
     markdown_core_parser_source_end(markdown_core_parser *parser, int line, int column) {
     const markdown_core_input_line *geometry = markdown_core_parser_visited_line(parser, line);
-    return !parser->input_mapped ? (bufsize_t)geometry->start + column
+    return !parser->input.mapped ? (bufsize_t)geometry->start + column
                                  : markdown_core_parser_mapped_source_end(parser, line, column);
 }
 /* Where the first byte of input line `line` was written: the document line's
@@ -819,6 +1075,31 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
                                         int *first_nonspace, int *indent, int *blank_lines);
 void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead);
 
+/* THE DEFINITION LOOKUP of inline content: the record of `kind` that
+ * declares `label`, as written, for the block being completed, or NULL.
+ * Reference and footnote labels are looked up in their normal form, and a
+ * specimen label as its bytes (registry.h). At a finalize every declaration
+ * answers; at a snapshot only one whose key some definition declares before
+ * the block starts, which is before its inline roots start, and a lookup that
+ * finds none is recorded for the finalize. `*failed` is set when storage
+ * could not be had, and the answer is then NULL. A snapshot's lookup goes on
+ * from what the registry answered in markdown_core_parser_find_at_snapshot. */
+const markdown_core_registry_record *markdown_core_parser_find_at_snapshot(markdown_core_parser *parser,
+                                                                           markdown_core_registry_kind kind,
+                                                                           const markdown_core_chunk *label,
+                                                                           const markdown_core_registry_record *record,
+                                                                           bool *failed);
+static inline const markdown_core_registry_record *
+markdown_core_parser_find_definition(markdown_core_parser *parser, markdown_core_registry_kind kind,
+                                     const markdown_core_chunk *label, bool *failed) {
+    const markdown_core_registry_record *record =
+        kind == MARKDOWN_CORE_REGISTRY_SPECIMEN
+            ? markdown_core_registry_find(&parser->registry, kind, label->data, label->len, failed)
+            : markdown_core_registry_find_label(&parser->registry, kind, label, failed);
+    return parser->snapshot && !*failed ? markdown_core_parser_find_at_snapshot(parser, kind, label, record, failed)
+                                        : record;
+}
+
 /* THE LONGEST SOURCE A PARSE TAKES: offsets are int32, and every buffer
  * derived from the source stays under half of that. A session refuses a text
  * that would grow past it (session.c); below it, `length` is within this
@@ -837,17 +1118,69 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
  * could not be allocated. */
 markdown_core_parser *markdown_core_parser_create(const markdown_core_element *const *elements, size_t count,
                                                   markdown_core_parser_setup_func setup, void *context);
-/* A PARSE IS A START, A COMMIT AND A FINALIZE, one transaction at a time on
+/* A PARSE IS A START, COMMITS AND A FINALIZE, one transaction at a time on
  * an instance. `start` begins a transaction that continues what `revision`
  * says, with the storage it lends (above). `commit` reads the lines of
- * `source`, which the transaction borrows until it ends. `finalize` ends the
- * input there: every block still open closes, the closed blocks complete,
- * and the tree is published and returned, or NULL when the transaction
- * failed. It releases the transaction's state, so an instance runs any
- * number of them, each as the first. */
+ * `source` that start before `limit`, from where the transaction's last
+ * commit stopped: the text of every commit of a transaction is the one
+ * before it with bytes added at its end, and it is borrowed until the next
+ * commit or the end of the transaction; false when the transaction failed.
+ * `finalize` ends the input there:
+ * every block still open closes, the closed blocks complete, and the tree is
+ * published and returned, or NULL when the transaction failed. `discard`
+ * ends a transaction and returns nothing. Both release the transaction's
+ * state, so an instance runs any number of them, each as the first. */
 void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revision *revision);
-void markdown_core_parser_commit(markdown_core_parser *parser, const char *source, size_t length);
+bool markdown_core_parser_commit(markdown_core_parser *parser, const char *source, size_t length, size_t limit);
 markdown_core_node *markdown_core_parser_finalize(markdown_core_parser *parser);
+void markdown_core_parser_discard(markdown_core_parser *parser);
+/* THE COMMIT POINT the lines read so far leave (plan 5.1, 5.3): where the
+ * first line that read the end of the input starts, or the end of the last
+ * complete line when none did. Every line before it decided only from bytes
+ * that more text leaves as they are, so a commit with this limit reads them
+ * as a parse of any longer text does. */
+size_t markdown_core_parser_commit_point(const markdown_core_parser *parser);
+/* Makes the transaction a session's (markdown_core_stream), before its first
+ * commit: only such a transaction completes for a snapshot and takes
+ * snapshots, and asks for paths, levels, supersedes and retirements. False
+ * when the transaction failed. */
+bool markdown_core_parser_stream(markdown_core_parser *parser);
+/* Completes the blocks that have settled, for a snapshot (plan 5.4): the
+ * cells of the tables that closed are read, the document prepares the
+ * headings that settled, and the completion queue is completed with a
+ * snapshot's lookups. What it completes stays complete. False when the
+ * transaction failed. */
+bool markdown_core_parser_complete(markdown_core_parser *parser);
+/* A SNAPSHOT of `source`, the text of the last commit (blocks.c, THE
+ * SNAPSHOT): the committed parse read on to the end of the text, ended
+ * there, completed with a snapshot's lookups and published, and then put
+ * back as its commit left it. The published root, or NULL when the
+ * transaction failed; `*commit_point` is the next commit's limit
+ * (markdown_core_parser_commit_point). */
+markdown_core_node *markdown_core_parser_snapshot(markdown_core_parser *parser, const char *source, size_t length,
+                                                  size_t *commit_point);
+/* THE PATHS (blocks.c): the path of `block`, a block a streaming commit has
+ * open, settling or settled and not yet completed, or NULL with the parse
+ * failed; and the block at `path` in the tree the parser builds once the
+ * document has closed. */
+const markdown_core_path *markdown_core_parser_path(markdown_core_parser *parser, markdown_core_node *block);
+markdown_core_node *markdown_core_parser_resolve(markdown_core_parser *parser, const markdown_core_path *path);
+/* THE OBJECT OF A LEVEL (blocks.c, THE LEVELS) in the tree the parser builds
+ * now: the copy of the level's builder while the snapshot has it open, and
+ * the level's block otherwise. NULL past the levels, when the copy is gone,
+ * or when the published document holds no object for the level. */
+const struct markdown_core_node *markdown_core_parser_level_object(const markdown_core_parser *parser, size_t depth);
+/* THE BLOCK AT `path` AS AN OBJECT OF ITS OWN (blocks.c, A BLOCK
+ * SUPERSEDED), once the document has closed: the block, which the published
+ * document holds only when it is an object of the tree the publish shares,
+ * moved to a slot of its own then, as is every block between it and the
+ * levels; or NULL, with the parse failed. Nothing the published document
+ * reads changes, and the next publish finds what holds the block differs. */
+struct markdown_core_node *markdown_core_parser_supersede(markdown_core_parser *parser, const markdown_core_path *path);
+/* Keeps `storage`, of `kind`, until the next publish, which no longer reads
+ * it, and then releases it. False, with the parse failed, when it could not
+ * be kept. */
+bool markdown_core_parser_retire(markdown_core_parser *parser, void *storage, markdown_core_retired_kind kind);
 void markdown_core_parser_destroy(markdown_core_parser *parser);
 
 #ifdef __cplusplus

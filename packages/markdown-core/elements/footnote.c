@@ -20,7 +20,7 @@ static markdown_core_node *markdown_core_inline_make_footnote_cite(markdown_core
 static bool markdown_core_footnote_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                         block_start_context *context, block_start *start);
 /* The definition record a call's label names, or NULL when the document
- * defines no such label. The record's label IS the call's normal form -- the
+ * defines no such label that the call's root sees. The record's label IS the call's normal form -- the
  * lookup matched it byte for byte -- so the call takes its id from there
  * rather than normalizing the same label a second time. */
 static const markdown_core_registry_record *
@@ -35,8 +35,8 @@ markdown_core_inline_footnote_definition(markdown_core_inline_state *inline_stat
     markdown_core_chunk label =
         markdown_core_chunk_dup(&inline_state->input, label_start + 1, after_close - label_start - 2);
     bool failed = false;
-    const markdown_core_registry_record *record = markdown_core_registry_find_label(
-        &inline_state->owner_parser->registry, MARKDOWN_CORE_REGISTRY_FOOTNOTE, &label, &failed);
+    const markdown_core_registry_record *record = markdown_core_parser_find_definition(
+        inline_state->owner_parser, MARKDOWN_CORE_REGISTRY_FOOTNOTE, &label, &failed);
     if (failed) {
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
     }
@@ -94,6 +94,7 @@ markdown_core_node *markdown_core_inline_close_inline_footnote(const markdown_co
     markdown_core_scaffold_insert_before(opener->inl_text, cite);
     /* The note is its Citation's own field, as the affixes are. */
     markdown_core_scaffold_first(cite)->as.citation->note = footnote;
+    markdown_core_parser_settle_field(parser, footnote);
     markdown_core_parser_release_node(parser, opener->inl_text);
     markdown_core_brackets(self->peers[FOOTNOTE_LINK], inline_state)->no_link_openers = opener->outer_no_link_openers;
     markdown_core_inline_pop_bracket(self->peers[FOOTNOTE_LINK], inline_state);

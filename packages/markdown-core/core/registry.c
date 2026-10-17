@@ -74,11 +74,8 @@ void markdown_core_registry_free(markdown_core_registry *registry) {
     markdown_core_strbuf_init(&registry->key, 0);
 }
 
-bool markdown_core_registry_declare(markdown_core_registry *registry, markdown_core_registry_kind kind,
-                                    const unsigned char *label, bufsize_t length, uint32_t start) {
-    if (length <= 0) {
-        return true;
-    }
+static inline bool S_append(markdown_core_registry *registry, markdown_core_registry_kind kind,
+                            const unsigned char *label, bufsize_t length, uint32_t start, bool withdraws) {
     void *records =
         markdown_core_reserve(registry->records, &registry->capacity, registry->count + 1, sizeof(*registry->records));
     if (!records) {
@@ -95,9 +92,16 @@ bool markdown_core_registry_declare(markdown_core_registry *registry, markdown_c
     record->key_len = length + 1;
     record->start = record->earliest = start;
     record->previous = 0;
+    record->live = 0;
+    record->withdraws = withdraws;
     registry->records[registry->count++] = record;
     registry->spaces[kind].records++;
     return true;
+}
+
+bool markdown_core_registry_declare(markdown_core_registry *registry, markdown_core_registry_kind kind,
+                                    const unsigned char *label, bufsize_t length, uint32_t start) {
+    return length <= 0 || S_append(registry, kind, label, length, start, false);
 }
 
 /* The index takes the kind's records the log holds beyond its cursor, in log
@@ -119,11 +123,20 @@ static bool S_index_space(markdown_core_registry *registry, markdown_core_regist
             return false;
         }
         if (slot->key) {
+            const markdown_core_registry_record *before = registry->records[slot->value];
             record->previous = slot->value + 1;
-            const uint32_t earlier = registry->records[slot->value]->earliest;
-            record->earliest = earlier < record->start ? earlier : record->start;
+            if (record->withdraws) {
+                assert(before->live);
+                record->earliest = before->earliest;
+                record->live = before->live - 1;
+            } else {
+                record->earliest = before->earliest < record->start ? before->earliest : record->start;
+                record->live = before->live + 1;
+            }
             slot->key = record->key;
         } else {
+            assert(!record->withdraws);
+            record->live = 1;
             markdown_core_key_index_commit(&registry->index, slot, record->key);
         }
         slot->value = space->cursor;
@@ -141,7 +154,13 @@ static const markdown_core_registry_record *S_find_key(markdown_core_registry *r
     }
     const markdown_core_key_index_slot *slot =
         markdown_core_key_index_find(&registry->index, registry->key.ptr, registry->key.size);
-    return slot ? registry->records[slot->value] : NULL;
+    return slot && registry->records[slot->value]->live ? registry->records[slot->value] : NULL;
+}
+
+bool markdown_core_registry_withdraw(markdown_core_registry *registry, markdown_core_registry_kind kind,
+                                     const unsigned char *label, bufsize_t length, uint32_t start) {
+    assert(length > 0);
+    return S_append(registry, kind, label, length, start, true) && S_index_space(registry, kind);
 }
 
 const markdown_core_registry_record *markdown_core_registry_find(markdown_core_registry *registry,
