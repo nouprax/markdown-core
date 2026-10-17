@@ -73,7 +73,8 @@ static inline uint64_t markdown_core_key_head(const unsigned char *key, bufsize_
 
 /* The entry of key `number`, its four big-endian bytes. */
 static inline markdown_core_key_entry markdown_core_key_number(uint32_t number) {
-    return (markdown_core_key_entry){(uint64_t)number << 32, NULL, 4, number, NULL};
+    const markdown_core_key_entry entry = {(uint64_t)number << 32, NULL, 4, number, NULL};
+    return entry;
 }
 
 /* The order of two keys with equal heads. */
