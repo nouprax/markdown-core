@@ -11148,6 +11148,7 @@ static void session_finalize_matches_a_parse(test_batch_runner *runner) {
         ":::note{#d}\n# x [x]\n:::" FILLER "# x\n\n[x]: /u\n",
         "See [^n] here." FILLER "[^n]: note\n",
         "See [^n]{#c} and [x][y]{#a}." FILLER "# a\n\n# c\n\n[^n]: note\n\n[y]: /u\n",
+        "- a\n  - # A [x]\n  - > b [y]\n    > - # A [x]\n- c" FILLER ":n{#a}\n\n# A\n\n[x]: /u\n\n[y]: /v\n",
     };
 #undef FILLER
     static const size_t chunks[] = {1, 3, 0};
@@ -11217,6 +11218,7 @@ static void session_snapshot_names(test_batch_runner *runner) {
         "# A\n\n# A\n\n# A\n\n# A\n\n# A\n\n# A\n\n# A\n\n:n{#a-2}\n\n# A\n\n:n{#a}\n",
         "# A\n\n# B {#a}\n\n# A\n\nA\n=\n\nA {#a-1}\n-\n",
         "- # A\n\n  # A\n\n> :n{#a-1}\n> # A\n",
+        "- a\n  - # A\n    text\n  - > # A\n    > - # A\n- # A\n\npara\n\n:n{#a}\n\n:n{#a-2}\n",
     };
     for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
         const char *source = sources[i];

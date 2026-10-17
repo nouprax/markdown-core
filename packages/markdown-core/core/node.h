@@ -311,8 +311,9 @@ enum markdown_core_node__internal_flags {
     /* A block that settled in a commit (parser.h, THE BUILDERS): it is in
      * the committed tree, and a snapshot reads it and never writes it. */
     MARKDOWN_CORE_NODE__COMMITTED = (1 << 5),
-    // Deferred contextual escape token, decoded when inline ownership is final.
-    MARKDOWN_CORE_NODE__ESCAPED_SPACE = (1 << 6),
+    /* A settled block whose path is cut: its scaffold holds the path where
+     * it held its index (blocks.c, THE PATHS). */
+    MARKDOWN_CORE_NODE__PATH_KEPT = (1 << 6),
     /* A copy a snapshot made of a builder or of the pending block, which
      * borrows the original's children array, or its content buffer: it
      * writes only past the original's count, and releasing it gives back
@@ -465,8 +466,9 @@ typedef struct markdown_core_path {
 typedef struct markdown_core_scaffold {
     struct markdown_core_node *parent;
     /* An inline node's previous sibling; a settled block's index in the
-     * children of the block it settled into; the path of an open block of a
-     * streaming commit, once asked for (blocks.c, THE PATHS). */
+     * children of the block it settled into, or its path once cut
+     * (PATH_KEPT); the path of an open block or the pending block, once cut
+     * (blocks.c, THE PATHS). */
     union {
         struct markdown_core_node *node;
         const struct markdown_core_path *path;

@@ -2056,12 +2056,14 @@ void markdown_core_parser_discard(markdown_core_parser *parser) { S_release_pars
  * takes, which nothing takes before it settles there. Each still holds its
  * place, so the path records where the block starts too, which a block
  * superseded later gives its table entries (A BLOCK SUPERSEDED). A block
- * that has not settled keeps its path once asked; the paths are cut from
- * blocks the parser owns and live as long as it. */
+ * keeps its path once cut, so a path is cut once for each block a path is
+ * asked through, and the walk up stops at the first block that has one; a
+ * block that settles takes its index in place of a path it kept while it
+ * had not. The paths are cut from blocks the parser owns and live as long
+ * as it. */
 #define S_PATH_BLOCK_ITEMS 255
 
-static const markdown_core_path *S_path_cut(markdown_core_parser *parser, const markdown_core_path *parent,
-                                            uint32_t index, uint32_t start) {
+static markdown_core_path *S_path_cut(markdown_core_parser *parser, uint32_t index, uint32_t start) {
     markdown_core_path_block *block = parser->paths;
     if (!block || block->used == S_PATH_BLOCK_ITEMS) {
         block = markdown_core_alloc(1, sizeof(*block) + S_PATH_BLOCK_ITEMS * sizeof(markdown_core_path));
@@ -2073,30 +2075,57 @@ static const markdown_core_path *S_path_cut(markdown_core_parser *parser, const 
         parser->paths = block;
     }
     markdown_core_path *path = &block->items[block->used++];
-    *path = (markdown_core_path){parent, index, start};
+    *path = (markdown_core_path){NULL, index, start};
     return path;
 }
 
-const markdown_core_path *markdown_core_parser_path(markdown_core_parser *parser, markdown_core_node *block) {
+/* Whether `block` has not settled: a builder above the active input's root,
+ * or the pending block. */
+static inline bool S_path_unsettled(const markdown_core_parser *parser, const markdown_core_node *block) {
+    return block == parser->pending || ((block->flags & MARKDOWN_CORE_NODE__OPEN) && block != parser->block_root);
+}
+
+/* The path `block` keeps, or NULL. */
+static inline const markdown_core_path *S_path_kept(const markdown_core_parser *parser,
+                                                    const markdown_core_node *block) {
     if (block == parser->root) {
         return &parser->root_path;
     }
-    markdown_core_scaffold *link = markdown_core_scaffold_of(block);
-    const bool unsettled =
-        block == parser->pending || ((block->flags & MARKDOWN_CORE_NODE__OPEN) && block != parser->block_root);
-    if (unsettled && link->prev.path) {
-        return link->prev.path;
+    const markdown_core_scaffold *link = markdown_core_scaffold_of(block);
+    return S_path_unsettled(parser, block) || (block->flags & MARKDOWN_CORE_NODE__PATH_KEPT) ? link->prev.path : NULL;
+}
+
+/* The blocks from `block` up to the first that keeps a path are cut theirs
+ * as the walk goes up, each linked to the next one's as that is cut. */
+const markdown_core_path *markdown_core_parser_path(markdown_core_parser *parser, markdown_core_node *block) {
+    const markdown_core_path *path = S_path_kept(parser, block), *first = NULL;
+    markdown_core_path *below = NULL;
+    while (!path) {
+        markdown_core_scaffold *link = markdown_core_scaffold_of(block);
+        const bool unsettled = S_path_unsettled(parser, block);
+        markdown_core_path *cut =
+            S_path_cut(parser, unsettled ? link->parent->child_count : link->prev.index, block->where.place.start);
+        if (!cut) {
+            return NULL;
+        }
+        link->prev.path = cut;
+        if (!unsettled) {
+            block->flags |= MARKDOWN_CORE_NODE__PATH_KEPT;
+        }
+        if (below) {
+            below->parent = cut;
+        } else {
+            first = cut;
+        }
+        below = cut;
+        block = link->parent;
+        path = S_path_kept(parser, block);
     }
-    const markdown_core_path *parent = markdown_core_parser_path(parser, link->parent);
-    if (!parent) {
-        return NULL;
+    if (!below) {
+        return path;
     }
-    const markdown_core_path *path =
-        S_path_cut(parser, parent, unsettled ? link->parent->child_count : link->prev.index, block->where.place.start);
-    if (unsettled) {
-        link->prev.path = path;
-    }
-    return path;
+    below->parent = path;
+    return first;
 }
 
 markdown_core_node *markdown_core_parser_resolve(markdown_core_parser *parser, const markdown_core_path *path) {
