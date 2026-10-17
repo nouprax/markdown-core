@@ -245,16 +245,18 @@ next start, with the last run using its own length. For grids, it is the count
 strictly between borders. A relative width is that count divided by their sum,
 using double precision. Pipe and simple tables have no authored relative widths.
 
-A simple, multiline, or grid table has a margin: the indentation that all of
-its lines share. Indentation and container prefixes therefore change neither a
-table's alignment nor its cells, except through a tab after them: it still
-reaches the physical line's next four-column stop, so indentation or a prefix
-whose width is not a multiple of four moves the columns after such a tab, as in
-Pandoc. The table and each of its rows begin at the margin on their first line.
-A line indented further keeps its extra columns as part of the table, so a row
-with an empty first cell still begins at the margin. A grid table's margin is
-its left border. A pipe row has no shared geometry and begins at its own first
-non-space character.
+A simple, multiline, or grid table has a margin: the indentation shared by its
+header, its dashes and its first row in a simple table, and by all of its lines
+in a multiline or grid table. Indentation and container prefixes therefore
+change neither a table's alignment nor its cells, except through a tab after
+them: it still reaches the physical line's next four-column stop, so
+indentation or a prefix whose width is not a multiple of four moves the columns
+after such a tab, as in Pandoc. The table and each of its rows begin at the
+margin on their first line, and a later row of a simple table that is indented
+less begins at its own text. A line indented further keeps its extra columns as
+part of the table, so a row with an empty first cell still begins at the
+margin. A grid table's margin is its left border. A pipe row has no shared
+geometry and begins at its own first non-space character.
 
 A table's scope includes its caption. Cells retain original document coordinates
 even when their text is assembled from several line segments. A cell spanning

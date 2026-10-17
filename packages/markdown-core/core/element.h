@@ -198,6 +198,11 @@ struct markdown_core_element {
     bool (*blank_line)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *);
     bool (*ends_block)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
                        markdown_core_chunk *);
+    /* Reads a line its block took whole (MARKDOWN_CORE_BLOCK_TAKEN), from
+     * the parser's cursor, which the block's matcher left where the blocks
+     * above it end. Required of an element whose matcher returns that. */
+    void (*take_line)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
+                      markdown_core_chunk *);
     /* THE CLOSE HOOK, asked of a block as it closes inside the block that
      * holds it, which it settles into later. It reads the block -- its
      * content, its children and its open state -- and makes the node the

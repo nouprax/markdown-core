@@ -43,6 +43,7 @@ static void free_node_table(markdown_core_table *table) {
     }
     if (!table->views_columns) {
         markdown_core_free(table->columns);
+        markdown_core_free(table->runs);
     }
     markdown_core_free(table);
 }
@@ -542,11 +543,20 @@ static int table_caption_start(const unsigned char *data, int length, int first,
     return content;
 }
 
+/* The line after a simple table's last one: a blank line ends the table, a
+ * footer closes it, and any other line is its next row. */
+static int table_simple_matches(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                const markdown_core_table *table, unsigned char *input, int len);
+
 static int matches(const markdown_core_element_instance *self, markdown_core_parser *parser, unsigned char *input,
                    int len, markdown_core_node *parent_container) {
     int res = 0;
 
     if (parent_container->kind == MARKDOWN_CORE_NODE_TABLE) {
+        const markdown_core_table *table = parent_container->opaque;
+        if (table->runs) {
+            return table_simple_matches(self, parser, table, input, len);
+        }
         if (table_caption_start(input, len, parser->first_nonspace, parser->indent) >= 0) {
             return 0;
         }
@@ -599,11 +609,19 @@ static bool opaque_own(const markdown_core_element *self, markdown_core_node *co
     }
     assert(table->columns == ((const markdown_core_table *)node->opaque)->columns);
     markdown_core_table_column *columns = markdown_core_realloc(NULL, table->column_count * sizeof(*columns));
-    if (!columns) {
+    markdown_core_table_interval *runs =
+        table->runs ? markdown_core_realloc(NULL, table->column_count * sizeof(*runs)) : NULL;
+    if (!columns || (table->runs && !runs)) {
+        markdown_core_free(columns);
+        markdown_core_free(runs);
         return false;
     }
     memcpy(columns, table->columns, table->column_count * sizeof(*columns));
+    if (runs) {
+        memcpy(runs, table->runs, table->column_count * sizeof(*runs));
+    }
     table->columns = columns;
+    table->runs = runs;
     table->views_columns = false;
     return true;
 }
@@ -616,9 +634,7 @@ static int visit_owned_subtrees(const markdown_core_element *self, markdown_core
 
 /* Source candidates own geometry only. Public nodes are allocated after a
  * complete candidate has passed validation; failed candidates consume nothing. */
-typedef struct {
-    int start, end;
-} table_interval;
+typedef markdown_core_table_interval table_interval;
 
 struct markdown_core_table_workspace;
 
@@ -665,8 +681,10 @@ typedef struct {
     size_t first, last;
     /* `pipe`: a pipe table's header. Its cells hold their bytes, as every
      * pipe cell does (`set_cell_content`), and the table stays open for the
-     * body rows `try_opening_table_row` adds. */
-    bool block_content, pipe;
+     * body rows `try_opening_table_row` adds. `simple`: a simple table, whose
+     * last line here is its dashes. It stays open, and reads each row after
+     * them on its own (`table_take_line`), cut at their runs. */
+    bool block_content, pipe, simple;
     int padding_limit;
     /* The table's left edge, in geometry columns (`table_margin`): the
      * table, each row and the first column begin here, not at the
@@ -806,6 +824,18 @@ static bool table_source_get(table_source *source, size_t index) {
     return index < source->count && !source->parser->error;
 }
 
+/* The line at the parser's cursor, `data` and `length` its input. */
+static table_source_line table_cursor_line(markdown_core_parser *parser, const unsigned char *data, int length) {
+    return (table_source_line){.data = data,
+                               .length = length,
+                               .offset = parser->offset,
+                               .first = parser->first_nonspace,
+                               .first_column = parser->first_nonspace_column,
+                               .indent = parser->indent,
+                               .line = parser->line_number,
+                               .after = parser->lookahead_cursor};
+}
+
 static void table_source_end(table_source *source) {
     markdown_core_parser_lookahead_end(&source->lookahead);
     table_workspace *workspace = source->workspace;
@@ -815,7 +845,7 @@ static void table_source_end(table_source *source) {
 static void table_candidate_reset(table_candidate *candidate) {
     candidate->column_count = candidate->row_count = candidate->cell_count = 0;
     candidate->head_count = candidate->foot_count = candidate->first = candidate->last = 0;
-    candidate->block_content = candidate->pipe = false;
+    candidate->block_content = candidate->pipe = candidate->simple = false;
     candidate->padding_limit = candidate->margin = 0;
 }
 
@@ -1061,15 +1091,19 @@ static bool table_add_cell(table_source *source, table_candidate *candidate, siz
 
 /* WHERE A TABLE STARTS. The lines of a simple, multiline or grid table
  * share one column geometry, so its left edge belongs to the table, not to a
- * line: the indentation all of those lines share. Columns before the margin
- * are blank on every one of them -- block indentation, which never changes a
- * block's meaning -- so the first column, the table and each row begin at the
- * margin wherever that indentation came from. The separator is one of these
- * lines, so the margin never lies right of the first dash run; a line whose
- * text starts left of that run moves the margin to its text, which the first
+ * line: the indentation the lines that fix that geometry share -- all of a
+ * multiline or grid table's lines, and a simple table's header, dashes and
+ * first row, the lines it opens with. Columns before the margin are blank on
+ * every one of them -- block indentation, which never changes a block's
+ * meaning -- so the first column, the table and each row begin at the margin
+ * wherever that indentation came from. The separator is one of these lines,
+ * so the margin never lies right of the first dash run; a line whose text
+ * starts left of that run moves the margin to its text, which the first
  * column owns. A row whose first line is indented further still begins at the
  * margin: its leading columns are the first cell's, and an empty first cell
- * sits there. A pipe row shares no geometry, so its margin is its own. */
+ * sits there. A later simple row indented less begins at its own text, which
+ * its first cell owns (`table_rectangular_row`). A pipe row shares no
+ * geometry, so its margin is its own. */
 static int table_margin(table_source *source, size_t first, size_t last) {
     int margin = INT_MAX;
     for (size_t i = first; i <= last; i++) {
@@ -1082,10 +1116,11 @@ static int table_margin(table_source *source, size_t first, size_t last) {
 }
 
 /* The byte at a line's margin: where the table, or a row, begins on it. The
- * margin lies in every table line's indentation, so the walk stays inside
- * the whitespace the block parser has already measured and needs no column
- * map; a multiline table's opening boundary never gets one. A tab that spans
- * the margin is the byte there, as the column map would say. */
+ * walk stays inside the indentation the block parser has already measured
+ * and needs no column map; a multiline table's opening boundary never gets
+ * one. A tab that spans the margin is the byte there, as the column map
+ * would say, and a line indented less than the margin -- a later simple row
+ * -- begins at its first non-space byte. */
 static int table_margin_byte(const table_source_line *line, int margin) {
     const unsigned char *data = line->data;
     int byte = line->offset;
@@ -1098,8 +1133,11 @@ static int table_margin_byte(const table_source_line *line, int margin) {
     return byte;
 }
 
+/* `runs` are the dash runs the row is cut at, one per column: the
+ * workspace's while the table is a candidate, the table's own once it reads
+ * its rows one at a time. */
 static bool table_rectangular_row(table_source *source, table_candidate *candidate, size_t first, size_t last,
-                                  size_t runs) {
+                                  const table_interval *runs) {
     for (size_t i = first; i <= last; i++) {
         if (!table_source_columns(source, i)) {
             return false;
@@ -1109,10 +1147,13 @@ static bool table_rectangular_row(table_source *source, table_candidate *candida
         return false;
     }
     /* Interior columns meet at dash-run starts; the outer two reach the
-     * table's edges, the margin and the line's end. */
+     * table's edges, the margin and the line's end. A row whose text lies
+     * left of the margin -- a later simple row indented less -- begins at its
+     * text instead, as the row itself does (`table_margin_byte`). */
+    int row_left = source->lines[first].indent < candidate->margin ? source->lines[first].indent : candidate->margin;
     for (size_t column = 0; column < candidate->column_count; column++) {
-        int left = column ? table_dash(source, runs, column).start : candidate->margin;
-        int right = column + 1 < candidate->column_count ? table_dash(source, runs, column + 1).start : INT_MAX;
+        int left = column ? runs[column].start : row_left;
+        int right = column + 1 < candidate->column_count ? runs[column + 1].start : INT_MAX;
         size_t cell_first = first, cell_last = last;
         if (candidate->block_content) {
             while (cell_first < cell_last && source->lines[cell_first].columns <= left) {
@@ -1264,6 +1305,18 @@ static void table_search_finish(table_source *source, size_t first, size_t after
 
 /* A simple footer must match every authored interval, not merely the number
  * of columns or a hash. Each comparison visits at most the opener's bytes. */
+static bool table_same_runs(table_workspace *workspace, const table_interval *runs, const table_interval *others,
+                            size_t count) {
+    for (size_t i = 0; i < count; i++) {
+        if (runs[i].start != others[i].start || runs[i].end != others[i].end) {
+            workspace->work.scan += i + 1;
+            return false;
+        }
+    }
+    workspace->work.scan += count;
+    return true;
+}
+
 static bool table_same_dashes(table_source *source, size_t left, size_t right) {
     size_t count = table_dash_count(source, left);
     if (count < 2 || table_dash_count(source, right) != count) {
@@ -1272,16 +1325,9 @@ static bool table_same_dashes(table_source *source, size_t left, size_t right) {
     if (!table_prepare_dashes(source, left) || !table_prepare_dashes(source, right)) {
         return false;
     }
-    size_t a = source->lines[left].dash_offset, b = source->lines[right].dash_offset;
-    for (size_t i = 0; i < count; i++) {
-        if (table_dash(source, a, i).start != table_dash(source, b, i).start ||
-            table_dash(source, a, i).end != table_dash(source, b, i).end) {
-            source->workspace->work.scan += i + 1;
-            return false;
-        }
-    }
-    source->workspace->work.scan += count;
-    return true;
+    const table_interval *dashes = source->workspace->dashes;
+    return table_same_runs(source->workspace, dashes + source->lines[left].dash_offset,
+                           dashes + source->lines[right].dash_offset, count);
 }
 
 /* Exact interval keys use sixteen radix digits per start/end pair and a
@@ -1387,6 +1433,12 @@ done:
     return;
 }
 
+/* A SIMPLE TABLE OPENS ON THE LINES THAT FIX ITS GEOMETRY: its header, its
+ * dashes and the line after them, its first row or its footer. It claims its
+ * header and dashes and stays open, and reads each line after them on its
+ * own as that line comes (`matches`, `table_take_line`). A headerless table
+ * is a table only if a footer closes it, so it finds that footer before it
+ * opens; it then reads its rows the same way. */
 static bool table_parse_simple(table_source *source, size_t start, table_candidate *candidate) {
     size_t count = table_dash_count(source, start);
     bool headerless = count > 1;
@@ -1399,48 +1451,43 @@ static bool table_parse_simple(table_source *source, size_t start, table_candida
             goto failed;
         }
     }
-    size_t delimiter = start + (headerless ? 0 : 1), body = delimiter + 1, end = delimiter;
+    size_t delimiter = start + (headerless ? 0 : 1), body = delimiter + 1;
     if (!table_prepare_dashes(source, delimiter)) {
         goto failed;
     }
-    bool footer = false;
-    /* Simple rows own inline text until a blank/valid footer. Pandoc 3.11
-     * retains heading, quote and fence markers here; the header/caption
-     * paragraph-interruption rules do not apply to an existing body. */
-    for (size_t i = body; table_source_get(source, i) && !source->lines[i].blanks; i++) {
-        end = i;
-        if (table_same_dashes(source, delimiter, i)) {
-            footer = true;
-            break;
+    if (headerless) {
+        size_t end = delimiter;
+        bool footer = false;
+        for (size_t i = body; table_source_get(source, i) && !source->lines[i].blanks; i++) {
+            end = i;
+            if (table_same_dashes(source, delimiter, i)) {
+                footer = true;
+                break;
+            }
         }
-    }
-    if (source->parser->error) {
-        goto failed;
-    }
-    if (headerless && !footer) {
-        table_simple_search_finish(source, delimiter, end);
-    }
-    if (end == delimiter || (headerless && !footer) || source->parser->error) {
-        goto failed;
-    }
-    if (!table_source_columns(source, start) || !table_source_columns(source, body)) {
+        if (source->parser->error) {
+            goto failed;
+        }
+        if (!footer) {
+            table_simple_search_finish(source, delimiter, end);
+            goto failed;
+        }
+    } else if (!table_source_get(source, body) || source->lines[body].blanks) {
         goto failed;
     }
     size_t runs = source->lines[delimiter].dash_offset;
     if (!table_set_columns(source, candidate, runs, count, headerless ? body : start, false)) {
         goto failed;
     }
+    candidate->simple = true;
     candidate->first = start;
-    candidate->last = end;
-    candidate->margin = table_margin(source, start, end);
+    candidate->last = delimiter;
+    /* The line after the dashes is the first row, or a footer, which has the
+     * indentation of the dashes it repeats. */
+    candidate->margin = table_margin(source, start, body);
     candidate->head_count = headerless ? 0 : 1;
-    if (!headerless && !table_rectangular_row(source, candidate, start, start, runs)) {
+    if (!headerless && !table_rectangular_row(source, candidate, start, start, source->workspace->dashes + runs)) {
         goto failed;
-    }
-    for (size_t i = body; i <= end - (footer ? 1u : 0u); i++) {
-        if (!table_rectangular_row(source, candidate, i, i, runs)) {
-            goto failed;
-        }
     }
     return true;
 failed:
@@ -1514,13 +1561,14 @@ static bool table_parse_multiline(table_source *source, size_t start, table_cand
     if (!table_set_columns(source, candidate, runs, count, header ? start + 1 : delimiter + 1, true)) {
         goto failed;
     }
-    if (header && !table_rectangular_row(source, candidate, start + 1, delimiter - 1, runs)) {
+    if (header &&
+        !table_rectangular_row(source, candidate, start + 1, delimiter - 1, source->workspace->dashes + runs)) {
         goto failed;
     }
     size_t first = delimiter + 1, body_count = 0;
     for (size_t i = first + 1; i <= end; i++) {
         if (i == end || source->lines[i].blanks) {
-            if (!table_rectangular_row(source, candidate, first, i - 1, runs)) {
+            if (!table_rectangular_row(source, candidate, first, i - 1, source->workspace->dashes + runs)) {
                 goto failed;
             }
             body_count++;
@@ -2407,6 +2455,48 @@ static void table_cell_places(table_source *source, markdown_core_node *node, co
     node->source.places = places;
 }
 
+/* A row the candidate cut, made whole and settled into `table`. */
+static void table_build_row(table_source *source, markdown_core_node *table, const table_candidate *candidate,
+                            const table_source_row *row, uint32_t enclosing) {
+    markdown_core_parser *parser = source->parser;
+    table_source_line *begin = &source->lines[row->first], *end = &source->lines[row->last];
+    markdown_core_node *row_node = table_child(parser, MARKDOWN_CORE_NODE_TABLE_ROW, begin->line,
+                                               table_margin_byte(begin, candidate->margin) + 1, end->line, end->length);
+    if (!row_node) {
+        return;
+    }
+    /* A pipe row's cells hold the bytes the iterator that recognized its
+     * line (`table_parse_pipe_header`) delimits again, in order. */
+    pipe_row_cursor pipe_cells = {0};
+    node_cell geometry;
+    bool pipe_more = candidate->pipe;
+    if (pipe_more) {
+        pipe_cells = pipe_row_begin((unsigned char *)begin->data + begin->first, begin->input_length - begin->first, 0);
+    }
+    for (size_t j = 0; j < row->count && !parser->error; j++) {
+        table_source_cell *cell = &candidate->cells[row->cell + j];
+        size_t last_line = cell->last < cell->first ? cell->first : cell->last;
+        markdown_core_node *cell_node =
+            table_child(parser, MARKDOWN_CORE_NODE_TABLE_CELL, source->lines[cell->first].line, cell->start_column,
+                        source->lines[last_line].line, cell->end_column);
+        if (!cell_node) {
+            break;
+        }
+        cell_node->as.table_cell->rowspan = cell->rowspan;
+        cell_node->as.table_cell->colspan = cell->colspan;
+        if (!candidate->pipe) {
+            table_cell_places(source, cell_node, cell);
+            table_fill_cell(source, cell_node, cell, candidate->block_content, candidate->padding_limit, enclosing);
+        } else if (pipe_more && (pipe_more = pipe_row_next(&pipe_cells, &geometry))) {
+            set_cell_content(parser, cell_node, &geometry, NULL, begin->line,
+                             markdown_core_parser_line_start(parser, begin->line),
+                             (bufsize_t)(geometry.content.data - begin->data));
+        }
+        markdown_core_block_settle(parser, cell_node, row_node);
+    }
+    markdown_core_block_settle(parser, row_node, table);
+}
+
 static markdown_core_node *table_build(table_source *source, markdown_core_node *parent, table_candidate *candidate) {
     markdown_core_parser *parser = source->parser;
     table_source_line *first = &source->lines[candidate->first], *last = &source->lines[candidate->last];
@@ -2429,6 +2519,16 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
     }
     memcpy(table->columns, candidate->columns, candidate->column_count * sizeof(*table->columns));
     table->column_count = candidate->column_count;
+    if (candidate->simple) {
+        table->runs = markdown_core_alloc(candidate->column_count, sizeof(*table->runs));
+        if (!table->runs) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            return node;
+        }
+        memcpy(table->runs, source->workspace->dashes + last->dash_offset,
+               candidate->column_count * sizeof(*table->runs));
+        table->left = candidate->margin;
+    }
     table->head_count = (uint32_t)candidate->head_count;
     table->foot_count = (uint32_t)candidate->foot_count;
     table->content_count = (uint32_t)(candidate->row_count - candidate->head_count - candidate->foot_count);
@@ -2438,49 +2538,11 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
     node->where.place.end = (uint32_t)markdown_core_parser_source_end(parser, last->line, last->length);
     const uint32_t enclosing = candidate->block_content ? markdown_core_parser_open_kinds(parser) : 0;
     for (size_t i = 0; i < candidate->row_count && !parser->error; i++) {
-        table_source_row *row = &candidate->rows[i];
-        table_source_line *begin = &source->lines[row->first], *end = &source->lines[row->last];
-        markdown_core_node *row_node =
-            table_child(parser, MARKDOWN_CORE_NODE_TABLE_ROW, begin->line,
-                        table_margin_byte(begin, candidate->margin) + 1, end->line, end->length);
-        if (!row_node) {
-            break;
-        }
-        /* A pipe row's cells hold the bytes the iterator that recognized its
-         * line (`table_parse_pipe_header`) delimits again, in order. */
-        pipe_row_cursor pipe_cells = {0};
-        node_cell geometry;
-        bool pipe_more = candidate->pipe;
-        if (pipe_more) {
-            pipe_cells =
-                pipe_row_begin((unsigned char *)begin->data + begin->first, begin->input_length - begin->first, 0);
-        }
-        for (size_t j = 0; j < row->count && !parser->error; j++) {
-            table_source_cell *cell = &candidate->cells[row->cell + j];
-            size_t last_line = cell->last < cell->first ? cell->first : cell->last;
-            markdown_core_node *cell_node =
-                table_child(parser, MARKDOWN_CORE_NODE_TABLE_CELL, source->lines[cell->first].line, cell->start_column,
-                            source->lines[last_line].line, cell->end_column);
-            if (!cell_node) {
-                break;
-            }
-            cell_node->as.table_cell->rowspan = cell->rowspan;
-            cell_node->as.table_cell->colspan = cell->colspan;
-            if (!candidate->pipe) {
-                table_cell_places(source, cell_node, cell);
-                table_fill_cell(source, cell_node, cell, candidate->block_content, candidate->padding_limit, enclosing);
-            } else if (pipe_more && (pipe_more = pipe_row_next(&pipe_cells, &geometry))) {
-                set_cell_content(parser, cell_node, &geometry, NULL, begin->line,
-                                 markdown_core_parser_line_start(parser, begin->line),
-                                 (bufsize_t)(geometry.content.data - begin->data));
-            }
-            markdown_core_block_settle(parser, cell_node, row_node);
-        }
-        markdown_core_block_settle(parser, row_node, node);
+        table_build_row(source, node, candidate, &candidate->rows[i], enclosing);
     }
-    /* A table read whole closes as it is made; a pipe table stays open for
-     * the rows after it. */
-    if (!candidate->pipe && !parser->error) {
+    /* A table read whole closes as it is made; a pipe or simple table stays
+     * open for the rows after it. */
+    if (!candidate->pipe && !candidate->simple && !parser->error) {
         markdown_core_block_close_current(parser);
     }
     return node;
@@ -2602,14 +2664,7 @@ static markdown_core_node *table_try_open(table_workspace *workspace, markdown_c
     if (!markdown_core_parser_lookahead_begin(parser, parent, MARKDOWN_CORE_NODE_TABLE, &source.lookahead)) {
         return NULL;
     }
-    if (!table_source_push(&source, (table_source_line){.data = input,
-                                                        .length = length,
-                                                        .offset = parser->offset,
-                                                        .first = parser->first_nonspace,
-                                                        .first_column = parser->first_nonspace_column,
-                                                        .indent = parser->indent,
-                                                        .line = parser->line_number,
-                                                        .after = parser->lookahead_cursor})) {
+    if (!table_source_push(&source, table_cursor_line(parser, input, length))) {
         goto done;
     }
     int caption = table_caption_start(source.lines[0].data, source.lines[0].length, source.lines[0].first,
@@ -2662,6 +2717,46 @@ done:
     return result;
 }
 
+/* Simple rows own inline text until a blank line or a footer. Pandoc 3.11
+ * retains heading, quote, fence and caption markers here; the header and
+ * caption paragraph-interruption rules do not apply to an open body. A
+ * footer has the table's own dash runs, every interval of them. */
+static int table_simple_matches(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                const markdown_core_table *table, unsigned char *input, int len) {
+    if (parser->blank) {
+        return 0;
+    }
+    table_workspace *workspace = self->state;
+    table_source source = {.parser = parser, .workspace = workspace, .lines = workspace->lines};
+    bool footer =
+        table_source_push(&source, table_cursor_line(parser, input, len)) &&
+        table_dash_count(&source, 0) == table->column_count && table_prepare_dashes(&source, 0) &&
+        table_same_runs(workspace, workspace->dashes + source.lines[0].dash_offset, table->runs, table->column_count);
+    table_source_end(&source);
+    return parser->error ? 0 : footer ? MARKDOWN_CORE_BLOCK_CLOSED : MARKDOWN_CORE_BLOCK_TAKEN;
+}
+
+/* A ROW OF A SIMPLE TABLE, read on its own: its line is cut at the table's
+ * dash runs, its first column taken from the margin, or from its text where
+ * that lies left of the margin, and the row settles into the open table. */
+static void table_take_line(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                            markdown_core_node *container, markdown_core_chunk *input) {
+    markdown_core_table *table = container->opaque;
+    table_workspace *workspace = self->state;
+    table_source source = {.parser = parser, .workspace = workspace, .lines = workspace->lines};
+    table_candidate *candidate = &workspace->candidate;
+    if (table_source_push(&source, table_cursor_line(parser, input->data, input->len))) {
+        candidate->column_count = table->column_count;
+        candidate->margin = table->left;
+        if (table_rectangular_row(&source, candidate, 0, 0, table->runs)) {
+            table_build_row(&source, container, candidate, &candidate->rows[0], 0);
+            table->content_count++;
+        }
+    }
+    table_candidate_reset(candidate);
+    table_source_end(&source);
+}
+
 /* A block-only element: no byte ends a text run for it, no byte is offered to an
  * inline hook it does not have, and no byte is transparent to flanking. */
 static markdown_core_node *try_interrupting_block(const markdown_core_element_instance *self,
@@ -2711,6 +2806,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
 
     .name = "table",
     .last_block_matches = matches,
+    .take_line = table_take_line,
     .maximum_block_indent = 3,
     .try_opening_block = try_opening_table_block,
     .containment_kinds = containment_kinds,

@@ -5613,7 +5613,9 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
     const char *rows[] = {"| a | b |\n", "| a \\| b | c |\n", "\n"};
     for (size_t i = 0; i < sizeof(rows) / sizeof(*rows); i++) {
         markdown_core_parser parser = {0};
-        markdown_core_node table = {.kind = MARKDOWN_CORE_NODE_TABLE};
+        /* A pipe table: one with no dash runs. */
+        markdown_core_table value = {0};
+        markdown_core_node table = {.kind = MARKDOWN_CORE_NODE_TABLE, .opaque = &value};
         text_allocation_calls = 0;
         int matched = MARKDOWN_CORE_ELEMENT_TABLE.last_block_matches(&table_instance, &parser, (unsigned char *)rows[i],
                                                                      (int)strlen(rows[i]), &table);
@@ -10338,6 +10340,39 @@ static void table_margin_is_shared_indentation(test_batch_runner *runner) {
     }
 }
 
+/* A SIMPLE TABLE'S MARGIN IS FIXED BY THE LINES IT OPENS WITH: its header,
+ * its dashes and its first row (owner, 2026-10-17). The table, its header
+ * and its first row begin at the margin those lines share; a later row
+ * indented less begins at its own text, which its first cell owns, and the
+ * rows before it keep their places. A later row indented further begins at
+ * the margin, its first cell at its text. */
+static void simple_table_margin_from_opening_lines(test_batch_runner *runner) {
+    static const char source[] = "  A    B\n  ---  ---\n  x    y\nc      d\n   z\n";
+    static const int rows[][6] = {
+        /* row start line, column; first cell start line, column, end line, column */
+        {1, 3, 1, 3, 1, 3},
+        {3, 3, 3, 3, 3, 3},
+        {4, 1, 4, 1, 4, 1},
+        {5, 3, 5, 4, 5, 4},
+    };
+    markdown_core_node *doc = parse(source), *table = first_of_kind(doc, MARKDOWN_CORE_NODE_TABLE);
+    OK(runner, table && START_LINE(table) == 1 && START_COLUMN(table) == 3 && END_LINE(table) == 5,
+       "the table begins at the margin of its opening lines");
+    for (size_t i = 0; table && i < sizeof(rows) / sizeof(rows[0]); i++) {
+        markdown_core_node *row = child_at(table, i), *cell = row ? child_at(row, 0) : NULL;
+        OK(runner,
+           row && cell && START_LINE(row) == rows[i][0] && START_COLUMN(row) == rows[i][1] &&
+               START_LINE(cell) == rows[i][2] && START_COLUMN(cell) == rows[i][3] && END_LINE(cell) == rows[i][4] &&
+               END_COLUMN(cell) == rows[i][5],
+           "row %zu begins at the margin or at its text left of it, as its first cell does", i);
+    }
+    markdown_core_node *last = table ? child_at(table, 2) : NULL, *second = last ? child_at(last, 1) : NULL;
+    OK(runner, second && START_LINE(second) == 4 && START_COLUMN(second) == 8,
+       "the row indented less keeps its later columns at the dash runs");
+    OK(runner, table && table_nodes_nest(table), "the table nests");
+    markdown_core_node_free(doc);
+}
+
 /* The row of `doc` that starts on `line`, as its cells and every node in
  * them: kind, literal, and scope, with lines counted from the row's. */
 static char *describe_row_on(markdown_core_node *doc, int line) {
@@ -11497,6 +11532,40 @@ static void session_snapshot_lists(test_batch_runner *runner) {
     }
 }
 
+/* Whether `source`, appended byte by byte, gives after each append a
+ * snapshot whose dump is a fresh parse's of the same text, and a finalized
+ * document whose dump is a parse's of all of it; `at` is how many bytes were
+ * appended when it stopped. */
+static bool snapshots_dump_as_parses(const char *source, size_t *at) {
+    const size_t length = strlen(source);
+    markdown_core_session *session = NULL;
+    bool same = markdown_core_session_new((const uint8_t *)source, 0, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
+                MARKDOWN_CORE_OK;
+    *at = 0;
+    for (size_t step = 0; same && step <= length; step++) {
+        const markdown_core_document *document = NULL;
+        if (step < length) {
+            same =
+                markdown_core_session_append(session, (const uint8_t *)source + step, 1, &document) == MARKDOWN_CORE_OK;
+            *at = step + 1;
+        } else {
+            same = markdown_core_session_finalize(session, &document) == MARKDOWN_CORE_OK;
+        }
+        markdown_core_document *parsed = NULL;
+        size_t expected_length = 0, actual_length = 0;
+        uint8_t *expected = markdown_core_document_parse((const uint8_t *)source, *at, &parsed) == MARKDOWN_CORE_OK
+                                ? dump_of(parsed, source, *at, &expected_length)
+                                : NULL;
+        uint8_t *actual = same ? dump_of(document, source, *at, &actual_length) : NULL;
+        same = expected && actual && expected_length == actual_length && memcmp(expected, actual, expected_length) == 0;
+        markdown_core_dump_free(expected);
+        markdown_core_dump_free(actual);
+        markdown_core_document_free(parsed);
+    }
+    markdown_core_session_free(session);
+    return same;
+}
+
 /* WHAT A BLOCK'S OPENING LINE GIVES IT, IN EVERY SNAPSHOT (step 7, THE
  * COPIES): the text arrives byte by byte, and after each append the
  * snapshot's dump is a fresh parse's of the same text. The blocks own what
@@ -11524,47 +11593,39 @@ static void session_snapshot_openers(test_batch_runner *runner) {
         "<div>\nhtml\n</div>\n\n~~~ {.x}\ncode\n~~~\n",
     };
     for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
-        const char *source = sources[i];
-        const size_t length = strlen(source);
-        markdown_core_session *session = NULL;
-        bool same = markdown_core_session_new((const uint8_t *)source, 0, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
-                    MARKDOWN_CORE_OK;
         size_t at = 0;
-        while (same && at < length) {
-            const markdown_core_document *document = NULL;
-            same =
-                markdown_core_session_append(session, (const uint8_t *)source + at, 1, &document) == MARKDOWN_CORE_OK;
-            at++;
-            markdown_core_document *parsed = NULL;
-            size_t expected_length = 0, actual_length = 0;
-            uint8_t *expected = markdown_core_document_parse((const uint8_t *)source, at, &parsed) == MARKDOWN_CORE_OK
-                                    ? dump_of(parsed, source, at, &expected_length)
-                                    : NULL;
-            uint8_t *actual = same ? dump_of(document, source, at, &actual_length) : NULL;
-            same = expected && actual && expected_length == actual_length &&
-                   memcmp(expected, actual, expected_length) == 0;
-            markdown_core_dump_free(expected);
-            markdown_core_dump_free(actual);
-            markdown_core_document_free(parsed);
-        }
-        const markdown_core_document *final = NULL;
-        size_t expected_length = 0, actual_length = 0;
-        markdown_core_document *parsed = NULL;
-        uint8_t *expected = markdown_core_document_parse((const uint8_t *)source, length, &parsed) == MARKDOWN_CORE_OK
-                                ? dump_of(parsed, source, length, &expected_length)
-                                : NULL;
-        uint8_t *actual = same && markdown_core_session_finalize(session, &final) == MARKDOWN_CORE_OK
-                              ? dump_of(final, source, length, &actual_length)
-                              : NULL;
-        OK(runner,
-           expected && actual && expected_length == actual_length && memcmp(expected, actual, expected_length) == 0,
+        OK(runner, snapshots_dump_as_parses(sources[i], &at),
            "every snapshot holds what its blocks' opening lines give them as a parse of its text, up to byte %zu "
            "of %zu: %s",
-           at, length, source);
-        markdown_core_dump_free(expected);
-        markdown_core_dump_free(actual);
-        markdown_core_document_free(parsed);
-        markdown_core_session_free(session);
+           at, strlen(sources[i]), sources[i]);
+    }
+}
+
+/* A SIMPLE TABLE READS A ROW AT A TIME, IN EVERY SNAPSHOT (step 7, plan
+ * 5.7): the text arrives byte by byte, and after each append the snapshot's
+ * dump is a fresh parse's of the same text. A headed table opens once its
+ * header, its dashes and its first row are there, a headerless one once its
+ * footer is; each row after the dashes is read on its own as it comes, as
+ * inline text whatever block it looks like, until a blank line ends the
+ * table or a footer closes it. A later row indented less than the margin
+ * begins at its own text; a closing directive fence above still ends the
+ * table, and a caption follows a closed table. */
+static void session_snapshot_simple_tables(test_batch_runner *runner) {
+    static const char *const sources[] = {
+        "Name    Count\n------  -----\nApples      4\nPears       2\n------  -----\nafter\n",
+        "  A    B\n  ---  ---\n  x    y\nc      d\n   z\n\nTable: cap\n",
+        "A    B\n---  ---\n# h  > q\n```  :x\nTable: y\n- i  1. j\n\nafter\n",
+        "---  ---\nx    y\n\tz  w\n---  ---\nTable: t\n",
+        "A    B\n---  ---\n---  ---\nafter\n",
+        "> A    B\n> ---  ---\n> a    b\nlazy\n\n- A    B\n  ---  ---\n  a    b\n c\n",
+        ":::note\nA    B\n---  ---\na    b\n:::\n\nafter\n",
+        "+------------+\n| A    B     |\n| ---  ---   |\n| a    b     |\n|   c    d   |\n+------------+\n",
+    };
+    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        size_t at = 0;
+        OK(runner, snapshots_dump_as_parses(sources[i], &at),
+           "every snapshot reads a simple table a row at a time as a parse of its text, up to byte %zu of %zu: %s", at,
+           strlen(sources[i]), sources[i]);
     }
 }
 
@@ -11875,6 +11936,7 @@ int main(void) {
     cell_blocks_end_in_their_cell(runner);
     table_geometry_ignores_indentation(runner);
     table_margin_is_shared_indentation(runner);
+    simple_table_margin_from_opening_lines(runner);
     pipe_rows_are_one_row(runner);
     create_tree(runner);
     attachment_containment(runner);
@@ -11957,6 +12019,7 @@ int main(void) {
     session_snapshot_tables(runner);
     session_snapshot_lists(runner);
     session_snapshot_openers(runner);
+    session_snapshot_simple_tables(runner);
     node_copy_views(runner);
     session_finalize_matches_a_parse(runner);
     session_allocation_failures(runner);

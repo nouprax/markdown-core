@@ -3228,7 +3228,7 @@ static bool S_container_prefix_matches(markdown_core_parser *parser, const markd
 
 static bool parse_element_block(markdown_core_parser *parser, const markdown_core_kind_record *kind,
                                 markdown_core_node *container, markdown_core_chunk *input, bool *should_continue,
-                                markdown_core_node **closing) {
+                                markdown_core_node **closing, markdown_core_node **taker) {
     const markdown_core_element_instance *structure = kind->structure;
     int matched;
 
@@ -3241,6 +3241,11 @@ static bool parse_element_block(markdown_core_parser *parser, const markdown_cor
         *closing = matched == MARKDOWN_CORE_BLOCK_PENDING_CLOSE ? container : NULL;
     } else if (matched && S_kind_accepts_lines(kind, container)) {
         *closing = NULL;
+    }
+    if (matched == MARKDOWN_CORE_BLOCK_TAKEN) {
+        assert(structure->element->take_line);
+        *taker = container;
+        return true;
     }
     if (matched != MARKDOWN_CORE_BLOCK_CLOSED) {
         return matched != 0;
@@ -3262,8 +3267,9 @@ static markdown_core_node *check_open_blocks(markdown_core_parser *parser, markd
     *all_matched = false;
     markdown_core_node *container = markdown_core_parser_block_root(parser);
     markdown_core_node *closing = NULL;
+    markdown_core_node *taker = NULL;
 
-    while (container != parser->current) {
+    while (container != parser->current && !taker) {
         /* Whatever a container's prefix consumed is that container's
          * MARKER: `> ` belongs to the block quote, the item's indent to the
          * list item. So the bytes of the block below begin where the
@@ -3278,7 +3284,7 @@ static markdown_core_node *check_open_blocks(markdown_core_parser *parser, markd
         const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, container);
         const markdown_core_element_instance *structure = kind->structure;
         if (structure && structure->element->last_block_matches) {
-            if (!parse_element_block(parser, kind, container, input, &should_continue, &closing)) {
+            if (!parse_element_block(parser, kind, container, input, &should_continue, &closing, &taker)) {
                 goto done;
             }
         } else {
@@ -3308,6 +3314,16 @@ done:
          * closes; what is open inside it ended on the line before. */
         closing->flags |= MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION;
         markdown_core_block_close(parser, closing);
+        return NULL;
+    }
+    if (taker) {
+        /* The line is the taker's, whole: what is open inside it ended on the
+         * line before. */
+        markdown_core_parser_close_below(parser, taker);
+        if (!parser->error) {
+            const markdown_core_element_instance *structure = markdown_core_parser_block_kind(parser, taker)->structure;
+            structure->element->take_line(structure, parser, taker, input);
+        }
         return NULL;
     }
     /* A container whose prefix consumed bytes and then declined still read
