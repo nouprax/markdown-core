@@ -133,9 +133,7 @@ static void S_release_builders(markdown_core_parser *parser) {
     }
 }
 
-static void S_level_release(markdown_core_parser *parser, markdown_core_level *level);
-static void S_release_retired(markdown_core_parser *parser);
-static void S_release_paths(markdown_core_parser *parser);
+static void S_release_stream(markdown_core_parser *parser);
 static void S_complete_settled(markdown_core_parser *parser);
 
 /* The document the last publish left reads the committed blocks and the
@@ -159,15 +157,6 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     }
     dialect->document_structure->element->dispose_document(dialect->document_structure, parser);
     markdown_core_registry_free(&parser->registry);
-    markdown_core_free(parser->misses);
-    markdown_core_strbuf_free(&parser->miss_labels);
-    for (size_t i = 0; i < parser->miss_position_count; i++) {
-        if (parser->miss_positions[i].places) {
-            markdown_core_node_pool_bytes_free(parser->pool, parser->miss_positions[i].places);
-        }
-    }
-    markdown_core_free(parser->miss_positions);
-    markdown_core_free(parser->miss_blocks);
     markdown_core_source_order_dispose(&parser->source_order);
     markdown_core_free(parser->walk_stack);
     markdown_core_free(parser->block_inputs);
@@ -177,26 +166,9 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     if (parser->root) {
         markdown_core_node_free(parser->root);
     }
-    /* What the streaming publishes keep: the levels' spare storage, what
-     * waits for the next publish, the committed definitions and the paths.
-     * The published document that read them is gone before. */
-    for (size_t depth = 0; depth < parser->level_count; depth++) {
-        S_level_release(parser, &parser->levels[depth]);
+    if (parser->stream) {
+        S_release_stream(parser);
     }
-    S_release_retired(parser);
-    markdown_core_free(parser->levels);
-    markdown_core_free(parser->retired);
-    markdown_core_free(parser->copies);
-    markdown_core_free(parser->rooms);
-    for (size_t table = 0; table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
-        markdown_core_key_tree_free(&parser->committed.starts[table]);
-    }
-    for (size_t table = 0; table < MARKDOWN_CORE_LABEL_TABLES; table++) {
-        markdown_core_key_tree_free(&parser->committed.labels[table]);
-    }
-    markdown_core_free(parser->kept);
-    markdown_core_free(parser->defined);
-    S_release_paths(parser);
 
     /* The content-to-source map outlives every block that indexes it and
      * nothing else does, so it is released here rather than with the node. */
@@ -288,7 +260,6 @@ void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revi
     markdown_core_strbuf_init(&parser->curline, 256);
     markdown_core_strbuf_init(&parser->input.last_line, 0);
     markdown_core_strbuf_init(&parser->idle_input.last_line, 0);
-    markdown_core_strbuf_init(&parser->miss_labels, 0);
     markdown_core_registry_init(&parser->registry);
     /* The line index is a parse-owned workspace, like curline. Establish its
      * initial capacity before any input; inputs reset length, never
@@ -1205,7 +1176,9 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_close(markdown_cor
     const markdown_core_element_instance *structure = kind->structure;
     if (structure && structure->element->close_block &&
         !structure->element->close_block(structure, parser, b, parent)) {
-        S_drop_block(parser, b);
+        if (parser->stream) {
+            S_drop_block(parser, b);
+        }
         markdown_core_parser_release_node(parser, b);
         return false;
     }
@@ -2064,15 +2037,15 @@ void markdown_core_parser_discard(markdown_core_parser *parser) { S_release_pars
 #define S_PATH_BLOCK_ITEMS 255
 
 static markdown_core_path *S_path_cut(markdown_core_parser *parser, uint32_t index, uint32_t start) {
-    markdown_core_path_block *block = parser->paths;
+    markdown_core_path_block *block = parser->stream->paths;
     if (!block || block->used == S_PATH_BLOCK_ITEMS) {
         block = markdown_core_alloc(1, sizeof(*block) + S_PATH_BLOCK_ITEMS * sizeof(markdown_core_path));
         if (!block) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return NULL;
         }
-        block->next = parser->paths;
-        parser->paths = block;
+        block->next = parser->stream->paths;
+        parser->stream->paths = block;
     }
     markdown_core_path *path = &block->items[block->used++];
     *path = (markdown_core_path){NULL, index, start};
@@ -2089,7 +2062,7 @@ static inline bool S_path_unsettled(const markdown_core_parser *parser, const ma
 static inline const markdown_core_path *S_path_kept(const markdown_core_parser *parser,
                                                     const markdown_core_node *block) {
     if (block == parser->root) {
-        return &parser->root_path;
+        return &parser->stream->root_path;
     }
     const markdown_core_scaffold *link = markdown_core_scaffold_of(block);
     return S_path_unsettled(parser, block) || (block->flags & MARKDOWN_CORE_NODE__PATH_KEPT) ? link->prev.path : NULL;
@@ -2151,9 +2124,9 @@ markdown_core_node *markdown_core_parser_resolve(markdown_core_parser *parser, c
 }
 
 static void S_release_paths(markdown_core_parser *parser) {
-    while (parser->paths) {
-        markdown_core_path_block *block = parser->paths;
-        parser->paths = block->next;
+    while (parser->stream->paths) {
+        markdown_core_path_block *block = parser->stream->paths;
+        parser->stream->paths = block->next;
         markdown_core_free(block);
     }
 }
@@ -2305,9 +2278,9 @@ static void S_hand_back(const markdown_core_copy *entry) {
 }
 
 static void S_hand_back_all(markdown_core_parser *parser) {
-    for (size_t i = 0; i < parser->copy_count; i++) {
-        if (parser->copies[i].copy) {
-            S_hand_back(&parser->copies[i]);
+    for (size_t i = 0; i < parser->stream->copy_count; i++) {
+        if (parser->stream->copies[i].copy) {
+            S_hand_back(&parser->stream->copies[i]);
         }
     }
 }
@@ -2316,14 +2289,14 @@ static bool S_retire(markdown_core_parser *parser, void *storage, markdown_core_
     if (!storage) {
         return true;
     }
-    markdown_core_retired *retired =
-        markdown_core_reserve(parser->retired, &parser->retired_capacity, parser->retired_count + 1, sizeof(*retired));
+    markdown_core_retired *retired = markdown_core_reserve(parser->stream->retired, &parser->stream->retired_capacity,
+                                                           parser->stream->retired_count + 1, sizeof(*retired));
     if (!retired) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
-    parser->retired = retired;
-    retired[parser->retired_count++] = (markdown_core_retired){storage, kind, 0};
+    parser->stream->retired = retired;
+    retired[parser->stream->retired_count++] = (markdown_core_retired){storage, kind, 0};
     return true;
 }
 
@@ -2332,8 +2305,8 @@ bool markdown_core_parser_retire(markdown_core_parser *parser, void *storage, ma
 }
 
 static void S_release_retired(markdown_core_parser *parser) {
-    for (size_t i = 0; i < parser->retired_count; i++) {
-        const markdown_core_retired retired = parser->retired[i];
+    for (size_t i = 0; i < parser->stream->retired_count; i++) {
+        const markdown_core_retired retired = parser->stream->retired[i];
         switch (retired.kind) {
         case MARKDOWN_CORE_RETIRED_CHILDREN:
             markdown_core_node_pool_bytes_free(parser->pool, retired.storage);
@@ -2349,7 +2322,7 @@ static void S_release_retired(markdown_core_parser *parser) {
             break;
         }
     }
-    parser->retired_count = 0;
+    parser->stream->retired_count = 0;
 }
 
 /* The spare storage of a level, released: none of it is the published
@@ -2362,30 +2335,78 @@ static void S_level_release(markdown_core_parser *parser, markdown_core_level *l
     *level = (markdown_core_level){0};
 }
 
+/* WHAT A STREAMING PARSE KEEPS (parser.h, markdown_core_stream), made as a
+ * session starts its parse and released with the parse's state: the levels'
+ * spare storage, what waits for the next publish, the committed definitions,
+ * the paths and the records of the lookups that found nothing. The published
+ * document that read them is gone before. */
+bool markdown_core_parser_stream(markdown_core_parser *parser) {
+    assert(!parser->stream);
+    parser->stream = markdown_core_alloc(1, sizeof(*parser->stream));
+    if (!parser->stream) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return false;
+    }
+    markdown_core_strbuf_init(&parser->stream->miss_labels, 0);
+    return !parser->error;
+}
+
+static void S_release_stream(markdown_core_parser *parser) {
+    markdown_core_stream *stream = parser->stream;
+    for (size_t depth = 0; depth < stream->level_count; depth++) {
+        S_level_release(parser, &stream->levels[depth]);
+    }
+    S_release_retired(parser);
+    markdown_core_free(stream->levels);
+    markdown_core_free(stream->retired);
+    markdown_core_free(stream->copies);
+    markdown_core_free(stream->rooms);
+    for (size_t table = 0; table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
+        markdown_core_key_tree_free(&stream->committed.starts[table]);
+    }
+    for (size_t table = 0; table < MARKDOWN_CORE_LABEL_TABLES; table++) {
+        markdown_core_key_tree_free(&stream->committed.labels[table]);
+    }
+    markdown_core_free(stream->kept);
+    markdown_core_free(stream->defined);
+    S_release_paths(parser);
+    markdown_core_free(stream->misses);
+    markdown_core_strbuf_free(&stream->miss_labels);
+    for (size_t i = 0; i < stream->miss_position_count; i++) {
+        if (stream->miss_positions[i].places) {
+            markdown_core_node_pool_bytes_free(parser->pool, stream->miss_positions[i].places);
+        }
+    }
+    markdown_core_free(stream->miss_positions);
+    markdown_core_free(stream->miss_blocks);
+    markdown_core_free(stream);
+    parser->stream = NULL;
+}
+
 /* A BLOCK DROPPED as it closes into nothing (S_close): a copy hands its
  * original back the storage it borrows, and is a copy no more; a builder of
  * the commit takes the levels from its own up with it, whose spare storage
  * the published document reads until the next publish -- a block made later
  * in its slot is not the builder the level was. */
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_drop_block(markdown_core_parser *parser, markdown_core_node *block) {
-    for (size_t i = parser->copy_count; i-- > 0;) {
-        if (parser->copies[i].copy == block) {
-            S_hand_back(&parser->copies[i]);
-            parser->copies[i].copy = NULL;
+    for (size_t i = parser->stream->copy_count; i-- > 0;) {
+        if (parser->stream->copies[i].copy == block) {
+            S_hand_back(&parser->stream->copies[i]);
+            parser->stream->copies[i].copy = NULL;
             return;
         }
     }
-    for (size_t depth = parser->level_count; depth-- > 0;) {
-        if (parser->levels[depth].node == block) {
-            for (size_t i = depth; i < parser->level_count; i++) {
-                markdown_core_level *level = &parser->levels[i];
+    for (size_t depth = parser->stream->level_count; depth-- > 0;) {
+        if (parser->stream->levels[depth].node == block) {
+            for (size_t i = depth; i < parser->stream->level_count; i++) {
+                markdown_core_level *level = &parser->stream->levels[i];
                 if (!S_retire(parser, level->spare, MARKDOWN_CORE_RETIRED_CHILDREN) ||
                     !S_retire(parser, level->spare_content, MARKDOWN_CORE_RETIRED_CONTENT)) {
                     return;
                 }
                 *level = (markdown_core_level){0};
             }
-            parser->level_count = depth;
+            parser->stream->level_count = depth;
             return;
         }
     }
@@ -2402,19 +2423,19 @@ static bool S_copy_spine(markdown_core_parser *parser) {
     }
     const size_t count = builders + (parser->pending ? 1 : 0);
     /* The rooms are as many as the copies can be, `copy_capacity`. */
-    size_t capacity = parser->copy_capacity;
-    markdown_core_copy *copies = markdown_core_reserve(parser->copies, &capacity, count, sizeof(*copies));
+    size_t capacity = parser->stream->copy_capacity;
+    markdown_core_copy *copies = markdown_core_reserve(parser->stream->copies, &capacity, count, sizeof(*copies));
     if (!copies) {
         return false;
     }
-    parser->copies = copies;
-    if (capacity != parser->copy_capacity) {
-        markdown_core_level_room *rooms = markdown_core_realloc(parser->rooms, capacity * sizeof(*rooms));
+    parser->stream->copies = copies;
+    if (capacity != parser->stream->copy_capacity) {
+        markdown_core_level_room *rooms = markdown_core_realloc(parser->stream->rooms, capacity * sizeof(*rooms));
         if (!rooms) {
             return false;
         }
-        parser->rooms = rooms;
-        parser->copy_capacity = capacity;
+        parser->stream->rooms = rooms;
+        parser->stream->copy_capacity = capacity;
     }
     markdown_core_node *node = parser->current;
     for (size_t i = builders; i-- > 0; node = markdown_core_scaffold_parent(node)) {
@@ -2437,9 +2458,9 @@ static bool S_copy_spine(markdown_core_parser *parser) {
         link->parent = i ? copies[i - 1].copy : NULL;
         link->last = i + 1 < builders ? copies[i + 1].copy : NULL;
     }
-    memset(parser->rooms, 0, count * sizeof(*parser->rooms));
-    parser->copy_count = count;
-    parser->builder_count = builders;
+    memset(parser->stream->rooms, 0, count * sizeof(*parser->stream->rooms));
+    parser->stream->copy_count = count;
+    parser->stream->builder_count = builders;
     parser->root = parser->block_root = copies[0].copy;
     parser->current = copies[builders - 1].copy;
     parser->pending = parser->pending ? copies[builders].copy : NULL;
@@ -2466,8 +2487,8 @@ static inline uint32_t S_capacity(uint32_t count) {
 }
 
 static void S_drop_rooms(markdown_core_parser *parser) {
-    for (size_t i = 0; i < parser->copy_count; i++) {
-        markdown_core_level_room *room = &parser->rooms[i];
+    for (size_t i = 0; i < parser->stream->copy_count; i++) {
+        markdown_core_level_room *room = &parser->stream->rooms[i];
         if (room->children) {
             markdown_core_node_pool_bytes_free(parser->pool, room->children);
         }
@@ -2480,21 +2501,21 @@ static void S_drop_rooms(markdown_core_parser *parser) {
  * to have: room for the levels, the storage a builder takes when its spare
  * is too small or it has none, and where its last published child ends. */
 static bool S_reserve_levels(markdown_core_parser *parser) {
-    markdown_core_level *levels =
-        markdown_core_reserve(parser->levels, &parser->level_capacity, parser->copy_count, sizeof(*levels));
+    markdown_core_level *levels = markdown_core_reserve(parser->stream->levels, &parser->stream->level_capacity,
+                                                        parser->stream->copy_count, sizeof(*levels));
     if (!levels) {
         return false;
     }
-    parser->levels = levels;
-    for (size_t depth = 0; depth < parser->copy_count; depth++) {
-        markdown_core_level_room *room = &parser->rooms[depth];
+    parser->stream->levels = levels;
+    for (size_t depth = 0; depth < parser->stream->copy_count; depth++) {
+        markdown_core_level_room *room = &parser->stream->rooms[depth];
         *room = (markdown_core_level_room){0};
-        const markdown_core_node *original = parser->copies[depth].original;
+        const markdown_core_node *original = parser->stream->copies[depth].original;
         const markdown_core_level *old =
-            depth < parser->level_count && levels[depth].node == original ? &levels[depth] : NULL;
+            depth < parser->stream->level_count && levels[depth].node == original ? &levels[depth] : NULL;
         const uint32_t count = original->child_count;
         room->end = !count ? 0 : old && old->count == count ? old->end : original->children[count - 1]->where.place.end;
-        if (depth >= parser->builder_count) {
+        if (depth >= parser->stream->builder_count) {
             continue;
         }
         if (count && !(old && old->spare && old->spare_capacity >= S_capacity(count))) {
@@ -2527,22 +2548,23 @@ static bool S_reserve_levels(markdown_core_parser *parser) {
  * read them is. */
 static void S_after_publish(markdown_core_parser *parser, markdown_core_node *root) {
     markdown_core_node *published = root;
-    for (size_t depth = 0; depth < parser->copy_count; depth++) {
-        markdown_core_node *original = parser->copies[depth].original;
-        const markdown_core_level_room room = parser->rooms[depth];
-        markdown_core_level *level = &parser->levels[depth];
+    for (size_t depth = 0; depth < parser->stream->copy_count; depth++) {
+        markdown_core_node *original = parser->stream->copies[depth].original;
+        const markdown_core_level_room room = parser->stream->rooms[depth];
+        markdown_core_level *level = &parser->stream->levels[depth];
         if (depth) {
-            const markdown_core_node *below = parser->copies[depth - 1].original;
-            published = published && parser->copies[depth].copy ? published->children[below->child_count] : NULL;
+            const markdown_core_node *below = parser->stream->copies[depth - 1].original;
+            published =
+                published && parser->stream->copies[depth].copy ? published->children[below->child_count] : NULL;
         }
-        if (depth >= parser->level_count || level->node != original) {
-            if (depth < parser->level_count) {
+        if (depth >= parser->stream->level_count || level->node != original) {
+            if (depth < parser->stream->level_count) {
                 S_level_release(parser, level);
             }
             *level = (markdown_core_level){0};
         }
         const uint32_t count = original->child_count;
-        if (depth < parser->builder_count) {
+        if (depth < parser->stream->builder_count) {
             if (count) {
                 markdown_core_node **taken = original->children;
                 if (room.children) {
@@ -2589,22 +2611,23 @@ static void S_after_publish(markdown_core_parser *parser, markdown_core_node *ro
         if (published) {
             markdown_core_node_share_fields(original, published);
         }
-        parser->rooms[depth] = (markdown_core_level_room){0};
+        parser->stream->rooms[depth] = (markdown_core_level_room){0};
     }
-    for (size_t depth = parser->copy_count; depth < parser->level_count; depth++) {
-        S_level_release(parser, &parser->levels[depth]);
+    for (size_t depth = parser->stream->copy_count; depth < parser->stream->level_count; depth++) {
+        S_level_release(parser, &parser->stream->levels[depth]);
     }
-    parser->level_count = parser->copy_count;
+    parser->stream->level_count = parser->stream->copy_count;
     S_release_retired(parser);
 }
 
 const markdown_core_node *markdown_core_parser_level_object(const markdown_core_parser *parser, size_t depth) {
-    if (depth >= parser->level_count || !parser->levels[depth].published) {
+    if (depth >= parser->stream->level_count || !parser->stream->levels[depth].published) {
         return NULL;
     }
-    const markdown_core_level *level = &parser->levels[depth];
-    return depth < parser->copy_count && parser->copies[depth].original == level->node ? parser->copies[depth].copy
-                                                                                       : level->node;
+    const markdown_core_level *level = &parser->stream->levels[depth];
+    return depth < parser->stream->copy_count && parser->stream->copies[depth].original == level->node
+               ? parser->stream->copies[depth].copy
+               : level->node;
 }
 
 /* A BLOCK SUPERSEDED (parser.h, markdown_core_parser_supersede). The
@@ -2661,17 +2684,18 @@ markdown_core_node *markdown_core_parser_supersede(markdown_core_parser *parser,
     while (level < depth && chain[level + 1] == markdown_core_parser_level_object(parser, level + 1)) {
         level++;
     }
-    if (level == depth || indices[level] >= parser->levels[level].count) {
+    if (level == depth || indices[level] >= parser->stream->levels[level].count) {
         return chain[depth];
     }
-    markdown_core_retired *retired = markdown_core_reserve(parser->retired, &parser->retired_capacity,
-                                                           parser->retired_count + depth - level, sizeof(*retired));
+    markdown_core_retired *retired =
+        markdown_core_reserve(parser->stream->retired, &parser->stream->retired_capacity,
+                              parser->stream->retired_count + depth - level, sizeof(*retired));
     if (!retired) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return NULL;
     }
-    parser->retired = retired;
-    markdown_core_level *spine = &parser->levels[level];
+    parser->stream->retired = retired;
+    markdown_core_level *spine = &parser->stream->levels[level];
     markdown_core_node *holder = chain[level];
     for (size_t i = level; i < depth; i++) {
         markdown_core_node *moved = markdown_core_node_move(parser->pool, chain[i + 1]);
@@ -2679,15 +2703,16 @@ markdown_core_node *markdown_core_parser_supersede(markdown_core_parser *parser,
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return NULL;
         }
-        retired[parser->retired_count++] = (markdown_core_retired){chain[i + 1], MARKDOWN_CORE_RETIRED_SLOT, starts[i]};
+        retired[parser->stream->retired_count++] =
+            (markdown_core_retired){chain[i + 1], MARKDOWN_CORE_RETIRED_SLOT, starts[i]};
         holder->children[indices[i]] = moved;
         if (i == level && indices[i] < spine->spare_valid) {
             spine->spare[indices[i]] = moved;
         }
         holder = moved;
     }
-    if (parser->touched_levels <= level) {
-        parser->touched_levels = level + 1;
+    if (parser->stream->touched_levels <= level) {
+        parser->stream->touched_levels = level + 1;
     }
     return holder;
 }
@@ -2697,7 +2722,7 @@ markdown_core_node *markdown_core_parser_supersede(markdown_core_parser *parser,
  * root's copy go with what the snapshot made below them. */
 static void S_discard_snapshot(markdown_core_parser *parser) {
     S_hand_back_all(parser);
-    if (parser->copy_count) {
+    if (parser->stream->copy_count) {
         S_release_builders(parser);
         markdown_core_parser_release_node(parser, parser->root);
     }
@@ -2761,7 +2786,7 @@ markdown_core_node *markdown_core_parser_snapshot(markdown_core_parser *parser, 
     if (copied) {
         S_snapshot_hook(parser, false);
     }
-    parser->copy_count = parser->builder_count = 0;
+    parser->stream->copy_count = parser->stream->builder_count = 0;
     parser->settle_flags = MARKDOWN_CORE_NODE__COMMITTED;
     parser->snapshot = false;
     return result;
@@ -3981,7 +4006,7 @@ static void S_complete_settled(markdown_core_parser *parser) {
 bool markdown_core_parser_complete(markdown_core_parser *parser) {
     if (!parser->error) {
         parser->snapshot = true;
-        parser->miss_block = NULL;
+        parser->stream->miss_block = NULL;
         S_parse_block_inputs(parser);
         if (!parser->error) {
             S_complete_settled(parser);
@@ -4011,7 +4036,7 @@ static bool S_miss_position(S_miss_keep *keep, const markdown_core_node *node) {
         memcpy(places, node->source.places, bytes);
     }
     *keep->at++ = (markdown_core_miss_position){node->where.place, places};
-    keep->parser->miss_position_count++;
+    keep->parser->stream->miss_position_count++;
     return true;
 }
 
@@ -4032,27 +4057,28 @@ static bool S_miss_block(markdown_core_parser *parser, markdown_core_node *block
     size_t fields = 0;
     markdown_core_visit_inline_subtrees(block, S_count_field, &fields);
     const markdown_core_path *path = markdown_core_parser_path(parser, block);
-    markdown_core_miss_block *blocks = markdown_core_reserve(parser->miss_blocks, &parser->miss_block_capacity,
-                                                             parser->miss_block_count + 1, sizeof(*blocks));
+    markdown_core_miss_block *blocks =
+        markdown_core_reserve(parser->stream->miss_blocks, &parser->stream->miss_block_capacity,
+                              parser->stream->miss_block_count + 1, sizeof(*blocks));
     if (blocks) {
-        parser->miss_blocks = blocks;
+        parser->stream->miss_blocks = blocks;
     }
     markdown_core_miss_position *positions =
-        markdown_core_reserve(parser->miss_positions, &parser->miss_position_capacity,
-                              parser->miss_position_count + 1 + fields, sizeof(*positions));
+        markdown_core_reserve(parser->stream->miss_positions, &parser->stream->miss_position_capacity,
+                              parser->stream->miss_position_count + 1 + fields, sizeof(*positions));
     if (positions) {
-        parser->miss_positions = positions;
+        parser->stream->miss_positions = positions;
     }
     if (!path || !blocks || !positions) {
         return false;
     }
-    const size_t first = parser->miss_position_count;
+    const size_t first = parser->stream->miss_position_count;
     S_miss_keep keep = {parser, positions + first};
-    blocks[parser->miss_block_count++] = (markdown_core_miss_block){path, first, 0};
-    parser->miss_block = block;
+    blocks[parser->stream->miss_block_count++] = (markdown_core_miss_block){path, first, 0};
+    parser->stream->miss_block = block;
     const bool kept =
         S_miss_position(&keep, block) && markdown_core_visit_inline_subtrees(block, S_miss_field_position, &keep);
-    blocks[parser->miss_block_count - 1].position_count = parser->miss_position_count - first;
+    blocks[parser->stream->miss_block_count - 1].position_count = parser->stream->miss_position_count - first;
     return kept;
 }
 
@@ -4070,19 +4096,19 @@ const markdown_core_registry_record *markdown_core_parser_find_at_snapshot(markd
     if (!(block->flags & MARKDOWN_CORE_NODE__COMMITTED)) {
         return NULL;
     }
-    markdown_core_definition_miss *misses =
-        markdown_core_reserve(parser->misses, &parser->miss_capacity, parser->miss_count + 1, sizeof(*misses));
+    markdown_core_definition_miss *misses = markdown_core_reserve(
+        parser->stream->misses, &parser->stream->miss_capacity, parser->stream->miss_count + 1, sizeof(*misses));
     if (misses) {
-        parser->misses = misses;
+        parser->stream->misses = misses;
     }
-    if (!misses || (parser->miss_block != block && !S_miss_block(parser, block))) {
+    if (!misses || (parser->stream->miss_block != block && !S_miss_block(parser, block))) {
         *failed = true;
         return NULL;
     }
-    misses[parser->miss_count++] =
-        (markdown_core_definition_miss){parser->miss_block_count - 1, kind, parser->miss_labels.size, label->len};
-    markdown_core_strbuf_put(&parser->miss_labels, label->data, label->len);
-    *failed = parser->miss_labels.oom;
+    misses[parser->stream->miss_count++] = (markdown_core_definition_miss){
+        parser->stream->miss_block_count - 1, kind, parser->stream->miss_labels.size, label->len};
+    markdown_core_strbuf_put(&parser->stream->miss_labels, label->data, label->len);
+    *failed = parser->stream->miss_labels.oom;
     return NULL;
 }
 
@@ -4178,7 +4204,7 @@ static markdown_core_node *S_complete_anew(markdown_core_parser *parser, const m
     if (!holder) {
         return NULL;
     }
-    markdown_core_miss_position *positions = &parser->miss_positions[record->first_position];
+    markdown_core_miss_position *positions = &parser->stream->miss_positions[record->first_position];
     S_withdraw_completion(parser, block, positions->place.start);
     const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, block);
     markdown_core_node *candidate =
@@ -4211,14 +4237,14 @@ static markdown_core_node *S_complete_anew(markdown_core_parser *parser, const m
  * candidate empties another's. */
 static void S_withdraw_defined(markdown_core_parser *parser, const markdown_core_miss_block *record,
                                markdown_core_node *block) {
-    const markdown_core_miss_position *positions = &parser->miss_positions[record->first_position];
+    const markdown_core_miss_position *positions = &parser->stream->miss_positions[record->first_position];
     const bool inlines = S_kind_contains_inlines(markdown_core_parser_block_kind(parser, block), block);
     for (size_t i = inlines ? 0 : 1; i < record->position_count; i++) {
         const markdown_core_place place = positions[i].place;
         const markdown_core_key_entry from = markdown_core_key_number(place.start);
         for (size_t table = 0; table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
             markdown_core_key_tree_cursor cursor;
-            markdown_core_key_tree_seek(&parser->committed.starts[table], &from, &cursor);
+            markdown_core_key_tree_seek(&parser->stream->committed.starts[table], &from, &cursor);
             for (markdown_core_key_entry *entry;
                  (entry = markdown_core_key_tree_next(&cursor)) && entry->extra < place.end;) {
                 if (entry->value && markdown_core_node_moved(entry->value) != block) {
@@ -4232,12 +4258,12 @@ static void S_withdraw_defined(markdown_core_parser *parser, const markdown_core
 /* The definitions the candidates listed, in the committed tables: each at
  * the entry of where it starts, which one emptied may already hold. */
 static void S_keep_defined(markdown_core_parser *parser) {
-    for (size_t i = 0; i < parser->defined_count; i++) {
-        const markdown_core_defined *defined = &parser->defined[i];
+    for (size_t i = 0; i < parser->stream->defined_count; i++) {
+        const markdown_core_defined *defined = &parser->stream->defined[i];
         const markdown_core_key_entry key = markdown_core_key_number(defined->start);
         bool made;
         markdown_core_key_entry *entry =
-            markdown_core_key_tree_entry(&parser->committed.starts[defined->table], &key, &made);
+            markdown_core_key_tree_entry(&parser->stream->committed.starts[defined->table], &key, &made);
         if (!entry) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return;
@@ -4245,7 +4271,7 @@ static void S_keep_defined(markdown_core_parser *parser) {
         entry->extra = defined->start;
         entry->value = defined->node;
     }
-    parser->defined_count = 0;
+    parser->stream->defined_count = 0;
 }
 
 /* A candidate completed, published against the object that holds its
@@ -4293,17 +4319,17 @@ static void S_complete_place(markdown_core_parser *parser, const S_completion_an
  * candidate is then published against the block, and takes its place when
  * it differs (S_complete_place). */
 static void S_complete_misses(markdown_core_parser *parser) {
-    S_completion_anew *anew = markdown_core_alloc(parser->miss_block_count, sizeof(*anew));
+    S_completion_anew *anew = markdown_core_alloc(parser->stream->miss_block_count, sizeof(*anew));
     if (!anew) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
     size_t count = 0;
-    for (size_t miss = 0, record = 0; record < parser->miss_block_count && !parser->error; record++) {
+    for (size_t miss = 0, record = 0; record < parser->stream->miss_block_count && !parser->error; record++) {
         bool found = false;
-        for (; miss < parser->miss_count && parser->misses[miss].block == record; miss++) {
-            const markdown_core_definition_miss *at = &parser->misses[miss];
-            const markdown_core_chunk label = {parser->miss_labels.ptr + at->label_start, at->label_length, 0};
+        for (; miss < parser->stream->miss_count && parser->stream->misses[miss].block == record; miss++) {
+            const markdown_core_definition_miss *at = &parser->stream->misses[miss];
+            const markdown_core_chunk label = {parser->stream->miss_labels.ptr + at->label_start, at->label_length, 0};
             bool failed = false;
             found = found || markdown_core_parser_find_definition(parser, at->kind, &label, &failed);
             if (failed) {
@@ -4312,9 +4338,9 @@ static void S_complete_misses(markdown_core_parser *parser) {
             }
         }
         markdown_core_node *candidate =
-            found && !parser->error ? S_complete_anew(parser, &parser->miss_blocks[record]) : NULL;
+            found && !parser->error ? S_complete_anew(parser, &parser->stream->miss_blocks[record]) : NULL;
         if (candidate) {
-            anew[count++] = (S_completion_anew){candidate, &parser->miss_blocks[record]};
+            anew[count++] = (S_completion_anew){candidate, &parser->stream->miss_blocks[record]};
         }
     }
     if (!parser->error && parser->completion_first) {
@@ -4485,7 +4511,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     if (!parser->error) {
         S_complete_settled(parser);
     }
-    if (!parser->error && !parser->snapshot && parser->miss_count) {
+    if (!parser->error && !parser->snapshot && parser->stream && parser->stream->miss_count) {
         S_complete_misses(parser);
     }
 

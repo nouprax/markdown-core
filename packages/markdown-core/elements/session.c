@@ -155,8 +155,8 @@ markdown_core_status markdown_core_session_new(const uint8_t *source, size_t siz
     }
     markdown_core_status status = session_open(made, source, size, unit);
     if (status == MARKDOWN_CORE_OK) {
-        made->committed->streaming = true;
-        status = session_snapshot(made);
+        status =
+            markdown_core_parser_stream(made->committed) ? session_snapshot(made) : MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     if (status != MARKDOWN_CORE_OK) {
         session_close(made);

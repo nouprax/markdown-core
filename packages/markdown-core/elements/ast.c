@@ -850,12 +850,12 @@ static inline bool publish_inline_runs(publish_walk *walk, markdown_core_node *n
  * streaming parse keeps once the publish is committed. */
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool publish_keep(publish_walk *walk, uint32_t table, size_t entry) {
     markdown_core_parser *parser = walk->stack.parser;
-    markdown_core_kept *kept =
-        markdown_core_reserve(parser->kept, &parser->kept_capacity, walk->kept_count + 1, sizeof(*kept));
+    markdown_core_kept *kept = markdown_core_reserve(parser->stream->kept, &parser->stream->kept_capacity,
+                                                     walk->kept_count + 1, sizeof(*kept));
     if (!kept) {
         return false;
     }
-    parser->kept = kept;
+    parser->stream->kept = kept;
     kept[walk->kept_count++] = (markdown_core_kept){table, (uint32_t)entry};
     return true;
 }
@@ -867,7 +867,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool publish_keep(publish_walk *walk,
 static inline bool publish_list(publish_walk *walk, markdown_core_node *node, uint32_t table, uint32_t start) {
     definition_table *values = &walk->tables[table];
     return table_add(values, node, start) &&
-           (!walk->stack.parser->streaming || !(node->flags & MARKDOWN_CORE_NODE__COMMITTED) ||
+           (!walk->stack.parser->stream || !(node->flags & MARKDOWN_CORE_NODE__COMMITTED) ||
             publish_keep(walk, table, values->count - 1));
 }
 
@@ -1554,11 +1554,11 @@ static void publish_spine(publish_walk *walk, markdown_core_parser *parser) {
     }
     size_t depth = 0;
     for (const markdown_core_node *object; (object = markdown_core_parser_level_object(parser, depth)); depth++) {
-        parser->levels[depth].object = object;
+        parser->stream->levels[depth].object = object;
     }
-    walk->levels = parser->levels;
+    walk->levels = parser->stream->levels;
     walk->level_count = depth;
-    walk->touched_levels = parser->touched_levels;
+    walk->touched_levels = parser->stream->touched_levels;
 }
 
 /* THE DEFINITION TABLES A STREAMING PARSE KEEPS (parser.h, `committed`):
@@ -1632,9 +1632,9 @@ static bool committed_keep(markdown_core_committed_tables *committed, uint32_t t
  * each retired slot of a definition they list where its block starts, and
  * at its label too when `labels` says the label tables are read. */
 static void committed_moves(markdown_core_parser *parser, bool labels) {
-    markdown_core_committed_tables *committed = &parser->committed;
-    for (size_t i = 0; i < parser->retired_count; i++) {
-        const markdown_core_retired *retired = &parser->retired[i];
+    markdown_core_committed_tables *committed = &parser->stream->committed;
+    for (size_t i = 0; i < parser->stream->retired_count; i++) {
+        const markdown_core_retired *retired = &parser->stream->retired[i];
         const markdown_core_node *old = retired->storage;
         const unsigned table = retired->kind == MARKDOWN_CORE_RETIRED_SLOT ? SLOT_TABLE(slot_of(old)) : 0;
         if (!table) {
@@ -1663,9 +1663,9 @@ static void committed_moves(markdown_core_parser *parser, bool labels) {
  * when storage could not be had. */
 static bool keep_committed(markdown_core_parser *parser, const publish_walk *walk) {
     for (size_t i = 0; i < walk->kept_count; i++) {
-        const markdown_core_kept kept = parser->kept[i];
+        const markdown_core_kept kept = parser->stream->kept[i];
         definition_entry *entry = &walk->tables[kept.table].values[kept.entry];
-        if (!committed_keep(&parser->committed, kept.table, entry->node, (uint32_t)entry->start)) {
+        if (!committed_keep(&parser->stream->committed, kept.table, entry->node, (uint32_t)entry->start)) {
             return false;
         }
         entry->node = NULL;
@@ -1679,7 +1679,7 @@ static bool publish_prefill(publish_walk *walk, markdown_core_parser *parser) {
     const markdown_core_key_entry first = markdown_core_key_number(0);
     for (size_t table = 0; table < TABLE_COUNT; table++) {
         markdown_core_key_tree_cursor cursor;
-        markdown_core_key_tree_seek(&parser->committed.starts[table], &first, &cursor);
+        markdown_core_key_tree_seek(&parser->stream->committed.starts[table], &first, &cursor);
         for (const markdown_core_key_entry *entry; (entry = markdown_core_key_tree_next(&cursor));) {
             if (entry->value && !table_add(&walk->tables[table], entry->value, entry->extra)) {
                 return false;
@@ -1825,7 +1825,7 @@ static bool snapshot_targets(const definition_table *references, const definitio
 /* A snapshot's document's tables (A SNAPSHOT'S TABLES), from the walk's,
  * which list its own entries. */
 static bool snapshot_tables(markdown_core_parser *parser, publish_walk *walk, markdown_core_document_value *value) {
-    const markdown_core_committed_tables *committed = &parser->committed;
+    const markdown_core_committed_tables *committed = &parser->stream->committed;
     markdown_core_table_place *places[TABLE_COUNT] = {NULL};
     bool ok = true;
     for (size_t table = 0; table < TABLE_COUNT && ok; table++) {
@@ -1868,17 +1868,17 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
     walk.places = (content_places){0};
     walk.pool = parser->pool;
     publish_placed placed;
-    publish_spine(&walk, parser);
-    /* A snapshot's publish, which keeps the COMMITTED definitions; the
-     * finalize lists them first. */
-    const bool snapshot = parser->streaming && parser->snapshot;
-    if (parser->streaming) {
+    /* A streaming publish starts at the levels, and a snapshot's keeps the
+     * COMMITTED definitions; the finalize lists them first. */
+    const bool snapshot = parser->stream && parser->snapshot;
+    if (parser->stream) {
+        publish_spine(&walk, parser);
         committed_moves(parser, snapshot);
     }
     value->footnotes = value->specimens = value->references = (markdown_core_definitions){0};
     value->reference_targets = (markdown_core_node_table){0};
     value->committed = NULL;
-    bool same = false, ok = snapshot || !parser->streaming || publish_prefill(&walk, parser);
+    bool same = false, ok = snapshot || !parser->stream || publish_prefill(&walk, parser);
     if (ok && previous) {
         const publish_relation start = {0};
         ok = publish_matched(&walk, root, previous, &start, &same);
@@ -1906,7 +1906,9 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
     }
     if (ok) {
         revision->last_id = walk.next_id;
-        parser->touched_levels = 0;
+    }
+    if (ok && parser->stream) {
+        parser->stream->touched_levels = 0;
     }
     for (size_t table = 0; table < TABLE_COUNT; table++) {
         markdown_core_free(walk.tables[table].values);
@@ -1945,20 +1947,21 @@ bool markdown_core_publish_candidate(markdown_core_parser *parser, markdown_core
                                    (uint32_t)((int64_t)start - block->source.runs->items[0].lead)};
     bool ok = publish_matched(&walk, candidate, block, &hand, same);
     if (ok && walk.kept_count) {
-        markdown_core_defined *defined = markdown_core_reserve(
-            parser->defined, &parser->defined_capacity, parser->defined_count + walk.kept_count, sizeof(*defined));
+        markdown_core_defined *defined =
+            markdown_core_reserve(parser->stream->defined, &parser->stream->defined_capacity,
+                                  parser->stream->defined_count + walk.kept_count, sizeof(*defined));
         ok = defined != NULL;
-        parser->defined = ok ? defined : parser->defined;
+        parser->stream->defined = ok ? defined : parser->stream->defined;
     }
     if (ok) {
         if (!*same) {
             publish_commit(&walk.identity);
         }
         for (size_t i = 0; i < walk.kept_count; i++) {
-            const markdown_core_kept kept = parser->kept[i];
+            const markdown_core_kept kept = parser->stream->kept[i];
             const definition_entry *entry = &walk.tables[kept.table].values[kept.entry];
             if (entry->node != candidate) {
-                parser->defined[parser->defined_count++] =
+                parser->stream->defined[parser->stream->defined_count++] =
                     (markdown_core_defined){(uint32_t)entry->start, kept.table, entry->node};
             }
         }

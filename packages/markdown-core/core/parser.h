@@ -274,14 +274,12 @@ typedef struct {
     bufsize_t label_start, label_length;
 } markdown_core_definition_miss;
 
-struct markdown_core_parser {
-    /* The flags a block takes as it settles (blocks.c, A BLOCK SETTLES):
-     * COMMITTED in a commit, nothing in a snapshot. */
-    markdown_core_node_internal_flags settle_flags;
-    /* Whether the parse is a session's, which takes snapshots between its
-     * commits: its records of committed blocks name them by path, and its
-     * publishes keep levels and the committed definitions. */
-    bool streaming;
+/* WHAT A STREAMING PARSE KEEPS: a session's parse, which takes snapshots
+ * between its commits (blocks.c, THE SNAPSHOT). Its records of committed
+ * blocks name them by path, and its publishes keep levels and the committed
+ * definitions. The parser owns it from markdown_core_parser_stream until the
+ * parse is released. */
+typedef struct markdown_core_stream {
     /* THE COPIES of the snapshot being taken, the builders' from the root
      * up, `builder_count` of them, and then the pending block's
      * (blocks.c), with what each level takes before the publish. */
@@ -306,20 +304,6 @@ struct markdown_core_parser {
      * from. */
     markdown_core_path root_path;
     markdown_core_path_block *paths;
-    /* Every definition and explicit anchor the parse declared (registry.h):
-     * the block phase declares definitions as it reads them, the headings
-     * declare their labels before inline content is parsed, and completion
-     * reserves explicit anchors where it meets them. */
-    markdown_core_registry registry;
-    /* Whether completion runs for a snapshot rather than for the finalize
-     * (docs/plans/2026-09-29-incremental-parsing.md, 5.4): a lookup sees only
-     * the definitions that start before the block being completed, and one
-     * that finds none is recorded (markdown_core_parser_find_definition). */
-    bool snapshot;
-    /* The block being completed: the queued block the completion walk is in
-     * (blocks.c, COMPLETION), or the heading whose inline content the
-     * document's preparation parses. */
-    struct markdown_core_node *completing;
     /* THE LOOKUPS A COMMIT'S COMPLETION FOUND NOTHING FOR, in the order
      * they were made (plan 5.4), and the blocks they were made for, the last
      * of which is `miss_block` while its completion lasts. The finalize asks
@@ -339,6 +323,29 @@ struct markdown_core_parser {
      * (markdown_core_parser_supersede): the next publish finds each of them
      * differs. */
     size_t touched_levels;
+} markdown_core_stream;
+
+struct markdown_core_parser {
+    /* The flags a block takes as it settles (blocks.c, A BLOCK SETTLES):
+     * COMMITTED in a commit, nothing in a snapshot. */
+    markdown_core_node_internal_flags settle_flags;
+    /* What the parse keeps as a session's (markdown_core_parser_stream), or
+     * NULL: a one-shot parse keeps none of it. */
+    markdown_core_stream *stream;
+    /* Every definition and explicit anchor the parse declared (registry.h):
+     * the block phase declares definitions as it reads them, the headings
+     * declare their labels before inline content is parsed, and completion
+     * reserves explicit anchors where it meets them. */
+    markdown_core_registry registry;
+    /* Whether completion runs for a snapshot rather than for the finalize
+     * (docs/plans/2026-09-29-incremental-parsing.md, 5.4): a lookup sees only
+     * the definitions that start before the block being completed, and one
+     * that finds none is recorded (markdown_core_parser_find_definition). */
+    bool snapshot;
+    /* The block being completed: the queued block the completion walk is in
+     * (blocks.c, COMPLETION), or the heading whose inline content the
+     * document's preparation parses. */
+    struct markdown_core_node *completing;
     markdown_core_source_order source_order;
     /* The stack the finish stage's tree walks borrow in turn, the finish
      * walk's frames and then publishing's: each grows it to what it needs
@@ -1133,6 +1140,11 @@ void markdown_core_parser_discard(markdown_core_parser *parser);
  * that more text leaves as they are, so a commit with this limit reads them
  * as a parse of any longer text does. */
 size_t markdown_core_parser_commit_point(const markdown_core_parser *parser);
+/* Makes the transaction a session's (markdown_core_stream), before its first
+ * commit: only such a transaction completes for a snapshot and takes
+ * snapshots, and asks for paths, levels, supersedes and retirements. False
+ * when the transaction failed. */
+bool markdown_core_parser_stream(markdown_core_parser *parser);
 /* Completes the blocks that have settled, for a snapshot (plan 5.4): the
  * cells of the tables that closed are read, the document prepares the
  * headings that settled, and the completion queue is completed with a

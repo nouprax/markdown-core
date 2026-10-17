@@ -85,7 +85,7 @@ void markdown_core_headings_prepare(const markdown_core_element_instance *self, 
         markdown_core_finish_heading(parser, heading);
         heading->parsed = true;
         heading->authored = node->attributes.anchor.len != 0;
-        if (parser->streaming && (node->flags & MARKDOWN_CORE_NODE__COMMITTED)) {
+        if (parser->stream && (node->flags & MARKDOWN_CORE_NODE__COMMITTED)) {
             heading->path = markdown_core_parser_path(parser, node);
             heading->node = NULL;
         }
@@ -161,8 +161,9 @@ void markdown_core_headings_start_snapshot(const markdown_core_element_instance 
     state->snapshot_records = parser->registry.count;
     assert(headings->count - headings->parsed <= 1);
     if (headings->parsed < headings->count) {
-        assert(!headings->values[headings->parsed].parsed && parser->copy_count > parser->builder_count &&
-               headings->values[headings->parsed].node == parser->copies[parser->builder_count].original);
+        assert(
+            !headings->values[headings->parsed].parsed && parser->stream->copy_count > parser->stream->builder_count &&
+            headings->values[headings->parsed].node == parser->stream->copies[parser->stream->builder_count].original);
         headings->values[headings->parsed].node = parser->pending;
     }
 }
