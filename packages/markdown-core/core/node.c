@@ -542,7 +542,8 @@ void markdown_core_node_free(markdown_core_node *node) { markdown_core_node_pool
 /* SWAPPING TWO NODES moves every byte of their slots, so each record in a
  * slot moves with the node it belongs to, and each node's view of it is
  * pointed at the slot the node now lies in. The slots exchange their bytes
- * a block at a time, each block read from both before either is written. */
+ * a block at a time, each block read from both before either is written,
+ * the last block what is left of the slot. */
 static inline void S_record_follow(markdown_core_node *node) {
     if (node->as.data && !node->node_data_allocation) {
         node->as.data = S_slot_of(node)->record;
@@ -551,16 +552,15 @@ static inline void S_record_follow(markdown_core_node *node) {
 
 enum { S_SWAP_BLOCK = 96 };
 
-typedef char S_slot_swaps_whole_blocks[sizeof(markdown_core_node_slot) % S_SWAP_BLOCK == 0 ? 1 : -1];
-
 void markdown_core_node_swap(markdown_core_node *a, markdown_core_node *b) {
     unsigned char *x = (unsigned char *)S_slot_of(a), *y = (unsigned char *)S_slot_of(b);
     for (size_t at = 0; at < sizeof(markdown_core_node_slot); at += S_SWAP_BLOCK) {
+        const size_t left = sizeof(markdown_core_node_slot) - at, size = left < S_SWAP_BLOCK ? left : S_SWAP_BLOCK;
         unsigned char held[S_SWAP_BLOCK], taken[S_SWAP_BLOCK];
-        memcpy(held, x + at, S_SWAP_BLOCK);
-        memcpy(taken, y + at, S_SWAP_BLOCK);
-        memcpy(x + at, taken, S_SWAP_BLOCK);
-        memcpy(y + at, held, S_SWAP_BLOCK);
+        memcpy(held, x + at, size);
+        memcpy(taken, y + at, size);
+        memcpy(x + at, taken, size);
+        memcpy(y + at, held, size);
     }
     S_record_follow(a);
     S_record_follow(b);
