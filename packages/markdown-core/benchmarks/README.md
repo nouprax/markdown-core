@@ -158,9 +158,10 @@ scale and adversarial shape at 16 KB, 64 KB, 256 KB and 1 MB with `tokens` and
 `rows`. `stream_runner` opens a subject on an empty text, appends the
 workload's document through `bench_apply_step` one chunk at a time, finalizes
 it through `bench_finalize`, and dumps a callgrind profile after each window of
-chunks and after the finalize; a window's cost is the edge into
-`bench_apply_step` or `bench_finalize`, less parser creation, which is not
-parsing. A stream of at most 1,024 chunks has one chunk per window, and a
+chunks and after the finalize. A session window's cost is the edge into
+`bench_apply_step` or `bench_finalize`, and a `reparse` window's is the two
+parse stages of each `Document.parse` in it: creating, starting and releasing
+the parser are not parsing. A stream of at most 1,024 chunks has one chunk per window, and a
 longer stream has 1,024 windows; the finalize is one more. The driver is
 `scripts/benchmark/streams.mjs`; it shares `run.mjs`'s build, provenance,
 isolation and callgrind invocation, so its binaries are the ones the stage

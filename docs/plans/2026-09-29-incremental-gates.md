@@ -321,9 +321,13 @@ step per window, so a window's cost is that step's cost. A longer stream (a stre
 `tokens` or `rows`) splits into 1,024 contiguous windows of equal step count.
 Its `reparse` column is measured at each window's last step, because
 reparsing after every chunk of a megabyte stream is the quadratic cost the
-design removes. The finalize is one more window, after the last. Parser
-creation is in no window: `Document.parse` creates a parser on every call,
-and creating it is not parsing.
+design removes. The finalize is one more window, after the last. A session's
+window counts the whole of its steps: an append is the session's streaming
+parse. A `reparse` window counts the parse of each `Document.parse` in it,
+its two stages `source_to_buffer` and `buffer_to_ast` as the one-shot
+benchmark reads them. Creating the parser, starting and releasing its
+transaction and freeing the document of the step before are not parsing, and
+are in no window.
 
 The gates measure the C engine. A binding builds its platform values from what
 the engine returns (plan 6.1); bindings are gated for correctness (section 4).
@@ -333,7 +337,7 @@ the engine returns (plan 6.1); bindings are gated for correctness (section 4).
 | Metric | Definition |
 | --- | --- |
 | `step_ir` | Ir per window: p50, p95, max and total over the stream |
-| `reparse_ir` | The same for the `reparse` subject: what an application pays today |
+| `reparse_ir` | The same for the `reparse` subject: the parse an application runs today (5.1) |
 | `oneshot_ir` | One-shot parse of the stream's final text, both stages |
 | `speedup` | `reparse_ir / step_ir` per step, p50 and p5, for streams of at most 1,024 steps |
 | `stream_ratio` | Stream total `step_ir` / `oneshot_ir` of the final text |
@@ -560,3 +564,7 @@ their own pull requests.
   `Document.parse` creates a parser on every call, so the `reparse` subject
   creates one on every step. Creating a parser is not parsing, and no window
   of either subject counts it, on either side of 6.4 (5.1).
+- **G13 Reparse windows. Decided 2026-10-18: parsing only** ("只算解析"). A
+  `reparse` window counts the two parse stages of each `Document.parse`, as
+  the one-shot gate does; creating and releasing the parser are outside
+  every window, on either side of 6.4 (5.1).

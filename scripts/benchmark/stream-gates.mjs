@@ -3,22 +3,18 @@
  * sections 5 and 6), separate from the driver so that each rule is tested on
  * synthetic profiles without building or measuring anything.
  *
- * A workload's costs are its windows' costs: the inclusive cost of the calls
- * into `bench_apply_step` and `bench_finalize` in each of the runner's
- * per-window dumps, less parser creation. Every rule compares Ir; data
- * references are reported beside it.
+ * A workload's costs are its windows' costs, read from each of the runner's
+ * per-window dumps: a session's window is the whole of its calls into
+ * `bench_apply_step` and `bench_finalize`, and a `reparse` window is the parse
+ * inside them. Every rule compares Ir; data references are reported beside
+ * it.
  */
 
-import { baseName, costRecord } from "./callgrind.mjs";
+import { baseName, costRecord, foldClones, stageCalls } from "./callgrind.mjs";
 import { STAGE_IR_LIMIT } from "./stage-budget.mjs";
 
-/** The measured edges' callees, as stream_runner.c names them: a chunk and the finalize. */
+/** The steps' entries, as stream_runner.c names them: a chunk and the finalize. */
 export const STEP_ENTRIES = Object.freeze(["bench_apply_step", "bench_finalize"]);
-/**
- * Parser creation, which `Document.parse` does on every call: it is not
- * parsing, and is in no window's cost (5.1).
- */
-export const CREATION_ENTRY = "markdown_core_core_parser";
 /** The most windows a workload is split into (5.1). */
 export const WINDOWS = 1024;
 /** 6.2: a later window of a stream against an earlier one. */
@@ -29,31 +25,60 @@ export const REPARSE_LIMIT = 1.25;
 export const REGRESSION_LIMIT = STAGE_IR_LIMIT;
 
 /**
- * One window's cost from its parsed profile: every edge into a step entry,
- * whatever its caller's context, less every edge into parser creation. The
- * runner zeroes the counts after opening the subject, so every creation in a
- * window is inside its step. A window that made no call is a runner that
- * measured nothing, and is refused rather than counted as free.
+ * A window's calls into a step entry, whatever their callers' contexts. A
+ * window that made none is a runner that measured nothing, and is refused
+ * rather than counted as free.
  */
-export function windowCost(profile) {
+function stepEdges(profile) {
+    const edges = [...profile.edges.values()].filter((edge) => STEP_ENTRIES.includes(baseName(edge.callee)));
+    if (!edges.length) throw new Error(`a window made no call to ${STEP_ENTRIES.join(" or ")}`);
+    return edges;
+}
+
+/** The record of a window whose `steps` cost what `edges` did. */
+function windowRecord(profile, steps, edges) {
     const cost = [];
-    const add = (edge, sign) => edge.cost.forEach((value, index) => (cost[index] = (cost[index] ?? 0) + sign * value));
-    let calls = 0;
-    for (const edge of profile.edges.values()) {
-        const callee = baseName(edge.callee);
-        if (STEP_ENTRIES.includes(callee)) {
-            calls += edge.calls;
-            add(edge, 1);
-        } else if (callee === CREATION_ENTRY) {
-            add(edge, -1);
-        }
-    }
-    if (!calls) throw new Error(`a window made no call to ${STEP_ENTRIES.join(" or ")}`);
+    for (const edge of edges) edge.cost.forEach((value, index) => (cost[index] = (cost[index] ?? 0) + value));
     const record = costRecord(profile, cost);
     if (!Number.isSafeInteger(record.Ir) || record.Ir <= 0) {
         throw new Error("a window's instruction count is not a positive integer");
     }
-    return { calls, Ir: record.Ir, Dr: record.Dr ?? 0, Dw: record.Dw ?? 0 };
+    return {
+        calls: steps.reduce((sum, edge) => sum + edge.calls, 0),
+        Ir: record.Ir,
+        Dr: record.Dr ?? 0,
+        Dw: record.Dw ?? 0
+    };
+}
+
+/**
+ * A session window's cost: the whole of its steps. An append is the
+ * session's streaming parse, and the session is opened before the runner
+ * zeroes the counts, so no window creates it (5.1).
+ */
+export function stepCost(profile) {
+    const steps = stepEdges(profile);
+    return windowRecord(profile, steps, steps);
+}
+
+/**
+ * A `reparse` window's cost: the parse stages of the `Document.parse` its
+ * step calls, read as the one-shot benchmark reads a document's
+ * (`boundaries`, each entered from outside every stage). Creating the
+ * parser, starting and releasing its transaction and freeing the step
+ * before's document are not parsing, and are in no window (5.1; G12, G13).
+ */
+export function parseCost(profile, boundaries) {
+    const steps = stepEdges(profile);
+    const entered = stageCalls(foldClones(profile), boundaries);
+    if (!entered || entered.some((stage) => !stage.edges.length)) {
+        throw new Error(`a window does not enter each of ${boundaries.join(", ")} from exactly one function`);
+    }
+    return windowRecord(
+        profile,
+        steps,
+        entered.flatMap((stage) => stage.edges)
+    );
 }
 
 /**

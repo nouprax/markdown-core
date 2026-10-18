@@ -63,12 +63,12 @@ import { fileURLToPath } from "node:url";
 
 import {
     baseName,
+    CLONE_SUFFIX,
     costRecord,
-    edgesBetween,
-    foldNames,
+    foldClones,
     nodesEnteredFrom,
     parseCallgrind,
-    stageEntries
+    stageCalls
 } from "./callgrind.mjs";
 import {
     compiledFlags as readCompiledFlags,
@@ -78,7 +78,7 @@ import {
     sameCompileOptions
 } from "./compile-identity.mjs";
 import { STAGES, stageBudget, STAGE_IR_LIMIT } from "./stage-budget.mjs";
-import { CREATION_ENTRY, STEP_ENTRIES } from "./stream-gates.mjs";
+import { STEP_ENTRIES } from "./stream-gates.mjs";
 import {
     buildGrammarCorpus,
     writeGrammarCorpus,
@@ -104,10 +104,6 @@ const PROFILE_PRESET = "benchmark";
 
 /* A cache geometry pinned in the report rather than taken from the host, so
  * that two machines produce the same file and a diff means a code change. */
-/* GCC clones a function when it specializes it; the clone carries the work but
- * not the plain name the stage boundary is written as. */
-const CLONE_SUFFIX = /(\.(constprop|isra|part|cold|lto_priv|localalias)\.?\d*)+$/u;
-
 const ENGINES = {
     "markdown-core": {
         runner: "packages/markdown-core/benchmarks/markdown_core_stage_runner",
@@ -134,6 +130,10 @@ const ENGINES = {
         }
     }
 };
+
+/* The core's parse stages, which a `reparse` stream window reads as this
+ * benchmark reads a document (stream-gates.mjs, parseCost). */
+export const PARSE_BOUNDARIES = Object.freeze(STAGES.map((stage) => ENGINES["markdown-core"].stages[stage].callee));
 
 /* The stream benchmark's runner (streams.mjs): Markdown Core's engine,
  * measured per append rather than per stage. */
@@ -894,8 +894,8 @@ function verifyBuildProvenance(profile, runners, versions) {
  * A stage boundary that the compiler folded into its caller is not a smaller
  * number, it is a missing one; the profile flags exist to prevent it and this
  * is where that contract is checked instead of discovered as a zero. The
- * stream runner's step entries and the parser creation its windows leave out
- * are checked the same way.
+ * stream runner's step entries and the parse stages its `reparse` windows
+ * read are checked the same way.
  */
 function verifyStageSymbols(profile) {
     const symbolsOf = (engine, runner) => {
@@ -922,7 +922,7 @@ function verifyStageSymbols(profile) {
         }
     }
     const streamSymbols = symbolsOf("markdown-core streams", STREAM_RUNNER);
-    for (const name of [...STEP_ENTRIES, CREATION_ENTRY]) {
+    for (const name of [...STEP_ENTRIES, ...PARSE_BOUNDARIES]) {
         if (!streamSymbols.has(name)) {
             fail(
                 `markdown-core streams: ${name} is absent from ${STREAM_RUNNER}. The profile build must keep the ` +
@@ -1221,24 +1221,19 @@ export function measure(profile, engine, document, out) {
     const receipt = /bytes=(\d+) root_children=(\d+)/u.exec(stdout);
     if (!receipt) fail(`${engine}: ${document.case} produced no receipt`);
 
-    const parsed = parseCallgrind(fs.readFileSync(dump, "utf8"));
-    const profileByName = foldNames(parsed, (name) => {
-        const context = name.indexOf("'");
-        if (context < 0) return name.replace(CLONE_SUFFIX, "");
-        return name.slice(0, context).replace(CLONE_SUFFIX, "") + name.slice(context);
-    });
+    const profileByName = foldClones(parseCallgrind(fs.readFileSync(dump, "utf8")));
     const stages = {};
     const boundaries = STAGES.map((stage) => definition.stages[stage].callee);
-    const entries = stageEntries(profileByName, boundaries);
-    if (!entries) {
+    const entered = stageCalls(profileByName, boundaries);
+    if (!entered) {
         fail(
             `${engine}: a stage boundary (${boundaries.join(", ")}) is not entered from exactly one function ` +
                 `outside the stages in ${path.basename(dump)}`
         );
     }
     for (const [index, stage] of STAGES.entries()) {
-        const boundary = { caller: entries[index], callee: definition.stages[stage].callee };
-        const edges = edgesBetween(profileByName, boundary.caller, boundary.callee);
+        const { caller, callee, edges } = entered[index];
+        const boundary = { caller, callee };
         if (!edges.length) {
             fail(`${engine}: no call edge ${boundary.caller} -> ${boundary.callee} in ${path.basename(dump)}`);
         }

@@ -5,9 +5,10 @@
  *
  * It measures what an application pays per streamed chunk: each benchmark
  * workload of workloads.mjs, run through a subject by `stream_runner`, under
- * callgrind, one dump per window and one for the finalize. A window's cost is
- * the edge into `bench_apply_step` or `bench_finalize`, less parser creation;
- * everything else in the process, including opening the subject, is outside
+ * callgrind, one dump per window and one for the finalize. A session window's
+ * cost is the edge into `bench_apply_step` or `bench_finalize`; a `reparse`
+ * window's is the two parse stages of the `Document.parse` inside it.
+ * Everything else in the process, including opening the subject, is outside
  * every window.
  *
  * The build, its provenance and identity, the measurement's isolation and the
@@ -48,15 +49,16 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { isMainThread, parentPort, Worker, workerData } from "node:worker_threads";
 
 import { parseCallgrind } from "./callgrind.mjs";
-import { STREAM_RUNNER, measure, prepareBuild, profileRun } from "./run.mjs";
+import { PARSE_BOUNDARIES, STREAM_RUNNER, measure, prepareBuild, profileRun } from "./run.mjs";
 import {
     groupWindows,
     neverWorse,
+    parseCost,
     REGRESSION_LIMIT,
     regressions,
+    stepCost,
     summary,
     WINDOWS,
-    windowCost,
     windowEnds
 } from "./stream-gates.mjs";
 import { STAGES } from "./stage-budget.mjs";
@@ -64,6 +66,13 @@ import { BENCHMARK_SETS, writeBenchmarkWorkloads } from "./workloads.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const SUBJECTS = Object.freeze(["reparse", "session"]);
+/* What a window of each subject counts (gates 5.1): an append is the
+ * session's streaming parse, all of it, and of each `Document.parse` the
+ * `reparse` subject calls, the two parse stages are the parsing. */
+const WINDOW_COST = Object.freeze({
+    reparse: (profile) => parseCost(profile, PARSE_BOUNDARIES),
+    session: stepCost
+});
 
 function fail(message) {
     console.error(`benchmark:streams: ${message}`);
@@ -151,7 +160,7 @@ function measureSubject(profile, out, into, workload, subject, final) {
     const costs = [];
     let highest = 0;
     for (let window = 1; window <= windows; window++) {
-        const cost = windowCost(parseCallgrind(fs.readFileSync(`${dump}.${window}`, "utf8")));
+        const cost = WINDOW_COST[subject](parseCallgrind(fs.readFileSync(`${dump}.${window}`, "utf8")));
         costs.push(cost);
         if (cost.Ir > costs[highest].Ir) highest = window - 1;
     }
@@ -305,7 +314,7 @@ export function markdownReport(report) {
         "# Stream benchmark",
         "",
         `Subjects: ${report.subjects.map((subject) => `\`${subject}\``).join(", ")}. Workloads: ${number(report.results.length)} (\`${report.workloads.version}\`, digest \`${report.workloads.digest.slice(0, 16)}\`).`,
-        "Every figure is Ir per window, the edge into `bench_apply_step` or, for the finalize, `bench_finalize`, less parser creation; the one-shot column parses each workload's final text once, both stages.",
+        "Every figure is Ir per window of chunks and for the finalize: S is the edge into `bench_apply_step` or `bench_finalize`, and R the two parse stages of each `Document.parse`; the one-shot column parses each workload's final text once, both stages.",
         `S is measured on the workloads of at most ${number(WINDOWS)} steps, where each step costs at most 1.25 times R's (6.3).`,
         "",
         "| Documents | Family | Size | Workloads | Windows | R p50 | R p95 | R max | R total | S p50 | S p95 | S max | S total | Highest S / R | One-shot total |",

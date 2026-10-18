@@ -3,8 +3,9 @@
  *
  * Nothing here is timed. The driver reads each window's cost out of the
  * callgrind call graph, from the edges into `bench_apply_step` and
- * `bench_finalize`, and the runner marks the windows with
- * `CALLGRIND_DUMP_STATS` and `CALLGRIND_ZERO_STATS`, no-ops outside valgrind
+ * `bench_finalize` or, for `reparse`, the parse stages under them, and the
+ * runner marks the windows with `CALLGRIND_DUMP_STATS` and
+ * `CALLGRIND_ZERO_STATS`, no-ops outside valgrind
  * (docs/plans/2026-09-29-incremental-gates.md, section 5.1). The subject is
  * opened before the counts are zeroed, so opening is in no window's dump.
  *

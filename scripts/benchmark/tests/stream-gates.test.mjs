@@ -2,42 +2,83 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { parseCallgrind } from "../callgrind.mjs";
-import { flatStream, neverWorse, regressions, summary, windowCost, windowEnds, WINDOWS } from "../stream-gates.mjs";
+import {
+    flatStream,
+    neverWorse,
+    parseCost,
+    regressions,
+    stepCost,
+    summary,
+    windowEnds,
+    WINDOWS
+} from "../stream-gates.mjs";
 
-/* A synthetic per-window dump, in callgrind's own format: the runner's main
- * calling the step entry once with the given inclusive cost, of which
- * `creation` is spent creating a parser. */
-const window = (ir, { calls = 1, entry = "bench_apply_step'main", creation = 0 } = {}) =>
-    parseCallgrind(
-        [
-            "version: 1",
-            "events: Ir Dr Dw",
-            "fl=(1) stream_runner.c",
-            "fn=(1) main'(below main)",
-            "0 40 4 2",
-            `cfn=(2) ${entry}`,
-            `calls=${calls} 0`,
-            `0 ${ir} ${ir / 4} ${ir / 8}`,
-            "fn=(2)",
-            `0 ${ir - creation} ${(ir - creation) / 4} ${(ir - creation) / 8}`,
-            ...(creation
-                ? [
-                      "cfn=(3) markdown_core_core_parser'session_open",
-                      "calls=1 0",
-                      `0 ${creation} ${creation / 4} ${creation / 8}`,
-                      "fn=(3)",
-                      `0 ${creation} ${creation / 4} ${creation / 8}`
-                  ]
-                : []),
-            ""
-        ].join("\n")
-    );
-const costs = (values) => values.map((ir) => windowCost(window(ir)).Ir);
+/* A synthetic per-window dump in callgrind's own format: each function with
+ * its self cost, the calls it makes and how often it is called, a call's
+ * cost being its callee's inclusive cost. Every count is Ir, with Dr a
+ * quarter and Dw an eighth. */
+const dump = (functions) => {
+    const inclusive = (name) =>
+        functions[name].self + (functions[name].calls ?? []).reduce((sum, callee) => sum + inclusive(callee), 0);
+    const ids = new Map();
+    const id = (name) => {
+        if (ids.has(name)) return `(${ids.get(name)})`;
+        ids.set(name, ids.size + 1);
+        return `(${ids.size}) ${name}`;
+    };
+    const counts = (ir) => `0 ${ir} ${ir / 4} ${ir / 8}`;
+    const lines = ["version: 1", "events: Ir Dr Dw", "fl=(1) stream_runner.c"];
+    for (const [name, { self, calls = [] }] of Object.entries(functions)) {
+        lines.push(`fn=${id(name)}`, counts(self));
+        for (const callee of calls) {
+            lines.push(`cfn=${id(callee)}`, `calls=${functions[callee].times ?? 1} 0`, counts(inclusive(callee)));
+        }
+    }
+    return parseCallgrind([...lines, ""].join("\n"));
+};
+/* A session window: the runner's main calling the step entry. */
+const window = (ir, { calls = 1, entry = "bench_apply_step'main" } = {}) =>
+    dump({ "main'(below main)": { self: 40, calls: [entry] }, [entry]: { self: ir, times: calls } });
+/* A `reparse` window: the step calls `Document.parse`, which creates the
+ * parser, starts the transaction, enters the two parse stages -- the second
+ * reaching the first again for mapped content -- and releases; the step then
+ * frees the document of the step before. */
+const BOUNDARIES = ["S_parse_source", "S_finish_parse"];
+const reparse = ({ entry = "bench_apply_step'main", parse = true } = {}) =>
+    dump({
+        "main'(below main)": { self: 40, calls: [entry] },
+        [entry]: { self: 160, calls: ["markdown_core_document_parse_in", "markdown_core_document_free"] },
+        markdown_core_document_parse_in: {
+            self: 80,
+            calls: [
+                "markdown_core_core_parser",
+                "markdown_core_parser_start",
+                "markdown_core_parser_commit",
+                "markdown_core_parser_finalize"
+            ]
+        },
+        markdown_core_core_parser: { self: 2000 },
+        markdown_core_parser_start: { self: 400 },
+        markdown_core_parser_commit: { self: 16, calls: parse ? ["S_parse_source'markdown_core_parser_commit"] : [] },
+        "S_parse_source'markdown_core_parser_commit": { self: 3000 },
+        markdown_core_parser_finalize: {
+            self: 24,
+            calls: [...(parse ? ["S_finish_parse.constprop.0'markdown_core_parser_finalize"] : []), "S_release_parse"]
+        },
+        "S_finish_parse.constprop.0'markdown_core_parser_finalize": {
+            self: 1200,
+            calls: ["S_parse_source'S_finish_parse.constprop.0"]
+        },
+        "S_parse_source'S_finish_parse.constprop.0": { self: 400 },
+        S_release_parse: { self: 320 },
+        markdown_core_document_free: { self: 800 }
+    });
+const costs = (values) => values.map((ir) => stepCost(window(ir)).Ir);
 
-test("a window's cost is the inclusive cost of its calls into a step entry", () => {
-    assert.deepEqual(windowCost(window(8000)), { calls: 1, Ir: 8000, Dr: 2000, Dw: 1000 });
-    assert.deepEqual(windowCost(window(8000, { calls: 3 })), { calls: 3, Ir: 8000, Dr: 2000, Dw: 1000 });
-    assert.deepEqual(windowCost(window(8000, { entry: "bench_finalize'main" })), {
+test("a session window's cost is the inclusive cost of its calls into a step entry", () => {
+    assert.deepEqual(stepCost(window(8000)), { calls: 1, Ir: 8000, Dr: 2000, Dw: 1000 });
+    assert.deepEqual(stepCost(window(8000, { calls: 3 })), { calls: 3, Ir: 8000, Dr: 2000, Dw: 1000 });
+    assert.deepEqual(stepCost(window(8000, { entry: "bench_finalize'main" })), {
         calls: 1,
         Ir: 8000,
         Dr: 2000,
@@ -45,19 +86,23 @@ test("a window's cost is the inclusive cost of its calls into a step entry", () 
     });
 });
 
-test("parser creation is in no window's cost", () => {
-    assert.deepEqual(windowCost(window(8000, { creation: 2000 })), { calls: 1, Ir: 6000, Dr: 1500, Dw: 750 });
-    assert.deepEqual(windowCost(window(8000, { entry: "bench_finalize'main", creation: 2000 })), {
+test("a reparse window counts the two parse stages of its Document.parse and nothing around them", () => {
+    /* 3,000 reading the source and 1,600 building the tree, the nested read
+     * included once; creation, start, release and the free are left out. */
+    assert.deepEqual(parseCost(reparse(), BOUNDARIES), { calls: 1, Ir: 4600, Dr: 1150, Dw: 575 });
+    assert.deepEqual(parseCost(reparse({ entry: "bench_finalize'main" }), BOUNDARIES), {
         calls: 1,
-        Ir: 6000,
-        Dr: 1500,
-        Dw: 750
+        Ir: 4600,
+        Dr: 1150,
+        Dw: 575
     });
 });
 
-test("a window that never entered the step, or counted nothing, is refused", () => {
-    assert.throws(() => windowCost(window(8000, { entry: "markdown_core_document_parse'main" })), /no call/);
-    assert.throws(() => windowCost(window(0)), /positive integer/);
+test("a window that never entered the step, never parsed, or counted nothing, is refused", () => {
+    assert.throws(() => stepCost(window(8000, { entry: "markdown_core_document_parse'main" })), /no call/);
+    assert.throws(() => stepCost(window(0)), /positive integer/);
+    assert.throws(() => parseCost(reparse({ entry: "markdown_core_document_parse'main" }), BOUNDARIES), /no call/);
+    assert.throws(() => parseCost(reparse({ parse: false }), BOUNDARIES), /exactly one function/);
 });
 
 test("windows split long streams into 1,024 contiguous windows of near-equal step count", () => {
