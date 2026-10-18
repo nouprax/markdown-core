@@ -33,6 +33,13 @@ markdown_core_node *markdown_core_block_close(markdown_core_parser *parser, mark
  * `parent`, which has no pending child: it joins the end of the parent's
  * children and the completion queue (blocks.c, A BLOCK SETTLES). */
 void markdown_core_block_settle(markdown_core_parser *parser, markdown_core_node *node, markdown_core_node *parent);
+/* `field`, a field root `holder` holds -- a callout's title, a definition's
+ * term, a block directive's label, a table's caption -- settles as `holder`
+ * installs it, once the line that writes it is read: it holds as a settled
+ * block does from then on, and joins the completion queue with `holder`, to
+ * complete on its own (blocks.c, A BLOCK SETTLES). */
+void markdown_core_block_settle_field(markdown_core_parser *parser, markdown_core_node *field,
+                                      markdown_core_node *holder);
 /* `b`, a block made whole that is on no stack, closes inside `parent` as a
  * block the line machine closes does -- its element reads it as a finished
  * thing, and it takes the runs of its own lines -- and settles into it. */

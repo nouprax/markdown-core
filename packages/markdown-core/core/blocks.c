@@ -1165,6 +1165,16 @@ void markdown_core_block_settle(markdown_core_parser *parser, markdown_core_node
     S_settle(parser, node, parent, markdown_core_parser_block_kind(parser, parent));
 }
 
+/* A field root settles as its block installs it: the line that wrote it is
+ * read, so nothing writes it after this but its completion, which joins the
+ * queue on its own, and a snapshot's copy of the block shares it
+ * (markdown_core_node_copy). */
+void markdown_core_block_settle_field(markdown_core_parser *parser, markdown_core_node *field,
+                                      markdown_core_node *holder) {
+    field->flags |= parser->settle_flags;
+    S_complete_later(parser, field, holder);
+}
+
 /* The pending block settles into `holder`, the current block of kind
  * `kind`, as it takes its next child or closes. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_settle_pending_as(markdown_core_parser *parser,
@@ -1450,24 +1460,22 @@ bool markdown_core_parse_inline_subtrees(markdown_core_parser *parser, markdown_
 }
 
 /* ONE FRAME PER ROOT THE WALK IS INSIDE: the walk of the root's inline tree,
- * held in the frame, rooted at a field root, or, at the bottom, at the
- * queued block the document's walk is at.
+ * held in the frame, rooted at the field root of an inline node, or, at the
+ * bottom, at the queued root the document's walk is at.
  *
- * `parses` and `parsed` are the inline parser's reach in this frame. The
- * content tree's nodes are the walk's to parse, and so are the fields of its
- * block nodes (a definition's term, a callout's title, a table's caption, a
- * block directive's label); a field of an inline node is not -- the inline
- * parser completed it when it made the token (process_inline_tree above) --
- * and nor is a definition the document owns as a root of its own, whose
- * content was made as inline content. `parsed` is the container whose inline
- * tree the walk is inside, or NULL: nothing below a parsed container is
- * parsed again, since an inline node's content is its container's, already
- * parsed. */
+ * The bottom frame's root is the walk's to parse: a block's inline content,
+ * or a field root's (a definition's term, a callout's title, a table's
+ * caption, a block directive's label), each a queued root of its own. A
+ * field of an inline node is not -- the inline parser completed it when it
+ * made the token (process_inline_tree above) -- and nor is a definition the
+ * document owns as a root of its own, whose content was made as inline
+ * content. `parsed` is the container whose inline tree the walk is inside,
+ * or NULL: nothing below a parsed container is parsed again, since an inline
+ * node's content is its container's, already parsed. */
 typedef struct {
     inline_walk walk;
     markdown_core_node *parsed;
     int script_depth;
-    bool parses;
 } owned_tree_frame;
 
 typedef struct {
@@ -1479,10 +1487,8 @@ typedef struct {
     void **states;
     size_t slots;
     size_t count, capacity;
-    /* What a root pushed now starts with: the pushing node's word depth and
-     * whether its fields are the walk's to parse. */
+    /* What a root pushed now starts with: the pushing node's word depth. */
     int script_depth;
-    bool parses;
 } owned_tree_walk;
 
 /* The walk starts with the room the parser keeps for walks: as many frames,
@@ -1554,7 +1560,6 @@ static int push_owned_root(markdown_core_node *root, owned_tree_walk *walk) {
     S_walk_init(&frame->walk, root);
     frame->parsed = NULL;
     frame->script_depth = block ? 0 : walk->script_depth;
-    frame->parses = walk->parses;
     return 1;
 }
 
@@ -1775,14 +1780,14 @@ static int push_owned_tree(markdown_core_node **slot, void *context) {
 }
 
 /* What completion does at a node's ENTER, in the frame at `index`: it parses
- * the node's inline content when the content is the frame's to parse
- * (`parses`, see owned_tree_frame; the content of a kind the record marks
- * PARSES, not DEFERRED, that the structure says holds inlines) and points the
- * frame's walk into that content; it runs the steps projected for the
- * ENTER, completes the node (the element's `complete_node` the record
- * carries), reserves its explicit anchor and pushes the node's field roots,
- * which are walked before anything below the node. Returns 1 when it
- * pushed a field root, 0 when it pushed none, and -1 with parser->error set. */
+ * the node's inline content when the node is the queued root (see
+ * owned_tree_frame; the content of a kind the record marks PARSES, not
+ * DEFERRED, that the structure says holds inlines) and points the frame's
+ * walk into that content; it runs the steps projected for the ENTER,
+ * completes the node (the element's `complete_node` the record carries),
+ * reserves its explicit anchor and pushes the field roots of an inline node,
+ * which are walked before anything below the node. Returns 1 when it pushed
+ * a field root, 0 when it pushed none, and -1 with parser->error set. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_enter_node(owned_tree_walk *walk, size_t index,
                                                                         markdown_core_node *node, size_t kind) {
     markdown_core_parser *const parser = walk->parser;
@@ -1790,8 +1795,11 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_enter_node(owned_tr
     const markdown_core_kind_record *facts = &parser->dialect->kinds[kind];
     const markdown_core_finish_step_entry *steps = parser->dialect->finish_dispatch[2 * kind];
     unsigned flags = facts->flags;
-    bool reach = frame->parses && !frame->parsed;
-    if (reach && S_kind_contains_inlines(facts, node)) {
+    /* The queued root is the only node the bottom frame enters outside the
+     * content it parsed; every other node any frame enters is an inline
+     * node. */
+    const bool queued = !index && !frame->parsed;
+    if (queued && S_kind_contains_inlines(facts, node)) {
         if (!(flags & MARKDOWN_CORE_KIND_DEFERRED)) {
             markdown_core_parse_inlines(parser, node, true);
             if (parser->error) {
@@ -1814,7 +1822,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_enter_node(owned_tr
         facts->complete(facts->structure, parser, node, frame->script_depth);
     }
     /* An explicit anchor is reserved once the node is complete, as starting
-     * where the queued block it is in starts. A FormulaBlock a fence became
+     * where the queued root it is in starts. A FormulaBlock a fence became
      * holds no attributes; a Text holds none either, so the siblings
      * consolidation absorbs reserve none. */
     const markdown_core_chunk *anchor = &node->attributes.anchor;
@@ -1824,14 +1832,15 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_enter_node(owned_tr
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return -1;
     }
-    /* The field roots, of a kind that owns them through its record or of an
-     * element that owns them through its hook: the answer is no for almost
-     * every node, and it is one flag and one load. */
-    if (!(flags & MARKDOWN_CORE_KIND_FIELDS) && !node->element) {
+    /* The field roots of an inline node, which the inline parser completed
+     * with it, of a kind that owns them through its record or of an element
+     * that owns them through its hook: the answer is no for almost every
+     * node, and it is one flag and one load. A block's field roots are
+     * queued roots of their own (A BLOCK SETTLES). */
+    if (queued || (!(flags & MARKDOWN_CORE_KIND_FIELDS) && !node->element)) {
         return 0;
     }
     walk->script_depth = frame->script_depth;
-    walk->parses = reach;
     size_t first = walk->count;
     if (((flags & MARKDOWN_CORE_KIND_FIELDS) && !markdown_core_visit_kind_fields(node, push_owned_tree, walk)) ||
         !markdown_core_visit_element_subtrees(node, push_owned_tree, walk)) {
@@ -1851,18 +1860,18 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_enter_node(owned_tr
 }
 
 /* THE COMPLETION WALK, on one explicit continuation stack. The bottom frame
- * is the walk of the document's queue, and it takes the queue a block at a
- * time: every block of the tree joined the queue as it settled
- * (S_complete_later), so nothing below a block that is a
- * block is that block's to walk. Each time the bottom walk is done, it starts
- * over at the next queued block: the block's ENTER is the queue's to deliver,
- * from word depth zero, since a block begins content of its own, and the
- * walk's next event is the block's EXIT unless the ENTER points it into the
- * block's inline content (S_enter_node). Above the bottom frame are the
- * fields the nodes own, roots of their own walked as they are found -- a
- * field root stays the node its owner put there, no step may substitute one,
- * so a frame carries the root itself and never the slot holding it, and depth
- * never uses C frames.
+ * is the walk of the document's queue, and it takes the queue a root at a
+ * time: every block of the tree, and every field root a block holds, joined
+ * the queue as it settled (S_complete_later), so nothing below a block that
+ * is a block, and no field root of a block, is that block's to walk. Each
+ * time the bottom walk is done, it starts over at the next queued root: the
+ * root's ENTER is the queue's to deliver, from word depth zero, since a block
+ * begins content of its own, and the walk's next event is the root's EXIT
+ * unless the ENTER points it into the root's inline content (S_enter_node).
+ * Above the bottom frame are the fields the inline nodes own, roots of their
+ * own walked as they are found -- a field root stays the node its owner put
+ * there, no step may substitute one, so a frame carries the root itself and
+ * never the slot holding it, and depth never uses C frames.
  *
  * Every event of every node is answered from the walk's own registers and the
  * parser's per-kind record: at a node's ENTER, S_enter_node; at a node's EXIT
@@ -1870,12 +1879,12 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_enter_node(owned_tr
  * at a Text's EXIT consolidation of the run when there is one to merge or a
  * Text with no bytes to drop, and then the steps projected for the EXIT of
  * its kind, in descriptor order, each behind its gate, asked with the node's
- * parent: its scaffold parent inside an inline tree, and for a queued block
- * the block it settled into, which the queue links it to. A field root's walk
- * ends when it is done, the document's when the queue is too. */
+ * parent: its scaffold parent inside an inline tree, and for a queued root
+ * the block it settled into or the block that holds it, which the queue
+ * links it to. A field root's walk ends when it is done, the document's when
+ * the queue is too. */
 static int walk_owned_trees(markdown_core_parser *parser) {
-    owned_tree_walk walk = {
-        .parser = parser, .slots = parser->dialect->finish_step_slots, .script_depth = 0, .parses = true};
+    owned_tree_walk walk = {.parser = parser, .slots = parser->dialect->finish_step_slots, .script_depth = 0};
     const markdown_core_finish_step_entry *const *const dispatch = parser->dialect->finish_dispatch;
     markdown_core_node *queued = parser->completion_first;
 
@@ -1883,7 +1892,7 @@ static int walk_owned_trees(markdown_core_parser *parser) {
     if (S_reserve_frame(&walk)) {
         /* The document's walk, done before its first block. */
         S_clear_states(&walk, 0);
-        *walk.frames = (owned_tree_frame){.walk = {.next_event = MARKDOWN_CORE_EVENT_DONE}, .parses = true};
+        *walk.frames = (owned_tree_frame){.walk = {.next_event = MARKDOWN_CORE_EVENT_DONE}};
         walk.count = 1;
     }
     while (walk.count && !parser->error) {
@@ -1902,7 +1911,7 @@ static int walk_owned_trees(markdown_core_parser *parser) {
                     walk.count--;
                     break;
                 }
-                /* The next queued block leaves the queue. */
+                /* The next queued root leaves the queue. */
                 node = queued;
                 queued = markdown_core_scaffold_next(node);
                 markdown_core_scaffold_of(node)->next = NULL;
@@ -1936,10 +1945,10 @@ static int walk_owned_trees(markdown_core_parser *parser) {
                     if (result == MARKDOWN_CORE_FINISH_CONTINUE && dispatch[2 * index + 1]) {
                         result = run_finish_steps(parser, dispatch[2 * index + 1], node, event, states);
                     }
-                    /* A field root's walk is done with the link to the node
-                     * that holds it. A queued block keeps the link to the
-                     * block it settled into, which its path reads (THE
-                     * PATHS). */
+                    /* The walk of an inline node's field root is done with
+                     * the link to the node that holds it. A queued root keeps
+                     * the link to the block it settled into, which its path
+                     * reads (THE PATHS), or to the block that holds it. */
                     if (node == tree->root && top) {
                         markdown_core_scaffold_of(node)->parent = NULL;
                     }
@@ -2198,8 +2207,10 @@ static void S_release_paths(markdown_core_parser *parser) {
  * the storage holds the storage the original continues with, which the
  * original takes back as the document closes, or as the snapshot lets the
  * copy go. A copy views the rest of what its original owns -- its
- * attributes, its record's strings, its payload's storage -- so what a
- * snapshot costs does not grow with the block's opening line. A commit lets
+ * attributes, its record's strings, its payload's storage -- and shares its
+ * field roots, which settled as the block installed them and completed on
+ * their own (markdown_core_block_settle_field), so what a snapshot costs
+ * does not grow with the block's opening line. A commit lets
  * none of it go while the block is a builder or the pending block, and
  * writes only the parts the block lacks; so as a builder closes and as the
  * pending block settles, the copy the published document holds, which reads
@@ -2434,13 +2445,12 @@ static void S_release_stream(markdown_core_parser *parser) {
     S_release_paths(parser);
     markdown_core_free(stream->misses);
     markdown_core_strbuf_free(&stream->miss_labels);
-    for (size_t i = 0; i < stream->miss_position_count; i++) {
-        if (stream->miss_positions[i].places) {
-            markdown_core_node_pool_bytes_free(parser->pool, stream->miss_positions[i].places);
+    for (size_t i = 0; i < stream->miss_root_count; i++) {
+        if (stream->miss_roots[i].position.places) {
+            markdown_core_node_pool_bytes_free(parser->pool, stream->miss_roots[i].position.places);
         }
     }
-    markdown_core_free(stream->miss_positions);
-    markdown_core_free(stream->miss_blocks);
+    markdown_core_free(stream->miss_roots);
     markdown_core_free(stream);
     parser->stream = NULL;
 }
@@ -2726,8 +2736,9 @@ const markdown_core_node *markdown_core_parser_level_object(const markdown_core_
  * A level's builder writes its own children array, and its spare, which the
  * published document reads, comes back to it after the publish with the
  * children it committed since (S_after_publish): a child the spare already
- * holds is written in both. The array of a moved block is the one its old
- * slot names, at a child no publish walks. */
+ * holds is written in both. The array of a moved block, and its element's
+ * payload, are the ones its old slot names, at a child or a field no publish
+ * walks. */
 markdown_core_node *markdown_core_parser_supersede(markdown_core_parser *parser, const markdown_core_path *path) {
     size_t depth = 0;
     for (const markdown_core_path *at = path; at->parent; at = at->parent) {
@@ -4100,7 +4111,7 @@ static void S_complete_settled(markdown_core_parser *parser) {
 bool markdown_core_parser_complete(markdown_core_parser *parser) {
     if (!parser->error) {
         parser->snapshot = true;
-        parser->stream->miss_block = NULL;
+        parser->stream->miss_root = NULL;
         S_parse_block_inputs(parser);
         if (!parser->error) {
             S_complete_settled(parser);
@@ -4110,70 +4121,69 @@ bool markdown_core_parser_complete(markdown_core_parser *parser) {
     return !parser->error;
 }
 
-/* Where a node lies as the block phase left it, taken into the record of
- * the block a lookup found nothing for: its place and a copy of its places,
- * in storage of the pool's. */
-typedef struct {
-    markdown_core_parser *parser;
-    markdown_core_miss_position *at;
-} S_miss_keep;
-
-static bool S_miss_position(S_miss_keep *keep, const markdown_core_node *node) {
+/* Where `root` lies as the block phase left it, kept in `position`: its
+ * place and a copy of its places, in storage of the pool's. */
+static bool S_miss_position(markdown_core_parser *parser, const markdown_core_node *root,
+                            markdown_core_miss_position *position) {
     markdown_core_places *places = NULL;
-    if (node->source.places) {
+    if (root->source.places) {
         const size_t bytes =
-            sizeof(markdown_core_places) + node->source.places->count * sizeof(markdown_core_source_place);
-        places = markdown_core_node_pool_bytes(keep->parser->pool, bytes);
+            sizeof(markdown_core_places) + root->source.places->count * sizeof(markdown_core_source_place);
+        places = markdown_core_node_pool_bytes(parser->pool, bytes);
         if (!places) {
             return false;
         }
-        memcpy(places, node->source.places, bytes);
+        memcpy(places, root->source.places, bytes);
     }
-    *keep->at++ = (markdown_core_miss_position){node->where.place, places};
-    keep->parser->stream->miss_position_count++;
+    *position = (markdown_core_miss_position){root->where.place, places};
     return true;
 }
 
-static int S_miss_field_position(markdown_core_node **slot, void *context) { return S_miss_position(context, *slot); }
-
-static int S_count_field(markdown_core_node **slot, void *context) {
-    (void)slot;
-    (*(size_t *)context)++;
+static int S_take_field(markdown_core_node **slot, void *context) {
+    markdown_core_node ***taken = context;
+    assert(!*taken);
+    *taken = slot;
     return 1;
 }
 
-/* THE RECORD OF A BLOCK A LOOKUP FOUND NOTHING FOR (parser.h,
- * markdown_core_miss_block), made at its first such lookup: the block's
- * path, and where it and its field roots lie. Its completion has not
- * changed where any of them lies, and nothing does before the publish
- * measures them. False when it could not be made. */
-static bool S_miss_block(markdown_core_parser *parser, markdown_core_node *block) {
-    size_t fields = 0;
-    markdown_core_visit_inline_subtrees(block, S_count_field, &fields);
-    const markdown_core_path *path = markdown_core_parser_path(parser, block);
-    markdown_core_miss_block *blocks =
-        markdown_core_reserve(parser->stream->miss_blocks, &parser->stream->miss_block_capacity,
-                              parser->stream->miss_block_count + 1, sizeof(*blocks));
-    if (blocks) {
-        parser->stream->miss_blocks = blocks;
+/* The slot of the field root `block` holds, or NULL when it holds none: a
+ * block holds one at most, its opener's or its caption
+ * (markdown_core_block_settle_field). */
+static markdown_core_node **S_field_slot(markdown_core_node *block) {
+    markdown_core_node **slot = NULL;
+    markdown_core_visit_inline_subtrees(block, S_take_field, &slot);
+    return slot;
+}
+
+/* THE RECORD OF AN INLINE ROOT A LOOKUP FOUND NOTHING FOR (parser.h,
+ * markdown_core_miss_root), made at its first such lookup: the path of the
+ * block that is the root, or of the block that holds it, which the queue
+ * links it to, and where the root lies. Its completion has not changed where
+ * it lies, and nothing does before the publish measures it. False when it
+ * could not be made. */
+static bool S_miss_root(markdown_core_parser *parser, markdown_core_node *root) {
+    assert(S_kind_contains_inlines(markdown_core_parser_kind(parser, root), root));
+    markdown_core_node *holder = markdown_core_scaffold_parent(root);
+    markdown_core_node **slot = holder ? S_field_slot(holder) : NULL;
+    const bool field = slot && *slot == root;
+    const markdown_core_path *path = markdown_core_parser_path(parser, field ? holder : root);
+    markdown_core_miss_root *roots =
+        markdown_core_reserve(parser->stream->miss_roots, &parser->stream->miss_root_capacity,
+                              parser->stream->miss_root_count + 1, sizeof(*roots));
+    if (roots) {
+        parser->stream->miss_roots = roots;
     }
-    markdown_core_miss_position *positions =
-        markdown_core_reserve(parser->stream->miss_positions, &parser->stream->miss_position_capacity,
-                              parser->stream->miss_position_count + 1 + fields, sizeof(*positions));
-    if (positions) {
-        parser->stream->miss_positions = positions;
-    }
-    if (!path || !blocks || !positions) {
+    if (!path || !roots) {
         return false;
     }
-    const size_t first = parser->stream->miss_position_count;
-    S_miss_keep keep = {parser, positions + first};
-    blocks[parser->stream->miss_block_count++] = (markdown_core_miss_block){path, first, 0};
-    parser->stream->miss_block = block;
-    const bool kept =
-        S_miss_position(&keep, block) && markdown_core_visit_inline_subtrees(block, S_miss_field_position, &keep);
-    blocks[parser->stream->miss_block_count - 1].position_count = parser->stream->miss_position_count - first;
-    return kept;
+    markdown_core_miss_root *record = &roots[parser->stream->miss_root_count];
+    *record = (markdown_core_miss_root){.path = path, .field = field};
+    if (!S_miss_position(parser, root, &record->position)) {
+        return false;
+    }
+    parser->stream->miss_root_count++;
+    parser->stream->miss_root = root;
+    return true;
 }
 
 const markdown_core_registry_record *markdown_core_parser_find_at_snapshot(markdown_core_parser *parser,
@@ -4181,13 +4191,13 @@ const markdown_core_registry_record *markdown_core_parser_find_at_snapshot(markd
                                                                            const markdown_core_chunk *label,
                                                                            const markdown_core_registry_record *record,
                                                                            bool *failed) {
-    markdown_core_node *block = parser->completing;
-    if (record && markdown_core_registry_starts_before(record, block->where.place.start)) {
+    markdown_core_node *root = parser->completing;
+    if (record && markdown_core_registry_starts_before(record, root->where.place.start)) {
         return record;
     }
-    /* Only a committed block is asked again: a snapshot's own are gone with
+    /* Only a committed root is asked again: a snapshot's own are gone with
      * it. */
-    if (!(block->flags & MARKDOWN_CORE_NODE__COMMITTED)) {
+    if (!(root->flags & MARKDOWN_CORE_NODE__COMMITTED)) {
         return NULL;
     }
     markdown_core_definition_miss *misses = markdown_core_reserve(
@@ -4195,18 +4205,18 @@ const markdown_core_registry_record *markdown_core_parser_find_at_snapshot(markd
     if (misses) {
         parser->stream->misses = misses;
     }
-    if (!misses || (parser->stream->miss_block != block && !S_miss_block(parser, block))) {
+    if (!misses || (parser->stream->miss_root != root && !S_miss_root(parser, root))) {
         *failed = true;
         return NULL;
     }
     misses[parser->stream->miss_count++] = (markdown_core_definition_miss){
-        parser->stream->miss_block_count - 1, kind, parser->stream->miss_labels.size, label->len};
+        parser->stream->miss_root_count - 1, kind, parser->stream->miss_labels.size, label->len};
     markdown_core_strbuf_put(&parser->stream->miss_labels, label->data, label->len);
     *failed = parser->stream->miss_labels.oom;
     return NULL;
 }
 
-/* The roots of what completion made of a block, gathered as their anchors
+/* The nodes of what completion made of a root, gathered as their anchors
  * are withdrawn. */
 typedef struct {
     markdown_core_parser *parser;
@@ -4235,18 +4245,14 @@ static bool S_withdraw_anchor(markdown_core_parser *parser, const markdown_core_
                                            start);
 }
 
-/* THE ANCHORS COMPLETING A BLOCK RESERVED, withdrawn as starting at
- * `start`, where the block starts: the block's own, its field roots' and
- * those of every node of their inline content and of the block's. The
- * block's children are inline content when it holds inlines, and blocks
- * with completions of their own otherwise. */
-static void S_withdraw_completion(markdown_core_parser *parser, markdown_core_node *block, uint32_t start) {
+/* THE ANCHORS COMPLETING A ROOT RESERVED, withdrawn as starting at `start`,
+ * where the root starts: the root's own and those of every node of its
+ * inline content, the field roots of its inline nodes included. */
+static void S_withdraw_completion(markdown_core_parser *parser, markdown_core_node *root, uint32_t start) {
     completion_collect collect = {.parser = parser};
-    const bool inlines = S_kind_contains_inlines(markdown_core_parser_block_kind(parser, block), block);
-    bool withdrawn = S_withdraw_anchor(parser, block, start) &&
-                     markdown_core_visit_inline_subtrees(block, S_collect_completed, &collect);
-    for (uint32_t i = 0; withdrawn && inlines && i < block->child_count; i++) {
-        withdrawn = S_collect_completed(&block->children[i], &collect);
+    bool withdrawn = S_withdraw_anchor(parser, root, start);
+    for (uint32_t i = 0; withdrawn && i < root->child_count; i++) {
+        withdrawn = S_collect_completed(&root->children[i], &collect);
     }
     while (withdrawn && collect.count) {
         markdown_core_node *node = ((markdown_core_node **)parser->walk_stack)[--collect.count];
@@ -4261,56 +4267,43 @@ static void S_withdraw_completion(markdown_core_parser *parser, markdown_core_no
     }
 }
 
-/* A block completed anew: the block's candidate, and the record of the
- * block, whose path finds the object that holds the block's state. */
+/* A root completed anew: its candidate, and the record of the root, whose
+ * path finds the object that holds the root's state, or the block that holds
+ * the root. */
 typedef struct {
     markdown_core_node *candidate;
-    const markdown_core_miss_block *record;
+    const markdown_core_miss_root *record;
 } S_completion_anew;
 
-/* The positions the record kept, given back to the candidate and its field
- * roots, in the order they were kept. */
-typedef struct {
-    markdown_core_miss_position *at;
-} S_miss_hand;
-
-static void S_miss_place(S_miss_hand *hand, markdown_core_node *node) {
-    node->where.place = hand->at->place;
-    node->source.places = hand->at->places;
-    hand->at->places = NULL;
-    hand->at++;
+/* The root `record` names, in `block`, the block its path finds. */
+static markdown_core_node *S_record_root(const markdown_core_miss_root *record, markdown_core_node *block) {
+    return record->field ? *S_field_slot(block) : block;
 }
 
-static int S_miss_field_place(markdown_core_node **slot, void *context) {
-    S_miss_place(context, *slot);
-    return 1;
-}
-
-/* The candidate of the block `record` names (markdown_core_node_candidate),
- * at the positions the record kept, joins the completion queue with the
- * block the block settled into, once the anchors the block's completion
- * reserved are withdrawn; the element of a kind whose inline content is
- * parsed before the walk parses it first. NULL, with the parse failed, when
- * no candidate could be made. */
-static markdown_core_node *S_complete_anew(markdown_core_parser *parser, const markdown_core_miss_block *record) {
+/* The candidate of the root `record` names (markdown_core_node_candidate),
+ * at the position the record kept, joins the completion queue with the block
+ * the root settled into or the block that holds it, once the anchors the
+ * root's completion reserved are withdrawn; the element of a kind whose
+ * inline content is parsed before the walk parses it first. NULL, with the
+ * parse failed, when no candidate could be made. */
+static markdown_core_node *S_complete_anew(markdown_core_parser *parser, markdown_core_miss_root *record) {
     markdown_core_node *block = markdown_core_parser_resolve(parser, record->path);
-    markdown_core_node *holder = block ? markdown_core_parser_resolve(parser, record->path->parent) : NULL;
+    markdown_core_node *holder =
+        !block || record->field ? block : markdown_core_parser_resolve(parser, record->path->parent);
     if (!holder) {
         return NULL;
     }
-    markdown_core_miss_position *positions = &parser->stream->miss_positions[record->first_position];
-    S_withdraw_completion(parser, block, positions->place.start);
-    const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, block);
-    markdown_core_node *candidate =
-        parser->error ? NULL : markdown_core_node_candidate(parser->pool, block, S_kind_contains_inlines(kind, block));
+    markdown_core_node *root = S_record_root(record, block);
+    S_withdraw_completion(parser, root, record->position.place.start);
+    const markdown_core_kind_record *kind = markdown_core_parser_kind(parser, root);
+    markdown_core_node *candidate = parser->error ? NULL : markdown_core_node_candidate(parser->pool, root);
     if (!candidate) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return NULL;
     }
-    S_miss_hand hand = {positions};
-    S_miss_place(&hand, candidate);
-    markdown_core_visit_inline_subtrees(candidate, S_miss_field_place, &hand);
-    assert((size_t)(hand.at - positions) == record->position_count);
+    candidate->where.place = record->position.place;
+    candidate->source.places = record->position.places;
+    record->position.places = NULL;
     if (kind->flags & MARKDOWN_CORE_KIND_DEFERRED) {
         parser->completing = candidate;
         kind->structure->element->reparse_inlines(kind->structure, parser, candidate);
@@ -4319,31 +4312,26 @@ static markdown_core_node *S_complete_anew(markdown_core_parser *parser, const m
     return candidate;
 }
 
-/* THE DEFINITIONS A BLOCK COMPLETED AGAIN MAKES AGAIN. The candidate makes
- * its inline content anew: its own, when its kind holds inline content, and
- * that of its field roots. The definitions the published document holds as
- * COMMITTED in that content (parser.h, `committed`) lie in its source, at
- * the places the block's record kept, and go as the candidate is published,
- * which lists the ones it makes there; the block's own entry stays, naming
- * the object that holds its state. A table finds the ones a place holds by
- * where they start, and each one going is emptied; what the candidates list
- * joins the tables once every candidate is placed (S_keep_defined), so no
- * candidate empties another's. */
-static void S_withdraw_defined(markdown_core_parser *parser, const markdown_core_miss_block *record,
-                               markdown_core_node *block) {
-    const markdown_core_miss_position *positions = &parser->stream->miss_positions[record->first_position];
-    const bool inlines = S_kind_contains_inlines(markdown_core_parser_block_kind(parser, block), block);
-    for (size_t i = inlines ? 0 : 1; i < record->position_count; i++) {
-        const markdown_core_place place = positions[i].place;
-        const markdown_core_key_entry from = markdown_core_key_number(place.start);
-        for (size_t table = 0; table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
-            markdown_core_key_tree_cursor cursor;
-            markdown_core_key_tree_seek(&parser->stream->committed.starts[table], &from, &cursor);
-            for (markdown_core_key_entry *entry;
-                 (entry = markdown_core_key_tree_next(&cursor)) && entry->extra < place.end;) {
-                if (entry->value && markdown_core_node_moved(entry->value) != block) {
-                    entry->value = NULL;
-                }
+/* THE DEFINITIONS A ROOT COMPLETED AGAIN MAKES AGAIN. The candidate makes
+ * the root's inline content anew. The definitions the published document
+ * holds as COMMITTED in that content (parser.h, `committed`) lie in its
+ * source, at the place the root's record kept, and go as the candidate is
+ * published, which lists the ones it makes there; the root's own entry
+ * stays, naming the object that holds its state. A table finds the ones a
+ * place holds by where they start, and each one going is emptied; what the
+ * candidates list joins the tables once every candidate is placed
+ * (S_keep_defined), so no candidate empties another's. */
+static void S_withdraw_defined(markdown_core_parser *parser, const markdown_core_miss_root *record,
+                               const markdown_core_node *root) {
+    const markdown_core_place place = record->position.place;
+    const markdown_core_key_entry from = markdown_core_key_number(place.start);
+    for (size_t table = 0; table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
+        markdown_core_key_tree_cursor cursor;
+        markdown_core_key_tree_seek(&parser->stream->committed.starts[table], &from, &cursor);
+        for (markdown_core_key_entry *entry;
+             (entry = markdown_core_key_tree_next(&cursor)) && entry->extra < place.end;) {
+            if (entry->value && markdown_core_node_moved(entry->value) != root) {
+                entry->value = NULL;
             }
         }
     }
@@ -4369,20 +4357,23 @@ static void S_keep_defined(markdown_core_parser *parser) {
 }
 
 /* A candidate completed, published against the object that holds its
- * block's state (the document's publish_candidate): one equal to it goes, and
- * one that differs takes its place, as an object of its own (A BLOCK
- * SUPERSEDED). The candidate's slot then holds the block's state, and the
- * storage the candidate and its field roots borrowed from the block's is
- * theirs (markdown_core_node_take_borrowed); the block's tree goes after the
- * next publish, which no longer reads it. */
+ * root's state (the document's publish_candidate): one equal to it goes, and
+ * one that differs takes its place. A block becomes an object of its own (A
+ * BLOCK SUPERSEDED), and the candidate's slot then holds the block's state;
+ * a field root's block does, and holds the candidate in the root's field.
+ * The storage the candidate borrowed from the root's is the candidate's
+ * (markdown_core_node_take_borrowed), and the root's tree goes after the next
+ * publish, which no longer reads it. */
 static void S_complete_place(markdown_core_parser *parser, const S_completion_anew *anew) {
     markdown_core_node *candidate = anew->candidate;
-    markdown_core_node *block = markdown_core_parser_resolve(parser, anew->record->path);
+    const markdown_core_miss_root *record = anew->record;
+    markdown_core_node *block = markdown_core_parser_resolve(parser, record->path);
+    markdown_core_node *root = block ? S_record_root(record, block) : NULL;
     const markdown_core_element_instance *document = parser->dialect->document_structure;
     bool same = false;
-    if (block) {
-        S_withdraw_defined(parser, anew->record, block);
-        document->element->publish_candidate(document, parser, candidate, block, &same);
+    if (root) {
+        S_withdraw_defined(parser, record, root);
+        document->element->publish_candidate(document, parser, candidate, root, record->path->start, &same);
     }
     if (parser->error) {
         markdown_core_node_pool_release(parser->pool, candidate);
@@ -4392,9 +4383,14 @@ static void S_complete_place(markdown_core_parser *parser, const S_completion_an
         markdown_core_node_pool_release(parser->pool, candidate);
         return;
     }
-    markdown_core_node *placed = markdown_core_parser_supersede(parser, anew->record->path);
-    if (!placed || !S_retire(parser, candidate, MARKDOWN_CORE_RETIRED_TREE)) {
+    markdown_core_node *placed = markdown_core_parser_supersede(parser, record->path);
+    if (!placed || !S_retire(parser, record->field ? root : candidate, MARKDOWN_CORE_RETIRED_TREE)) {
         markdown_core_node_pool_release(parser->pool, candidate);
+        return;
+    }
+    if (record->field) {
+        *S_field_slot(placed) = candidate;
+        markdown_core_node_take_borrowed(candidate, root);
         return;
     }
     /* The block was published at the snapshot after the commit whose
@@ -4406,22 +4402,22 @@ static void S_complete_place(markdown_core_parser *parser, const S_completion_an
 
 /* A LOOKUP THAT FOUND NOTHING at a commit's completion is asked anew as
  * the finalize ends the completion, with every definition visible (plan
- * 5.10). The block was completed and published, and the published document
- * shares it: a block one of whose lookups finds a definition now is
- * completed anew as a candidate, what the block phase made of it, at the
- * positions its record kept, with every block the finalize completes. The
- * candidate is then published against the block, and takes its place when
- * it differs (S_complete_place). */
+ * 5.10). The root was completed and published, and the published document
+ * shares it: a root one of whose lookups finds a definition now is completed
+ * anew as a candidate, what the block phase made of it, at the position its
+ * record kept, with every block the finalize completes. The candidate is
+ * then published against the root, and takes its place when it differs
+ * (S_complete_place). */
 static void S_complete_misses(markdown_core_parser *parser) {
-    S_completion_anew *anew = markdown_core_alloc(parser->stream->miss_block_count, sizeof(*anew));
+    S_completion_anew *anew = markdown_core_alloc(parser->stream->miss_root_count, sizeof(*anew));
     if (!anew) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
     size_t count = 0;
-    for (size_t miss = 0, record = 0; record < parser->stream->miss_block_count && !parser->error; record++) {
+    for (size_t miss = 0, record = 0; record < parser->stream->miss_root_count && !parser->error; record++) {
         bool found = false;
-        for (; miss < parser->stream->miss_count && parser->stream->misses[miss].block == record; miss++) {
+        for (; miss < parser->stream->miss_count && parser->stream->misses[miss].root == record; miss++) {
             const markdown_core_definition_miss *at = &parser->stream->misses[miss];
             const markdown_core_chunk label = {parser->stream->miss_labels.ptr + at->label_start, at->label_length, 0};
             bool failed = false;
@@ -4432,9 +4428,9 @@ static void S_complete_misses(markdown_core_parser *parser) {
             }
         }
         markdown_core_node *candidate =
-            found && !parser->error ? S_complete_anew(parser, &parser->stream->miss_blocks[record]) : NULL;
+            found && !parser->error ? S_complete_anew(parser, &parser->stream->miss_roots[record]) : NULL;
         if (candidate) {
-            anew[count++] = (S_completion_anew){candidate, &parser->stream->miss_blocks[record]};
+            anew[count++] = (S_completion_anew){candidate, &parser->stream->miss_roots[record]};
         }
     }
     if (!parser->error && parser->completion_first) {
@@ -4444,7 +4440,7 @@ static void S_complete_misses(markdown_core_parser *parser) {
     for (; placed < count && !parser->error; placed++) {
         S_complete_place(parser, &anew[placed]);
     }
-    /* A candidate a failure left unplaced is no block's. */
+    /* A candidate a failure left unplaced is no root's. */
     for (; placed < count; placed++) {
         markdown_core_node_pool_release(parser->pool, anew[placed].candidate);
     }

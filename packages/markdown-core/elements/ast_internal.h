@@ -30,14 +30,15 @@ struct markdown_core_document {
  * It works in the parser's scratch. False, having changed neither tree's
  * structure, when an allocation failed. Nothing reads a place after this. */
 bool markdown_core_publish_tree(markdown_core_parser *parser);
-/* PUBLISHING A CANDIDATE (ast.c) for `block`, a block the parser's revision
- * published: the candidate takes `block`'s id, and ids, extents and runs
- * continuing `block`'s subtree; `*same` says whether it equals `block` as a
- * value, and when it does not, every node of the two that is same is the
- * object `block`'s subtree held. False, having changed neither tree's
- * structure, when an allocation failed. */
+/* PUBLISHING A CANDIDATE (ast.c) for `root`, an inline root the parser's
+ * revision published, itself or, a callout's title or a definition's term,
+ * as its holder that starts at `holder_start`: the candidate takes `root`'s
+ * id, and ids, extents and runs continuing `root`'s subtree; `*same` says
+ * whether it equals `root` as a value, and when it does not, every node of
+ * the two that is same is the object `root`'s subtree held. False, having
+ * changed neither tree's structure, when an allocation failed. */
 bool markdown_core_publish_candidate(markdown_core_parser *parser, markdown_core_node *candidate,
-                                     markdown_core_node *block, bool *same);
+                                     markdown_core_node *root, uint32_t holder_start, bool *same);
 
 /* The scopes of `node` in the published tree `root` parsed from `source`,
  * with columns in `unit`, in a new array markdown_core_scopes_free frees;

@@ -191,6 +191,7 @@ static markdown_core_node *markdown_core_block_open_definition(markdown_core_def
                                                                        term->content.size, 0)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
+    markdown_core_block_settle_field(parser, term, definition);
     markdown_core_block_advance_offset(parser, input, input->len - 1 - parser->offset, false);
     return definition;
 }

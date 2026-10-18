@@ -168,12 +168,13 @@ struct markdown_core_element {
     /* The last step of the parse: the tree is final, and the owner publishes
      * it (ids, extents, definition tables). */
     void (*publish_document)(const markdown_core_element_instance *, markdown_core_parser *);
-    /* A candidate the finalize completed again for a block the parse's
-     * revision published (blocks.c, A LOOKUP THAT FOUND NOTHING), published
-     * against that block: `*same` says whether the candidate equals it. A
-     * failure fails the parse. */
+    /* A candidate the finalize completed again for an inline root the
+     * parse's revision published (blocks.c, A LOOKUP THAT FOUND NOTHING),
+     * published against that root, whose holder starts where the offset
+     * says (markdown_core_publish_candidate): `*same` says whether the
+     * candidate equals it. A failure fails the parse. */
     void (*publish_candidate)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                              markdown_core_node *, bool *);
+                              markdown_core_node *, uint32_t, bool *);
     markdown_core_node *(*open_text_block)(const markdown_core_element_instance *, markdown_core_parser *,
                                            markdown_core_node *, markdown_core_chunk *);
     markdown_core_node *(*try_interrupting_block)(const markdown_core_element_instance *, markdown_core_parser *,

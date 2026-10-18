@@ -312,8 +312,9 @@ enum markdown_core_node__internal_flags {
     // than on the line before, and to know that a `-->` line really closed a
     // type-2 block rather than the input or a container running out.
     MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION = (1 << 4),
-    /* A block that settled in a commit (parser.h, THE BUILDERS): it is in
-     * the committed tree, and a snapshot reads it and never writes it. */
+    /* A block, or a block's field root, that settled in a commit (parser.h,
+     * THE BUILDERS): it is in the committed tree, and a snapshot reads it and
+     * never writes it. */
     MARKDOWN_CORE_NODE__COMMITTED = (1 << 5),
     /* A settled block whose path is cut: its scaffold holds the path where
      * it held its index (blocks.c, THE PATHS). */
@@ -337,9 +338,10 @@ enum markdown_core_node__internal_flags {
      * attributes wrote: it reserves no name, so releasing the heading
      * withdraws none (heading.c). */
     MARKDOWN_CORE_NODE__ANCHOR_COMPUTED = (1 << 11),
-    /* A copy one of whose fields holds a COMMITTED node, which it shares
-     * with the original -- the metadata of the document, which holds it once
-     * its prefix is read: releasing the copy gives back none of them
+    /* A copy one of whose fields holds a node, which it shares with the
+     * original -- the document's metadata, a callout's title, a definition's
+     * term, a block directive's label, a table's caption, each COMMITTED as
+     * the original installed it: releasing the copy gives back none of them
      * (markdown_core_node_copy). */
     MARKDOWN_CORE_NODE__SHARES_FIELDS = (1 << 12),
 
@@ -831,43 +833,39 @@ void markdown_core_node_slot_release(markdown_core_node_pool *pool, markdown_cor
  * a node of `node`'s kind in a slot of `pool`'s, with a record and a payload
  * of its own, that VIEWS what `node` owns where its holder marks it -- its
  * attributes, the strings its record owns, the storage its element's payload
- * owns -- and holds a copy of the rest: its labels and its places; and of
- * each node its fields hold that is not COMMITTED, a copy of its own, and it
- * shares those that are (SHARES_FIELDS). Its children array, when `node` has
+ * owns -- and holds a copy of the rest: its labels and its places; and it
+ * shares each node its fields hold, which settled as `node` installed it and
+ * is COMMITTED (SHARES_FIELDS). Its children array, when `node` has
  * children, and its content buffer, when `node` holds content storage, are
  * `node`'s, which it borrows (BORROWS_CHILDREN, BORROWS_CONTENT); its
  * scaffold is empty. NULL, having taken nothing, when storage could not be
  * had. */
 markdown_core_node *markdown_core_node_copy(markdown_core_node_pool *pool, const markdown_core_node *node);
 /* What `copy`, a copy of `original` (markdown_core_node_copy) that a publish
- * placed, and the copies its fields hold still view of what `original` and
- * its field roots own, copied into storage of their own: as `original` is
- * to change, its copy stops reading it (blocks.c, THE COPIES). False when
- * storage could not be had, with what was not copied still viewed. */
+ * placed, still views of what `original` owns, copied into storage of its
+ * own: as `original` is to change, its copy stops reading it (blocks.c, THE
+ * COPIES). False when storage could not be had, with what was not copied
+ * still viewed. */
 bool markdown_core_node_own_viewed(markdown_core_node_pool *pool, markdown_core_node *copy,
                                    const markdown_core_node *original);
-/* A CANDIDATE FOR A BLOCK COMPLETED AGAIN (blocks.c, A LOOKUP THAT FOUND
- * NOTHING): a node of `node`'s kind in a slot of `pool`'s, holding what the
- * block phase made of `node` and nothing its completion or its publish made:
- * a copy of each thing `node` owns -- its attributes, its record and what
- * the record owns, its element's payload -- its content buffer, which it
- * borrows (BORROWS_CONTENT), and, of each field root, a candidate of its
- * own. Its children are inline content its completion makes when `inlines`
- * says so, and `node`'s children array, which it borrows
- * (BORROWS_CHILDREN), otherwise. It has no id, and no place or places
- * until the caller gives them; its scaffold is empty. NULL, having taken
- * nothing, when storage could not be had. */
-markdown_core_node *markdown_core_node_candidate(markdown_core_node_pool *pool, const markdown_core_node *node,
-                                                 bool inlines);
+/* A CANDIDATE FOR AN INLINE ROOT COMPLETED AGAIN (blocks.c, A LOOKUP THAT
+ * FOUND NOTHING): a node of `root`'s kind in a slot of `pool`'s, holding what
+ * the block phase made of `root` and nothing its completion or its publish
+ * made: a copy of each thing `root` owns -- its attributes, its record and
+ * what the record owns, its element's payload -- and its content buffer,
+ * which it borrows (BORROWS_CONTENT). A root holds no field root, and its
+ * children are inline content its completion makes. It has no id, and no
+ * place or places until the caller gives them; its scaffold is empty. NULL,
+ * having taken nothing, when storage could not be had. */
+markdown_core_node *markdown_core_node_candidate(markdown_core_node_pool *pool, const markdown_core_node *root);
 /* The COMMITTED nodes the fields of `copy`, a copy of `original` that a
  * publish placed, hold, taken into the same fields of `original`: a field
  * node the two share stays one object when the publish exchanges it with
  * the node it continues (blocks.c, AFTER A PUBLISH). */
 void markdown_core_node_share_fields(markdown_core_node *original, markdown_core_node *copy);
-/* The storage `taker` and each of its field roots borrow, made theirs, and
- * lent by `lender` and its field roots in the same places, which borrow it
- * from them: `taker` is a candidate (markdown_core_node_candidate) and
- * `lender` the node whose state it was made from, released after it. */
+/* The storage `taker` borrows, made its own, and lent by `lender`, which
+ * borrows it from it: `taker` is a candidate (markdown_core_node_candidate)
+ * and `lender` the root whose state it was made from, released after it. */
 void markdown_core_node_take_borrowed(markdown_core_node *taker, markdown_core_node *lender);
 /* `markdown_core_node_free` into a pool: the node slots and the slots of
  * the resources the nodes held last go back to it for reuse rather than

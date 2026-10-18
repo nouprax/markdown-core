@@ -11163,6 +11163,43 @@ static uint8_t *dump_of(const markdown_core_document *document, const char *sour
     return dump;
 }
 
+/* Whether a session fed `source` in chunks of `chunk` bytes, or line by
+ * line when it is 0, finalizes to the dump of a fresh parse of it. */
+static bool finalizes_as_a_parse(const char *source, size_t chunk) {
+    const size_t length = strlen(source);
+    size_t expected_length = 0, actual_length = 0;
+    markdown_core_document *parsed = NULL;
+    uint8_t *expected = markdown_core_document_parse((const uint8_t *)source, length, &parsed) == MARKDOWN_CORE_OK
+                            ? dump_of(parsed, source, length, &expected_length)
+                            : NULL;
+    markdown_core_session *session = NULL;
+    bool appended = markdown_core_session_new((const uint8_t *)source, 0, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
+                    MARKDOWN_CORE_OK;
+    for (size_t at = 0; appended && at < length;) {
+        size_t step = chunk;
+        if (!step) {
+            const char *newline = memchr(source + at, '\n', length - at);
+            step = newline ? (size_t)(newline - (source + at)) + 1 : length - at;
+        }
+        step = step < length - at ? step : length - at;
+        const markdown_core_document *document = NULL;
+        appended =
+            markdown_core_session_append(session, (const uint8_t *)source + at, step, &document) == MARKDOWN_CORE_OK;
+        at += step;
+    }
+    const markdown_core_document *final = NULL;
+    uint8_t *actual = appended && markdown_core_session_finalize(session, &final) == MARKDOWN_CORE_OK
+                          ? dump_of(final, source, length, &actual_length)
+                          : NULL;
+    const bool same =
+        expected && actual && expected_length == actual_length && memcmp(expected, actual, expected_length) == 0;
+    markdown_core_dump_free(actual);
+    markdown_core_session_free(session);
+    markdown_core_dump_free(expected);
+    markdown_core_document_free(parsed);
+    return same;
+}
+
 /* A STREAMED SESSION FINALIZES TO WHAT A FRESH PARSE OF ITS TEXT IS (plan
  * 5.4, 5.10). The text arrives byte by byte, three bytes at a time and line
  * by line. A block that completes at a commit sees only the definitions
@@ -11199,48 +11236,13 @@ static void session_finalize_matches_a_parse(test_batch_runner *runner) {
 #undef FILLER
     static const size_t chunks[] = {1, 3, 0};
     for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
-        const char *source = sources[i];
-        size_t length = strlen(source), expected_length = 0;
-        markdown_core_document *parsed = NULL;
-        uint8_t *expected = NULL;
-        if (markdown_core_document_parse((const uint8_t *)source, length, &parsed) == MARKDOWN_CORE_OK) {
-            expected = dump_of(parsed, source, length, &expected_length);
-        }
         for (size_t c = 0; c < sizeof(chunks) / sizeof(chunks[0]); c++) {
-            markdown_core_session *session = NULL;
-            bool appended = markdown_core_session_new((const uint8_t *)source, 0, MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                                      &session) == MARKDOWN_CORE_OK;
-            for (size_t at = 0; appended && at < length;) {
-                size_t step = chunks[c];
-                if (!step) {
-                    const char *newline = memchr(source + at, '\n', length - at);
-                    step = newline ? (size_t)(newline - (source + at)) + 1 : length - at;
-                }
-                if (step > length - at) {
-                    step = length - at;
-                }
-                const markdown_core_document *document = NULL;
-                appended = markdown_core_session_append(session, (const uint8_t *)source + at, step, &document) ==
-                           MARKDOWN_CORE_OK;
-                at += step;
-            }
-            const markdown_core_document *final = NULL;
-            size_t actual_length = 0;
-            uint8_t *actual = appended && markdown_core_session_finalize(session, &final) == MARKDOWN_CORE_OK
-                                  ? dump_of(final, source, length, &actual_length)
-                                  : NULL;
-            OK(runner,
-               expected && actual && expected_length == actual_length && memcmp(expected, actual, expected_length) == 0,
-               "a session streamed in %s finalizes as a parse: %s",
+            OK(runner, finalizes_as_a_parse(sources[i], chunks[c]), "a session streamed in %s finalizes as a parse: %s",
                chunks[c] == 1   ? "bytes"
                : chunks[c] == 3 ? "three bytes"
                                 : "lines",
-               source);
-            markdown_core_dump_free(actual);
-            markdown_core_session_free(session);
+               sources[i]);
         }
-        markdown_core_dump_free(expected);
-        markdown_core_document_free(parsed);
     }
 }
 
@@ -11722,6 +11724,89 @@ static bool parts_equal(const markdown_core_node *a, const markdown_core_node *b
     }
 }
 
+/* `pattern` with each `%s` in it the field `field`, in a new string the
+ * caller frees. */
+static char *with_field(const char *pattern, const char *field) {
+    const size_t field_length = strlen(field);
+    size_t length = 0;
+    for (const char *p = pattern; *p; p++) {
+        length += p[0] == '%' && p[1] == 's' ? (p++, field_length) : 1;
+    }
+    char *made = malloc(length + 1), *at = made;
+    for (const char *p = pattern; made && *p; p++) {
+        if (p[0] == '%' && p[1] == 's') {
+            memcpy(at, field, field_length);
+            at += field_length;
+            p++;
+        } else {
+            *at++ = *p;
+        }
+    }
+    if (made) {
+        *at = '\0';
+    }
+    return made;
+}
+
+/* A FIELD AN OPENING LINE WRITES COMPLETES ONCE ITS LINE IS READ (step 7,
+ * plan 5.3): a callout's title, a definition's term, a block directive's
+ * label and a table's caption, before or after its rows, each some
+ * hundreds of bytes of the inline content a completion makes -- emphasis,
+ * code, a reference, an inline note holding a reference, and an anchor. While its
+ * block stays open over many appends, every snapshot holds it as a fresh
+ * parse of the text so far does when each reference is defined before it.
+ * When each is defined after it, the finalize looks the field's references
+ * up again and gives what a parse of the whole text gives: with the block
+ * closed and published before the definition arrives, and with the block
+ * still open when the text ends, the definition inside it -- in a quote, a
+ * definition's body, an unclosed directive and a list item. */
+static void session_opener_fields(test_batch_runner *runner) {
+    char field[1024] = "";
+    for (size_t length = 0; length + 40 < 300;) {
+        length += (size_t)snprintf(field + length, sizeof(field) - length, "word *em* [x] ^[note [x]] `code` ");
+    }
+    strcat(field, ":n{#a} end");
+    static const char *const defined_before[] = {
+        "[x]: /u\n\n> [!NOTE] %s\n> body one\n>\n> body two\n>\n> body three\n\nafter\n",
+        "[x]: /u\n\n%s\n: def one\n\n  def two\n\n  def three\n\nafter\n",
+        "[x]: /u\n\n:::note[%s]\nbody one\n\nbody two\n\nbody three\n:::\n\nafter\n",
+        "[x]: /u\n\nTable: %s\n\n| a | b |\n|---|---|\n| c | d |\n| e | f |\n| g | h |\n\nafter\n",
+        "[x]: /u\n\n| a | b |\n|---|---|\n| c | d |\n| e | f |\n\nTable: %s\n\nafter\n",
+    };
+    for (size_t i = 0; i < sizeof(defined_before) / sizeof(defined_before[0]); i++) {
+        char *source = with_field(defined_before[i], field);
+        size_t at = 0;
+        OK(runner, source && snapshots_dump_as_parses(source, &at),
+           "every snapshot holds a long field its opening line wrote as a parse of its text, up to byte %zu: %s", at,
+           defined_before[i]);
+        free(source);
+    }
+    static const char *const defined_after[] = {
+        "> [!NOTE] %s\n> body\n\nfiller one\n\nfiller two\n\n# a\n\n[x]: /u\n",
+        "%s\n: def\n\nfiller one\n\nfiller two\n\n# a\n\n[x]: /u\n",
+        ":::note[%s]\nbody\n:::\n\nfiller one\n\nfiller two\n\n# a\n\n[x]: /u\n",
+        "Table: %s\n\n| a | b |\n|---|---|\n| c | d |\n\nfiller one\n\nfiller two\n\n# a\n\n[x]: /u\n",
+        "| a | b |\n|---|---|\n| c | d |\n\nTable: %s\n\nfiller one\n\nfiller two\n\n# a\n\n[x]: /u\n",
+        "> [!NOTE] %s\n> body\n>\n> filler\n>\n> # a\n>\n> [x]: /u\n",
+        "%s\n: def\n\n  filler\n\n  # a\n\n  [x]: /u\n",
+        ":::note[%s]\nbody\n\nfiller\n\n# a\n\n[x]: /u\n",
+        "- > [!TIP] %s\n  > body\n  >\n  > # a\n  >\n  > [x]: /u\n",
+    };
+    static const size_t chunks[] = {1, 7, 0};
+    for (size_t i = 0; i < sizeof(defined_after) / sizeof(defined_after[0]); i++) {
+        char *source = with_field(defined_after[i], field);
+        for (size_t c = 0; c < sizeof(chunks) / sizeof(chunks[0]); c++) {
+            OK(runner, source && finalizes_as_a_parse(source, chunks[c]),
+               "a session streamed in %s finalizes a long field defined after it as a parse: %s",
+               chunks[c] == 1   ? "bytes"
+               : chunks[c] == 7 ? "seven bytes"
+                                : "lines",
+               defined_after[i]);
+        }
+        free(source);
+    }
+}
+
 /* A copy lets go of the children array and content buffer it borrows,
  * which stay its original's, as a snapshot lets a copy go (blocks.c, THE
  * COPIES); the copies here make no children of their own. */
@@ -12031,6 +12116,7 @@ int main(void) {
     session_snapshot_lists(runner);
     session_snapshot_openers(runner);
     session_snapshot_simple_tables(runner);
+    session_opener_fields(runner);
     node_copy_views(runner);
     session_finalize_matches_a_parse(runner);
     session_allocation_failures(runner);

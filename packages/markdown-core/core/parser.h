@@ -249,28 +249,29 @@ typedef struct markdown_core_path_block {
     markdown_core_path items[];
 } markdown_core_path_block;
 
-/* A BLOCK A LOOKUP FOUND NOTHING FOR at a commit's completion
- * (markdown_core_parser_find_definition; blocks.c, A LOOKUP THAT FOUND
- * NOTHING): its path, and where it and each of its field roots lay as the
- * block phase left them, `position_count` of the parser's `miss_positions`
- * from `first_position`, in the order their visit finds them. */
-typedef struct {
-    const markdown_core_path *path;
-    size_t first_position, position_count;
-} markdown_core_miss_block;
-
-/* Where a block or a field root lay as the block phase left it: its place,
- * and its places, which the parser owns until a candidate takes them. */
+/* Where an inline root lay as the block phase left it: its place, and its
+ * places, which the parser owns until a candidate takes them. */
 typedef struct {
     markdown_core_place place;
     markdown_core_places *places;
 } markdown_core_miss_position;
 
-/* A definition lookup a commit's completion found nothing for: the block it
- * was made for, among the parser's `miss_blocks`, and the lookup's kind and
+/* AN INLINE ROOT A LOOKUP FOUND NOTHING FOR at a commit's completion
+ * (markdown_core_parser_find_definition; blocks.c, A LOOKUP THAT FOUND
+ * NOTHING): a block whose own inline content asked, or the field root a
+ * block holds (`field`), named by the path of that block, and where the root
+ * lay as the block phase left it. */
+typedef struct {
+    const markdown_core_path *path;
+    markdown_core_miss_position position;
+    bool field;
+} markdown_core_miss_root;
+
+/* A definition lookup a commit's completion found nothing for: the root it
+ * was made for, among the parser's `miss_roots`, and the lookup's kind and
  * label, as written, at `label_start` in the parser's `miss_labels`. */
 typedef struct {
-    size_t block;
+    size_t root;
     markdown_core_registry_kind kind;
     bufsize_t label_start, label_length;
 } markdown_core_definition_miss;
@@ -315,19 +316,17 @@ typedef struct markdown_core_stream {
     markdown_core_path root_path;
     markdown_core_path_block *paths;
     /* THE LOOKUPS A COMMIT'S COMPLETION FOUND NOTHING FOR, in the order
-     * they were made (plan 5.4), and the blocks they were made for, the last
-     * of which is `miss_block` while its completion lasts. The finalize asks
-     * each again with every definition visible, and completes again each
-     * block whose answer is one now (blocks.c, A LOOKUP THAT FOUND
+     * they were made (plan 5.4), and the inline roots they were made for,
+     * the last of which is `miss_root` while its completion lasts. The
+     * finalize asks each again with every definition visible, and completes
+     * again each root whose answer is one now (blocks.c, A LOOKUP THAT FOUND
      * NOTHING). */
     markdown_core_definition_miss *misses;
     size_t miss_count, miss_capacity;
     markdown_core_strbuf miss_labels;
-    markdown_core_miss_block *miss_blocks;
-    size_t miss_block_count, miss_block_capacity;
-    markdown_core_miss_position *miss_positions;
-    size_t miss_position_count, miss_position_capacity;
-    const struct markdown_core_node *miss_block;
+    markdown_core_miss_root *miss_roots;
+    size_t miss_root_count, miss_root_capacity;
+    const struct markdown_core_node *miss_root;
     /* How many levels of THE LEVELS, from the root, hold below the children
      * they published as they are a block that has changed since
      * (markdown_core_parser_supersede): the next publish finds each of them
@@ -352,9 +351,9 @@ struct markdown_core_parser {
      * declare their labels before inline content is parsed, and completion
      * reserves explicit anchors where it meets them. */
     markdown_core_registry registry;
-    /* The block being completed: the queued block the completion walk is in
-     * (blocks.c, COMPLETION), or the heading whose inline content the
-     * document's preparation parses. */
+    /* The root being completed: the queued block or field root the
+     * completion walk is in (blocks.c, COMPLETION), or the heading whose
+     * inline content the document's preparation parses. */
     struct markdown_core_node *completing;
     markdown_core_source_order source_order;
     /* The stack the finish stage's tree walks borrow in turn, the finish
@@ -375,15 +374,17 @@ struct markdown_core_parser {
     size_t definition_capacity[MARKDOWN_CORE_DEFINITION_TABLES];
     void *content_places;
     size_t content_place_capacity;
-    /* THE COMPLETION QUEUE: every block of the tree, in the order it settled
-     * (blocks.c, A BLOCK SETTLES), from `completion_first` to
-     * `completion_last`, each linked through its scaffold to the block after
-     * it and to the block it settled into (node.h, THE SCAFFOLD). A block
-     * joins once its block structure is final; completing it parses its own
-     * inline content and asks the finish steps at the events of its inline
-     * nodes and at its own EXIT, with the block it settled into, after the
-     * block phase, in queue order (S_finish_parse). Every block joins on its
-     * own, so a block's completion never reaches another block. */
+    /* THE COMPLETION QUEUE: every block of the tree and every field root a
+     * block holds, in the order it settled (blocks.c, A BLOCK SETTLES), from
+     * `completion_first` to `completion_last`, each linked through its
+     * scaffold to the one after it and to the block it settled into or the
+     * block that holds it (node.h, THE SCAFFOLD). A block joins once its
+     * block structure is final, and a field root once the line that wrote it
+     * is read; completing one parses its own inline content and asks the
+     * finish steps at the events of its inline nodes and at its own EXIT,
+     * with that block, after the block phase, in queue order
+     * (S_finish_parse). Every one joins on its own, so a completion never
+     * reaches another block or a block's field root. */
     struct markdown_core_node *completion_first, *completion_last;
     /* Run records released by finished runs, kept for the next run
      * (markdown_core_inline_state_from_buf); linked through their first word

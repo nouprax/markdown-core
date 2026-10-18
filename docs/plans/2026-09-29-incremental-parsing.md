@@ -524,9 +524,10 @@ this order:
   copy made are released with it, and the registry rolls back to the mark.
   Then process only the lines before that line on a new copy.
 - The copy becomes the builder stack and the commit point moves past the
-  processed lines. Blocks that closed, and captions a trailing line added,
-  join the completion queue. Blocks that settled are finished into settled
-  nodes.
+  processed lines. Blocks that closed join the completion queue, and so does
+  each field a processed line wrote: a callout's title, a definition's term,
+  a block directive's label and a table's caption. Blocks that settled are
+  finished into settled nodes.
 
 The lines after the commit point are **pending**. They are of two kinds:
 
@@ -540,9 +541,9 @@ A fresh parse copies the builder stack once.
 
 ### 5.4 Completion
 
-The blocks of the completion queue complete in the order they closed: their
-inline roots are parsed, the element's finish steps run, and the blocks in
-table cells are read.
+The blocks and fields of the completion queue complete in the order they
+joined it: their inline roots are parsed, the element's finish steps run, and
+the blocks in table cells are read.
 
 A block completes at the next publish or at `finalize`:
 

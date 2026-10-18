@@ -2694,7 +2694,11 @@ static markdown_core_node *table_try_open(table_workspace *workspace, markdown_c
     if (trailing) {
         result = preceding;
         table_candidate_reset(candidate);
-        ((markdown_core_table *)result->opaque)->caption = table_caption_build(&source, parent, caption_last, caption);
+        markdown_core_table *table = result->opaque;
+        table->caption = table_caption_build(&source, parent, caption_last, caption);
+        if (table->caption) {
+            markdown_core_block_settle_field(parser, table->caption, result);
+        }
         result->where.place.end = (uint32_t)markdown_core_parser_source_end(parser, source.lines[caption_last].line,
                                                                             source.lines[caption_last].length);
         parser->claimed_cursor = source.lines[caption_last].after;
@@ -2703,8 +2707,11 @@ static markdown_core_node *table_try_open(table_workspace *workspace, markdown_c
     } else {
         result = table_build(&source, parent, candidate);
         if (result && result->opaque && caption >= 0) {
-            ((markdown_core_table *)result->opaque)->caption =
-                table_caption_build(&source, parent, caption_last, caption);
+            markdown_core_table *table = result->opaque;
+            table->caption = table_caption_build(&source, parent, caption_last, caption);
+            if (table->caption) {
+                markdown_core_block_settle_field(parser, table->caption, result);
+            }
             result->where.place.start =
                 (uint32_t)markdown_core_parser_source_offset(parser, source.lines[0].line, source.lines[0].first + 1);
         }

@@ -1,5 +1,6 @@
 #include "alloc.h"
 #include "attributes.h"
+#include "block_internal.h"
 #include "directive.h"
 #include "element.h"
 
@@ -586,6 +587,9 @@ static markdown_core_node *open_directive_block(const markdown_core_element_inst
     directive = get_directive(node);
     directive->fence_length = (int)colon_count;
     directive->consume_line = 1;
+    if (directive->label) {
+        markdown_core_block_settle_field(parser, directive->label, node);
+    }
     markdown_core_parser_advance_offset(parser, (char *)input, len - markdown_core_parser_get_offset(parser), false);
 
 done:

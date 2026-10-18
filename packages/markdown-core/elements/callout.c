@@ -88,6 +88,7 @@ static bool markdown_core_block_parse_callout_metadata(markdown_core_callout_wor
                                                                             title->content.size, 0)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
+        markdown_core_block_settle_field(parser, title, node);
     }
     markdown_core_block_advance_offset(parser, input, input->len - 1 - parser->offset, false);
     return true;
