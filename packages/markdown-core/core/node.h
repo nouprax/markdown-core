@@ -209,7 +209,8 @@ typedef struct markdown_core_definitions {
  * and the nodes reference occurrences resolve to, by label: for each label,
  * the first Reference declaring it, or, when none does, the first Heading
  * whose text declares it. A snapshot's document shares the committed parse's
- * tables, `committed`, and lists what it adds to them; NULL in any other. */
+ * tables, `committed`, and lists what it adds to them in room the parse
+ * keeps, so it borrows every table; NULL in any other, which owns them. */
 typedef struct {
     struct markdown_core_node *metadata;
     markdown_core_definitions footnotes;

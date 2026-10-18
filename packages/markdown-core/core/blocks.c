@@ -146,6 +146,25 @@ static void S_release_previous(markdown_core_parser *parser) {
     }
 }
 
+/* The stack the stage's walks borrow, and what the walks keep for every
+ * walk of the parse, let go. */
+static void S_release_walk(markdown_core_parser *parser) {
+    markdown_core_free(parser->walk_stack);
+    parser->walk_stack = NULL;
+    parser->walk_stack_size = 0;
+    markdown_core_free(parser->walk_states);
+    parser->walk_states = NULL;
+    parser->walk_state_capacity = 0;
+    for (size_t table = 0; table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
+        markdown_core_free(parser->definition_values[table]);
+        parser->definition_values[table] = NULL;
+        parser->definition_capacity[table] = 0;
+    }
+    markdown_core_free(parser->content_places);
+    parser->content_places = NULL;
+    parser->content_place_capacity = 0;
+}
+
 static void S_parser_dispose(markdown_core_parser *parser) {
     S_release_previous(parser);
     const markdown_core_dialect *dialect = parser->dialect;
@@ -158,7 +177,7 @@ static void S_parser_dispose(markdown_core_parser *parser) {
     dialect->document_structure->element->dispose_document(dialect->document_structure, parser);
     markdown_core_registry_free(&parser->registry);
     markdown_core_source_order_dispose(&parser->source_order);
-    markdown_core_free(parser->walk_stack);
+    S_release_walk(parser);
     markdown_core_free(parser->block_inputs);
     S_release_input(&parser->input);
     if (parser->cell_input) {
@@ -1455,7 +1474,8 @@ typedef struct {
     markdown_core_parser *parser;
     owned_tree_frame *frames;
     /* One word per projected step per frame, zero when a root's walk starts:
-     * frame i's words are `states + i * slots`. Sized with the frames. */
+     * frame i's words are `states + i * slots`, in the parser's
+     * `walk_states`. Sized with the frames. */
     void **states;
     size_t slots;
     size_t count, capacity;
@@ -1483,12 +1503,14 @@ static bool S_reserve_frame(owned_tree_walk *walk) {
     }
     walk->frames = frames;
     if (walk->slots) {
-        void *states = markdown_core_realloc(walk->states, capacity * walk->slots * sizeof(*walk->states));
+        markdown_core_parser *parser = walk->parser;
+        void **states = markdown_core_reserve(parser->walk_states, &parser->walk_state_capacity, capacity * walk->slots,
+                                              sizeof(*states));
         if (!states) {
-            markdown_core_parser_fail(walk->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return false;
         }
-        walk->states = states;
+        parser->walk_states = walk->states = states;
     }
     walk->capacity = capacity;
     return true;
@@ -1927,7 +1949,6 @@ static int walk_owned_trees(markdown_core_parser *parser) {
     if (!queued) {
         parser->completion_last = NULL;
     }
-    markdown_core_free(walk.states);
     return !parser->error;
 }
 
@@ -2393,6 +2414,8 @@ static void S_release_stream(markdown_core_parser *parser) {
         markdown_core_key_tree_free(&stream->committed.labels[table]);
     }
     markdown_core_free(stream->kept);
+    markdown_core_free(stream->same_pairs);
+    markdown_core_free(stream->own_tables);
     markdown_core_free(stream->defined);
     S_release_paths(parser);
     markdown_core_free(stream->misses);
@@ -4585,9 +4608,7 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
         const markdown_core_element_instance *document = parser->dialect->document_structure;
         document->element->publish_document(document, parser);
     }
-    markdown_core_free(parser->walk_stack);
-    parser->walk_stack = NULL;
-    parser->walk_stack_size = 0;
+    S_release_walk(parser);
     if (parser->error) {
         goto failed;
     }

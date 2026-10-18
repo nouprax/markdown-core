@@ -552,35 +552,14 @@ static markdown_core_place runs_window(const markdown_core_node *node, uint32_t 
  * old storage. A fresh parse continues no tree, so no node is matched and
  * every node takes the next id in walk order. */
 
-/* A same pair, recorded in post-order: `node` and `old` exchange their
- * states, and each takes the slot that held the other, `slot` in the new
- * tree and `old_slot` in the old. */
-typedef struct {
+/* A same pair, recorded in post-order in the streaming parse's room for
+ * them (parser.h, `same_pairs`): `node` and `old` exchange their states,
+ * and each takes the slot that held the other, `slot` in the new tree and
+ * `old_slot` in the old. */
+typedef struct markdown_core_same_pair {
     markdown_core_node *node, *old;
     markdown_core_node **slot, **old_slot;
 } publish_swap;
-
-typedef struct {
-    publish_swap *swaps;
-    size_t swap_count, swap_capacity;
-} publish_identity;
-
-static bool publish_reserve(void **values, size_t *capacity, size_t count, size_t size) {
-    if (count < *capacity) {
-        return true;
-    }
-    size_t grown = *capacity ? *capacity * 2 : 16;
-    if (grown > SIZE_MAX / size) {
-        return false;
-    }
-    void *resized = markdown_core_realloc(*values, grown * size);
-    if (!resized) {
-        return false;
-    }
-    *values = resized;
-    *capacity = grown;
-    return true;
-}
 
 static inline bool is_link(const markdown_core_node *node) {
     return node->kind == MARKDOWN_CORE_NODE_LINK || node->kind == MARKDOWN_CORE_NODE_EMBEDDED;
@@ -604,21 +583,29 @@ typedef struct {
 } publish_frame;
 
 /* The frames live on the parser's walk stack, which completion has just
- * left. */
+ * left, above the `below` bytes that hold the frames of the matching walk
+ * that is publishing them (A STREAMING PUBLISH). */
 typedef struct {
     markdown_core_parser *parser;
+    size_t below;
     publish_frame *frames;
-    size_t count, capacity;
+    size_t capacity;
 } publish_stack;
+
+/* The stack's frames, above `below` bytes of the walk stack as it is now. */
+static void publish_above(publish_stack *stack, size_t below) {
+    const markdown_core_parser *parser = stack->parser;
+    stack->below = below;
+    stack->frames = parser->walk_stack ? (publish_frame *)((unsigned char *)parser->walk_stack + below) : NULL;
+    stack->capacity = parser->walk_stack_size > below ? (parser->walk_stack_size - below) / sizeof(publish_frame) : 0;
+}
 
 static bool publish_grow(publish_stack *stack) {
     size_t capacity = stack->capacity ? stack->capacity * 2 : 16;
-    publish_frame *frames = markdown_core_parser_walk_stack(stack->parser, capacity, sizeof(*frames));
-    if (!frames) {
+    if (!markdown_core_parser_walk_stack(stack->parser, 1, stack->below + capacity * sizeof(publish_frame))) {
         return false;
     }
-    stack->frames = frames;
-    stack->capacity = stack->parser->walk_stack_size / sizeof(*frames);
+    publish_above(stack, stack->below);
     return true;
 }
 
@@ -680,12 +667,13 @@ static inline publish_relation publish_next(const publish_frame *frame, const pu
     return next;
 }
 
-/* What one publish carries through its walks: the walk stack, what matching
- * needs, the lookup tables, the last id issued, the levels of the spine (A
- * STREAMING PUBLISH, below) and how many committed definitions it lists. */
+/* What one publish carries through its walks: the walk stack, how many
+ * same pairs matching has recorded, the lookup tables, the last id issued,
+ * the levels of the spine (A STREAMING PUBLISH, below) and how many
+ * committed definitions it lists. */
 typedef struct {
     publish_stack stack;
-    publish_identity identity;
+    size_t swap_count;
     definition_table tables[TABLE_COUNT];
     uint64_t next_id;
     const markdown_core_level *levels;
@@ -926,16 +914,15 @@ static inline void publish_enter(publish_frame *frame, const publish_placed *pla
  * are open. A node's place becomes its extent as it is published, so each
  * frame keeps the offsets its later nodes are relative to, and a frame with
  * nothing left gives its slot to its last node's own. The frames sit above
- * those already on the stack. A fresh parse publishes its whole tree this
- * way, below the root. */
+ * what the stack holds below them. A fresh parse publishes its whole tree
+ * this way, below the root. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_fresh(publish_walk *walk,
                                                                           const markdown_core_node *node,
                                                                           relation_shape shape,
                                                                           const publish_placed *placed, bool content) {
     publish_stack *stack = &walk->stack;
-    /* The walk ends with the stack as it found it, so its count and the ids
-     * it issues stay in hand until then. */
-    size_t base = stack->count, count = base;
+    /* The ids the walk issues stay in hand until it ends. */
+    size_t count = 0;
     uint64_t next_id = walk->next_id;
     markdown_core_relation_cursor cursor;
     publish_relation hand, first;
@@ -952,7 +939,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_fresh(publis
     *frame = (publish_frame){.cursor = cursor, .more = more};
     hand = first;
     publish_enter(frame, placed, &hand, content);
-    while (count > base) {
+    while (count) {
         if (hand.item == hand.end) {
             markdown_core_relation relation;
             if (frame->more && relations_next(&frame->cursor, &relation, &frame->more)) {
@@ -961,7 +948,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_fresh(publis
                 if (frame->root) {
                     frame->root = frame->content = false;
                 }
-            } else if (--count > base) {
+            } else if (--count) {
                 frame--;
                 hand = (publish_relation){frame->item, frame->end, frame->anchor, frame->source};
             }
@@ -1284,19 +1271,19 @@ static bool publish_same(const markdown_core_node *node, const markdown_core_nod
  * recorded. */
 static bool publish_verdict(publish_walk *walk, publish_match_frame *owner, markdown_core_node **slot,
                             markdown_core_node **old_slot, bool same, size_t entry) {
-    publish_identity *identity = &walk->identity;
     if (!same) {
         owner->same = false;
         return true;
     }
+    markdown_core_stream *stream = walk->stack.parser->stream;
     publish_swap *swaps =
-        markdown_core_reserve(identity->swaps, &identity->swap_capacity, identity->swap_count + 1, sizeof(*swaps));
+        markdown_core_reserve(stream->same_pairs, &stream->same_pair_capacity, walk->swap_count + 1, sizeof(*swaps));
     if (!swaps) {
         return false;
     }
-    identity->swaps = swaps;
+    stream->same_pairs = swaps;
     markdown_core_node *node = *slot, *old = *old_slot;
-    swaps[identity->swap_count++] = (publish_swap){node, old, slot, old_slot};
+    swaps[walk->swap_count++] = (publish_swap){node, old, slot, old_slot};
     if (entry) {
         walk->tables[SLOT_TABLE(slot_of(node)) - 1].values[entry - 1].node = old;
     }
@@ -1306,13 +1293,15 @@ static bool publish_verdict(publish_walk *walk, publish_match_frame *owner, mark
 /* PUBLISHING WHAT CONTINUES THE PREVIOUS TREE: the root continues the
  * previous root, measured against `start`, and each matched node pairs its
  * relations with its old node's and matches their nodes in turn, one frame
- * per matched node whose relations are open, each waiting for its verdict.
+ * per matched node whose relations are open, on the walk stack, each waiting
+ * for its verdict.
  * A node that continues nothing takes the next id, and so does everything
  * below it, which publish_fresh publishes. `*same` is the root's verdict. */
 static bool publish_matched(publish_walk *walk, markdown_core_node *root, markdown_core_node *previous,
                             const publish_relation *start, bool *same) {
-    publish_match_frame *frames = NULL, *frame;
-    size_t count = 0, capacity = 0;
+    markdown_core_parser *parser = walk->stack.parser;
+    publish_match_frame *frame;
+    size_t count = 0;
     markdown_core_relation_cursor cursor, old_cursor;
     publish_relation hand = *start, first, old_first;
     const markdown_core_node *holder, *old_holder;
@@ -1341,7 +1330,8 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, markdo
     /* Enters a matched node that has relations: its frame waits for its
      * verdict while they are published. */
     for (;;) {
-        if (!publish_reserve((void **)&frames, &capacity, count, sizeof(*frames))) {
+        publish_match_frame *frames = markdown_core_parser_walk_stack(parser, count + 1, sizeof(*frames));
+        if (!frames) {
             ok = false;
             break;
         }
@@ -1428,8 +1418,12 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, markdo
                 }
             }
             if (!match_slot) {
+                /* What continues nothing is published above the frames,
+                 * which find the stack where its growth left it. */
                 child->id = ++walk->next_id;
+                publish_above(&walk->stack, count * sizeof(*frame));
                 ok = publish_fresh(walk, child, shape, &placed, content);
+                frame = (publish_match_frame *)parser->walk_stack + count - 1;
                 continue;
             }
             markdown_core_node *match = *match_slot;
@@ -1453,7 +1447,6 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, markdo
             break;
         }
     }
-    markdown_core_free(frames);
     return ok;
 }
 
@@ -1466,18 +1459,18 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, markdo
  * node, which is why a node's pairs come first. The root is then the
  * previous root when it is same, and whatever tree is left over is released
  * into the pool (publish_continue). */
-static void publish_commit(const publish_identity *identity) {
-    for (size_t i = 0; i < identity->swap_count; i++) {
-        const publish_swap *swap = &identity->swaps[i];
+static void publish_commit(const markdown_core_stream *stream, size_t swap_count) {
+    for (size_t i = 0; i < swap_count; i++) {
+        const publish_swap *swap = &stream->same_pairs[i];
         markdown_core_node_swap(swap->node, swap->old);
         *swap->slot = swap->old;
         *swap->old_slot = swap->node;
     }
 }
 
-static void publish_continue(markdown_core_parser *parser, const publish_identity *identity, bool same) {
+static void publish_continue(markdown_core_parser *parser, size_t swap_count, bool same) {
     markdown_core_node *root = parser->root, *previous = parser->revision->previous;
-    publish_commit(identity);
+    publish_commit(parser->stream, swap_count);
     if (same) {
         markdown_core_node_swap(root, previous);
         parser->root = previous;
@@ -1696,14 +1689,33 @@ static bool publish_prefill(publish_walk *walk, markdown_core_parser *parser) {
  * the committed entry after it, so the entry at an index is an own one or
  * the committed one past the last own entry before it. A label's own entry
  * is listed only when it is the label's definition, before the label's
- * committed one, in whose place it then stands. The document reads the
- * committed tables until the next append changes them, as long as the
- * session lends it. */
+ * committed one, in whose place it then stands. The own entries are in the
+ * room the streaming parse keeps for them (parser.h, `own_tables`), which
+ * every snapshot reuses, so a snapshot's document borrows all of its tables:
+ * it reads them until the next append changes them, as long as the session
+ * lends it. */
 
-/* The own entries of `table`, which `tree` keeps committed, in source order
- * in the table, and where each falls, into `*places`. */
-static bool snapshot_starts(markdown_core_parser *parser, definition_table *table, const markdown_core_key_tree *tree,
-                            markdown_core_table_place **places) {
+/* THE ROOM'S BLOCKS each start where any object may: a block takes a whole
+ * number of units. */
+typedef union {
+    long double real;
+    uint64_t integer;
+    void *pointer;
+} room_unit;
+
+static inline size_t room_bytes(size_t bytes) {
+    return (bytes + sizeof(room_unit) - 1) / sizeof(room_unit) * sizeof(room_unit);
+}
+
+static inline void *room_take(unsigned char **at, size_t bytes) {
+    void *taken = *at;
+    *at += room_bytes(bytes);
+    return taken;
+}
+
+/* The table's own entries, the ones the walk listed and no commit keeps, in
+ * source order. */
+static bool snapshot_own(markdown_core_parser *parser, definition_table *table) {
     size_t own = 0;
     for (size_t i = 0; i < table->count; i++) {
         if (table->values[i].node) {
@@ -1711,34 +1723,28 @@ static bool snapshot_starts(markdown_core_parser *parser, definition_table *tabl
         }
     }
     table->count = own;
-    *places = NULL;
-    if (!own) {
-        return true;
-    }
-    if (!table_order(parser, table) || !(*places = markdown_core_alloc(own, sizeof(**places)))) {
-        return false;
-    }
-    for (size_t j = 0; j < own; j++) {
+    return !own || table_order(parser, table);
+}
+
+/* The own entries of `table`, which `tree` keeps committed, into `nodes`, and
+ * where each falls into `places`. */
+static void snapshot_starts(const definition_table *table, const markdown_core_key_tree *tree,
+                            const markdown_core_node **nodes, markdown_core_table_place *places) {
+    for (size_t j = 0; j < table->count; j++) {
         const markdown_core_key_entry at = markdown_core_key_number((uint32_t)table->values[j].start);
         size_t rank;
         markdown_core_key_tree_find(tree, &at, &rank);
-        (*places)[j] = (markdown_core_table_place){rank + j, rank};
+        nodes[j] = table->values[j].node;
+        places[j] = (markdown_core_table_place){rank + j, rank};
     }
-    return true;
 }
 
 /* The labeled own entries of `table`, in source order, that are their
  * labels' definitions before those `tree` keeps committed for label table
- * `labels`, by label, into `out`. */
-static bool snapshot_labeled(const definition_table *table, uint32_t labels, const markdown_core_key_tree *tree,
-                             markdown_core_definitions *out) {
-    if (!table->count) {
-        return true;
-    }
-    label_entry *entries = label_room(table->count);
-    if (!entries) {
-        return false;
-    }
+ * `labels`, by label, into `labeled`, sorted in `entries`, room for as many
+ * labels as the table holds, into `out`. */
+static void snapshot_labeled(const definition_table *table, uint32_t labels, const markdown_core_key_tree *tree,
+                             label_entry *entries, const markdown_core_node **labeled, markdown_core_definitions *out) {
     size_t taken = 0;
     for (size_t i = 0; i < table->count; i++) {
         const definition_entry *own = &table->values[i];
@@ -1752,40 +1758,21 @@ static bool snapshot_labeled(const definition_table *table, uint32_t labels, con
             entries[taken++] = named;
         }
     }
-    const markdown_core_node **labeled = taken ? markdown_core_alloc(taken, sizeof(*labeled)) : NULL;
-    if (taken && !labeled) {
-        markdown_core_free(entries);
-        return false;
-    }
     const label_entry *sorted = label_order(entries, taken, table->count);
     for (size_t i = 0; i < taken; i++) {
         labeled[i] = sorted[i].value;
     }
-    markdown_core_free(entries);
-    out->labeled = labeled;
+    out->labeled = taken ? labeled : NULL;
     out->labeled_count = taken;
-    return true;
 }
 
 /* The own reference targets: the own References and Headings, in source
  * order in their tables, that are their labels' definitions before those
- * `tree` keeps committed, by label, into `out`. */
-static bool snapshot_targets(const definition_table *references, const definition_table *headings,
-                             const markdown_core_key_tree *tree, markdown_core_node_table *out) {
-    const size_t total = references->count + headings->count;
-    *out = (markdown_core_node_table){NULL, tree->count, 0, NULL};
-    if (!total) {
-        return true;
-    }
-    label_entry *entries = label_room(total);
-    const markdown_core_node **nodes = markdown_core_alloc(total, sizeof(*nodes));
-    markdown_core_table_place *places = markdown_core_alloc(total, sizeof(*places));
-    if (!entries || !nodes || !places) {
-        markdown_core_free(entries);
-        markdown_core_free((void *)nodes);
-        markdown_core_free(places);
-        return false;
-    }
+ * `tree` keeps committed, by label, into `nodes` and `places`, sorted in
+ * `entries`, room for as many labels as both tables hold, into `out`. */
+static void snapshot_targets(const definition_table *references, const definition_table *headings,
+                             const markdown_core_key_tree *tree, label_entry *entries, const markdown_core_node **nodes,
+                             markdown_core_table_place *places, markdown_core_node_table *out) {
     size_t labels = 0;
     const definition_table *const tables[] = {references, headings};
     for (size_t t = 0; t < 2; t++) {
@@ -1797,7 +1784,7 @@ static bool snapshot_targets(const definition_table *references, const definitio
             }
         }
     }
-    const label_entry *sorted = label_order(entries, labels, total);
+    const label_entry *sorted = label_order(entries, labels, references->count + headings->count);
     size_t own = 0, added = 0;
     for (size_t i = 0; i < labels; i++) {
         if (i && label_same(&sorted[i], &sorted[i - 1])) {
@@ -1812,45 +1799,91 @@ static bool snapshot_targets(const definition_table *references, const definitio
         places[own++] = (markdown_core_table_place){rank + added, held ? rank + 1 : rank};
         added += !held;
     }
-    markdown_core_free(entries);
-    if (!own) {
-        markdown_core_free((void *)nodes);
-        markdown_core_free(places);
-        return true;
-    }
-    *out = (markdown_core_node_table){nodes, tree->count + added, own, places};
-    return true;
+    *out = (markdown_core_node_table){own ? nodes : NULL, tree->count + added, own, own ? places : NULL};
 }
 
 /* A snapshot's document's tables (A SNAPSHOT'S TABLES), from the walk's,
- * which list its own entries. */
+ * which list its own entries. False when storage could not be had, before
+ * the document lists anything. */
 static bool snapshot_tables(markdown_core_parser *parser, publish_walk *walk, markdown_core_document_value *value) {
-    const markdown_core_committed_tables *committed = &parser->stream->committed;
-    markdown_core_table_place *places[TABLE_COUNT] = {NULL};
-    bool ok = true;
-    for (size_t table = 0; table < TABLE_COUNT && ok; table++) {
-        ok = snapshot_starts(parser, &walk->tables[table], &committed->starts[table], &places[table]);
-    }
-    ok = ok &&
-         snapshot_labeled(&walk->tables[TABLE_FOOTNOTES], LABELS_FOOTNOTES, &committed->labels[LABELS_FOOTNOTES],
-                          &value->footnotes) &&
-         snapshot_labeled(&walk->tables[TABLE_SPECIMENS], LABELS_SPECIMENS, &committed->labels[LABELS_SPECIMENS],
-                          &value->specimens) &&
-         snapshot_targets(&walk->tables[TABLE_REFERENCES], &walk->tables[TABLE_HEADINGS],
-                          &committed->labels[LABELS_TARGETS], &value->reference_targets);
-    markdown_core_definitions *const all[] = {&value->footnotes, &value->specimens, &value->references};
+    markdown_core_stream *stream = parser->stream;
+    const markdown_core_committed_tables *committed = &stream->committed;
+    definition_table *const tables = walk->tables;
     for (size_t table = 0; table < TABLE_COUNT; table++) {
-        definition_table *own = &walk->tables[table];
-        if (!ok || table == TABLE_HEADINGS) {
-            markdown_core_free(places[table]);
-            continue;
+        if (!snapshot_own(parser, &tables[table])) {
+            return false;
         }
-        const size_t count = own->count;
-        all[table]->all = (markdown_core_node_table){count ? table_handles(own) : NULL,
-                                                     committed->starts[table].count + count, count, places[table]};
     }
-    value->committed = ok ? committed : NULL;
-    return ok;
+    const size_t footnotes = tables[TABLE_FOOTNOTES].count, specimens = tables[TABLE_SPECIMENS].count;
+    const size_t listed = footnotes + specimens + tables[TABLE_REFERENCES].count;
+    const size_t targets = tables[TABLE_REFERENCES].count + tables[TABLE_HEADINGS].count;
+    size_t labels = targets > footnotes ? targets : footnotes;
+    labels = labels > specimens ? labels : specimens;
+    const size_t entry_bytes = labels * (2 * sizeof(label_entry) + sizeof(size_t));
+    const size_t node_bytes = (listed + footnotes + specimens + targets) * sizeof(const markdown_core_node *);
+    const size_t place_bytes = (listed + targets) * sizeof(markdown_core_table_place);
+    const size_t bytes = room_bytes(entry_bytes) + room_bytes(node_bytes) + room_bytes(place_bytes);
+    /* A snapshot that lists nothing of its own takes its empty blocks from
+     * no room. */
+    static room_unit no_room;
+    unsigned char *at = (unsigned char *)&no_room;
+    if (bytes) {
+        if (!(at = markdown_core_reserve(stream->own_tables, &stream->own_table_capacity, bytes, 1))) {
+            return false;
+        }
+        stream->own_tables = at;
+    }
+    label_entry *entries = room_take(&at, entry_bytes);
+    const markdown_core_node **nodes = room_take(&at, node_bytes);
+    markdown_core_table_place *places = room_take(&at, place_bytes);
+    markdown_core_definitions *const all[] = {&value->footnotes, &value->specimens, &value->references};
+    for (size_t table = 0; table < TABLE_HEADINGS; table++) {
+        const size_t count = tables[table].count;
+        snapshot_starts(&tables[table], &committed->starts[table], nodes, places);
+        all[table]->all = (markdown_core_node_table){count ? nodes : NULL, committed->starts[table].count + count,
+                                                     count, count ? places : NULL};
+        nodes += count;
+        places += count;
+    }
+    snapshot_labeled(&tables[TABLE_FOOTNOTES], LABELS_FOOTNOTES, &committed->labels[LABELS_FOOTNOTES], entries, nodes,
+                     &value->footnotes);
+    nodes += footnotes;
+    snapshot_labeled(&tables[TABLE_SPECIMENS], LABELS_SPECIMENS, &committed->labels[LABELS_SPECIMENS], entries, nodes,
+                     &value->specimens);
+    nodes += specimens;
+    snapshot_targets(&tables[TABLE_REFERENCES], &tables[TABLE_HEADINGS], &committed->labels[LABELS_TARGETS], entries,
+                     nodes, places, &value->reference_targets);
+    value->committed = committed;
+    return true;
+}
+
+/* A publish's walk starts empty, on the walk stack and the storage every
+ * publish of the parse reuses (parser.h, `definition_values`), and gives the
+ * storage back when it ends: a table whose entries became a document's
+ * nodes (table_handles) gives none. */
+static void publish_start(publish_walk *walk, markdown_core_parser *parser) {
+    walk->stack.parser = parser;
+    publish_above(&walk->stack, 0);
+    walk->swap_count = 0;
+    for (size_t table = 0; table < TABLE_COUNT; table++) {
+        walk->tables[table] =
+            (definition_table){parser->definition_values[table], 0, parser->definition_capacity[table]};
+    }
+    walk->next_id = parser->revision->last_id;
+    walk->levels = NULL;
+    walk->level_count = walk->touched_levels = 0;
+    walk->kept_count = 0;
+    walk->places = (content_places){parser->content_places, 0, parser->content_place_capacity};
+    walk->pool = parser->pool;
+}
+
+static void publish_end(const publish_walk *walk, markdown_core_parser *parser) {
+    for (size_t table = 0; table < TABLE_COUNT; table++) {
+        parser->definition_values[table] = walk->tables[table].values;
+        parser->definition_capacity[table] = walk->tables[table].capacity;
+    }
+    parser->content_places = walk->places.items;
+    parser->content_place_capacity = walk->places.capacity;
 }
 
 bool markdown_core_publish_tree(markdown_core_parser *parser) {
@@ -1858,15 +1891,7 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
     markdown_core_node *root = parser->root, *previous = revision->previous;
     markdown_core_document_value *value = root->as.document;
     publish_walk walk;
-    walk.stack = (publish_stack){parser, parser->walk_stack, 0, parser->walk_stack_size / sizeof(publish_frame)};
-    walk.identity = (publish_identity){NULL, 0, 0};
-    memset(walk.tables, 0, sizeof(walk.tables));
-    walk.next_id = revision->last_id;
-    walk.levels = NULL;
-    walk.level_count = walk.touched_levels = 0;
-    walk.kept_count = 0;
-    walk.places = (content_places){0};
-    walk.pool = parser->pool;
+    publish_start(&walk, parser);
     publish_placed placed;
     /* A streaming publish starts at the levels, and a snapshot's keeps the
      * COMMITTED definitions; the finalize lists them first. */
@@ -1901,7 +1926,7 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
     }
     /* Nothing below can fail: the result is committed. */
     if (ok && previous) {
-        publish_continue(parser, &walk.identity, same);
+        publish_continue(parser, walk.swap_count, same);
         revision->previous = NULL;
     }
     if (ok) {
@@ -1910,13 +1935,7 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
     if (ok && parser->stream) {
         parser->stream->touched_levels = 0;
     }
-    for (size_t table = 0; table < TABLE_COUNT; table++) {
-        markdown_core_free(walk.tables[table].values);
-    }
-    markdown_core_free(walk.places.items);
-    if (previous) {
-        markdown_core_free(walk.identity.swaps);
-    }
+    publish_end(&walk, parser);
     return ok;
 }
 
@@ -1933,15 +1952,7 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
 bool markdown_core_publish_candidate(markdown_core_parser *parser, markdown_core_node *candidate,
                                      markdown_core_node *block, bool *same) {
     publish_walk walk;
-    walk.stack = (publish_stack){parser, parser->walk_stack, 0, parser->walk_stack_size / sizeof(publish_frame)};
-    walk.identity = (publish_identity){NULL, 0, 0};
-    memset(walk.tables, 0, sizeof(walk.tables));
-    walk.next_id = parser->revision->last_id;
-    walk.levels = NULL;
-    walk.level_count = walk.touched_levels = 0;
-    walk.kept_count = 0;
-    walk.places = (content_places){0};
-    walk.pool = parser->pool;
+    publish_start(&walk, parser);
     const uint32_t start = candidate->where.place.start;
     const publish_relation hand = {NULL, NULL, (uint32_t)((int64_t)start - block->where.extent.lead),
                                    (uint32_t)((int64_t)start - block->source.runs->items[0].lead)};
@@ -1955,7 +1966,7 @@ bool markdown_core_publish_candidate(markdown_core_parser *parser, markdown_core
     }
     if (ok) {
         if (!*same) {
-            publish_commit(&walk.identity);
+            publish_commit(parser->stream, walk.swap_count);
         }
         for (size_t i = 0; i < walk.kept_count; i++) {
             const markdown_core_kept kept = parser->stream->kept[i];
@@ -1967,11 +1978,7 @@ bool markdown_core_publish_candidate(markdown_core_parser *parser, markdown_core
         }
         parser->revision->last_id = walk.next_id;
     }
-    for (size_t table = 0; table < TABLE_COUNT; table++) {
-        markdown_core_free(walk.tables[table].values);
-    }
-    markdown_core_free(walk.places.items);
-    markdown_core_free(walk.identity.swaps);
+    publish_end(&walk, parser);
     return ok;
 }
 

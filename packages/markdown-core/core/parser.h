@@ -299,6 +299,15 @@ typedef struct markdown_core_stream {
     markdown_core_committed_tables committed;
     markdown_core_kept *kept;
     size_t kept_capacity;
+    /* Room for the same pairs a publish's commit exchanges (ast.c, A
+     * STREAMING PUBLISH), which every publish of the parse reuses. */
+    struct markdown_core_same_pair *same_pairs;
+    size_t same_pair_capacity;
+    /* Room for the entries a snapshot's document lists as its own (ast.c,
+     * A SNAPSHOT'S TABLES), which every snapshot of the parse reuses: the
+     * document borrows them until the next snapshot. */
+    void *own_tables;
+    size_t own_table_capacity;
     markdown_core_defined *defined;
     size_t defined_count, defined_capacity;
     /* THE PATHS (blocks.c): the root's, and the blocks the rest are cut
@@ -354,6 +363,18 @@ struct markdown_core_parser {
      * stage releases it when it ends. */
     void *walk_stack;
     size_t walk_stack_size;
+    /* The words the completion walk's frames keep for the finish steps
+     * (blocks.c, walk_owned_trees), which every completion of the parse
+     * reuses and the stage releases with the walk stack. */
+    void **walk_states;
+    size_t walk_state_capacity;
+    /* What a publish fills as it walks (ast.c, THE DEFINITION TABLES and AN
+     * INLINE ROOT'S PLACES), which every publish of the parse reuses and the
+     * stage releases with the walk stack. */
+    void *definition_values[MARKDOWN_CORE_DEFINITION_TABLES];
+    size_t definition_capacity[MARKDOWN_CORE_DEFINITION_TABLES];
+    void *content_places;
+    size_t content_place_capacity;
     /* THE COMPLETION QUEUE: every block of the tree, in the order it settled
      * (blocks.c, A BLOCK SETTLES), from `completion_first` to
      * `completion_last`, each linked through its scaffold to the block after

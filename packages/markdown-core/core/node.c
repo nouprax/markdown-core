@@ -296,9 +296,13 @@ markdown_core_node *markdown_core_node_new(markdown_core_node_type type) {
     return markdown_core_node_pool_new(NULL, type, NULL);
 }
 
-/* A document's definition tables. Out of line, so that the free of every
- * other kind keeps its own registers. */
+/* A document's definition tables, but a snapshot's, which it borrows (ast.c,
+ * A SNAPSHOT'S TABLES). Out of line, so that the free of every other kind
+ * keeps its own registers. */
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) void free_document_tables(markdown_core_document_value *document) {
+    if (document->committed) {
+        return;
+    }
     markdown_core_definitions *const tables[] = {&document->footnotes, &document->specimens, &document->references};
     for (size_t i = 0; i < sizeof(tables) / sizeof(*tables); i++) {
         markdown_core_free((void *)tables[i]->all.nodes);
@@ -537,18 +541,27 @@ void markdown_core_node_free(markdown_core_node *node) { markdown_core_node_pool
 
 /* SWAPPING TWO NODES moves every byte of their slots, so each record in a
  * slot moves with the node it belongs to, and each node's view of it is
- * pointed at the slot the node now lies in. */
+ * pointed at the slot the node now lies in. The slots exchange their bytes
+ * a block at a time, each block read from both before either is written. */
 static inline void S_record_follow(markdown_core_node *node) {
     if (node->as.data && !node->node_data_allocation) {
         node->as.data = S_slot_of(node)->record;
     }
 }
 
+enum { S_SWAP_BLOCK = 96 };
+
+typedef char S_slot_swaps_whole_blocks[sizeof(markdown_core_node_slot) % S_SWAP_BLOCK == 0 ? 1 : -1];
+
 void markdown_core_node_swap(markdown_core_node *a, markdown_core_node *b) {
-    markdown_core_node_slot held;
-    memcpy(&held, S_slot_of(a), sizeof(held));
-    memcpy(S_slot_of(a), S_slot_of(b), sizeof(held));
-    memcpy(S_slot_of(b), &held, sizeof(held));
+    unsigned char *x = (unsigned char *)S_slot_of(a), *y = (unsigned char *)S_slot_of(b);
+    for (size_t at = 0; at < sizeof(markdown_core_node_slot); at += S_SWAP_BLOCK) {
+        unsigned char held[S_SWAP_BLOCK], taken[S_SWAP_BLOCK];
+        memcpy(held, x + at, S_SWAP_BLOCK);
+        memcpy(taken, y + at, S_SWAP_BLOCK);
+        memcpy(x + at, taken, S_SWAP_BLOCK);
+        memcpy(y + at, held, S_SWAP_BLOCK);
+    }
     S_record_follow(a);
     S_record_follow(b);
 }
