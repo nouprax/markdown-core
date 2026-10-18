@@ -64,10 +64,9 @@ static void publish_document(const markdown_core_element_instance *self, markdow
     }
 }
 static void publish_candidate(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                              markdown_core_node *candidate, markdown_core_node *root, uint32_t holder_start,
-                              bool *same) {
+                              markdown_core_node *candidate, markdown_core_node *root, uint32_t holder_start) {
     (void)self;
-    if (!markdown_core_publish_candidate(parser, candidate, root, holder_start, same)) {
+    if (!markdown_core_publish_candidate(parser, candidate, root, holder_start)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
 }

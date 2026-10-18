@@ -77,9 +77,10 @@ static bool markdown_core_specimen_open(const markdown_core_element_instance *se
         markdown_core_optional_chunk_free(&specimen.label);
         return false;
     }
-    /* The block before it settled as it opened: its parent's last child. */
+    /* The block before it is the one before it among its parent's children,
+     * which it joined as it opened. */
     const markdown_core_node *parent = markdown_core_parser_parent(parser, *container);
-    const markdown_core_node *previous = parent->child_count ? parent->children[parent->child_count - 1] : NULL;
+    const markdown_core_node *previous = parent->child_count > 1 ? parent->children[parent->child_count - 2] : NULL;
     if (previous && previous->kind == MARKDOWN_CORE_NODE_SPECIMEN) {
         specimen.has_start = false;
         specimen.start = 0;

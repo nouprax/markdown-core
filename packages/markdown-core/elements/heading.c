@@ -53,9 +53,7 @@ static uint64_t heading_start_key(const void *entry) { return ((const markdown_c
  * rest of their inlines. The headings before the collection's `parsed` come
  * before every later one in source order, so only the headings after them
  * are put in order: those that closed since, and those the last completion
- * left because they had not settled. A heading a streaming commit settled is
- * named by its path from then on: a publish exchanges its node with the
- * object it continues. */
+ * left because they had not settled. */
 void markdown_core_headings_prepare(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     markdown_core_heading_state *state = self->state;
     markdown_core_heading_collection *headings = &state->headings;
@@ -85,10 +83,6 @@ void markdown_core_headings_prepare(const markdown_core_element_instance *self, 
         markdown_core_finish_heading(parser, heading);
         heading->parsed = true;
         heading->authored = node->attributes.anchor.len != 0;
-        if (parser->stream && (node->flags & MARKDOWN_CORE_NODE__COMMITTED)) {
-            heading->path = markdown_core_parser_path(parser, node);
-            heading->node = NULL;
-        }
     }
     while (headings->parsed < headings->count && headings->values[headings->parsed].parsed) {
         headings->parsed++;
@@ -151,8 +145,8 @@ static void reparse_inlines(const markdown_core_element_instance *self, markdown
 /* A SNAPSHOT'S HEADINGS (element.h, `start_snapshot`). After a commit every
  * heading is parsed but the pending block's, which a later line can still
  * write: it closed last, so it comes after every other heading in source
- * order. While the snapshot lasts the pending block's copy stands in for it,
- * and the entry names the copy. */
+ * order. The snapshot lends the pending block (blocks.c, THE LENDING), so
+ * its entry names it as it is. */
 void markdown_core_headings_start_snapshot(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     markdown_core_heading_state *state = self->state;
     markdown_core_heading_collection *headings = &state->headings;
@@ -160,12 +154,8 @@ void markdown_core_headings_start_snapshot(const markdown_core_element_instance 
     state->snapshot_parsed = headings->parsed;
     state->snapshot_records = parser->registry.count;
     assert(headings->count - headings->parsed <= 1);
-    if (headings->parsed < headings->count) {
-        assert(
-            !headings->values[headings->parsed].parsed && parser->stream->copy_count > parser->stream->builder_count &&
-            headings->values[headings->parsed].node == parser->stream->copies[parser->stream->builder_count].original);
-        headings->values[headings->parsed].node = parser->pending;
-    }
+    assert(headings->parsed == headings->count ||
+           (!headings->values[headings->parsed].parsed && headings->values[headings->parsed].node == parser->pending));
 }
 
 /* The snapshot ends with the collection as its commit left it: the entries
@@ -410,35 +400,18 @@ static inline markdown_core_key_index_slot *name_entry(name_pass *pass, const un
     return pass->beneath ? overlay_entry(pass, name, length) : markdown_core_key_index_entry(pass->index, name, length);
 }
 
-/* The heading's node in the tree the parser builds: the one its entry
- * names, or the block at its path. NULL, with the parse failed, when the path
- * could not be followed. */
-static inline markdown_core_node *heading_node(markdown_core_parser *parser,
-                                               const markdown_core_heading_parse *heading) {
-    return heading->node ? heading->node : markdown_core_parser_resolve(parser, heading->path);
-}
-
-/* `made`, bytes the call takes when it succeeds, given to the heading's node
- * as its computed anchor: a heading at a path is first an object of its own
- * (markdown_core_parser_supersede). The anchor the node computed before goes
- * to `*kept` when `kept` is not NULL, and otherwise after the next publish
- * when the published document reads it, and at once when it does not. The
- * node's bytes, or NULL with the parse failed. */
-static inline const unsigned char *show_anchor(markdown_core_parser *parser, const markdown_core_heading_parse *heading,
-                                               markdown_core_node *node, markdown_core_chunk made,
+/* `made`, bytes the call takes, given to `node` as its computed anchor. The
+ * anchor the node computed before goes to `*kept` when `kept` is not NULL,
+ * and is freed otherwise: the document the last publish made is read no
+ * longer. The node's bytes. */
+static inline const unsigned char *show_anchor(markdown_core_node *node, markdown_core_chunk made,
                                                unsigned char **kept) {
-    markdown_core_node *const held = node;
-    if (heading->path && !(node = markdown_core_parser_supersede(parser, heading->path))) {
-        return NULL;
-    }
     markdown_core_chunk *anchor = &node->attributes.anchor;
     if (node->flags & MARKDOWN_CORE_NODE__ANCHOR_COMPUTED) {
         if (kept) {
             *kept = anchor->data;
-        } else if (node == held) {
+        } else {
             markdown_core_chunk_free(anchor);
-        } else if (!markdown_core_parser_retire(parser, anchor->data, MARKDOWN_CORE_RETIRED_CONTENT)) {
-            return NULL;
         }
     }
     *anchor = made;
@@ -470,30 +443,21 @@ static bool rename_committed(markdown_core_parser *parser, markdown_core_heading
     return true;
 }
 
-/* The heading's node, `node` when not NULL, shows the name in the pass's
- * buffer unless `shown`, `shown_size` bytes, which it shows, is that name;
- * the bytes it showed go as show_anchor says. The node's bytes, or NULL with
- * the parse failed. */
+/* The heading's node shows the name in the pass's buffer unless `shown`,
+ * `shown_size` bytes, which it shows, is that name; the bytes it showed go
+ * as show_anchor says. The node's bytes, or NULL with the parse failed. */
 static inline const unsigned char *show_name(name_pass *pass, const markdown_core_heading_parse *heading,
-                                             markdown_core_node *node, const unsigned char *shown, bufsize_t shown_size,
-                                             unsigned char **kept) {
-    markdown_core_parser *parser = pass->parser;
+                                             const unsigned char *shown, bufsize_t shown_size, unsigned char **kept) {
     const markdown_core_strbuf *name = &pass->name;
     if (shown && shown_size == name->size && memcmp(shown, name->ptr, (size_t)name->size) == 0) {
         return shown;
     }
-    if (!node && !(node = heading_node(parser, heading))) {
-        return NULL;
-    }
     markdown_core_chunk made = {name->ptr, name->size, 0};
     if (!markdown_core_chunk_to_cstr(&made)) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        markdown_core_parser_fail(pass->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return NULL;
     }
-    if (!(shown = show_anchor(parser, heading, node, made, kept))) {
-        markdown_core_chunk_free(&made);
-    }
-    return shown;
+    return show_anchor(heading->node, made, kept);
 }
 
 /* The heading's entry names `shown`, the name in the pass's buffer, of which
@@ -517,14 +481,13 @@ static const unsigned char *give_name_apart(name_pass *pass, size_t at, bufsize_
     markdown_core_heading_parse *heading = &state->headings.values[at];
     const unsigned char *shown;
     if (heading->holds_name) {
-        markdown_core_node *node = heading_node(parser, heading);
-        if (!node || !(shown = show_name(pass, heading, node, node->attributes.anchor.data, node->attributes.anchor.len,
-                                         NULL))) {
+        const markdown_core_chunk *anchor = &heading->node->attributes.anchor;
+        if (!(shown = show_name(pass, heading, anchor->data, anchor->len, NULL))) {
             return NULL;
         }
     } else {
         unsigned char *kept = NULL;
-        if (!(shown = show_name(pass, heading, NULL, heading->name, heading->name_size, &kept))) {
+        if (!(shown = show_name(pass, heading, heading->name, heading->name_size, &kept))) {
             return NULL;
         }
         assert(!kept || kept == heading->name);
@@ -545,7 +508,7 @@ static const unsigned char *give_name_apart(name_pass *pass, size_t at, bufsize_
  * shows. The node's bytes, or NULL with the parse failed. */
 static inline const unsigned char *give_name(name_pass *pass, markdown_core_heading_parse *heading,
                                              bufsize_t base_size) {
-    const unsigned char *shown = show_name(pass, heading, NULL, heading->name, heading->name_size, NULL);
+    const unsigned char *shown = show_name(pass, heading, heading->name, heading->name_size, NULL);
     if (shown) {
         keep_name(pass, heading, shown, base_size);
     }
@@ -713,15 +676,14 @@ static void name_headings(name_pass *pass, size_t first, size_t end) {
             continue;
         }
         markdown_core_strbuf_clear(name);
-        markdown_core_node *node;
         if (heading->name) {
             state->anchor_work += (size_t)heading->base_size;
             markdown_core_strbuf_put(name, heading->name, heading->base_size);
             if (name->oom) {
                 markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             }
-        } else if ((node = heading_node(parser, heading))) {
-            heading_anchor_base(parser, state, node, name, &pass->stack);
+        } else {
+            heading_anchor_base(parser, state, heading->node, name, &pass->stack);
         }
         if (!parser->error) {
             take_last(pass, heading, at, name->size);
@@ -731,12 +693,10 @@ static void name_headings(name_pass *pass, size_t first, size_t end) {
 
 /* A committed heading the last snapshot renamed shows its committed name
  * again: the entry's bytes go back to its node. */
-static void restore_name(markdown_core_parser *parser, markdown_core_heading_parse *heading) {
-    markdown_core_node *node = heading_node(parser, heading);
+static void restore_name(markdown_core_heading_parse *heading) {
     const markdown_core_chunk name = {(unsigned char *)heading->name, heading->name_size, 1};
-    if (node && show_anchor(parser, heading, node, name, NULL)) {
-        heading->holds_name = false;
-    }
+    show_anchor(heading->node, name, NULL);
+    heading->holds_name = false;
 }
 
 /* A SNAPSHOT'S NAMES. The snapshot's tail -- the ANCHOR records its
@@ -764,7 +724,7 @@ static void name_snapshot(name_pass *pass, markdown_core_registry_cursor cursor)
     for (size_t i = 0; i < earlier && !parser->error; i++) {
         markdown_core_heading_parse *heading = &headings->values[state->renamed[i]];
         if (heading->holds_name && !heading->renamed) {
-            restore_name(parser, heading);
+            restore_name(heading);
         }
     }
     size_t count = 0;
@@ -781,15 +741,15 @@ static void name_snapshot(name_pass *pass, markdown_core_registry_cursor cursor)
 /* The committed names let go, for a pass that starts empty: a heading whose
  * entry holds its committed name frees it, and its entry names the bytes
  * its node shows. */
-static void names_reset(markdown_core_parser *parser, markdown_core_heading_state *state) {
+static void names_reset(markdown_core_heading_state *state) {
     for (size_t i = 0; i < state->renamed_count; i++) {
         markdown_core_heading_parse *heading = &state->headings.values[state->renamed[i]];
         if (heading->holds_name) {
-            markdown_core_node *node = heading_node(parser, heading);
+            const markdown_core_chunk *anchor = &heading->node->attributes.anchor;
             markdown_core_free((void *)heading->name);
             heading->holds_name = false;
-            heading->name = node ? node->attributes.anchor.data : NULL;
-            heading->name_size = node ? node->attributes.anchor.len : 0;
+            heading->name = anchor->data;
+            heading->name_size = anchor->len;
         }
     }
     state->renamed_count = 0;
@@ -806,9 +766,8 @@ void markdown_core_headings_finish(const markdown_core_element_instance *self, m
     markdown_core_heading_state *state = self->state;
     markdown_core_heading_collection *headings = &state->headings;
     const bool snapshot = parser->snapshot;
-    markdown_core_parser_path_pass(parser);
     if (!snapshot) {
-        names_reset(parser, state);
+        names_reset(state);
     }
     const size_t committed = snapshot ? state->snapshot_parsed : headings->count;
     if (!state->taken.size) {

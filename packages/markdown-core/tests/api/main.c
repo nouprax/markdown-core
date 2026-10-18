@@ -3604,10 +3604,10 @@ static void inspect_lazy_block_content(const markdown_core_element_instance *sel
             parser->column = 0;
             parser->partially_consumed_tab = false;
         }
-        /* The probe block leaves the builder stack as it is released: the
-         * root is the deepest open block again. */
+        /* The probe block leaves the builder stack and the root's children
+         * as it is released: the root is the deepest open block again. */
         parser->current = parser->root;
-        markdown_core_scaffold_of(parser->root)->last = NULL;
+        markdown_core_node_array_pop(parser->root->children, &parser->root->child_count);
         markdown_core_parser_release_node(parser, node);
     }
     parser->input.line_count = 0;
@@ -7346,7 +7346,7 @@ static markdown_core_node *observe_definition_before_anchor(const markdown_core_
     (void)self;
     (void)indented;
     if (length - parser->first_nonspace >= 6 && memcmp(input + parser->first_nonspace, "#list#", 6) == 0) {
-        markdown_core_node *previous = markdown_core_parser_last_child(parser, parent);
+        markdown_core_node *previous = markdown_core_parser_last_child(parent);
         *(bool *)parser->context = previous && previous->kind == MARKDOWN_CORE_NODE_REFERENCE;
     }
     return NULL;
@@ -8810,24 +8810,21 @@ static bool configure_error_observer(markdown_core_dialect_builder *builder, voi
            markdown_core_dialect_builder_attach(builder, &ERROR_OBSERVER);
 }
 /* The policy of the parse under test, from its setup context: the document
- * accepts one paragraph, the one its source opens with, and refuses every
- * paragraph after it. */
+ * refuses every table. */
 typedef struct {
-    size_t accepted, rejections;
+    size_t rejections;
 } lead_policy;
 static lead_policy *lead_policy_current;
 
-static int reject_additional_paragraph(const markdown_core_element *element, markdown_core_node *node,
-                                       markdown_core_node_type kind) {
+static int reject_table(const markdown_core_element *element, markdown_core_node *node, markdown_core_node_type kind) {
     (void)element;
-    if (kind == MARKDOWN_CORE_NODE_PARAGRAPH && lead_policy_current->accepted++) {
+    if (kind == MARKDOWN_CORE_NODE_TABLE) {
         lead_policy_current->rejections++;
         return 0;
     }
     return markdown_core_node_can_contain_builtin(node, kind);
 }
-static const markdown_core_element LEAD_POLICY = {.name = "lead-policy",
-                                                  .can_contain_func = reject_additional_paragraph};
+static const markdown_core_element LEAD_POLICY = {.name = "lead-policy", .can_contain_func = reject_table};
 static void begin_lead_policy(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     MARKDOWN_CORE_ELEMENT_DOCUMENT.init_document(self, parser);
     parser->root->element = &LEAD_POLICY;
@@ -11641,7 +11638,7 @@ static void session_snapshot_simple_tables(test_batch_runner *runner) {
     }
 }
 
-/* Where the bytes a block owns of each part a copy of it views are: its
+/* Where the bytes a block owns of each part a view of it views are: its
  * attributes' anchor, classes and records, its record's string and its
  * payload's storage. */
 typedef struct {
@@ -11689,7 +11686,7 @@ static bool chunks_equal(markdown_core_chunk a, markdown_core_chunk b) {
     return a.len == b.len && (!a.len || memcmp(a.data, b.data, (size_t)a.len) == 0);
 }
 
-/* Whether `a` holds what `b` does in each part a copy views. */
+/* Whether `a` holds what `b` does in each part a view views. */
 static bool parts_equal(const markdown_core_node *a, const markdown_core_node *b) {
     const markdown_core_attributes *x = &a->attributes, *y = &b->attributes;
     bool same = a->kind == b->kind && chunks_equal(x->anchor, y->anchor) && x->class_count == y->class_count &&
@@ -11747,17 +11744,16 @@ static char *with_field(const char *pattern, const char *field) {
     return made;
 }
 
-/* THE BLOCKS OF ONE PASS SHARE THE BLOCKS ABOVE THEM (blocks.c, A PASS
- * OVER THE PATHS): the roots a finalize completes anew and the headings a
- * late anchor renames lie at every depth of three nested directives, so each
- * pass supersedes blocks under the ones it already moved. The last root of
- * each directive completes as its closing line closes it, after the roots
- * that completed while it was open; a directive's label looks the late
+/* THE ROOTS A FINALIZE COMPLETES ANEW LIE AT EVERY DEPTH (blocks.c, A
+ * LOOKUP THAT FOUND NOTHING), as do the headings a late anchor renames: in
+ * three nested directives, each published open and then closed. The last
+ * root of each directive completes as its closing line closes it, after the
+ * roots that completed while it was open; a directive's label looks the late
  * definition up beside the roots inside it. Each text arrives byte by byte,
  * three bytes at a time and line by line, and its finalize dumps as a parse
  * of the same text does. The headings look no definition up, so every
  * snapshot of their text dumps as a parse of the text so far does. */
-static void session_paths_share_blocks(test_batch_runner *runner) {
+static void session_roots_at_every_depth(test_batch_runner *runner) {
 #define FILLER "\n\nfiller one\n\nfiller two\n\nfiller three\n\n"
     static const char *const sources[] = {
         ":::note\n\nouter [x]\n\n:::note\n\nmiddle [x]\n\n:::note\n\ninner one [x]\n\ninner two [x]\n:::\n\n"
@@ -11841,32 +11837,21 @@ static void session_opener_fields(test_batch_runner *runner) {
     }
 }
 
-/* A copy lets go of the children array and content buffer it borrows,
- * which stay its original's, as a snapshot lets a copy go (blocks.c, THE
- * COPIES); the copies here make no children of their own. */
-static void let_go_borrowed(markdown_core_node *copy) {
-    copy->children = NULL;
-    copy->child_count = 0;
-    markdown_core_strbuf_init_zeroed(&copy->content);
-    copy->flags &= (markdown_core_node_internal_flags) ~(MARKDOWN_CORE_NODE__BORROWS_CHILDREN |
-                                                         MARKDOWN_CORE_NODE__BORROWS_CONTENT);
-}
-
-/* A COPY VIEWS WHAT ITS ORIGINAL OWNS (markdown_core_node_copy): it holds
- * the original's bytes of each part, and releasing it leaves the original
- * whole. Once it owns what it viewed (markdown_core_node_own_viewed), it
- * holds bytes of its own, which it reads after the original is gone. */
-static void node_copy_views(test_batch_runner *runner) {
+/* A VIEW VIEWS WHAT ITS BLOCK OWNS (markdown_core_node_view; blocks.c, THE
+ * LENDING): it holds the block's bytes of each part, and the block's
+ * children array, content buffer and field nodes, and letting it go and
+ * releasing it leaves the block whole. */
+static void node_view_views(test_batch_runner *runner) {
     static const char source[] = "```js {#c .x key=v}\ncode\n```\n\n"
-                                 ":::note{#d .y k=w}\nbody\n:::\n\n"
-                                 "> [!NOTE]\n> callout\n\n"
+                                 ":::note[label]{#d .y k=w}\nbody\n:::\n\n"
+                                 "> [!NOTE] Title\n> callout\n\n"
                                  "- [x] done\n\n"
                                  "| a | b |\n|:-|-:|\n| 1 | 2 |\n";
     enum { BLOCKS = 5 };
     markdown_core_document *viewed = NULL, *kept = NULL;
     if (markdown_core_document_parse((const uint8_t *)source, sizeof(source) - 1, &viewed) != MARKDOWN_CORE_OK ||
         markdown_core_document_parse((const uint8_t *)source, sizeof(source) - 1, &kept) != MARKDOWN_CORE_OK) {
-        OK(runner, false, "the copied blocks parse");
+        OK(runner, false, "the viewed blocks parse");
         markdown_core_document_free(viewed);
         return;
     }
@@ -11880,36 +11865,24 @@ static void node_copy_views(test_batch_runner *runner) {
         }
     }
     markdown_core_node_pool pool = {0};
-    markdown_core_node *owners[BLOCKS] = {0};
     for (size_t i = 0; i < BLOCKS; i++) {
         const owned_parts original = parts_of(blocks[i]);
-        markdown_core_node *copy = markdown_core_node_copy(&pool, blocks[i]);
-        owned_parts parts = copy ? parts_of(copy) : (owned_parts){0};
-        OK(runner, copy && parts_alike(&original, &parts, true) && parts_equal(copy, alike[i]),
-           "a copy of block %zu holds its original's bytes of each part", i);
-        if (copy) {
-            let_go_borrowed(copy);
-            markdown_core_node_pool_release(&pool, copy);
+        markdown_core_node *view = markdown_core_node_view(&pool, blocks[i]);
+        const owned_parts parts = view ? parts_of(view) : (owned_parts){0};
+        OK(runner,
+           view && parts_alike(&original, &parts, true) && parts_equal(view, alike[i]) &&
+               view->children == blocks[i]->children && view->child_count == blocks[i]->child_count &&
+               view->content.ptr == blocks[i]->content.ptr,
+           "a view of block %zu holds its block's bytes of each part and its storage", i);
+        if (view) {
+            markdown_core_node_view_let_go(&pool, view, blocks[i]);
+            markdown_core_node_pool_release(&pool, view);
         }
-        OK(runner, parts_equal(blocks[i], alike[i]), "releasing a copy of block %zu leaves its original whole", i);
-        owners[i] = markdown_core_node_copy(&pool, blocks[i]);
-        const bool owned = owners[i] && markdown_core_node_own_viewed(&pool, owners[i], blocks[i]);
-        parts = owned ? parts_of(owners[i]) : (owned_parts){0};
-        OK(runner, owned && parts_alike(&original, &parts, false) && parts_equal(owners[i], alike[i]),
-           "a copy of block %zu that owns what it viewed holds bytes of its own", i);
-        if (owners[i]) {
-            let_go_borrowed(owners[i]);
-        }
-    }
-    markdown_core_document_free(viewed);
-    for (size_t i = 0; i < BLOCKS; i++) {
-        OK(runner, owners[i] && parts_equal(owners[i], alike[i]),
-           "a copy of block %zu that owns what it viewed reads it after its original is gone", i);
-        if (owners[i]) {
-            markdown_core_node_pool_release(&pool, owners[i]);
-        }
+        OK(runner, parts_equal(blocks[i], alike[i]) && blocks[i]->child_count == alike[i]->child_count,
+           "letting a view of block %zu go leaves its block whole", i);
     }
     markdown_core_node_pool_dispose(&pool);
+    markdown_core_document_free(viewed);
     markdown_core_document_free(kept);
 }
 
@@ -12151,9 +12124,9 @@ int main(void) {
     session_snapshot_openers(runner);
     session_snapshot_simple_tables(runner);
     session_opener_fields(runner);
-    node_copy_views(runner);
+    node_view_views(runner);
     session_finalize_matches_a_parse(runner);
-    session_paths_share_blocks(runner);
+    session_roots_at_every_depth(runner);
     session_allocation_failures(runner);
 
     test_print_summary(runner);

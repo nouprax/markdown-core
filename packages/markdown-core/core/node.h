@@ -303,14 +303,15 @@ enum markdown_core_node__internal_flags {
      * THE BUILDERS): it is in the committed tree, and a snapshot reads it and
      * never writes it. */
     MARKDOWN_CORE_NODE__COMMITTED = (1 << 5),
-    /* A block whose path is cut: its scaffold holds the path, where a
-     * settled block holds its index (blocks.c, THE PATHS). */
-    MARKDOWN_CORE_NODE__PATH_KEPT = (1 << 6),
-    /* A copy a snapshot made of a builder or of the pending block, which
-     * borrows the original's children array, or its content buffer: it
-     * writes only past the original's count, and releasing it gives back
-     * neither (blocks.c, THE COPIES). */
-    MARKDOWN_CORE_NODE__BORROWS_CHILDREN = (1 << 7),
+    /* A node the document holds as a publish left it, which no later parse
+     * writes again: an item that is COMMITTED, or that a COMMITTED node
+     * holds, as the publish that placed it found it. A later publish skips
+     * the FINAL items at the front of a relation (ast.c, THE FINAL PREFIX). */
+    MARKDOWN_CORE_NODE__FINAL = (1 << 6),
+    /* A block a snapshot lent (blocks.c, THE LENDING): its address holds a
+     * view of the block's state, which the snapshot writes, and the block's
+     * own state waits in a slot of its own until the next take-back. */
+    MARKDOWN_CORE_NODE__LENT = (1 << 7),
 
     /* A block the blank-line facts read through, as CommonMark reads through
      * a link reference definition: whether a block ends with a blank line,
@@ -320,17 +321,17 @@ enum markdown_core_node__internal_flags {
     /* A child the blank-line facts see has settled into the block, and
      * ENDS_BLANK holds that child's answer. */
     MARKDOWN_CORE_NODE__BLANK_FOLDED = (1 << 9),
+    /* A candidate that borrows the content buffer of the root it was made
+     * from, which releasing it does not give back
+     * (markdown_core_node_candidate). */
     MARKDOWN_CORE_NODE__BORROWS_CONTENT = (1 << 10),
     /* A heading's anchor that the headings computed rather than one its
      * attributes wrote: it reserves no name, so releasing the heading
      * withdraws none (heading.c). */
     MARKDOWN_CORE_NODE__ANCHOR_COMPUTED = (1 << 11),
-    /* A copy one of whose fields holds a node, which it shares with the
-     * original -- the document's metadata, a callout's title, a definition's
-     * term, a block directive's label, a table's caption, each COMMITTED as
-     * the original installed it: releasing the copy gives back none of them
-     * (markdown_core_node_copy). */
-    MARKDOWN_CORE_NODE__SHARES_FIELDS = (1 << 12),
+    /* An open block a publish placed: its source holds the runs that
+     * publish made, which the next publish of it replaces (ast.c). */
+    MARKDOWN_CORE_NODE__PUBLISHED_OPEN = (1 << 12),
 
     // The first bit an element may claim. Element flags are compile-time
     // constants owned by the element that uses them; there is no runtime
@@ -432,35 +433,6 @@ struct markdown_core_node {
     markdown_core_node_data as;
 };
 
-/* How the block at a step of a path stands to the published document as a
- * pass follows it (blocks.c, A PASS OVER THE PATHS): the object of the level
- * at its depth (THE LEVELS); a block the document holds as it is, inside the
- * children a level published as they are; a block moved to a slot of its
- * own in the pass (A BLOCK SUPERSEDED); or a block no object of the
- * document holds. */
-typedef enum {
-    MARKDOWN_CORE_PATH_LEVEL,
-    MARKDOWN_CORE_PATH_SHARED,
-    MARKDOWN_CORE_PATH_MOVED,
-    MARKDOWN_CORE_PATH_APART
-} markdown_core_path_share;
-
-/* A PATH: where a block of a streaming parse's committed tree is, as the
- * path of the block that holds it and its index in that block's children
- * (blocks.c, THE PATHS), and where the block starts in the source. The
- * root's path holds nothing. A path names a place of the tree, which keeps
- * its meaning while the objects there change, and each block has one. The
- * pass that followed it last records what it found there: the block, its
- * depth below the root, and how it stands to the published document. */
-typedef struct markdown_core_path {
-    struct markdown_core_path *parent;
-    uint32_t index, start;
-    struct markdown_core_node *node;
-    uint64_t pass;
-    uint32_t depth;
-    markdown_core_path_share share;
-} markdown_core_path;
-
 /* THE SCAFFOLD: a node's links while something is built of it, kept in the
  * node's slot beside the node.
  *
@@ -473,24 +445,20 @@ typedef struct markdown_core_path {
  * scaffold children.
  *
  * An open block is linked into the builder stack (parser.h, THE BUILDERS)
- * through its own: `parent` is the block it is open inside and `last` the
- * block open inside it, and a block's `last` empties as that block closes. A
- * block on the completion queue (parser.h) is linked into it through its
- * own: `next` is the block that joined after it and `parent` the block it
- * settled into, which completion asks its finish steps with; `next` empties
- * as the block leaves the queue, and `parent` stays, with the block's index
- * in the children of the block it settled into, as no block has a sibling
- * link (blocks.c, THE PATHS). A node the release walk takes is on the walk's
- * stack through its `next` (node.c), and a node whose state moved names the
- * node it moved to through its `next` (markdown_core_node_move). */
+ * through its own `parent`, the block it is open inside, whose last child it
+ * is. A block on the completion queue (parser.h) is linked into it through
+ * its own: `next` is the block that joined after it and `parent` the block
+ * it settled into, which completion asks its finish steps with; `next`
+ * empties as the block leaves the queue. A node the release walk takes is on
+ * the walk's stack through its `next` (node.c). A publish links the records
+ * it keeps of a block's relations through the block's `prev` (ast.c, THE
+ * RECORDS). */
 typedef struct markdown_core_scaffold {
     struct markdown_core_node *parent;
-    /* An inline node's previous sibling; a settled block's index in the
-     * children of the block it settled into; or a block's path once cut
-     * (PATH_KEPT; blocks.c, THE PATHS). */
+    /* An inline node's previous sibling, or the first record a publish kept
+     * of a block's relations, plus one (ast.c, THE RECORDS). */
     union {
         struct markdown_core_node *node;
-        struct markdown_core_path *path;
         uint32_t index;
     } prev;
     struct markdown_core_node *next, *first, *last;
@@ -741,22 +709,48 @@ bool markdown_core_node_array_start(struct markdown_core_node_pool *pool, markdo
 bool markdown_core_node_array_push_full(struct markdown_core_node_pool *pool, markdown_core_node ***items,
                                         uint32_t *count, markdown_core_node *node);
 
-/* Appends `node` to the array `*items` holds `*count` of: an empty array
- * takes its storage (markdown_core_node_array_start), and one that is full --
- * at each power of two from two -- moves first
- * (markdown_core_node_array_push_full). */
+/* Appends `node` to the array `*items` holds `*count` of: an array with no
+ * storage takes its storage (markdown_core_node_array_start), and one whose
+ * count is at a power of two from two moves first
+ * (markdown_core_node_array_push_full). An array keeps its storage as its
+ * count drops (markdown_core_node_array_pop), which is at least the capacity
+ * its count determines. */
 static inline bool markdown_core_node_array_push(struct markdown_core_node_pool *pool, markdown_core_node ***items,
                                                  uint32_t *count, markdown_core_node *node) {
     const uint32_t held = *count;
-    if (!held) {
-        return markdown_core_node_array_start(pool, items, count, node);
-    }
     if (held >= 2 && !(held & (held - 1))) {
         return markdown_core_node_array_push_full(pool, items, count, node);
+    }
+    if (!*items) {
+        return markdown_core_node_array_start(pool, items, count, node);
     }
     (*items)[held] = node;
     *count = held + 1;
     return true;
+}
+
+/* `node` before the last of the array `*items` holds `*count` of, or as its
+ * first when it holds none. False, having changed nothing, when no storage
+ * can be had. */
+static inline bool markdown_core_node_array_insert_before_last(struct markdown_core_node_pool *pool,
+                                                               markdown_core_node ***items, uint32_t *count,
+                                                               markdown_core_node *node) {
+    const uint32_t held = *count;
+    if (!held) {
+        return markdown_core_node_array_push(pool, items, count, node);
+    }
+    if (!markdown_core_node_array_push(pool, items, count, (*items)[held - 1])) {
+        return false;
+    }
+    (*items)[held - 1] = node;
+    return true;
+}
+
+/* The last of the array `*items` holds `*count` of, at least one, out of
+ * it; the array keeps its storage. */
+static inline markdown_core_node *markdown_core_node_array_pop(markdown_core_node **items, uint32_t *count) {
+    assert(*count);
+    return items[--*count];
 }
 
 /* `child` at the end of `node`'s children, with no containment check: the
@@ -820,60 +814,35 @@ markdown_core_node *markdown_core_node_pool_new(markdown_core_node_pool *pool, m
 /* Exchanges everything two nodes' slots hold -- each node, its scaffold and
  * its record -- so each node takes the other's whole state, with what it
  * owns and borrows, and only the two addresses stay where they were
- * (ast.c, PUBLISHING CONTINUES THE PREVIOUS TREE). */
+ * (blocks.c, THE LENDING). */
 void markdown_core_node_swap(markdown_core_node *a, markdown_core_node *b);
-/* A NODE MOVED TO A SLOT OF ITS OWN: a node in a new slot of `pool` holding
- * `node`'s whole state, which it takes over with what it owns; `node`'s slot
- * keeps its bytes, for whatever still reads it, names the node it moved to
- * (markdown_core_node_moved), and goes back to the pool with
- * markdown_core_node_slot_release. NULL when no slot can be had. */
-markdown_core_node *markdown_core_node_move(markdown_core_node_pool *pool, markdown_core_node *node);
-/* The node `node`'s state is in now: `node`, or the node it moved to, as
- * often as it moved. A node that never moved names none: no queue holds a
- * placed node (THE SCAFFOLD). */
-static inline const markdown_core_node *markdown_core_node_moved(const markdown_core_node *node) {
-    while (markdown_core_scaffold_next(node)) {
-        node = markdown_core_scaffold_next(node);
-    }
-    return node;
-}
-/* Gives back the slot of a node whose state moved (markdown_core_node_move),
- * and nothing it held. */
-void markdown_core_node_slot_release(markdown_core_node_pool *pool, markdown_core_node *node);
-/* A COPY OF A BLOCK THE BLOCK PHASE STILL WRITES (blocks.c, THE COPIES):
- * a node of `node`'s kind in a slot of `pool`'s, with a record and a payload
- * of its own, that VIEWS what `node` owns where its holder marks it -- its
+/* A VIEW OF A BLOCK A SNAPSHOT LENDS (blocks.c, THE LENDING): a node of
+ * `node`'s kind in a slot of `pool`'s, with a record and a payload of its
+ * own, that VIEWS what `node` owns where its holder marks it -- its
  * attributes, the strings its record owns, the storage its element's payload
- * owns -- and holds a copy of the rest: its labels and its places; and it
- * shares each node its fields hold, which settled as `node` installed it and
- * is COMMITTED (SHARES_FIELDS). Its children array, when `node` has
- * children, and its content buffer, when `node` holds content storage, are
- * `node`'s, which it borrows (BORROWS_CHILDREN, BORROWS_CONTENT); its
- * scaffold is empty. NULL, having taken nothing, when storage could not be
- * had. */
-markdown_core_node *markdown_core_node_copy(markdown_core_node_pool *pool, const markdown_core_node *node);
-/* What `copy`, a copy of `original` (markdown_core_node_copy) that a publish
- * placed, still views of what `original` owns, copied into storage of its
- * own: as `original` is to change, its copy stops reading it (blocks.c, THE
- * COPIES). False when storage could not be had, with what was not copied
- * still viewed. */
-bool markdown_core_node_own_viewed(markdown_core_node_pool *pool, markdown_core_node *copy,
-                                   const markdown_core_node *original);
+ * owns -- and holds a copy of its labels and of its places, but the places
+ * of a block a publish placed open (PUBLISHED_OPEN), which it holds none
+ * of. It holds `node`'s children array, content buffer and field nodes as
+ * they are, and owns none of them: the lending hands each back before it
+ * releases the view. Its scaffold is empty. NULL, having taken nothing, when
+ * storage could not be had. */
+markdown_core_node *markdown_core_node_view(markdown_core_node_pool *pool, const markdown_core_node *node);
+/* What `view` holds of the children, the content and the field nodes of
+ * `node`, the node it views (markdown_core_node_view), let go: it holds none
+ * of them. With `pool`, each field node it holds that `node` does not hold in
+ * the same field -- one it took since -- is released into it first. */
+void markdown_core_node_view_let_go(markdown_core_node_pool *pool, markdown_core_node *view,
+                                    const markdown_core_node *node);
 /* A CANDIDATE FOR AN INLINE ROOT COMPLETED AGAIN (blocks.c, A LOOKUP THAT
  * FOUND NOTHING): a node of `root`'s kind in a slot of `pool`'s, holding what
  * the block phase made of `root` and nothing its completion or its publish
  * made: a copy of each thing `root` owns -- its attributes, its record and
- * what the record owns, its element's payload -- and its content buffer,
- * which it borrows (BORROWS_CONTENT). A root holds no field root, and its
- * children are inline content its completion makes. It has no id, and no
- * place or places until the caller gives them; its scaffold is empty. NULL,
- * having taken nothing, when storage could not be had. */
+ * what the record owns -- and its content buffer, which it borrows
+ * (BORROWS_CONTENT). A root holds no field root and no element payload, and
+ * its children are inline content its completion makes. It has no id, and
+ * no place or places until the caller gives them; its scaffold is empty.
+ * NULL, having taken nothing, when storage could not be had. */
 markdown_core_node *markdown_core_node_candidate(markdown_core_node_pool *pool, const markdown_core_node *root);
-/* The COMMITTED nodes the fields of `copy`, a copy of `original` that a
- * publish placed, hold, taken into the same fields of `original`: a field
- * node the two share stays one object when the publish exchanges it with
- * the node it continues (blocks.c, AFTER A PUBLISH). */
-void markdown_core_node_share_fields(markdown_core_node *original, markdown_core_node *copy);
 /* The storage `taker` borrows, made its own, and lent by `lender`, which
  * borrows it from it: `taker` is a candidate (markdown_core_node_candidate)
  * and `lender` the root whose state it was made from, released after it. */

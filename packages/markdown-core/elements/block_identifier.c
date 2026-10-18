@@ -82,7 +82,10 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identif
     markdown_core_node *owner = paragraph;
     int line;
     bufsize_t source;
-    if (parent && markdown_core_block_type(parent) == MARKDOWN_CORE_NODE_LIST_ITEM && parent->child_count == 0 &&
+    /* The last of the parent's children is the paragraph, or the block it
+     * was split from, which it settles before: no block comes before it
+     * when that is the only one. */
+    if (parent && markdown_core_block_type(parent) == MARKDOWN_CORE_NODE_LIST_ITEM && parent->child_count == 1 &&
         markdown_core_parser_content_place(parser, &paragraph->content_map,
                                            (bufsize_t)(candidate.identifier.data - text.data), &line, &source) &&
         markdown_core_parser_starts_on_line(parser, parent, line)) {
@@ -105,7 +108,7 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identif
 
 bool markdown_core_block_attach_identifier_line(markdown_core_block_identifier_work *work, markdown_core_parser *parser,
                                                 markdown_core_node *parent, markdown_core_chunk *input) {
-    markdown_core_node *owner = markdown_core_parser_last_child(parser, parent);
+    markdown_core_node *owner = markdown_core_parser_last_child(parent);
     block_identifier candidate;
     if (parser->indent >= CODE_INDENT || input->data[parser->first_nonspace] != '#' || !owner ||
         owner->attributes.anchor.len ||

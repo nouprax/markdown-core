@@ -30,9 +30,13 @@ bool markdown_core_block_ends_with_blank_line(const markdown_core_node *node);
  * returns the block that is current after them. */
 markdown_core_node *markdown_core_block_close(markdown_core_parser *parser, markdown_core_node *b);
 /* `node`, a block made whole, its own children settled, settles into
- * `parent`, which has no pending child: it joins the end of the parent's
- * children and the completion queue (blocks.c, A BLOCK SETTLES). */
+ * `parent`, which has no open or pending child: it joins the end of the
+ * parent's children and the completion queue (blocks.c, A BLOCK SETTLES). */
 void markdown_core_block_settle(markdown_core_parser *parser, markdown_core_node *node, markdown_core_node *parent);
+/* The same before the last of `parent`'s children: the block it was read
+ * from as that closes, or the block it was split from. */
+void markdown_core_block_settle_before(markdown_core_parser *parser, markdown_core_node *node,
+                                       markdown_core_node *parent);
 /* `field`, a field root `holder` holds -- a callout's title, a definition's
  * term, a block directive's label, a table's caption -- settles as `holder`
  * installs it, once the line that writes it is read: it holds as a settled
@@ -40,10 +44,6 @@ void markdown_core_block_settle(markdown_core_parser *parser, markdown_core_node
  * complete on its own (blocks.c, A BLOCK SETTLES). */
 void markdown_core_block_settle_field(markdown_core_parser *parser, markdown_core_node *field,
                                       markdown_core_node *holder);
-/* `b`, a block made whole that is on no stack, closes inside `parent` as a
- * block the line machine closes does -- its element reads it as a finished
- * thing, and it takes the runs of its own lines -- and settles into it. */
-void markdown_core_block_close_into(markdown_core_parser *parser, markdown_core_node *b, markdown_core_node *parent);
 /* The current block, its range settled, closes and becomes the pending child
  * of the block below it. */
 void markdown_core_block_close_current(markdown_core_parser *parser);
@@ -91,4 +91,11 @@ markdown_core_node *markdown_core_block_parent_for(markdown_core_parser *parser,
 /* Commit a parent selected by block_parent_for without repeating its policy. */
 markdown_core_node *markdown_core_parser_add_child_validated(markdown_core_parser *parser, markdown_core_node *parent,
                                                              markdown_core_node_type kind, int start_column);
+/* `child`, a block made for `parent`, which holds its kind, opens in it as
+ * add_child_validated opens the block it makes: what is open inside the
+ * container closes first, its pending child settles, and `child` is its last
+ * child and the builder above it. NULL, with the parse failed, when the
+ * children could not grow. */
+markdown_core_node *markdown_core_parser_open_child(markdown_core_parser *parser, markdown_core_node *parent,
+                                                    markdown_core_node *child);
 #endif

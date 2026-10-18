@@ -307,19 +307,11 @@ typedef void (*markdown_core_opaque_free_func)(const markdown_core_element *elem
 /* `copy`'s payload as a VIEW of `node`'s, which `copy->opaque` still names:
  * a record of its own whose members are `node`'s, owning none of the storage
  * `node`'s payload owns, which it reads for as long as `node` keeps it. The
- * nodes its fields hold are left as they are, which the engine copies after
- * it (node.h, markdown_core_node_copy). False, with `copy->opaque` NULL, when
- * storage could not be had. */
+ * nodes its fields hold are left as they are (node.h,
+ * markdown_core_node_view). False, with `copy->opaque` NULL, when storage
+ * could not be had. */
 typedef bool (*markdown_core_opaque_view_func)(const markdown_core_element *element, markdown_core_node *copy,
                                                const markdown_core_node *node);
-
-/* What `copy`'s payload, a view of `node`'s (markdown_core_opaque_view_func),
- * still reads of the storage `node`'s payload owns, copied: `copy`'s payload
- * then owns everything it holds (node.h, markdown_core_node_own_viewed).
- * False when storage could not be had, with what was not copied still read
- * from `node`. */
-typedef bool (*markdown_core_opaque_own_func)(const markdown_core_element *element, markdown_core_node *copy,
-                                              const markdown_core_node *node);
 
 /** A parser element is a `static const` descriptor in a fixed compile-time
  * table (`elements/core-elements.c`), not an object built at run time.
@@ -625,7 +617,8 @@ typedef enum {
  * children.
  *
  * A change releases values owned by the old kind and installs the new kind's
- * defaults. Node identity and element-owned opaque data are preserved.
+ * defaults. The node's address and element-owned opaque data are preserved;
+ * its id is 0 again, since an id names a node while its kind holds.
  * A record that fits the node's existing cell needs no allocation.
  * Setting the current kind succeeds without allocating or changing its data.
  */

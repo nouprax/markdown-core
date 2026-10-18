@@ -415,7 +415,7 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_no
     markdown_core_parser_line_places(parser, reference, parent, line);
     /* A definition is read whole: it settles as it is made, before the block
      * it was read from, which settles later if anything of it is left. */
-    markdown_core_block_settle(parser, reference, parent);
+    markdown_core_block_settle_before(parser, reference, parent);
     /* The document defines the label from where the definition starts. */
     if (!parser->error && !markdown_core_registry_declare(&parser->registry, MARKDOWN_CORE_REGISTRY_REFERENCE,
                                                           label.data, label.len, start)) {

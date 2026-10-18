@@ -9,16 +9,14 @@
  * declaration dependency; `parsed` says the heading has declared its label
  * and its inline content is parsed, which a completion does once, for the
  * headings that settled since the last (markdown_core_headings_prepare);
- * nodes remain owned by the tree. A heading a streaming commit settled is
- * named by its path once it is parsed, and its node by no address
- * (blocks.c, THE PATHS); any other by its node. `authored` says its
+ * nodes remain owned by the tree, and an entry names its node, which keeps
+ * its address for its whole life. `authored` says its
  * attributes wrote its anchor. `name` is the anchor the headings computed
  * for it, the node's own bytes, `name_size` of them, of which the first
  * `base_size` are the base its text projects to; NULL when it holds none,
  * or when its inline content was made again since. */
 typedef struct {
     markdown_core_node *node;
-    markdown_core_path *path;
     markdown_core_inline_state *pending;
     const unsigned char *name;
     bufsize_t base_size, name_size;

@@ -24,10 +24,10 @@
  * commit point (blocks.c, THE SNAPSHOT); the finalize commits every line that
  * is left and ends the committed parse at the end of the text.
  * Each new document continues the old one (parser.h, `revision`): the
- * revision lends the session's pool, names the document published last and
- * counts the ids it issued. The document shares the committed blocks with
- * the committed parse, and borrows storage it keeps: the parse owns it, and
- * releases it before them, until the finalize returns the last document. */
+ * revision lends the session's pool and counts the ids it issued. The
+ * document is the committed parse's tree, published in place (ast.c,
+ * PUBLISHING IN PLACE), and the session lends it until the next append or
+ * the finalize; the finalize returns the last document. */
 struct markdown_core_session {
     uint8_t *text;
     size_t size, capacity;
@@ -51,7 +51,7 @@ static markdown_core_status session_publish(markdown_core_session *session, mark
     if (!root) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
-    session->document.root = session->revision.previous = root;
+    session->document.root = root;
     return MARKDOWN_CORE_OK;
 }
 
@@ -83,7 +83,7 @@ static markdown_core_status session_finalize(markdown_core_session *session) {
     markdown_core_parser_commit(session->committed, session_source(session), session->size, session->size);
     session->finalized = true;
     markdown_core_node *root = markdown_core_parser_finalize(session->committed);
-    session->document.root = session->revision.previous = root;
+    session->document.root = root;
     return root ? MARKDOWN_CORE_OK : MARKDOWN_CORE_ALLOCATION_FAILED;
 }
 

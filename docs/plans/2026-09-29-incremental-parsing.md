@@ -101,9 +101,9 @@ second parser:
   entries with borrowed nodes) and resolved once. They are not rediscovered
   by tree searches.
 
-What streaming needs in addition is (a) open state that can be copied
-without touching the closed part of the tree, so a snapshot can finish the
-tail and leave the session's state as it was; (b) a rule that tells which
+What streaming needs in addition is (a) closing that writes values and
+changes no parse state, so a snapshot can finish the tail on the session's
+own blocks and leave the session's state as it was; (b) a rule that tells which
 decisions the end of the input made, so that every other decision is made
 once; (c) inline completion that waits for the definitions a fresh parse
 would see; and (d) identity for the nodes that are still changing. Section 5
@@ -117,7 +117,7 @@ current dialect. Each row names the mechanism in section 5 that handles it.
 
 | Dependency | Examples | Direction | Mechanism |
 | --- | --- | --- | --- |
-| Carried block state | Open list item widths, blockquote and callout prefixes, definition body indentation, directive fence stack, last-line-blank flags | Earlier line → later lines | Held by the open blocks' builders, which a snapshot copies (5.2, 5.5) |
+| Carried block state | Open list item widths, blockquote and callout prefixes, definition body indentation, directive fence stack, last-line-blank flags | Earlier line → later lines | Held by the open blocks' builders, which a snapshot leaves as the commit left them (5.2, 5.5) |
 | Lookahead | Setext underline, table separator and caption, definition term marker, multiline and grid tables, directive closer, Properties closing fence | Later lines → earlier decision | A line whose processing observed the end of the input is pending, and is processed again when more text arrives (5.1, 5.3) |
 | Retroactive write | A separate-line block identifier sets the preceding block's anchor; a caption after a table | Later line → closed block | A closed block stays a builder until it settles (5.2) |
 | Container facts from children | `List.tight`, list layout, definition and definition-list scopes | Children → container | Folded into the container's builder as each child settles (5.6) |
@@ -476,68 +476,59 @@ as the direct `lookahead_cursor == lookahead_end` tests in `table.c` and
   block that is closed but not settled is still a builder, because a
   trailing line can still change it: a caption after a table, or a block
   identifier after a list, callout or table.
-- Finishing is a pure function from a builder to a node, which changes no
-  builder. When a block settles, its builder is finished into a settled node,
-  the content and child arrays pass to the node, and the builder is
-  released.
+- A block is one object for its whole life. Closing it writes its closed
+  values into that object: its end, its content view and the values it folds
+  from its children. Closing changes no parse state.
 - While the stream runs, a settled node changes only when a later explicit
   anchor changes a heading's automatic anchor (5.5). `finalize` changes two
   kinds of settled node in place: inline roots whose answer a later
   definition changes, and headings whose anchor changes (5.10).
 
-The open state is all in the builders, so copying it costs O(depth). A node
-holds no pointer back to a builder, so a copy never touches the settled part
-of the tree. That is what lets a snapshot finish the tail and leave the
-session's state unchanged.
+A snapshot does not copy the committed blocks. It writes the closed values
+into the original objects and leaves the parse state as the commit left it.
+Only when the provisional reading changes a committed block's kind or parse
+state does it copy that one block, for example when `===` turns a paragraph
+into a Setext heading. The published document is the committed tree plus the
+provisional part, valid until the next call.
 
 **Append-only buffers.** A builder's content bytes, its runs and its array of
 closed children only grow at the end. Each builder records its committed
-length; a copy writes past it, and that part is scratch, which the next call
-writes again from the committed length. This holds because a session has
-exactly one live C document at a time: a session's document borrows from it
-until its next call, a document `Document.parse` returns owns its nodes, and
-a binding converts a document into platform values before the call returns.
+length; a snapshot writes past it, and the next call cuts it back to the
+committed length. This holds because a session has exactly one live C
+document at a time: a session's document borrows from it until its next
+call, a document `Document.parse` returns owns its nodes, and a binding
+converts a document into platform values before the call returns.
 
 A published node views these buffers, so the literal of a growing code block
 is not copied per append, and its runs and children are not either. Committed
-bytes are written once and never move, and the previous document stays intact
-until the next publish has matched and deduplicated its tail (5.9); the
-scratch a snapshot writes is kept apart from what the previous document views
-for that long.
+bytes are written once and never move.
 
 **Positions.** A node's extent and runs (4.3) are computed when it is first
 published: from the end of its previous sibling, or from its parent's start
 for a first child. The text only grows at the end, so neither that sibling's
 end nor the parent's start changes again, and a settled node's position
-values are final.
+values are final. An open block grows at its end, so each publish writes its
+extent and runs again.
 
 ### 5.3 Commit
 
-`append` adds the new bytes to the end of the text and then commits, in
-this order:
-
-- Copy the builder stack and record a mark in the registry log.
-- On the copy, process the complete lines from the commit point, one at a
-  time. A line is complete when it ends with `\n`, or with `\r` followed by
-  another byte.
-- If a line sees the end of the input (5.1), discard the copy: the nodes the
-  copy made are released with it, and the registry rolls back to the mark.
-  Then process only the lines before that line on a new copy.
-- The copy becomes the builder stack and the commit point moves past the
-  processed lines. Blocks that closed join the completion queue, and so does
-  each field a processed line wrote: a callout's title, a definition's term,
-  a block directive's label and a table's caption. Blocks that settled are
-  finished into settled nodes.
+`append` adds the new bytes to the end of the text and then commits: the
+line machine reads on the builder stack from the last step the last commit
+read, which may lie inside the line that is not complete yet, up to the
+**commit point**, the first decision the last snapshot made after seeing the
+end of the input (5.1). Every decision before it read only bytes that were
+there. A line is complete when it ends with `\n`, or with `\r` followed by
+another byte. Blocks that closed join the completion queue, and so does
+each field a committed line wrote: a callout's title, a definition's term,
+a block directive's label and a table's caption.
 
 The lines after the commit point are **pending**. They are of two kinds:
 
-- the last line, which is not complete yet;
+- the rest of the last line, which is not complete yet;
 - lines whose decision waits for later lines: the headers of simple,
   multiline and grid tables, a caption before a table, a definition list's
   term, a block identifier line, an unclosed grid table, a comment block and
   the Properties envelope at the start of the document.
-
-A fresh parse copies the builder stack once.
 
 ### 5.4 Completion
 
@@ -581,18 +572,22 @@ streaming (D8).
 **How a snapshot is made**, in this order:
 
 - Complete the completion queue (5.4).
-- Copy the builder stack and record a mark in the registry log.
-- On the copy, process the pending lines, then finish every copy at the true
-  end of the input.
+- Record a mark in the registry log.
+- Process the pending lines on the committed builders, copying first each
+  block whose kind or parse state that reading changes (5.2), then write the
+  closed values of every open block into its object at the true end of the
+  input.
 - Complete the tail by the publish rule of 5.4, without recording the
   lookups that find none.
-- Publish: give ids to the nodes that have none (5.9), compute the extents
-  and runs of the tail, and assemble the document.
+- Publish in place: give ids to the nodes that are not settled (5.9),
+  compute the extents and runs of the tail and of the open blocks, and
+  assemble the document.
 
-The **tail** is the nodes a snapshot makes from the copies, from the pending
-lines and from the inline content of an open paragraph. At the start of the
-next call the copies and their scratch are discarded and the registry rolls
-back to the mark.
+The **tail** is the nodes a snapshot makes from the pending lines and from
+the inline content of an open paragraph. At the start of the next call each
+copied block takes back its state, the open blocks cut their buffers back to
+their committed lengths, and the registry rolls back to the mark. The tail's
+nodes stay until the next publish has given ids to its own tail (5.9).
 
 ### 5.6 Container folds
 
@@ -638,9 +633,10 @@ append, the short stretch after the settle point.
 ### 5.9 Identity matching
 
 - A settled node never changes its id.
-- At each publish, every node without an id (the tail and the nodes that
-  settled since the last publish) takes one from the previous document's
-  tail by one rule: within the same owner relation, a new node continues the
+- At each publish, every node that is not settled (the tail, the open
+  blocks and the nodes that settled since the last publish) takes its id
+  from the previous document's unsettled nodes by one rule: within the same
+  owner relation, a new node continues the
   earliest old node of the same kind whose start lies in the new node's
   source range, and takes its id. A node that continues none takes the
   session's next unused id. The text only grows at the end, so an old node's
@@ -697,7 +693,7 @@ the text and is finalized (R6).
   over the lines, the builder stack after a commit is the state a parse of
   the whole text has at the commit point.
 - **Snapshots.** A snapshot processes the pending lines at the true end of the
-  input, on a copy of that state. Every line of the text is then processed in
+  input, from that state, which it leaves as it found it (5.2). Every line of the text is then processed in
   order, by the same line machine, with the end where it really is, so the
   blocks are those of `Document.parse` of the text so far. Completion runs
   the same inline parser on the same content, against the definitions before
@@ -1012,9 +1008,10 @@ activates for it.
   definition answers its lookups** (#432). In a fresh parse every definition
   written after its use parses that root twice. Here a fresh parse completes
   at `finalize`, and a stream's lookups see what is written before them.
-- **Processing pending lines on the session's own state and undoing them.**
-  Finishing changes many fields, and an undo written per element would miss
-  some. A copy of the builder stack costs O(depth) and needs no undo.
+- **Copying every open block for each snapshot and matching the copies back
+  to the previous document.** A block's opening decision is final, so its
+  kind and id are already known; the copies and the matching cost O(depth)
+  per append and decide nothing.
 - **No lookups at all before `finalize`.** Definitions written before their
   use would not show either while the text streams, and nothing requires
   that.

@@ -23,28 +23,21 @@ typedef enum {
 
 #define MAX_LINK_LABEL_LENGTH 1000
 
-/* WHAT A PARSE CONTINUES: the storage it takes nodes from and the tree it
- * continues.
+/* WHAT A PARSE CONTINUES: the storage it takes nodes from and the ids it
+ * issued.
  *
- * `previous` is the root of a tree a parse published, and the text it was
- * parsed from begins the text this parse reads: appends add to the end of a
- * text, so every byte of the old text keeps its offset. The published tree
- * continues it (docs/plans/2026-09-29-incremental-parsing.md, 5.9): every
- * node matched to an old node takes its id, every other node takes the next
- * id after `last_id`, and a matched node equal to its old node as a value is
- * that old node. The parse owns `previous`, which reads the blocks it
- * committed (blocks.c, THE LEVELS): a publish makes it the returned root or
- * releases it into `pool` with every other node it retires, and empties
- * `previous`, and `last_id` is then the last id issued; a parse that ends
- * without publishing again releases it first. A fresh parse continues nothing:
- * `previous` is NULL and `last_id` is 0, so its root is 1 and every node is
- * numbered in canonical walk order.
+ * A session's parse publishes the tree it builds, in place, at each of its
+ * snapshots and at its finalize, and each publish continues the one before
+ * (docs/plans/2026-09-29-incremental-parsing.md, 5.9): a node a publish
+ * placed keeps its id, a node matched to a node the last publish placed
+ * takes its id, and every other node takes the next id after `last_id`,
+ * which is then the last id issued. A fresh parse continues nothing: `last_id`
+ * is 0, so its root is 1 and every node is numbered in canonical walk order.
  *
  * `pool` lends the parse every node and resource slot it takes (node.h); it
  * outlives the parse, and its owner disposes it. */
 typedef struct markdown_core_revision {
     markdown_core_node_pool *pool;
-    markdown_core_node *previous;
     uint64_t last_id;
 } markdown_core_revision;
 
@@ -156,62 +149,44 @@ typedef struct markdown_core_parser_input {
     bool last_line_ready;
 } markdown_core_parser_input;
 
-/* A COPY A SNAPSHOT MADE (blocks.c, THE COPIES): the copy, NULL once the
- * snapshot released it, and the block it copies, whose storage it borrows. */
-typedef struct markdown_core_copy {
-    struct markdown_core_node *copy, *original;
-} markdown_core_copy;
+/* A BLOCK A SNAPSHOT LENT (blocks.c, THE LENDING): the block's address,
+ * which holds the snapshot's view of it, the slot that holds the block's own
+ * state, and its last child as the snapshot found it. */
+typedef struct markdown_core_lend {
+    struct markdown_core_node *address, *backup, *last;
+} markdown_core_lend;
 
-/* A LEVEL OF THE SPINE (blocks.c, THE LEVELS): a builder of the committed
- * parse as the last publish left it, at its depth, or, one past the last
- * builder, the pending block; the object the published document holds for
- * it, NULL when it holds none, and, while a publish is made, the object the
- * new tree holds at its depth (ast.c, A STREAMING PUBLISH); how many of its
- * children the document publishes as they are, and where the last of them
- * ends in the source. A
- * builder writes a children array and a content buffer the document does
- * not read: `spare` and `spare_content` are the ones the document reads,
- * of which the first `spare_valid` entries and `spare_content_valid` bytes
- * are what the builder has committed. `spare_capacity` is a bound the
- * array's room is at least, and `spare_size` the buffer's room. */
-typedef struct markdown_core_level {
-    struct markdown_core_node *node, *published;
-    const struct markdown_core_node *object;
+/* AN OPEN BLOCK BELOW THE BLOCKS A SNAPSHOT LENT, as the snapshot found it
+ * (blocks.c, THE LENDING): how many children it held, the last of them, its
+ * flags and where it ended, which the snapshot writes in place. */
+typedef struct markdown_core_room {
+    struct markdown_core_node *node, *last;
     uint32_t count, end;
-    struct markdown_core_node **spare;
-    uint32_t spare_capacity, spare_valid;
-    unsigned char *spare_content;
-    bufsize_t spare_size, spare_content_valid;
-} markdown_core_level;
+    markdown_core_node_internal_flags flags;
+} markdown_core_room;
 
-/* WHAT A LEVEL TAKES BEFORE A PUBLISH (blocks.c, THE LEVELS), at the depth
- * of a copy: the children array and the content buffer the builder takes
- * after the publish, when the spare cannot serve, and where its last
- * published child ends. Nothing after a publish can fail. */
-typedef struct markdown_core_level_room {
-    struct markdown_core_node **children;
-    unsigned char *content;
-    bufsize_t content_size;
-    uint32_t end;
-} markdown_core_level_room;
+/* A RECORD A PUBLISH KEPT (ast.c, THE RECORDS): a node of a relation of an
+ * open or lent block, `owner`, that was not FINAL: its id and kind, where its
+ * published source lay, the owner's relation it was in, and the next record
+ * of the same owner, plus one, or 0. A node a snapshot made is the record's
+ * `node`, which the record owns once the next take-back unhooks it
+ * (blocks.c, THE LENDING); an open or lent block, which the commits keep,
+ * is no record's node. */
+typedef struct markdown_core_tail_record {
+    struct markdown_core_node *node;
+    const struct markdown_core_node *owner;
+    uint64_t id;
+    uint32_t start, end, field, next;
+    uint16_t kind;
+} markdown_core_tail_record;
 
-/* STORAGE THE PUBLISHED DOCUMENT STILL READS that the committed parse let
- * go (blocks.c, THE LEVELS): a children array, a content buffer or a
- * string, the slot of a node that moved, or a tree a block completed again
- * replaced; released after the next publish. */
-typedef enum {
-    MARKDOWN_CORE_RETIRED_CHILDREN,
-    MARKDOWN_CORE_RETIRED_CONTENT,
-    MARKDOWN_CORE_RETIRED_SLOT,
-    MARKDOWN_CORE_RETIRED_TREE
-} markdown_core_retired_kind;
+typedef struct markdown_core_tail_records {
+    markdown_core_tail_record *items;
+    size_t count, capacity;
+} markdown_core_tail_records;
 
-typedef struct {
-    void *storage;
-    markdown_core_retired_kind kind;
-    /* Where the block whose state moved starts, for a slot. */
-    uint32_t start;
-} markdown_core_retired;
+/* The nodes `records` owns, released, and the records emptied. */
+void markdown_core_parser_release_records(markdown_core_parser *parser, markdown_core_tail_records *records);
 
 /* THE COMMITTED TABLES (ast.c, THE DEFINITION TABLES A STREAMING PARSE
  * KEEPS): the definitions the published document holds as COMMITTED. Each
@@ -241,14 +216,6 @@ typedef struct {
     uint32_t table, entry;
 } markdown_core_kept;
 
-/* THE PATHS a streaming commit's records hold (blocks.c), cut from blocks
- * of the parser's own. */
-typedef struct markdown_core_path_block {
-    struct markdown_core_path_block *next;
-    size_t used;
-    markdown_core_path items[];
-} markdown_core_path_block;
-
 /* Where an inline root lay as the block phase left it: its place, and its
  * places, which the parser owns until a candidate takes them. */
 typedef struct {
@@ -258,11 +225,11 @@ typedef struct {
 
 /* AN INLINE ROOT A LOOKUP FOUND NOTHING FOR at a commit's completion
  * (markdown_core_parser_find_definition; blocks.c, A LOOKUP THAT FOUND
- * NOTHING): a block whose own inline content asked, or the field root a
- * block holds (`field`), named by the path of that block, and where the root
- * lay as the block phase left it. */
+ * NOTHING): a block whose own inline content asked, or the block that holds
+ * the field root that asked (`field`); the block the root settled into, or
+ * that holds it; and where the root lay as the block phase left it. */
 typedef struct {
-    markdown_core_path *path;
+    struct markdown_core_node *node, *holder;
     markdown_core_miss_position position;
     bool field;
 } markdown_core_miss_root;
@@ -300,25 +267,28 @@ typedef struct markdown_core_line_stop {
 } markdown_core_line_stop;
 
 /* WHAT A STREAMING PARSE KEEPS: a session's parse, which takes snapshots
- * between its commits (blocks.c, THE SNAPSHOT). Its records of committed
- * blocks name them by path, and its publishes keep levels and the committed
- * definitions. The parser owns it from markdown_core_parser_stream until the
- * parse is released. */
+ * between its commits (blocks.c, THE SNAPSHOT) and publishes its tree in
+ * place. The parser owns it from markdown_core_parser_stream until the parse
+ * is released. */
 typedef struct markdown_core_stream {
     /* The line the last commit stopped in, when `held`. */
     markdown_core_line_stop stop;
     bool held;
-    /* THE COPIES of the snapshot being taken, the builders' from the root
-     * up, `builder_count` of them, and then the pending block's
-     * (blocks.c), with what each level takes before the publish. */
-    markdown_core_copy *copies;
-    markdown_core_level_room *rooms;
-    size_t copy_count, builder_count, copy_capacity;
-    /* THE LEVELS of the spine the last publish left (blocks.c). */
-    markdown_core_level *levels;
-    size_t level_count, level_capacity;
-    markdown_core_retired *retired;
-    size_t retired_count, retired_capacity;
+    /* THE LENDING of the last snapshot (blocks.c): the blocks it lent, in
+     * the order it lent them, the open blocks below them as it found them,
+     * from the one that holds the first lent block down to the root, and
+     * the open block the lending reaches next, NULL once it lent the root.
+     * The published document reads the lent blocks until the next
+     * take-back. */
+    markdown_core_lend *lends;
+    size_t lend_count, lend_capacity;
+    markdown_core_room *rooms;
+    size_t room_count, room_capacity;
+    struct markdown_core_node *boundary;
+    /* THE RECORDS (ast.c): those the last publish kept, `records[last]`,
+     * and room for those the next keeps. */
+    markdown_core_tail_records records[2];
+    unsigned last;
     /* The definitions the published document holds as committed (ast.c),
      * room for those a publish lists as it walks, and the definitions the
      * candidates of a finalize list, which join the committed tables once
@@ -326,10 +296,6 @@ typedef struct markdown_core_stream {
     markdown_core_committed_tables committed;
     markdown_core_kept *kept;
     size_t kept_capacity;
-    /* Room for the same pairs a publish's commit exchanges (ast.c, A
-     * STREAMING PUBLISH), which every publish of the parse reuses. */
-    struct markdown_core_same_pair *same_pairs;
-    size_t same_pair_capacity;
     /* Room for the entries a snapshot's document lists as its own (ast.c,
      * A SNAPSHOT'S TABLES), which every snapshot of the parse reuses: the
      * document borrows them until the next snapshot. */
@@ -337,28 +303,19 @@ typedef struct markdown_core_stream {
     size_t own_table_capacity;
     markdown_core_defined *defined;
     size_t defined_count, defined_capacity;
-    /* THE PATHS (blocks.c): the root's, the blocks the rest are cut from,
-     * and the pass that follows them now (A PASS OVER THE PATHS). */
-    markdown_core_path root_path;
-    markdown_core_path_block *paths;
-    uint64_t path_pass;
     /* THE LOOKUPS A COMMIT'S COMPLETION FOUND NOTHING FOR, in the order
      * they were made (plan 5.4), and the inline roots they were made for,
-     * the last of which is `miss_root` while its completion lasts. The
-     * finalize asks each again with every definition visible, and completes
-     * again each root whose answer is one now (blocks.c, A LOOKUP THAT FOUND
-     * NOTHING). */
+     * the last of which is `miss_root` while its completion lasts, and how
+     * many of the roots a snapshot published once they were complete. The
+     * finalize asks each lookup again with every definition visible, and
+     * completes again each root whose answer is one now (blocks.c, A LOOKUP
+     * THAT FOUND NOTHING). */
     markdown_core_definition_miss *misses;
     size_t miss_count, miss_capacity;
     markdown_core_strbuf miss_labels;
     markdown_core_miss_root *miss_roots;
-    size_t miss_root_count, miss_root_capacity;
+    size_t miss_root_count, miss_root_capacity, miss_published;
     const struct markdown_core_node *miss_root;
-    /* How many levels of THE LEVELS, from the root, hold below the children
-     * they published as they are a block that has changed since
-     * (markdown_core_parser_supersede): the next publish finds each of them
-     * differs. */
-    size_t touched_levels;
 } markdown_core_stream;
 
 struct markdown_core_parser {
@@ -389,11 +346,6 @@ struct markdown_core_parser {
      * stage releases it when it ends. */
     void *walk_stack;
     size_t walk_stack_size;
-    /* The words the completion walk's frames keep for the finish steps
-     * (blocks.c, walk_owned_trees), which every completion of the parse
-     * reuses and the stage releases with the walk stack. */
-    void **walk_states;
-    size_t walk_state_capacity;
     /* What a publish fills as it walks (ast.c, THE DEFINITION TABLES and AN
      * INLINE ROOT'S PLACES), which every publish of the parse reuses and the
      * stage releases with the walk stack. */
@@ -427,16 +379,15 @@ struct markdown_core_parser {
     struct markdown_core_node *root;
     /* THE BUILDERS (docs/plans/2026-09-29-incremental-parsing.md, 5.2): the
      * blocks open in the active input, from its root to the deepest, the
-     * current block. Each is the last child of the one before it and is not
-     * yet one of that block's children: a block joins its parent's children
-     * when it SETTLES, as its parent takes its next child or closes
-     * (blocks.c). They are a stack linked through their scaffolds (node.h,
-     * THE SCAFFOLD): a builder's `parent` is the builder it is open inside,
-     * and its `last` the builder open inside it, none for the current block.
+     * current block. Each is the last of the children of the one before it,
+     * which it joins as it opens (blocks.c). They are a stack linked through
+     * their scaffolds (node.h, THE SCAFFOLD): a builder's `parent` is the
+     * builder it is open inside.
      * `block_root` is the active input's root -- the document, or a table
      * cell whose content is the input -- which the input's end closes in
      * place, and `current` the current block. `pending` is the block that
-     * closed last, a child of the current block, until it settles: the lines
+     * closed last, the last child of the current block, until it settles
+     * (A BLOCK SETTLES): the lines
      * after its close still write it -- a blank line its LAST_LINE_BLANK, a
      * block identifier its anchor and end, a caption its table -- and nothing
      * writes a settled block but completion, which makes its inline
@@ -833,15 +784,9 @@ static inline markdown_core_node *markdown_core_parser_parent(const markdown_cor
 
 /* The last child of `node`, an open block: the block open inside it, or,
  * when it is the current block, its pending child or else its last settled
- * one; NULL when it has none. */
-static inline markdown_core_node *markdown_core_parser_last_child(const markdown_core_parser *parser,
-                                                                  const markdown_core_node *node) {
-    if (node != parser->current) {
-        return markdown_core_scaffold_last(node);
-    }
-    if (parser->pending) {
-        return parser->pending;
-    }
+ * one, each the last of its children (THE BUILDERS); NULL when it has
+ * none. */
+static inline markdown_core_node *markdown_core_parser_last_child(const markdown_core_node *node) {
     return node->child_count ? node->children[node->child_count - 1] : NULL;
 }
 
@@ -1194,8 +1139,7 @@ void markdown_core_parser_discard(markdown_core_parser *parser);
 size_t markdown_core_parser_commit_point(const markdown_core_parser *parser);
 /* Makes the transaction a session's (markdown_core_stream), before its first
  * commit: only such a transaction completes for a snapshot and takes
- * snapshots, and asks for paths, levels, supersedes and retirements. False
- * when the transaction failed. */
+ * snapshots. False when the transaction failed. */
 bool markdown_core_parser_stream(markdown_core_parser *parser);
 /* Completes the blocks that have settled, for a snapshot (plan 5.4): the
  * cells of the tables that closed are read, the document prepares the
@@ -1206,36 +1150,12 @@ bool markdown_core_parser_complete(markdown_core_parser *parser);
 /* A SNAPSHOT of `source`, the text of the last commit (blocks.c, THE
  * SNAPSHOT): the committed parse read on to the end of the text, ended
  * there, completed with a snapshot's lookups and published, and then put
- * back as its commit left it. The published root, or NULL when the
- * transaction failed; `*commit_point` is the next commit's limit
+ * back as its commit left it. The published root, which the next commit,
+ * finalize or discard takes back, or NULL when the transaction failed;
+ * `*commit_point` is the next commit's limit
  * (markdown_core_parser_commit_point). */
 markdown_core_node *markdown_core_parser_snapshot(markdown_core_parser *parser, const char *source, size_t length,
                                                   size_t *commit_point);
-/* THE PATHS (blocks.c): the path of `block`, a block a streaming commit has
- * open, settling or settled and not yet completed, or NULL with the parse
- * failed; a pass over the paths begun (A PASS OVER THE PATHS), until the next
- * of which the tree the parser builds changes only as
- * markdown_core_parser_supersede changes it; and the block at `path` in that
- * tree once the document has closed, or NULL with the parse failed. */
-markdown_core_path *markdown_core_parser_path(markdown_core_parser *parser, markdown_core_node *block);
-void markdown_core_parser_path_pass(markdown_core_parser *parser);
-markdown_core_node *markdown_core_parser_resolve(markdown_core_parser *parser, markdown_core_path *path);
-/* THE OBJECT OF A LEVEL (blocks.c, THE LEVELS) in the tree the parser builds
- * now: the copy of the level's builder while the snapshot has it open, and
- * the level's block otherwise. NULL past the levels, when the copy is gone,
- * or when the published document holds no object for the level. */
-const struct markdown_core_node *markdown_core_parser_level_object(const markdown_core_parser *parser, size_t depth);
-/* THE BLOCK AT `path` AS AN OBJECT OF ITS OWN (blocks.c, A BLOCK
- * SUPERSEDED), once the document has closed: the block, which the published
- * document holds only when it is an object of the tree the publish shares,
- * moved to a slot of its own then, as is every block between it and the
- * levels; or NULL, with the parse failed. Nothing the published document
- * reads changes, and the next publish finds what holds the block differs. */
-struct markdown_core_node *markdown_core_parser_supersede(markdown_core_parser *parser, markdown_core_path *path);
-/* Keeps `storage`, of `kind`, until the next publish, which no longer reads
- * it, and then releases it. False, with the parse failed, when it could not
- * be kept. */
-bool markdown_core_parser_retire(markdown_core_parser *parser, void *storage, markdown_core_retired_kind kind);
 void markdown_core_parser_destroy(markdown_core_parser *parser);
 
 #ifdef __cplusplus

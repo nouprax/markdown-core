@@ -218,87 +218,124 @@ static void S_place_content_span(markdown_core_parser *parser, markdown_core_nod
     }
 }
 
-static void try_inserting_table_header_paragraph(markdown_core_parser *parser, markdown_core_node *parent_container,
-                                                 unsigned char *parent_string, int paragraph_offset) {
-    markdown_core_node *paragraph;
+/* THE LEAD (docs/plans/2026-09-29-incremental-parsing.md, 5.7): the paragraph
+ * whose last line is a table's header keeps the `lead` bytes of its text
+ * before that line and closes where they end, as a later block start would
+ * close it -- reference definitions, anchor attachment and the runs of its
+ * own lines share the close -- and a paragraph whose text was the header
+ * alone yields no node. The lead keeps its authored spelling: a pipe a cell
+ * escapes is a cell's transformation, and the lead is no cell, so `pre \\|
+ * lead` above a table keeps both of its bytes. The paragraph is the current
+ * block. */
+static void S_close_lead(markdown_core_parser *parser, markdown_core_node *paragraph, markdown_core_chunk text,
+                         bufsize_t lead) {
     bufsize_t first = 0;
-    bufsize_t content_end = paragraph_offset;
-    bufsize_t scope_end = content_end;
+    bufsize_t scope_end = lead;
     int line;
     bufsize_t source;
 
-    // Four allocations, and every one of them used to be trusted. The first was
-    // a crash: an unchecked node had its content written, which dereferences
-    // it -- SIGSEGV on `lead text` above a two-column table
-    // with the allocation refused. The other three lose the lead paragraph
-    // WITHOUT setting parser->error, so the document comes back short and the
-    // failure bit says everything was fine.
-    paragraph = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_PARAGRAPH);
-    if (!paragraph) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return;
-    }
-
-    /* THE LEAD KEEPS ITS AUTHORED SPELLING. This used to run the lead through
-     * `unescape_pipes`, which is a CELL transformation: a pipe a cell escaped
-     * is not a pipe the cell contains. The lead is not a cell -- it is the
-     * paragraph the table was split out of -- so `pre \\| lead` above a table
-     * lost one of its two backslashes here and the inline phase then read the
-     * survivor as the escape, giving `pre | lead` where the author wrote an
-     * escaped backslash followed by a pipe. */
-    while (first < content_end && markdown_core_is_whitespace(parent_string[first])) {
+    assert(parser->current == paragraph);
+    while (first < lead && markdown_core_is_whitespace(text.data[first])) {
         first++;
     }
-    /* The paragraph's close needs the complete terminated slice, including
-     * the last reference definition's newline. Only the authored scope omits
-     * line endings; inline parsing trims its own input after the close. */
-    while (scope_end > first && (parent_string[scope_end - 1] == '\n' || parent_string[scope_end - 1] == '\r')) {
+    /* The close reads the lead with its last line ending, which ends the
+     * last reference definition; the authored scope omits line endings. */
+    while (scope_end > first && (text.data[scope_end - 1] == '\n' || text.data[scope_end - 1] == '\r')) {
         scope_end--;
     }
-    markdown_core_strbuf_put(&paragraph->content, parent_string + first, content_end - first);
-    if (paragraph->content.oom) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        markdown_core_parser_release_node(parser, paragraph);
-        return;
-    }
-
-    /* The lead is synthesized from a content offset and so has no position of
-     * its own; before requirement 10 it kept the 0:0..0:0 sentinel, and every
-     * inline in it inherited line zero. The map answers both ends. */
-    if (markdown_core_parser_content_place(parser, &parent_container->content_map, first, &line, &source)) {
-        paragraph->place = (markdown_core_place){(uint32_t)source, (uint32_t)source};
-    }
     if (scope_end > first &&
-        markdown_core_parser_content_end_place(parser, &parent_container->content_map, scope_end - 1, &line, &source)) {
+        markdown_core_parser_content_end_place(parser, &paragraph->content_map, scope_end - 1, &line, &source)) {
         paragraph->place.end = (uint32_t)source;
     }
-    /* The lead's content is a SLICE of the paragraph's, and it can be several
-     * lines long, so it takes the marks for those lines rather than one mark
-     * for the first of them. */
-    markdown_core_parser_adopt_content_marks(parser, &parent_container->content_map, &paragraph->content_map, first,
-                                             content_end - first);
+    /* What is cut from the front moves the paragraph's start, which its
+     * close reads from the map. */
+    if (lead > first) {
+        markdown_core_parser_adopt_content_marks(parser, &paragraph->content_map, &paragraph->content_map, first,
+                                                 lead - first);
+    } else {
+        paragraph->content_map.count = 0;
+        paragraph->content_map.offset = 0;
+    }
+    paragraph->cut_front += first;
+    paragraph->cut_back += text.len - lead;
+    markdown_core_block_close_current(parser);
+}
 
-    /* A table split closes this paragraph just as a later block start would:
-     * reference definitions, anchor attachment and the runs of its own lines
-     * share the close. It settles before the table it was split from. */
-    markdown_core_block_close_into(parser, paragraph, markdown_core_parser_parent(parser, parent_container));
+/* The table a paragraph's last line heads, made from `text`, the
+ * paragraph's text, whose header row starts at `header`: the row's bytes
+ * are its content, and their marks its map, and it starts where the row was
+ * written. NULL, with the parse failed, when an allocation failed. */
+static markdown_core_node *S_header_table(markdown_core_parser *parser, const markdown_core_node *paragraph,
+                                          markdown_core_chunk text, bufsize_t header) {
+    int line;
+    bufsize_t source;
+    markdown_core_node *table = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_TABLE);
+    if (!table) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return NULL;
+    }
+    markdown_core_strbuf_put(&table->content, text.data + header, text.len - header);
+    if (table->content.oom) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        markdown_core_parser_release_node(parser, table);
+        return NULL;
+    }
+    markdown_core_parser_adopt_content_marks(parser, &paragraph->content_map, &table->content_map, header,
+                                             text.len - header);
+    if (markdown_core_parser_content_place(parser, &paragraph->content_map, header, &line, &source)) {
+        table->place = (markdown_core_place){(uint32_t)source, (uint32_t)source};
+    }
+    return table;
+}
+
+/* THE TABLE A PARAGRAPH'S LAST LINE HEADS (5.7) is the block of that line
+ * on, and the paragraph's object stays with the block that holds its first
+ * line (5.9): a paragraph whose text was the header alone becomes the table,
+ * as an underline makes a paragraph a Setext heading, and any other keeps
+ * the `header` bytes of its text before the header (S_close_lead) as the
+ * table opens after it, a block of its own. The table is the current block.
+ * NULL, with the parse failed when an allocation failed, when no table
+ * opened. */
+static markdown_core_node *S_open_table(markdown_core_parser *parser, markdown_core_node *paragraph,
+                                        markdown_core_node *parent, markdown_core_chunk text, bufsize_t header) {
+    if (!header) {
+        markdown_core_node_set_kind_result result =
+            markdown_core_parser_set_node_kind(parser, paragraph, parent, MARKDOWN_CORE_NODE_TABLE);
+        if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
+            if (result == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED) {
+                markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            }
+            return NULL;
+        }
+        return paragraph;
+    }
+    markdown_core_node *table = S_header_table(parser, paragraph, text, header);
+    if (!table) {
+        return NULL;
+    }
+    S_close_lead(parser, paragraph, text, header);
+    if (parser->error) {
+        markdown_core_parser_release_node(parser, table);
+        return NULL;
+    }
+    return markdown_core_parser_open_child(parser, parent, table);
 }
 
 /* Return NULL when the syntax does not match or the parent rejects the table
- * kind, so later elements can try the same line. Once the paragraph becomes
- * a table, return that container even if a later allocation fails; parser->error
- * then aborts the parse and destruction releases the partially built table. */
+ * kind, so later elements can try the same line. A pipe table opens at its
+ * delimiter row, and its header row is the last line of the paragraph above
+ * it (S_open_table). Once the table has opened, return it even if a later
+ * allocation fails; parser->error then aborts the parse and destruction
+ * releases the partially built table. */
 static markdown_core_node *try_opening_table_header(const markdown_core_element_instance *self,
-                                                    markdown_core_parser *parser, markdown_core_node *parent_container,
+                                                    markdown_core_parser *parser, markdown_core_node *paragraph,
                                                     unsigned char *input, int len) {
     markdown_core_node *table_header;
     pipe_row header_row, delimiter_row;
-    markdown_core_chunk header_text;
+    markdown_core_chunk text;
     uint16_t i;
-    int header_line;
-    bufsize_t header_start;
 
-    if (parent_container->flags & MARKDOWN_CORE_NODE__TABLE_VISITED) {
+    if (paragraph->flags & MARKDOWN_CORE_NODE__TABLE_VISITED) {
         return NULL;
     }
 
@@ -313,57 +350,49 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
 
     // Select the final header row and verify width before committing a table.
     /* The header row is the last line of the paragraph's text. */
-    header_text = markdown_core_node_text(parent_container);
-    if (!recognize_pipe_row(header_text.data, header_text.len, &header_row) ||
-        header_row.n_columns != delimiter_row.n_columns) {
-        parent_container->flags |= MARKDOWN_CORE_NODE__TABLE_VISITED;
+    text = markdown_core_node_text(paragraph);
+    if (!recognize_pipe_row(text.data, text.len, &header_row) || header_row.n_columns != delimiter_row.n_columns) {
+        paragraph->flags |= MARKDOWN_CORE_NODE__TABLE_VISITED;
         return NULL;
     }
 
-    /* A split introduces a new sibling. Decide before converting or allocating,
-     * so refusal leaves the complete original paragraph available to grammar. */
-    markdown_core_node *parent = markdown_core_parser_parent(parser, parent_container);
-    if (header_row.paragraph_offset && !markdown_core_node_can_contain_type(parent, MARKDOWN_CORE_NODE_PARAGRAPH)) {
+    /* Decide before allocating, so refusal leaves the complete paragraph
+     * available to grammar. */
+    markdown_core_node *parent = markdown_core_parser_parent(parser, paragraph);
+    if (!markdown_core_node_can_contain_type(parent, MARKDOWN_CORE_NODE_TABLE)) {
         return NULL;
     }
-
-    markdown_core_node_set_kind_result result =
-        markdown_core_parser_set_node_kind(parser, parent_container, parent, MARKDOWN_CORE_NODE_TABLE);
-    if (result != MARKDOWN_CORE_NODE_SET_KIND_OK) {
-        if (result == MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        }
-
+    markdown_core_node *node = S_open_table(parser, paragraph, parent, text, header_row.paragraph_offset);
+    if (!node) {
         return NULL;
     }
-
-    if (header_row.paragraph_offset) {
-        try_inserting_table_header_paragraph(parser, parent_container, header_text.data, header_row.paragraph_offset);
-        /* The table starts where its HEADER ROW was written, not where the
-         * paragraph it was split out of did. Taken before the row and cells
-         * below read start_column, because they are placed against it. */
-        if (markdown_core_parser_content_place(parser, &parent_container->content_map, header_row.paragraph_offset,
-                                               &header_line, &header_start)) {
-            parent_container->place.start = (uint32_t)header_start;
-        }
-    }
+    /* The header row and its cells are RECOVERED from the table's text,
+     * the row as it was written, and every offset below is an offset into it.
+     * Adding one to a column is only right while the buffer holds a single
+     * line starting where the block does; with a lead split off, `| a | b |`
+     * on line three was reported at 1:10, a column that is not on line one.
+     * The map turns each offset back into the place it was written. */
+    text = markdown_core_node_text(node);
+    header_row.source = text.data;
+    header_row.length = text.len;
+    header_row.paragraph_offset = 0;
 
     /* Table data belongs to the element. Its cleanup accepts partial
-     * initialization when an allocation fails after the kind change. */
-    markdown_core_node_set_element(parent_container, self->element);
-    parent_container->opaque = markdown_core_alloc(1, sizeof(markdown_core_table));
-    if (!parent_container->opaque) {
+     * initialization when an allocation fails. */
+    markdown_core_node_set_element(node, self->element);
+    node->opaque = markdown_core_alloc(1, sizeof(markdown_core_table));
+    if (!node->opaque) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
 
-        return parent_container;
+        return node;
     }
-    markdown_core_table *table = parent_container->opaque;
+    markdown_core_table *table = node->opaque;
     table->column_count = header_row.n_columns;
     table->columns = markdown_core_alloc(table->column_count, sizeof(*table->columns));
     if (!table->columns) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
 
-        return parent_container;
+        return node;
     }
     pipe_row_cursor markers = pipe_row_cells(&delimiter_row);
     node_cell geometry;
@@ -374,20 +403,14 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
                                       : (right ? MARKDOWN_CORE_FLOW_RIGHT : MARKDOWN_CORE_FLOW_NONE);
     }
 
-    /* The header row is made whole from the paragraph's content, as its
-     * cells are: it is never an open block. */
+    /* The header row is made whole from the table's content, as its cells
+     * are: it is never an open block. */
     table_header = table_child(parser, MARKDOWN_CORE_NODE_TABLE_ROW, parser->line_number, 1, parser->line_number, 1);
     if (!table_header) {
 
-        return parent_container;
+        return node;
     }
-    /* The header row and its cells are RECOVERED from the paragraph's content
-     * buffer, and every offset below is an offset into that buffer. Adding one
-     * to a column is only right while the buffer holds a single line starting
-     * where the block does; with a lead split off, `| a | b |` on line three
-     * was reported at 1:10, a column that is not on line one. The map turns
-     * each offset back into the place it was written. */
-    S_place_content_span(parser, parent_container, table_header, header_row.paragraph_offset, header_text.len - 2);
+    S_place_content_span(parser, node, table_header, 0, header_row.length - 2);
 
     table->head_count = 1;
 
@@ -398,17 +421,17 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
         if (!header_cell) {
             break;
         }
-        S_place_content_span(parser, parent_container, header_cell, cell->start_offset, cell->end_offset);
-        set_cell_content(parser, header_cell, cell, parent_container, parser->line_number, parser->line_start,
-                         (bufsize_t)(cell->content.data - header_text.data));
+        S_place_content_span(parser, node, header_cell, cell->start_offset, cell->end_offset);
+        set_cell_content(parser, header_cell, cell, node, parser->line_number, parser->line_start,
+                         (bufsize_t)(cell->content.data - header_row.source));
         markdown_core_block_settle(parser, header_cell, table_header);
     }
-    markdown_core_block_settle(parser, table_header, parent_container);
+    markdown_core_block_settle(parser, table_header, node);
 
     markdown_core_parser_advance_offset(
         parser, (char *)input, (int)strlen((char *)input) - 1 - markdown_core_parser_get_offset(parser), false);
 
-    return parent_container;
+    return node;
 }
 
 static markdown_core_node *try_opening_table_row(const markdown_core_element *self, markdown_core_parser *parser,
@@ -598,30 +621,6 @@ static bool opaque_view(const markdown_core_element *self, markdown_core_node *c
     *made = *(const markdown_core_table *)node->opaque;
     made->views_columns = made->columns != NULL;
     copy->opaque = made;
-    return true;
-}
-
-static bool opaque_own(const markdown_core_element *self, markdown_core_node *copy, const markdown_core_node *node) {
-    markdown_core_table *table = copy->opaque;
-    if (!table->views_columns) {
-        return true;
-    }
-    assert(table->columns == ((const markdown_core_table *)node->opaque)->columns);
-    markdown_core_table_column *columns = markdown_core_realloc(NULL, table->column_count * sizeof(*columns));
-    markdown_core_table_interval *runs =
-        table->runs ? markdown_core_realloc(NULL, table->column_count * sizeof(*runs)) : NULL;
-    if (!columns || (table->runs && !runs)) {
-        markdown_core_free(columns);
-        markdown_core_free(runs);
-        return false;
-    }
-    memcpy(columns, table->columns, table->column_count * sizeof(*columns));
-    if (runs) {
-        memcpy(runs, table->runs, table->column_count * sizeof(*runs));
-    }
-    table->columns = columns;
-    table->runs = runs;
-    table->views_columns = false;
     return true;
 }
 
@@ -2653,7 +2652,7 @@ static markdown_core_node *table_try_open(table_workspace *workspace, markdown_c
     /* Every opening grammar needs a later physical line. At EOF only an
      * existing eligible table can claim a trailing caption. */
     if (markdown_core_parser_input_ends(parser, parser->lookahead_cursor)) {
-        const markdown_core_node *preceding = markdown_core_parser_last_child(parser, parent);
+        const markdown_core_node *preceding = markdown_core_parser_last_child(parent);
         if (!preceding || preceding->kind != MARKDOWN_CORE_NODE_TABLE) {
             return NULL;
         }
@@ -2673,7 +2672,7 @@ static markdown_core_node *table_try_open(table_workspace *workspace, markdown_c
     int caption = table_caption_start(source.lines[0].data, source.lines[0].length, source.lines[0].first,
                                       source.lines[0].indent);
     size_t caption_last = 0;
-    markdown_core_node *preceding = caption >= 0 ? markdown_core_parser_last_child(parser, parent) : NULL;
+    markdown_core_node *preceding = caption >= 0 ? markdown_core_parser_last_child(parent) : NULL;
     bool trailing = preceding && preceding->kind == MARKDOWN_CORE_NODE_TABLE && preceding->opaque &&
                     !((markdown_core_table *)preceding->opaque)->caption;
     bool matched = false;
@@ -2824,6 +2823,5 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .opaque_alloc_func = opaque_alloc,
     .opaque_free_func = opaque_free,
     .opaque_view_func = opaque_view,
-    .opaque_own_func = opaque_own,
     .visit_owned_subtrees_func = visit_owned_subtrees,
 };

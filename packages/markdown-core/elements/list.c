@@ -288,7 +288,7 @@ bool markdown_core_list_continue(markdown_core_parser *parser, markdown_core_nod
     if (container->kind == MARKDOWN_CORE_NODE_LIST_ITEM) {
         return markdown_core_block_continue_indented(
             parser, input, container->as.list->marker_offset + container->as.list->padding,
-            markdown_core_parser_last_child(parser, container) != NULL || joining == container);
+            markdown_core_parser_last_child(container) != NULL || joining == container);
     }
     if (parser->blank) {
         if ((container->flags & MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK) && parser->indent == 0) {
@@ -308,32 +308,30 @@ static bool continue_container(const markdown_core_element_instance *self, markd
     (void)self;
     return markdown_core_list_continue(parser, node, input, joining, taken);
 }
-/* A LIST IS LAID OUT AT ITS EXIT, as completion reaches it: its items, which
- * settled before it, have folded into it whether it is loose. */
-static markdown_core_finish_result finish_step(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                               markdown_core_node *node, markdown_core_node *parent,
-                                               markdown_core_event_type event, void **state) {
+/* A LIST IS LAID OUT AS IT CLOSES, or as a snapshot ends it open: its
+ * items, which settled into it before, have folded into it whether it is
+ * loose. */
+static bool close_block(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                        markdown_core_node *node, markdown_core_node *parent) {
     (void)self;
     (void)parser;
-    (void)event;
     (void)parent;
-    (void)state;
-    assert(event == MARKDOWN_CORE_EVENT_EXIT && node->kind == MARKDOWN_CORE_NODE_LIST);
-    node->as.list->tight = !(node->flags & MARKDOWN_CORE_NODE__LIST_LOOSE);
-    return MARKDOWN_CORE_FINISH_CONTINUE;
+    if (node->kind == MARKDOWN_CORE_NODE_LIST) {
+        node->as.list->tight = !(node->flags & MARKDOWN_CORE_NODE__LIST_LOOSE);
+    }
+    return true;
 }
 static const markdown_core_node_type LIST_KINDS[] = {MARKDOWN_CORE_NODE_LIST, MARKDOWN_CORE_NODE_NONE};
 static bool blank_line(const markdown_core_element_instance *self, markdown_core_parser *parser,
                        markdown_core_node *node) {
     (void)self;
-    return !(node->kind == MARKDOWN_CORE_NODE_LIST_ITEM && !markdown_core_parser_last_child(parser, node) &&
+    return !(node->kind == MARKDOWN_CORE_NODE_LIST_ITEM && !markdown_core_parser_last_child(node) &&
              markdown_core_parser_starts_on_line(parser, node, parser->line_number));
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
     .state_size = sizeof(markdown_core_list_work),
-    .finish_step = finish_step,
-    .finish_exit_kinds = LIST_KINDS,
+    .close_block = close_block,
     .fold_child = fold_child,
     .fold_kinds = LIST_KINDS,
     .blank_line = blank_line,
