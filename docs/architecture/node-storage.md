@@ -7,8 +7,9 @@ kind-specific fields has no data record. Field-bearing kinds own a
 record containing their ordinary typed fields. Construction places the node
 and its record together in one slot, with the typed pointer referring directly
 to that record; a record larger than the slot's record space is owned apart
-from the slot through `node_data_allocation`. Kind conversion uses the same
-capacity and ownership rule. A C99 union provides scalar alignment
+from the slot through `node_data_allocation`, as storage of its size the node
+owns (below). Copying a node and kind conversion use the same capacity and
+ownership rule. A C99 union provides scalar alignment
 for the node and the record; the slot's header before them is padded to the
 same alignment, and that padding is included in measured memory costs.
 
@@ -89,8 +90,8 @@ as it keeps its node slabs.
 
 What else a node owns of its own size -- the lists of its source (its places
 while the parse builds the tree, its runs once it is published), a label it
-declares -- is storage of varied sizes, cut from the node slabs beside the
-nodes. A size is rounded up to a class, and storage of each class is a slot
+declares, a record too large for its slot -- is storage of varied sizes, cut
+from the node slabs beside the nodes. A size is rounded up to a class, and storage of each class is a slot
 like any other: released into the pool, it is handed out again for its class
 before a slab is cut further, so this storage too is bounded by what is live,
 not by how much a session's appends made. Storage larger than the largest class
@@ -191,7 +192,8 @@ fields if the new record exceeds slot capacity. A record that fits already
 has storage: the conversion releases the old fields, zeroes the new active
 record in the slot, establishes defaults and commits the new kind. These last
 operations cannot fail and never overwrite a still-live old field. The old
-record is freed only when it was external; slot storage stays with the node.
+record is given back only when it was external; slot storage stays with the
+node.
 The typed view and allocation ownership are explicit: `as` points to the
 current record, while `node_data_allocation` owns whichever record is not in
 the slot, if any, because it exceeds the slot's record space. Ownership is

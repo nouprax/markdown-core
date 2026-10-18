@@ -2609,15 +2609,26 @@ static void node_slots_come_from_slabs_and_go_back_to_the_pool(test_batch_runner
     }
     INT_EQ(runner, payload_allocations, allocations, "reusing released slots makes no allocator call");
 
-    /* A record too large for the slot is owned apart from it and released
-     * with the node, under the same rule used by kind conversion. */
-    markdown_core_node *large = markdown_core_node_pool_new(&pool, MARKDOWN_CORE_NODE_METADATA, NULL);
+    /* A record too large for the slot is storage of its size the node owns,
+     * cut from the slabs beside the nodes and given back to the pool with
+     * the node, under the rule copies and kind conversion use too. A pool of
+     * its own keeps the slabs above holding nodes alone. */
+    markdown_core_node_pool records = {0};
+    allocations = payload_allocations;
+    markdown_core_node *large = markdown_core_node_pool_new(&records, MARKDOWN_CORE_NODE_METADATA, NULL);
     OK(runner, large && large->node_data_allocation && large->as.data == large->node_data_allocation,
        "a record that does not fit the slot is owned through node_data_allocation");
-    INT_EQ(runner, payload_allocations, allocations + 1, "the out-of-slot record is one allocation");
+    INT_EQ(runner, payload_allocations, allocations + 1, "the node and its out-of-slot record are cut from one slab");
+    void *record = large ? large->node_data_allocation : NULL;
     size_t releases = payload_releases;
-    markdown_core_node_pool_release(&pool, large);
-    INT_EQ(runner, payload_releases, releases + 1, "releasing it frees the record and returns the slot to the pool");
+    markdown_core_node_pool_release(&records, large);
+    large = markdown_core_node_pool_new(&records, MARKDOWN_CORE_NODE_METADATA, NULL);
+    OK(runner, large && large->node_data_allocation == record, "the record given back is the next one of its size");
+    INT_EQ(runner, payload_allocations, allocations + 1, "taking them again makes no allocator call");
+    INT_EQ(runner, payload_releases, releases, "giving them back frees nothing");
+    markdown_core_node_pool_dispose(&records);
+    markdown_core_node_free(large);
+    INT_EQ(runner, payload_releases, releases + 1, "the slab is freed with its last node and record");
 
     /* Refusing the slab refuses the node and leaves the pool usable. */
     while (count < LIMIT) {

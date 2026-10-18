@@ -131,6 +131,21 @@ void markdown_core_node_pool_bytes_free(markdown_core_node_pool *pool, void *sto
     markdown_core_bytes_release(pool ? &pool->bytes : NULL, storage);
 }
 
+/* Storage of `bytes` a node owns, from `pool`, or a slot of its own from the
+ * allocator when there is no pool: either is given back by
+ * markdown_core_node_pool_bytes_free. */
+static void *S_bytes_take(markdown_core_node_pool *pool, size_t bytes) {
+    if (pool) {
+        return markdown_core_node_pool_bytes(pool, bytes);
+    }
+    markdown_core_bytes_header *header = markdown_core_realloc(NULL, sizeof(*header) + bytes);
+    if (!header) {
+        return NULL;
+    }
+    header->owner.slab = NULL;
+    return header + 1;
+}
+
 /* RECORD SIZE IS A PROPERTY OF THE KIND, so it is an array index.
  *
  * This was a 24-branch switch on the kind, compiled as a decision tree and
@@ -266,11 +281,12 @@ markdown_core_node *markdown_core_node_pool_new(markdown_core_node_pool *pool, m
     memset(slot, 0, offsetof(markdown_core_node_slot, record) + inline_size);
     markdown_core_node *node = &slot->node.node;
     if (payload_size > MARKDOWN_CORE_NODE_SLOT_RECORD_BYTES) {
-        node->node_data_allocation = markdown_core_alloc(1, payload_size);
+        node->node_data_allocation = S_bytes_take(pool, payload_size);
         if (!node->node_data_allocation) {
             S_slot_release(pool, node);
             return NULL;
         }
+        memset(node->node_data_allocation, 0, payload_size);
         node->as.data = node->node_data_allocation;
     } else {
         node->as.data = payload_size ? slot->record : NULL;
@@ -388,13 +404,13 @@ static void free_node_as(markdown_core_node_pool *pool, markdown_core_node *node
     default:
         break;
     }
-    /* Free only a record too large for the slot, whether construction or a
-     * kind change installed it. Pointer
-     * equality cannot establish ownership: an allocator may place a
-     * replacement right after a slot. Almost no node owns one, so the release
-     * is entered only when there is one. */
+    /* Give back only a record too large for the slot, whether construction,
+     * a copy or a kind change installed it, as storage the node owns.
+     * Pointer equality cannot establish ownership: such storage may lie
+     * right after a slot. Almost no node owns one, so the release is entered
+     * only when there is one. */
     if (node->node_data_allocation) {
-        markdown_core_free(node->node_data_allocation);
+        markdown_core_node_pool_bytes_free(pool, node->node_data_allocation);
         node->node_data_allocation = NULL;
     }
     node->as.data = NULL;
@@ -721,7 +737,7 @@ static markdown_core_node *S_copy_slot(markdown_core_node_pool *pool, const mark
     markdown_core_node *copy = &slot->node.node;
     if (node->node_data_allocation) {
         const size_t size = S_node_payload_size((markdown_core_node_type)node->kind);
-        copy->node_data_allocation = markdown_core_realloc(NULL, size);
+        copy->node_data_allocation = S_bytes_take(pool, size);
         if (!copy->node_data_allocation) {
             S_slot_release(pool, copy);
             return NULL;
@@ -984,7 +1000,7 @@ markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_nod
      * the old fields are destroyed cannot fail. Both cases keep the node's
      * address, and an allocation refusal preserves all old owned values. */
     size_t size = S_node_payload_size(kind);
-    void *allocation = size > MARKDOWN_CORE_NODE_SLOT_RECORD_BYTES ? markdown_core_alloc(1, size) : NULL;
+    void *allocation = size > MARKDOWN_CORE_NODE_SLOT_RECORD_BYTES ? S_bytes_take(NULL, size) : NULL;
     if (size > MARKDOWN_CORE_NODE_SLOT_RECORD_BYTES && !allocation) {
         return MARKDOWN_CORE_NODE_SET_KIND_ALLOCATION_FAILED;
     }
@@ -996,7 +1012,7 @@ markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_nod
     free_node_as(NULL, node);
     node->as.data = allocation ? allocation : size ? S_slot_of(node)->record : NULL;
     node->node_data_allocation = allocation;
-    if (!allocation && size) {
+    if (size) {
         memset(node->as.data, 0, size);
     }
     S_init_node_as(kind, &node->as);
@@ -1060,21 +1076,6 @@ int markdown_core_node_set_element(markdown_core_node *node, const markdown_core
     }
     node->element = element;
     return 1;
-}
-
-/* Storage of `bytes` a node owns, from `pool`, or a slot of its own from the
- * allocator when there is no pool: either is given back by
- * markdown_core_node_pool_bytes_free. */
-static void *S_bytes_take(markdown_core_node_pool *pool, size_t bytes) {
-    if (pool) {
-        return markdown_core_node_pool_bytes(pool, bytes);
-    }
-    markdown_core_bytes_header *header = markdown_core_realloc(NULL, sizeof(*header) + bytes);
-    if (!header) {
-        return NULL;
-    }
-    header->owner.slab = NULL;
-    return header + 1;
 }
 
 bool markdown_core_node_array_start(markdown_core_node_pool *pool, markdown_core_node ***items, uint32_t *count,

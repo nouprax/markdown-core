@@ -429,8 +429,10 @@ struct markdown_core_node {
      * opaque_free_func. It survives kind changes independently of `as`. */
     void *opaque;
 
-    /* Owns a record too large for the slot, whether installed at construction
-     * or conversion. `as` is the typed view for either backing. */
+    /* Owns a record too large for the slot, whether installed at
+     * construction, copy or conversion: storage of its size the node owns
+     * (markdown_core_node_pool_bytes). `as` is the typed view for either
+     * backing. */
     void *node_data_allocation;
     markdown_core_node_data as;
 };
@@ -494,10 +496,10 @@ typedef union {
 
 /* Room for a kind's record inside the slot. The bound is a property of the
  * slot, not of any kind: a record that fits is placed here, and one that does
- * not is owned through `node_data_allocation`. Construction and conversion
- * use this same capacity and ownership rule. Sixty-four bytes hold every
- * record but the metadata fields and a cross transclusion's, which are one
- * per document and rare. */
+ * not is storage of its size the node owns, through `node_data_allocation`.
+ * Construction, copy and conversion use this same capacity and ownership
+ * rule. Sixty-four bytes hold every record but the document's, the metadata
+ * fields and a cross transclusion's, which are one per document and rare. */
 #define MARKDOWN_CORE_NODE_SLOT_RECORD_BYTES 64
 
 typedef struct {
@@ -763,7 +765,8 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node);
  * A node lives in a SLOT (slab.h) holding the node and room for its kind's
  * record, the resources links read through live in slots of their own, and
  * what else a node owns of its own size -- the lists of its source, a label
- * it declares -- in storage of that size, cut from the slabs its nodes are.
+ * it declares, a record too large for its slot -- in storage of that size,
+ * cut from the slabs its nodes are.
  * A pool holds the slabs of all three. A parse takes every slot from the
  * pool its caller lends it -- a session's, which outlives each of its
  * appends, or one the caller makes for a single parse -- and a caller with no
@@ -787,9 +790,9 @@ typedef struct markdown_core_node_pool {
 #define MARKDOWN_CORE_NODE_SLAB_BYTES ((size_t)64 * 1024)
 
 /* Uninitialized storage of `bytes` a node owns -- a list of its source, a
- * label it declares -- cut from the slabs of the pool's nodes, which a parse
- * always lends; NULL when none can be had. The node releases it with
- * itself. */
+ * label it declares, a record too large for its slot -- cut from the slabs
+ * of the pool's nodes, which a parse always lends; NULL when none can be
+ * had. The node releases it with itself. */
 static inline void *markdown_core_node_pool_bytes(markdown_core_node_pool *pool, size_t bytes) {
     return markdown_core_bytes_take(&pool->bytes, &pool->nodes, bytes, MARKDOWN_CORE_NODE_SLAB_BYTES);
 }
