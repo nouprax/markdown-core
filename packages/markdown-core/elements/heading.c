@@ -806,6 +806,7 @@ void markdown_core_headings_finish(const markdown_core_element_instance *self, m
     markdown_core_heading_state *state = self->state;
     markdown_core_heading_collection *headings = &state->headings;
     const bool snapshot = parser->snapshot;
+    markdown_core_parser_path_pass(parser);
     if (!snapshot) {
         names_reset(parser, state);
     }

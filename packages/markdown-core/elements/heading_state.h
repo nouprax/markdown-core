@@ -18,7 +18,7 @@
  * or when its inline content was made again since. */
 typedef struct {
     markdown_core_node *node;
-    const markdown_core_path *path;
+    markdown_core_path *path;
     markdown_core_inline_state *pending;
     const unsigned char *name;
     bufsize_t base_size, name_size;

@@ -11748,6 +11748,41 @@ static char *with_field(const char *pattern, const char *field) {
     return made;
 }
 
+/* THE BLOCKS OF ONE PASS SHARE THE BLOCKS ABOVE THEM (blocks.c, A PASS
+ * OVER THE PATHS): the roots a finalize completes anew and the headings a
+ * late anchor renames lie at every depth of three nested directives, so each
+ * pass supersedes blocks under the ones it already moved. The last root of
+ * each directive completes as its closing line closes it, after the roots
+ * that completed while it was open; a directive's label looks the late
+ * definition up beside the roots inside it. Each text arrives byte by byte,
+ * three bytes at a time and line by line, and its finalize dumps as a parse
+ * of the same text does. The headings look no definition up, so every
+ * snapshot of their text dumps as a parse of the text so far does. */
+static void session_paths_share_blocks(test_batch_runner *runner) {
+#define FILLER "\n\nfiller one\n\nfiller two\n\nfiller three\n\n"
+    static const char *const sources[] = {
+        ":::note\n\nouter [x]\n\n:::note\n\nmiddle [x]\n\n:::note\n\ninner one [x]\n\ninner two [x]\n:::\n\n"
+        "middle again [x]\n:::\n\nouter again [x]\n:::" FILLER "[x]: /u\n",
+        ":::note[Label [x]]\n\n:::note[Inner [x]]\n\nbody [x]\n\nlast [x]\n:::\n\nafter [x]\n:::" FILLER "[x]: /u\n",
+    };
+#undef FILLER
+    static const char headings[] =
+        ":::note\n\n# A\n\n:::note\n\n# A\n\n:::note\n\n# A\n\n# A\n:::\n\n# A\n:::\n\n# A\n:::\n\ntext :n{#a} more\n";
+    static const size_t chunks[] = {1, 3, 0};
+    for (size_t c = 0; c < sizeof(chunks) / sizeof(chunks[0]); c++) {
+        const char *const unit = chunks[c] == 1 ? "bytes" : chunks[c] == 3 ? "three bytes" : "lines";
+        for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+            OK(runner, finalizes_as_a_parse(sources[i], chunks[c]), "a session streamed in %s finalizes as a parse: %s",
+               unit, sources[i]);
+        }
+        OK(runner, finalizes_as_a_parse(headings, chunks[c]), "a session streamed in %s finalizes as a parse: %s", unit,
+           headings);
+    }
+    size_t at = 0;
+    const bool dumped = snapshots_dump_as_parses(headings, &at);
+    OK(runner, dumped, "a session streamed byte by byte dumps as a parse, up to byte %zu: %s", at, headings);
+}
+
 /* A FIELD AN OPENING LINE WRITES COMPLETES ONCE ITS LINE IS READ (step 7,
  * plan 5.3): a callout's title, a definition's term, a block directive's
  * label and a table's caption, before or after its rows, each some
@@ -12119,6 +12154,7 @@ int main(void) {
     session_opener_fields(runner);
     node_copy_views(runner);
     session_finalize_matches_a_parse(runner);
+    session_paths_share_blocks(runner);
     session_allocation_failures(runner);
 
     test_print_summary(runner);

@@ -262,7 +262,7 @@ typedef struct {
  * block holds (`field`), named by the path of that block, and where the root
  * lay as the block phase left it. */
 typedef struct {
-    const markdown_core_path *path;
+    markdown_core_path *path;
     markdown_core_miss_position position;
     bool field;
 } markdown_core_miss_root;
@@ -311,10 +311,11 @@ typedef struct markdown_core_stream {
     size_t own_table_capacity;
     markdown_core_defined *defined;
     size_t defined_count, defined_capacity;
-    /* THE PATHS (blocks.c): the root's, and the blocks the rest are cut
-     * from. */
+    /* THE PATHS (blocks.c): the root's, the blocks the rest are cut from,
+     * and the pass that follows them now (A PASS OVER THE PATHS). */
     markdown_core_path root_path;
     markdown_core_path_block *paths;
+    uint64_t path_pass;
     /* THE LOOKUPS A COMMIT'S COMPLETION FOUND NOTHING FOR, in the order
      * they were made (plan 5.4), and the inline roots they were made for,
      * the last of which is `miss_root` while its completion lasts. The
@@ -1186,10 +1187,13 @@ markdown_core_node *markdown_core_parser_snapshot(markdown_core_parser *parser, 
                                                   size_t *commit_point);
 /* THE PATHS (blocks.c): the path of `block`, a block a streaming commit has
  * open, settling or settled and not yet completed, or NULL with the parse
- * failed; and the block at `path` in the tree the parser builds once the
- * document has closed. */
-const markdown_core_path *markdown_core_parser_path(markdown_core_parser *parser, markdown_core_node *block);
-markdown_core_node *markdown_core_parser_resolve(markdown_core_parser *parser, const markdown_core_path *path);
+ * failed; a pass over the paths begun (A PASS OVER THE PATHS), until the next
+ * of which the tree the parser builds changes only as
+ * markdown_core_parser_supersede changes it; and the block at `path` in that
+ * tree once the document has closed, or NULL with the parse failed. */
+markdown_core_path *markdown_core_parser_path(markdown_core_parser *parser, markdown_core_node *block);
+void markdown_core_parser_path_pass(markdown_core_parser *parser);
+markdown_core_node *markdown_core_parser_resolve(markdown_core_parser *parser, markdown_core_path *path);
 /* THE OBJECT OF A LEVEL (blocks.c, THE LEVELS) in the tree the parser builds
  * now: the copy of the level's builder while the snapshot has it open, and
  * the level's block otherwise. NULL past the levels, when the copy is gone,
@@ -1201,7 +1205,7 @@ const struct markdown_core_node *markdown_core_parser_level_object(const markdow
  * moved to a slot of its own then, as is every block between it and the
  * levels; or NULL, with the parse failed. Nothing the published document
  * reads changes, and the next publish finds what holds the block differs. */
-struct markdown_core_node *markdown_core_parser_supersede(markdown_core_parser *parser, const markdown_core_path *path);
+struct markdown_core_node *markdown_core_parser_supersede(markdown_core_parser *parser, markdown_core_path *path);
 /* Keeps `storage`, of `kind`, until the next publish, which no longer reads
  * it, and then releases it. False, with the parse failed, when it could not
  * be kept. */

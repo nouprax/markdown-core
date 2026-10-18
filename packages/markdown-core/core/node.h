@@ -316,8 +316,8 @@ enum markdown_core_node__internal_flags {
      * THE BUILDERS): it is in the committed tree, and a snapshot reads it and
      * never writes it. */
     MARKDOWN_CORE_NODE__COMMITTED = (1 << 5),
-    /* A settled block whose path is cut: its scaffold holds the path where
-     * it held its index (blocks.c, THE PATHS). */
+    /* A block whose path is cut: its scaffold holds the path, where a
+     * settled block holds its index (blocks.c, THE PATHS). */
     MARKDOWN_CORE_NODE__PATH_KEPT = (1 << 6),
     /* A copy a snapshot made of a builder or of the pending block, which
      * borrows the original's children array, or its content buffer: it
@@ -439,14 +439,33 @@ struct markdown_core_node {
     markdown_core_node_data as;
 };
 
+/* How the block at a step of a path stands to the published document as a
+ * pass follows it (blocks.c, A PASS OVER THE PATHS): the object of the level
+ * at its depth (THE LEVELS); a block the document holds as it is, inside the
+ * children a level published as they are; a block moved to a slot of its
+ * own in the pass (A BLOCK SUPERSEDED); or a block no object of the
+ * document holds. */
+typedef enum {
+    MARKDOWN_CORE_PATH_LEVEL,
+    MARKDOWN_CORE_PATH_SHARED,
+    MARKDOWN_CORE_PATH_MOVED,
+    MARKDOWN_CORE_PATH_APART
+} markdown_core_path_share;
+
 /* A PATH: where a block of a streaming parse's committed tree is, as the
  * path of the block that holds it and its index in that block's children
  * (blocks.c, THE PATHS), and where the block starts in the source. The
  * root's path holds nothing. A path names a place of the tree, which keeps
- * its meaning while the objects there change. */
+ * its meaning while the objects there change, and each block has one. The
+ * pass that followed it last records what it found there: the block, its
+ * depth below the root, and how it stands to the published document. */
 typedef struct markdown_core_path {
-    const struct markdown_core_path *parent;
+    struct markdown_core_path *parent;
     uint32_t index, start;
+    struct markdown_core_node *node;
+    uint64_t pass;
+    uint32_t depth;
+    markdown_core_path_share share;
 } markdown_core_path;
 
 /* THE SCAFFOLD: a node's links while something is built of it, kept in the
@@ -474,12 +493,11 @@ typedef struct markdown_core_path {
 typedef struct markdown_core_scaffold {
     struct markdown_core_node *parent;
     /* An inline node's previous sibling; a settled block's index in the
-     * children of the block it settled into, or its path once cut
-     * (PATH_KEPT); the path of an open block or the pending block, once cut
-     * (blocks.c, THE PATHS). */
+     * children of the block it settled into; or a block's path once cut
+     * (PATH_KEPT; blocks.c, THE PATHS). */
     union {
         struct markdown_core_node *node;
-        const struct markdown_core_path *path;
+        struct markdown_core_path *path;
         uint32_t index;
     } prev;
     struct markdown_core_node *next, *first, *last;

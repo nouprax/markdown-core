@@ -1138,8 +1138,9 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_settle_failed(markdown_core_pa
  * end of the parent's children, and the completion queue with its parent. It
  * takes the parser's `settle_flags` -- COMMITTED in a commit, which a
  * snapshot reads and never writes -- and keeps its index among the parent's
- * children (THE PATHS). A parent of a kind that folds its children takes
- * what it reads of the child at once (S_fold).
+ * children, which a path it kept while open already holds (THE PATHS). A
+ * parent of a kind that folds its children takes what it reads of the child
+ * at once (S_fold).
  * Nothing writes it after this but completion, which makes its inline content
  * and asks the finish steps of its kind (markdown-core-element-api.h, THE
  * FINISH STEP). The document settles into nothing as the input ends: it joins
@@ -1153,7 +1154,9 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_settle(markdown_co
         return;
     }
     node->flags |= parser->settle_flags;
-    markdown_core_scaffold_of(node)->prev.index = parent->child_count - 1;
+    if (!(node->flags & MARKDOWN_CORE_NODE__PATH_KEPT)) {
+        markdown_core_scaffold_of(node)->prev.index = parent->child_count - 1;
+    }
     if (kind->flags & (MARKDOWN_CORE_KIND_BLANK_PROPAGATES | MARKDOWN_CORE_KIND_FOLDS)) {
         S_fold(parser, kind, parent, node);
     }
@@ -1237,7 +1240,7 @@ void markdown_core_block_close_into(markdown_core_parser *parser, markdown_core_
 /* The current block, its range settled, closes: its pending child settles
  * into it, it closes, and it leaves the stack to be the pending child of the
  * block below. */
-static void S_close_current(markdown_core_parser *parser) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_close_current(markdown_core_parser *parser) {
     markdown_core_node *closing = parser->current;
     markdown_core_node *parent = markdown_core_scaffold_parent(closing);
     assert(closing->flags & MARKDOWN_CORE_NODE__OPEN);
@@ -2091,26 +2094,36 @@ void markdown_core_parser_discard(markdown_core_parser *parser) { S_release_pars
  * takes, which nothing takes before it settles there. Each still holds its
  * place, so the path records where the block starts too, which a block
  * superseded later gives its table entries (A BLOCK SUPERSEDED). A block
- * keeps its path once cut, so a path is cut once for each block a path is
- * asked through, and the walk up stops at the first block that has one; a
- * block that settles takes its index in place of a path it kept while it
- * had not. The paths are cut from blocks the parser owns and live as long
- * as it. */
+ * keeps its path once cut (PATH_KEPT), open or settled, so a path is cut once
+ * for each block a path is asked through, and the walk up stops at the first
+ * block that has one. The paths are cut from blocks the parser owns and live
+ * as long as it; each is written whole as it is cut.
+ *
+ * A PASS OVER THE PATHS. The blocks the paths of one pass name are asked
+ * for together -- the roots a finalize completes anew, the headings a
+ * naming pass writes -- and many of them lie under the same blocks. Within
+ * a pass the tree changes only as a block is superseded, so a step a pass
+ * has followed keeps what the pass found there: the block, its depth, and
+ * how it stands to the published document. A path is followed down from the
+ * last of its steps the pass has followed, and a block is moved to a slot of
+ * its own once in a pass, so the paths of a pass cost the steps they share
+ * once. */
 #define S_PATH_BLOCK_ITEMS 255
 
 static markdown_core_path *S_path_cut(markdown_core_parser *parser, uint32_t index, uint32_t start) {
     markdown_core_path_block *block = parser->stream->paths;
     if (!block || block->used == S_PATH_BLOCK_ITEMS) {
-        block = markdown_core_alloc(1, sizeof(*block) + S_PATH_BLOCK_ITEMS * sizeof(markdown_core_path));
+        block = markdown_core_realloc(NULL, sizeof(*block) + S_PATH_BLOCK_ITEMS * sizeof(markdown_core_path));
         if (!block) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return NULL;
         }
         block->next = parser->stream->paths;
+        block->used = 0;
         parser->stream->paths = block;
     }
     markdown_core_path *path = &block->items[block->used++];
-    *path = (markdown_core_path){NULL, index, start};
+    *path = (markdown_core_path){.index = index, .start = start};
     return path;
 }
 
@@ -2121,32 +2134,27 @@ static inline bool S_path_unsettled(const markdown_core_parser *parser, const ma
 }
 
 /* The path `block` keeps, or NULL. */
-static inline const markdown_core_path *S_path_kept(const markdown_core_parser *parser,
-                                                    const markdown_core_node *block) {
+static inline markdown_core_path *S_path_kept(markdown_core_parser *parser, const markdown_core_node *block) {
     if (block == parser->root) {
         return &parser->stream->root_path;
     }
-    const markdown_core_scaffold *link = markdown_core_scaffold_of(block);
-    return S_path_unsettled(parser, block) || (block->flags & MARKDOWN_CORE_NODE__PATH_KEPT) ? link->prev.path : NULL;
+    return block->flags & MARKDOWN_CORE_NODE__PATH_KEPT ? markdown_core_scaffold_of(block)->prev.path : NULL;
 }
 
 /* The blocks from `block` up to the first that keeps a path are cut theirs
  * as the walk goes up, each linked to the next one's as that is cut. */
-const markdown_core_path *markdown_core_parser_path(markdown_core_parser *parser, markdown_core_node *block) {
-    const markdown_core_path *path = S_path_kept(parser, block), *first = NULL;
-    markdown_core_path *below = NULL;
+markdown_core_path *markdown_core_parser_path(markdown_core_parser *parser, markdown_core_node *block) {
+    markdown_core_path *path = S_path_kept(parser, block), *first = NULL, *below = NULL;
     while (!path) {
         markdown_core_scaffold *link = markdown_core_scaffold_of(block);
-        const bool unsettled = S_path_unsettled(parser, block);
         markdown_core_path *cut =
-            S_path_cut(parser, unsettled ? link->parent->child_count : link->prev.index, block->where.place.start);
+            S_path_cut(parser, S_path_unsettled(parser, block) ? link->parent->child_count : link->prev.index,
+                       block->where.place.start);
         if (!cut) {
             return NULL;
         }
         link->prev.path = cut;
-        if (!unsettled) {
-            block->flags |= MARKDOWN_CORE_NODE__PATH_KEPT;
-        }
+        block->flags |= MARKDOWN_CORE_NODE__PATH_KEPT;
         if (below) {
             below->parent = cut;
         } else {
@@ -2163,26 +2171,75 @@ const markdown_core_path *markdown_core_parser_path(markdown_core_parser *parser
     return first;
 }
 
-markdown_core_node *markdown_core_parser_resolve(markdown_core_parser *parser, const markdown_core_path *path) {
-    size_t depth = 0;
-    for (const markdown_core_path *at = path; at->parent; at = at->parent) {
-        depth++;
+void markdown_core_parser_path_pass(markdown_core_parser *parser) {
+    if (parser->stream) {
+        parser->stream->path_pass++;
     }
-    uint32_t *indices = markdown_core_parser_walk_stack(parser, depth ? depth : 1, sizeof(*indices));
-    if (!indices) {
+}
+
+/* `step`, whose parent the pass has followed, followed: the block at its
+ * index in its parent's, and how that block stands to the published
+ * document. A child of a level's object is the next level's object, or one
+ * of the children the level published as they are, or no object of the
+ * document; whatever lies below a block the document holds as it is, or
+ * below one moved from such a place, the document holds as it is too, as
+ * the array of a moved block is its old slot's (A BLOCK SUPERSEDED). */
+static void S_path_step(markdown_core_parser *parser, markdown_core_path *step) {
+    const markdown_core_path *parent = step->parent;
+    assert(step->index < parent->node->child_count);
+    markdown_core_node *node = parent->node->children[step->index];
+    markdown_core_path_share share = MARKDOWN_CORE_PATH_SHARED;
+    if (parent->share == MARKDOWN_CORE_PATH_APART) {
+        share = MARKDOWN_CORE_PATH_APART;
+    } else if (parent->share == MARKDOWN_CORE_PATH_LEVEL) {
+        share = node == markdown_core_parser_level_object(parser, parent->depth + 1) ? MARKDOWN_CORE_PATH_LEVEL
+                : step->index < parser->stream->levels[parent->depth].count          ? MARKDOWN_CORE_PATH_SHARED
+                                                                                     : MARKDOWN_CORE_PATH_APART;
+    }
+    step->node = node;
+    step->depth = parent->depth + 1;
+    step->share = share;
+    step->pass = parser->stream->path_pass;
+}
+
+/* `path` followed in the pass (A PASS OVER THE PATHS): the steps the pass
+ * has not followed, from the first below one it has, or from the root's,
+ * which holds the root. False, with the parse failed, when there was no room
+ * to walk. */
+static bool S_path_follow(markdown_core_parser *parser, markdown_core_path *path) {
+    const uint64_t pass = parser->stream->path_pass;
+    size_t count = 0;
+    for (const markdown_core_path *at = path; at && at->pass != pass; at = at->parent) {
+        count++;
+    }
+    if (!count) {
+        return true;
+    }
+    markdown_core_path **steps = markdown_core_parser_walk_stack(parser, count, sizeof(*steps));
+    if (!steps) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return NULL;
+        return false;
     }
-    size_t at = depth;
-    for (const markdown_core_path *step = path; step->parent; step = step->parent) {
-        indices[--at] = step->index;
+    size_t at = count;
+    for (markdown_core_path *step = path; at; step = step->parent) {
+        steps[--at] = step;
     }
-    markdown_core_node *node = parser->root;
-    for (size_t i = 0; i < depth; i++) {
-        assert(indices[i] < node->child_count);
-        node = node->children[indices[i]];
+    if (!steps[0]->parent) {
+        markdown_core_path *root = steps[at++];
+        root->node = parser->root;
+        root->depth = 0;
+        root->share = parser->root == markdown_core_parser_level_object(parser, 0) ? MARKDOWN_CORE_PATH_LEVEL
+                                                                                   : MARKDOWN_CORE_PATH_APART;
+        root->pass = pass;
     }
-    return node;
+    for (; at < count; at++) {
+        S_path_step(parser, steps[at]);
+    }
+    return true;
+}
+
+markdown_core_node *markdown_core_parser_resolve(markdown_core_parser *parser, markdown_core_path *path) {
+    return S_path_follow(parser, path) ? path->node : NULL;
 }
 
 static void S_release_paths(markdown_core_parser *parser) {
@@ -2731,7 +2788,9 @@ const markdown_core_node *markdown_core_parser_level_object(const markdown_core_
  * block's entries in the committed tables there (ast.c). The levels down to
  * that one then differ (`touched_levels`), and the publish finds each moved
  * block, by its id, to differ from the object it continues. Any other block
- * is no object of the published document, and changes as it is.
+ * is no object of the published document, and changes as it is. A block
+ * moves once in a pass (A PASS OVER THE PATHS): the blocks above one a pass
+ * moved are objects of their own already.
  *
  * A level's builder writes its own children array, and its spare, which the
  * published document reads, comes back to it after the publish with the
@@ -2739,71 +2798,63 @@ const markdown_core_node *markdown_core_parser_level_object(const markdown_core_
  * holds is written in both. The array of a moved block, and its element's
  * payload, are the ones its old slot names, at a child or a field no publish
  * walks. */
-markdown_core_node *markdown_core_parser_supersede(markdown_core_parser *parser, const markdown_core_path *path) {
-    size_t depth = 0;
-    for (const markdown_core_path *at = path; at->parent; at = at->parent) {
-        depth++;
-    }
-    markdown_core_node **chain =
-        markdown_core_parser_walk_stack(parser, depth + 1, sizeof(*chain) + 2 * sizeof(uint32_t));
-    if (!chain) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+markdown_core_node *markdown_core_parser_supersede(markdown_core_parser *parser, markdown_core_path *path) {
+    if (!S_path_follow(parser, path)) {
         return NULL;
     }
-    /* The index of each block of the chain below the root, and where each
-     * starts. */
-    uint32_t *indices = (uint32_t *)(void *)(chain + depth + 1), *starts = indices + depth;
-    size_t at = depth;
-    for (const markdown_core_path *step = path; step->parent; step = step->parent) {
-        indices[--at] = step->index;
-        starts[at] = step->start;
+    /* The blocks the document holds as they are, from the block up to the
+     * object of a level, or to a block the pass moved. */
+    size_t count = 0;
+    markdown_core_path *top = path;
+    for (; top->share == MARKDOWN_CORE_PATH_SHARED; top = top->parent) {
+        count++;
     }
-    chain[0] = parser->root;
-    for (size_t i = 0; i < depth; i++) {
-        assert(indices[i] < chain[i]->child_count);
-        chain[i + 1] = chain[i]->children[indices[i]];
+    if (!count) {
+        return path->node;
     }
-    /* The deepest level whose object holds the block, and the child of its
-     * object the block is in, when the level published that child as it
-     * is. */
-    if (chain[0] != markdown_core_parser_level_object(parser, 0)) {
-        return chain[depth];
-    }
-    size_t level = 0;
-    while (level < depth && chain[level + 1] == markdown_core_parser_level_object(parser, level + 1)) {
-        level++;
-    }
-    if (level == depth || indices[level] >= parser->stream->levels[level].count) {
-        return chain[depth];
-    }
+    markdown_core_path **steps = markdown_core_parser_walk_stack(parser, count, sizeof(*steps));
     markdown_core_retired *retired =
-        markdown_core_reserve(parser->stream->retired, &parser->stream->retired_capacity,
-                              parser->stream->retired_count + depth - level, sizeof(*retired));
+        steps ? markdown_core_reserve(parser->stream->retired, &parser->stream->retired_capacity,
+                                      parser->stream->retired_count + count, sizeof(*retired))
+              : NULL;
     if (!retired) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return NULL;
     }
     parser->stream->retired = retired;
-    markdown_core_level *spine = &parser->stream->levels[level];
-    markdown_core_node *holder = chain[level];
-    for (size_t i = level; i < depth; i++) {
-        markdown_core_node *moved = markdown_core_node_move(parser->pool, chain[i + 1]);
+    size_t at = count;
+    for (markdown_core_path *step = path; at; step = step->parent) {
+        steps[--at] = step;
+    }
+    /* The level whose object holds the first block to move, when no block
+     * above it moved in the pass. */
+    markdown_core_level *spine = NULL;
+    if (top->share == MARKDOWN_CORE_PATH_LEVEL) {
+        spine = &parser->stream->levels[top->depth];
+        if (parser->stream->touched_levels <= top->depth) {
+            parser->stream->touched_levels = top->depth + 1;
+        }
+    }
+    markdown_core_node *holder = top->node;
+    for (; at < count; at++) {
+        markdown_core_path *step = steps[at];
+        markdown_core_node *moved = markdown_core_node_move(parser->pool, step->node);
         if (!moved) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return NULL;
         }
         retired[parser->stream->retired_count++] =
-            (markdown_core_retired){chain[i + 1], MARKDOWN_CORE_RETIRED_SLOT, starts[i]};
-        holder->children[indices[i]] = moved;
-        if (i == level && indices[i] < spine->spare_valid) {
-            spine->spare[indices[i]] = moved;
+            (markdown_core_retired){step->node, MARKDOWN_CORE_RETIRED_SLOT, step->start};
+        holder->children[step->index] = moved;
+        if (spine && step->index < spine->spare_valid) {
+            spine->spare[step->index] = moved;
         }
+        spine = NULL;
+        step->node = moved;
+        step->share = MARKDOWN_CORE_PATH_MOVED;
         holder = moved;
     }
-    if (parser->stream->touched_levels <= level) {
-        parser->stream->touched_levels = level + 1;
-    }
-    return holder;
+    return path->node;
 }
 
 /* A snapshot that failed lets its tree go: the copies give their originals
@@ -4166,7 +4217,7 @@ static bool S_miss_root(markdown_core_parser *parser, markdown_core_node *root) 
     markdown_core_node *holder = markdown_core_scaffold_parent(root);
     markdown_core_node **slot = holder ? S_field_slot(holder) : NULL;
     const bool field = slot && *slot == root;
-    const markdown_core_path *path = markdown_core_parser_path(parser, field ? holder : root);
+    markdown_core_path *path = markdown_core_parser_path(parser, field ? holder : root);
     markdown_core_miss_root *roots =
         markdown_core_reserve(parser->stream->miss_roots, &parser->stream->miss_root_capacity,
                               parser->stream->miss_root_count + 1, sizeof(*roots));
@@ -4414,6 +4465,7 @@ static void S_complete_misses(markdown_core_parser *parser) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
+    markdown_core_parser_path_pass(parser);
     size_t count = 0;
     for (size_t miss = 0, record = 0; record < parser->stream->miss_root_count && !parser->error; record++) {
         bool found = false;
@@ -4436,6 +4488,7 @@ static void S_complete_misses(markdown_core_parser *parser) {
     if (!parser->error && parser->completion_first) {
         S_complete_queue(parser);
     }
+    markdown_core_parser_path_pass(parser);
     size_t placed = 0;
     for (; placed < count && !parser->error; placed++) {
         S_complete_place(parser, &anew[placed]);
