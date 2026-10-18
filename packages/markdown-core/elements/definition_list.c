@@ -193,7 +193,7 @@ static markdown_core_node *markdown_core_block_open_definition(markdown_core_def
         end--;
     }
     counts->work += end - begin;
-    term->where.place =
+    term->place =
         (markdown_core_place){(uint32_t)markdown_core_parser_source_offset(parser, parser->line_number, begin + 1),
                               (uint32_t)markdown_core_parser_source_end(parser, parser->line_number, end)};
     markdown_core_strbuf_put(&term->content, input->data + begin, end - begin);
@@ -269,9 +269,9 @@ static bool close_block(const markdown_core_element_instance *self, markdown_cor
     (void)parser;
     (void)parent;
     if (node->child_count) {
-        node->where.place.end = node->children[node->child_count - 1]->where.place.end;
+        node->place.end = node->children[node->child_count - 1]->place.end;
     } else if (node->kind == MARKDOWN_CORE_NODE_DEFINITION_BODY) {
-        node->where.place.end = (uint32_t)node->internal_offset;
+        node->place.end = (uint32_t)node->internal_offset;
     }
     return true;
 }

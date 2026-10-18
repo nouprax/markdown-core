@@ -879,8 +879,8 @@ static inline bool publish_list(publish_walk *walk, markdown_core_node *node, ui
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_node(publish_walk *walk, markdown_core_node *node,
                                                                          unsigned slot, const publish_relation *hand,
                                                                          bool content, publish_placed *placed) {
-    const markdown_core_place place = node->where.place;
-    node->where.extent =
+    const markdown_core_place place = node->place;
+    node->extent =
         (markdown_core_extent){(int32_t)((int64_t)place.start - (int64_t)hand->anchor), place.end - place.start};
     placed->place = place;
     placed->root = false;
@@ -925,7 +925,7 @@ static inline void publish_enter(publish_frame *frame, const publish_placed *pla
 /* PUBLISHING WHAT CONTINUES NOTHING: every node below `node`, placed as
  * `placed`, takes the next id in canonical walk order: a node, then the
  * nodes of its relations in order, with one frame per node whose relations
- * are open. A node's place becomes its extent as it is published, so each
+ * are open. A node's extent is relative to the node before it, so each
  * frame keeps the offsets its later nodes are relative to, and a frame with
  * nothing left gives its slot to its last node's own. The frames sit above
  * what the stack holds below them. A fresh parse publishes its whole tree
@@ -1252,7 +1252,7 @@ static void publish_shared(publish_match_frame *owner, const markdown_core_node 
     if (!found) {
         owner->same = false;
     }
-    hand->anchor = (uint32_t)((int64_t)hand->anchor + node->where.extent.lead) + node->where.extent.span;
+    hand->anchor = (uint32_t)((int64_t)hand->anchor + node->extent.lead) + node->extent.span;
     hand->source = runs_window(node, hand->source).end;
 }
 
@@ -1274,7 +1274,7 @@ static bool runs_equal(const markdown_core_runs *a, const markdown_core_runs *b)
 /* Whether a matched node equals its old node as a value, before their
  * relations are compared. */
 static bool publish_same(const markdown_core_node *node, const markdown_core_node *old) {
-    return node->where.extent.lead == old->where.extent.lead && node->where.extent.span == old->where.extent.span &&
+    return node->extent.lead == old->extent.lead && node->extent.span == old->extent.span &&
            runs_equal(node->source.runs, old->source.runs) && scalars_equal(node, old);
 }
 
@@ -1337,7 +1337,7 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, markdo
         root->id = previous->id;
         verdict = publish_same(root, previous);
     } else if (content_places_read(&walk->places, root->source.places)) {
-        placed = (publish_placed){root->where.place, {start->source, start->source}, true};
+        placed = (publish_placed){root->place, {start->source, start->source}, true};
     } else {
         return false;
     }
@@ -1981,9 +1981,9 @@ bool markdown_core_publish_candidate(markdown_core_parser *parser, markdown_core
                                      markdown_core_node *root, uint32_t holder_start, bool *same) {
     publish_walk walk;
     publish_start(&walk, parser);
-    const uint32_t start = candidate->where.place.start;
+    const uint32_t start = candidate->place.start;
     const publish_relation hand =
-        root->id ? (publish_relation){NULL, NULL, (uint32_t)((int64_t)start - root->where.extent.lead),
+        root->id ? (publish_relation){NULL, NULL, (uint32_t)((int64_t)start - root->extent.lead),
                                       (uint32_t)((int64_t)start - root->source.runs->items[0].lead)}
                  : (publish_relation){NULL, NULL, 0, holder_start};
     bool ok = publish_matched(&walk, candidate, root, &hand, same);
@@ -2160,7 +2160,7 @@ static inline bool node_is(const markdown_core_node *node, uint64_t kinds) {
 
 uint64_t markdown_core_node_id(const markdown_core_node *node) { return node->id; }
 
-markdown_core_extent markdown_core_node_extent(const markdown_core_node *node) { return node->where.extent; }
+markdown_core_extent markdown_core_node_extent(const markdown_core_node *node) { return node->extent; }
 
 const markdown_core_run *markdown_core_node_runs(const markdown_core_node *node, size_t *count) {
     *count = node->source.runs->count;

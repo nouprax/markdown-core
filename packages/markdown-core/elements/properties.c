@@ -815,7 +815,7 @@ size_t markdown_core_properties_parse(markdown_core_properties_work *work, markd
     }
     size_t consumed = next_line(source, close + 3, length);
     p.metadata = node->as.metadata;
-    node->where.place = (markdown_core_place){0, (uint32_t)(close + 3)};
+    node->place = (markdown_core_place){0, (uint32_t)(close + 3)};
     payload(&p);
     if (parser->error) {
         markdown_core_parser_release_node(parser, node);

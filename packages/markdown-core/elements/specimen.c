@@ -89,7 +89,7 @@ static bool markdown_core_specimen_open(const markdown_core_element_instance *se
     /* A citation names a specimen by its label as written. */
     if (specimen.label.has_value &&
         !markdown_core_registry_declare(&parser->registry, MARKDOWN_CORE_REGISTRY_SPECIMEN, specimen.label.value.data,
-                                        specimen.label.value.len, (*container)->where.place.start)) {
+                                        specimen.label.value.len, (*container)->place.start)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }

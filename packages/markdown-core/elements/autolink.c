@@ -309,7 +309,7 @@ static size_t check_domain(const markdown_core_element_instance *self, markdown_
 
 static void set_sourcepos_from_range(markdown_core_parser *parser, markdown_core_node *node,
                                      const markdown_core_content_map *source, size_t start, size_t len) {
-    node->where.place = (markdown_core_place){0, 0};
+    node->place = (markdown_core_place){0, 0};
     if (!len) {
         return;
     }
@@ -317,7 +317,7 @@ static void set_sourcepos_from_range(markdown_core_parser *parser, markdown_core
     bufsize_t from, to;
     markdown_core_parser_content_place(parser, source, (bufsize_t)start, &line, &from);
     markdown_core_parser_content_end_place(parser, source, (bufsize_t)(start + len - 1), &line, &to);
-    node->where.place = (markdown_core_place){(uint32_t)from, (uint32_t)to};
+    node->place = (markdown_core_place){(uint32_t)from, (uint32_t)to};
     if (node->kind == MARKDOWN_CORE_NODE_TEXT) {
         markdown_core_parser_adopt_content_marks(parser, source, &node->content_map, (bufsize_t)start, (bufsize_t)len);
     }

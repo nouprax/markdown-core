@@ -211,10 +211,10 @@ static void S_place_content_span(markdown_core_parser *parser, markdown_core_nod
     bufsize_t source;
 
     if (markdown_core_parser_content_place(parser, &owner->content_map, start_offset, &line, &source)) {
-        node->where.place.start = (uint32_t)source;
+        node->place.start = (uint32_t)source;
     }
     if (markdown_core_parser_content_end_place(parser, &owner->content_map, end_offset, &line, &source)) {
-        node->where.place.end = (uint32_t)source;
+        node->place.end = (uint32_t)source;
     }
 }
 
@@ -266,11 +266,11 @@ static void try_inserting_table_header_paragraph(markdown_core_parser *parser, m
      * its own; before requirement 10 it kept the 0:0..0:0 sentinel, and every
      * inline in it inherited line zero. The map answers both ends. */
     if (markdown_core_parser_content_place(parser, &parent_container->content_map, first, &line, &source)) {
-        paragraph->where.place = (markdown_core_place){(uint32_t)source, (uint32_t)source};
+        paragraph->place = (markdown_core_place){(uint32_t)source, (uint32_t)source};
     }
     if (scope_end > first &&
         markdown_core_parser_content_end_place(parser, &parent_container->content_map, scope_end - 1, &line, &source)) {
-        paragraph->where.place.end = (uint32_t)source;
+        paragraph->place.end = (uint32_t)source;
     }
     /* The lead's content is a SLICE of the paragraph's, and it can be several
      * lines long, so it takes the marks for those lines rather than one mark
@@ -344,7 +344,7 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
          * below read start_column, because they are placed against it. */
         if (markdown_core_parser_content_place(parser, &parent_container->content_map, header_row.paragraph_offset,
                                                &header_line, &header_start)) {
-            parent_container->where.place.start = (uint32_t)header_start;
+            parent_container->place.start = (uint32_t)header_start;
         }
     }
 
@@ -451,8 +451,8 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
             if (!node) {
                 break;
             }
-            node->where.place.end = (uint32_t)markdown_core_parser_source_end(
-                parser, parser->line_number, parser->first_nonspace + 1 + cell->end_offset);
+            node->place.end = (uint32_t)markdown_core_parser_source_end(parser, parser->line_number,
+                                                                        parser->first_nonspace + 1 + cell->end_offset);
             set_cell_content(parser, node, cell, NULL, parser->line_number, parser->line_start,
                              (bufsize_t)(cell->content.data - input));
             markdown_core_block_settle(parser, node, table_row_block);
@@ -483,8 +483,7 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
             if (!node) {
                 break;
             }
-            node->where.place.end =
-                (uint32_t)markdown_core_parser_source_end(parser, parser->line_number, (int)completed_at);
+            node->place.end = (uint32_t)markdown_core_parser_source_end(parser, parser->line_number, (int)completed_at);
             markdown_core_block_settle(parser, node, table_row_block);
         }
     }
@@ -2421,8 +2420,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_node *table
     if (kind == MARKDOWN_CORE_NODE_TABLE_ROW || kind == MARKDOWN_CORE_NODE_TABLE_CELL) {
         markdown_core_node_set_element(node, &MARKDOWN_CORE_ELEMENT_TABLE);
     }
-    node->where.place.start = (uint32_t)markdown_core_parser_source_offset(parser, first_line, first_column);
-    node->where.place.end = (uint32_t)markdown_core_parser_source_end(parser, last_line, last_column);
+    node->place.start = (uint32_t)markdown_core_parser_source_offset(parser, first_line, first_column);
+    node->place.end = (uint32_t)markdown_core_parser_source_end(parser, last_line, last_column);
     return node;
 }
 
@@ -2537,9 +2536,9 @@ static markdown_core_node *table_build(table_source *source, markdown_core_node 
     table->foot_count = (uint32_t)candidate->foot_count;
     table->content_count = (uint32_t)(candidate->row_count - candidate->head_count - candidate->foot_count);
     /* The table and each of its rows begin at the margin on their first line. */
-    node->where.place.start = (uint32_t)markdown_core_parser_source_offset(
-        parser, first->line, table_margin_byte(first, candidate->margin) + 1);
-    node->where.place.end = (uint32_t)markdown_core_parser_source_end(parser, last->line, last->length);
+    node->place.start = (uint32_t)markdown_core_parser_source_offset(parser, first->line,
+                                                                     table_margin_byte(first, candidate->margin) + 1);
+    node->place.end = (uint32_t)markdown_core_parser_source_end(parser, last->line, last->length);
     const uint32_t enclosing = candidate->block_content ? markdown_core_parser_open_kinds(parser) : 0;
     for (size_t i = 0; i < candidate->row_count && !parser->error; i++) {
         table_build_row(source, node, candidate, &candidate->rows[i], enclosing);
@@ -2699,11 +2698,11 @@ static markdown_core_node *table_try_open(table_workspace *workspace, markdown_c
         if (table->caption) {
             markdown_core_block_settle_field(parser, table->caption, result);
         }
-        result->where.place.end = (uint32_t)markdown_core_parser_source_end(parser, source.lines[caption_last].line,
-                                                                            source.lines[caption_last].length);
+        result->place.end = (uint32_t)markdown_core_parser_source_end(parser, source.lines[caption_last].line,
+                                                                      source.lines[caption_last].length);
         parser->claimed_cursor = source.lines[caption_last].after;
         parser->claimed_line = source.lines[caption_last].line;
-        parser->claimed_last_end = result->where.place.end;
+        parser->claimed_last_end = result->place.end;
     } else {
         result = table_build(&source, parent, candidate);
         if (result && result->opaque && caption >= 0) {
@@ -2712,7 +2711,7 @@ static markdown_core_node *table_try_open(table_workspace *workspace, markdown_c
             if (table->caption) {
                 markdown_core_block_settle_field(parser, table->caption, result);
             }
-            result->where.place.start =
+            result->place.start =
                 (uint32_t)markdown_core_parser_source_offset(parser, source.lines[0].line, source.lines[0].first + 1);
         }
         if (result) {

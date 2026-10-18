@@ -80,7 +80,7 @@ static bool markdown_core_block_parse_callout_metadata(markdown_core_callout_wor
             return true;
         }
         node->as.callout->title = title;
-        title->where.place =
+        title->place =
             (markdown_core_place){(uint32_t)markdown_core_parser_source_offset(parser, parser->line_number, pos + 1),
                                   (uint32_t)markdown_core_parser_source_end(parser, parser->line_number, end)};
         markdown_core_strbuf_put(&title->content, input->data + pos, end - pos);

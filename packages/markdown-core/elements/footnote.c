@@ -315,7 +315,7 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
      * labels owns no node and picks no winner, so order decides
      * nothing left to get wrong. */
     if (!markdown_core_registry_declare(&parser->registry, MARKDOWN_CORE_REGISTRY_FOOTNOTE, normal.data, normal.len,
-                                        footnote->where.place.start)) {
+                                        footnote->place.start)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         markdown_core_chunk_free(&c);
         return false;

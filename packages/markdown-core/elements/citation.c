@@ -369,7 +369,7 @@ static bool trim_affix_node(markdown_core_inline_state *inline_state, markdown_c
                                        &first_byte);
     markdown_core_parser_content_end_place(inline_state->owner_parser, &inline_state->owner->content_map, end - 1,
                                            &line, &end_byte);
-    const markdown_core_place place = node->where.place;
+    const markdown_core_place place = node->place;
     if (place.end <= (uint32_t)first_byte || place.start >= (uint32_t)end_byte) {
         return false;
     }
@@ -432,7 +432,7 @@ static void remove_specimen_parenthesis(markdown_core_inline_state *inline_state
         int line;
         bufsize_t start;
         markdown_core_parser_content_place(inline_state->owner_parser, &text->content_map, 1, &line, &start);
-        text->where.place.start = (uint32_t)start;
+        text->place.start = (uint32_t)start;
         markdown_core_parser_adopt_content_marks(inline_state->owner_parser, &text->content_map, &text->content_map, 1,
                                                  literal->len - 1);
         if (literal->alloc) {
@@ -445,7 +445,7 @@ static void remove_specimen_parenthesis(markdown_core_inline_state *inline_state
         bufsize_t end;
         markdown_core_parser_content_end_place(inline_state->owner_parser, &text->content_map, literal->len - 2, &line,
                                                &end);
-        text->where.place.end = (uint32_t)end;
+        text->place.end = (uint32_t)end;
     }
     literal->len--;
 }

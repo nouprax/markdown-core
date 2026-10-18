@@ -79,7 +79,7 @@ static markdown_core_node *make_block(markdown_core_parser *parser, markdown_cor
     /* Empty content borrows the strbuf sentinel. Only writing content takes
      * storage; containers and empty leaves need no separate allocation. */
     e->flags = MARKDOWN_CORE_NODE__OPEN;
-    e->where.place = (markdown_core_place){(uint32_t)start, (uint32_t)start};
+    e->place = (markdown_core_place){(uint32_t)start, (uint32_t)start};
 
     return e;
 }
@@ -341,7 +341,7 @@ const markdown_core_element_instance *markdown_core_parser_instance(const markdo
  * the line before. An element container closing on its own fence is a fourth,
  * and `markdown_core_block_close` cannot know that from the type alone. */
 void markdown_core_block_set_end_to_current_line(markdown_core_parser *parser, markdown_core_node *b) {
-    b->where.place.end = (uint32_t)parser->line_end;
+    b->place.end = (uint32_t)parser->line_end;
 }
 
 /* Whether a node of `kind` takes lines as its content, and whether it may
@@ -710,7 +710,7 @@ static inline bool S_starts_on_line(markdown_core_parser *parser, const markdown
     if (line < parser->input.first_line || line > parser->line_number) {
         return false;
     }
-    uint32_t start = node->where.place.start;
+    uint32_t start = node->place.start;
     if (line == parser->line_number) {
         return start >= (uint32_t)S_input_source(parser, parser->line_start);
     }
@@ -785,7 +785,7 @@ void markdown_core_parser_line_places(markdown_core_parser *parser, markdown_cor
         return;
     }
     const int visited = parser->input.first_line + (int)parser->input.line_count - 1;
-    const uint32_t start = node->where.place.start, end = node->where.place.end;
+    const uint32_t start = node->place.start, end = node->place.end;
     int first = *line;
     while (first > parser->input.first_line && (uint32_t)S_line_offset(parser, first) > start) {
         first--;
@@ -1276,7 +1276,7 @@ markdown_core_node *markdown_core_block_close(markdown_core_parser *parser, mark
 
         if (parser->curline.size == 0) {
             // end of input - line number has not been incremented
-            closing->where.place.end = (uint32_t)parser->last_line_end;
+            closing->place.end = (uint32_t)parser->last_line_end;
         } else if (/* D35: a block closed on the line it OPENED did not end on
                     * the previous one. `line_number - 1` below assumes the block
                     * was closed by a later line, which is true of every block that
@@ -1299,7 +1299,7 @@ markdown_core_node *markdown_core_block_close(markdown_core_parser *parser, mark
                    (closing->flags & MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION) != 0) {
             markdown_core_block_set_end_to_current_line(parser, closing);
         } else {
-            closing->where.place.end = (uint32_t)parser->last_line_end;
+            closing->place.end = (uint32_t)parser->last_line_end;
         }
 
         S_close_current(parser);
@@ -1681,7 +1681,7 @@ static markdown_core_finish_result S_consolidate_text(markdown_core_parser *pars
             // so taking their end put `1:1..1:0` on a run of four real
             // characters.
             if (tmp->as.literal->len > 0) {
-                cur->where.place.end = tmp->where.place.end;
+                cur->place.end = tmp->place.end;
             }
             next = markdown_core_scaffold_next(tmp);
             markdown_core_parser_release_node(parser, tmp);
@@ -1834,7 +1834,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_enter_node(owned_tr
     const markdown_core_chunk *anchor = &node->attributes.anchor;
     if (anchor->len && !(node->flags & MARKDOWN_CORE_NODE__ANCHOR_COMPUTED) &&
         !markdown_core_registry_declare(&parser->registry, MARKDOWN_CORE_REGISTRY_ANCHOR, anchor->data, anchor->len,
-                                        parser->completing->where.place.start)) {
+                                        parser->completing->place.start)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return -1;
     }
@@ -1995,7 +1995,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_close_document(mar
     if (parser->error) {
         return;
     }
-    root->where.place.end = (uint32_t)parser->last_line_end;
+    root->place.end = (uint32_t)parser->last_line_end;
     root->flags &= ~MARKDOWN_CORE_NODE__OPEN;
     if (S_close(parser, root, kind, NULL)) {
         S_complete_later(parser, root, NULL);
@@ -2150,9 +2150,8 @@ markdown_core_path *markdown_core_parser_path(markdown_core_parser *parser, mark
     markdown_core_path *path = S_path_kept(parser, block), *first = NULL, *below = NULL;
     while (!path) {
         markdown_core_scaffold *link = markdown_core_scaffold_of(block);
-        markdown_core_path *cut =
-            S_path_cut(parser, S_path_unsettled(parser, block) ? link->parent->child_count : link->prev.index,
-                       block->where.place.start);
+        markdown_core_path *cut = S_path_cut(
+            parser, S_path_unsettled(parser, block) ? link->parent->child_count : link->prev.index, block->place.start);
         if (!cut) {
             return NULL;
         }
@@ -2626,8 +2625,7 @@ static bool S_copy_spine(markdown_core_parser *parser) {
  * committed since and becomes the builder's own, and the storage the new
  * document reads becomes the spare. The pending block is written by no
  * commit, and needs none. A level also keeps what the next publish skips:
- * the children it published as they are, and where the last of them ends,
- * as its place is an extent once it is published. */
+ * the children it published as they are, and where the last of them ends. */
 static inline uint32_t S_capacity(uint32_t count) {
     uint32_t capacity = 2;
     while (capacity < count) {
@@ -2664,7 +2662,7 @@ static bool S_reserve_levels(markdown_core_parser *parser) {
         const markdown_core_level *old =
             depth < parser->stream->level_count && levels[depth].node == original ? &levels[depth] : NULL;
         const uint32_t count = original->child_count;
-        room->end = !count ? 0 : old && old->count == count ? old->end : original->children[count - 1]->where.place.end;
+        room->end = !count ? 0 : old && old->count == count ? old->end : original->children[count - 1]->place.end;
         if (depth >= parser->stream->builder_count) {
             continue;
         }
@@ -4466,7 +4464,7 @@ static bool S_miss_position(markdown_core_parser *parser, const markdown_core_no
         }
         memcpy(places, root->source.places, bytes);
     }
-    *position = (markdown_core_miss_position){root->where.place, places};
+    *position = (markdown_core_miss_position){root->place, places};
     return true;
 }
 
@@ -4523,7 +4521,7 @@ const markdown_core_registry_record *markdown_core_parser_find_at_snapshot(markd
                                                                            const markdown_core_registry_record *record,
                                                                            bool *failed) {
     markdown_core_node *root = parser->completing;
-    if (record && markdown_core_registry_starts_before(record, root->where.place.start)) {
+    if (record && markdown_core_registry_starts_before(record, root->place.start)) {
         return record;
     }
     /* Only a committed root is asked again: a snapshot's own are gone with
@@ -4632,7 +4630,7 @@ static markdown_core_node *S_complete_anew(markdown_core_parser *parser, markdow
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return NULL;
     }
-    candidate->where.place = record->position.place;
+    candidate->place = record->position.place;
     candidate->source.places = record->position.places;
     record->position.places = NULL;
     if (kind->flags & MARKDOWN_CORE_KIND_DEFERRED) {
@@ -4786,7 +4784,7 @@ static void S_complete_misses(markdown_core_parser *parser) {
 uint64_t markdown_core_source_key(const void *entry) {
     markdown_core_node *node;
     memcpy(&node, entry, sizeof(node));
-    return node->where.place.start;
+    return node->place.start;
 }
 
 /* A STABLE LINEAR ORDERING BY SOURCE COORDINATE, keyed once.

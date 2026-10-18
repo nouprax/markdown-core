@@ -563,7 +563,7 @@ static markdown_core_node *make_formula_span(const markdown_core_element *elemen
     bufsize_t first, last;
     markdown_core_parser_content_place(parser, &parent->content_map, start, &line, &first);
     markdown_core_parser_content_end_place(parser, &parent->content_map, end - 1, &line, &last);
-    formula->where.place = (markdown_core_place){(uint32_t)first, (uint32_t)last};
+    formula->place = (markdown_core_place){(uint32_t)first, (uint32_t)last};
     return formula;
 }
 

@@ -2700,7 +2700,7 @@ static void node_reuse_initializes_the_active_record(test_batch_runner *runner) 
            !markdown_core_scaffold_parent(node) && !markdown_core_scaffold_prev(node) &&
                !markdown_core_scaffold_next(node) && !markdown_core_scaffold_first(node) &&
                !markdown_core_scaffold_last(node) && !node->children && !node->child_count && !node->id &&
-               !node->where.place.start && !node->where.place.end && !node->flags && !node->element &&
+               !node->place.start && !node->place.end && !node->flags && !node->element &&
                node->content.ptr == markdown_core_strbuf__initbuf && !node->content.size && !node->content.asize &&
                !node->content.oom,
            "all node state is initialized independently of its former kind");
@@ -4883,7 +4883,7 @@ static void universal_values(test_batch_runner *runner) {
     markdown_core_document *document = facade_parse((const uint8_t *)source, strlen(source));
     markdown_core_node *root = document->root;
     markdown_core_node *metadata = published_node_new(MARKDOWN_CORE_NODE_METADATA, 4);
-    metadata->where.extent = (markdown_core_extent){0, 4};
+    metadata->extent = (markdown_core_extent){0, 4};
     root->as.document->metadata = metadata;
     markdown_core_metadata_value *values[] = {&metadata->as.metadata->name,    &metadata->as.metadata->time,
                                               &metadata->as.metadata->date,    &metadata->as.metadata->title,
@@ -6636,7 +6636,7 @@ static void source_entries_order_by_the_key_bytes_that_differ(test_batch_runner 
                 key = (uint32_t)((i * 31) % 5);
                 break;
             }
-            nodes[i].where.place.start = key;
+            nodes[i].place.start = key;
             entries[i] = (source_entry){&nodes[i], i};
         }
         markdown_core_source_order workspace = {0};
@@ -6832,8 +6832,7 @@ static void probe_placements(const markdown_core_element_instance *self, markdow
                 markdown_core_inline_state_place(inline_state, &placed, from, to);
                 markdown_core_parser_content_span(parser, &owner->content_map, from, to, &span, NULL);
                 placements_checked++;
-                if (placed.where.place.start != (uint32_t)span.start ||
-                    (to >= 0 && placed.where.place.end != (uint32_t)span.end)) {
+                if (placed.place.start != (uint32_t)span.start || (to >= 0 && placed.place.end != (uint32_t)span.end)) {
                     placement_disagreements++;
                 }
             }

@@ -837,7 +837,7 @@ markdown_core_node *markdown_core_node_candidate(markdown_core_node_pool *pool, 
         return NULL;
     }
     copy->id = 0;
-    copy->where.place = (markdown_core_place){0, 0};
+    copy->place = (markdown_core_place){0, 0};
     copy->source.places = NULL;
     copy->children = NULL;
     copy->child_count = 0;

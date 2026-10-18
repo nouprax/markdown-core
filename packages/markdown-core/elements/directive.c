@@ -230,7 +230,7 @@ static markdown_core_node *make_label_node(const markdown_core_element *element,
         markdown_core_parser_release_node(parser, label_node);
         return NULL;
     }
-    label_node->where.place = (markdown_core_place){(uint32_t)start, (uint32_t)end};
+    label_node->place = (markdown_core_place){(uint32_t)start, (uint32_t)end};
     return label_node;
 }
 

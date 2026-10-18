@@ -276,24 +276,11 @@ typedef struct markdown_core_runs {
 } markdown_core_runs;
 
 /* A node's places while the parse builds the tree, and its runs once it is
- * published, as its place becomes its extent. */
+ * published. */
 typedef union {
     markdown_core_places *places;
     markdown_core_runs *runs;
 } markdown_core_node_source;
-
-/* WHERE A NODE IS, in bytes of the UTF-8 source, and never in lines or
- * columns. While a parse builds the tree every node holds its absolute
- * `place`. Publishing the document (markdown_core_publish_tree) rewrites
- * each node's place as its `extent`: `lead`, the signed distance from the end
- * of the previous node in the same relation (or from its owner's start, for
- * the first node), and `span`, the length of its range. Relative extents are
- * what lets a node keep its value when text before it moves. A published node
- * holds only its extent; nothing reads a place after publishing. */
-typedef union {
-    markdown_core_place place;
-    markdown_core_extent extent;
-} markdown_core_node_where;
 
 enum markdown_core_node__internal_flags {
     MARKDOWN_CORE_NODE__OPEN = (1 << 0),
@@ -391,8 +378,6 @@ typedef union {
 } markdown_core_node_data;
 
 struct markdown_core_node {
-    /* The node's PLACE: its children and its id. Every field after `id` is
-     * its value. */
     /* The node's children in order, `child_count` of them, in storage the
      * node owns whose capacity the count determines
      * (markdown_core_node_push_child). A node holds no pointer to its parent
@@ -400,6 +385,8 @@ struct markdown_core_node {
      * field. */
     struct markdown_core_node **children;
     uint32_t child_count;
+    uint16_t kind;
+    markdown_core_node_internal_flags flags;
 
     /* The node's identifier, unique within its document; 0 until the
      * document is published (markdown_core_publish_tree). */
@@ -415,16 +402,22 @@ struct markdown_core_node {
      * paragraph's leading reference definitions and its trailing block
      * identifier. */
     bufsize_t cut_front, cut_back;
-    /* Where the node is in the source; see markdown_core_node_where. */
-    markdown_core_node_where where;
+    /* WHERE THE NODE IS, in bytes of the UTF-8 source, and never in lines
+     * or columns. `place` is its absolute range, which the parse writes and
+     * reads. `extent` is what publishing the document makes of it
+     * (markdown_core_publish_tree): `lead`, the signed distance from the end
+     * of the previous node in the same relation (or from its owner's start,
+     * for the first node), and `span`, the length of its range. Relative
+     * extents are what lets a node keep its value when text before it
+     * moves. */
+    markdown_core_place place;
+    markdown_core_extent extent;
     int internal_offset;
     /* This node's slice of parser-owned content-to-source runs. Zero count
      * means there is no mapped content (for example, an empty cell). */
     markdown_core_content_map content_map;
     /* Its places, then its runs (markdown_core_node_source). */
     markdown_core_node_source source;
-    uint16_t kind;
-    markdown_core_node_internal_flags flags;
 
     const markdown_core_element *element;
     /* Element-owned data, allocated by opaque_alloc_func and released by

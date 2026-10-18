@@ -41,7 +41,7 @@ static bool close_heading(const markdown_core_element_instance *self, markdown_c
         headings->values = values;
         headings->capacity = capacity;
     }
-    headings->values[headings->count++] = (markdown_core_heading_parse){.node = node, .start = node->where.place.start};
+    headings->values[headings->count++] = (markdown_core_heading_parse){.node = node, .start = node->place.start};
     return true;
 }
 
@@ -139,7 +139,7 @@ static void reparse_inlines(const markdown_core_element_instance *self, markdown
         node->flags |= MARKDOWN_CORE_NODE__ANCHOR_COMPUTED;
     }
     markdown_core_heading_parse *entry =
-        parsed_heading(&((markdown_core_heading_state *)self->state)->headings, node->where.place.start);
+        parsed_heading(&((markdown_core_heading_state *)self->state)->headings, node->place.start);
     entry->authored = authored;
     if (entry->holds_name) {
         markdown_core_free((void *)entry->name);
@@ -182,7 +182,7 @@ void markdown_core_headings_end_snapshot(const markdown_core_element_instance *s
     if (state->snapshot_count > state->snapshot_parsed) {
         markdown_core_node *pending = parser->pending;
         headings->values[headings->count++] =
-            (markdown_core_heading_parse){.node = pending, .start = pending->where.place.start};
+            (markdown_core_heading_parse){.node = pending, .start = pending->place.start};
     }
 }
 
@@ -893,7 +893,7 @@ void markdown_core_prepare_heading(const markdown_core_element_instance *self, m
             markdown_core_inline_reference_label_length(label.data, label.len) == label.len) {
             if (!markdown_core_registry_normal_label(&parser->registry, parser->pool, &label, declared) ||
                 !markdown_core_registry_declare(&parser->registry, MARKDOWN_CORE_REGISTRY_REFERENCE, declared->data,
-                                                declared->len, heading->node->where.place.start)) {
+                                                declared->len, heading->node->place.start)) {
                 markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             }
         }
