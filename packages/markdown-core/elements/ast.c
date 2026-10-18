@@ -1824,8 +1824,8 @@ static bool snapshot_tables(markdown_core_parser *parser, publish_walk *walk, ma
     const size_t place_bytes = (listed + targets) * sizeof(markdown_core_table_place);
     const size_t bytes = room_bytes(entry_bytes) + room_bytes(node_bytes) + room_bytes(place_bytes);
     /* A snapshot that lists nothing of its own takes its empty blocks from
-     * no room. */
-    static room_unit no_room;
+     * no room, which none of its tables points into. */
+    room_unit no_room;
     unsigned char *at = (unsigned char *)&no_room;
     if (bytes) {
         if (!(at = markdown_core_reserve(stream->own_tables, &stream->own_table_capacity, bytes, 1))) {
