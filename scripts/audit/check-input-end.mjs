@@ -38,6 +38,7 @@ const OWNERS = new Set([
     "core/parser.h:markdown_core_parser_see_end",
     "core/parser.h:markdown_core_parser_input_ends",
     "core/parser.h:markdown_core_input_line_next",
+    "core/blocks.c:S_scan_line",
     "core/blocks.c:S_extend_source_lines",
     "core/blocks.c:markdown_core_parser_extend_source_lines",
     "core/blocks.c:S_parse_source",

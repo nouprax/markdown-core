@@ -144,6 +144,48 @@ static bool continue_container(const markdown_core_element_instance *self, markd
     (void)self;
     return markdown_core_block_parse_callout_prefix(parser, input);
 }
+/* The prefix reads the first non-space byte, and the byte after a `>`,
+ * which it takes when it is a space or a tab. */
+static bufsize_t continue_reach(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                const markdown_core_node *node, const markdown_core_chunk *input) {
+    (void)self;
+    (void)node;
+    const bufsize_t first = parser->first_nonspace;
+    return parser->indent <= 3 && input->data[first] == '>' ? first + 1 : first;
+}
+/* The scan reads the first non-space byte. The open reads the byte after
+ * the `>`, which it takes when it is a space or one column of a tab; then,
+ * unless that tab is only partly taken, up to three spaces and the two
+ * bytes after them, which a metadata line opens with `[!`, and whose header
+ * reads to the line's end (markdown_core_block_parse_callout_metadata). */
+static bufsize_t start_reach(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                             const block_start_context *context, bool *opens) {
+    (void)self;
+    (void)parser;
+    const markdown_core_chunk *input = context->input;
+    const bufsize_t end = input->len - 1;
+    bufsize_t at = context->first;
+    if (input->data[at] != '>') {
+        return at;
+    }
+    *opens = true;
+    at++;
+    if (input->data[at] == '\t') {
+        if (TAB_STOP - (context->column + 1) % TAB_STOP > 1) {
+            return at;
+        }
+        at++;
+    } else if (input->data[at] == ' ') {
+        at++;
+    }
+    for (int spaces = 0; spaces < 3 && input->data[at] == ' '; spaces++) {
+        at++;
+    }
+    if (at + 1 >= end || (input->data[at] == '[' && input->data[at + 1] == '!')) {
+        return end;
+    }
+    return at + 1;
+}
 /* The marker line's text is the callout's title, so a lazy line after it
  * cannot continue a paragraph: it starts the body's first one, as the same
  * text would with the quote's prefix. */
@@ -161,9 +203,11 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_CALLOUT = {
 
     .name = "callout",
     .continue_container = continue_container,
+    .continue_reach = continue_reach,
     .container_prefix_bytes = ">",
     .blank_opaque = true,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_callout_scan,
+    .start_reach = start_reach,
     .scan_block_gate = {.bytes = ">"},
 };

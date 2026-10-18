@@ -183,11 +183,28 @@ struct markdown_core_element {
 
     bool (*continue_container)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
                                markdown_core_chunk *, const markdown_core_node *, bool *);
+    /* HOW FAR A STEP READS (docs/plans/2026-09-29-incremental-parsing.md,
+     * 5.1), asked of a line a session holds unfinished before the step runs,
+     * with the cursor and the first non-space byte found: the furthest byte
+     * of the line the answer reads -- `continue_container`'s for `node`, and
+     * `scan_block_start`'s with the open it names, which says in `*opens`
+     * whether a block opens there. A block start answers only for a
+     * container it opens; one that would claim the line for a block that
+     * takes text answers the line's end. A step whose bytes are all in the
+     * line decides from bytes alone and commits; an element without the
+     * question leaves its steps to the snapshot (blocks.c, THE LINE A
+     * SESSION HOLDS). */
+    bufsize_t (*continue_reach)(const markdown_core_element_instance *, markdown_core_parser *,
+                                const markdown_core_node *, const markdown_core_chunk *);
+    bufsize_t (*start_reach)(const markdown_core_element_instance *, markdown_core_parser *,
+                             const struct markdown_core_block_start_context *, bool *);
     /* The bytes `continue_container` can strip from a line besides
      * indentation: the COMPLETE set, as a gate's is, and NULL when it strips
-     * indentation only. A block-start question asked of a LATER line from raw
-     * source (the definition gate) reaches that line's first stripped byte by
-     * walking over indentation and these, so a byte left out here does not
+     * indentation only; it strips at most one of them from a line. A
+     * block-start question asked of a LATER line from raw source (the
+     * definition gate) reaches that line's first stripped byte by walking
+     * over indentation and these, one for each container above the block
+     * asking, so a byte left out here does not
      * make the parser slower, it makes it WRONG: the construct inside this
      * container is silently never recognised. Projected with the hooks into
      * the dialect's `container_prefix`. A declared byte that is also the marker

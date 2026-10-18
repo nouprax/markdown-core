@@ -58,6 +58,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
 
     .name = "paragraph",
     .last_block_matches = continue_paragraph,
+    .continue_reach = markdown_core_block_indent_reach,
     .content_mode = MARKDOWN_CORE_CONTENT_PROSE,
     .inline_content = true,
     .paragraph = true,

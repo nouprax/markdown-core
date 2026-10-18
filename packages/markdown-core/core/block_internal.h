@@ -80,6 +80,11 @@ int markdown_core_block_consume_item_marker(markdown_core_parser *parser, markdo
 void markdown_core_block_find_first_nonspace(markdown_core_parser *parser, markdown_core_chunk *input);
 bool markdown_core_block_continue_indented(markdown_core_parser *parser, markdown_core_chunk *input, int continuation,
                                            bool has_content);
+/* How far a continuation reads that matches by the line's indentation and
+ * whether the line is blank: to its first non-space byte (element.h, HOW FAR
+ * A STEP READS). */
+bufsize_t markdown_core_block_indent_reach(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                           const markdown_core_node *node, const markdown_core_chunk *input);
 void markdown_core_block_add_line(markdown_core_node *node, markdown_core_chunk *input, markdown_core_parser *parser);
 markdown_core_node *markdown_core_block_parent_for(markdown_core_parser *parser, markdown_core_node *parent,
                                                    markdown_core_node_type kind);

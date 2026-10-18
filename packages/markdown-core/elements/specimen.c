@@ -132,5 +132,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_SPECIMEN = {
     .continue_container = continue_container,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_specimen_scan,
+    .continue_reach = markdown_core_block_indent_reach,
     .scan_block_gate = {.bytes = "("},
 };

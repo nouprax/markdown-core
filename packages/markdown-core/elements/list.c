@@ -342,6 +342,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
     .name = "list",
     .continue_container = continue_container,
     .propagates_child_blank = true,
+    .continue_reach = markdown_core_block_indent_reach,
     .blank_runs = true,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_list_scan,

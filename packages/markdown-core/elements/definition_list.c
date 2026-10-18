@@ -64,16 +64,20 @@ static bool markdown_core_block_definition_marker(markdown_core_chunk *input, in
  * there the raw bytes before it are all in that table: walking over them
  * lands on the byte the stripped line would show first, and a raw line made
  * of nothing else is blank once stripped (or a bare quote opener, which the
- * transaction refuses; yielding to the line after it only over-admits). So
- * the key reads a prefix, never a line: its cost is the container depth,
- * whatever the prose's length, where the `memchr` search it replaces read
- * both lines end to end (97% of this hook's own cost on long prose) and
- * admitted any line with ': ' in it. Every answer of false is a line the
- * transaction would refuse too. */
-static bool definition_next_lines_admit(markdown_core_parser *parser) {
+ * transaction refuses; yielding to the line after it only over-admits).
+ * Each container the term is in strips at most one declared byte, so the
+ * walk crosses no more of them than there are containers from `parent` up:
+ * one more is the stripped line's first byte, a block's opener and no
+ * marker. So the key reads a prefix, never a line: its cost is the
+ * container depth, whatever the prose's length, where the `memchr` search
+ * it replaces read both lines end to end (97% of this hook's own cost on
+ * long prose) and admitted any line with ': ' in it. Every answer of false
+ * is a line the transaction would refuse too. */
+static bool definition_next_lines_admit(markdown_core_parser *parser, const markdown_core_node *parent) {
     const unsigned char *cursor = parser->lookahead_cursor;
     for (int line = 0; line < 2 && cursor && !markdown_core_parser_input_ends(parser, cursor); line++) {
         const unsigned char *at = cursor;
+        const markdown_core_node *container = parent;
         while (!markdown_core_parser_input_ends(parser, at) && parser->dialect->container_prefix[*at]) {
             /* A declared prefix byte that is also a marker byte -- a
              * container whose continuation strips ':' or '~' -- cannot be
@@ -83,6 +87,12 @@ static bool definition_next_lines_admit(markdown_core_parser *parser) {
              * definitions inside it. */
             if (*at == ':' || *at == '~') {
                 return true;
+            }
+            if (!markdown_core_is_space_or_tab(*at)) {
+                container = markdown_core_parser_parent(parser, container);
+                if (!container) {
+                    return false;
+                }
             }
             at++;
         }
@@ -114,7 +124,7 @@ static bool markdown_core_block_definition_prefix(const markdown_core_element_in
     /* The next line first: it refuses almost every line, and it costs the
      * container depth where the reference re-parse below costs the line. Both
      * are conjuncts of one decision, so the order changes nothing else. */
-    if (!definition_next_lines_admit(parser)) {
+    if (!definition_next_lines_admit(parser, parent)) {
         return false;
     }
     markdown_core_chunk term = {input->data + parser->first_nonspace, input->len - parser->first_nonspace, 0};
@@ -275,6 +285,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
 
     .name = "definition_list",
     .continue_container = continue_container,
+    .continue_reach = markdown_core_block_indent_reach,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_definition_list_scan,
     .scan_block_gate = {.bytes = ":~"},

@@ -442,8 +442,9 @@ Every mechanism of the engine follows from one rule:
 **A decision made after seeing the end of the input is provisional; every
 other decision is final once it is made.**
 
-- At the block level, a line is committed only if processing it did not see
-  the end of the input (5.3).
+- At the block level, every decision that did not see the end of the input
+  is committed, the container steps of the line that is not complete yet
+  included (5.3).
 - At the inline level, the nodes of an open paragraph before its earliest
   provisional decision are settled (5.8).
 

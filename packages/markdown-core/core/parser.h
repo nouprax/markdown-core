@@ -276,12 +276,38 @@ typedef struct {
     bufsize_t label_start, label_length;
 } markdown_core_definition_miss;
 
+/* WHERE A COMMIT STOPPED IN THE LINE A SESSION HOLDS (blocks.c): the step
+ * the line machine stands before -- matching the open block below
+ * `container`, opening a block in `container`, or adding the rest of the
+ * line to `container` as text, with `all_matched` whether the line matched
+ * every open block, `opened` whether it has opened one, `maybe_lazy` whether
+ * it may still be lazy and `depth` the blocks it has asked to open -- and
+ * the line's cursor there and where its own bytes begin, which the next
+ * reading of the line starts from. */
+typedef enum {
+    MARKDOWN_CORE_LINE_AT_MATCH,
+    MARKDOWN_CORE_LINE_AT_OPEN,
+    MARKDOWN_CORE_LINE_AT_TEXT,
+} markdown_core_line_step;
+
+typedef struct markdown_core_line_stop {
+    struct markdown_core_node *container;
+    size_t depth;
+    bufsize_t offset, column;
+    uint32_t own;
+    markdown_core_line_step step;
+    bool all_matched, opened, maybe_lazy, partially_consumed_tab;
+} markdown_core_line_stop;
+
 /* WHAT A STREAMING PARSE KEEPS: a session's parse, which takes snapshots
  * between its commits (blocks.c, THE SNAPSHOT). Its records of committed
  * blocks name them by path, and its publishes keep levels and the committed
  * definitions. The parser owns it from markdown_core_parser_stream until the
  * parse is released. */
 typedef struct markdown_core_stream {
+    /* The line the last commit stopped in, when `held`. */
+    markdown_core_line_stop stop;
+    bool held;
     /* THE COPIES of the snapshot being taken, the builders' from the root
      * up, `builder_count` of them, and then the pending block's
      * (blocks.c), with what each level takes before the publish. */
