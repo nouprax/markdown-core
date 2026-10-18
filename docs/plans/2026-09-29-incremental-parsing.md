@@ -447,8 +447,9 @@ other decision is final once it is made.**
 - At the inline level, the nodes of an open paragraph before its earliest
   provisional decision are settled (5.8).
 
-A decision sees the end of the input when it reads lookahead past the last
-complete line, or when it asks whether a line is the last one. Every such
+A decision sees the end of the input when its lookahead reaches the end of
+the input, when it asks for the last line before that line is complete, or
+when it asks whether a line is the last one. Every such
 question goes through one entry of the lookahead API, and an audit in
 `scripts/audit/` refuses any other comparison with the end of the input, such
 as the direct `lookahead_cursor == lookahead_end` tests in `table.c` and

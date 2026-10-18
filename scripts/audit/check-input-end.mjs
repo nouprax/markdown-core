@@ -4,8 +4,9 @@
  * reading reached the end of the document's input decided something only
  * while no more text follows, so the parser records it: every reading that
  * asks whether the input goes on asks `markdown_core_parser_input_ends`, or
- * asks the line index for a line, and both record the line that asked when
- * it reads past the last complete line (parser.h).
+ * asks the line index for a line. The entry records the line that asked when
+ * the input ends where it asked, and the line index when the line asked for
+ * is not complete (parser.h).
  *
  * A reading that compares a position with the input's end itself decides
  * from the end without the record, and the commit then keeps a decision the

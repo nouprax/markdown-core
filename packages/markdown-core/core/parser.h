@@ -132,9 +132,10 @@ typedef struct markdown_core_parser_input {
     const unsigned char *source;
     size_t size, scanned;
     /* Where the input's last complete line ends: a line ending with `\n`,
-     * or with `\r` and another byte after it. A reading at or past it reads
-     * the end of the input (markdown_core_parser_input_ends). A cell's
-     * content is complete when it is read, so this is its end. */
+     * or with `\r` and another byte after it. Asking for a line that starts
+     * at or past it reads the end of the input
+     * (markdown_core_parser_extend_source_lines). A cell's content is
+     * complete when it is read, so this is its end. */
     const unsigned char *complete;
     struct markdown_core_input_line *lines;
     struct markdown_core_normalized_line *normalized;
@@ -890,11 +891,13 @@ static inline markdown_core_input_line *markdown_core_parser_source_line(markdow
  * asks whether the input goes on past a position asks here, or asks for a
  * line after the ones the driver reached (markdown_core_parser_source_line);
  * nothing else compares a position with the input's end. `cursor` is a
- * position of the active input. A reading at or past the end of the last
- * complete line reads what more text can change, so when the input is the
- * document's the parser records the line that asked (`end_seen`): its
- * decisions hold only while no more text follows. A table cell's input is
- * complete when it is read, so its end records nothing. */
+ * position of the active input. More text leaves every byte the input holds
+ * as it is and moves only its end, so a reading that reaches the end reads
+ * what more text can change: when the input is the document's, the parser
+ * records the line that asked (`end_seen`), whose decisions hold only while
+ * no more text follows. A reading that stops before the end decided from
+ * bytes alone, however far into the last line it read. A table cell's input
+ * is complete when it is read, so its end records nothing. */
 static inline void markdown_core_parser_see_end(markdown_core_parser *parser) {
     if (!parser->end_seen && markdown_core_parser_block_root(parser) == parser->root) {
         parser->end_seen = true;
@@ -904,11 +907,11 @@ static inline void markdown_core_parser_see_end(markdown_core_parser *parser) {
 
 static inline bool markdown_core_parser_input_ends(markdown_core_parser *parser, const unsigned char *cursor) {
     assert(cursor >= parser->input.source && cursor <= parser->input.source + parser->input.size);
-    if (cursor < parser->input.complete) {
+    if (cursor < parser->input.source + parser->input.size) {
         return false;
     }
     markdown_core_parser_see_end(parser);
-    return cursor == parser->input.source + parser->input.size;
+    return true;
 }
 
 /* Optional state is sparse within the input index: properties and ordinary
