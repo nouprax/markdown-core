@@ -1485,6 +1485,19 @@ typedef struct {
     bool parses;
 } owned_tree_walk;
 
+/* The walk starts with the room the parser keeps for walks: as many frames,
+ * and their state words, as it holds. */
+static void S_frames_kept(owned_tree_walk *walk) {
+    const markdown_core_parser *parser = walk->parser;
+    size_t capacity = parser->walk_stack_size / sizeof(*walk->frames);
+    if (walk->slots && parser->walk_state_capacity / walk->slots < capacity) {
+        capacity = parser->walk_state_capacity / walk->slots;
+    }
+    walk->frames = parser->walk_stack;
+    walk->states = parser->walk_states;
+    walk->capacity = capacity;
+}
+
 /* Room for one frame more than the walk holds. */
 static bool S_reserve_frame(owned_tree_walk *walk) {
     if (walk->count < walk->capacity) {
@@ -1866,6 +1879,7 @@ static int walk_owned_trees(markdown_core_parser *parser) {
     const markdown_core_finish_step_entry *const *const dispatch = parser->dialect->finish_dispatch;
     markdown_core_node *queued = parser->completion_first;
 
+    S_frames_kept(&walk);
     if (S_reserve_frame(&walk)) {
         /* The document's walk, done before its first block. */
         S_clear_states(&walk, 0);
