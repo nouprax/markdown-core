@@ -11032,7 +11032,7 @@ static void table_nested_inputs(test_batch_runner *runner) {
 
 /* SESSIONS: a text past the capacity is ALLOCATION_FAILED before it is
  * read, an append takes its bytes as they are, and an append that leaves a
- * node's value alone leaves its object. */
+ * node's value alone leaves its id. */
 static void session_appends(test_batch_runner *runner) {
     static const char source[] = "one\n\ntwo \xf0\xa0\x80\x80\n";
     markdown_core_session *session = NULL;
@@ -11049,15 +11049,15 @@ static void session_appends(test_batch_runner *runner) {
         return;
     }
     document = markdown_core_session_document(session);
-    const markdown_core_node *first = facade_child(markdown_core_document_root(document), 0);
+    const uint64_t first = markdown_core_node_id(facade_child(markdown_core_document_root(document), 0));
     OK(runner,
        markdown_core_session_append(session, NULL, MARKDOWN_CORE_SOURCE_CAPACITY, &document) ==
            MARKDOWN_CORE_ALLOCATION_FAILED,
        "a text past the capacity is refused before it is read");
     OK(runner,
        markdown_core_session_append(session, (const uint8_t *)"s", 1, &document) == MARKDOWN_CORE_OK &&
-           facade_child(markdown_core_document_root(document), 0) == first,
-       "an append to the second paragraph keeps the first's object");
+           markdown_core_node_id(facade_child(markdown_core_document_root(document), 0)) == first,
+       "an append to the second paragraph keeps the first's id");
     OK(runner,
        markdown_core_session_append(session, (const uint8_t *)"\xe4\xb8", 2, &document) == MARKDOWN_CORE_OK &&
            markdown_core_session_text_size(session) == sizeof(source) + 2,

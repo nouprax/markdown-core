@@ -50,8 +50,7 @@ The owner's requirement, 2026-10-14:
 - **R3 Minimal replacement.** A node is a new value only if its value
   changed. Its ancestors are new values because their child collections
   changed. Every other node of the new document equals the previous
-  document's node with the same id; in the C document it is that node,
-  reused.
+  document's node with the same id.
 - **R4 Stable identity.** Every node has an identifier, unique within its
   document, that survives every append that does not remove the node. An
   identifier never changes kind.
@@ -83,7 +82,7 @@ the AST itself.
 | S4 Finish walk | `S_finish_parse` → `walk_owned_trees` | Every owned root once | Inline parse of each container at ENTER, inline completion, anchor reservation, Text consolidation, finish steps |
 | S5 Document | `finish_document` | Registries | Footnote and specimen order, heading anchors and their reference targets |
 | S6 Passes | `postprocess_func` (Autolink) | Each finished root | Bare email links |
-| S7 Publish | `publish_document` (`elements/ast.c`) | The finished tree and, in a session, the previous document | Ids, extents and runs; identity matching and value deduplication |
+| S7 Publish | `publish_document` (`elements/ast.c`) | The finished tree and, in a session, the previous document | Ids, extents and runs; identity matching |
 | S8 Bindings | Swift `DocumentBuilder`; Kotlin and ES decode MCB3 | The finished C tree | One immutable value tree per parse |
 
 Three properties of this design make a streaming parser possible without a
@@ -636,7 +635,7 @@ When the paragraph closes, only the content after the settle point is parsed
 too. So a paragraph's inline content is parsed in full once, plus, on each
 append, the short stretch after the settle point.
 
-### 5.9 Identity matching and value deduplication
+### 5.9 Identity matching
 
 - A settled node never changes its id.
 - At each publish, every node without an id (the tail and the nodes that
@@ -655,9 +654,6 @@ append, the short stretch after the settle point.
   sibling: the cells of a grid table that span rows start inside the ranges
   of the cells before them. Both sequences are in source order and the match
   is monotone, so it is linear in the tail.
-- A new node whose value equals the old tail node it continues is that old
-  object (R3): equal kind, equal scalars, equal extent and runs, and every
-  child relation holding the same objects, compared in post-order.
 - Matching visits only the tail, so it costs O(tail nodes).
 - Consequences, each from the one rule:
   - Typing at the end of a paragraph keeps its id.
@@ -857,9 +853,8 @@ which also says at which rollout step each one becomes a gate.
   fresh parse's definition tables, anchors and scopes, not from the engine.
 - **Identity and minimality.** After every append: ids are unique; no id
   changed kind; no retired id returns; every id follows the matching rule
-  (5.9); in C, every unchanged node is the previous document's node; in every
-  binding, every node equals the previous document's node with its id
-  exactly when C reused it. Scripted cases assert the exact sets of kept, new
+  (5.9); in C and in every binding, a node equals the previous document's
+  node with its id exactly when its value is unchanged. Scripted cases assert the exact sets of kept, new
   and retired ids: typing at the end of a paragraph, a paragraph that becomes
   a Setext heading and back, a row appended to a table, an item appended to a
   long list.

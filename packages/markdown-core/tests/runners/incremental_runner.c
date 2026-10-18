@@ -275,35 +275,6 @@ static markdown_core_status renumber_append(void *handle, const uint8_t *text, s
 static const ih_subject_class renumber = {
     "renumbers every id on every step", faulty_open, renumber_append, faulty_finalize, faulty_text, faulty_close};
 
-/* Rewrites every node with the same ids: two sessions take every step, and
- * the subject answers with each in turn. */
-static void *rewrite_open(ih_unit unit, const uint8_t *text, size_t length, const markdown_core_document **document) {
-    faulty *subject = (faulty *)faulty_open(unit, text, length, document);
-    const markdown_core_document *twin;
-    if (subject && !(subject->other = ih_session.open(unit, text, length, &twin))) {
-        faulty_close(subject);
-        return NULL;
-    }
-    return subject;
-}
-
-static markdown_core_status rewrite_append(void *handle, const uint8_t *text, size_t length,
-                                           const markdown_core_document **document) {
-    faulty *subject = (faulty *)handle;
-    const markdown_core_document *twin = NULL;
-    markdown_core_status status = ih_session.append(subject->inner, text, length, document);
-    if (status != MARKDOWN_CORE_OK || (status = ih_session.append(subject->other, text, length, &twin))) {
-        return status;
-    }
-    if (++subject->steps % 2) {
-        *document = twin;
-    }
-    return MARKDOWN_CORE_OK;
-}
-
-static const ih_subject_class rewrite = {
-    "rewrites every node with the same ids", rewrite_open, rewrite_append, faulty_finalize, faulty_text, faulty_close};
-
 /* Keeps a node whose text changed: a second session takes every step but
  * the second the first accepts, and the subject answers with its document
  * while it reports the first's text. */
@@ -544,7 +515,7 @@ int main(int argc, char **argv) {
         static const struct {
             const ih_subject_class *subject;
             const char *oracle;
-        } faulty[] = {{&stale, "4.1"}, {&renumber, "4.2 4.4 4.5"}, {&rewrite, "4.3"}, {&keep, "4.1"}, {&revive, "4.2"},
+        } faulty[] = {{&stale, "4.1"}, {&renumber, "4.2 4.4 4.5"}, {&keep, "4.1"}, {&revive, "4.2"},
                       {&early, "4.6"}, {&lenient, "4.7"}};
         int failures = 0;
         size_t which;

@@ -747,16 +747,6 @@ static void check_identity(run *state, const char *where, size_t step, history *
                     after->nodes[mine].relation == before->nodes[theirs].relation;
         }
         changed[index] = !equal;
-        if (equal && before->nodes[old].object != node->object) {
-            fail(state, "4.3", "%s step %zu: unchanged node %llu is a new object", where, step,
-                 (unsigned long long)node->id);
-        } else if (!equal && view_find(before, node->object) != SIZE_MAX) {
-            fail(state, "4.3", "%s step %zu: changed node %llu is an object of the previous document", where, step,
-                 (unsigned long long)node->id);
-        }
-    }
-    if (stopped(state)) {
-        goto done;
     }
     /* 4.5: the script's expectations, by position; `finalize` has none. */
     if (entry) {

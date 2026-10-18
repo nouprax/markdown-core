@@ -206,10 +206,7 @@ For every node of the new document, the harness classifies it against the
 node of the previous document with the same id: **unchanged** when the two are
 deep equal (plan 4.2), and **changed** when they differ or no previous node has
 that id. `N` is the number of changed nodes. An ancestor of a changed node is
-changed, because its children are part of its value. In C, every unchanged
-node is the previous document's node, reused, and every node that is a new C
-object is changed (plan R3, 8): a new object for an unchanged node is a
-rewrite the step did not need.
+changed, because its children are part of its value.
 
 The comparison uses a **snapshot** of the previous document the harness takes
 before the step: each node's kind, id, scalars, extent and the ids of its
@@ -376,7 +373,7 @@ step 8 it covers the paragraph of short lines (3.1).
 For every step of every stream of at most 1,024 chunks and its `finalize`,
 `step_ir` is at most 1.25 times `reparse_ir` of the same step (decision G2).
 A longer stream is bounded per chunk by 6.2; its `reparse_ir` column is
-reported. The margin pays for matching and deduplication when an append
+reported. The margin pays for matching when an append
 really does change the whole document; beyond it, an incremental append would
 be a regression against the application that just reparses.
 
@@ -433,7 +430,6 @@ named oracle:
 | Returns the previous document for one step | 4.1 |
 | Answers `reference(for:)` with the last declaration of a label instead of the first | 4.1 |
 | Renumbers every id on every step (a fresh parse with fresh ids) | 4.2 lineage, 4.4, 4.5 |
-| Rewrites every node with the same ids | 4.3 |
 | Keeps a node whose text changed | 4.1 |
 | Reuses a retired id for a new node | 4.2 |
 | Re-reads the whole document on every step | 6.2 |
