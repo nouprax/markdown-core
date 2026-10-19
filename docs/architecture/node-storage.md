@@ -17,9 +17,12 @@ same alignment, and that padding is included in measured memory costs.
 
 A node holds its children in an array, in order: `children` and
 `child_count`. The array is storage the node owns, cut from the pool like its
-other storage of its own size. Its capacity is the smallest power of two, and
-at least two, that holds its count, so the count alone says when the array is
-full; an append to a full array moves it to the next class. Nothing else
+other storage of its own size. Its capacity is what that storage holds, which
+its header records: at least the smallest power of two, and at least two, that
+holds its count. The array keeps its storage as its count drops, so an append
+asks the storage whether the array is full only when the count is at a power
+of two, and an append to a full array moves it to storage twice its count.
+Nothing else
 records the relation: a node holds no pointer to its parent or its siblings,
 and whatever holds a node holds it in an array or a node-valued field. A
 cite's citations and a definition's bodies are their children in storage; the

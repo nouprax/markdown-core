@@ -382,10 +382,9 @@ typedef union {
 
 struct markdown_core_node {
     /* The node's children in order, `child_count` of them, in storage the
-     * node owns whose capacity the count determines
-     * (markdown_core_node_push_child). A node holds no pointer to its parent
-     * or its siblings: whatever holds a node holds it in an array or a
-     * field. */
+     * node owns (THE CAPACITY OF A NODE ARRAY, markdown_core_node_push_child).
+     * A node holds no pointer to its parent or its siblings: whatever holds a
+     * node holds it in an array or a field. */
     struct markdown_core_node **children;
     uint32_t child_count;
     uint16_t kind;
@@ -677,9 +676,11 @@ markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type
 void markdown_core_node_free(markdown_core_node *node);
 
 /* THE CAPACITY OF A NODE ARRAY -- a node's children, a cite's items -- is
- * the smallest power of two that holds its count, and at least two, the
- * pointers one class of a pool's storage holds: the count alone says when
- * the array is full. */
+ * what its storage holds (markdown_core_bytes_size), at least the smallest
+ * power of two that holds its count, and at least two, the pointers one
+ * class of a pool's storage holds. An array keeps its storage as its count
+ * drops, so only a count at a power of two asks the storage whether the
+ * array is full. */
 static inline uint32_t markdown_core_node_array_capacity(uint32_t count) {
     uint32_t capacity = 2;
     while (capacity < count) {
@@ -695,19 +696,17 @@ static inline uint32_t markdown_core_node_array_capacity(uint32_t count) {
 bool markdown_core_node_array_start(struct markdown_core_node_pool *pool, markdown_core_node ***items, uint32_t *count,
                                     markdown_core_node *node);
 
-/* Appends `node` to the full array `*items` holds `*count` of, at least two,
- * moving the array to storage from `pool` twice its capacity. False, having
- * appended nothing, when no storage can be had or the count is at its
- * bound. */
+/* Appends `node` to the array `*items` holds `*count` of, a power of two
+ * from two: in place when its storage holds more, and otherwise moving the
+ * array to storage from `pool` twice its count. False, having appended
+ * nothing, when no storage can be had or the count is at its bound. */
 bool markdown_core_node_array_push_full(struct markdown_core_node_pool *pool, markdown_core_node ***items,
                                         uint32_t *count, markdown_core_node *node);
 
 /* Appends `node` to the array `*items` holds `*count` of: an array with no
  * storage takes its storage (markdown_core_node_array_start), and one whose
- * count is at a power of two from two moves first
- * (markdown_core_node_array_push_full). An array keeps its storage as its
- * count drops (markdown_core_node_array_pop), which is at least the capacity
- * its count determines. */
+ * count is at a power of two from two asks its storage
+ * (markdown_core_node_array_push_full). */
 static inline bool markdown_core_node_array_push(struct markdown_core_node_pool *pool, markdown_core_node ***items,
                                                  uint32_t *count, markdown_core_node *node) {
     const uint32_t held = *count;

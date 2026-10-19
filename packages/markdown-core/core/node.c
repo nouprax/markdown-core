@@ -135,15 +135,7 @@ void markdown_core_node_pool_bytes_free(markdown_core_node_pool *pool, void *sto
  * allocator when there is no pool: either is given back by
  * markdown_core_node_pool_bytes_free. */
 static void *S_bytes_take(markdown_core_node_pool *pool, size_t bytes) {
-    if (pool) {
-        return markdown_core_node_pool_bytes(pool, bytes);
-    }
-    markdown_core_bytes_header *header = markdown_core_realloc(NULL, sizeof(*header) + bytes);
-    if (!header) {
-        return NULL;
-    }
-    header->owner.slab = NULL;
-    return header + 1;
+    return pool ? markdown_core_node_pool_bytes(pool, bytes) : markdown_core_bytes_own(bytes);
 }
 
 /* RECORD SIZE IS A PROPERTY OF THE KIND, so it is an array index.
@@ -1022,14 +1014,16 @@ bool markdown_core_node_array_push_full(markdown_core_node_pool *pool, markdown_
     if (held > UINT32_MAX / 2) {
         return false;
     }
-    markdown_core_node **moved = S_bytes_take(pool, 2 * held * sizeof(*moved));
-    if (!moved) {
-        return false;
+    if (markdown_core_bytes_size(*items) <= held * sizeof(**items)) {
+        markdown_core_node **moved = S_bytes_take(pool, 2 * held * sizeof(*moved));
+        if (!moved) {
+            return false;
+        }
+        memcpy(moved, *items, held * sizeof(*moved));
+        markdown_core_node_pool_bytes_free(pool, *items);
+        *items = moved;
     }
-    memcpy(moved, *items, held * sizeof(*moved));
-    markdown_core_node_pool_bytes_free(pool, *items);
-    moved[held] = node;
-    *items = moved;
+    (*items)[held] = node;
     *count = held + 1;
     return true;
 }
