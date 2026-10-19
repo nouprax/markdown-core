@@ -10,9 +10,6 @@ static const markdown_core_element *const DEFINITION_LIST_PEERS[] = {
     [DEFINITION_LIST_TABLE] = &MARKDOWN_CORE_ELEMENT_TABLE, NULL};
 
 static bool markdown_core_block_definition_marker(markdown_core_chunk *input, int at, int indent);
-static bool markdown_core_block_definition_prefix(const markdown_core_element_instance *self,
-                                                  markdown_core_parser *parser, markdown_core_node *parent,
-                                                  markdown_core_chunk *input, bool *compact, bool decides);
 static markdown_core_node *markdown_core_block_open_definition(markdown_core_definition_list_work *counts,
                                                                markdown_core_parser *parser, markdown_core_node *parent,
                                                                markdown_core_chunk *input, bool compact);
@@ -107,7 +104,8 @@ static bool markdown_core_block_definition_marker(markdown_core_chunk *input, in
  * it replaces read both lines end to end (97% of this hook's own cost on
  * long prose) and admitted any line with ': ' in it. Every answer of false
  * is a line the transaction would refuse too. */
-static bool definition_next_lines_admit(markdown_core_parser *parser, const markdown_core_node *parent) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_next_lines_admit(
+    markdown_core_parser *parser, const markdown_core_node *parent) {
     const unsigned char *cursor = parser->lookahead_cursor;
     for (int line = 0; line < 2 && cursor && !markdown_core_parser_input_ends(parser, cursor); line++) {
         const unsigned char *at = cursor;
@@ -146,24 +144,29 @@ static bool definition_next_lines_admit(markdown_core_parser *parser, const mark
     return false;
 }
 
-/* THE TERM'S READING of the line `input` in `parent`: whether a definition
- * marker line follows it, after one blank line at most, that is no caption
- * of a table. A candidate's decision, `decides`, writes nothing. */
-static bool markdown_core_block_definition_prefix(const markdown_core_element_instance *self,
-                                                  markdown_core_parser *parser, markdown_core_node *parent,
-                                                  markdown_core_chunk *input, bool *compact, bool decides) {
+/* THE TERM'S ADMISSION of the line `input` in `parent`, which reads the
+ * line and the first bytes of the two lines after it, and so can read the
+ * end: whether a term can start there at all. The reading
+ * (definition_term_reads) is begun only on a line it admits. The next lines
+ * refuse almost every line, and cost the container depth where the
+ * reading's reference re-parse costs the line; both are conjuncts of one
+ * decision, so the order changes nothing else. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_term_admits(
+    const markdown_core_element_instance *self, markdown_core_parser *parser, const markdown_core_node *parent,
+    markdown_core_chunk *input) {
+    ((markdown_core_definition_list_work *)self->state)->work++;
+    return !parser->blank && parser->indent < 4 &&
+           !markdown_core_block_definition_marker(input, parser->first_nonspace, parser->indent) &&
+           definition_next_lines_admit(parser, parent);
+}
+
+/* THE TERM'S READING of a line `input` in `parent` its admission admits:
+ * whether a definition marker line follows it, after one blank line at
+ * most, that is no caption of a table. A candidate's decision, `decides`,
+ * writes nothing. */
+static bool definition_term_reads(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                  markdown_core_node *parent, markdown_core_chunk *input, bool *compact, bool decides) {
     markdown_core_definition_list_work *counts = self->state;
-    counts->work++;
-    if (parser->blank || parser->indent >= 4 ||
-        markdown_core_block_definition_marker(input, parser->first_nonspace, parser->indent)) {
-        return false;
-    }
-    /* The next line first: it refuses almost every line, and it costs the
-     * container depth where the reference re-parse below costs the line. Both
-     * are conjuncts of one decision, so the order changes nothing else. */
-    if (!definition_next_lines_admit(parser, parent)) {
-        return false;
-    }
     markdown_core_chunk term = {input->data + parser->first_nonspace, input->len - parser->first_nonspace, 0};
     if (term.data[0] == '[') {
         counts->work += term.len;
@@ -295,7 +298,8 @@ static markdown_core_node *try_paragraph(const markdown_core_element_instance *s
     const bool aside = !markdown_core_parser_candidate_final(parser);
     const markdown_core_end_aside end =
         aside ? markdown_core_parser_set_end_aside(parser) : (markdown_core_end_aside){0};
-    const bool term = markdown_core_block_definition_prefix(self, parser, parent, &input, &compact, false);
+    const bool term = definition_term_admits(self, parser, parent, &input) &&
+                      definition_term_reads(self, parser, parent, &input, &compact, false);
     if (aside && markdown_core_parser_put_end_back(parser, end)) {
         if (!parser->error) {
             const int words[MARKDOWN_CORE_CANDIDATE_WORDS] = {DEFINITION_TERM};
@@ -345,7 +349,8 @@ static markdown_core_candidate_decision decide_candidate(const markdown_core_ele
     bool claims;
     if (words[0] == DEFINITION_TERM) {
         bool compact = false;
-        claims = markdown_core_block_definition_prefix(self, parser, container, &line, &compact, true);
+        claims = definition_term_admits(self, parser, container, &line) &&
+                 definition_term_reads(self, parser, container, &line, &compact, true);
     } else {
         int next;
         claims = definition_body_continues(parser, container, words[1], &next);

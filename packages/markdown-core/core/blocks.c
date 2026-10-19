@@ -4660,11 +4660,13 @@ requested:
     *held = true;
 }
 
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void add_text_to_container(
+/* What remains at parser->offset is a text line: adds the text to the
+ * appropriate container. False when the block that would take it did not
+ * open: the parse failed, or the text opener's call asked to be a
+ * candidate (THE CANDIDATES). */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool add_text_to_container(
     markdown_core_parser *parser, markdown_core_node *container, markdown_core_node *last_matched_container,
     markdown_core_chunk *input) {
-    // what remains at parser->offset is a text line.  add the text to the
-    // appropriate container.
 
     markdown_core_block_find_first_nonspace(parser, input);
 
@@ -4705,7 +4707,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void add_text_to_containe
         const markdown_core_element_instance *taker = markdown_core_parser_block_kind(parser, current)->structure;
         markdown_core_node *lazy = taker->element->open_lazy(taker, parser, current, input);
         if (!lazy) {
-            return;
+            return false;
         }
         assert(lazy == markdown_core_parser_current(parser));
         /* A lazy line is text, so its indentation is not content, as it is not
@@ -4732,12 +4734,13 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void add_text_to_containe
             const markdown_core_element_instance *text_block = parser->dialect->text_block_structure;
             container = text_block->element->open_text_block(text_block, parser, container, input);
             if (!container) {
-                return;
+                return false;
             }
             markdown_core_block_add_line(container, input, parser);
         }
         assert(container == markdown_core_parser_current(parser));
     }
+    return true;
 }
 
 /* THE LINE A SESSION HOLDS. A commit reads the lines before the commit
@@ -4871,11 +4874,10 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_line_machine(markd
         goto finished;
     }
 
-    add_text_to_container(parser, container, last_matched_container, &input);
     /* The text opener asked for its call to be a candidate (THE
      * CANDIDATES): the line holds at the call, in the block it was asked
      * in, where the blocks the line did not match have closed. */
-    if (S_requested(parser)) {
+    if (!add_text_to_container(parser, container, last_matched_container, &input) && S_requested(parser)) {
         held = true;
         container = markdown_core_parser_current(parser);
         S_hold(parser, MARKDOWN_CORE_LINE_AT_TEXT, container, all_matched, container != last_matched_container, opens);

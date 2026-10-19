@@ -2717,22 +2717,6 @@ bool markdown_core_table_caption_probe(const markdown_core_element_instance *tab
     return matched;
 }
 
-/* Captions are a separate entry grammar; the body shares candidate admission
- * with the definition-precedence query and every other table producer. */
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool table_open_admits(markdown_core_parser *parser,
-                                                                              const unsigned char *input, int length) {
-    bufsize_t trimmed = length;
-    while (trimmed > 0 && (input[trimmed - 1] == '\n' || input[trimmed - 1] == '\r')) {
-        trimmed--;
-    }
-    if (table_caption_start(input, trimmed, parser->first_nonspace, parser->indent) >= 0) {
-        return true;
-    }
-    return table_grammar_admits(parser, input, trimmed, parser->first_nonspace,
-                                table_dash_count_raw(input, parser->offset, trimmed), parser->line_number + 1,
-                                parser->lookahead_cursor, false);
-}
-
 /* WHAT THE OPENER READ (table_opener_reads): its lines, and the caption the
  * first of them starts, with the last line of the caption and whether it
  * trails the table before it. */
@@ -2763,19 +2747,34 @@ static inline bool table_opener_fits(const markdown_core_parser *parser, const m
 
 /* THE OPENER'S ADMISSION at a place that fits, which reads only the line,
  * `input`, and the first bytes of the line after it, and so can read the
- * end: whether a table or a caption of the table before it, when the call
- * found one it can trail (`trailing`), can start there at all. The reading
- * (table_opener_reads) is begun only on a line it admits. */
+ * end: whether the line's bytes can start a table or a caption at all.
+ * Captions are a separate entry grammar; the body shares candidate
+ * admission with the definition-precedence query and every other table
+ * producer. The reading (table_opener_reads) is begun only on a line it
+ * admits and the end admits (table_opener_ends_admit). */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool table_opener_admits(markdown_core_parser *parser,
-                                                                                bool trailing,
                                                                                 const unsigned char *input,
                                                                                 int length) {
-    /* Every opening grammar needs a later physical line. At EOF only a
-     * caption a table before it takes can be claimed. */
-    if (markdown_core_parser_input_ends(parser, parser->lookahead_cursor) && !trailing) {
-        return false;
+    bufsize_t trimmed = length;
+    while (trimmed > 0 && (input[trimmed - 1] == '\n' || input[trimmed - 1] == '\r')) {
+        trimmed--;
     }
-    return table_open_admits(parser, input, length);
+    if (table_caption_start(input, trimmed, parser->first_nonspace, parser->indent) >= 0) {
+        return true;
+    }
+    return table_grammar_admits(parser, input, trimmed, parser->first_nonspace,
+                                table_dash_count_raw(input, parser->offset, trimmed), parser->line_number + 1,
+                                parser->lookahead_cursor, false);
+}
+
+/* THE END'S ADMISSION of a line the opener admits: every opening grammar
+ * needs a later physical line, and at EOF only a caption the table before
+ * it takes, when the call found one it can trail (`trailing`), can be
+ * claimed. The line's bytes refuse almost every line, so a call asks the
+ * tree for the table a caption can trail only on a line they admit; both
+ * are conjuncts of one decision, so the order changes nothing else. */
+static inline bool table_opener_ends_admit(markdown_core_parser *parser, bool trailing) {
+    return trailing || !markdown_core_parser_input_ends(parser, parser->lookahead_cursor);
 }
 
 /* THE OPENER'S READING of a line its admission admits, which writes nothing
@@ -2912,8 +2911,9 @@ static markdown_core_node *table_try_open(const markdown_core_element_instance *
     const markdown_core_end_aside end =
         aside ? markdown_core_parser_set_end_aside(parser) : (markdown_core_end_aside){0};
     table_workspace *workspace = self->state;
-    markdown_core_node *const preceding = table_preceding(parent);
-    if (!table_opener_admits(parser, preceding != NULL, input, length)) {
+    const bool admitted = table_opener_admits(parser, input, length);
+    markdown_core_node *const preceding = admitted ? table_preceding(parent) : NULL;
+    if (!admitted || !table_opener_ends_admit(parser, preceding != NULL)) {
         if (aside && markdown_core_parser_put_end_back(parser, end) && !parser->error) {
             table_source source = {.parser = parser, .workspace = workspace, .lines = workspace->lines};
             if (table_source_push(&source, table_cursor_line(parser, input, length))) {
@@ -3193,7 +3193,8 @@ static markdown_core_candidate_decision decide_candidate(const markdown_core_ele
     }
     table_workspace *workspace = self->state;
     bool claims = false, undecided = false;
-    if (table_opener_fits(parser, container) && table_opener_admits(parser, feed.trailing, line.data, (int)line.len)) {
+    if (table_opener_fits(parser, container) && table_opener_admits(parser, line.data, (int)line.len) &&
+        table_opener_ends_admit(parser, feed.trailing)) {
         table_read found;
         claims =
             table_opener_reads(workspace, parser, container, line.data, (int)line.len, true, feed.trailing, &found);
