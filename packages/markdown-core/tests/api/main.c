@@ -11638,6 +11638,36 @@ static void session_snapshot_simple_tables(test_batch_runner *runner) {
     }
 }
 
+/* WHAT A CANDIDATE DECIDES, IN EVERY SNAPSHOT (step 7, THE CANDIDATES): the
+ * text arrives byte by byte, and after each append the snapshot's dump is a
+ * fresh parse's of the same text. A construct whose opening line reads to
+ * the end of the text so far -- a grid, a multiline table with or without a
+ * header, a headerless simple table, a `%%` comment -- is read on as the
+ * commit reads its lines, and decided at the line that ends it, inside
+ * containers too; one the text leaves open stays as its lines read. */
+static void session_snapshot_candidates(test_batch_runner *runner) {
+    static const char *const sources[] = {
+        "%%\nhidden *x*\n\n- not a list\n%%\n\nafter\n",
+        "> %%\n> a\n> %%\n> b\n\n%%\nopen\n",
+        "- %%\n  x\n- y\n  %%\n",
+        "%%\n%%x\n%\n %%  \nafter\n",
+        "+---+---+\n| a | b |\n+---+---+\n| c | d |\n+---+---+\n\nafter\n",
+        "+---+\n| a |\n|   |\n\npara\n",
+        "-------------------\nHead A    Head B\n--------  --------\nrow a1    row b1\n\nrow a2    row b2\n"
+        "-------------------\n\nafter\n",
+        "----------- -------\n   First    row\n\n  Second    row\n-------------------\n\nafter\n",
+        "------ ------\nx      y\n------ ------\nafter\n",
+        "> -------------------\n> Head A    Head B\n> --------  --------\n> row a1    row b1\n>\n"
+        "> row a2    row b2\n> -------------------\n>\n> after\n",
+    };
+    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        size_t at = 0;
+        OK(runner, snapshots_dump_as_parses(sources[i], &at),
+           "every snapshot decides a construct read on as a parse of its text, up to byte %zu of %zu: %s", at,
+           strlen(sources[i]), sources[i]);
+    }
+}
+
 /* Where the bytes a block owns of each part a view of it views are: its
  * attributes' anchor, classes and records, its record's string and its
  * payload's storage. */
@@ -12123,6 +12153,7 @@ int main(void) {
     session_snapshot_lists(runner);
     session_snapshot_openers(runner);
     session_snapshot_simple_tables(runner);
+    session_snapshot_candidates(runner);
     session_opener_fields(runner);
     node_view_views(runner);
     session_finalize_matches_a_parse(runner);
