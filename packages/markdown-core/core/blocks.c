@@ -3362,7 +3362,7 @@ static void S_lookahead_close_run(markdown_core_block_lookahead *lookahead, int 
     if (lookahead->run_start) {
         /* A run holds only lines the text has finished: the line it has not
          * may take bytes that are not blank. */
-        const unsigned char *finished = markdown_core_parser_finished_end(lookahead->parser);
+        const unsigned char *finished = markdown_core_parser_complete_end(lookahead->parser);
         if (cursor > finished) {
             line--;
             cursor = finished;
@@ -3556,7 +3556,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_lookahead_next(mark
 
         /* A line the text has not finished, read by a reading that waits,
          * matches every prefix itself, as far as its bytes decide. */
-        const bool unfinished = can_wait && lookahead->waits && start >= markdown_core_parser_finished_end(parser);
+        const bool unfinished = can_wait && lookahead->waits && start >= markdown_core_parser_complete_end(parser);
         if (unfinished) {
             for (i = 1; i < lookahead->depth; i++) {
                 parser->lookahead_chain[i].line_flags = parser->lookahead_chain[i].node->flags;
@@ -3658,7 +3658,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_lookahead_next(mark
         *line = input;
         *first_nonspace = parser->first_nonspace;
         *indent = parser->indent;
-        lookahead->incomplete = start >= markdown_core_parser_finished_end(parser);
+        lookahead->incomplete = start >= markdown_core_parser_complete_end(parser);
         return 1;
     }
     S_lookahead_close_run(lookahead, lookahead->line, lookahead->cursor);

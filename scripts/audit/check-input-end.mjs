@@ -48,7 +48,7 @@ const OWNERS = new Set([
     "core/parser.h:markdown_core_parser_set_end_aside",
     "core/parser.h:markdown_core_parser_end_read",
     "core/parser.h:markdown_core_parser_put_end_back",
-    "core/parser.h:markdown_core_parser_finished_end",
+    "core/parser.h:markdown_core_parser_complete_end",
     "core/parser.h:markdown_core_parser_lookahead_wait",
     "core/parser.h:markdown_core_input_line_next",
     "core/blocks.c:S_scan_line",

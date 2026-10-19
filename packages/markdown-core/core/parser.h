@@ -974,7 +974,7 @@ static inline bool markdown_core_parser_input_ends(markdown_core_parser *parser,
  * waits on it instead, or reads it only as far as its bytes decide
  * (markdown_core_block_lookahead). The facts a lookahead keeps for a run of
  * blank lines hold finished lines only. */
-static inline const unsigned char *markdown_core_parser_finished_end(const markdown_core_parser *parser) {
+static inline const unsigned char *markdown_core_parser_complete_end(const markdown_core_parser *parser) {
     return parser->input.complete;
 }
 

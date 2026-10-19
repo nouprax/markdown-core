@@ -2353,7 +2353,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool table_grammar_admits
     const unsigned char *end = parser->input.source + line->end;
     /* A line the text has not finished ends where the input does: a reading
      * of it to its end reads the end. */
-    const bool unfinished = parser->input.source + line->start >= markdown_core_parser_finished_end(parser);
+    const bool unfinished = parser->input.source + line->start >= markdown_core_parser_complete_end(parser);
     const unsigned char *byte = cursor;
     while (byte < end && markdown_core_is_space_or_tab(*byte)) {
         byte++;
