@@ -3864,6 +3864,7 @@ bool markdown_core_parser_candidate_start(markdown_core_parser *parser, markdown
     parser->first_nonspace = 0;
     parser->first_nonspace_column = 0;
     parser->thematic_break_kill_pos = 0;
+    parser->line_visit++;
     parser->lookahead_cursor = parser->input.source + markdown_core_input_line_next(parser, found);
     parser->line_start = (bufsize_t)found->start;
     parser->line_end = (bufsize_t)found->end;
@@ -4817,6 +4818,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_line_machine(markd
     parser->first_nonspace = 0;
     parser->first_nonspace_column = 0;
     parser->thematic_break_kill_pos = 0;
+    parser->line_visit++;
     parser->indent = 0;
     parser->blank = false;
     parser->partially_consumed_tab = false;

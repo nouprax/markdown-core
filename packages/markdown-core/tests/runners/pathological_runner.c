@@ -367,6 +367,48 @@ static int case_nested_block_quotes(pc_context *context) {
     return pc_expect_text(context, "a", 1);
 }
 
+/* A line that opens a container at every one of its markers asks the table
+ * opener at each of them whether the rest of the line and the line after it
+ * can start a table. The answer is read once per line, so the depth costs the
+ * bytes of the markers alone. Reading the rest of the line again at each
+ * marker took 11 seconds at 50000 markers in a debug build, so the depth here
+ * is twice that. */
+static int case_deep_list_line(pc_context *context) {
+    if (pc_build(context, NULL, "- ", 100000, "a\nb\n") != 0 || pc_parse(context) != 0) {
+        return -1;
+    }
+    if (pc_expect_count(context, MARKDOWN_CORE_KIND_LIST, 100000, "List") != 0 ||
+        pc_expect_count(context, MARKDOWN_CORE_KIND_LIST_ITEM, 100000, "ListItem") != 0) {
+        return -1;
+    }
+    return pc_expect_text(context, "ab", 2);
+}
+
+/* The same line in a session, which reads it unfinished, finished with no
+ * line after it, and as the text's end. */
+static int case_deep_list_session(pc_context *context) {
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document = NULL;
+    int result = -1;
+    if (pc_build(context, NULL, "- ", 50000, "lea") != 0 ||
+        markdown_core_session_new((const uint8_t *)context->input, context->input_length, MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                  &session) != MARKDOWN_CORE_OK) {
+        return -1;
+    }
+    if (markdown_core_session_append(session, (const uint8_t *)"n\n", 2, &document) == MARKDOWN_CORE_OK &&
+        markdown_core_session_finalize(session, &document) == MARKDOWN_CORE_OK &&
+        ts_ast_count_kinds(markdown_core_document_root(document), context->counts) == 0 &&
+        pc_expect_count(context, MARKDOWN_CORE_KIND_LIST, 50000, "List") == 0 &&
+        pc_expect_count(context, MARKDOWN_CORE_KIND_LIST_ITEM, 50000, "ListItem") == 0) {
+        size_t length = 0;
+        char *text = ts_ast_concat_text(markdown_core_document_root(document), &length);
+        result = text && length == 4 && memcmp(text, "lean", 4) == 0 ? 0 : -1;
+        free(text);
+    }
+    markdown_core_session_free(session);
+    return result;
+}
+
 /* The canonical dump of a deep document, drawn on a deliberately small stack.
  *
  * The dump walks the tree the parser produced, and a walk that recurses per
@@ -1367,6 +1409,8 @@ static const pc_case_entry PC_CASES[] = {
     {"nested_brackets", case_nested_brackets},
     {"cross_reference_kinds", case_cross_reference_kinds},
     {"nested_block_quotes", case_nested_block_quotes},
+    {"deep_list_line", case_deep_list_line},
+    {"deep_list_session", case_deep_list_session},
     {"deeply_nested_lists", case_deeply_nested_lists},
     {"empty_lines_in_deeply_nested_lists", case_empty_lines_in_deeply_nested_lists},
     {"empty_lines_in_deep_list_blockquote", case_empty_lines_in_deep_list_blockquote},

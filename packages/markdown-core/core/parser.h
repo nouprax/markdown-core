@@ -460,6 +460,13 @@ struct markdown_core_parser {
      */
     bufsize_t first_nonspace_column;
     bufsize_t thematic_break_kill_pos;
+    /* THE LINE'S VISIT: a number each reading of a line takes as it begins
+     * or resumes the line (S_line_machine) or as a candidate's decision reads
+     * it anew (markdown_core_parser_candidate_start), and no other reading has
+     * had. A visit reads one line of one text, so what an element reads of the
+     * line and of the lines after it holds for the visit: every container the
+     * line opens asks again, at a later byte. */
+    size_t line_visit;
     /* See the documentation for markdown_core_parser_get_indent() in markdown_core.h */
     int indent;
     /* See the documentation for markdown_core_parser_is_blank() in markdown_core.h */

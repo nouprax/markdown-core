@@ -722,6 +722,28 @@ typedef struct {
     size_t top, bottom, left, right, area;
 } table_grid_region;
 
+/* WHAT A READING OF THE LINE AFTER A HEADER TOLD (table_grammar_admits):
+ * whether the line has a byte past its indentation, read once `known`, and
+ * the dash runs of its longest trailing run of separator bytes, counted
+ * once `counted`. */
+typedef struct {
+    bool known, blank, counted;
+    size_t runs;
+} table_successor;
+
+/* WHAT THE OPENER READ OF THE LINE IT WAS ASKED ON (table_opener_admits), in
+ * the parser's visit `visit` of it (parser.h, THE LINE'S VISIT): where the
+ * line's longest trailing run of separator bytes starts and the last dash in
+ * it, or -1, and what it read of the line after it. Every container the line
+ * opens asks the opener again, at a later byte of the same bytes, so the
+ * line's end and the line after it are read once a visit, and each asking
+ * costs what the bytes it adds do. */
+typedef struct {
+    size_t visit;
+    int separators, last_dash;
+    table_successor successor;
+} table_admission;
+
 /* A query borrows this workspace. Only its used ranges are reset; committed
  * AST values own copies. All references into growing line geometry are
  * offsets, so growth cannot invalidate a previously captured line or key. */
@@ -763,6 +785,7 @@ struct markdown_core_table_workspace {
     size_t region_scratch_capacity;
     table_grid_region *closed;
     size_t closed_capacity;
+    table_admission admission;
     markdown_core_table_work work;
 };
 
@@ -2275,20 +2298,6 @@ done:
     return matches;
 }
 
-/* An uncaptured line uses the same all-or-nothing separator grammar. */
-static size_t table_dash_count_raw(const unsigned char *data, bufsize_t from, bufsize_t length) {
-    const unsigned char *p = data + from, *end = data + length, *run;
-    size_t count = 0;
-    int result;
-    do {
-        result = scan_table_dash(&p, end, &run);
-        if (result > 0) {
-            count++;
-        }
-    } while (result > 0);
-    return result < 0 ? 0 : count;
-}
-
 /* A separator line is the raw successor's SUFFIX. Container continuation only
  * strips a prefix -- indentation and container markers, never a byte of the
  * separator alphabet other than indentation -- so the stripped line a
@@ -2318,6 +2327,24 @@ static size_t table_trailing_dash_runs(const unsigned char *start, const unsigne
     return runs;
 }
 
+/* THE TRAILING SEPARATORS of the `length` bytes at `data`, by the suffix rule
+ * above: where their longest trailing run of separator bytes starts,
+ * `*separators`, and the last dash in it, `*last_dash`, or -1. The bytes from
+ * a later byte on are an uncaptured line's all-or-nothing separator grammar,
+ * dash runs among blanks, exactly when it is at or past the first and at or
+ * before the second. */
+static void table_trailing_separators(const unsigned char *data, int length, int *separators, int *last_dash) {
+    int at = length, dash = -1;
+    while (at > 0 && (data[at - 1] == '-' || markdown_core_is_space_or_tab(data[at - 1]))) {
+        at--;
+        if (dash < 0 && data[at] == '-') {
+            dash = at;
+        }
+    }
+    *separators = at;
+    *last_dash = dash;
+}
+
 /* One necessary-condition predicate for every candidate entry. Every opener
  * needs a nonblank physical successor: a grid's next row or border, the first
  * body row of a headless table (which follows its separator directly), the
@@ -2336,9 +2363,9 @@ static size_t table_trailing_dash_runs(const unsigned char *start, const unsigne
  * out-of-line operation. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool table_grammar_admits(markdown_core_parser *parser,
                                                                                  const unsigned char *input, int length,
-                                                                                 int first, size_t runs, int next_line,
-                                                                                 const unsigned char *cursor,
-                                                                                 bool pipe) {
+                                                                                 int first, bool dashes, int next_line,
+                                                                                 const unsigned char *cursor, bool pipe,
+                                                                                 table_successor *successor) {
     if (!cursor || markdown_core_parser_input_ends(parser, cursor)) {
         return false;
     }
@@ -2350,24 +2377,31 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool table_grammar_admits
     /* A line the text has not finished ends where the input does: a reading
      * of it to its end reads the end. */
     const bool unfinished = parser->input.source + line->start >= markdown_core_parser_complete_end(parser);
-    const unsigned char *byte = cursor;
-    while (byte < end && markdown_core_is_space_or_tab(*byte)) {
-        byte++;
+    if (!successor->known) {
+        const unsigned char *byte = cursor;
+        while (byte < end && markdown_core_is_space_or_tab(*byte)) {
+            byte++;
+        }
+        successor->known = true;
+        successor->blank = byte == end;
     }
-    if (byte == end) {
+    if (successor->blank) {
         if (unfinished) {
             markdown_core_parser_see_end(parser);
         }
         return false;
     }
-    if ((first < length && input[first] == '+') || runs >= 1) {
+    if ((first < length && input[first] == '+') || dashes) {
         return true;
     }
     if (unfinished) {
         markdown_core_parser_see_end(parser);
     }
-    size_t required = pipe ? 1u : 2u;
-    return table_trailing_dash_runs(byte, end, pipe) >= required;
+    if (!successor->counted) {
+        successor->counted = true;
+        successor->runs = table_trailing_dash_runs(cursor, end, pipe);
+    }
+    return successor->runs >= (pipe ? 1u : 2u);
 }
 
 /* Admission and recognition have separate lifetimes. A top-level opener
@@ -2394,10 +2428,11 @@ static bool table_parse_candidate(table_source *source, size_t start, table_cand
     if (!table_source_get(source, start) || source->lines[start].indent >= 4) {
         return false;
     }
-    size_t runs = table_dash_count(source, start);
+    const bool dashes = table_dash_count(source, start) > 0;
     table_source_line *line = &source->lines[start];
-    return table_grammar_admits(source->parser, line->data, line->length, line->first, runs, line->line + 1,
-                                line->after, pipe) &&
+    table_successor successor = {0};
+    return table_grammar_admits(source->parser, line->data, line->length, line->first, dashes, line->line + 1,
+                                line->after, pipe, &successor) &&
            table_parse_admitted_candidate(source, start, candidate, pipe);
 }
 
@@ -2753,6 +2788,7 @@ static inline bool table_opener_fits(const markdown_core_parser *parser, const m
  * producer. The reading (table_opener_reads) is begun only on a line it
  * admits and the end admits (table_opener_ends_admit). */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool table_opener_admits(markdown_core_parser *parser,
+                                                                                table_workspace *workspace,
                                                                                 const unsigned char *input,
                                                                                 int length) {
     bufsize_t trimmed = length;
@@ -2762,9 +2798,15 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool table_opener_admits(
     if (table_caption_start(input, trimmed, parser->first_nonspace, parser->indent) >= 0) {
         return true;
     }
-    return table_grammar_admits(parser, input, trimmed, parser->first_nonspace,
-                                table_dash_count_raw(input, parser->offset, trimmed), parser->line_number + 1,
-                                parser->lookahead_cursor, false);
+    table_admission *admission = &workspace->admission;
+    if (admission->visit != parser->line_visit) {
+        admission->visit = parser->line_visit;
+        admission->successor = (table_successor){0};
+        table_trailing_separators(input, trimmed, &admission->separators, &admission->last_dash);
+    }
+    const bool dashes = parser->offset >= admission->separators && admission->last_dash >= parser->offset;
+    return table_grammar_admits(parser, input, trimmed, parser->first_nonspace, dashes, parser->line_number + 1,
+                                parser->lookahead_cursor, false, &admission->successor);
 }
 
 /* THE END'S ADMISSION of a line the opener admits: every opening grammar
@@ -2911,7 +2953,7 @@ static markdown_core_node *table_try_open(const markdown_core_element_instance *
     const markdown_core_end_aside end =
         aside ? markdown_core_parser_set_end_aside(parser) : (markdown_core_end_aside){0};
     table_workspace *workspace = self->state;
-    const bool admitted = table_opener_admits(parser, input, length);
+    const bool admitted = table_opener_admits(parser, workspace, input, length);
     markdown_core_node *const preceding = admitted ? table_preceding(parent) : NULL;
     if (!admitted || !table_opener_ends_admit(parser, preceding != NULL)) {
         if (aside && markdown_core_parser_put_end_back(parser, end) && !parser->error) {
@@ -3193,7 +3235,7 @@ static markdown_core_candidate_decision decide_candidate(const markdown_core_ele
     }
     table_workspace *workspace = self->state;
     bool claims = false, undecided = false;
-    if (table_opener_fits(parser, container) && table_opener_admits(parser, line.data, (int)line.len) &&
+    if (table_opener_fits(parser, container) && table_opener_admits(parser, workspace, line.data, (int)line.len) &&
         table_opener_ends_admit(parser, feed.trailing)) {
         table_read found;
         claims =

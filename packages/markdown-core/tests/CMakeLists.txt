@@ -369,6 +369,8 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     nested_brackets
     cross_reference_kinds
     nested_block_quotes
+    deep_list_line
+    deep_list_session
     deeply_nested_lists
     dump_deep_nesting
     dump_wide_siblings
