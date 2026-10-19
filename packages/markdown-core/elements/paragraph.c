@@ -20,6 +20,14 @@ static int continue_paragraph(const markdown_core_element_instance *self, markdo
                               unsigned char *data, int length, markdown_core_node *container) {
     return !parser->blank;
 }
+/* The paragraph reads whether the line is blank: its first non-space byte. */
+static bufsize_t continue_reach(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                const markdown_core_node *node, const markdown_core_chunk *input) {
+    (void)self;
+    (void)node;
+    (void)input;
+    return parser->first_nonspace;
+}
 static bool accepts_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
                          markdown_core_node *node) {
     (void)self;
@@ -58,7 +66,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
 
     .name = "paragraph",
     .last_block_matches = continue_paragraph,
-    .continue_reach = markdown_core_block_indent_reach,
+    .continue_reach = continue_reach,
     .content_mode = MARKDOWN_CORE_CONTENT_PROSE,
     .inline_content = true,
     .paragraph = true,

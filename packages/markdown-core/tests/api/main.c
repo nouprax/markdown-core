@@ -11721,6 +11721,63 @@ static void session_snapshot_candidates(test_batch_runner *runner) {
     }
 }
 
+/* A HELD LINE'S STEP READS TO THE END OF THE SCALAR IT TAKES (blocks.c, THE
+ * LINE A SESSION HOLDS): the text arrives byte by byte, and after each append
+ * the snapshot's dump is a fresh parse's of the same text. A column-counted
+ * advance over a container's prefix -- a quote's `>` and the space after it,
+ * a list item's, a footnote's and a specimen's indentation -- takes the
+ * continuation bytes after the last byte it takes as that byte's scalar, so
+ * its step on a line the text has not finished is decided once a byte that is
+ * not one follows them. The bytes are malformed UTF-8, which the engine reads
+ * as it reads any text. */
+static void session_held_scalars(test_batch_runner *runner) {
+    static const char *const sources[] = {
+        ">\r> \x80\n",
+        ">\n>\x80\x80"
+        "b\n",
+        "> a\n> \x80"
+        "b\n",
+        "> x\n>\x80\x80 b\n",
+        "- a\n  \x80\x80"
+        "b\n",
+        "[^a]: x\n    \x80\x80"
+        "b\n",
+        "(@a) x\n    \x80\x80"
+        "b\n",
+    };
+    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        size_t at = 0;
+        OK(runner, snapshots_dump_as_parses(sources[i], &at),
+           "every snapshot reads a held prefix to its scalar's end as a parse of its text, up to byte %zu of %zu: %s",
+           at, strlen(sources[i]), sources[i]);
+    }
+}
+
+/* A CANDIDATE'S DECISION LEAVES THE LINES IT READS AS THE READING PLACED
+ * THEM (blocks.c, THE CANDIDATES): a table's call on a quote's lazy line reads
+ * the next line on the root's path, where the reading matched that line in
+ * the quote, and the quote's paragraph, which spans it, takes its places from
+ * where the reading found the line's own bytes. The text arrives byte by
+ * byte, in the two pieces the lazy line ends, and whole, and each snapshot
+ * and the finalized document dump as a parse of its text does. */
+static void session_decisions_keep_lines(test_batch_runner *runner) {
+    static const char *const sources[] = {">_\n:\n>a\n", ">_\r:\r>a"};
+    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        const size_t length = strlen(sources[i]);
+        size_t at = 0;
+        OK(runner, snapshots_dump_as_parses(sources[i], &at),
+           "a decision leaves the lines it reads to the reading, byte by byte, up to byte %zu of %zu: %s", at, length,
+           sources[i]);
+        const size_t halves[] = {4, length};
+        OK(runner, pieces_dump_as_parses(sources[i], halves, 2, &at),
+           "a decision leaves the lines it reads to the reading, in two pieces, up to byte %zu of %zu: %s", at, length,
+           sources[i]);
+        const size_t whole[] = {length};
+        OK(runner, pieces_dump_as_parses(sources[i], whole, 1, &at),
+           "a decision leaves the lines it reads to the reading, whole: %s", sources[i]);
+    }
+}
+
 /* WHAT AN ACCEPT TAKES AWAY (blocks.c, THE CANDIDATES) goes, and the next
  * publish matches what continues it against what the last publish recorded
  * of it as it placed it (ast.c, THE RECORDS), whatever the commit wrote in
@@ -12234,6 +12291,8 @@ int main(void) {
     session_snapshot_openers(runner);
     session_snapshot_simple_tables(runner);
     session_snapshot_candidates(runner);
+    session_held_scalars(runner);
+    session_decisions_keep_lines(runner);
     session_accept_after_commit_writes(runner);
     session_opener_fields(runner);
     node_view_views(runner);

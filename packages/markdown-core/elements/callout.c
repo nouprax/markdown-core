@@ -144,20 +144,26 @@ static bool continue_container(const markdown_core_element_instance *self, markd
     (void)self;
     return markdown_core_block_parse_callout_prefix(parser, input);
 }
-/* The prefix reads the first non-space byte, and the byte after a `>`,
- * which it takes when it is a space or a tab. */
+/* The prefix reads the first non-space byte. Its column-counted advance
+ * over a `>` reads the byte after the `>`'s scalar, and takes it when it is
+ * a space or a tab -- a space's scalar too (markdown_core_block_scalar_end). */
 static bufsize_t continue_reach(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                 const markdown_core_node *node, const markdown_core_chunk *input) {
     (void)self;
     (void)node;
     const bufsize_t first = parser->first_nonspace;
-    return parser->indent <= 3 && input->data[first] == '>' ? first + 1 : first;
+    if (parser->indent > 3 || input->data[first] != '>') {
+        return first;
+    }
+    const bufsize_t after = markdown_core_block_scalar_end(input, first + 1);
+    return input->data[after] == ' ' ? markdown_core_block_scalar_end(input, after + 1) : after;
 }
 /* The scan reads the first non-space byte. The open reads the byte after
- * the `>`, which it takes when it is a space or one column of a tab; then,
- * unless that tab is only partly taken, up to three spaces and the two
- * bytes after them, which a metadata line opens with `[!`, and whose header
- * reads to the line's end (markdown_core_block_parse_callout_metadata). */
+ * the `>`, which it takes when it is a space -- with the space's scalar
+ * (markdown_core_block_scalar_end) -- or one column of a tab; then, unless
+ * that tab is only partly taken, up to three spaces and the two bytes after
+ * them, which a metadata line opens with `[!`, and whose header reads to the
+ * line's end (markdown_core_block_parse_callout_metadata). */
 static bufsize_t start_reach(const markdown_core_element_instance *self, markdown_core_parser *parser,
                              const block_start_context *context, bool *opens) {
     (void)self;
@@ -176,7 +182,7 @@ static bufsize_t start_reach(const markdown_core_element_instance *self, markdow
         }
         at++;
     } else if (input->data[at] == ' ') {
-        at++;
+        at = markdown_core_block_scalar_end(input, at + 1);
     }
     for (int spaces = 0; spaces < 3 && input->data[at] == ' '; spaces++) {
         at++;

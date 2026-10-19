@@ -799,6 +799,19 @@ void markdown_core_parser_line_places(markdown_core_parser *parser, markdown_cor
     *line = last;
 }
 
+void markdown_core_parser_claim(markdown_core_parser *parser, int line, const unsigned char *cursor, bufsize_t end) {
+    /* The lookahead's last scan of each line recorded where it matched the
+     * line's containers to in the line's facts. */
+    for (int claimed = parser->line_number + 1; claimed <= line; claimed++) {
+        markdown_core_input_line *visited = markdown_core_parser_visited_line(parser, claimed);
+        assert(visited->facts);
+        visited->own = (uint32_t)parser->input.facts[visited->facts - 1].offset;
+    }
+    parser->claimed_cursor = cursor;
+    parser->claimed_line = line;
+    parser->claimed_last_end = end;
+}
+
 /* One copied run of a document line. */
 static inline int S_append_copied_mark(markdown_core_parser *parser, markdown_core_node *node, int line,
                                        bufsize_t source, bufsize_t offset) {
@@ -3206,8 +3219,7 @@ bufsize_t markdown_core_block_indent_reach(const markdown_core_element_instance 
                                            const markdown_core_node *node, const markdown_core_chunk *input) {
     (void)self;
     (void)node;
-    (void)input;
-    return parser->first_nonspace;
+    return markdown_core_block_scalar_end(input, parser->first_nonspace);
 }
 
 /* ONE CONTAINER'S CLAIM ON THE LINE at the parser's cursor, for the kinds whose
@@ -3738,7 +3750,6 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_lookahead_next(mark
          * A run an earlier scan recorded from this line stays until this scan
          * closes its own, which ends where that one did. */
         if (entry) {
-            markdown_core_parser_visited_line(parser, this_line)->own = (uint32_t)parser->offset;
             entry->container = markdown_core_parser_lookahead_parent(lookahead);
             entry->depth = lookahead->depth - 1;
             entry->offset = parser->offset;

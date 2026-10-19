@@ -463,7 +463,8 @@ struct markdown_core_parser {
     markdown_core_parser_input *cell_input;
     size_t input_line_work;
     /* A complete candidate may consume through a later source boundary. The
-     * source driver advances to it after the current line has finished. */
+     * source driver advances to it after the current line has finished
+     * (markdown_core_parser_claim). */
     const unsigned char *claimed_cursor;
     int claimed_line;
     bufsize_t claimed_last_end;
@@ -891,8 +892,9 @@ typedef struct markdown_core_input_line {
     uint32_t facts;
     /* Where the line's own bytes begin: the offset in the line where the
      * bytes of the last open block the line reached begin, past the
-     * prefixes of the containers above it, as the block parser or a
-     * lookahead last matched them (markdown_core_parser_line_places). */
+     * prefixes of the containers above it, as the block parser last matched
+     * them, or the lookahead of the call that claimed the line
+     * (markdown_core_parser_claim; markdown_core_parser_line_places). */
     uint32_t own;
 } markdown_core_input_line;
 
@@ -1197,6 +1199,13 @@ const unsigned char *markdown_core_parser_line_content(markdown_core_parser *par
  * where a later node can start the search. */
 void markdown_core_parser_line_places(markdown_core_parser *parser, markdown_core_node *node,
                                       const markdown_core_node *container, int *line);
+/* A CALL'S CLAIM on the lines after the reading's through `line`, which the
+ * call's lookahead read: the reading skips them and goes on at `cursor`, the
+ * last of them ending at `end`. Each claimed line's own bytes begin where
+ * that lookahead matched the line's containers to, as the reading matches a
+ * line it reads (markdown_core_input_line, `own`), so the call claims before
+ * it places nodes on the lines. */
+void markdown_core_parser_claim(markdown_core_parser *parser, int line, const unsigned char *cursor, bufsize_t end);
 /* Whether `node` begins on input line `line`, a line of the active input the
  * driver has reached. */
 bool markdown_core_parser_starts_on_line(markdown_core_parser *parser, const markdown_core_node *node, int line);

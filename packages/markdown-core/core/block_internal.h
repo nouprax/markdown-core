@@ -49,6 +49,17 @@ void markdown_core_block_settle_field(markdown_core_parser *parser, markdown_cor
 void markdown_core_block_close_current(markdown_core_parser *parser);
 void markdown_core_block_advance_offset(markdown_core_parser *parser, markdown_core_chunk *input, bufsize_t count,
                                         bool columns);
+/* Where a column-counted advance that takes the byte before `at` stops
+ * reading (markdown_core_block_advance_offset): it takes the continuation
+ * bytes after that byte as its scalar's, so it reads to the first byte from
+ * `at` on that is not one, which the line's end is at the latest (element.h,
+ * HOW FAR A STEP READS). */
+static inline bufsize_t markdown_core_block_scalar_end(const markdown_core_chunk *input, bufsize_t at) {
+    while ((input->data[at] & 0xC0) == 0x80) {
+        at++;
+    }
+    return at;
+}
 typedef struct markdown_core_block_start_context {
     markdown_core_node *container;
     markdown_core_chunk *input;
@@ -81,8 +92,10 @@ void markdown_core_block_find_first_nonspace(markdown_core_parser *parser, markd
 bool markdown_core_block_continue_indented(markdown_core_parser *parser, markdown_core_chunk *input, int continuation,
                                            bool has_content);
 /* How far a continuation reads that matches by the line's indentation and
- * whether the line is blank: to its first non-space byte (element.h, HOW FAR
- * A STEP READS). */
+ * whether the line is blank: to its first non-space byte, and through the
+ * continuation bytes after it, which a column-counted advance over the
+ * indentation that ends at the byte reads (element.h, HOW FAR A STEP READS;
+ * markdown_core_block_scalar_end). */
 bufsize_t markdown_core_block_indent_reach(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                            const markdown_core_node *node, const markdown_core_chunk *input);
 void markdown_core_block_add_line(markdown_core_node *node, markdown_core_chunk *input, markdown_core_parser *parser);

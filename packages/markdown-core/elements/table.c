@@ -3008,6 +3008,9 @@ static markdown_core_node *table_try_open(const markdown_core_element_instance *
     }
     const int caption = found.caption;
     const size_t caption_last = found.caption_last;
+    const table_source_line *last = &source->lines[found.trailing ? caption_last : candidate->last];
+    const bufsize_t end = markdown_core_parser_source_end(parser, last->line, last->length);
+    markdown_core_parser_claim(parser, last->line, last->after, end);
     if (found.trailing) {
         result = preceding;
         table_candidate_reset(candidate);
@@ -3016,11 +3019,7 @@ static markdown_core_node *table_try_open(const markdown_core_element_instance *
         if (table->caption) {
             markdown_core_block_settle_field(parser, table->caption, result);
         }
-        result->place.end = (uint32_t)markdown_core_parser_source_end(parser, source->lines[caption_last].line,
-                                                                      source->lines[caption_last].length);
-        parser->claimed_cursor = source->lines[caption_last].after;
-        parser->claimed_line = source->lines[caption_last].line;
-        parser->claimed_last_end = result->place.end;
+        result->place.end = (uint32_t)end;
     } else {
         result = table_build(source, parent, candidate);
         if (result && result->opaque && caption >= 0) {
@@ -3031,12 +3030,6 @@ static markdown_core_node *table_try_open(const markdown_core_element_instance *
             }
             result->place.start =
                 (uint32_t)markdown_core_parser_source_offset(parser, source->lines[0].line, source->lines[0].first + 1);
-        }
-        if (result) {
-            parser->claimed_cursor = source->lines[candidate->last].after;
-            parser->claimed_line = source->lines[candidate->last].line;
-            parser->claimed_last_end =
-                markdown_core_parser_source_end(parser, parser->claimed_line, source->lines[candidate->last].length);
         }
     }
 done:
