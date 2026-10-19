@@ -4282,13 +4282,14 @@ static void S_candidate_drop(markdown_core_parser *parser, size_t index) {
     }
 }
 
-/* Every candidate let go as the parse is released, the last made first. */
+/* Every candidate let go as the parse is released, the last made first,
+ * each as the last one live, as a reject of it lets it go. */
 static void S_candidates_release(markdown_core_parser *parser) {
     markdown_core_stream *stream = parser->stream;
-    for (size_t i = stream->candidate_count; i-- > 0;) {
-        S_candidate_unlend(parser, i);
+    for (; stream->candidate_count; stream->candidate_count--) {
+        S_candidate_unlend(parser, stream->candidate_count - 1);
     }
-    stream->candidate_count = stream->holder_count = 0;
+    stream->holder_count = 0;
 }
 
 /* A lent block that left its holder's children as it closed: in a commit,
