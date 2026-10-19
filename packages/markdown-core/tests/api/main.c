@@ -6192,10 +6192,10 @@ static void line_facts_survive_moved_text(test_batch_runner *runner) {
     if (before && after && parser) {
         memcpy(before, source.ptr, size);
         markdown_core_parser_start(parser, &revision);
-        markdown_core_parser_commit(parser, before, size, first_line);
+        markdown_core_parser_commit(parser, before, size, first_line, false);
         memcpy(after, source.ptr, size);
         memset(before, 'x', size);
-        markdown_core_parser_commit(parser, after, size, size);
+        markdown_core_parser_commit(parser, after, size, size, true);
         moved = markdown_core_parser_finalize(parser);
     }
     markdown_core_node *whole = markdown_core_parse_document((const char *)source.ptr, size);

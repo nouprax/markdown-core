@@ -149,12 +149,28 @@ typedef struct markdown_core_parser_input {
     bool last_line_ready;
 } markdown_core_parser_input;
 
-/* A BLOCK A SNAPSHOT LENT (blocks.c, THE LENDING): the block's address,
- * which holds the snapshot's view of it, the slot that holds the block's own
- * state, and its last child as the snapshot found it. */
+/* The words an opener keeps of its candidate's grammar (blocks.c, THE
+ * CANDIDATES): a grid table's walls. */
+#define MARKDOWN_CORE_CANDIDATE_WORDS 2
+
+/* A BLOCK A SNAPSHOT OR A CANDIDATE LENT (blocks.c, THE LENDING, THE
+ * CANDIDATES): the block's address, which holds the view of it, the slot
+ * that holds the block's own state, its last child as the lending found it,
+ * and whether the view left its holder's children as it closed, yielding no
+ * node of its own. */
 typedef struct markdown_core_lend {
     struct markdown_core_node *address, *backup, *last;
+    bool dropped;
 } markdown_core_lend;
+
+/* A HOLDER of the first candidate (blocks.c, THE CANDIDATES; parser.h,
+ * THE DECIDED CONTENT): a block its call found open or pending, which it
+ * lent, how many children it held and the last of them, and the slot that
+ * holds its state as the call found it, with the fields an accept keeps. */
+typedef struct markdown_core_holder {
+    const struct markdown_core_node *node, *last, *backup;
+    uint32_t count;
+} markdown_core_holder;
 
 /* AN OPEN BLOCK BELOW THE BLOCKS A SNAPSHOT LENT, as the snapshot found it
  * (blocks.c, THE LENDING): how many children it held, the last of them, its
@@ -274,6 +290,9 @@ typedef struct markdown_core_stream {
     /* The line the last commit stopped in, when `held`. */
     markdown_core_line_stop stop;
     bool held;
+    /* Whether the text of the commit being read is the whole text: the
+     * finalize's, which no append follows. */
+    bool ends;
     /* THE LENDING of the last snapshot (blocks.c): the blocks it lent, in
      * the order it lent them, the open blocks below them as it found them,
      * from the one that holds the first lent block down to the root, and
@@ -316,6 +335,19 @@ typedef struct markdown_core_stream {
     markdown_core_miss_root *miss_roots;
     size_t miss_root_count, miss_root_capacity, miss_published;
     const struct markdown_core_node *miss_root;
+    /* THE CANDIDATES (blocks.c): the opener calls whose decision the text
+     * read so far does not make, outermost first, the holders of the first
+     * by address, the one being decided, and the request the line being
+     * read made of its opener's call. */
+    struct markdown_core_candidate *candidates;
+    size_t candidate_count, candidate_capacity;
+    markdown_core_holder *holders;
+    size_t holder_count, holder_capacity;
+    struct markdown_core_candidate *deciding;
+    const markdown_core_element_instance *request_owner;
+    struct markdown_core_node *request_holder;
+    int request_words[MARKDOWN_CORE_CANDIDATE_WORDS];
+    bool requested;
 } markdown_core_stream;
 
 struct markdown_core_parser {
@@ -899,6 +931,30 @@ static inline void markdown_core_parser_see_end(markdown_core_parser *parser) {
     }
 }
 
+/* A READING THAT SETS THE END ASIDE (blocks.c, THE CANDIDATES): a
+ * candidate's decision, and an opener's call in a commit more text may
+ * follow that makes its call a candidate when it reads the end, read it
+ * without the commit recording it. `set_end_aside` keeps what the parse
+ * recorded and clears it; `put_end_back` puts it back and answers whether
+ * the reading read the end. */
+typedef struct {
+    bufsize_t at;
+    bool seen;
+} markdown_core_end_aside;
+
+static inline markdown_core_end_aside markdown_core_parser_set_end_aside(markdown_core_parser *parser) {
+    const markdown_core_end_aside aside = {parser->end_seen_at, parser->end_seen};
+    parser->end_seen = false;
+    return aside;
+}
+
+static inline bool markdown_core_parser_put_end_back(markdown_core_parser *parser, markdown_core_end_aside aside) {
+    const bool read = parser->end_seen;
+    parser->end_seen = aside.seen;
+    parser->end_seen_at = aside.at;
+    return read;
+}
+
 static inline bool markdown_core_parser_input_ends(markdown_core_parser *parser, const unsigned char *cursor) {
     assert(cursor >= parser->input.source && cursor <= parser->input.source + parser->input.size);
     if (cursor < parser->input.source + parser->input.size) {
@@ -906,6 +962,14 @@ static inline bool markdown_core_parser_input_ends(markdown_core_parser *parser,
     }
     markdown_core_parser_see_end(parser);
     return true;
+}
+
+/* Whether the end of the active input is the end of its text (blocks.c, THE
+ * CANDIDATES): false only in a session's commit of the document that more
+ * text may follow. A snapshot, the last commit, a parse of a whole text and
+ * a cell's content, which is complete when it is read, read their end. */
+static inline bool markdown_core_parser_candidate_final(const markdown_core_parser *parser) {
+    return !parser->stream || parser->snapshot || parser->stream->ends || parser->block_root != parser->root;
 }
 
 /* Optional state is sparse within the input index: properties and ordinary
@@ -921,10 +985,12 @@ static inline markdown_core_line_facts *markdown_core_parser_get_line_facts(mark
     return line->facts ? &parser->input.facts[line->facts - 1] : markdown_core_parser_extend_line_facts(parser, line);
 }
 
-/* A container of a lookahead's chain, and its flags as the lookahead began. */
+/* A container of a lookahead's chain, its flags as the lookahead began, and
+ * its flags as the line the lookahead reads began, kept for a line it may
+ * stop before (markdown_core_block_lookahead, `waited`). */
 typedef struct markdown_core_lookahead_container {
     struct markdown_core_node *node;
-    markdown_core_node_internal_flags flags;
+    markdown_core_node_internal_flags flags, line_flags;
 } markdown_core_lookahead_container;
 
 /* A NON-CONSUMING LOOKAHEAD over the lines after the one being processed.
@@ -943,12 +1009,26 @@ typedef struct markdown_core_lookahead_container {
  *
  * `begin` saves the parser's line state and the chain's flags, `end` restores
  * them; nothing else in the parser or the tree is touched. `begin` returns
- * false only when an allocation failed, and has then marked the parse lost. */
+ * false only when an allocation failed, and has then marked the parse lost.
+ *
+ * A READING THAT CAN WAIT (blocks.c, THE CANDIDATES) stops at `limit`, which
+ * `begin` leaves NULL for every other reading, and never reads the end of the
+ * input (markdown_core_parser_see_end). Where a line would start at `limit`
+ * it waits: `next` returns no line and sets `exhausted`, with the blank lines
+ * it stepped over before the limit counted, and a reader that clears `limit`
+ * reads on as an ordinary reading. `incomplete` says the line returned last
+ * is one the text has not finished, and a reader that decides from that line
+ * reads the end itself. With `waits`, such a line is read only as far as its
+ * bytes decide each prefix (element.h, HOW FAR A STEP READS): where they do
+ * not decide one, or leave the line blank so far, `next` returns no line and
+ * sets `waited`, with the line unread, and a reader that clears `waits`
+ * reads it on as an ordinary reading. */
 typedef struct {
     markdown_core_parser *parser;
     struct markdown_core_node *parent;
     int depth;
     const unsigned char *cursor;
+    const unsigned char *limit;
     int line;
     int run_start;
     bufsize_t saved_offset;
@@ -959,6 +1039,10 @@ typedef struct {
     bool saved_blank;
     bool saved_partially_consumed_tab;
     bool active;
+    bool exhausted;
+    bool incomplete;
+    bool waits;
+    bool waited;
 } markdown_core_block_lookahead;
 
 /* Stable source-coordinate ordering, shared by deferred nodes and cell geometry. */
@@ -1072,6 +1156,44 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
                                         int *first_nonspace, int *indent, int *blank_lines);
 void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead);
 
+/* THE CANDIDATES (blocks.c). An opener whose reading waited or read where
+ * the text read so far ends, in a commit more text may follow, asks for its
+ * call in `container` to be a candidate, and declines: `child` is the kind
+ * of block it would open, whose lines its candidate is fed, and `words` what
+ * it keeps of the grammar. The commit ends at the call, completes, marks its
+ * state there and reads on from the call, where `live` answers true for the
+ * owner, the line and `container` while the candidate waits, and the opener
+ * declines again. Once a later line decides, an accept puts the commit back
+ * at the call, where the opener reads the lines anew, and a reject keeps
+ * what the commit read. */
+void markdown_core_parser_request_candidate(markdown_core_parser *parser, const markdown_core_element_instance *owner,
+                                            struct markdown_core_node *container, markdown_core_node_type child,
+                                            const int *words);
+bool markdown_core_parser_candidate_live(const markdown_core_parser *parser,
+                                         const markdown_core_element_instance *owner,
+                                         const struct markdown_core_node *container);
+/* The decision of the candidate being decided (element.h, `decide_candidate`)
+ * reads its line as its opener did: `start` puts the parser's line state at
+ * the opener's call, and gives the line through its line ending and the
+ * container the opener was asked in; `end` puts the line state back. False,
+ * with the parse failed, when storage could not be had. */
+bool markdown_core_parser_candidate_start(markdown_core_parser *parser, markdown_core_chunk *line,
+                                          struct markdown_core_node **container);
+void markdown_core_parser_candidate_end(markdown_core_parser *parser);
+/* THE DECIDED CONTENT (blocks.c, THE CANDIDATES): what an accept can take
+ * away or put back is UNDECIDED -- every block the first candidate's call
+ * found open or pending, its HOLDERS, the root among them, and everything
+ * that settled after. A holder's children as the call found them, the last
+ * one aside when it is a holder too, are DECIDED, with everything they
+ * hold, and so are the fields an accept keeps; so is every block while no
+ * candidate waits. `holder` gives `block`'s entry when it is a holder, and
+ * NULL otherwise. */
+static inline bool markdown_core_parser_undecided(const markdown_core_parser *parser) {
+    return parser->stream && parser->stream->holder_count;
+}
+const markdown_core_holder *markdown_core_parser_holder(const markdown_core_parser *parser,
+                                                        const struct markdown_core_node *block);
+
 /* THE DEFINITION LOOKUP of inline content: the record of `kind` that
  * declares `label`, as written, for the block being completed, or NULL.
  * Reference and footnote labels are looked up in their normal form, and a
@@ -1121,14 +1243,16 @@ markdown_core_parser *markdown_core_parser_create(const markdown_core_element *c
  * `source` that start before `limit`, from where the transaction's last
  * commit stopped: the text of every commit of a transaction is the one
  * before it with bytes added at its end, and it is borrowed until the next
- * commit or the end of the transaction; false when the transaction failed.
+ * commit or the end of the transaction, and `ends` says it is the whole text,
+ * which no commit follows; false when the transaction failed.
  * `finalize` ends the input there:
  * every block still open closes, the closed blocks complete, and the tree is
  * published and returned, or NULL when the transaction failed. `discard`
  * ends a transaction and returns nothing. Both release the transaction's
  * state, so an instance runs any number of them, each as the first. */
 void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revision *revision);
-bool markdown_core_parser_commit(markdown_core_parser *parser, const char *source, size_t length, size_t limit);
+bool markdown_core_parser_commit(markdown_core_parser *parser, const char *source, size_t length, size_t limit,
+                                 bool ends);
 markdown_core_node *markdown_core_parser_finalize(markdown_core_parser *parser);
 void markdown_core_parser_discard(markdown_core_parser *parser);
 /* THE COMMIT POINT the lines read so far leave (plan 5.1, 5.3): where the

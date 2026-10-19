@@ -519,7 +519,7 @@ static markdown_core_node *try_opening_table_row(const markdown_core_element *se
 
 typedef struct markdown_core_table_workspace table_workspace;
 /* Recognize a complete source candidate before claiming any of its lines. */
-static markdown_core_node *table_try_open(table_workspace *workspace, markdown_core_parser *parser,
+static markdown_core_node *table_try_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                           markdown_core_node *parent, unsigned char *input, int length);
 
 static markdown_core_node *try_opening_table_block(const markdown_core_element_instance *self, int indented,
@@ -532,7 +532,7 @@ static markdown_core_node *try_opening_table_block(const markdown_core_element_i
     } else if (!indented && parent_type == MARKDOWN_CORE_NODE_TABLE) {
         return try_opening_table_row(self->element, parser, parent_container, input, len);
     } else if (!indented) {
-        return table_try_open(self->state, parser, parent_container, input, len);
+        return table_try_open(self, parser, parent_container, input, len);
     }
 
     return NULL;
@@ -624,6 +624,14 @@ static bool opaque_view(const markdown_core_element *self, markdown_core_node *c
     return true;
 }
 
+static void opaque_adopt(const markdown_core_element *self, markdown_core_node *view, markdown_core_node *node) {
+    markdown_core_table *made = view->opaque, *table = node->opaque;
+    if (made->views_columns && made->columns == table->columns && !table->views_columns) {
+        made->views_columns = false;
+        table->views_columns = true;
+    }
+}
+
 static int visit_owned_subtrees(const markdown_core_element *self, markdown_core_node *node,
                                 markdown_core_owned_subtree_visitor visitor, void *context) {
     markdown_core_table *table = node->opaque;
@@ -650,13 +658,27 @@ typedef struct markdown_core_table_source_line {
     int columns;
 } table_source_line;
 
+/* THE OPENER'S CANDIDATE (blocks.c, THE CANDIDATES). The scan of a grid
+ * whose top border is the opener's own line, `holds`, reads no end
+ * (markdown_core_block_lookahead, `limit`): it stops where the input ends,
+ * `exhausted`, with `blanks` blank lines before it, which the line read next
+ * carries. In a commit more text may follow, it waits there, and at a line
+ * the text has not finished whose bytes do not tell, and decides nothing:
+ * the call is `undecided`, and `words` are its walls. Every other reader
+ * reads on as an ordinary reading, which reads the end at `incomplete`, the
+ * first line the text has not finished, plus one. A commit's call that can
+ * wait sets aside the end it reads (markdown_core_parser_set_end_aside),
+ * `aside`, and records no facts once it read it; a candidate's decision,
+ * `decides`, writes nothing. */
 typedef struct {
     markdown_core_parser *parser;
     struct markdown_core_table_workspace *workspace;
     markdown_core_block_lookahead lookahead;
     table_source_line *lines;
-    size_t count;
-    bool ended;
+    size_t count, incomplete;
+    int blanks;
+    int words[MARKDOWN_CORE_CANDIDATE_WORDS];
+    bool ended, holds, exhausted, undecided, aside, decides;
 } table_source;
 
 typedef struct {
@@ -802,12 +824,23 @@ static bool table_source_push(table_source *source, table_source_line line) {
 }
 
 static bool table_source_get(table_source *source, size_t index) {
-    while (source->count <= index && !source->ended && !source->parser->error) {
+    markdown_core_block_lookahead *lookahead = &source->lookahead;
+    while (source->count <= index && !source->ended && !source->exhausted && !source->parser->error) {
         markdown_core_chunk line;
         int first, indent, blanks;
-        if (!markdown_core_parser_lookahead_next(&source->lookahead, &line, &first, &indent, &blanks)) {
-            source->ended = true;
-            break;
+        if (!markdown_core_parser_lookahead_next(lookahead, &line, &first, &indent, &blanks)) {
+            if (!lookahead->exhausted && !lookahead->waited) {
+                source->ended = true;
+                break;
+            }
+            source->blanks += blanks;
+            if (source->holds) {
+                source->exhausted = true;
+                break;
+            }
+            lookahead->limit = NULL;
+            lookahead->waits = lookahead->exhausted = lookahead->waited = false;
+            continue;
         }
         if (!table_source_push(source, (table_source_line){.data = line.data,
                                                            .length = line.len,
@@ -815,11 +848,18 @@ static bool table_source_get(table_source *source, size_t index) {
                                                            .first = first,
                                                            .first_column = source->parser->first_nonspace_column,
                                                            .indent = indent,
-                                                           .blanks = blanks,
+                                                           .blanks = blanks + source->blanks,
                                                            .line = source->lookahead.line - 1,
                                                            .after = source->lookahead.cursor})) {
             return false;
         }
+        source->blanks = 0;
+        if (lookahead->incomplete && !source->incomplete) {
+            source->incomplete = source->count;
+        }
+    }
+    if (!source->holds && source->incomplete && index >= source->incomplete - 1) {
+        markdown_core_parser_see_end(source->parser);
     }
     return index < source->count && !source->parser->error;
 }
@@ -1277,6 +1317,9 @@ enum {
 };
 
 static markdown_core_line_facts *table_search_fact(table_source *source, size_t index) {
+    if (source->decides || (source->aside && source->parser->end_seen)) {
+        return NULL;
+    }
     table_source_line *line = &source->lines[index];
     markdown_core_line_facts *fact = markdown_core_parser_get_line_facts(source->parser, line->line);
     if (fact && (fact->table_container != source->lookahead.parent || fact->table_offset != line->offset)) {
@@ -2007,6 +2050,9 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
         sizes[i] = 1;
     }
     size_t end = start;
+    /* The scan from the opener's own line reads no end (THE OPENER'S
+     * CANDIDATE). */
+    source->holds = start == 0 && source->lookahead.limit;
     for (size_t i = start; table_source_get(source, i); i++) {
         if (i > start && source->lines[i].blanks) {
             break;
@@ -2022,6 +2068,12 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
          * that starts after it. */
         int first = table_character(line, left);
         if ((first != '+' && first != '|') || line->indent != left) {
+            break;
+        }
+        /* A wall-led line the text has not finished does not tell where
+         * its walls end. */
+        if (source->holds && source->lookahead.waits && source->incomplete == i + 1) {
+            source->exhausted = true;
             break;
         }
         int last = table_trim_spaces(line, left + 1, line->columns) - 1;
@@ -2048,6 +2100,15 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
         }
         end = i;
     }
+    /* A scan that waits where the text read so far ends, with no blank line
+     * before it, decides nothing until a later line does. */
+    if (source->holds && source->exhausted && !source->blanks && source->lookahead.waits) {
+        source->undecided = true;
+        source->words[0] = left;
+        source->words[1] = right;
+        goto failed;
+    }
+    source->holds = source->exhausted = false;
     if (source->parser->error || !table_grid_search_finish(source, start, end, left, right, true) ||
         table_grid_root(source, parents, left) != table_grid_root(source, parents, right)) {
         goto failed;
@@ -2139,6 +2200,7 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
     }
     return true;
 failed:
+    source->holds = source->exhausted = false;
     table_candidate_reset(candidate);
     return false;
 }
@@ -2276,15 +2338,24 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool table_grammar_admits
         return false;
     }
     const unsigned char *end = parser->input.source + line->end;
+    /* A line the text has not finished ends where the input does: a reading
+     * of it to its end reads the end. */
+    const bool unfinished = parser->input.source + line->start >= parser->input.complete;
     const unsigned char *byte = cursor;
     while (byte < end && markdown_core_is_space_or_tab(*byte)) {
         byte++;
     }
     if (byte == end) {
+        if (unfinished) {
+            markdown_core_parser_see_end(parser);
+        }
         return false;
     }
     if ((first < length && input[first] == '+') || runs >= 1) {
         return true;
+    }
+    if (unfinished) {
+        markdown_core_parser_see_end(parser);
     }
     size_t required = pipe ? 1u : 2u;
     return table_trailing_dash_runs(byte, end, pipe) >= required;
@@ -2297,8 +2368,13 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool table_grammar_admits
 static bool table_parse_admitted_candidate(table_source *source, size_t start, table_candidate *candidate, bool pipe) {
     assert(start < source->count && source->lines[start].indent < 4);
     bool boundary = table_full_boundary(source, start);
-    if (table_parse_grid(source, start, candidate) || (boundary && table_parse_multiline(source, start, candidate)) ||
-        table_parse_simple(source, start, candidate) ||
+    if (table_parse_grid(source, start, candidate)) {
+        return true;
+    }
+    if (source->undecided || source->parser->error) {
+        return false;
+    }
+    if ((boundary && table_parse_multiline(source, start, candidate)) || table_parse_simple(source, start, candidate) ||
         (!boundary && table_parse_multiline(source, start, candidate))) {
         return true;
     }
@@ -2643,87 +2719,215 @@ static bool table_open_admits(markdown_core_parser *parser, const unsigned char 
                                 parser->lookahead_cursor, false);
 }
 
-static markdown_core_node *table_try_open(table_workspace *workspace, markdown_core_parser *parser,
-                                          markdown_core_node *parent, unsigned char *input, int length) {
+/* WHAT THE OPENER READ (table_opener_reads): its lines, and the caption the
+ * first of them starts, with the last line of the caption and the table
+ * before it that the caption may follow. */
+typedef struct {
+    table_source source;
+    int caption;
+    size_t caption_last;
+    markdown_core_node *preceding;
+    bool trailing;
+} table_read;
+
+/* THE OPENER'S ADMISSION, which reads only the line at the parser's cursor
+ * in `parent`, `input`, and the first bytes of the line after it: whether a
+ * table or a caption of the table before it can start there at all. The
+ * reading (table_opener_reads) is begun only on a line it admits. */
+static bool table_opener_admits(markdown_core_parser *parser, const markdown_core_node *parent,
+                                const unsigned char *input, int length) {
     if (parser->indent > 3 || parser->blank || parent->kind == MARKDOWN_CORE_NODE_TABLE ||
         parent->kind == MARKDOWN_CORE_NODE_TABLE_ROW || parent->kind == MARKDOWN_CORE_NODE_PARAGRAPH) {
-        return NULL;
+        return false;
     }
     /* Every opening grammar needs a later physical line. At EOF only an
      * existing eligible table can claim a trailing caption. */
     if (markdown_core_parser_input_ends(parser, parser->lookahead_cursor)) {
         const markdown_core_node *preceding = markdown_core_parser_last_child(parent);
         if (!preceding || preceding->kind != MARKDOWN_CORE_NODE_TABLE) {
-            return NULL;
+            return false;
         }
     }
-    if (!table_open_admits(parser, input, length)) {
+    return table_open_admits(parser, input, length);
+}
+
+/* THE OPENER'S READING of a line its admission admits, which writes nothing
+ * in the tree: whether the line opens a table or a caption of the table
+ * before it. A candidate's decision, `decides`, records no facts either
+ * (THE OPENER'S CANDIDATE). */
+static bool table_opener_reads(table_workspace *workspace, markdown_core_parser *parser, markdown_core_node *parent,
+                               unsigned char *input, int length, bool decides, table_read *found) {
+    const bool waits = !markdown_core_parser_candidate_final(parser);
+    *found = (table_read){.source = {.parser = parser,
+                                     .workspace = workspace,
+                                     .lines = workspace->lines,
+                                     .aside = waits && !decides,
+                                     .decides = decides},
+                          .caption = -1};
+    table_source *source = &found->source;
+    if (!markdown_core_parser_lookahead_begin(parser, parent, MARKDOWN_CORE_NODE_TABLE, &source->lookahead)) {
+        return false;
+    }
+    source->lookahead.limit = parser->input.source + parser->input.size;
+    source->lookahead.waits = waits;
+    bool matched = false;
+    if (table_source_push(source, table_cursor_line(parser, input, length))) {
+        found->caption = table_caption_start(source->lines[0].data, source->lines[0].length, source->lines[0].first,
+                                             source->lines[0].indent);
+        found->preceding = found->caption >= 0 ? markdown_core_parser_last_child(parent) : NULL;
+        found->trailing = found->preceding && found->preceding->kind == MARKDOWN_CORE_NODE_TABLE &&
+                          found->preceding->opaque && !((markdown_core_table *)found->preceding->opaque)->caption;
+        if (found->caption >= 0) {
+            matched = table_after_caption(source, &found->caption_last, &workspace->candidate, !found->trailing);
+        } else {
+            matched = table_parse_admitted_candidate(source, 0, &workspace->candidate, false);
+        }
+    }
+    markdown_core_parser_lookahead_end(&source->lookahead);
+    return !parser->error && (matched || found->trailing);
+}
+
+/* THE OPENER. A call in a commit more text may follow sets the end it reads
+ * aside: one that reads it, or whose grid waits, decides nothing, and asks
+ * to be a candidate (THE OPENER'S CANDIDATE); while it waits, it declines. */
+static markdown_core_node *table_try_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                          markdown_core_node *parent, unsigned char *input, int length) {
+    if (parser->stream && markdown_core_parser_candidate_live(parser, self, parent)) {
         return NULL;
     }
-    table_source source = {.parser = parser, .workspace = workspace, .lines = workspace->lines};
+    table_workspace *workspace = self->state;
     table_candidate *candidate = &workspace->candidate;
-    markdown_core_node *result = NULL;
-    if (!markdown_core_parser_lookahead_begin(parser, parent, MARKDOWN_CORE_NODE_TABLE, &source.lookahead)) {
+    const bool aside = !markdown_core_parser_candidate_final(parser);
+    const markdown_core_end_aside end =
+        aside ? markdown_core_parser_set_end_aside(parser) : (markdown_core_end_aside){0};
+    if (!table_opener_admits(parser, parent, input, length)) {
+        if (aside && markdown_core_parser_put_end_back(parser, end) && !parser->error) {
+            const int words[MARKDOWN_CORE_CANDIDATE_WORDS] = {0};
+            markdown_core_parser_request_candidate(parser, self, parent, MARKDOWN_CORE_NODE_TABLE, words);
+        }
         return NULL;
     }
-    if (!table_source_push(&source, table_cursor_line(parser, input, length))) {
+    table_read found;
+    const bool claims = table_opener_reads(workspace, parser, parent, input, length, false, &found);
+    table_source *source = &found.source;
+    markdown_core_node *result = NULL;
+    if (aside && markdown_core_parser_put_end_back(parser, end)) {
+        source->undecided = true;
+    }
+    if (source->undecided) {
+        if (!parser->error) {
+            markdown_core_parser_request_candidate(parser, self, parent, MARKDOWN_CORE_NODE_TABLE, source->words);
+        }
         goto done;
     }
-    int caption = table_caption_start(source.lines[0].data, source.lines[0].length, source.lines[0].first,
-                                      source.lines[0].indent);
-    size_t caption_last = 0;
-    markdown_core_node *preceding = caption >= 0 ? markdown_core_parser_last_child(parent) : NULL;
-    bool trailing = preceding && preceding->kind == MARKDOWN_CORE_NODE_TABLE && preceding->opaque &&
-                    !((markdown_core_table *)preceding->opaque)->caption;
-    bool matched = false;
-    if (caption >= 0) {
-        matched = table_after_caption(&source, &caption_last, candidate, !trailing);
-    } else {
-        matched = table_parse_admitted_candidate(&source, 0, candidate, false);
-    }
-    markdown_core_parser_lookahead_end(&source.lookahead);
-    if (parser->error || (!matched && !trailing)) {
+    if (!claims) {
         goto done;
     }
     markdown_core_parser_close_below(parser, parent);
     if (parser->error) {
         goto done;
     }
-    if (trailing) {
-        result = preceding;
+    const int caption = found.caption;
+    const size_t caption_last = found.caption_last;
+    if (found.trailing) {
+        result = found.preceding;
         table_candidate_reset(candidate);
         markdown_core_table *table = result->opaque;
-        table->caption = table_caption_build(&source, parent, caption_last, caption);
+        table->caption = table_caption_build(source, parent, caption_last, caption);
         if (table->caption) {
             markdown_core_block_settle_field(parser, table->caption, result);
         }
-        result->place.end = (uint32_t)markdown_core_parser_source_end(parser, source.lines[caption_last].line,
-                                                                      source.lines[caption_last].length);
-        parser->claimed_cursor = source.lines[caption_last].after;
-        parser->claimed_line = source.lines[caption_last].line;
+        result->place.end = (uint32_t)markdown_core_parser_source_end(parser, source->lines[caption_last].line,
+                                                                      source->lines[caption_last].length);
+        parser->claimed_cursor = source->lines[caption_last].after;
+        parser->claimed_line = source->lines[caption_last].line;
         parser->claimed_last_end = result->place.end;
     } else {
-        result = table_build(&source, parent, candidate);
+        result = table_build(source, parent, candidate);
         if (result && result->opaque && caption >= 0) {
             markdown_core_table *table = result->opaque;
-            table->caption = table_caption_build(&source, parent, caption_last, caption);
+            table->caption = table_caption_build(source, parent, caption_last, caption);
             if (table->caption) {
                 markdown_core_block_settle_field(parser, table->caption, result);
             }
             result->place.start =
-                (uint32_t)markdown_core_parser_source_offset(parser, source.lines[0].line, source.lines[0].first + 1);
+                (uint32_t)markdown_core_parser_source_offset(parser, source->lines[0].line, source->lines[0].first + 1);
         }
         if (result) {
-            parser->claimed_cursor = source.lines[candidate->last].after;
-            parser->claimed_line = source.lines[candidate->last].line;
+            parser->claimed_cursor = source->lines[candidate->last].after;
+            parser->claimed_line = source->lines[candidate->last].line;
             parser->claimed_last_end =
-                markdown_core_parser_source_end(parser, parser->claimed_line, source.lines[candidate->last].length);
+                markdown_core_parser_source_end(parser, parser->claimed_line, source->lines[candidate->last].length);
         }
     }
 done:
     table_candidate_reset(candidate);
-    table_source_end(&source);
+    table_source_end(source);
     return result;
+}
+
+/* THE FEED of the opener's candidate (blocks.c, THE CANDIDATES): a line
+ * goes on with its grid while the wall at `words[0]` leads it and the wall
+ * at `words[1]` ends it, and the grid could end after it when it is a
+ * border; a blank line or any other line ends the grid, and a wall-led line
+ * the text has not finished does not tell yet. */
+static markdown_core_candidate_step feed_candidate(const markdown_core_element_instance *self,
+                                                   markdown_core_parser *parser, const int *words,
+                                                   const markdown_core_chunk *input, int first, int indent, int blanks,
+                                                   bool unfinished, bool *ends) {
+    if (blanks || !input) {
+        return MARKDOWN_CORE_CANDIDATE_ENDS;
+    }
+    table_workspace *workspace = self->state;
+    table_source source = {.parser = parser, .workspace = workspace, .lines = workspace->lines};
+    const int left = words[0], right = words[1];
+    markdown_core_candidate_step step = MARKDOWN_CORE_CANDIDATE_ENDS;
+    if (table_source_push(&source, (table_source_line){.data = input->data,
+                                                       .length = input->len,
+                                                       .offset = parser->offset,
+                                                       .first = first,
+                                                       .first_column = parser->first_nonspace_column,
+                                                       .indent = indent}) &&
+        table_source_columns(&source, 0)) {
+        table_source_line *line = &source.lines[0];
+        const int wall = table_character(line, left);
+        if ((wall == '+' || wall == '|') && line->indent == left) {
+            const int edge = table_character(line, right);
+            if (unfinished) {
+                step = MARKDOWN_CORE_CANDIDATE_WAITS;
+            } else if (table_trim_spaces(line, left + 1, line->columns) - 1 == right && (edge == '+' || edge == '|')) {
+                step = MARKDOWN_CORE_CANDIDATE_CONTINUES;
+                *ends = table_horizontal(line, left, right) != 0;
+            }
+        }
+    }
+    table_source_end(&source);
+    return step;
+}
+
+/* The opener's call decided as it would read now (blocks.c, THE
+ * CANDIDATES). */
+static markdown_core_candidate_decision decide_candidate(const markdown_core_element_instance *self,
+                                                         markdown_core_parser *parser, const int *words) {
+    (void)words;
+    markdown_core_chunk line;
+    markdown_core_node *container;
+    if (!markdown_core_parser_candidate_start(parser, &line, &container)) {
+        return MARKDOWN_CORE_CANDIDATE_REJECT;
+    }
+    table_workspace *workspace = self->state;
+    bool claims = false, undecided = false;
+    if (table_opener_admits(parser, container, line.data, (int)line.len)) {
+        table_read found;
+        claims = table_opener_reads(workspace, parser, container, line.data, (int)line.len, true, &found);
+        undecided = found.source.undecided;
+        table_candidate_reset(&workspace->candidate);
+        table_source_end(&found.source);
+    }
+    markdown_core_parser_candidate_end(parser);
+    return undecided ? MARKDOWN_CORE_CANDIDATE_WAIT
+           : claims  ? MARKDOWN_CORE_CANDIDATE_ACCEPT
+                     : MARKDOWN_CORE_CANDIDATE_REJECT;
 }
 
 /* Simple rows own inline text until a blank line or a footer. Pandoc 3.11
@@ -2775,7 +2979,7 @@ static markdown_core_node *try_interrupting_block(const markdown_core_element_in
         input->data[parser->first_nonspace] != '-') {
         return NULL;
     }
-    return table_try_open(self->state, parser, node, input->data, input->len);
+    return table_try_open(self, parser, node, input->data, input->len);
 }
 
 static void dispose_parser(const markdown_core_element_instance *self, markdown_core_parser *parser) {
@@ -2818,10 +3022,13 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .take_line = table_take_line,
     .maximum_block_indent = 3,
     .try_opening_block = try_opening_table_block,
+    .feed_candidate = feed_candidate,
+    .decide_candidate = decide_candidate,
     .containment_kinds = containment_kinds,
     .contains_inlines_func = contains_inlines,
     .opaque_alloc_func = opaque_alloc,
     .opaque_free_func = opaque_free,
     .opaque_view_func = opaque_view,
+    .opaque_adopt_func = opaque_adopt,
     .visit_owned_subtrees_func = visit_owned_subtrees,
 };

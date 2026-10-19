@@ -93,7 +93,7 @@ markdown_core_node *markdown_core_parse_document_with_setup(const char *source, 
     markdown_core_node_pool pool = {0};
     markdown_core_revision revision = {.pool = &pool};
     markdown_core_parser_start(parser, &revision);
-    markdown_core_parser_commit(parser, source, length, length);
+    markdown_core_parser_commit(parser, source, length, length, true);
     markdown_core_node *root = markdown_core_parser_finalize(parser);
     markdown_core_parser_destroy(parser);
     markdown_core_node_pool_dispose(&pool);

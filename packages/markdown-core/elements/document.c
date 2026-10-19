@@ -57,6 +57,26 @@ static void end_snapshot(const markdown_core_element_instance *self, markdown_co
         markdown_core_headings_end_snapshot(headings, parser);
     }
 }
+static void mark_candidate(const markdown_core_element_instance *self, markdown_core_parser *parser) {
+    const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
+    if (headings) {
+        markdown_core_headings_mark_candidate(headings, parser);
+    }
+}
+static void undo_candidate(const markdown_core_element_instance *self, markdown_core_parser *parser, size_t index) {
+    (void)parser;
+    const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
+    if (headings) {
+        markdown_core_headings_undo_candidate(headings, index);
+    }
+}
+static void drop_candidate(const markdown_core_element_instance *self, markdown_core_parser *parser, size_t index) {
+    (void)parser;
+    const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
+    if (headings) {
+        markdown_core_headings_drop_candidate(headings, index);
+    }
+}
 static void publish_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     (void)self;
     if (!markdown_core_publish_tree(parser)) {
@@ -86,6 +106,9 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
     .finish_document = finish_document,
     .start_snapshot = start_snapshot,
     .end_snapshot = end_snapshot,
+    .mark_candidate = mark_candidate,
+    .undo_candidate = undo_candidate,
+    .drop_candidate = drop_candidate,
     .publish_document = publish_document,
     .publish_candidate = publish_candidate,
 };

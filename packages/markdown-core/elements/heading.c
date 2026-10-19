@@ -176,6 +176,53 @@ void markdown_core_headings_end_snapshot(const markdown_core_element_instance *s
     }
 }
 
+/* THE HEADINGS A CANDIDATE MARKS (element.h, `mark_candidate`): the mark
+ * finds every heading parsed but the pending block's, as a snapshot does. An
+ * accept puts the collection back as the mark found it, the pending block's
+ * entry naming the block again, not parsed; and the names a snapshot commits
+ * are of the headings and the ANCHOR records before the oldest mark (THE
+ * COMMITTED NAMES), which no accept puts back. */
+void markdown_core_headings_mark_candidate(const markdown_core_element_instance *self, markdown_core_parser *parser) {
+    markdown_core_heading_state *state = self->state;
+    markdown_core_heading_collection *headings = &state->headings;
+    markdown_core_heading_mark *marks =
+        markdown_core_reserve(state->marks, &state->mark_capacity, state->mark_count + 1, sizeof(*marks));
+    if (!marks) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return;
+    }
+    state->marks = marks;
+    assert(headings->count - headings->parsed <= 1);
+    markdown_core_heading_mark *mark = &marks[state->mark_count++];
+    *mark = (markdown_core_heading_mark){
+        .count = headings->count, .parsed = headings->parsed, .records = parser->registry.count};
+    if (headings->count > headings->parsed) {
+        mark->pending = headings->values[headings->parsed];
+        assert(!mark->pending.parsed && !mark->pending.pending && mark->pending.node == parser->pending);
+    }
+}
+
+void markdown_core_headings_undo_candidate(const markdown_core_element_instance *self, size_t index) {
+    markdown_core_heading_state *state = self->state;
+    markdown_core_heading_collection *headings = &state->headings;
+    const markdown_core_heading_mark *mark = &state->marks[index];
+    for (size_t i = mark->parsed; i < headings->count; i++) {
+        assert(!headings->values[i].holds_name);
+        markdown_core_dispose_heading(&headings->values[i]);
+    }
+    headings->count = headings->parsed = mark->parsed;
+    if (mark->count > mark->parsed) {
+        headings->values[headings->count++] = mark->pending;
+    }
+    state->mark_count = index;
+}
+
+void markdown_core_headings_drop_candidate(const markdown_core_element_instance *self, size_t index) {
+    markdown_core_heading_state *state = self->state;
+    memmove(&state->marks[index], &state->marks[index + 1], (state->mark_count - index - 1) * sizeof(*state->marks));
+    state->mark_count--;
+}
+
 /* Release the headings and the names they took, with the committed names
  * their entries hold. The anchors are assigned by then, or the parse failed;
  * either way nothing reads them again. */
@@ -195,6 +242,9 @@ void markdown_core_headings_dispose(const markdown_core_element_instance *self) 
     state->renamed = NULL;
     state->renamed_count = state->renamed_capacity = 0;
     state->records_at = state->records_read = state->named = 0;
+    markdown_core_free(state->marks);
+    state->marks = NULL;
+    state->mark_count = state->mark_capacity = 0;
 }
 
 static void project_anchor_literal(markdown_core_heading_state *state, markdown_core_strbuf *base,
@@ -493,7 +543,7 @@ static const unsigned char *give_name_apart(name_pass *pass, size_t at, bufsize_
         assert(!kept || kept == heading->name);
         heading->holds_name = kept != NULL;
     }
-    if (pass->beneath && at < state->snapshot_parsed) {
+    if (pass->beneath && at < state->named) {
         return rename_committed(parser, state, at) ? shown : NULL;
     }
     markdown_core_free((void *)heading->name);
@@ -573,7 +623,7 @@ static void take_last(name_pass *pass, markdown_core_heading_parse *heading, siz
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
-    assert(!heading->holds_name && !(pass->beneath && at < pass->state->snapshot_parsed));
+    assert(!heading->holds_name && !(pass->beneath && at < pass->state->named));
     const unsigned char *bytes = give_name(pass, heading, base_size);
     if (bytes) {
         const size_t holder = claim_name(pass, at, candidate, bytes);
@@ -604,7 +654,7 @@ static void displace(name_pass *pass, size_t at) {
                 return;
             }
         } while (candidate->key && (!candidate->extra || candidate->extra <= at + 1));
-        const unsigned char *bytes = heading->holds_name || (pass->beneath && at < state->snapshot_parsed)
+        const unsigned char *bytes = heading->holds_name || (pass->beneath && at < state->named)
                                          ? give_name_apart(pass, at, base_size)
                                          : give_name(pass, heading, base_size);
         holder = bytes ? claim_name(pass, at, candidate, bytes) : 0;
@@ -712,7 +762,7 @@ static void name_snapshot(name_pass *pass, markdown_core_registry_cursor cursor)
     markdown_core_heading_state *state = pass->state;
     markdown_core_heading_collection *headings = &state->headings;
     markdown_core_key_index overlay;
-    if (!markdown_core_key_index_init(&overlay, cursor.left + headings->count - state->snapshot_parsed)) {
+    if (!markdown_core_key_index_init(&overlay, cursor.left + headings->count - state->named)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
     }
@@ -720,7 +770,7 @@ static void name_snapshot(name_pass *pass, markdown_core_registry_cursor cursor)
     pass->beneath = &state->taken;
     const size_t earlier = state->renamed_count;
     read_records(pass, &cursor, parser->registry.count);
-    name_headings(pass, state->snapshot_parsed, headings->count);
+    name_headings(pass, state->named, headings->count);
     for (size_t i = 0; i < earlier && !parser->error; i++) {
         markdown_core_heading_parse *heading = &headings->values[state->renamed[i]];
         if (heading->holds_name && !heading->renamed) {
@@ -760,16 +810,23 @@ static void names_reset(markdown_core_heading_state *state) {
 /* Each heading's anchor (THE COMMITTED NAMES): an authored one stays, and a
  * computed one is the heading's own copy of the name chosen; only a heading
  * whose anchor changes is written. A snapshot moves the committed names on,
- * by the records and the headings its commit added, and names its tail over
- * them; the finalize names everything from an empty index. */
+ * by the records and the headings its commit added before the oldest
+ * candidate's mark, and names the rest over them, its tail among them; the
+ * finalize names everything from an empty index. */
 void markdown_core_headings_finish(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     markdown_core_heading_state *state = self->state;
     markdown_core_heading_collection *headings = &state->headings;
     const bool snapshot = parser->snapshot;
     if (!snapshot) {
+        assert(!state->mark_count);
         names_reset(state);
     }
-    const size_t committed = snapshot ? state->snapshot_parsed : headings->count;
+    const markdown_core_heading_mark *oldest = state->mark_count ? &state->marks[0] : NULL;
+    const size_t committed = !snapshot                                           ? headings->count
+                             : oldest && oldest->parsed < state->snapshot_parsed ? oldest->parsed
+                                                                                 : state->snapshot_parsed;
+    const size_t committed_records =
+        oldest && oldest->records < state->snapshot_records ? oldest->records : state->snapshot_records;
     if (!state->taken.size) {
         /* Nothing is named yet: the authored headings ask for no name. */
         while (state->named < committed && headings->values[state->named].authored) {
@@ -798,7 +855,7 @@ void markdown_core_headings_finish(const markdown_core_element_instance *self, m
     pass.beneath = NULL;
     pass.name = (markdown_core_strbuf)MARKDOWN_CORE_BUF_INIT();
     pass.stack = (anchor_projection_stack){0};
-    read_records(&pass, &cursor, snapshot ? state->snapshot_records : registry->count);
+    read_records(&pass, &cursor, snapshot ? committed_records : registry->count);
     state->records_at = cursor.at;
     state->records_read = records - cursor.left;
     name_headings(&pass, state->named, committed);

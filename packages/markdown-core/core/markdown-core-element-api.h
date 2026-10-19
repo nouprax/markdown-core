@@ -313,6 +313,13 @@ typedef void (*markdown_core_opaque_free_func)(const markdown_core_element *elem
 typedef bool (*markdown_core_opaque_view_func)(const markdown_core_element *element, markdown_core_node *copy,
                                                const markdown_core_node *node);
 
+/* `view`'s payload, a view of `node`'s (markdown_core_opaque_view_func),
+ * takes the storage of `node`'s it still reads: `node`'s payload then owns
+ * none of it, and `view`'s owns everything it holds. Required of an element
+ * with a view hook. */
+typedef void (*markdown_core_opaque_adopt_func)(const markdown_core_element *element, markdown_core_node *view,
+                                                markdown_core_node *node);
+
 /** A parser element is a `static const` descriptor in a fixed compile-time
  * table (`elements/core-elements.c`), not an object built at run time.
  *

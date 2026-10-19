@@ -81,6 +81,15 @@ static bool formula_opaque_view(const markdown_core_element *element, markdown_c
     return true;
 }
 
+static void formula_opaque_adopt(const markdown_core_element *element, markdown_core_node *view,
+                                 markdown_core_node *node) {
+    node_formula *made = view->opaque, *formula = node->opaque;
+    if (made->literal.data == formula->literal.data && !made->literal.alloc) {
+        made->literal.alloc = formula->literal.alloc;
+        formula->literal.alloc = 0;
+    }
+}
+
 static int set_formula_literal_bytes(markdown_core_node *node, const unsigned char *data, bufsize_t len) {
     node_formula *formula = get_formula(node);
     markdown_core_chunk_free(&formula->literal);
@@ -660,6 +669,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .opaque_alloc_func = formula_opaque_alloc,
     .opaque_free_func = formula_opaque_free,
     .opaque_view_func = formula_opaque_view,
+    .opaque_adopt_func = formula_opaque_adopt,
     .insert_inline_from_delim = insert_formula,
     .terminates_text = "$",
     .dispatch = "$\\",

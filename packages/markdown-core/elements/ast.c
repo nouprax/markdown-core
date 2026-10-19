@@ -697,6 +697,11 @@ static inline publish_relation publish_next(const publish_frame *frame, const pu
     return next;
 }
 
+/* THE DECIDED CONTENT (parser.h) a node published in place lies in:
+ * DECIDED, UNDECIDED, or a HOLDER's, which holds both (A NODE PUBLISHED IN
+ * PLACE). */
+typedef enum { DECIDED, UNDECIDED, HOLDER } publish_decided;
+
 /* What one publish carries through its walks: the walk stack, the lookup
  * tables, the last id issued and how many committed definitions it lists. */
 typedef struct {
@@ -710,11 +715,16 @@ typedef struct {
     content_places places;
     /* The pool the runs are cut from. */
     markdown_core_node_pool *pool;
+    /* The decided content (THE DECIDED CONTENT) of the node the walk places
+     * and of all it publishes below it: a node only a publish that walks it
+     * in place places may lie in the content of a holder. */
+    uint8_t decided;
 } publish_walk;
 
 /* Where a node published from `hand` lies: its range, in the content of the
  * root whose places the walk holds when it is in one, its source, and
- * whether it is an inline root, whose places the walk now holds. */
+ * whether the walk now holds its places, an inline root's whose content it
+ * measures (publish_node_in_place). */
 typedef struct {
     markdown_core_place place, source;
     bool root;
@@ -809,13 +819,14 @@ static inline bool publish_range_run(markdown_core_node_pool *pool, markdown_cor
 }
 
 /* An inline node's runs, its content range `place` measured in the root
- * whose places the walk holds: its source `window`, from where its first
- * content byte was read to where its last was, or the empty window where its
- * start was read when it holds none, less the gaps between the root's places;
- * the first measured from `anchor`, each other from the end of the run
- * before. One pass over the places from the one its start is read from to
- * the one its last byte is: each gap between two of them in the window ends a
- * run. False when they could not be allocated. */
+ * whose places the walk holds: the source from where its first content byte
+ * was read to where its last was, or the empty source where its start was
+ * read when it holds none, less the gaps between the root's places; the
+ * first measured from `anchor`, each other from the end of the run before,
+ * and its source `window` from the start of the first to the end of the
+ * last (runs_window). One pass over the places from the one its start is
+ * read from to the one its last byte is: each gap between two of them in
+ * that source ends a run. False when they could not be allocated. */
 static inline bool publish_inline_runs(publish_walk *walk, markdown_core_node *node, markdown_core_place place,
                                        uint32_t anchor, markdown_core_place *window) {
     assert(!node->source.places);
@@ -838,12 +849,11 @@ static inline bool publish_inline_runs(publish_walk *walk, markdown_core_node *n
                   ? to->end
                   : to->start + (place.end - to->content);
     }
-    *window = (markdown_core_place){first, end};
     markdown_core_runs *runs = markdown_core_node_pool_bytes(walk->pool, runs_bytes((uint32_t)(to - at + 1)));
     if (!runs) {
         return false;
     }
-    uint32_t count = 0, from = anchor, start = first;
+    uint32_t count = 0, from = anchor, start = first, last = first;
     const content_place *p = at;
     while (p + 1 < past && p->end <= start) {
         p++;
@@ -855,16 +865,17 @@ static inline bool publish_inline_runs(publish_walk *walk, markdown_core_node *n
         }
         if (gap > start) {
             runs->items[count++] = (markdown_core_run){(int32_t)((int64_t)start - from), gap - start};
-            from = gap;
+            from = last = gap;
         }
         start = next > start ? next : start;
     }
     if (start < end || !count) {
-        end = start < end ? end : start;
-        runs->items[count++] = (markdown_core_run){(int32_t)((int64_t)start - from), end - start};
+        last = start < end ? end : start;
+        runs->items[count++] = (markdown_core_run){(int32_t)((int64_t)start - from), last - start};
     }
     runs->count = count;
     node->source.runs = runs;
+    *window = (markdown_core_place){first, last};
     return true;
 }
 
@@ -883,13 +894,14 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool publish_keep(publish_walk *walk,
 }
 
 /* Records `node` in table `table` at `start`: a streaming parse keeps it
- * there too when it is COMMITTED. A definition is a block, and every block
- * in the subtree of a COMMITTED block settled in a commit, so it is one
- * (blocks.c, A BLOCK SETTLES). */
+ * there too when it is COMMITTED and DECIDED, as it is FINAL (THE DECIDED
+ * CONTENT). A definition is a block, and every block in the subtree of a
+ * COMMITTED block settled in a commit, so it is one (blocks.c, A BLOCK
+ * SETTLES). */
 static inline bool publish_list(publish_walk *walk, markdown_core_node *node, uint32_t table, uint32_t start) {
     definition_table *values = &walk->tables[table];
     return table_add(values, node, start) &&
-           (!walk->stack.parser->stream || !(node->flags & MARKDOWN_CORE_NODE__COMMITTED) ||
+           (!walk->stack.parser->stream || !(node->flags & MARKDOWN_CORE_NODE__COMMITTED) || walk->decided != DECIDED ||
             publish_keep(walk, table, values->count - 1));
 }
 
@@ -930,8 +942,14 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_node(publish
     return !SLOT_TABLE(slot) || publish_list(walk, node, SLOT_TABLE(slot) - 1, placed->source.start);
 }
 
-/* publish_node of a node the walk in place enters (THE WALK IN PLACE). An
- * open block's runs are the publish's own (PUBLISHED_OPEN), which the next
+/* publish_node of a node the walk in place enters (THE WALK IN PLACE). A
+ * closed node a publish placed (PUBLISHED) stands as that publish left it,
+ * its extent and runs and all below it: it is closed in the committed tree,
+ * where nothing writes it, or in what a snapshot made, which no other
+ * publish walks, and the nodes before it in its relation are committed too
+ * (blocks.c, A BLOCK SETTLES), so what its extent and runs are measured from
+ * stands as well. Its source is its runs' window, and the walk holds none of
+ * its places. An open block's runs are the publish's own, which the next
  * publish of it replaces: an open block reads no places of its own, which a
  * leaf block holds, and a leaf block is never open as a snapshot publishes
  * (blocks.c, THE LENDING). Every open block persists, so no other walk
@@ -939,17 +957,20 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_node(publish
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_node_in_place(
     publish_walk *walk, markdown_core_node *node, unsigned slot, const publish_relation *hand, bool content,
     publish_placed *placed) {
-    if (node->flags & MARKDOWN_CORE_NODE__PUBLISHED_OPEN) {
+    if (node->flags & MARKDOWN_CORE_NODE__PUBLISHED) {
+        if (!(node->flags & MARKDOWN_CORE_NODE__OPEN)) {
+            placed->place = node->place;
+            placed->source = runs_window(node, hand->source);
+            placed->root = false;
+            return !SLOT_TABLE(slot) || publish_list(walk, node, SLOT_TABLE(slot) - 1, placed->source.start);
+        }
         markdown_core_node_pool_bytes_free(walk->pool, node->source.runs);
         node->source.runs = NULL;
-        node->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__PUBLISHED_OPEN;
     }
     if (!publish_node(walk, node, slot, hand, content, placed)) {
         return false;
     }
-    if (node->flags & MARKDOWN_CORE_NODE__OPEN) {
-        node->flags |= MARKDOWN_CORE_NODE__PUBLISHED_OPEN;
-    }
+    node->flags |= MARKDOWN_CORE_NODE__PUBLISHED;
     return true;
 }
 
@@ -1017,11 +1038,12 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_fresh(publis
         relation_shape child_shape = (relation_shape)(slot & SLOT_SHAPE);
         content = frame->content;
         /* Every node it publishes is new and closed (PUBLISHING IN PLACE). */
-        assert(!child->id && !(child->flags & (MARKDOWN_CORE_NODE__OPEN | MARKDOWN_CORE_NODE__PUBLISHED_OPEN)));
+        assert(!child->id && !(child->flags & (MARKDOWN_CORE_NODE__OPEN | MARKDOWN_CORE_NODE__PUBLISHED)));
         if (!publish_node(walk, child, slot, &hand, content, &child_placed)) {
             return false;
         }
         child->id = ++next_id;
+        child->flags |= MARKDOWN_CORE_NODE__PUBLISHED;
         hand.anchor = child_placed.place.end;
         hand.source = child_placed.source.end;
         if (!publish_first(child, child_shape, &cursor, &first, &holder, &more)) {
@@ -1064,9 +1086,23 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_fresh(publis
  * where that one's first run is measured from (where the source of the old
  * node before it ends, or the old node's begins). The relation in hand has
  * a field (relation_field) and a holder. A persisting node marks what it
- * holds FINAL and keeps records of what an open or lent block holds, the
- * last of which this publish kept, plus one; one a publish placed before
- * passes the FINAL prefix of each of its relations. */
+ * holds FINAL and keeps records of what an open or lent block holds, and of
+ * what an UNDECIDED node or a HOLDER holds, the last of which this publish
+ * kept, plus one; one a publish placed before passes the FINAL prefix of
+ * each of its relations.
+ *
+ * The node lies in THE DECIDED CONTENT (parser.h) -- DECIDED, UNDECIDED, or
+ * a HOLDER's, with its entry -- and whether it is COMMITTED, or held by a
+ * node or a relation holder that is, in which case it stays in the tree
+ * whatever a take-back does. What a DECIDED or an UNDECIDED node holds is
+ * as it is. Of a holder's relations, its children, and the items of a
+ * holder among a definition's bodies, are each DECIDED when the call found
+ * them -- a child before the last it found, or that last when it is no
+ * holder -- a HOLDER when that last is one, and UNDECIDED otherwise; the
+ * items of a definition's body that is not a holder are as the body is
+ * among the definition's children, and those of a field -- the node a
+ * field holds, or the root whose children a field's relation holds -- are
+ * DECIDED when an accept keeps the field and UNDECIDED otherwise. */
 typedef enum { OLD_NONE, OLD_RECORDS, OLD_LIVE } publish_old;
 
 typedef struct {
@@ -1081,8 +1117,13 @@ typedef struct {
     uint32_t old_start, old_source;
     uint32_t record, kept;
     int field;
-    uint8_t old;
-    bool persists, published, keeps;
+    /* The node's decided content and, for a holder, its entry; those of
+     * the relation in hand, whose items a holder's entry judges by where
+     * they are among its holder's children. */
+    const markdown_core_holder *holds, *relation_holds;
+    markdown_core_node *const *relation_children;
+    uint8_t old, decided, relation_decided;
+    bool persists, published, keeps, committed;
 } publish_match_frame;
 
 /* The field of the relation a cursor stepped to last, which names it from
@@ -1174,17 +1215,56 @@ static inline uint32_t publish_final_bodies(const markdown_core_node *node) {
     return at;
 }
 
+/* The decided content of a node a holder's entry `holds` judges, the child
+ * at `index` of the holder's children (A NODE PUBLISHED IN PLACE). */
+static inline publish_decided publish_held(const markdown_core_parser *parser, const markdown_core_holder *holds,
+                                           const markdown_core_node *node, size_t index) {
+    if (node == holds->last) {
+        return markdown_core_parser_holder(parser, node) ? HOLDER : DECIDED;
+    }
+    return index + 1 < holds->count ? DECIDED : UNDECIDED;
+}
+
+/* The decided content of the relation in hand of the node `frame` is for,
+ * held by `holder`, its first item at `item` (A NODE PUBLISHED IN PLACE). */
+static void publish_relation_decided(const markdown_core_parser *parser, publish_match_frame *frame,
+                                     const markdown_core_node *holder, relation_shape shape, markdown_core_node **item,
+                                     markdown_core_node **end) {
+    frame->relation_decided = frame->decided;
+    if (frame->decided != HOLDER) {
+        return;
+    }
+    const markdown_core_node *node = frame->node;
+    publish_decided decided;
+    if (holder == node) {
+        decided = HOLDER;
+        frame->relation_holds = frame->holds;
+    } else if (shape == SHAPE_DEFINITION && frame->field) {
+        decided = publish_held(parser, frame->holds, holder, frame->walk.cursor.index - 1);
+        frame->relation_holds = decided == HOLDER ? markdown_core_parser_holder(parser, holder) : NULL;
+    } else {
+        const markdown_core_node *field = holder ? holder : item != end ? *item : NULL;
+        decided = !field || markdown_core_node_holds_field(frame->holds->backup, field) ? DECIDED : UNDECIDED;
+    }
+    frame->relation_decided = decided;
+    if (decided == HOLDER) {
+        frame->relation_children = holder->children;
+    }
+}
+
 /* The relation in hand of the node `frame` is for, of shape `shape`, as the
  * walk enters it, held by `holder`: its field, which goes on from the
- * relation before when it goes on from it, and, for a persisting node, its
- * FINAL prefix passed when a publish placed the node before, and a
- * definition's body FINAL when it is COMMITTED. */
-static inline void publish_relation_begin(publish_match_frame *frame, publish_relation *hand,
-                                          const markdown_core_node *holder, relation_shape shape, bool continues) {
+ * relation before when it goes on from it, its decided content, and, for a
+ * persisting node, its FINAL prefix passed when a publish placed the node
+ * before, and a definition's body FINAL when it is COMMITTED and DECIDED. */
+static inline void publish_relation_begin(const markdown_core_parser *parser, publish_match_frame *frame,
+                                          publish_relation *hand, const markdown_core_node *holder,
+                                          relation_shape shape, bool continues) {
     frame->holder = holder;
     if (!continues) {
         frame->field = shape == SHAPE_CHILDREN ? 0 : relation_field(&frame->walk.cursor);
     }
+    publish_relation_decided(parser, frame, holder, shape, hand->item, hand->end);
     if (frame->published) {
         markdown_core_node **const first = hand->item;
         publish_pass_final(hand, frame->walk.content);
@@ -1193,8 +1273,8 @@ static inline void publish_relation_begin(publish_match_frame *frame, publish_re
         assert(frame->old == OLD_RECORDS || hand->item == first);
         (void)first;
     }
-    if (frame->persists && shape == SHAPE_DEFINITION && frame->field &&
-        (holder->flags & MARKDOWN_CORE_NODE__COMMITTED)) {
+    if (frame->persists && shape == SHAPE_DEFINITION && frame->field && frame->relation_decided == DECIDED &&
+        (frame->committed || (holder->flags & MARKDOWN_CORE_NODE__COMMITTED))) {
         frame->node->children[frame->walk.cursor.index - 1]->flags |= MARKDOWN_CORE_NODE__FINAL;
     }
 }
@@ -1271,11 +1351,11 @@ static const markdown_core_tail_record *publish_record_match(const markdown_core
 }
 
 /* `node`, whose source is `source`, in the relation in hand of `owner`,
- * recorded (THE RECORDS), and owned when it is neither open nor lent: the
- * first of the owner's records is linked from its scaffold, and each from
- * the one before. False when the records could not grow. */
+ * recorded (THE RECORDS), and `owned` by the record: the first of the
+ * owner's records is linked from its scaffold, and each from the one
+ * before. False when the records could not grow. */
 static bool publish_record(markdown_core_parser *parser, publish_match_frame *owner, markdown_core_node *node,
-                           markdown_core_place source) {
+                           markdown_core_place source, markdown_core_node *owned) {
     markdown_core_stream *stream = parser->stream;
     markdown_core_tail_records *records = &stream->records[!stream->last];
     markdown_core_tail_record *items =
@@ -1285,7 +1365,6 @@ static bool publish_record(markdown_core_parser *parser, publish_match_frame *ow
     }
     records->items = items;
     const uint32_t at = (uint32_t)records->count++;
-    markdown_core_node *const owned = node->flags & (MARKDOWN_CORE_NODE__OPEN | MARKDOWN_CORE_NODE__LENT) ? NULL : node;
     items[at] = (markdown_core_tail_record){
         owned, owner->node, node->id, source.start, source.end, (uint32_t)owner->field, 0, node->kind};
     if (owner->kept) {
@@ -1298,17 +1377,20 @@ static bool publish_record(markdown_core_parser *parser, publish_match_frame *ow
 }
 
 /* `node`, placed as `placed` in the relation in hand of the persisting node
- * `frame` is for: FINAL when it or the relation's holder is COMMITTED, and
- * otherwise recorded when an open or lent block holds it (THE RECORDS).
- * False when the records could not grow. */
+ * `frame` is for, in the decided content `decided`, and `committed` when it
+ * stays in the tree whatever a take-back does: FINAL when it is COMMITTED
+ * and DECIDED, and otherwise recorded when the node keeps records (THE
+ * RECORDS), and owned by its record when a take-back unhooks it -- it is
+ * neither committed, open nor lent. False when the records could not
+ * grow. */
 static inline bool publish_hold(markdown_core_parser *parser, publish_match_frame *frame, markdown_core_node *node,
-                                const publish_placed *placed) {
-    if ((node->flags & MARKDOWN_CORE_NODE__COMMITTED) ||
-        (frame->holder && (frame->holder->flags & MARKDOWN_CORE_NODE__COMMITTED))) {
+                                const publish_placed *placed, publish_decided decided, bool committed) {
+    if (committed && decided == DECIDED) {
         node->flags |= MARKDOWN_CORE_NODE__FINAL;
         return true;
     }
-    return !frame->keeps || publish_record(parser, frame, node, placed->source);
+    const bool stays = committed || (node->flags & (MARKDOWN_CORE_NODE__OPEN | MARKDOWN_CORE_NODE__LENT));
+    return !frame->keeps || publish_record(parser, frame, node, placed->source, stays ? NULL : node);
 }
 
 /* THE WALK IN PLACE (PUBLISHING IN PLACE): `root`, measured against
@@ -1337,11 +1419,17 @@ static bool publish_in_place(publish_walk *walk, markdown_core_node *root, const
     relation_shape shape = (relation_shape)(slot & SLOT_SHAPE);
     /* The node to enter next, the old node whose relations it continues and
      * where that one's source starts, whether it persists, whether a publish
-     * placed it before, and whether it continues itself. */
+     * placed it before, whether it continues itself, its decided content and
+     * whether it is committed (A NODE PUBLISHED IN PLACE). The root is a
+     * holder while a candidate waits. */
     markdown_core_node *node = root;
     const markdown_core_node *old = previous;
     uint32_t old_start = start->source;
     bool persists = true, published = root->id != 0, itself = published && !previous;
+    publish_decided decided = markdown_core_parser_undecided(parser) ? HOLDER : DECIDED;
+    bool committed = (root->flags & MARKDOWN_CORE_NODE__COMMITTED) != 0;
+    assert(decided == DECIDED || (!previous && markdown_core_parser_holder(parser, root)));
+    walk->decided = (uint8_t)decided;
     if (previous && !previous->id) {
         if (!content_places_read(&walk->places, root->source.places)) {
             return false;
@@ -1374,7 +1462,11 @@ static bool publish_in_place(publish_walk *walk, markdown_core_node *root, const
             frame->node = node;
             frame->persists = persists;
             frame->published = published;
-            frame->keeps = persists && (node->flags & (MARKDOWN_CORE_NODE__OPEN | MARKDOWN_CORE_NODE__LENT));
+            frame->decided = (uint8_t)decided;
+            frame->holds = decided == HOLDER ? markdown_core_parser_holder(parser, node) : NULL;
+            frame->committed = committed;
+            frame->keeps = persists && (decided != DECIDED ||
+                                        (node->flags & (MARKDOWN_CORE_NODE__OPEN | MARKDOWN_CORE_NODE__LENT)));
             frame->kept = 0;
             frame->old = old ? OLD_LIVE : itself ? OLD_RECORDS : OLD_NONE;
             if (persists) {
@@ -1392,7 +1484,7 @@ static bool publish_in_place(publish_walk *walk, markdown_core_node *root, const
                 frame->old_start = old_start;
                 publish_pair_first(frame, old, shape);
             }
-            publish_relation_begin(frame, &hand, holder, shape, false);
+            publish_relation_begin(parser, frame, &hand, holder, shape, false);
         }
         /* The next node with relations to enter, or the end of the walk. */
         for (node = NULL; count && !node;) {
@@ -1407,8 +1499,8 @@ static bool publish_in_place(publish_walk *walk, markdown_core_node *root, const
                     if (frame->old == OLD_LIVE) {
                         publish_pair(frame, relation_field(&frame->walk.cursor), relation.continues);
                     }
-                    publish_relation_begin(frame, &hand, relation.holder, (relation_shape)frame->walk.cursor.shape,
-                                           relation.continues);
+                    publish_relation_begin(parser, frame, &hand, relation.holder,
+                                           (relation_shape)frame->walk.cursor.shape, relation.continues);
                     continue;
                 }
                 if (--count) {
@@ -1425,6 +1517,13 @@ static bool publish_in_place(publish_walk *walk, markdown_core_node *root, const
             published = child->id != 0;
             /* Every node below one that does not persist is new. */
             assert(frame->persists || !published);
+            decided = frame->relation_decided == HOLDER
+                          ? publish_held(parser, frame->relation_holds, child,
+                                         (size_t)(hand.item - 1 - frame->relation_children))
+                          : (publish_decided)frame->relation_decided;
+            committed = frame->committed || (child->flags & MARKDOWN_CORE_NODE__COMMITTED) ||
+                        (frame->holder && (frame->holder->flags & MARKDOWN_CORE_NODE__COMMITTED));
+            walk->decided = (uint8_t)decided;
             if (!publish_node_in_place(walk, child, slot, &hand, content, &placed)) {
                 return false;
             }
@@ -1445,9 +1544,12 @@ static bool publish_in_place(publish_walk *walk, markdown_core_node *root, const
                 itself = record && !record->node;
                 child->id = record ? record->id : ++walk->next_id;
             }
+            /* A node the next publish walks again persists: one that stays in
+             * the tree and is not FINAL. */
             persists = frame->persists &&
-                       (published || (child->flags & (MARKDOWN_CORE_NODE__OPEN | MARKDOWN_CORE_NODE__LENT)));
-            if (frame->persists && !publish_hold(parser, frame, child, &placed)) {
+                       (published || (child->flags & (MARKDOWN_CORE_NODE__OPEN | MARKDOWN_CORE_NODE__LENT)) ||
+                        (committed && decided != DECIDED));
+            if (frame->persists && !publish_hold(parser, frame, child, &placed, decided, committed)) {
                 return false;
             }
             if (!old && !persists) {
@@ -1825,6 +1927,7 @@ static void publish_start(publish_walk *walk, markdown_core_parser *parser) {
     walk->kept_count = 0;
     walk->places = (content_places){parser->content_places, 0, parser->content_place_capacity};
     walk->pool = parser->pool;
+    walk->decided = DECIDED;
 }
 
 static void publish_end(const publish_walk *walk, markdown_core_parser *parser) {
@@ -1857,6 +1960,7 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
         publish_placed placed;
         ok = publish_node(&walk, root, slot, &hand, false, &placed);
         root->id = ++walk.next_id;
+        root->flags |= MARKDOWN_CORE_NODE__PUBLISHED;
         ok = ok && publish_fresh(&walk, root, (relation_shape)(slot & SLOT_SHAPE), &placed, false);
     }
     if (ok && snapshot) {

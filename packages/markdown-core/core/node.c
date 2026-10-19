@@ -752,6 +752,97 @@ void markdown_core_node_view_let_go(markdown_core_node_pool *pool, markdown_core
     }
 }
 
+/* A visit of a view's fields that hands each it took since to a taker. */
+typedef struct {
+    markdown_core_owned_subtree_visitor take;
+    void *context;
+    const unsigned char *storage, *original;
+} S_field_taker;
+
+static int S_take_field(markdown_core_node **slot, void *context) {
+    const S_field_taker *taker = context;
+    if (*slot &&
+        (!taker->original ||
+         *slot != *(markdown_core_node *const *)(taker->original + ((const unsigned char *)slot - taker->storage)))) {
+        return taker->take(slot, taker->context);
+    }
+    return 1;
+}
+
+void markdown_core_node_view_taken(markdown_core_node *view, const markdown_core_node *node,
+                                   markdown_core_owned_subtree_visitor take, void *context) {
+    S_field_taker taker = {take, context, view->as.data, view->kind == node->kind ? node->as.data : NULL};
+    S_visit_record_fields(view, S_take_field, &taker);
+    if (view->element && view->element->visit_owned_subtrees_func) {
+        taker.storage = view->opaque;
+        taker.original = view->element == node->element ? node->opaque : NULL;
+        view->element->visit_owned_subtrees_func(view->element, view, S_take_field, &taker);
+    }
+}
+
+static int S_field_other(markdown_core_node **slot, void *context) { return *slot != context; }
+
+bool markdown_core_node_holds_field(const markdown_core_node *node, const markdown_core_node *field) {
+    markdown_core_node *const holder = (markdown_core_node *)node;
+    return !S_visit_fields(holder, S_field_other, (void *)field);
+}
+
+/* The strings of `node`'s record that `view`'s still reads, the view's: the
+ * kinds of S_view_node_as, whose views hold the bytes and own none. */
+static void S_chunk_adopt(markdown_core_chunk *view, markdown_core_chunk *chunk) {
+    if (view->data == chunk->data && !view->alloc) {
+        view->alloc = chunk->alloc;
+        chunk->alloc = 0;
+    }
+}
+
+static void S_adopt_node_as(markdown_core_node *view, markdown_core_node *node) {
+    switch (view->kind) {
+    case MARKDOWN_CORE_NODE_CALLOUT:
+        S_chunk_adopt(&view->as.callout->variant.value, &node->as.callout->variant.value);
+        break;
+    case MARKDOWN_CORE_NODE_LIST_ITEM:
+        S_chunk_adopt(&view->as.list->task_marker.value, &node->as.list->task_marker.value);
+        break;
+    case MARKDOWN_CORE_NODE_CODE_BLOCK:
+        S_chunk_adopt(&view->as.code->info.value, &node->as.code->info.value);
+        S_chunk_adopt(&view->as.code->literal, &node->as.code->literal);
+        break;
+    case MARKDOWN_CORE_NODE_COMMENT_BLOCK:
+        S_chunk_adopt(view->as.literal, node->as.literal);
+        break;
+    case MARKDOWN_CORE_NODE_HTML_BLOCK:
+        S_chunk_adopt(&view->as.html_block->literal, &node->as.html_block->literal);
+        break;
+    case MARKDOWN_CORE_NODE_SPECIMEN:
+        S_chunk_adopt(&view->as.specimen->label.value, &node->as.specimen->label.value);
+        break;
+    default:
+        break;
+    }
+}
+
+void markdown_core_node_view_adopt(markdown_core_node_pool *pool, markdown_core_node *view, markdown_core_node *node) {
+    const bool kind = view->kind == node->kind;
+    markdown_core_attributes_adopt(&view->attributes, &node->attributes);
+    if (kind) {
+        S_adopt_node_as(view, node);
+    }
+    const bool element = view->element == node->element && view->opaque && node->opaque;
+    if (element) {
+        view->element->opaque_adopt_func(view->element, view, node);
+    }
+    node->children = NULL;
+    node->child_count = 0;
+    markdown_core_strbuf_init_zeroed(&node->content);
+    S_field_pair pair = {pool, node->as.data, kind ? view->as.data : NULL};
+    S_visit_record_fields(node, S_let_go_field, &pair);
+    if (node->element && node->element->visit_owned_subtrees_func) {
+        pair = (S_field_pair){pool, node->opaque, element ? view->opaque : NULL};
+        node->element->visit_owned_subtrees_func(node->element, node, S_let_go_field, &pair);
+    }
+}
+
 markdown_core_node *markdown_core_node_view(markdown_core_node_pool *pool, const markdown_core_node *node) {
     markdown_core_node *view = S_copy_slot(pool, node);
     if (!view) {
@@ -759,9 +850,9 @@ markdown_core_node *markdown_core_node_view(markdown_core_node_pool *pool, const
     }
     S_copy_state state = {pool, false};
     view->source.places = NULL;
-    view->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__PUBLISHED_OPEN;
+    view->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__PUBLISHED;
     S_view_owned(&state, view, node);
-    if (!(node->flags & MARKDOWN_CORE_NODE__PUBLISHED_OPEN) && node->source.places && !state.failed) {
+    if (!(node->flags & MARKDOWN_CORE_NODE__PUBLISHED) && node->source.places && !state.failed) {
         const size_t bytes =
             sizeof(markdown_core_places) + node->source.places->count * sizeof(markdown_core_source_place);
         view->source.places = markdown_core_node_pool_bytes(pool, bytes);
@@ -788,6 +879,7 @@ markdown_core_node *markdown_core_node_candidate(markdown_core_node_pool *pool, 
     copy->id = 0;
     copy->place = (markdown_core_place){0, 0};
     copy->source.places = NULL;
+    copy->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__PUBLISHED;
     copy->children = NULL;
     copy->child_count = 0;
     if (markdown_core_strbuf_owns(&root->content)) {

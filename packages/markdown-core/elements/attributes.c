@@ -395,6 +395,20 @@ bool markdown_core_attributes_own(markdown_core_attributes *view, const markdown
     return !(anchor && value->anchor.alloc) || markdown_core_chunk_to_cstr(&view->anchor);
 }
 
+void markdown_core_attributes_adopt(markdown_core_attributes *view, markdown_core_attributes *value) {
+    const bool records = view->records && view->records == value->records;
+    const bool classes = view->classes && view->classes == value->classes;
+    const bool anchor = view->anchor.data && view->anchor.data == value->anchor.data && !view->anchor.alloc;
+    if (value->storage && !view->storage && (records || classes || (anchor && !value->anchor.alloc))) {
+        view->storage = value->storage;
+        value->storage = NULL;
+    }
+    if (anchor && value->anchor.alloc) {
+        view->anchor.alloc = value->anchor.alloc;
+        value->anchor.alloc = 0;
+    }
+}
+
 /* The memo exists only once recognition ran (see the recogniser above): a
  * parser that never asked owns nothing and releases nothing. The scratch is
  * borrowed and released by its owner, and totals the work of every

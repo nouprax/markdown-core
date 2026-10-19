@@ -36,6 +36,14 @@ typedef struct {
     size_t count, capacity, parsed;
 } markdown_core_heading_collection;
 
+/* A CANDIDATE'S MARK of the headings (heading.c): the collection's count
+ * and how many were parsed as the mark found them, with the pending block's
+ * entry when it is a heading, and the registry's length then. */
+typedef struct {
+    markdown_core_heading_parse pending;
+    size_t count, parsed, records;
+} markdown_core_heading_mark;
+
 /* THE HEADINGS OF ONE PARSE (the heading element's parse record): each
  * heading as its block closed, the collection's count and how many were
  * parsed as the snapshot being taken found them
@@ -43,9 +51,10 @@ typedef struct {
  * the committed names (heading.c, THE COMMITTED NAMES): the names taken,
  * where the reading of the registry's ANCHOR records stands and how many it
  * read, how many headings are named, and the committed headings that show
- * another name, from the last snapshot and then from the one under way; and
- * the projection and lookup work the assignment of their anchors did, for
- * its complexity gate. */
+ * another name, from the last snapshot and then from the one under way; the
+ * marks of the candidates that wait, outermost first; and the projection
+ * and lookup work the assignment of their anchors did, for its complexity
+ * gate. */
 typedef struct {
     markdown_core_heading_collection headings;
     size_t snapshot_count, snapshot_parsed, snapshot_records;
@@ -53,6 +62,8 @@ typedef struct {
     size_t records_at, records_read, named;
     uint32_t *renamed;
     size_t renamed_count, renamed_capacity;
+    markdown_core_heading_mark *marks;
+    size_t mark_count, mark_capacity;
     size_t anchor_work;
 } markdown_core_heading_state;
 

@@ -167,6 +167,15 @@ static bool directive_opaque_view(const markdown_core_element *element, markdown
     return true;
 }
 
+static void directive_opaque_adopt(const markdown_core_element *element, markdown_core_node *view,
+                                   markdown_core_node *node) {
+    node_directive *made = view->opaque, *directive = node->opaque;
+    if (made->name.data == directive->name.data && !made->name.alloc) {
+        made->name.alloc = directive->name.alloc;
+        directive->name.alloc = 0;
+    }
+}
+
 /* Recognize the shared attribute grammar without constructing semantic
  * strings or records. The parser owns and accounts for recognition work. */
 static int scan_directive_attributes(markdown_core_parser *parser, unsigned char *data, bufsize_t len, bufsize_t *pos,
@@ -685,6 +694,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
     .opaque_alloc_func = directive_opaque_alloc,
     .opaque_free_func = directive_opaque_free,
     .opaque_view_func = directive_opaque_view,
+    .opaque_adopt_func = directive_opaque_adopt,
     .visit_owned_subtrees_func = visit_owned_subtrees,
     .terminates_text = ":",
     .dispatch = ":",

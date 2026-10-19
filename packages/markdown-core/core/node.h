@@ -329,9 +329,11 @@ enum markdown_core_node__internal_flags {
      * attributes wrote: it reserves no name, so releasing the heading
      * withdraws none (heading.c). */
     MARKDOWN_CORE_NODE__ANCHOR_COMPUTED = (1 << 11),
-    /* An open block a publish placed: its source holds the runs that
-     * publish made, which the next publish of it replaces (ast.c). */
-    MARKDOWN_CORE_NODE__PUBLISHED_OPEN = (1 << 12),
+    /* A node whose source holds the runs a publish made (ast.c): an open
+     * block's, which its close lets go and the next publish makes again, or
+     * a closed node's, which stand with its extent while the node is in the
+     * tree. */
+    MARKDOWN_CORE_NODE__PUBLISHED = (1 << 12),
 
     // The first bit an element may claim. Element flags are compile-time
     // constants owned by the element that uses them; there is no runtime
@@ -820,12 +822,11 @@ void markdown_core_node_swap(markdown_core_node *a, markdown_core_node *b);
  * `node`'s kind in a slot of `pool`'s, with a record and a payload of its
  * own, that VIEWS what `node` owns where its holder marks it -- its
  * attributes, the strings its record owns, the storage its element's payload
- * owns -- and holds a copy of its labels and of its places, but the places
- * of a block a publish placed open (PUBLISHED_OPEN), which it holds none
- * of. It holds `node`'s children array, content buffer and field nodes as
- * they are, and owns none of them: the lending hands each back before it
- * releases the view. Its scaffold is empty. NULL, having taken nothing, when
- * storage could not be had. */
+ * owns -- and holds a copy of its labels and of its places, and no places
+ * when its source holds runs (PUBLISHED). It holds `node`'s children array,
+ * content buffer and field nodes as they are, and owns none of them: the
+ * lending hands each back before it releases the view. Its scaffold is
+ * empty. NULL, having taken nothing, when storage could not be had. */
 markdown_core_node *markdown_core_node_view(markdown_core_node_pool *pool, const markdown_core_node *node);
 /* What `view` holds of the children, the content and the field nodes of
  * `node`, the node it views (markdown_core_node_view), let go: it holds none
@@ -833,6 +834,20 @@ markdown_core_node *markdown_core_node_view(markdown_core_node_pool *pool, const
  * the same field -- one it took since -- is released into it first. */
 void markdown_core_node_view_let_go(markdown_core_node_pool *pool, markdown_core_node *view,
                                     const markdown_core_node *node);
+/* Each field node `view` holds that `node`, the node it views, does not hold
+ * in the same field -- one it took since -- handed to `take` with its slot,
+ * which `take` empties as it takes the node. */
+void markdown_core_node_view_taken(markdown_core_node *view, const markdown_core_node *node,
+                                   markdown_core_owned_subtree_visitor take, void *context);
+/* Whether `node` holds `field` in one of its fields. */
+bool markdown_core_node_holds_field(const markdown_core_node *node, const markdown_core_node *field);
+/* A VIEW ADOPTS what it views: `view` takes every part of `node`'s it still
+ * holds -- the children array, the content buffer, the field nodes, the
+ * attribute value, the strings of its record and its element's storage --
+ * and owns everything it holds; `node` lets go of them and keeps only what
+ * the view replaced, the field nodes of which are released into `pool`, and
+ * the rest of which goes with `node`'s release. */
+void markdown_core_node_view_adopt(markdown_core_node_pool *pool, markdown_core_node *view, markdown_core_node *node);
 /* A CANDIDATE FOR AN INLINE ROOT COMPLETED AGAIN (blocks.c, A LOOKUP THAT
  * FOUND NOTHING): a node of `root`'s kind in a slot of `pool`'s, holding what
  * the block phase made of `root` and nothing its completion or its publish
@@ -840,7 +855,8 @@ void markdown_core_node_view_let_go(markdown_core_node_pool *pool, markdown_core
  * what the record owns -- and its content buffer, which it borrows
  * (BORROWS_CONTENT). A root holds no field root and no element payload, and
  * its children are inline content its completion makes. It has no id, and
- * no place or places until the caller gives them; its scaffold is empty.
+ * no place, places or runs until the caller gives them; its scaffold is
+ * empty.
  * NULL, having taken nothing, when storage could not be had. */
 markdown_core_node *markdown_core_node_candidate(markdown_core_node_pool *pool, const markdown_core_node *root);
 /* The storage `taker` borrows, made its own, and lent by `lender`, which

@@ -41,6 +41,20 @@ typedef enum {
     MARKDOWN_CORE_INLINE_FALLBACK
 } markdown_core_inline_precedence;
 
+/* What a line tells a candidate (blocks.c, THE CANDIDATES;
+ * `feed_candidate`), and what its decision is (`decide_candidate`). */
+typedef enum {
+    MARKDOWN_CORE_CANDIDATE_CONTINUES,
+    MARKDOWN_CORE_CANDIDATE_ENDS,
+    MARKDOWN_CORE_CANDIDATE_WAITS
+} markdown_core_candidate_step;
+
+typedef enum {
+    MARKDOWN_CORE_CANDIDATE_REJECT,
+    MARKDOWN_CORE_CANDIDATE_ACCEPT,
+    MARKDOWN_CORE_CANDIDATE_WAIT
+} markdown_core_candidate_decision;
+
 typedef enum {
     MARKDOWN_CORE_CONTENT_CONTAINER,
     MARKDOWN_CORE_CONTENT_PROSE,
@@ -165,6 +179,14 @@ struct markdown_core_element {
      * made. */
     void (*start_snapshot)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*end_snapshot)(const markdown_core_element_instance *, markdown_core_parser *);
+    /* A CANDIDATE'S MARK (blocks.c, THE CANDIDATES), taken as a commit holds
+     * at an opener's call with every block settled before it completed: the
+     * accept of the candidate at `index` among those that wait puts what the
+     * document's elements keep back as it was at the mark, and its drop
+     * forgets the mark. */
+    void (*mark_candidate)(const markdown_core_element_instance *, markdown_core_parser *);
+    void (*undo_candidate)(const markdown_core_element_instance *, markdown_core_parser *, size_t);
+    void (*drop_candidate)(const markdown_core_element_instance *, markdown_core_parser *, size_t);
     /* The last step of the parse: the tree is final, and the owner publishes
      * it (ids, extents, definition tables). */
     void (*publish_document)(const markdown_core_element_instance *, markdown_core_parser *);
@@ -258,6 +280,25 @@ struct markdown_core_element {
      * (see the typedef); required of an element whose blocks contain blocks. */
     markdown_core_continues_block_func continues_block;
     markdown_core_open_block_func try_opening_block;
+    /* THE CANDIDATES (blocks.c): an opener that asks for candidates
+     * (markdown_core_parser_request_candidate) is fed each later line its
+     * candidate's holder carries, after `blanks` blank lines, with `first`
+     * and `indent` its first non-space byte and its indentation after the
+     * prefixes; the line is NULL when the lines read so far end after the
+     * blank lines, and `unfinished` when the text has not finished it, whose
+     * bytes past the prefixes it reads only as far as they decide. It
+     * answers that the line continues the construct, and then in `*ends`
+     * whether the opener could claim the lines through it were the text to
+     * end after it; that the construct ended before it; or that the
+     * unfinished line does not tell yet. `decide_candidate` decides as the
+     * opener would at its call (markdown_core_parser_candidate_start): ACCEPT
+     * when it would claim lines, REJECT when it would not, and WAIT when
+     * more text may follow and the decision read where the text ends. */
+    markdown_core_candidate_step (*feed_candidate)(const markdown_core_element_instance *, markdown_core_parser *,
+                                                   const int *, const markdown_core_chunk *, int, int, int, bool,
+                                                   bool *);
+    markdown_core_candidate_decision (*decide_candidate)(const markdown_core_element_instance *, markdown_core_parser *,
+                                                         const int *);
     /* What `try_opening_block` needs on the line before it is worth entering. */
     markdown_core_block_gate open_block_gate;
     /* What `try_interrupting_block` needs on a non-indented line. */
@@ -355,6 +396,7 @@ struct markdown_core_element {
     markdown_core_opaque_alloc_func opaque_alloc_func;
     markdown_core_opaque_free_func opaque_free_func;
     markdown_core_opaque_view_func opaque_view_func;
+    markdown_core_opaque_adopt_func opaque_adopt_func;
     markdown_core_visit_owned_subtrees_func visit_owned_subtrees_func;
     /* The bytes of the element's parse record and of its record in each
      * inline run (markdown-core-element-api.h, "AN ELEMENT AS ONE PARSE HOLDS

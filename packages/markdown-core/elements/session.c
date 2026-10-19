@@ -59,8 +59,8 @@ static markdown_core_status session_publish(markdown_core_session *session, mark
  * settled in them, then publishes a snapshot of the whole text, which leaves
  * the next commit point. */
 static markdown_core_status session_snapshot(markdown_core_session *session) {
-    if (!markdown_core_parser_commit(session->committed, session_source(session), session->size,
-                                     session->commit_point) ||
+    if (!markdown_core_parser_commit(session->committed, session_source(session), session->size, session->commit_point,
+                                     false) ||
         !markdown_core_parser_complete(session->committed)) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
@@ -80,7 +80,7 @@ static markdown_core_status session_snapshot(markdown_core_session *session) {
 /* Commits every line of the text and publishes the committed parse ended
  * there, which ends the session's appends. */
 static markdown_core_status session_finalize(markdown_core_session *session) {
-    markdown_core_parser_commit(session->committed, session_source(session), session->size, session->size);
+    markdown_core_parser_commit(session->committed, session_source(session), session->size, session->size, true);
     session->finalized = true;
     markdown_core_node *root = markdown_core_parser_finalize(session->committed);
     session->document.root = root;
