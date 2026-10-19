@@ -336,7 +336,8 @@ static bool S_kind_accepts_lines(const markdown_core_kind_record *kind, markdown
             kind->structure->element->accepts_lines_func(kind->structure->element, node));
 }
 /* Whether a node of `kind` takes a text line: as its content, or as prose. */
-static inline bool S_kind_takes_text(const markdown_core_kind_record *kind, markdown_core_node *node) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_kind_takes_text(const markdown_core_kind_record *kind,
+                                                                              markdown_core_node *node) {
     return S_kind_accepts_lines(kind, node) || (kind->flags & MARKDOWN_CORE_KIND_PROSE);
 }
 static bool S_kind_contains_inlines(const markdown_core_kind_record *kind, markdown_core_node *node) {
@@ -2854,8 +2855,8 @@ markdown_core_line_facts *markdown_core_parser_extend_line_facts(markdown_core_p
  * does not end with LF can end in a long line, so the search compares a
  * machine word at a time against the two bytes, as S_source_span_end does
  * forward, and steps bytewise only through the word that holds the
- * boundary. */
-static size_t S_complete_end(const unsigned char *source, size_t length) {
+ * boundary. One of the driver's steps out of its line loop (THE DRIVER). */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) size_t S_complete_end(const unsigned char *source, size_t length) {
     size_t end = length;
     if (end && source[end - 1] == '\n') {
         return end;
@@ -2948,6 +2949,60 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_read_line(markdown
     }
 }
 
+/* The commit stops in the root, before line 1: the reading of the envelope
+ * requested it (THE CANDIDATES). */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_stop_at_root(markdown_core_parser *parser) {
+    parser->stream->stop = (markdown_core_line_stop){.container = parser->root};
+}
+
+/* How a step of the driver out of its line loop leaves the call: reading
+ * lines on, reading again from the envelope, where a candidate's accept put
+ * the commit back, or stopped. */
+typedef enum { S_DRIVER_READS_ON, S_DRIVER_RESTARTS, S_DRIVER_STOPS } S_driver_step;
+
+/* THE LINE A SESSION HOLDS, read on from where the last commit stopped in
+ * it, and held again when the text still ends in it. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) S_driver_step
+    S_read_held_line(markdown_core_parser *parser, const unsigned char *source, size_t length, size_t limit) {
+    markdown_core_stream *const stream = parser->stream;
+    const size_t index = (size_t)(parser->line_number - parser->input.first_line);
+    markdown_core_input_line *found = &parser->input.lines[index];
+    bool hold = false;
+    if (!parser->snapshot) {
+        if (stream->mark_count &&
+            S_feed(parser, parser->line_number, source + markdown_core_input_line_next(parser, found))) {
+            return S_DRIVER_RESTARTS;
+        }
+        found = &parser->input.lines[index];
+        stream->held = false;
+        hold = found->start >= limit;
+    }
+    const markdown_core_line_stop from = stream->stop;
+    S_meet_from_stop(parser);
+    S_read_line(parser, source, length, found, &from, hold, true);
+    /* A line held again ends the commit, and so does a request. */
+    return hold || stream->requested ? S_DRIVER_STOPS : S_DRIVER_READS_ON;
+}
+
+/* The line that starts where a commit more text may follow stops, input
+ * line `index`, read and held: true when a candidate's accept put the commit
+ * back instead. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_hold_next_line(markdown_core_parser *parser,
+                                                                 const unsigned char *source, size_t length,
+                                                                 size_t index) {
+    markdown_core_input_line *found = S_extend_source_lines(parser, index);
+    if (found && parser->stream->mark_count) {
+        if (S_feed(parser, parser->line_number + 1, source + markdown_core_input_line_next(parser, found))) {
+            return true;
+        }
+        found = &parser->input.lines[index];
+    }
+    if (found) {
+        S_read_line(parser, source, length, found, NULL, true, true);
+    }
+    return false;
+}
+
 /* THE DRIVER: reads the lines of `source` as the active input. A cell's
  * content is an input of its own, installed and read whole. The document's
  * text is installed at its first commit and grows at its end from one commit
@@ -2957,7 +3012,10 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_read_line(markdown
  * at line 0 (THE CANDIDATES). A commit more text may follow reads the lines
  * the text has finished, to `limit`, and holds the line that starts there
  * once a line before it has been read with the envelope; the next reads on
- * in it first (THE LINE A SESSION HOLDS). */
+ * in it first (THE LINE A SESSION HOLDS). What a call does once -- find
+ * where the complete text ends, stop in the root, read on in the held line
+ * and hold the next -- is out of line, so the loop that reads each line has
+ * the driver's frame to itself. */
 static void S_parse_source(markdown_core_parser *parser, const unsigned char *source, size_t length) {
     assert(length <= MARKDOWN_CORE_SOURCE_CAPACITY);
     bool at_root = markdown_core_parser_block_root(parser) == parser->root;
@@ -2994,28 +3052,16 @@ read:
         }
         document->element->read_document_prefix(document, parser);
         if (stream && stream->requested) {
-            stream->stop = (markdown_core_line_stop){.container = parser->root};
+            S_stop_at_root(parser);
             return;
         }
     }
     if (stream && stream->held) {
-        const size_t index = (size_t)(parser->line_number - parser->input.first_line);
-        markdown_core_input_line *found = &parser->input.lines[index];
-        bool hold = false;
-        if (!parser->snapshot) {
-            if (stream->mark_count &&
-                S_feed(parser, parser->line_number, source + markdown_core_input_line_next(parser, found))) {
-                goto read;
-            }
-            found = &parser->input.lines[index];
-            stream->held = false;
-            hold = found->start >= limit;
+        const S_driver_step step = S_read_held_line(parser, source, length, limit);
+        if (step == S_DRIVER_RESTARTS) {
+            goto read;
         }
-        const markdown_core_line_stop from = stream->stop;
-        S_meet_from_stop(parser);
-        S_read_line(parser, source, length, found, &from, hold, true);
-        /* A line held again ends the commit, and so does a request. */
-        if (hold || stream->requested) {
+        if (step == S_DRIVER_STOPS) {
             return;
         }
     }
@@ -3024,18 +3070,9 @@ read:
         size_t index = (size_t)(parser->line_number + 1 - parser->input.first_line);
         size_t start = index < parser->input.line_count ? parser->input.lines[index].start : parser->input.scanned;
         if (start >= limit) {
-            if (stream && !parser->snapshot && start == limit && start < length && parser->line_number) {
-                markdown_core_input_line *found = S_extend_source_lines(parser, index);
-                if (found && stream->mark_count) {
-                    if (S_feed(parser, parser->line_number + 1,
-                               source + markdown_core_input_line_next(parser, found))) {
-                        goto read;
-                    }
-                    found = &parser->input.lines[index];
-                }
-                if (found) {
-                    S_read_line(parser, source, length, found, NULL, true, true);
-                }
+            if (stream && !parser->snapshot && start == limit && start < length && parser->line_number &&
+                S_hold_next_line(parser, source, length, index)) {
+                goto read;
             }
             break;
         }
@@ -5049,9 +5086,12 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool add_text_to_containe
  * it. Every step of the line is taken once, in the commit that
  * decides it, as a parse of any longer text takes it. */
 
-/* Keeps where the line machine stopped in the line a session holds. */
-static void S_hold(markdown_core_parser *parser, markdown_core_line_step step, markdown_core_node *container,
-                   bool all_matched, bool opened, S_opens opens) {
+/* Keeps where the line machine stopped in the line a session holds: once
+ * a commit, out of line as the driver's steps out of its line loop are
+ * (THE DRIVER). */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_hold(markdown_core_parser *parser, markdown_core_line_step step,
+                                                       markdown_core_node *container, bool all_matched, bool opened,
+                                                       S_opens opens) {
     parser->stream->stop = (markdown_core_line_stop){
         .container = container,
         .depth = opens.depth,

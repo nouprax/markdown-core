@@ -86,7 +86,9 @@ static int read_block_line(void *context, markdown_core_chunk *input, int *first
  * later line under the same prefixes closes it. */
 static bool comment_reads(const markdown_core_element_instance *self, markdown_core_parser *parser,
                           markdown_core_node *parent, markdown_core_chunk *line, int first, bool *undecided) {
-    comment_lines lines = {.undecided = false};
+    /* The lookahead's beginning writes the lookahead whole. */
+    comment_lines lines;
+    lines.undecided = false;
     *undecided = false;
     if (!markdown_core_parser_lookahead_begin(parser, parent, MARKDOWN_CORE_NODE_COMMENT_BLOCK, &lines.lookahead)) {
         return false;

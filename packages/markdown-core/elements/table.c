@@ -309,6 +309,12 @@ static markdown_core_node *S_open_table(markdown_core_parser *parser, markdown_c
         }
         return paragraph;
     }
+    /* A parent that holds no table refuses it before anything is made, so
+     * the paragraph stays whole for the grammar after it; the change of kind
+     * refuses it so for a paragraph that becomes the table. */
+    if (!markdown_core_node_can_contain_type(parent, MARKDOWN_CORE_NODE_TABLE)) {
+        return NULL;
+    }
     markdown_core_node *table = S_header_table(parser, paragraph, text, header);
     if (!table) {
         return NULL;
@@ -356,13 +362,8 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
         return NULL;
     }
 
-    /* Decide before allocating, so refusal leaves the complete paragraph
-     * available to grammar. */
-    markdown_core_node *parent = markdown_core_parser_parent(parser, paragraph);
-    if (!markdown_core_node_can_contain_type(parent, MARKDOWN_CORE_NODE_TABLE)) {
-        return NULL;
-    }
-    markdown_core_node *node = S_open_table(parser, paragraph, parent, text, header_row.paragraph_offset);
+    markdown_core_node *node = S_open_table(parser, paragraph, markdown_core_parser_parent(parser, paragraph), text,
+                                            header_row.paragraph_offset);
     if (!node) {
         return NULL;
     }
