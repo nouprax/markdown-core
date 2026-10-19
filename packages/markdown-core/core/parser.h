@@ -129,7 +129,7 @@ typedef struct markdown_core_parser_input {
      * at or past it reads the end of the input
      * (markdown_core_parser_extend_source_lines). A cell's content is
      * complete when it is read, so this is its end. */
-    const unsigned char *complete;
+    size_t complete;
     struct markdown_core_input_line *lines;
     struct markdown_core_normalized_line *normalized;
     struct markdown_core_line_facts *facts;
@@ -178,9 +178,11 @@ typedef struct markdown_core_holder {
     uint32_t count;
 } markdown_core_holder;
 
-/* AN OPEN BLOCK BELOW THE BLOCKS A SNAPSHOT LENT, as the snapshot found it
- * (blocks.c, THE LENDING): how many children it held, the last of them, its
- * flags, where it ended and its anchor, which the snapshot writes in place. */
+/* A ROOM: the open block below the blocks a snapshot lent that the lending
+ * reached, as the lending found it (blocks.c, THE LENDING): how many
+ * children it held, the last of them, its flags, where it ended and its
+ * anchor, which the snapshot writes in place as the blocks it lent settle
+ * into it. */
 typedef struct markdown_core_room {
     struct markdown_core_node *node, *last;
     uint32_t count, end;
@@ -195,7 +197,8 @@ typedef struct markdown_core_room {
  * kept of the node's own relations, plus one, or 0. A node a snapshot made
  * is the record's `node`, which the record owns once the next take-back
  * unhooks it (blocks.c, THE LENDING); a node that stays in the tree, which
- * the commits keep or release, is no record's node. */
+ * the commits keep or release, is no record's node. A free record is linked
+ * through `next`. */
 typedef struct markdown_core_tail_record {
     struct markdown_core_node *node;
     uint64_t id;
@@ -203,12 +206,13 @@ typedef struct markdown_core_tail_record {
     uint16_t kind;
 } markdown_core_tail_record;
 
-/* The records one publish kept, and the first of those it kept of the
- * root's relations, plus one, or 0. */
+/* The records the publishes keep, the root's first: its `held` is the first
+ * record of the root's relations. The free ones are linked from `free`,
+ * plus one, or 0. */
 typedef struct markdown_core_tail_records {
     markdown_core_tail_record *items;
     size_t count, capacity;
-    uint32_t root;
+    uint32_t free;
 } markdown_core_tail_records;
 
 /* The nodes `records` owns, released, and the records emptied. */
@@ -304,20 +308,21 @@ typedef struct markdown_core_stream {
      * finalize's, which no append follows. */
     bool ends;
     /* THE LENDING of the last snapshot (blocks.c): the blocks it lent, in
-     * the order it lent them, the open blocks below them as it found them,
-     * from the one that holds the first lent block down to the root, and
-     * the open block the lending reaches next, NULL once it lent the root.
-     * The published document reads the lent blocks until the next
-     * take-back. */
+     * the order it lent them, the rooms of the open blocks the lending
+     * reached, in the order it reached them, and the open block the lending
+     * reaches next, NULL once it lent the root. The published document
+     * reads the lent blocks until the next take-back. */
     markdown_core_lend *lends;
     size_t lend_count, lend_capacity;
     markdown_core_room *rooms;
     size_t room_count, room_capacity;
     struct markdown_core_node *boundary;
-    /* THE RECORDS (ast.c): those the last publish kept, `records[last]`,
-     * and room for those the next keeps. */
-    markdown_core_tail_records records[2];
-    unsigned last;
+    /* THE WALK ROOT (blocks.c): the open block the commits changed since
+     * the last publish nearest the root, which is on the builder stack, or
+     * NULL; and the block the snapshot's publish walks from. */
+    struct markdown_core_node *changed, *walk_root;
+    /* THE RECORDS (ast.c). */
+    markdown_core_tail_records records;
     /* The definitions the published document holds as committed (ast.c),
      * room for those a publish lists as it walks, and the definitions the
      * candidates of a finalize list, which join the committed tables once
@@ -1018,7 +1023,7 @@ static inline bool markdown_core_parser_input_ends(markdown_core_parser *parser,
  * (markdown_core_block_lookahead). The facts a lookahead keeps for a run of
  * blank lines hold finished lines only. */
 static inline const unsigned char *markdown_core_parser_complete_end(const markdown_core_parser *parser) {
-    return parser->input.complete;
+    return parser->input.source + parser->input.complete;
 }
 
 /* Optional state is sparse within the input index: properties and ordinary

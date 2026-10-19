@@ -258,13 +258,17 @@ struct markdown_core_element {
     /* THE FOLD HOOK (docs/plans/2026-09-29-incremental-parsing.md, 5.6),
      * asked of a block of a kind in `fold_kinds` as a child settles into it
      * (blocks.c, A BLOCK SETTLES), after the child's blank-line answer is
-     * folded into a block whose answer is its children's: it folds what the
-     * block's own values take from the child into the block, so that what
-     * the block reads as it closes or completes is there without a walk of
-     * its children, and a snapshot that closes a copy of it adds only the
-     * children the snapshot settled. */
-    void (*fold_child)(const markdown_core_element_instance *, markdown_core_parser *, markdown_core_node *,
-                       const markdown_core_node *);
+     * folded into a block whose answer is its children's: the block's flags
+     * `flags` with what they take from a child whose flags are `child`, so
+     * that what the block reads as it closes or completes is there without a
+     * walk of its children. It writes nothing of the block but the values
+     * the block publishes from the flags it returns: a commit writes the
+     * result as the block's flags, and a snapshot that ends the open blocks
+     * below its stop folds each into the block below without writing their
+     * flags (blocks.c, THE LENDING). */
+    markdown_core_node_internal_flags (*fold_child)(const markdown_core_element_instance *, markdown_core_node *,
+                                                    markdown_core_node_internal_flags,
+                                                    markdown_core_node_internal_flags);
     /* The block kinds the fold hook is asked at, kinds whose structure is
      * the element, terminated by MARKDOWN_CORE_NODE_NONE; an element with a
      * fold hook declares at least one, and one without declares NULL. */

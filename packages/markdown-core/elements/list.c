@@ -217,20 +217,19 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *
  * once another item follows. The list is laid out as each item folds, so it
  * is laid out as it closes and as a snapshot ends it open, its last item
  * having folded into it. */
-static void fold_child(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                       markdown_core_node *node, const markdown_core_node *child) {
+static markdown_core_node_internal_flags fold_child(const markdown_core_element_instance *self,
+                                                    markdown_core_node *node, markdown_core_node_internal_flags flags,
+                                                    markdown_core_node_internal_flags child) {
     (void)self;
-    (void)parser;
     assert(node->kind == MARKDOWN_CORE_NODE_LIST);
-    markdown_core_node_internal_flags flags = node->flags;
-    if (flags & MARKDOWN_CORE_NODE__LIST_LOOSE_FOLLOWED || child->flags & MARKDOWN_CORE_NODE__BLANK_SPACED) {
+    if (flags & MARKDOWN_CORE_NODE__LIST_LOOSE_FOLLOWED || child & MARKDOWN_CORE_NODE__BLANK_SPACED) {
         flags |= MARKDOWN_CORE_NODE__LIST_LOOSE;
     }
     const markdown_core_node_internal_flags ends = MARKDOWN_CORE_NODE__BLANK_FOLDED | MARKDOWN_CORE_NODE__ENDS_BLANK;
-    const bool followed_loose = (child->flags & MARKDOWN_CORE_NODE__LAST_LINE_BLANK) || (child->flags & ends) == ends;
-    node->flags = (markdown_core_node_internal_flags)((flags & ~MARKDOWN_CORE_NODE__LIST_LOOSE_FOLLOWED) |
-                                                      (followed_loose ? MARKDOWN_CORE_NODE__LIST_LOOSE_FOLLOWED : 0));
+    const bool followed_loose = (child & MARKDOWN_CORE_NODE__LAST_LINE_BLANK) || (child & ends) == ends;
     node->as.list->tight = !(flags & MARKDOWN_CORE_NODE__LIST_LOOSE);
+    return (markdown_core_node_internal_flags)((flags & ~MARKDOWN_CORE_NODE__LIST_LOOSE_FOLLOWED) |
+                                               (followed_loose ? MARKDOWN_CORE_NODE__LIST_LOOSE_FOLLOWED : 0));
 }
 
 static bool markdown_core_list_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
