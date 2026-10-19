@@ -1789,6 +1789,19 @@ static int push_owned_tree(markdown_core_node **slot, void *context) {
     return push_owned_root(slot ? *slot : NULL, context);
 }
 
+/* The explicit anchor `node` holds reserved as starting at `start`: its own,
+ * not one the headings computed for it. A node reserves it once it is
+ * complete, and a block the snapshot ends without closing (S_close_tail) as
+ * it ends. False when storage could not be had. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_reserve_anchor(markdown_core_parser *parser,
+                                                                             const markdown_core_node *node,
+                                                                             uint32_t start) {
+    const markdown_core_chunk *anchor = &node->attributes.anchor;
+    return !anchor->len || (node->flags & MARKDOWN_CORE_NODE__ANCHOR_COMPUTED) ||
+           markdown_core_registry_declare(&parser->registry, MARKDOWN_CORE_REGISTRY_ANCHOR, anchor->data, anchor->len,
+                                          start);
+}
+
 /* What completion does at a node's ENTER, in the frame at `index`: it parses
  * the node's inline content when the node is the queued root (see
  * owned_tree_frame; the content of a kind the record marks PARSES, not
@@ -1835,10 +1848,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_enter_node(owned_tr
      * where the queued root it is in starts. A FormulaBlock a fence became
      * holds no attributes; a Text holds none either, so the siblings
      * consolidation absorbs reserve none. */
-    const markdown_core_chunk *anchor = &node->attributes.anchor;
-    if (anchor->len && !(node->flags & MARKDOWN_CORE_NODE__ANCHOR_COMPUTED) &&
-        !markdown_core_registry_declare(&parser->registry, MARKDOWN_CORE_REGISTRY_ANCHOR, anchor->data, anchor->len,
-                                        parser->completing->place.start)) {
+    if (!S_reserve_anchor(parser, node, parser->completing->place.start)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return -1;
     }
@@ -2574,10 +2584,10 @@ static void S_take_back(markdown_core_parser *parser, bool release) {
 /* The end of the text as the snapshot reads it: every block above the
  * lending's reach closes and settles into it, the blocks of the cells
  * queued for them are read, and the open blocks from there down to the
- * root end there without closing -- each takes its end, what its close hook
- * makes of its children, and folds into the block below as its children
- * fold -- and join no queue. With nothing below the stop, the document
- * closes. */
+ * root end there without closing -- each takes its end and what its close
+ * hook makes of its children, reserves its explicit anchor as a complete
+ * block does, and folds into the block below as its children fold -- and
+ * join no queue. With nothing below the stop, the document closes. */
 static void S_close_tail(markdown_core_parser *parser) {
     markdown_core_node *boundary = parser->stream->boundary;
     if (!boundary) {
@@ -2593,6 +2603,10 @@ static void S_close_tail(markdown_core_parser *parser) {
         const markdown_core_element_instance *structure = markdown_core_parser_block_kind(parser, node)->structure;
         if (structure && structure->element->close_block) {
             structure->element->close_block(structure, parser, node, below);
+        }
+        if (!S_reserve_anchor(parser, node, node->place.start)) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            return;
         }
         if (below) {
             const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, below);

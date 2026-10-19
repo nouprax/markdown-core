@@ -11119,8 +11119,8 @@ static const markdown_core_node *first_heading(const markdown_core_document *doc
 }
 
 /* A snapshot's headings take their anchors as a fresh parse's do: every
- * explicit anchor of the text is reserved first, a later one included
- * (docs/specs/dialect/anchors.md). */
+ * explicit anchor of the text is reserved first, a later one included, and
+ * one of a block the text ends in too (docs/specs/dialect/anchors.md). */
 static void session_snapshot_anchors(test_batch_runner *runner) {
     static const struct {
         const char *source;
@@ -11128,6 +11128,8 @@ static void session_snapshot_anchors(test_batch_runner *runner) {
     } cases[] = {
         {":::note{#x}\n# x\n:::\n", "a heading inside a container avoids the container's anchor"},
         {"- # x\n\n#x#\n", "a heading avoids an explicit anchor written after it"},
+        {"- # x\n\n:::note{#x}\nbody\n", "a heading avoids the anchor of a container the text ends in"},
+        {"- # x\n\n- a #x#\n", "a heading avoids the anchor an open item takes from its paragraph"},
     };
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         markdown_core_session *session = NULL;
