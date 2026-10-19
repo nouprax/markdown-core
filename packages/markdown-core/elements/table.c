@@ -1330,7 +1330,7 @@ enum {
 };
 
 static markdown_core_line_facts *table_search_fact(table_source *source, size_t index) {
-    if (source->decides || (source->aside && source->parser->end_seen)) {
+    if (source->decides || (source->aside && markdown_core_parser_end_read(source->parser))) {
         return NULL;
     }
     table_source_line *line = &source->lines[index];
@@ -2353,7 +2353,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool table_grammar_admits
     const unsigned char *end = parser->input.source + line->end;
     /* A line the text has not finished ends where the input does: a reading
      * of it to its end reads the end. */
-    const bool unfinished = parser->input.source + line->start >= parser->input.complete;
+    const bool unfinished = parser->input.source + line->start >= markdown_core_parser_finished_end(parser);
     const unsigned char *byte = cursor;
     while (byte < end && markdown_core_is_space_or_tab(*byte)) {
         byte++;
@@ -2790,8 +2790,7 @@ static bool table_opener_reads(table_workspace *workspace, markdown_core_parser 
         return false;
     }
     if (waits) {
-        source->lookahead.limit = parser->input.source + parser->input.size;
-        source->lookahead.waits = true;
+        markdown_core_parser_lookahead_wait(&source->lookahead);
     }
     bool matched = false;
     if (table_source_push(source, table_cursor_line(parser, input, length))) {

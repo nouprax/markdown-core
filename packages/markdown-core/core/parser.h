@@ -935,7 +935,8 @@ static inline void markdown_core_parser_see_end(markdown_core_parser *parser) {
  * candidate's decision, and an opener's call in a commit more text may
  * follow that makes its call a candidate when it reads the end, read it
  * without the commit recording it. `set_end_aside` keeps what the parse
- * recorded and clears it; `put_end_back` puts it back and answers whether
+ * recorded and clears it; `end_read` answers whether the reading has read
+ * the end so far; `put_end_back` puts the record back and answers whether
  * the reading read the end. */
 typedef struct {
     bufsize_t at;
@@ -947,6 +948,8 @@ static inline markdown_core_end_aside markdown_core_parser_set_end_aside(markdow
     parser->end_seen = false;
     return aside;
 }
+
+static inline bool markdown_core_parser_end_read(const markdown_core_parser *parser) { return parser->end_seen; }
 
 static inline bool markdown_core_parser_put_end_back(markdown_core_parser *parser, markdown_core_end_aside aside) {
     const bool read = parser->end_seen;
@@ -962,6 +965,17 @@ static inline bool markdown_core_parser_input_ends(markdown_core_parser *parser,
     }
     markdown_core_parser_see_end(parser);
     return true;
+}
+
+/* WHERE THE LINES THE TEXT HAS FINISHED END (`complete`): a line that
+ * starts at or past it is one the text has not finished, and asking here
+ * reads nothing of the end. A reading that reads such a line to its end
+ * reads the end (markdown_core_parser_see_end); a reading that can wait
+ * waits on it instead, or reads it only as far as its bytes decide
+ * (markdown_core_block_lookahead). The facts a lookahead keeps for a run of
+ * blank lines hold finished lines only. */
+static inline const unsigned char *markdown_core_parser_finished_end(const markdown_core_parser *parser) {
+    return parser->input.complete;
 }
 
 /* Whether the end of the active input is the end of its text (blocks.c, THE
@@ -1044,6 +1058,15 @@ typedef struct {
     bool waits;
     bool waited;
 } markdown_core_block_lookahead;
+
+/* A reading that can wait at the end of the input: an opener's call in a
+ * commit more text may follow, and its decision as a candidate, read up to
+ * the input's end and wait there, reading a line the text has not finished
+ * only as far as its bytes decide (`limit` and `waits`). */
+static inline void markdown_core_parser_lookahead_wait(markdown_core_block_lookahead *lookahead) {
+    lookahead->limit = lookahead->parser->input.source + lookahead->parser->input.size;
+    lookahead->waits = true;
+}
 
 /* Stable source-coordinate ordering, shared by deferred nodes and cell geometry. */
 void markdown_core_source_order_dispose(markdown_core_source_order *workspace);

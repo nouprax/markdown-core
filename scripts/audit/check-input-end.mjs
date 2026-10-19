@@ -17,7 +17,12 @@
  * read, and the record -- is read only by the entry, the line index, the
  * driver that installs an input, the snapshot's mark, which keeps the
  * commit's view while the snapshot reads on and puts it back, and the commit
- * point.
+ * point; and for the candidates (blocks.c, THE CANDIDATES) by the reading
+ * that sets the end aside, which keeps the record and tells whether it read
+ * the end, by where the lines the text has finished end, which a reading
+ * compares a line with without reading the end, by the reading that waits at
+ * the end, and by the candidates' feed, which feeds them to the end and
+ * decides one that waited again once the end moves.
  */
 
 import fs from "node:fs";
@@ -30,21 +35,31 @@ const pkg = path.join(root, "packages/markdown-core");
 
 const END_VIEW = /\bparser->(input\.(size|complete|scanned)|end_seen_at|end_seen)\b/g;
 
-/** The functions that own the end: the entry and its record (parser.h), the
- * line index's frontier, the physical-line scanner, the line index's entry
- * for readers, the driver that installs an input, the snapshot's mark and
- * its rollback, and the commit point the record leaves (blocks.c). */
+/** The functions that own the end: the entry and its record, the reading
+ * that sets the end aside, where the finished lines end, the reading that
+ * waits at the end (parser.h), the line index's frontier, the physical-line
+ * scanner, the line index's entry for readers, the driver that installs an
+ * input, the snapshot's mark and the put-back a rollback and a candidate's
+ * undo share, the commit point the record leaves, and the candidates' feed
+ * and the snapshot's feed of them to the end (blocks.c). */
 const OWNERS = new Set([
     "core/parser.h:markdown_core_parser_see_end",
     "core/parser.h:markdown_core_parser_input_ends",
+    "core/parser.h:markdown_core_parser_set_end_aside",
+    "core/parser.h:markdown_core_parser_end_read",
+    "core/parser.h:markdown_core_parser_put_end_back",
+    "core/parser.h:markdown_core_parser_finished_end",
+    "core/parser.h:markdown_core_parser_lookahead_wait",
     "core/parser.h:markdown_core_input_line_next",
     "core/blocks.c:S_scan_line",
     "core/blocks.c:S_extend_source_lines",
     "core/blocks.c:markdown_core_parser_extend_source_lines",
     "core/blocks.c:S_parse_source",
     "core/blocks.c:S_mark",
-    "core/blocks.c:S_rollback",
-    "core/blocks.c:markdown_core_parser_commit_point"
+    "core/blocks.c:S_restore",
+    "core/blocks.c:markdown_core_parser_commit_point",
+    "core/blocks.c:S_feed",
+    "core/blocks.c:S_candidates_see_end"
 ]);
 
 function librarySources() {
