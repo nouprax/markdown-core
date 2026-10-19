@@ -2155,7 +2155,11 @@ typedef struct {
     size_t block_input_count, block_input_cursor;
 } S_snapshot_mark;
 
-static void S_mark(const markdown_core_parser *parser, S_snapshot_mark *mark) {
+/* A snapshot takes a mark and rolls back to it on every append, so the
+ * mark, the restore and the rollback stay in their callers; a candidate's
+ * making and undo share them. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_mark(const markdown_core_parser *parser,
+                                                                   S_snapshot_mark *mark) {
     *mark = (S_snapshot_mark){
         .root = parser->root,
         .block_root = parser->block_root,
@@ -2196,7 +2200,8 @@ static void S_mark(const markdown_core_parser *parser, S_snapshot_mark *mark) {
 /* Puts back the parser's state as `mark` found it: the builders and the
  * root, the line state, the content map, the registry, the completion queue
  * and the cell inputs. */
-static void S_restore(markdown_core_parser *parser, const S_snapshot_mark *mark) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_restore(markdown_core_parser *parser,
+                                                                      const S_snapshot_mark *mark) {
     parser->root = mark->root;
     parser->block_root = mark->block_root;
     parser->current = mark->current;
@@ -2252,7 +2257,8 @@ static void S_drop_facts(markdown_core_parser_input *input, size_t first, size_t
  * lines it made. The container and table
  * facts of those lines go too: they name blocks the snapshot made, which
  * the next take-back unhooks. */
-static void S_rollback(markdown_core_parser *parser, const S_snapshot_mark *mark) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_rollback(markdown_core_parser *parser,
+                                                                       const S_snapshot_mark *mark) {
     S_restore(parser, mark);
     markdown_core_parser_input *input = &parser->input;
     input->mapped = mark->mapped;
