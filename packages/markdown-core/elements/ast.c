@@ -542,18 +542,17 @@ static markdown_core_place runs_window(const markdown_core_node *node, uint32_t 
  *
  * Every other node the walk meets takes its id by the old node it CONTINUES:
  * the root continues the root, and any other node an old node of its owner's
- * old relations -- what the last publish recorded of its owner past the
- * FINAL prefix (THE RECORDS), or the relations of the old node its owner
- * continues, a node the last snapshot made, which its document held and the
- * take-back unhooked. A node of its kind whose source holds an old node's
+ * old relations -- what the last publish recorded of the old node its owner
+ * continues, past the FINAL prefix (THE RECORDS), or, when that old node is
+ * one the last snapshot made, which its document held and the take-back
+ * unhooked, its relations. A node of its kind whose source holds an old node's
  * anchor -- the first byte of its source, which an append leaves at its
  * offset -- continues the earliest such old node not yet passed in the old
  * relation paired with its own. A node with no source has no anchor. Both
  * relations are in source order, so one cursor into the old relation moves
  * forward with the new one, past each old node matched and those before it
  * (publish_match). A node that continues an old node takes its id, and its
- * relations are matched against the old node's: a persisting node that
- * continues itself, against what the last publish recorded of it. One that
+ * relations are matched against the old node's old relations. One that
  * continues none takes the next id, and so does everything below it that
  * does not persist (publish_fresh). A fresh parse continues nothing, and
  * every node takes the next id in walk order.
@@ -567,19 +566,22 @@ static markdown_core_place runs_window(const markdown_core_node *node, uint32_t 
  * nothing, and only a node that continues itself holds FINAL items.
  *
  * THE RECORDS (parser.h, markdown_core_tail_record). The publish records each
- * item an open or lent block holds that it does not make FINAL -- an item
- * that is not COMMITTED, in a relation whose holder is not COMMITTED -- with
- * its id and kind, where its source lay and the relation it was in. Those
- * that are neither open nor lent are nodes the snapshot made, which leave
- * the tree at the next take-back (blocks.c, THE LENDING); the records own
- * them from then on, and the next publish matches against them and releases
- * them once it is done. An open or lent block stays in the tree, and its
- * record keeps no hold on it: the commits may release it before the next
- * publish. A block's records are linked from its scaffold (node.h) in the
- * order the walk met them, relation by relation, and a record's owner tells
- * a link to the last publish's records from any other. The last publish's
- * records are `records[last]`; a publish keeps its own in the other half,
- * and turns the halves once it is done.
+ * item it does not make FINAL that an open or lent block holds, or an
+ * UNDECIDED node or a HOLDER (A NODE PUBLISHED IN PLACE), with its id and
+ * kind, where its source lay and the relation it was in. An item that stays
+ * in the tree -- COMMITTED, held by a node or a relation holder that is, or
+ * open or lent -- is no record's node: the commits may release it before
+ * the next publish, an accept among them (blocks.c, THE CANDIDATES), so the
+ * old relations of an old node that stayed are what this publish recorded
+ * of it, and nothing reads the node itself. Any other item is a node the
+ * snapshot made, which leaves the tree at the next take-back (blocks.c, THE
+ * LENDING): its record owns it from then on, nothing writes it, and the
+ * next publish matches against its relations and releases it once it is
+ * done. The records of a node's relations are in the order the walk met
+ * them, relation by relation, each linked from the one before, the first
+ * from the node's own record, or, for the root, from the records. The last
+ * publish's records are `records[last]`; a publish keeps its own in the
+ * other half, and turns the halves once it is done.
  *
  * THE FINAL PREFIX of a relation of a node a publish placed before: the
  * items up to its last FINAL one, which are all FINAL, as a block settles
@@ -1078,9 +1080,10 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_fresh(publis
 
 /* A NODE PUBLISHED IN PLACE (PUBLISHING IN PLACE): its frame of the walk,
  * the node, and the old entries its relations are matched against: none,
- * the records the last publish kept of it, of which `record` is the next
- * not yet passed, plus one, in the last publish's half (THE RECORDS), or
- * the relations of the old node it continues -- the old node's relations
+ * the records the last publish kept of the old node it continues, which
+ * stayed in the tree, of which `record` is the next not yet passed, plus
+ * one, in the last publish's half (THE RECORDS), or the relations of the old
+ * node it continues, one the last snapshot made -- the old node's relations
  * not yet paired, and the old relation paired with the one in hand: its old
  * nodes from `old_item` to `old_end`, of which `old_item` is the next, and
  * where that one's first run is measured from (where the source of the old
@@ -1088,8 +1091,9 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_fresh(publis
  * a field (relation_field) and a holder. A persisting node marks what it
  * holds FINAL and keeps records of what an open or lent block holds, and of
  * what an UNDECIDED node or a HOLDER holds, the last of which this publish
- * kept, plus one; one a publish placed before passes the FINAL prefix of
- * each of its relations.
+ * kept, plus one, the first linked from the record its owner keeps of it,
+ * `recorded`, plus one, or 0 for the root; one a publish placed before
+ * passes the FINAL prefix of each of its relations.
  *
  * The node lies in THE DECIDED CONTENT (parser.h) -- DECIDED, UNDECIDED, or
  * a HOLDER's, with its entry -- and whether it is COMMITTED, or held by a
@@ -1115,7 +1119,7 @@ typedef struct {
     int old_field;
     markdown_core_node **old_item, **old_end;
     uint32_t old_start, old_source;
-    uint32_t record, kept;
+    uint32_t record, kept, recorded;
     int field;
     /* The node's decided content and, for a holder, its entry; those of
      * the relation in hand, whose items a holder's entry judges by where
@@ -1352,8 +1356,9 @@ static const markdown_core_tail_record *publish_record_match(const markdown_core
 
 /* `node`, whose source is `source`, in the relation in hand of `owner`,
  * recorded (THE RECORDS), and `owned` by the record: the first of the
- * owner's records is linked from its scaffold, and each from the one
- * before. False when the records could not grow. */
+ * owner's records is linked from the owner's own record, or from the
+ * records for the root, and each from the one before. False when the
+ * records could not grow. */
 static bool publish_record(markdown_core_parser *parser, publish_match_frame *owner, markdown_core_node *node,
                            markdown_core_place source, markdown_core_node *owned) {
     markdown_core_stream *stream = parser->stream;
@@ -1365,12 +1370,22 @@ static bool publish_record(markdown_core_parser *parser, publish_match_frame *ow
     }
     records->items = items;
     const uint32_t at = (uint32_t)records->count++;
-    items[at] = (markdown_core_tail_record){
-        owned, owner->node, node->id, source.start, source.end, (uint32_t)owner->field, 0, node->kind};
+    items[at] = (markdown_core_tail_record){.node = owned,
+                                            .id = node->id,
+                                            .start = source.start,
+                                            .end = source.end,
+                                            .field = (uint32_t)owner->field,
+                                            .kind = node->kind};
     if (owner->kept) {
         items[owner->kept - 1].next = at + 1;
+    } else if (owner->recorded) {
+        items[owner->recorded - 1].held = at + 1;
     } else {
-        markdown_core_scaffold_of(owner->node)->prev.index = at + 1;
+        /* A node that keeps a record of what it holds is the root or one its
+         * owner recorded: what a node its owner makes FINAL holds is FINAL
+         * too. */
+        assert(owner->node == parser->root);
+        records->root = at + 1;
     }
     owner->kept = at + 1;
     return true;
@@ -1417,15 +1432,19 @@ static bool publish_in_place(publish_walk *walk, markdown_core_node *root, const
     bool more, content = false;
     unsigned slot = slot_of(root);
     relation_shape shape = (relation_shape)(slot & SLOT_SHAPE);
-    /* The node to enter next, the old node whose relations it continues and
-     * where that one's source starts, whether it persists, whether a publish
-     * placed it before, whether it continues itself, its decided content and
-     * whether it is committed (A NODE PUBLISHED IN PLACE). The root is a
-     * holder while a candidate waits. */
+    /* The node to enter next; the old entries its relations are matched
+     * against -- the old node the snapshot made that it continues, or the
+     * first of the records the last publish kept of the old node that
+     * stayed, plus one -- and where the old node's source starts; the record
+     * its owner keeps of it, plus one; whether it persists, whether a publish
+     * placed it before, its decided content and whether it is committed (A
+     * NODE PUBLISHED IN PLACE). The root is a holder while a candidate
+     * waits. */
     markdown_core_node *node = root;
     const markdown_core_node *old = previous;
-    uint32_t old_start = start->source;
-    bool persists = true, published = root->id != 0, itself = published && !previous;
+    bool persists = true, published = root->id != 0;
+    publish_old old_entries = previous ? OLD_LIVE : published ? OLD_RECORDS : OLD_NONE;
+    uint32_t old_start = start->source, held = old_entries == OLD_RECORDS ? records->root : 0, recorded = 0;
     publish_decided decided = markdown_core_parser_undecided(parser) ? HOLDER : DECIDED;
     bool committed = (root->flags & MARKDOWN_CORE_NODE__COMMITTED) != 0;
     assert(decided == DECIDED || (!previous && markdown_core_parser_holder(parser, root)));
@@ -1468,17 +1487,14 @@ static bool publish_in_place(publish_walk *walk, markdown_core_node *root, const
             frame->keeps = persists && (decided != DECIDED ||
                                         (node->flags & (MARKDOWN_CORE_NODE__OPEN | MARKDOWN_CORE_NODE__LENT)));
             frame->kept = 0;
-            frame->old = old ? OLD_LIVE : itself ? OLD_RECORDS : OLD_NONE;
-            if (persists) {
-                const uint32_t at = markdown_core_scaffold_of(node)->prev.index;
-                frame->record = itself && at && at <= records->count && records->items[at - 1].owner == node ? at : 0;
-                markdown_core_scaffold_of(node)->prev.index = 0;
-            }
+            frame->recorded = recorded;
+            frame->old = (uint8_t)old_entries;
+            frame->record = held;
             hand = first;
             publish_enter(&frame->walk, &placed, &hand, content);
             if (published && shape == SHAPE_DEFINITION) {
                 frame->walk.cursor.index = publish_final_bodies(node);
-                assert(itself || !frame->walk.cursor.index);
+                assert(old_entries == OLD_RECORDS || !frame->walk.cursor.index);
             }
             if (old) {
                 frame->old_start = old_start;
@@ -1531,17 +1547,21 @@ static bool publish_in_place(publish_walk *walk, markdown_core_node *root, const
             hand.source = placed.source.end;
             if (frame->old == OLD_LIVE) {
                 old = publish_match(frame, child, placed.source, &old_start);
-                itself = false;
+                old_entries = old ? OLD_LIVE : OLD_NONE;
+                held = 0;
                 child->id = old ? old->id : ++walk->next_id;
             } else {
                 const markdown_core_tail_record *record =
                     frame->old == OLD_RECORDS ? publish_record_match(records, frame, child, placed.source, &old_start)
                                               : NULL;
                 /* An open or lent block continues itself or nothing
-                 * (PUBLISHING IN PLACE). */
-                assert(!record || record->node || record->id == child->id);
+                 * (PUBLISHING IN PLACE), and an old node that stayed in the
+                 * tree has its records, one the snapshot made its relations
+                 * (THE RECORDS). */
+                assert(!record || !published || record->id == child->id);
                 old = record ? record->node : NULL;
-                itself = record && !record->node;
+                old_entries = old ? OLD_LIVE : record ? OLD_RECORDS : OLD_NONE;
+                held = record ? record->held : 0;
                 child->id = record ? record->id : ++walk->next_id;
             }
             /* A node the next publish walks again persists: one that stays in
@@ -1549,10 +1569,12 @@ static bool publish_in_place(publish_walk *walk, markdown_core_node *root, const
             persists = frame->persists &&
                        (published || (child->flags & (MARKDOWN_CORE_NODE__OPEN | MARKDOWN_CORE_NODE__LENT)) ||
                         (committed && decided != DECIDED));
+            const uint32_t kept = frame->kept;
             if (frame->persists && !publish_hold(parser, frame, child, &placed, decided, committed)) {
                 return false;
             }
-            if (!old && !persists) {
+            recorded = frame->kept != kept ? frame->kept : 0;
+            if (old_entries == OLD_NONE && !persists) {
                 /* What continues nothing is published above the frames,
                  * which find the stack where its growth left it. */
                 publish_above(&walk->stack, count * sizeof(*frame));

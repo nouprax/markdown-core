@@ -385,24 +385,42 @@ static int case_deep_list_line(pc_context *context) {
 }
 
 /* The same line in a session, which reads it unfinished, finished with no
- * line after it, and as the text's end. */
+ * line after it, and as the text's end. The table opener's call at each
+ * marker asks to be a candidate, so the session reads on in the line from
+ * every marker and decides every candidate there: the line is in hand once
+ * for its visit, so the markers and the text after them cost their bytes
+ * once. Taking the whole line in hand again at each marker took 6.3 seconds
+ * at 50000 markers before 1 MiB of text in a debug build, so the text here
+ * is sixteen times that. */
 static int case_deep_list_session(pc_context *context) {
+    const size_t depth = 50000, tail = (size_t)16 << 20;
     markdown_core_session *session = NULL;
     const markdown_core_document *document = NULL;
     int result = -1;
-    if (pc_build(context, NULL, "- ", 50000, "lea") != 0 ||
-        markdown_core_session_new((const uint8_t *)context->input, context->input_length, MARKDOWN_CORE_TEXT_UNIT_UTF8,
-                                  &session) != MARKDOWN_CORE_OK) {
+    char *suffix = (char *)malloc(tail + 4);
+    if (!suffix) {
+        return -1;
+    }
+    memset(suffix, 'a', tail);
+    memcpy(suffix + tail, "lea", 4);
+    const int built = pc_build(context, NULL, "- ", depth, suffix);
+    free(suffix);
+    if (built != 0 || markdown_core_session_new((const uint8_t *)context->input, context->input_length,
+                                                MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) != MARKDOWN_CORE_OK) {
         return -1;
     }
     if (markdown_core_session_append(session, (const uint8_t *)"n\n", 2, &document) == MARKDOWN_CORE_OK &&
         markdown_core_session_finalize(session, &document) == MARKDOWN_CORE_OK &&
         ts_ast_count_kinds(markdown_core_document_root(document), context->counts) == 0 &&
-        pc_expect_count(context, MARKDOWN_CORE_KIND_LIST, 50000, "List") == 0 &&
-        pc_expect_count(context, MARKDOWN_CORE_KIND_LIST_ITEM, 50000, "ListItem") == 0) {
+        pc_expect_count(context, MARKDOWN_CORE_KIND_LIST, depth, "List") == 0 &&
+        pc_expect_count(context, MARKDOWN_CORE_KIND_LIST_ITEM, depth, "ListItem") == 0) {
         size_t length = 0;
         char *text = ts_ast_concat_text(markdown_core_document_root(document), &length);
-        result = text && length == 4 && memcmp(text, "lean", 4) == 0 ? 0 : -1;
+        size_t same = 0;
+        while (text && same < length && text[same] == 'a') {
+            same++;
+        }
+        result = text && length == tail + 4 && same == tail && memcmp(text + tail, "lean", 4) == 0 ? 0 : -1;
         free(text);
     }
     markdown_core_session_free(session);

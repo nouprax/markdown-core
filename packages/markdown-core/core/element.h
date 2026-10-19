@@ -180,11 +180,12 @@ struct markdown_core_element {
      * made. */
     void (*start_snapshot)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*end_snapshot)(const markdown_core_element_instance *, markdown_core_parser *);
-    /* A CANDIDATE'S MARK (blocks.c, THE CANDIDATES), taken as a commit holds
-     * at an opener's call with every block settled before it completed: the
-     * accept of the candidate at `index` among those that wait puts what the
-     * document's elements keep back as it was at the mark, and its drop
-     * forgets the mark. */
+    /* A LINE'S MARK (blocks.c, THE CANDIDATES), taken as a commit holds at
+     * the first opener's call of a line that asks to be a candidate, with
+     * every block settled before it completed: the accept of a call of the
+     * mark at `index` among the marks puts what the document's elements keep
+     * back as it was at the mark and forgets the marks from `index` on, and
+     * the mark's drop forgets it. */
     void (*mark_candidate)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*undo_candidate)(const markdown_core_element_instance *, markdown_core_parser *, size_t);
     void (*drop_candidate)(const markdown_core_element_instance *, markdown_core_parser *, size_t);

@@ -452,18 +452,9 @@ struct markdown_core_node {
  * its own: `next` is the block that joined after it and `parent` the block
  * it settled into, which completion asks its finish steps with; `next`
  * empties as the block leaves the queue. A node the release walk takes is on
- * the walk's stack through its `next` (node.c). A publish links the records
- * it keeps of a block's relations through the block's `prev` (ast.c, THE
- * RECORDS). */
+ * the walk's stack through its `next` (node.c). */
 typedef struct markdown_core_scaffold {
-    struct markdown_core_node *parent;
-    /* An inline node's previous sibling, or the first record a publish kept
-     * of a block's relations, plus one (ast.c, THE RECORDS). */
-    union {
-        struct markdown_core_node *node;
-        uint32_t index;
-    } prev;
-    struct markdown_core_node *next, *first, *last;
+    struct markdown_core_node *parent, *prev, *next, *first, *last;
 } markdown_core_scaffold;
 
 /* A NODE'S SLOT STORAGE (slab.h): the node's scaffold, the node, then room
@@ -524,7 +515,7 @@ static inline void markdown_core_scaffold_append(markdown_core_node *parent, mar
     assert(markdown_core_node_may_attach(parent, (markdown_core_node_type)child->kind));
     markdown_core_scaffold *holder = markdown_core_scaffold_of(parent), *link = markdown_core_scaffold_of(child);
     link->parent = parent;
-    link->prev.node = holder->last;
+    link->prev = holder->last;
     link->next = NULL;
     if (holder->last) {
         markdown_core_scaffold_of(holder->last)->next = child;
@@ -539,14 +530,14 @@ static inline void markdown_core_scaffold_insert_before(markdown_core_node *anch
     markdown_core_scaffold *at = markdown_core_scaffold_of(anchor), *link = markdown_core_scaffold_of(child);
     assert(markdown_core_node_may_attach(at->parent, (markdown_core_node_type)child->kind));
     link->parent = at->parent;
-    link->prev.node = at->prev.node;
+    link->prev = at->prev;
     link->next = anchor;
-    if (at->prev.node) {
-        markdown_core_scaffold_of(at->prev.node)->next = child;
+    if (at->prev) {
+        markdown_core_scaffold_of(at->prev)->next = child;
     } else {
         markdown_core_scaffold_of(at->parent)->first = child;
     }
-    at->prev.node = child;
+    at->prev = child;
 }
 
 /* `node` out of its scaffold parent's children; its own children stay. */
@@ -556,18 +547,18 @@ static inline void markdown_core_scaffold_unlink(markdown_core_node *node) {
         return;
     }
     markdown_core_scaffold *holder = markdown_core_scaffold_of(link->parent);
-    if (link->prev.node) {
-        markdown_core_scaffold_of(link->prev.node)->next = link->next;
+    if (link->prev) {
+        markdown_core_scaffold_of(link->prev)->next = link->next;
     } else {
         holder->first = link->next;
     }
     if (link->next) {
-        markdown_core_scaffold_of(link->next)->prev.node = link->prev.node;
+        markdown_core_scaffold_of(link->next)->prev = link->prev;
     } else {
-        holder->last = link->prev.node;
+        holder->last = link->prev;
     }
     link->parent = link->next = NULL;
-    link->prev.node = NULL;
+    link->prev = NULL;
 }
 
 static inline markdown_core_node *markdown_core_scaffold_parent(const markdown_core_node *node) {
@@ -577,7 +568,7 @@ static inline markdown_core_node *markdown_core_scaffold_next(const markdown_cor
     return markdown_core_scaffold_of(node)->next;
 }
 static inline markdown_core_node *markdown_core_scaffold_prev(const markdown_core_node *node) {
-    return markdown_core_scaffold_of(node)->prev.node;
+    return markdown_core_scaffold_of(node)->prev;
 }
 static inline markdown_core_node *markdown_core_scaffold_first(const markdown_core_node *node) {
     return markdown_core_scaffold_of(node)->first;

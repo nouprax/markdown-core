@@ -686,7 +686,7 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
     tmp = markdown_core_scaffold_next(opener_inl);
     if (tmp && tmp != closer_inl) {
         inner->first = tmp;
-        markdown_core_scaffold_of(tmp)->prev.node = NULL;
+        markdown_core_scaffold_of(tmp)->prev = NULL;
 
         while (tmp && tmp != closer_inl) {
             markdown_core_scaffold *link = markdown_core_scaffold_of(tmp);
@@ -704,8 +704,8 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
     }
 
     markdown_core_scaffold_of(opener_inl)->next = inline_node;
-    markdown_core_scaffold_of(closer_inl)->prev.node = inline_node;
-    inner->prev.node = opener_inl;
+    markdown_core_scaffold_of(closer_inl)->prev = inline_node;
+    inner->prev = opener_inl;
     inner->next = closer_inl;
     inner->parent = holder;
 

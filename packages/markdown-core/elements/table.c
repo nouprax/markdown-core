@@ -666,9 +666,10 @@ typedef struct markdown_core_table_source_line {
  * whose bytes do not tell, and decides nothing: the call is `undecided`.
  * Every other reader reads on as an ordinary reading, which reads the end
  * at `incomplete`, the first line the text has not finished, plus one. A
- * commit's call that can wait sets aside the end it reads
- * (markdown_core_parser_set_end_aside), `aside`, and records no facts once
- * it read it; a candidate's decision, `decides`, writes nothing. */
+ * call's reading, which asks whether it read the end, `asks`, records no
+ * facts once it read it where more text may follow
+ * (markdown_core_parser_end_read); a candidate's decision, `decides`, writes
+ * nothing. */
 typedef struct {
     markdown_core_parser *parser;
     struct markdown_core_table_workspace *workspace;
@@ -676,7 +677,7 @@ typedef struct {
     table_source_line *lines;
     size_t count, incomplete;
     int blanks;
-    bool ended, holds, exhausted, undecided, aside, decides;
+    bool ended, holds, exhausted, undecided, asks, decides;
 } table_source;
 
 typedef struct {
@@ -1335,8 +1336,9 @@ static bool table_has_block_start(table_source *source, size_t index, bool parag
     markdown_core_chunk chunk = {(unsigned char *)line->data, line->input_length, 0};
     table_block_reader context = {source, index};
     markdown_core_block_reader reader = {&context, table_read_block_line};
-    return markdown_core_parser_has_block_start(source->parser, source->lookahead.parent, &chunk, line->first,
-                                                line->first_column, line->indent, paragraph, &reader);
+    return markdown_core_parser_has_block_start(source->parser,
+                                                markdown_core_parser_lookahead_parent(&source->lookahead), &chunk,
+                                                line->first, line->first_column, line->indent, paragraph, &reader);
 }
 
 static bool table_header_allowed(table_source *source, size_t index) {
@@ -1351,13 +1353,14 @@ enum {
 };
 
 static markdown_core_line_facts *table_search_fact(table_source *source, size_t index) {
-    if (source->decides || (source->aside && markdown_core_parser_end_read(source->parser))) {
+    if (source->decides || (source->asks && markdown_core_parser_end_read(source->parser))) {
         return NULL;
     }
     table_source_line *line = &source->lines[index];
     markdown_core_line_facts *fact = markdown_core_parser_get_line_facts(source->parser, line->line);
-    if (fact && (fact->table_container != source->lookahead.parent || fact->table_offset != line->offset)) {
-        fact->table_container = source->lookahead.parent;
+    markdown_core_node *const container = markdown_core_parser_lookahead_parent(&source->lookahead);
+    if (fact && (fact->table_container != container || fact->table_offset != line->offset)) {
+        fact->table_container = container;
         fact->table_offset = line->offset;
         fact->table_absent = 0;
     }
@@ -2730,7 +2733,7 @@ bool markdown_core_table_caption_probe(const markdown_core_element_instance *tab
                            .workspace = workspace,
                            .lookahead = *lookahead,
                            .lines = workspace->lines,
-                           .aside = !markdown_core_parser_candidate_final(parser) && !decides,
+                           .asks = !decides,
                            .decides = decides};
     lookahead->active = false; /* Transfer the transaction; source_free ends it. */
     table_candidate *candidate = &workspace->candidate;
@@ -2780,6 +2783,14 @@ static inline bool table_opener_fits(const markdown_core_parser *parser, const m
            parent->kind != MARKDOWN_CORE_NODE_TABLE_ROW && parent->kind != MARKDOWN_CORE_NODE_PARAGRAPH;
 }
 
+/* Whether the line the opener was asked on is dash runs from the parser's
+ * offset to its end: what the admission read of the line in this visit
+ * tells, the offset inside the line's trailing run of separator bytes, with
+ * a dash at it or after it. */
+static inline bool table_admission_dashes(const markdown_core_parser *parser, const table_admission *admission) {
+    return parser->offset >= admission->separators && admission->last_dash >= parser->offset;
+}
+
 /* THE OPENER'S ADMISSION at a place that fits, which reads only the line,
  * `input`, and the first bytes of the line after it, and so can read the
  * end: whether the line's bytes can start a table or a caption at all.
@@ -2804,8 +2815,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool table_opener_admits(
         admission->successor = (table_successor){0};
         table_trailing_separators(input, trimmed, &admission->separators, &admission->last_dash);
     }
-    const bool dashes = parser->offset >= admission->separators && admission->last_dash >= parser->offset;
-    return table_grammar_admits(parser, input, trimmed, parser->first_nonspace, dashes, parser->line_number + 1,
+    return table_grammar_admits(parser, input, trimmed, parser->first_nonspace,
+                                table_admission_dashes(parser, admission), parser->line_number + 1,
                                 parser->lookahead_cursor, false, &admission->successor);
 }
 
@@ -2830,7 +2841,7 @@ static bool table_opener_reads(table_workspace *workspace, markdown_core_parser 
     *found = (table_read){.source = {.parser = parser,
                                      .workspace = workspace,
                                      .lines = workspace->lines,
-                                     .aside = waits && !decides,
+                                     .asks = !decides,
                                      .decides = decides},
                           .caption = -1};
     table_source *source = &found->source;
@@ -2896,11 +2907,11 @@ typedef char table_feed_fits_its_words[sizeof(table_feed) <= sizeof(int[MARKDOWN
 static table_feed table_feed_start(table_source *source, bool trailing) {
     table_feed feed = {0};
     table_source_line *line = &source->lines[0];
-    const size_t runs = table_dash_count(source, 0);
     if (table_caption_start(line->data, line->length, line->first, line->indent) >= 0) {
         feed.trailing = trailing;
         return feed;
     }
+    const size_t runs = table_dash_count(source, 0);
     if (table_grid_opening(source, 0, &feed.left, &feed.right)) {
         feed.grammars[0] = TABLE_GRID;
         feed.grammars[1] = TABLE_SIMPLE;
@@ -2929,9 +2940,18 @@ static table_feed table_feed_start(table_source *source, bool trailing) {
 
 /* THE OPENER'S REQUEST: its call on the line `source` holds first asks to
  * be a candidate, with the grammars that line names; a caption that trails
- * a table is claimed were the text to end after its line. */
+ * a table is claimed were the text to end after its line. The line holds no
+ * dash run from the call's byte when what the admission read of it in this
+ * visit says it is not dash runs to its end. */
 static void table_request(const markdown_core_element_instance *self, markdown_core_parser *parser,
                           markdown_core_node *parent, table_source *source, bool trailing) {
+    const table_admission *admission = &source->workspace->admission;
+    if (admission->visit == parser->line_visit && !table_admission_dashes(parser, admission)) {
+        table_source_line *line = &source->lines[0];
+        line->dashes_scanned = true;
+        line->dash_count = 0;
+        line->full_boundary = false;
+    }
     int words[MARKDOWN_CORE_CANDIDATE_WORDS] = {0};
     const table_feed feed = table_feed_start(source, trailing);
     if (!parser->error) {
@@ -2940,23 +2960,22 @@ static void table_request(const markdown_core_element_instance *self, markdown_c
     }
 }
 
-/* THE OPENER. A call in a commit more text may follow sets the end it reads
- * aside: one that reads it, or whose grid waits, decides nothing, and asks
- * to be a candidate (THE OPENER'S CANDIDATE); while it waits, it declines. */
+/* THE OPENER. The call asks whether its reading read the end (parser.h,
+ * markdown_core_parser_end_read): one that read it where more text may
+ * follow, or whose grid waits, decides nothing, and asks to be a candidate
+ * (THE OPENER'S CANDIDATE); a call that meets its candidate declines. */
 static markdown_core_node *table_try_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                           markdown_core_node *parent, unsigned char *input, int length) {
     if (!table_opener_fits(parser, parent) ||
-        (parser->stream && markdown_core_parser_candidate_live(parser, self, parent))) {
+        (parser->stream && markdown_core_parser_candidate_meets(parser, self, parent))) {
         return NULL;
     }
-    const bool aside = !markdown_core_parser_candidate_final(parser);
-    const markdown_core_end_aside end =
-        aside ? markdown_core_parser_set_end_aside(parser) : (markdown_core_end_aside){0};
+    markdown_core_parser_clear_end_read(parser);
     table_workspace *workspace = self->state;
     const bool admitted = table_opener_admits(parser, workspace, input, length);
     markdown_core_node *const preceding = admitted ? table_preceding(parent) : NULL;
     if (!admitted || !table_opener_ends_admit(parser, preceding != NULL)) {
-        if (aside && markdown_core_parser_put_end_back(parser, end) && !parser->error) {
+        if (markdown_core_parser_end_read(parser) && !parser->error) {
             table_source source = {.parser = parser, .workspace = workspace, .lines = workspace->lines};
             if (table_source_push(&source, table_cursor_line(parser, input, length))) {
                 table_request(self, parser, parent, &source, preceding != NULL);
@@ -2970,7 +2989,7 @@ static markdown_core_node *table_try_open(const markdown_core_element_instance *
     const bool claims = table_opener_reads(workspace, parser, parent, input, length, false, preceding != NULL, &found);
     table_source *source = &found.source;
     markdown_core_node *result = NULL;
-    if (aside && markdown_core_parser_put_end_back(parser, end)) {
+    if (markdown_core_parser_end_read(parser)) {
         source->undecided = true;
     }
     if (source->undecided) {

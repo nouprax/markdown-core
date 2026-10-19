@@ -91,19 +91,18 @@ static void publish_candidate(const markdown_core_element_instance *self, markdo
     }
 }
 /* THE PREFIX, the call before line 1: an envelope that closes is read as
- * the document's properties. A call in a commit more text may follow sets
- * the end it reads aside: one that reads it decides nothing, and asks to be
- * a candidate (blocks.c, THE CANDIDATES); while it waits, it declines. */
+ * the document's properties. The call asks whether its reading read the end
+ * (parser.h, markdown_core_parser_end_read): one that read it where more
+ * text may follow decides nothing, and asks to be a candidate (blocks.c, THE
+ * CANDIDATES); a call that meets its candidate declines. */
 static size_t read_document_prefix(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    if (parser->stream && markdown_core_parser_candidate_live(parser, self, parser->root)) {
+    if (parser->stream && markdown_core_parser_candidate_meets(parser, self, parser->root)) {
         return 0;
     }
-    const bool aside = !markdown_core_parser_candidate_final(parser);
-    const markdown_core_end_aside end =
-        aside ? markdown_core_parser_set_end_aside(parser) : (markdown_core_end_aside){0};
+    markdown_core_parser_clear_end_read(parser);
     size_t fence;
     const bool closed = markdown_core_properties_closed(self->state, parser, &fence);
-    if (aside && markdown_core_parser_put_end_back(parser, end)) {
+    if (markdown_core_parser_end_read(parser)) {
         if (!parser->error) {
             const int words[MARKDOWN_CORE_CANDIDATE_WORDS] = {0};
             markdown_core_parser_request_candidate(parser, self, parser->root, MARKDOWN_CORE_NODE_METADATA, words,

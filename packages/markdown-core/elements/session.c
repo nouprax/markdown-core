@@ -1,4 +1,3 @@
-#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -16,13 +15,13 @@
  * written, and only grows at its end.
  *
  * THE COMMITTED PARSE is one transaction of `committed` across the
- * session's appends (plan 5.3): it has read the lines before `commit_point`,
- * each as a parse of any longer text reads it, and completed the blocks that
- * settled in them (plan 5.4). An append commits the lines up to the commit
- * point the last snapshot left, completes what settled, and then takes a
- * snapshot of the whole text on the committed parse, which leaves the next
- * commit point (blocks.c, THE SNAPSHOT); the finalize commits every line that
- * is left and ends the committed parse at the end of the text.
+ * session's appends (plan 5.3): it has read the lines the text has finished
+ * and the steps of its last line that the line's bytes decide, each as a
+ * parse of any longer text reads it, and completed the blocks that settled
+ * in them (plan 5.4). An append commits what the new bytes finish, completes
+ * what settled, and then takes a snapshot of the whole text on the committed
+ * parse (blocks.c, THE SNAPSHOT); the finalize commits the rest of the text
+ * and ends the committed parse at its end.
  * Each new document continues the old one (parser.h, `revision`): the
  * revision lends the session's pool and counts the ids it issued. The
  * document is the committed parse's tree, published in place (ast.c,
@@ -32,7 +31,6 @@ struct markdown_core_session {
     uint8_t *text;
     size_t size, capacity;
     markdown_core_parser *committed;
-    size_t commit_point;
     markdown_core_node_pool pool;
     markdown_core_revision revision;
     markdown_core_document document;
@@ -55,32 +53,21 @@ static markdown_core_status session_publish(markdown_core_session *session, mark
     return MARKDOWN_CORE_OK;
 }
 
-/* Commits the lines before the commit point and completes the blocks that
- * settled in them, then publishes a snapshot of the whole text, which leaves
- * the next commit point. */
+/* Commits the text and completes the blocks that settled in it, then
+ * publishes a snapshot of the whole text. */
 static markdown_core_status session_snapshot(markdown_core_session *session) {
-    if (!markdown_core_parser_commit(session->committed, session_source(session), session->size, session->commit_point,
-                                     false) ||
+    if (!markdown_core_parser_commit(session->committed, session_source(session), session->size, false) ||
         !markdown_core_parser_complete(session->committed)) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
-    /* The lines committed read nothing of the end, as they did in the
-     * snapshot that left the commit point. */
-    assert(markdown_core_parser_commit_point(session->committed) >= session->commit_point);
-    size_t commit_point = session->commit_point;
-    markdown_core_status status =
-        session_publish(session, markdown_core_parser_snapshot(session->committed, session_source(session),
-                                                               session->size, &commit_point));
-    if (status == MARKDOWN_CORE_OK) {
-        session->commit_point = commit_point;
-    }
-    return status;
+    return session_publish(session,
+                           markdown_core_parser_snapshot(session->committed, session_source(session), session->size));
 }
 
 /* Commits every line of the text and publishes the committed parse ended
  * there, which ends the session's appends. */
 static markdown_core_status session_finalize(markdown_core_session *session) {
-    markdown_core_parser_commit(session->committed, session_source(session), session->size, session->size, true);
+    markdown_core_parser_commit(session->committed, session_source(session), session->size, true);
     session->finalized = true;
     markdown_core_node *root = markdown_core_parser_finalize(session->committed);
     session->document.root = root;

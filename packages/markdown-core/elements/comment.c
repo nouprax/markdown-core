@@ -101,8 +101,8 @@ static bool comment_reads(const markdown_core_element_instance *self, markdown_c
     return closed && !parser->error;
 }
 
-/* THE OPENER. A call whose reading decides nothing asks to be a candidate,
- * and declines while it waits. */
+/* THE OPENER. A call whose reading decides nothing asks to be a candidate;
+ * a call that meets its candidate declines. */
 static markdown_core_node *open_block(const markdown_core_element_instance *self, int indented,
                                       markdown_core_parser *parser, markdown_core_node *parent_container,
                                       unsigned char *input, int len) {
@@ -110,7 +110,7 @@ static markdown_core_node *open_block(const markdown_core_element_instance *self
     markdown_core_node *node;
 
     if (indented || !is_fence_line(input, len, first_nonspace) ||
-        (parser->stream && markdown_core_parser_candidate_live(parser, self, parent_container))) {
+        (parser->stream && markdown_core_parser_candidate_meets(parser, self, parent_container))) {
         return NULL;
     }
     markdown_core_chunk line = {input, len, 0};

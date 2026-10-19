@@ -138,8 +138,8 @@ static bool S_followed_by_boundary(markdown_core_parser *parser, markdown_core_n
  * would open a paragraph in `parent`: an identifier alone on the line names
  * the block before it, the pending block (parser.h, THE BUILDERS), when the
  * boundary follows it. A call whose boundary reading decides nothing asks
- * to be a candidate, which takes the line as the call would, and declines
- * while it waits. */
+ * to be a candidate, which takes the line as the call would; a call that
+ * meets its candidate declines. */
 bool markdown_core_block_attach_identifier_line(const markdown_core_element_instance *self,
                                                 markdown_core_parser *parser, markdown_core_node *parent,
                                                 markdown_core_chunk *input) {
@@ -154,7 +154,7 @@ bool markdown_core_block_attach_identifier_line(const markdown_core_element_inst
         !S_scan_block_identifier(work, input->data + parser->first_nonspace, input->len - parser->first_nonspace,
                                  &candidate) ||
         !candidate.own_line || candidate.content_end || !markdown_core_block_ends_with_blank_line(owner) ||
-        (parser->stream && markdown_core_parser_candidate_live(parser, self, parent))) {
+        (parser->stream && markdown_core_parser_candidate_meets(parser, self, parent))) {
         return false;
     }
     bool undecided;

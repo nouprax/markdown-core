@@ -1,12 +1,13 @@
 #!/usr/bin/env node
-/** A streaming session commits the lines whose decisions hold whatever text
- * follows (docs/plans/2026-09-29-incremental-parsing.md, 5.2). A line whose
- * reading reached the end of the document's input decided something only
- * while no more text follows, so the parser records it: every reading that
- * asks whether the input goes on asks `markdown_core_parser_input_ends`, or
- * asks the line index for a line. The entry records the line that asked when
- * the input ends where it asked, and the line index when the line asked for
- * is not complete (parser.h).
+/** A streaming session commits the decisions that hold whatever text
+ * follows (docs/plans/2026-09-29-incremental-parsing.md, 5.1, 5.3). A
+ * reading that reaches the end of the document's input where more text may
+ * follow decides nothing, and its call asks to be a candidate (blocks.c, THE
+ * CANDIDATES): every reading that asks whether the input goes on asks
+ * `markdown_core_parser_input_ends`, or asks the line index for a line, and
+ * the call asks the record they keep. The entry records the reading when the
+ * input ends where it asked, and the line index when the line asked for is
+ * not complete (parser.h).
  *
  * A reading that compares a position with the input's end itself decides
  * from the end without the record, and the commit then keeps a decision the
@@ -14,15 +15,14 @@
  * fresh parse only when text arrives after that line. So the rule is held
  * here, over a closed set of names: the parser's view of the end -- the
  * input's length, where its last complete line ends, how far its scanner has
- * read, and the record -- is read only by the entry, the line index, the
- * driver that installs an input, the snapshot's mark, which keeps the
- * commit's view while the snapshot reads on and puts it back, and the commit
- * point; and for the candidates (blocks.c, THE CANDIDATES) by the reading
- * that sets the end aside, which keeps the record and tells whether it read
- * the end, by where the lines the text has finished end, which a reading
- * compares a line with without reading the end, by the reading that waits at
- * the end, and by the candidates' feed, which feeds them to the end and
- * decides one that waited again once the end moves.
+ * read, and the record -- is read only by the entry, the record's clear and
+ * query, the line index, the driver that installs an input and reads a
+ * commit's lines to where the text has finished them, and the snapshot's
+ * mark, which keeps the commit's view while the snapshot reads on and puts
+ * it back; and for the candidates by where the lines the text has finished
+ * end, which a reading compares a line with without reading the end, by the
+ * reading that waits at the end, and by the candidates' feed, which feeds
+ * them to the end and decides one that waited again once the end moves.
  */
 
 import fs from "node:fs";
@@ -33,23 +33,22 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const pkg = path.join(root, "packages/markdown-core");
 
-const END_VIEW = /\bparser->(input\.(size|complete|scanned)|end_seen_at|end_seen)\b/g;
+const END_VIEW = /\bparser->(input\.(size|complete|scanned)|end_seen)\b/g;
 
 /** The functions that own the end: the entry and its record, the input's
- * text, which a reading reads to its end asking the entry, the reading
- * that sets the end aside, where the finished lines end, the reading that
- * waits at the end (parser.h), the line index's frontier, the physical-line
- * scanner, the line index's entry for readers, the driver that installs an
- * input, the snapshot's mark and the put-back a rollback and a candidate's
- * undo share, the commit point the record leaves, and the candidates' feed
- * and the snapshot's feed of them to the end (blocks.c). */
+ * text, which a reading reads to its end asking the entry, the record's
+ * clear and query, where the finished lines end, the reading that waits at
+ * the end (parser.h), the line index's frontier, the physical-line scanner,
+ * the line index's entry for readers, the driver that installs an input,
+ * the snapshot's mark, which a rollback and a candidate's undo put back, and
+ * the candidates' feed and the snapshot's feed of them to the end
+ * (blocks.c). */
 const OWNERS = new Set([
     "core/parser.h:markdown_core_parser_see_end",
     "core/parser.h:markdown_core_parser_input_ends",
     "core/parser.h:markdown_core_parser_input_text",
-    "core/parser.h:markdown_core_parser_set_end_aside",
+    "core/parser.h:markdown_core_parser_clear_end_read",
     "core/parser.h:markdown_core_parser_end_read",
-    "core/parser.h:markdown_core_parser_put_end_back",
     "core/parser.h:markdown_core_parser_complete_end",
     "core/parser.h:markdown_core_parser_lookahead_wait",
     "core/parser.h:markdown_core_input_line_next",
@@ -58,8 +57,6 @@ const OWNERS = new Set([
     "core/blocks.c:markdown_core_parser_extend_source_lines",
     "core/blocks.c:S_parse_source",
     "core/blocks.c:S_mark",
-    "core/blocks.c:S_restore",
-    "core/blocks.c:markdown_core_parser_commit_point",
     "core/blocks.c:S_feed",
     "core/blocks.c:S_candidates_see_end"
 ]);

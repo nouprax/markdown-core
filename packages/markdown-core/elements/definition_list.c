@@ -39,9 +39,10 @@ static bool definition_body_continues(markdown_core_parser *parser, markdown_cor
     return continues;
 }
 
-/* A BODY TAKES A BLANK LINE its reading admits. A call in a commit more text
- * may follow sets the end it reads aside: one that reads it decides nothing,
- * and asks to be a candidate; while it waits, the body declines the line. */
+/* A BODY TAKES A BLANK LINE its reading admits. The call asks whether its
+ * reading read the end (parser.h, markdown_core_parser_end_read): one that
+ * read it where more text may follow decides nothing, and asks to be a
+ * candidate; a call that meets its candidate declines the line. */
 static bool accepts_blank(const markdown_core_element_instance *self, markdown_core_parser *parser,
                           markdown_core_node *body) {
     if (body->kind != MARKDOWN_CORE_NODE_DEFINITION_BODY) {
@@ -52,16 +53,14 @@ static bool accepts_blank(const markdown_core_element_instance *self, markdown_c
         return true;
     }
     markdown_core_node *parent = markdown_core_parser_parent(parser, body);
-    if (parser->stream && markdown_core_parser_candidate_live(parser, self, parent)) {
+    if (parser->stream && markdown_core_parser_candidate_meets(parser, self, parent)) {
         return false;
     }
     const int continuation = body->as.definition_body->continuation;
-    const bool aside = !markdown_core_parser_candidate_final(parser);
-    const markdown_core_end_aside end =
-        aside ? markdown_core_parser_set_end_aside(parser) : (markdown_core_end_aside){0};
+    markdown_core_parser_clear_end_read(parser);
     int line;
     const bool continues = definition_body_continues(parser, parent, continuation, &line);
-    if (aside && markdown_core_parser_put_end_back(parser, end)) {
+    if (markdown_core_parser_end_read(parser)) {
         if (!parser->error) {
             const int words[MARKDOWN_CORE_CANDIDATE_WORDS] = {DEFINITION_BLANK, continuation};
             markdown_core_parser_request_candidate(parser, self, parent, MARKDOWN_CORE_NODE_PARAGRAPH, words, false);
@@ -283,24 +282,23 @@ bool markdown_core_definition_list_continue(markdown_core_parser *parser, markdo
 }
 
 /* THE TERM, the paragraph opener's call: a line its reading admits opens a
- * definition, with the line as its term. A call in a commit more text may
- * follow sets the end it reads aside: one that reads it decides nothing,
- * and asks to be a candidate; while it waits, it declines. */
+ * definition, with the line as its term. The call asks whether its reading
+ * read the end: one that read it where more text may follow decides
+ * nothing, and asks to be a candidate; a call that meets its candidate
+ * declines. */
 static markdown_core_node *try_paragraph(const markdown_core_element_instance *self, int indented,
                                          markdown_core_parser *parser, markdown_core_node *parent, unsigned char *data,
                                          int length) {
     (void)indented;
-    if (parser->stream && markdown_core_parser_candidate_live(parser, self, parent)) {
+    if (parser->stream && markdown_core_parser_candidate_meets(parser, self, parent)) {
         return NULL;
     }
     markdown_core_chunk input = {data, length, 0};
     bool compact = false;
-    const bool aside = !markdown_core_parser_candidate_final(parser);
-    const markdown_core_end_aside end =
-        aside ? markdown_core_parser_set_end_aside(parser) : (markdown_core_end_aside){0};
+    markdown_core_parser_clear_end_read(parser);
     const bool term = definition_term_admits(self, parser, parent, &input) &&
                       definition_term_reads(self, parser, parent, &input, &compact, false);
-    if (aside && markdown_core_parser_put_end_back(parser, end)) {
+    if (markdown_core_parser_end_read(parser)) {
         if (!parser->error) {
             const int words[MARKDOWN_CORE_CANDIDATE_WORDS] = {DEFINITION_TERM};
             markdown_core_parser_request_candidate(parser, self, parent, MARKDOWN_CORE_NODE_DEFINITION_LIST, words,

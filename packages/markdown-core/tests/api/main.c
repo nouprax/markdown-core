@@ -6160,10 +6160,10 @@ static void comment_block_linear_work(test_batch_runner *runner) {
 /* A transaction's line facts outlive the text they were read from: a
  * session's text moves when it grows, and the next commit reads the facts an
  * earlier one recorded. Nested candidates over a blank run are the shape
- * whose later scans step over the run the first scan recorded. The first
- * commit reads one line from a copy of the text that is then overwritten,
- * and the second reads the rest from another copy; the document is the one
- * parsed whole. */
+ * whose later scans step over the run the first scan recorded. A session's
+ * first commit reads every line but the last from a copy of the text that is
+ * then overwritten, and the finalize's commit reads the whole text from
+ * another copy; the document is the one parsed whole. */
 static void line_facts_survive_moved_text(test_batch_runner *runner) {
     markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
     const size_t depth = 16;
@@ -6183,7 +6183,10 @@ static void line_facts_survive_moved_text(test_batch_runner *runner) {
         markdown_core_strbuf_puts(&source, "x\n");
     }
     const size_t size = (size_t)source.size;
-    const size_t first_line = (size_t)((const unsigned char *)memchr(source.ptr, '\n', size) - source.ptr) + 1;
+    size_t last_line = size - 1;
+    while (source.ptr[last_line - 1] != '\n') {
+        last_line--;
+    }
     char *before = malloc(size), *after = malloc(size);
     markdown_core_parser *parser = markdown_core_core_parser(NULL, NULL);
     markdown_core_node_pool pool = {0};
@@ -6192,10 +6195,12 @@ static void line_facts_survive_moved_text(test_batch_runner *runner) {
     if (before && after && parser) {
         memcpy(before, source.ptr, size);
         markdown_core_parser_start(parser, &revision);
-        markdown_core_parser_commit(parser, before, size, first_line, false);
-        memcpy(after, source.ptr, size);
-        memset(before, 'x', size);
-        markdown_core_parser_commit(parser, after, size, size, true);
+        if (markdown_core_parser_stream(parser)) {
+            markdown_core_parser_commit(parser, before, last_line, false);
+            memcpy(after, source.ptr, size);
+            memset(before, 'x', size);
+            markdown_core_parser_commit(parser, after, size, true);
+        }
         moved = markdown_core_parser_finalize(parser);
     }
     markdown_core_node *whole = markdown_core_parse_document((const char *)source.ptr, size);
@@ -6206,7 +6211,9 @@ static void line_facts_survive_moved_text(test_batch_runner *runner) {
         INT_EQ(runner, count_kind(moved, MARKDOWN_CORE_NODE_LIST_ITEM), count_kind(whole, MARKDOWN_CORE_NODE_LIST_ITEM),
                "the commits after the text moved read the items a whole parse reads");
     }
-    markdown_core_node_free(moved);
+    if (moved) {
+        markdown_core_node_pool_release(&pool, moved);
+    }
     markdown_core_node_free(whole);
     if (parser) {
         markdown_core_parser_destroy(parser);
@@ -11543,37 +11550,56 @@ static void session_snapshot_lists(test_batch_runner *runner) {
     }
 }
 
-/* Whether `source`, appended byte by byte, gives after each append a
- * snapshot whose dump is a fresh parse's of the same text, and a finalized
- * document whose dump is a parse's of all of it; `at` is how many bytes were
- * appended when it stopped. */
-static bool snapshots_dump_as_parses(const char *source, size_t *at) {
-    const size_t length = strlen(source);
+/* Whether `document` dumps as a fresh parse of the first `length` bytes of
+ * `source` does. */
+static bool dumps_as_a_parse(const markdown_core_document *document, const char *source, size_t length) {
+    markdown_core_document *parsed = NULL;
+    size_t expected_length = 0, actual_length = 0;
+    uint8_t *expected = markdown_core_document_parse((const uint8_t *)source, length, &parsed) == MARKDOWN_CORE_OK
+                            ? dump_of(parsed, source, length, &expected_length)
+                            : NULL;
+    uint8_t *actual = dump_of(document, source, length, &actual_length);
+    const bool same =
+        expected && actual && expected_length == actual_length && memcmp(expected, actual, expected_length) == 0;
+    markdown_core_dump_free(expected);
+    markdown_core_dump_free(actual);
+    markdown_core_document_free(parsed);
+    return same;
+}
+
+/* Whether `source`, appended in pieces that end at each of the `count`
+ * offsets `ends`, in order, gives after each append a snapshot whose dump is
+ * a fresh parse's of the same text, and a finalized document whose dump is a
+ * parse's of all of it; `at` is how many bytes were appended when it
+ * stopped. */
+static bool pieces_dump_as_parses(const char *source, const size_t *ends, size_t count, size_t *at) {
     markdown_core_session *session = NULL;
     bool same = markdown_core_session_new((const uint8_t *)source, 0, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
                 MARKDOWN_CORE_OK;
     *at = 0;
-    for (size_t step = 0; same && step <= length; step++) {
+    for (size_t i = 0; same && i < count; i++) {
         const markdown_core_document *document = NULL;
-        if (step < length) {
-            same =
-                markdown_core_session_append(session, (const uint8_t *)source + step, 1, &document) == MARKDOWN_CORE_OK;
-            *at = step + 1;
-        } else {
-            same = markdown_core_session_finalize(session, &document) == MARKDOWN_CORE_OK;
-        }
-        markdown_core_document *parsed = NULL;
-        size_t expected_length = 0, actual_length = 0;
-        uint8_t *expected = markdown_core_document_parse((const uint8_t *)source, *at, &parsed) == MARKDOWN_CORE_OK
-                                ? dump_of(parsed, source, *at, &expected_length)
-                                : NULL;
-        uint8_t *actual = same ? dump_of(document, source, *at, &actual_length) : NULL;
-        same = expected && actual && expected_length == actual_length && memcmp(expected, actual, expected_length) == 0;
-        markdown_core_dump_free(expected);
-        markdown_core_dump_free(actual);
-        markdown_core_document_free(parsed);
+        same = markdown_core_session_append(session, (const uint8_t *)source + *at, ends[i] - *at, &document) ==
+                   MARKDOWN_CORE_OK &&
+               dumps_as_a_parse(document, source, ends[i]);
+        *at = ends[i];
     }
+    const markdown_core_document *final = NULL;
+    same = same && markdown_core_session_finalize(session, &final) == MARKDOWN_CORE_OK &&
+           dumps_as_a_parse(final, source, *at);
     markdown_core_session_free(session);
+    return same;
+}
+
+/* The same of `source` appended byte by byte. */
+static bool snapshots_dump_as_parses(const char *source, size_t *at) {
+    const size_t length = strlen(source);
+    size_t *ends = malloc((length ? length : 1) * sizeof(*ends));
+    for (size_t i = 0; ends && i < length; i++) {
+        ends[i] = i + 1;
+    }
+    const bool same = ends && pieces_dump_as_parses(source, ends, length, at);
+    free(ends);
     return same;
 }
 
@@ -11692,6 +11718,33 @@ static void session_snapshot_candidates(test_batch_runner *runner) {
         OK(runner, snapshots_dump_as_parses(sources[i], &at),
            "every snapshot decides a construct read on as a parse of its text, up to byte %zu of %zu: %s", at,
            strlen(sources[i]), sources[i]);
+    }
+}
+
+/* WHAT AN ACCEPT TAKES AWAY (blocks.c, THE CANDIDATES) goes, and the next
+ * publish matches what continues it against what the last publish recorded
+ * of it as it placed it (ast.c, THE RECORDS), whatever the commit wrote in
+ * it since: a simple table read after a multiline table's opening line, which
+ * a publish places open, and which the commit then closes with a row no
+ * publish placed, before the closing line accepts the multiline table; and
+ * the same inside a quote. Each text arrives in two appends, split where the
+ * first publish places the simple table, and each document dumps as a parse
+ * of its text does. */
+static void session_accept_after_commit_writes(test_batch_runner *runner) {
+    static const struct {
+        const char *source;
+        size_t split;
+    } cases[] = {
+        {"-------\nh   j\n--- ---\na   b\nc   d\n\ne   f\n-------\n", 28},
+        {"> -------\n> h   j\n> --- ---\n> a   b\n> c   d\n>\n> e   f\n> -------\n", 36},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const size_t ends[] = {cases[i].split, strlen(cases[i].source)};
+        size_t at = 0;
+        OK(runner, pieces_dump_as_parses(cases[i].source, ends, 2, &at),
+           "a multiline table accepted after the commit closed the simple table a publish placed dumps as a parse, "
+           "up to byte %zu: %s",
+           at, cases[i].source);
     }
 }
 
@@ -12181,6 +12234,7 @@ int main(void) {
     session_snapshot_openers(runner);
     session_snapshot_simple_tables(runner);
     session_snapshot_candidates(runner);
+    session_accept_after_commit_writes(runner);
     session_opener_fields(runner);
     node_view_views(runner);
     session_finalize_matches_a_parse(runner);
