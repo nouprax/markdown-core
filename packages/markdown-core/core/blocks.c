@@ -2130,7 +2130,8 @@ void markdown_core_parser_discard(markdown_core_parser *parser) { S_release_pars
  * and adds to them only past what the block holds. The open blocks below
  * the stop end where the text ends without closing: the snapshot writes
  * their ends, folds and runs in place, and keeps what each held -- its
- * child count, its last child, its flags and its end (the ROOMS) -- as it
+ * child count, its last child, its flags, its end and its anchor, which a
+ * paragraph closing as its first child can give it (the ROOMS) -- as it
  * adds children past them or replaces the last. A block below the stop that
  * the snapshot closes after all, as a block start none of the blocks above
  * it can hold takes its place, is lent as it closes (S_lend_below). The
@@ -2401,8 +2402,12 @@ static bool S_lend_tail(markdown_core_parser *parser, size_t length) {
     }
     markdown_core_room *room = stream->rooms;
     for (markdown_core_node *node = stream->boundary; node; node = markdown_core_scaffold_parent(node)) {
-        *room++ = (markdown_core_room){node, markdown_core_parser_last_child(node), node->child_count, node->place.end,
-                                       node->flags};
+        *room++ = (markdown_core_room){node,
+                                       markdown_core_parser_last_child(node),
+                                       node->child_count,
+                                       node->place.end,
+                                       node->flags,
+                                       node->attributes.anchor};
     }
     stream->room_count = rooms;
     if (parser->pending && !S_lend(parser, parser->pending)) {
@@ -2539,6 +2544,10 @@ static void S_take_back_room(const markdown_core_room *room) {
     const markdown_core_node_internal_flags published = MARKDOWN_CORE_NODE__PUBLISHED | MARKDOWN_CORE_NODE__FINAL;
     node->flags = (markdown_core_node_internal_flags)((room->flags & ~published) | (node->flags & published));
     node->place.end = room->end;
+    if (node->attributes.anchor.data != room->anchor.data) {
+        markdown_core_chunk_free(&node->attributes.anchor);
+        node->attributes.anchor = room->anchor;
+    }
 }
 
 /* THE TAKE-BACK (THE LENDING): the lent blocks, the last lent first, and

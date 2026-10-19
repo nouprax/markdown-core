@@ -175,11 +175,12 @@ typedef struct markdown_core_holder {
 
 /* AN OPEN BLOCK BELOW THE BLOCKS A SNAPSHOT LENT, as the snapshot found it
  * (blocks.c, THE LENDING): how many children it held, the last of them, its
- * flags and where it ended, which the snapshot writes in place. */
+ * flags, where it ended and its anchor, which the snapshot writes in place. */
 typedef struct markdown_core_room {
     struct markdown_core_node *node, *last;
     uint32_t count, end;
     markdown_core_node_internal_flags flags;
+    markdown_core_chunk anchor;
 } markdown_core_room;
 
 /* A RECORD A PUBLISH KEPT (ast.c, THE RECORDS): a node of a relation of an
