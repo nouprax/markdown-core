@@ -172,17 +172,21 @@ of it: the R column, measured at each window's last chunk, so a long stream is
 not reparsed after every chunk, and at the finalize. `session` appends through
 the engine's session: the S column, measured on the streams of at most 1,024
 chunks, where its total over the chunks and the finalize is at most 1.25 times
-R's (6.3). `binding` steps the same session
+R's (6.3), and on every stream of a shape whose cost per chunk the language
+keeps local (`LOCAL_SHAPES`: the scale shapes, the 10,000-item list and the
+1,000 nested quotes), where the highest chunk window up to a quarter of the
+stream and up to its end costs at most 1.25 times the highest up to its first
+sixteenth (6.2). `binding` steps the same session
 through the MCB3 entries and releases each step's message: the B column, on
-the streams S runs, counting what the messages add to the session's steps --
+the streams of at most 1,024 chunks, counting what the messages add to the session's steps --
 the part of a binding's build that reads the C document, without building the
 platform objects. B is reported without a gate (G14). `oneshot_ir` is the
 stage runner's two stages on each workload's final text.
 
 With `--baseline-ref`, the base revision's engine is rebuilt with this run's
-harness, as the stage gate does, and measured on the same workloads. R's and
-S's p95, maximum and total Ir of each workload must be at most 1.02 times the
-base's (6.4).
+harness, as the stage gate does, and measured on the same workloads. R's
+p95, maximum and total Ir of each workload must be at most 1.02 times the
+base's, and S's on the streams of at most 1,024 chunks (6.4).
 
 ```sh
 scripts/tooling/setup-environment.sh --install oracle-cmark oracle-cmark-gfm

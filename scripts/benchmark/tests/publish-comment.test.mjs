@@ -96,7 +96,7 @@ const attributes = () => ({
 });
 
 const streams = () => ({
-    schemaVersion: 5,
+    schemaVersion: 6,
     subjects: ["reparse", "session", "binding"],
     workloads: { version: "incremental-workloads-v2", set: "corpus", digest: "e".repeat(64), count: 3 },
     baseline: { revision: "b".repeat(40) },
@@ -105,6 +105,7 @@ const streams = () => ({
             name: "a.tokens",
             family: "tokens",
             size: null,
+            steps: 2,
             windows: [10, 20, 30],
             session: { windows: [11, 20, 33] },
             binding: { windows: [3, 5, 8] },
@@ -115,6 +116,7 @@ const streams = () => ({
             name: "b.tokens",
             family: "tokens",
             size: null,
+            steps: 1,
             windows: [40],
             session: { windows: [40] },
             binding: { windows: [10] },
@@ -125,6 +127,7 @@ const streams = () => ({
             name: "prose-ascii-16k.rows",
             family: "rows",
             size: 16384,
+            steps: 4096,
             windows: [7, 9],
             session: null,
             binding: null,
@@ -152,6 +155,12 @@ test("the stream table reports the R, S and B columns by family and size, pooled
     unbased.baseline = null;
     unbased.results[1].regressions = [];
     assert.doesNotMatch(streamSection(unbased), /passed/);
+    const local = streams();
+    local.results[2].session = { windows: [5, 6] };
+    assert.match(
+        streamSection(local),
+        /\| Shapes \| rows \| 16,384 \| 1 \| 2 \| 7 \| 9 \| 9 \| 16 \| 5 \| 6 \| 6 \| 11 \| {2}\| {2}\| 8 \|/
+    );
     for (const mutate of [
         (r) => (r.schemaVersion = 3),
         (r) => (r.subjects = ["reparse", "session"]),
@@ -167,6 +176,8 @@ test("the stream table reports the R, S and B columns by family and size, pooled
         (r) => (r.results[0].binding.windows = [1, 2]),
         (r) => (r.results[0].binding.windows = [3, 5, 0.5]),
         (r) => (r.results[2].binding = { windows: [1, 2] }),
+        (r) => (r.results[2].steps = 1024),
+        (r) => delete r.results[0].steps,
         (r) => (r.results[1].regressions[0].subject = "binding"),
         (r) => (r.results[2].size = -1),
         (r) => (r.results[1].oneshot.ir = 1.5),

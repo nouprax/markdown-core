@@ -138,10 +138,16 @@ export function summary(values) {
     };
 }
 
+/** The byte each chunk window ends at: its last chunk's end (5.1). */
+export function windowBytes(chunkEnds) {
+    return windowEnds(chunkEnds.length).map((step) => chunkEnds[step - 1]);
+}
+
 /**
  * 6.2 for a stream of `length` bytes: with m(p) the highest cost of every
  * window that ends at or before byte p, m(n/4) and m(n) are each at most 1.25
- * times m(n/16). `windows` lists each window's end byte and Ir, in order.
+ * times m(n/16). `windows` lists each chunk window's end byte and Ir, in
+ * order; the finalize is bounded by 6.3 (decision G16).
  */
 export function flatStream(windows, length) {
     const highest = (point) =>
@@ -178,9 +184,10 @@ export function regressions(current, base) {
 /**
  * The R, S and B columns by group, each pooled over every window of every
  * workload in the group that has it: `key` names a workload's group.
- * `totalRatio` is S's total over R's on the workloads S runs (6.3),
- * `stepRatio` the group's highest S / R of one step, and the one-shot figure
- * sums the final texts' parses.
+ * `totalRatio` is S's total over R's on the streams 6.3 measures, those of
+ * at most 1,024 steps, `stepRatio` their highest S / R of one step,
+ * `bindingRatio` B's total over S's on the streams B runs, and the one-shot
+ * figure sums the final texts' parses.
  */
 export function groupWindows(results, key) {
     const groups = new Map();
@@ -192,22 +199,30 @@ export function groupWindows(results, key) {
             windows: [],
             session: [],
             binding: [],
+            measured: 0,
             stepRatio: 0,
             sessionTotal: 0,
             reparseTotal: 0,
+            bindingTotal: 0,
+            boundTotal: 0,
             oneshot: 0
         };
         group.workloads++;
         group.windows.push(...row.windows);
-        if (row.session) {
-            group.session.push(...row.session.windows);
+        if (row.session) group.session.push(...row.session.windows);
+        if (row.session && row.steps <= WINDOWS) {
+            group.measured++;
             group.sessionTotal += total(row.session.windows);
             group.reparseTotal += total(row.windows);
             row.session.windows.forEach(
                 (cost, step) => (group.stepRatio = Math.max(group.stepRatio, cost / row.windows[step]))
             );
         }
-        if (row.binding) group.binding.push(...row.binding.windows);
+        if (row.binding) {
+            group.binding.push(...row.binding.windows);
+            group.bindingTotal += total(row.binding.windows);
+            group.boundTotal += total(row.session.windows);
+        }
         group.oneshot += row.oneshot.ir;
         groups.set(name, group);
     }
@@ -218,8 +233,9 @@ export function groupWindows(results, key) {
         reparse: summary(group.windows),
         session: group.session.length ? summary(group.session) : null,
         binding: group.binding.length ? summary(group.binding) : null,
-        totalRatio: group.session.length ? group.sessionTotal / group.reparseTotal : null,
-        stepRatio: group.session.length ? group.stepRatio : null,
+        totalRatio: group.measured ? group.sessionTotal / group.reparseTotal : null,
+        stepRatio: group.measured ? group.stepRatio : null,
+        bindingRatio: group.binding.length ? group.bindingTotal / group.boundTotal : null,
         oneshot: group.oneshot
     }));
 }

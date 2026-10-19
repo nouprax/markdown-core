@@ -5,11 +5,13 @@ import { parseCallgrind } from "../callgrind.mjs";
 import {
     bindingCost,
     flatStream,
+    groupWindows,
     neverWorse,
     parseCost,
     regressions,
     stepCost,
     summary,
+    windowBytes,
     windowEnds,
     WINDOWS
 } from "../stream-gates.mjs";
@@ -162,6 +164,15 @@ test("windows split long streams into 1,024 contiguous windows of near-equal ste
     assert.ok(Math.max(...widths) - Math.min(...widths) <= 1);
 });
 
+test("each chunk window ends where its last chunk ends", () => {
+    assert.deepEqual(windowBytes([3, 5, 9]), [3, 5, 9]);
+    const chunkEnds = Array.from({ length: 4115 }, (_, index) => 4 * (index + 1));
+    assert.deepEqual(
+        windowBytes(chunkEnds),
+        windowEnds(4115).map((step) => 4 * step)
+    );
+});
+
 test("a summary reports nearest-rank percentiles, the maximum and the total", () => {
     const values = Array.from({ length: 100 }, (_, index) => index + 1);
     assert.deepEqual(summary(values), { p50: 50, p95: 95, max: 100, total: 5050 });
@@ -197,6 +208,29 @@ test("6.2 rejects stream windows whose cost grows with the text already streamed
         spike.map((entry) => entry.point),
         [length]
     );
+});
+
+test("S / R and B / S come from the streams 6.3 measures, and a long stream's S joins its group's column", () => {
+    const row = (steps, windows, session, binding) => ({
+        steps,
+        windows,
+        session: { windows: session },
+        binding: binding && { windows: binding },
+        oneshot: { ir: 1 }
+    });
+    const [group] = groupWindows(
+        [row(2, [10, 10, 10], [11, 12, 10], [3, 3, 3]), row(WINDOWS + 1, [10, 10], [500, 900], null)],
+        () => "all"
+    );
+    assert.equal(group.totalRatio, 33 / 30);
+    assert.equal(group.stepRatio, 1.2);
+    assert.equal(group.bindingRatio, 9 / 33);
+    assert.equal(group.session.max, 900);
+    const [long] = groupWindows([row(WINDOWS + 1, [10, 10], [500, 900], null)], () => "long");
+    assert.equal(long.totalRatio, null);
+    assert.equal(long.stepRatio, null);
+    assert.equal(long.bindingRatio, null);
+    assert.equal(long.session.total, 1400);
 });
 
 test("6.3 rejects a stream whose total, the finalize included, is above 1.25 times reparse's", () => {

@@ -21,18 +21,18 @@
  *
  * Three subjects run the workloads: `reparse`, the R column, `session`, the
  * S column, and `binding`, the B column. The session takes every step of its
- * windows, so it is measured on the workloads of at most 1,024 steps, where
- * 6.3 holds its total over the steps and the finalize to 1.25 times
- * `reparse`'s on the same steps; a longer stream is bounded per chunk by 6.2
- * from the step that makes
- * its chunks local (section 7). B is the C side of a binding's build of each
- * published document's values, on the session's workloads, reported without
- * a gate (plan D5).
+ * windows, and runs the streams a gate bounds: every stream of at most 1,024
+ * steps, where 6.3 holds its total over the steps and the finalize to 1.25
+ * times `reparse`'s on the same steps, and every stream of a shape whose
+ * cost per chunk the language keeps local, whose chunk windows 6.2 holds
+ * flat. B is the C side of a binding's build of each published document's
+ * values, on the streams of at most 1,024 steps, reported without a gate
+ * (plan D5).
  * With `--baseline-ref`, the base revision's engine is rebuilt with this
- * run's harness and measured on the same workloads, and 6.4 holds R's and
- * S's p95, maximum and total to 1.02 times the base's. The report is
- * written either way, and a violation of 6.3 or 6.4 fails the run that writes
- * the whole report.
+ * run's harness and measured on the same workloads, and 6.4 holds R's p95,
+ * maximum and total to 1.02 times the base's, and S's on the streams 6.3
+ * measures. The report is written either way, and a violation of 6.2, 6.3
+ * or 6.4 fails the run that writes the whole report.
  *
  *   node scripts/benchmark/streams.mjs [--out DIR] [--set all|corpus]
  *                                      [--workload NAME]... [--shard I/N]
@@ -56,6 +56,7 @@ import { parseCallgrind } from "./callgrind.mjs";
 import { PARSE_BOUNDARIES, STREAM_RUNNER, measure, prepareBuild, profileRun } from "./run.mjs";
 import {
     bindingCost,
+    flatStream,
     groupWindows,
     neverWorse,
     parseCost,
@@ -64,10 +65,11 @@ import {
     stepCost,
     summary,
     WINDOWS,
+    windowBytes,
     windowEnds
 } from "./stream-gates.mjs";
 import { STAGES } from "./stage-budget.mjs";
-import { BENCHMARK_SETS, writeBenchmarkWorkloads } from "./workloads.mjs";
+import { BENCHMARK_SETS, streamChunks, writeBenchmarkWorkloads } from "./workloads.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const SUBJECTS = Object.freeze(["reparse", "session", "binding"]);
@@ -189,10 +191,14 @@ function measureSubject(profile, out, into, workload, subject, final) {
     };
 }
 
-/** Both subjects of one build on one workload; the session only where 6.3 measures it. */
-function measureSubjects(profile, out, into, workload, final) {
+/**
+ * Both subjects of one build on one workload: the session on a stream of at
+ * most 1,024 steps (6.3), and on a longer one when `long` asks for it (6.2).
+ */
+function measureSubjects(profile, out, into, workload, final, long) {
     const reparse = measureSubject(profile, out, into, workload, "reparse", final);
-    const session = reparse.steps <= WINDOWS ? measureSubject(profile, out, into, workload, "session", final) : null;
+    const session =
+        reparse.steps <= WINDOWS || long ? measureSubject(profile, out, into, workload, "session", final) : null;
     if (session && (session.steps !== reparse.steps || session.bytes !== reparse.bytes)) {
         throw new Error(`${workload.name}: the subjects took different streams`);
     }
@@ -200,16 +206,31 @@ function measureSubjects(profile, out, into, workload, final) {
 }
 
 /**
- * One workload, measured: each subject's windows, 6.3 between R and S, the
- * one-shot parse of the text they end with and, with a baseline, R's and S's
- * summaries on the base revision and 6.4 against them. B is this revision's
- * alone. Runs in a worker; every path is absolute.
+ * The byte each of a workload's chunk windows ends at, from the generator's
+ * own chunking of its document, which must take the runner's `steps`.
+ */
+function measuredBytes(out, workload, steps) {
+    const chunkEnds = streamChunks(fs.readFileSync(path.join(out, "workloads", workload.document)), workload.stream);
+    if (chunkEnds.length !== steps) {
+        throw new Error(`${workload.name}: the runner took ${steps} chunks and the generator ${chunkEnds.length}`);
+    }
+    return windowBytes(chunkEnds);
+}
+
+/**
+ * One workload, measured: each subject's windows, 6.2 on the session's chunk
+ * windows of a local shape, 6.3 between R and S, the one-shot parse of the
+ * text they end with and, with a baseline, R's and S's summaries on the base
+ * revision and 6.4 against them, S's on the streams 6.3 measures. B is this
+ * revision's alone, on those streams. Runs in a worker; every path is
+ * absolute.
  */
 function measureWorkload(profile, baseline, out, workload) {
     const final = path.join(out, "final", `${workload.name}.md`);
     fs.mkdirSync(path.dirname(final), { recursive: true });
-    const { reparse, session } = measureSubjects(profile, out, out, workload, final);
-    const binding = session && measureSubject(profile, out, out, workload, "binding", final);
+    const { reparse, session } = measureSubjects(profile, out, out, workload, final, workload.local);
+    const short = reparse.steps <= WINDOWS;
+    const binding = short && measureSubject(profile, out, out, workload, "binding", final);
     if (binding && (binding.steps !== session.steps || binding.bytes !== session.bytes)) {
         throw new Error(`${workload.name}: the subjects took different streams`);
     }
@@ -220,13 +241,14 @@ function measureWorkload(profile, baseline, out, workload) {
     fs.rmSync(oneshot.dump, { force: true });
     let base = null;
     if (baseline) {
-        const measured = measureSubjects(baseline.profile, out, baseline.directory, workload, final);
-        if (measured.reparse.steps !== reparse.steps || !measured.session !== !session) {
+        const measured = measureSubjects(baseline.profile, out, baseline.directory, workload, final, false);
+        if (measured.reparse.steps !== reparse.steps || !measured.session !== !short) {
             throw new Error(`${workload.name}: the base revision took a different stream`);
         }
         base = { reparse: measured.reparse.summary.ir, session: measured.session?.summary.ir ?? null };
     }
     fs.rmSync(final, { force: true });
+    const bytes = workload.local && measuredBytes(out, workload, reparse.steps);
     return {
         steps: reparse.steps,
         bytes: reparse.bytes,
@@ -234,13 +256,19 @@ function measureWorkload(profile, baseline, out, workload) {
         reparse: reparse.summary,
         session: session && { windows: session.windows, ...session.summary },
         binding: binding && { windows: binding.windows, ...binding.summary },
-        neverWorse: session && reparse.steps <= WINDOWS ? neverWorse(session.windows, reparse.windows) : [],
+        flatness: workload.local
+            ? flatStream(
+                  bytes.map((end, window) => ({ end, Ir: session.windows[window] })),
+                  reparse.bytes
+              )
+            : [],
+        neverWorse: short ? neverWorse(session.windows, reparse.windows) : [],
         oneshot: { ir: STAGES.reduce((sum, stage) => sum + oneshot.stages[stage].cost.Ir, 0) },
         base,
         regressions: base
             ? [
                   ...regressions(reparse.summary.ir, base.reparse).map((entry) => ({ subject: "reparse", ...entry })),
-                  ...(session
+                  ...(short
                       ? regressions(session.summary.ir, base.session).map((entry) => ({ subject: "session", ...entry }))
                       : [])
               ]
@@ -310,6 +338,11 @@ const figures = (column) =>
 const ratios = (group) =>
     group.totalRatio === null ? ["", ""] : [`${group.totalRatio.toFixed(3)}×`, `${group.stepRatio.toFixed(3)}×`];
 
+/** The 6.2 violations of a report: every point whose m(p) is above 1.25 times m(n/16). */
+export function steep(report) {
+    return report.results.flatMap((row) => row.flatness.map((entry) => ({ name: row.name, ...entry })));
+}
+
 /** The 6.3 violations of a report: every workload whose total is above 1.25 times `reparse`'s. */
 export function violations(report) {
     return report.results.flatMap((row) => row.neverWorse.map((entry) => ({ name: row.name, ...entry })));
@@ -332,7 +365,7 @@ export function markdownReport(report) {
         "",
         `Subjects: ${report.subjects.map((subject) => `\`${subject}\``).join(", ")}. Workloads: ${number(report.results.length)} (\`${report.workloads.version}\`, digest \`${report.workloads.digest.slice(0, 16)}\`).`,
         "Every figure is Ir per window of chunks and for the finalize: S is the edge into `bench_apply_step` or `bench_finalize`, and R the two parse stages of each `Document.parse`; the one-shot column parses each workload's final text once, both stages.",
-        `S is measured on the workloads of at most ${number(WINDOWS)} steps, where each workload's S total is at most 1.25 times its R total (6.3).`,
+        `S is measured on the workloads of at most ${number(WINDOWS)} steps, where each workload's S total is at most 1.25 times its R total (6.3), and on every stream of a shape whose cost per chunk the language keeps local, where the highest chunk window up to a quarter of the stream and up to its end costs at most 1.25 times the highest up to its first sixteenth (6.2). S / R is over the first.`,
         "",
         "| Documents | Family | Size | Workloads | Windows | R p50 | R p95 | R max | R total | S p50 | S p95 | S max | S total | S / R total | Highest step S / R | One-shot total |",
         "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
@@ -353,6 +386,13 @@ export function markdownReport(report) {
                 number(group.oneshot)
             ].join(" | ")} |`
         );
+    }
+    const uneven = steep(report);
+    if (uneven.length) {
+        lines.push("", `6.2 fails at ${number(uneven.length)} point(s):`, "");
+        for (const entry of uneven.slice(0, 20)) {
+            lines.push(`- ${entry.name} byte ${number(entry.point)}: ${entry.ratio.toFixed(3)}× the first sixteenth`);
+        }
     }
     const failed = violations(report);
     if (failed.length) {
@@ -391,7 +431,7 @@ export function markdownReport(report) {
                 family,
                 size ? number(size) : "",
                 ...figures(group.binding),
-                `${(group.binding.total / group.session.total).toFixed(3)}×`
+                `${group.bindingRatio.toFixed(3)}×`
             ].join(" | ")} |`
         );
     }
@@ -469,7 +509,8 @@ async function measureSet(options) {
         selected.map((workload) => ({
             name: workload.name,
             document: workload.document.path,
-            stream: workload.family
+            stream: workload.family,
+            local: workload.local
         })),
         options.quiet
     );
@@ -480,7 +521,7 @@ async function measureSet(options) {
             ["markdown-core", "markdown-core streams"].map((name) => [name, { sha256: identity[name].sha256 }])
         );
     const report = {
-        schemaVersion: 5,
+        schemaVersion: 6,
         subjects: SUBJECTS,
         toolchain: versions,
         binaries: measuredBinaries(binaries),
@@ -494,6 +535,7 @@ async function measureSet(options) {
             alphabet: workload.document.alphabet,
             size: workload.document.shape ? workload.document.size : null,
             family: workload.family,
+            local: workload.local,
             ...measured.get(workload.name)
         }))
     };
@@ -515,11 +557,15 @@ async function main() {
     writeReport(report, options.out, options.quiet);
     /* A part is judged with the others, once they are joined. */
     if (report.shard) return;
+    const uneven = steep(report);
     const failed = violations(report);
     const worse = regressed(report);
-    if (failed.length || worse.length) {
+    if (uneven.length || failed.length || worse.length) {
         fail(
             [
+                uneven.length
+                    ? `6.2: ${uneven.length} point(s) cost more than 1.25 times the first sixteenth, the first ${uneven[0].name} at byte ${uneven[0].point} at ${uneven[0].ratio.toFixed(3)}×`
+                    : null,
                 failed.length
                     ? `6.3: ${failed.length} workload(s) cost more than 1.25 times reparse in total, the first ${failed[0].name} at ${failed[0].ratio.toFixed(3)}×`
                     : null,

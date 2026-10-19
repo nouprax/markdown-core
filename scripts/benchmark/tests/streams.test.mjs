@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { markdownReport, mergeParts, regressed, violations } from "../streams.mjs";
+import { markdownReport, mergeParts, regressed, steep, violations } from "../streams.mjs";
 
 /* A set of `count` workloads measured in `shards` parts: workload k is the
  * (k / shards)th result of part k mod shards. */
 const parts = (count, shards) =>
     Array.from({ length: shards }, (_, index) => ({
-        schemaVersion: 5,
+        schemaVersion: 6,
         subjects: ["reparse", "session", "binding"],
         toolchain: { compiler: "cc" },
         binaries: { "markdown-core": { sha256: "a" }, "markdown-core streams": { sha256: "b" } },
@@ -60,10 +60,13 @@ const row = (name, ir, base) => {
         source: "grammar corpus",
         family: "tokens",
         size: null,
+        local: false,
+        steps: 1,
         windows,
         reparse: { ir: figures },
         session: { windows, ir: figures },
         binding: { windows: windows.map((cost) => cost / 5), ir: figures },
+        flatness: [],
         neverWorse: [],
         oneshot: { ir: 3 * ir },
         base: { reparse: scaled, session: scaled },
@@ -112,4 +115,36 @@ test("6.3 lists every workload above 1.25 times reparse in total, beside S / R i
     assert.match(rendered, /6\.3 fails on 1 workload\(s\):/);
     assert.match(rendered, /- w1: 1\.550× reparse in total/);
     assert.equal(violations({ ...report, results: [row("w0", 100, 1)] }).length, 0);
+});
+
+test("6.2 lists every point above 1.25 times the first sixteenth, and the report names them", () => {
+    /* A long stream of a local shape: S without B, and outside S / R. */
+    const long = (name, flatness) => ({
+        ...row(name, 100, 1),
+        source: "list",
+        family: "rows",
+        size: 16384,
+        local: true,
+        steps: 2048,
+        binding: null,
+        neverWorse: [],
+        flatness
+    });
+    const report = {
+        ...parts(2, 1)[0],
+        shard: undefined,
+        baseline: null,
+        results: [long("list-ascii-16k.rows", []), long("quote-ascii-16k.rows", [{ point: 16384, ratio: 1.31 }])]
+    };
+    assert.deepEqual(steep(report), [{ name: "quote-ascii-16k.rows", point: 16384, ratio: 1.31 }]);
+    const rendered = markdownReport(report);
+    assert.match(
+        rendered,
+        /6\.2 fails at 1 point\(s\):\n\n- quote-ascii-16k\.rows byte 16,384: 1\.310× the first sixteenth/
+    );
+    assert.match(
+        rendered,
+        /\| list \| rows \| 16,384 \| 2 \| 4 \| 100 \| 100 \| 100 \| 400 \| 100 \| 100 \| 100 \| 400 \| {2}\| {2}\| 600 \|/
+    );
+    assert.doesNotMatch(markdownReport({ ...report, results: [long("list-ascii-16k.rows", [])] }), /6\.2 fails/);
 });

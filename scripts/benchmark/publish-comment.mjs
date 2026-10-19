@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { inputVersion, sameInputs, validationSource } from "../shared/ci-inputs.mjs";
-import { groupWindows, REGRESSION_LIMIT } from "./stream-gates.mjs";
+import { groupWindows, REGRESSION_LIMIT, WINDOWS } from "./stream-gates.mjs";
 import { grammarComparisons } from "./report.mjs";
 import { stageBudget, STAGE_IR_LIMIT } from "./stage-budget.mjs";
 
@@ -211,7 +211,7 @@ const STREAM_METRICS = ["p95", "max", "total"];
 // the comment.
 export function streamSection(report) {
     if (
-        report?.schemaVersion !== 5 ||
+        report?.schemaVersion !== 6 ||
         JSON.stringify(report.subjects) !== JSON.stringify(STREAM_SUBJECTS) ||
         !Array.isArray(report.results)
     ) {
@@ -227,15 +227,19 @@ export function streamSection(report) {
     for (const row of report.results) {
         if (!STREAM_FAMILIES.includes(row.family)) throw new Error("Invalid stream family");
         if (row.size !== null) count(row.size);
+        count(row.steps);
         if (!windows(row.windows)) throw new Error("Invalid stream windows");
+        // S runs every stream of at most 1,024 chunks, and B exactly those.
+        const short = row.steps <= WINDOWS;
         if (
-            row.session !== null &&
-            (!windows(row.session?.windows) || row.session.windows.length !== row.windows.length)
+            (short && row.session === null) ||
+            (row.session !== null &&
+                (!windows(row.session?.windows) || row.session.windows.length !== row.windows.length))
         ) {
             throw new Error("Invalid session windows");
         }
         if (
-            (row.binding === null) !== (row.session === null) ||
+            (row.binding === null) === short ||
             (row.binding !== null &&
                 (!windows(row.binding?.windows) || row.binding.windows.length !== row.windows.length))
         ) {
@@ -265,7 +269,7 @@ export function streamSection(report) {
     const lines = [
         "### Streams",
         "",
-        `Subjects: \`reparse\` (R), \`session\` (S) and \`binding\` (B), Ir per window of chunks and for the finalize, R counting the two parse stages of each \`Document.parse\`; S and B run the streams of at most 1,024 chunks. ${number(report.results.length)} workloads · \`${report.workloads.digest.slice(0, 16)}\`.`
+        `Subjects: \`reparse\` (R), \`session\` (S) and \`binding\` (B), Ir per window of chunks and for the finalize, R counting the two parse stages of each \`Document.parse\`; S and B run the streams of at most 1,024 chunks, and S also every longer stream of a shape the language keeps local. ${number(report.results.length)} workloads · \`${report.workloads.digest.slice(0, 16)}\`.`
     ];
     if (report.baseline) {
         lines.push(
@@ -307,7 +311,7 @@ export function streamSection(report) {
                     family,
                     size === null ? "" : number(size),
                     ...figures(group.binding),
-                    `${(group.binding.total / group.session.total).toFixed(3)}×`
+                    `${group.bindingRatio.toFixed(3)}×`
                 ].join(" | ")} |`;
             })
     );

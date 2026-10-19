@@ -334,7 +334,7 @@ encode of each document the window publishes and the release of its message.
 That is the part of a binding's build that reads the C document, which Kotlin
 and ECMAScript run per append and whose facade reads Swift's builder makes;
 building the platform objects is not counted (G14). The benchmark runs it on
-the workloads the session runs, and reports it without a gate.
+the streams of at most 1,024 chunks, and reports it without a gate.
 
 ### 5.2 Metrics per workload
 
@@ -361,10 +361,10 @@ There is no tolerance.
 ### 6.2 Flatness, on Ir
 
 For `tokens` and `rows` on every scale shape, the rule compares positions
-within one stream of `n` bytes. With `m(p)` the highest cost of every window that ends at or before `p`, each
+within one stream of `n` bytes. With `m(p)` the highest cost of every chunk window that ends at or before `p`, each
 of `m(n/4)` and `m(n)` is at most `1.25 × m(n/16)`, which catches per-chunk
 work that grows with the text already streamed, wherever in the stream it
-occurs.
+occurs. The finalize's window is reported (decision G16).
 
 The same rule covers the adversarial shapes whose cost the language keeps
 local: the 10,000-item list and the 1,000 nested quotes. It excludes the
@@ -392,8 +392,8 @@ Against the base revision, measured with the current harness and workloads on
 both sides as the one-shot gate already does, and always between the same
 subject on both sides:
 
-- each workload's p95, maximum and total `step_ir` are at most 1.02 times the
-  base;
+- each workload's p95, maximum and total `reparse_ir`, and `step_ir` on the
+  streams 6.3 measures, are at most 1.02 times the base;
 - the one-shot gate keeps its `source_to_buffer` rule and adds the same rule
   to `buffer_to_ast`, per document.
 
@@ -584,3 +584,9 @@ their own pull requests.
   ("streaming的解析性能要远好于每次append重复解析，尤其是LLM的常见场景").
   6.3 bounds each stream's session total by its reparse total, and the
   highest ratio of one step is reported.
+- **G16 The finalize under 6.2. Decided 2026-10-18: the compromise**
+  ("收尾窗口是我们的妥协，ref/link backtracking导致不这么做性能更差"). The
+  finalize looks up the definitions that the stream's roots use, because
+  going back over references and links while streaming costs more. 6.2
+  compares the chunk windows of a stream, and the finalize's window is
+  reported.

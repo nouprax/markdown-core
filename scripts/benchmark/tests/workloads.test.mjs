@@ -7,6 +7,8 @@ import test from "node:test";
 
 import {
     ADVERSARIAL_SHAPES,
+    benchmarkWorkloads,
+    LOCAL_SHAPES,
     SCALE_SHAPES,
     SIZES,
     STREAM_FAMILIES,
@@ -99,6 +101,28 @@ test("the adversarial shapes hold the counts and depths section 3.1 names", () =
     assert.deepEqual(shapeSizes("single-line"), [65536]);
     assert.ok(smallest("unclosed-strong", "ascii").text.startsWith("**"));
     assert.equal(smallest("single-line", "ascii").text.trimEnd().split("\n").length, 1);
+});
+
+test("the streaming shapes write the definition after its uses and leave the envelope and the grid table open", () => {
+    const late = shapeDocument("late-definition", "ascii", SIZES.at(-1)).text;
+    assert.ok(late.match(/\]\[t\]/g).length >= 10000);
+    assert.equal(late.match(/^\[t\]: /gm).length, 1);
+    assert.match(late, /\n\[t\]: \/[a-z]+\n$/);
+    const envelope = smallest("unclosed-properties", "ascii").text.split("\n");
+    assert.equal(envelope[0], "---");
+    assert.ok(!envelope.slice(1).some((line) => /^(---|\.\.\.)\s*$/.test(line)));
+    const grid = smallest("unclosed-grid", "ascii").text.trimEnd().split("\n");
+    assert.match(grid[0], /^\+-+\+-+\+$/);
+    assert.match(grid.at(-1), /^\| .*\|$/);
+});
+
+test("6.2 holds the streams of every scale shape, the long list and the deep quotes, and no other", () => {
+    assert.deepEqual(LOCAL_SHAPES, [...Object.keys(SCALE_SHAPES), "long-list", "deep-quotes"]);
+    const { workloads } = benchmarkWorkloads();
+    for (const workload of workloads) {
+        assert.equal(workload.local, LOCAL_SHAPES.includes(workload.document.shape), workload.name);
+    }
+    assert.ok(workloads.some((workload) => workload.local));
 });
 
 test("scripts survive their text format unchanged", () => {
