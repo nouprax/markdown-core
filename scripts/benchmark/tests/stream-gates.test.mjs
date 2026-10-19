@@ -199,18 +199,19 @@ test("6.2 rejects stream windows whose cost grows with the text already streamed
     );
 });
 
-test("6.3 rejects a step or a finalize above 1.25 times reparse on the same step", () => {
-    assert.deepEqual(neverWorse(costs([125, 10]), costs([100, 100])), []);
+test("6.3 rejects a stream whose total, the finalize included, is above 1.25 times reparse's", () => {
+    assert.deepEqual(neverWorse(costs([125, 125]), costs([100, 100])), []);
+    /* A step above the margin is the stream's to pay for, not a failure. */
+    assert.deepEqual(neverWorse(costs([200, 50]), costs([100, 100])), []);
     assert.deepEqual(
-        neverWorse(costs([126, 10]), costs([100, 100])).map((entry) => entry.step),
-        [0]
+        neverWorse(costs([126, 125]), costs([100, 100])).map((entry) => entry.ratio),
+        [1.255]
     );
     /* The finalize is the last window: a stream of 1,024 chunks has 1,025. */
     const full = Array.from({ length: WINDOWS + 1 }, () => 100);
-    assert.deepEqual(
-        neverWorse([...full.slice(0, -1), 126], full).map((entry) => entry.step),
-        [WINDOWS]
-    );
+    const room = 1.25 * 100 * (WINDOWS + 1) - 100 * WINDOWS;
+    assert.deepEqual(neverWorse([...full.slice(0, -1), room], full), []);
+    assert.equal(neverWorse([...full.slice(0, -1), room + 1], full).length, 1);
     assert.throws(() => neverWorse([1], [1, 2]), /different step counts/);
 });
 

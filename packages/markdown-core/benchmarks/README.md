@@ -171,7 +171,8 @@ Three subjects run the workloads. `reparse` keeps the text and parses the whole
 of it: the R column, measured at each window's last chunk, so a long stream is
 not reparsed after every chunk, and at the finalize. `session` appends through
 the engine's session: the S column, measured on the streams of at most 1,024
-chunks, where each chunk and the finalize cost at most 1.25 times R's (6.3). `binding` steps the same session
+chunks, where its total over the chunks and the finalize is at most 1.25 times
+R's (6.3). `binding` steps the same session
 through the MCB3 entries and releases each step's message: the B column, on
 the streams S runs, counting what the messages add to the session's steps --
 the part of a binding's build that reads the C document, without building the

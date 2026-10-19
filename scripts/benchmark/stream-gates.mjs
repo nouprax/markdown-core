@@ -31,7 +31,7 @@ export const SESSION_STEPS = Object.freeze(["markdown_core_session_append", "mar
 export const WINDOWS = 1024;
 /** 6.2: a later window of a stream against an earlier one. */
 export const FLATNESS_LIMIT = 1.25;
-/** 6.3: a subject's step against `reparse` on the same step. */
+/** 6.3: a subject's stream total against `reparse`'s on the same steps. */
 export const REPARSE_LIMIT = 1.25;
 /** 6.4: the same rule the one-shot gate applies per document and stage. */
 export const REGRESSION_LIMIT = STAGE_IR_LIMIT;
@@ -123,6 +123,9 @@ function percentile(sorted, share) {
     return sorted[Math.max(0, Math.ceil(share * sorted.length) - 1)];
 }
 
+/** The sum of a workload's window costs. */
+const total = (costs) => costs.reduce((sum, cost) => sum + cost, 0);
+
 /** 5.2: p50, p95, maximum and total over a workload's windows. */
 export function summary(values) {
     if (!values.length) throw new Error("a workload has no windows");
@@ -131,7 +134,7 @@ export function summary(values) {
         p50: percentile(sorted, 0.5),
         p95: percentile(sorted, 0.95),
         max: sorted.at(-1),
-        total: values.reduce((sum, value) => sum + value, 0)
+        total: total(values)
     };
 }
 
@@ -151,15 +154,15 @@ export function flatStream(windows, length) {
 }
 
 /**
- * 6.3, for a stream of at most 1,024 chunks: every step, the finalize
- * included, costs at most 1.25 times `reparse` on the same step. A longer
- * stream is bounded by 6.2.
+ * 6.3, for a stream of at most 1,024 chunks: its steps, the finalize
+ * included, cost at most 1.25 times `reparse` on the same steps, in total
+ * (decision G15). A longer stream is bounded by 6.2. The stream's ratio when
+ * it is above the limit.
  */
 export function neverWorse(steps, reparse) {
     if (steps.length !== reparse.length) throw new Error("the subjects ran different step counts");
-    return steps
-        .map((cost, step) => ({ step, ratio: cost / reparse[step] }))
-        .filter((entry) => entry.ratio > REPARSE_LIMIT);
+    const ratio = total(steps) / total(reparse);
+    return ratio > REPARSE_LIMIT ? [{ ratio }] : [];
 }
 
 /**
@@ -174,8 +177,9 @@ export function regressions(current, base) {
 
 /**
  * The R, S and B columns by group, each pooled over every window of every
- * workload in the group that has it: `key` names a workload's group. `ratio`
- * is the group's highest S / R of one step (6.3), and the one-shot figure
+ * workload in the group that has it: `key` names a workload's group.
+ * `totalRatio` is S's total over R's on the workloads S runs (6.3),
+ * `stepRatio` the group's highest S / R of one step, and the one-shot figure
  * sums the final texts' parses.
  */
 export function groupWindows(results, key) {
@@ -188,29 +192,34 @@ export function groupWindows(results, key) {
             windows: [],
             session: [],
             binding: [],
-            ratio: 0,
+            stepRatio: 0,
+            sessionTotal: 0,
+            reparseTotal: 0,
             oneshot: 0
         };
         group.workloads++;
         group.windows.push(...row.windows);
         if (row.session) {
             group.session.push(...row.session.windows);
+            group.sessionTotal += total(row.session.windows);
+            group.reparseTotal += total(row.windows);
             row.session.windows.forEach(
-                (cost, step) => (group.ratio = Math.max(group.ratio, cost / row.windows[step]))
+                (cost, step) => (group.stepRatio = Math.max(group.stepRatio, cost / row.windows[step]))
             );
         }
         if (row.binding) group.binding.push(...row.binding.windows);
         group.oneshot += row.oneshot.ir;
         groups.set(name, group);
     }
-    return [...groups.values()].map(({ key: name, workloads, windows, session, binding, ratio, oneshot }) => ({
-        key: name,
-        workloads,
-        windows: windows.length,
-        reparse: summary(windows),
-        session: session.length ? summary(session) : null,
-        binding: binding.length ? summary(binding) : null,
-        ratio: session.length ? ratio : null,
-        oneshot
+    return [...groups.values()].map((group) => ({
+        key: group.key,
+        workloads: group.workloads,
+        windows: group.windows.length,
+        reparse: summary(group.windows),
+        session: group.session.length ? summary(group.session) : null,
+        binding: group.binding.length ? summary(group.binding) : null,
+        totalRatio: group.session.length ? group.sessionTotal / group.reparseTotal : null,
+        stepRatio: group.session.length ? group.stepRatio : null,
+        oneshot: group.oneshot
     }));
 }

@@ -378,12 +378,13 @@ step 8 it covers the paragraph of short lines (3.1).
 
 ### 6.3 Never worse than reparsing
 
-For every step of every stream of at most 1,024 chunks and its `finalize`,
-`step_ir` is at most 1.25 times `reparse_ir` of the same step (decision G2).
-A longer stream is bounded per chunk by 6.2; its `reparse_ir` column is
-reported. The margin pays for matching when an append
-really does change the whole document; beyond it, an incremental append would
-be a regression against the application that just reparses.
+For every stream of at most 1,024 chunks, the total `step_ir` of its steps and
+its `finalize` is at most 1.25 times the total `reparse_ir` of the same steps
+(decisions G2 and G15). The highest ratio of one step is reported. A longer
+stream is bounded per chunk by 6.2; its `reparse_ir` column is reported. The
+margin pays for matching when an append really does change the whole
+document; beyond it, streaming would be a regression against the application
+that just reparses.
 
 ### 6.4 Regressions
 
@@ -577,3 +578,9 @@ their own pull requests.
   reads the C document, in the gates' unit on the gates' machine; building
   the platform objects is not counted. It is reported per append, without a
   gate (plan D5).
+- **G15 6.3 over the whole stream. Decided 2026-10-19: the stream's total**
+  ("按整条流总量"). What streaming must give is parsing far better than
+  reparsing on every append, above all in the common LLM case
+  ("streaming的解析性能要远好于每次append重复解析，尤其是LLM的常见场景").
+  6.3 bounds each stream's session total by its reparse total, and the
+  highest ratio of one step is reported.

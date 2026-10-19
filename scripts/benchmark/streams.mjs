@@ -22,8 +22,9 @@
  * Three subjects run the workloads: `reparse`, the R column, `session`, the
  * S column, and `binding`, the B column. The session takes every step of its
  * windows, so it is measured on the workloads of at most 1,024 steps, where
- * 6.3 holds every step and the finalize to 1.25 times `reparse` on the same
- * step; a longer stream is bounded per chunk by 6.2 from the step that makes
+ * 6.3 holds its total over the steps and the finalize to 1.25 times
+ * `reparse`'s on the same steps; a longer stream is bounded per chunk by 6.2
+ * from the step that makes
  * its chunks local (section 7). B is the C side of a binding's build of each
  * published document's values, on the session's workloads, reported without
  * a gate (plan D5).
@@ -305,7 +306,11 @@ const number = (value) => value.toLocaleString("en-US");
 const figures = (column) =>
     column ? [column.p50, column.p95, column.max, column.total].map(number) : ["", "", "", ""];
 
-/** The 6.3 violations of a report: every step above 1.25 times `reparse`. */
+/** A group's S / R in total and on its highest step, or blanks without S. */
+const ratios = (group) =>
+    group.totalRatio === null ? ["", ""] : [`${group.totalRatio.toFixed(3)}×`, `${group.stepRatio.toFixed(3)}×`];
+
+/** The 6.3 violations of a report: every workload whose total is above 1.25 times `reparse`'s. */
 export function violations(report) {
     return report.results.flatMap((row) => row.neverWorse.map((entry) => ({ name: row.name, ...entry })));
 }
@@ -317,9 +322,9 @@ export function regressed(report) {
 
 /**
  * The human report: per document source, family and size, the R and S
- * columns pooled over every window of every workload in the group, the
- * highest S / R of one step, and the one-shot parse of the final texts; with
- * a baseline, 6.4 per workload; and the B column beside S.
+ * columns pooled over every window of every workload in the group, S's total
+ * over R's and the highest S / R of one step, and the one-shot parse of the
+ * final texts; with a baseline, 6.4 per workload; and the B column beside S.
  */
 export function markdownReport(report) {
     const lines = [
@@ -327,10 +332,10 @@ export function markdownReport(report) {
         "",
         `Subjects: ${report.subjects.map((subject) => `\`${subject}\``).join(", ")}. Workloads: ${number(report.results.length)} (\`${report.workloads.version}\`, digest \`${report.workloads.digest.slice(0, 16)}\`).`,
         "Every figure is Ir per window of chunks and for the finalize: S is the edge into `bench_apply_step` or `bench_finalize`, and R the two parse stages of each `Document.parse`; the one-shot column parses each workload's final text once, both stages.",
-        `S is measured on the workloads of at most ${number(WINDOWS)} steps, where each step costs at most 1.25 times R's (6.3).`,
+        `S is measured on the workloads of at most ${number(WINDOWS)} steps, where each workload's S total is at most 1.25 times its R total (6.3).`,
         "",
-        "| Documents | Family | Size | Workloads | Windows | R p50 | R p95 | R max | R total | S p50 | S p95 | S max | S total | Highest S / R | One-shot total |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
+        "| Documents | Family | Size | Workloads | Windows | R p50 | R p95 | R max | R total | S p50 | S p95 | S max | S total | S / R total | Highest step S / R | One-shot total |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
     ];
     const groups = groupWindows(report.results, (row) => JSON.stringify([row.source, row.family, row.size]));
     for (const group of groups) {
@@ -344,16 +349,16 @@ export function markdownReport(report) {
                 number(group.windows),
                 ...figures(group.reparse),
                 ...figures(group.session),
-                group.ratio === null ? "" : `${group.ratio.toFixed(3)}×`,
+                ...ratios(group),
                 number(group.oneshot)
             ].join(" | ")} |`
         );
     }
     const failed = violations(report);
     if (failed.length) {
-        lines.push("", `6.3 fails on ${number(failed.length)} step(s):`, "");
+        lines.push("", `6.3 fails on ${number(failed.length)} workload(s):`, "");
         for (const entry of failed.slice(0, 20)) {
-            lines.push(`- ${entry.name} step ${entry.step + 1}: ${entry.ratio.toFixed(3)}× reparse`);
+            lines.push(`- ${entry.name}: ${entry.ratio.toFixed(3)}× reparse in total`);
         }
     }
     if (report.baseline) {
@@ -475,7 +480,7 @@ async function measureSet(options) {
             ["markdown-core", "markdown-core streams"].map((name) => [name, { sha256: identity[name].sha256 }])
         );
     const report = {
-        schemaVersion: 4,
+        schemaVersion: 5,
         subjects: SUBJECTS,
         toolchain: versions,
         binaries: measuredBinaries(binaries),
@@ -516,7 +521,7 @@ async function main() {
         fail(
             [
                 failed.length
-                    ? `6.3: ${failed.length} step(s) cost more than 1.25 times reparse, the first ${failed[0].name} step ${failed[0].step + 1} at ${failed[0].ratio.toFixed(3)}×`
+                    ? `6.3: ${failed.length} workload(s) cost more than 1.25 times reparse in total, the first ${failed[0].name} at ${failed[0].ratio.toFixed(3)}×`
                     : null,
                 worse.length
                     ? `6.4: ${worse.length} figure(s) exceed ${REGRESSION_LIMIT} times the base, the first ${worse[0].name} ${worse[0].subject} ${worse[0].metric} at ${worse[0].ratio.toFixed(4)}×`

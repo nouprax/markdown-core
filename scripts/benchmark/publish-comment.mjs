@@ -211,7 +211,7 @@ const STREAM_METRICS = ["p95", "max", "total"];
 // the comment.
 export function streamSection(report) {
     if (
-        report?.schemaVersion !== 4 ||
+        report?.schemaVersion !== 5 ||
         JSON.stringify(report.subjects) !== JSON.stringify(STREAM_SUBJECTS) ||
         !Array.isArray(report.results)
     ) {
@@ -275,8 +275,8 @@ export function streamSection(report) {
     }
     lines.push(
         "",
-        "| Documents | Family | Size | Workloads | Windows | R p50 | R p95 | R max | R total | S p50 | S p95 | S max | S total | Highest S / R | One-shot total |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Documents | Family | Size | Workloads | Windows | R p50 | R p95 | R max | R total | S p50 | S p95 | S max | S total | S / R total | Highest step S / R | One-shot total |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
         ...groups.map((group) => {
             const [source, family, size] = JSON.parse(group.key);
             return `| ${[
@@ -287,7 +287,9 @@ export function streamSection(report) {
                 number(group.windows),
                 ...figures(group.reparse),
                 ...figures(group.session),
-                group.ratio === null ? "" : `${group.ratio.toFixed(3)}×`,
+                ...(group.totalRatio === null
+                    ? ["", ""]
+                    : [`${group.totalRatio.toFixed(3)}×`, `${group.stepRatio.toFixed(3)}×`]),
                 number(group.oneshot)
             ].join(" | ")} |`;
         }),

@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { markdownReport, mergeParts, regressed } from "../streams.mjs";
+import { markdownReport, mergeParts, regressed, violations } from "../streams.mjs";
 
 /* A set of `count` workloads measured in `shards` parts: workload k is the
  * (k / shards)th result of part k mod shards. */
 const parts = (count, shards) =>
     Array.from({ length: shards }, (_, index) => ({
-        schemaVersion: 4,
+        schemaVersion: 5,
         subjects: ["reparse", "session", "binding"],
         toolchain: { compiler: "cc" },
         binaries: { "markdown-core": { sha256: "a" }, "markdown-core streams": { sha256: "b" } },
@@ -94,4 +94,22 @@ test("the report pools B beside S, without a gate", () => {
     assert.match(rendered, /## Bindings' C side/);
     assert.match(rendered, /\| grammar corpus \| tokens \| {2}\| 20 \| 60 \| 60 \| 160 \| 0\.200× \|/);
     assert.equal(regressed(report).length, 0);
+});
+
+test("6.3 lists every workload above 1.25 times reparse in total, beside S / R in total and on its highest step", () => {
+    const over = {
+        ...row("w1", 100, 1),
+        session: { windows: [300, 10], ir: { p50: 10, p95: 300, max: 300, total: 310 } },
+        neverWorse: [{ ratio: 1.55 }]
+    };
+    const report = { ...parts(2, 1)[0], shard: undefined, results: [row("w0", 100, 1), over] };
+    assert.deepEqual(violations(report), [{ name: "w1", ratio: 1.55 }]);
+    const rendered = markdownReport(report);
+    assert.match(
+        rendered,
+        /\| grammar corpus \| tokens \| {2}\| 2 \| 4 \| 100 \| 100 \| 100 \| 400 \| 100 \| 300 \| 300 \| 510 \| 1\.275× \| 3\.000× \| 600 \|/
+    );
+    assert.match(rendered, /6\.3 fails on 1 workload\(s\):/);
+    assert.match(rendered, /- w1: 1\.550× reparse in total/);
+    assert.equal(violations({ ...report, results: [row("w0", 100, 1)] }).length, 0);
 });

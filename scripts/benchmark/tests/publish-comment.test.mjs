@@ -96,7 +96,7 @@ const attributes = () => ({
 });
 
 const streams = () => ({
-    schemaVersion: 4,
+    schemaVersion: 5,
     subjects: ["reparse", "session", "binding"],
     workloads: { version: "incremental-workloads-v2", set: "corpus", digest: "e".repeat(64), count: 3 },
     baseline: { revision: "b".repeat(40) },
@@ -138,11 +138,11 @@ test("the stream table reports the R, S and B columns by family and size, pooled
     const body = streamSection(streams());
     assert.match(
         body,
-        /\| Grammar corpus \| tokens \| {2}\| 2 \| 4 \| 20 \| 40 \| 40 \| 100 \| 20 \| 40 \| 40 \| 104 \| 1\.100× \| 60 \|/
+        /\| Grammar corpus \| tokens \| {2}\| 2 \| 4 \| 20 \| 40 \| 40 \| 100 \| 20 \| 40 \| 40 \| 104 \| 1\.040× \| 1\.100× \| 60 \|/
     );
     assert.match(
         body,
-        /\| Shapes \| rows \| 16,384 \| 1 \| 2 \| 7 \| 9 \| 9 \| 16 \| {2}\| {2}\| {2}\| {2}\| {2}\| 8 \|/
+        /\| Shapes \| rows \| 16,384 \| 1 \| 2 \| 7 \| 9 \| 9 \| 16 \| {2}\| {2}\| {2}\| {2}\| {2}\| {2}\| 8 \|/
     );
     assert.match(body, /\| Grammar corpus \| tokens \| {2}\| 5 \| 10 \| 10 \| 26 \| 0\.250× \|/);
     assert.doesNotMatch(body, /\| Shapes \| rows \| 16,384 \| {2}\|/);
