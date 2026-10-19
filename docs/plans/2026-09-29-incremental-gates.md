@@ -81,12 +81,13 @@ changes the subject under test, not the harness.
 The harness drives a **subject** through one interface: open a session in a
 coordinate unit with an initial text, call `append` and, from step 7,
 `finalize`, each of which returns the new document, and close. There
-are exactly two subjects:
+are three subjects:
 
 | Subject | What it does | Role |
 | --- | --- | --- |
 | `session` | The engine's `MarkdownSession` (plan 4.4) | Under test, from rollout step 2 |
 | `reparse` | Keeps the text, and on every step calls `Document.parse` on the whole of it | The oracle for correctness, the R column for benchmarks |
+| `binding` | Steps the `session` subject's session through the MCB3 entries (plan 6.2) and releases each step's message | The B column of the stream benchmark, from rollout step 7 (5.1) |
 
 `reparse` is the one parser, called the way an application calls it today. It
 is the equivalence oracle and the reference cost an incremental append must
@@ -328,6 +329,12 @@ are in no window.
 
 The gates measure the C engine. A binding builds its platform values from what
 the engine returns (plan 6.1); bindings are gated for correctness (section 4).
+A `binding` window counts what its messages add to the session's steps: the
+encode of each document the window publishes and the release of its message.
+That is the part of a binding's build that reads the C document, which Kotlin
+and ECMAScript run per append and whose facade reads Swift's builder makes;
+building the platform objects is not counted (G14). The benchmark runs it on
+the workloads the session runs, and reports it without a gate.
 
 ### 5.2 Metrics per workload
 
@@ -335,6 +342,7 @@ the engine returns (plan 6.1); bindings are gated for correctness (section 4).
 | --- | --- |
 | `step_ir` | Ir per window: p50, p95, max and total over the stream |
 | `reparse_ir` | The same for the `reparse` subject: the parse an application runs today (5.1) |
+| `binding_ir` | The same for the `binding` subject: the C side of a binding's build per append (5.1) |
 | `oneshot_ir` | One-shot parse of the stream's final text, both stages |
 | `speedup` | `reparse_ir / step_ir` per step, p50 and p5, for streams of at most 1,024 steps |
 | `stream_ratio` | Stream total `step_ir` / `oneshot_ir` of the final text |
@@ -476,7 +484,7 @@ workloads and the raw profiles. CI runs a job, "Measure - streams", in the
 benchmark workflow against the pull request's base, and the trusted publisher
 adds its tables to the existing PR comment. The report shows, per workload,
 the S column (session), the R column (reparse), the highest S / R of one step,
-and the workloads that pass 6.4.
+the workloads that pass 6.4, and the B column (binding) beside S.
 
 ## 10. Work items
 
@@ -564,3 +572,8 @@ their own pull requests.
   `reparse` window counts the two parse stages of each `Document.parse`, as
   the one-shot gate does; creating and releasing the parser are outside
   every window, on either side of 6.4 (5.1).
+- **G14 A binding's cost per append. Decided 2026-10-19: the C side in Ir**
+  ("只计 C 侧 Ir"). Callgrind measures the part of a binding's build that
+  reads the C document, in the gates' unit on the gates' machine; building
+  the platform objects is not counted. It is reported per append, without a
+  gate (plan D5).

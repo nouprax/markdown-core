@@ -96,8 +96,8 @@ const attributes = () => ({
 });
 
 const streams = () => ({
-    schemaVersion: 3,
-    subjects: ["reparse", "session"],
+    schemaVersion: 4,
+    subjects: ["reparse", "session", "binding"],
     workloads: { version: "incremental-workloads-v2", set: "corpus", digest: "e".repeat(64), count: 3 },
     baseline: { revision: "b".repeat(40) },
     results: [
@@ -107,6 +107,7 @@ const streams = () => ({
             size: null,
             windows: [10, 20, 30],
             session: { windows: [11, 20, 33] },
+            binding: { windows: [3, 5, 8] },
             oneshot: { ir: 25 },
             regressions: []
         },
@@ -116,6 +117,7 @@ const streams = () => ({
             size: null,
             windows: [40],
             session: { windows: [40] },
+            binding: { windows: [10] },
             oneshot: { ir: 35 },
             regressions: [{ subject: "session", metric: "total", ratio: 1.03 }]
         },
@@ -125,13 +127,14 @@ const streams = () => ({
             size: 16384,
             windows: [7, 9],
             session: null,
+            binding: null,
             oneshot: { ir: 8 },
             regressions: []
         }
     ]
 });
 
-test("the stream table reports the R and S columns by family and size, pooled over windows, and 6.4", () => {
+test("the stream table reports the R, S and B columns by family and size, pooled over windows, and 6.4", () => {
     const body = streamSection(streams());
     assert.match(
         body,
@@ -141,6 +144,8 @@ test("the stream table reports the R and S columns by family and size, pooled ov
         body,
         /\| Shapes \| rows \| 16,384 \| 1 \| 2 \| 7 \| 9 \| 9 \| 16 \| {2}\| {2}\| {2}\| {2}\| {2}\| 8 \|/
     );
+    assert.match(body, /\| Grammar corpus \| tokens \| {2}\| 5 \| 10 \| 10 \| 26 \| 0\.250× \|/);
+    assert.doesNotMatch(body, /\| Shapes \| rows \| 16,384 \| {2}\|/);
     assert.match(body, /against `bbbbbbbbbbbb`\): \*\*2\/3 passed\*\*, 1 exceeded/);
     assert.doesNotMatch(body, /a\.tokens|prose-ascii/);
     const unbased = streams();
@@ -148,8 +153,8 @@ test("the stream table reports the R and S columns by family and size, pooled ov
     unbased.results[1].regressions = [];
     assert.doesNotMatch(streamSection(unbased), /passed/);
     for (const mutate of [
-        (r) => (r.schemaVersion = 2),
-        (r) => (r.subjects = ["reparse"]),
+        (r) => (r.schemaVersion = 3),
+        (r) => (r.subjects = ["reparse", "session"]),
         (r) => (r.workloads.count = 4),
         (r) => (r.baseline.revision = "<b>"),
         (r) => (r.baseline = null),
@@ -158,6 +163,11 @@ test("the stream table reports the R and S columns by family and size, pooled ov
         (r) => (r.results[0].windows = []),
         (r) => (r.results[0].session.windows = [1, 2]),
         (r) => (r.results[0].session = {}),
+        (r) => (r.results[0].binding = null),
+        (r) => (r.results[0].binding.windows = [1, 2]),
+        (r) => (r.results[0].binding.windows = [3, 5, 0.5]),
+        (r) => (r.results[2].binding = { windows: [1, 2] }),
+        (r) => (r.results[1].regressions[0].subject = "binding"),
         (r) => (r.results[2].size = -1),
         (r) => (r.results[1].oneshot.ir = 1.5),
         (r) => (r.results[1].regressions[0].metric = "<b>"),

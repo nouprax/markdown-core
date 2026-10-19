@@ -7,8 +7,8 @@ import { markdownReport, mergeParts, regressed } from "../streams.mjs";
  * (k / shards)th result of part k mod shards. */
 const parts = (count, shards) =>
     Array.from({ length: shards }, (_, index) => ({
-        schemaVersion: 3,
-        subjects: ["reparse", "session"],
+        schemaVersion: 4,
+        subjects: ["reparse", "session", "binding"],
         toolchain: { compiler: "cc" },
         binaries: { "markdown-core": { sha256: "a" }, "markdown-core streams": { sha256: "b" } },
         profile: { compiler: "cc", flags: "-O2" },
@@ -49,8 +49,8 @@ test("a missing, repeated or foreign part is refused", () => {
     assert.throws(() => mergeParts(long), /more results/);
 });
 
-/* A measured workload of `windows` windows of `ir` each, for both subjects,
- * with the base's figures scaled by `base`. */
+/* A measured workload of `windows` windows of `ir` each, for R and S, with
+ * the base's figures scaled by `base`, and B a fifth of S. */
 const row = (name, ir, base) => {
     const windows = [ir, ir];
     const figures = { p50: ir, p95: ir, max: ir, total: 2 * ir };
@@ -63,6 +63,7 @@ const row = (name, ir, base) => {
         windows,
         reparse: { ir: figures },
         session: { windows, ir: figures },
+        binding: { windows: windows.map((cost) => cost / 5), ir: figures },
         neverWorse: [],
         oneshot: { ir: 3 * ir },
         base: { reparse: scaled, session: scaled },
@@ -85,4 +86,12 @@ test("6.4 lists every figure above the base, and the report says how many worklo
     assert.match(rendered, /1\/2 workloads passed/);
     assert.match(rendered, /- w1 session total: 1\.0500× base/);
     assert.doesNotMatch(markdownReport({ ...report, baseline: null }), /Regression gate/);
+});
+
+test("the report pools B beside S, without a gate", () => {
+    const report = { ...parts(2, 1)[0], shard: undefined, results: [row("w0", 100, 1), row("w1", 300, 1)] };
+    const rendered = markdownReport(report);
+    assert.match(rendered, /## Bindings' C side/);
+    assert.match(rendered, /\| grammar corpus \| tokens \| {2}\| 20 \| 60 \| 60 \| 160 \| 0\.200× \|/);
+    assert.equal(regressed(report).length, 0);
 });

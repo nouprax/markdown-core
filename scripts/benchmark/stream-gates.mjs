@@ -5,9 +5,10 @@
  *
  * A workload's costs are its windows' costs, read from each of the runner's
  * per-window dumps: a session's window is the whole of its calls into
- * `bench_apply_step` and `bench_finalize`, and a `reparse` window is the parse
- * inside them. Every rule compares Ir; data references are reported beside
- * it.
+ * `bench_apply_step` and `bench_finalize`, a `reparse` window is the parse
+ * inside them, and a `binding` window is what its messages add to the
+ * session's steps. Every rule compares Ir; data references are reported
+ * beside it.
  */
 
 import { baseName, costRecord, foldClones, stageCalls } from "./callgrind.mjs";
@@ -15,6 +16,17 @@ import { STAGE_IR_LIMIT } from "./stage-budget.mjs";
 
 /** The steps' entries, as stream_runner.c names them: a chunk and the finalize. */
 export const STEP_ENTRIES = Object.freeze(["bench_apply_step", "bench_finalize"]);
+/**
+ * The MCB3 entries the `binding` subject steps its session through, and the
+ * release of each message (wire/markdown_core_wire.h).
+ */
+export const BINDING_ENTRIES = Object.freeze([
+    "markdown_core_wire_session_append",
+    "markdown_core_wire_session_finalize",
+    "markdown_core_wire_free"
+]);
+/** The session's own steps inside those entries: the S column's work. */
+export const SESSION_STEPS = Object.freeze(["markdown_core_session_append", "markdown_core_session_finalize"]);
 /** The most windows a workload is split into (5.1). */
 export const WINDOWS = 1024;
 /** 6.2: a later window of a stream against an earlier one. */
@@ -35,10 +47,11 @@ function stepEdges(profile) {
     return edges;
 }
 
-/** The record of a window whose `steps` cost what `edges` did. */
-function windowRecord(profile, steps, edges) {
+/** The record of a window whose `steps` cost what `edges` did beyond what `inside` did. */
+function windowRecord(profile, steps, edges, inside = []) {
     const cost = [];
     for (const edge of edges) edge.cost.forEach((value, index) => (cost[index] = (cost[index] ?? 0) + value));
+    for (const edge of inside) edge.cost.forEach((value, index) => (cost[index] = (cost[index] ?? 0) - value));
     const record = costRecord(profile, cost);
     if (!Number.isSafeInteger(record.Ir) || record.Ir <= 0) {
         throw new Error("a window's instruction count is not a positive integer");
@@ -79,6 +92,21 @@ export function parseCost(profile, boundaries) {
         steps,
         entered.flatMap((stage) => stage.edges)
     );
+}
+
+/**
+ * A `binding` window's cost: what its messages add to the session's steps,
+ * the MCB3 encode of each document the window publishes and the release of
+ * its message -- the C side of a binding's build of its values (plan D5).
+ */
+export function bindingCost(profile) {
+    const steps = stepEdges(profile);
+    const entries = [...profile.edges.values()].filter((edge) => BINDING_ENTRIES.includes(baseName(edge.callee)));
+    const sessions = [...profile.edges.values()].filter(
+        (edge) => BINDING_ENTRIES.includes(baseName(edge.caller)) && SESSION_STEPS.includes(baseName(edge.callee))
+    );
+    if (!sessions.length) throw new Error(`a window made no session step through ${BINDING_ENTRIES.join(" or ")}`);
+    return windowRecord(profile, steps, entries, sessions);
 }
 
 /**
@@ -145,7 +173,7 @@ export function regressions(current, base) {
 }
 
 /**
- * The R and S columns by group, each pooled over every window of every
+ * The R, S and B columns by group, each pooled over every window of every
  * workload in the group that has it: `key` names a workload's group. `ratio`
  * is the group's highest S / R of one step (6.3), and the one-shot figure
  * sums the final texts' parses.
@@ -154,7 +182,15 @@ export function groupWindows(results, key) {
     const groups = new Map();
     for (const row of results) {
         const name = key(row);
-        const group = groups.get(name) ?? { key: name, workloads: 0, windows: [], session: [], ratio: 0, oneshot: 0 };
+        const group = groups.get(name) ?? {
+            key: name,
+            workloads: 0,
+            windows: [],
+            session: [],
+            binding: [],
+            ratio: 0,
+            oneshot: 0
+        };
         group.workloads++;
         group.windows.push(...row.windows);
         if (row.session) {
@@ -163,15 +199,17 @@ export function groupWindows(results, key) {
                 (cost, step) => (group.ratio = Math.max(group.ratio, cost / row.windows[step]))
             );
         }
+        if (row.binding) group.binding.push(...row.binding.windows);
         group.oneshot += row.oneshot.ir;
         groups.set(name, group);
     }
-    return [...groups.values()].map(({ key: name, workloads, windows, session, ratio, oneshot }) => ({
+    return [...groups.values()].map(({ key: name, workloads, windows, session, binding, ratio, oneshot }) => ({
         key: name,
         workloads,
         windows: windows.length,
         reparse: summary(windows),
         session: session.length ? summary(session) : null,
+        binding: binding.length ? summary(binding) : null,
         ratio: session.length ? ratio : null,
         oneshot
     }));

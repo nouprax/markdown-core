@@ -7,7 +7,8 @@
  * workload of workloads.mjs, run through a subject by `stream_runner`, under
  * callgrind, one dump per window and one for the finalize. A session window's
  * cost is the edge into `bench_apply_step` or `bench_finalize`; a `reparse`
- * window's is the two parse stages of the `Document.parse` inside it.
+ * window's is the two parse stages of the `Document.parse` inside it; a
+ * `binding` window's is what its MCB3 messages add to the session's steps.
  * Everything else in the process, including opening the subject, is outside
  * every window.
  *
@@ -18,15 +19,17 @@
  * workload's final text, both stages, exactly as the one-shot benchmark
  * measures a document.
  *
- * Two subjects run every workload: `reparse`, the R column, and `session`,
- * the S column. The session takes every step of its windows, so it is
- * measured on the workloads of at most 1,024 steps, where 6.3 holds every
- * step and the finalize to 1.25 times `reparse` on the same step; a longer
- * stream is bounded per chunk by 6.2 from the step that makes its chunks
- * local (section 7).
+ * Three subjects run the workloads: `reparse`, the R column, `session`, the
+ * S column, and `binding`, the B column. The session takes every step of its
+ * windows, so it is measured on the workloads of at most 1,024 steps, where
+ * 6.3 holds every step and the finalize to 1.25 times `reparse` on the same
+ * step; a longer stream is bounded per chunk by 6.2 from the step that makes
+ * its chunks local (section 7). B is the C side of a binding's build of each
+ * published document's values, on the session's workloads, reported without
+ * a gate (plan D5).
  * With `--baseline-ref`, the base revision's engine is rebuilt with this
- * run's harness and measured on the same workloads, and 6.4 holds each
- * subject's p95, maximum and total to 1.02 times the base's. The report is
+ * run's harness and measured on the same workloads, and 6.4 holds R's and
+ * S's p95, maximum and total to 1.02 times the base's. The report is
  * written either way, and a violation of 6.3 or 6.4 fails the run that writes
  * the whole report.
  *
@@ -51,6 +54,7 @@ import { isMainThread, parentPort, Worker, workerData } from "node:worker_thread
 import { parseCallgrind } from "./callgrind.mjs";
 import { PARSE_BOUNDARIES, STREAM_RUNNER, measure, prepareBuild, profileRun } from "./run.mjs";
 import {
+    bindingCost,
     groupWindows,
     neverWorse,
     parseCost,
@@ -65,13 +69,16 @@ import { STAGES } from "./stage-budget.mjs";
 import { BENCHMARK_SETS, writeBenchmarkWorkloads } from "./workloads.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
-const SUBJECTS = Object.freeze(["reparse", "session"]);
+const SUBJECTS = Object.freeze(["reparse", "session", "binding"]);
 /* What a window of each subject counts (gates 5.1): an append is the
- * session's streaming parse, all of it, and of each `Document.parse` the
- * `reparse` subject calls, the two parse stages are the parsing. */
+ * session's streaming parse, all of it, of each `Document.parse` the
+ * `reparse` subject calls, the two parse stages are the parsing, and a
+ * binding's C side is the encode of each published document and the release
+ * of its message. */
 const WINDOW_COST = Object.freeze({
     reparse: (profile) => parseCost(profile, PARSE_BOUNDARIES),
-    session: stepCost
+    session: stepCost,
+    binding: bindingCost
 });
 
 function fail(message) {
@@ -192,15 +199,19 @@ function measureSubjects(profile, out, into, workload, final) {
 }
 
 /**
- * One workload, measured: each subject's windows, 6.3 between them, the
- * one-shot parse of the text they end with and, with a baseline, each
- * subject's summary on the base revision and 6.4 against it. Runs in a
- * worker; every path is absolute.
+ * One workload, measured: each subject's windows, 6.3 between R and S, the
+ * one-shot parse of the text they end with and, with a baseline, R's and S's
+ * summaries on the base revision and 6.4 against them. B is this revision's
+ * alone. Runs in a worker; every path is absolute.
  */
 function measureWorkload(profile, baseline, out, workload) {
     const final = path.join(out, "final", `${workload.name}.md`);
     fs.mkdirSync(path.dirname(final), { recursive: true });
     const { reparse, session } = measureSubjects(profile, out, out, workload, final);
+    const binding = session && measureSubject(profile, out, out, workload, "binding", final);
+    if (binding && (binding.steps !== session.steps || binding.bytes !== session.bytes)) {
+        throw new Error(`${workload.name}: the subjects took different streams`);
+    }
     const oneshot = measure(profile, "markdown-core", { case: workload.name, file: final }, out);
     if (oneshot.receiptBytes !== reparse.bytes || oneshot.rootChildren !== reparse.rootChildren) {
         throw new Error(`${workload.name}: the one-shot parse of the final text disagrees with the subject's`);
@@ -221,6 +232,7 @@ function measureWorkload(profile, baseline, out, workload) {
         windows: reparse.windows,
         reparse: reparse.summary,
         session: session && { windows: session.windows, ...session.summary },
+        binding: binding && { windows: binding.windows, ...binding.summary },
         neverWorse: session && reparse.steps <= WINDOWS ? neverWorse(session.windows, reparse.windows) : [],
         oneshot: { ir: STAGES.reduce((sum, stage) => sum + oneshot.stages[stage].cost.Ir, 0) },
         base,
@@ -307,7 +319,7 @@ export function regressed(report) {
  * The human report: per document source, family and size, the R and S
  * columns pooled over every window of every workload in the group, the
  * highest S / R of one step, and the one-shot parse of the final texts; with
- * a baseline, 6.4 per workload.
+ * a baseline, 6.4 per workload; and the B column beside S.
  */
 export function markdownReport(report) {
     const lines = [
@@ -351,11 +363,32 @@ export function markdownReport(report) {
             "",
             "## Regression gate",
             "",
-            `Base: ${report.baseline.revision}, measured with this run's harness and workloads. Each subject's p95, maximum and total Ir of each workload must stay within ${((REGRESSION_LIMIT - 1) * 100).toFixed(0)}% of the base's (6.4). ${number(report.results.length - workloads)}/${number(report.results.length)} workloads passed.`
+            `Base: ${report.baseline.revision}, measured with this run's harness and workloads. R's and S's p95, maximum and total Ir of each workload must stay within ${((REGRESSION_LIMIT - 1) * 100).toFixed(0)}% of the base's (6.4). ${number(report.results.length - workloads)}/${number(report.results.length)} workloads passed.`
         );
         for (const entry of worse.slice(0, 20)) {
             lines.push(`- ${entry.name} ${entry.subject} ${entry.metric}: ${entry.ratio.toFixed(4)}× base`);
         }
+    }
+    lines.push(
+        "",
+        "## Bindings' C side",
+        "",
+        "B is what a binding's C side adds to each S window: the MCB3 encode of each document the window publishes and the release of its message, which Kotlin and ECMAScript run per append, and whose facade reads Swift's builder makes from Swift. Building the platform values is not counted, and B has no gate (plan D5).",
+        "",
+        "| Documents | Family | Size | B p50 | B p95 | B max | B total | B / S total |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"
+    );
+    for (const group of groups.filter((entry) => entry.binding)) {
+        const [source, family, size] = JSON.parse(group.key);
+        lines.push(
+            `| ${[
+                source,
+                family,
+                size ? number(size) : "",
+                ...figures(group.binding),
+                `${(group.binding.total / group.session.total).toFixed(3)}×`
+            ].join(" | ")} |`
+        );
     }
     return lines.join("\n");
 }
@@ -442,7 +475,7 @@ async function measureSet(options) {
             ["markdown-core", "markdown-core streams"].map((name) => [name, { sha256: identity[name].sha256 }])
         );
     const report = {
-        schemaVersion: 3,
+        schemaVersion: 4,
         subjects: SUBJECTS,
         toolchain: versions,
         binaries: measuredBinaries(binaries),

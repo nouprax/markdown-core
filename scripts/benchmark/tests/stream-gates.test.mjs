@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { parseCallgrind } from "../callgrind.mjs";
 import {
+    bindingCost,
     flatStream,
     neverWorse,
     parseCost,
@@ -73,6 +74,36 @@ const reparse = ({ entry = "bench_apply_step'main", parse = true } = {}) =>
         S_release_parse: { self: 320 },
         markdown_core_document_free: { self: 800 }
     });
+/* A `binding` window: the step enters the subject, whose MCB3 entry runs
+ * the session's step and encodes the document it published; the subject
+ * then releases the message and reads the document. */
+const binding = ({
+    entry = "bench_apply_step'main",
+    wire = "markdown_core_wire_session_append",
+    session = "markdown_core_session_append",
+    step = true
+} = {}) =>
+    dump({
+        "main'(below main)": { self: 40, calls: [entry] },
+        [entry]: { self: 32, calls: [`binding_append'${entry}`] },
+        [`binding_append'${entry}`]: {
+            self: 24,
+            calls: [
+                `${wire}'binding_append`,
+                "markdown_core_wire_free'binding_append",
+                "session_document'binding_append"
+            ]
+        },
+        [`${wire}'binding_append`]: {
+            self: 16,
+            calls: [...(step ? [`${session}'${wire}`] : []), `document_bytes'${wire}`]
+        },
+        [`${session}'${wire}`]: { self: 9000 },
+        [`document_bytes'${wire}`]: { self: 2400 },
+        "markdown_core_wire_free'binding_append": { self: 8, calls: ["free'markdown_core_wire_free"] },
+        "free'markdown_core_wire_free": { self: 80 },
+        "session_document'binding_append": { self: 8 }
+    });
 const costs = (values) => values.map((ir) => stepCost(window(ir)).Ir);
 
 test("a session window's cost is the inclusive cost of its calls into a step entry", () => {
@@ -98,11 +129,28 @@ test("a reparse window counts the two parse stages of its Document.parse and not
     });
 });
 
+test("a binding window counts its messages' encode and release, and neither the session's step nor the subject", () => {
+    /* 16 in the entry, 2,400 encoding and 88 releasing the message. */
+    assert.deepEqual(bindingCost(binding()), { calls: 1, Ir: 2504, Dr: 626, Dw: 313 });
+    assert.deepEqual(
+        bindingCost(
+            binding({
+                entry: "bench_finalize'main",
+                wire: "markdown_core_wire_session_finalize",
+                session: "markdown_core_session_finalize"
+            })
+        ),
+        { calls: 1, Ir: 2504, Dr: 626, Dw: 313 }
+    );
+});
+
 test("a window that never entered the step, never parsed, or counted nothing, is refused", () => {
     assert.throws(() => stepCost(window(8000, { entry: "markdown_core_document_parse'main" })), /no call/);
     assert.throws(() => stepCost(window(0)), /positive integer/);
     assert.throws(() => parseCost(reparse({ entry: "markdown_core_document_parse'main" }), BOUNDARIES), /no call/);
     assert.throws(() => parseCost(reparse({ parse: false }), BOUNDARIES), /exactly one function/);
+    assert.throws(() => bindingCost(binding({ entry: "markdown_core_document_parse'main" })), /no call/);
+    assert.throws(() => bindingCost(binding({ step: false })), /no session step/);
 });
 
 test("windows split long streams into 1,024 contiguous windows of near-equal step count", () => {

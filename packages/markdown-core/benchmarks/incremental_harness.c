@@ -691,6 +691,8 @@ static void session_close(void *handle) {
     }
 }
 
+markdown_core_session *ih_session_of(void *handle) { return ((session_subject *)handle)->session; }
+
 const ih_subject_class ih_session = {.name = "session",
                                      .open = session_open,
                                      .append = session_append,

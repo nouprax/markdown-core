@@ -17,8 +17,13 @@
  * subject takes every chunk in its window. The stream's finalize is one more
  * window, after the last chunk's.
  *
- *   stream_runner --subject reparse|session --document PATH --stream FAMILY
- *                 --tokens FILE [--final PATH]
+ * The `binding` subject is the session stepped through the MCB3 entries, as
+ * the bindings that read messages step it: the driver reads what its
+ * messages add to the session's steps, the C side of building each published
+ * document's values (plan D5).
+ *
+ *   stream_runner --subject reparse|session|binding --document PATH
+ *                 --stream FAMILY --tokens FILE [--final PATH]
  *
  * `--final` writes the subject's final text, whose one-shot parse the driver
  * measures for `oneshot_ir`.
@@ -33,6 +38,7 @@
 
 #include "incremental_harness.h"
 #include "markdown_core_receipt.h"
+#include "markdown_core_wire.h"
 
 #define WINDOWS 1024
 
@@ -43,7 +49,53 @@ typedef struct measured_subject {
     bool (*advance)(void *subject, const uint8_t *text, size_t length);
 } measured_subject;
 
-static const measured_subject SUBJECTS[] = {{&ih_reparse, ih_reparse_extend}, {&ih_session, NULL}};
+/* THE BINDING SUBJECT: the `session` subject's session, each step answering
+ * with its document's MCB3 message (plan 6.2), which the binding releases
+ * once it has built its values from it. */
+
+/* A message's status byte follows the magic and the message length
+ * (docs/architecture/wire-format.md): 0 is a document, and a failure carries
+ * its status in the u32 after it. */
+enum { MESSAGE_STATUS = 8 };
+
+static markdown_core_status binding_step(void *handle, uint8_t *message, const markdown_core_document **document) {
+    const markdown_core_status status =
+        !message ? MARKDOWN_CORE_ALLOCATION_FAILED
+        : !message[MESSAGE_STATUS]
+            ? MARKDOWN_CORE_OK
+            : (markdown_core_status)(message[MESSAGE_STATUS + 1] | (uint32_t)message[MESSAGE_STATUS + 2] << 8 |
+                                     (uint32_t)message[MESSAGE_STATUS + 3] << 16 |
+                                     (uint32_t)message[MESSAGE_STATUS + 4] << 24);
+    markdown_core_wire_free(message);
+    *document = status == MARKDOWN_CORE_OK ? markdown_core_session_document(ih_session_of(handle)) : NULL;
+    return status;
+}
+
+static void *binding_open(ih_unit unit, const uint8_t *text, size_t length, const markdown_core_document **document) {
+    return ih_session.open(unit, text, length, document);
+}
+
+static markdown_core_status binding_append(void *handle, const uint8_t *text, size_t length,
+                                           const markdown_core_document **document) {
+    return binding_step(handle, markdown_core_wire_session_append(ih_session_of(handle), text, length), document);
+}
+
+static markdown_core_status binding_finalize(void *handle, const markdown_core_document **document) {
+    return binding_step(handle, markdown_core_wire_session_finalize(ih_session_of(handle)), document);
+}
+
+static const uint8_t *binding_text(const void *handle, size_t *length) { return ih_session.text(handle, length); }
+
+static void binding_close(void *handle) { ih_session.close(handle); }
+
+static const ih_subject_class binding = {.name = "binding",
+                                         .open = binding_open,
+                                         .append = binding_append,
+                                         .finalize = binding_finalize,
+                                         .text = binding_text,
+                                         .close = binding_close};
+
+static const measured_subject SUBJECTS[] = {{&ih_reparse, ih_reparse_extend}, {&ih_session, NULL}, {&binding, NULL}};
 
 /* The measured edges: one chunk, from its bytes to the subject's new
  * document, and the finalize, to the final document. */

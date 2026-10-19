@@ -199,16 +199,19 @@ export function attributeSection(report) {
     return lines.join("\n");
 }
 
-const STREAM_SUBJECTS = ["reparse", "session"];
+const STREAM_SUBJECTS = ["reparse", "session", "binding"];
+// The subjects 6.4 holds to the base; B is reported alone.
+const GATED_SUBJECTS = ["reparse", "session"];
 const STREAM_FAMILIES = ["tokens", "scalars", "rows"];
 const STREAM_METRICS = ["p95", "max", "total"];
 
 // The R and S columns by family and size, the grammar corpus apart from the
-// shapes, and with a base revision the workloads that pass 6.4. Every
-// workload's windows are validated counts; names never reach the comment.
+// shapes, with a base revision the workloads that pass 6.4, and the B column
+// beside S. Every workload's windows are validated counts; names never reach
+// the comment.
 export function streamSection(report) {
     if (
-        report?.schemaVersion !== 3 ||
+        report?.schemaVersion !== 4 ||
         JSON.stringify(report.subjects) !== JSON.stringify(STREAM_SUBJECTS) ||
         !Array.isArray(report.results)
     ) {
@@ -231,13 +234,20 @@ export function streamSection(report) {
         ) {
             throw new Error("Invalid session windows");
         }
+        if (
+            (row.binding === null) !== (row.session === null) ||
+            (row.binding !== null &&
+                (!windows(row.binding?.windows) || row.binding.windows.length !== row.windows.length))
+        ) {
+            throw new Error("Invalid binding windows");
+        }
         count(row.oneshot?.ir);
         if (
             !Array.isArray(row.regressions) ||
             (report.baseline === null && row.regressions.length) ||
             !row.regressions.every(
                 (entry) =>
-                    STREAM_SUBJECTS.includes(entry?.subject) &&
+                    GATED_SUBJECTS.includes(entry?.subject) &&
                     STREAM_METRICS.includes(entry.metric) &&
                     Number.isFinite(entry.ratio)
             )
@@ -255,7 +265,7 @@ export function streamSection(report) {
     const lines = [
         "### Streams",
         "",
-        `Subjects: \`reparse\` (R) and \`session\` (S), Ir per window of chunks and for the finalize, R counting the two parse stages of each \`Document.parse\`; S runs the streams of at most 1,024 chunks. ${number(report.results.length)} workloads · \`${report.workloads.digest.slice(0, 16)}\`.`
+        `Subjects: \`reparse\` (R), \`session\` (S) and \`binding\` (B), Ir per window of chunks and for the finalize, R counting the two parse stages of each \`Document.parse\`; S and B run the streams of at most 1,024 chunks. ${number(report.results.length)} workloads · \`${report.workloads.digest.slice(0, 16)}\`.`
     ];
     if (report.baseline) {
         lines.push(
@@ -280,7 +290,24 @@ export function streamSection(report) {
                 group.ratio === null ? "" : `${group.ratio.toFixed(3)}×`,
                 number(group.oneshot)
             ].join(" | ")} |`;
-        })
+        }),
+        "",
+        "Bindings' C side (B): the MCB3 encode of each document an S window publishes and the release of its message, without building the platform values; no gate.",
+        "",
+        "| Documents | Family | Size | B p50 | B p95 | B max | B total | B / S total |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ...groups
+            .filter((group) => group.binding)
+            .map((group) => {
+                const [source, family, size] = JSON.parse(group.key);
+                return `| ${[
+                    sources[source],
+                    family,
+                    size === null ? "" : number(size),
+                    ...figures(group.binding),
+                    `${(group.binding.total / group.session.total).toFixed(3)}×`
+                ].join(" | ")} |`;
+            })
     );
     return lines.join("\n");
 }

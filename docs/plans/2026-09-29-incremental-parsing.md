@@ -739,7 +739,8 @@ After an append, a binding converts the session's C document into platform
 values node by node, exactly as it converts a fresh parse today, and returns
 the result. The C document is its only input. The conversion's cost is the
 platform's cost of building an immutable value, which grows with the whole
-document; the design keeps it (D5) and reports it per append (section 8).
+document; the design keeps it (D5) and reports its C side per append
+(section 8).
 Nodes the append left unchanged reach the consumer as equal values with
 unchanged ids (4.2), which is what SwiftUI, Compose and React reconcile.
 
@@ -982,7 +983,9 @@ activates for it.
   document as a second input) and the engine reports to maintain it.
   Confirmed 2026-10-14 for streaming ("保持D5"): from step 7 the benchmark
   reports what building the platform values costs per append, without a
-  gate.
+  gate. Decided 2026-10-19 ("只计 C 侧 Ir"): the report counts the part of
+  the build that reads the C document, in callgrind Ir on the gates'
+  machine, and not building the platform objects (gates G14).
 - **D6 Node storage. Decided 2026-10-01: shared subtrees.** Superseded
   2026-10-14 with the general-edit engine (D7): a session has one live
   document at a time, so nothing shares subtrees across documents, and

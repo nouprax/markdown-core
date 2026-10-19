@@ -172,6 +172,10 @@ typedef struct ih_subject_class {
  * the subject's unit. */
 extern const ih_subject_class ih_session;
 
+/* The engine's session a `session` subject holds, for the harness that
+ * steps it through another entry. */
+markdown_core_session *ih_session_of(void *subject);
+
 /* The `reparse` subject: it keeps the text and calls the one parse entry on
  * the whole of it on every step. */
 extern const ih_subject_class ih_reparse;

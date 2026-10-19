@@ -167,17 +167,21 @@ longer stream has 1,024 windows; the finalize is one more. The driver is
 isolation and callgrind invocation, so its binaries are the ones the stage
 benchmark describes.
 
-Two subjects run every workload. `reparse` keeps the text and parses the whole
+Three subjects run the workloads. `reparse` keeps the text and parses the whole
 of it: the R column, measured at each window's last chunk, so a long stream is
 not reparsed after every chunk, and at the finalize. `session` appends through
 the engine's session: the S column, measured on the streams of at most 1,024
-chunks, where each chunk and the finalize cost at most 1.25 times R's (6.3). `oneshot_ir` is the stage runner's
-two stages on each workload's final text.
+chunks, where each chunk and the finalize cost at most 1.25 times R's (6.3). `binding` steps the same session
+through the MCB3 entries and releases each step's message: the B column, on
+the streams S runs, counting what the messages add to the session's steps --
+the part of a binding's build that reads the C document, without building the
+platform objects. B is reported without a gate (G14). `oneshot_ir` is the
+stage runner's two stages on each workload's final text.
 
 With `--baseline-ref`, the base revision's engine is rebuilt with this run's
-harness, as the stage gate does, and measured on the same workloads. Each
-subject's p95, maximum and total Ir of each workload must be at most 1.02
-times the base's (6.4).
+harness, as the stage gate does, and measured on the same workloads. R's and
+S's p95, maximum and total Ir of each workload must be at most 1.02 times the
+base's (6.4).
 
 ```sh
 scripts/tooling/setup-environment.sh --install oracle-cmark oracle-cmark-gfm
