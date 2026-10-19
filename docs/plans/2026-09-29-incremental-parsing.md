@@ -118,7 +118,7 @@ current dialect. Each row names the mechanism in section 5 that handles it.
 | Dependency | Examples | Direction | Mechanism |
 | --- | --- | --- | --- |
 | Carried block state | Open list item widths, blockquote and callout prefixes, definition body indentation, directive fence stack, last-line-blank flags | Earlier line → later lines | Held by the open blocks' builders, which a snapshot leaves as the commit left them (5.2, 5.5) |
-| Lookahead | Setext underline, table separator and caption, definition term marker, multiline and grid tables, directive closer, Properties closing fence | Later lines → earlier decision | A line whose processing observed the end of the input is pending, and is processed again when more text arrives (5.1, 5.3) |
+| Lookahead | Setext underline, table separator and caption, definition term marker, multiline and grid tables, directive closer, Properties closing fence | Later lines → earlier decision | A decision that sees the end of the input is a candidate, which a later line decides (5.1, 5.3) |
 | Retroactive write | A separate-line block identifier sets the preceding block's anchor; a caption after a table | Later line → closed block | A closed block stays a builder until it settles (5.2) |
 | Container facts from children | `List.tight`, list layout, definition and definition-list scopes | Children → container | Folded into the container's builder as each child settles (5.6) |
 | Unclosed opaque leaves | Fenced code, HTML block, comment, formula block and directive block without a closer run to the end | Opener → rest of the text | The open leaf's builder holds them; its content is appended to, never copied (5.2) |
@@ -126,7 +126,7 @@ current dialect. Each row names the mechanism in section 5 that handles it.
 | Document ordinals | Heading anchor `-N` suffixes | Every explicit anchor and every earlier heading → a heading's automatic anchor | A snapshot assigns anchors as `Document.parse` does over the text so far: explicit anchors reserve their names first, then automatic anchors are numbered in source order (5.5) |
 | Shared resources | A definition's destination, title and attributes read by every occurrence | Definition → occurrences | Occurrences name the definition's label and read it through the document's lookup tables (4.5) |
 | Absolute coordinates | Every `Scope` | Every earlier byte → every later scope | Nodes carry relative extents and runs (4.3) |
-| Mapped cell inputs | Grid and multiline cell bodies | Table → cells | The table is pending until its closing border; pipe and simple tables are read a row at a time (5.7) |
+| Mapped cell inputs | Grid and multiline cell bodies | Table → cells | The table is a candidate until its closing border; pipe and simple tables are read a row at a time (5.7) |
 
 A dialect change that adds a dependency not covered by one of these
 mechanisms must add a row here and its mechanism, the same way a new kind
@@ -514,21 +514,31 @@ extent and runs again.
 
 `append` adds the new bytes to the end of the text and then commits: the
 line machine reads on the builder stack from the last step the last commit
-read, which may lie inside the line that is not complete yet, up to the
-**commit point**, the first decision the last snapshot made after seeing the
-end of the input (5.1). Every decision before it read only bytes that were
-there. A line is complete when it ends with `\n`, or with `\r` followed by
-another byte. Blocks that closed join the completion queue, and so does
-each field a committed line wrote: a callout's title, a definition's term,
-a block directive's label and a table's caption.
+read, which may lie inside the line that is not complete yet. The commit
+takes every decision that does not see the end of the input (5.1): it reads
+every complete line, and of the last line each step that reads only bytes
+the line has. A line is complete when it ends with `\n`, or with `\r`
+followed by another byte. Blocks that closed join the completion queue, and
+so does each field a committed line wrote: a callout's title, a definition's
+term, a block directive's label and a table's caption.
 
-The lines after the commit point are **pending**. They are of two kinds:
+**Candidates.** Some constructs are decided only by later lines: the headers
+of simple, multiline and grid tables, a caption before a table, a definition
+list's term, a blank line in a definition's body, a block identifier line,
+an unclosed grid table, a comment block and the Properties envelope at the
+start of the document. When the decision of such a construct sees the end of
+the input, the commit makes it a **candidate** and reads on with the main
+reading, the reading in which every live candidate is rejected: the ordinary
+blocks, committed line by line. Each candidate keeps its own state and is
+fed each complete line once, until a line decides it:
 
-- the rest of the last line, which is not complete yet;
-- lines whose decision waits for later lines: the headers of simple,
-  multiline and grid tables, a caption before a table, a definition list's
-  term, a block identifier line, an unclosed grid table, a comment block and
-  the Properties envelope at the start of the document.
+- an accept puts the commit back at the candidate's opening line, and the
+  lines from there are read again, with the construct claiming them;
+- a reject drops the candidate's state, and the main reading stays.
+
+A decision that sees the end of the input waits for the next commit. The
+lines of the main reading from a live candidate's opening line are
+**undecided**. A snapshot decides each candidate as the text ends (5.5).
 
 ### 5.4 Completion
 
@@ -573,7 +583,11 @@ streaming (D8).
 
 - Complete the completion queue (5.4).
 - Record a mark in the registry log.
-- Process the pending lines on the committed builders, copying first each
+- Decide each candidate as the text ends: one whose construct the text
+  ends puts the reading back at its opening line, and the snapshot reads the
+  lines from there with the construct claiming them; the others leave the
+  main reading.
+- Process the rest of the text on the committed builders, copying first each
   block whose kind or parse state that reading changes (5.2), then write the
   closed values of every open block into its object at the true end of the
   input.
@@ -583,8 +597,9 @@ streaming (D8).
   compute the extents and runs of the tail and of the open blocks, and
   assemble the document.
 
-The **tail** is the nodes a snapshot makes from the pending lines and from
-the inline content of an open paragraph. At the start of the next call each
+The **tail** is the nodes a snapshot makes from the rest of the text, from
+the lines of a candidate it accepts and from the inline content of an open
+paragraph. At the start of the next call each
 copied block takes back its state, the open blocks cut their buffers back to
 their committed lengths, and the registry rolls back to the mark. The tail's
 nodes stay until the next publish has given ids to its own tail (5.9).
@@ -606,8 +621,8 @@ and one more item on a list of 10,000 costs O(1), not O(items).
 - Today a table reads its whole extent with one lookahead when it opens.
   That becomes a continuation, one row at a time.
 - A grid table, a multiline table and a headerless simple table know their
-  row structure only at their closing border. Until then their lines are
-  pending (7.2).
+  row structure only at their closing border. Until then each is a candidate
+  (5.3), fed each line once, and its lines are undecided (7.2).
 
 ### 5.8 The settle point of an open paragraph
 
@@ -666,8 +681,8 @@ append, the short stretch after the settle point.
 
 `finalize`, in this order:
 
-- Processes the pending lines at the true end of the input and closes every
-  block.
+- Commits the rest of the text, decides each candidate at the true end of
+  the input and closes every block.
 - Completes the completion queue, with lookups that see every definition.
 - Checks each lookup recorded by 5.4 that found no definition; if one is
   defined now, parses that root again in place.
@@ -685,22 +700,27 @@ the text and is finalized (R6).
 
 ### 5.11 Why the results are right
 
-- **Committed lines.** A committed line did not see the end of the input, so
-  it read only bytes that were already there and decided nothing from where
-  the text ended. The line machine is a deterministic function of its state
-  and the bytes it reads, so a line committed at an earlier append is
-  processed exactly as a parse of any longer text processes it. By induction
-  over the lines, the builder stack after a commit is the state a parse of
-  the whole text has at the commit point.
-- **Snapshots.** A snapshot processes the pending lines at the true end of the
-  input, from that state, which it leaves as it found it (5.2). Every line of the text is then processed in
+- **Committed decisions.** A committed decision did not see the end of the
+  input, so it read only bytes that were already there and decided nothing
+  from where the text ended. The line machine is a deterministic function of
+  its state and the bytes it reads, so a step committed at an earlier append
+  is processed exactly as a parse of any longer text processes it. A
+  candidate is the one decision a later line still makes: the main reading
+  is the parse in which it is rejected, and an accept puts the commit back
+  at its opening line and reads on as the parse that claims it. By induction
+  over the steps, the builder stack after a commit is the state a parse of
+  the whole text has after the last committed step, once the live candidates
+  are decided.
+- **Snapshots.** A snapshot decides the live candidates and processes the
+  rest of the text at the true end of the input, from that state, which it
+  leaves as it found it (5.2). Every line of the text is then processed in
   order, by the same line machine, with the end where it really is, so the
   blocks are those of `Document.parse` of the text so far. Completion runs
   the same inline parser on the same content, against the definitions before
   each root, all of which are registered then (5.4). None of this depends on
   where earlier appends ended, so neither does the snapshot.
-- **The final document.** `finalize` processes the pending lines and
-  completes the queue with every definition visible, as `Document.parse`
+- **The final document.** `finalize` commits the rest of the text, decides
+  the live candidates and completes the queue with every definition visible, as `Document.parse`
   does. A root completed earlier saw the definitions before it; the only
   answers that change with every definition visible are the recorded
   misses, and those roots are parsed again. Anchors are assigned with the
@@ -798,7 +818,7 @@ handle and must be disposed. A `Document` never holds a handle.
 
 Let `c` be the appended bytes, `d` the depth of the builder stack, `s` the
 content of the open paragraph after its settle point, `t` the tail's nodes
-and `p` the total length of the pending lines.
+and `p` the total length of the undecided lines.
 
 | Case | Work |
 | --- | --- |
@@ -822,7 +842,7 @@ language decides its meaning only at a later line or at the end:
 - An unclosed grid table, multiline table, headerless simple table or comment
   block: each append processes its lines from its opening line again.
 - A document that starts with `---`: any later `---` line can close the
-  Properties envelope, so every line is pending until one does or the stream
+  Properties envelope, so every line is undecided until one does or the stream
   ends.
 - An unmatched `**`, backtick run or `[`: the settle point stays before it,
   and each append parses the rest of the paragraph again.
