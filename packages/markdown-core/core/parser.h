@@ -171,11 +171,13 @@ typedef struct markdown_core_lend {
 
 /* A HOLDER of the first line's mark (blocks.c, THE CANDIDATES; parser.h,
  * THE DECIDED CONTENT): a block the mark found open or pending, which it
- * lent, how many children it held and the last of them, and the slot that
- * holds its state as the mark found it, with the fields an accept keeps. */
+ * lent, how many children it held and the last of them, the slot that
+ * holds its state as the mark found it, with the fields an accept keeps,
+ * and its depth among the blocks the mark lent, the root's 0 and the
+ * pending block's one past the current block's. */
 typedef struct markdown_core_holder {
     const struct markdown_core_node *node, *last, *backup;
-    uint32_t count;
+    uint32_t count, depth;
 } markdown_core_holder;
 
 /* A ROOM: the open block below the blocks a snapshot lent that the lending
@@ -352,16 +354,14 @@ typedef struct markdown_core_stream {
     const struct markdown_core_node *miss_root;
     /* THE CANDIDATES (blocks.c): the marks of the lines whose opener calls
      * the text read so far does not decide, outermost first, and how many
-     * entries keep storage; the holders of the first by address; the call
-     * being decided and its mark; the call a reading meets next, and the
-     * depth in its mark's path of the container of the last one it met, and
-     * whether an accept put the commit back at the last mark, whose line a
-     * reading reads anew; the line through which the feed has fed every
-     * call; and the request the line being read made of its opener's call. */
+     * entries keep storage; the call being decided and its mark; the call a
+     * reading meets next, and the depth in its mark's path of the container
+     * of the last one it met, and whether an accept put the commit back at
+     * the last mark, whose line a reading reads anew; the line through which
+     * the feed has fed every call; and the request the line being read made
+     * of its opener's call. */
     struct markdown_core_candidate_mark *marks;
     size_t mark_count, mark_capacity, mark_made;
-    markdown_core_holder *holders;
-    size_t holder_count, holder_capacity;
     struct markdown_core_candidate *deciding;
     struct markdown_core_candidate_mark *decision_mark;
     size_t meet_mark, meet_call, meet_depth;
@@ -1275,13 +1275,16 @@ void markdown_core_parser_candidate_end(markdown_core_parser *parser);
  * settled after. A holder's children as the mark found them, the last
  * one aside when it is a holder too, are DECIDED, with everything they
  * hold, and so are the fields an accept keeps; so is every block while no
- * candidate waits. `holder` gives `block`'s entry when it is a holder, and
- * NULL otherwise. */
-static inline bool markdown_core_parser_undecided(const markdown_core_parser *parser) {
-    return parser->stream && parser->stream->holder_count;
-}
-const markdown_core_holder *markdown_core_parser_holder(const markdown_core_parser *parser,
-                                                        const struct markdown_core_node *block);
+ * candidate waits. `holder` gives the entry of `block` at depth `depth`
+ * (markdown_core_holder) when it is a holder, and false otherwise;
+ * `last_holder` gives the last holder on the way from the root to `block`,
+ * an open block, each holder before it the block below the next, with its
+ * depth `*depth`. */
+bool markdown_core_parser_undecided(const markdown_core_parser *parser);
+bool markdown_core_parser_holder(const markdown_core_parser *parser, size_t depth,
+                                 const struct markdown_core_node *block, markdown_core_holder *entry);
+struct markdown_core_node *markdown_core_parser_last_holder(const markdown_core_parser *parser,
+                                                            const struct markdown_core_node *block, size_t *depth);
 
 /* THE DEFINITION LOOKUP of inline content: the record of `kind` that
  * declares `label`, as written, for the block being completed, or NULL.

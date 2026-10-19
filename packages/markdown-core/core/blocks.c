@@ -2179,14 +2179,16 @@ void markdown_core_parser_discard(markdown_core_parser *parser) { S_release_pars
  * commits change the relations of the blocks on the builder stack, and only
  * of the current block and of a block whose child closes, so the block they
  * changed nearest the root (`changed`) is on the builder stack: a block that
- * closes gives it to the block below it (S_close_current), and a candidate's
- * decision, which reads from the call of its candidate again, gives it to
- * the root. The take-back gives it the block the lending reached, or the
- * root when the lending reached nothing, as the snapshot wrote below there,
- * and a streaming parse starts with the root. The snapshot's publish walks
- * from the block the lending reaches, or from `changed` when that is open
- * below it, or from the root while a candidate waits, as THE DECIDED CONTENT
- * (parser.h) starts there; the finalize's walks from the root. */
+ * closes gives it to the block below it (S_close_current), and a line's
+ * mark, which lends every open block, and a candidate's decision, which
+ * reads from the call of its candidate again, give it to the root. The
+ * take-back gives it the block the lending reached, or the root when the
+ * lending reached nothing, as the snapshot wrote below there, and a
+ * streaming parse starts with the root. The snapshot's publish walks from
+ * the block the lending reaches, or from `changed` when that is open below
+ * it (S_close_tail), and, while a candidate waits, from the last holder of
+ * THE DECIDED CONTENT (parser.h) on the way there (ast.c, THE SPINE); the
+ * finalize's walks from the root. */
 typedef struct {
     markdown_core_node *root, *block_root, *current, *pending;
     int line_number, indent;
@@ -2353,7 +2355,6 @@ static void S_release_stream(markdown_core_parser *parser) {
     markdown_core_stream *stream = parser->stream;
     markdown_core_free(stream->lends);
     markdown_core_free(stream->rooms);
-    markdown_core_free(stream->holders);
     markdown_core_parser_release_records(parser, &stream->records);
     markdown_core_free(stream->records.items);
     for (size_t table = 0; table < MARKDOWN_CORE_DEFINITION_TABLES; table++) {
@@ -2634,10 +2635,10 @@ static void S_close_tail(markdown_core_parser *parser) {
     markdown_core_parser_close_below(parser, boundary);
     S_settle_pending(parser, boundary);
     S_parse_block_inputs(parser);
-    markdown_core_node *changed = stream->changed;
-    stream->walk_root = markdown_core_parser_undecided(parser)                                           ? parser->root
-                        : changed && changed != boundary && !(changed->flags & MARKDOWN_CORE_NODE__LENT) ? changed
-                                                                                                         : boundary;
+    /* What the commits changed nearest the root is open, below the block
+     * the lending reaches or that block itself, as a block that closes gives
+     * it to the block below it (THE WALK ROOT). */
+    stream->walk_root = stream->changed;
     const uint32_t end = (uint32_t)parser->last_line_end;
     markdown_core_node_internal_flags flags = boundary->flags;
     const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, boundary);
@@ -4205,57 +4206,44 @@ static markdown_core_node *const *S_candidate_path(const markdown_core_parser *p
     return stream->decision_mark->path;
 }
 
-/* THE DECIDED CONTENT (parser.h): the first mark's holders, by address,
- * made as it becomes the first, and found by halves. */
-static int S_holder_order(const void *a, const void *b) {
-    const uintptr_t x = (uintptr_t)((const markdown_core_holder *)a)->node;
-    const uintptr_t y = (uintptr_t)((const markdown_core_holder *)b)->node;
-    return (x > y) - (x < y);
-}
-
-static void S_holders_make(markdown_core_parser *parser) {
-    markdown_core_stream *stream = parser->stream;
-    stream->holder_count = 0;
-    if (!stream->mark_count) {
-        return;
-    }
-    const struct markdown_core_candidate_mark *first = &stream->marks[0];
-    const size_t count = first->lend_count;
-    markdown_core_holder *holders =
-        markdown_core_reserve(stream->holders, &stream->holder_capacity, count, sizeof(*holders));
-    if (!holders) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return;
-    }
-    stream->holders = holders;
-    for (size_t i = 0; i < count; i++) {
-        const markdown_core_lend *lend = &first->lends[i];
-        holders[i] = (markdown_core_holder){lend->address, lend->last, lend->backup, lend->backup->child_count};
-    }
-    qsort(holders, count, sizeof(*holders), S_holder_order);
-    stream->holder_count = count;
-}
-
-const markdown_core_holder *markdown_core_parser_holder(const markdown_core_parser *parser,
-                                                        const markdown_core_node *block) {
+/* THE DECIDED CONTENT (parser.h): the first mark's holders, found by
+ * depth, as it lent every open block from the root up and the pending block
+ * last. */
+bool markdown_core_parser_undecided(const markdown_core_parser *parser) {
     const markdown_core_stream *stream = parser->stream;
-    const uintptr_t key = (uintptr_t)block;
-    size_t low = 0, high = stream->holder_count;
-    while (low < high) {
-        const size_t middle = low + (high - low) / 2;
-        if ((uintptr_t)stream->holders[middle].node < key) {
-            low = middle + 1;
-        } else {
-            high = middle;
-        }
-    }
-    return low < stream->holder_count && stream->holders[low].node == block ? &stream->holders[low] : NULL;
+    return stream && stream->mark_count && stream->marks[0].lend_count;
 }
 
-/* The open blocks lent to `mark` from the root up, the pending block last.
- * The path holds them, the root first. False, with the parse failed, when
- * storage could not be had. */
+bool markdown_core_parser_holder(const markdown_core_parser *parser, size_t depth, const markdown_core_node *block,
+                                 markdown_core_holder *entry) {
+    const struct markdown_core_candidate_mark *first = &parser->stream->marks[0];
+    if (depth >= first->lend_count || first->lends[depth].address != block) {
+        return false;
+    }
+    const markdown_core_lend *lend = &first->lends[depth];
+    *entry = (markdown_core_holder){block, lend->last, lend->backup, lend->backup->child_count, (uint32_t)depth};
+    return true;
+}
+
+markdown_core_node *markdown_core_parser_last_holder(const markdown_core_parser *parser,
+                                                     const markdown_core_node *block, size_t *depth) {
+    const struct markdown_core_candidate_mark *first = &parser->stream->marks[0];
+    const markdown_core_lend *lend = first->lends;
+    const markdown_core_lend *const end = lend + first->lend_count;
+    while (lend->address != block && lend + 1 < end &&
+           lend[1].address == markdown_core_parser_last_child(lend->address)) {
+        lend++;
+    }
+    *depth = (size_t)(lend - first->lends);
+    return lend->address;
+}
+
+/* The open blocks lent to `mark` from the root up, the pending block last,
+ * each a view no publish placed, so the next publish walks from the root
+ * (THE WALK ROOT). The path holds them, the root first. False, with the
+ * parse failed, when storage could not be had. */
 static bool S_mark_lend(markdown_core_parser *parser, struct markdown_core_candidate_mark *mark) {
+    parser->stream->changed = parser->root;
     size_t depth = 0;
     for (markdown_core_node *node = parser->current; node; node = markdown_core_scaffold_parent(node)) {
         depth++;
@@ -4314,9 +4302,6 @@ static struct markdown_core_candidate_mark *S_mark_make(markdown_core_parser *pa
         (*at)++;
     }
     assert(mark->path[*at] == container);
-    if (stream->mark_count == 1) {
-        S_holders_make(parser);
-    }
     return mark;
 }
 
@@ -4536,9 +4521,6 @@ static void S_candidate_undo(markdown_core_parser *parser, size_t m, size_t inde
     } else if (!index) {
         stream->mark_count = m;
     }
-    if (!m) {
-        S_holders_make(parser);
-    }
 }
 
 /* The lend of the block a lend of the mark at `m` names, at the same depth,
@@ -4614,9 +4596,6 @@ static void S_candidate_drop(markdown_core_parser *parser, size_t m, size_t inde
     } else if (stream->meet_mark == m) {
         stream->meet_mark = stream->mark_count;
     }
-    if (!m) {
-        S_holders_make(parser);
-    }
 }
 
 /* Every mark let go as the parse is released, the last taken first, each
@@ -4627,7 +4606,6 @@ static void S_candidates_release(markdown_core_parser *parser) {
     for (; stream->mark_count; stream->mark_count--) {
         S_mark_unlend(parser, stream->mark_count - 1);
     }
-    stream->holder_count = 0;
     for (size_t i = 0; i < stream->mark_made; i++) {
         markdown_core_free(stream->marks[i].lends);
         markdown_core_free(stream->marks[i].path);
