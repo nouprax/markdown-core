@@ -702,6 +702,10 @@ bufsize_t markdown_core_parser_line_offset(markdown_core_parser *parser, int lin
     return S_line_offset(parser, line);
 }
 
+const unsigned char *markdown_core_parser_line_content(markdown_core_parser *parser, int line, bufsize_t *length) {
+    return S_input_line_content(parser, markdown_core_parser_visited_line(parser, line), length);
+}
+
 bool markdown_core_parser_starts_on_line(markdown_core_parser *parser, const markdown_core_node *node, int line) {
     return S_starts_on_line(parser, node, line);
 }

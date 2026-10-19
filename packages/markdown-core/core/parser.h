@@ -149,9 +149,10 @@ typedef struct markdown_core_parser_input {
     bool last_line_ready;
 } markdown_core_parser_input;
 
-/* The words an opener keeps of its candidate's grammar (blocks.c, THE
- * CANDIDATES): a grid table's walls. */
-#define MARKDOWN_CORE_CANDIDATE_WORDS 2
+/* The words an opener keeps of its candidate's grammars (blocks.c, THE
+ * CANDIDATES), which its feed writes: where a table opener's grammars that
+ * read on stand. */
+#define MARKDOWN_CORE_CANDIDATE_WORDS 12
 
 /* A BLOCK A SNAPSHOT OR A CANDIDATE LENT (blocks.c, THE LENDING, THE
  * CANDIDATES): the block's address, which holds the view of it, the slot
@@ -1137,6 +1138,10 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bufsize_t
  * begin in increasing source order, so a node began on `line` or later when
  * its start is at least this offset. */
 bufsize_t markdown_core_parser_line_offset(markdown_core_parser *parser, int line);
+/* The content of line `line` of the active input, which the driver read,
+ * as the block parser reads it, a NUL as U+FFFD, without its terminator, and
+ * its length; NULL, with the parse failed, when storage could not be had. */
+const unsigned char *markdown_core_parser_line_content(markdown_core_parser *parser, int line, bufsize_t *length);
 /* THE PLACES OF THE OWN LINES OF `node`, a block of `container`, which
  * starts on input line `*line`, an earlier one or a later one of the lines
  * visited: on each line its place spans, a place of length 0 over the source

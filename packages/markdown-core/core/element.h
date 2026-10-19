@@ -290,13 +290,14 @@ struct markdown_core_element {
      * answers that the line continues the construct, and then in `*ends`
      * whether the opener could claim the lines through it were the text to
      * end after it; that the construct ended before it; or that the
-     * unfinished line does not tell yet. `decide_candidate` decides as the
-     * opener would at its call (markdown_core_parser_candidate_start): ACCEPT
-     * when it would claim lines, REJECT when it would not, and WAIT when
-     * more text may follow and the decision read where the text ends. */
+     * unfinished line does not tell yet. It keeps what it read in the
+     * candidate's words, which it writes only for a line it answers goes
+     * on. `decide_candidate` decides as the opener would at its call
+     * (markdown_core_parser_candidate_start): ACCEPT when it would claim
+     * lines, REJECT when it would not, and WAIT when more text may follow
+     * and the decision read where the text ends. */
     markdown_core_candidate_step (*feed_candidate)(const markdown_core_element_instance *, markdown_core_parser *,
-                                                   const int *, const markdown_core_chunk *, int, int, int, bool,
-                                                   bool *);
+                                                   int *, const markdown_core_chunk *, int, int, int, bool, bool *);
     markdown_core_candidate_decision (*decide_candidate)(const markdown_core_element_instance *, markdown_core_parser *,
                                                          const int *);
     /* What `try_opening_block` needs on the line before it is worth entering. */
