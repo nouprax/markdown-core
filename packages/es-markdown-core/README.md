@@ -197,7 +197,9 @@ session.dispose();
 A session's documents count scope columns in its `unit`, `"utf16"` by default,
 the unit of JavaScript strings, or `"utf8"`, chosen with
 `new MarkdownSession(source, { unit })`. Every document the session returns is
-an immutable value. The caller ends the text with `finalize()`, which returns
+an immutable value. Until `finalize()`, each document is a snapshot of the text
+so far: a lookup of a reference, footnote or specimen sees only the definitions
+that start before the inline root asking. The caller ends the text with `finalize()`, which returns
 the final document; afterwards `append` and `finalize` throw
 `sessionFinalized`, and `document` and `text` stay readable. The session
 itself lives in WebAssembly memory: `dispose()` releases it, and a session

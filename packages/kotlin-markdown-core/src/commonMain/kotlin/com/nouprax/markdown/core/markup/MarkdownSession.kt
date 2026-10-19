@@ -9,6 +9,10 @@ import kotlin.jvm.JvmOverloads
  * session has never issued. Every column a scope query of its documents takes
  * or returns counts in [unit].
  *
+ * Until [finalize], each document is a snapshot of the text so far: a lookup
+ * of a reference, footnote or specimen sees only the definitions that start
+ * before the inline root asking.
+ *
  * The caller ends the text with [finalize], which returns the final
  * document; nothing ends a session implicitly. Afterwards [document] and
  * [text] stay readable, and [append] and [finalize] throw
@@ -43,7 +47,7 @@ public class MarkdownSession
         /**
          * Appends [text] and parses the result.
          *
-         * @return the new [document].
+         * @return the new [document], a snapshot.
          * @throws MarkdownCoreException [ErrorCode.ALLOCATION_FAILED] when the
          *   engine cannot allocate, the text would exceed 1 GiB of UTF-8, or the
          *   tree a byte array's capacity; [ErrorCode.SESSION_FINALIZED] after

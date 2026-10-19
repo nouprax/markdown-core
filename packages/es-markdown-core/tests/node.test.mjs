@@ -718,6 +718,20 @@ test("api: a session's finalize returns the final document and ends the session"
     }
 });
 
+test("api: a session's first document is a snapshot of its source", () => {
+    for (const unit of ["utf8", "utf16"]) {
+        const session = new MarkdownSession("[a]\n\n[a]: /url\n", { unit });
+        try {
+            const text = session.text;
+            // The source is the first append, so the use before its definition stays unresolved.
+            assert.notEqual(session.document.dump(text), Document.parse(text, { unit }).dump(text));
+            assert.equal(session.finalize().dump(text), Document.parse(text, { unit }).dump(text));
+        } finally {
+            session.dispose();
+        }
+    }
+});
+
 test("errors: a disposed session takes no further call", () => {
     const session = new MarkdownSession("text\n");
     session.dispose();
