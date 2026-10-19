@@ -333,7 +333,7 @@ static bool S_kind_accepts_lines(const markdown_core_kind_record *kind, markdown
             kind->structure->element->accepts_lines_func(kind->structure->element, node));
 }
 /* Whether a node of `kind` takes a text line: as its content, or as prose. */
-static bool S_kind_takes_text(const markdown_core_kind_record *kind, markdown_core_node *node) {
+static inline bool S_kind_takes_text(const markdown_core_kind_record *kind, markdown_core_node *node) {
     return S_kind_accepts_lines(kind, node) || (kind->flags & MARKDOWN_CORE_KIND_PROSE);
 }
 static bool S_kind_contains_inlines(const markdown_core_kind_record *kind, markdown_core_node *node) {
@@ -3400,8 +3400,8 @@ static inline markdown_core_input_line *S_source_line_unread(markdown_core_parse
 /* A lookahead whose chain is the stack from `parent`, the container its
  * block would join, down to the active input's root, with the parser's line
  * state kept for `end`; the caller says where it reads from. */
-static bool S_lookahead_start(markdown_core_parser *parser, markdown_core_node *parent,
-                              markdown_core_block_lookahead *lookahead) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_lookahead_start(
+    markdown_core_parser *parser, markdown_core_node *parent, markdown_core_block_lookahead *lookahead) {
     memset(lookahead, 0, sizeof(*lookahead));
     int depth = 0;
     for (markdown_core_node *node = parent; node; node = markdown_core_parser_builder_below(parser, node)) {
@@ -3472,8 +3472,12 @@ static void S_lookahead_wait(markdown_core_block_lookahead *lookahead, int line,
     lookahead->waited = true;
 }
 
-int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead, markdown_core_chunk *line,
-                                        int *first_nonspace, int *indent, int *blank_lines) {
+/* The next line of `lookahead`, which is a reading that can wait,
+ * `can_wait`, when its `limit` is set (markdown_core_block_lookahead). */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_lookahead_next(markdown_core_block_lookahead *lookahead,
+                                                                            markdown_core_chunk *line,
+                                                                            int *first_nonspace, int *indent,
+                                                                            int *blank_lines, const bool can_wait) {
     markdown_core_parser *parser = lookahead->parser;
 
     *blank_lines = 0;
@@ -3481,14 +3485,14 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
         return 0;
     }
     while (lookahead->cursor && !parser->error) {
-        if (lookahead->limit && lookahead->cursor >= lookahead->limit) {
+        if (!can_wait && markdown_core_parser_input_ends(parser, lookahead->cursor)) {
+            break;
+        }
+        if (can_wait && lookahead->cursor >= lookahead->limit) {
             /* A reading that can wait waits here, as it is. */
             S_lookahead_close_run(lookahead, lookahead->line, lookahead->cursor);
             lookahead->exhausted = true;
             return 0;
-        }
-        if (!lookahead->limit && markdown_core_parser_input_ends(parser, lookahead->cursor)) {
-            break;
         }
         const unsigned char *start = lookahead->cursor;
         const unsigned char *next;
@@ -3504,8 +3508,8 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
         bool blank;
         int i;
 
-        markdown_core_input_line *geometry = lookahead->limit ? S_source_line_unread(parser, this_line)
-                                                              : markdown_core_parser_source_line(parser, this_line);
+        markdown_core_input_line *geometry =
+            can_wait ? S_source_line_unread(parser, this_line) : markdown_core_parser_source_line(parser, this_line);
         if (!geometry) {
             return 0;
         }
@@ -3551,7 +3555,7 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
 
         /* A line the text has not finished, read by a reading that waits,
          * matches every prefix itself, as far as its bytes decide. */
-        const bool unfinished = lookahead->waits && start >= parser->input.complete;
+        const bool unfinished = can_wait && lookahead->waits && start >= parser->input.complete;
         if (unfinished) {
             for (i = 1; i < lookahead->depth; i++) {
                 parser->lookahead_chain[i].line_flags = parser->lookahead_chain[i].node->flags;
@@ -3641,7 +3645,7 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
                 lookahead->run_start = this_line;
             }
             if (resumed && entry->run_end > this_line + 1 &&
-                (!lookahead->limit || parser->input.source + entry->run_end_at <= lookahead->limit) &&
+                (!can_wait || parser->input.source + entry->run_end_at <= lookahead->limit) &&
                 S_lookahead_extras_accept_blank(parser, from, lookahead->depth)) {
                 *blank_lines += entry->run_end - this_line - 1;
                 lookahead->cursor = parser->input.source + entry->run_end_at;
@@ -3659,6 +3663,12 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
     S_lookahead_close_run(lookahead, lookahead->line, lookahead->cursor);
     lookahead->active = false;
     return 0;
+}
+
+int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead, markdown_core_chunk *line,
+                                        int *first_nonspace, int *indent, int *blank_lines) {
+    return lookahead->limit ? S_lookahead_next(lookahead, line, first_nonspace, indent, blank_lines, true)
+                            : S_lookahead_next(lookahead, line, first_nonspace, indent, blank_lines, false);
 }
 
 void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead) {

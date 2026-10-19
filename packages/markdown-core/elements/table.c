@@ -658,13 +658,13 @@ typedef struct markdown_core_table_source_line {
     int columns;
 } table_source_line;
 
-/* THE OPENER'S CANDIDATE (blocks.c, THE CANDIDATES). The scan of a grid
- * whose top border is the opener's own line, `holds`, reads no end
- * (markdown_core_block_lookahead, `limit`): it stops where the input ends,
- * `exhausted`, with `blanks` blank lines before it, which the line read next
- * carries. In a commit more text may follow, it waits there, and at a line
- * the text has not finished whose bytes do not tell, and decides nothing:
- * the call is `undecided`, and `words` are its walls. Every other reader
+/* THE OPENER'S CANDIDATE (blocks.c, THE CANDIDATES). In a commit more text
+ * may follow, the scan of a grid whose top border is the opener's own line,
+ * `holds`, reads no end (markdown_core_block_lookahead, `limit`): it waits
+ * where the input ends, `exhausted`, with `blanks` blank lines before it,
+ * which the line read next carries, and at a line the text has not finished
+ * whose bytes do not tell, and decides nothing: the call is `undecided`, and
+ * `words` are its walls. Every other reader
  * reads on as an ordinary reading, which reads the end at `incomplete`, the
  * first line the text has not finished, plus one. A commit's call that can
  * wait sets aside the end it reads (markdown_core_parser_set_end_aside),
@@ -823,9 +823,11 @@ static bool table_source_push(table_source *source, table_source_line line) {
     return true;
 }
 
-static bool table_source_get(table_source *source, size_t index) {
+/* The reading's next line, pushed: false when it has none, because a line
+ * ended the construct, the scan that holds waits, or the parse failed. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool table_source_read(table_source *source) {
     markdown_core_block_lookahead *lookahead = &source->lookahead;
-    while (source->count <= index && !source->ended && !source->exhausted && !source->parser->error) {
+    while (!source->ended && !source->exhausted && !source->parser->error) {
         markdown_core_chunk line;
         int first, indent, blanks;
         if (!markdown_core_parser_lookahead_next(lookahead, &line, &first, &indent, &blanks)) {
@@ -857,8 +859,19 @@ static bool table_source_get(table_source *source, size_t index) {
         if (lookahead->incomplete && !source->incomplete) {
             source->incomplete = source->count;
         }
+        return true;
     }
-    if (!source->holds && source->incomplete && index >= source->incomplete - 1) {
+    return false;
+}
+
+/* Whether the reading has line `index`, reading on to it. */
+static inline bool table_source_get(table_source *source, size_t index) {
+    while (source->count <= index) {
+        if (!table_source_read(source)) {
+            break;
+        }
+    }
+    if (source->incomplete && index + 1 >= source->incomplete && !source->holds) {
         markdown_core_parser_see_end(source->parser);
     }
     return index < source->count && !source->parser->error;
@@ -2050,8 +2063,8 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
         sizes[i] = 1;
     }
     size_t end = start;
-    /* The scan from the opener's own line reads no end (THE OPENER'S
-     * CANDIDATE). */
+    /* The scan from the opener's own line in a call that can wait reads no
+     * end (THE OPENER'S CANDIDATE). */
     source->holds = start == 0 && source->lookahead.limit;
     for (size_t i = start; table_source_get(source, i); i++) {
         if (i > start && source->lines[i].blanks) {
@@ -2072,7 +2085,7 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
         }
         /* A wall-led line the text has not finished does not tell where
          * its walls end. */
-        if (source->holds && source->lookahead.waits && source->incomplete == i + 1) {
+        if (source->holds && source->incomplete == i + 1) {
             source->exhausted = true;
             break;
         }
@@ -2102,7 +2115,7 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
     }
     /* A scan that waits where the text read so far ends, with no blank line
      * before it, decides nothing until a later line does. */
-    if (source->holds && source->exhausted && !source->blanks && source->lookahead.waits) {
+    if (source->holds && source->exhausted && !source->blanks) {
         source->undecided = true;
         source->words[0] = left;
         source->words[1] = right;
@@ -2706,7 +2719,8 @@ bool markdown_core_table_caption_probe(const markdown_core_element_instance *tab
 
 /* Captions are a separate entry grammar; the body shares candidate admission
  * with the definition-precedence query and every other table producer. */
-static bool table_open_admits(markdown_core_parser *parser, const unsigned char *input, int length) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool table_open_admits(markdown_core_parser *parser,
+                                                                              const unsigned char *input, int length) {
     bufsize_t trimmed = length;
     while (trimmed > 0 && (input[trimmed - 1] == '\n' || input[trimmed - 1] == '\r')) {
         trimmed--;
@@ -2730,16 +2744,23 @@ typedef struct {
     bool trailing;
 } table_read;
 
-/* THE OPENER'S ADMISSION, which reads only the line at the parser's cursor
- * in `parent`, `input`, and the first bytes of the line after it: whether a
- * table or a caption of the table before it can start there at all. The
- * reading (table_opener_reads) is begun only on a line it admits. */
-static bool table_opener_admits(markdown_core_parser *parser, const markdown_core_node *parent,
-                                const unsigned char *input, int length) {
-    if (parser->indent > 3 || parser->blank || parent->kind == MARKDOWN_CORE_NODE_TABLE ||
-        parent->kind == MARKDOWN_CORE_NODE_TABLE_ROW || parent->kind == MARKDOWN_CORE_NODE_PARAGRAPH) {
-        return false;
-    }
+/* THE OPENER'S PLACE, which reads no byte of the input: whether a table or
+ * a caption can start on the line at the parser's cursor in `parent` -- its
+ * indentation, a blank line, and the containers no table opens in. */
+static inline bool table_opener_fits(const markdown_core_parser *parser, const markdown_core_node *parent) {
+    return parser->indent <= 3 && !parser->blank && parent->kind != MARKDOWN_CORE_NODE_TABLE &&
+           parent->kind != MARKDOWN_CORE_NODE_TABLE_ROW && parent->kind != MARKDOWN_CORE_NODE_PARAGRAPH;
+}
+
+/* THE OPENER'S ADMISSION at a place that fits, which reads only the line,
+ * `input`, and the first bytes of the line after it, and so can read the
+ * end: whether a table or a caption of the table before it can start there
+ * at all. The reading (table_opener_reads) is begun only on a line it
+ * admits. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool table_opener_admits(markdown_core_parser *parser,
+                                                                                const markdown_core_node *parent,
+                                                                                const unsigned char *input,
+                                                                                int length) {
     /* Every opening grammar needs a later physical line. At EOF only an
      * existing eligible table can claim a trailing caption. */
     if (markdown_core_parser_input_ends(parser, parser->lookahead_cursor)) {
@@ -2768,8 +2789,10 @@ static bool table_opener_reads(table_workspace *workspace, markdown_core_parser 
     if (!markdown_core_parser_lookahead_begin(parser, parent, MARKDOWN_CORE_NODE_TABLE, &source->lookahead)) {
         return false;
     }
-    source->lookahead.limit = parser->input.source + parser->input.size;
-    source->lookahead.waits = waits;
+    if (waits) {
+        source->lookahead.limit = parser->input.source + parser->input.size;
+        source->lookahead.waits = true;
+    }
     bool matched = false;
     if (table_source_push(source, table_cursor_line(parser, input, length))) {
         found->caption = table_caption_start(source->lines[0].data, source->lines[0].length, source->lines[0].first,
@@ -2792,11 +2815,10 @@ static bool table_opener_reads(table_workspace *workspace, markdown_core_parser 
  * to be a candidate (THE OPENER'S CANDIDATE); while it waits, it declines. */
 static markdown_core_node *table_try_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                           markdown_core_node *parent, unsigned char *input, int length) {
-    if (parser->stream && markdown_core_parser_candidate_live(parser, self, parent)) {
+    if (!table_opener_fits(parser, parent) ||
+        (parser->stream && markdown_core_parser_candidate_live(parser, self, parent))) {
         return NULL;
     }
-    table_workspace *workspace = self->state;
-    table_candidate *candidate = &workspace->candidate;
     const bool aside = !markdown_core_parser_candidate_final(parser);
     const markdown_core_end_aside end =
         aside ? markdown_core_parser_set_end_aside(parser) : (markdown_core_end_aside){0};
@@ -2807,6 +2829,8 @@ static markdown_core_node *table_try_open(const markdown_core_element_instance *
         }
         return NULL;
     }
+    table_workspace *workspace = self->state;
+    table_candidate *candidate = &workspace->candidate;
     table_read found;
     const bool claims = table_opener_reads(workspace, parser, parent, input, length, false, &found);
     table_source *source = &found.source;
@@ -2917,7 +2941,7 @@ static markdown_core_candidate_decision decide_candidate(const markdown_core_ele
     }
     table_workspace *workspace = self->state;
     bool claims = false, undecided = false;
-    if (table_opener_admits(parser, container, line.data, (int)line.len)) {
+    if (table_opener_fits(parser, container) && table_opener_admits(parser, container, line.data, (int)line.len)) {
         table_read found;
         claims = table_opener_reads(workspace, parser, container, line.data, (int)line.len, true, &found);
         undecided = found.source.undecided;
