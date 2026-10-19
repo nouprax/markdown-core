@@ -759,15 +759,23 @@ static bool properties_dashes_at(markdown_core_parser *parser, const unsigned ch
     return true;
 }
 
-size_t markdown_core_properties_parse(markdown_core_properties_work *work, markdown_core_parser *parser,
-                                      const unsigned char *source, size_t length) {
+int markdown_core_properties_fence(const unsigned char *data) {
+    int dashes = 0;
+    while (dashes < 3 && data[dashes] == '-') {
+        dashes++;
+    }
+    return markdown_core_is_line_end(data[dashes]) ? dashes : -1;
+}
+
+bool markdown_core_properties_closed(markdown_core_properties_work *work, markdown_core_parser *parser, size_t *fence) {
+    size_t length;
+    const unsigned char *source = markdown_core_parser_input_text(parser, &length);
     /* The opener is exactly "---" and a line ending: a peek, not a scan. */
     if (!properties_dashes_at(parser, source, 0) || markdown_core_parser_input_ends(parser, source + 3) ||
         !markdown_core_is_line_end(source[3])) {
-        return 0;
+        return false;
     }
-    size_t start = next_line(source, 3, length), close = start;
-    properties p = {.parser = parser, .work = work, .source = source};
+    size_t close = next_line(source, 3, length);
     /* THE FENCE NEEDS NO LINE GEOMETRY. It is "---" bracketed by line ends,
      * so the search for it is one `memchr` pass over the dashes, checked at
      * each hit for the line start before it and the line end after it, and
@@ -795,9 +803,14 @@ size_t markdown_core_properties_parse(markdown_core_properties_work *work, markd
         close = at + 1;
     }
     work->line_work += fence_work;
-    if (!closed) {
-        return 0;
-    }
+    *fence = close;
+    return closed;
+}
+
+size_t markdown_core_properties_parse(markdown_core_properties_work *work, markdown_core_parser *parser, size_t close) {
+    size_t length;
+    const unsigned char *source = markdown_core_parser_input_text(parser, &length);
+    properties p = {.parser = parser, .work = work, .source = source};
     int number = 1;
     source_line *line;
     do {

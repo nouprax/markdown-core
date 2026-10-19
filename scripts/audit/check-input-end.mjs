@@ -35,7 +35,8 @@ const pkg = path.join(root, "packages/markdown-core");
 
 const END_VIEW = /\bparser->(input\.(size|complete|scanned)|end_seen_at|end_seen)\b/g;
 
-/** The functions that own the end: the entry and its record, the reading
+/** The functions that own the end: the entry and its record, the input's
+ * text, which a reading reads to its end asking the entry, the reading
  * that sets the end aside, where the finished lines end, the reading that
  * waits at the end (parser.h), the line index's frontier, the physical-line
  * scanner, the line index's entry for readers, the driver that installs an
@@ -45,6 +46,7 @@ const END_VIEW = /\bparser->(input\.(size|complete|scanned)|end_seen_at|end_seen
 const OWNERS = new Set([
     "core/parser.h:markdown_core_parser_see_end",
     "core/parser.h:markdown_core_parser_input_ends",
+    "core/parser.h:markdown_core_parser_input_text",
     "core/parser.h:markdown_core_parser_set_end_aside",
     "core/parser.h:markdown_core_parser_end_read",
     "core/parser.h:markdown_core_parser_put_end_back",

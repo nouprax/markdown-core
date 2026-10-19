@@ -8922,7 +8922,7 @@ static bool probe_table_transactions(const markdown_core_element_instance *self,
             markdown_core_parser_lookahead_begin(parser, context->container, MARKDOWN_CORE_NODE_TABLE, &lookahead);
         bool matched = begun && markdown_core_table_caption_probe(
                                     markdown_core_parser_instance(parser, &MARKDOWN_CORE_ELEMENT_TABLE), &lookahead,
-                                    context->input, context->first, context->indent);
+                                    context->input, context->first, context->indent, false);
         payload_probe_calls after = payload_probe_snapshot();
         OK(probe->runner, begun && !parser->error && matched == probe->matches,
            "cold and warm table transactions agree on recognition");
@@ -11640,9 +11640,11 @@ static void session_snapshot_simple_tables(test_batch_runner *runner) {
 
 /* WHAT A CANDIDATE DECIDES, IN EVERY SNAPSHOT (step 7, THE CANDIDATES): the
  * text arrives byte by byte, and after each append the snapshot's dump is a
- * fresh parse's of the same text. A construct whose opening line reads to
- * the end of the text so far -- a grid, a multiline table with or without a
- * header, a headerless simple table, a `%%` comment -- is read on as the
+ * fresh parse's of the same text. A construct whose call reads to the end
+ * of the text so far -- a grid, a multiline table with or without a header,
+ * a headerless simple table, a `%%` comment, a block identifier line, a
+ * definition's term and its body's blank line, the Properties envelope the
+ * text opens with, a caption before or after a table -- is read on as the
  * commit reads its lines, and decided at the line that ends it, inside
  * containers too; one the text leaves open stays as its lines read. */
 static void session_snapshot_candidates(test_batch_runner *runner) {
@@ -11659,6 +11661,29 @@ static void session_snapshot_candidates(test_batch_runner *runner) {
         "------ ------\nx      y\n------ ------\nafter\n",
         "> -------------------\n> Head A    Head B\n> --------  --------\n> row a1    row b1\n>\n"
         "> row a2    row b2\n> -------------------\n>\n> after\n",
+        "- a\n\n#id#\n  x\n",
+        "- a\n\n#id#\n\nafter\n",
+        "> [!NOTE]\n> x\n\n#id#\n x\n",
+        "| a |\n|---|\n\n#id#\n\n#no#\n",
+        "> - a\n>\n> #id#\n>  x\n",
+        "Term\n: def\n\n  more\n\nafter\n",
+        "Term\n\n: def\n\n\n  code?\nTwo\n:x\n",
+        "> Term\n> : def\n>\n>   more\n> after\n",
+        "Term\n: Caption\n\n| a |\n|---|\n| b |\n",
+        "---\ntitle: a\n---\nbody\n",
+        "---\ntitle: a\n\n- item\n> quote\n",
+        "---\na: b\n----\n--\n -- -\n---\nafter\n",
+        "---\n---\n",
+        "---\r\na: b\r\n---\r\nx\r\n",
+        "--- \na: b\n---\n",
+        "x\n---\na: b\n---\n",
+        "\n---\na: b\n---\n",
+        "---\n%%\n---\n%%\nafter\n",
+        "---\na: b\n---",
+        "| a |\n|---|\n\nTable: ab\n\nafter\n",
+        "| a |\n|---|\n| c |\n\nTable: ab\nmore\n\nx\n",
+        "| a |\n|---|\n\nTable: ab\n| b |\n|---|\n\nTable: c\n",
+        "Table: lead\n\n+---+\n| a |\n+---+\n\nafter\n",
     };
     for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
         size_t at = 0;

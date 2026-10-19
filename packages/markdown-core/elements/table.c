@@ -2688,11 +2688,15 @@ static bool table_after_caption(table_source *source, size_t *caption_last, tabl
 
 bool markdown_core_table_caption_probe(const markdown_core_element_instance *table,
                                        markdown_core_block_lookahead *lookahead, markdown_core_chunk *input, int first,
-                                       int indent) {
+                                       int indent, bool decides) {
     markdown_core_parser *parser = lookahead->parser;
     table_workspace *workspace = table->state;
-    table_source source = {
-        .parser = parser, .workspace = workspace, .lookahead = *lookahead, .lines = workspace->lines};
+    table_source source = {.parser = parser,
+                           .workspace = workspace,
+                           .lookahead = *lookahead,
+                           .lines = workspace->lines,
+                           .aside = !markdown_core_parser_candidate_final(parser) && !decides,
+                           .decides = decides};
     lookahead->active = false; /* Transfer the transaction; source_free ends it. */
     table_candidate *candidate = &workspace->candidate;
     size_t last = 0;
@@ -2730,15 +2734,24 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool table_open_admits(ma
 }
 
 /* WHAT THE OPENER READ (table_opener_reads): its lines, and the caption the
- * first of them starts, with the last line of the caption and the table
- * before it that the caption may follow. */
+ * first of them starts, with the last line of the caption and whether it
+ * trails the table before it. */
 typedef struct {
     table_source source;
     int caption;
     size_t caption_last;
-    markdown_core_node *preceding;
     bool trailing;
 } table_read;
+
+/* THE TABLE A CAPTION CAN TRAIL in `parent`, which the tree tells at the
+ * call: its last child, when that is a table without a caption. */
+static markdown_core_node *table_preceding(const markdown_core_node *parent) {
+    markdown_core_node *last = markdown_core_parser_last_child(parent);
+    return last && last->kind == MARKDOWN_CORE_NODE_TABLE && last->opaque &&
+                   !((markdown_core_table *)last->opaque)->caption
+               ? last
+               : NULL;
+}
 
 /* THE OPENER'S PLACE, which reads no byte of the input: whether a table or
  * a caption can start on the line at the parser's cursor in `parent` -- its
@@ -2750,30 +2763,28 @@ static inline bool table_opener_fits(const markdown_core_parser *parser, const m
 
 /* THE OPENER'S ADMISSION at a place that fits, which reads only the line,
  * `input`, and the first bytes of the line after it, and so can read the
- * end: whether a table or a caption of the table before it can start there
- * at all. The reading (table_opener_reads) is begun only on a line it
- * admits. */
+ * end: whether a table or a caption of the table before it, when the call
+ * found one it can trail (`trailing`), can start there at all. The reading
+ * (table_opener_reads) is begun only on a line it admits. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool table_opener_admits(markdown_core_parser *parser,
-                                                                                const markdown_core_node *parent,
+                                                                                bool trailing,
                                                                                 const unsigned char *input,
                                                                                 int length) {
-    /* Every opening grammar needs a later physical line. At EOF only an
-     * existing eligible table can claim a trailing caption. */
-    if (markdown_core_parser_input_ends(parser, parser->lookahead_cursor)) {
-        const markdown_core_node *preceding = markdown_core_parser_last_child(parent);
-        if (!preceding || preceding->kind != MARKDOWN_CORE_NODE_TABLE) {
-            return false;
-        }
+    /* Every opening grammar needs a later physical line. At EOF only a
+     * caption a table before it takes can be claimed. */
+    if (markdown_core_parser_input_ends(parser, parser->lookahead_cursor) && !trailing) {
+        return false;
     }
     return table_open_admits(parser, input, length);
 }
 
 /* THE OPENER'S READING of a line its admission admits, which writes nothing
  * in the tree: whether the line opens a table or a caption of the table
- * before it. A candidate's decision, `decides`, records no facts either
- * (THE OPENER'S CANDIDATE). */
+ * before it, when the call found one it can trail (`trailing`). A
+ * candidate's decision, `decides`, records no facts either (THE OPENER'S
+ * CANDIDATE). */
 static bool table_opener_reads(table_workspace *workspace, markdown_core_parser *parser, markdown_core_node *parent,
-                               unsigned char *input, int length, bool decides, table_read *found) {
+                               unsigned char *input, int length, bool decides, bool trailing, table_read *found) {
     const bool waits = !markdown_core_parser_candidate_final(parser);
     *found = (table_read){.source = {.parser = parser,
                                      .workspace = workspace,
@@ -2792,9 +2803,7 @@ static bool table_opener_reads(table_workspace *workspace, markdown_core_parser 
     if (table_source_push(source, table_cursor_line(parser, input, length))) {
         found->caption = table_caption_start(source->lines[0].data, source->lines[0].length, source->lines[0].first,
                                              source->lines[0].indent);
-        found->preceding = found->caption >= 0 ? markdown_core_parser_last_child(parent) : NULL;
-        found->trailing = found->preceding && found->preceding->kind == MARKDOWN_CORE_NODE_TABLE &&
-                          found->preceding->opaque && !((markdown_core_table *)found->preceding->opaque)->caption;
+        found->trailing = found->caption >= 0 && trailing;
         if (found->caption >= 0) {
             matched = table_after_caption(source, &found->caption_last, &workspace->candidate, !found->trailing);
         } else {
@@ -2823,7 +2832,10 @@ static bool table_opener_reads(table_workspace *workspace, markdown_core_parser 
  * without a header compares a line with the runs of the call's line, `line`,
  * whose content starts at `offset` with its first non-space byte at `first`
  * in column `column`, indented `indent`, and holds `runs` runs, the last
- * ending at `last_end`. */
+ * ending at `last_end`. A caption's line names no grammar: its own reads
+ * on to the first line or blank lines after it, and the decision reads it
+ * whole; the call keeps whether it found a table before it the caption can
+ * trail, `trailing`, as the tree told it there. */
 enum { TABLE_DEAD, TABLE_ALIVE, TABLE_CLAIMED, TABLE_DONE };
 enum { TABLE_GRID, TABLE_SIMPLE, TABLE_HEADERLESS, TABLE_MULTILINE, TABLE_HEADLESS };
 
@@ -2831,19 +2843,21 @@ typedef struct {
     int left, right;
     int line, offset, first, column, indent, runs, last_end;
     unsigned char grammars[2], states[2];
-    bool separated, headed, body, after, first_body, boundary, blanks, split;
+    bool separated, headed, body, after, first_body, boundary, blanks, split, trailing;
 } table_feed;
 
 typedef char table_feed_fits_its_words[sizeof(table_feed) <= sizeof(int[MARKDOWN_CORE_CANDIDATE_WORDS]) ? 1 : -1];
 
 /* The grammars the line `source` holds first names, each ALIVE, as the feed
- * starts at the line after it. A caption's line names none (it reads its
- * own grammar). */
-static table_feed table_feed_start(table_source *source) {
+ * starts at the line after it, a call that found a table a caption can
+ * trail when `trailing`. A caption's line names none (it reads its own
+ * grammar). */
+static table_feed table_feed_start(table_source *source, bool trailing) {
     table_feed feed = {0};
     table_source_line *line = &source->lines[0];
     const size_t runs = table_dash_count(source, 0);
     if (table_caption_start(line->data, line->length, line->first, line->indent) >= 0) {
+        feed.trailing = trailing;
         return feed;
     }
     if (table_grid_opening(source, 0, &feed.left, &feed.right)) {
@@ -2873,14 +2887,15 @@ static table_feed table_feed_start(table_source *source) {
 }
 
 /* THE OPENER'S REQUEST: its call on the line `source` holds first asks to
- * be a candidate, with the grammars that line names. */
+ * be a candidate, with the grammars that line names; a caption that trails
+ * a table is claimed were the text to end after its line. */
 static void table_request(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                          markdown_core_node *parent, table_source *source) {
+                          markdown_core_node *parent, table_source *source, bool trailing) {
     int words[MARKDOWN_CORE_CANDIDATE_WORDS] = {0};
-    const table_feed feed = table_feed_start(source);
+    const table_feed feed = table_feed_start(source, trailing);
     if (!parser->error) {
         memcpy(words, &feed, sizeof(feed));
-        markdown_core_parser_request_candidate(parser, self, parent, MARKDOWN_CORE_NODE_TABLE, words);
+        markdown_core_parser_request_candidate(parser, self, parent, MARKDOWN_CORE_NODE_TABLE, words, feed.trailing);
     }
 }
 
@@ -2897,11 +2912,12 @@ static markdown_core_node *table_try_open(const markdown_core_element_instance *
     const markdown_core_end_aside end =
         aside ? markdown_core_parser_set_end_aside(parser) : (markdown_core_end_aside){0};
     table_workspace *workspace = self->state;
-    if (!table_opener_admits(parser, parent, input, length)) {
+    markdown_core_node *const preceding = table_preceding(parent);
+    if (!table_opener_admits(parser, preceding != NULL, input, length)) {
         if (aside && markdown_core_parser_put_end_back(parser, end) && !parser->error) {
             table_source source = {.parser = parser, .workspace = workspace, .lines = workspace->lines};
             if (table_source_push(&source, table_cursor_line(parser, input, length))) {
-                table_request(self, parser, parent, &source);
+                table_request(self, parser, parent, &source, preceding != NULL);
             }
             table_source_end(&source);
         }
@@ -2909,7 +2925,7 @@ static markdown_core_node *table_try_open(const markdown_core_element_instance *
     }
     table_candidate *candidate = &workspace->candidate;
     table_read found;
-    const bool claims = table_opener_reads(workspace, parser, parent, input, length, false, &found);
+    const bool claims = table_opener_reads(workspace, parser, parent, input, length, false, preceding != NULL, &found);
     table_source *source = &found.source;
     markdown_core_node *result = NULL;
     if (aside && markdown_core_parser_put_end_back(parser, end)) {
@@ -2917,7 +2933,7 @@ static markdown_core_node *table_try_open(const markdown_core_element_instance *
     }
     if (source->undecided) {
         if (!parser->error) {
-            table_request(self, parser, parent, source);
+            table_request(self, parser, parent, source, preceding != NULL);
         }
         goto done;
     }
@@ -2931,7 +2947,7 @@ static markdown_core_node *table_try_open(const markdown_core_element_instance *
     const int caption = found.caption;
     const size_t caption_last = found.caption_last;
     if (found.trailing) {
-        result = found.preceding;
+        result = preceding;
         table_candidate_reset(candidate);
         markdown_core_table *table = result->opaque;
         table->caption = table_caption_build(source, parent, caption_last, caption);
@@ -3103,11 +3119,14 @@ static markdown_core_candidate_step feed_candidate(const markdown_core_element_i
                                                    markdown_core_parser *parser, int *words,
                                                    const markdown_core_chunk *input, int first, int indent, int blanks,
                                                    bool unfinished, bool *ends) {
-    if (!input) {
-        return MARKDOWN_CORE_CANDIDATE_CONTINUES;
-    }
     table_feed feed;
     memcpy(&feed, words, sizeof(feed));
+    if (!input) {
+        /* Blank lines tell a grammar nothing until the line after them, and
+         * end a caption's lines. */
+        return feed.states[0] == TABLE_ALIVE || feed.states[1] == TABLE_ALIVE ? MARKDOWN_CORE_CANDIDATE_CONTINUES
+                                                                              : MARKDOWN_CORE_CANDIDATE_ENDS;
+    }
     table_workspace *workspace = self->state;
     table_source source = {.parser = parser, .workspace = workspace, .lines = workspace->lines};
     markdown_core_candidate_step step = MARKDOWN_CORE_CANDIDATE_ENDS;
@@ -3162,10 +3181,11 @@ done:
 }
 
 /* The opener's call decided as it would read now (blocks.c, THE
- * CANDIDATES). */
+ * CANDIDATES), with the table before it as the call found it. */
 static markdown_core_candidate_decision decide_candidate(const markdown_core_element_instance *self,
                                                          markdown_core_parser *parser, const int *words) {
-    (void)words;
+    table_feed feed;
+    memcpy(&feed, words, sizeof(feed));
     markdown_core_chunk line;
     markdown_core_node *container;
     if (!markdown_core_parser_candidate_start(parser, &line, &container)) {
@@ -3173,9 +3193,10 @@ static markdown_core_candidate_decision decide_candidate(const markdown_core_ele
     }
     table_workspace *workspace = self->state;
     bool claims = false, undecided = false;
-    if (table_opener_fits(parser, container) && table_opener_admits(parser, container, line.data, (int)line.len)) {
+    if (table_opener_fits(parser, container) && table_opener_admits(parser, feed.trailing, line.data, (int)line.len)) {
         table_read found;
-        claims = table_opener_reads(workspace, parser, container, line.data, (int)line.len, true, &found);
+        claims =
+            table_opener_reads(workspace, parser, container, line.data, (int)line.len, true, feed.trailing, &found);
         undecided = found.source.undecided;
         table_candidate_reset(&workspace->candidate);
         table_source_end(&found.source);

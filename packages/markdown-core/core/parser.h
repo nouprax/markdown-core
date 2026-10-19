@@ -149,10 +149,10 @@ typedef struct markdown_core_parser_input {
     bool last_line_ready;
 } markdown_core_parser_input;
 
-/* The words an opener keeps of its candidate's grammars (blocks.c, THE
+/* The words a call keeps of its candidate's grammars (blocks.c, THE
  * CANDIDATES), which its feed writes: where a table opener's grammars that
- * read on stand. */
-#define MARKDOWN_CORE_CANDIDATE_WORDS 12
+ * read on stand, with what its call found before a caption. */
+#define MARKDOWN_CORE_CANDIDATE_WORDS 13
 
 /* A BLOCK A SNAPSHOT OR A CANDIDATE LENT (blocks.c, THE LENDING, THE
  * CANDIDATES): the block's address, which holds the view of it, the slot
@@ -348,7 +348,7 @@ typedef struct markdown_core_stream {
     const markdown_core_element_instance *request_owner;
     struct markdown_core_node *request_holder;
     int request_words[MARKDOWN_CORE_CANDIDATE_WORDS];
-    bool requested;
+    bool request_ends, requested;
 } markdown_core_stream;
 
 struct markdown_core_parser {
@@ -959,6 +959,14 @@ static inline bool markdown_core_parser_put_end_back(markdown_core_parser *parse
     return read;
 }
 
+/* THE TEXT OF THE ACTIVE INPUT read so far, through `*length`: a reading of
+ * it to its end asks markdown_core_parser_input_ends there. The document's
+ * prefix reads it (element.h, `read_document_prefix`). */
+static inline const unsigned char *markdown_core_parser_input_text(const markdown_core_parser *parser, size_t *length) {
+    *length = parser->input.size;
+    return parser->input.source;
+}
+
 static inline bool markdown_core_parser_input_ends(markdown_core_parser *parser, const unsigned char *cursor) {
     assert(cursor >= parser->input.source && cursor <= parser->input.source + parser->input.size);
     if (cursor < parser->input.source + parser->input.size) {
@@ -1184,26 +1192,29 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
                                         int *first_nonspace, int *indent, int *blank_lines);
 void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead);
 
-/* THE CANDIDATES (blocks.c). An opener whose reading waited or read where
- * the text read so far ends, in a commit more text may follow, asks for its
- * call in `container` to be a candidate, and declines: `child` is the kind
- * of block it would open, whose lines its candidate is fed, and `words` what
- * it keeps of the grammar. The commit ends at the call, completes, marks its
- * state there and reads on from the call, where `live` answers true for the
- * owner, the line and `container` while the candidate waits, and the opener
- * declines again. Once a later line decides, an accept puts the commit back
- * at the call, where the opener reads the lines anew, and a reject keeps
- * what the commit read. */
+/* THE CANDIDATES (blocks.c). A call whose reading waited or read where the
+ * text read so far ends, in a commit more text may follow, asks to be a
+ * candidate in `container`, and declines: an opener's, the text step's, a
+ * blank line's acceptance, or the document's prefix, which is called before
+ * line 1 (element.h, `read_document_prefix`). `child` is the kind of block
+ * it would open, whose lines its candidate is fed, `words` what it keeps of
+ * the grammar, and `ends` whether it could claim were the text to end after
+ * the call's line (element.h, `feed_candidate`). The commit ends at the
+ * call, completes, marks its state there and reads on from the call, where
+ * `live` answers true for the owner, the line and `container` while the
+ * candidate waits, and the call declines again. Once a later line decides,
+ * an accept puts the commit back at the call, which reads the lines anew,
+ * and a reject keeps what the commit read. */
 void markdown_core_parser_request_candidate(markdown_core_parser *parser, const markdown_core_element_instance *owner,
                                             struct markdown_core_node *container, markdown_core_node_type child,
-                                            const int *words);
+                                            const int *words, bool ends);
 bool markdown_core_parser_candidate_live(const markdown_core_parser *parser,
                                          const markdown_core_element_instance *owner,
                                          const struct markdown_core_node *container);
 /* The decision of the candidate being decided (element.h, `decide_candidate`)
- * reads its line as its opener did: `start` puts the parser's line state at
- * the opener's call, and gives the line through its line ending and the
- * container the opener was asked in; `end` puts the line state back. False,
+ * reads its line as its call did: `start` puts the parser's line state at
+ * the call on a line, and gives the line through its line ending and the
+ * container the call was asked in; `end` puts the line state back. False,
  * with the parse failed, when storage could not be had. */
 bool markdown_core_parser_candidate_start(markdown_core_parser *parser, markdown_core_chunk *line,
                                           struct markdown_core_node **container);

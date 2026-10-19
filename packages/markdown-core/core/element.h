@@ -166,11 +166,12 @@ struct markdown_core_element {
     void (*init_document)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*dispose_parser)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*dispose_document)(const markdown_core_element_instance *, markdown_core_parser *);
-    /* Reads what the document's input opens with, before its first line:
-     * `source` and its length are the input, and a reading that reaches the
-     * length asks markdown_core_parser_input_ends (parser.h). */
-    size_t (*read_document_prefix)(const markdown_core_element_instance *, markdown_core_parser *,
-                                   const unsigned char *, size_t);
+    /* Reads what the document's input opens with, before its first line, in
+     * the input's text (markdown_core_parser_input_text, parser.h). In a
+     * commit more text may follow, a call whose reading read the end asks to
+     * be a candidate (blocks.c, THE CANDIDATES): it stops in the root at line
+     * 0, and its candidate is fed the lines from line 1. */
+    size_t (*read_document_prefix)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*prepare_document)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*finish_document)(const markdown_core_element_instance *, markdown_core_parser *);
     /* A SNAPSHOT (blocks.c, THE SNAPSHOT) begins once it has lent the
@@ -280,7 +281,7 @@ struct markdown_core_element {
      * (see the typedef); required of an element whose blocks contain blocks. */
     markdown_core_continues_block_func continues_block;
     markdown_core_open_block_func try_opening_block;
-    /* THE CANDIDATES (blocks.c): an opener that asks for candidates
+    /* THE CANDIDATES (blocks.c): an element whose calls ask for candidates
      * (markdown_core_parser_request_candidate) is fed each later line its
      * candidate's holder carries, after `blanks` blank lines, with `first`
      * and `indent` its first non-space byte and its indentation after the
@@ -288,11 +289,11 @@ struct markdown_core_element {
      * blank lines, and `unfinished` when the text has not finished it, whose
      * bytes past the prefixes it reads only as far as they decide. It
      * answers that the line continues the construct, and then in `*ends`
-     * whether the opener could claim the lines through it were the text to
+     * whether the call could claim the lines through it were the text to
      * end after it; that the construct ended before it; or that the
      * unfinished line does not tell yet. It keeps what it read in the
      * candidate's words, which it writes only for a line it answers goes
-     * on. `decide_candidate` decides as the opener would at its call
+     * on. `decide_candidate` decides as the call would read now
      * (markdown_core_parser_candidate_start): ACCEPT when it would claim
      * lines, REJECT when it would not, and WAIT when more text may follow
      * and the decision read where the text ends. */

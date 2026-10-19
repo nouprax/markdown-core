@@ -12,12 +12,39 @@ static const markdown_core_element *const DEFINITION_LIST_PEERS[] = {
 static bool markdown_core_block_definition_marker(markdown_core_chunk *input, int at, int indent);
 static bool markdown_core_block_definition_prefix(const markdown_core_element_instance *self,
                                                   markdown_core_parser *parser, markdown_core_node *parent,
-                                                  markdown_core_chunk *input, bool *compact);
+                                                  markdown_core_chunk *input, bool *compact, bool decides);
 static markdown_core_node *markdown_core_block_open_definition(markdown_core_definition_list_work *counts,
                                                                markdown_core_parser *parser, markdown_core_node *parent,
                                                                markdown_core_chunk *input, bool compact);
 static bool markdown_core_definition_list_scan(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                                block_start_context *context, block_start *start);
+/* THE CANDIDATES of the element (blocks.c, THE CANDIDATES), the first of
+ * their words naming the call: the term's, on a line that would open a
+ * paragraph, and a body's on a blank line, whose second word is the body's
+ * continuation. */
+enum { DEFINITION_TERM, DEFINITION_BLANK };
+
+/* THE BODY'S READING of a blank line in `parent`: whether the next line that
+ * is not blank is indented to `continuation`, which line that is in
+ * `*line`. */
+static bool definition_body_continues(markdown_core_parser *parser, markdown_core_node *parent, int continuation,
+                                      int *line) {
+    markdown_core_block_lookahead lookahead;
+    if (!markdown_core_parser_lookahead_begin(parser, parent, MARKDOWN_CORE_NODE_PARAGRAPH, &lookahead)) {
+        return false;
+    }
+    markdown_core_chunk next;
+    int first, indent, blanks;
+    const bool continues =
+        markdown_core_parser_lookahead_next(&lookahead, &next, &first, &indent, &blanks) && indent >= continuation;
+    *line = lookahead.line - 1;
+    markdown_core_parser_lookahead_end(&lookahead);
+    return continues;
+}
+
+/* A BODY TAKES A BLANK LINE its reading admits. A call in a commit more text
+ * may follow sets the end it reads aside: one that reads it decides nothing,
+ * and asks to be a candidate; while it waits, the body declines the line. */
 static bool accepts_blank(const markdown_core_element_instance *self, markdown_core_parser *parser,
                           markdown_core_node *body) {
     if (body->kind != MARKDOWN_CORE_NODE_DEFINITION_BODY) {
@@ -27,19 +54,26 @@ static bool accepts_blank(const markdown_core_element_instance *self, markdown_c
     if (body->as.definition_body->continuation_line > parser->line_number) {
         return true;
     }
-    markdown_core_block_lookahead lookahead;
-    if (!markdown_core_parser_lookahead_begin(parser, markdown_core_parser_parent(parser, body),
-                                              MARKDOWN_CORE_NODE_PARAGRAPH, &lookahead)) {
+    markdown_core_node *parent = markdown_core_parser_parent(parser, body);
+    if (parser->stream && markdown_core_parser_candidate_live(parser, self, parent)) {
         return false;
     }
-    markdown_core_chunk next;
-    int first, indent, blanks;
-    bool continues = markdown_core_parser_lookahead_next(&lookahead, &next, &first, &indent, &blanks) &&
-                     indent >= body->as.definition_body->continuation;
-    if (continues) {
-        body->as.definition_body->continuation_line = lookahead.line - 1;
+    const int continuation = body->as.definition_body->continuation;
+    const bool aside = !markdown_core_parser_candidate_final(parser);
+    const markdown_core_end_aside end =
+        aside ? markdown_core_parser_set_end_aside(parser) : (markdown_core_end_aside){0};
+    int line;
+    const bool continues = definition_body_continues(parser, parent, continuation, &line);
+    if (aside && markdown_core_parser_put_end_back(parser, end)) {
+        if (!parser->error) {
+            const int words[MARKDOWN_CORE_CANDIDATE_WORDS] = {DEFINITION_BLANK, continuation};
+            markdown_core_parser_request_candidate(parser, self, parent, MARKDOWN_CORE_NODE_PARAGRAPH, words, false);
+        }
+        return false;
     }
-    markdown_core_parser_lookahead_end(&lookahead);
+    if (continues) {
+        body->as.definition_body->continuation_line = line;
+    }
     return continues;
 }
 
@@ -112,9 +146,12 @@ static bool definition_next_lines_admit(markdown_core_parser *parser, const mark
     return false;
 }
 
+/* THE TERM'S READING of the line `input` in `parent`: whether a definition
+ * marker line follows it, after one blank line at most, that is no caption
+ * of a table. A candidate's decision, `decides`, writes nothing. */
 static bool markdown_core_block_definition_prefix(const markdown_core_element_instance *self,
                                                   markdown_core_parser *parser, markdown_core_node *parent,
-                                                  markdown_core_chunk *input, bool *compact) {
+                                                  markdown_core_chunk *input, bool *compact, bool decides) {
     markdown_core_definition_list_work *counts = self->state;
     counts->work++;
     if (parser->blank || parser->indent >= 4 ||
@@ -152,7 +189,7 @@ static bool markdown_core_block_definition_prefix(const markdown_core_element_in
     if (matched && next.data[first] == ':') {
         /* A dialect without tables has no caption to yield to. */
         const markdown_core_element_instance *table = self->peers[DEFINITION_LIST_TABLE];
-        matched = !table || !markdown_core_table_caption_probe(table, &lookahead, &next, first, indent);
+        matched = !table || !markdown_core_table_caption_probe(table, &lookahead, &next, first, indent, decides);
     }
     if (matched) {
         *compact = blanks == 0;
@@ -242,15 +279,79 @@ bool markdown_core_definition_list_continue(markdown_core_parser *parser, markdo
     return markdown_core_block_continue_indented(parser, input, container->as.definition_body->continuation, true);
 }
 
+/* THE TERM, the paragraph opener's call: a line its reading admits opens a
+ * definition, with the line as its term. A call in a commit more text may
+ * follow sets the end it reads aside: one that reads it decides nothing,
+ * and asks to be a candidate; while it waits, it declines. */
 static markdown_core_node *try_paragraph(const markdown_core_element_instance *self, int indented,
                                          markdown_core_parser *parser, markdown_core_node *parent, unsigned char *data,
                                          int length) {
+    (void)indented;
+    if (parser->stream && markdown_core_parser_candidate_live(parser, self, parent)) {
+        return NULL;
+    }
     markdown_core_chunk input = {data, length, 0};
     bool compact = false;
-    if (!markdown_core_block_definition_prefix(self, parser, parent, &input, &compact)) {
+    const bool aside = !markdown_core_parser_candidate_final(parser);
+    const markdown_core_end_aside end =
+        aside ? markdown_core_parser_set_end_aside(parser) : (markdown_core_end_aside){0};
+    const bool term = markdown_core_block_definition_prefix(self, parser, parent, &input, &compact, false);
+    if (aside && markdown_core_parser_put_end_back(parser, end)) {
+        if (!parser->error) {
+            const int words[MARKDOWN_CORE_CANDIDATE_WORDS] = {DEFINITION_TERM};
+            markdown_core_parser_request_candidate(parser, self, parent, MARKDOWN_CORE_NODE_DEFINITION_LIST, words,
+                                                   false);
+        }
+        return NULL;
+    }
+    if (!term) {
         return NULL;
     }
     return markdown_core_block_open_definition(self->state, parser, parent, &input, compact);
+}
+
+/* THE FEED of the element's candidates (element.h). The term's reading is
+ * decided by the first line after one blank line at most, which the text
+ * has finished, or by a second blank line; a body's, by the first line
+ * after the blank lines, which tells its indentation as soon as it is
+ * read. */
+static markdown_core_candidate_step feed_candidate(const markdown_core_element_instance *self,
+                                                   markdown_core_parser *parser, int *words,
+                                                   const markdown_core_chunk *input, int first, int indent, int blanks,
+                                                   bool unfinished, bool *ends) {
+    (void)self;
+    (void)parser;
+    (void)first;
+    (void)indent;
+    if (words[0] == DEFINITION_TERM && blanks > 1) {
+        return MARKDOWN_CORE_CANDIDATE_ENDS;
+    }
+    if (!input) {
+        *ends = false;
+        return MARKDOWN_CORE_CANDIDATE_CONTINUES;
+    }
+    return words[0] == DEFINITION_TERM && unfinished ? MARKDOWN_CORE_CANDIDATE_WAITS : MARKDOWN_CORE_CANDIDATE_ENDS;
+}
+
+/* The call decided as it would read now (element.h): a body's from the
+ * continuation it had, which nothing after the call writes. */
+static markdown_core_candidate_decision decide_candidate(const markdown_core_element_instance *self,
+                                                         markdown_core_parser *parser, const int *words) {
+    markdown_core_chunk line;
+    markdown_core_node *container;
+    if (!markdown_core_parser_candidate_start(parser, &line, &container)) {
+        return MARKDOWN_CORE_CANDIDATE_REJECT;
+    }
+    bool claims;
+    if (words[0] == DEFINITION_TERM) {
+        bool compact = false;
+        claims = markdown_core_block_definition_prefix(self, parser, container, &line, &compact, true);
+    } else {
+        int next;
+        claims = definition_body_continues(parser, container, words[1], &next);
+    }
+    markdown_core_parser_candidate_end(parser);
+    return claims ? MARKDOWN_CORE_CANDIDATE_ACCEPT : MARKDOWN_CORE_CANDIDATE_REJECT;
 }
 
 static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,
@@ -290,4 +391,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DEFINITION_LIST = {
     .scan_block_start = markdown_core_definition_list_scan,
     .scan_block_gate = {.bytes = ":~"},
     .try_opening_paragraph = try_paragraph,
+    .feed_candidate = feed_candidate,
+    .decide_candidate = decide_candidate,
 };

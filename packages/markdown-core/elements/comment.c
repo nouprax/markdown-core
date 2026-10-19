@@ -118,7 +118,8 @@ static markdown_core_node *open_block(const markdown_core_element_instance *self
     const bool closed = comment_reads(self, parser, parent_container, &line, first_nonspace, &undecided);
     if (undecided && !parser->error) {
         const int words[MARKDOWN_CORE_CANDIDATE_WORDS] = {0};
-        markdown_core_parser_request_candidate(parser, self, parent_container, MARKDOWN_CORE_NODE_COMMENT_BLOCK, words);
+        markdown_core_parser_request_candidate(parser, self, parent_container, MARKDOWN_CORE_NODE_COMMENT_BLOCK, words,
+                                               false);
     }
     if (!closed) {
         return NULL;

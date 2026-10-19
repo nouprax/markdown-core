@@ -90,9 +90,65 @@ static void publish_candidate(const markdown_core_element_instance *self, markdo
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
 }
-static size_t read_document_prefix(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                   const unsigned char *source, size_t length) {
-    return markdown_core_properties_parse(self->state, parser, source, length);
+/* THE PREFIX, the call before line 1: an envelope that closes is read as
+ * the document's properties. A call in a commit more text may follow sets
+ * the end it reads aside: one that reads it decides nothing, and asks to be
+ * a candidate (blocks.c, THE CANDIDATES); while it waits, it declines. */
+static size_t read_document_prefix(const markdown_core_element_instance *self, markdown_core_parser *parser) {
+    if (parser->stream && markdown_core_parser_candidate_live(parser, self, parser->root)) {
+        return 0;
+    }
+    const bool aside = !markdown_core_parser_candidate_final(parser);
+    const markdown_core_end_aside end =
+        aside ? markdown_core_parser_set_end_aside(parser) : (markdown_core_end_aside){0};
+    size_t fence;
+    const bool closed = markdown_core_properties_closed(self->state, parser, &fence);
+    if (aside && markdown_core_parser_put_end_back(parser, end)) {
+        if (!parser->error) {
+            const int words[MARKDOWN_CORE_CANDIDATE_WORDS] = {0};
+            markdown_core_parser_request_candidate(parser, self, parser->root, MARKDOWN_CORE_NODE_METADATA, words,
+                                                   false);
+        }
+        return 0;
+    }
+    return closed ? markdown_core_properties_parse(self->state, parser, fence) : 0;
+}
+
+/* THE FEED of the prefix's candidate: the first line opens the envelope
+ * when it is a fence, which the first of the words keeps, and ends the
+ * construct otherwise; after it, a fence line closes the envelope and ends
+ * the construct, and any other line goes on with it, a line the text has
+ * not finished once its bytes rule a fence out. An envelope its text leaves
+ * open is not claimed. */
+static markdown_core_candidate_step feed_candidate(const markdown_core_element_instance *self,
+                                                   markdown_core_parser *parser, int *words,
+                                                   const markdown_core_chunk *input, int first, int indent, int blanks,
+                                                   bool unfinished, bool *ends) {
+    (void)self;
+    (void)parser;
+    (void)first;
+    (void)indent;
+    const bool opened = words[0];
+    const int fence = input ? markdown_core_properties_fence(input->data) : -1;
+    if (unfinished && fence > 0) {
+        return MARKDOWN_CORE_CANDIDATE_WAITS;
+    }
+    if (opened ? fence == 3 : blanks || fence != 3) {
+        return MARKDOWN_CORE_CANDIDATE_ENDS;
+    }
+    words[0] = 1;
+    *ends = false;
+    return MARKDOWN_CORE_CANDIDATE_CONTINUES;
+}
+
+/* The prefix's call decided as it would read now: the envelope closes at
+ * the fence that ended the construct. */
+static markdown_core_candidate_decision decide_candidate(const markdown_core_element_instance *self,
+                                                         markdown_core_parser *parser, const int *words) {
+    (void)words;
+    size_t fence;
+    return markdown_core_properties_closed(self->state, parser, &fence) ? MARKDOWN_CORE_CANDIDATE_ACCEPT
+                                                                        : MARKDOWN_CORE_CANDIDATE_REJECT;
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
@@ -102,6 +158,8 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
     .init_document = init_document,
     .dispose_document = dispose_document,
     .read_document_prefix = read_document_prefix,
+    .feed_candidate = feed_candidate,
+    .decide_candidate = decide_candidate,
     .prepare_document = prepare_document,
     .finish_document = finish_document,
     .start_snapshot = start_snapshot,

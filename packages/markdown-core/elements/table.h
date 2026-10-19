@@ -46,10 +46,12 @@ typedef struct {
 const markdown_core_table_work *markdown_core_table_work_in(const markdown_core_element_instance *table);
 
 /* Consumes the active lookahead transaction at its current caption line,
- * with `table` the table element's instance. */
+ * with `table` the table element's instance. A candidate's decision,
+ * `decides`, writes nothing; a reading in a commit more text may follow
+ * records no facts once it has read the end (blocks.c, THE CANDIDATES). */
 bool markdown_core_table_caption_probe(const markdown_core_element_instance *table,
                                        markdown_core_block_lookahead *lookahead, markdown_core_chunk *input, int first,
-                                       int indent);
+                                       int indent, bool decides);
 
 /* C LINKAGE, AND WINDOWS IS THE ONLY PLACE THIS SHOWS. The Itanium ABI does not
  * mangle a variable at global scope, so `MARKDOWN_CORE_ELEMENT_*` resolves on
