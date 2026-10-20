@@ -132,9 +132,18 @@ typedef struct markdown_core_parser_input {
     size_t complete;
     struct markdown_core_input_line *lines;
     struct markdown_core_normalized_line *normalized;
-    struct markdown_core_line_facts *facts;
-    size_t fact_count, fact_capacity;
-    size_t line_count, line_capacity;
+    /* The facts records of its lines (markdown_core_line_facts), in the
+     * order they were made: each is carved where it stays (carve.h), as a
+     * record is written whenever its line is read again, and the array of
+     * them moves ahead of its growth (ahead.h). */
+    struct markdown_core_line_facts **facts;
+    size_t fact_count, fact_room;
+    markdown_core_ahead fact_ahead;
+    markdown_core_carve fact_store;
+    /* The lines move ahead of their growth (ahead.h): a line is written
+     * through markdown_core_parser_written_line. */
+    size_t line_count, line_room;
+    markdown_core_ahead line_ahead;
     /* Whether a column of the input may stand elsewhere than the same
      * offset from its line's start in the source: true for a cell's content,
      * and for the document once its scan finds NUL, which the block parser
@@ -268,7 +277,7 @@ typedef struct {
 
 /* A definition lookup a commit's completion found nothing for: the root it
  * was made for, among the parser's `miss_roots`, and the lookup's kind and
- * label, as written, at `label_start` in the parser's `miss_labels`. */
+ * label, as written, at `label_start` in the parser's miss labels. */
 typedef struct {
     size_t root;
     markdown_core_registry_kind kind;
@@ -345,12 +354,17 @@ typedef struct markdown_core_stream {
      * many of the roots a snapshot published once they were complete. The
      * finalize asks each lookup again with every definition visible, and
      * completes again each root whose answer is one now (blocks.c, A LOOKUP
-     * THAT FOUND NOTHING). */
+     * THAT FOUND NOTHING). The three arrays move ahead of their growth
+     * (ahead.h). */
     markdown_core_definition_miss *misses;
-    size_t miss_count, miss_capacity;
-    markdown_core_strbuf miss_labels;
+    size_t miss_count, miss_room;
+    markdown_core_ahead miss_ahead;
+    unsigned char *miss_labels;
+    size_t miss_label_size, miss_label_room;
+    markdown_core_ahead miss_label_ahead;
     markdown_core_miss_root *miss_roots;
-    size_t miss_root_count, miss_root_capacity, miss_published;
+    size_t miss_root_count, miss_root_room, miss_published;
+    markdown_core_ahead miss_root_ahead;
     const struct markdown_core_node *miss_root;
     /* THE CANDIDATES (blocks.c): the marks of the lines whose opener calls
      * the text read so far does not decide, outermost first, and how many
@@ -606,10 +620,12 @@ struct markdown_core_parser {
     /* The content-to-source map (see markdown_core_line_mark). It is read while the
      * parse is still running -- the block phase reads it as blocks close and
      * the inline phase reads it before the transaction returns -- and it is
-     * released with the rest of the per-parse state. */
+     * released with the rest of the per-parse state. It moves ahead of its
+     * growth (ahead.h). */
     markdown_core_line_mark *line_marks;
     bufsize_t line_marks_size;
-    bufsize_t line_marks_alloc;
+    size_t line_marks_room;
+    markdown_core_ahead line_mark_ahead;
 };
 
 /* THE RUN AN OFFSET LIES IN, FOUND FROM WHERE THE LAST ONE WAS.
@@ -953,6 +969,9 @@ static inline size_t markdown_core_input_line_next(const markdown_core_parser *p
     return next < parser->input.lines + parser->input.line_count ? next->start : parser->input.scanned;
 }
 
+/* Gives back what an input holds. */
+void markdown_core_parser_release_input(markdown_core_parser_input *input);
+
 /* Returned pointers are borrowed until the next request that grows the
  * index. Keep line numbers or copies across such a request. */
 markdown_core_input_line *markdown_core_parser_extend_source_lines(markdown_core_parser *parser, size_t index);
@@ -1038,7 +1057,11 @@ static inline markdown_core_line_facts *markdown_core_parser_get_line_facts(mark
     if (!line) {
         return NULL;
     }
-    return line->facts ? &parser->input.facts[line->facts - 1] : markdown_core_parser_extend_line_facts(parser, line);
+    if (line->facts) {
+        return parser->input.facts[line->facts - 1];
+    }
+    markdown_core_ahead_unsettle(&parser->input.line_ahead, (size_t)(number - parser->input.first_line));
+    return markdown_core_parser_extend_line_facts(parser, line);
 }
 
 /* The flags of a container a lookahead matches: as it first matched it, and
@@ -1166,6 +1189,13 @@ static inline markdown_core_input_line *markdown_core_parser_visited_line(const 
     size_t index = (size_t)(line - parser->input.first_line);
     assert(line >= parser->input.first_line && index < parser->input.line_count);
     return &parser->input.lines[index];
+}
+
+/* The same, to write: the copy the index made of it ahead of its growth is
+ * void (ahead.h). */
+static inline markdown_core_input_line *markdown_core_parser_written_line(markdown_core_parser *parser, int line) {
+    markdown_core_ahead_unsettle(&parser->input.line_ahead, (size_t)(line - parser->input.first_line));
+    return markdown_core_parser_visited_line(parser, line);
 }
 
 /* An input that is not mapped is a copy of its source, so a line's column c

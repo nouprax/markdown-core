@@ -66,6 +66,17 @@ static markdown_core_key_index_slot *find_key_slot(markdown_core_key_index_slot 
     return NULL;
 }
 
+/* The first vacant slot from `hash`'s home, for a key the table does not
+ * hold. */
+static markdown_core_key_index_slot *vacant_key_slot(markdown_core_key_index_slot *slots, size_t capacity,
+                                                     uint64_t hash) {
+    size_t position = (size_t)hash & (capacity - 1);
+    while (slots[position].key) {
+        position = (position + 1) & (capacity - 1);
+    }
+    return &slots[position];
+}
+
 /* The least capacity that holds `size` keys at most half full, or zero when
  * none can be had. */
 static size_t S_capacity_for(size_t size) {
@@ -82,28 +93,109 @@ static size_t S_capacity_for(size_t size) {
     return capacity <= SIZE_MAX / sizeof(markdown_core_key_index_slot) ? capacity : 0;
 }
 
-/* Move every entry to a table of `capacity` slots, more than the index has. */
-static int S_rehash(markdown_core_key_index *index, size_t capacity) {
-    markdown_core_key_index_slot *slots;
-    size_t i;
-    slots = (markdown_core_key_index_slot *)markdown_core_alloc(capacity, sizeof(*slots));
-    if (!slots) {
-        return 0;
-    }
-    for (i = 0; i < index->capacity; i++) {
-        markdown_core_key_index_slot *source = &index->slots[i];
-        markdown_core_key_index_slot *destination;
-        if (!source->key) {
-            continue;
+/* THE MOVE. The older table is emptied run by run: the cursor is a vacant
+ * slot, and a move takes the runs after it whole, so every entry left keeps
+ * its probe chain from its home, which no vacant slot breaks, and no run
+ * reaches past the cursor. A removal from the older table shifts entries
+ * within their run, so the cursor stays vacant.
+ *
+ * Each new key passes KEY_INDEX_MOVE_SLOTS slots of the older table, more to
+ * end a run. The older table, of `c` slots, held at most `c / 2` keys when the
+ * newer one, of at least `2c`, was had, and the newer one is half full only
+ * after `c / 2` more keys: two slots each would empty the older table in
+ * time, and four empty it in half the time, so a lookup reads two tables
+ * for as short a stretch. */
+#define KEY_INDEX_MOVE_SLOTS 4
+
+static void S_drop_older(markdown_core_key_index *index) {
+    markdown_core_free(index->older);
+    index->older = NULL;
+    index->older_capacity = 0;
+    index->cursor = 0;
+}
+
+/* Move the runs after the cursor to the newer table. A run is cleared as it
+ * goes, whole before any lookup reads the older table again. */
+static void S_move_runs(markdown_core_key_index *index) {
+    markdown_core_key_index_slot *older = index->older;
+    const size_t mask = index->older_capacity - 1;
+    size_t at = index->cursor;
+    for (size_t passed = 0; passed < KEY_INDEX_MOVE_SLOTS && index->left;) {
+        at = (at + 1) & mask;
+        passed++;
+        for (; older[at].key; at = (at + 1) & mask, passed++) {
+            *vacant_key_slot(index->slots, index->capacity, older[at].hash) = older[at];
+            older[at] = (markdown_core_key_index_slot){0};
+            index->left--;
         }
-        destination = find_key_slot(slots, capacity, source->hash, source->key, source->key_len);
-        if (!destination) {
-            markdown_core_free(slots);
+    }
+    if (index->left) {
+        index->cursor = at;
+    } else {
+        S_drop_older(index);
+    }
+}
+
+/* THE NEXT TABLE. The table of twice the slots that the index grows to is
+ * made vacant before any key enters it, from the front, a slice for each new
+ * key: from three eighths full on, each new key clears KEY_INDEX_CLEAR_SLOTS
+ * of its slots, so that at half full, an eighth of the slots in keys later,
+ * all of its twice as many slots are vacant. By three eighths full the older
+ * table is empty (THE MOVE: the keys from a quarter full, where the table
+ * was had, pass every slot of the older table), so the index holds at most
+ * two tables. */
+#define KEY_INDEX_CLEAR_SLOTS 16
+
+/* Make the next table's first `vacant` slots vacant, taking it first. */
+static int S_clear_next(markdown_core_key_index *index, size_t vacant) {
+    if (!index->next) {
+        if (index->capacity > SIZE_MAX / 2 / sizeof(*index->next) ||
+            !(index->next = (markdown_core_key_index_slot *)markdown_core_realloc(NULL, 2 * index->capacity *
+                                                                                            sizeof(*index->next)))) {
             return 0;
         }
-        *destination = *source;
+        index->vacant = 0;
     }
-    markdown_core_free(index->slots);
+    if (vacant > index->vacant) {
+        memset(index->next + index->vacant, 0, (vacant - index->vacant) * sizeof(*index->next));
+        index->vacant = vacant;
+    }
+    return 1;
+}
+
+/* Take a table of `capacity` slots, more than the index has, for the keys to
+ * come: the next table when it has twice the slots, with the rest of it made
+ * vacant. The entries the index holds become the older table's, from which
+ * later keys move them; an index with none drops its table. */
+static int S_extend(markdown_core_key_index *index, size_t capacity) {
+    assert(!index->older);
+    markdown_core_key_index_slot *slots;
+    if (capacity == 2 * index->capacity) {
+        if (!S_clear_next(index, capacity)) {
+            return 0;
+        }
+        slots = index->next;
+    } else {
+        if (!(slots = (markdown_core_key_index_slot *)markdown_core_alloc(capacity, sizeof(*slots)))) {
+            return 0;
+        }
+        markdown_core_free(index->next);
+    }
+    index->next = NULL;
+    index->vacant = 0;
+    if (index->size) {
+        index->older = index->slots;
+        index->older_capacity = index->capacity;
+        index->left = index->size;
+        /* A table at most half full has a vacant slot. */
+        size_t at = 0;
+        while (index->older[at].key) {
+            at++;
+        }
+        index->cursor = at;
+    } else if (index->slots) {
+        markdown_core_free(index->slots);
+    }
     index->slots = slots;
     index->capacity = capacity;
     return 1;
@@ -122,13 +214,13 @@ int markdown_core_key_index_reserve(markdown_core_key_index *index, size_t size)
     if (!capacity) {
         return 0;
     }
-    return capacity <= index->capacity || S_rehash(index, capacity);
+    return capacity <= index->capacity || index->older || S_extend(index, capacity);
 }
 
-void markdown_core_key_index_free(markdown_core_key_index *index) {
-    if (index->slots) {
-        markdown_core_free(index->slots);
-    }
+void markdown_core_key_index_free_tables(markdown_core_key_index *index) {
+    markdown_core_free(index->slots);
+    markdown_core_free(index->older);
+    markdown_core_free(index->next);
     memset(index, 0, sizeof(*index));
 }
 
@@ -142,14 +234,29 @@ markdown_core_key_index_slot *markdown_core_key_index_entry(markdown_core_key_in
     if (!slot || slot->key) {
         return slot;
     }
-    if (index->size + 1 > index->capacity / 2) {
-        if (!markdown_core_key_index_reserve(index, index->size + 1)) {
+    if (index->older) {
+        markdown_core_key_index_slot *held = find_key_slot(index->older, index->older_capacity, hash, key, key_len);
+        if (held && held->key) {
+            return held;
+        }
+    }
+    const size_t size = index->size + 1;
+    if (size > index->capacity / 2) {
+        const size_t capacity = S_capacity_for(size);
+        if (!capacity || !S_extend(index, capacity)) {
             return NULL;
         }
-        slot = find_key_slot(index->slots, index->capacity, hash, key, key_len);
-        if (!slot) {
+    }
+    const size_t clear_from = index->capacity / 8 * 3;
+    if (size > clear_from) {
+        const size_t vacant = (size - clear_from) * KEY_INDEX_CLEAR_SLOTS;
+        if (!S_clear_next(index, vacant < 2 * index->capacity ? vacant : 2 * index->capacity)) {
             return NULL;
         }
+    }
+    if (index->older) {
+        S_move_runs(index);
+        slot = vacant_key_slot(index->slots, index->capacity, hash);
     }
     slot->hash = hash;
     slot->key_len = key_len;
@@ -168,8 +275,11 @@ markdown_core_key_index_slot *markdown_core_key_index_find(const markdown_core_k
     if (!index->capacity) {
         return NULL;
     }
-    markdown_core_key_index_slot *slot =
-        find_key_slot(index->slots, index->capacity, hash_key(key, key_len), key, key_len);
+    const uint64_t hash = hash_key(key, key_len);
+    markdown_core_key_index_slot *slot = find_key_slot(index->slots, index->capacity, hash, key, key_len);
+    if (slot && !slot->key && index->older) {
+        slot = find_key_slot(index->older, index->older_capacity, hash, key, key_len);
+    }
     return slot && slot->key ? slot : NULL;
 }
 
@@ -179,18 +289,29 @@ markdown_core_key_index_slot *markdown_core_key_index_find(const markdown_core_k
  * -- and the hole moves to where that entry was, until the run ends. No
  * entry is ever marked deleted, so the table is exactly the one its live
  * keys would have built. */
-void markdown_core_key_index_remove(markdown_core_key_index *index, markdown_core_key_index_slot *slot) {
-    const size_t mask = index->capacity - 1;
-    size_t hole = (size_t)(slot - index->slots);
-    for (size_t next = (hole + 1) & mask; index->slots[next].key; next = (next + 1) & mask) {
-        size_t home = (size_t)index->slots[next].hash & mask;
+static void S_close_hole(markdown_core_key_index_slot *slots, size_t capacity, size_t hole) {
+    const size_t mask = capacity - 1;
+    for (size_t next = (hole + 1) & mask; slots[next].key; next = (next + 1) & mask) {
+        size_t home = (size_t)slots[next].hash & mask;
         if (((next - home) & mask) >= ((next - hole) & mask)) {
-            index->slots[hole] = index->slots[next];
+            slots[hole] = slots[next];
             hole = next;
         }
     }
-    index->slots[hole] = (markdown_core_key_index_slot){0};
+    slots[hole] = (markdown_core_key_index_slot){0};
+}
+
+void markdown_core_key_index_remove(markdown_core_key_index *index, markdown_core_key_index_slot *slot) {
     index->size--;
+    if (index->older &&
+        (uintptr_t)slot - (uintptr_t)index->older < index->older_capacity * sizeof(markdown_core_key_index_slot)) {
+        S_close_hole(index->older, index->older_capacity, (size_t)(slot - index->older));
+        if (!--index->left) {
+            S_drop_older(index);
+        }
+        return;
+    }
+    S_close_hole(index->slots, index->capacity, (size_t)(slot - index->slots));
 }
 
 /* THE ORDERED INDEX. Every node but the root holds at least half the fanout

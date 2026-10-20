@@ -498,7 +498,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_free_stack(markdow
             S_push_release(&stack, e->children[i]);
         }
         if (e->children) {
-            markdown_core_node_pool_bytes_free(pool, e->children);
+            markdown_core_node_array_free(pool, e->children);
         }
         for (markdown_core_node *child = markdown_core_scaffold_first(e); child;) {
             markdown_core_node *next = markdown_core_scaffold_next(child);
@@ -996,9 +996,34 @@ int markdown_core_node_set_element(markdown_core_node *node, const markdown_core
     return 1;
 }
 
+markdown_core_node **markdown_core_node_array_take_ahead(markdown_core_node_pool *pool, size_t capacity) {
+    assert(capacity > 2 * MARKDOWN_CORE_AHEAD_SLICE);
+    markdown_core_node **items = S_bytes_take(pool, capacity * sizeof(*items) + MARKDOWN_CORE_NODE_ARRAY_TRAILER);
+    if (items) {
+        *markdown_core_node_array_ahead(items, (uint32_t)capacity) = (markdown_core_ahead){.capacity = capacity};
+    }
+    return items;
+}
+
+static void *S_array_take(void *pool, size_t capacity, size_t width) {
+    assert(width == sizeof(markdown_core_node *));
+    (void)width;
+    return markdown_core_node_array_take(pool, capacity);
+}
+
+static void S_array_release(void *pool, void *values) { markdown_core_node_pool_bytes_free(pool, values); }
+
+void markdown_core_node_array_free(markdown_core_node_pool *pool, markdown_core_node **items) {
+    const markdown_core_ahead *ahead = markdown_core_node_array_ahead(items, markdown_core_node_array_places(items));
+    if (ahead && ahead->next) {
+        markdown_core_node_pool_bytes_free(pool, ahead->next);
+    }
+    markdown_core_node_pool_bytes_free(pool, items);
+}
+
 bool markdown_core_node_array_start(markdown_core_node_pool *pool, markdown_core_node ***items, uint32_t *count,
                                     markdown_core_node *node) {
-    markdown_core_node **taken = S_bytes_take(pool, 2 * sizeof(*taken));
+    markdown_core_node **taken = markdown_core_node_array_take(pool, 2);
     if (!taken) {
         return false;
     }
@@ -1014,14 +1039,21 @@ bool markdown_core_node_array_push_full(markdown_core_node_pool *pool, markdown_
     if (held > UINT32_MAX / 2) {
         return false;
     }
-    if (markdown_core_bytes_size(*items) <= held * sizeof(**items)) {
-        markdown_core_node **moved = S_bytes_take(pool, 2 * held * sizeof(*moved));
-        if (!moved) {
+    const uint32_t capacity = markdown_core_node_array_places(*items);
+    size_t room = markdown_core_ahead_room(capacity, held);
+    if (held == room) {
+        markdown_core_ahead *ahead = markdown_core_node_array_ahead(*items, capacity);
+        markdown_core_ahead state = ahead ? *ahead : (markdown_core_ahead){.capacity = capacity};
+        const markdown_core_ahead_source source = {S_array_take, S_array_release, pool};
+        markdown_core_node **larger =
+            markdown_core_ahead_extend(&state, &source, *items, &room, held, (size_t)held + 1, sizeof(*larger));
+        if (!larger) {
             return false;
         }
-        memcpy(moved, *items, held * sizeof(*moved));
-        markdown_core_node_pool_bytes_free(pool, *items);
-        *items = moved;
+        if ((ahead = markdown_core_node_array_ahead(larger, (uint32_t)state.capacity))) {
+            *ahead = state;
+        }
+        *items = larger;
     }
     (*items)[held] = node;
     *count = held + 1;

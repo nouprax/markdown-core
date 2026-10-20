@@ -14,6 +14,7 @@ extern "C" {
 #include "buffer.h"
 #include "chunk.h"
 #include "attributes.h"
+#include "ahead.h"
 #include "slab.h"
 #include "metadata.h"
 
@@ -679,8 +680,16 @@ void markdown_core_node_free(markdown_core_node *node);
  * what its storage holds (markdown_core_bytes_size), at least the smallest
  * power of two that holds its count, and at least two, the pointers one
  * class of a pool's storage holds. An array keeps its storage as its count
- * drops, so only a count at a power of two asks the storage whether the
- * array is full. */
+ * drops.
+ *
+ * A NODE ARRAY GROWS AHEAD (ahead.h), from storage the pool gives. The
+ * storage of one with room for more than two slices holds the array's
+ * moving state after its elements: the views of a block share its storage
+ * (blocks.c, THE LENDING), so they share that state too, and it goes with
+ * the storage. The array's room (ahead.h) ends only at a power of two or at a
+ * slice's end, so a push asks its storage only there, and its owner says so
+ * before it writes an element in place or drops elements off the end
+ * (markdown_core_node_array_unsettle). */
 static inline uint32_t markdown_core_node_array_capacity(uint32_t count) {
     uint32_t capacity = 2;
     while (capacity < count) {
@@ -689,28 +698,51 @@ static inline uint32_t markdown_core_node_array_capacity(uint32_t count) {
     return capacity;
 }
 
+/* The bytes the moving state takes after the elements: whole classes of
+ * storage, so that what the storage holds still says the capacity. */
+#define MARKDOWN_CORE_NODE_ARRAY_TRAILER                                                                               \
+    ((sizeof(markdown_core_ahead) + MARKDOWN_CORE_BYTES_CLASS - 1) / MARKDOWN_CORE_BYTES_CLASS *                       \
+     MARKDOWN_CORE_BYTES_CLASS)
+
+/* The capacity of the array storage `items` is: what the storage holds, but
+ * the moving state when it has room for more than two slices. */
+static inline uint32_t markdown_core_node_array_places(markdown_core_node *const *items) {
+    const size_t bytes = markdown_core_bytes_size(items);
+    return (uint32_t)((bytes > 2 * MARKDOWN_CORE_AHEAD_SLICE * sizeof(*items) ? bytes - MARKDOWN_CORE_NODE_ARRAY_TRAILER
+                                                                              : bytes) /
+                      sizeof(*items));
+}
+
+/* The moving state of the array storage `items` is, with room for
+ * `capacity`; NULL when it has room for two slices or fewer. */
+static inline markdown_core_ahead *markdown_core_node_array_ahead(markdown_core_node **items, uint32_t capacity) {
+    return capacity > 2 * MARKDOWN_CORE_AHEAD_SLICE ? (markdown_core_ahead *)(void *)(items + capacity) : NULL;
+}
+
+/* Gives back the array storage `items` is to `pool`, with the storage the
+ * array was moving to. */
+void markdown_core_node_array_free(struct markdown_core_node_pool *pool, markdown_core_node **items);
+
 /* `node` as the first of the array `*items`, which holds nothing: the array
- * takes storage of two from `pool` (markdown_core_node_pool_bytes; NULL is
- * the allocator). False, having appended nothing, when no storage can be
- * had. */
+ * takes storage of two from `pool`. False, having appended nothing, when no
+ * storage can be had. */
 bool markdown_core_node_array_start(struct markdown_core_node_pool *pool, markdown_core_node ***items, uint32_t *count,
                                     markdown_core_node *node);
 
-/* Appends `node` to the array `*items` holds `*count` of, a power of two
- * from two: in place when its storage holds more, and otherwise moving the
- * array to storage from `pool` twice its count. False, having appended
- * nothing, when no storage can be had or the count is at its bound. */
+/* Appends `node` to the array `*items` holds `*count` of, growing it ahead
+ * from `pool` when it asks. False, having appended nothing, when no storage
+ * can be had or the count is at its bound. */
 bool markdown_core_node_array_push_full(struct markdown_core_node_pool *pool, markdown_core_node ***items,
                                         uint32_t *count, markdown_core_node *node);
 
 /* Appends `node` to the array `*items` holds `*count` of: an array with no
  * storage takes its storage (markdown_core_node_array_start), and one whose
- * count is at a power of two from two asks its storage
- * (markdown_core_node_array_push_full). */
+ * count is at a power of two from two or before a slice boundary asks its
+ * storage (markdown_core_node_array_push_full). */
 static inline bool markdown_core_node_array_push(struct markdown_core_node_pool *pool, markdown_core_node ***items,
                                                  uint32_t *count, markdown_core_node *node) {
     const uint32_t held = *count;
-    if (held >= 2 && !(held & (held - 1))) {
+    if (held >= 2 && (!(held & (held - 1)) || !((held + 1) % MARKDOWN_CORE_AHEAD_SLICE))) {
         return markdown_core_node_array_push_full(pool, items, count, node);
     }
     if (!*items) {
@@ -719,6 +751,17 @@ static inline bool markdown_core_node_array_push(struct markdown_core_node_pool 
     (*items)[held] = node;
     *count = held + 1;
     return true;
+}
+
+/* The elements of the array storage `items` is from `first` on change, as
+ * its owner writes one in place or drops them off the end: the copies the
+ * array moving ahead made of them are void. */
+static inline void markdown_core_node_array_unsettle(markdown_core_node **items, uint32_t first) {
+    markdown_core_ahead *ahead =
+        items ? markdown_core_node_array_ahead(items, markdown_core_node_array_places(items)) : NULL;
+    if (ahead) {
+        markdown_core_ahead_unsettle(ahead, first);
+    }
 }
 
 /* `node` before the last of the array `*items` holds `*count` of, or as its
@@ -734,6 +777,7 @@ static inline bool markdown_core_node_array_insert_before_last(struct markdown_c
     if (!markdown_core_node_array_push(pool, items, count, (*items)[held - 1])) {
         return false;
     }
+    markdown_core_node_array_unsettle(*items, held - 1);
     (*items)[held - 1] = node;
     return true;
 }
@@ -742,7 +786,8 @@ static inline bool markdown_core_node_array_insert_before_last(struct markdown_c
  * it; the array keeps its storage. */
 static inline markdown_core_node *markdown_core_node_array_pop(markdown_core_node **items, uint32_t *count) {
     assert(*count);
-    return items[--*count];
+    markdown_core_node_array_unsettle(items, --*count);
+    return items[*count];
 }
 
 /* `child` at the end of `node`'s children, with no containment check: the
@@ -798,6 +843,19 @@ static inline void *markdown_core_node_pool_bytes(markdown_core_node_pool *pool,
 /* Gives back storage `markdown_core_node_pool_bytes` took, into `pool` for
  * reuse; a NULL pool is the plain release. */
 void markdown_core_node_pool_bytes_free(markdown_core_node_pool *pool, void *storage);
+
+/* Storage for a node array of `capacity`, a power of two from two, from
+ * `pool` (markdown_core_node_pool_bytes; NULL is the allocator), with its
+ * moving state, empty, when it has room for more than two slices; NULL when
+ * none can be had. */
+markdown_core_node **markdown_core_node_array_take_ahead(markdown_core_node_pool *pool, size_t capacity);
+static inline markdown_core_node **markdown_core_node_array_take(markdown_core_node_pool *pool, size_t capacity) {
+    if (capacity > 2 * MARKDOWN_CORE_AHEAD_SLICE) {
+        return markdown_core_node_array_take_ahead(pool, capacity);
+    }
+    const size_t bytes = capacity * sizeof(markdown_core_node *);
+    return (markdown_core_node **)(pool ? markdown_core_node_pool_bytes(pool, bytes) : markdown_core_bytes_own(bytes));
+}
 
 /* `markdown_core_node_new_with_ext` from a pool's slots. A NULL pool is the
  * allocator's own slot, which is what the parser-less constructor takes. */

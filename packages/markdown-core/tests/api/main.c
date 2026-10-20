@@ -3185,6 +3185,228 @@ static void whitespace_is_space_tab_and_line_ending(test_batch_runner *runner) {
     }
 }
 
+/* AN ARRAY THAT GROWS AHEAD HOLDS WHAT A PLAIN ARRAY HOLDS through every
+ * growth. Pushes of one element and of many at once -- some past twice the
+ * capacity -- writes in place and truncations interleave, each write and
+ * truncation unsettling what it changes, as owners do, and the array holds
+ * the plain array's elements throughout. A growth whose storage cannot be
+ * had leaves the array as it was, and the free releases the storage it was
+ * moving to. */
+static void ahead_array_matches_a_plain_array(test_batch_runner *runner) {
+    enum { LIMIT = 40000, STEPS = 60000 };
+    static uint32_t model[LIMIT];
+    payload_probe_arm();
+    markdown_core_ahead ahead = {0};
+    uint32_t *values = NULL;
+    size_t count = 0, room = 0;
+    bool ok = true, agrees = true, kept = true, moving = false;
+    uint64_t state = 0x9e3779b97f4a7c15;
+    for (size_t step = 0; step < STEPS && ok && agrees; step++) {
+        state = state * UINT64_C(6364136223846793005) + UINT64_C(1442695040888963407);
+        const size_t pick = (size_t)(state >> 29);
+        const size_t roll = pick % 16;
+        if (roll < 11) {
+            size_t pushed = roll == 10 ? 1 + (pick >> 4) % 300 : 1;
+            if (count + pushed > LIMIT) {
+                pushed = 0;
+            }
+            if (count + pushed > room) {
+                if (kept && (pick >> 12) % 4 == 0) {
+                    const size_t before = room, places = ahead.capacity, refusal = payload_allocations + 1;
+                    payload_fail_at = refusal;
+                    void *refused =
+                        markdown_core_ahead_extend(&ahead, NULL, values, &room, count, count + pushed, sizeof(*values));
+                    payload_fail_at = 0;
+                    kept = payload_allocations < refusal
+                               ? refused != NULL
+                               : !refused && room == before && ahead.capacity == places &&
+                                     (!count || !memcmp(values, model, count * sizeof(*values)));
+                    if (refused) {
+                        values = refused;
+                    }
+                }
+                if (count + pushed > room) {
+                    uint32_t *grown =
+                        markdown_core_ahead_extend(&ahead, NULL, values, &room, count, count + pushed, sizeof(*values));
+                    ok = grown != NULL && room >= count + pushed && ahead.capacity >= room;
+                    if (!ok) {
+                        break;
+                    }
+                    values = grown;
+                }
+            }
+            for (size_t k = 0; k < pushed; k++) {
+                values[count + k] = model[count + k] = (uint32_t)(state >> (k % 32)) ^ (uint32_t)(step + k);
+            }
+            count += pushed;
+        } else if (roll < 14) {
+            if (count) {
+                const size_t at = (pick >> 4) % count;
+                markdown_core_ahead_unsettle(&ahead, at);
+                values[at] = model[at] = (uint32_t)~step;
+            }
+        } else {
+            const size_t dropped = count ? (pick >> 4) % (count < 40 ? count + 1 : 40) : 0;
+            count -= dropped;
+            markdown_core_ahead_unsettle(&ahead, count);
+        }
+        moving = moving || ahead.moved;
+        if (step % 61 == 0) {
+            agrees = !count || !memcmp(values, model, count * sizeof(*values));
+        }
+    }
+    agrees = agrees && (!count || !memcmp(values, model, count * sizeof(*values)));
+    OK(runner, ok, "every growth had its storage");
+    OK(runner, agrees, "the array holds the plain array's elements throughout");
+    OK(runner, moving, "elements were copied ahead of a switch");
+    OK(runner, kept, "a refused growth leaves the array as it was");
+    markdown_core_free(values);
+    markdown_core_ahead_free(&ahead, NULL);
+    INT_EQ(runner, payload_live, 0, "the array and the storage it was moving to are released");
+    payload_probe_disarm();
+}
+
+/* A NODE ARRAY HOLDS WHAT A PLAIN ARRAY HOLDS through every growth, used as
+ * the builders and the lending use it: pushes, insertions before the last,
+ * pops one at a time and in runs, and truncations interleave with lends -- a
+ * view shares the array's storage, pushes past the count it found and writes
+ * its last place, and the take-back adopts the view's storage, holding the
+ * array's count and its last element again. The free releases the array and
+ * the storage it was moving to. */
+static void node_array_matches_a_plain_array(test_batch_runner *runner) {
+    enum { LIMIT = 20000, STEPS = 40000, NODES = 251 };
+    static markdown_core_node *model[LIMIT];
+    static markdown_core_node nodes[NODES];
+    payload_probe_arm();
+    markdown_core_node **items = NULL;
+    uint32_t count = 0;
+    bool ok = true, agrees = true, moving = false;
+    uint64_t state = 0xbb67ae8584caa73b;
+    for (size_t step = 0; step < STEPS && ok && agrees; step++) {
+        state = state * UINT64_C(6364136223846793005) + UINT64_C(1442695040888963407);
+        const size_t pick = (size_t)(state >> 29);
+        const size_t roll = pick % 16;
+        markdown_core_node *node = &nodes[(pick >> 4) % NODES];
+        if (roll < 9) {
+            for (size_t run = 1 + (pick >> 12) % 8; run-- && ok && count < LIMIT - 1;) {
+                ok = markdown_core_node_array_push(NULL, &items, &count, &nodes[(pick + run) % NODES]);
+                model[count - 1] = &nodes[(pick + run) % NODES];
+            }
+        } else if (roll < 10 && count) {
+            markdown_core_node_array_pop(items, &count);
+        } else if (roll < 11 && count < LIMIT - 1) {
+            ok = markdown_core_node_array_insert_before_last(NULL, &items, &count, node);
+            if (count > 1) {
+                model[count - 1] = model[count - 2];
+                model[count - 2] = node;
+            } else {
+                model[0] = node;
+            }
+        } else if (roll < 14) {
+            /* A lend: the view pushes past the count it found and may write
+             * its last place, and the take-back puts the array back. */
+            markdown_core_node **view = items;
+            uint32_t viewed = count;
+            markdown_core_node *const last = count ? items[count - 1] : NULL;
+            const size_t pushed = (pick >> 12) % 300;
+            for (size_t k = 0; k < pushed && ok && viewed < LIMIT - 1; k++) {
+                ok = markdown_core_node_array_push(NULL, &view, &viewed, &nodes[(pick + k) % NODES]);
+            }
+            if (ok && viewed && (pick >> 20) % 2) {
+                markdown_core_node_array_unsettle(view, viewed - 1);
+                view[viewed - 1] = node;
+            }
+            if (items) {
+                items = view;
+                markdown_core_node_array_unsettle(items, count ? count - 1 : 0);
+                if (count) {
+                    items[count - 1] = last;
+                }
+            } else if (view) {
+                markdown_core_node_array_free(NULL, view);
+            }
+        } else if (roll < 15 && count) {
+            for (size_t popped = (pick >> 4) % 12; popped-- && count;) {
+                markdown_core_node_array_pop(items, &count);
+            }
+        } else if (count) {
+            count -= (uint32_t)((pick >> 4) % (count < 12 ? count + 1 : 12));
+            markdown_core_node_array_unsettle(items, count);
+        }
+        if (items) {
+            const markdown_core_ahead *ahead =
+                markdown_core_node_array_ahead(items, markdown_core_node_array_places(items));
+            moving = moving || (ahead && ahead->moved);
+        }
+        if (step % 61 == 0) {
+            agrees = !count || !memcmp(items, model, count * sizeof(*items));
+        }
+    }
+    agrees = agrees && (!count || !memcmp(items, model, count * sizeof(*items)));
+    OK(runner, ok, "every growth had its storage");
+    OK(runner, agrees, "the array holds the plain array's elements throughout");
+    OK(runner, moving, "elements were copied ahead of a switch");
+    if (items) {
+        markdown_core_node_array_free(NULL, items);
+    }
+    INT_EQ(runner, payload_live, 0, "the array and the storage it was moving to are released");
+    payload_probe_disarm();
+}
+
+/* CARVED RECORDS KEEP THEIR PLACE AND THEIR BYTES. Records of mixed sizes,
+ * some larger than any block, are carved under nested marks; a rollback pops
+ * exactly the records carved after its mark, and every record before it keeps
+ * its address and its bytes, while new records carve on. A clear keeps one
+ * block and the free releases every block. */
+static void carved_records_keep_their_place(test_batch_runner *runner) {
+    enum { RECORDS = 3000, MARKS = 8 };
+    static unsigned char *records[RECORDS];
+    static size_t sizes[RECORDS];
+    payload_probe_arm();
+    markdown_core_carve carve = {0};
+    markdown_core_carve marks[MARKS];
+    size_t marked[MARKS], mark_count = 0, count = 0;
+    bool ok = true, intact = true, aligned = true;
+    uint64_t state = 0x6a09e667f3bcc909;
+    for (size_t step = 0; step < 4 * RECORDS && ok && intact; step++) {
+        state = state * UINT64_C(6364136223846793005) + UINT64_C(1442695040888963407);
+        const size_t pick = (size_t)(state >> 29);
+        const size_t roll = pick % 32;
+        if (roll < 26 && count < RECORDS) {
+            const size_t size = roll == 25 ? 20000 + (pick >> 5) % 9000 : 1 + (pick >> 5) % 200;
+            unsigned char *record = markdown_core_carve_take(&carve, size);
+            ok = record != NULL;
+            if (ok) {
+                aligned = aligned && (uintptr_t)record % sizeof(void *) == 0;
+                memset(record, (int)(count & 0xff), size);
+                records[count] = record;
+                sizes[count++] = size;
+            }
+        } else if (roll < 29 && mark_count < MARKS) {
+            marks[mark_count] = carve;
+            marked[mark_count++] = count;
+        } else if (mark_count) {
+            const size_t back = (pick >> 5) % mark_count;
+            markdown_core_carve_rollback(&carve, marks[back]);
+            count = marked[back];
+            mark_count = back;
+        }
+        for (size_t i = 0; i < count && intact; i += 1 + i / 64) {
+            for (size_t k = 0; k < sizes[i]; k += 1 + sizes[i] / 8) {
+                intact = intact && records[i][k] == (unsigned char)(i & 0xff);
+            }
+        }
+    }
+    OK(runner, ok, "every record had its storage");
+    OK(runner, aligned, "every record is aligned for a pointer");
+    OK(runner, intact, "each record before a rollback keeps its address and its bytes");
+    markdown_core_carve_clear(&carve);
+    OK(runner, payload_live == 1 && carve.used == 0, "a clear keeps one empty block");
+    markdown_core_carve_free(&carve);
+    INT_EQ(runner, payload_live, 0, "the free releases every block");
+    payload_probe_disarm();
+}
+
 /* THE REGISTRY'S RECORDS ARE CARVED FROM BLOCKS IT OWNS: a run of
  * declarations costs allocations logarithmic in its length -- the blocks, the
  * log's array and the index each double -- rather than one each, and all of
@@ -3340,6 +3562,94 @@ static void key_tree_matches_a_sorted_model(test_batch_runner *runner) {
     OK(runner, ok, "numbers are keys in numeric order");
     markdown_core_key_tree_free(&numbers);
     INT_EQ(runner, payload_live, 0, "the trees' nodes are all released");
+    payload_probe_disarm();
+}
+
+/* THE KEY INDEX AGREES WITH A SET MODEL while it grows a slice at a time.
+ * Insertions, lookups, removals and reservations interleave through several
+ * growths: the keys first grow, are then mostly removed, then grow again, so
+ * keys enter, are found and leave while entries move between tables. After
+ * every operation the size agrees; after every few, each key is found exactly
+ * when the model holds it, with its value. An entry for a held key is its
+ * occupied entry. A growth whose table cannot be had leaves the index as it
+ * was, and the free releases both tables. */
+static bool key_index_holds_the_model(const markdown_core_key_index *index, char (*keys)[16], const bool *held,
+                                      size_t count) {
+    for (size_t i = 0; i < count; i++) {
+        const markdown_core_key_index_slot *found =
+            markdown_core_key_index_find(index, (const unsigned char *)keys[i], (bufsize_t)strlen(keys[i]));
+        if (held[i] ? !found || found->value != i : found != NULL) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void key_index_matches_a_set_model(test_batch_runner *runner) {
+    enum { COUNT = 6000, STEPS = 90000 };
+    static char keys[COUNT][16];
+    static bool held[COUNT];
+    for (size_t i = 0; i < COUNT; i++) {
+        snprintf(keys[i], sizeof(keys[i]), "k%zu", i);
+        held[i] = false;
+    }
+    payload_probe_arm();
+    markdown_core_key_index index;
+    bool ok = markdown_core_key_index_init(&index, 0);
+    bool agrees = true, kept = true, moving = false;
+    size_t count = 0;
+    uint64_t state = 0x2545f4914f6cdd1d;
+    for (size_t step = 0; step < STEPS && ok && agrees; step++) {
+        state = state * UINT64_C(6364136223846793005) + UINT64_C(1442695040888963407);
+        const size_t pick = (size_t)(state >> 33);
+        const size_t i = pick % COUNT;
+        const unsigned char *key = (const unsigned char *)keys[i];
+        const bufsize_t length = (bufsize_t)strlen(keys[i]);
+        /* Insertions lead in the first and last thirds, removals between. */
+        const size_t roll = (pick / COUNT) % 8;
+        const size_t inserting = step * 3 / STEPS == 1 ? 2 : 5;
+        moving = moving || index.older;
+        if (roll < inserting && !held[i] && index.size + 1 > index.capacity / 2 && !index.older && kept) {
+            payload_fail_at = payload_allocations + 1;
+            const markdown_core_key_index_slot *refused = markdown_core_key_index_entry(&index, key, length);
+            payload_fail_at = 0;
+            kept = !refused && index.size == count && key_index_holds_the_model(&index, keys, held, COUNT);
+        }
+        if (roll < inserting) {
+            markdown_core_key_index_slot *entry = markdown_core_key_index_entry(&index, key, length);
+            ok = entry != NULL;
+            if (ok && held[i]) {
+                agrees = entry->key && entry->value == i;
+            } else if (ok) {
+                agrees = !entry->key;
+                markdown_core_key_index_commit(&index, entry, key);
+                entry->value = i;
+                held[i] = true;
+                count++;
+            }
+        } else if (roll < 7) {
+            markdown_core_key_index_slot *found = markdown_core_key_index_find(&index, key, length);
+            agrees = held[i] ? found && found->value == i : !found;
+            if (agrees && found) {
+                markdown_core_key_index_remove(&index, found);
+                held[i] = false;
+                count--;
+            }
+        } else {
+            ok = markdown_core_key_index_reserve(&index, index.size + pick % 64);
+        }
+        agrees = agrees && index.size == count;
+        if (step % 97 == 0) {
+            agrees = agrees && key_index_holds_the_model(&index, keys, held, COUNT);
+        }
+    }
+    OK(runner, ok, "every insertion and reservation had its storage");
+    OK(runner, agrees && key_index_holds_the_model(&index, keys, held, COUNT),
+       "each key is found exactly when the model holds it, with its value");
+    OK(runner, moving, "keys entered, were found and left while entries moved");
+    OK(runner, kept, "a refused growth leaves the index as it was");
+    markdown_core_key_index_free(&index);
+    INT_EQ(runner, payload_live, 0, "the index's tables are all released");
     payload_probe_disarm();
 }
 
@@ -3531,7 +3841,7 @@ static void registry_rollback_matches_a_model(test_batch_runner *runner) {
     }
     INT_EQ(runner, (int)registry.count, 0, "a rollback to the start empties the log");
     INT_EQ(runner, (int)registry.index.size, 0, "and the index");
-    OK(runner, registry.blocks == NULL, "and releases every block");
+    OK(runner, registry.carve.blocks == NULL, "and releases every block");
     markdown_core_registry_free(&registry);
     INT_EQ(runner, payload_live, 0, "the registry releases everything it holds");
     payload_probe_disarm();
@@ -5020,12 +5330,12 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
     work->properties_lines = properties->line_work;
     work->physical_line_bytes = parser->input_line_work;
     work->physical_lines = parser->input.line_count;
-    work->physical_capacity = parser->input.line_capacity;
+    work->physical_capacity = parser->input.line_ahead.capacity;
     work->physical_facts = parser->input.fact_count;
-    work->physical_fact_capacity = parser->input.fact_capacity;
+    work->physical_fact_capacity = parser->input.fact_ahead.capacity;
     work->normalized_lines = 0;
     for (size_t i = 0; i < parser->input.fact_count; i++) {
-        work->normalized_lines += parser->input.facts[i].normalized != NULL;
+        work->normalized_lines += parser->input.facts[i]->normalized != NULL;
     }
     work->metadata_key_bytes = properties->key_work;
     work->metadata_value_bytes = properties->decoded_bytes;
@@ -8669,7 +8979,8 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
             bool split = value == '\r' || value == '\n';
             OK(runner, first && first->start == 0 && first->end == (split ? position : sizeof(bytes) - 1),
                "only CR and LF end a physical line: byte %u at %zu", value, position);
-            OK(runner, first && ((first->facts && reader.input.facts[first->facts - 1].nul_count == 1) == (value == 0)),
+            OK(runner,
+               first && ((first->facts && reader.input.facts[first->facts - 1]->nul_count == 1) == (value == 0)),
                "only NUL requests normalization: byte %u", value);
             markdown_core_input_line *second = markdown_core_parser_source_line(&reader, 2);
             bool remaining = split && !(value == '\r' && position == sizeof(bytes) - 2);
@@ -8677,8 +8988,7 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
                remaining ? second && second->start == position + 1 && second->end == sizeof(bytes) - 1 : !second,
                "content after a word or tail boundary belongs to exactly one line: byte %u at %zu", value, position);
             INT_EQ(runner, reader.input_line_work, sizeof(bytes), "span search advances the frontier exactly once");
-            markdown_core_free(reader.input.facts);
-            markdown_core_free(reader.input.lines);
+            markdown_core_parser_release_input(&reader.input);
         }
     }
     static const unsigned char source[] = "a\0b\r\nc\rd\nlast";
@@ -8694,7 +9004,7 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
                line && line->start == starts[i] && line->end == ends[i] &&
                    markdown_core_input_line_next(&parser, line) == next[i],
                "physical line geometry is stable across lookahead and replay: %d/%d", pass, i);
-            OK(runner, line && (line->facts && parser.input.facts[line->facts - 1].nul_count != 0) == (i == 0),
+            OK(runner, line && (line->facts && parser.input.facts[line->facts - 1]->nul_count != 0) == (i == 0),
                "NUL normalization is a line fact");
         }
         INT_EQ(runner, parser.input_line_work, sizeof(source) - 1, "replay never scans source geometry again");
@@ -8712,8 +9022,7 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
        "unrelated line queries preserve their own facts");
     INT_EQ(runner, parser.input.fact_count, 2, "only queried lines own speculative facts");
     INT_EQ(runner, parser.input_line_work, sizeof(source) - 1, "facts do not rediscover geometry");
-    markdown_core_free(parser.input.facts);
-    markdown_core_free(parser.input.lines);
+    markdown_core_parser_release_input(&parser.input);
 }
 
 static void short_line_storage_is_bounded(test_batch_runner *runner) {
@@ -12130,8 +12439,12 @@ int main(void) {
     unicode_classes_are_total(runner);
     anchor_images_only_scalars(runner);
     whitespace_is_space_tab_and_line_ending(runner);
+    ahead_array_matches_a_plain_array(runner);
+    node_array_matches_a_plain_array(runner);
+    carved_records_keep_their_place(runner);
     registry_records_are_carved_from_its_blocks(runner);
     key_tree_matches_a_sorted_model(runner);
+    key_index_matches_a_set_model(runner);
     registry_kinds_and_starts(runner);
     registry_rollback_matches_a_model(runner);
     properties_values(runner);

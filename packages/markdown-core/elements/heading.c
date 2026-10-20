@@ -27,25 +27,26 @@ static bool close_heading(const markdown_core_element_instance *self, markdown_c
                           markdown_core_node *node, markdown_core_node *parent) {
     (void)parent;
     markdown_core_heading_collection *headings = &((markdown_core_heading_state *)self->state)->headings;
-    if (headings->count == headings->capacity) {
-        size_t capacity = headings->capacity ? headings->capacity * 2 : 8;
-        if (capacity > SIZE_MAX / sizeof(*headings->values)) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            return true;
-        }
-        void *values = markdown_core_realloc(headings->values, capacity * sizeof(*headings->values));
+    if (headings->count == headings->room) {
+        void *values = markdown_core_ahead_extend(&headings->ahead, NULL, headings->values, &headings->room,
+                                                  headings->count, headings->count + 1, sizeof(*headings->values));
         if (!values) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return true;
         }
         headings->values = values;
-        headings->capacity = capacity;
     }
-    headings->values[headings->count++] = (markdown_core_heading_parse){.node = node, .start = node->place.start};
+    markdown_core_heading_parse *heading = markdown_core_carve_take(&headings->bodies, sizeof(*heading));
+    if (!heading) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return true;
+    }
+    *heading = (markdown_core_heading_parse){.node = node, .start = node->place.start};
+    headings->values[headings->count++] = heading;
     return true;
 }
 
-static uint64_t heading_start_key(const void *entry) { return ((const markdown_core_heading_parse *)entry)->start; }
+static uint64_t heading_start_key(const void *entry) { return (*(markdown_core_heading_parse *const *)entry)->start; }
 
 /* The inline content of every heading that settled since the last
  * completion: first, in source order, each one's inlines up to its
@@ -58,6 +59,7 @@ void markdown_core_headings_prepare(const markdown_core_element_instance *self, 
     markdown_core_heading_state *state = self->state;
     markdown_core_heading_collection *headings = &state->headings;
     const size_t first = headings->parsed;
+    markdown_core_ahead_unsettle(&headings->ahead, first);
     if (first < headings->count &&
         !markdown_core_order_source_entries(&parser->source_order, &headings->values[first], headings->count - first,
                                             sizeof(*headings->values), heading_start_key)) {
@@ -67,14 +69,14 @@ void markdown_core_headings_prepare(const markdown_core_element_instance *self, 
     /* Anchors are numbered in source order, whatever order mapped inputs were
      * scheduled and headings closed in. */
     for (size_t i = first; i < headings->count && !parser->error; i++) {
-        markdown_core_heading_parse *heading = &headings->values[i];
+        markdown_core_heading_parse *heading = headings->values[i];
         if (!heading->parsed && markdown_core_parser_settled(parser, heading->node)) {
             parser->completing = heading->node;
             markdown_core_prepare_heading(self, parser, heading);
         }
     }
     for (size_t i = first; i < headings->count && !parser->error; i++) {
-        markdown_core_heading_parse *heading = &headings->values[i];
+        markdown_core_heading_parse *heading = headings->values[i];
         if (heading->parsed || !markdown_core_parser_settled(parser, heading->node)) {
             continue;
         }
@@ -84,7 +86,7 @@ void markdown_core_headings_prepare(const markdown_core_element_instance *self, 
         heading->parsed = true;
         heading->authored = node->attributes.anchor.len != 0;
     }
-    while (headings->parsed < headings->count && headings->values[headings->parsed].parsed) {
+    while (headings->parsed < headings->count && headings->values[headings->parsed]->parsed) {
         headings->parsed++;
     }
 }
@@ -95,14 +97,14 @@ static markdown_core_heading_parse *parsed_heading(markdown_core_heading_collect
     size_t low = 0, high = headings->parsed;
     while (low < high) {
         const size_t middle = low + (high - low) / 2;
-        if (headings->values[middle].start < start) {
+        if (headings->values[middle]->start < start) {
             low = middle + 1;
         } else {
             high = middle;
         }
     }
-    assert(low < headings->parsed && headings->values[low].start == start);
-    return &headings->values[low];
+    assert(low < headings->parsed && headings->values[low]->start == start);
+    return headings->values[low];
 }
 
 /* A heading parsed again (element.h, `reparse_inlines`), a candidate of a
@@ -142,20 +144,53 @@ static void reparse_inlines(const markdown_core_element_instance *self, markdown
     entry->name = NULL;
 }
 
-/* A SNAPSHOT'S HEADINGS (element.h, `start_snapshot`). After a commit every
+/* The collection back at its first `parsed` headings, with `pending`'s
+ * entry, when not NULL, naming the pending block again, not parsed, and its
+ * bodies as `bodies` found them: the entries after go, which hold no
+ * committed name, and their bodies with them. The pending block's entry
+ * came before `bodies`, as the block closed before the snapshot or the
+ * mark. */
+static void headings_back(markdown_core_heading_collection *headings, size_t parsed,
+                          markdown_core_heading_parse *pending, markdown_core_carve bodies) {
+    for (size_t i = parsed; i < headings->count; i++) {
+        assert(!headings->values[i]->holds_name);
+        markdown_core_dispose_heading(headings->values[i]);
+    }
+    markdown_core_carve_rollback(&headings->bodies, bodies);
+    headings->count = headings->parsed = parsed;
+    markdown_core_ahead_unsettle(&headings->ahead, parsed);
+    if (pending) {
+        *pending = (markdown_core_heading_parse){.node = pending->node, .start = pending->start};
+        headings->values[headings->count++] = pending;
+    }
+}
+
+/* The pending block's entry, when it is a heading: after a commit every
  * heading is parsed but the pending block's, which a later line can still
  * write: it closed last, so it comes after every other heading in source
- * order. The snapshot lends the pending block (blocks.c, THE LENDING), so
- * its entry names it as it is. */
+ * order. */
+static markdown_core_heading_parse *pending_heading(const markdown_core_heading_collection *headings,
+                                                    const markdown_core_parser *parser) {
+    assert(headings->count - headings->parsed <= 1);
+    if (headings->parsed == headings->count) {
+        return NULL;
+    }
+    markdown_core_heading_parse *pending = headings->values[headings->parsed];
+    assert(!pending->parsed && !pending->pending && pending->node == parser->pending);
+    (void)parser;
+    return pending;
+}
+
+/* A SNAPSHOT'S HEADINGS (element.h, `start_snapshot`). The snapshot lends
+ * the pending block (blocks.c, THE LENDING), so its entry names it as it
+ * is. */
 void markdown_core_headings_start_snapshot(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     markdown_core_heading_state *state = self->state;
     markdown_core_heading_collection *headings = &state->headings;
-    state->snapshot_count = headings->count;
+    state->snapshot_pending = pending_heading(headings, parser);
+    state->snapshot_bodies = headings->bodies;
     state->snapshot_parsed = headings->parsed;
     state->snapshot_records = parser->registry.count;
-    assert(headings->count - headings->parsed <= 1);
-    assert(headings->parsed == headings->count ||
-           (!headings->values[headings->parsed].parsed && headings->values[headings->parsed].node == parser->pending));
 }
 
 /* The snapshot ends with the collection as its commit left it: the entries
@@ -164,16 +199,9 @@ void markdown_core_headings_start_snapshot(const markdown_core_element_instance 
  * which the published document holds. */
 void markdown_core_headings_end_snapshot(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     markdown_core_heading_state *state = self->state;
-    markdown_core_heading_collection *headings = &state->headings;
-    for (size_t i = state->snapshot_parsed; i < headings->count; i++) {
-        markdown_core_dispose_heading(&headings->values[i]);
-    }
-    headings->count = headings->parsed = state->snapshot_parsed;
-    if (state->snapshot_count > state->snapshot_parsed) {
-        markdown_core_node *pending = parser->pending;
-        headings->values[headings->count++] =
-            (markdown_core_heading_parse){.node = pending, .start = pending->place.start};
-    }
+    assert(!state->snapshot_pending || state->snapshot_pending->node == parser->pending);
+    (void)parser;
+    headings_back(&state->headings, state->snapshot_parsed, state->snapshot_pending, state->snapshot_bodies);
 }
 
 /* THE HEADINGS A CANDIDATE MARKS (element.h, `mark_candidate`): the mark
@@ -192,28 +220,16 @@ void markdown_core_headings_mark_candidate(const markdown_core_element_instance 
         return;
     }
     state->marks = marks;
-    assert(headings->count - headings->parsed <= 1);
-    markdown_core_heading_mark *mark = &marks[state->mark_count++];
-    *mark = (markdown_core_heading_mark){
-        .count = headings->count, .parsed = headings->parsed, .records = parser->registry.count};
-    if (headings->count > headings->parsed) {
-        mark->pending = headings->values[headings->parsed];
-        assert(!mark->pending.parsed && !mark->pending.pending && mark->pending.node == parser->pending);
-    }
+    marks[state->mark_count++] = (markdown_core_heading_mark){.pending = pending_heading(headings, parser),
+                                                              .bodies = headings->bodies,
+                                                              .parsed = headings->parsed,
+                                                              .records = parser->registry.count};
 }
 
 void markdown_core_headings_undo_candidate(const markdown_core_element_instance *self, size_t index) {
     markdown_core_heading_state *state = self->state;
-    markdown_core_heading_collection *headings = &state->headings;
     const markdown_core_heading_mark *mark = &state->marks[index];
-    for (size_t i = mark->parsed; i < headings->count; i++) {
-        assert(!headings->values[i].holds_name);
-        markdown_core_dispose_heading(&headings->values[i]);
-    }
-    headings->count = headings->parsed = mark->parsed;
-    if (mark->count > mark->parsed) {
-        headings->values[headings->count++] = mark->pending;
-    }
+    headings_back(&state->headings, mark->parsed, mark->pending, mark->bodies);
     state->mark_count = index;
 }
 
@@ -230,12 +246,14 @@ void markdown_core_headings_dispose(const markdown_core_element_instance *self) 
     markdown_core_heading_state *state = self->state;
     markdown_core_heading_collection *headings = &state->headings;
     for (size_t i = 0; i < headings->count; i++) {
-        markdown_core_dispose_heading(&headings->values[i]);
-        if (headings->values[i].holds_name) {
-            markdown_core_free((void *)headings->values[i].name);
+        markdown_core_dispose_heading(headings->values[i]);
+        if (headings->values[i]->holds_name) {
+            markdown_core_free((void *)headings->values[i]->name);
         }
     }
     markdown_core_free(headings->values);
+    markdown_core_ahead_free(&headings->ahead, NULL);
+    markdown_core_carve_free(&headings->bodies);
     *headings = (markdown_core_heading_collection){0};
     markdown_core_key_index_free(&state->taken);
     markdown_core_free(state->renamed);
@@ -477,7 +495,7 @@ static inline const unsigned char *show_anchor(markdown_core_node *node, markdow
  * next one gives the bytes back to the node unless it displaces the heading
  * too, and committed names that move the heading on free them. */
 static bool rename_committed(markdown_core_parser *parser, markdown_core_heading_state *state, size_t at) {
-    markdown_core_heading_parse *heading = &state->headings.values[at];
+    markdown_core_heading_parse *heading = state->headings.values[at];
     if (heading->renamed) {
         return true;
     }
@@ -528,7 +546,7 @@ static inline void keep_name(name_pass *pass, markdown_core_heading_parse *headi
 static const unsigned char *give_name_apart(name_pass *pass, size_t at, bufsize_t base_size) {
     markdown_core_parser *parser = pass->parser;
     markdown_core_heading_state *state = pass->state;
-    markdown_core_heading_parse *heading = &state->headings.values[at];
+    markdown_core_heading_parse *heading = state->headings.values[at];
     const unsigned char *shown;
     if (heading->holds_name) {
         const markdown_core_chunk *anchor = &heading->node->attributes.anchor;
@@ -602,14 +620,14 @@ static void take_last(name_pass *pass, markdown_core_heading_parse *heading, siz
     markdown_core_strbuf *name = &pass->name;
     markdown_core_key_index_slot *projected = name_entry(pass, name->ptr, name->size);
     markdown_core_key_index_slot *candidate = projected;
-    size_t capacity = index->capacity;
+    size_t size = index->size;
     while (candidate && candidate->key) {
         /* A lookup that adds an entry can move the base's: a vacant
          * candidate, which ends the search, and in an overlay a name it
          * takes from the committed index. */
-        if (index->capacity != capacity) {
+        if (index->size != size) {
             projected = markdown_core_key_index_find(index, name->ptr, base_size);
-            capacity = index->capacity;
+            size = index->size;
         }
         markdown_core_strbuf_truncate(name, base_size);
         append_anchor_suffix(name, projected->value++);
@@ -641,7 +659,7 @@ static void displace(name_pass *pass, size_t at) {
     markdown_core_strbuf *name = &pass->name;
     for (size_t holder = at + 1; holder && !parser->error;) {
         at = holder - 1;
-        markdown_core_heading_parse *heading = &state->headings.values[at];
+        markdown_core_heading_parse *heading = state->headings.values[at];
         const bufsize_t base_size = heading->base_size;
         size_t suffix = name_suffix(name, base_size);
         markdown_core_key_index_slot *candidate;
@@ -721,7 +739,7 @@ static void name_headings(name_pass *pass, size_t first, size_t end) {
     markdown_core_heading_state *state = pass->state;
     markdown_core_strbuf *name = &pass->name;
     for (size_t at = first; at < end && !parser->error; at++) {
-        markdown_core_heading_parse *heading = &state->headings.values[at];
+        markdown_core_heading_parse *heading = state->headings.values[at];
         if (heading->authored) {
             continue;
         }
@@ -772,14 +790,14 @@ static void name_snapshot(name_pass *pass, markdown_core_registry_cursor cursor)
     read_records(pass, &cursor, parser->registry.count);
     name_headings(pass, state->named, headings->count);
     for (size_t i = 0; i < earlier && !parser->error; i++) {
-        markdown_core_heading_parse *heading = &headings->values[state->renamed[i]];
+        markdown_core_heading_parse *heading = headings->values[state->renamed[i]];
         if (heading->holds_name && !heading->renamed) {
             restore_name(heading);
         }
     }
     size_t count = 0;
     for (size_t i = earlier; i < state->renamed_count; i++) {
-        headings->values[state->renamed[i]].renamed = false;
+        headings->values[state->renamed[i]]->renamed = false;
         state->renamed[count++] = state->renamed[i];
     }
     state->renamed_count = count;
@@ -793,7 +811,7 @@ static void name_snapshot(name_pass *pass, markdown_core_registry_cursor cursor)
  * its node shows. */
 static void names_reset(markdown_core_heading_state *state) {
     for (size_t i = 0; i < state->renamed_count; i++) {
-        markdown_core_heading_parse *heading = &state->headings.values[state->renamed[i]];
+        markdown_core_heading_parse *heading = state->headings.values[state->renamed[i]];
         if (heading->holds_name) {
             const markdown_core_chunk *anchor = &heading->node->attributes.anchor;
             markdown_core_free((void *)heading->name);
@@ -829,11 +847,11 @@ void markdown_core_headings_finish(const markdown_core_element_instance *self, m
         oldest && oldest->records < state->snapshot_records ? oldest->records : state->snapshot_records;
     if (!state->taken.size) {
         /* Nothing is named yet: the authored headings ask for no name. */
-        while (state->named < committed && headings->values[state->named].authored) {
+        while (state->named < committed && headings->values[state->named]->authored) {
             state->named++;
         }
         size_t first = state->named;
-        while (first < headings->count && headings->values[first].authored) {
+        while (first < headings->count && headings->values[first]->authored) {
             first++;
         }
         if (first == headings->count) {

@@ -510,6 +510,25 @@ end nor the parent's start changes again, and a settled node's position
 values are final. An open block grows at its end, so each publish writes its
 extent and runs again.
 
+**Growth.** No append copies or rehashes a structure that grows with the
+document whole.
+
+- A contiguous array that readers walk in place (the text, the line index,
+  the content map, a block's children) takes storage of twice its capacity
+  once it is half full, and copies its elements there from the front, two
+  for each place it gains, a slice at a time. When it is full it switches to
+  that storage and moves only what was not copied. An array of at most two
+  slices moves whole when it is full, which copies no more than a slice of
+  a larger array. An owner that writes an element in place or cuts the
+  array back voids the copies from that element on.
+- Records that later appends write in place (line facts, heading entries,
+  registry records) are cut from blocks that never move, and the arrays that
+  find them hold pointers.
+- A key index that would pass half full takes a table of twice the slots.
+  New keys enter it, and each moves a few slots of the older table's entries
+  over first; a lookup reads the newer table, then the older. That table is
+  made vacant ahead, a few slots for each new key before it.
+
 ### 5.3 Commit
 
 `append` adds the new bytes to the end of the text and then commits: the
@@ -831,7 +850,9 @@ and `p` the total length of the undecided lines.
 | `finalize` | O(p + queued blocks + roots parsed again + headings) |
 | `Document.parse` | O(n), as on `main` |
 
-No bound depends on a size threshold. A binding builds each published
+No bound depends on a size threshold. Each bound holds for every append,
+not only on average: no append moves a structure that grows with the
+document whole (5.2). A binding builds each published
 document whole (6.1); that O(nodes) is the platform's construction cost and
 is outside these bounds (D5).
 

@@ -12,7 +12,15 @@ extern "C" {
  * keeps them for as long as the key is in the index, and the caller may
  * point an entry at other bytes that hold the same key. The number takes the
  * room the slot's alignment leaves after the key's length. A vacant entry
- * holds zero in both. */
+ * holds zero in both.
+ *
+ * IT GROWS A SLICE AT A TIME. A new key that would fill the table past half
+ * takes a table of twice the slots, which that key and every later one
+ * enter; the entries already held stay in the older table, and each later
+ * new key first moves a slice of them over (map.c, THE MOVE). A key is in
+ * one table, and a lookup reads the newer, then the older. The table it
+ * grows to is made vacant a slice at a time too, by the new keys before it
+ * (map.c, THE NEXT TABLE). So no insertion copies or clears a table whole. */
 typedef struct markdown_core_key_index_slot {
     uint64_t hash;
     const unsigned char *key;
@@ -24,14 +32,35 @@ typedef struct markdown_core_key_index_slot {
 typedef struct markdown_core_key_index {
     markdown_core_key_index_slot *slots;
     size_t capacity;
+    /* The keys of both tables. */
     size_t size;
+    /* The table the entries are leaving, or NULL; its entries, and the
+     * vacant slot of it the next move starts after. */
+    markdown_core_key_index_slot *older;
+    size_t older_capacity;
+    size_t left;
+    size_t cursor;
+    /* The table the index grows to, of twice the slots, or NULL, and its
+     * slots from the front that are vacant. */
+    markdown_core_key_index_slot *next;
+    size_t vacant;
 } markdown_core_key_index;
 
 int markdown_core_key_index_init(markdown_core_key_index *index, size_t expected_size);
 /* Make room for `size` keys in all, so that taking that many grows the index
- * no further. Zero means allocation failure. */
+ * no further: a table that holds them at most half full, to which the
+ * entries held move as later keys enter. While entries are moving it makes
+ * none, and the keys taken grow the index as they need. Zero means
+ * allocation failure. */
 int markdown_core_key_index_reserve(markdown_core_key_index *index, size_t size);
-void markdown_core_key_index_free(markdown_core_key_index *index);
+/* markdown_core_key_index_free for an index that has a table. */
+void markdown_core_key_index_free_tables(markdown_core_key_index *index);
+/* Gives back the index's tables. An index that has none holds nothing. */
+static inline void markdown_core_key_index_free(markdown_core_key_index *index) {
+    if (index->slots) {
+        markdown_core_key_index_free_tables(index);
+    }
+}
 /* Find an occupied or vacant entry, growing only for a new key. NULL means
  * allocation failure. The entry is borrowed until the next insertion; a
  * vacant entry must be committed before another index operation. */

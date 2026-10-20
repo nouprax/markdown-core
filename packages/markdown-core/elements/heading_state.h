@@ -1,5 +1,7 @@
 #ifndef MARKDOWN_CORE_HEADING_STATE_H
 #define MARKDOWN_CORE_HEADING_STATE_H
+#include "ahead.h"
+#include "carve.h"
 #include "map.h"
 #include "inline_internal.h"
 
@@ -30,24 +32,30 @@ typedef struct {
 } markdown_core_heading_parse;
 
 /* The headings in the order they closed, and `parsed`, how many come first
- * that are parsed and in source order, before every heading after them. */
+ * that are parsed and in source order, before every heading after them. The
+ * names write a committed heading's entry in place long after it closed, so
+ * each entry lives in `bodies`, which never move (carve.h), and the array,
+ * which grows ahead (ahead.h), holds where each one is. */
 typedef struct {
-    markdown_core_heading_parse *values;
-    size_t count, capacity, parsed;
+    markdown_core_heading_parse **values;
+    size_t count, room, parsed;
+    markdown_core_ahead ahead;
+    markdown_core_carve bodies;
 } markdown_core_heading_collection;
 
-/* A CANDIDATE'S MARK of the headings (heading.c): the collection's count
- * and how many were parsed as the mark found them, with the pending block's
- * entry when it is a heading, and the registry's length then. */
+/* A CANDIDATE'S MARK of the headings (heading.c): how many were parsed as
+ * the mark found them, the pending block's entry when it is a heading, the
+ * bodies then, and the registry's length then. */
 typedef struct {
-    markdown_core_heading_parse pending;
-    size_t count, parsed, records;
+    markdown_core_heading_parse *pending;
+    markdown_core_carve bodies;
+    size_t parsed, records;
 } markdown_core_heading_mark;
 
 /* THE HEADINGS OF ONE PARSE (the heading element's parse record): each
- * heading as its block closed, the collection's count and how many were
- * parsed as the snapshot being taken found them
- * (markdown_core_headings_start_snapshot), with the registry's length then;
+ * heading as its block closed; how many were parsed as the snapshot being
+ * taken found them (markdown_core_headings_start_snapshot), with the pending
+ * block's entry, the bodies and the registry's length then;
  * the committed names (heading.c, THE COMMITTED NAMES): the names taken,
  * where the reading of the registry's ANCHOR records stands and how many it
  * read, how many headings are named, and the committed headings that show
@@ -57,7 +65,9 @@ typedef struct {
  * gate. */
 typedef struct {
     markdown_core_heading_collection headings;
-    size_t snapshot_count, snapshot_parsed, snapshot_records;
+    markdown_core_heading_parse *snapshot_pending;
+    markdown_core_carve snapshot_bodies;
+    size_t snapshot_parsed, snapshot_records;
     markdown_core_key_index taken;
     size_t records_at, records_read, named;
     uint32_t *renamed;

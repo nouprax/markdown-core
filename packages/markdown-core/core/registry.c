@@ -5,56 +5,8 @@
 #include "parser.h"
 #include "utf8.h"
 
-/* THE LOG'S RECORD STORAGE. A record lives until the registry is freed or a
- * rollback pops it, and pops come newest first, so records are carved one
- * after another from blocks the registry owns: a rollback releases the blocks
- * opened after its mark and resumes the mark's block where the mark left it.
- * A block starts small, so a parse that declares a few labels costs one small
- * allocation, and doubles up to a cap, so a document with many definitions
- * pays for its records in a few allocations rather than one each. A record
- * larger than the next block gets a block of its own size. */
-struct markdown_core_registry_block {
-    union {
-        markdown_core_registry_block *next;
-        long double alignment;
-        int64_t integer_alignment;
-    } head;
-};
-
-#define REGISTRY_BLOCK_MIN_BYTES ((size_t)1024)
-#define REGISTRY_BLOCK_MAX_BYTES ((size_t)16 * 1024)
-
-static void *S_carve(markdown_core_registry *registry, size_t size) {
-    const size_t align = sizeof(markdown_core_registry_block);
-    if (size > SIZE_MAX - align) {
-        return NULL;
-    }
-    size = (size + align - 1) / align * align;
-    if (!registry->blocks || registry->block_size - registry->block_used < size) {
-        size_t capacity = registry->block_size ? registry->block_size * 2 : REGISTRY_BLOCK_MIN_BYTES;
-        if (capacity > REGISTRY_BLOCK_MAX_BYTES) {
-            capacity = REGISTRY_BLOCK_MAX_BYTES;
-        }
-        if (capacity < size) {
-            capacity = size;
-        }
-        if (capacity > SIZE_MAX - sizeof(markdown_core_registry_block)) {
-            return NULL;
-        }
-        markdown_core_registry_block *block = (markdown_core_registry_block *)markdown_core_realloc(
-            NULL, sizeof(markdown_core_registry_block) + capacity);
-        if (!block) {
-            return NULL;
-        }
-        block->head.next = registry->blocks;
-        registry->blocks = block;
-        registry->block_size = capacity;
-        registry->block_used = 0;
-    }
-    void *storage = (unsigned char *)(registry->blocks + 1) + registry->block_used;
-    registry->block_used += size;
-    return storage;
-}
+/* THE LOG'S RECORDS are carved from a store the registry owns (carve.h):
+ * pops come newest first, as a rollback makes them. */
 
 void markdown_core_registry_init(markdown_core_registry *registry) {
     *registry = (markdown_core_registry){0};
@@ -62,12 +14,9 @@ void markdown_core_registry_init(markdown_core_registry *registry) {
 }
 
 void markdown_core_registry_free(markdown_core_registry *registry) {
-    while (registry->blocks) {
-        markdown_core_registry_block *next = registry->blocks->head.next;
-        markdown_core_free(registry->blocks);
-        registry->blocks = next;
-    }
+    markdown_core_carve_free(&registry->carve);
     markdown_core_free(registry->records);
+    markdown_core_ahead_free(&registry->records_ahead, NULL);
     markdown_core_key_index_free(&registry->index);
     markdown_core_strbuf_free(&registry->key);
     *registry = (markdown_core_registry){0};
@@ -76,13 +25,16 @@ void markdown_core_registry_free(markdown_core_registry *registry) {
 
 static inline bool S_append(markdown_core_registry *registry, markdown_core_registry_kind kind,
                             const unsigned char *label, bufsize_t length, uint32_t start, bool withdraws) {
-    void *records =
-        markdown_core_reserve(registry->records, &registry->capacity, registry->count + 1, sizeof(*registry->records));
-    if (!records) {
-        return false;
+    if (registry->count == registry->room) {
+        void *records = markdown_core_ahead_extend(&registry->records_ahead, NULL, registry->records, &registry->room,
+                                                   registry->count, registry->count + 1, sizeof(*registry->records));
+        if (!records) {
+            return false;
+        }
+        registry->records = records;
     }
-    registry->records = records;
-    markdown_core_registry_record *record = S_carve(registry, sizeof(*record) + (size_t)length + 2);
+    markdown_core_registry_record *record =
+        markdown_core_carve_take(&registry->carve, sizeof(*record) + (size_t)length + 2);
     if (!record) {
         return false;
     }
@@ -105,7 +57,7 @@ bool markdown_core_registry_declare(markdown_core_registry *registry, markdown_c
 }
 
 /* The index takes the kind's records the log holds beyond its cursor, in log
- * order, with room made for all of them first. */
+ * order, with room asked for all of them first. */
 static bool S_index_space(markdown_core_registry *registry, markdown_core_registry_kind kind) {
     markdown_core_registry_space *space = &registry->spaces[kind];
     if (space->indexed < space->records &&
@@ -216,7 +168,7 @@ bool markdown_core_registry_normal_label(markdown_core_registry *registry, markd
 }
 
 markdown_core_registry_mark markdown_core_registry_mark_now(const markdown_core_registry *registry) {
-    return (markdown_core_registry_mark){registry->count, registry->blocks, registry->block_used, registry->block_size};
+    return (markdown_core_registry_mark){registry->count, registry->carve};
 }
 
 void markdown_core_registry_rollback(markdown_core_registry *registry, markdown_core_registry_mark mark) {
@@ -239,16 +191,11 @@ void markdown_core_registry_rollback(markdown_core_registry *registry, markdown_
             }
         }
     }
+    markdown_core_ahead_unsettle(&registry->records_ahead, registry->count);
     for (size_t kind = 0; kind < sizeof(registry->spaces) / sizeof(*registry->spaces); kind++) {
         if (registry->spaces[kind].cursor > registry->count) {
             registry->spaces[kind].cursor = registry->count;
         }
     }
-    while (registry->blocks != mark.blocks) {
-        markdown_core_registry_block *block = registry->blocks;
-        registry->blocks = block->head.next;
-        markdown_core_free(block);
-    }
-    registry->block_used = mark.block_used;
-    registry->block_size = mark.block_size;
+    markdown_core_carve_rollback(&registry->carve, mark.carve);
 }

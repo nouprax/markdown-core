@@ -3,6 +3,8 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "ahead.h"
+#include "carve.h"
 #include "map.h"
 #include "node.h"
 
@@ -72,9 +74,6 @@ typedef struct markdown_core_registry_record {
     unsigned char key[];
 } markdown_core_registry_record;
 
-/* Storage records are carved from, newest first (registry.c). */
-typedef struct markdown_core_registry_block markdown_core_registry_block;
-
 /* One kind's records in the log. */
 typedef struct {
     /* How many records are of the kind: a kind none declares answers every
@@ -86,15 +85,17 @@ typedef struct {
 } markdown_core_registry_space;
 
 typedef struct {
+    /* The log, which moves ahead of its growth (ahead.h). */
     markdown_core_registry_record **records;
-    size_t count, capacity;
+    size_t count, room;
+    markdown_core_ahead records_ahead;
     markdown_core_registry_space spaces[MARKDOWN_CORE_REGISTRY_ANCHOR + 1];
     /* Each key's latest record among the records the index has taken, as
      * its position in the log. The index borrows the key bytes from that
      * record. */
     markdown_core_key_index index;
-    markdown_core_registry_block *blocks;
-    size_t block_used, block_size;
+    /* Where the records are carved from. */
+    markdown_core_carve carve;
     /* Where a lookup assembles its key. */
     markdown_core_strbuf key;
 } markdown_core_registry;
@@ -102,8 +103,7 @@ typedef struct {
 /* A point the log can roll back to. */
 typedef struct {
     size_t count;
-    markdown_core_registry_block *blocks;
-    size_t block_used, block_size;
+    markdown_core_carve carve;
 } markdown_core_registry_mark;
 
 void markdown_core_registry_init(markdown_core_registry *registry);

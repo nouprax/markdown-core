@@ -8,6 +8,8 @@ set(LIBRARY "libmarkdown-core")
 set(STATICLIBRARY "libmarkdown-core_static")
 set(HEADERS
     alloc.h
+    ahead.h
+    carve.h
     markdown-core-element-api.h
     parser.h
     dialect.h
@@ -30,6 +32,8 @@ set(HEADERS
     delimiter.h)
 set(LIBRARY_SOURCES
     alloc.c
+    ahead.c
+    carve.c
     slab.c
     node.c
     dialect.c

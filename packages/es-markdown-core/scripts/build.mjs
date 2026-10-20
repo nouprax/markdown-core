@@ -8,6 +8,8 @@ const root = path.resolve(packageDirectory, "../..");
 const dist = path.join(packageDirectory, "dist");
 const core = [
     "alloc.c",
+    "ahead.c",
+    "carve.c",
     "slab.c",
     "node.c",
     "dialect.c",
