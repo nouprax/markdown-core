@@ -357,15 +357,17 @@ typedef struct markdown_core_stream {
      * entries keep storage; the call being decided and its mark; the call a
      * reading meets next, and the depth in its mark's path of the container
      * of the last one it met, and whether an accept put the commit back at
-     * the last mark, whose line a reading reads anew; the line through which
-     * the feed has fed every call; and the request the line being read made
-     * of its opener's call. */
+     * the last mark, whose line a reading reads anew; the call a snapshot
+     * accepted, which claims in the snapshot's reading anew; the line through
+     * which the feed has fed every call; and the request the line being read
+     * made of its opener's call. */
     struct markdown_core_candidate_mark *marks;
     size_t mark_count, mark_capacity, mark_made;
     struct markdown_core_candidate *deciding;
     struct markdown_core_candidate_mark *decision_mark;
     size_t meet_mark, meet_call, meet_depth;
     bool anew;
+    struct markdown_core_candidate *claimant;
     int fed;
     const markdown_core_element_instance *request_owner;
     struct markdown_core_node *request_container;

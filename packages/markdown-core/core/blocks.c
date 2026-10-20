@@ -124,6 +124,7 @@ static void S_release_stream(markdown_core_parser *parser);
 static void S_take_back(markdown_core_parser *parser, bool release);
 static void S_candidate_make(markdown_core_parser *parser);
 static void S_candidate_undo(markdown_core_parser *parser, size_t m, size_t index);
+static void S_candidate_see(markdown_core_parser *parser, size_t m, size_t index);
 static void S_candidates_release(markdown_core_parser *parser);
 static bool S_feed(markdown_core_parser *parser, int through, const unsigned char *limit);
 static bool S_candidates_end(markdown_core_parser *parser);
@@ -2683,13 +2684,14 @@ markdown_core_node *markdown_core_parser_snapshot(markdown_core_parser *parser, 
     parser->snapshot = true;
     markdown_core_node *result = NULL;
     /* A SNAPSHOT SEES A CANDIDATE END (THE CANDIDATES): the commit puts
-     * back what it read since the call and holds there, and the snapshot
-     * reads the lines anew. */
+     * back what it read since the call and holds there, its calls waiting,
+     * and the snapshot reads the lines anew, where the call accepted
+     * claims. */
     markdown_core_stream *const stream = parser->stream;
     size_t accepted_mark, accepted_call;
     if (stream->mark_count && S_candidates_see_end(parser, &accepted_mark, &accepted_call)) {
         S_rollback(parser, &mark);
-        S_candidate_undo(parser, accepted_mark, accepted_call);
+        S_candidate_see(parser, accepted_mark, accepted_call);
         S_mark(parser, &mark);
     }
 
@@ -2719,6 +2721,7 @@ markdown_core_node *markdown_core_parser_snapshot(markdown_core_parser *parser, 
         S_take_back(parser, true);
     }
     S_rollback(parser, &mark);
+    stream->claimant = NULL;
     if (lent) {
         S_snapshot_hook(parser, false);
     }
@@ -3942,8 +3945,12 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_line_take(markdown
  * block two marks lent, at the same depth in both, holds the outer one's view
  * in the inner one's backup. The commit's reading of a candidate's lines is
  * the one a snapshot publishes, unless the snapshot sees the construct end:
- * then it accepts as a commit does and reads the lines anew to its text's
- * end. */
+ * then it puts the commit back at the call's mark as an accept does, every
+ * call of the mark waiting as the commit fed it, as only a commit decides a
+ * call, and reads the lines anew to its text's end, where the calls before
+ * the one accepted meet it and that one, the CLAIMANT, claims. The commit
+ * reads the lines anew from the mark, where every call of it meets the
+ * reading, and feeds each call from the line it was fed through. */
 typedef struct {
     int line_number, indent;
     bufsize_t offset, column, first_nonspace, first_nonspace_column, thematic_break_kill_pos, line_start, line_end;
@@ -4094,8 +4101,9 @@ static void S_meet_from_stop(markdown_core_parser *parser) {
 }
 
 /* The next call a reading meets is the next one made on its line, from
- * where the reading started (S_meet_from_stop). A commit's reading takes the
- * call's container and path anew; a snapshot's writes no call. */
+ * where the reading started (S_meet_from_stop), up to a snapshot's
+ * CLAIMANT, which claims. A commit's reading takes the call's container and
+ * path anew; a snapshot's writes no call. */
 bool markdown_core_parser_candidate_meets(markdown_core_parser *parser, const markdown_core_element_instance *owner,
                                           markdown_core_node *container) {
     markdown_core_stream *stream = parser->stream;
@@ -4107,8 +4115,8 @@ bool markdown_core_parser_candidate_meets(markdown_core_parser *parser, const ma
         return false;
     }
     struct markdown_core_candidate *call = &mark->calls[stream->meet_call];
-    if (call->line != parser->line_number || call->owner != owner || call->offset != parser->offset ||
-        call->kind != container->kind) {
+    if (call == stream->claimant || call->line != parser->line_number || call->owner != owner ||
+        call->offset != parser->offset || call->kind != container->kind) {
         return false;
     }
     stream->meet_call++;
@@ -4462,12 +4470,9 @@ static void S_candidate_take_back(markdown_core_parser *parser, const markdown_c
     markdown_core_parser_release_node(parser, backup);
 }
 
-/* AN ACCEPT: the commit back at the mark at `m`, every mark taken after it
- * put back first, holding the line at the mark's first call to read it anew,
- * where the calls before the one at `index` meet it again. The mark stays
- * while one of them waits, marked and lent again, and while one was decided,
- * for the reading anew to meet, lending nothing. */
-static void S_candidate_undo(markdown_core_parser *parser, size_t m, size_t index) {
+/* The commit back at the mark at `m`, every mark taken after it put back
+ * first, holding the line at the mark's first call to read it anew. */
+static void S_candidate_put_back(markdown_core_parser *parser, size_t m) {
     markdown_core_stream *stream = parser->stream;
     struct markdown_core_candidate_mark *mark = &stream->marks[m];
     stream->changed = parser->root;
@@ -4505,6 +4510,32 @@ static void S_candidate_undo(markdown_core_parser *parser, size_t m, size_t inde
         undone->lend_count = 0;
     }
     stream->mark_count = m + 1;
+}
+
+/* The mark at `m` marked and lent again while one of its calls waits; with
+ * none, it stays while it keeps a decided call for the reading anew to meet,
+ * lending nothing. */
+static void S_mark_again(markdown_core_parser *parser, size_t m) {
+    markdown_core_stream *stream = parser->stream;
+    struct markdown_core_candidate_mark *mark = &stream->marks[m];
+    if (mark->live) {
+        const markdown_core_element_instance *document = parser->dialect->document_structure;
+        if (document->element->mark_candidate) {
+            document->element->mark_candidate(document, parser);
+        }
+        S_mark_lend(parser, mark);
+    } else if (!mark->call_count) {
+        stream->mark_count = m;
+    }
+}
+
+/* AN ACCEPT: the commit back at the mark at `m` (S_candidate_put_back),
+ * where the calls before the one at `index` meet the reading anew, and the
+ * call accepted claims: it and the calls after it go. */
+static void S_candidate_undo(markdown_core_parser *parser, size_t m, size_t index) {
+    S_candidate_put_back(parser, m);
+    markdown_core_stream *stream = parser->stream;
+    struct markdown_core_candidate_mark *mark = &stream->marks[m];
     for (size_t k = index; k < mark->call_count; k++) {
         mark->live -= !mark->calls[k].decided;
     }
@@ -4513,14 +4544,19 @@ static void S_candidate_undo(markdown_core_parser *parser, size_t m, size_t inde
         mark->first = index;
     }
     stream->anew = index > 0;
-    if (mark->live) {
-        if (document->element->mark_candidate) {
-            document->element->mark_candidate(document, parser);
-        }
-        S_mark_lend(parser, mark);
-    } else if (!index) {
-        stream->mark_count = m;
-    }
+    S_mark_again(parser, m);
+}
+
+/* A SNAPSHOT'S ACCEPT: the commit back at the mark at `m`
+ * (S_candidate_put_back), every call of it waiting as the commit fed it, as
+ * only a commit decides a call; the snapshot's reading anew meets each call
+ * before the one at `index`, the CLAIMANT, which claims. */
+static void S_candidate_see(markdown_core_parser *parser, size_t m, size_t index) {
+    S_candidate_put_back(parser, m);
+    markdown_core_stream *stream = parser->stream;
+    stream->claimant = &stream->marks[m].calls[index];
+    stream->anew = true;
+    S_mark_again(parser, m);
 }
 
 /* The lend of the block a lend of the mark at `m` names, at the same depth,
