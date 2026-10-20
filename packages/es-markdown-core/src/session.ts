@@ -19,9 +19,9 @@ const sessions = new FinalizationRegistry<number>((session) => native.markdown_c
  * continues an old node keeps its `id`. Every document a session returns is an
  * immutable value that borrows nothing.
  *
- * Until `finalize()`, each document is a snapshot of the text so far: a lookup
- * of a reference, footnote or specimen sees only the definitions that start
- * before the inline root asking.
+ * Until `finalize()`, a document's lookups of a reference, footnote or
+ * specimen see only the definitions that start before the inline root
+ * asking.
  *
  * The caller ends the text with `finalize()`, which returns the final
  * document; nothing ends a session implicitly. Afterwards `document` and
@@ -37,11 +37,11 @@ export class MarkdownSession {
     #session: number;
     #document: Document;
 
-    /** Parses `source` as the session's first append; its document is a
-     * snapshot. `unit` is `"utf16"`, the unit of JavaScript strings and
-     * editors, by default. Throws `MarkdownCoreError`
-     * `allocationFailed` when the parse cannot allocate or the source's UTF-8
-     * exceeds the engine's 1 GiB capacity. */
+    /** Adds `source` as the session's first text and parses it as text added
+     * later is parsed. `unit` is `"utf16"`, the unit of JavaScript strings and
+     * editors, by default. Throws `MarkdownCoreError` `allocationFailed` when
+     * the parse cannot allocate or the source's UTF-8 exceeds the engine's
+     * 1 GiB capacity. */
     constructor(source = "", options?: { readonly unit?: TextUnit }) {
         this.unit = options?.unit ?? "utf16";
         const bytes = utf8Encoder.encode(source);
@@ -83,9 +83,9 @@ export class MarkdownSession {
         }
     }
 
-    /** Appends `text` and parses the result, a snapshot. Throws
-     * `MarkdownCoreError` `allocationFailed` when an allocation fails or the
-     * text would exceed 1 GiB, and `sessionFinalized` after `finalize()`. */
+    /** Appends `text` and parses the text so far. Throws `MarkdownCoreError`
+     * `allocationFailed` when an allocation fails or the text would exceed
+     * 1 GiB, and `sessionFinalized` after `finalize()`. */
     append(text: string): Document {
         const session = this.#open();
         const bytes = utf8Encoder.encode(text);
