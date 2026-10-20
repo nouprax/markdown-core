@@ -9,9 +9,9 @@
  * script means.
  *
  * A subject opens in a coordinate unit with an initial text, takes `append`
- * steps, each of which returns the new document, and closes. A document a
- * subject returns is the subject's, and is valid until its next step or its
- * close. This file holds the two subjects: `session`, the engine's session,
+ * steps and one `finalize`, each of which returns the new document, and
+ * closes. A document a subject returns is the subject's, and is valid until
+ * its next step or its close. This file holds the two subjects: `session`, the engine's session,
  * and `reparse`, which keeps the text and parses the whole of it on every
  * step.
  */
@@ -156,9 +156,13 @@ typedef struct ih_subject_class {
     const char *name;
     /* Returns NULL, and no document, when the subject cannot be opened. */
     void *(*open)(ih_unit unit, const uint8_t *text, size_t length, const markdown_core_document **document);
-    /* Returns false, and no document, when the step could not be carried
-     * out. */
-    bool (*append)(void *subject, const uint8_t *text, size_t length, const markdown_core_document **document);
+    /* Each step answers MARKDOWN_CORE_OK with the new document, or the
+     * status of its failure and no document: `append` adds to the end of the
+     * text, and `finalize` ends it; after `finalize` both answer
+     * MARKDOWN_CORE_SESSION_FINALIZED. */
+    markdown_core_status (*append)(void *subject, const uint8_t *text, size_t length,
+                                   const markdown_core_document **document);
+    markdown_core_status (*finalize)(void *subject, const markdown_core_document **document);
     /* The subject's text, as UTF-8. */
     const uint8_t *(*text)(const void *subject, size_t *length);
     void (*close)(void *subject);
@@ -168,13 +172,18 @@ typedef struct ih_subject_class {
  * the subject's unit. */
 extern const ih_subject_class ih_session;
 
+/* The engine's session a `session` subject holds, for the harness that
+ * steps it through another entry. */
+markdown_core_session *ih_session_of(void *subject);
+
 /* The `reparse` subject: it keeps the text and calls the one parse entry on
  * the whole of it on every step. */
 extern const ih_subject_class ih_reparse;
 
 /* The reparse subject's two halves, for the harness that measures it: extend
  * its text, and parse the whole text, releasing the previous document.
- * `append` is exactly the one followed by the other. */
+ * `append` is exactly the one followed by the other, and `finalize` the parse
+ * alone. */
 bool ih_reparse_extend(void *subject, const uint8_t *text, size_t length);
 bool ih_reparse_parse(void *subject, const markdown_core_document **document);
 

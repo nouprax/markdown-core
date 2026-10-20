@@ -8,6 +8,10 @@ import MarkdownCoreC
 /// each step; it borrows nothing from the session, so it is safe to hold, copy
 /// and send across isolation boundaries.
 ///
+/// Until ``finalize()``, each document is a snapshot of the text so far: a
+/// lookup of a reference, footnote or specimen sees only the definitions that
+/// start before the inline root asking.
+///
 /// The caller ends the text with ``finalize()``, which returns the final
 /// document; nothing ends a session implicitly. Afterwards ``document`` and
 /// ``text`` stay readable, and ``append(_:)`` and ``finalize()`` throw
@@ -22,7 +26,8 @@ public final class MarkdownSession {
     /// The document parsed from the current ``text``.
     public private(set) var document: Document
 
-    /// Parses `source` into a new session.
+    /// Parses `source` into a new session, as its first append; its
+    /// ``document`` is a snapshot.
     ///
     /// - Parameters:
     ///   - source: the Markdown to start from. It is read as UTF-8.
@@ -59,7 +64,7 @@ public final class MarkdownSession {
     /// Appends `text` and parses the result.
     ///
     /// - Parameter text: the Markdown to append. It is read as UTF-8.
-    /// - Returns: the new ``document``.
+    /// - Returns: the new ``document``, a snapshot.
     /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/allocationFailed``
     ///   when an allocation fails or the text would exceed 1 GiB of UTF-8,
     ///   and with ``ErrorCode/sessionFinalized`` after ``finalize()``.

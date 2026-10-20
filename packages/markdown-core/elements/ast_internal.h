@@ -23,13 +23,20 @@ struct markdown_core_document {
 };
 
 /* PUBLISHING, the last step of the parse transaction: the one canonical walk
- * that gives every node its id, rewrites its parse-time place as its extent
- * and records the definition tables it finds on the way in the root,
- * continuing the tree the parser's revision names (parser.h): a fresh parse
- * numbers every node from 1 in walk order. The parser's root is the result.
- * It works in the parser's scratch. False, having changed neither tree's
- * structure, when an allocation failed. Nothing reads a place after this. */
+ * that gives every node its id, makes its extent of its place and records
+ * the definition tables it finds on the way in the root; a session's parse
+ * publishes its tree in place (ast.c, PUBLISHING IN PLACE), and a fresh
+ * parse numbers every node from 1 in walk order. The parser's root is the
+ * result. It works in the parser's scratch. False when an allocation
+ * failed. */
 bool markdown_core_publish_tree(markdown_core_parser *parser);
+/* PUBLISHING A CANDIDATE (ast.c) for `root`, an inline root a snapshot
+ * published, itself or, a callout's title or a definition's term, as its
+ * holder that starts at `holder_start`: the candidate takes `root`'s id, and
+ * ids, extents and runs continuing `root`'s subtree. False when an
+ * allocation failed. */
+bool markdown_core_publish_candidate(markdown_core_parser *parser, markdown_core_node *candidate,
+                                     markdown_core_node *root, uint32_t holder_start);
 
 /* The scopes of `node` in the published tree `root` parsed from `source`,
  * with columns in `unit`, in a new array markdown_core_scopes_free frees;

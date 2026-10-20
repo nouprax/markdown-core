@@ -80,7 +80,7 @@ static bool markdown_core_block_parse_callout_metadata(markdown_core_callout_wor
             return true;
         }
         node->as.callout->title = title;
-        title->where.place =
+        title->place =
             (markdown_core_place){(uint32_t)markdown_core_parser_source_offset(parser, parser->line_number, pos + 1),
                                   (uint32_t)markdown_core_parser_source_end(parser, parser->line_number, end)};
         markdown_core_strbuf_put(&title->content, input->data + pos, end - pos);
@@ -88,6 +88,7 @@ static bool markdown_core_block_parse_callout_metadata(markdown_core_callout_wor
                                                                             title->content.size, 0)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
+        markdown_core_block_settle_field(parser, title, node);
     }
     markdown_core_block_advance_offset(parser, input, input->len - 1 - parser->offset, false);
     return true;
@@ -133,7 +134,7 @@ static bool accepts_lazy(const markdown_core_element_instance *self, markdown_co
                          markdown_core_node *node) {
     (void)self;
     return node->kind == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->variant.has_value &&
-           !markdown_core_parser_last_child(parser, node) &&
+           !markdown_core_parser_last_child(node) &&
            markdown_core_parser_starts_on_line(parser, node, parser->line_number - 1);
 }
 
@@ -142,6 +143,54 @@ static bool continue_container(const markdown_core_element_instance *self, markd
                                bool *taken) {
     (void)self;
     return markdown_core_block_parse_callout_prefix(parser, input);
+}
+/* The prefix reads the first non-space byte. Its column-counted advance
+ * over a `>` reads the byte after the `>`'s scalar, and takes it when it is
+ * a space or a tab -- a space's scalar too (markdown_core_block_scalar_end). */
+static bufsize_t continue_reach(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                const markdown_core_node *node, const markdown_core_chunk *input) {
+    (void)self;
+    (void)node;
+    const bufsize_t first = parser->first_nonspace;
+    if (parser->indent > 3 || input->data[first] != '>') {
+        return first;
+    }
+    const bufsize_t after = markdown_core_block_scalar_end(input, first + 1);
+    return input->data[after] == ' ' ? markdown_core_block_scalar_end(input, after + 1) : after;
+}
+/* The scan reads the first non-space byte. The open reads the byte after
+ * the `>`, which it takes when it is a space -- with the space's scalar
+ * (markdown_core_block_scalar_end) -- or one column of a tab; then, unless
+ * that tab is only partly taken, up to three spaces and the two bytes after
+ * them, which a metadata line opens with `[!`, and whose header reads to the
+ * line's end (markdown_core_block_parse_callout_metadata). */
+static bufsize_t start_reach(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                             const block_start_context *context, bool *opens) {
+    (void)self;
+    (void)parser;
+    const markdown_core_chunk *input = context->input;
+    const bufsize_t end = input->len - 1;
+    bufsize_t at = context->first;
+    if (input->data[at] != '>') {
+        return at;
+    }
+    *opens = true;
+    at++;
+    if (input->data[at] == '\t') {
+        if (TAB_STOP - (context->column + 1) % TAB_STOP > 1) {
+            return at;
+        }
+        at++;
+    } else if (input->data[at] == ' ') {
+        at = markdown_core_block_scalar_end(input, at + 1);
+    }
+    for (int spaces = 0; spaces < 3 && input->data[at] == ' '; spaces++) {
+        at++;
+    }
+    if (at + 1 >= end || (input->data[at] == '[' && input->data[at + 1] == '!')) {
+        return end;
+    }
+    return at + 1;
 }
 /* The marker line's text is the callout's title, so a lazy line after it
  * cannot continue a paragraph: it starts the body's first one, as the same
@@ -160,9 +209,11 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_CALLOUT = {
 
     .name = "callout",
     .continue_container = continue_container,
+    .continue_reach = continue_reach,
     .container_prefix_bytes = ">",
     .blank_opaque = true,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_callout_scan,
+    .start_reach = start_reach,
     .scan_block_gate = {.bytes = ">"},
 };

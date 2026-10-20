@@ -96,8 +96,8 @@ const attributes = () => ({
 });
 
 const streams = () => ({
-    schemaVersion: 3,
-    subjects: ["reparse", "session"],
+    schemaVersion: 6,
+    subjects: ["reparse", "session", "binding"],
     workloads: { version: "incremental-workloads-v2", set: "corpus", digest: "e".repeat(64), count: 3 },
     baseline: { revision: "b".repeat(40) },
     results: [
@@ -105,8 +105,10 @@ const streams = () => ({
             name: "a.tokens",
             family: "tokens",
             size: null,
+            steps: 2,
             windows: [10, 20, 30],
             session: { windows: [11, 20, 33] },
+            binding: { windows: [3, 5, 8] },
             oneshot: { ir: 25 },
             regressions: []
         },
@@ -114,8 +116,10 @@ const streams = () => ({
             name: "b.tokens",
             family: "tokens",
             size: null,
-            windows: [40],
-            session: { windows: [40] },
+            steps: 1,
+            windows: [40, 40],
+            session: { windows: [40, 40] },
+            binding: { windows: [10, 10] },
             oneshot: { ir: 35 },
             regressions: [{ subject: "session", metric: "total", ratio: 1.03 }]
         },
@@ -123,33 +127,43 @@ const streams = () => ({
             name: "prose-ascii-16k.rows",
             family: "rows",
             size: 16384,
+            steps: 4096,
             windows: [7, 9],
             session: null,
+            binding: null,
             oneshot: { ir: 8 },
             regressions: []
         }
     ]
 });
 
-test("the stream table reports the R and S columns by family and size, pooled over windows, and 6.4", () => {
+test("the stream table reports the R, S and B columns by family and size, pooled over windows, and 6.4", () => {
     const body = streamSection(streams());
     assert.match(
         body,
-        /\| Grammar corpus \| tokens \| {2}\| 2 \| 4 \| 20 \| 40 \| 40 \| 100 \| 20 \| 40 \| 40 \| 104 \| 1\.100× \| 60 \|/
+        /\| Grammar corpus \| tokens \| {2}\| 2 \| 5 \| 30 \| 40 \| 40 \| 140 \| 33 \| 40 \| 40 \| 144 \| 1\.029× \| 1\.100× \| 60 \|/
     );
     assert.match(
         body,
-        /\| Shapes \| rows \| 16,384 \| 1 \| 2 \| 7 \| 9 \| 9 \| 16 \| {2}\| {2}\| {2}\| {2}\| {2}\| 8 \|/
+        /\| Shapes \| rows \| 16,384 \| 1 \| 2 \| 7 \| 9 \| 9 \| 16 \| {2}\| {2}\| {2}\| {2}\| {2}\| {2}\| 8 \|/
     );
+    assert.match(body, /\| Grammar corpus \| tokens \| {2}\| 8 \| 10 \| 10 \| 36 \| 0\.250× \|/);
+    assert.doesNotMatch(body, /\| Shapes \| rows \| 16,384 \| {2}\|/);
     assert.match(body, /against `bbbbbbbbbbbb`\): \*\*2\/3 passed\*\*, 1 exceeded/);
     assert.doesNotMatch(body, /a\.tokens|prose-ascii/);
     const unbased = streams();
     unbased.baseline = null;
     unbased.results[1].regressions = [];
     assert.doesNotMatch(streamSection(unbased), /passed/);
+    const local = streams();
+    local.results[2].session = { windows: [5, 6] };
+    assert.match(
+        streamSection(local),
+        /\| Shapes \| rows \| 16,384 \| 1 \| 2 \| 7 \| 9 \| 9 \| 16 \| 5 \| 6 \| 6 \| 11 \| {2}\| {2}\| 8 \|/
+    );
     for (const mutate of [
-        (r) => (r.schemaVersion = 2),
-        (r) => (r.subjects = ["reparse"]),
+        (r) => (r.schemaVersion = 3),
+        (r) => (r.subjects = ["reparse", "session"]),
         (r) => (r.workloads.count = 4),
         (r) => (r.baseline.revision = "<b>"),
         (r) => (r.baseline = null),
@@ -158,6 +172,13 @@ test("the stream table reports the R and S columns by family and size, pooled ov
         (r) => (r.results[0].windows = []),
         (r) => (r.results[0].session.windows = [1, 2]),
         (r) => (r.results[0].session = {}),
+        (r) => (r.results[0].binding = null),
+        (r) => (r.results[0].binding.windows = [1, 2]),
+        (r) => (r.results[0].binding.windows = [3, 5, 0.5]),
+        (r) => (r.results[2].binding = { windows: [1, 2] }),
+        (r) => (r.results[2].steps = 1024),
+        (r) => delete r.results[0].steps,
+        (r) => (r.results[1].regressions[0].subject = "binding"),
         (r) => (r.results[2].size = -1),
         (r) => (r.results[1].oneshot.ir = 1.5),
         (r) => (r.results[1].regressions[0].metric = "<b>"),

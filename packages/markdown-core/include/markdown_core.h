@@ -404,16 +404,19 @@ MARKDOWN_CORE_API markdown_core_text_unit markdown_core_document_unit(const mark
  * returns borrows from the session until its next append, its finalize or
  * its release.
  *
- * `markdown_core_session_new` parses `size` bytes of `source` as
- * markdown_core_document_parse does, into a session whose documents count
- * columns in `unit`. */
+ * Until finalize, each document is a snapshot of the text so far: a lookup
+ * of a reference, footnote or specimen sees only the definitions that start
+ * before the inline root asking.
+ *
+ * `markdown_core_session_new` parses `size` bytes of `source` into a session
+ * whose documents count columns in `unit`; its document is a snapshot. */
 typedef struct markdown_core_session markdown_core_session;
 
 MARKDOWN_CORE_API markdown_core_status markdown_core_session_new(const uint8_t *source, size_t size,
                                                                  markdown_core_text_unit unit,
                                                                  markdown_core_session **session);
 /** Appends `size` bytes of `text` to the text and parses it; `*document`
- * receives the new document. The bytes are stored as given, so a scalar may
+ * receives the new snapshot. The bytes are stored as given, so a scalar may
  * be split between two appends. ALLOCATION_FAILED when an allocation fails
  * or the text would exceed the 1 GiB a document can hold; SESSION_FINALIZED
  * after markdown_core_session_finalize. */

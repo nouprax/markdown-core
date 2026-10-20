@@ -21,26 +21,32 @@ extern "C" {
  *              occurrence resolves against;
  *   FOOTNOTE   the label of a footnote definition;
  *   SPECIMEN   the label of a specimen definition;
- *   ANCHOR     an explicit anchor, reserved where completion meets it.
+ *   ANCHOR     an explicit anchor, reserved where completion meets it, and
+ *              withdrawn where completion releases the node that holds it.
  *
  * Reference and footnote labels are in the reference-label normal form
  * (markdown_core_registry_normal_label); a specimen label and an anchor are
  * their bytes as written.
  *
+ * A record declares its key, or withdraws one earlier declaration of it: a
+ * key is declared while it has more declarations than withdrawals.
+ *
  * The index maps a kind and a label to the key's latest record, and each
- * record names the key's record before it and the earliest start among the
- * records up to it. So a lookup answers whether the key is declared at all
- * and whether some declaration of it starts before a position, and a
- * rollback pops records back to a mark, each pop pointing the index at what
- * it pointed at before that record was taken. A declaration only appends to
- * the log: a lookup of a kind has the index take that kind's records beyond
- * it, in log order, room for all of them made at once. So the declarations
- * of a kind a parse makes before its first lookup of that kind are indexed
- * together, a kind no lookup asks for is never indexed, and a record rolled
- * back before a lookup of its kind never is. A kind's records can also be
- * read in log order (markdown_core_registry_records), which asks nothing of
- * the index. The log holds no node: a record's label is the registry's own
- * copy. */
+ * record names the key's record before it, the earliest start among the
+ * declarations up to it and how many of them stand. So a lookup answers
+ * whether the key is declared at all and whether some declaration of it
+ * starts before a position, and a rollback pops records back to a mark, each
+ * pop pointing the index at what it pointed at before that record was taken.
+ * A declaration only appends to the log: a lookup of a kind has the index
+ * take that kind's records beyond it, in log order, room for all of them made
+ * at once. So the declarations of a kind a parse makes before its first
+ * lookup of that kind are indexed together, a kind that no lookup asks for
+ * and nothing withdraws is never indexed, and a record rolled back before a
+ * lookup of its kind never is. A withdrawal has the index take its kind's
+ * records up to it as it is appended, so it knows how many declarations of
+ * its key stand after it. A kind's records can also be read in log order
+ * (markdown_core_registry_records), which asks nothing of the index. The log
+ * holds no node: a record's label is the registry's own copy. */
 typedef enum {
     MARKDOWN_CORE_REGISTRY_REFERENCE = 1,
     MARKDOWN_CORE_REGISTRY_FOOTNOTE,
@@ -51,13 +57,18 @@ typedef enum {
 typedef struct markdown_core_registry_record {
     /* Once the index has taken the record: the key's record before this
      * one, as its position in the log plus one, zero when this is the key's
-     * first; and the earliest start among this key's records up to this
-     * one. */
+     * first; and how many of the key's declarations up to this one stand,
+     * which no withdrawal up to this one withdraws. */
     size_t previous;
-    /* Where the declaring definition starts, and the earliest start. */
+    uint32_t live;
+    /* Where the declaring or withdrawing definition starts, and, once the
+     * index has taken the record, the earliest start among the key's
+     * declarations up to this one. */
     uint32_t start, earliest;
     /* The key: the kind's byte, then the label, then NUL. */
     bufsize_t key_len;
+    /* Whether the record withdraws a declaration of its key. */
+    bool withdraws;
     unsigned char key[];
 } markdown_core_registry_record;
 
@@ -103,6 +114,12 @@ void markdown_core_registry_free(markdown_core_registry *registry);
  * nothing. False when storage could not be had. */
 bool markdown_core_registry_declare(markdown_core_registry *registry, markdown_core_registry_kind kind,
                                     const unsigned char *label, bufsize_t length, uint32_t start);
+
+/* Append a record of `kind` that withdraws one declaration of `label`, which
+ * is declared, by a definition starting at `start`. False when storage could
+ * not be had. */
+bool markdown_core_registry_withdraw(markdown_core_registry *registry, markdown_core_registry_kind kind,
+                                     const unsigned char *label, bufsize_t length, uint32_t start);
 
 /* The latest record of `kind` for `label`, in the kind's normal form, or NULL
  * when nothing declares it. `*failed` is set when the key could not be
@@ -158,6 +175,24 @@ static inline const markdown_core_registry_record *markdown_core_registry_next(c
     }
     cursor->left--;
     return registry->records[cursor->at++];
+}
+
+/* The cursor's next record before position `end` of the log, or NULL, with
+ * the cursor at `end`, when none of its kind is left before it. */
+static inline const markdown_core_registry_record *
+markdown_core_registry_next_before(const markdown_core_registry *registry, markdown_core_registry_cursor *cursor,
+                                   size_t end) {
+    while (cursor->left && cursor->at < end) {
+        const markdown_core_registry_record *record = registry->records[cursor->at++];
+        if (record->key[0] == (unsigned char)cursor->kind) {
+            cursor->left--;
+            return record;
+        }
+    }
+    if (cursor->at < end) {
+        cursor->at = end;
+    }
+    return NULL;
 }
 
 /* Whether some declaration of the record's key, up to the record, starts

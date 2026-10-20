@@ -186,11 +186,20 @@ typedef void (*markdown_core_inline_from_delim_func)(const markdown_core_element
  * container's closer only after descendant ownership is known. Both matching
  * and non-consuming continuation hooks may return this result. */
 #define MARKDOWN_CORE_BLOCK_PENDING_CLOSE 3
+/* The line continues the container, which takes it whole: no block opens on
+ * it and no block takes it as text. The parser hands it to the container's
+ * element (its `take_line`) once the containers above have kept it, so a
+ * pending closer above still takes the line, and the container then ends on
+ * the line before. The blocks open inside the container end on the line
+ * before it. */
+#define MARKDOWN_CORE_BLOCK_TAKEN 4
 
 /** Should return 'true' if 'input' can be contained in 'container',
  *  'false' otherwise, or MARKDOWN_CORE_BLOCK_CLOSED if 'input' is the
  *  container's own closing line. A DirectiveBlock returns
  *  MARKDOWN_CORE_BLOCK_PENDING_CLOSE until descendant ownership is known.
+ *  A container that takes the line whole returns MARKDOWN_CORE_BLOCK_TAKEN
+ *  and changes nothing: its element reads the line in `take_line`.
  */
 typedef int (*markdown_core_match_block_func)(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                               unsigned char *input, int len, markdown_core_node *container);
@@ -294,6 +303,22 @@ typedef markdown_core_finish_result (*markdown_core_finish_step_func)(const mark
 typedef void (*markdown_core_opaque_alloc_func)(const markdown_core_element *element, markdown_core_node *node);
 
 typedef void (*markdown_core_opaque_free_func)(const markdown_core_element *element, markdown_core_node *node);
+
+/* `copy`'s payload as a VIEW of `node`'s, which `copy->opaque` still names:
+ * a record of its own whose members are `node`'s, owning none of the storage
+ * `node`'s payload owns, which it reads for as long as `node` keeps it. The
+ * nodes its fields hold are left as they are (node.h,
+ * markdown_core_node_view). False, with `copy->opaque` NULL, when storage
+ * could not be had. */
+typedef bool (*markdown_core_opaque_view_func)(const markdown_core_element *element, markdown_core_node *copy,
+                                               const markdown_core_node *node);
+
+/* `view`'s payload, a view of `node`'s (markdown_core_opaque_view_func),
+ * takes the storage of `node`'s it still reads: `node`'s payload then owns
+ * none of it, and `view`'s owns everything it holds. Required of an element
+ * with a view hook. */
+typedef void (*markdown_core_opaque_adopt_func)(const markdown_core_element *element, markdown_core_node *view,
+                                                markdown_core_node *node);
 
 /** A parser element is a `static const` descriptor in a fixed compile-time
  * table (`elements/core-elements.c`), not an object built at run time.
@@ -599,7 +624,8 @@ typedef enum {
  * children.
  *
  * A change releases values owned by the old kind and installs the new kind's
- * defaults. Node identity and element-owned opaque data are preserved.
+ * defaults. The node's address and element-owned opaque data are preserved;
+ * its id is 0 again, since an id names a node while its kind holds.
  * A record that fits the node's existing cell needs no allocation.
  * Setting the current kind succeeds without allocating or changing its data.
  */

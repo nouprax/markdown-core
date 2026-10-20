@@ -77,9 +77,10 @@ static bool markdown_core_specimen_open(const markdown_core_element_instance *se
         markdown_core_optional_chunk_free(&specimen.label);
         return false;
     }
-    /* The block before it settled as it opened: its parent's last child. */
+    /* The block before it is the one before it among its parent's children,
+     * which it joined as it opened. */
     const markdown_core_node *parent = markdown_core_parser_parent(parser, *container);
-    const markdown_core_node *previous = parent->child_count ? parent->children[parent->child_count - 1] : NULL;
+    const markdown_core_node *previous = parent->child_count > 1 ? parent->children[parent->child_count - 2] : NULL;
     if (previous && previous->kind == MARKDOWN_CORE_NODE_SPECIMEN) {
         specimen.has_start = false;
         specimen.start = 0;
@@ -89,7 +90,7 @@ static bool markdown_core_specimen_open(const markdown_core_element_instance *se
     /* A citation names a specimen by its label as written. */
     if (specimen.label.has_value &&
         !markdown_core_registry_declare(&parser->registry, MARKDOWN_CORE_REGISTRY_SPECIMEN, specimen.label.value.data,
-                                        specimen.label.value.len, (*container)->where.place.start)) {
+                                        specimen.label.value.len, (*container)->place.start)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
@@ -132,5 +133,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_SPECIMEN = {
     .continue_container = continue_container,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_specimen_scan,
+    .continue_reach = markdown_core_block_indent_reach,
     .scan_block_gate = {.bytes = "("},
 };

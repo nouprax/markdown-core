@@ -82,7 +82,10 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identif
     markdown_core_node *owner = paragraph;
     int line;
     bufsize_t source;
-    if (parent && markdown_core_block_type(parent) == MARKDOWN_CORE_NODE_LIST_ITEM && parent->child_count == 0 &&
+    /* The last of the parent's children is the paragraph, or the block it
+     * was split from, which it settles before: no block comes before it
+     * when that is the only one. */
+    if (parent && markdown_core_block_type(parent) == MARKDOWN_CORE_NODE_LIST_ITEM && parent->child_count == 1 &&
         markdown_core_parser_content_place(parser, &paragraph->content_map,
                                            (bufsize_t)(candidate.identifier.data - text.data), &line, &source) &&
         markdown_core_parser_starts_on_line(parser, parent, line)) {
@@ -103,9 +106,45 @@ void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identif
     }
 }
 
-bool markdown_core_block_attach_identifier_line(markdown_core_block_identifier_work *work, markdown_core_parser *parser,
-                                                markdown_core_node *parent, markdown_core_chunk *input) {
-    markdown_core_node *owner = markdown_core_parser_last_child(parser, parent);
+/* THE BOUNDARY AFTER AN IDENTIFIER LINE, read from the line after it in
+ * `parent`: a blank line, or the end of the input. In a commit more text
+ * may follow the reading waits where the text read so far ends
+ * (markdown_core_parser_lookahead_wait): reaching it with no blank line
+ * read leaves the reading `undecided`, and the call asks to be a candidate
+ * (blocks.c, THE CANDIDATES). A line the reading returns is not blank,
+ * however much of it the text has finished. */
+static bool S_followed_by_boundary(markdown_core_parser *parser, markdown_core_node *parent, bool *undecided) {
+    const bool waits = !markdown_core_parser_candidate_final(parser);
+    *undecided = false;
+    if (!waits && markdown_core_parser_input_ends(parser, parser->lookahead_cursor)) {
+        return true;
+    }
+    markdown_core_block_lookahead lookahead;
+    markdown_core_chunk next;
+    int first_nonspace, indent, blank_lines;
+    if (!markdown_core_parser_lookahead_begin(parser, parent, MARKDOWN_CORE_NODE_PARAGRAPH, &lookahead)) {
+        return false;
+    }
+    if (waits) {
+        markdown_core_parser_lookahead_wait(&lookahead);
+    }
+    const bool line = markdown_core_parser_lookahead_next(&lookahead, &next, &first_nonspace, &indent, &blank_lines);
+    *undecided = !line && !blank_lines && (lookahead.exhausted || lookahead.waited);
+    markdown_core_parser_lookahead_end(&lookahead);
+    return blank_lines > 0;
+}
+
+/* THE IDENTIFIER LINE, the text opener's call (paragraph.c) on a line that
+ * would open a paragraph in `parent`: an identifier alone on the line names
+ * the block before it, the pending block (parser.h, THE BUILDERS), when the
+ * boundary follows it. A call whose boundary reading decides nothing asks
+ * to be a candidate, which takes the line as the call would; a call that
+ * meets its candidate declines. */
+bool markdown_core_block_attach_identifier_line(const markdown_core_element_instance *self,
+                                                markdown_core_parser *parser, markdown_core_node *parent,
+                                                markdown_core_chunk *input) {
+    markdown_core_block_identifier_work *work = self->state;
+    markdown_core_node *owner = markdown_core_parser_last_child(parent);
     block_identifier candidate;
     if (parser->indent >= CODE_INDENT || input->data[parser->first_nonspace] != '#' || !owner ||
         owner->attributes.anchor.len ||
@@ -114,24 +153,65 @@ bool markdown_core_block_attach_identifier_line(markdown_core_block_identifier_w
          markdown_core_block_type(owner) != MARKDOWN_CORE_NODE_TABLE) ||
         !S_scan_block_identifier(work, input->data + parser->first_nonspace, input->len - parser->first_nonspace,
                                  &candidate) ||
-        !candidate.own_line || candidate.content_end || !markdown_core_block_ends_with_blank_line(owner)) {
+        !candidate.own_line || candidate.content_end || !markdown_core_block_ends_with_blank_line(owner) ||
+        (parser->stream && markdown_core_parser_candidate_meets(parser, self, parent))) {
         return false;
     }
-    bool followed_by_boundary = parser->lookahead_cursor == parser->lookahead_end;
-    if (!followed_by_boundary) {
-        markdown_core_block_lookahead lookahead;
-        markdown_core_chunk next;
-        int first_nonspace, indent, blank_lines;
-        if (!markdown_core_parser_lookahead_begin(parser, parent, MARKDOWN_CORE_NODE_PARAGRAPH, &lookahead)) {
-            return false;
-        }
-        markdown_core_parser_lookahead_next(&lookahead, &next, &first_nonspace, &indent, &blank_lines);
-        followed_by_boundary = blank_lines > 0;
-        markdown_core_parser_lookahead_end(&lookahead);
+    bool undecided;
+    const bool boundary = S_followed_by_boundary(parser, parent, &undecided);
+    if (parser->error) {
+        return false;
     }
-    if (!followed_by_boundary || parser->error || !S_attach_block_identifier(parser, owner, &candidate)) {
+    if (undecided) {
+        const int words[MARKDOWN_CORE_CANDIDATE_WORDS] = {0};
+        markdown_core_parser_request_candidate(parser, self, parent, MARKDOWN_CORE_NODE_PARAGRAPH, words, true);
+        return true;
+    }
+    if (!boundary || !S_attach_block_identifier(parser, owner, &candidate)) {
         return false;
     }
     markdown_core_block_set_end_to_current_line(parser, owner);
     return true;
+}
+
+/* THE FEED of the identifier line's candidate (element.h): the first line
+ * after it, or the blank lines before one, decides its boundary. The text
+ * ending after the identifier line is a boundary, so the request says the
+ * call could claim there. */
+markdown_core_candidate_step markdown_core_block_feed_identifier_line(const markdown_core_element_instance *self,
+                                                                      markdown_core_parser *parser, int *words,
+                                                                      const markdown_core_chunk *input, int first,
+                                                                      int indent, int blanks, bool unfinished,
+                                                                      bool *ends) {
+    (void)self;
+    (void)parser;
+    (void)words;
+    (void)input;
+    (void)first;
+    (void)indent;
+    (void)blanks;
+    (void)unfinished;
+    (void)ends;
+    return MARKDOWN_CORE_CANDIDATE_ENDS;
+}
+
+/* The call decided as it would read now (element.h): its line and the
+ * pending block it names, which nothing after the call writes, held when
+ * it asked, so what decides is the boundary after its line. */
+markdown_core_candidate_decision markdown_core_block_decide_identifier_line(const markdown_core_element_instance *self,
+                                                                            markdown_core_parser *parser,
+                                                                            const int *words) {
+    (void)self;
+    (void)words;
+    markdown_core_chunk line;
+    markdown_core_node *container;
+    if (!markdown_core_parser_candidate_start(parser, &line, &container)) {
+        return MARKDOWN_CORE_CANDIDATE_REJECT;
+    }
+    bool undecided;
+    const bool boundary = S_followed_by_boundary(parser, container, &undecided);
+    markdown_core_parser_candidate_end(parser);
+    return undecided  ? MARKDOWN_CORE_CANDIDATE_WAIT
+           : boundary ? MARKDOWN_CORE_CANDIDATE_ACCEPT
+                      : MARKDOWN_CORE_CANDIDATE_REJECT;
 }

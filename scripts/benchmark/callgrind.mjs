@@ -194,6 +194,19 @@ export function foldNames(profile, rename) {
     return { ...profile, self, edges };
 }
 
+/* GCC clones a function when it specializes it; the clone carries the work but
+ * not the plain name a stage boundary is written as. */
+export const CLONE_SUFFIX = /(\.(constprop|isra|part|cold|lto_priv|localalias)\.?\d*)+$/u;
+
+/** The profile with every clone folded into its function, calling contexts kept. */
+export function foldClones(profile) {
+    return foldNames(profile, (name) => {
+        const context = name.indexOf("'");
+        if (context < 0) return name.replace(CLONE_SUFFIX, "");
+        return name.slice(0, context).replace(CLONE_SUFFIX, "") + name.slice(context);
+    });
+}
+
 /**
  * A function name without its calling context.
  *
@@ -280,6 +293,23 @@ export function stageEntries(profile, boundaries) {
         return callers;
     });
     return entries.every((callers) => callers.size === 1) ? entries.map((callers) => [...callers][0]) : null;
+}
+
+/**
+ * The calls that enter each of `boundaries` from outside every stage, in their
+ * order: the entry stageEntries finds and its edges into the boundary. Null
+ * unless each boundary is entered from exactly one function.
+ */
+export function stageCalls(profile, boundaries) {
+    const entries = stageEntries(profile, boundaries);
+    return (
+        entries &&
+        boundaries.map((callee, index) => ({
+            caller: entries[index],
+            callee,
+            edges: edgesBetween(profile, entries[index], callee)
+        }))
+    );
 }
 
 /** Every recorded call into `callee`, whatever the caller. */

@@ -20,6 +20,14 @@ static int continue_paragraph(const markdown_core_element_instance *self, markdo
                               unsigned char *data, int length, markdown_core_node *container) {
     return !parser->blank;
 }
+/* The paragraph reads whether the line is blank: its first non-space byte. */
+static bufsize_t continue_reach(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                                const markdown_core_node *node, const markdown_core_chunk *input) {
+    (void)self;
+    (void)node;
+    (void)input;
+    return parser->first_nonspace;
+}
 static bool accepts_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
                          markdown_core_node *node) {
     (void)self;
@@ -40,7 +48,7 @@ static markdown_core_node *open_text(const markdown_core_element_instance *self,
     if (!container) {
         return NULL;
     }
-    if (markdown_core_block_attach_identifier_line(self->state, parser, container, input) || parser->error) {
+    if (markdown_core_block_attach_identifier_line(self, parser, container, input) || parser->error) {
         return NULL;
     }
     container = markdown_core_parser_add_child_validated(parser, container, MARKDOWN_CORE_NODE_PARAGRAPH,
@@ -58,9 +66,12 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
 
     .name = "paragraph",
     .last_block_matches = continue_paragraph,
+    .continue_reach = continue_reach,
     .content_mode = MARKDOWN_CORE_CONTENT_PROSE,
     .inline_content = true,
     .paragraph = true,
     .close_block = close_paragraph,
     .open_text_block = open_text,
+    .feed_candidate = markdown_core_block_feed_identifier_line,
+    .decide_candidate = markdown_core_block_decide_identifier_line,
 };

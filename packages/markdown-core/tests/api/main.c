@@ -2609,15 +2609,26 @@ static void node_slots_come_from_slabs_and_go_back_to_the_pool(test_batch_runner
     }
     INT_EQ(runner, payload_allocations, allocations, "reusing released slots makes no allocator call");
 
-    /* A record too large for the slot is owned apart from it and released
-     * with the node, under the same rule used by kind conversion. */
-    markdown_core_node *large = markdown_core_node_pool_new(&pool, MARKDOWN_CORE_NODE_METADATA, NULL);
+    /* A record too large for the slot is storage of its size the node owns,
+     * cut from the slabs beside the nodes and given back to the pool with
+     * the node, under the rule copies and kind conversion use too. A pool of
+     * its own keeps the slabs above holding nodes alone. */
+    markdown_core_node_pool records = {0};
+    allocations = payload_allocations;
+    markdown_core_node *large = markdown_core_node_pool_new(&records, MARKDOWN_CORE_NODE_METADATA, NULL);
     OK(runner, large && large->node_data_allocation && large->as.data == large->node_data_allocation,
        "a record that does not fit the slot is owned through node_data_allocation");
-    INT_EQ(runner, payload_allocations, allocations + 1, "the out-of-slot record is one allocation");
+    INT_EQ(runner, payload_allocations, allocations + 1, "the node and its out-of-slot record are cut from one slab");
+    void *record = large ? large->node_data_allocation : NULL;
     size_t releases = payload_releases;
-    markdown_core_node_pool_release(&pool, large);
-    INT_EQ(runner, payload_releases, releases + 1, "releasing it frees the record and returns the slot to the pool");
+    markdown_core_node_pool_release(&records, large);
+    large = markdown_core_node_pool_new(&records, MARKDOWN_CORE_NODE_METADATA, NULL);
+    OK(runner, large && large->node_data_allocation == record, "the record given back is the next one of its size");
+    INT_EQ(runner, payload_allocations, allocations + 1, "taking them again makes no allocator call");
+    INT_EQ(runner, payload_releases, releases, "giving them back frees nothing");
+    markdown_core_node_pool_dispose(&records);
+    markdown_core_node_free(large);
+    INT_EQ(runner, payload_releases, releases + 1, "the slab is freed with its last node and record");
 
     /* Refusing the slab refuses the node and leaves the pool usable. */
     while (count < LIMIT) {
@@ -2689,7 +2700,7 @@ static void node_reuse_initializes_the_active_record(test_batch_runner *runner) 
            !markdown_core_scaffold_parent(node) && !markdown_core_scaffold_prev(node) &&
                !markdown_core_scaffold_next(node) && !markdown_core_scaffold_first(node) &&
                !markdown_core_scaffold_last(node) && !node->children && !node->child_count && !node->id &&
-               !node->where.place.start && !node->where.place.end && !node->flags && !node->element &&
+               !node->place.start && !node->place.end && !node->flags && !node->element &&
                node->content.ptr == markdown_core_strbuf__initbuf && !node->content.size && !node->content.asize &&
                !node->content.oom,
            "all node state is initialized independently of its former kind");
@@ -3207,6 +3218,131 @@ static void registry_records_are_carved_from_its_blocks(test_batch_runner *runne
     payload_probe_disarm();
 }
 
+/* Two byte strings in byte order, the shorter first on a common prefix,
+ * written apart from the index's own order. */
+static int key_bytes_order(const char *a, size_t a_size, const char *b, size_t b_size) {
+    const size_t common = a_size < b_size ? a_size : b_size;
+    const int order = common ? memcmp(a, b, common) : 0;
+    return order ? order : (a_size > b_size) - (a_size < b_size);
+}
+
+static int key_model_order(const void *a, const void *b) {
+    const char *x = *(const char *const *)a, *y = *(const char *const *)b;
+    return key_bytes_order(x, strlen(x), y, strlen(y));
+}
+
+static markdown_core_key_entry key_of(const char *key) {
+    const bufsize_t size = (bufsize_t)strlen(key);
+    const unsigned char *bytes = (const unsigned char *)key;
+    return (markdown_core_key_entry){markdown_core_key_head(bytes, size), bytes, size, 0, NULL};
+}
+
+/* THE ORDERED INDEX AGREES WITH A SORTED MODEL whichever order the keys
+ * arrive in -- rising, falling or scattered, through splits at every level:
+ * one entry per key, each key's entry and rank, each rank's entry, a walk
+ * from any key, a missing key's rank. Keys share heads, so the bytes past the
+ * eighth and the lengths decide among them too. An insertion whose storage
+ * cannot be had leaves the tree as it was, and the free releases every
+ * node. */
+static void key_tree_matches_a_sorted_model(test_batch_runner *runner) {
+    enum { COUNT = 3000, ORDERS = 3 };
+    static char keys[COUNT][32];
+    static const char *sorted[COUNT];
+    for (size_t i = 0; i < COUNT; i++) {
+        if (i % 3 == 0) {
+            snprintf(keys[i], sizeof(keys[i]), "%zu", i);
+        } else if (i % 3 == 1) {
+            snprintf(keys[i], sizeof(keys[i]), "headings/%zu", i * 7);
+        } else {
+            snprintf(keys[i], sizeof(keys[i]), "headings/%zu/%zu", i, i % 11);
+        }
+        sorted[i] = keys[i];
+    }
+    qsort(sorted, COUNT, sizeof(*sorted), key_model_order);
+    payload_probe_arm();
+    for (size_t order = 0; order < ORDERS; order++) {
+        markdown_core_key_tree tree = {0};
+        bool ok = true;
+        for (size_t step = 0; step < COUNT && ok; step++) {
+            const size_t i = order == 0 ? step : order == 1 ? COUNT - 1 - step : step * 1999 % COUNT;
+            const markdown_core_key_entry key = key_of(keys[i]);
+            bool made = false;
+            markdown_core_key_entry *entry = markdown_core_key_tree_entry(&tree, &key, &made);
+            ok = entry && made && entry->key == key.key;
+            if (ok) {
+                entry->value = keys[i];
+                entry = markdown_core_key_tree_entry(&tree, &key, &made);
+                ok = entry && !made && entry->value == keys[i];
+            }
+        }
+        OK(runner, ok && tree.count == COUNT, "order %zu: every key has one entry", order);
+        bool agrees = true;
+        for (size_t rank = 0; rank < COUNT && agrees; rank++) {
+            const markdown_core_key_entry key = key_of(sorted[rank]);
+            size_t found_rank = SIZE_MAX;
+            const markdown_core_key_entry *found = markdown_core_key_tree_find(&tree, &key, &found_rank);
+            agrees = found && found->value == sorted[rank] && found_rank == rank &&
+                     markdown_core_key_tree_at(&tree, rank)->value == sorted[rank];
+            char missing[40];
+            snprintf(missing, sizeof(missing), "%s~", sorted[rank]);
+            const markdown_core_key_entry absent = key_of(missing);
+            agrees = agrees && !markdown_core_key_tree_find(&tree, &absent, &found_rank);
+            const size_t expected = rank + 1 < COUNT && key_model_order(&sorted[rank + 1], &(const char *){missing}) < 0
+                                        ? SIZE_MAX
+                                        : rank + 1;
+            agrees = agrees && (expected == SIZE_MAX || found_rank == expected);
+        }
+        OK(runner, agrees, "order %zu: each key's entry and rank, and each rank's entry, agree", order);
+        bool walks = true;
+        for (size_t from = 0; from < COUNT && walks; from += 97) {
+            const markdown_core_key_entry key = key_of(sorted[from]);
+            markdown_core_key_tree_cursor cursor;
+            markdown_core_key_tree_seek(&tree, &key, &cursor);
+            size_t at = from;
+            for (const markdown_core_key_entry *entry; (entry = markdown_core_key_tree_next(&cursor)); at++) {
+                walks = walks && at < COUNT && entry->value == sorted[at];
+            }
+            walks = walks && at == COUNT;
+        }
+        OK(runner, walks, "order %zu: a walk from any key visits the rest in order", order);
+        /* A key past every other, which splits the rightmost node at each
+         * level that is full, refused at each allocation it makes. */
+        bool kept = true;
+        for (size_t fail = 1; fail <= 4 && kept; fail++) {
+            const markdown_core_key_entry key = key_of("~");
+            payload_fail_at = payload_allocations + fail;
+            bool made = false;
+            const markdown_core_key_entry *entry = markdown_core_key_tree_entry(&tree, &key, &made);
+            payload_fail_at = 0;
+            if (entry) {
+                kept = kept && made && tree.count == COUNT + 1;
+                break;
+            }
+            kept = tree.count == COUNT && markdown_core_key_tree_at(&tree, COUNT - 1)->value == sorted[COUNT - 1];
+        }
+        OK(runner, kept, "order %zu: a refused insertion leaves the tree as it was", order);
+        markdown_core_key_tree_free(&tree);
+    }
+    markdown_core_key_tree numbers = {0};
+    bool ok = true;
+    for (uint32_t i = 0; i < COUNT && ok; i++) {
+        const markdown_core_key_entry key = markdown_core_key_number(COUNT - i);
+        bool made = false;
+        markdown_core_key_entry *entry = markdown_core_key_tree_entry(&numbers, &key, &made);
+        ok = entry && made;
+        if (ok) {
+            entry->extra = COUNT - i;
+        }
+    }
+    for (uint32_t rank = 0; rank < COUNT && ok; rank++) {
+        ok = markdown_core_key_tree_at(&numbers, rank)->extra == rank + 1;
+    }
+    OK(runner, ok, "numbers are keys in numeric order");
+    markdown_core_key_tree_free(&numbers);
+    INT_EQ(runner, payload_live, 0, "the trees' nodes are all released");
+    payload_probe_disarm();
+}
+
 /* THE KINDS ARE SEPARATE LOOKUP SPACES, and a key's records answer for the
  * earliest of them: a label declared as a reference is not a footnote, and
  * a key declared twice starts where its earlier declaration starts. */
@@ -3219,7 +3355,8 @@ static void registry_kinds_and_starts(test_batch_runner *runner) {
        "a reference is declared");
     OK(runner, !markdown_core_registry_find(&registry, MARKDOWN_CORE_REGISTRY_FOOTNOTE, x, 1, &failed),
        "a reference label is no footnote");
-    OK(runner, !markdown_core_registry_find(&registry, MARKDOWN_CORE_REGISTRY_ANCHOR, x, 1, &failed), "nor an anchor");
+    OK(runner, !markdown_core_registry_find(&registry, MARKDOWN_CORE_REGISTRY_SPECIMEN, x, 1, &failed),
+       "nor a specimen");
     const markdown_core_registry_record *record =
         markdown_core_registry_find(&registry, MARKDOWN_CORE_REGISTRY_REFERENCE, x, 1, &failed);
     OK(runner,
@@ -3247,21 +3384,43 @@ static void registry_kinds_and_starts(test_batch_runner *runner) {
 
 /* ROLLBACK RESTORES THE LOG AND THE INDEX EXACTLY. A model -- the records as
  * a plain array, every answer computed by scanning it -- is driven through
- * the same random declarations, marks and rollbacks, and after a random
- * third of the steps every key of a random set of the kinds is compared:
- * whether it is declared, its latest record's start, and its earliest start.
- * The index takes a kind's records only when a lookup of that kind asks, so
- * the steps between two comparisons, and the kinds a comparison skips, leave
- * records it never took, and the rollbacks pop records it took and records
- * it did not. Labels come from a small set, so keys are declared
- * again and again, and from a growing one, so the index grows and removals
- * cross the slots growth moved. A rollback to the first mark releases every
- * block the records were carved from. */
+ * the same random declarations, withdrawals, marks and rollbacks, and after
+ * a random third of the steps every key of a random set of the kinds is
+ * compared: whether it is declared, its latest record, its earliest start
+ * and how many of its declarations stand. The index takes a kind's records
+ * only when a lookup or a withdrawal of that kind asks, so the steps between
+ * two comparisons, and the kinds a comparison skips, leave records it never
+ * took, and the rollbacks pop records it took and records it did not. Labels come from a small set, so keys are
+ * declared again and again, and from a growing one, so the index grows and removals cross the slots growth moved. A
+ * rollback to the first mark releases every block the records were carved from. */
 typedef struct {
     markdown_core_registry_kind kind;
     unsigned label;
     uint32_t start;
+    bool withdraws;
 } registry_model_record;
+
+/* How many declarations of the key stand among the model's first `count`
+ * records. */
+static uint32_t registry_model_live(const registry_model_record *model, size_t count, markdown_core_registry_kind kind,
+                                    unsigned label) {
+    uint32_t live = 0;
+    for (size_t i = 0; i < count; i++) {
+        if (model[i].kind == kind && model[i].label == label) {
+            live = model[i].withdraws ? live - 1 : live + 1;
+        }
+    }
+    return live;
+}
+
+/* The model's answer for one key: its latest record, its earliest standing
+ * start and how many of its declarations stand, taken for every label of a
+ * kind in one pass over the records. */
+typedef struct {
+    const registry_model_record *latest;
+    uint32_t earliest;
+    uint32_t live;
+} model_answer;
 
 static void registry_label_text(unsigned label, char *text, size_t size) { snprintf(text, size, "k%u", label); }
 
@@ -3271,12 +3430,13 @@ static void registry_rollback_matches_a_model(test_batch_runner *runner) {
     markdown_core_registry registry;
     markdown_core_registry_init(&registry);
     registry_model_record *model = malloc(STEPS * sizeof(*model));
+    model_answer *answers = malloc((SHARED + STEPS) * sizeof(*answers));
     size_t model_count = 0, fresh = SHARED, mark_count = 0;
     markdown_core_registry_mark marks[MARKS];
     size_t model_marks[MARKS];
     uint64_t random = UINT64_C(0x9e3779b97f4a7c15);
     bool agrees = true;
-    size_t untaken = 0, taken = 0;
+    size_t untaken = 0, taken = 0, withdrawals = 0;
     for (size_t step = 0; step < STEPS && agrees; step++) {
         random ^= random << 13;
         random ^= random >> 7;
@@ -3298,11 +3458,19 @@ static void registry_rollback_matches_a_model(test_batch_runner *runner) {
         } else {
             registry_model_record record = {
                 (markdown_core_registry_kind)(MARKDOWN_CORE_REGISTRY_REFERENCE + (random >> 40) % KINDS),
-                choice < 70 ? (unsigned)((random >> 20) % SHARED) : (unsigned)fresh++, (uint32_t)(random >> 44)};
+                choice < 70 ? (unsigned)((random >> 20) % SHARED) : (unsigned)fresh++, (uint32_t)(random >> 44), false};
+            /* A declared key is withdrawn about a third of the times a
+             * shared label comes up, so declarations stand and fall again
+             * and again. */
+            record.withdraws = choice < 30 && registry_model_live(model, model_count, record.kind, record.label) > 0;
             char text[16];
             registry_label_text(record.label, text, sizeof(text));
-            agrees = markdown_core_registry_declare(&registry, record.kind, (const unsigned char *)text,
-                                                    (bufsize_t)strlen(text), record.start);
+            agrees = record.withdraws
+                         ? markdown_core_registry_withdraw(&registry, record.kind, (const unsigned char *)text,
+                                                           (bufsize_t)strlen(text), record.start)
+                         : markdown_core_registry_declare(&registry, record.kind, (const unsigned char *)text,
+                                                          (bufsize_t)strlen(text), record.start);
+            withdrawals += record.withdraws;
             model[model_count++] = record;
         }
         agrees = agrees && registry.count == model_count;
@@ -3314,16 +3482,26 @@ static void registry_rollback_matches_a_model(test_batch_runner *runner) {
             if (!(compared & (1u << kind))) {
                 continue;
             }
-            for (unsigned label = 0; label < fresh && agrees; label++) {
-                const registry_model_record *latest = NULL;
-                uint32_t earliest = UINT32_MAX;
-                for (size_t i = 0; i < model_count; i++) {
-                    if (model[i].kind == (markdown_core_registry_kind)(MARKDOWN_CORE_REGISTRY_REFERENCE + kind) &&
-                        model[i].label == label) {
-                        latest = &model[i];
-                        earliest = model[i].start < earliest ? model[i].start : earliest;
+            const markdown_core_registry_kind compared_kind =
+                (markdown_core_registry_kind)(MARKDOWN_CORE_REGISTRY_REFERENCE + kind);
+            for (unsigned label = 0; label < fresh; label++) {
+                answers[label] = (model_answer){NULL, UINT32_MAX, 0};
+            }
+            for (size_t i = 0; i < model_count; i++) {
+                if (model[i].kind == compared_kind) {
+                    model_answer *answer = &answers[model[i].label];
+                    answer->latest = &model[i];
+                    if (model[i].withdraws) {
+                        answer->live--;
+                    } else {
+                        answer->live++;
+                        answer->earliest = model[i].start < answer->earliest ? model[i].start : answer->earliest;
                     }
                 }
+            }
+            for (unsigned label = 0; label < fresh && agrees; label++) {
+                const registry_model_record *latest = answers[label].latest;
+                const uint32_t earliest = answers[label].earliest, live = answers[label].live;
                 /* Only a label some step declared can answer; the rest are
                  * sampled every few steps, which is enough to see a key
                  * left behind. */
@@ -3334,17 +3512,18 @@ static void registry_rollback_matches_a_model(test_batch_runner *runner) {
                 registry_label_text(label, text, sizeof(text));
                 bool failed = false;
                 const markdown_core_registry_record *found = markdown_core_registry_find(
-                    &registry, (markdown_core_registry_kind)(MARKDOWN_CORE_REGISTRY_REFERENCE + kind),
-                    (const unsigned char *)text, (bufsize_t)strlen(text), &failed);
-                agrees = !failed && (found != NULL) == (latest != NULL) &&
-                         (!found || (found->start == latest->start && found->earliest == earliest));
+                    &registry, compared_kind, (const unsigned char *)text, (bufsize_t)strlen(text), &failed);
+                agrees = !failed && (found != NULL) == (live > 0) &&
+                         (!found || (found->start == latest->start && found->withdraws == latest->withdraws &&
+                                     found->earliest == earliest && found->live == live));
                 if (!agrees) {
                     fprintf(stderr, "registry diverges at step %zu on kind %u label %u\n", step, kind, label);
                 }
             }
         }
     }
-    OK(runner, agrees, "the registry answers as the model after declarations, marks and rollbacks");
+    OK(runner, agrees, "the registry answers as the model after declarations, withdrawals, marks and rollbacks");
+    OK(runner, withdrawals, "declarations were withdrawn (%zu)", withdrawals);
     OK(runner, untaken && taken, "rollbacks popped records the index took and records it never took (%zu, %zu)", taken,
        untaken);
     if (mark_count == 0 || agrees) {
@@ -3357,6 +3536,7 @@ static void registry_rollback_matches_a_model(test_batch_runner *runner) {
     INT_EQ(runner, payload_live, 0, "the registry releases everything it holds");
     payload_probe_disarm();
     free(model);
+    free(answers);
 }
 
 /* Run from the instance's own beginning -- a document owner's lifecycle --
@@ -3370,9 +3550,9 @@ static void inspect_lazy_block_content(const markdown_core_element_instance *sel
                                              MARKDOWN_CORE_NODE_PARAGRAPH, MARKDOWN_CORE_NODE_DEFINITION_LIST};
     /* Blocks open and take content on the line the driver visits; no input
      * has begun, so stand on an empty line at the start of the source. */
-    parser->input_lines[0] = (markdown_core_input_line){0};
-    parser->input_first_line = parser->line_number;
-    parser->input_line_count = 1;
+    parser->input.lines[0] = (markdown_core_input_line){0};
+    parser->input.first_line = parser->line_number;
+    parser->input.line_count = 1;
     for (size_t i = 0; i < sizeof(kinds) / sizeof(*kinds); i++) {
         size_t before = payload_probe_snapshot().allocations;
         markdown_core_node *node = markdown_core_parser_add_child_validated(parser, parser->root, kinds[i], 1);
@@ -3424,13 +3604,13 @@ static void inspect_lazy_block_content(const markdown_core_element_instance *sel
             parser->column = 0;
             parser->partially_consumed_tab = false;
         }
-        /* The probe block leaves the builder stack as it is released: the
-         * root is the deepest open block again. */
+        /* The probe block leaves the builder stack and the root's children
+         * as it is released: the root is the deepest open block again. */
         parser->current = parser->root;
-        markdown_core_scaffold_of(parser->root)->last = NULL;
+        markdown_core_node_array_pop(parser->root->children, &parser->root->child_count);
         markdown_core_parser_release_node(parser, node);
     }
-    parser->input_line_count = 0;
+    parser->input.line_count = 0;
 }
 
 static bool begin_with_lazy_block_inspection(markdown_core_dialect_builder *builder, void *context) {
@@ -4703,7 +4883,7 @@ static void universal_values(test_batch_runner *runner) {
     markdown_core_document *document = facade_parse((const uint8_t *)source, strlen(source));
     markdown_core_node *root = document->root;
     markdown_core_node *metadata = published_node_new(MARKDOWN_CORE_NODE_METADATA, 4);
-    metadata->where.extent = (markdown_core_extent){0, 4};
+    metadata->extent = (markdown_core_extent){0, 4};
     root->as.document->metadata = metadata;
     markdown_core_metadata_value *values[] = {&metadata->as.metadata->name,    &metadata->as.metadata->time,
                                               &metadata->as.metadata->date,    &metadata->as.metadata->title,
@@ -4839,13 +5019,13 @@ static void record_work(const markdown_core_element_instance *self, markdown_cor
     work->inline_hooks = parser->inline_hook_work;
     work->properties_lines = properties->line_work;
     work->physical_line_bytes = parser->input_line_work;
-    work->physical_lines = parser->input_line_count;
-    work->physical_capacity = parser->input_line_capacity;
-    work->physical_facts = parser->input_fact_count;
-    work->physical_fact_capacity = parser->input_fact_capacity;
+    work->physical_lines = parser->input.line_count;
+    work->physical_capacity = parser->input.line_capacity;
+    work->physical_facts = parser->input.fact_count;
+    work->physical_fact_capacity = parser->input.fact_capacity;
     work->normalized_lines = 0;
-    for (size_t i = 0; i < parser->input_fact_count; i++) {
-        work->normalized_lines += parser->input_facts[i].normalized != NULL;
+    for (size_t i = 0; i < parser->input.fact_count; i++) {
+        work->normalized_lines += parser->input.facts[i].normalized != NULL;
     }
     work->metadata_key_bytes = properties->key_work;
     work->metadata_value_bytes = properties->decoded_bytes;
@@ -5444,7 +5624,9 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
     const char *rows[] = {"| a | b |\n", "| a \\| b | c |\n", "\n"};
     for (size_t i = 0; i < sizeof(rows) / sizeof(*rows); i++) {
         markdown_core_parser parser = {0};
-        markdown_core_node table = {.kind = MARKDOWN_CORE_NODE_TABLE};
+        /* A pipe table: one with no dash runs. */
+        markdown_core_table value = {0};
+        markdown_core_node table = {.kind = MARKDOWN_CORE_NODE_TABLE, .opaque = &value};
         text_allocation_calls = 0;
         int matched = MARKDOWN_CORE_ELEMENT_TABLE.last_block_matches(&table_instance, &parser, (unsigned char *)rows[i],
                                                                      (int)strlen(rows[i]), &table);
@@ -5975,6 +6157,73 @@ static void comment_block_linear_work(test_batch_runner *runner) {
     }
 }
 
+/* A transaction's line facts outlive the text they were read from: a
+ * session's text moves when it grows, and the next commit reads the facts an
+ * earlier one recorded. Nested candidates over a blank run are the shape
+ * whose later scans step over the run the first scan recorded. A session's
+ * first commit reads every line but the last from a copy of the text that is
+ * then overwritten, and the finalize's commit reads the whole text from
+ * another copy; the document is the one parsed whole. */
+static void line_facts_survive_moved_text(test_batch_runner *runner) {
+    markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+    const size_t depth = 16;
+    for (size_t i = 1; i <= depth; i++) {
+        for (size_t j = 1; j < i; j++) {
+            markdown_core_strbuf_puts(&source, "  ");
+        }
+        markdown_core_strbuf_puts(&source, "- %%\n");
+    }
+    for (size_t i = 0; i < depth; i++) {
+        for (size_t j = 0; j < depth; j++) {
+            markdown_core_strbuf_puts(&source, "\n");
+        }
+        for (size_t j = 0; j < depth; j++) {
+            markdown_core_strbuf_puts(&source, "  ");
+        }
+        markdown_core_strbuf_puts(&source, "x\n");
+    }
+    const size_t size = (size_t)source.size;
+    size_t last_line = size - 1;
+    while (source.ptr[last_line - 1] != '\n') {
+        last_line--;
+    }
+    char *before = malloc(size), *after = malloc(size);
+    markdown_core_parser *parser = markdown_core_core_parser(NULL, NULL);
+    markdown_core_node_pool pool = {0};
+    markdown_core_revision revision = {.pool = &pool};
+    markdown_core_node *moved = NULL;
+    if (before && after && parser) {
+        memcpy(before, source.ptr, size);
+        markdown_core_parser_start(parser, &revision);
+        if (markdown_core_parser_stream(parser)) {
+            markdown_core_parser_commit(parser, before, last_line, false);
+            memcpy(after, source.ptr, size);
+            memset(before, 'x', size);
+            markdown_core_parser_commit(parser, after, size, true);
+        }
+        moved = markdown_core_parser_finalize(parser);
+    }
+    markdown_core_node *whole = markdown_core_parse_document((const char *)source.ptr, size);
+    OK(runner, moved && whole, "both parses succeed");
+    if (moved && whole) {
+        INT_EQ(runner, count_kind(moved, MARKDOWN_CORE_NODE_PARAGRAPH), count_kind(whole, MARKDOWN_CORE_NODE_PARAGRAPH),
+               "the commits after the text moved read the paragraphs a whole parse reads");
+        INT_EQ(runner, count_kind(moved, MARKDOWN_CORE_NODE_LIST_ITEM), count_kind(whole, MARKDOWN_CORE_NODE_LIST_ITEM),
+               "the commits after the text moved read the items a whole parse reads");
+    }
+    if (moved) {
+        markdown_core_node_pool_release(&pool, moved);
+    }
+    markdown_core_node_free(whole);
+    if (parser) {
+        markdown_core_parser_destroy(parser);
+    }
+    markdown_core_node_pool_dispose(&pool);
+    free(before);
+    free(after);
+    markdown_core_strbuf_free(&source);
+}
+
 /* O3: the `%%` forms produce the `Comment` kind M0 added, on the engine's own
  * accessors, with the type strings and positions the HTML forms have. */
 static void percent_comment_nodes(test_batch_runner *runner) {
@@ -6394,7 +6643,7 @@ static void source_entries_order_by_the_key_bytes_that_differ(test_batch_runner 
                 key = (uint32_t)((i * 31) % 5);
                 break;
             }
-            nodes[i].where.place.start = key;
+            nodes[i].place.start = key;
             entries[i] = (source_entry){&nodes[i], i};
         }
         markdown_core_source_order workspace = {0};
@@ -6590,8 +6839,7 @@ static void probe_placements(const markdown_core_element_instance *self, markdow
                 markdown_core_inline_state_place(inline_state, &placed, from, to);
                 markdown_core_parser_content_span(parser, &owner->content_map, from, to, &span, NULL);
                 placements_checked++;
-                if (placed.where.place.start != (uint32_t)span.start ||
-                    (to >= 0 && placed.where.place.end != (uint32_t)span.end)) {
+                if (placed.place.start != (uint32_t)span.start || (to >= 0 && placed.place.end != (uint32_t)span.end)) {
                     placement_disagreements++;
                 }
             }
@@ -7105,7 +7353,7 @@ static markdown_core_node *observe_definition_before_anchor(const markdown_core_
     (void)self;
     (void)indented;
     if (length - parser->first_nonspace >= 6 && memcmp(input + parser->first_nonspace, "#list#", 6) == 0) {
-        markdown_core_node *previous = markdown_core_parser_last_child(parser, parent);
+        markdown_core_node *previous = markdown_core_parser_last_child(parent);
         *(bool *)parser->context = previous && previous->kind == MARKDOWN_CORE_NODE_REFERENCE;
     }
     return NULL;
@@ -8413,31 +8661,31 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
             memset(bytes, 'a', sizeof(bytes));
             bytes[position] = (unsigned char)value;
             bytes[sizeof(bytes) - 1] = '\n';
-            markdown_core_parser input = {0};
-            input.input_source = bytes;
-            input.input_length = sizeof(bytes);
-            input.input_first_line = 1;
-            markdown_core_input_line *first = markdown_core_parser_source_line(&input, 1);
+            markdown_core_parser reader = {0};
+            reader.input.source = bytes;
+            reader.input.size = sizeof(bytes);
+            reader.input.first_line = 1;
+            markdown_core_input_line *first = markdown_core_parser_source_line(&reader, 1);
             bool split = value == '\r' || value == '\n';
             OK(runner, first && first->start == 0 && first->end == (split ? position : sizeof(bytes) - 1),
                "only CR and LF end a physical line: byte %u at %zu", value, position);
-            OK(runner, first && ((first->facts && input.input_facts[first->facts - 1].nul_count == 1) == (value == 0)),
+            OK(runner, first && ((first->facts && reader.input.facts[first->facts - 1].nul_count == 1) == (value == 0)),
                "only NUL requests normalization: byte %u", value);
-            markdown_core_input_line *second = markdown_core_parser_source_line(&input, 2);
+            markdown_core_input_line *second = markdown_core_parser_source_line(&reader, 2);
             bool remaining = split && !(value == '\r' && position == sizeof(bytes) - 2);
             OK(runner,
                remaining ? second && second->start == position + 1 && second->end == sizeof(bytes) - 1 : !second,
                "content after a word or tail boundary belongs to exactly one line: byte %u at %zu", value, position);
-            INT_EQ(runner, input.input_line_work, sizeof(bytes), "span search advances the frontier exactly once");
-            markdown_core_free(input.input_facts);
-            markdown_core_free(input.input_lines);
+            INT_EQ(runner, reader.input_line_work, sizeof(bytes), "span search advances the frontier exactly once");
+            markdown_core_free(reader.input.facts);
+            markdown_core_free(reader.input.lines);
         }
     }
     static const unsigned char source[] = "a\0b\r\nc\rd\nlast";
     markdown_core_parser parser = {0};
-    parser.input_source = source;
-    parser.input_length = sizeof(source) - 1;
-    parser.input_first_line = 7;
+    parser.input.source = source;
+    parser.input.size = sizeof(source) - 1;
+    parser.input.first_line = 7;
     static const size_t starts[] = {0, 5, 7, 9}, ends[] = {3, 6, 8, 13}, next[] = {5, 7, 9, 13};
     for (int pass = 0; pass < 3; pass++) {
         for (int i = 3; i >= 0; i--) {
@@ -8446,14 +8694,14 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
                line && line->start == starts[i] && line->end == ends[i] &&
                    markdown_core_input_line_next(&parser, line) == next[i],
                "physical line geometry is stable across lookahead and replay: %d/%d", pass, i);
-            OK(runner, line && (line->facts && parser.input_facts[line->facts - 1].nul_count != 0) == (i == 0),
+            OK(runner, line && (line->facts && parser.input.facts[line->facts - 1].nul_count != 0) == (i == 0),
                "NUL normalization is a line fact");
         }
         INT_EQ(runner, parser.input_line_work, sizeof(source) - 1, "replay never scans source geometry again");
     }
     OK(runner, !markdown_core_parser_source_line(&parser, 6) && !markdown_core_parser_source_line(&parser, 11),
        "the active input has an explicit line range");
-    INT_EQ(runner, parser.input_fact_count, 1, "only the NUL-bearing line needs optional geometry state");
+    INT_EQ(runner, parser.input.fact_count, 1, "only the NUL-bearing line needs optional geometry state");
     markdown_core_line_facts *first = markdown_core_parser_get_line_facts(&parser, 7);
     OK(runner, first != NULL, "a grammar query attaches facts to its physical line");
     if (first) {
@@ -8462,10 +8710,10 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
     markdown_core_line_facts *last = markdown_core_parser_get_line_facts(&parser, 10);
     OK(runner, last && !last->run_end && markdown_core_parser_get_line_facts(&parser, 7)->run_end == 10,
        "unrelated line queries preserve their own facts");
-    INT_EQ(runner, parser.input_fact_count, 2, "only queried lines own speculative facts");
+    INT_EQ(runner, parser.input.fact_count, 2, "only queried lines own speculative facts");
     INT_EQ(runner, parser.input_line_work, sizeof(source) - 1, "facts do not rediscover geometry");
-    markdown_core_free(parser.input_facts);
-    markdown_core_free(parser.input_lines);
+    markdown_core_free(parser.input.facts);
+    markdown_core_free(parser.input.lines);
 }
 
 static void short_line_storage_is_bounded(test_batch_runner *runner) {
@@ -8569,24 +8817,21 @@ static bool configure_error_observer(markdown_core_dialect_builder *builder, voi
            markdown_core_dialect_builder_attach(builder, &ERROR_OBSERVER);
 }
 /* The policy of the parse under test, from its setup context: the document
- * accepts one paragraph, the one its source opens with, and refuses every
- * paragraph after it. */
+ * refuses every table. */
 typedef struct {
-    size_t accepted, rejections;
+    size_t rejections;
 } lead_policy;
 static lead_policy *lead_policy_current;
 
-static int reject_additional_paragraph(const markdown_core_element *element, markdown_core_node *node,
-                                       markdown_core_node_type kind) {
+static int reject_table(const markdown_core_element *element, markdown_core_node *node, markdown_core_node_type kind) {
     (void)element;
-    if (kind == MARKDOWN_CORE_NODE_PARAGRAPH && lead_policy_current->accepted++) {
+    if (kind == MARKDOWN_CORE_NODE_TABLE) {
         lead_policy_current->rejections++;
         return 0;
     }
     return markdown_core_node_can_contain_builtin(node, kind);
 }
-static const markdown_core_element LEAD_POLICY = {.name = "lead-policy",
-                                                  .can_contain_func = reject_additional_paragraph};
+static const markdown_core_element LEAD_POLICY = {.name = "lead-policy", .can_contain_func = reject_table};
 static void begin_lead_policy(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     MARKDOWN_CORE_ELEMENT_DOCUMENT.init_document(self, parser);
     parser->root->element = &LEAD_POLICY;
@@ -8684,7 +8929,7 @@ static bool probe_table_transactions(const markdown_core_element_instance *self,
             markdown_core_parser_lookahead_begin(parser, context->container, MARKDOWN_CORE_NODE_TABLE, &lookahead);
         bool matched = begun && markdown_core_table_caption_probe(
                                     markdown_core_parser_instance(parser, &MARKDOWN_CORE_ELEMENT_TABLE), &lookahead,
-                                    context->input, context->first, context->indent);
+                                    context->input, context->first, context->indent, false);
         payload_probe_calls after = payload_probe_snapshot();
         OK(probe->runner, begun && !parser->error && matched == probe->matches,
            "cold and warm table transactions agree on recognition");
@@ -10109,6 +10354,39 @@ static void table_margin_is_shared_indentation(test_batch_runner *runner) {
     }
 }
 
+/* A SIMPLE TABLE'S MARGIN IS FIXED BY THE LINES IT OPENS WITH: its header,
+ * its dashes and its first row (owner, 2026-10-17). The table, its header
+ * and its first row begin at the margin those lines share; a later row
+ * indented less begins at its own text, which its first cell owns, and the
+ * rows before it keep their places. A later row indented further begins at
+ * the margin, its first cell at its text. */
+static void simple_table_margin_from_opening_lines(test_batch_runner *runner) {
+    static const char source[] = "  A    B\n  ---  ---\n  x    y\nc      d\n   z\n";
+    static const int rows[][6] = {
+        /* row start line, column; first cell start line, column, end line, column */
+        {1, 3, 1, 3, 1, 3},
+        {3, 3, 3, 3, 3, 3},
+        {4, 1, 4, 1, 4, 1},
+        {5, 3, 5, 4, 5, 4},
+    };
+    markdown_core_node *doc = parse(source), *table = first_of_kind(doc, MARKDOWN_CORE_NODE_TABLE);
+    OK(runner, table && START_LINE(table) == 1 && START_COLUMN(table) == 3 && END_LINE(table) == 5,
+       "the table begins at the margin of its opening lines");
+    for (size_t i = 0; table && i < sizeof(rows) / sizeof(rows[0]); i++) {
+        markdown_core_node *row = child_at(table, i), *cell = row ? child_at(row, 0) : NULL;
+        OK(runner,
+           row && cell && START_LINE(row) == rows[i][0] && START_COLUMN(row) == rows[i][1] &&
+               START_LINE(cell) == rows[i][2] && START_COLUMN(cell) == rows[i][3] && END_LINE(cell) == rows[i][4] &&
+               END_COLUMN(cell) == rows[i][5],
+           "row %zu begins at the margin or at its text left of it, as its first cell does", i);
+    }
+    markdown_core_node *last = table ? child_at(table, 2) : NULL, *second = last ? child_at(last, 1) : NULL;
+    OK(runner, second && START_LINE(second) == 4 && START_COLUMN(second) == 8,
+       "the row indented less keeps its later columns at the dash runs");
+    OK(runner, table && table_nodes_nest(table), "the table nests");
+    markdown_core_node_free(doc);
+}
+
 /* The row of `doc` that starts on `line`, as its cells and every node in
  * them: kind, literal, and scope, with lines counted from the row's. */
 static char *describe_row_on(markdown_core_node *doc, int line) {
@@ -10758,7 +11036,7 @@ static void table_nested_inputs(test_batch_runner *runner) {
 
 /* SESSIONS: a text past the capacity is ALLOCATION_FAILED before it is
  * read, an append takes its bytes as they are, and an append that leaves a
- * node's value alone leaves its object. */
+ * node's value alone leaves its id. */
 static void session_appends(test_batch_runner *runner) {
     static const char source[] = "one\n\ntwo \xf0\xa0\x80\x80\n";
     markdown_core_session *session = NULL;
@@ -10775,15 +11053,15 @@ static void session_appends(test_batch_runner *runner) {
         return;
     }
     document = markdown_core_session_document(session);
-    const markdown_core_node *first = facade_child(markdown_core_document_root(document), 0);
+    const uint64_t first = markdown_core_node_id(facade_child(markdown_core_document_root(document), 0));
     OK(runner,
        markdown_core_session_append(session, NULL, MARKDOWN_CORE_SOURCE_CAPACITY, &document) ==
            MARKDOWN_CORE_ALLOCATION_FAILED,
        "a text past the capacity is refused before it is read");
     OK(runner,
        markdown_core_session_append(session, (const uint8_t *)"s", 1, &document) == MARKDOWN_CORE_OK &&
-           facade_child(markdown_core_document_root(document), 0) == first,
-       "an append to the second paragraph keeps the first's object");
+           markdown_core_node_id(facade_child(markdown_core_document_root(document), 0)) == first,
+       "an append to the second paragraph keeps the first's id");
     OK(runner,
        markdown_core_session_append(session, (const uint8_t *)"\xe4\xb8", 2, &document) == MARKDOWN_CORE_OK &&
            markdown_core_session_text_size(session) == sizeof(source) + 2,
@@ -10806,11 +11084,978 @@ static void session_appends(test_batch_runner *runner) {
     OK(runner, facade_child(markdown_core_document_root(markdown_core_session_document(session)), 0) != NULL,
        "the final document stays readable");
     markdown_core_session_free(session);
+
+    /* A snapshot's lookup sees the definitions written before its root, and
+     * the final document's every one (plan 5.5, 5.10). */
+    static const char later[] = "[x]\n\n[x]: /u\n";
+    session = NULL;
+    OK(runner,
+       markdown_core_session_new((const uint8_t *)later, sizeof(later) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
+           MARKDOWN_CORE_OK,
+       "a session opens on a use before its definition");
+    if (!session) {
+        return;
+    }
+    const markdown_core_node *use =
+        facade_child(facade_child(markdown_core_document_root(markdown_core_session_document(session)), 0), 0);
+    OK(runner, use && markdown_core_node_get_kind(use) == MARKDOWN_CORE_KIND_TEXT,
+       "a snapshot leaves a use before its definition as text");
+    final = NULL;
+    OK(runner, markdown_core_session_finalize(session, &final) == MARKDOWN_CORE_OK, "the session finalizes");
+    use = final ? facade_child(facade_child(markdown_core_document_root(final), 0), 0) : NULL;
+    OK(runner, use && markdown_core_node_get_kind(use) == MARKDOWN_CORE_KIND_LINK,
+       "the final document resolves a use before its definition");
+    markdown_core_session_free(session);
 }
 
-/* The allocator-seam sweep (plan 8, gates 4.7): an append fails at every
- * allocation, reports ALLOCATION_FAILED, and the session frees everything it
- * holds. */
+/* The anchor `node` has, compared with `expected`. */
+static bool anchor_is(const markdown_core_node *node, const char *expected) {
+    markdown_core_optional_string anchor = node ? markdown_core_node_anchor(node) : (markdown_core_optional_string){0};
+    return anchor.has_value && anchor.value.length == strlen(expected) &&
+           memcmp(anchor.value.data, expected, anchor.value.length) == 0;
+}
+
+/* The first heading under the document's first block, or inside its first
+ * item. */
+static const markdown_core_node *first_heading(const markdown_core_document *document) {
+    const markdown_core_node *heading = facade_child(facade_child(markdown_core_document_root(document), 0), 0);
+    if (heading && markdown_core_node_get_kind(heading) == MARKDOWN_CORE_KIND_LIST_ITEM) {
+        heading = facade_child(heading, 0);
+    }
+    return heading;
+}
+
+/* A snapshot's headings take their anchors as a fresh parse's do: every
+ * explicit anchor of the text is reserved first, a later one included, and
+ * one of a block the text ends in too (docs/specs/dialect/anchors.md). */
+static void session_snapshot_anchors(test_batch_runner *runner) {
+    static const struct {
+        const char *source;
+        const char *message;
+    } cases[] = {
+        {":::note{#x}\n# x\n:::\n", "a heading inside a container avoids the container's anchor"},
+        {"- # x\n\n#x#\n", "a heading avoids an explicit anchor written after it"},
+        {"- # x\n\n:::note{#x}\nbody\n", "a heading avoids the anchor of a container the text ends in"},
+        {"- # x\n\n- a #x#\n", "a heading avoids the anchor an open item takes from its paragraph"},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        markdown_core_session *session = NULL;
+        if (markdown_core_session_new((const uint8_t *)cases[i].source, strlen(cases[i].source),
+                                      MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) != MARKDOWN_CORE_OK) {
+            OK(runner, 0, "a session opens on %s", cases[i].source);
+            continue;
+        }
+        OK(runner, anchor_is(first_heading(markdown_core_session_document(session)), "x-1"), "snapshot: %s",
+           cases[i].message);
+        const markdown_core_document *final = NULL;
+        OK(runner,
+           markdown_core_session_finalize(session, &final) == MARKDOWN_CORE_OK &&
+               anchor_is(first_heading(final), "x-1"),
+           "final: %s", cases[i].message);
+        markdown_core_session_free(session);
+    }
+}
+
+/* The canonical dump of `document` over `source`, or NULL. */
+static uint8_t *dump_of(const markdown_core_document *document, const char *source, size_t length,
+                        size_t *dump_length) {
+    uint8_t *dump = NULL;
+    if (!document ||
+        markdown_core_document_dump(document, markdown_core_document_root(document), (const uint8_t *)source, length,
+                                    &dump, dump_length) != MARKDOWN_CORE_OK) {
+        return NULL;
+    }
+    return dump;
+}
+
+/* Whether a session fed `source` in chunks of `chunk` bytes, or line by
+ * line when it is 0, finalizes to the dump of a fresh parse of it. */
+static bool finalizes_as_a_parse(const char *source, size_t chunk) {
+    const size_t length = strlen(source);
+    size_t expected_length = 0, actual_length = 0;
+    markdown_core_document *parsed = NULL;
+    uint8_t *expected = markdown_core_document_parse((const uint8_t *)source, length, &parsed) == MARKDOWN_CORE_OK
+                            ? dump_of(parsed, source, length, &expected_length)
+                            : NULL;
+    markdown_core_session *session = NULL;
+    bool appended = markdown_core_session_new((const uint8_t *)source, 0, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
+                    MARKDOWN_CORE_OK;
+    for (size_t at = 0; appended && at < length;) {
+        size_t step = chunk;
+        if (!step) {
+            const char *newline = memchr(source + at, '\n', length - at);
+            step = newline ? (size_t)(newline - (source + at)) + 1 : length - at;
+        }
+        step = step < length - at ? step : length - at;
+        const markdown_core_document *document = NULL;
+        appended =
+            markdown_core_session_append(session, (const uint8_t *)source + at, step, &document) == MARKDOWN_CORE_OK;
+        at += step;
+    }
+    const markdown_core_document *final = NULL;
+    uint8_t *actual = appended && markdown_core_session_finalize(session, &final) == MARKDOWN_CORE_OK
+                          ? dump_of(final, source, length, &actual_length)
+                          : NULL;
+    const bool same =
+        expected && actual && expected_length == actual_length && memcmp(expected, actual, expected_length) == 0;
+    markdown_core_dump_free(actual);
+    markdown_core_session_free(session);
+    markdown_core_dump_free(expected);
+    markdown_core_document_free(parsed);
+    return same;
+}
+
+/* A STREAMED SESSION FINALIZES TO WHAT A FRESH PARSE OF ITS TEXT IS (plan
+ * 5.4, 5.10). The text arrives byte by byte, three bytes at a time and line
+ * by line. A block that completes at a commit sees only the definitions
+ * written before it, so each use below is defined after it, past enough
+ * paragraphs that the use's block completes at a commit before the
+ * definition arrives; finalize looks the use up again. The uses sit in each
+ * holder of inline content: a paragraph, a heading and its trailing
+ * attributes, a callout title, a definition term, a table caption, a pipe
+ * cell and a grid cell, a list item inside a quote, and a heading inside a
+ * container. Some uses stay undefined, and a heading whose anchor depends on
+ * whether its use resolves comes before a heading of the resolved text. A
+ * grid table followed by a paragraph of several lines appends to the
+ * paragraph's content after the table's cells. */
+static void session_finalize_matches_a_parse(test_batch_runner *runner) {
+#define FILLER "\n\nfiller one\n\nfiller two\n\nfiller three\n\n"
+    static const char *const sources[] = {
+        "See [x], [^n] and @s." FILLER "[x]: /u\n\n[^n]: note\n\n(@s) sample\n",
+        "# Head [x]\n\ntext" FILLER "[x]: /u\n",
+        "# Title [x][]{#a}\n\n# a" FILLER "[x]: /u\n",
+        "# Head [foo][x]" FILLER "# Head foo\n\n[x]: /u\n",
+        "# Head @s here" FILLER "(@s) sample\n",
+        "> [!NOTE] Title [x]\n> body" FILLER "[x]: /u\n",
+        "Term [x]\n: def" FILLER "[x]: /u\n",
+        "Table: Caption [x]\n\n| a | b |\n|---|---|\n| c | d |" FILLER "[x]: /u\n",
+        "| a | b |\n|---|---|\n| [x] | y |" FILLER "[x]: /u\n",
+        "+---+---+\n| a | b |\n+===+===+\n| [x] | y |\n+---+---+\n\npara line one\nline two\nline three" FILLER
+        "[x]: /u\n",
+        "> - item [x] and [y]" FILLER "[x]: /u\n",
+        ":::note{#d}\n# x [x]\n:::" FILLER "# x\n\n[x]: /u\n",
+        "See [^n] here." FILLER "[^n]: note\n",
+        "See [^n]{#c} and [x][y]{#a}." FILLER "# a\n\n# c\n\n[^n]: note\n\n[y]: /u\n",
+        "- a\n  - # A [x]\n  - > b [y]\n    > - # A [x]\n- c" FILLER ":n{#a}\n\n# A\n\n[x]: /u\n\n[y]: /v\n",
+    };
+#undef FILLER
+    static const size_t chunks[] = {1, 3, 0};
+    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        for (size_t c = 0; c < sizeof(chunks) / sizeof(chunks[0]); c++) {
+            OK(runner, finalizes_as_a_parse(sources[i], chunks[c]), "a session streamed in %s finalizes as a parse: %s",
+               chunks[c] == 1   ? "bytes"
+               : chunks[c] == 3 ? "three bytes"
+                                : "lines",
+               sources[i]);
+        }
+    }
+}
+
+/* EVERY SNAPSHOT NAMES ITS HEADINGS AS A PARSE OF THE TEXT SO FAR DOES
+ * (step 7, 4.5): the text arrives byte by byte, and after each append the
+ * snapshot's dump is a fresh parse's of the same text. An explicit anchor
+ * written after headings that took its name displaces the first of them,
+ * which displaces the next along its own sequence: while the anchor is in a
+ * snapshot's tail, a committed heading shows another name, and the commit
+ * that reaches the anchor gives it that name for good. An anchor in an
+ * unclosed code span is gone once the span closes, and the heading shows its
+ * own name again. The headings sit at the top, in a footnote, as a setext
+ * heading the last paragraph becomes, and with authored anchors. No text
+ * here looks a definition up, so a snapshot's lookups change nothing. */
+static void session_snapshot_names(test_batch_runner *runner) {
+    static const char *const sources[] = {
+        "# A\n\n# A\n\n# A\n\ntext :n{#a} more\n\n# A\n",
+        "# A\n\none\n\ntwo\n\npara `x :n{#a}\nline` after\n\n# A\n\nthree\n\n`:n{#a-1}` and :n{#a-2}\n",
+        "# A\n\n# A-1\n\n# A\n\n:n{#a}\n\n# A-1\n",
+        "[^n]: # A\n\n    # A\n\n# A\n\n:n{#a}\n",
+        "# A\n\n# A\n\n# A\n\n# A\n\n# A\n\n# A\n\n# A\n\n:n{#a-2}\n\n# A\n\n:n{#a}\n",
+        "# A\n\n# B {#a}\n\n# A\n\nA\n=\n\nA {#a-1}\n-\n",
+        "- # A\n\n  # A\n\n> :n{#a-1}\n> # A\n",
+        "- a\n  - # A\n    text\n  - > # A\n    > - # A\n- # A\n\npara\n\n:n{#a}\n\n:n{#a-2}\n",
+    };
+    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        const char *source = sources[i];
+        const size_t length = strlen(source);
+        markdown_core_session *session = NULL;
+        bool same = markdown_core_session_new((const uint8_t *)source, 0, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
+                    MARKDOWN_CORE_OK;
+        size_t at = 0;
+        while (same && at < length) {
+            const markdown_core_document *document = NULL;
+            same =
+                markdown_core_session_append(session, (const uint8_t *)source + at, 1, &document) == MARKDOWN_CORE_OK;
+            at++;
+            markdown_core_document *parsed = NULL;
+            size_t expected_length = 0, actual_length = 0;
+            uint8_t *expected = markdown_core_document_parse((const uint8_t *)source, at, &parsed) == MARKDOWN_CORE_OK
+                                    ? dump_of(parsed, source, at, &expected_length)
+                                    : NULL;
+            uint8_t *actual = same ? dump_of(document, source, at, &actual_length) : NULL;
+            same = expected && actual && expected_length == actual_length &&
+                   memcmp(expected, actual, expected_length) == 0;
+            markdown_core_dump_free(expected);
+            markdown_core_dump_free(actual);
+            markdown_core_document_free(parsed);
+        }
+        const markdown_core_document *final = NULL;
+        OK(runner, same && markdown_core_session_finalize(session, &final) == MARKDOWN_CORE_OK,
+           "every snapshot names its headings as a parse of its text, up to byte %zu of %zu: %s", at, length, source);
+        markdown_core_session_free(session);
+    }
+}
+
+/* WHERE A NODE IS in the source, which names a node of one document in
+ * another parsed from the same source even where their trees differ: its
+ * kind, and the start of its first run and the end of its last; the kind
+ * alone, zero, for NULL. */
+typedef struct {
+    int kind;
+    markdown_core_position start;
+    markdown_core_position end;
+} node_where;
+
+static bool node_where_of(const markdown_core_document *document, const markdown_core_node *node, const char *source,
+                          size_t length, node_where *where) {
+    memset(where, 0, sizeof(*where));
+    if (!node) {
+        return true;
+    }
+    markdown_core_scope *scopes = NULL;
+    size_t count = 0;
+    if (markdown_core_document_scope(document, node, (const uint8_t *)source, length, &scopes, &count) !=
+            MARKDOWN_CORE_OK ||
+        !count) {
+        markdown_core_scopes_free(scopes);
+        return false;
+    }
+    where->kind = (int)markdown_core_node_get_kind(node) + 1;
+    where->start = scopes[0].start;
+    where->end = scopes[count - 1].end;
+    markdown_core_scopes_free(scopes);
+    return true;
+}
+
+/* The label of a definition of table `table` (0 Footnotes, 1 Specimens, 2
+ * References), and whether it has one. */
+static bool definition_label_of(int table, const markdown_core_node *node, markdown_core_string *label) {
+    markdown_core_optional_string optional = {0};
+    markdown_core_optional_i64 start;
+    if (table == 2) {
+        optional.has_value = markdown_core_reference_label(node, &optional.value) == MARKDOWN_CORE_OK;
+    } else if (table == 1) {
+        markdown_core_specimen_properties(node, &optional, &start);
+    } else {
+        markdown_core_footnote_label(node, &optional);
+    }
+    *label = optional.value;
+    return optional.has_value;
+}
+
+static size_t definition_count(int table, const markdown_core_document *document) {
+    return table == 0   ? markdown_core_document_footnote_count(document)
+           : table == 1 ? markdown_core_document_specimen_count(document)
+                        : markdown_core_document_reference_count(document);
+}
+
+static const markdown_core_node *definition_entry(int table, const markdown_core_document *document, size_t index) {
+    const markdown_core_node *node = NULL;
+    const markdown_core_status status = table == 0   ? markdown_core_document_footnote_at(document, index, &node)
+                                        : table == 1 ? markdown_core_document_specimen_at(document, index, &node)
+                                                     : markdown_core_document_reference_at(document, index, &node);
+    return status == MARKDOWN_CORE_OK ? node : NULL;
+}
+
+static const markdown_core_node *definition_lookup(int table, const markdown_core_document *document,
+                                                   markdown_core_string label) {
+    return table == 0   ? markdown_core_document_footnote_for(document, label)
+           : table == 1 ? markdown_core_document_specimen_for(document, label)
+                        : markdown_core_document_reference_for(document, label);
+}
+
+/* Whether two documents parsed from `length` bytes of `source` have tables
+ * that agree, entry for entry, by where their nodes are: every list, the
+ * lookup of every label a list holds and of a label none does, and the
+ * reference label table. */
+static bool same_node(const markdown_core_document *actual, const markdown_core_node *mine,
+                      const markdown_core_document *expected, const markdown_core_node *theirs, const char *source,
+                      size_t length) {
+    node_where a, b;
+    return node_where_of(actual, mine, source, length, &a) && node_where_of(expected, theirs, source, length, &b) &&
+           a.kind == b.kind && a.start.line == b.start.line && a.start.column == b.start.column &&
+           a.end.line == b.end.line && a.end.column == b.end.column;
+}
+
+static bool tables_agree(const markdown_core_document *actual, const markdown_core_document *expected,
+                         const char *source, size_t length) {
+    bool same = true;
+#define SAME_NODE(a, b) same_node(actual, (a), expected, (b), source, length)
+    for (int table = 0; same && table < 3; table++) {
+        const size_t count = definition_count(table, expected);
+        same = definition_count(table, actual) == count;
+        for (size_t i = 0; same && i < count; i++) {
+            const markdown_core_node *entry = definition_entry(table, expected, i);
+            markdown_core_string label;
+            same = entry && SAME_NODE(definition_entry(table, actual, i), entry) &&
+                   (!definition_label_of(table, entry, &label) ||
+                    SAME_NODE(definition_lookup(table, actual, label), definition_lookup(table, expected, label)));
+        }
+        const markdown_core_string absent = {(const uint8_t *)"absent label", 12};
+        same = same && !definition_lookup(table, actual, absent) && !definition_lookup(table, expected, absent);
+    }
+    const size_t labels = markdown_core_document_reference_label_count(expected);
+    same = same && markdown_core_document_reference_label_count(actual) == labels;
+    for (size_t i = 0; same && i < labels; i++) {
+        markdown_core_string label, expected_label;
+        const markdown_core_node *target = NULL, *expected_target = NULL;
+        same = markdown_core_document_reference_label_at(actual, i, &label, &target) == MARKDOWN_CORE_OK &&
+               markdown_core_document_reference_label_at(expected, i, &expected_label, &expected_target) ==
+                   MARKDOWN_CORE_OK &&
+               label.length == expected_label.length && !memcmp(label.data, expected_label.data, label.length) &&
+               SAME_NODE(target, expected_target) &&
+               SAME_NODE(markdown_core_document_reference_for(actual, label), expected_target);
+    }
+#undef SAME_NODE
+    return same;
+}
+
+/* EVERY SNAPSHOT'S TABLES ARE A PARSE'S OF THE TEXT SO FAR (step 7, 4.5):
+ * the text arrives byte by byte, and after each append the snapshot's
+ * definition tables -- the lists, the lookups by label and the reference
+ * labels -- name the nodes a fresh parse of the same text names, by where
+ * they are in the text, since the snapshot's inline roots resolve only
+ * definitions before them and its tree differs from the parse's. The committed definitions sit in the committed tables
+ * and the tail's are the snapshot's own: footnotes nested in an open
+ * footnote, inline notes, labels written twice, a Reference and Headings
+ * declaring one label in either order, the tail's labels between committed
+ * ones and over a committed Heading's, specimens, and a heading in a
+ * footnote that a later anchor renames, which moves the footnote and the
+ * heading to objects of their own while their entries stay committed. */
+static void session_snapshot_tables(test_batch_runner *runner) {
+    static const char *const sources[] = {
+        "[^a]: one\n\n    [^b]: inner\n\n    more\n\n[^a]: again\n\ntext [^a] ^[inline] [^b]\n\n[^c]: last\n",
+        "# Foo\n\n[foo]: /u\n\n# Foo\n\n[Foo] and [bar]\n\n[bar]: /b\n\n# Bar\n\n[foo]: /again\n",
+        "[^n]: # A\n\n    # A\n\n# A\n\n[A] and [a-1]\n\n:n{#a}\n\n[x]: /x\n",
+        "(5@etude) Body.\n(@) Anonymous.\n\n(@etude) Again.\n\n@etude and (@next) Next.\n",
+        "- [r]: /r\n- # R\n\n> [^q]: quote\n>\n> # Q\n\n[R] [Q] [^q]\n",
+        "[a]: /a\n\n# D\n\n[c]: /c\n\n# G\n\n[b]: /b\n[d]: /d\n[f]: /f\n\n[B] [D] [G]\n",
+    };
+    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        const char *source = sources[i];
+        const size_t length = strlen(source);
+        markdown_core_session *session = NULL;
+        bool same = markdown_core_session_new((const uint8_t *)source, 0, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
+                    MARKDOWN_CORE_OK;
+        size_t at = 0;
+        while (same && at < length) {
+            const markdown_core_document *document = NULL;
+            same =
+                markdown_core_session_append(session, (const uint8_t *)source + at, 1, &document) == MARKDOWN_CORE_OK;
+            at++;
+            markdown_core_document *parsed = NULL;
+            same = same && markdown_core_document_parse((const uint8_t *)source, at, &parsed) == MARKDOWN_CORE_OK &&
+                   tables_agree(document, parsed, source, at);
+            markdown_core_document_free(parsed);
+        }
+        const markdown_core_document *final = NULL;
+        markdown_core_document *parsed = NULL;
+        same = same && markdown_core_session_finalize(session, &final) == MARKDOWN_CORE_OK &&
+               markdown_core_document_parse((const uint8_t *)source, length, &parsed) == MARKDOWN_CORE_OK &&
+               tables_agree(final, parsed, source, length);
+        OK(runner, same, "every snapshot's tables are a parse's of its text, up to byte %zu of %zu: %s", at, length,
+           source);
+        markdown_core_document_free(parsed);
+        markdown_core_session_free(session);
+    }
+}
+
+/* The lists of a document in canonical walk order, into `lists`, which
+ * holds `capacity`; their count, or SIZE_MAX when the walk could not
+ * allocate. */
+static size_t document_lists(const markdown_core_document *document, const markdown_core_node **lists,
+                             size_t capacity) {
+    markdown_core_walk walk;
+    markdown_core_walk_item item;
+    size_t count = 0;
+    markdown_core_walk_begin(&walk, markdown_core_document_root(document));
+    while (markdown_core_walk_next(&walk, &item)) {
+        if (item.node && markdown_core_node_get_kind(item.node) == MARKDOWN_CORE_KIND_LIST && count < capacity) {
+            lists[count++] = item.node;
+        }
+    }
+    const bool failed = walk.failed;
+    markdown_core_walk_end(&walk);
+    return failed ? SIZE_MAX : count;
+}
+
+static bool list_tight(const markdown_core_node *list) {
+    markdown_core_list_flavor flavor;
+    markdown_core_optional_i64 start;
+    markdown_core_ordered_list_variant variant;
+    markdown_core_ordered_list_delimiter delimiter;
+    bool tight = false;
+    markdown_core_node_list_properties(list, &flavor, &start, &variant, &delimiter, &tight);
+    return tight;
+}
+
+/* EVERY SNAPSHOT LAYS ITS LISTS OUT AS A PARSE OF ITS TEXT (step 7, plan
+ * 5.6): the text arrives byte by byte, and after each append every list of
+ * the snapshot is where a fresh parse of the same text has one, and is
+ * tight exactly when that one is. Each item and each child an item holds
+ * folds into its list as it settles, and a snapshot closes copies of the
+ * open list and item whose folds hold the committed children: a blank line
+ * between items or between an item's children, a last item or child ending
+ * with one, a nested list ending with one, a reference definition the
+ * blank-line facts read through, a blank line inside a fence, an empty item
+ * and lists that a later line ends. */
+static void session_snapshot_lists(test_batch_runner *runner) {
+    static const char *const sources[] = {
+        "- a\n- b\n- c\n\nafter\n",    "- a\n\n- b\n- c\n",          "- a\n\n  b\n- c\n\n  d\n",
+        "- a\n  - b\n\n- c\n",         "- a\n  - b\n\n  c\n",        "- a\n\n  [r]: /r\n- b\n\n- [s]: /s\n\n  e\n",
+        "- a\n\n  [r]: /r\n\n[r]\n",   "- ```\n  x\n\n  ```\n- b\n", "-\n- b\n\n-\n\n  c\n",
+        "1. a\n2. b\n\n\n3. c\n- d\n",
+    };
+    enum { LISTS = 16 };
+    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        const char *source = sources[i];
+        const size_t length = strlen(source);
+        markdown_core_session *session = NULL;
+        bool same = markdown_core_session_new((const uint8_t *)source, 0, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
+                    MARKDOWN_CORE_OK;
+        size_t at = 0;
+        while (same && at <= length) {
+            const markdown_core_document *document = NULL;
+            if (at < length) {
+                same = markdown_core_session_append(session, (const uint8_t *)source + at, 1, &document) ==
+                       MARKDOWN_CORE_OK;
+            } else {
+                same = markdown_core_session_finalize(session, &document) == MARKDOWN_CORE_OK;
+            }
+            const size_t parsed_length = at < length ? at + 1 : length;
+            markdown_core_document *parsed = NULL;
+            same = same &&
+                   markdown_core_document_parse((const uint8_t *)source, parsed_length, &parsed) == MARKDOWN_CORE_OK;
+            const markdown_core_node *mine[LISTS], *theirs[LISTS];
+            const size_t count = same ? document_lists(parsed, theirs, LISTS) : 0;
+            same = same && count < LISTS && document_lists(document, mine, LISTS) == count;
+            for (size_t k = 0; same && k < count; k++) {
+                same = same_node(document, mine[k], parsed, theirs[k], source, parsed_length) &&
+                       list_tight(mine[k]) == list_tight(theirs[k]);
+            }
+            markdown_core_document_free(parsed);
+            at++;
+        }
+        OK(runner, same, "every snapshot lays its lists out as a parse of its text, up to byte %zu of %zu: %s", at,
+           length, source);
+        markdown_core_session_free(session);
+    }
+}
+
+/* Whether `document` dumps as a fresh parse of the first `length` bytes of
+ * `source` does. */
+static bool dumps_as_a_parse(const markdown_core_document *document, const char *source, size_t length) {
+    markdown_core_document *parsed = NULL;
+    size_t expected_length = 0, actual_length = 0;
+    uint8_t *expected = markdown_core_document_parse((const uint8_t *)source, length, &parsed) == MARKDOWN_CORE_OK
+                            ? dump_of(parsed, source, length, &expected_length)
+                            : NULL;
+    uint8_t *actual = dump_of(document, source, length, &actual_length);
+    const bool same =
+        expected && actual && expected_length == actual_length && memcmp(expected, actual, expected_length) == 0;
+    markdown_core_dump_free(expected);
+    markdown_core_dump_free(actual);
+    markdown_core_document_free(parsed);
+    return same;
+}
+
+/* Whether `source`, appended in pieces that end at each of the `count`
+ * offsets `ends`, in order, gives after each append a snapshot whose dump is
+ * a fresh parse's of the same text, and a finalized document whose dump is a
+ * parse's of all of it; `at` is how many bytes were appended when it
+ * stopped. */
+static bool pieces_dump_as_parses(const char *source, const size_t *ends, size_t count, size_t *at) {
+    markdown_core_session *session = NULL;
+    bool same = markdown_core_session_new((const uint8_t *)source, 0, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
+                MARKDOWN_CORE_OK;
+    *at = 0;
+    for (size_t i = 0; same && i < count; i++) {
+        const markdown_core_document *document = NULL;
+        same = markdown_core_session_append(session, (const uint8_t *)source + *at, ends[i] - *at, &document) ==
+                   MARKDOWN_CORE_OK &&
+               dumps_as_a_parse(document, source, ends[i]);
+        *at = ends[i];
+    }
+    const markdown_core_document *final = NULL;
+    same = same && markdown_core_session_finalize(session, &final) == MARKDOWN_CORE_OK &&
+           dumps_as_a_parse(final, source, *at);
+    markdown_core_session_free(session);
+    return same;
+}
+
+/* The same of `source` appended byte by byte. */
+static bool snapshots_dump_as_parses(const char *source, size_t *at) {
+    const size_t length = strlen(source);
+    size_t *ends = malloc((length ? length : 1) * sizeof(*ends));
+    for (size_t i = 0; ends && i < length; i++) {
+        ends[i] = i + 1;
+    }
+    const bool same = ends && pieces_dump_as_parses(source, ends, length, at);
+    free(ends);
+    return same;
+}
+
+/* WHAT A BLOCK'S OPENING LINE GIVES IT, IN EVERY SNAPSHOT (step 7, THE
+ * COPIES): the text arrives byte by byte, and after each append the
+ * snapshot's dump is a fresh parse's of the same text. The blocks own what
+ * their opening lines give them -- the attributes and name of a directive,
+ * the info string and attributes of a fence, a callout's variant, a
+ * footnote's label, a table's columns, a task's marker -- which the copies a
+ * snapshot reads view, while the block is open, while it is the pending
+ * block a blank line or an identifier still writes, and after a commit
+ * closes it, settles it or makes a formula of it. No text here looks a
+ * definition up, so a snapshot's lookups change nothing. */
+static void session_snapshot_openers(test_batch_runner *runner) {
+    static const char *const sources[] = {
+        ":::note{#d .c key=v}\nbody one\n\nbody two\n:::\n\nafter\n",
+        ":::note[Label *x*]{#d}\nbody\n:::\n\n\n\nafter\n",
+        "```js {#c .x key=v}\ncode one\ncode two\n```\n\nafter\n",
+        "```formula {#f}\nx^2\n```\n\nafter\n",
+        "> [!NOTE] Title *x*\n> body\n\nafter\n",
+        "- > [!TIP] Tip title\n  > body\n- next\n",
+        "[^n]: note one\n\n    note two\n\nafter\n",
+        "| a | b |\n|---|---|\n| c | d |\n| e | f |\n\n#t#\n\nafter\n",
+        "- [ ] task one #one#\n- [x] task two\n\n  more\n\nafter\n",
+        "> ```js {#c}\n> code\n> ```\n>\n> after\n\n:::note{#d}\n> q\n:::\n",
+        "(@s) sample one\n\n(@t) sample two\n",
+        "Term\n: def one\n: def two\n\nafter\n",
+        "<div>\nhtml\n</div>\n\n~~~ {.x}\ncode\n~~~\n",
+    };
+    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        size_t at = 0;
+        OK(runner, snapshots_dump_as_parses(sources[i], &at),
+           "every snapshot holds what its blocks' opening lines give them as a parse of its text, up to byte %zu "
+           "of %zu: %s",
+           at, strlen(sources[i]), sources[i]);
+    }
+}
+
+/* A SIMPLE TABLE READS A ROW AT A TIME, IN EVERY SNAPSHOT (step 7, plan
+ * 5.7): the text arrives byte by byte, and after each append the snapshot's
+ * dump is a fresh parse's of the same text. A headed table opens once its
+ * header, its dashes and its first row are there, a headerless one once its
+ * footer is; each row after the dashes is read on its own as it comes, as
+ * inline text whatever block it looks like, until a blank line ends the
+ * table or a footer closes it. A later row indented less than the margin
+ * begins at its own text; a closing directive fence above still ends the
+ * table, and a caption follows a closed table. */
+static void session_snapshot_simple_tables(test_batch_runner *runner) {
+    static const char *const sources[] = {
+        "Name    Count\n------  -----\nApples      4\nPears       2\n------  -----\nafter\n",
+        "  A    B\n  ---  ---\n  x    y\nc      d\n   z\n\nTable: cap\n",
+        "A    B\n---  ---\n# h  > q\n```  :x\nTable: y\n- i  1. j\n\nafter\n",
+        "---  ---\nx    y\n\tz  w\n---  ---\nTable: t\n",
+        "A    B\n---  ---\n---  ---\nafter\n",
+        "> A    B\n> ---  ---\n> a    b\nlazy\n\n- A    B\n  ---  ---\n  a    b\n c\n",
+        ":::note\nA    B\n---  ---\na    b\n:::\n\nafter\n",
+        "+------------+\n| A    B     |\n| ---  ---   |\n| a    b     |\n|   c    d   |\n+------------+\n",
+    };
+    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        size_t at = 0;
+        OK(runner, snapshots_dump_as_parses(sources[i], &at),
+           "every snapshot reads a simple table a row at a time as a parse of its text, up to byte %zu of %zu: %s", at,
+           strlen(sources[i]), sources[i]);
+    }
+}
+
+/* WHAT A CANDIDATE DECIDES, IN EVERY SNAPSHOT (step 7, THE CANDIDATES): the
+ * text arrives byte by byte, and after each append the snapshot's dump is a
+ * fresh parse's of the same text. A construct whose call reads to the end
+ * of the text so far -- a grid, a multiline table with or without a header,
+ * a headerless simple table, a `%%` comment, a block identifier line, a
+ * definition's term and its body's blank line, the Properties envelope the
+ * text opens with, a caption before or after a table -- is read on as the
+ * commit reads its lines, and decided at the line that ends it, inside
+ * containers too; one the text leaves open stays as its lines read. */
+static void session_snapshot_candidates(test_batch_runner *runner) {
+    static const char *const sources[] = {
+        "%%\nhidden *x*\n\n- not a list\n%%\n\nafter\n",
+        "> %%\n> a\n> %%\n> b\n\n%%\nopen\n",
+        "- %%\n  x\n- y\n  %%\n",
+        "%%\n%%x\n%\n %%  \nafter\n",
+        "+---+---+\n| a | b |\n+---+---+\n| c | d |\n+---+---+\n\nafter\n",
+        "+---+\n| a |\n|   |\n\npara\n",
+        "-------------------\nHead A    Head B\n--------  --------\nrow a1    row b1\n\nrow a2    row b2\n"
+        "-------------------\n\nafter\n",
+        "----------- -------\n   First    row\n\n  Second    row\n-------------------\n\nafter\n",
+        "------ ------\nx      y\n------ ------\nafter\n",
+        "> -------------------\n> Head A    Head B\n> --------  --------\n> row a1    row b1\n>\n"
+        "> row a2    row b2\n> -------------------\n>\n> after\n",
+        "- a\n\n#id#\n  x\n",
+        "- a\n\n#id#\n\nafter\n",
+        "> [!NOTE]\n> x\n\n#id#\n x\n",
+        "| a |\n|---|\n\n#id#\n\n#no#\n",
+        "> - a\n>\n> #id#\n>  x\n",
+        "Term\n: def\n\n  more\n\nafter\n",
+        "Term\n\n: def\n\n\n  code?\nTwo\n:x\n",
+        "> Term\n> : def\n>\n>   more\n> after\n",
+        "Term\n: Caption\n\n| a |\n|---|\n| b |\n",
+        "---\ntitle: a\n---\nbody\n",
+        "---\ntitle: a\n\n- item\n> quote\n",
+        "---\na: b\n----\n--\n -- -\n---\nafter\n",
+        "---\n---\n",
+        "---\r\na: b\r\n---\r\nx\r\n",
+        "--- \na: b\n---\n",
+        "x\n---\na: b\n---\n",
+        "\n---\na: b\n---\n",
+        "---\n%%\n---\n%%\nafter\n",
+        "---\na: b\n---",
+        "| a |\n|---|\n\nTable: ab\n\nafter\n",
+        "| a |\n|---|\n| c |\n\nTable: ab\nmore\n\nx\n",
+        "| a |\n|---|\n\nTable: ab\n| b |\n|---|\n\nTable: c\n",
+        "Table: lead\n\n+---+\n| a |\n+---+\n\nafter\n",
+    };
+    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        size_t at = 0;
+        OK(runner, snapshots_dump_as_parses(sources[i], &at),
+           "every snapshot decides a construct read on as a parse of its text, up to byte %zu of %zu: %s", at,
+           strlen(sources[i]), sources[i]);
+    }
+}
+
+/* A HELD LINE'S STEP READS TO THE END OF THE SCALAR IT TAKES (blocks.c, THE
+ * LINE A SESSION HOLDS): the text arrives byte by byte, and after each append
+ * the snapshot's dump is a fresh parse's of the same text. A column-counted
+ * advance over a container's prefix -- a quote's `>` and the space after it,
+ * a list item's, a footnote's and a specimen's indentation -- takes the
+ * continuation bytes after the last byte it takes as that byte's scalar, so
+ * its step on a line the text has not finished is decided once a byte that is
+ * not one follows them. The bytes are malformed UTF-8, which the engine reads
+ * as it reads any text. */
+static void session_held_scalars(test_batch_runner *runner) {
+    static const char *const sources[] = {
+        ">\r> \x80\n",
+        ">\n>\x80\x80"
+        "b\n",
+        "> a\n> \x80"
+        "b\n",
+        "> x\n>\x80\x80 b\n",
+        "- a\n  \x80\x80"
+        "b\n",
+        "[^a]: x\n    \x80\x80"
+        "b\n",
+        "(@a) x\n    \x80\x80"
+        "b\n",
+    };
+    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        size_t at = 0;
+        OK(runner, snapshots_dump_as_parses(sources[i], &at),
+           "every snapshot reads a held prefix to its scalar's end as a parse of its text, up to byte %zu of %zu: %s",
+           at, strlen(sources[i]), sources[i]);
+    }
+}
+
+/* A CANDIDATE'S DECISION LEAVES THE LINES IT READS AS THE READING PLACED
+ * THEM (blocks.c, THE CANDIDATES): a table's call on a quote's lazy line reads
+ * the next line on the root's path, where the reading matched that line in
+ * the quote, and the quote's paragraph, which spans it, takes its places from
+ * where the reading found the line's own bytes. The text arrives byte by
+ * byte, in the two pieces the lazy line ends, and whole, and each snapshot
+ * and the finalized document dump as a parse of its text does. */
+static void session_decisions_keep_lines(test_batch_runner *runner) {
+    static const char *const sources[] = {">_\n:\n>a\n", ">_\r:\r>a"};
+    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        const size_t length = strlen(sources[i]);
+        size_t at = 0;
+        OK(runner, snapshots_dump_as_parses(sources[i], &at),
+           "a decision leaves the lines it reads to the reading, byte by byte, up to byte %zu of %zu: %s", at, length,
+           sources[i]);
+        const size_t halves[] = {4, length};
+        OK(runner, pieces_dump_as_parses(sources[i], halves, 2, &at),
+           "a decision leaves the lines it reads to the reading, in two pieces, up to byte %zu of %zu: %s", at, length,
+           sources[i]);
+        const size_t whole[] = {length};
+        OK(runner, pieces_dump_as_parses(sources[i], whole, 1, &at),
+           "a decision leaves the lines it reads to the reading, whole: %s", sources[i]);
+    }
+}
+
+/* WHAT AN ACCEPT TAKES AWAY (blocks.c, THE CANDIDATES) goes, and the next
+ * publish matches what continues it against what the last publish recorded
+ * of it as it placed it (ast.c, THE RECORDS), whatever the commit wrote in
+ * it since: a simple table read after a multiline table's opening line, which
+ * a publish places open, and which the commit then closes with a row no
+ * publish placed, before the closing line accepts the multiline table; and
+ * the same inside a quote. Each text arrives in two appends, split where the
+ * first publish places the simple table, and each document dumps as a parse
+ * of its text does. */
+static void session_accept_after_commit_writes(test_batch_runner *runner) {
+    static const struct {
+        const char *source;
+        size_t split;
+    } cases[] = {
+        {"-------\nh   j\n--- ---\na   b\nc   d\n\ne   f\n-------\n", 28},
+        {"> -------\n> h   j\n> --- ---\n> a   b\n> c   d\n>\n> e   f\n> -------\n", 36},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        const size_t ends[] = {cases[i].split, strlen(cases[i].source)};
+        size_t at = 0;
+        OK(runner, pieces_dump_as_parses(cases[i].source, ends, 2, &at),
+           "a multiline table accepted after the commit closed the simple table a publish placed dumps as a parse, "
+           "up to byte %zu: %s",
+           at, cases[i].source);
+    }
+}
+
+/* Where the bytes a block owns of each part a view of it views are: its
+ * attributes' anchor, classes and records, its record's string and its
+ * payload's storage. */
+typedef struct {
+    const void *anchor, *classes, *records, *text, *payload;
+} owned_parts;
+
+static owned_parts parts_of(const markdown_core_node *node) {
+    owned_parts parts = {node->attributes.anchor.data, node->attributes.classes, node->attributes.records, NULL, NULL};
+    switch (node->kind) {
+    case MARKDOWN_CORE_NODE_CODE_BLOCK:
+        parts.text = node->as.code->info.value.data;
+        break;
+    case MARKDOWN_CORE_NODE_CALLOUT:
+        parts.text = node->as.callout->variant.value.data;
+        break;
+    case MARKDOWN_CORE_NODE_LIST_ITEM:
+        parts.text = node->as.list->task_marker.value.data;
+        break;
+    case MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK:
+        parts.payload = markdown_core_elements_get_directive_name(node);
+        break;
+    case MARKDOWN_CORE_NODE_TABLE:
+        parts.payload = ((const markdown_core_table *)node->opaque)->columns;
+        break;
+    default:
+        break;
+    }
+    return parts;
+}
+
+/* Whether each part `a` holds is at the bytes `b` holds it at when `viewed`,
+ * and at bytes of its own otherwise. */
+static bool parts_alike(const owned_parts *a, const owned_parts *b, bool viewed) {
+    const void *const x[] = {a->anchor, a->classes, a->records, a->text, a->payload};
+    const void *const y[] = {b->anchor, b->classes, b->records, b->text, b->payload};
+    for (size_t i = 0; i < sizeof(x) / sizeof(x[0]); i++) {
+        if (x[i] && (x[i] == y[i]) != viewed) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool chunks_equal(markdown_core_chunk a, markdown_core_chunk b) {
+    return a.len == b.len && (!a.len || memcmp(a.data, b.data, (size_t)a.len) == 0);
+}
+
+/* Whether `a` holds what `b` does in each part a view views. */
+static bool parts_equal(const markdown_core_node *a, const markdown_core_node *b) {
+    const markdown_core_attributes *x = &a->attributes, *y = &b->attributes;
+    bool same = a->kind == b->kind && chunks_equal(x->anchor, y->anchor) && x->class_count == y->class_count &&
+                x->record_count == y->record_count;
+    for (uint32_t i = 0; same && i < x->class_count; i++) {
+        same = chunks_equal(x->classes[i], y->classes[i]);
+    }
+    for (uint32_t i = 0; same && i < x->record_count; i++) {
+        same = chunks_equal(x->records[i].name, y->records[i].name) &&
+               chunks_equal(x->records[i].value, y->records[i].value);
+    }
+    if (!same) {
+        return false;
+    }
+    switch (a->kind) {
+    case MARKDOWN_CORE_NODE_CODE_BLOCK:
+        return chunks_equal(a->as.code->info.value, b->as.code->info.value);
+    case MARKDOWN_CORE_NODE_CALLOUT:
+        return chunks_equal(a->as.callout->variant.value, b->as.callout->variant.value);
+    case MARKDOWN_CORE_NODE_LIST_ITEM:
+        return chunks_equal(a->as.list->task_marker.value, b->as.list->task_marker.value);
+    case MARKDOWN_CORE_NODE_DIRECTIVE_BLOCK:
+        return strcmp(markdown_core_elements_get_directive_name(a), markdown_core_elements_get_directive_name(b)) == 0;
+    case MARKDOWN_CORE_NODE_TABLE: {
+        const markdown_core_table *t = a->opaque, *u = b->opaque;
+        return t->column_count == u->column_count &&
+               memcmp(t->columns, u->columns, t->column_count * sizeof(*t->columns)) == 0;
+    }
+    default:
+        return true;
+    }
+}
+
+/* `pattern` with each `%s` in it the field `field`, in a new string the
+ * caller frees. */
+static char *with_field(const char *pattern, const char *field) {
+    const size_t field_length = strlen(field);
+    size_t length = 0;
+    for (const char *p = pattern; *p; p++) {
+        length += p[0] == '%' && p[1] == 's' ? (p++, field_length) : 1;
+    }
+    char *made = malloc(length + 1), *at = made;
+    for (const char *p = pattern; made && *p; p++) {
+        if (p[0] == '%' && p[1] == 's') {
+            memcpy(at, field, field_length);
+            at += field_length;
+            p++;
+        } else {
+            *at++ = *p;
+        }
+    }
+    if (made) {
+        *at = '\0';
+    }
+    return made;
+}
+
+/* THE ROOTS A FINALIZE COMPLETES ANEW LIE AT EVERY DEPTH (blocks.c, A
+ * LOOKUP THAT FOUND NOTHING), as do the headings a late anchor renames: in
+ * three nested directives, each published open and then closed. The last
+ * root of each directive completes as its closing line closes it, after the
+ * roots that completed while it was open; a directive's label looks the late
+ * definition up beside the roots inside it. Each text arrives byte by byte,
+ * three bytes at a time and line by line, and its finalize dumps as a parse
+ * of the same text does. The headings look no definition up, so every
+ * snapshot of their text dumps as a parse of the text so far does. */
+static void session_roots_at_every_depth(test_batch_runner *runner) {
+#define FILLER "\n\nfiller one\n\nfiller two\n\nfiller three\n\n"
+    static const char *const sources[] = {
+        ":::note\n\nouter [x]\n\n:::note\n\nmiddle [x]\n\n:::note\n\ninner one [x]\n\ninner two [x]\n:::\n\n"
+        "middle again [x]\n:::\n\nouter again [x]\n:::" FILLER "[x]: /u\n",
+        ":::note[Label [x]]\n\n:::note[Inner [x]]\n\nbody [x]\n\nlast [x]\n:::\n\nafter [x]\n:::" FILLER "[x]: /u\n",
+    };
+#undef FILLER
+    static const char headings[] =
+        ":::note\n\n# A\n\n:::note\n\n# A\n\n:::note\n\n# A\n\n# A\n:::\n\n# A\n:::\n\n# A\n:::\n\ntext :n{#a} more\n";
+    static const size_t chunks[] = {1, 3, 0};
+    for (size_t c = 0; c < sizeof(chunks) / sizeof(chunks[0]); c++) {
+        const char *const unit = chunks[c] == 1 ? "bytes" : chunks[c] == 3 ? "three bytes" : "lines";
+        for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+            OK(runner, finalizes_as_a_parse(sources[i], chunks[c]), "a session streamed in %s finalizes as a parse: %s",
+               unit, sources[i]);
+        }
+        OK(runner, finalizes_as_a_parse(headings, chunks[c]), "a session streamed in %s finalizes as a parse: %s", unit,
+           headings);
+    }
+    size_t at = 0;
+    const bool dumped = snapshots_dump_as_parses(headings, &at);
+    OK(runner, dumped, "a session streamed byte by byte dumps as a parse, up to byte %zu: %s", at, headings);
+}
+
+/* A FIELD AN OPENING LINE WRITES COMPLETES ONCE ITS LINE IS READ (step 7,
+ * plan 5.3): a callout's title, a definition's term, a block directive's
+ * label and a table's caption, before or after its rows, each some
+ * hundreds of bytes of the inline content a completion makes -- emphasis,
+ * code, a reference, an inline note holding a reference, and an anchor. While its
+ * block stays open over many appends, every snapshot holds it as a fresh
+ * parse of the text so far does when each reference is defined before it.
+ * When each is defined after it, the finalize looks the field's references
+ * up again and gives what a parse of the whole text gives: with the block
+ * closed and published before the definition arrives, and with the block
+ * still open when the text ends, the definition inside it -- in a quote, a
+ * definition's body, an unclosed directive and a list item. */
+static void session_opener_fields(test_batch_runner *runner) {
+    char field[1024] = "";
+    for (size_t length = 0; length + 40 < 300;) {
+        length += (size_t)snprintf(field + length, sizeof(field) - length, "word *em* [x] ^[note [x]] `code` ");
+    }
+    strcat(field, ":n{#a} end");
+    static const char *const defined_before[] = {
+        "[x]: /u\n\n> [!NOTE] %s\n> body one\n>\n> body two\n>\n> body three\n\nafter\n",
+        "[x]: /u\n\n%s\n: def one\n\n  def two\n\n  def three\n\nafter\n",
+        "[x]: /u\n\n:::note[%s]\nbody one\n\nbody two\n\nbody three\n:::\n\nafter\n",
+        "[x]: /u\n\nTable: %s\n\n| a | b |\n|---|---|\n| c | d |\n| e | f |\n| g | h |\n\nafter\n",
+        "[x]: /u\n\n| a | b |\n|---|---|\n| c | d |\n| e | f |\n\nTable: %s\n\nafter\n",
+    };
+    for (size_t i = 0; i < sizeof(defined_before) / sizeof(defined_before[0]); i++) {
+        char *source = with_field(defined_before[i], field);
+        size_t at = 0;
+        OK(runner, source && snapshots_dump_as_parses(source, &at),
+           "every snapshot holds a long field its opening line wrote as a parse of its text, up to byte %zu: %s", at,
+           defined_before[i]);
+        free(source);
+    }
+    static const char *const defined_after[] = {
+        "> [!NOTE] %s\n> body\n\nfiller one\n\nfiller two\n\n# a\n\n[x]: /u\n",
+        "%s\n: def\n\nfiller one\n\nfiller two\n\n# a\n\n[x]: /u\n",
+        ":::note[%s]\nbody\n:::\n\nfiller one\n\nfiller two\n\n# a\n\n[x]: /u\n",
+        "Table: %s\n\n| a | b |\n|---|---|\n| c | d |\n\nfiller one\n\nfiller two\n\n# a\n\n[x]: /u\n",
+        "| a | b |\n|---|---|\n| c | d |\n\nTable: %s\n\nfiller one\n\nfiller two\n\n# a\n\n[x]: /u\n",
+        "> [!NOTE] %s\n> body\n>\n> filler\n>\n> # a\n>\n> [x]: /u\n",
+        "%s\n: def\n\n  filler\n\n  # a\n\n  [x]: /u\n",
+        ":::note[%s]\nbody\n\nfiller\n\n# a\n\n[x]: /u\n",
+        "- > [!TIP] %s\n  > body\n  >\n  > # a\n  >\n  > [x]: /u\n",
+    };
+    static const size_t chunks[] = {1, 7, 0};
+    for (size_t i = 0; i < sizeof(defined_after) / sizeof(defined_after[0]); i++) {
+        char *source = with_field(defined_after[i], field);
+        for (size_t c = 0; c < sizeof(chunks) / sizeof(chunks[0]); c++) {
+            OK(runner, source && finalizes_as_a_parse(source, chunks[c]),
+               "a session streamed in %s finalizes a long field defined after it as a parse: %s",
+               chunks[c] == 1   ? "bytes"
+               : chunks[c] == 7 ? "seven bytes"
+                                : "lines",
+               defined_after[i]);
+        }
+        free(source);
+    }
+}
+
+/* A VIEW VIEWS WHAT ITS BLOCK OWNS (markdown_core_node_view; blocks.c, THE
+ * LENDING): it holds the block's bytes of each part, and the block's
+ * children array, content buffer and field nodes, and letting it go and
+ * releasing it leaves the block whole. */
+static void node_view_views(test_batch_runner *runner) {
+    static const char source[] = "```js {#c .x key=v}\ncode\n```\n\n"
+                                 ":::note[label]{#d .y k=w}\nbody\n:::\n\n"
+                                 "> [!NOTE] Title\n> callout\n\n"
+                                 "- [x] done\n\n"
+                                 "| a | b |\n|:-|-:|\n| 1 | 2 |\n";
+    enum { BLOCKS = 5 };
+    markdown_core_document *viewed = NULL, *kept = NULL;
+    if (markdown_core_document_parse((const uint8_t *)source, sizeof(source) - 1, &viewed) != MARKDOWN_CORE_OK ||
+        markdown_core_document_parse((const uint8_t *)source, sizeof(source) - 1, &kept) != MARKDOWN_CORE_OK) {
+        OK(runner, false, "the viewed blocks parse");
+        markdown_core_document_free(viewed);
+        return;
+    }
+    const markdown_core_node *blocks[BLOCKS], *alike[BLOCKS];
+    for (size_t i = 0; i < BLOCKS; i++) {
+        blocks[i] = child_at(markdown_core_document_root(viewed), i);
+        alike[i] = child_at(markdown_core_document_root(kept), i);
+        if (blocks[i]->kind == MARKDOWN_CORE_NODE_LIST) {
+            blocks[i] = child_at(blocks[i], 0);
+            alike[i] = child_at(alike[i], 0);
+        }
+    }
+    markdown_core_node_pool pool = {0};
+    for (size_t i = 0; i < BLOCKS; i++) {
+        const owned_parts original = parts_of(blocks[i]);
+        markdown_core_node *view = markdown_core_node_view(&pool, blocks[i]);
+        const owned_parts parts = view ? parts_of(view) : (owned_parts){0};
+        OK(runner,
+           view && parts_alike(&original, &parts, true) && parts_equal(view, alike[i]) &&
+               view->children == blocks[i]->children && view->child_count == blocks[i]->child_count &&
+               view->content.ptr == blocks[i]->content.ptr,
+           "a view of block %zu holds its block's bytes of each part and its storage", i);
+        if (view) {
+            markdown_core_node_view_let_go(&pool, view, blocks[i]);
+            markdown_core_node_pool_release(&pool, view);
+        }
+        OK(runner, parts_equal(blocks[i], alike[i]) && blocks[i]->child_count == alike[i]->child_count,
+           "letting a view of block %zu go leaves its block whole", i);
+    }
+    markdown_core_node_pool_dispose(&pool);
+    markdown_core_document_free(viewed);
+    markdown_core_document_free(kept);
+}
+
+/* The allocator-seam sweep (plan 8, gates 4.7): an append and a finalize
+ * fail at every allocation, report ALLOCATION_FAILED, and the session frees
+ * everything it holds. */
 static void session_allocation_failures(test_batch_runner *runner) {
     static const char source[] = "# Head\n\nSome *text* [a][r].\n\n- item\n- item\n\n[r]: /url\n";
     payload_probe_arm();
@@ -10839,6 +12084,30 @@ static void session_allocation_failures(test_batch_runner *runner) {
         failed &= payload_live == 0;
     }
     OK(runner, needed > 0 && failed, "an append fails at each of its %zu allocations and leaks nothing", needed);
+    needed = 0;
+    failed = 1;
+    for (size_t fail = 0; fail == 0 || fail <= needed; fail++) {
+        markdown_core_session *session = NULL;
+        const markdown_core_document *document = NULL;
+        if (markdown_core_session_new((const uint8_t *)source, sizeof(source) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8,
+                                      &session) != MARKDOWN_CORE_OK) {
+            failed = 0;
+            break;
+        }
+        size_t before = payload_allocations;
+        payload_fail_at = fail ? before + fail : 0;
+        markdown_core_status status = markdown_core_session_finalize(session, &document);
+        payload_fail_at = 0;
+        if (!fail) {
+            needed = payload_allocations - before;
+            failed &= status == MARKDOWN_CORE_OK;
+        } else {
+            failed &= status == MARKDOWN_CORE_ALLOCATION_FAILED;
+        }
+        markdown_core_session_free(session);
+        failed &= payload_live == 0;
+    }
+    OK(runner, needed > 0 && failed, "a finalize fails at each of its %zu allocations and leaks nothing", needed);
     payload_probe_disarm();
 }
 
@@ -10862,6 +12131,7 @@ int main(void) {
     anchor_images_only_scalars(runner);
     whitespace_is_space_tab_and_line_ending(runner);
     registry_records_are_carved_from_its_blocks(runner);
+    key_tree_matches_a_sorted_model(runner);
     registry_kinds_and_starts(runner);
     registry_rollback_matches_a_model(runner);
     properties_values(runner);
@@ -10917,6 +12187,7 @@ int main(void) {
     span_and_script_linear_work(runner);
     comment_inline_linear_work(runner);
     comment_block_linear_work(runner);
+    line_facts_survive_moved_text(runner);
     percent_comment_nodes(runner);
     cross_link_fields(runner);
     node_payload_lifecycle(runner);
@@ -10935,6 +12206,7 @@ int main(void) {
     cell_blocks_end_in_their_cell(runner);
     table_geometry_ignores_indentation(runner);
     table_margin_is_shared_indentation(runner);
+    simple_table_margin_from_opening_lines(runner);
     pipe_rows_are_one_row(runner);
     create_tree(runner);
     attachment_containment(runner);
@@ -11012,6 +12284,20 @@ int main(void) {
     inline_dispatch_orders_every_precedence(runner);
     scope_queries_count_in_the_document_unit(runner);
     session_appends(runner);
+    session_snapshot_anchors(runner);
+    session_snapshot_names(runner);
+    session_snapshot_tables(runner);
+    session_snapshot_lists(runner);
+    session_snapshot_openers(runner);
+    session_snapshot_simple_tables(runner);
+    session_snapshot_candidates(runner);
+    session_held_scalars(runner);
+    session_decisions_keep_lines(runner);
+    session_accept_after_commit_writes(runner);
+    session_opener_fields(runner);
+    node_view_views(runner);
+    session_finalize_matches_a_parse(runner);
+    session_roots_at_every_depth(runner);
     session_allocation_failures(runner);
 
     test_print_summary(runner);

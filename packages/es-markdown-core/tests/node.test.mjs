@@ -700,7 +700,9 @@ test("api: a session's finalize returns the final document and ends the session"
     for (const unit of ["utf8", "utf16"]) {
         const session = new MarkdownSession("[a]\n\n", { unit });
         try {
-            session.append("[a]: /url\n");
+            const snapshot = session.append("[a]: /url\n");
+            // A snapshot's lookup sees only the definitions written before it.
+            assert.notEqual(snapshot.dump(session.text), Document.parse(session.text, { unit }).dump(session.text));
             const final = session.finalize();
             const text = session.text;
             assert.equal(final, session.document);
@@ -710,6 +712,20 @@ test("api: a session's finalize returns the final document and ends the session"
             assert.throws(() => session.finalize(), finalized);
             assert.equal(session.text, text);
             assert.equal(session.document, final);
+        } finally {
+            session.dispose();
+        }
+    }
+});
+
+test("api: a session's first document is a snapshot of its source", () => {
+    for (const unit of ["utf8", "utf16"]) {
+        const session = new MarkdownSession("[a]\n\n[a]: /url\n", { unit });
+        try {
+            const text = session.text;
+            // The source is the first append, so the use before its definition stays unresolved.
+            assert.notEqual(session.document.dump(text), Document.parse(text, { unit }).dump(text));
+            assert.equal(session.finalize().dump(text), Document.parse(text, { unit }).dump(text));
         } finally {
             session.dispose();
         }

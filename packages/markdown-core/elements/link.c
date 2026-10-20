@@ -70,7 +70,7 @@ bool markdown_core_block_resolve_reference_link_definitions(markdown_core_parser
      * unread. Taking the answer from the surviving run rather than from the
      * size of the cut is what makes both arrivals give the same result. */
     if (markdown_core_parser_content_place(parser, &b->content_map, 0, &ignored, &source)) {
-        b->where.place.start = (uint32_t)source;
+        b->place.start = (uint32_t)source;
     }
     return !markdown_core_is_blank_to_line_end(chunk.data, 0, chunk.len);
 }
@@ -408,14 +408,14 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_no
         end--;
     }
     int ignored;
-    bufsize_t start = b->where.place.start, stop = b->where.place.start;
+    bufsize_t start = b->place.start, stop = b->place.start;
     markdown_core_parser_content_place(parser, &b->content_map, before, &ignored, &start);
     markdown_core_parser_content_end_place(parser, &b->content_map, before + end - 1, &ignored, &stop);
-    reference->where.place = (markdown_core_place){(uint32_t)start, (uint32_t)stop};
+    reference->place = (markdown_core_place){(uint32_t)start, (uint32_t)stop};
     markdown_core_parser_line_places(parser, reference, parent, line);
     /* A definition is read whole: it settles as it is made, before the block
      * it was read from, which settles later if anything of it is left. */
-    markdown_core_block_settle(parser, reference, parent);
+    markdown_core_block_settle_before(parser, reference, parent);
     /* The document defines the label from where the definition starts. */
     if (!parser->error && !markdown_core_registry_declare(&parser->registry, MARKDOWN_CORE_REGISTRY_REFERENCE,
                                                           label.data, label.len, start)) {
@@ -509,8 +509,8 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
      * -- the module states one node for every successful form. */
     if (link_allowed && found_label) {
         bool failed = false;
-        record = markdown_core_registry_find_label(&inline_state->owner_parser->registry,
-                                                   MARKDOWN_CORE_REGISTRY_REFERENCE, &raw_label, &failed);
+        record = markdown_core_parser_find_definition(inline_state->owner_parser, MARKDOWN_CORE_REGISTRY_REFERENCE,
+                                                      &raw_label, &failed);
         if (failed) {
             inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
         }
@@ -578,13 +578,13 @@ bool markdown_core_link_commit(const markdown_core_element_instance *link, markd
     // two need not be on the same line. Taking BOTH from inline_state->line made a link
     // start where it ENDED: `[a\nb](/u)` reported Link 2:1..2:6 around a child
     // Text at 1:2 -- a node that begins after its own first child.
-    inl->where.place.start = opener->inl_text->where.place.start;
+    inl->place.start = opener->inl_text->place.start;
     if (explicit_tail) {
         markdown_core_inline_attach_inline_attributes(inline_state, inl, opener->position - 1);
-        inl->where.place.start = opener->inl_text->where.place.start;
+        inl->place.start = opener->inl_text->place.start;
     }
     markdown_core_inline_state_place(inline_state, inl, opener->position - 1, inline_state->pos - 1);
-    inl->where.place.start = opener->inl_text->where.place.start;
+    inl->place.start = opener->inl_text->place.start;
     // And the destination and title are scanned by markdown_core_inline_manual_scan_link_url and
     // scan_link_title, which move inline_state->pos without ever passing through
     // handle_newline -- so a line ending inside `(...)` is invisible to the

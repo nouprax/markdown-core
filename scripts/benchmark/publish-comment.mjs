@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { inputVersion, sameInputs, validationSource } from "../shared/ci-inputs.mjs";
-import { groupWindows, REGRESSION_LIMIT } from "./stream-gates.mjs";
+import { everyStep, groupWindows, REGRESSION_LIMIT, WINDOWS } from "./stream-gates.mjs";
 import { grammarComparisons } from "./report.mjs";
 import { stageBudget, STAGE_IR_LIMIT } from "./stage-budget.mjs";
 
@@ -199,16 +199,19 @@ export function attributeSection(report) {
     return lines.join("\n");
 }
 
-const STREAM_SUBJECTS = ["reparse", "session"];
+const STREAM_SUBJECTS = ["reparse", "session", "binding"];
+// The subjects 6.4 holds to the base; B is reported alone.
+const GATED_SUBJECTS = ["reparse", "session"];
 const STREAM_FAMILIES = ["tokens", "scalars", "rows"];
 const STREAM_METRICS = ["p95", "max", "total"];
 
 // The R and S columns by family and size, the grammar corpus apart from the
-// shapes, and with a base revision the workloads that pass 6.4. Every
-// workload's windows are validated counts; names never reach the comment.
+// shapes, with a base revision the workloads that pass 6.4, and the B column
+// beside S. Every workload's windows are validated counts; names never reach
+// the comment.
 export function streamSection(report) {
     if (
-        report?.schemaVersion !== 3 ||
+        report?.schemaVersion !== 6 ||
         JSON.stringify(report.subjects) !== JSON.stringify(STREAM_SUBJECTS) ||
         !Array.isArray(report.results)
     ) {
@@ -224,12 +227,23 @@ export function streamSection(report) {
     for (const row of report.results) {
         if (!STREAM_FAMILIES.includes(row.family)) throw new Error("Invalid stream family");
         if (row.size !== null) count(row.size);
+        count(row.steps);
         if (!windows(row.windows)) throw new Error("Invalid stream windows");
+        // S runs every stream whose R ran every step, and B exactly those of at most 1,024 chunks.
+        const short = row.steps <= WINDOWS;
         if (
-            row.session !== null &&
-            (!windows(row.session?.windows) || row.session.windows.length !== row.windows.length)
+            (everyStep(row) && row.session === null) ||
+            (row.session !== null &&
+                (!windows(row.session?.windows) || row.session.windows.length !== row.windows.length))
         ) {
             throw new Error("Invalid session windows");
+        }
+        if (
+            (row.binding === null) === short ||
+            (row.binding !== null &&
+                (!windows(row.binding?.windows) || row.binding.windows.length !== row.windows.length))
+        ) {
+            throw new Error("Invalid binding windows");
         }
         count(row.oneshot?.ir);
         if (
@@ -237,7 +251,7 @@ export function streamSection(report) {
             (report.baseline === null && row.regressions.length) ||
             !row.regressions.every(
                 (entry) =>
-                    STREAM_SUBJECTS.includes(entry?.subject) &&
+                    GATED_SUBJECTS.includes(entry?.subject) &&
                     STREAM_METRICS.includes(entry.metric) &&
                     Number.isFinite(entry.ratio)
             )
@@ -255,7 +269,7 @@ export function streamSection(report) {
     const lines = [
         "### Streams",
         "",
-        `Subjects: \`reparse\` (R) and \`session\` (S), Ir per window of chunks; S runs the streams of at most 1,024 chunks. ${number(report.results.length)} workloads · \`${report.workloads.digest.slice(0, 16)}\`.`
+        `Subjects: \`reparse\` (R), \`session\` (S) and \`binding\` (B), Ir per window of chunks and for the finalize, R counting the two parse stages of each \`Document.parse\`; S runs every stream R runs at every step (those of at most 1,024 chunks, and the shapes 6.2 leaves to 6.3 at their smallest size) and every longer stream of a shape the language keeps local, and B the streams of at most 1,024 chunks. ${number(report.results.length)} workloads · \`${report.workloads.digest.slice(0, 16)}\`.`
     ];
     if (report.baseline) {
         lines.push(
@@ -265,8 +279,8 @@ export function streamSection(report) {
     }
     lines.push(
         "",
-        "| Documents | Family | Size | Workloads | Windows | R p50 | R p95 | R max | R total | S p50 | S p95 | S max | S total | Highest S / R | One-shot total |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Documents | Family | Size | Workloads | Windows | R p50 | R p95 | R max | R total | S p50 | S p95 | S max | S total | S / R total | Highest step S / R | One-shot total |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
         ...groups.map((group) => {
             const [source, family, size] = JSON.parse(group.key);
             return `| ${[
@@ -277,10 +291,29 @@ export function streamSection(report) {
                 number(group.windows),
                 ...figures(group.reparse),
                 ...figures(group.session),
-                group.ratio === null ? "" : `${group.ratio.toFixed(3)}×`,
+                ...(group.totalRatio === null
+                    ? ["", ""]
+                    : [`${group.totalRatio.toFixed(3)}×`, `${group.stepRatio.toFixed(3)}×`]),
                 number(group.oneshot)
             ].join(" | ")} |`;
-        })
+        }),
+        "",
+        "Bindings' C side (B): the MCB3 encode of each document an S window publishes and the release of its message, without building the platform values; no gate.",
+        "",
+        "| Documents | Family | Size | B p50 | B p95 | B max | B total | B / S total |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ...groups
+            .filter((group) => group.binding)
+            .map((group) => {
+                const [source, family, size] = JSON.parse(group.key);
+                return `| ${[
+                    sources[source],
+                    family,
+                    size === null ? "" : number(size),
+                    ...figures(group.binding),
+                    `${group.bindingRatio.toFixed(3)}×`
+                ].join(" | ")} |`;
+            })
     );
     return lines.join("\n");
 }

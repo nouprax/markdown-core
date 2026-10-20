@@ -45,7 +45,8 @@ static bool S_finish_kind_indexable(markdown_core_node_type kind) {
 
 static bool S_owns_document_lifecycle(const markdown_core_element *element) {
     return element->init_document && element->dispose_document && element->read_document_prefix &&
-           element->prepare_document && element->finish_document && element->publish_document;
+           element->prepare_document && element->finish_document && element->publish_document &&
+           element->publish_candidate;
 }
 
 static bool S_element_refused(const markdown_core_element *element) {
@@ -84,9 +85,20 @@ static bool S_element_refused(const markdown_core_element *element) {
             }
         }
     }
+    /* A fold hook asked at no kind, kinds without one to ask, or a kind to
+     * ask it at that is not a block kind of the element's structure. */
+    if (!element->fold_child != !(element->fold_kinds && *element->fold_kinds)) {
+        return true;
+    }
+    for (const markdown_core_node_type *kind = element->fold_kinds; kind && *kind; kind++) {
+        if (!MARKDOWN_CORE_NODE_TYPE_BLOCK_P(*kind) || markdown_core_structure_for_kind(*kind) != element) {
+            return true;
+        }
+    }
     /* Only part of the document lifecycle. */
     if ((element->init_document || element->dispose_document || element->read_document_prefix ||
-         element->prepare_document || element->finish_document || element->publish_document) &&
+         element->prepare_document || element->finish_document || element->publish_document ||
+         element->publish_candidate) &&
         !S_owns_document_lifecycle(element)) {
         return true;
     }
@@ -259,33 +271,31 @@ static void S_project_kinds(markdown_core_dialect *dialect) {
         const markdown_core_element *structure = markdown_core_structure_for_kind(kind);
         record.structure = structure ? markdown_core_dialect_instance(dialect, structure) : NULL;
         if (record.structure) {
-            const struct {
-                bool fact;
-                unsigned flag;
-            } facts[] = {
-                {structure->inline_content, MARKDOWN_CORE_KIND_INLINES},
-                {structure->contains_inlines_func != NULL, MARKDOWN_CORE_KIND_INLINES_ASK},
-                {structure->deferred_inlines, MARKDOWN_CORE_KIND_DEFERRED},
-                {structure->content_mode == MARKDOWN_CORE_CONTENT_LITERAL, MARKDOWN_CORE_KIND_LINES},
-                {structure->accepts_lines_func != NULL, MARKDOWN_CORE_KIND_LINES_ASK},
-                {structure->content_mode == MARKDOWN_CORE_CONTENT_PROSE, MARKDOWN_CORE_KIND_PROSE},
-                {structure->paragraph, MARKDOWN_CORE_KIND_IS_PARAGRAPH},
-                {structure->blank_opaque, MARKDOWN_CORE_KIND_BLANK_OPAQUE},
-                {structure->blank_line != NULL, MARKDOWN_CORE_KIND_BLANK_ASK},
-                {structure->blank_runs, MARKDOWN_CORE_KIND_BLANK_RUNS},
-                {structure->propagates_child_blank, MARKDOWN_CORE_KIND_BLANK_PROPAGATES},
-            };
-            for (size_t i = 0; i < sizeof(facts) / sizeof(facts[0]); i++) {
-                if (facts[i].fact) {
-                    record.flags |= (uint16_t)facts[i].flag;
-                }
-            }
+            record.flags =
+                (uint16_t)((structure->inline_content ? MARKDOWN_CORE_KIND_INLINES : 0) |
+                           (structure->contains_inlines_func ? MARKDOWN_CORE_KIND_INLINES_ASK : 0) |
+                           (structure->deferred_inlines ? MARKDOWN_CORE_KIND_DEFERRED : 0) |
+                           (structure->content_mode == MARKDOWN_CORE_CONTENT_LITERAL ? MARKDOWN_CORE_KIND_LINES : 0) |
+                           (structure->accepts_lines_func ? MARKDOWN_CORE_KIND_LINES_ASK : 0) |
+                           (structure->content_mode == MARKDOWN_CORE_CONTENT_PROSE ? MARKDOWN_CORE_KIND_PROSE : 0) |
+                           (structure->paragraph ? MARKDOWN_CORE_KIND_IS_PARAGRAPH : 0) |
+                           (structure->blank_opaque ? MARKDOWN_CORE_KIND_BLANK_OPAQUE : 0) |
+                           (structure->blank_line ? MARKDOWN_CORE_KIND_BLANK_ASK : 0) |
+                           (structure->blank_runs ? MARKDOWN_CORE_KIND_BLANK_RUNS : 0) |
+                           (structure->propagates_child_blank ? MARKDOWN_CORE_KIND_BLANK_PROPAGATES : 0));
             record.complete = structure->complete_node;
         }
         if (markdown_core_kind_owns_fields(kind)) {
             record.flags |= MARKDOWN_CORE_KIND_FIELDS;
         }
         dialect->kinds[index] = record;
+    }
+    /* A structure's fold hook is asked at the kinds it lists, each a block
+     * kind it is the structure of (S_element_refused). */
+    for (size_t i = 0; i < dialect->element_count; i++) {
+        for (const markdown_core_node_type *kind = dialect->instances[i].element->fold_kinds; kind && *kind; kind++) {
+            dialect->kinds[markdown_core_block_kind_index(*kind)].flags |= MARKDOWN_CORE_KIND_FOLDS;
+        }
     }
     /* The out-of-table index answers nothing; the storage is zeroed. */
 }

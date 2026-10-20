@@ -271,6 +271,12 @@ stream documents/wide-definition-ascii-16k.md rows
 document documents/wide-definition-utf8-16k.md parts 10 842 844 844 856 845 846 841 843 843 852 854 850 865 851 863 848 851 852 843 855
 stream documents/wide-definition-utf8-16k.md tokens
 stream documents/wide-definition-utf8-16k.md rows
+document documents/late-definition-ascii-16k.md parts 851 851 851 851 851 851 851 851 851 851 850 850 850 850 850 850 850 850 850 850 8
+stream documents/late-definition-ascii-16k.md tokens
+stream documents/late-definition-ascii-16k.md rows
+document documents/late-definition-utf8-16k.md parts 842 844 844 856 845 846 841 843 843 852 854 850 865 851 863 848 851 852 843 855 9
+stream documents/late-definition-utf8-16k.md tokens
+stream documents/late-definition-utf8-16k.md rows
 document documents/repeated-heading-ascii-16k.md parts 26 26 26 26 26 26 26 26 26 26 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 29 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32 32
 stream documents/repeated-heading-ascii-16k.md tokens
 stream documents/repeated-heading-ascii-16k.md rows
@@ -289,3 +295,15 @@ stream documents/single-line-ascii-64k.md rows
 document documents/single-line-utf8-64k.md parts 65540
 stream documents/single-line-utf8-64k.md tokens
 stream documents/single-line-utf8-64k.md rows
+document documents/unclosed-properties-ascii-16k.md parts 16385
+stream documents/unclosed-properties-ascii-16k.md tokens
+stream documents/unclosed-properties-ascii-16k.md rows
+document documents/unclosed-properties-utf8-16k.md parts 16420
+stream documents/unclosed-properties-utf8-16k.md tokens
+stream documents/unclosed-properties-utf8-16k.md rows
+document documents/unclosed-grid-ascii-16k.md parts 16464
+stream documents/unclosed-grid-ascii-16k.md tokens
+stream documents/unclosed-grid-ascii-16k.md rows
+document documents/unclosed-grid-utf8-16k.md parts 16448
+stream documents/unclosed-grid-utf8-16k.md tokens
+stream documents/unclosed-grid-utf8-16k.md rows

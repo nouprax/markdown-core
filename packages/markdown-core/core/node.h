@@ -37,6 +37,9 @@ typedef struct {
      * absent, and `js` is present. */
     markdown_core_optional_chunk info;
     markdown_core_chunk literal;
+    /* Where the literal starts in the content: past the fence line, which
+     * gives the info string, in a fenced block, and at its start otherwise. */
+    bufsize_t literal_start;
     uint8_t fence_length;
     uint8_t fence_offset;
     unsigned char fence_char;
@@ -172,14 +175,29 @@ typedef struct {
     int continuation_line;
 } markdown_core_definition_body_value;
 
-/* A DEFINITION TABLE of a published document: every Footnote, every
- * Specimen, or every Reference, in source order, borrowed from the tree. */
-typedef struct markdown_core_definitions {
-    /* Every definition of the kind, in source order. */
+/* Where an entry a snapshot's document lists lies in a table it shares
+ * with the committed parse (ast.c, A SNAPSHOT'S TABLES): its index among the
+ * document's entries, and the index of the committed entry after it. */
+typedef struct markdown_core_table_place {
+    size_t at, next;
+} markdown_core_table_place;
+
+/* A TABLE of a published document, borrowed from the tree: `count` nodes,
+ * every one of which `nodes` holds, or, in a snapshot's document, `own` of
+ * them, each where `places` says, and the committed table's in between. */
+typedef struct markdown_core_node_table {
     const struct markdown_core_node **nodes;
-    size_t count;
+    size_t count, own;
+    markdown_core_table_place *places;
+} markdown_core_node_table;
+
+/* A DEFINITION TABLE of a published document: every Footnote, every
+ * Specimen, or every Reference, in source order. */
+typedef struct markdown_core_definitions {
+    markdown_core_node_table all;
     /* The labeled ones by label, in source order among equal labels: the
-     * Footnotes and Specimens a lookup by label answers from. A label a
+     * Footnotes and Specimens a lookup by label answers from, every one, or
+     * a snapshot's own that no committed definition comes before. A label a
      * reference occurrence names resolves through the reference targets. */
     const struct markdown_core_node **labeled;
     size_t labeled_count;
@@ -190,14 +208,16 @@ typedef struct markdown_core_definitions {
  * were written; publishing the document records its definition tables here,
  * and the nodes reference occurrences resolve to, by label: for each label,
  * the first Reference declaring it, or, when none does, the first Heading
- * whose text declares it. */
+ * whose text declares it. A snapshot's document shares the committed parse's
+ * tables, `committed`, and lists what it adds to them in room the parse
+ * keeps, so it borrows every table; NULL in any other, which owns them. */
 typedef struct {
     struct markdown_core_node *metadata;
     markdown_core_definitions footnotes;
     markdown_core_definitions specimens;
     markdown_core_definitions references;
-    const struct markdown_core_node **reference_targets;
-    size_t reference_target_count;
+    markdown_core_node_table reference_targets;
+    const struct markdown_core_committed_tables *committed;
 } markdown_core_document_value;
 
 /* A node's source extent in UTF-8 bytes (the published form of its place). */
@@ -256,54 +276,69 @@ typedef struct markdown_core_runs {
 } markdown_core_runs;
 
 /* A node's places while the parse builds the tree, and its runs once it is
- * published, as its place becomes its extent. */
+ * published. */
 typedef union {
     markdown_core_places *places;
     markdown_core_runs *runs;
 } markdown_core_node_source;
 
-/* WHERE A NODE IS, in bytes of the UTF-8 source, and never in lines or
- * columns. While a parse builds the tree every node holds its absolute
- * `place`. Publishing the document (markdown_core_publish_tree) rewrites
- * each node's place as its `extent`: `lead`, the signed distance from the end
- * of the previous node in the same relation (or from its owner's start, for
- * the first node), and `span`, the length of its range. Relative extents are
- * what lets a node keep its value when text before it moves. A published node
- * holds only its extent; nothing reads a place after publishing. */
-typedef union {
-    markdown_core_place place;
-    markdown_core_extent extent;
-} markdown_core_node_where;
-
 enum markdown_core_node__internal_flags {
     MARKDOWN_CORE_NODE__OPEN = (1 << 0),
     MARKDOWN_CORE_NODE__LAST_LINE_BLANK = (1 << 1),
-    /* The answer of a list or a list item with a child the blank-line facts
-     * see to whether it ends with a blank line: that child's, folded as the
-     * block closes, when its children have settled, and marked by
-     * BLANK_FOLDED (markdown_core_block_ends_with_blank_line). */
+    /* Whether the last child the blank-line facts see that settled into a
+     * block of a kind whose blank-line answer is its children's ends with a
+     * blank line; the block's answer once it has closed, with BLANK_FOLDED
+     * (markdown_core_block_ends_with_blank_line). */
     MARKDOWN_CORE_NODE__ENDS_BLANK = (1 << 2),
-    MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK = (1 << 3),
+    /* A blank line separates two children the blank-line facts see in such
+     * a block: one that settled into it ended with a blank line, and a later
+     * one settled after it. */
+    MARKDOWN_CORE_NODE__BLANK_SPACED = (1 << 3),
     // An HTML block whose own end condition matched on the line being
     // processed. `markdown_core_block_close` reads it to end the block on that line rather
     // than on the line before, and to know that a `-->` line really closed a
     // type-2 block rather than the input or a container running out.
     MARKDOWN_CORE_NODE__CLOSED_BY_END_CONDITION = (1 << 4),
-    // Deferred contextual escape token, decoded when inline ownership is final.
-    MARKDOWN_CORE_NODE__ESCAPED_SPACE = (1 << 6),
+    /* A block, or a block's field root, that settled in a commit (parser.h,
+     * THE BUILDERS): it is in the committed tree, and a snapshot reads it and
+     * never writes it. */
+    MARKDOWN_CORE_NODE__COMMITTED = (1 << 5),
+    /* A node the document holds as a publish left it, which no later parse
+     * writes again: an item that is COMMITTED, or that a COMMITTED node
+     * holds, as the publish that placed it found it. A later publish skips
+     * the FINAL items at the front of a relation (ast.c, THE FINAL PREFIX). */
+    MARKDOWN_CORE_NODE__FINAL = (1 << 6),
+    /* A block a snapshot lent (blocks.c, THE LENDING): its address holds a
+     * view of the block's state, which the snapshot writes, and the block's
+     * own state waits in a slot of its own until the next take-back. */
+    MARKDOWN_CORE_NODE__LENT = (1 << 7),
 
     /* A block the blank-line facts read through, as CommonMark reads through
      * a link reference definition: whether a block ends with a blank line,
      * and whether another block follows it, are answered by the blocks
      * around it. */
     MARKDOWN_CORE_NODE__BLANK_TRANSPARENT = (1 << 8),
-    /* ENDS_BLANK holds the block's answer, folded as it closed. */
+    /* A child the blank-line facts see has settled into the block, and
+     * ENDS_BLANK holds that child's answer. */
     MARKDOWN_CORE_NODE__BLANK_FOLDED = (1 << 9),
+    /* A candidate that borrows the content buffer of the root it was made
+     * from, which releasing it does not give back
+     * (markdown_core_node_candidate). */
+    MARKDOWN_CORE_NODE__BORROWS_CONTENT = (1 << 10),
+    /* A heading's anchor that the headings computed rather than one its
+     * attributes wrote: it reserves no name, so releasing the heading
+     * withdraws none (heading.c). */
+    MARKDOWN_CORE_NODE__ANCHOR_COMPUTED = (1 << 11),
+    /* A node whose source holds the runs a publish made (ast.c): an open
+     * block's, which its close lets go and the next publish makes again, or
+     * a closed node's, which stand with its extent while the node is in the
+     * tree. */
+    MARKDOWN_CORE_NODE__PUBLISHED = (1 << 12),
 
     // The first bit an element may claim. Element flags are compile-time
     // constants owned by the element that uses them; there is no runtime
     // registration and no allocator to run out of bits.
-    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 10),
+    MARKDOWN_CORE_NODE__ELEMENT_FIRST = (1 << 13),
 };
 
 typedef uint16_t markdown_core_node_internal_flags;
@@ -346,15 +381,14 @@ typedef union {
 } markdown_core_node_data;
 
 struct markdown_core_node {
-    /* The node's PLACE: its children and its id. Every field after `id` is
-     * its value (markdown_core_node_swap_values). */
     /* The node's children in order, `child_count` of them, in storage the
-     * node owns whose capacity the count determines
-     * (markdown_core_node_push_child). A node holds no pointer to its parent
-     * or its siblings: whatever holds a node holds it in an array or a
-     * field. */
+     * node owns (THE CAPACITY OF A NODE ARRAY, markdown_core_node_push_child).
+     * A node holds no pointer to its parent or its siblings: whatever holds a
+     * node holds it in an array or a field. */
     struct markdown_core_node **children;
     uint32_t child_count;
+    uint16_t kind;
+    markdown_core_node_internal_flags flags;
 
     /* The node's identifier, unique within its document; 0 until the
      * document is published (markdown_core_publish_tree). */
@@ -370,24 +404,32 @@ struct markdown_core_node {
      * paragraph's leading reference definitions and its trailing block
      * identifier. */
     bufsize_t cut_front, cut_back;
-    /* Where the node is in the source; see markdown_core_node_where. */
-    markdown_core_node_where where;
+    /* WHERE THE NODE IS, in bytes of the UTF-8 source, and never in lines
+     * or columns. `place` is its absolute range, which the parse writes and
+     * reads. `extent` is what publishing the document makes of it
+     * (markdown_core_publish_tree): `lead`, the signed distance from the end
+     * of the previous node in the same relation (or from its owner's start,
+     * for the first node), and `span`, the length of its range. Relative
+     * extents are what lets a node keep its value when text before it
+     * moves. */
+    markdown_core_place place;
+    markdown_core_extent extent;
     int internal_offset;
     /* This node's slice of parser-owned content-to-source runs. Zero count
      * means there is no mapped content (for example, an empty cell). */
     markdown_core_content_map content_map;
     /* Its places, then its runs (markdown_core_node_source). */
     markdown_core_node_source source;
-    uint16_t kind;
-    markdown_core_node_internal_flags flags;
 
     const markdown_core_element *element;
     /* Element-owned data, allocated by opaque_alloc_func and released by
      * opaque_free_func. It survives kind changes independently of `as`. */
     void *opaque;
 
-    /* Owns a record too large for the slot, whether installed at construction
-     * or conversion. `as` is the typed view for either backing. */
+    /* Owns a record too large for the slot, whether installed at
+     * construction, copy or conversion: storage of its size the node owns
+     * (markdown_core_node_pool_bytes). `as` is the typed view for either
+     * backing. */
     void *node_data_allocation;
     markdown_core_node_data as;
 };
@@ -404,13 +446,12 @@ struct markdown_core_node {
  * scaffold children.
  *
  * An open block is linked into the builder stack (parser.h, THE BUILDERS)
- * through its own: `parent` is the block it is open inside and `last` the
- * block open inside it, and a block's `last` empties as that block closes. A
- * block on the completion queue (parser.h) is linked into it through its
- * own: `next` is the block that joined after it and `parent` the block it
- * settled into, which completion asks its finish steps with; completion
- * empties both. A node the release walk takes is on the walk's stack through
- * its `next` (node.c). */
+ * through its own `parent`, the block it is open inside, whose last child it
+ * is. A block on the completion queue (parser.h) is linked into it through
+ * its own: `next` is the block that joined after it and `parent` the block
+ * it settled into, which completion asks its finish steps with; `next`
+ * empties as the block leaves the queue. A node the release walk takes is on
+ * the walk's stack through its `next` (node.c). */
 typedef struct markdown_core_scaffold {
     struct markdown_core_node *parent, *prev, *next, *first, *last;
 } markdown_core_scaffold;
@@ -428,10 +469,10 @@ typedef union {
 
 /* Room for a kind's record inside the slot. The bound is a property of the
  * slot, not of any kind: a record that fits is placed here, and one that does
- * not is owned through `node_data_allocation`. Construction and conversion
- * use this same capacity and ownership rule. Sixty-four bytes hold every
- * record but the metadata fields and a cross transclusion's, which are one
- * per document and rare. */
+ * not is storage of its size the node owns, through `node_data_allocation`.
+ * Construction, copy and conversion use this same capacity and ownership
+ * rule. Sixty-four bytes hold every record but the document's, the metadata
+ * fields and a cross transclusion's, which are one per document and rare. */
 #define MARKDOWN_CORE_NODE_SLOT_RECORD_BYTES 64
 
 typedef struct {
@@ -515,7 +556,8 @@ static inline void markdown_core_scaffold_unlink(markdown_core_node *node) {
     } else {
         holder->last = link->prev;
     }
-    link->parent = link->prev = link->next = NULL;
+    link->parent = link->next = NULL;
+    link->prev = NULL;
 }
 
 static inline markdown_core_node *markdown_core_scaffold_parent(const markdown_core_node *node) {
@@ -627,13 +669,18 @@ bool markdown_core_node_kind_set_intersects(const markdown_core_node_kind_set *a
 markdown_core_node *markdown_core_node_new(markdown_core_node_type type);
 markdown_core_node *markdown_core_node_new_with_ext(markdown_core_node_type type, const markdown_core_element *element);
 
-/* Releases `node`, its descendants and every node-valued field under them. */
+/* Releases `node`, its descendants and every node-valued field under them.
+ * An inline node leaves the inline tree under construction that holds it
+ * (THE SCAFFOLD); a block is held by an array or a field, never through its
+ * scaffold, whose links name the builders and the queue. */
 void markdown_core_node_free(markdown_core_node *node);
 
 /* THE CAPACITY OF A NODE ARRAY -- a node's children, a cite's items -- is
- * the smallest power of two that holds its count, and at least two, the
- * pointers one class of a pool's storage holds: the count alone says when
- * the array is full. */
+ * what its storage holds (markdown_core_bytes_size), at least the smallest
+ * power of two that holds its count, and at least two, the pointers one
+ * class of a pool's storage holds. An array keeps its storage as its count
+ * drops, so only a count at a power of two asks the storage whether the
+ * array is full. */
 static inline uint32_t markdown_core_node_array_capacity(uint32_t count) {
     uint32_t capacity = 2;
     while (capacity < count) {
@@ -649,29 +696,53 @@ static inline uint32_t markdown_core_node_array_capacity(uint32_t count) {
 bool markdown_core_node_array_start(struct markdown_core_node_pool *pool, markdown_core_node ***items, uint32_t *count,
                                     markdown_core_node *node);
 
-/* Appends `node` to the full array `*items` holds `*count` of, at least two,
- * moving the array to storage from `pool` twice its capacity. False, having
- * appended nothing, when no storage can be had or the count is at its
- * bound. */
+/* Appends `node` to the array `*items` holds `*count` of, a power of two
+ * from two: in place when its storage holds more, and otherwise moving the
+ * array to storage from `pool` twice its count. False, having appended
+ * nothing, when no storage can be had or the count is at its bound. */
 bool markdown_core_node_array_push_full(struct markdown_core_node_pool *pool, markdown_core_node ***items,
                                         uint32_t *count, markdown_core_node *node);
 
-/* Appends `node` to the array `*items` holds `*count` of: an empty array
- * takes its storage (markdown_core_node_array_start), and one that is full --
- * at each power of two from two -- moves first
+/* Appends `node` to the array `*items` holds `*count` of: an array with no
+ * storage takes its storage (markdown_core_node_array_start), and one whose
+ * count is at a power of two from two asks its storage
  * (markdown_core_node_array_push_full). */
 static inline bool markdown_core_node_array_push(struct markdown_core_node_pool *pool, markdown_core_node ***items,
                                                  uint32_t *count, markdown_core_node *node) {
     const uint32_t held = *count;
-    if (!held) {
-        return markdown_core_node_array_start(pool, items, count, node);
-    }
     if (held >= 2 && !(held & (held - 1))) {
         return markdown_core_node_array_push_full(pool, items, count, node);
+    }
+    if (!*items) {
+        return markdown_core_node_array_start(pool, items, count, node);
     }
     (*items)[held] = node;
     *count = held + 1;
     return true;
+}
+
+/* `node` before the last of the array `*items` holds `*count` of, or as its
+ * first when it holds none. False, having changed nothing, when no storage
+ * can be had. */
+static inline bool markdown_core_node_array_insert_before_last(struct markdown_core_node_pool *pool,
+                                                               markdown_core_node ***items, uint32_t *count,
+                                                               markdown_core_node *node) {
+    const uint32_t held = *count;
+    if (!held) {
+        return markdown_core_node_array_push(pool, items, count, node);
+    }
+    if (!markdown_core_node_array_push(pool, items, count, (*items)[held - 1])) {
+        return false;
+    }
+    (*items)[held - 1] = node;
+    return true;
+}
+
+/* The last of the array `*items` holds `*count` of, at least one, out of
+ * it; the array keeps its storage. */
+static inline markdown_core_node *markdown_core_node_array_pop(markdown_core_node **items, uint32_t *count) {
+    assert(*count);
+    return items[--*count];
 }
 
 /* `child` at the end of `node`'s children, with no containment check: the
@@ -693,7 +764,8 @@ const char *markdown_core_node_get_type_string(markdown_core_node *node);
  * A node lives in a SLOT (slab.h) holding the node and room for its kind's
  * record, the resources links read through live in slots of their own, and
  * what else a node owns of its own size -- the lists of its source, a label
- * it declares -- in storage of that size, cut from the slabs its nodes are.
+ * it declares, a record too large for its slot -- in storage of that size,
+ * cut from the slabs its nodes are.
  * A pool holds the slabs of all three. A parse takes every slot from the
  * pool its caller lends it -- a session's, which outlives each of its
  * appends, or one the caller makes for a single parse -- and a caller with no
@@ -717,9 +789,9 @@ typedef struct markdown_core_node_pool {
 #define MARKDOWN_CORE_NODE_SLAB_BYTES ((size_t)64 * 1024)
 
 /* Uninitialized storage of `bytes` a node owns -- a list of its source, a
- * label it declares -- cut from the slabs of the pool's nodes, which a parse
- * always lends; NULL when none can be had. The node releases it with
- * itself. */
+ * label it declares, a record too large for its slot -- cut from the slabs
+ * of the pool's nodes, which a parse always lends; NULL when none can be
+ * had. The node releases it with itself. */
 static inline void *markdown_core_node_pool_bytes(markdown_core_node_pool *pool, size_t bytes) {
     return markdown_core_bytes_take(&pool->bytes, &pool->nodes, bytes, MARKDOWN_CORE_NODE_SLAB_BYTES);
 }
@@ -731,12 +803,56 @@ void markdown_core_node_pool_bytes_free(markdown_core_node_pool *pool, void *sto
  * allocator's own slot, which is what the parser-less constructor takes. */
 markdown_core_node *markdown_core_node_pool_new(markdown_core_node_pool *pool, markdown_core_node_type type,
                                                 const markdown_core_element *element);
-/* Exchanges the values of two nodes of one kind with the same node-valued
- * fields: everything but their places, which are their children, their
- * queue links, their ids and the nodes their fields hold. Each value keeps
- * the storage it borrows from, so a node takes the other's value with the
- * other's storage. */
-void markdown_core_node_swap_values(markdown_core_node *a, markdown_core_node *b);
+/* Exchanges everything two nodes' slots hold -- each node, its scaffold and
+ * its record -- so each node takes the other's whole state, with what it
+ * owns and borrows, and only the two addresses stay where they were
+ * (blocks.c, THE LENDING). */
+void markdown_core_node_swap(markdown_core_node *a, markdown_core_node *b);
+/* A VIEW OF A BLOCK A SNAPSHOT LENDS (blocks.c, THE LENDING): a node of
+ * `node`'s kind in a slot of `pool`'s, with a record and a payload of its
+ * own, that VIEWS what `node` owns where its holder marks it -- its
+ * attributes, the strings its record owns, the storage its element's payload
+ * owns -- and holds a copy of its labels and of its places, and no places
+ * when its source holds runs (PUBLISHED). It holds `node`'s children array,
+ * content buffer and field nodes as they are, and owns none of them: the
+ * lending hands each back before it releases the view. Its scaffold is
+ * empty. NULL, having taken nothing, when storage could not be had. */
+markdown_core_node *markdown_core_node_view(markdown_core_node_pool *pool, const markdown_core_node *node);
+/* What `view` holds of the children, the content and the field nodes of
+ * `node`, the node it views (markdown_core_node_view), let go: it holds none
+ * of them. With `pool`, each field node it holds that `node` does not hold in
+ * the same field -- one it took since -- is released into it first. */
+void markdown_core_node_view_let_go(markdown_core_node_pool *pool, markdown_core_node *view,
+                                    const markdown_core_node *node);
+/* Each field node `view` holds that `node`, the node it views, does not hold
+ * in the same field -- one it took since -- handed to `take` with its slot,
+ * which `take` empties as it takes the node. */
+void markdown_core_node_view_taken(markdown_core_node *view, const markdown_core_node *node,
+                                   markdown_core_owned_subtree_visitor take, void *context);
+/* Whether `node` holds `field` in one of its fields. */
+bool markdown_core_node_holds_field(const markdown_core_node *node, const markdown_core_node *field);
+/* A VIEW ADOPTS what it views: `view` takes every part of `node`'s it still
+ * holds -- the children array, the content buffer, the field nodes, the
+ * attribute value, the strings of its record and its element's storage --
+ * and owns everything it holds; `node` lets go of them and keeps only what
+ * the view replaced, the field nodes of which are released into `pool`, and
+ * the rest of which goes with `node`'s release. */
+void markdown_core_node_view_adopt(markdown_core_node_pool *pool, markdown_core_node *view, markdown_core_node *node);
+/* A CANDIDATE FOR AN INLINE ROOT COMPLETED AGAIN (blocks.c, A LOOKUP THAT
+ * FOUND NOTHING): a node of `root`'s kind in a slot of `pool`'s, holding what
+ * the block phase made of `root` and nothing its completion or its publish
+ * made: a copy of each thing `root` owns -- its attributes, its record and
+ * what the record owns -- and its content buffer, which it borrows
+ * (BORROWS_CONTENT). A root holds no field root and no element payload, and
+ * its children are inline content its completion makes. It has no id, and
+ * no place, places or runs until the caller gives them; its scaffold is
+ * empty.
+ * NULL, having taken nothing, when storage could not be had. */
+markdown_core_node *markdown_core_node_candidate(markdown_core_node_pool *pool, const markdown_core_node *root);
+/* The storage `taker` borrows, made its own, and lent by `lender`, which
+ * borrows it from it: `taker` is a candidate (markdown_core_node_candidate)
+ * and `lender` the root whose state it was made from, released after it. */
+void markdown_core_node_take_borrowed(markdown_core_node *taker, markdown_core_node *lender);
 /* `markdown_core_node_free` into a pool: the node slots and the slots of
  * the resources the nodes held last go back to it for reuse rather than
  * dropping their slabs. A NULL pool is the plain release. */

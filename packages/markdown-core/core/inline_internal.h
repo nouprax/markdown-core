@@ -145,8 +145,7 @@ static inline void markdown_core_inline_map_text(markdown_core_inline_state *inl
         node->content_map.count = 0;
         node->content_map.offset = 0;
         markdown_core_parser_append_content_mark(inline_state->owner_parser, node, 0, inline_state->mark_line,
-                                                 node->where.place.start,
-                                                 (int)(node->where.place.end - node->where.place.start), 0);
+                                                 node->place.start, (int)(node->place.end - node->place.start), 0);
     }
 }
 
@@ -180,9 +179,9 @@ static inline void markdown_core_inline_place(markdown_core_inline_state *inline
         markdown_core_inline_place_outside_frame(inline_state, node, from, to);
         return;
     }
-    node->where.place.start =
+    node->place.start =
         (uint32_t)(inline_state->mark_source + (from_offset - inline_state->mark_run_start) * inline_state->mark_step);
-    node->where.place.end =
+    node->place.end =
         (uint32_t)(inline_state->mark_source + (to_offset - inline_state->mark_run_start) * inline_state->mark_step +
                    inline_state->mark_width);
     if (node->kind == MARKDOWN_CORE_NODE_TEXT && node->as.literal->len > 0) {

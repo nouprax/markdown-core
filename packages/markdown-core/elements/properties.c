@@ -41,7 +41,7 @@ typedef struct {
 /* Decode a pre-indexed envelope. Return geometry by value so a later parser
  * operation cannot invalidate a decoder's line reference. */
 static source_line property_line(const properties *p, size_t line) {
-    return p->parser->input_lines[p->first_line + line];
+    return p->parser->input.lines[p->first_line + line];
 }
 
 static bool plain_start(const unsigned char *s, size_t start, size_t end) {
@@ -748,14 +748,34 @@ static void payload(properties *p) {
         line = boundary;
     }
 }
-size_t markdown_core_properties_parse(markdown_core_properties_work *work, markdown_core_parser *parser,
-                                      const unsigned char *source, size_t length) {
-    /* The opener is exactly "---" and a line ending: a peek, not a scan. */
-    if (length < 4 || memcmp(source, "---", 3) || !markdown_core_is_line_end(source[3])) {
-        return 0;
+/* Whether the input holds the fence's three dashes at `at`. Each byte asks
+ * whether the input goes on there (markdown_core_parser_input_ends). */
+static bool properties_dashes_at(markdown_core_parser *parser, const unsigned char *source, size_t at) {
+    for (size_t i = at; i < at + 3; i++) {
+        if (markdown_core_parser_input_ends(parser, source + i) || source[i] != '-') {
+            return false;
+        }
     }
-    size_t start = next_line(source, 3, length), close = start;
-    properties p = {.parser = parser, .work = work, .source = source};
+    return true;
+}
+
+int markdown_core_properties_fence(const unsigned char *data) {
+    int dashes = 0;
+    while (dashes < 3 && data[dashes] == '-') {
+        dashes++;
+    }
+    return markdown_core_is_line_end(data[dashes]) ? dashes : -1;
+}
+
+bool markdown_core_properties_closed(markdown_core_properties_work *work, markdown_core_parser *parser, size_t *fence) {
+    size_t length;
+    const unsigned char *source = markdown_core_parser_input_text(parser, &length);
+    /* The opener is exactly "---" and a line ending: a peek, not a scan. */
+    if (!properties_dashes_at(parser, source, 0) || markdown_core_parser_input_ends(parser, source + 3) ||
+        !markdown_core_is_line_end(source[3])) {
+        return false;
+    }
+    size_t close = next_line(source, 3, length);
     /* THE FENCE NEEDS NO LINE GEOMETRY. It is "---" bracketed by line ends,
      * so the search for it is one `memchr` pass over the dashes, checked at
      * each hit for the line start before it and the line end after it, and
@@ -765,16 +785,17 @@ size_t markdown_core_properties_parse(markdown_core_properties_work *work, markd
      * closing fence afterwards; the block driver later reuses those entries. */
     bool closed = false;
     size_t fence_work = 0;
-    while (close < length) {
+    while (!markdown_core_parser_input_ends(parser, source + close)) {
         const unsigned char *hit = memchr(source + close, '-', length - close);
         if (!hit) {
             fence_work += length - close;
-            break;
+            close = length;
+            continue;
         }
         size_t at = (size_t)(hit - source);
         fence_work += at - close + 1;
-        if (markdown_core_is_line_end(source[at - 1]) && length - at >= 3 && source[at + 1] == '-' &&
-            source[at + 2] == '-' && (at + 3 == length || markdown_core_is_line_end(source[at + 3]))) {
+        if (markdown_core_is_line_end(source[at - 1]) && properties_dashes_at(parser, source, at) &&
+            (markdown_core_parser_input_ends(parser, source + at + 3) || markdown_core_is_line_end(source[at + 3]))) {
             close = at;
             closed = true;
             break;
@@ -782,9 +803,14 @@ size_t markdown_core_properties_parse(markdown_core_properties_work *work, markd
         close = at + 1;
     }
     work->line_work += fence_work;
-    if (!closed) {
-        return 0;
-    }
+    *fence = close;
+    return closed;
+}
+
+size_t markdown_core_properties_parse(markdown_core_properties_work *work, markdown_core_parser *parser, size_t close) {
+    size_t length;
+    const unsigned char *source = markdown_core_parser_input_text(parser, &length);
+    properties p = {.parser = parser, .work = work, .source = source};
     int number = 1;
     source_line *line;
     do {
@@ -802,13 +828,14 @@ size_t markdown_core_properties_parse(markdown_core_properties_work *work, markd
     }
     size_t consumed = next_line(source, close + 3, length);
     p.metadata = node->as.metadata;
-    node->where.place = (markdown_core_place){0, (uint32_t)(close + 3)};
+    node->place = (markdown_core_place){0, (uint32_t)(close + 3)};
     payload(&p);
     if (parser->error) {
         markdown_core_parser_release_node(parser, node);
         return 0;
     }
     parser->root->as.document->metadata = node;
+    markdown_core_parser_settle_field(parser, node);
     parser->line_number = (int)(p.count + 2);
     parser->last_line_end = (bufsize_t)(close + 3);
     return consumed;

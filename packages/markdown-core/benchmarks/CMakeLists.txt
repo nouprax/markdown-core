@@ -88,11 +88,12 @@ endif()
 # The stream benchmark's runner (docs/plans/2026-09-29-incremental-gates.md,
 # section 5). It shares the incremental harness with the correctness runner, so
 # both read the same workload files, and it links the same static engine as
-# the stage runner. Like the stage runners it is never registered with CTest.
+# the stage runner, with the MCB3 encoder its `binding` subject steps the
+# session through. Like the stage runners it is never registered with CTest.
 add_executable(markdown_core_stream_runner stream_runner.c incremental_harness.c)
 target_include_directories(markdown_core_stream_runner PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
                                                                "${CMAKE_CURRENT_SOURCE_DIR}/../include")
-target_link_libraries(markdown_core_stream_runner PRIVATE libmarkdown-core-public-static)
+target_link_libraries(markdown_core_stream_runner PRIVATE libmarkdown-core-wire libmarkdown-core-public-static)
 
 # The attribute comparison's two runners.
 #

@@ -90,16 +90,19 @@ previous one: a node that continues an old node keeps its id, so a Compose
 MarkdownSession("# Title\n\nfir").use { session ->   // TextUnit.UTF16 by default
     session.append("st\n")
     session.append("\n> quote\n")
-    val document = session.document             // the tree of Document.parse(session.text), ids aside
-    val final = session.finalize()              // the text ends here
+    val document = session.document             // a snapshot of the text so far
+    val final = session.finalize()              // the tree of Document.parse(session.text), ids aside
 }
 ```
 
-A session's `unit` is how its documents count scope columns. The caller ends
-the text with `finalize`, which returns the final document; afterwards
-`append` and `finalize` throw `ErrorCode.SESSION_FINALIZED`, and `document`
-and `text` stay readable. `close` releases the engine's session; the
-documents it returned stay complete values.
+Until `finalize`, each document is a snapshot of the text so far: a lookup of
+a reference, footnote or specimen sees only the definitions that start before
+the inline root asking. A session's `unit` is how its documents count scope
+columns. The caller ends the text with `finalize`, which returns the final
+document; afterwards `append` and `finalize` throw
+`ErrorCode.SESSION_FINALIZED`, and `document` and `text` stay readable.
+`close` releases the engine's session; the documents it returned stay complete
+values.
 
 ### Identity, equality and scopes
 

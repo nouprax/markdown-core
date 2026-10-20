@@ -15,7 +15,7 @@ private fun assertParsesItsText(session: MarkdownSession) {
 class SessionTest {
     @Test
     fun aNewSessionIsAParseOfItsSource() {
-        val source = "# Title\n\nSome *text*[^n]\n\n[^n]: note\n"
+        val source = "# Title\n\n[^n]: note\n\nSome *text*[^n]\n"
         MarkdownSession(source).use { session ->
             assertEquals(TextUnit.UTF16, session.unit)
             assertEquals(TextUnit.UTF16, session.document.unit)
@@ -67,7 +67,9 @@ class SessionTest {
     fun finalizeReturnsTheFinalDocumentAndEndsTheSession() {
         for (unit in listOf(TextUnit.UTF8, TextUnit.UTF16)) {
             MarkdownSession("[a]\n\n", unit).use { session ->
-                session.append("[a]: /url\n")
+                val snapshot = session.append("[a]: /url\n")
+                // A snapshot's lookup sees only the definitions written before it.
+                assertNotEquals(Document.parse(session.text, unit).dump(session.text), snapshot.dump(session.text))
                 val final = session.finalize()
                 val text = session.text
                 assertEquals(final, session.document)

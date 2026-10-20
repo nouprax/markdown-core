@@ -35,9 +35,9 @@ Every gate below checks one of these properties for tail streaming:
 
 - **Correct AST.** After `finalize`, the AST a session returns is the AST a
   fresh parse of the same text returns. Before it, each snapshot is the AST a
-  fresh parse of the text so far returns, except where a definition lookup or
-  an automatic anchor would see text written after the node that asks (plan
-  5.5), and it does not depend on how the text was split into appends.
+  fresh parse of the text so far returns, except where a definition lookup
+  would see text written after the node that asks (plan 5.5), and it does not
+  depend on how the text was split into appends.
 - **Identifier.** A node's identifier is unique, keeps naming the same node
   across steps, and is never handed to a different node.
 - **Minimal AST mutation.** A node is a new value exactly when its value
@@ -81,12 +81,13 @@ changes the subject under test, not the harness.
 The harness drives a **subject** through one interface: open a session in a
 coordinate unit with an initial text, call `append` and, from step 7,
 `finalize`, each of which returns the new document, and close. There
-are exactly two subjects:
+are three subjects:
 
 | Subject | What it does | Role |
 | --- | --- | --- |
 | `session` | The engine's `MarkdownSession` (plan 4.4) | Under test, from rollout step 2 |
 | `reparse` | Keeps the text, and on every step calls `Document.parse` on the whole of it | The oracle for correctness, the R column for benchmarks |
+| `binding` | Steps the `session` subject's session through the MCB3 entries (plan 6.2) and releases each step's message | The B column of the stream benchmark, from rollout step 7 (5.1) |
 
 `reparse` is the one parser, called the way an application calls it today. It
 is the equivalence oracle and the reference cost an incremental append must
@@ -206,10 +207,7 @@ For every node of the new document, the harness classifies it against the
 node of the previous document with the same id: **unchanged** when the two are
 deep equal (plan 4.2), and **changed** when they differ or no previous node has
 that id. `N` is the number of changed nodes. An ancestor of a changed node is
-changed, because its children are part of its value. In C, every unchanged
-node is the previous document's node, reused, and every node that is a new C
-object is changed (plan R3, 8): a new object for an unchanged node is a
-rewrite the step did not need.
+changed, because its children are part of its value.
 
 The comparison uses a **snapshot** of the previous document the harness takes
 before the step: each node's kind, id, scalars, extent and the ids of its
@@ -268,10 +266,10 @@ From step 7, after every chunk:
   model text everywhere except at the places plan 5.5 allows. The harness
   computes them from the fresh parse alone, with its definition tables,
   anchors and scopes: every inline root that names a label whose definition
-  starts after the root, every heading whose automatic anchor an explicit
-  anchor or heading written after it changes, and, in turn, every heading
-  whose text holds such a root and every root that names that heading's
-  label. Outside those places the dumps agree node for node.
+  starts after the root, and, in turn, every heading whose text holds such a
+  root, every root that names that heading's label, and every heading whose
+  automatic anchor an anchor in those places can change. Outside those
+  places the dumps agree node for node.
 - 4.2–4.4 hold against the previous snapshot.
 
 After `finalize`, 4.1–4.4 hold against the last snapshot, and every later
@@ -311,7 +309,8 @@ The runners follow the one-shot benchmark's rules: callgrind instruction and
 data-reference counts, the benchmark preset, the same build provenance and
 isolation, and a measured edge instead of a timer. The stream runner loads a
 document and a stream family, opens the subject on an empty text outside the
-measurement, and calls `bench_apply_step` once per chunk.
+measurement, calls `bench_apply_step` once per chunk and then
+`bench_finalize` once.
 
 Costs come from callgrind client requests (`CALLGRIND_DUMP_STATS`), which are
 no-ops outside valgrind. The runner dumps after each of at most 1,024
@@ -320,19 +319,34 @@ step per window, so a window's cost is that step's cost. A longer stream (a stre
 `tokens` or `rows`) splits into 1,024 contiguous windows of equal step count.
 Its `reparse` column is measured at each window's last step, because
 reparsing after every chunk of a megabyte stream is the quadratic cost the
-design removes.
+design removes. A stream 6.3 measures at every step has one step per window
+however long it is (decision G17). The finalize is one more window, after
+the last. A session's
+window counts the whole of its steps: an append is the session's streaming
+parse. A `reparse` window counts the parse of each `Document.parse` in it,
+its two stages `source_to_buffer` and `buffer_to_ast` as the one-shot
+benchmark reads them. Creating the parser, starting and releasing its
+transaction and freeing the document of the step before are not parsing, and
+are in no window.
 
 The gates measure the C engine. A binding builds its platform values from what
 the engine returns (plan 6.1); bindings are gated for correctness (section 4).
+A `binding` window counts what its messages add to the session's steps: the
+encode of each document the window publishes and the release of its message.
+That is the part of a binding's build that reads the C document, which Kotlin
+and ECMAScript run per append and whose facade reads Swift's builder makes;
+building the platform objects is not counted (G14). The benchmark runs it on
+the streams of at most 1,024 chunks, and reports it without a gate.
 
 ### 5.2 Metrics per workload
 
 | Metric | Definition |
 | --- | --- |
 | `step_ir` | Ir per window: p50, p95, max and total over the stream |
-| `reparse_ir` | The same for the `reparse` subject: what an application pays today |
+| `reparse_ir` | The same for the `reparse` subject: the parse an application runs today (5.1) |
+| `binding_ir` | The same for the `binding` subject: the C side of a binding's build per append (5.1) |
 | `oneshot_ir` | One-shot parse of the stream's final text, both stages |
-| `speedup` | `reparse_ir / step_ir` per step, p50 and p5, for streams of at most 1,024 steps |
+| `speedup` | `reparse_ir / step_ir` per step, p50 and p5, for the streams 6.3 measures |
 | `stream_ratio` | Stream total `step_ir` / `oneshot_ir` of the final text |
 
 ## 6. Gate rules
@@ -349,10 +363,10 @@ There is no tolerance.
 ### 6.2 Flatness, on Ir
 
 For `tokens` and `rows` on every scale shape, the rule compares positions
-within one stream of `n` bytes. With `m(p)` the highest cost of every window that ends at or before `p`, each
+within one stream of `n` bytes. With `m(p)` the highest cost of every chunk window that ends at or before `p`, each
 of `m(n/4)` and `m(n)` is at most `1.25 × m(n/16)`, which catches per-chunk
 work that grows with the text already streamed, wherever in the stream it
-occurs.
+occurs. The finalize's window is reported (decision G16).
 
 The same rule covers the adversarial shapes whose cost the language keeps
 local: the 10,000-item list and the 1,000 nested quotes. It excludes the
@@ -366,12 +380,17 @@ step 8 it covers the paragraph of short lines (3.1).
 
 ### 6.3 Never worse than reparsing
 
-For every step of every stream of at most 1,024 chunks and its `finalize`,
-`step_ir` is at most 1.25 times `reparse_ir` of the same step (decision G2).
-A longer stream is bounded per chunk by 6.2; its `reparse_ir` column is
-reported. The margin pays for matching and deduplication when an append
-really does change the whole document; beyond it, an incremental append would
-be a regression against the application that just reparses.
+For every stream of at most 1,024 chunks, and for every stream of a shape
+6.2 leaves to 6.3 at the shape's smallest size, measured at every step
+whatever its length (decision G17), the total `step_ir` of its steps and its
+`finalize` is at most 1.25 times the total `reparse_ir` of the same steps
+(decisions G2 and G15). The highest ratio of one step is reported. Of every
+other longer stream, `reparse_ir` is reported, and 6.2 bounds the chunk
+windows of those of the scale shapes and of the shapes the language keeps
+local. The
+margin pays for matching when an append really does change the whole
+document; beyond it, streaming would be a regression against the application
+that just reparses.
 
 ### 6.4 Regressions
 
@@ -379,8 +398,8 @@ Against the base revision, measured with the current harness and workloads on
 both sides as the one-shot gate already does, and always between the same
 subject on both sides:
 
-- each workload's p95, maximum and total `step_ir` are at most 1.02 times the
-  base;
+- each workload's p95, maximum and total `reparse_ir`, and `step_ir` on the
+  streams 6.3 measures, are at most 1.02 times the base;
 - the one-shot gate keeps its `source_to_buffer` rule and adds the same rule
   to `buffer_to_ast`, per document.
 
@@ -426,7 +445,6 @@ named oracle:
 | Returns the previous document for one step | 4.1 |
 | Answers `reference(for:)` with the last declaration of a label instead of the first | 4.1 |
 | Renumbers every id on every step (a fresh parse with fresh ids) | 4.2 lineage, 4.4, 4.5 |
-| Rewrites every node with the same ids | 4.3 |
 | Keeps a node whose text changed | 4.1 |
 | Reuses a retired id for a new node | 4.2 |
 | Re-reads the whole document on every step | 6.2 |
@@ -473,7 +491,7 @@ workloads and the raw profiles. CI runs a job, "Measure - streams", in the
 benchmark workflow against the pull request's base, and the trusted publisher
 adds its tables to the existing PR comment. The report shows, per workload,
 the S column (session), the R column (reparse), the highest S / R of one step,
-and the workloads that pass 6.4.
+the workloads that pass 6.4, and the B column (binding) beside S.
 
 ## 10. Work items
 
@@ -553,3 +571,33 @@ their own pull requests.
   scripts, the edit benchmark and the oracles and rules only edits use leave
   with `edit` in step 5. The stream gates of 4.6 and 6.2 turn on with the
   streaming session in step 7 and the settle point in step 8 (section 7).
+- **G12 Parser creation. Decided 2026-10-17: in no window** ("不计建实例").
+  `Document.parse` creates a parser on every call, so the `reparse` subject
+  creates one on every step. Creating a parser is not parsing, and no window
+  of either subject counts it, on either side of 6.4 (5.1).
+- **G13 Reparse windows. Decided 2026-10-18: parsing only** ("只算解析"). A
+  `reparse` window counts the two parse stages of each `Document.parse`, as
+  the one-shot gate does; creating and releasing the parser are outside
+  every window, on either side of 6.4 (5.1).
+- **G14 A binding's cost per append. Decided 2026-10-19: the C side in Ir**
+  ("只计 C 侧 Ir"). Callgrind measures the part of a binding's build that
+  reads the C document, in the gates' unit on the gates' machine; building
+  the platform objects is not counted. It is reported per append, without a
+  gate (plan D5).
+- **G15 6.3 over the whole stream. Decided 2026-10-19: the stream's total**
+  ("按整条流总量"). What streaming must give is parsing far better than
+  reparsing on every append, above all in the common LLM case
+  ("streaming的解析性能要远好于每次append重复解析，尤其是LLM的常见场景").
+  6.3 bounds each stream's session total by its reparse total, and the
+  highest ratio of one step is reported.
+- **G16 The finalize under 6.2. Decided 2026-10-18: the compromise**
+  ("收尾窗口是我们的妥协，ref/link backtracking导致不这么做性能更差"). The
+  finalize looks up the definitions that the stream's roots use, because
+  going back over references and links while streaming costs more. 6.2
+  compares the chunk windows of a stream, and the finalize's window is
+  reported.
+- **G17 The long streams of the shapes 6.2 leaves to 6.3. Decided
+  2026-10-20: every step** ("逐段都量"). Most streams of those shapes are
+  longer than 1,024 chunks. 6.3 measures each of them at the shape's smallest
+  size at every step, the session and `reparse` alike, and bounds its total
+  as it bounds a shorter stream's (5.1).

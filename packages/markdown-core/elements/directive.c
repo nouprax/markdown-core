@@ -1,5 +1,6 @@
 #include "alloc.h"
 #include "attributes.h"
+#include "block_internal.h"
 #include "directive.h"
 #include "element.h"
 
@@ -123,9 +124,12 @@ static int set_chunk_bytes(markdown_core_chunk *chunk, const unsigned char *data
     return 1;
 }
 
-const char *markdown_core_elements_get_directive_name(markdown_core_node *node) {
-    node_directive *directive = node->opaque;
-    return directive->name.len ? markdown_core_chunk_to_cstr(&directive->name) : NULL;
+/* A directive's name is made NUL-terminated (set_chunk_bytes,
+ * markdown_core_elements_set_directive_name), and a copy views those bytes
+ * (directive_opaque_view). */
+const char *markdown_core_elements_get_directive_name(const markdown_core_node *node) {
+    const node_directive *directive = node->opaque;
+    return directive->name.len ? (const char *)directive->name.data : NULL;
 }
 
 int markdown_core_elements_set_directive_name(markdown_core_node *node, const char *name) {
@@ -148,6 +152,28 @@ static void directive_opaque_free(const markdown_core_element *element, markdown
     markdown_core_chunk_free(&directive->name);
     markdown_core_free(directive);
     node->opaque = NULL;
+}
+
+static bool directive_opaque_view(const markdown_core_element *element, markdown_core_node *copy,
+                                  const markdown_core_node *node) {
+    node_directive *made = markdown_core_realloc(NULL, sizeof(*made));
+    if (!made) {
+        copy->opaque = NULL;
+        return false;
+    }
+    *made = *(const node_directive *)node->opaque;
+    markdown_core_chunk_view(&made->name);
+    copy->opaque = made;
+    return true;
+}
+
+static void directive_opaque_adopt(const markdown_core_element *element, markdown_core_node *view,
+                                   markdown_core_node *node) {
+    node_directive *made = view->opaque, *directive = node->opaque;
+    if (made->name.data == directive->name.data && !made->name.alloc) {
+        made->name.alloc = directive->name.alloc;
+        directive->name.alloc = 0;
+    }
 }
 
 /* Recognize the shared attribute grammar without constructing semantic
@@ -207,7 +233,7 @@ static markdown_core_node *make_label_node(const markdown_core_element *element,
         markdown_core_parser_release_node(parser, label_node);
         return NULL;
     }
-    label_node->where.place = (markdown_core_place){(uint32_t)start, (uint32_t)end};
+    label_node->place = (markdown_core_place){(uint32_t)start, (uint32_t)end};
     return label_node;
 }
 
@@ -564,6 +590,9 @@ static markdown_core_node *open_directive_block(const markdown_core_element_inst
     directive = get_directive(node);
     directive->fence_length = (int)colon_count;
     directive->consume_line = 1;
+    if (directive->label) {
+        markdown_core_block_settle_field(parser, directive->label, node);
+    }
     markdown_core_parser_advance_offset(parser, (char *)input, len - markdown_core_parser_get_offset(parser), false);
 
 done:
@@ -664,6 +693,8 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
     .accepts_lines_func = accepts_lines,
     .opaque_alloc_func = directive_opaque_alloc,
     .opaque_free_func = directive_opaque_free,
+    .opaque_view_func = directive_opaque_view,
+    .opaque_adopt_func = directive_opaque_adopt,
     .visit_owned_subtrees_func = visit_owned_subtrees,
     .terminates_text = ":",
     .dispatch = ":",

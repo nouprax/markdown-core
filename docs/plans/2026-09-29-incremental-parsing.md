@@ -39,9 +39,9 @@ The owner's requirement, 2026-10-14:
   and the canonical debug dump, which prints no identifiers, is
   byte-identical. Before it, each document an append returns is a
   **snapshot**: the document `Document.parse` returns for the text so far,
-  except that definition lookups and automatic heading anchors see only what
-  is written before the node that asks (5.5). A snapshot depends only on the
-  text, not on how it was split into appends.
+  except that definition lookups see only the definitions written before the
+  node that asks (5.5). A snapshot depends only on the text, not on how it
+  was split into appends.
 - **R2 Bounded work per append.** An append's work is proportional to the
   appended bytes, the depth of the open blocks and the part of the text whose
   meaning the end of the input still decides, not to the text already
@@ -50,8 +50,7 @@ The owner's requirement, 2026-10-14:
 - **R3 Minimal replacement.** A node is a new value only if its value
   changed. Its ancestors are new values because their child collections
   changed. Every other node of the new document equals the previous
-  document's node with the same id; in the C document it is that node,
-  reused.
+  document's node with the same id.
 - **R4 Stable identity.** Every node has an identifier, unique within its
   document, that survives every append that does not remove the node. An
   identifier never changes kind.
@@ -83,7 +82,7 @@ the AST itself.
 | S4 Finish walk | `S_finish_parse` → `walk_owned_trees` | Every owned root once | Inline parse of each container at ENTER, inline completion, anchor reservation, Text consolidation, finish steps |
 | S5 Document | `finish_document` | Registries | Footnote and specimen order, heading anchors and their reference targets |
 | S6 Passes | `postprocess_func` (Autolink) | Each finished root | Bare email links |
-| S7 Publish | `publish_document` (`elements/ast.c`) | The finished tree and, in a session, the previous document | Ids, extents and runs; identity matching and value deduplication |
+| S7 Publish | `publish_document` (`elements/ast.c`) | The finished tree and, in a session, the previous document | Ids, extents and runs; identity matching |
 | S8 Bindings | Swift `DocumentBuilder`; Kotlin and ES decode MCB3 | The finished C tree | One immutable value tree per parse |
 
 Three properties of this design make a streaming parser possible without a
@@ -102,9 +101,9 @@ second parser:
   entries with borrowed nodes) and resolved once. They are not rediscovered
   by tree searches.
 
-What streaming needs in addition is (a) open state that can be copied
-without touching the closed part of the tree, so a snapshot can finish the
-tail and leave the session's state as it was; (b) a rule that tells which
+What streaming needs in addition is (a) closing that writes values and
+changes no parse state, so a snapshot can finish the tail on the session's
+own blocks and leave the session's state as it was; (b) a rule that tells which
 decisions the end of the input made, so that every other decision is made
 once; (c) inline completion that waits for the definitions a fresh parse
 would see; and (d) identity for the nodes that are still changing. Section 5
@@ -118,16 +117,16 @@ current dialect. Each row names the mechanism in section 5 that handles it.
 
 | Dependency | Examples | Direction | Mechanism |
 | --- | --- | --- | --- |
-| Carried block state | Open list item widths, blockquote and callout prefixes, definition body indentation, directive fence stack, last-line-blank flags | Earlier line → later lines | Held by the open blocks' builders, which a snapshot copies (5.2, 5.5) |
-| Lookahead | Setext underline, table separator and caption, definition term marker, multiline and grid tables, directive closer, Properties closing fence | Later lines → earlier decision | A line whose processing observed the end of the input is pending, and is processed again when more text arrives (5.1, 5.3) |
+| Carried block state | Open list item widths, blockquote and callout prefixes, definition body indentation, directive fence stack, last-line-blank flags | Earlier line → later lines | Held by the open blocks' builders, which a snapshot leaves as the commit left them (5.2, 5.5) |
+| Lookahead | Setext underline, table separator and caption, definition term marker, multiline and grid tables, directive closer, Properties closing fence | Later lines → earlier decision | A decision that sees the end of the input is a candidate, which a later line decides (5.1, 5.3) |
 | Retroactive write | A separate-line block identifier sets the preceding block's anchor; a caption after a table | Later line → closed block | A closed block stays a builder until it settles (5.2) |
 | Container facts from children | `List.tight`, list layout, definition and definition-list scopes | Children → container | Folded into the container's builder as each child settles (5.6) |
 | Unclosed opaque leaves | Fenced code, HTML block, comment, formula block and directive block without a closer run to the end | Opener → rest of the text | The open leaf's builder holds them; its content is appended to, never copied (5.2) |
 | Registry lookups in inline parsing | `[label]` and heading labels in the reference map (`link.c`, `heading.c`), `[^label]` in the footnote label map (`footnote.c`), `@id` in the specimen id index (`citation.c`) | Any definition → any occurrence | A snapshot sees the definitions written before the asking root; `finalize` sees all of them and parses again the roots whose answer changed (5.4, 5.10) |
-| Document ordinals | Heading anchor `-N` suffixes | Earlier declarations → later values | A snapshot assigns anchors in source order from what is written before each heading; `finalize` assigns them with the full rule (5.5, 5.10) |
+| Document ordinals | Heading anchor `-N` suffixes | Every explicit anchor and every earlier heading → a heading's automatic anchor | A snapshot assigns anchors as `Document.parse` does over the text so far: explicit anchors reserve their names first, then automatic anchors are numbered in source order (5.5) |
 | Shared resources | A definition's destination, title and attributes read by every occurrence | Definition → occurrences | Occurrences name the definition's label and read it through the document's lookup tables (4.5) |
 | Absolute coordinates | Every `Scope` | Every earlier byte → every later scope | Nodes carry relative extents and runs (4.3) |
-| Mapped cell inputs | Grid and multiline cell bodies | Table → cells | The table is pending until its closing border; pipe and simple tables are read a row at a time (5.7) |
+| Mapped cell inputs | Grid and multiline cell bodies | Table → cells | The table is a candidate until its closing border; pipe and simple tables are read a row at a time (5.7) |
 
 A dialect change that adds a dependency not covered by one of these
 mechanisms must add a row here and its mechanism, the same way a new kind
@@ -442,13 +441,15 @@ Every mechanism of the engine follows from one rule:
 **A decision made after seeing the end of the input is provisional; every
 other decision is final once it is made.**
 
-- At the block level, a line is committed only if processing it did not see
-  the end of the input (5.3).
+- At the block level, every decision that did not see the end of the input
+  is committed, the container steps of the line that is not complete yet
+  included (5.3).
 - At the inline level, the nodes of an open paragraph before its earliest
   provisional decision are settled (5.8).
 
-A decision sees the end of the input when it reads lookahead past the last
-complete line, or when it asks whether a line is the last one. Every such
+A decision sees the end of the input when its lookahead reaches the end of
+the input, when it asks for the last line before that line is complete, or
+when it asks whether a line is the last one. Every such
 question goes through one entry of the lookahead API, and an audit in
 `scripts/audit/` refuses any other comparison with the end of the input, such
 as the direct `lookahead_cursor == lookahead_end` tests in `table.c` and
@@ -475,72 +476,75 @@ as the direct `lookahead_cursor == lookahead_end` tests in `table.c` and
   block that is closed but not settled is still a builder, because a
   trailing line can still change it: a caption after a table, or a block
   identifier after a list, callout or table.
-- Finishing is a pure function from a builder to a node, which changes no
-  builder. When a block settles, its builder is finished into a settled node,
-  the content and child arrays pass to the node, and the builder is
-  released.
-- While the stream runs, settled nodes do not change. `finalize` changes
-  only two kinds of settled node in place: inline roots whose answer a later
+- A block is one object for its whole life. Closing it writes its closed
+  values into that object: its end, its content view and the values it folds
+  from its children. Closing changes no parse state.
+- While the stream runs, a settled node changes only when a later explicit
+  anchor changes a heading's automatic anchor (5.5). `finalize` changes two
+  kinds of settled node in place: inline roots whose answer a later
   definition changes, and headings whose anchor changes (5.10).
 
-The open state is all in the builders, so copying it costs O(depth). A node
-holds no pointer back to a builder, so a copy never touches the settled part
-of the tree. That is what lets a snapshot finish the tail and leave the
-session's state unchanged.
+A snapshot does not copy the committed blocks. It writes the closed values
+into the original objects and leaves the parse state as the commit left it.
+Only when the provisional reading changes a committed block's kind or parse
+state does it copy that one block, for example when `===` turns a paragraph
+into a Setext heading. The published document is the committed tree plus the
+provisional part, valid until the next call.
 
 **Append-only buffers.** A builder's content bytes, its runs and its array of
 closed children only grow at the end. Each builder records its committed
-length; a copy writes past it, and that part is scratch, which the next call
-writes again from the committed length. This holds because a session has
-exactly one live C document at a time: a session's document borrows from it
-until its next call, a document `Document.parse` returns owns its nodes, and
-a binding converts a document into platform values before the call returns.
+length; a snapshot writes past it, and the next call cuts it back to the
+committed length. This holds because a session has exactly one live C
+document at a time: a session's document borrows from it until its next
+call, a document `Document.parse` returns owns its nodes, and a binding
+converts a document into platform values before the call returns.
 
 A published node views these buffers, so the literal of a growing code block
 is not copied per append, and its runs and children are not either. Committed
-bytes are written once and never move, and the previous document stays intact
-until the next publish has matched and deduplicated its tail (5.9); the
-scratch a snapshot writes is kept apart from what the previous document views
-for that long.
+bytes are written once and never move.
 
 **Positions.** A node's extent and runs (4.3) are computed when it is first
 published: from the end of its previous sibling, or from its parent's start
 for a first child. The text only grows at the end, so neither that sibling's
 end nor the parent's start changes again, and a settled node's position
-values are final.
+values are final. An open block grows at its end, so each publish writes its
+extent and runs again.
 
 ### 5.3 Commit
 
-`append` adds the new bytes to the end of the text and then commits, in
-this order:
+`append` adds the new bytes to the end of the text and then commits: the
+line machine reads on the builder stack from the last step the last commit
+read, which may lie inside the line that is not complete yet. The commit
+takes every decision that does not see the end of the input (5.1): it reads
+every complete line, and of the last line each step that reads only bytes
+the line has. A line is complete when it ends with `\n`, or with `\r`
+followed by another byte. Blocks that closed join the completion queue, and
+so does each field a committed line wrote: a callout's title, a definition's
+term, a block directive's label and a table's caption.
 
-- Copy the builder stack and record a mark in the registry log.
-- On the copy, process the complete lines from the commit point, one at a
-  time. A line is complete when it ends with `\n`, or with `\r` followed by
-  another byte.
-- If a line sees the end of the input (5.1), discard the copy: the nodes the
-  copy made are released with it, and the registry rolls back to the mark.
-  Then process only the lines before that line on a new copy.
-- The copy becomes the builder stack and the commit point moves past the
-  processed lines. Blocks that closed, and captions a trailing line added,
-  join the completion queue. Blocks that settled are finished into settled
-  nodes.
+**Candidates.** Some constructs are decided only by later lines: the headers
+of simple, multiline and grid tables, a caption before a table, a definition
+list's term, a blank line in a definition's body, a block identifier line,
+an unclosed grid table, a comment block and the Properties envelope at the
+start of the document. When the decision of such a construct sees the end of
+the input, the commit makes it a **candidate** and reads on with the main
+reading, the reading in which every live candidate is rejected: the ordinary
+blocks, committed line by line. Each candidate keeps its own state and is
+fed each complete line once, until a line decides it:
 
-The lines after the commit point are **pending**. They are of two kinds:
+- an accept puts the commit back at the candidate's opening line, and the
+  lines from there are read again, with the construct claiming them;
+- a reject drops the candidate's state, and the main reading stays.
 
-- the last line, which is not complete yet;
-- lines whose decision waits for later lines: the headers of simple,
-  multiline and grid tables, a caption before a table, a definition list's
-  term, a block identifier line, an unclosed grid table, a comment block and
-  the Properties envelope at the start of the document.
-
-A fresh parse copies the builder stack once.
+A decision that sees the end of the input waits for the next commit. The
+lines of the main reading from a live candidate's opening line are
+**undecided**. A snapshot decides each candidate as the text ends (5.5).
 
 ### 5.4 Completion
 
-The blocks of the completion queue complete in the order they closed: their
-inline roots are parsed, the element's finish steps run, and the blocks in
-table cells are read.
+The blocks and fields of the completion queue complete in the order they
+joined it: their inline roots are parsed, the element's finish steps run, and
+the blocks in table cells are read.
 
 A block completes at the next publish or at `finalize`:
 
@@ -561,15 +565,15 @@ definitions, then inline content, then anchors.
 ### 5.5 Snapshot
 
 **What a snapshot is.** The document an append returns equals
-`Document.parse` of the text so far, with two differences:
-
-- A definition lookup (reference link, footnote, specimen, heading label)
-  sees only the definitions that start before the inline root that asks.
-- A heading's automatic anchor avoids only the explicit anchors and the
-  headings written before it.
+`Document.parse` of the text so far, with one difference: a definition lookup
+(reference link, footnote, specimen, heading label) sees only the definitions
+that start before the inline root that asks. Headings take their anchors as
+`Document.parse` assigns them (docs/specs/dialect/anchors.md): every explicit
+anchor of the text so far reserves its name first, then automatic anchors are
+numbered in source order.
 
 The document's own tables (4.5) are those of the snapshot's nodes, as
-`Document.parse` computes them. Both differences depend only on positions, so
+`Document.parse` computes them. The difference depends only on positions, so
 a snapshot does not depend on how the text was split into appends. A
 definition written after its use leaves the `[x]` before it as literal text
 until `finalize`, which is the jump in the text that the owner accepted for
@@ -578,18 +582,27 @@ streaming (D8).
 **How a snapshot is made**, in this order:
 
 - Complete the completion queue (5.4).
-- Copy the builder stack and record a mark in the registry log.
-- On the copy, process the pending lines, then finish every copy at the true
-  end of the input.
+- Record a mark in the registry log.
+- Decide each candidate as the text ends: one whose construct the text
+  ends puts the reading back at its opening line, and the snapshot reads the
+  lines from there with the construct claiming them; the others leave the
+  main reading.
+- Process the rest of the text on the committed builders, copying first each
+  block whose kind or parse state that reading changes (5.2), then write the
+  closed values of every open block into its object at the true end of the
+  input.
 - Complete the tail by the publish rule of 5.4, without recording the
   lookups that find none.
-- Publish: give ids to the nodes that have none (5.9), compute the extents
-  and runs of the tail, and assemble the document.
+- Publish in place: give ids to the nodes that are not settled (5.9),
+  compute the extents and runs of the tail and of the open blocks, and
+  assemble the document.
 
-The **tail** is the nodes a snapshot makes from the copies, from the pending
-lines and from the inline content of an open paragraph. At the start of the
-next call the copies and their scratch are discarded and the registry rolls
-back to the mark.
+The **tail** is the nodes a snapshot makes from the rest of the text, from
+the lines of a candidate it accepts and from the inline content of an open
+paragraph. At the start of the next call each
+copied block takes back its state, the open blocks cut their buffers back to
+their committed lengths, and the registry rolls back to the mark. The tail's
+nodes stay until the next publish has given ids to its own tail (5.9).
 
 ### 5.6 Container folds
 
@@ -608,8 +621,8 @@ and one more item on a list of 10,000 costs O(1), not O(items).
 - Today a table reads its whole extent with one lookahead when it opens.
   That becomes a continuation, one row at a time.
 - A grid table, a multiline table and a headerless simple table know their
-  row structure only at their closing border. Until then their lines are
-  pending (7.2).
+  row structure only at their closing border. Until then each is a candidate
+  (5.3), fed each line once, and its lines are undecided (7.2).
 
 ### 5.8 The settle point of an open paragraph
 
@@ -632,12 +645,13 @@ When the paragraph closes, only the content after the settle point is parsed
 too. So a paragraph's inline content is parsed in full once, plus, on each
 append, the short stretch after the settle point.
 
-### 5.9 Identity matching and value deduplication
+### 5.9 Identity matching
 
 - A settled node never changes its id.
-- At each publish, every node without an id (the tail and the nodes that
-  settled since the last publish) takes one from the previous document's
-  tail by one rule: within the same owner relation, a new node continues the
+- At each publish, every node that is not settled (the tail, the open
+  blocks and the nodes that settled since the last publish) takes its id
+  from the previous document's unsettled nodes by one rule: within the same
+  owner relation, a new node continues the
   earliest old node of the same kind whose start lies in the new node's
   source range, and takes its id. A node that continues none takes the
   session's next unused id. The text only grows at the end, so an old node's
@@ -651,9 +665,6 @@ append, the short stretch after the settle point.
   sibling: the cells of a grid table that span rows start inside the ranges
   of the cells before them. Both sequences are in source order and the match
   is monotone, so it is linear in the tail.
-- A new node whose value equals the old tail node it continues is that old
-  object (R3): equal kind, equal scalars, equal extent and runs, and every
-  child relation holding the same objects, compared in post-order.
 - Matching visits only the tail, so it costs O(tail nodes).
 - Consequences, each from the one rule:
   - Typing at the end of a paragraph keeps its id.
@@ -670,8 +681,8 @@ append, the short stretch after the settle point.
 
 `finalize`, in this order:
 
-- Processes the pending lines at the true end of the input and closes every
-  block.
+- Commits the rest of the text, decides each candidate at the true end of
+  the input and closes every block.
 - Completes the completion queue, with lookups that see every definition.
 - Checks each lookup recorded by 5.4 that found no definition; if one is
   defined now, parses that root again in place.
@@ -689,22 +700,27 @@ the text and is finalized (R6).
 
 ### 5.11 Why the results are right
 
-- **Committed lines.** A committed line did not see the end of the input, so
-  it read only bytes that were already there and decided nothing from where
-  the text ended. The line machine is a deterministic function of its state
-  and the bytes it reads, so a line committed at an earlier append is
-  processed exactly as a parse of any longer text processes it. By induction
-  over the lines, the builder stack after a commit is the state a parse of
-  the whole text has at the commit point.
-- **Snapshots.** A snapshot processes the pending lines at the true end of the
-  input, on a copy of that state. Every line of the text is then processed in
+- **Committed decisions.** A committed decision did not see the end of the
+  input, so it read only bytes that were already there and decided nothing
+  from where the text ended. The line machine is a deterministic function of
+  its state and the bytes it reads, so a step committed at an earlier append
+  is processed exactly as a parse of any longer text processes it. A
+  candidate is the one decision a later line still makes: the main reading
+  is the parse in which it is rejected, and an accept puts the commit back
+  at its opening line and reads on as the parse that claims it. By induction
+  over the steps, the builder stack after a commit is the state a parse of
+  the whole text has after the last committed step, once the live candidates
+  are decided.
+- **Snapshots.** A snapshot decides the live candidates and processes the
+  rest of the text at the true end of the input, from that state, which it
+  leaves as it found it (5.2). Every line of the text is then processed in
   order, by the same line machine, with the end where it really is, so the
   blocks are those of `Document.parse` of the text so far. Completion runs
   the same inline parser on the same content, against the definitions before
   each root, all of which are registered then (5.4). None of this depends on
   where earlier appends ended, so neither does the snapshot.
-- **The final document.** `finalize` processes the pending lines and
-  completes the queue with every definition visible, as `Document.parse`
+- **The final document.** `finalize` commits the rest of the text, decides
+  the live candidates and completes the queue with every definition visible, as `Document.parse`
   does. A root completed earlier saw the definitions before it; the only
   answers that change with every definition visible are the recorded
   misses, and those roots are parsed again. Anchors are assigned with the
@@ -723,7 +739,8 @@ After an append, a binding converts the session's C document into platform
 values node by node, exactly as it converts a fresh parse today, and returns
 the result. The C document is its only input. The conversion's cost is the
 platform's cost of building an immutable value, which grows with the whole
-document; the design keeps it (D5) and reports it per append (section 8).
+document; the design keeps it (D5) and reports its C side per append
+(section 8).
 Nodes the append left unchanged reach the consumer as equal values with
 unchanged ids (4.2), which is what SwiftUI, Compose and React reconcile.
 
@@ -802,7 +819,7 @@ handle and must be disposed. A `Document` never holds a handle.
 
 Let `c` be the appended bytes, `d` the depth of the builder stack, `s` the
 content of the open paragraph after its settle point, `t` the tail's nodes
-and `p` the total length of the pending lines.
+and `p` the total length of the undecided lines.
 
 | Case | Work |
 | --- | --- |
@@ -826,7 +843,7 @@ language decides its meaning only at a later line or at the end:
 - An unclosed grid table, multiline table, headerless simple table or comment
   block: each append processes its lines from its opening line again.
 - A document that starts with `---`: any later `---` line can close the
-  Properties envelope, so every line is pending until one does or the stream
+  Properties envelope, so every line is undecided until one does or the stream
   ends.
 - An unmatched `**`, backtick run or `[`: the settle point stays before it,
   and each append parses the rest of the paragraph again.
@@ -848,15 +865,13 @@ which also says at which rollout step each one becomes a gate.
   up, and small documents are split at every scalar boundary.
 - **Snapshot meaning.** After every append, the snapshot equals
   `Document.parse` of the text so far everywhere except at the inline roots
-  that use a definition written after them and the headings whose automatic
-  anchor a later anchor or heading changes. The harness finds those places
-  from the fresh parse's definition tables, anchors and scopes, not from the
-  engine.
+  that use a definition written after them and the headings whose text or
+  anchor depends on such a root. The harness finds those places from the
+  fresh parse's definition tables, anchors and scopes, not from the engine.
 - **Identity and minimality.** After every append: ids are unique; no id
   changed kind; no retired id returns; every id follows the matching rule
-  (5.9); in C, every unchanged node is the previous document's node; in every
-  binding, every node equals the previous document's node with its id
-  exactly when C reused it. Scripted cases assert the exact sets of kept, new
+  (5.9); in C and in every binding, a node equals the previous document's
+  node with its id exactly when its value is unchanged. Scripted cases assert the exact sets of kept, new
   and retired ids: typing at the end of a paragraph, a paragraph that becomes
   a Setext heading and back, a row appended to a table, an item appended to a
   long list.
@@ -903,7 +918,7 @@ activates for it.
 - [x] **Step 5: No edits.** `edit` and `TextEdit` leave C and every binding,
    with the session's text tree and the harness's edit scripts and their
    oracles (D7).
-- [ ] **Step 6: Builders.** Open blocks are builders, finishing is a pure
+- [x] **Step 6: Builders.** Open blocks are builders, finishing is a pure
    function and settled nodes are immutable (5.2); the completion queue
    replaces the finish walk (5.4); the registry is a log with rollback marks;
    `Document.parse` is a commit and a `finalize` (5.10).
@@ -968,7 +983,9 @@ activates for it.
   document as a second input) and the engine reports to maintain it.
   Confirmed 2026-10-14 for streaming ("保持D5"): from step 7 the benchmark
   reports what building the platform values costs per append, without a
-  gate.
+  gate. Decided 2026-10-19 ("只计 C 侧 Ir"): the report counts the part of
+  the build that reads the C document, in callgrind Ir on the gates'
+  machine, and not building the platform objects (gates G14).
 - **D6 Node storage. Decided 2026-10-01: shared subtrees.** Superseded
   2026-10-14 with the general-edit engine (D7): a session has one live
   document at a time, so nothing shares subtrees across documents, and
@@ -986,6 +1003,9 @@ activates for it.
   only content is a standalone formula stays a paragraph holding a `Formula`;
   it does not become a `FormulaBlock`, so no block changes kind after its
   inline content is parsed.
+- **D10 Anchors while streaming. Decided 2026-10-16.** The owner: "你在这里纠结的问题我们的语法spec里有答案，attributes里的锚点事attributes修饰的对象的，title的锚点指向title本身". A snapshot's headings take their
+  anchors by docs/specs/dialect/anchors.md, as `Document.parse` does over the
+  text so far (5.5).
 
 ## 11. Rejected alternatives
 
@@ -1011,9 +1031,10 @@ activates for it.
   definition answers its lookups** (#432). In a fresh parse every definition
   written after its use parses that root twice. Here a fresh parse completes
   at `finalize`, and a stream's lookups see what is written before them.
-- **Processing pending lines on the session's own state and undoing them.**
-  Finishing changes many fields, and an undo written per element would miss
-  some. A copy of the builder stack costs O(depth) and needs no undo.
+- **Copying every open block for each snapshot and matching the copies back
+  to the previous document.** A block's opening decision is final, so its
+  kind and id are already known; the copies and the matching cost O(depth)
+  per append and decide nothing.
 - **No lookups at all before `finalize`.** Definitions written before their
   use would not show either while the text streams, and nothing requires
   that.

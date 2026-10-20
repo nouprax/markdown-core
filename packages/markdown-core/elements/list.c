@@ -3,6 +3,17 @@
 #define BLOCK_PEEK(input, at) ((input)->data[(at)])
 #include "block_internal.h"
 
+/* The list element's flags, on a List. */
+enum {
+    /* The list's last line was blank: a second blank line ends it. */
+    MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK = MARKDOWN_CORE_NODE__ELEMENT_FIRST,
+    /* An item that settled into the list makes it loose (fold_child). */
+    MARKDOWN_CORE_NODE__LIST_LOOSE = MARKDOWN_CORE_NODE__ELEMENT_FIRST << 1,
+    /* The last item that settled makes the list loose once another item
+     * follows it. */
+    MARKDOWN_CORE_NODE__LIST_LOOSE_FOLLOWED = MARKDOWN_CORE_NODE__ELEMENT_FIRST << 2,
+};
+
 static bool markdown_core_block_list_facts_match(const markdown_core_list *list, const markdown_core_list *item);
 static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *counts, markdown_core_parser *parser,
                                                        markdown_core_chunk *input, bufsize_t pos,
@@ -197,34 +208,28 @@ static bufsize_t markdown_core_block_parse_list_marker(markdown_core_list_work *
     return pos - startpos;
 }
 
-/* A list is loose when a blank line separates two of its items or two of
+/* A LIST IS LOOSE when a blank line separates two of its items or two of
  * the blocks an item holds that the blank-line facts see: an item that is
- * not the last ends with one, or a child that some block follows does. */
-static void S_lay_out(markdown_core_node *list) {
-    list->as.list->tight = true;
-    for (uint32_t i = 0; i < list->child_count; i++) {
-        markdown_core_node *item = list->children[i];
-        const bool followed = i + 1 < list->child_count;
-        if (markdown_core_block_last_line_blank(item) && followed) {
-            list->as.list->tight = false;
-            return;
-        }
-        /* The children before `seen` have a child the facts see after them. */
-        uint32_t seen = item->child_count;
-        while (seen > 0 && (item->children[seen - 1]->flags & MARKDOWN_CORE_NODE__BLANK_TRANSPARENT)) {
-            seen--;
-        }
-        for (uint32_t k = 0; k < item->child_count; k++) {
-            markdown_core_node *child = item->children[k];
-            if (child->flags & MARKDOWN_CORE_NODE__BLANK_TRANSPARENT) {
-                continue;
-            }
-            if ((followed || k + 1 < seen) && markdown_core_block_ends_with_blank_line(child)) {
-                list->as.list->tight = false;
-                return;
-            }
-        }
+ * not the last ends with one, or a child that some block follows does. Each
+ * item folds into the list as it settles, its children having folded into it
+ * (blocks.c, S_fold): one that BLANK_SPACED marks makes the list loose, and
+ * one whose last line, or the last child it sees, ends blank makes it loose
+ * once another item follows. The list is laid out as each item folds, so it
+ * is laid out as it closes and as a snapshot ends it open, its last item
+ * having folded into it. */
+static markdown_core_node_internal_flags fold_child(const markdown_core_element_instance *self,
+                                                    markdown_core_node *node, markdown_core_node_internal_flags flags,
+                                                    markdown_core_node_internal_flags child) {
+    (void)self;
+    assert(node->kind == MARKDOWN_CORE_NODE_LIST);
+    if (flags & MARKDOWN_CORE_NODE__LIST_LOOSE_FOLLOWED || child & MARKDOWN_CORE_NODE__BLANK_SPACED) {
+        flags |= MARKDOWN_CORE_NODE__LIST_LOOSE;
     }
+    const markdown_core_node_internal_flags ends = MARKDOWN_CORE_NODE__BLANK_FOLDED | MARKDOWN_CORE_NODE__ENDS_BLANK;
+    const bool followed_loose = (child & MARKDOWN_CORE_NODE__LAST_LINE_BLANK) || (child & ends) == ends;
+    node->as.list->tight = !(flags & MARKDOWN_CORE_NODE__LIST_LOOSE);
+    return (markdown_core_node_internal_flags)((flags & ~MARKDOWN_CORE_NODE__LIST_LOOSE_FOLLOWED) |
+                                               (followed_loose ? MARKDOWN_CORE_NODE__LIST_LOOSE_FOLLOWED : 0));
 }
 
 static bool markdown_core_list_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
@@ -285,7 +290,7 @@ bool markdown_core_list_continue(markdown_core_parser *parser, markdown_core_nod
     if (container->kind == MARKDOWN_CORE_NODE_LIST_ITEM) {
         return markdown_core_block_continue_indented(
             parser, input, container->as.list->marker_offset + container->as.list->padding,
-            markdown_core_parser_last_child(parser, container) != NULL || joining == container);
+            markdown_core_parser_last_child(container) != NULL || joining == container);
     }
     if (parser->blank) {
         if ((container->flags & MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK) && parser->indent == 0) {
@@ -305,38 +310,25 @@ static bool continue_container(const markdown_core_element_instance *self, markd
     (void)self;
     return markdown_core_list_continue(parser, node, input, joining, taken);
 }
-/* A LIST IS LAID OUT AT ITS EXIT, as completion reaches it: tight or loose is
- * read off its items and their children, which settled before it. */
-static markdown_core_finish_result finish_step(const markdown_core_element_instance *self, markdown_core_parser *parser,
-                                               markdown_core_node *node, markdown_core_node *parent,
-                                               markdown_core_event_type event, void **state) {
-    (void)self;
-    (void)parser;
-    (void)event;
-    (void)parent;
-    (void)state;
-    assert(event == MARKDOWN_CORE_EVENT_EXIT && node->kind == MARKDOWN_CORE_NODE_LIST);
-    S_lay_out(node);
-    return MARKDOWN_CORE_FINISH_CONTINUE;
-}
-static const markdown_core_node_type LIST_EXIT_KINDS[] = {MARKDOWN_CORE_NODE_LIST, MARKDOWN_CORE_NODE_NONE};
+static const markdown_core_node_type LIST_KINDS[] = {MARKDOWN_CORE_NODE_LIST, MARKDOWN_CORE_NODE_NONE};
 static bool blank_line(const markdown_core_element_instance *self, markdown_core_parser *parser,
                        markdown_core_node *node) {
     (void)self;
-    return !(node->kind == MARKDOWN_CORE_NODE_LIST_ITEM && !markdown_core_parser_last_child(parser, node) &&
+    return !(node->kind == MARKDOWN_CORE_NODE_LIST_ITEM && !markdown_core_parser_last_child(node) &&
              markdown_core_parser_starts_on_line(parser, node, parser->line_number));
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
     .state_size = sizeof(markdown_core_list_work),
-    .finish_step = finish_step,
-    .finish_exit_kinds = LIST_EXIT_KINDS,
+    .fold_child = fold_child,
+    .fold_kinds = LIST_KINDS,
     .blank_line = blank_line,
     .speculative_flags = MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK,
 
     .name = "list",
     .continue_container = continue_container,
     .propagates_child_blank = true,
+    .continue_reach = markdown_core_block_indent_reach,
     .blank_runs = true,
     .maximum_block_indent = 3,
     .scan_block_start = markdown_core_list_scan,

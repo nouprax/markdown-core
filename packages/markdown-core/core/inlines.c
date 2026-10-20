@@ -49,10 +49,10 @@ void markdown_core_inline_place_outside_frame(markdown_core_inline_state *inline
                                       &inline_state->mark_cursor);
     markdown_core_inline_seat_cursor(inline_state);
     if (span.has_start) {
-        node->where.place.start = (uint32_t)span.start;
+        node->place.start = (uint32_t)span.start;
     }
     if (span.has_end) {
-        node->where.place.end = (uint32_t)span.end;
+        node->place.end = (uint32_t)span.end;
     }
     if (node->kind == MARKDOWN_CORE_NODE_TEXT && node->as.literal->len > 0) {
         /* A Text placed with an end unresolved keeps no map at all: the
@@ -68,8 +68,8 @@ void markdown_core_inline_place_outside_frame(markdown_core_inline_state *inline
                 node->content_map.count = 0;
                 node->content_map.offset = 0;
                 markdown_core_parser_append_content_mark(inline_state->owner_parser, node, 0, inline_state->mark_line,
-                                                         node->where.place.start,
-                                                         (int)(node->where.place.end - node->where.place.start), 0);
+                                                         node->place.start, (int)(node->place.end - node->place.start),
+                                                         0);
             }
         }
     }
@@ -719,18 +719,18 @@ static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_s
     // is the opener's LEADING bytes and the closer's TRAILING ones. Taking the
     // whole run's start and end gave two nodes one byte: `***a**` reported a
     // leftover Text spanning columns 1..3 and a Strong also starting at 1.
-    inline_node->where.place.start = opener_inl->where.place.start + (uint32_t)opener_num_chars;
-    inline_node->where.place.end = closer_inl->where.place.end - (uint32_t)closer_num_chars;
+    inline_node->place.start = opener_inl->place.start + (uint32_t)opener_num_chars;
+    inline_node->place.end = closer_inl->place.end - (uint32_t)closer_num_chars;
     // and a leftover that SURVIVES owns only the bytes it still carries. A
     // leftover with none is freed below, and writing its end first would put a
     // reversed range in the tree for the length of two statements -- true only
     // by reading ahead, which is not a property worth relying on.
     if (opener_num_chars > 0) {
-        opener_inl->where.place.end = opener_inl->where.place.start + (uint32_t)opener_num_chars;
+        opener_inl->place.end = opener_inl->place.start + (uint32_t)opener_num_chars;
     }
     if (closer_num_chars > 0) {
         closer_inl->content_map.offset += (int)use_delims;
-        closer_inl->where.place.start = closer_inl->where.place.end - (uint32_t)closer_num_chars;
+        closer_inl->place.start = closer_inl->place.end - (uint32_t)closer_num_chars;
     }
 
     // if opener has 0 characters, remove it and its associated inline
@@ -905,7 +905,7 @@ void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_c
      * position used to be measured from, and stating it once as a mark is
      * what lets the term itself go. */
     if (parent->content_map.count == 0) {
-        markdown_core_parser_mark_content(parser, parent, 0, parent->where.place.start + parent->internal_offset);
+        markdown_core_parser_mark_content(parser, parent, 0, parent->place.start + parent->internal_offset);
     }
     markdown_core_inline_state_from_buf(parser, inline_state, &content);
     /* Block buffers include their terminating line ending. An inline field
@@ -1095,13 +1095,13 @@ markdown_core_chunk *markdown_core_inline_state_get_chunk(markdown_core_inline_s
 
 static void S_update_text_sourcepos(markdown_core_parser *parser, markdown_core_node *node) {
     if (node->as.literal->len == 0) {
-        node->where.place.end = node->where.place.start;
+        node->place.end = node->place.start;
         return;
     }
     int line;
     bufsize_t end;
     markdown_core_parser_content_end_place(parser, &node->content_map, node->as.literal->len - 1, &line, &end);
-    node->where.place.end = (uint32_t)end;
+    node->place.end = (uint32_t)end;
 }
 
 void markdown_core_node_unput(markdown_core_parser *parser, markdown_core_node *node, int n) {

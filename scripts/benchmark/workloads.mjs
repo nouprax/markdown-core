@@ -273,6 +273,25 @@ export const SCALE_SHAPES = Object.freeze({
     }
 });
 
+/* Paragraphs that use the label `t`, the definition of the definition
+ * shapes, written with or without it. */
+function definitionUses(out, size, letters) {
+    const per = SIZES.at(-1) / 10000;
+    let references = 0;
+    fill(out, size, (i) => {
+        const w = wordsOf(i + 1, letters);
+        const start = out.bytes;
+        let text = w(1);
+        while (bytes(text) < 8 * per) {
+            text += ` [${w(2 + (references % 5))}][t] ${w(8)}`;
+            references++;
+        }
+        out.put(`${text}\n\n`);
+        assert.ok(out.bytes > start);
+        out.part();
+    });
+}
+
 /* The stray early openers, one line each. */
 const OPENERS = Object.freeze({
     fence: "```\n",
@@ -330,23 +349,14 @@ export const ADVERSARIAL_SHAPES = Object.freeze({
         );
     },
     "wide-definition"(out, size, letters) {
-        const w0 = wordsOf(0, letters);
-        out.put(`[t]: /${w0(1)}\n\n`);
+        out.put(`[t]: /${wordsOf(0, letters)(1)}\n\n`);
         out.part();
-        const per = SIZES.at(-1) / 10000;
-        let references = 0;
-        fill(out, size, (i) => {
-            const w = wordsOf(i + 1, letters);
-            const start = out.bytes;
-            let text = w(1);
-            while (bytes(text) < 8 * per) {
-                text += ` [${w(2 + (references % 5))}][t] ${w(8)}`;
-                references++;
-            }
-            out.put(`${text}\n\n`);
-            assert.ok(out.bytes > start);
-            out.part();
-        });
+        definitionUses(out, size, letters);
+    },
+    "late-definition"(out, size, letters) {
+        definitionUses(out, size, letters);
+        out.put(`[t]: /${wordsOf(0, letters)(1)}\n`);
+        out.part();
     },
     "repeated-heading"(out, size, letters) {
         const same = `${wordsOf(0, letters)(1)} ${wordsOf(0, letters)(2)}`;
@@ -369,9 +379,32 @@ export const ADVERSARIAL_SHAPES = Object.freeze({
         fill(out, size - 1, (i) => out.put(`${wordsOf(i, letters)(1)} `));
         out.put("\n");
         out.part();
+    },
+    "unclosed-properties"(out, size, letters) {
+        out.put("---\n");
+        fill(out, size, (i) => {
+            const w = wordsOf(i, letters);
+            out.put(`${w(1)}: ${w(2)} ${w(3)}\n`);
+        });
+        out.part();
+    },
+    "unclosed-grid"(out, size, letters) {
+        const w = wordsOf(0, letters);
+        out.put(`+${"-".repeat(GRID)}+${"-".repeat(GRID)}+\n`);
+        out.put(`| ${gridCell(w(1))}| ${gridCell(w(2))}|\n`);
+        out.put(`+${"=".repeat(GRID)}+${"=".repeat(GRID)}+\n`);
+        fill(out, size, (row) => gridRow(out, row + 1, letters));
+        out.put(`| ${gridCell(w(3))}| ${gridCell(w(4))}|\n`);
+        out.part();
     }
 });
 const FIXED_SIZES = Object.freeze({ "unclosed-strong": [65536], "single-line": [65536] });
+
+/**
+ * The shapes whose cost per chunk the language keeps local, which 6.2 holds
+ * flat: every scale shape, the 10,000-item list and the 1,000 nested quotes.
+ */
+export const LOCAL_SHAPES = Object.freeze([...Object.keys(SCALE_SHAPES), "long-list", "deep-quotes"]);
 
 /** A generated document: shape, alphabet and size. */
 export function shapeDocument(shape, alphabet, size) {
@@ -588,7 +621,9 @@ export function correctnessSet() {
  * The benchmark workloads (section 9): every grammar corpus document with
  * `tokens` and `scalars`, and every scale and adversarial shape at all four
  * sizes with `tokens` and `rows`. Each workload is one document and one
- * stream family.
+ * stream family, is `local` when 6.2 holds its stream flat, and is
+ * `stepwise` when 6.3 measures it at every step however long it is: a shape
+ * 6.2 leaves to 6.3, at the shape's smallest size (decision G17).
  *
  * `set` is `all`, or `corpus` for the grammar corpus's workloads alone: the
  * shapes are measured at their four sizes together or not at all.
@@ -603,7 +638,7 @@ export function benchmarkWorkloads(set = "all") {
         const document = { name: entry.name, text: entry.text, alphabet: entry.alphabet, parts: null };
         documents.push(document);
         for (const family of ["tokens", "scalars"])
-            workloads.push({ document, family, name: `${document.name}.${family}` });
+            workloads.push({ document, family, name: `${document.name}.${family}`, local: false, stepwise: false });
     }
     for (const shape of set === "all" ? [...Object.keys(SCALE_SHAPES), ...Object.keys(ADVERSARIAL_SHAPES)] : [])
         for (const alphabet of Object.keys(alphabets))
@@ -611,7 +646,13 @@ export function benchmarkWorkloads(set = "all") {
                 const document = shapeDocument(shape, alphabet, size);
                 documents.push(document);
                 for (const family of ["tokens", "rows"])
-                    workloads.push({ document, family, name: `${document.name}.${family}` });
+                    workloads.push({
+                        document,
+                        family,
+                        name: `${document.name}.${family}`,
+                        local: LOCAL_SHAPES.includes(shape),
+                        stepwise: !LOCAL_SHAPES.includes(shape) && size === shapeSizes(shape)[0]
+                    });
             }
     return { documents, workloads };
 }

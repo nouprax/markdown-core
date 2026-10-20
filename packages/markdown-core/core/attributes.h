@@ -84,6 +84,24 @@ static MARKDOWN_CORE_INLINE bool markdown_core_attributes_owns(const markdown_co
 }
 /* Releases what the value owns, leaving it empty. */
 void markdown_core_attributes_free(markdown_core_attributes *value);
+/* A VIEW OF A VALUE holds the value's members and owns none of them: it
+ * reads the value's block and anchor for as long as the value keeps them, and
+ * releasing it frees nothing. `value`, a copy of another value's members,
+ * becomes a view of that value. */
+static MARKDOWN_CORE_INLINE void markdown_core_attributes_view(markdown_core_attributes *value) {
+    value->storage = NULL;
+    value->anchor.alloc = 0;
+}
+/* What `view` still reads of `value`, of which it is a view, copied: the
+ * members it kept in `value`'s block, into a block of its own, and `value`'s
+ * anchor string where it kept it. `view` then owns everything it holds.
+ * False when storage could not be had, with what was not copied still read
+ * from `value`. */
+bool markdown_core_attributes_own(markdown_core_attributes *view, const markdown_core_attributes *value);
+/* The same without a copy: `view` takes `value`'s block when it still reads
+ * a member there, and `value`'s anchor string when it reads that, and owns
+ * everything it holds; `value` then holds them without owning them. */
+void markdown_core_attributes_adopt(markdown_core_attributes *view, markdown_core_attributes *value);
 /* A value holding one class, `bytes`, and nothing else: the value an element
  * makes when its syntax names a class without an attribute container. The
  * caller supplies an empty value. Returns 0 on allocation failure, leaving it

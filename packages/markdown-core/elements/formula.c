@@ -68,6 +68,28 @@ static void formula_opaque_free(const markdown_core_element *element, markdown_c
     markdown_core_free(formula);
 }
 
+static bool formula_opaque_view(const markdown_core_element *element, markdown_core_node *copy,
+                                const markdown_core_node *node) {
+    node_formula *made = markdown_core_realloc(NULL, sizeof(*made));
+    if (!made) {
+        copy->opaque = NULL;
+        return false;
+    }
+    *made = *(const node_formula *)node->opaque;
+    markdown_core_chunk_view(&made->literal);
+    copy->opaque = made;
+    return true;
+}
+
+static void formula_opaque_adopt(const markdown_core_element *element, markdown_core_node *view,
+                                 markdown_core_node *node) {
+    node_formula *made = view->opaque, *formula = node->opaque;
+    if (made->literal.data == formula->literal.data && !made->literal.alloc) {
+        made->literal.alloc = formula->literal.alloc;
+        formula->literal.alloc = 0;
+    }
+}
+
 static int set_formula_literal_bytes(markdown_core_node *node, const unsigned char *data, bufsize_t len) {
     node_formula *formula = get_formula(node);
     markdown_core_chunk_free(&formula->literal);
@@ -544,7 +566,7 @@ static markdown_core_node *make_formula_span(const markdown_core_element *elemen
     bufsize_t first, last;
     markdown_core_parser_content_place(parser, &parent->content_map, start, &line, &first);
     markdown_core_parser_content_end_place(parser, &parent->content_map, end - 1, &line, &last);
-    formula->where.place = (markdown_core_place){(uint32_t)first, (uint32_t)last};
+    formula->place = (markdown_core_place){(uint32_t)first, (uint32_t)last};
     return formula;
 }
 
@@ -646,6 +668,8 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .accepts_lines_func = accepts_lines,
     .opaque_alloc_func = formula_opaque_alloc,
     .opaque_free_func = formula_opaque_free,
+    .opaque_view_func = formula_opaque_view,
+    .opaque_adopt_func = formula_opaque_adopt,
     .insert_inline_from_delim = insert_formula,
     .terminates_text = "$",
     .dispatch = "$\\",

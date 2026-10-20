@@ -2614,7 +2614,7 @@
         {
             "feature": "tables",
             "specification": "docs/specs/dialect/tables.md",
-            "sha256": "162ce9a7b22a00dbc413ab40a22763572f0a55fcf3ae13070914d61ff6f528e9",
+            "sha256": "06db97e9612d51ad718dc412952a956b348fe3f9cd9c58430ee803a5f49cf7e3",
             "sections": [
                 {
                     "title": "Tables",
@@ -2720,7 +2720,7 @@
                     "title": "Column widths and source positions",
                     "line": 236,
                     "level": 2,
-                    "sha256": "44846e0032dcf8aa4e4285e21fc756837151b3067523ffa84aeff14e41ee28e9",
+                    "sha256": "b25b5934bc8365b34b6313397f3d28ea5608a1d2dfd390db55af8f89888a4a7a",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -2734,7 +2734,7 @@
                 },
                 {
                     "title": "Competing block syntax",
-                    "line": 270,
+                    "line": 272,
                     "level": 2,
                     "sha256": "15848b2923c6f996b4242f01a024271bd4e138e33638837236011e4bdc58d0fd",
                     "disposition": {

@@ -2,20 +2,29 @@
  * document through it in the chunks of one stream family, report.
  *
  * Nothing here is timed. The driver reads each window's cost out of the
- * callgrind call graph, from the edges into `bench_apply_step`, and the runner
- * marks the windows with `CALLGRIND_DUMP_STATS`, a no-op outside valgrind
+ * callgrind call graph, from the edges into `bench_apply_step` and
+ * `bench_finalize` or, for `reparse`, the parse stages under them, and the
+ * runner marks the windows with `CALLGRIND_DUMP_STATS` and
+ * `CALLGRIND_ZERO_STATS`, no-ops outside valgrind
  * (docs/plans/2026-09-29-incremental-gates.md, section 5.1). The subject is
- * opened before the first window, so opening is in no window's edge.
+ * opened before the counts are zeroed, so opening is in no window's dump.
  *
- * A stream of at most 1,024 chunks has one chunk per window. A longer stream
- * splits into 1,024 contiguous windows whose chunk counts differ by at most
- * one. The `reparse` subject is measured at each window's last chunk: the
- * chunks before it only extend its text, because reparsing after every chunk
- * of a long stream is the quadratic cost the design removes. The `session`
- * subject takes every chunk in its window.
+ * `--windows` is the most windows the driver splits the stream into (5.1): a
+ * stream of at most that many chunks has one chunk per window, and a longer
+ * one splits into that many contiguous windows whose chunk counts differ by
+ * at most one. The `reparse` subject is measured at each window's last
+ * chunk: the chunks before it only extend its text, because reparsing after
+ * every chunk of a long stream is the quadratic cost the design removes. The
+ * `session` subject takes every chunk in its window. The stream's finalize is
+ * one more window, after the last chunk's.
  *
- *   stream_runner --subject reparse|session --document PATH --stream FAMILY
- *                 --tokens FILE [--final PATH]
+ * The `binding` subject is the session stepped through the MCB3 entries, as
+ * the bindings that read messages step it: the driver reads what its
+ * messages add to the session's steps, the C side of building each published
+ * document's values (plan D5).
+ *
+ *   stream_runner --subject reparse|session|binding --document PATH
+ *                 --stream FAMILY --tokens FILE --windows N [--final PATH]
  *
  * `--final` writes the subject's final text, whose one-shot parse the driver
  * measures for `oneshot_ir`.
@@ -30,8 +39,7 @@
 
 #include "incremental_harness.h"
 #include "markdown_core_receipt.h"
-
-#define WINDOWS 1024
+#include "markdown_core_wire.h"
 
 /* A subject the runner can measure, and how a chunk that ends no window
  * advances it: NULL when every chunk goes through `bench_apply_step`. */
@@ -40,22 +48,76 @@ typedef struct measured_subject {
     bool (*advance)(void *subject, const uint8_t *text, size_t length);
 } measured_subject;
 
-static const measured_subject SUBJECTS[] = {{&ih_reparse, ih_reparse_extend}, {&ih_session, NULL}};
+/* THE BINDING SUBJECT: the `session` subject's session, each step answering
+ * with its document's MCB3 message (plan 6.2), which the binding releases
+ * once it has built its values from it. */
 
-/* The measured edge: one chunk, from its bytes to the subject's new
- * document. */
+/* A message's status byte follows the magic and the message length
+ * (docs/architecture/wire-format.md): 0 is a document, and a failure carries
+ * its status in the u32 after it. */
+enum { MESSAGE_STATUS = 8 };
+
+static markdown_core_status binding_step(void *handle, uint8_t *message, const markdown_core_document **document) {
+    const markdown_core_status status =
+        !message ? MARKDOWN_CORE_ALLOCATION_FAILED
+        : !message[MESSAGE_STATUS]
+            ? MARKDOWN_CORE_OK
+            : (markdown_core_status)(message[MESSAGE_STATUS + 1] | (uint32_t)message[MESSAGE_STATUS + 2] << 8 |
+                                     (uint32_t)message[MESSAGE_STATUS + 3] << 16 |
+                                     (uint32_t)message[MESSAGE_STATUS + 4] << 24);
+    markdown_core_wire_free(message);
+    *document = status == MARKDOWN_CORE_OK ? markdown_core_session_document(ih_session_of(handle)) : NULL;
+    return status;
+}
+
+static void *binding_open(ih_unit unit, const uint8_t *text, size_t length, const markdown_core_document **document) {
+    return ih_session.open(unit, text, length, document);
+}
+
+static markdown_core_status binding_append(void *handle, const uint8_t *text, size_t length,
+                                           const markdown_core_document **document) {
+    return binding_step(handle, markdown_core_wire_session_append(ih_session_of(handle), text, length), document);
+}
+
+static markdown_core_status binding_finalize(void *handle, const markdown_core_document **document) {
+    return binding_step(handle, markdown_core_wire_session_finalize(ih_session_of(handle)), document);
+}
+
+static const uint8_t *binding_text(const void *handle, size_t *length) { return ih_session.text(handle, length); }
+
+static void binding_close(void *handle) { ih_session.close(handle); }
+
+static const ih_subject_class binding = {.name = "binding",
+                                         .open = binding_open,
+                                         .append = binding_append,
+                                         .finalize = binding_finalize,
+                                         .text = binding_text,
+                                         .close = binding_close};
+
+static const measured_subject SUBJECTS[] = {{&ih_reparse, ih_reparse_extend}, {&ih_session, NULL}, {&binding, NULL}};
+
+/* The measured edges: one chunk, from its bytes to the subject's new
+ * document, and the finalize, to the final document. */
 __attribute__((noinline)) bool bench_apply_step(const ih_subject_class *subject, void *handle, const ih_step *step,
                                                 const markdown_core_document **document) {
-    return subject->append(handle, step->text, step->length, document);
+    return subject->append(handle, step->text, step->length, document) == MARKDOWN_CORE_OK;
+}
+
+__attribute__((noinline)) bool bench_finalize(const ih_subject_class *subject, void *handle,
+                                              const markdown_core_document **document) {
+    return subject->finalize(handle, document) == MARKDOWN_CORE_OK;
 }
 
 static int usage(void) {
-    fputs("usage: stream_runner --subject NAME --document PATH --stream FAMILY --tokens FILE [--final PATH]\n", stderr);
+    fputs("usage: stream_runner --subject NAME --document PATH --stream FAMILY --tokens FILE --windows N "
+          "[--final PATH]\n",
+          stderr);
     return 2;
 }
 
 int main(int argc, char **argv) {
-    const char *subject_name = NULL, *document_path = NULL, *family = NULL, *tokens_path = NULL, *final_path = NULL;
+    const char *subject_name = NULL, *document_path = NULL, *family = NULL, *tokens_path = NULL, *final_path = NULL,
+               *windows_text = NULL;
     const measured_subject *measured = NULL;
     const markdown_core_document *current = NULL;
     const uint8_t *text;
@@ -63,7 +125,8 @@ int main(int argc, char **argv) {
     ih_sizes tokens = {0};
     ih_step *steps = NULL;
     size_t *ends = NULL;
-    size_t length = 0, count = 0, windows, window, index, final_length = 0, root_children = 0;
+    size_t length = 0, count = 0, most = 0, windows, window, index, final_length = 0, root_children = 0;
+    char *windows_end = NULL;
     void *handle;
     int i, status = 1;
 
@@ -72,6 +135,7 @@ int main(int argc, char **argv) {
                             : strcmp(argv[i], "--document") == 0 ? &document_path
                             : strcmp(argv[i], "--stream") == 0   ? &family
                             : strcmp(argv[i], "--tokens") == 0   ? &tokens_path
+                            : strcmp(argv[i], "--windows") == 0  ? &windows_text
                             : strcmp(argv[i], "--final") == 0    ? &final_path
                                                                  : NULL;
         if (!slot || *slot) {
@@ -79,7 +143,11 @@ int main(int argc, char **argv) {
         }
         *slot = argv[i + 1];
     }
-    if (i != argc || !subject_name || !document_path || !family || !tokens_path) {
+    if (i != argc || !subject_name || !document_path || !family || !tokens_path || !windows_text) {
+        return usage();
+    }
+    most = strtoul(windows_text, &windows_end, 10);
+    if (!most || *windows_end) {
         return usage();
     }
     for (index = 0; index < sizeof(SUBJECTS) / sizeof(SUBJECTS[0]); index++) {
@@ -107,7 +175,8 @@ int main(int argc, char **argv) {
         fprintf(stderr, "stream_runner: %s did not open\n", subject_name);
         goto done;
     }
-    windows = count < WINDOWS ? count : WINDOWS;
+    CALLGRIND_ZERO_STATS;
+    windows = count < most ? count : most;
     for (window = 0, index = 0; window < windows; window++) {
         size_t end = (window + 1) * count / windows;
         for (; index < end; index++) {
@@ -125,6 +194,11 @@ int main(int argc, char **argv) {
         }
         CALLGRIND_DUMP_STATS;
     }
+    if (!bench_finalize(measured->subject, handle, &current)) {
+        fputs("stream_runner: the finalize failed\n", stderr);
+        goto close;
+    }
+    CALLGRIND_DUMP_STATS;
     text = measured->subject->text(handle, &final_length);
     if (final_length != length || memcmp(text, document, length) != 0) {
         fputs("stream_runner: the stream did not rebuild its document\n", stderr);
@@ -141,8 +215,9 @@ int main(int argc, char **argv) {
         fputs("stream_runner: cannot read the final document's receipt\n", stderr);
         goto close;
     }
-    printf("stream-runner subject=%s steps=%zu windows=%zu bytes=%zu root_children=%zu\n", subject_name, count, windows,
-           final_length, root_children);
+    /* The windows of the chunks and the finalize's. */
+    printf("stream-runner subject=%s steps=%zu windows=%zu bytes=%zu root_children=%zu\n", subject_name, count,
+           windows + 1, final_length, root_children);
     status = 0;
 close:
     measured->subject->close(handle);
