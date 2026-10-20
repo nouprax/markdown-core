@@ -77,7 +77,8 @@ static inline void markdown_core_carve_clear(markdown_core_carve *carve) {
 /* Gives back every block: pops every record, back to the empty store. */
 static inline void markdown_core_carve_free(markdown_core_carve *carve) {
     if (carve->blocks) {
-        markdown_core_carve_rollback(carve, (markdown_core_carve){0});
+        const markdown_core_carve empty = {NULL, 0, 0};
+        markdown_core_carve_rollback(carve, empty);
     }
 }
 

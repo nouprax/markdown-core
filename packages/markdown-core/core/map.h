@@ -35,7 +35,7 @@ typedef struct markdown_core_key_index {
     /* The keys of both tables. */
     size_t size;
     /* The table the entries are leaving, or NULL; its entries, and the
-     * vacant slot of it the next move starts after. */
+     * vacant slot of it the next move walks down from. */
     markdown_core_key_index_slot *older;
     size_t older_capacity;
     size_t left;
@@ -50,8 +50,9 @@ int markdown_core_key_index_init(markdown_core_key_index *index, size_t expected
 /* Make room for `size` keys in all, so that taking that many grows the index
  * no further: a table that holds them at most half full, to which the
  * entries held move as later keys enter. While entries are moving it makes
- * none, and the keys taken grow the index as they need. Zero means
- * allocation failure. */
+ * none, and the keys taken grow the index as they need. Like any new keys,
+ * the keys taken from three eighths full on make the table the index grows
+ * to vacant ahead (map.c, THE NEXT TABLE). Zero means allocation failure. */
 int markdown_core_key_index_reserve(markdown_core_key_index *index, size_t size);
 /* markdown_core_key_index_free for an index that has a table. */
 void markdown_core_key_index_free_tables(markdown_core_key_index *index);

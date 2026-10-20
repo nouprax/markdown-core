@@ -83,7 +83,8 @@ static inline void markdown_core_ahead_free(markdown_core_ahead *ahead, const ma
             markdown_core_free(ahead->next);
         }
     }
-    *ahead = (markdown_core_ahead){0};
+    const markdown_core_ahead empty = {0, NULL, 0};
+    *ahead = empty;
 }
 
 /* markdown_core_ahead_extend past half full, short of the capacity: copies

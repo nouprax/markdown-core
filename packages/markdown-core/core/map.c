@@ -93,18 +93,19 @@ static size_t S_capacity_for(size_t size) {
     return capacity <= SIZE_MAX / sizeof(markdown_core_key_index_slot) ? capacity : 0;
 }
 
-/* THE MOVE. The older table is emptied run by run: the cursor is a vacant
- * slot, and a move takes the runs after it whole, so every entry left keeps
- * its probe chain from its home, which no vacant slot breaks, and no run
- * reaches past the cursor. A removal from the older table shifts entries
- * within their run, so the cursor stays vacant.
+/* THE MOVE. The older table is emptied from the back of its runs: the move
+ * walks down from a vacant slot, so every entry it reaches ends its run, and
+ * taking that entry out breaks no probe chain of an entry left, which runs
+ * from its home up to it. No run reaches past the cursor, the vacant slot
+ * the walk has come down to. A removal from the older table shifts entries
+ * down within their run, so the slots the walk has passed stay vacant.
  *
- * Each new key passes KEY_INDEX_MOVE_SLOTS slots of the older table, more to
- * end a run. The older table, of `c` slots, held at most `c / 2` keys when the
- * newer one, of at least `2c`, was had, and the newer one is half full only
- * after `c / 2` more keys: two slots each would empty the older table in
- * time, and four empty it in half the time, so a lookup reads two tables
- * for as short a stretch. */
+ * Each new key passes KEY_INDEX_MOVE_SLOTS slots of the older table. The
+ * older table, of `c` slots, held at most `c / 2` keys when the newer one, of
+ * at least `2c`, was had, and the newer one is half full only after `c / 2`
+ * more keys: two slots each would empty the older table in time, and four
+ * empty it in half the time, so a lookup reads two tables for as short a
+ * stretch. */
 #define KEY_INDEX_MOVE_SLOTS 4
 
 static void S_drop_older(markdown_core_key_index *index) {
@@ -114,16 +115,14 @@ static void S_drop_older(markdown_core_key_index *index) {
     index->cursor = 0;
 }
 
-/* Move the runs after the cursor to the newer table. A run is cleared as it
- * goes, whole before any lookup reads the older table again. */
-static void S_move_runs(markdown_core_key_index *index) {
+/* Move the entries of the slots below the cursor to the newer table. */
+static void S_move_entries(markdown_core_key_index *index) {
     markdown_core_key_index_slot *older = index->older;
     const size_t mask = index->older_capacity - 1;
     size_t at = index->cursor;
-    for (size_t passed = 0; passed < KEY_INDEX_MOVE_SLOTS && index->left;) {
-        at = (at + 1) & mask;
-        passed++;
-        for (; older[at].key; at = (at + 1) & mask, passed++) {
+    for (size_t passed = 0; passed < KEY_INDEX_MOVE_SLOTS && index->left; passed++) {
+        at = (at - 1) & mask;
+        if (older[at].key) {
             *vacant_key_slot(index->slots, index->capacity, older[at].hash) = older[at];
             older[at] = (markdown_core_key_index_slot){0};
             index->left--;
@@ -255,7 +254,7 @@ markdown_core_key_index_slot *markdown_core_key_index_entry(markdown_core_key_in
         }
     }
     if (index->older) {
-        S_move_runs(index);
+        S_move_entries(index);
         slot = vacant_key_slot(index->slots, index->capacity, hash);
     }
     slot->hash = hash;
