@@ -4,6 +4,7 @@ import test from "node:test";
 import { parseCallgrind } from "../callgrind.mjs";
 import {
     bindingCost,
+    everyStep,
     flatStream,
     groupWindows,
     neverWorse,
@@ -11,7 +12,6 @@ import {
     regressions,
     stepCost,
     summary,
-    windowBytes,
     windowEnds,
     WINDOWS
 } from "../stream-gates.mjs";
@@ -156,20 +156,19 @@ test("a window that never entered the step, never parsed, or counted nothing, is
 });
 
 test("windows split long streams into 1,024 contiguous windows of near-equal step count", () => {
-    assert.deepEqual(windowEnds(3), [1, 2, 3]);
-    const ends = windowEnds(4115);
+    assert.deepEqual(windowEnds(3, false), [1, 2, 3]);
+    const ends = windowEnds(4115, false);
     assert.equal(ends.length, WINDOWS);
     assert.equal(ends.at(-1), 4115);
     const widths = ends.map((end, index) => end - (index ? ends[index - 1] : 0));
     assert.ok(Math.max(...widths) - Math.min(...widths) <= 1);
 });
 
-test("each chunk window ends where its last chunk ends", () => {
-    assert.deepEqual(windowBytes([3, 5, 9]), [3, 5, 9]);
-    const chunkEnds = Array.from({ length: 4115 }, (_, index) => 4 * (index + 1));
+test("a stepwise stream has one window per step however long it is", () => {
+    assert.deepEqual(windowEnds(3, true), [1, 2, 3]);
     assert.deepEqual(
-        windowBytes(chunkEnds),
-        windowEnds(4115).map((step) => 4 * step)
+        windowEnds(4115, true),
+        Array.from({ length: 4115 }, (_, index) => index + 1)
     );
 });
 
@@ -182,7 +181,8 @@ test("a summary reports nearest-rank percentiles, the maximum and the total", ()
 
 test("6.2 rejects stream windows whose cost grows with the text already streamed", () => {
     const length = 1024 * 64;
-    const stream = (cost) => windowEnds(1024).map((end, index) => ({ end: (end * length) / 1024, Ir: cost(index) }));
+    const stream = (cost) =>
+        windowEnds(1024, false).map((end, index) => ({ end: (end * length) / 1024, Ir: cost(index) }));
     assert.deepEqual(
         flatStream(
             stream(() => 100),
@@ -231,6 +231,27 @@ test("S / R and B / S come from the streams 6.3 measures, and a long stream's S 
     assert.equal(long.stepRatio, null);
     assert.equal(long.bindingRatio, null);
     assert.equal(long.session.total, 1400);
+    /* A stepwise stream's R ran every step, so 6.3 measures it however long it is. */
+    const every = Array.from({ length: WINDOWS + 2 }, () => 10);
+    const [stepwise] = groupWindows(
+        [
+            row(
+                WINDOWS + 1,
+                every,
+                every.map((cost, step) => (step ? cost : 30)),
+                null
+            )
+        ],
+        () => "stepwise"
+    );
+    assert.equal(stepwise.totalRatio, (10 * (WINDOWS + 1) + 30) / (10 * (WINDOWS + 2)));
+    assert.equal(stepwise.stepRatio, 3);
+    assert.equal(stepwise.bindingRatio, null);
+});
+
+test("a row's windows are its steps when its R ran every step and the finalize", () => {
+    assert.equal(everyStep({ steps: 2, windows: [1, 1, 1] }), true);
+    assert.equal(everyStep({ steps: WINDOWS + 1, windows: Array.from({ length: WINDOWS + 1 }, () => 1) }), false);
 });
 
 test("6.3 rejects a stream whose total, the finalize included, is above 1.25 times reparse's", () => {

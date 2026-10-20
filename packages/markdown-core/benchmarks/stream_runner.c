@@ -9,13 +9,14 @@
  * (docs/plans/2026-09-29-incremental-gates.md, section 5.1). The subject is
  * opened before the counts are zeroed, so opening is in no window's dump.
  *
- * A stream of at most 1,024 chunks has one chunk per window. A longer stream
- * splits into 1,024 contiguous windows whose chunk counts differ by at most
- * one. The `reparse` subject is measured at each window's last chunk: the
- * chunks before it only extend its text, because reparsing after every chunk
- * of a long stream is the quadratic cost the design removes. The `session`
- * subject takes every chunk in its window. The stream's finalize is one more
- * window, after the last chunk's.
+ * `--windows` is the most windows the driver splits the stream into (5.1): a
+ * stream of at most that many chunks has one chunk per window, and a longer
+ * one splits into that many contiguous windows whose chunk counts differ by
+ * at most one. The `reparse` subject is measured at each window's last
+ * chunk: the chunks before it only extend its text, because reparsing after
+ * every chunk of a long stream is the quadratic cost the design removes. The
+ * `session` subject takes every chunk in its window. The stream's finalize is
+ * one more window, after the last chunk's.
  *
  * The `binding` subject is the session stepped through the MCB3 entries, as
  * the bindings that read messages step it: the driver reads what its
@@ -23,7 +24,7 @@
  * document's values (plan D5).
  *
  *   stream_runner --subject reparse|session|binding --document PATH
- *                 --stream FAMILY --tokens FILE [--final PATH]
+ *                 --stream FAMILY --tokens FILE --windows N [--final PATH]
  *
  * `--final` writes the subject's final text, whose one-shot parse the driver
  * measures for `oneshot_ir`.
@@ -39,8 +40,6 @@
 #include "incremental_harness.h"
 #include "markdown_core_receipt.h"
 #include "markdown_core_wire.h"
-
-#define WINDOWS 1024
 
 /* A subject the runner can measure, and how a chunk that ends no window
  * advances it: NULL when every chunk goes through `bench_apply_step`. */
@@ -110,12 +109,15 @@ __attribute__((noinline)) bool bench_finalize(const ih_subject_class *subject, v
 }
 
 static int usage(void) {
-    fputs("usage: stream_runner --subject NAME --document PATH --stream FAMILY --tokens FILE [--final PATH]\n", stderr);
+    fputs("usage: stream_runner --subject NAME --document PATH --stream FAMILY --tokens FILE --windows N "
+          "[--final PATH]\n",
+          stderr);
     return 2;
 }
 
 int main(int argc, char **argv) {
-    const char *subject_name = NULL, *document_path = NULL, *family = NULL, *tokens_path = NULL, *final_path = NULL;
+    const char *subject_name = NULL, *document_path = NULL, *family = NULL, *tokens_path = NULL, *final_path = NULL,
+               *windows_text = NULL;
     const measured_subject *measured = NULL;
     const markdown_core_document *current = NULL;
     const uint8_t *text;
@@ -123,7 +125,8 @@ int main(int argc, char **argv) {
     ih_sizes tokens = {0};
     ih_step *steps = NULL;
     size_t *ends = NULL;
-    size_t length = 0, count = 0, windows, window, index, final_length = 0, root_children = 0;
+    size_t length = 0, count = 0, most = 0, windows, window, index, final_length = 0, root_children = 0;
+    char *windows_end = NULL;
     void *handle;
     int i, status = 1;
 
@@ -132,6 +135,7 @@ int main(int argc, char **argv) {
                             : strcmp(argv[i], "--document") == 0 ? &document_path
                             : strcmp(argv[i], "--stream") == 0   ? &family
                             : strcmp(argv[i], "--tokens") == 0   ? &tokens_path
+                            : strcmp(argv[i], "--windows") == 0  ? &windows_text
                             : strcmp(argv[i], "--final") == 0    ? &final_path
                                                                  : NULL;
         if (!slot || *slot) {
@@ -139,7 +143,11 @@ int main(int argc, char **argv) {
         }
         *slot = argv[i + 1];
     }
-    if (i != argc || !subject_name || !document_path || !family || !tokens_path) {
+    if (i != argc || !subject_name || !document_path || !family || !tokens_path || !windows_text) {
+        return usage();
+    }
+    most = strtoul(windows_text, &windows_end, 10);
+    if (!most || *windows_end) {
         return usage();
     }
     for (index = 0; index < sizeof(SUBJECTS) / sizeof(SUBJECTS[0]); index++) {
@@ -168,7 +176,7 @@ int main(int argc, char **argv) {
         goto done;
     }
     CALLGRIND_ZERO_STATS;
-    windows = count < WINDOWS ? count : WINDOWS;
+    windows = count < most ? count : most;
     for (window = 0, index = 0; window < windows; window++) {
         size_t end = (window + 1) * count / windows;
         for (; index < end; index++) {

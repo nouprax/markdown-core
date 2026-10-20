@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { inputVersion, sameInputs, validationSource } from "../shared/ci-inputs.mjs";
-import { groupWindows, REGRESSION_LIMIT, WINDOWS } from "./stream-gates.mjs";
+import { everyStep, groupWindows, REGRESSION_LIMIT, WINDOWS } from "./stream-gates.mjs";
 import { grammarComparisons } from "./report.mjs";
 import { stageBudget, STAGE_IR_LIMIT } from "./stage-budget.mjs";
 
@@ -229,10 +229,10 @@ export function streamSection(report) {
         if (row.size !== null) count(row.size);
         count(row.steps);
         if (!windows(row.windows)) throw new Error("Invalid stream windows");
-        // S runs every stream of at most 1,024 chunks, and B exactly those.
+        // S runs every stream whose R ran every step, and B exactly those of at most 1,024 chunks.
         const short = row.steps <= WINDOWS;
         if (
-            (short && row.session === null) ||
+            (everyStep(row) && row.session === null) ||
             (row.session !== null &&
                 (!windows(row.session?.windows) || row.session.windows.length !== row.windows.length))
         ) {
@@ -269,7 +269,7 @@ export function streamSection(report) {
     const lines = [
         "### Streams",
         "",
-        `Subjects: \`reparse\` (R), \`session\` (S) and \`binding\` (B), Ir per window of chunks and for the finalize, R counting the two parse stages of each \`Document.parse\`; S and B run the streams of at most 1,024 chunks, and S also every longer stream of a shape the language keeps local. ${number(report.results.length)} workloads · \`${report.workloads.digest.slice(0, 16)}\`.`
+        `Subjects: \`reparse\` (R), \`session\` (S) and \`binding\` (B), Ir per window of chunks and for the finalize, R counting the two parse stages of each \`Document.parse\`; S runs every stream R runs at every step (those of at most 1,024 chunks, and the shapes 6.2 leaves to 6.3 at their smallest size) and every longer stream of a shape the language keeps local, and B the streams of at most 1,024 chunks. ${number(report.results.length)} workloads · \`${report.workloads.digest.slice(0, 16)}\`.`
     ];
     if (report.baseline) {
         lines.push(

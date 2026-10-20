@@ -21,13 +21,14 @@
  *
  * Three subjects run the workloads: `reparse`, the R column, `session`, the
  * S column, and `binding`, the B column. The session takes every step of its
- * windows, and runs the streams a gate bounds: every stream of at most 1,024
- * steps, where 6.3 holds its total over the steps and the finalize to 1.25
- * times `reparse`'s on the same steps, and every stream of a shape whose
- * cost per chunk the language keeps local, whose chunk windows 6.2 holds
- * flat. B is the C side of a binding's build of each published document's
- * values, on the streams of at most 1,024 steps, reported without a gate
- * (plan D5).
+ * windows, and runs the streams a gate bounds: every stream `reparse` runs at
+ * every step -- each of at most 1,024 steps, and each of a shape 6.2 leaves
+ * to 6.3 at the shape's smallest size, whatever its length (decision G17) --
+ * where 6.3 holds its total over the steps and the finalize to 1.25 times
+ * `reparse`'s on the same steps, and every stream of a shape whose cost per
+ * chunk the language keeps local, whose chunk windows 6.2 holds flat. B is
+ * the C side of a binding's build of each published document's values, on
+ * the streams of at most 1,024 steps, reported without a gate (plan D5).
  * With `--baseline-ref`, the base revision's engine is rebuilt with this
  * run's harness and measured on the same workloads, and 6.4 holds R's p95,
  * maximum and total to 1.02 times the base's, and S's on the streams 6.3
@@ -56,6 +57,7 @@ import { parseCallgrind } from "./callgrind.mjs";
 import { PARSE_BOUNDARIES, STREAM_RUNNER, measure, prepareBuild, profileRun } from "./run.mjs";
 import {
     bindingCost,
+    everyStep,
     flatStream,
     groupWindows,
     neverWorse,
@@ -65,7 +67,6 @@ import {
     stepCost,
     summary,
     WINDOWS,
-    windowBytes,
     windowEnds
 } from "./stream-gates.mjs";
 import { STAGES } from "./stage-budget.mjs";
@@ -136,13 +137,13 @@ function parseArguments(argv) {
 }
 
 /**
- * One subject on one workload: its windows' costs and its receipt. The
- * profile of the most expensive window is kept as `NAME.SUBJECT.max`; the
- * rest are read and removed, because a long stream writes a thousand of them.
- * `out` holds the run's workloads, and `into` the profiles of the binaries
- * `profile` names.
+ * One subject on one workload, in `windows` chunk windows: their costs, the
+ * finalize's and the receipt. The profile of the most expensive window is
+ * kept as `NAME.SUBJECT.max`; the rest are read and removed, because a long
+ * stream writes thousands of them. `out` holds the run's workloads, and
+ * `into` the profiles of the binaries `profile` names.
  */
-function measureSubject(profile, out, into, workload, subject, final) {
+function measureSubject(profile, out, into, workload, subject, final, windows) {
     const dump = path.join(into, "callgrind", `${workload.name}.${subject}.out`);
     const stdout = profileRun(
         profile,
@@ -156,6 +157,8 @@ function measureSubject(profile, out, into, workload, subject, final) {
             workload.stream,
             "--tokens",
             path.join(out, "workloads", "token-sizes.txt"),
+            "--windows",
+            String(windows),
             "--final",
             final
         ],
@@ -164,19 +167,19 @@ function measureSubject(profile, out, into, workload, subject, final) {
     );
     const receipt = /steps=(\d+) windows=(\d+) bytes=(\d+) root_children=(\d+)/u.exec(stdout);
     if (!receipt) throw new Error(`${workload.name} produced no receipt from ${subject}`);
-    const [steps, windows, bytes, rootChildren] = receipt.slice(1).map(Number);
+    const [steps, dumped, bytes, rootChildren] = receipt.slice(1).map(Number);
     /* Every chunk window, then the finalize's. */
-    if (windows !== windowEnds(steps).length + 1) throw new Error(`${workload.name} reported ${windows} windows`);
+    if (dumped !== windows + 1) throw new Error(`${workload.name} reported ${dumped} windows`);
     const costs = [];
     let highest = 0;
-    for (let window = 1; window <= windows; window++) {
+    for (let window = 1; window <= dumped; window++) {
         const cost = WINDOW_COST[subject](parseCallgrind(fs.readFileSync(`${dump}.${window}`, "utf8")));
         costs.push(cost);
         if (cost.Ir > costs[highest].Ir) highest = window - 1;
     }
-    if (fs.existsSync(`${dump}.${windows + 1}`)) throw new Error(`${workload.name} dumped more windows than it ran`);
+    if (fs.existsSync(`${dump}.${dumped + 1}`)) throw new Error(`${workload.name} dumped more windows than it ran`);
     fs.renameSync(`${dump}.${highest + 1}`, `${dump}.max`);
-    for (let window = 1; window <= windows; window++) fs.rmSync(`${dump}.${window}`, { force: true });
+    for (let window = 1; window <= dumped; window++) fs.rmSync(`${dump}.${window}`, { force: true });
     fs.rmSync(dump, { force: true });
     return {
         steps,
@@ -192,13 +195,14 @@ function measureSubject(profile, out, into, workload, subject, final) {
 }
 
 /**
- * Both subjects of one build on one workload: the session on a stream of at
- * most 1,024 steps (6.3), and on a longer one when `long` asks for it (6.2).
+ * Both subjects of one build on one workload, in `windows` chunk windows:
+ * the session where `reparse` runs every step (6.3), and on a longer stream
+ * when `long` asks for it (6.2).
  */
-function measureSubjects(profile, out, into, workload, final, long) {
-    const reparse = measureSubject(profile, out, into, workload, "reparse", final);
+function measureSubjects(profile, out, into, workload, final, windows, long) {
+    const reparse = measureSubject(profile, out, into, workload, "reparse", final, windows);
     const session =
-        reparse.steps <= WINDOWS || long ? measureSubject(profile, out, into, workload, "session", final) : null;
+        everyStep(reparse) || long ? measureSubject(profile, out, into, workload, "session", final, windows) : null;
     if (session && (session.steps !== reparse.steps || session.bytes !== reparse.bytes)) {
         throw new Error(`${workload.name}: the subjects took different streams`);
     }
@@ -206,31 +210,29 @@ function measureSubjects(profile, out, into, workload, final, long) {
 }
 
 /**
- * The byte each of a workload's chunk windows ends at, from the generator's
- * own chunking of its document, which must take the runner's `steps`.
- */
-function measuredBytes(out, workload, steps) {
-    const chunkEnds = streamChunks(fs.readFileSync(path.join(out, "workloads", workload.document)), workload.stream);
-    if (chunkEnds.length !== steps) {
-        throw new Error(`${workload.name}: the runner took ${steps} chunks and the generator ${chunkEnds.length}`);
-    }
-    return windowBytes(chunkEnds);
-}
-
-/**
  * One workload, measured: each subject's windows, 6.2 on the session's chunk
- * windows of a local shape, 6.3 between R and S, the one-shot parse of the
- * text they end with and, with a baseline, R's and S's summaries on the base
- * revision and 6.4 against them, S's on the streams 6.3 measures. B is this
- * revision's alone, on those streams. Runs in a worker; every path is
+ * windows of a local shape, 6.3 between R and S where R runs every step, the
+ * one-shot parse of the text they end with and, with a baseline, R's and S's
+ * summaries on the base revision and 6.4 against them, S's on the streams
+ * 6.3 measures. B is this revision's alone, on the streams of at most 1,024
+ * steps. The windows come from the generator's own chunking of the document,
+ * which must take the runner's steps. Runs in a worker; every path is
  * absolute.
  */
 function measureWorkload(profile, baseline, out, workload) {
     const final = path.join(out, "final", `${workload.name}.md`);
     fs.mkdirSync(path.dirname(final), { recursive: true });
-    const { reparse, session } = measureSubjects(profile, out, out, workload, final, workload.local);
+    const chunkEnds = streamChunks(fs.readFileSync(path.join(out, "workloads", workload.document)), workload.stream);
+    const ends = windowEnds(chunkEnds.length, workload.stepwise);
+    const { reparse, session } = measureSubjects(profile, out, out, workload, final, ends.length, workload.local);
+    if (reparse.steps !== chunkEnds.length) {
+        throw new Error(
+            `${workload.name}: the runner took ${reparse.steps} chunks and the generator ${chunkEnds.length}`
+        );
+    }
+    const compared = everyStep(reparse);
     const short = reparse.steps <= WINDOWS;
-    const binding = short && measureSubject(profile, out, out, workload, "binding", final);
+    const binding = short ? measureSubject(profile, out, out, workload, "binding", final, ends.length) : null;
     if (binding && (binding.steps !== session.steps || binding.bytes !== session.bytes)) {
         throw new Error(`${workload.name}: the subjects took different streams`);
     }
@@ -241,14 +243,21 @@ function measureWorkload(profile, baseline, out, workload) {
     fs.rmSync(oneshot.dump, { force: true });
     let base = null;
     if (baseline) {
-        const measured = measureSubjects(baseline.profile, out, baseline.directory, workload, final, false);
-        if (measured.reparse.steps !== reparse.steps || !measured.session !== !short) {
+        const measured = measureSubjects(
+            baseline.profile,
+            out,
+            baseline.directory,
+            workload,
+            final,
+            ends.length,
+            false
+        );
+        if (measured.reparse.steps !== reparse.steps || !measured.session !== !compared) {
             throw new Error(`${workload.name}: the base revision took a different stream`);
         }
         base = { reparse: measured.reparse.summary.ir, session: measured.session?.summary.ir ?? null };
     }
     fs.rmSync(final, { force: true });
-    const bytes = workload.local && measuredBytes(out, workload, reparse.steps);
     return {
         steps: reparse.steps,
         bytes: reparse.bytes,
@@ -258,17 +267,18 @@ function measureWorkload(profile, baseline, out, workload) {
         binding: binding && { windows: binding.windows, ...binding.summary },
         flatness: workload.local
             ? flatStream(
-                  bytes.map((end, window) => ({ end, Ir: session.windows[window] })),
+                  /* Each chunk window ends where its last chunk does (5.1). */
+                  ends.map((step, window) => ({ end: chunkEnds[step - 1], Ir: session.windows[window] })),
                   reparse.bytes
               )
             : [],
-        neverWorse: short ? neverWorse(session.windows, reparse.windows) : [],
+        neverWorse: compared ? neverWorse(session.windows, reparse.windows) : [],
         oneshot: { ir: STAGES.reduce((sum, stage) => sum + oneshot.stages[stage].cost.Ir, 0) },
         base,
         regressions: base
             ? [
                   ...regressions(reparse.summary.ir, base.reparse).map((entry) => ({ subject: "reparse", ...entry })),
-                  ...(short
+                  ...(compared
                       ? regressions(session.summary.ir, base.session).map((entry) => ({ subject: "session", ...entry }))
                       : [])
               ]
@@ -365,7 +375,7 @@ export function markdownReport(report) {
         "",
         `Subjects: ${report.subjects.map((subject) => `\`${subject}\``).join(", ")}. Workloads: ${number(report.results.length)} (\`${report.workloads.version}\`, digest \`${report.workloads.digest.slice(0, 16)}\`).`,
         "Every figure is Ir per window of chunks and for the finalize: S is the edge into `bench_apply_step` or `bench_finalize`, and R the two parse stages of each `Document.parse`; the one-shot column parses each workload's final text once, both stages.",
-        `S is measured on the workloads of at most ${number(WINDOWS)} steps, where each workload's S total is at most 1.25 times its R total (6.3), and on every stream of a shape whose cost per chunk the language keeps local, where the highest chunk window up to a quarter of the stream and up to its end costs at most 1.25 times the highest up to its first sixteenth (6.2). S / R is over the first.`,
+        `S is measured on the workloads whose R runs every step, those of at most ${number(WINDOWS)} steps and those of the shapes 6.2 leaves to 6.3 at the shape's smallest size, where each workload's S total is at most 1.25 times its R total (6.3), and on every stream of a shape whose cost per chunk the language keeps local, where the highest chunk window up to a quarter of the stream and up to its end costs at most 1.25 times the highest up to its first sixteenth (6.2). S / R is over the first.`,
         "",
         "| Documents | Family | Size | Workloads | Windows | R p50 | R p95 | R max | R total | S p50 | S p95 | S max | S total | S / R total | Highest step S / R | One-shot total |",
         "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
@@ -510,7 +520,8 @@ async function measureSet(options) {
             name: workload.name,
             document: workload.document.path,
             stream: workload.family,
-            local: workload.local
+            local: workload.local,
+            stepwise: workload.stepwise
         })),
         options.quiet
     );

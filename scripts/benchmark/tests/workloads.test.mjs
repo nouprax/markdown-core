@@ -125,6 +125,19 @@ test("6.2 holds the streams of every scale shape, the long list and the deep quo
     assert.ok(workloads.some((workload) => workload.local));
 });
 
+test("6.3 measures every step of each shape 6.2 leaves to it, at the shape's smallest size, and of no other stream", () => {
+    const { workloads } = benchmarkWorkloads();
+    for (const workload of workloads) {
+        const { shape, size } = workload.document;
+        const stepwise = Boolean(shape) && !LOCAL_SHAPES.includes(shape) && size === shapeSizes(shape)[0];
+        assert.equal(workload.stepwise, stepwise, workload.name);
+    }
+    const names = workloads.filter((workload) => workload.stepwise).map((workload) => workload.name);
+    assert.ok(names.includes("unclosed-grid-ascii-16k.rows"));
+    assert.ok(names.includes("unclosed-strong-utf8-64k.tokens"));
+    assert.ok(!names.some((name) => name.includes("-1024k.")));
+});
+
 test("scripts survive their text format unchanged", () => {
     const text = formatScripts(identityScripts().map((entry) => entry.script));
     assert.equal(formatScripts(parseScripts(text)), text);

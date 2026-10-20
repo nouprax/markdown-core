@@ -117,9 +117,9 @@ const streams = () => ({
             family: "tokens",
             size: null,
             steps: 1,
-            windows: [40],
-            session: { windows: [40] },
-            binding: { windows: [10] },
+            windows: [40, 40],
+            session: { windows: [40, 40] },
+            binding: { windows: [10, 10] },
             oneshot: { ir: 35 },
             regressions: [{ subject: "session", metric: "total", ratio: 1.03 }]
         },
@@ -141,13 +141,13 @@ test("the stream table reports the R, S and B columns by family and size, pooled
     const body = streamSection(streams());
     assert.match(
         body,
-        /\| Grammar corpus \| tokens \| {2}\| 2 \| 4 \| 20 \| 40 \| 40 \| 100 \| 20 \| 40 \| 40 \| 104 \| 1\.040× \| 1\.100× \| 60 \|/
+        /\| Grammar corpus \| tokens \| {2}\| 2 \| 5 \| 30 \| 40 \| 40 \| 140 \| 33 \| 40 \| 40 \| 144 \| 1\.029× \| 1\.100× \| 60 \|/
     );
     assert.match(
         body,
         /\| Shapes \| rows \| 16,384 \| 1 \| 2 \| 7 \| 9 \| 9 \| 16 \| {2}\| {2}\| {2}\| {2}\| {2}\| {2}\| 8 \|/
     );
-    assert.match(body, /\| Grammar corpus \| tokens \| {2}\| 5 \| 10 \| 10 \| 26 \| 0\.250× \|/);
+    assert.match(body, /\| Grammar corpus \| tokens \| {2}\| 8 \| 10 \| 10 \| 36 \| 0\.250× \|/);
     assert.doesNotMatch(body, /\| Shapes \| rows \| 16,384 \| {2}\|/);
     assert.match(body, /against `bbbbbbbbbbbb`\): \*\*2\/3 passed\*\*, 1 exceeded/);
     assert.doesNotMatch(body, /a\.tokens|prose-ascii/);

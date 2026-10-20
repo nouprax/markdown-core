@@ -319,7 +319,9 @@ step per window, so a window's cost is that step's cost. A longer stream (a stre
 `tokens` or `rows`) splits into 1,024 contiguous windows of equal step count.
 Its `reparse` column is measured at each window's last step, because
 reparsing after every chunk of a megabyte stream is the quadratic cost the
-design removes. The finalize is one more window, after the last. A session's
+design removes. A stream 6.3 measures at every step has one step per window
+however long it is (decision G17). The finalize is one more window, after
+the last. A session's
 window counts the whole of its steps: an append is the session's streaming
 parse. A `reparse` window counts the parse of each `Document.parse` in it,
 its two stages `source_to_buffer` and `buffer_to_ast` as the one-shot
@@ -344,7 +346,7 @@ the streams of at most 1,024 chunks, and reports it without a gate.
 | `reparse_ir` | The same for the `reparse` subject: the parse an application runs today (5.1) |
 | `binding_ir` | The same for the `binding` subject: the C side of a binding's build per append (5.1) |
 | `oneshot_ir` | One-shot parse of the stream's final text, both stages |
-| `speedup` | `reparse_ir / step_ir` per step, p50 and p5, for streams of at most 1,024 steps |
+| `speedup` | `reparse_ir / step_ir` per step, p50 and p5, for the streams 6.3 measures |
 | `stream_ratio` | Stream total `step_ir` / `oneshot_ir` of the final text |
 
 ## 6. Gate rules
@@ -378,10 +380,14 @@ step 8 it covers the paragraph of short lines (3.1).
 
 ### 6.3 Never worse than reparsing
 
-For every stream of at most 1,024 chunks, the total `step_ir` of its steps and
-its `finalize` is at most 1.25 times the total `reparse_ir` of the same steps
-(decisions G2 and G15). The highest ratio of one step is reported. A longer
-stream is bounded per chunk by 6.2; its `reparse_ir` column is reported. The
+For every stream of at most 1,024 chunks, and for every stream of a shape
+6.2 leaves to 6.3 at the shape's smallest size, measured at every step
+whatever its length (decision G17), the total `step_ir` of its steps and its
+`finalize` is at most 1.25 times the total `reparse_ir` of the same steps
+(decisions G2 and G15). The highest ratio of one step is reported. Of every
+other longer stream, `reparse_ir` is reported, and 6.2 bounds the chunk
+windows of those of the scale shapes and of the shapes the language keeps
+local. The
 margin pays for matching when an append really does change the whole
 document; beyond it, streaming would be a regression against the application
 that just reparses.
@@ -590,3 +596,8 @@ their own pull requests.
   going back over references and links while streaming costs more. 6.2
   compares the chunk windows of a stream, and the finalize's window is
   reported.
+- **G17 The long streams of the shapes 6.2 leaves to 6.3. Decided
+  2026-10-20: every step** ("逐段都量"). Most streams of those shapes are
+  longer than 1,024 chunks. 6.3 measures each of them at the shape's smallest
+  size at every step, the session and `reparse` alike, and bounds its total
+  as it bounds a shorter stream's (5.1).

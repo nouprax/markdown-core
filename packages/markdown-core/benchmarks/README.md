@@ -162,16 +162,20 @@ chunks and after the finalize. A session window's cost is the edge into
 `bench_apply_step` or `bench_finalize`, and a `reparse` window's is the two
 parse stages of each `Document.parse` in it: creating, starting and releasing
 the parser are not parsing. A stream of at most 1,024 chunks has one chunk per window, and a
-longer stream has 1,024 windows; the finalize is one more. The driver is
-`scripts/benchmark/streams.mjs`; it shares `run.mjs`'s build, provenance,
+longer stream has 1,024 windows, unless 6.3 measures it at every step (see
+below), when it has one chunk per window too; the finalize is one more. The
+driver, `scripts/benchmark/streams.mjs`, names the window count
+(`--windows`); it shares `run.mjs`'s build, provenance,
 isolation and callgrind invocation, so its binaries are the ones the stage
 benchmark describes.
 
 Three subjects run the workloads. `reparse` keeps the text and parses the whole
 of it: the R column, measured at each window's last chunk, so a long stream is
 not reparsed after every chunk, and at the finalize. `session` appends through
-the engine's session: the S column, measured on the streams of at most 1,024
-chunks, where its total over the chunks and the finalize is at most 1.25 times
+the engine's session: the S column, measured on every stream R runs at every
+step -- each of at most 1,024 chunks, and each of a shape 6.2 leaves to 6.3
+at the shape's smallest size whatever its length (`stepwise`, decision G17)
+-- where its total over the chunks and the finalize is at most 1.25 times
 R's (6.3), and on every stream of a shape whose cost per chunk the language
 keeps local (`LOCAL_SHAPES`: the scale shapes, the 10,000-item list and the
 1,000 nested quotes), where the highest chunk window up to a quarter of the
@@ -186,7 +190,7 @@ stage runner's two stages on each workload's final text.
 With `--baseline-ref`, the base revision's engine is rebuilt with this run's
 harness, as the stage gate does, and measured on the same workloads. R's
 p95, maximum and total Ir of each workload must be at most 1.02 times the
-base's, and S's on the streams of at most 1,024 chunks (6.4).
+base's, and S's on the streams 6.3 measures (6.4).
 
 ```sh
 scripts/tooling/setup-environment.sh --install oracle-cmark oracle-cmark-gfm

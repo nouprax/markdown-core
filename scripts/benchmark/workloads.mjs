@@ -621,7 +621,9 @@ export function correctnessSet() {
  * The benchmark workloads (section 9): every grammar corpus document with
  * `tokens` and `scalars`, and every scale and adversarial shape at all four
  * sizes with `tokens` and `rows`. Each workload is one document and one
- * stream family, and is `local` when 6.2 holds its stream flat.
+ * stream family, is `local` when 6.2 holds its stream flat, and is
+ * `stepwise` when 6.3 measures it at every step however long it is: a shape
+ * 6.2 leaves to 6.3, at the shape's smallest size (decision G17).
  *
  * `set` is `all`, or `corpus` for the grammar corpus's workloads alone: the
  * shapes are measured at their four sizes together or not at all.
@@ -636,7 +638,7 @@ export function benchmarkWorkloads(set = "all") {
         const document = { name: entry.name, text: entry.text, alphabet: entry.alphabet, parts: null };
         documents.push(document);
         for (const family of ["tokens", "scalars"])
-            workloads.push({ document, family, name: `${document.name}.${family}`, local: false });
+            workloads.push({ document, family, name: `${document.name}.${family}`, local: false, stepwise: false });
     }
     for (const shape of set === "all" ? [...Object.keys(SCALE_SHAPES), ...Object.keys(ADVERSARIAL_SHAPES)] : [])
         for (const alphabet of Object.keys(alphabets))
@@ -648,7 +650,8 @@ export function benchmarkWorkloads(set = "all") {
                         document,
                         family,
                         name: `${document.name}.${family}`,
-                        local: LOCAL_SHAPES.includes(shape)
+                        local: LOCAL_SHAPES.includes(shape),
+                        stepwise: !LOCAL_SHAPES.includes(shape) && size === shapeSizes(shape)[0]
                     });
             }
     return { documents, workloads };

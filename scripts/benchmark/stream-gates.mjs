@@ -27,7 +27,7 @@ export const BINDING_ENTRIES = Object.freeze([
 ]);
 /** The session's own steps inside those entries: the S column's work. */
 export const SESSION_STEPS = Object.freeze(["markdown_core_session_append", "markdown_core_session_finalize"]);
-/** The most windows a workload is split into (5.1). */
+/** The most windows a stream 6.3 does not measure at every step is split into (5.1). */
 export const WINDOWS = 1024;
 /** 6.2: a later window of a stream against an earlier one. */
 export const FLATNESS_LIMIT = 1.25;
@@ -110,12 +110,23 @@ export function bindingCost(profile) {
 }
 
 /**
- * The chunk windows of 5.1: window k ends after step floor((k + 1) n / W).
- * The finalize's window follows the last.
+ * The chunk windows of 5.1: one per step for a `stepwise` stream, which 6.3
+ * measures at every step (decision G17), and otherwise at most 1,024; window
+ * k of W ends after step floor((k + 1) n / W). The finalize's window follows
+ * the last.
  */
-export function windowEnds(steps) {
-    const windows = Math.min(steps, WINDOWS);
+export function windowEnds(steps, stepwise) {
+    const windows = stepwise ? steps : Math.min(steps, WINDOWS);
     return Array.from({ length: windows }, (_, window) => Math.floor(((window + 1) * steps) / windows));
+}
+
+/**
+ * Whether a measured workload's windows are its steps, which is when `reparse`
+ * ran every step and 6.3 compares the session with it: its chunk windows and
+ * the finalize's.
+ */
+export function everyStep(row) {
+    return row.windows.length === row.steps + 1;
 }
 
 /** Nearest-rank percentile of a non-empty list. */
@@ -138,11 +149,6 @@ export function summary(values) {
     };
 }
 
-/** The byte each chunk window ends at: its last chunk's end (5.1). */
-export function windowBytes(chunkEnds) {
-    return windowEnds(chunkEnds.length).map((step) => chunkEnds[step - 1]);
-}
-
 /**
  * 6.2 for a stream of `length` bytes: with m(p) the highest cost of every
  * window that ends at or before byte p, m(n/4) and m(n) are each at most 1.25
@@ -160,10 +166,9 @@ export function flatStream(windows, length) {
 }
 
 /**
- * 6.3, for a stream of at most 1,024 chunks: its steps, the finalize
+ * 6.3, for a stream `reparse` ran at every step: its steps, the finalize
  * included, cost at most 1.25 times `reparse` on the same steps, in total
- * (decision G15). A longer stream is bounded by 6.2. The stream's ratio when
- * it is above the limit.
+ * (decision G15). The stream's ratio when it is above the limit.
  */
 export function neverWorse(steps, reparse) {
     if (steps.length !== reparse.length) throw new Error("the subjects ran different step counts");
@@ -184,8 +189,8 @@ export function regressions(current, base) {
 /**
  * The R, S and B columns by group, each pooled over every window of every
  * workload in the group that has it: `key` names a workload's group.
- * `totalRatio` is S's total over R's on the streams 6.3 measures, those of
- * at most 1,024 steps, `stepRatio` their highest S / R of one step,
+ * `totalRatio` is S's total over R's on the streams 6.3 measures, those
+ * `reparse` ran at every step, `stepRatio` their highest S / R of one step,
  * `bindingRatio` B's total over S's on the streams B runs, and the one-shot
  * figure sums the final texts' parses.
  */
@@ -210,7 +215,7 @@ export function groupWindows(results, key) {
         group.workloads++;
         group.windows.push(...row.windows);
         if (row.session) group.session.push(...row.session.windows);
-        if (row.session && row.steps <= WINDOWS) {
+        if (row.session && everyStep(row)) {
             group.measured++;
             group.sessionTotal += total(row.session.windows);
             group.reparseTotal += total(row.windows);
