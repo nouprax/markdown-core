@@ -102,7 +102,9 @@ test("dash runs beside text are the Pandoc table forms' boundary", () => {
         "a\n- -\nb\n",
         "Name    Count\n------  -----\nApples      4\n",
         "------  -----\nApples      4\n------  -----\n",
-        "> a\n> --- -\n> b\n"
+        "> a\n> --- -\n> b\n",
+        "1. -- --\n   a  b\n\n   c  d\n   -----\n",
+        "* -- --\n  a  b\n"
     ]) {
         assert.equal(outsideSharedFuzzScope(input), "pandoc-tables", input);
     }

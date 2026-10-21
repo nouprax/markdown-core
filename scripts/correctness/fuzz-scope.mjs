@@ -38,9 +38,10 @@ function partlessTextDirective(input) {
  * gate owns the shape. Whether a table actually forms depends on lines the
  * line-local view cannot see (a body row, a matching footer, a closing
  * boundary), so the boundary is conservative: any such line next to a
- * non-blank line, inside block quotes and list indentation alike.
+ * non-blank line, after block quote markers, list markers and indentation
+ * alike.
  */
-const DASH_RUNS = /^[ \t>]*-+(?:[ \t]+-+)+[ \t]*$/u;
+const DASH_RUNS = /^(?:[ \t>]|[*+](?=[ \t])|\d{1,9}[.)](?=[ \t]))*-+(?:[ \t]+-+)+[ \t]*$/u;
 const BLANK = /^[ \t>]*$/u;
 
 function pandocTableSegments(input) {
