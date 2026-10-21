@@ -298,9 +298,9 @@ typedef struct markdown_core_line_stop {
     bool all_matched, opened, maybe_lazy, partially_consumed_tab;
 } markdown_core_line_stop;
 
-/* WHAT A STREAMING PARSE KEEPS: a session's parse, which takes snapshots
+/* WHAT A STREAMING PARSE KEEPS: every parse, which takes snapshots
  * between its commits (blocks.c, THE SNAPSHOT) and publishes its tree in
- * place. The parser owns it from markdown_core_parser_stream until the parse
+ * place. The parser owns it from markdown_core_parser_start until the parse
  * is released. */
 typedef struct markdown_core_stream {
     /* The line the last commit stopped in, when `held`. */
@@ -386,8 +386,8 @@ struct markdown_core_parser {
      * the definitions that start before the block being completed, and one
      * that finds none is recorded (markdown_core_parser_find_definition). */
     bool snapshot;
-    /* What the parse keeps as a session's (markdown_core_parser_stream), or
-     * NULL: a one-shot parse keeps none of it. */
+    /* What the parse keeps as a stream (markdown_core_stream), made as the
+     * parse starts. */
     markdown_core_stream *stream;
     /* Every definition and explicit anchor the parse declared (registry.h):
      * the block phase declares definitions as it reads them, the headings
@@ -971,7 +971,7 @@ static inline markdown_core_input_line *markdown_core_parser_source_line(markdow
  * text may follow. A snapshot, the last commit, a parse of a whole text and
  * a cell's content, which is complete when it is read, read their end. */
 static inline bool markdown_core_parser_candidate_final(const markdown_core_parser *parser) {
-    return !parser->stream || parser->snapshot || parser->stream->ends || parser->block_root != parser->root;
+    return parser->snapshot || parser->stream->ends || parser->block_root != parser->root;
 }
 
 /* THE END OF THE ACTIVE INPUT, learned in one place. Every reading that
@@ -1261,8 +1261,16 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
 void markdown_core_parser_request_candidate(markdown_core_parser *parser, const markdown_core_element_instance *owner,
                                             struct markdown_core_node *container, markdown_core_node_type child,
                                             const int *words, bool ends);
-bool markdown_core_parser_candidate_meets(markdown_core_parser *parser, const markdown_core_element_instance *owner,
-                                          struct markdown_core_node *container);
+bool markdown_core_parser_meets_call(markdown_core_parser *parser, const markdown_core_element_instance *owner,
+                                     struct markdown_core_node *container);
+/* Every opener asks, so the parse reads whether a mark is left to meet
+ * here and calls out only when one is. */
+static inline bool markdown_core_parser_candidate_meets(markdown_core_parser *parser,
+                                                        const markdown_core_element_instance *owner,
+                                                        struct markdown_core_node *container) {
+    const markdown_core_stream *stream = parser->stream;
+    return stream->meet_mark < stream->mark_count && markdown_core_parser_meets_call(parser, owner, container);
+}
 /* The decision of the candidate being decided (element.h, `decide_candidate`)
  * reads its line as its call did: `start` puts the parser's line state at
  * the call on a line, and gives the line through its line ending and the
@@ -1338,8 +1346,7 @@ markdown_core_parser *markdown_core_parser_create(const markdown_core_element *c
  * every commit of a transaction is the one before it with bytes added at its
  * end, and it is borrowed until the next commit or the end of the
  * transaction, and `ends` says it is the whole text, which no commit
- * follows. Only a session's transaction (markdown_core_parser_stream) commits
- * a text more text may follow, and such a commit reads the lines the text has
+ * follows. A commit of a text more text may follow reads the lines the text has
  * finished and the steps of its last line that the line's bytes decide
  * (blocks.c, THE LINE A SESSION HOLDS). False when the transaction failed.
  * `finalize` ends the input there:
@@ -1351,10 +1358,6 @@ void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revi
 bool markdown_core_parser_commit(markdown_core_parser *parser, const char *source, size_t length, bool ends);
 markdown_core_node *markdown_core_parser_finalize(markdown_core_parser *parser);
 void markdown_core_parser_discard(markdown_core_parser *parser);
-/* Makes the transaction a session's (markdown_core_stream), before its first
- * commit: only such a transaction completes for a snapshot and takes
- * snapshots. False when the transaction failed. */
-bool markdown_core_parser_stream(markdown_core_parser *parser);
 /* Completes the blocks that have settled, for a snapshot (plan 5.4): the
  * cells of the tables that closed are read, the document prepares the
  * headings that settled, and the completion queue is completed with a

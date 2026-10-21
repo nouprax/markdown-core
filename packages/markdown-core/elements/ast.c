@@ -913,9 +913,8 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool publish_keep(publish_walk *walk,
  * SETTLES). */
 static inline bool publish_list(publish_walk *walk, markdown_core_node *node, uint32_t table, uint32_t start) {
     definition_table *values = &walk->tables[table];
-    return table_add(values, node, start) &&
-           (!walk->stack.parser->stream || !(node->flags & MARKDOWN_CORE_NODE__COMMITTED) || walk->decided != DECIDED ||
-            publish_keep(walk, table, values->count - 1));
+    return table_add(values, node, start) && (!(node->flags & MARKDOWN_CORE_NODE__COMMITTED) ||
+                                              walk->decided != DECIDED || publish_keep(walk, table, values->count - 1));
 }
 
 /* Gives `node`, of slot `slot`, its extent against the relation in hand and
@@ -1006,8 +1005,7 @@ static inline void publish_enter(publish_frame *frame, const publish_placed *pla
  * are open. A node's extent is relative to the node before it, so each
  * frame keeps the offsets its later nodes are relative to, and a frame with
  * nothing left gives its slot to its last node's own. The frames sit above
- * what the stack holds below them. A fresh parse publishes its whole tree
- * this way, below the root. */
+ * what the stack holds below them. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_fresh(publish_walk *walk,
                                                                           const markdown_core_node *node,
                                                                           relation_shape shape,
@@ -2071,40 +2069,11 @@ static bool publish_tables(markdown_core_parser *parser, publish_walk *walk, mar
     return ok && reference_targets(parser, value, &walk->tables[TABLE_HEADINGS]);
 }
 
-/* A FRESH PARSE'S PUBLISH: the root, and all it holds below it, published
- * as what continues nothing (PUBLISHING WHAT CONTINUES NOTHING), and the
- * lookup tables sealed, in a function of its own, whose code the streaming
- * publish leaves as it is. */
-static bool publish_whole(markdown_core_parser *parser) {
-    markdown_core_node *root = parser->root;
-    markdown_core_document_value *value = root->as.document;
-    publish_walk walk;
-    publish_start(&walk, parser);
-    publish_clear(value);
-    const unsigned slot = slot_of(root);
-    const publish_relation hand = {0};
-    publish_placed placed;
-    bool ok = publish_node(&walk, root, slot, &hand, false, &placed);
-    root->id = ++walk.next_id;
-    root->flags |= MARKDOWN_CORE_NODE__PUBLISHED;
-    ok = ok && publish_fresh(&walk, root, (relation_shape)(slot & SLOT_SHAPE), &placed, false) &&
-         publish_tables(parser, &walk, value);
-    if (ok) {
-        parser->revision->last_id = walk.next_id;
-    }
-    publish_end(&walk, parser);
-    return ok;
-}
-
-/* A streaming publish is made in place: it walks from its walk root
- * (blocks.c, THE WALK ROOT), measured from what the spine gave it, and
- * keeps the records of what that holds in place of the old ones (THE
- * RECORDS); a snapshot's keeps the COMMITTED definitions, and the finalize
- * lists them first. */
+/* A publish is made in place: it walks from its walk root (blocks.c, THE
+ * WALK ROOT), measured from what the spine gave it, and keeps the records
+ * of what that holds in place of the old ones (THE RECORDS); a snapshot's
+ * keeps the COMMITTED definitions, and the finalize lists them first. */
 bool markdown_core_publish_tree(markdown_core_parser *parser) {
-    if (!parser->stream) {
-        return publish_whole(parser);
-    }
     markdown_core_node *root = parser->root;
     markdown_core_document_value *value = root->as.document;
     markdown_core_tail_records *records = &parser->stream->records;

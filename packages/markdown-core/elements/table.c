@@ -2967,8 +2967,7 @@ static void table_request(const markdown_core_element_instance *self, markdown_c
  * (THE OPENER'S CANDIDATE); a call that meets its candidate declines. */
 static markdown_core_node *table_try_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                           markdown_core_node *parent, unsigned char *input, int length) {
-    if (!table_opener_fits(parser, parent) ||
-        (parser->stream && markdown_core_parser_candidate_meets(parser, self, parent))) {
+    if (!table_opener_fits(parser, parent) || markdown_core_parser_candidate_meets(parser, self, parent)) {
         return NULL;
     }
     markdown_core_parser_clear_end_read(parser);

@@ -96,7 +96,7 @@ static void publish_candidate(const markdown_core_element_instance *self, markdo
  * text may follow decides nothing, and asks to be a candidate (blocks.c, THE
  * CANDIDATES); a call that meets its candidate declines. */
 static size_t read_document_prefix(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    if (parser->stream && markdown_core_parser_candidate_meets(parser, self, parser->root)) {
+    if (markdown_core_parser_candidate_meets(parser, self, parser->root)) {
         return 0;
     }
     markdown_core_parser_clear_end_read(parser);

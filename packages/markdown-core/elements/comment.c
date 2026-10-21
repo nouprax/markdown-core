@@ -112,7 +112,7 @@ static markdown_core_node *open_block(const markdown_core_element_instance *self
     markdown_core_node *node;
 
     if (indented || !is_fence_line(input, len, first_nonspace) ||
-        (parser->stream && markdown_core_parser_candidate_meets(parser, self, parent_container))) {
+        markdown_core_parser_candidate_meets(parser, self, parent_container)) {
         return NULL;
     }
     markdown_core_chunk line = {input, len, 0};

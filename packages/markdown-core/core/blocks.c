@@ -284,6 +284,17 @@ void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revi
     document = make_document(parser);
     parser->root = document;
     parser->block_root = parser->current = document;
+    /* WHAT A STREAMING PARSE KEEPS (parser.h, markdown_core_stream), released
+     * with the parse's state: the lending's storage, the records and the
+     * nodes they own, the committed definitions and the records of the
+     * lookups that found nothing. Every parse streams: a one-shot parse is
+     * a stream whose first commit is its whole text, and its finalize. */
+    parser->stream = markdown_core_alloc(1, sizeof(*parser->stream));
+    if (parser->stream) {
+        markdown_core_strbuf_init(&parser->stream->miss_labels, 0);
+        /* No publish has walked the root yet (THE WALK ROOT). */
+        parser->stream->changed = document;
+    }
 
     /* A transaction that could not build its initial structures is poisoned:
      * source processing becomes a no-op and the parse reports failure. Only a
@@ -292,8 +303,8 @@ void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revi
      * failed transaction. Disposal does not depend on it having begun: the
      * lifecycle's own allocations can fail halfway, so its release already
      * takes whatever state it finds. */
-    if (!parser->root || !parser->input.lines || parser->curline.oom || parser->input.last_line.oom ||
-        parser->root->content.oom) {
+    if (!parser->root || !parser->stream || !parser->input.lines || parser->curline.oom ||
+        parser->input.last_line.oom || parser->root->content.oom) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     } else {
         const markdown_core_element_instance *document_structure = parser->dialect->document_structure;
@@ -1258,10 +1269,10 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_close_current(mark
     markdown_core_node *closing = parser->current;
     markdown_core_node *parent = markdown_core_scaffold_parent(closing);
     assert(closing->flags & MARKDOWN_CORE_NODE__OPEN);
-    if (parser->stream && closing == parser->stream->boundary) {
+    if (closing == parser->stream->boundary) {
         S_lend_below(parser, closing);
     }
-    if (parser->stream && closing == parser->stream->changed) {
+    if (closing == parser->stream->changed) {
         parser->stream->changed = parent;
     }
     const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, closing);
@@ -2111,15 +2122,14 @@ static void S_parse_block_inputs(markdown_core_parser *parser) {
  * an accept reads the commit's lines again from its candidate's call. */
 bool markdown_core_parser_commit(markdown_core_parser *parser, const char *source, size_t length, bool ends) {
     markdown_core_stream *stream = parser->stream;
-    assert(stream || ends);
-    if (stream && !parser->error) {
+    if (!parser->error) {
         S_take_back(parser, false);
         stream->ends = ends;
         stream->fed = 0;
     }
     while (!parser->error) {
         S_parse_source(parser, (const unsigned char *)source, length);
-        if (!stream || parser->error) {
+        if (parser->error) {
             break;
         }
         if (stream->requested) {
@@ -2317,29 +2327,11 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_rollback(markdown_
     }
     /* The lines past the commit's line that the commit had scanned, and the
      * line it holds, which the snapshot read on. */
-    const size_t first =
-        (size_t)(mark->line_number + 1 - input->first_line) - (parser->stream && parser->stream->held ? 1 : 0);
+    const size_t first = (size_t)(mark->line_number + 1 - input->first_line) - (parser->stream->held ? 1 : 0);
     S_drop_facts(input, first, mark->line_count, mark->fact_count);
     input->line_count = mark->line_count;
     input->fact_count = mark->fact_count;
     input->scanned = mark->scanned;
-}
-
-/* WHAT A STREAMING PARSE KEEPS (parser.h, markdown_core_stream), made as a
- * session starts its parse and released with the parse's state: the
- * lending's storage, the records and the nodes they own, the committed
- * definitions and the records of the lookups that found nothing. */
-bool markdown_core_parser_stream(markdown_core_parser *parser) {
-    assert(!parser->stream);
-    parser->stream = markdown_core_alloc(1, sizeof(*parser->stream));
-    if (!parser->stream) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return false;
-    }
-    markdown_core_strbuf_init(&parser->stream->miss_labels, 0);
-    /* No publish has walked the root yet (THE WALK ROOT). */
-    parser->stream->changed = parser->root;
-    return !parser->error;
 }
 
 void markdown_core_parser_release_records(markdown_core_parser *parser, markdown_core_tail_records *records) {
@@ -3333,9 +3325,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool parse_element_block(
 }
 
 /* Whether the call just made asked to be a candidate (THE CANDIDATES). */
-static inline bool S_requested(const markdown_core_parser *parser) {
-    return parser->stream && parser->stream->requested;
-}
+static inline bool S_requested(const markdown_core_parser *parser) { return parser->stream->requested; }
 
 /* Whether the step that matches `container` on the line a session holds
  * reads only bytes the line already has (THE LINE A SESSION HOLDS): as far
@@ -4104,12 +4094,9 @@ static void S_meet_from_stop(markdown_core_parser *parser) {
  * where the reading started (S_meet_from_stop), up to a snapshot's
  * CLAIMANT, which claims. A commit's reading takes the call's container and
  * path anew; a snapshot's writes no call. */
-bool markdown_core_parser_candidate_meets(markdown_core_parser *parser, const markdown_core_element_instance *owner,
-                                          markdown_core_node *container) {
+bool markdown_core_parser_meets_call(markdown_core_parser *parser, const markdown_core_element_instance *owner,
+                                     markdown_core_node *container) {
     markdown_core_stream *stream = parser->stream;
-    if (!stream || stream->meet_mark >= stream->mark_count) {
-        return false;
-    }
     struct markdown_core_candidate_mark *mark = &stream->marks[stream->meet_mark];
     if (stream->meet_call >= mark->call_count) {
         return false;
@@ -4207,7 +4194,7 @@ void markdown_core_parser_candidate_end(markdown_core_parser *parser) {
 static markdown_core_node *const *S_candidate_path(const markdown_core_parser *parser, const markdown_core_node *parent,
                                                    int *depth) {
     const markdown_core_stream *stream = parser->stream;
-    if (!stream || !stream->deciding || parent != stream->deciding->holder) {
+    if (!stream->deciding || parent != stream->deciding->holder) {
         return NULL;
     }
     *depth = (int)stream->deciding->depth + 1;
@@ -4219,7 +4206,7 @@ static markdown_core_node *const *S_candidate_path(const markdown_core_parser *p
  * last. */
 bool markdown_core_parser_undecided(const markdown_core_parser *parser) {
     const markdown_core_stream *stream = parser->stream;
-    return stream && stream->mark_count && stream->marks[0].lend_count;
+    return stream->mark_count && stream->marks[0].lend_count;
 }
 
 bool markdown_core_parser_holder(const markdown_core_parser *parser, size_t depth, const markdown_core_node *block,
@@ -5810,15 +5797,13 @@ static markdown_core_node *S_finish_parse(markdown_core_parser *parser) {
     if (parser->root == NULL || parser->error) {
         return NULL;
     }
-    if (parser->stream) {
-        S_take_back(parser, false);
-    }
+    S_take_back(parser, false);
 
     S_close_document(parser);
     if (!parser->error) {
         S_complete_settled(parser);
     }
-    if (!parser->error && !parser->snapshot && parser->stream && parser->stream->miss_count) {
+    if (!parser->error && !parser->snapshot && parser->stream->miss_count) {
         S_complete_misses(parser);
     }
 
