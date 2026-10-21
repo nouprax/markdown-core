@@ -1466,9 +1466,9 @@ static inline bool publish_hold(markdown_core_parser *parser, publish_match_fram
  * stack, and what continues nothing and does not persist is published above
  * them (publish_fresh). While a candidate waits, the root is a holder, at
  * depth `depth` among the blocks the first mark lent (THE SPINE). */
-static bool publish_in_place(publish_walk *walk, markdown_core_node *root, size_t depth,
-                             const markdown_core_node *previous, const publish_relation *start, uint32_t held,
-                             uint32_t recorded) {
+static bool publish_matched(publish_walk *walk, markdown_core_node *root, size_t depth,
+                            const markdown_core_node *previous, const publish_relation *start, uint32_t held,
+                            uint32_t recorded) {
     markdown_core_parser *parser = walk->stack.parser;
     const markdown_core_tail_records *records = &parser->stream->records;
     publish_match_frame *frame = NULL;
@@ -1697,6 +1697,19 @@ static bool publish_in_place(publish_walk *walk, markdown_core_node *root, size_
     }
 }
 
+/* A walk root that continues nothing and does not persist is published
+ * whole, as the nodes such a frame holds are; any other is matched. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_in_place(
+    publish_walk *walk, markdown_core_node *root, size_t depth, const markdown_core_node *previous,
+    const publish_relation *start, uint32_t held, uint32_t recorded) {
+    if (!previous && !root->id && !walk->keeps) {
+        const publish_frame from = {.more = false};
+        publish_relation items = {&root, &root + 1, start->anchor, start->source};
+        return publish_fresh(walk, &from, &items);
+    }
+    return publish_matched(walk, root, depth, previous, start, held, recorded);
+}
+
 /* THE SPINE (THE RECORDS) below the block the publish walks from, from the
  * root up, each block's open block above it its last child: each block
  * takes its new end and is listed as the walk lists it. The publish walks
@@ -1884,8 +1897,12 @@ static bool keep_committed(markdown_core_parser *parser, const publish_walk *wal
 static bool publish_prefill(publish_walk *walk, markdown_core_parser *parser) {
     const markdown_core_key_entry first = markdown_core_key_number(0);
     for (size_t table = 0; table < TABLE_COUNT; table++) {
+        const markdown_core_key_tree *starts = &parser->stream->committed.starts[table];
+        if (!starts->count) {
+            continue;
+        }
         markdown_core_key_tree_cursor cursor;
-        markdown_core_key_tree_seek(&parser->stream->committed.starts[table], &first, &cursor);
+        markdown_core_key_tree_seek(starts, &first, &cursor);
         for (const markdown_core_key_entry *entry; (entry = markdown_core_key_tree_next(&cursor));) {
             if (entry->value && !table_add(&walk->tables[table], entry->value, entry->extra)) {
                 return false;
