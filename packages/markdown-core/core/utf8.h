@@ -110,6 +110,12 @@ enum {
     MARKDOWN_CORE_UNICODE_SYMBOL = 1 << 2,
     MARKDOWN_CORE_UNICODE_LETTER = 1 << 3,
     MARKDOWN_CORE_UNICODE_NUMBER = 1 << 4,
+    MARKDOWN_CORE_UNICODE_MARK = 1 << 5,
+    /* The Emoji property, outside ASCII, whose keycap bases are ordinary
+     * characters. */
+    MARKDOWN_CORE_UNICODE_EMOJI = 1 << 6,
+    /* Nd, the numbers that are decimal digits. */
+    MARKDOWN_CORE_UNICODE_DECIMAL = 1 << 7,
     /* A Unicode punctuation character as CommonMark 0.31 defines it: P or S. */
     MARKDOWN_CORE_UNICODE_PUNCTUATION_OR_SYMBOL = MARKDOWN_CORE_UNICODE_PUNCTUATION | MARKDOWN_CORE_UNICODE_SYMBOL
 };

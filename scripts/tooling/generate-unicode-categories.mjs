@@ -10,7 +10,11 @@
 //   punctuation  P, and every ASCII punctuation character;
 //   symbol       S;
 //   letter       L;
-//   number       N.
+//   number       N;
+//   mark         M;
+//   emoji        Emoji, outside ASCII, whose keycap bases are
+//                ordinary characters;
+//   decimal      Nd.
 // A scalar's classes are blocks[pages[s >> 8] + (s & 255)]. The first page's
 // block is laid first, at offset 0, so utf8.h reads the classes of page 0,
 // U+0000..U+00FF, with one load and every other scalar's with two, whatever
@@ -25,6 +29,9 @@ const PUNCTUATION = 1 << 1;
 const SYMBOL = 1 << 2;
 const LETTER = 1 << 3;
 const NUMBER = 1 << 4;
+const MARK = 1 << 5;
+const EMOJI = 1 << 6;
+const DECIMAL = 1 << 7;
 
 const SCALARS = 0x110000;
 const asciiPunctuation = (scalar) =>
@@ -43,6 +50,9 @@ const classesOf = (scalar) => {
     if (/\p{S}/u.test(text)) value |= SYMBOL;
     if (/\p{L}/u.test(text)) value |= LETTER;
     if (/\p{N}/u.test(text)) value |= NUMBER;
+    if (/\p{M}/u.test(text)) value |= MARK;
+    if (scalar >= 0x80 && /\p{Emoji}/u.test(text)) value |= EMOJI;
+    if (/\p{Nd}/u.test(text)) value |= DECIMAL;
     return value;
 };
 const classes = new Uint8Array(SCALARS);

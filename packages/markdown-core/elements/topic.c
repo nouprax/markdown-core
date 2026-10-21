@@ -2,10 +2,40 @@
 #include "inline_internal.h"
 #include "utf8.h"
 
-/* THE WIDTH OF A SEGMENT CHARACTER at `str`, or 0: a letter, a number, `_`
- * or `-`, with letter and number meaning the Unicode categories, as for
- * citation keys. `word` is set when the character is not a number, which is
- * what a name must contain at least one of. */
+/* THE JOINERS, the characters twitter-text lets a hashtag contain besides
+ * letters, marks, numbers and `_`: zero width non-joiner and joiner, Cyrillic kavyka, Hebrew
+ * maqaf, geresh and gershayim, fullwidth tilde, wave dash, katakana-hiragana
+ * sound marks, double hyphen and middle dot, ditto mark, Tibetan tsheg and
+ * non-breaking tsheg, and middle dot. */
+static bool topic_joiner(int32_t scalar) {
+    switch (scalar) {
+    case 0x200C:
+    case 0x200D:
+    case 0xA67E:
+    case 0x05BE:
+    case 0x05F3:
+    case 0x05F4:
+    case 0xFF5E:
+    case 0x301C:
+    case 0x309B:
+    case 0x309C:
+    case 0x30A0:
+    case 0x30FB:
+    case 0x3003:
+    case 0x0F0B:
+    case 0x0F0C:
+    case 0x00B7:
+        return true;
+    default:
+        return false;
+    }
+}
+
+/* THE WIDTH OF A SEGMENT CHARACTER at `str`, or 0: a letter, a mark, an
+ * emoji, `_`, `-`, a number, or a joiner, with letter, mark, number and emoji
+ * meaning the Unicode categories and property. `word` is set when the
+ * character is one of the first five, which is what a name must contain at
+ * least one of. */
 static int segment_width(const unsigned char *str, bufsize_t len, bool *word) {
     if (len <= 0) {
         return 0;
@@ -17,17 +47,17 @@ static int segment_width(const unsigned char *str, bufsize_t len, bool *word) {
     int32_t scalar;
     const int width = markdown_core_utf8proc_decode(str, len, &scalar);
     const uint8_t classes = markdown_core_utf8proc_classes(scalar);
-    if (classes & MARKDOWN_CORE_UNICODE_LETTER) {
+    if (classes & (MARKDOWN_CORE_UNICODE_LETTER | MARKDOWN_CORE_UNICODE_MARK | MARKDOWN_CORE_UNICODE_EMOJI)) {
         *word = true;
         return width;
     }
-    return classes & MARKDOWN_CORE_UNICODE_NUMBER ? width : 0;
+    return (classes & MARKDOWN_CORE_UNICODE_NUMBER) || topic_joiner(scalar) ? width : 0;
 }
 
-/* A name character is a segment character or `/`. A `#` opens a topic at the
- * start of the input or after a character that is neither one nor `&`, which
- * begins a character reference with it, as twitter-text bounds a hashtag; that
- * character begins at the last non-continuation byte before `at`. */
+/* A `#` opens a topic at the start of the input or after a character that is
+ * none of a letter, a mark, a decimal digit, `_`, a joiner, and `&`, which
+ * begins a character reference with it, as twitter-text bounds a hashtag;
+ * that character begins at the last non-continuation byte before `at`. */
 static bool topic_opener(const markdown_core_inline_state *inline_state, bufsize_t at) {
     const unsigned char *data = inline_state->input.data;
     bufsize_t before = at;
@@ -37,8 +67,14 @@ static bool topic_opener(const markdown_core_inline_state *inline_state, bufsize
     do {
         before--;
     } while (before && (data[before] & 0xc0) == 0x80);
-    bool word = false;
-    return data[before] != '/' && data[before] != '&' && !segment_width(data + before, at - before, &word);
+    if (data[before] == '_' || data[before] == '&') {
+        return false;
+    }
+    int32_t scalar;
+    markdown_core_utf8proc_decode(data + before, at - before, &scalar);
+    return !(markdown_core_utf8proc_classes(scalar) &
+             (MARKDOWN_CORE_UNICODE_LETTER | MARKDOWN_CORE_UNICODE_MARK | MARKDOWN_CORE_UNICODE_DECIMAL)) &&
+           !topic_joiner(scalar);
 }
 
 /* THE END OF THE TOPIC whose `#` is at `at`, or 0 when there is none. The

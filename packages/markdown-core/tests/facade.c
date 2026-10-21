@@ -857,12 +857,12 @@ static void check_index_boundary(void) {
     }
 
     const char *kind_name = NULL;
-    for (int kind = MARKDOWN_CORE_KIND_NONE; kind <= MARKDOWN_CORE_KIND_REFERENCE; kind++) {
+    for (int kind = MARKDOWN_CORE_KIND_NONE; kind <= MARKDOWN_CORE_KIND_TOPIC; kind++) {
         check(markdown_core_node_kind_name((markdown_core_node_kind)kind, &kind_name) == MARKDOWN_CORE_OK && kind_name,
               "every kind has a name");
     }
     kind_name = NULL;
-    check(markdown_core_node_kind_name((markdown_core_node_kind)(MARKDOWN_CORE_KIND_REFERENCE + 1), &kind_name) ==
+    check(markdown_core_node_kind_name((markdown_core_node_kind)(MARKDOWN_CORE_KIND_TOPIC + 1), &kind_name) ==
                   MARKDOWN_CORE_OUT_OF_BOUNDS &&
               markdown_core_node_kind_name((markdown_core_node_kind)-1, &kind_name) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
               kind_name == NULL,
