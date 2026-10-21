@@ -192,6 +192,7 @@ that the dump represents as nested descendants.
 | `Embedded` | `anchor`, `attributes`, `dest`, `title`, `dimensions` |
 | `Directive` | `anchor`, `attributes`, `name` |
 | `Cite` | `anchor`, `attributes` |
+| `Topic` | `anchor`, `attributes`, `name` |
 | `DefinitionList` | `anchor`, `attributes` |
 | `Definition` | `anchor`, `attributes`, `compact` |
 | `Citation` | `anchor`, `attributes`, `referent` |

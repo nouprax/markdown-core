@@ -36,6 +36,7 @@ import type { Strong } from "./strong.js";
 import type { Table, TableCaption, TableCell, TableRow } from "./table.js";
 import type { Text } from "./text.js";
 import type { ThematicBreak } from "./thematic-break.js";
+import type { Topic } from "./topic.js";
 
 export type Markup =
     | Document
@@ -77,6 +78,7 @@ export type Markup =
     | Embedded
     | Directive
     | Cite
+    | Topic
     | Citation
     | Footnote
     | Specimen

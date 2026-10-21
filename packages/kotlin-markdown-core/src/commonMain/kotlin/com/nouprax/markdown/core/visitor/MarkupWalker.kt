@@ -57,6 +57,7 @@ internal class MarkupWalker(
             is Embedded -> visitor.visit(node, phase)
             is Directive -> visitor.visit(node, phase)
             is Cite -> visitor.visit(node, phase)
+            is Topic -> visitor.visit(node, phase)
             is Citation -> visitor.visit(node, phase)
             is Footnote -> visitor.visit(node, phase)
             is Specimen -> visitor.visit(node, phase)

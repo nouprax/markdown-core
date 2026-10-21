@@ -43,6 +43,7 @@ returns this structure; your application decides how to display it.
 | Targets on other blocks | [Block identifiers](dialect/block-identifiers.md) |
 | Referenced and inline notes | [Footnotes](dialect/footnotes.md) |
 | Bibliography references and citation groups | [Citations](dialect/citations.md) |
+| Topics such as `#pricing` | [Topics](dialect/topics.md) |
 | Numbered examples and references to them | [Specimens](dialect/specimens.md) |
 
 ## Organize content

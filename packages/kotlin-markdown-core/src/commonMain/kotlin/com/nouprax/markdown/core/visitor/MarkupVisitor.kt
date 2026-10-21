@@ -198,6 +198,11 @@ public interface MarkupVisitor {
     ): Unit
 
     public fun visit(
+        topic: Topic,
+        phase: MarkupVisitPhase,
+    ): Unit
+
+    public fun visit(
         citation: Citation,
         phase: MarkupVisitPhase,
     ): Unit

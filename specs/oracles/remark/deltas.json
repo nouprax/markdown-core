@@ -886,6 +886,13 @@
             "authority": "docs/specs/dialect/tables.md#captions; Pandoc 3.11 table_captions",
             "summary": "A colon followed by a non-punctuation scalar starts an available table caption, including :badge[short]. The caption owns its paragraph continuation; remark-gfm keeps those lines as table cells.",
             "why": "P11 applies the normative caption grammar to all table forms. Both projected trees retain their complete content and ownership; this exact conflict remains visible."
+        },
+        {
+            "id": "topic-after-unclosed-attributes",
+            "input": "`a` {.c} `b`{.} `c`{\"bad} `d`{#x\n",
+            "authority": "docs/specs/dialect/topics.md",
+            "summary": "An unclosed attribute container is ordinary text, and the `#x` inside it is a topic here; remark has no topics.",
+            "why": "A failed construct releases its source to ordinary Markdown, where valid inner syntax is still recognized; a `#` after `{` opens a topic."
         }
     ],
     "baselineBacklog": [],

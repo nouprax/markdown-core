@@ -294,6 +294,10 @@ internal object WireDecoder {
                     Directive(name, optional(label), id, extent, runs, anchor, attributes)
                 }
 
+                WireNodeKind.TOPIC -> {
+                    Topic(string(), id, extent, runs, anchor, attributes)
+                }
+
                 WireNodeKind.CITE -> {
                     val citations = count()
                     take(citations)

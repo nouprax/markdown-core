@@ -56,6 +56,7 @@ struct KindVisitor: MarkupVisitor {
     mutating func visit(_ node: Embedded, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
     mutating func visit(_ node: Directive, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
     mutating func visit(_ node: Cite, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
+    mutating func visit(_ node: Topic, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
     mutating func visit(_ node: TableCaption, phase: MarkupVisitPhase) { record(kindName(node), phase: phase) }
     mutating func visit(_ node: TableRow, phase: MarkupVisitPhase) { record("row", phase: phase) }
     mutating func visit(_ node: TableCell, phase: MarkupVisitPhase) { record("cell", phase: phase) }
@@ -126,6 +127,7 @@ struct RecordingWalkingVisitor: MarkupVisitor {
     mutating func visit(_ node: Embedded, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Directive, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Cite, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Topic, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: TableCaption, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: TableRow, phase: MarkupVisitPhase) {
         record(node, phase)

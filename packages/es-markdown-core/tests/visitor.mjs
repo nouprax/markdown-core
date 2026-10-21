@@ -37,6 +37,7 @@ export const emptyVisitor = {
     link: () => {},
     embedded: () => {},
     directive: () => {},
+    topic: () => {},
     cite: () => {},
     citation: () => {},
     footnote: () => {},

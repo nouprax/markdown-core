@@ -176,6 +176,7 @@ range of their own.
 | Link or image | Includes opener, label/alt, tail, dimensions, and occurrence attributes; resolved references keep only their occurrence's range. |
 | Autolink | Includes the angle brackets or the complete accepted bare token. |
 | Cross link/embed | Includes the optional exclamation mark, both bracket pairs, target, label, and dimensions. |
+| Topic | Includes the `#` and the complete name. |
 | Directive | Runs from the colon through the last accepted name, label, or attribute byte. |
 | Directive label | Includes its brackets, even when the label is empty. |
 | Directive block | Includes its opening and closing lines, or ends at the last consumed content line when unclosed. |
@@ -422,6 +423,7 @@ them without checking.
 | `Embedded` | `dest: Destination`, `title: String?`, `dimensions: Dimensions?`, `content: [Markup]` | `dest` is the tagged `Destination` value and is never absent, for the reason `Link.dest` is not; a direct image owns the `url` branch and a reference image the `reference` branch; absent and empty title remain distinct; content is parsed alt-text inline content |
 | `Directive` | `name: String`, `label: DirectiveLabel?` | letter-first name; attributes use the inherited fields; label is a typed Markup field spanning its brackets, never content; absent and empty labels remain distinct; leaf |
 | `Cite` | `citations: [Citation]` | one or more items in source order; every item has exactly one referent and one cite never mixes referent families; an inherited `[^label]` call is one item with a `footnote(label)` referent whose value is the normalized label without the caret and with empty affixes; its items are owned Citation nodes in the citations field; ordinary content remains empty |
+| `Topic` | `name: String` | inline leaf; the name as written, without the `#`; null anchor and empty attributes |
 | `DefinitionList` | `definitions: [Definition]` | non-empty ordered associations |
 | `Definition` | `term: [Markup]`, `content: [[Markup]]`, `compact: Bool` | inline term; non-empty outer content; each inner collection is one block body; compact records the absence of a blank term gap; visit term then bodies |
 | `Citation` | `referent: CitationReferent`, `prefix: [Markup]`, `suffix: [Markup]` | One Markup node owned by Cite.citations. Its non-null prefix and suffix contain inline markup, empty when absent. It is not ordinary content. |

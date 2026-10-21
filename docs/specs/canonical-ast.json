@@ -607,6 +607,18 @@
             "invariants": "one or more items in source order; every item has exactly one referent and one cite never mixes referent families; an inherited `[^label]` call is one item with a `footnote(label)` referent whose label is the normalized label without the caret and with empty affixes; its Citation nodes remain in the citations field, outside ordinary content"
         },
         {
+            "name": "Topic",
+            "ordinal": 45,
+            "fields": [
+                {
+                    "name": "name",
+                    "type": "String",
+                    "optional": false
+                }
+            ],
+            "invariants": "inline leaf; the name as written, without the `#`; null anchor and empty attributes"
+        },
+        {
             "name": "DefinitionList",
             "ordinal": 37,
             "fields": [

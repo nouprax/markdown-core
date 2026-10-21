@@ -249,6 +249,7 @@ extension DocumentBuilder {
         case MARKDOWN_CORE_KIND_DIRECTIVE:
             return DirectiveRecord(from: node, label: take(relations.label, as: DirectiveLabelRecord.self))
         case MARKDOWN_CORE_KIND_CITE: return CiteRecord(from: node, citations: take(relations.citations))
+        case MARKDOWN_CORE_KIND_TOPIC: return TopicRecord(from: node)
         case MARKDOWN_CORE_KIND_TABLE_CAPTION: return TableCaptionRecord(from: node, content: children)
         case MARKDOWN_CORE_KIND_TABLE_ROW: return TableRowRecord(from: node, cells: children)
         case MARKDOWN_CORE_KIND_TABLE_CELL: return TableCellRecord(from: node, content: children)

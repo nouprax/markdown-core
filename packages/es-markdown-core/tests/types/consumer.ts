@@ -232,6 +232,9 @@ const visitor: MarkupVisitor = {
     directive: (node) => {
         void node.kind;
     },
+    topic: (node) => {
+        void node.name;
+    },
     cite: (node) => {
         void node.kind;
     }
@@ -289,6 +292,7 @@ const walkingVisitor: MarkupVisitor = {
     link: () => undefined,
     embedded: () => undefined,
     directive: () => undefined,
+    topic: () => undefined,
     cite: () => undefined,
     definitionList: () => undefined,
     definition: () => undefined,

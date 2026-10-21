@@ -49,6 +49,7 @@ public protocol MarkupVisitor {
     mutating func visit(_ node: Embedded, phase: MarkupVisitPhase)
     mutating func visit(_ node: Directive, phase: MarkupVisitPhase)
     mutating func visit(_ node: Cite, phase: MarkupVisitPhase)
+    mutating func visit(_ node: Topic, phase: MarkupVisitPhase)
     mutating func visit(_ node: TableCaption, phase: MarkupVisitPhase)
     mutating func visit(_ node: TableRow, phase: MarkupVisitPhase)
     mutating func visit(_ node: TableCell, phase: MarkupVisitPhase)

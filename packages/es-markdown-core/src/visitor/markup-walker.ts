@@ -178,6 +178,7 @@ const relations: {
     crossLink: () => none,
     crossEmbedded: () => none,
     comment: () => none,
+    topic: () => none,
     formula: () => none,
     metadata: () => none,
     reference: () => none

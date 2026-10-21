@@ -351,6 +351,8 @@ markdown_core_add_test(spec_dialect_task_lists spec 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-task-lists.txt")
 markdown_core_add_test(spec_dialect_block_identifiers spec 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-block-identifiers.txt")
+markdown_core_add_test(spec_dialect_topics spec 120 spec_runner --spec
+                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/dialect-topics.txt")
 # pathological: adversarial inputs, one CTest test per case so timeouts and
 # failures stay addressable.  The audit script cross-checks this list against
 # `pathological_runner --list`.
@@ -404,7 +406,10 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     formula_backslash_openers
     formula_backslash_closers
     formula_backslash_pairs
-    formula_backslash_nested)
+    formula_backslash_nested
+    topic_number_names
+    topic_refused_long_name
+    topic_runs)
 foreach(case IN LISTS MARKDOWN_CORE_PATHOLOGICAL_CASES)
     markdown_core_add_test(pathological_${case} pathological 30 pathological_runner --case ${case})
 endforeach()

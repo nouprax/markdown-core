@@ -35,6 +35,7 @@
 #include "directive.h"
 #include "comment.h"
 #include "cross_link.h"
+#include "topic.h"
 
 /* Every parse attaches the same elements. Scanner precedence is
  * source ownership: footnote before superscript, double tilde before single
@@ -67,6 +68,7 @@ static const markdown_core_element *const CORE_ELEMENTS[] = {&MARKDOWN_CORE_ELEM
                                                              &MARKDOWN_CORE_ELEMENT_COMMENT,
                                                              &MARKDOWN_CORE_ELEMENT_CROSS_LINK,
                                                              &MARKDOWN_CORE_ELEMENT_DIRECTIVE,
+                                                             &MARKDOWN_CORE_ELEMENT_TOPIC,
                                                              &MARKDOWN_CORE_ELEMENT_HTML,
                                                              &MARKDOWN_CORE_ELEMENT_LINK,
                                                              &MARKDOWN_CORE_ELEMENT_EMBEDDED,
@@ -156,5 +158,6 @@ const markdown_core_element *const markdown_core_inline_structure[MARKDOWN_CORE_
     [MARKDOWN_CORE_NODE_INSERTION & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_ELEMENT_INSERTION,
     [MARKDOWN_CORE_NODE_SUPERSCRIPT & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_ELEMENT_SUPERSCRIPT,
     [MARKDOWN_CORE_NODE_SUBSCRIPT & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_ELEMENT_SUBSCRIPT,
+    [MARKDOWN_CORE_NODE_TOPIC & MARKDOWN_CORE_NODE_VALUE_MASK] = &MARKDOWN_CORE_ELEMENT_TOPIC,
 };
 /* END GENERATED */

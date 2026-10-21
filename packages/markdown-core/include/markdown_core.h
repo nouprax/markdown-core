@@ -290,6 +290,7 @@ typedef enum markdown_core_node_kind {
     MARKDOWN_CORE_KIND_SPECIMEN = 42,
     MARKDOWN_CORE_KIND_METADATA = 43,
     MARKDOWN_CORE_KIND_REFERENCE = 44,
+    MARKDOWN_CORE_KIND_TOPIC = 45,
     /* END GENERATED */
 } markdown_core_node_kind;
 
@@ -530,6 +531,9 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_node_code_block_properties(
  * them, line endings and indentation included. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_literal(const markdown_core_node *node,
                                                                   markdown_core_string *literal);
+/** A `Topic`'s name: the bytes after its `#`, as written. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_topic_name(const markdown_core_node *topic,
+                                                                markdown_core_string *name);
 /** A `Formula` or `FormulaBlock`. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_node_formula_properties(const markdown_core_node *node,
                                                                              markdown_core_placement *mode,
