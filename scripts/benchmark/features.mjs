@@ -67,7 +67,8 @@ export const rejectedConstructs = Object.freeze({
     citation: Object.freeze([]),
     "bracketed-span": Object.freeze([]),
     "image-dimensions": Object.freeze([]),
-    "metadata-envelope": Object.freeze([])
+    "metadata-envelope": Object.freeze([]),
+    topic: Object.freeze([])
 });
 
 // A control, when declared, is a third production of the same fields.
@@ -713,7 +714,8 @@ for (const [id, feature, rejects, parts, options] of [
     ["footnote", "footnotes", "footnote-reference", inline("[^", k, "]"), { gfm: true }],
     ["grid", "tables", "grid-table", ["+---+\n|", k, "\n+---+\n\n"], { control: ["q---q\n|", k, "\nq---q\n\n"] }],
     ["citation", "citations", "citation", inline("@-", k), { control: inline("q-", k) }],
-    ["span", "bracketed-spans", "bracketed-span", inline("[", b, "]{"), { control: inline("[", b, "]q") }]
+    ["span", "bracketed-spans", "bracketed-span", inline("[", b, "]{"), { control: inline("[", b, "]q") }],
+    ["topic", "topics", "topic", inline("#", k, "#"), { control: inline("q", k, "q") }]
 ])
     shared(`fallback-${id}`, feature, ["fallback", "rejected-prefix"], parts, { rejects, ...options });
 shared(
@@ -799,6 +801,7 @@ shared("task-nested", "task-lists", ["nested-tasks", "ordered-task"], ["1. [ ] "
 });
 
 pair("mark-formatting", "marks", ["formatted-content"], inline("==", b, "=="), inline("**", b, "**"));
+pair("topic", "topics", ["names", "opening-boundary"], inline("#", k), inline("`", k, "`"));
 shared(
     "gfm-footnote-blocks",
     "footnotes",

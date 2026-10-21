@@ -11639,6 +11639,77 @@
             ]
         },
         {
+            "id": "fallback-topic",
+            "certificate": "fallback-topic-grammar-v2",
+            "scope": "paired-document-grammar",
+            "feature": "topics",
+            "facets": ["fallback", "rejected-prefix"],
+            "identity": true,
+            "outputDifference": null,
+            "reference": null,
+            "rejection": {
+                "construct": "topic",
+                "implementedBy": [],
+                "uncontrolled": null
+            },
+            "theorem": "T6",
+            "normalForm": {
+                "repetition": "+",
+                "fields": [
+                    {
+                        "name": "key",
+                        "grammar": "word"
+                    }
+                ]
+            },
+            "grammars": {
+                "dialect": "Document = Unit+ ; Unit = \"probe \" \"#\" key:word \"#\" \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; AsciiWord = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Empty = epsilon ; UnicodeWord = (Letter | 'é' | '字')+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "common": "Document = Unit+ ; Unit = \"probe \" \"#\" key:word \"#\" \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; AsciiWord = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Empty = epsilon ; UnicodeWord = (Letter | 'é' | '字')+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "control": "Document = Unit+ ; Unit = \"probe \" \"q\" key:word \"q\" \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; AsciiWord = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Empty = epsilon ; UnicodeWord = (Letter | 'é' | '字')+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+            },
+            "rewrite": [
+                "inline-administrative-productions",
+                "invertible-fixed-terminal-encoding",
+                "label-preserving-product-permutation",
+                "common-normal-form"
+            ],
+            "residual": null,
+            "examples": [
+                {
+                    "dialect": "probe #nd# end\n\n",
+                    "common": "probe #nd# end\n\n",
+                    "control": "probe qndq end\n\n",
+                    "derivation": [
+                        [
+                            [
+                                "key",
+                                {
+                                    "grammar": "word",
+                                    "value": "nd"
+                                }
+                            ]
+                        ]
+                    ]
+                },
+                {
+                    "dialect": "probe #od# end\n\n",
+                    "common": "probe #od# end\n\n",
+                    "control": "probe qodq end\n\n",
+                    "derivation": [
+                        [
+                            [
+                                "key",
+                                {
+                                    "grammar": "word",
+                                    "value": "od"
+                                }
+                            ]
+                        ]
+                    ]
+                }
+            ]
+        },
+        {
             "id": "footnote-nested-inline",
             "certificate": "footnote-nested-inline-grammar-v2",
             "scope": "paired-document-grammar",
@@ -20892,6 +20963,70 @@
                             ],
                             "blankLines": 1
                         }
+                    ]
+                }
+            ]
+        },
+        {
+            "id": "topic",
+            "certificate": "topic-grammar-v2",
+            "scope": "paired-document-grammar",
+            "feature": "topics",
+            "facets": ["names", "opening-boundary"],
+            "identity": false,
+            "outputDifference": null,
+            "reference": "cmark",
+            "rejection": null,
+            "theorem": "T3",
+            "normalForm": {
+                "repetition": "+",
+                "fields": [
+                    {
+                        "name": "key",
+                        "grammar": "word"
+                    }
+                ]
+            },
+            "grammars": {
+                "dialect": "Document = Unit+ ; Unit = \"probe \" \"#\" key:word \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; AsciiWord = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Empty = epsilon ; UnicodeWord = (Letter | 'é' | '字')+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;",
+                "common": "Document = Unit+ ; Unit = \"probe \" \"`\" key:word \"`\" \" end\\n\\n\" ; word = Word ; attribute-key = AttributeKey ; unicode = UnicodeWord ; ordinal = Ordinal ; state = State ; positive9 = Positive9 ; phrase = Phrase ; inline = Body ; empty = Empty ; OPEN = CLOSE = '**' ; repeated field names in one Unit bind the same value ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; AsciiWord = [a-z]+ ; AttributeKey = Word except 'id' and 'class' ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Positive9 = [1-9][0-9]{0,8} ; Phrase = Word (SP Word)* ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Body = Word | Word SP (Atom SP)* Word ; Atom = Word | OPEN Body CLOSE ; Word = Letter+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Empty = epsilon ; UnicodeWord = (Letter | 'é' | '字')+ ; Letter = [a-z] | [а-и] | [一-丈] | [𠀀-𠀇] ; Ordinal = 1 | 2 | ... | 26 ; State = plain | closed | open ;"
+            },
+            "rewrite": [
+                "inline-administrative-productions",
+                "invertible-fixed-terminal-encoding",
+                "label-preserving-product-permutation",
+                "common-normal-form"
+            ],
+            "residual": null,
+            "examples": [
+                {
+                    "dialect": "probe #nd end\n\n",
+                    "common": "probe `nd` end\n\n",
+                    "derivation": [
+                        [
+                            [
+                                "key",
+                                {
+                                    "grammar": "word",
+                                    "value": "nd"
+                                }
+                            ]
+                        ]
+                    ]
+                },
+                {
+                    "dialect": "probe #od end\n\n",
+                    "common": "probe `od` end\n\n",
+                    "derivation": [
+                        [
+                            [
+                                "key",
+                                {
+                                    "grammar": "word",
+                                    "value": "od"
+                                }
+                            ]
+                        ]
                     ]
                 }
             ]

@@ -307,5 +307,13 @@ export const sectionDispositions = {
     },
     "thematic-breaks": {
         "Thematic breaks": grammar("common-thematic-dash", "common-thematic-star", "common-thematic-underscore")
+    },
+    topics: {
+        Topics: grammar("topic"),
+        "Topic names": grammar("topic"),
+        "Where a topic starts and ends": grammar("topic", "fallback-topic"),
+        Boundaries: context(
+            "Block identifiers, opaque contents and email recognition keep their own grammars; their certificates cover those sources, and a topic adds no authored form beside them."
+        )
     }
 };

@@ -66,7 +66,8 @@ export const featureOwners = {
     "superscript-and-subscript": { elements: ["SUPERSCRIPT", "SUBSCRIPT"], certificates: ["run-super", "run-sub"] },
     tables: { elements: ["TABLE"], certificates: ["grid-cell", "simple-matrix", "headless-matrix", "sparse-grid"] },
     "task-lists": { elements: [], certificates: ["task-value"] },
-    "thematic-breaks": { elements: ["THEMATIC_BREAK"], certificates: [] }
+    "thematic-breaks": { elements: ["THEMATIC_BREAK"], certificates: [] },
+    topics: { elements: ["TOPIC"], certificates: [] }
 };
 
 /** Markdown headings outside fenced examples. Hash each complete section as
