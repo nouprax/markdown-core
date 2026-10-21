@@ -94,3 +94,22 @@ test("a text directive without a part is remark's form, not the dialect's", () =
         assert.equal(outsideSharedFuzzScope(input), null, input);
     }
 });
+
+test("dash runs beside text are the Pandoc table forms' boundary", () => {
+    for (const input of [
+        "----\n[f\n--- -\n*bar*\n*\t*\t*\t\n",
+        "f\n--- -\nbar\n",
+        "a\n- -\nb\n",
+        "Name    Count\n------  -----\nApples      4\n",
+        "------  -----\nApples      4\n------  -----\n",
+        "> a\n> --- -\n> b\n",
+        "1. -- --\n   a  b\n\n   c  d\n   -----\n",
+        "* -- --\n  a  b\n"
+    ]) {
+        assert.equal(outsideSharedFuzzScope(input), "pandoc-tables", input);
+    }
+    // A thematic break between blank lines, and a single dash run, stay shared.
+    for (const input of ["a\n\n- - -\n\nb\n", "- - -\n", "a\n---\n", "a\n\n----\nb\n", "- a\n- b\n"]) {
+        assert.equal(outsideSharedFuzzScope(input), null, input);
+    }
+});
