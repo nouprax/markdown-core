@@ -1699,9 +1699,11 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, size_t
 
 /* A walk root that continues nothing and does not persist is published
  * whole, as the nodes such a frame holds are; any other is matched. */
-static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_in_place(
-    publish_walk *walk, markdown_core_node *root, size_t depth, const markdown_core_node *previous,
-    const publish_relation *start, uint32_t held, uint32_t recorded) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_in_place(publish_walk *walk,
+                                                                             markdown_core_node *root, size_t depth,
+                                                                             const markdown_core_node *previous,
+                                                                             const publish_relation *start,
+                                                                             uint32_t held, uint32_t recorded) {
     if (!previous && !root->id && !walk->keeps) {
         const publish_frame from = {.more = false};
         publish_relation items = {&root, &root + 1, start->anchor, start->source};
