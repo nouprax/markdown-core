@@ -47,6 +47,7 @@
             "Embedded",
             "Directive",
             "Cite",
+            "Topic",
             "DefinitionList",
             "Definition",
             "Citation",
@@ -1143,6 +1144,16 @@
                 ],
                 "states": ["citation.referent.footnote.label"],
                 "orders": []
+            }
+        },
+        {
+            "name": "topics",
+            "input": "topics.md",
+            "expected": "topics.ast",
+            "coverage": {
+                "kinds": ["Document", "Heading", "Paragraph", "Text", "Topic", "Code", "Link"],
+                "states": ["markup.anchor.null", "scope.positive", "children.empty", "children.populated"],
+                "orders": ["document.source-order", "inline.source-order"]
             }
         }
     ]

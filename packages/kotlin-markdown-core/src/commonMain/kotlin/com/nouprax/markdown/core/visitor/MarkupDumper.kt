@@ -370,6 +370,10 @@ private fun describe(node: Markup): Line =
             Line("Cite", node.citations.size)
         }
 
+        is Topic -> {
+            Line("Topic", 0, listOf("name=${escaped(node.name)}"))
+        }
+
         is Citation -> {
             Line("Citation", 0, listOf("referent=${referent(node.referent)}"))
         }

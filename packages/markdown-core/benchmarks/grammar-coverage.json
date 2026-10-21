@@ -3,13 +3,13 @@
     "contract": "Every syntax feature and registered element has generated grammar-certified inputs; every specification section explicitly names its source-grammar certificates or explains why it introduces no grammar obligation. Parser correctness is owned by parity and regression suites. Whole-language proofs apply only to the declared grammars; local boundaries do not certify their residual host grammar.",
     "guide": {
         "file": "docs/specs/dialect.md",
-        "sha256": "7559b561d1e5fd5ffe32f58b4c5d77d6112ce909debd510b33be6584040a75bd"
+        "sha256": "5e3a682ff1d4cef0f30c131c3ef1cb3a4ca74a9bb29b058d2fe6530e6e52e38c"
     },
     "features": [
         {
             "feature": "anchors",
             "specification": "docs/specs/dialect/anchors.md",
-            "sha256": "92903a855ac3b469e4b0c4ecf1bb7c192e7ca89ac5d9785d5465bf218fee4160",
+            "sha256": "dc374ac81abcdb865195322a61bf56c8d873ecedcbe2debad441e8d26419cda9",
             "sections": [
                 {
                     "title": "Anchors",
@@ -35,7 +35,7 @@
                     "title": "Automatic anchors",
                     "line": 32,
                     "level": 2,
-                    "sha256": "c7a9c4be18ddaa2fba220c8ca50dea49a293fd93ab31f56abacb2d08d0dca792",
+                    "sha256": "617249f1db0bcb3fa82894d8e5c5dc191e02da6677ac65b8e3f3750a637d7284",
                     "disposition": {
                         "kind": "context",
                         "reason": "Automatic IDs are derived output, with no additional authored grammar. The heading source workload is common-anchor-generation; correctness of normalization/collision allocation belongs to regression and parity."
@@ -918,7 +918,7 @@
         {
             "feature": "conflicts",
             "specification": "docs/specs/dialect/conflicts.md",
-            "sha256": "b5d15a9a87bab63b53debcb9282e26948194e7164bf27ed90c95b8ce87cff398",
+            "sha256": "665377f9745c92cefa55fba696e7e523e235eb5a846e23c603f5d0fdd48f94ac",
             "sections": [
                 {
                     "title": "Compatibility and precedence",
@@ -934,7 +934,7 @@
                     "title": "Differences to know",
                     "line": 10,
                     "level": 2,
-                    "sha256": "724dd593fa2b842fc16a67c95a9cd938d6abde628aa0a951adc79f7104e2a08f",
+                    "sha256": "dfc224fbc9cad76ea5ebc370f00b20d66b21ae2c00be6230d282e6719aecdfb0",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -960,7 +960,7 @@
                 },
                 {
                     "title": "Block recognition",
-                    "line": 37,
+                    "line": 38,
                     "level": 2,
                     "sha256": "b2739e0d66d978aa329c26e2a7228a95adbffe65234f88826e8be5de192035da",
                     "disposition": {
@@ -975,9 +975,9 @@
                 },
                 {
                     "title": "Inline recognition",
-                    "line": 68,
+                    "line": 69,
                     "level": 2,
-                    "sha256": "57e7eccb2d207aaf2601865b29c08221853db0dc803424ede081c16976e48978",
+                    "sha256": "8e9bd4560a73b2d7510302064e0ca1635d4c8e9b9f1b299bcd5dc8f67ad03ac0",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -991,7 +991,7 @@
                 },
                 {
                     "title": "Literal content and incomplete syntax",
-                    "line": 92,
+                    "line": 93,
                     "level": 2,
                     "sha256": "0794901c97d1d31cfc63ba503a14f39c0cc83bff908a7090cf6c7e788685ff0d",
                     "disposition": {
@@ -1662,13 +1662,13 @@
         {
             "feature": "headings",
             "specification": "docs/specs/dialect/headings.md",
-            "sha256": "1def07dfc418973df24903f8e20b50c09f224c6ac8edf4d2b2360204627f6e92",
+            "sha256": "7a2e3195418bee5222339b23cea04bab1d456dd4f53f45b443ca1e8e870caccc",
             "sections": [
                 {
                     "title": "Headings",
                     "line": 1,
                     "level": 1,
-                    "sha256": "cf1a1d079e3010f1d2a265a67a20bbe6591a5e7a432f7b5d6a96d0b142f7b97e",
+                    "sha256": "5c1011ebec5c3a6cfc31f84377353f11e508eb4078e3f77622b656c68545832c",
                     "disposition": {
                         "kind": "grammar",
                         "certificates": [
@@ -1683,7 +1683,7 @@
                 },
                 {
                     "title": "Underlined headings",
-                    "line": 22,
+                    "line": 23,
                     "level": 2,
                     "sha256": "98e84416498adb29725c60bdf008fb3d68d242267cb3cbe680fce1862e1f8b23",
                     "disposition": {
@@ -1693,7 +1693,7 @@
                 },
                 {
                     "title": "Format a heading",
-                    "line": 39,
+                    "line": 40,
                     "level": 2,
                     "sha256": "95464d55987e9f36639f61691f38cb231de4b4f5a0bdfc72478c29ab24047b8c",
                     "disposition": {
@@ -2943,6 +2943,68 @@
                     "scope": "paired-document-grammar",
                     "identity": true,
                     "facets": ["markers", "spacing", "block-precedence"]
+                }
+            ]
+        },
+        {
+            "feature": "topics",
+            "specification": "docs/specs/dialect/topics.md",
+            "sha256": "1d4cc9cbb6d54ea6c8207a6bc77094c866aceb4367ede97b5e43d73f00dfccd6",
+            "sections": [
+                {
+                    "title": "Topics",
+                    "line": 1,
+                    "level": 1,
+                    "sha256": "ae1659b66fee6fa477294e98ce71645660f97c57be35140330209722ac6357b8",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["topic"]
+                    }
+                },
+                {
+                    "title": "Topic names",
+                    "line": 15,
+                    "level": 2,
+                    "sha256": "27a36f97cf431fbcdd6a7ede4805a595f26e8d55acaa76f22a6e5c0b402c75e6",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["topic"]
+                    }
+                },
+                {
+                    "title": "Where a topic starts and ends",
+                    "line": 37,
+                    "level": 2,
+                    "sha256": "c6e8b213a85f254728238c86296d57d03e2ba6d224c536f78b865294f8aa80f2",
+                    "disposition": {
+                        "kind": "grammar",
+                        "certificates": ["topic", "fallback-topic"]
+                    }
+                },
+                {
+                    "title": "Boundaries",
+                    "line": 55,
+                    "level": 2,
+                    "sha256": "f1bfab6015029867883a253e556e8e25e6e483c3e89854b41debdc51ed37d5e2",
+                    "disposition": {
+                        "kind": "context",
+                        "reason": "Block identifiers, opaque contents and email recognition keep their own grammars; their certificates cover those sources, and a topic adds no authored form beside them."
+                    }
+                }
+            ],
+            "elements": ["TOPIC"],
+            "certificates": [
+                {
+                    "id": "fallback-topic",
+                    "scope": "paired-document-grammar",
+                    "identity": true,
+                    "facets": ["fallback", "rejected-prefix"]
+                },
+                {
+                    "id": "topic",
+                    "scope": "paired-document-grammar",
+                    "identity": false,
+                    "facets": ["names", "opening-boundary"]
                 }
             ]
         }

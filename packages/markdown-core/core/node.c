@@ -179,6 +179,7 @@ static const size_t S_inline_payload_size[MARKDOWN_CORE_NODE_KIND_COUNT] = {
     [MARKDOWN_CORE_NODE_CITATION & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_citation_item),
     [MARKDOWN_CORE_NODE_CROSS_LINK & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_cross_reference),
     [MARKDOWN_CORE_NODE_CROSS_EMBEDDED & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_cross_embedded),
+    [MARKDOWN_CORE_NODE_TOPIC & MARKDOWN_CORE_NODE_VALUE_MASK] = sizeof(markdown_core_chunk),
 };
 
 static const char *const S_block_type_string[MARKDOWN_CORE_NODE_KIND_COUNT] = {
@@ -231,6 +232,7 @@ static const char *const S_inline_type_string[MARKDOWN_CORE_NODE_KIND_COUNT] = {
     [MARKDOWN_CORE_NODE_SPAN & MARKDOWN_CORE_NODE_VALUE_MASK] = "span",
     [MARKDOWN_CORE_NODE_SUPERSCRIPT & MARKDOWN_CORE_NODE_VALUE_MASK] = "superscript",
     [MARKDOWN_CORE_NODE_SUBSCRIPT & MARKDOWN_CORE_NODE_VALUE_MASK] = "subscript",
+    [MARKDOWN_CORE_NODE_TOPIC & MARKDOWN_CORE_NODE_VALUE_MASK] = "topic",
 };
 /* END GENERATED */
 
@@ -342,6 +344,7 @@ static void free_node_as(markdown_core_node_pool *pool, markdown_core_node *node
     case MARKDOWN_CORE_NODE_CODE:
     case MARKDOWN_CORE_NODE_COMMENT:
     case MARKDOWN_CORE_NODE_COMMENT_BLOCK:
+    case MARKDOWN_CORE_NODE_TOPIC:
         markdown_core_chunk_free(node->as.literal);
         break;
     case MARKDOWN_CORE_NODE_HTML_BLOCK:
@@ -636,9 +639,9 @@ static void S_view_node_as(S_copy_state *state, markdown_core_node *copy) {
         assert(copy->kind != MARKDOWN_CORE_NODE_METADATA && copy->kind != MARKDOWN_CORE_NODE_REFERENCE &&
                copy->kind != MARKDOWN_CORE_NODE_TEXT && copy->kind != MARKDOWN_CORE_NODE_HTML &&
                copy->kind != MARKDOWN_CORE_NODE_CODE && copy->kind != MARKDOWN_CORE_NODE_COMMENT &&
-               copy->kind != MARKDOWN_CORE_NODE_CROSS_LINK && copy->kind != MARKDOWN_CORE_NODE_CROSS_EMBEDDED &&
-               copy->kind != MARKDOWN_CORE_NODE_CITATION && copy->kind != MARKDOWN_CORE_NODE_LINK &&
-               copy->kind != MARKDOWN_CORE_NODE_EMBEDDED);
+               copy->kind != MARKDOWN_CORE_NODE_TOPIC && copy->kind != MARKDOWN_CORE_NODE_CROSS_LINK &&
+               copy->kind != MARKDOWN_CORE_NODE_CROSS_EMBEDDED && copy->kind != MARKDOWN_CORE_NODE_CITATION &&
+               copy->kind != MARKDOWN_CORE_NODE_LINK && copy->kind != MARKDOWN_CORE_NODE_EMBEDDED);
         break;
     }
 }

@@ -48,6 +48,7 @@ internal enum class WireNodeKind(
     SPECIMEN(42),
     METADATA(43),
     REFERENCE(44),
+    TOPIC(45),
     ;
 
     companion object {

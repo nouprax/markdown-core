@@ -322,6 +322,10 @@ static void heading_anchor_base(markdown_core_parser *parser, markdown_core_head
         case MARKDOWN_CORE_NODE_CODE:
             project_anchor_literal(state, base, node->as.literal->data, node->as.literal->len);
             break;
+        case MARKDOWN_CORE_NODE_TOPIC:
+            project_anchor_literal(state, base, (const unsigned char *)"#", 1);
+            project_anchor_literal(state, base, node->as.literal->data, node->as.literal->len);
+            break;
         case MARKDOWN_CORE_NODE_FORMULA: {
             const markdown_core_chunk literal = markdown_core_elements_formula_literal(node);
             project_anchor_literal(state, base, literal.data, literal.len);

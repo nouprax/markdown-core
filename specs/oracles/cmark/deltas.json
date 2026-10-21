@@ -54,6 +54,12 @@
             "handling": "Retain exact changed inputs; citation keys, modes, affixes and scopes are covered by the Pandoc oracle and canonical conformance fixtures."
         },
         {
+            "id": "topics",
+            "kind": "deliberate-difference",
+            "summary": "The topics module recognizes #name after a non-name character and stores a Topic leaf. The inherited base grammar has no topics.",
+            "handling": "Exact specification inputs only; dialect/topics.md and product fixtures own recognition, names and scopes."
+        },
+        {
             "id": "nested-ordered-start",
             "kind": "deliberate-difference",
             "summary": "A newly opened ordered list inside a list item or specimen body must start at one under the lists module. CommonMark permits a nested list to start at two.",
@@ -239,6 +245,16 @@
             "id": "spec-text-whitespace",
             "input": "```&#32;js\ncode\n```\n",
             "note": "cmark decodes `&#32;` before trimming, so its info string is `js`; the text trims first and keeps ` js`."
+        },
+        {
+            "id": "topics",
+            "input": "#5 bolt\n\n#hashtag\n",
+            "note": "`#hashtag` without a following space is a topic; `#5` has numbers alone and stays text."
+        },
+        {
+            "id": "topics",
+            "input": "<a h*#ref=\"hi\">\n",
+            "note": "An invalid HTML tag is text, where `#ref` after `*` is a topic."
         }
     ],
     "notDeltas": [],

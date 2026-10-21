@@ -557,6 +557,7 @@ public abstract interface class com/nouprax/markdown/core/MarkupVisitor {
 	public abstract fun visit (Lcom/nouprax/markdown/core/TableRow;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
 	public abstract fun visit (Lcom/nouprax/markdown/core/Text;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
 	public abstract fun visit (Lcom/nouprax/markdown/core/ThematicBreak;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
+	public abstract fun visit (Lcom/nouprax/markdown/core/Topic;Lcom/nouprax/markdown/core/MarkupVisitPhase;)V
 }
 
 public final class com/nouprax/markdown/core/MarkupVisitorKt {
@@ -946,6 +947,15 @@ public final class com/nouprax/markdown/core/ThematicBreak : com/nouprax/markdow
 	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
 	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
 	public fun getId-cjMMCNQ ()J
+	public fun getRuns ()Ljava/util/List;
+}
+
+public final class com/nouprax/markdown/core/Topic : com/nouprax/markdown/core/Markup {
+	public fun getAnchor ()Ljava/lang/String;
+	public fun getAttributes ()Lcom/nouprax/markdown/core/Attributes;
+	public fun getExtent ()Lcom/nouprax/markdown/core/Extent;
+	public fun getId-cjMMCNQ ()J
+	public final fun getName ()Ljava/lang/String;
 	public fun getRuns ()Ljava/util/List;
 }
 

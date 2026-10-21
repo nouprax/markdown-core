@@ -293,6 +293,12 @@
             "kind": "Subscript",
             "record": null,
             "structure": "SUBSCRIPT"
+        },
+        {
+            "name": "TOPIC",
+            "kind": "Topic",
+            "record": "markdown_core_chunk",
+            "structure": "TOPIC"
         }
     ]
 }

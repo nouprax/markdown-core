@@ -420,6 +420,14 @@ class State {
                 { name: null, count: node.label === null ? 0 : 1 }
             ]);
         },
+        topic: (node, phase) => {
+            if (phase === "exit") {
+                this.end();
+                return;
+            }
+            this.start();
+            this.line("Topic", node, [`name=${escaped(node.name)}`]);
+        },
         cite: (node, phase) => {
             if (phase === "exit") {
                 this.end();

@@ -50,8 +50,8 @@ const fresh = () => ({
 
 test("catalog is a complete reviewable corpus with exact grammar/proof/example provenance", () => {
     validateGrammarCertificates();
-    assert.equal(grammarCertificates.length, 193);
-    assert.equal(full.length, 181);
+    assert.equal(grammarCertificates.length, 195);
+    assert.equal(full.length, 183);
     assert.equal(split.length, 12);
     assert.deepEqual(
         JSON.parse(fs.readFileSync(path.join(root, "packages/markdown-core/benchmarks/grammar-corpus.json"))),
@@ -166,11 +166,11 @@ test("boundary splits keep every byte and every independent field, with measured
 test("one corpus contains unique inputs, repeats derivations, keeps metadata document-initial, and records exact normal forms", () => {
     const corpus = buildGrammarCorpus();
     // Every certificate once per alphabet.
-    assert.equal(corpus.cases.length, 844);
+    assert.equal(corpus.cases.length, 854);
     for (const alphabet of ["ascii", "utf8"]) {
-        assert.equal(corpus.cases.filter((c) => c.alphabet === alphabet).length, 422);
-        assert.equal(corpus.cases.filter((c) => c.alphabet === alphabet && c.side === "control").length, 12);
-        assert.equal(corpus.proofs.filter((p) => p.alphabet === alphabet).length, 193);
+        assert.equal(corpus.cases.filter((c) => c.alphabet === alphabet).length, 427);
+        assert.equal(corpus.cases.filter((c) => c.alphabet === alphabet && c.side === "control").length, 13);
+        assert.equal(corpus.proofs.filter((p) => p.alphabet === alphabet).length, 195);
     }
     assert.equal(new Set(corpus.cases.map((c) => c.name)).size, corpus.cases.length);
     for (const document of corpus.cases) {
@@ -487,7 +487,8 @@ test("a certificate compares with a reference only when that reference implement
         "fallback-mark",
         "fallback-noninitial-metadata",
         "fallback-script",
-        "fallback-span"
+        "fallback-span",
+        "fallback-topic"
     ]);
     for (const [id, reference] of [
         ["fallback-strike", "cmark-gfm"],
@@ -514,7 +515,7 @@ test("a certificate compares with a reference only when that reference implement
 
 test("a control keeps every field and frame byte and replaces only trigger punctuation with letters", () => {
     const controlled = grammarCertificates.filter((c) => featureGrammars.get(c.id)?.control);
-    assert.equal(controlled.length, 12);
+    assert.equal(controlled.length, 13);
     for (const certificate of controlled) {
         const production = featureGrammars.get(certificate.id);
         assert.ok(validateControl(production.common, production.control) > 0);
@@ -547,9 +548,9 @@ test("a control keeps every field and frame byte and replaces only trigger punct
 test("the complete syntax and element inventories fail closed when a feature, rule, or source changes", () => {
     const corpus = buildGrammarCorpus({ units: 1 });
     const coverage = validateFeatureCoverage(root, corpus);
-    assert.equal(coverage.features, 30);
-    assert.equal(coverage.elements, 32);
-    assert.equal(coverage.sections, 136);
+    assert.equal(coverage.features, 31);
+    assert.equal(coverage.elements, 33);
+    assert.equal(coverage.sections, 140);
     assert.throws(
         () =>
             validateFeatureCoverage(root, {
@@ -610,8 +611,8 @@ test("section coverage requires explicit proof links before a ledger can be rege
     assert.throws(() => reviewedSections("formulas", sections, certificates, decisions), /context needs a reason/u);
     const ledger = featureCoverage(root, buildGrammarCorpus({ units: 1 }));
     const all = ledger.features.flatMap((feature) => feature.sections);
-    assert.equal(all.filter((section) => section.disposition.kind === "grammar").length, 132);
-    assert.equal(all.filter((section) => section.disposition.kind === "context").length, 4);
+    assert.equal(all.filter((section) => section.disposition.kind === "grammar").length, 135);
+    assert.equal(all.filter((section) => section.disposition.kind === "context").length, 5);
     assert.deepEqual(
         new Set(all.flatMap((section) => section.disposition.certificates ?? [])),
         new Set(certificates.keys())

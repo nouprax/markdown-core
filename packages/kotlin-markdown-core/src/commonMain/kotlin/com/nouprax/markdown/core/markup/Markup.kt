@@ -196,7 +196,7 @@ public sealed class Markup {
             }
 
             is ThematicBreak, is CodeBlock, is HTMLBlock, is FormulaBlock, is Text, is SoftBreak, is LineBreak, is Code,
-            is HTML, is Comment, is CrossLink, is CrossEmbedded, is Formula, is Metadata, is Reference,
+            is HTML, is Comment, is CrossLink, is CrossEmbedded, is Formula, is Metadata, is Reference, is Topic,
             -> {
                 emptyList()
             }
@@ -366,6 +366,10 @@ public sealed class Markup {
 
             is Cite -> {
                 other is Cite
+            }
+
+            is Topic -> {
+                other is Topic && name == other.name
             }
 
             is Citation -> {

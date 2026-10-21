@@ -133,6 +133,7 @@ abstract interface com.nouprax.markdown.core/MarkupVisitor { // com.nouprax.mark
     abstract fun visit(com.nouprax.markdown.core/TableRow, com.nouprax.markdown.core/MarkupVisitPhase) // com.nouprax.markdown.core/MarkupVisitor.visit|visit(com.nouprax.markdown.core.TableRow;com.nouprax.markdown.core.MarkupVisitPhase){}[0]
     abstract fun visit(com.nouprax.markdown.core/Text, com.nouprax.markdown.core/MarkupVisitPhase) // com.nouprax.markdown.core/MarkupVisitor.visit|visit(com.nouprax.markdown.core.Text;com.nouprax.markdown.core.MarkupVisitPhase){}[0]
     abstract fun visit(com.nouprax.markdown.core/ThematicBreak, com.nouprax.markdown.core/MarkupVisitPhase) // com.nouprax.markdown.core/MarkupVisitor.visit|visit(com.nouprax.markdown.core.ThematicBreak;com.nouprax.markdown.core.MarkupVisitPhase){}[0]
+    abstract fun visit(com.nouprax.markdown.core/Topic, com.nouprax.markdown.core/MarkupVisitPhase) // com.nouprax.markdown.core/MarkupVisitor.visit|visit(com.nouprax.markdown.core.Topic;com.nouprax.markdown.core.MarkupVisitPhase){}[0]
 }
 
 sealed interface com.nouprax.markdown.core/CitationReferent { // com.nouprax.markdown.core/CitationReferent|null[0]
@@ -1311,6 +1312,21 @@ final class com.nouprax.markdown.core/ThematicBreak : com.nouprax.markdown.core/
         final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/ThematicBreak.id.<get-id>|<get-id>(){}[0]
     final val runs // com.nouprax.markdown.core/ThematicBreak.runs|{}runs[0]
         final fun <get-runs>(): kotlin.collections/List<com.nouprax.markdown.core/Run> // com.nouprax.markdown.core/ThematicBreak.runs.<get-runs>|<get-runs>(){}[0]
+}
+
+final class com.nouprax.markdown.core/Topic : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Topic|null[0]
+    final val anchor // com.nouprax.markdown.core/Topic.anchor|{}anchor[0]
+        final fun <get-anchor>(): kotlin/String? // com.nouprax.markdown.core/Topic.anchor.<get-anchor>|<get-anchor>(){}[0]
+    final val attributes // com.nouprax.markdown.core/Topic.attributes|{}attributes[0]
+        final fun <get-attributes>(): com.nouprax.markdown.core/Attributes // com.nouprax.markdown.core/Topic.attributes.<get-attributes>|<get-attributes>(){}[0]
+    final val extent // com.nouprax.markdown.core/Topic.extent|{}extent[0]
+        final fun <get-extent>(): com.nouprax.markdown.core/Extent // com.nouprax.markdown.core/Topic.extent.<get-extent>|<get-extent>(){}[0]
+    final val id // com.nouprax.markdown.core/Topic.id|{}id[0]
+        final fun <get-id>(): com.nouprax.markdown.core/MarkupID // com.nouprax.markdown.core/Topic.id.<get-id>|<get-id>(){}[0]
+    final val name // com.nouprax.markdown.core/Topic.name|{}name[0]
+        final fun <get-name>(): kotlin/String // com.nouprax.markdown.core/Topic.name.<get-name>|<get-name>(){}[0]
+    final val runs // com.nouprax.markdown.core/Topic.runs|{}runs[0]
+        final fun <get-runs>(): kotlin.collections/List<com.nouprax.markdown.core/Run> // com.nouprax.markdown.core/Topic.runs.<get-runs>|<get-runs>(){}[0]
 }
 
 final value class com.nouprax.markdown.core/MarkupID { // com.nouprax.markdown.core/MarkupID|null[0]

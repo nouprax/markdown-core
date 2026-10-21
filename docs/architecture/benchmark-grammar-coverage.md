@@ -33,15 +33,15 @@ the responsibility of the existing parity and regression pipelines.
    states. Requested unit counts are lower bounds; they cannot truncate this
    coverage. Callgrind measures these generated documents.
 
-There are **30 specification features, 136 sections, 32 registered elements,
-193 certificates and 844 generated documents**, 422 in each of two
+There are **31 specification features, 140 sections, 33 registered elements,
+195 certificates and 854 generated documents**, 427 in each of two
 [alphabets](benchmark-grammar-corpus.md#alphabets), each measured once.
-Of the 136 sections, **132 link to grammar certificates and four are explicitly
-context-only** (automatic-anchor output, anchor ownership, and two navigation
-introductions). Cross-feature links reuse the same certificate; a documentation
+Of the 140 sections, **135 link to grammar certificates and five are explicitly
+context-only** (automatic-anchor output, anchor ownership, two navigation
+introductions, and topic boundaries). Cross-feature links reuse the same certificate; a documentation
 heading does not demand another benchmark. Mixed sections link their source
 productions and explicitly keep output-coordinate rules in parity/regression.
-Of these, **181 certify whole declared languages and 12 certify local boundary
+Of these, **183 certify whole declared languages and 12 certify local boundary
 languages**. This is feature coverage, not a theorem that the union of these
 restricted grammars equals every possible document of the unrestricted dialect.
 In particular a boundary's residual is not proved impossible to match against
@@ -58,6 +58,7 @@ all imaginable reference grammars. The ledger exposes that distinction.
 | HTML | Inline tags/attributes, raw blocks, processing instructions, declarations, CDATA, block/complete tags; comments have their own families. |
 | Insertions | Recursive insertion/strong substitution, runs, protected code and rejected openers. |
 | Highlights | Paired runs, formatted bodies and rejected openers. |
+| Topics | Names after a bounded `#`, and names rejected by a following `#`. |
 | Strikethrough | Same-input GFM pairs, cross-syntax pairs and rejected openers. |
 | Super/subscript | Both markers, formatted content, empty superscript, escaped spaces and raw-space rejection. |
 | Comments | Inline/block percent forms, empty comments, inline/block HTML comments and fallback. |

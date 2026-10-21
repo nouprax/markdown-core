@@ -2248,6 +2248,7 @@ static const markdown_core_node_kind S_inline_kind[MARKDOWN_CORE_NODE_KIND_COUNT
     [MARKDOWN_CORE_NODE_SPAN & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_SPAN,
     [MARKDOWN_CORE_NODE_SUPERSCRIPT & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_SUPERSCRIPT,
     [MARKDOWN_CORE_NODE_SUBSCRIPT & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_SUBSCRIPT,
+    [MARKDOWN_CORE_NODE_TOPIC & MARKDOWN_CORE_NODE_VALUE_MASK] = MARKDOWN_CORE_KIND_TOPIC,
 };
 
 /* clang-format off */
@@ -2297,6 +2298,7 @@ static const char *const S_kind_name[] = {
     "Specimen",
     "Metadata",
     "Reference",
+    "Topic",
 };
 /* clang-format on */
 /* END GENERATED */
@@ -2322,7 +2324,7 @@ markdown_core_status markdown_core_node_kind_name(markdown_core_node_kind kind, 
  * makes: whether `node`'s public kind is one of `kinds`, a set of
  * KIND_BIT()s. Every public kind is below 64. */
 #define KIND_BIT(kind) (UINT64_C(1) << (kind))
-typedef char kinds_fit_a_set[MARKDOWN_CORE_KIND_REFERENCE < 64 ? 1 : -1];
+typedef char kinds_fit_a_set[MARKDOWN_CORE_KIND_TOPIC < 64 ? 1 : -1];
 
 static inline bool node_is(const markdown_core_node *node, uint64_t kinds) {
     return (kinds >> public_kind(node) & 1) != 0;
@@ -2917,6 +2919,12 @@ markdown_core_status markdown_core_node_code_block_properties(const markdown_cor
 markdown_core_status markdown_core_node_literal(const markdown_core_node *node, markdown_core_string *literal) {
     REQUIRE_KIND(node, LITERAL_KINDS);
     *literal = literal_of(node);
+    return MARKDOWN_CORE_OK;
+}
+
+markdown_core_status markdown_core_topic_name(const markdown_core_node *topic, markdown_core_string *name) {
+    REQUIRE_KIND(topic, KIND_BIT(MARKDOWN_CORE_KIND_TOPIC));
+    *name = chunk_string(*topic->as.literal);
     return MARKDOWN_CORE_OK;
 }
 
@@ -3892,6 +3900,10 @@ static void dump_fields(dump_buffer *buffer, const markdown_core_node *node, mar
         buffer_destination(buffer, destination_of(node));
         buffer_cstr(buffer, " title=");
         buffer_optional_string(buffer, link_title(node));
+        break;
+    case MARKDOWN_CORE_KIND_TOPIC:
+        buffer_cstr(buffer, " name=");
+        buffer_json_string(buffer, chunk_string(*node->as.literal));
         break;
     case MARKDOWN_CORE_KIND_REFERENCE:
         buffer_cstr(buffer, " label=");

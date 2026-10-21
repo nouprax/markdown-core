@@ -763,7 +763,9 @@ static bufsize_t inline_state_find_special_char(markdown_core_inline_state *inli
     // The dialect is sealed, so its tables are read through one local.
     const markdown_core_dialect *const dialect = inline_state->dialect;
     const unsigned char *const data = inline_state->input.data;
-    const bufsize_t len = inline_state->input.len;
+    /* Text before the run owner's tail ends at it, so no byte of the tail
+     * is asked whether a token starts there. */
+    const bufsize_t len = inline_state->pos < inline_state->text_end ? inline_state->text_end : inline_state->input.len;
     bufsize_t n = inline_state->pos;
     while (n < len) {
         /* Text runs to the next byte an inline element terminates it at. */
@@ -789,7 +791,7 @@ static bufsize_t inline_state_find_special_char(markdown_core_inline_state *inli
             n++;
         }
     }
-    return inline_state->input.len;
+    return len;
 }
 
 static markdown_core_node *try_elements(markdown_core_parser *parser, markdown_core_node *parent, unsigned char c,
@@ -851,9 +853,6 @@ int markdown_core_inline_parse_inline(markdown_core_parser *parser, markdown_cor
     new_inl = try_elements(parser, parent, c, inline_state);
     if (inline_state->pos == token_start && !new_inl && !parser->error && !inline_state->error) {
         endpos = inline_state_find_special_char(inline_state);
-        if (inline_state->pos < inline_state->text_end && endpos > inline_state->text_end) {
-            endpos = inline_state->text_end;
-        }
         const markdown_core_element_instance *text = parser->dialect->text_structure;
         new_inl = text->element->parse_text(text, parser, inline_state, endpos);
     }

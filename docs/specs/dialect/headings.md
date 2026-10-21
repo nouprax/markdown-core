@@ -16,8 +16,9 @@ content excludes the signs. Each heading receives an [anchor](anchors.md),
 such as `document-title`, for use by applications that support navigation.
 
 An empty heading such as `#` is valid. A nonempty heading needs whitespace
-after its opening signs: `#hashtag` remains paragraph text. Seven or more signs
-do not open a heading. Up to three leading spaces are allowed.
+after its opening signs: `#hashtag` is a paragraph containing a
+[topic](topics.md). Seven or more signs do not open a heading. Up to three
+leading spaces are allowed.
 
 ## Underlined headings
 

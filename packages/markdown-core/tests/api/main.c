@@ -2893,13 +2893,16 @@ static void class_runs_split_on_ascii_white_space(test_batch_runner *runner) {
 static void unicode_classes_are_unicode_17(test_batch_runner *runner) {
     static const struct {
         int32_t scalar;
-        int whitespace, punctuation, punctuation_or_symbol, letter, number;
-    } cases[] = {{0x20, 1, 0, 0, 0, 0},   {0x0B, 0, 0, 0, 0, 0},     {0x85, 0, 0, 0, 0, 0},   {0x3000, 1, 0, 0, 0, 0},
-                 {'!', 0, 1, 1, 0, 0},    {'$', 0, 1, 1, 0, 0},      {'a', 0, 0, 0, 1, 0},    {'7', 0, 0, 0, 0, 1},
-                 {0xA7, 0, 1, 1, 0, 0},   {0x166D, 0, 0, 1, 0, 0},   {0x1B4E, 0, 1, 1, 0, 0}, {0x2FFC, 0, 0, 1, 0, 0},
-                 {0x4E00, 0, 0, 0, 1, 0}, {0x20000, 0, 0, 0, 1, 0},  {0x0661, 0, 0, 0, 0, 1}, {0x2167, 0, 0, 0, 0, 1},
-                 {'~', 0, 1, 1, 0, 0},    {0x7F, 0, 0, 0, 0, 0},     {0x80, 0, 0, 0, 0, 0},   {0xA0, 1, 0, 0, 0, 0},
-                 {0xD800, 0, 0, 0, 0, 0}, {0x110000, 0, 0, 0, 0, 0}, {-1, 0, 0, 0, 0, 0}};
+        int whitespace, punctuation, punctuation_or_symbol, letter, number, mark;
+    } cases[] = {{0x20, 1, 0, 0, 0, 0, 0},     {0x0B, 0, 0, 0, 0, 0, 0},    {0x85, 0, 0, 0, 0, 0, 0},
+                 {0x3000, 1, 0, 0, 0, 0, 0},   {'!', 0, 1, 1, 0, 0, 0},     {'$', 0, 1, 1, 0, 0, 0},
+                 {'a', 0, 0, 0, 1, 0, 0},      {'7', 0, 0, 0, 0, 1, 0},     {0xA7, 0, 1, 1, 0, 0, 0},
+                 {0x166D, 0, 0, 1, 0, 0, 0},   {0x1B4E, 0, 1, 1, 0, 0, 0},  {0x2FFC, 0, 0, 1, 0, 0, 0},
+                 {0x4E00, 0, 0, 0, 1, 0, 0},   {0x20000, 0, 0, 0, 1, 0, 0}, {0x0661, 0, 0, 0, 0, 1, 0},
+                 {0x2167, 0, 0, 0, 0, 1, 0},   {'~', 0, 1, 1, 0, 0, 0},     {0x7F, 0, 0, 0, 0, 0, 0},
+                 {0x80, 0, 0, 0, 0, 0, 0},     {0xA0, 1, 0, 0, 0, 0, 0},    {0xD800, 0, 0, 0, 0, 0, 0},
+                 {0x110000, 0, 0, 0, 0, 0, 0}, {-1, 0, 0, 0, 0, 0, 0},      {0x0301, 0, 0, 0, 0, 0, 1},
+                 {0x093E, 0, 0, 0, 0, 0, 1},   {0x20DD, 0, 0, 0, 0, 0, 1}};
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         int32_t scalar = cases[i].scalar;
         uint8_t classes = markdown_core_utf8proc_classes(scalar);
@@ -2908,9 +2911,24 @@ static void unicode_classes_are_unicode_17(test_batch_runner *runner) {
                !!(classes & MARKDOWN_CORE_UNICODE_PUNCTUATION) == cases[i].punctuation &&
                !!(classes & MARKDOWN_CORE_UNICODE_PUNCTUATION_OR_SYMBOL) == cases[i].punctuation_or_symbol &&
                !!(classes & MARKDOWN_CORE_UNICODE_LETTER) == cases[i].letter &&
-               !!(classes & MARKDOWN_CORE_UNICODE_NUMBER) == cases[i].number,
+               !!(classes & MARKDOWN_CORE_UNICODE_NUMBER) == cases[i].number &&
+               !!(classes & MARKDOWN_CORE_UNICODE_MARK) == cases[i].mark,
            "U+%04X has its Unicode 17 classes", (unsigned)scalar);
     }
+    /* Emoji outside ASCII, whose keycap bases stay ordinary characters, and
+     * the decimal digits among the numbers. */
+    OK(runner,
+       (markdown_core_utf8proc_classes(0x1F389) & MARKDOWN_CORE_UNICODE_EMOJI) &&
+           (markdown_core_utf8proc_classes(0xA9) & MARKDOWN_CORE_UNICODE_EMOJI) &&
+           !(markdown_core_utf8proc_classes('#') & MARKDOWN_CORE_UNICODE_EMOJI) &&
+           !(markdown_core_utf8proc_classes('7') & MARKDOWN_CORE_UNICODE_EMOJI),
+       "emoji are the Emoji property outside ASCII");
+    OK(runner,
+       (markdown_core_utf8proc_classes('7') & MARKDOWN_CORE_UNICODE_DECIMAL) &&
+           (markdown_core_utf8proc_classes(0x0661) & MARKDOWN_CORE_UNICODE_DECIMAL) &&
+           !(markdown_core_utf8proc_classes(0x2167) & MARKDOWN_CORE_UNICODE_DECIMAL) &&
+           !(markdown_core_utf8proc_classes(0xB2) & MARKDOWN_CORE_UNICODE_DECIMAL),
+       "decimal digits are Nd");
     /* U+1B4E BALINESE INVERTED CARIK SIAKI became punctuation in Unicode 16,
      * so it keeps `a**` from opening strong emphasis, as a quote would. */
     const char *source = "a**\xE1\xAD\x8E"

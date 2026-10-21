@@ -264,6 +264,10 @@ private struct LineVisitor: MarkupVisitor {
 
     mutating func visit(_ node: Cite, phase: MarkupVisitPhase) { line("Cite", node, children: node.citations.count) }
 
+    mutating func visit(_ node: Topic, phase: MarkupVisitPhase) {
+        line("Topic", node, fields: ["name=\(dump(escaped: node.name))"])
+    }
+
     mutating func visit(_ node: TableCaption, phase: MarkupVisitPhase) {
         line("TableCaption", node, children: node.content.count)
     }

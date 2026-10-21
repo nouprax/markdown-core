@@ -92,6 +92,7 @@ MARKDOWN_CORE_1.0 {
     markdown_core_session_unit;
     markdown_core_specimen_content;
     markdown_core_specimen_properties;
+    markdown_core_topic_name;
   local:
     *;
 };

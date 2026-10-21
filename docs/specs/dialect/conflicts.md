@@ -16,6 +16,7 @@ differences and explains overlapping syntax.
 | Empty superscript | `^^` is a valid empty superscript. |
 | Quotes and alerts | Every quote is a `Callout`; custom types and their case are retained. |
 | Block IDs | Declare with `#id#`; refer through a cross link with `#^id`. |
+| Topics | `#name` after a non-name character is a `Topic`; inherited CommonMark keeps it as text. |
 | Internal links | Target comes before the pipe, raw label after it. Labels are not parsed as Markdown. |
 | Heading links | Automatic anchors are generated, while cross-link targets stay raw; applications match them. |
 | Properties | One initial `---` envelope with ten known fields. Unsupported members, including `...`, are ignored. |
@@ -69,9 +70,9 @@ line's other possible meanings.
 
 At a given position, recognized literal tokens own their entire extent. Escapes,
 code spans, HTML/autolink tokens, formulas, percent comments, cross links,
-inline footnotes, citation keys, specimen references, directives, and character
-references participate in that order. At a backslash, the doubled-backslash
-formula openers are checked before ordinary escaping.
+inline footnotes, citation keys, specimen references, directives, topics, and
+character references participate in that order. At a backslash, the
+doubled-backslash formula openers are checked before ordinary escaping.
 
 Brackets use the [ordered bracket alternatives](links-and-images.md#bracket-precedence).
 Emphasis, strikethrough, subscript, superscript, highlights, and insertions then

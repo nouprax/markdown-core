@@ -1177,6 +1177,32 @@ static int case_directive_unclosed_attributes(pc_context *context) {
 
 static int case_directive_colon_pairs(pc_context *context) { return pc_directive_literal_case(context, "::", 40000); }
 
+/* A name of numbers alone is no topic, and the `#` after it follows a name
+ * character: every unit is scanned once and the whole run is one literal. */
+static int case_topic_number_names(pc_context *context) {
+    return pc_literal_case(context, "#12345/67890", 30000, MARKDOWN_CORE_KIND_TOPIC, "Topic");
+}
+
+/* One long name refused by the `#` after it: the candidate is scanned once,
+ * not once per byte of the text that follows its `#`. */
+static int case_topic_refused_long_name(pc_context *context) {
+    if (pc_build(context, "#", "a", 300000, "#") != 0 || pc_parse(context) != 0) {
+        return -1;
+    }
+    if (pc_expect_count(context, MARKDOWN_CORE_KIND_TOPIC, 0, "Topic") != 0) {
+        return -1;
+    }
+    return pc_expect_text_is_input(context);
+}
+
+/* A run of topics is one node per unit. */
+static int case_topic_runs(pc_context *context) {
+    if (pc_build(context, NULL, "#a ", 100000, NULL) != 0 || pc_parse(context) != 0) {
+        return -1;
+    }
+    return pc_expect_count(context, MARKDOWN_CORE_KIND_TOPIC, 100000, "Topic");
+}
+
 static const markdown_core_node *pc_first_directive(const pc_context *context) {
     const markdown_core_node *root = markdown_core_document_root(context->document);
     return ts_child(ts_child(root, 0), 0);
@@ -1462,6 +1488,9 @@ static const pc_case_entry PC_CASES[] = {
     {"formula_backslash_closers", case_formula_backslash_closers},
     {"formula_backslash_pairs", case_formula_backslash_pairs},
     {"formula_backslash_nested", case_formula_backslash_nested},
+    {"topic_number_names", case_topic_number_names},
+    {"topic_refused_long_name", case_topic_refused_long_name},
+    {"topic_runs", case_topic_runs},
 };
 
 int main(int argc, char **argv) {

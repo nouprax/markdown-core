@@ -47,6 +47,7 @@ Commit abbreviations identify the reviewed history, not implementation layers.
 | Subscript: single-tilde word body | `subscript.c` | `0c68bd1d` |
 | DirectiveBlock: named and nameless fenced containers | `directive.c` | `1ad40aed`, `5f5a516c` |
 | Formula: non-nesting opaque pairs | `formula.c` | `ab01af37` |
+| Topic: `#name` hashtags | `topic.c` | Topic grammar (2026-10-21) |
 
 The other six commits introduce no separate syntax element: `ee8200fc`
 updates the specification; `1d9d3bde` removes parse options; `9547dc63`

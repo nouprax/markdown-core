@@ -2,14 +2,14 @@
 
 The deliverable is the corpus, its generative grammars, and the proofs below.
 [The checked-in corpus catalog](../../packages/markdown-core/benchmarks/grammar-corpus.json)
-contains all 193 certificates, their concrete grammars, normal forms and two
-complete examples per family. The run emits 844 documents, each measured once:
-in each of [two alphabets](#alphabets), 181 whole declared-language pairs, 12
-local boundary pairs with complete hosts, and 12 controls for
+contains all 195 certificates, their concrete grammars, normal forms and two
+complete examples per family. The run emits 854 documents, each measured once:
+in each of [two alphabets](#alphabets), 183 whole declared-language pairs, 12
+local boundary pairs with complete hosts, and 13 controls for
 [rejection certificates](#rejection-certificates). The [feature acceptance ledger](benchmark-grammar-coverage.md) covers all
-30 syntax-guide features, 136 sections and 32 registered elements. Its explicit
-section mapping names certificates for 132 source-language sections and gives
-reviewed context-only dispositions for four sections. Certificates are registered
+31 syntax-guide features, 140 sections and 33 registered elements. Its explicit
+section mapping names certificates for 135 source-language sections and gives
+reviewed context-only dispositions for five sections. Certificates are registered
 directly from their source grammars and specification obligations.
 
 CommonMark/GFM features use the same input on both sides. Extensions use proved
@@ -391,7 +391,7 @@ references implement each construct:
 | Strikethrough | cmark-gfm | fallback-strike |
 | Footnote reference | cmark-gfm | fallback-footnote |
 | Task-list marker | cmark-gfm | fallback-task-separator |
-| Superscript, insertion, mark, inline formula, percent comment, cross link, inline directive, attribute block, grid table, citation, bracketed span, image dimensions, metadata envelope | none | the other thirteen `fallback-*` certificates |
+| Superscript, insertion, mark, inline formula, percent comment, cross link, inline directive, attribute block, grid table, citation, bracketed span, image dimensions, metadata envelope, topic | none | the other fourteen `fallback-*` certificates |
 
 When the certificate's reference implements the construct, B and R both attempt
 and reject the same prefix. Such a certificate is an ordinary equivalence.

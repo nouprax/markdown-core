@@ -6,6 +6,16 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Add topics: `#` followed by a name, as on social platforms, is an inline
+  `Topic` leaf whose `name` excludes the `#`. A name is runs of Unicode
+  letters, combining marks, emoji, digits, `_`, `-` and twitter-text's hashtag
+  joiners, joined by single `/` signs, with at least one character that is
+  neither a digit nor a joiner. A `#` opens a topic at the start of an inline
+  container or where twitter-text's hashtag boundary allows; a name followed
+  at once by `#` or `://` is not a topic. Heading anchors include `#name`. The
+  C facade adds `markdown_core_topic_name`, MCB3 writes the name, and the
+  bindings add `Topic`. See [Topics](docs/specs/dialect/topics.md).
+
 - Read a node's children, and every node-valued field, as a sequence
   (incremental parsing, step 6). The C facade's `markdown_core_nodes`, a
   borrowed `items` array and its `count`, replaces the sibling chain:

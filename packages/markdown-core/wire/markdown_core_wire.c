@@ -374,6 +374,7 @@ static size_t node_edges(const markdown_core_node *node, markdown_core_node_kind
     case MARKDOWN_CORE_KIND_HTML:
     case MARKDOWN_CORE_KIND_FORMULA:
     case MARKDOWN_CORE_KIND_COMMENT:
+    case MARKDOWN_CORE_KIND_TOPIC:
     case MARKDOWN_CORE_KIND_CROSS_LINK:
     case MARKDOWN_CORE_KIND_CROSS_EMBEDDED:
     case MARKDOWN_CORE_KIND_METADATA:
@@ -570,6 +571,10 @@ static void put_record(wire_buffer *buffer, const markdown_core_node *node) {
     case MARKDOWN_CORE_KIND_HTML:
     case MARKDOWN_CORE_KIND_COMMENT:
         markdown_core_node_literal(node, &literal);
+        put_string(buffer, literal);
+        break;
+    case MARKDOWN_CORE_KIND_TOPIC:
+        markdown_core_topic_name(node, &literal);
         put_string(buffer, literal);
         break;
     case MARKDOWN_CORE_KIND_FORMULA_BLOCK:

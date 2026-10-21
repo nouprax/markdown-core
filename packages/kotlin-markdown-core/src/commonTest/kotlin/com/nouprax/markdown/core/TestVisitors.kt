@@ -146,6 +146,11 @@ internal class KindVisitor : MarkupVisitor {
     ): Unit = record(name(comment), phase)
 
     override fun visit(
+        topic: Topic,
+        phase: MarkupVisitPhase,
+    ): Unit = record(name(topic), phase)
+
+    override fun visit(
         crossLink: CrossLink,
         phase: MarkupVisitPhase,
     ): Unit = record(name(crossLink), phase)
@@ -368,6 +373,11 @@ internal class RecordingVisitor : MarkupVisitor {
         comment: Comment,
         phase: MarkupVisitPhase,
     ): Unit = if (phase == MarkupVisitPhase.ENTER) record(comment) else Unit
+
+    override fun visit(
+        topic: Topic,
+        phase: MarkupVisitPhase,
+    ): Unit = if (phase == MarkupVisitPhase.ENTER) record(topic) else Unit
 
     override fun visit(
         crossLink: CrossLink,
@@ -613,6 +623,11 @@ internal class RecordingWalkingVisitor(
     ): Unit = record(comment, phase)
 
     override fun visit(
+        topic: Topic,
+        phase: MarkupVisitPhase,
+    ): Unit = record(topic, phase)
+
+    override fun visit(
         crossLink: CrossLink,
         phase: MarkupVisitPhase,
     ): Unit = record(crossLink, phase)
@@ -833,6 +848,11 @@ internal class NodeVisitor : MarkupVisitor {
         comment: Comment,
         phase: MarkupVisitPhase,
     ): Unit = record(comment, phase)
+
+    override fun visit(
+        topic: Topic,
+        phase: MarkupVisitPhase,
+    ): Unit = record(topic, phase)
 
     override fun visit(
         crossLink: CrossLink,

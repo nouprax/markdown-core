@@ -329,6 +329,8 @@ export class Decoder {
                     dest: this.destination(),
                     title: this.optional(() => this.string())
                 };
+            case "topic":
+                return { ...(base as Base<"topic">), name: this.string() };
             case "cite": {
                 const citations = this.count();
                 return {

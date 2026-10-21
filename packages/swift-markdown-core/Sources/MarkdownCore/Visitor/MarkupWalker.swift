@@ -44,6 +44,7 @@ func dispatch<V: MarkupVisitor>(_ node: any Markup, to visitor: inout V, phase: 
     case let node as Embedded: visitor.visit(node, phase: phase)
     case let node as Directive: visitor.visit(node, phase: phase)
     case let node as Cite: visitor.visit(node, phase: phase)
+    case let node as Topic: visitor.visit(node, phase: phase)
     case let node as DefinitionList: visitor.visit(node, phase: phase)
     case let node as Definition: visitor.visit(node, phase: phase)
     case let node as Citation: visitor.visit(node, phase: phase)

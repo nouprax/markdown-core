@@ -21,6 +21,7 @@ private typealias Comment = Testing.Comment
             "a <!-- b --> c\n\n<!-- block -->\n",
             "[[Note]] ![[#^block|]]\n",
             "Term\n: body\n",
+            "Revisit #pricing\n",
             "---\ntitle: Example\n---\n(@sample) Body\n",
             ":plain :empty[]{} :attrs{#kept .a class=\"b a\" k=1 k=2}\n\n| none |\n| ---- |\n| cell |\n",
         ]
@@ -35,7 +36,7 @@ private typealias Comment = Testing.Comment
             "Code", "HTML", "Comment", "CrossLink", "CrossEmbedded", "Formula", "Emphasis", "Strong",
             "Strikethrough", "Mark", "Insertion", "Span", "Superscript", "Subscript", "DefinitionList", "Definition",
             "Link", "Embedded", "Directive",
-            "Cite", "Citation", "Footnote", "Specimen", "Metadata", "Reference",
+            "Cite", "Topic", "Citation", "Footnote", "Specimen", "Metadata", "Reference",
             "TableRow", "TableCell", "TableCaption",
         ]
         #expect(kinds == expected)
@@ -192,6 +193,7 @@ private struct IdentifierVisitor: MarkupVisitor {
     mutating func visit(_ node: Embedded, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Directive, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: Cite, phase: MarkupVisitPhase) { record(node, phase) }
+    mutating func visit(_ node: Topic, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: TableCaption, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: TableRow, phase: MarkupVisitPhase) { record(node, phase) }
     mutating func visit(_ node: TableCell, phase: MarkupVisitPhase) { record(node, phase) }

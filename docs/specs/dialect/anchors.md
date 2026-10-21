@@ -51,8 +51,8 @@ The base is computed from parsed heading content:
    formulas contribute their literals. Breaks contribute spaces. Cross links
    and embeds contribute their label when present, otherwise their target
    text. Bibliography citations contribute affixes and `@key`; specimen
-   citations contribute `@id`. HTML, comments, and footnote calls contribute
-   nothing.
+   citations contribute `@id`; topics contribute `#name`. HTML, comments,
+   and footnote calls contribute nothing.
 2. Apply Unicode 17 simple lowercase mapping, without normalization or full
    case-fold expansion.
 3. Replace each Unicode `White_Space` scalar with one hyphen, without merging
