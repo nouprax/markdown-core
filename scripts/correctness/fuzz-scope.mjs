@@ -31,6 +31,29 @@ function partlessTextDirective(input) {
 }
 
 /**
+ * A line of two or more dash runs beside text is where the Pandoc table forms
+ * begin: the runs are a simple table's column starts, or a multiline table's
+ * segmented boundary. CommonMark reads the same line as a thematic break, a
+ * list item or paragraph text, so the two disagree by design, and the Pandoc
+ * gate owns the shape. Whether a table actually forms depends on lines the
+ * line-local view cannot see (a body row, a matching footer, a closing
+ * boundary), so the boundary is conservative: any such line next to a
+ * non-blank line, inside block quotes and list indentation alike.
+ */
+const DASH_RUNS = /^[ \t>]*-+(?:[ \t]+-+)+[ \t]*$/u;
+const BLANK = /^[ \t>]*$/u;
+
+function pandocTableSegments(input) {
+    const lines = input.split(/\r?\n/u);
+    return lines.some(
+        (line, index) =>
+            DASH_RUNS.test(line) &&
+            ((index > 0 && !BLANK.test(lines[index - 1])) ||
+                (index + 1 < lines.length && !BLANK.test(lines[index + 1])))
+    );
+}
+
+/**
  * cmark, cmark-gfm and remark do not implement implicit heading references.
  * Bound their recombination domain using an independent CommonMark parse,
  * never the product's output. A heading beside unresolved bracket text can
@@ -41,6 +64,7 @@ function partlessTextDirective(input) {
  * likewise belong to their Obsidian/Pandoc gates, not to these base oracles.
  */
 export function outsideSharedFuzzScope(input) {
+    if (input.includes("-") && pandocTableSegments(input)) return "pandoc-tables";
     if (!/[[:~]/u.test(input)) return null;
     const pending = [commonmark.parse(input)];
     let heading = false;
