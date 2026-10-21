@@ -639,10 +639,9 @@ static void S_view_node_as(S_copy_state *state, markdown_core_node *copy) {
         assert(copy->kind != MARKDOWN_CORE_NODE_METADATA && copy->kind != MARKDOWN_CORE_NODE_REFERENCE &&
                copy->kind != MARKDOWN_CORE_NODE_TEXT && copy->kind != MARKDOWN_CORE_NODE_HTML &&
                copy->kind != MARKDOWN_CORE_NODE_CODE && copy->kind != MARKDOWN_CORE_NODE_COMMENT &&
-               copy->kind != MARKDOWN_CORE_NODE_TOPIC &&
-               copy->kind != MARKDOWN_CORE_NODE_CROSS_LINK && copy->kind != MARKDOWN_CORE_NODE_CROSS_EMBEDDED &&
-               copy->kind != MARKDOWN_CORE_NODE_CITATION && copy->kind != MARKDOWN_CORE_NODE_LINK &&
-               copy->kind != MARKDOWN_CORE_NODE_EMBEDDED);
+               copy->kind != MARKDOWN_CORE_NODE_TOPIC && copy->kind != MARKDOWN_CORE_NODE_CROSS_LINK &&
+               copy->kind != MARKDOWN_CORE_NODE_CROSS_EMBEDDED && copy->kind != MARKDOWN_CORE_NODE_CITATION &&
+               copy->kind != MARKDOWN_CORE_NODE_LINK && copy->kind != MARKDOWN_CORE_NODE_EMBEDDED);
         break;
     }
 }
