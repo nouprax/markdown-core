@@ -31,6 +31,22 @@ static bool topic_joiner(int32_t scalar) {
     }
 }
 
+/* The ASCII segment characters, by what they count as: a letter, `_` or
+ * `-` is a word character and a digit only a digit. Every other byte, and
+ * every byte of a multi-byte character, is 0. */
+enum { TOPIC_DIGIT = 1, TOPIC_WORD = 2 };
+#define TOPIC_TEN(first, value)                                                                                        \
+    [(first)] = (value), [(first) + 1] = (value), [(first) + 2] = (value), [(first) + 3] = (value),                    \
+    [(first) + 4] = (value), [(first) + 5] = (value), [(first) + 6] = (value), [(first) + 7] = (value),                \
+    [(first) + 8] = (value), [(first) + 9] = (value)
+#define TOPIC_LETTERS(first)                                                                                           \
+    TOPIC_TEN((first), TOPIC_WORD), TOPIC_TEN((first) + 10, TOPIC_WORD),                                               \
+        [(first) + 20] = TOPIC_WORD, [(first) + 21] = TOPIC_WORD, [(first) + 22] = TOPIC_WORD,                         \
+                   [(first) + 23] = TOPIC_WORD, [(first) + 24] = TOPIC_WORD, [(first) + 25] = TOPIC_WORD
+static const uint8_t SEGMENT_BYTES[256] = {
+    TOPIC_TEN('0', TOPIC_DIGIT), TOPIC_LETTERS('A'), TOPIC_LETTERS('a'), ['_'] = TOPIC_WORD, ['-'] = TOPIC_WORD,
+};
+
 /* THE WIDTH OF A SEGMENT CHARACTER at `str`, or 0: a letter, a mark, an
  * emoji, `_`, `-`, a number, or a joiner, with letter, mark, number and emoji
  * meaning the Unicode categories and property. `word` is set when the
@@ -40,9 +56,9 @@ static int segment_width(const unsigned char *str, bufsize_t len, bool *word) {
     if (len <= 0) {
         return 0;
     }
-    if (str[0] == '_' || str[0] == '-') {
-        *word = true;
-        return 1;
+    if (str[0] < 0x80) {
+        *word = *word || SEGMENT_BYTES[str[0]] == TOPIC_WORD;
+        return SEGMENT_BYTES[str[0]] != 0;
     }
     int32_t scalar;
     const int width = markdown_core_utf8proc_decode(str, len, &scalar);
@@ -64,12 +80,12 @@ static bool topic_opener(const markdown_core_inline_state *inline_state, bufsize
     if (!at) {
         return true;
     }
+    if (data[at - 1] < 0x80) {
+        return data[at - 1] == '-' || (!SEGMENT_BYTES[data[at - 1]] && data[at - 1] != '&');
+    }
     do {
         before--;
     } while (before && (data[before] & 0xc0) == 0x80);
-    if (data[before] == '_' || data[before] == '&') {
-        return false;
-    }
     int32_t scalar;
     markdown_core_utf8proc_decode(data + before, at - before, &scalar);
     return !(markdown_core_utf8proc_classes(scalar) &
@@ -91,6 +107,14 @@ static bufsize_t topic_end(const markdown_core_inline_state *inline_state, bufsi
     bool word = false;
     bufsize_t end = at + 1;
     for (;;) {
+        /* A run of ASCII segment characters is read a byte at a time,
+         * looking for a word character only until one is found. */
+        while (!word && end < len && SEGMENT_BYTES[data[end]]) {
+            word = SEGMENT_BYTES[data[end++]] == TOPIC_WORD;
+        }
+        while (end < len && SEGMENT_BYTES[data[end]]) {
+            end++;
+        }
         int width = segment_width(data + end, len - end, &word);
         if (width) {
             end += width;
