@@ -193,6 +193,11 @@ stream ../canonical-ast/table-mapped.md tokens
 stream ../canonical-ast/table-mapped.md scalars
 stream ../canonical-ast/table-mapped.md rows
 stream ../canonical-ast/table-mapped.md splits
+document ../canonical-ast/topics.md
+stream ../canonical-ast/topics.md tokens
+stream ../canonical-ast/topics.md scalars
+stream ../canonical-ast/topics.md rows
+stream ../canonical-ast/topics.md splits
 document documents/prose-ascii-16k.md parts 128 131 131 131 131 131 131 131 131 134 151 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 161 166 166 166 166
 stream documents/prose-ascii-16k.md tokens
 stream documents/prose-ascii-16k.md rows
