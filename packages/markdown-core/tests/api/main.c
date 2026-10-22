@@ -3569,7 +3569,7 @@ static void inspect_lazy_block_content(const markdown_core_element_instance *sel
     /* Blocks open and take content on the line the driver visits; no input
      * has begun, so stand on an empty line at the start of the source. */
     parser->input.lines[0] = (markdown_core_input_line){0};
-    parser->input.first_line = parser->line_number;
+    parser->input.first_line = parser->at.line_number;
     parser->input.line_count = 1;
     for (size_t i = 0; i < sizeof(kinds) / sizeof(*kinds); i++) {
         size_t before = payload_probe_snapshot().allocations;
@@ -3603,9 +3603,9 @@ static void inspect_lazy_block_content(const markdown_core_element_instance *sel
             for (int partial_tab = 0; partial_tab < 2; partial_tab++) {
                 markdown_core_strbuf_free(&node->content);
                 node->content_map = (markdown_core_content_map){0};
-                parser->offset = 0;
-                parser->column = 1;
-                parser->partially_consumed_tab = partial_tab;
+                parser->at.offset = 0;
+                parser->at.column = 1;
+                parser->at.partially_consumed_tab = partial_tab;
                 before = payload_probe_snapshot().allocations;
                 markdown_core_block_add_line(node, &large, parser);
                 INT_EQ(runner, payload_probe_snapshot().allocations, before + 1,
@@ -3618,13 +3618,13 @@ static void inspect_lazy_block_content(const markdown_core_element_instance *sel
                     OK(runner, !memcmp(node->content.ptr, "   ", 3), "the partial tab writes its remaining spaces");
                 }
             }
-            parser->offset = 0;
-            parser->column = 0;
-            parser->partially_consumed_tab = false;
+            parser->at.offset = 0;
+            parser->at.column = 0;
+            parser->at.partially_consumed_tab = false;
         }
         /* The probe block leaves the builder stack and the root's children
          * as it is released: the root is the deepest open block again. */
-        parser->current = parser->root;
+        parser->at.current = parser->root;
         markdown_core_node_array_pop(parser->root->children, &parser->root->child_count);
         markdown_core_parser_release_node(parser, node);
     }
@@ -4061,17 +4061,17 @@ static void block_cursor_coordinates(test_batch_runner *runner) {
             markdown_core_parser cursor = {0};
             markdown_core_parser_advance_offset(&cursor, input, split, false);
             markdown_core_parser_advance_offset(&cursor, input, length - split, false);
-            OK(runner, cursor.offset == length && cursor.column == 10 && !cursor.partially_consumed_tab,
+            OK(runner, cursor.at.offset == length && cursor.at.column == 10 && !cursor.at.partially_consumed_tab,
                "byte advances compose across scalar and tab boundaries (%s, %d)", markers[i], split);
         }
         markdown_core_parser cursor = {0};
         markdown_core_parser_advance_offset(&cursor, input, 1, true);
-        OK(runner, cursor.offset == width && cursor.column == 1, "one column consumes one whole scalar");
+        OK(runner, cursor.at.offset == width && cursor.at.column == 1, "one column consumes one whole scalar");
         markdown_core_parser_advance_offset(&cursor, input, 2, true);
-        OK(runner, cursor.offset == width && cursor.column == 3 && cursor.partially_consumed_tab,
+        OK(runner, cursor.at.offset == width && cursor.at.column == 3 && cursor.at.partially_consumed_tab,
            "a tab after any scalar expands from its virtual column");
         markdown_core_parser_advance_offset(&cursor, input, 7, true);
-        OK(runner, cursor.offset == length && cursor.column == 10 && !cursor.partially_consumed_tab,
+        OK(runner, cursor.at.offset == length && cursor.at.column == 10 && !cursor.at.partially_consumed_tab,
            "resuming a partial tab preserves later scalar and tab coordinates");
     }
 }
@@ -7351,7 +7351,7 @@ static markdown_core_node *seed_anchor(const markdown_core_element_instance *sel
     (void)input;
     (void)length;
     markdown_core_node *owner = markdown_core_parser_current(parser);
-    if (parser->blank && owner->kind == MARKDOWN_CORE_NODE_PARAGRAPH) {
+    if (parser->at.blank && owner->kind == MARKDOWN_CORE_NODE_PARAGRAPH) {
         markdown_core_node *holder = markdown_core_parser_parent(parser, owner);
         if (holder->kind == MARKDOWN_CORE_NODE_LIST_ITEM) {
             owner = holder;
@@ -7368,7 +7368,7 @@ static markdown_core_node *observe_definition_before_anchor(const markdown_core_
                                                             unsigned char *input, int length) {
     (void)self;
     (void)indented;
-    if (length - parser->first_nonspace >= 6 && memcmp(input + parser->first_nonspace, "#list#", 6) == 0) {
+    if (length - parser->at.first_nonspace >= 6 && memcmp(input + parser->at.first_nonspace, "#list#", 6) == 0) {
         markdown_core_node *previous = markdown_core_parser_last_child(parent);
         *(bool *)parser->context = previous && previous->kind == MARKDOWN_CORE_NODE_REFERENCE;
     }
@@ -9112,7 +9112,7 @@ static void parser_attachment_commits_one_decision(test_batch_runner *runner) {
     paragraph_root->element = &CONVERSION_POLICY;
     conversion_current_policy = &paragraph_policy;
     rejected.root = paragraph_root;
-    rejected.block_root = rejected.current = paragraph_root;
+    rejected.at.block_root = rejected.at.current = paragraph_root;
     size_t attempts = payload_allocations;
     OK(runner, !markdown_core_parser_add_child(&rejected, paragraph_root, MARKDOWN_CORE_NODE_PARAGRAPH, 1),
        "root refusal terminates parent selection without walking past the root");

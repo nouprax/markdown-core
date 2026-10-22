@@ -244,11 +244,11 @@ static bool markdown_core_list_open(const markdown_core_element_instance *self, 
     // check container; if it's a list, see if this list item
     // can continue the list; otherwise, create a list container.
 
-    data->marker_offset = parser->indent;
+    data->marker_offset = parser->at.indent;
 
     if (cont_type != MARKDOWN_CORE_NODE_LIST || !markdown_core_block_list_facts_match((*container)->as.list, data)) {
         *container =
-            markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_LIST, parser->first_nonspace + 1);
+            markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_LIST, parser->at.first_nonspace + 1);
         if (!*container) {
             return false;
         }
@@ -258,7 +258,7 @@ static bool markdown_core_list_open(const markdown_core_element_instance *self, 
 
     // add the list item
     *container =
-        markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_LIST_ITEM, parser->first_nonspace + 1);
+        markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_LIST_ITEM, parser->at.first_nonspace + 1);
     if (!*container) {
         return false;
     }
@@ -292,8 +292,8 @@ bool markdown_core_list_continue(markdown_core_parser *parser, markdown_core_nod
             parser, input, container->as.list->marker_offset + container->as.list->padding,
             markdown_core_parser_last_child(container) != NULL || joining == container);
     }
-    if (parser->blank) {
-        if ((container->flags & MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK) && parser->indent == 0) {
+    if (parser->at.blank) {
+        if ((container->flags & MARKDOWN_CORE_NODE__LIST_LAST_LINE_BLANK) && parser->at.indent == 0) {
             *taken = true;
             return true;
         }
@@ -315,7 +315,7 @@ static bool blank_line(const markdown_core_element_instance *self, markdown_core
                        markdown_core_node *node) {
     (void)self;
     return !(node->kind == MARKDOWN_CORE_NODE_LIST_ITEM && !markdown_core_parser_last_child(node) &&
-             markdown_core_parser_starts_on_line(parser, node, parser->line_number));
+             markdown_core_parser_starts_on_line(parser, node, parser->at.line_number));
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
@@ -338,17 +338,18 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_LIST = {
 
 int markdown_core_block_consume_item_marker(markdown_core_parser *parser, markdown_core_chunk *input,
                                             int marker_width) {
-    markdown_core_block_advance_offset(parser, input, parser->first_nonspace + marker_width - parser->offset, false);
-    int offset = parser->offset, column = parser->column;
-    bool partial = parser->partially_consumed_tab;
-    while (parser->column - column < 5 && markdown_core_is_space_or_tab(input->data[parser->offset])) {
+    markdown_core_block_advance_offset(parser, input, parser->at.first_nonspace + marker_width - parser->at.offset,
+                                       false);
+    int offset = parser->at.offset, column = parser->at.column;
+    bool partial = parser->at.partially_consumed_tab;
+    while (parser->at.column - column < 5 && markdown_core_is_space_or_tab(input->data[parser->at.offset])) {
         markdown_core_block_advance_offset(parser, input, 1, true);
     }
-    int padding = parser->column - column;
-    if (padding < 1 || padding >= 5 || markdown_core_is_line_end(input->data[parser->offset])) {
-        parser->offset = offset;
-        parser->column = column;
-        parser->partially_consumed_tab = partial;
+    int padding = parser->at.column - column;
+    if (padding < 1 || padding >= 5 || markdown_core_is_line_end(input->data[parser->at.offset])) {
+        parser->at.offset = offset;
+        parser->at.column = column;
+        parser->at.partially_consumed_tab = partial;
         if (padding > 0) {
             markdown_core_block_advance_offset(parser, input, 1, true);
         }

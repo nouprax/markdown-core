@@ -154,8 +154,8 @@ void markdown_core_headings_start_snapshot(const markdown_core_element_instance 
     state->snapshot_parsed = headings->parsed;
     state->snapshot_records = parser->registry.count;
     assert(headings->count - headings->parsed <= 1);
-    assert(headings->parsed == headings->count ||
-           (!headings->values[headings->parsed].parsed && headings->values[headings->parsed].node == parser->pending));
+    assert(headings->parsed == headings->count || (!headings->values[headings->parsed].parsed &&
+                                                   headings->values[headings->parsed].node == parser->at.pending));
 }
 
 /* The snapshot ends with the collection as its commit left it: the entries
@@ -170,7 +170,7 @@ void markdown_core_headings_end_snapshot(const markdown_core_element_instance *s
     }
     headings->count = headings->parsed = state->snapshot_parsed;
     if (state->snapshot_count > state->snapshot_parsed) {
-        markdown_core_node *pending = parser->pending;
+        markdown_core_node *pending = parser->at.pending;
         headings->values[headings->count++] =
             (markdown_core_heading_parse){.node = pending, .start = pending->place.start};
     }
@@ -198,7 +198,7 @@ void markdown_core_headings_mark_candidate(const markdown_core_element_instance 
         .count = headings->count, .parsed = headings->parsed, .records = parser->registry.count};
     if (headings->count > headings->parsed) {
         mark->pending = headings->values[headings->parsed];
-        assert(!mark->pending.parsed && !mark->pending.pending && mark->pending.node == parser->pending);
+        assert(!mark->pending.parsed && !mark->pending.pending && mark->pending.node == parser->at.pending);
     }
 }
 
@@ -1019,15 +1019,15 @@ static bool open_atx(const markdown_core_element_instance *self, markdown_core_p
 
     bufsize_t hashpos;
     int level = 0;
-    bufsize_t heading_startpos = parser->first_nonspace;
+    bufsize_t heading_startpos = parser->at.first_nonspace;
 
-    markdown_core_block_advance_offset(parser, input, parser->first_nonspace + matched - parser->offset, false);
+    markdown_core_block_advance_offset(parser, input, parser->at.first_nonspace + matched - parser->at.offset, false);
     *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_HEADING, heading_startpos + 1);
     if (!*container) {
         return false;
     }
 
-    hashpos = markdown_core_chunk_strchr(input, '#', parser->first_nonspace);
+    hashpos = markdown_core_chunk_strchr(input, '#', parser->at.first_nonspace);
 
     while (peek_at(input, hashpos) == '#') {
         level++;
@@ -1061,7 +1061,7 @@ static bool open_setext(const markdown_core_element_instance *self, markdown_cor
         }
         (*container)->as.heading->level = matched;
         (*container)->as.heading->setext = true;
-        markdown_core_block_advance_offset(parser, input, input->len - 1 - parser->offset, false);
+        markdown_core_block_advance_offset(parser, input, input->len - 1 - parser->at.offset, false);
     }
 
     return true;

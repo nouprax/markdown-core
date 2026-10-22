@@ -97,7 +97,7 @@ static bool comment_reads(const markdown_core_element_instance *self, markdown_c
         markdown_core_parser_lookahead_wait(&lines.lookahead);
     }
     markdown_core_block_reader reader = {&lines, read_block_line};
-    const bool closed = probe_comment_block(self, parser, line, first, parser->indent, &reader);
+    const bool closed = probe_comment_block(self, parser, line, first, parser->at.indent, &reader);
     markdown_core_parser_lookahead_end(&lines.lookahead);
     *undecided = !closed && lines.undecided;
     return closed && !parser->error;
@@ -174,8 +174,8 @@ static markdown_core_candidate_decision decide_candidate(const markdown_core_ele
         return MARKDOWN_CORE_CANDIDATE_REJECT;
     }
     bool closed = false, undecided = false;
-    if (parser->indent < 4 && is_fence_line(line.data, line.len, parser->first_nonspace)) {
-        closed = comment_reads(self, parser, container, &line, parser->first_nonspace, &undecided);
+    if (parser->at.indent < 4 && is_fence_line(line.data, line.len, parser->at.first_nonspace)) {
+        closed = comment_reads(self, parser, container, &line, parser->at.first_nonspace, &undecided);
     }
     markdown_core_parser_candidate_end(parser);
     return undecided ? MARKDOWN_CORE_CANDIDATE_WAIT

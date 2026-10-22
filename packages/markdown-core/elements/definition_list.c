@@ -51,7 +51,7 @@ static bool accepts_blank(const markdown_core_element_instance *self, markdown_c
         return true;
     }
     ((markdown_core_definition_list_work *)self->state)->work++;
-    if (body->as.definition_body->continuation_line > parser->line_number) {
+    if (body->as.definition_body->continuation_line > parser->at.line_number) {
         return true;
     }
     markdown_core_node *parent = markdown_core_parser_parent(parser, body);
@@ -108,7 +108,7 @@ static bool markdown_core_block_definition_marker(markdown_core_chunk *input, in
  * is a line the transaction would refuse too. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_next_lines_admit(
     markdown_core_parser *parser, const markdown_core_node *parent) {
-    const unsigned char *cursor = parser->lookahead_cursor;
+    const unsigned char *cursor = parser->at.lookahead_cursor;
     for (int line = 0; line < 2 && cursor && !markdown_core_parser_input_ends(parser, cursor); line++) {
         const unsigned char *at = cursor;
         const markdown_core_node *container = parent;
@@ -157,8 +157,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_term_admi
     const markdown_core_element_instance *self, markdown_core_parser *parser, const markdown_core_node *parent,
     markdown_core_chunk *input) {
     ((markdown_core_definition_list_work *)self->state)->work++;
-    return !parser->blank && parser->indent < 4 &&
-           !markdown_core_block_definition_marker(input, parser->first_nonspace, parser->indent) &&
+    return !parser->at.blank && parser->at.indent < 4 &&
+           !markdown_core_block_definition_marker(input, parser->at.first_nonspace, parser->at.indent) &&
            definition_next_lines_admit(parser, parent);
 }
 
@@ -169,7 +169,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool definition_term_admi
 static bool definition_term_reads(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                   markdown_core_node *parent, markdown_core_chunk *input, bool *compact, bool decides) {
     markdown_core_definition_list_work *counts = self->state;
-    markdown_core_chunk term = {input->data + parser->first_nonspace, input->len - parser->first_nonspace, 0};
+    markdown_core_chunk term = {input->data + parser->at.first_nonspace, input->len - parser->at.first_nonspace, 0};
     if (term.data[0] == '[') {
         counts->work += term.len;
         markdown_core_attribute_parser attributes = {
@@ -213,13 +213,13 @@ static markdown_core_node *markdown_core_block_open_definition(markdown_core_def
     }
     if (parent->kind != MARKDOWN_CORE_NODE_DEFINITION_LIST) {
         parent = markdown_core_parser_add_child(parser, parent, MARKDOWN_CORE_NODE_DEFINITION_LIST,
-                                                parser->first_nonspace + 1);
+                                                parser->at.first_nonspace + 1);
         if (!parent) {
             return NULL;
         }
     }
     markdown_core_node *definition =
-        markdown_core_parser_add_child(parser, parent, MARKDOWN_CORE_NODE_DEFINITION, parser->first_nonspace + 1);
+        markdown_core_parser_add_child(parser, parent, MARKDOWN_CORE_NODE_DEFINITION, parser->at.first_nonspace + 1);
     if (!definition) {
         return NULL;
     }
@@ -230,21 +230,21 @@ static markdown_core_node *markdown_core_block_open_definition(markdown_core_def
         return definition;
     }
     definition->as.definition->term = term;
-    int begin = parser->first_nonspace, end = input->len;
+    int begin = parser->at.first_nonspace, end = input->len;
     while (end > begin && markdown_core_is_whitespace(input->data[end - 1])) {
         end--;
     }
     counts->work += end - begin;
     term->place =
-        (markdown_core_place){(uint32_t)markdown_core_parser_source_offset(parser, parser->line_number, begin + 1),
-                              (uint32_t)markdown_core_parser_source_end(parser, parser->line_number, end)};
+        (markdown_core_place){(uint32_t)markdown_core_parser_source_offset(parser, parser->at.line_number, begin + 1),
+                              (uint32_t)markdown_core_parser_source_end(parser, parser->at.line_number, end)};
     markdown_core_strbuf_put(&term->content, input->data + begin, end - begin);
-    if (term->content.oom || !markdown_core_parser_append_source_marks(parser, term, parser->line_number, begin + 1,
+    if (term->content.oom || !markdown_core_parser_append_source_marks(parser, term, parser->at.line_number, begin + 1,
                                                                        term->content.size, 0)) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     }
     markdown_core_block_settle_field(parser, term, definition);
-    markdown_core_block_advance_offset(parser, input, input->len - 1 - parser->offset, false);
+    markdown_core_block_advance_offset(parser, input, input->len - 1 - parser->at.offset, false);
     return definition;
 }
 
@@ -253,15 +253,15 @@ static bool markdown_core_definition_list_open(const markdown_core_element_insta
                                                block_start *start) {
     (void)self;
 
-    int continuation = parser->indent + markdown_core_block_consume_item_marker(parser, input, 1);
+    int continuation = parser->at.indent + markdown_core_block_consume_item_marker(parser, input, 1);
     *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_DEFINITION_BODY,
-                                                parser->first_nonspace + 1);
+                                                parser->at.first_nonspace + 1);
     if (!*container) {
         return false;
     }
     (*container)->as.definition_body->continuation = continuation;
     (*container)->internal_offset =
-        (int)markdown_core_parser_source_end(parser, parser->line_number, (int)input->len - 1);
+        (int)markdown_core_parser_source_end(parser, parser->at.line_number, (int)input->len - 1);
     return true;
 }
 

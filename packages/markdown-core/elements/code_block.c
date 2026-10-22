@@ -31,18 +31,18 @@ static int continue_code(const markdown_core_element_instance *self, markdown_co
     bool res = false;
 
     if (!container->as.code->fenced) { // indented
-        if (parser->indent >= CODE_INDENT) {
+        if (parser->at.indent >= CODE_INDENT) {
             markdown_core_block_advance_offset(parser, input, CODE_INDENT, true);
             res = true;
-        } else if (parser->blank) {
-            markdown_core_block_advance_offset(parser, input, parser->first_nonspace - parser->offset, false);
+        } else if (parser->at.blank) {
+            markdown_core_block_advance_offset(parser, input, parser->at.first_nonspace - parser->at.offset, false);
             res = true;
         }
     } else { // fenced
         bufsize_t matched = 0;
 
-        if (parser->indent <= 3 && (peek_at(input, parser->first_nonspace) == container->as.code->fence_char)) {
-            matched = scan_close_code_fence(input->data, input->len, parser->first_nonspace);
+        if (parser->at.indent <= 3 && (peek_at(input, parser->at.first_nonspace) == container->as.code->fence_char)) {
+            matched = scan_close_code_fence(input->data, input->len, parser->at.first_nonspace);
         }
 
         if (matched >= container->as.code->fence_length) {
@@ -52,10 +52,10 @@ static int continue_code(const markdown_core_element_instance *self, markdown_co
             markdown_core_block_advance_offset(parser, input, matched, false);
             return MARKDOWN_CORE_BLOCK_CLOSED;
         } else {
-            // skip opt. spaces of fence parser->offset
+            // skip opt. spaces of fence parser->at.offset
             int i = container->as.code->fence_offset;
 
-            while (i > 0 && markdown_core_is_space_or_tab(peek_at(input, parser->offset))) {
+            while (i > 0 && markdown_core_is_space_or_tab(peek_at(input, parser->at.offset))) {
                 markdown_core_block_advance_offset(parser, input, 1, true);
                 i--;
             }
@@ -146,18 +146,18 @@ static bool open_fenced(const markdown_core_element_instance *self, markdown_cor
     (void)self;
     bufsize_t matched = start->matched;
 
-    *container =
-        markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_CODE_BLOCK, parser->first_nonspace + 1);
+    *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_CODE_BLOCK,
+                                                parser->at.first_nonspace + 1);
     if (!*container) {
         return false;
     }
     (*container)->as.code->fenced = true;
-    (*container)->as.code->fence_char = peek_at(input, parser->first_nonspace);
+    (*container)->as.code->fence_char = peek_at(input, parser->at.first_nonspace);
     (*container)->as.code->fence_length = (matched > 255) ? 255 : (uint8_t)matched;
-    (*container)->as.code->fence_offset = (int8_t)(parser->first_nonspace - parser->offset);
+    (*container)->as.code->fence_offset = (int8_t)(parser->at.first_nonspace - parser->at.offset);
     (*container)->as.code->fence_closed = false;
-    markdown_core_block_advance_offset(parser, input, parser->first_nonspace + matched - parser->offset, false);
-    S_fence_info(parser, *container, input->data + parser->offset, input->len - parser->offset);
+    markdown_core_block_advance_offset(parser, input, parser->at.first_nonspace + matched - parser->at.offset, false);
+    S_fence_info(parser, *container, input->data + parser->at.offset, input->len - parser->at.offset);
 
     return true;
 }
@@ -166,7 +166,8 @@ static bool open_indented(const markdown_core_element_instance *self, markdown_c
     (void)self;
 
     markdown_core_block_advance_offset(parser, input, CODE_INDENT, true);
-    *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_CODE_BLOCK, parser->offset + 1);
+    *container =
+        markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_CODE_BLOCK, parser->at.offset + 1);
     if (!*container) {
         return false;
     }
