@@ -592,7 +592,11 @@ static markdown_core_place runs_window(const markdown_core_node *node, uint32_t 
  * -- its extent's span, and its last run's, which runs to its end -- and
  * lists it in its lookup table when its slot says the tables find it, as
  * the walk would, and the record of each leads to the record of the block
- * above it by that block's id.
+ * above it by that block's id. A definition's body is no node of the tree
+ * but a relation of its definition (THE SHAPE): the spine steps from the
+ * definition to the open block of its body, whose record is among the
+ * definition's, and a walk that would start at a body starts at its
+ * definition.
  *
  * THE FINAL PREFIX of a relation of a node a publish placed before: the
  * items up to its last FINAL one, which are all FINAL, as a block settles
@@ -1729,8 +1733,13 @@ static bool publish_spine(publish_walk *walk, markdown_core_node **from, size_t 
         }
         records->items[0] = (markdown_core_tail_record){0};
     }
-    if (markdown_core_parser_undecided(parser)) {
+    const bool undecided = markdown_core_parser_undecided(parser);
+    if (undecided) {
         *from = markdown_core_parser_last_holder(parser, *from, depth);
+    }
+    if (*from != parser->root && shape_of(markdown_core_scaffold_parent(*from)) == SHAPE_DEFINITION) {
+        *from = markdown_core_scaffold_parent(*from);
+        *depth -= undecided;
     }
     markdown_core_tail_record *const items = records->items;
     markdown_core_node *const stop = *from;
@@ -1744,7 +1753,8 @@ static bool publish_spine(publish_walk *walk, markdown_core_node **from, size_t 
         if (SLOT_TABLE(slot) && !publish_list(walk, node, SLOT_TABLE(slot) - 1, node->place.start)) {
             return false;
         }
-        node = markdown_core_parser_last_child(node);
+        markdown_core_node *const above = markdown_core_parser_last_child(node);
+        node = (slot & SLOT_SHAPE) == SHAPE_DEFINITION ? markdown_core_parser_last_child(above) : above;
         at = items[at - 1].held;
         while (items[at - 1].id != node->id) {
             at = items[at - 1].next;
