@@ -3895,9 +3895,11 @@ struct markdown_core_candidate {
 
 /* A LINE'S MARK: the state, the misses and the lent blocks, the root first,
  * the pending block last, so a block's lend stands at its depth; the path;
- * the calls, the first that waits and how many wait; and the record each
- * call keeps (element.h, `candidate_state_size`), the call's at its index in
- * room for the dialect's largest. */
+ * the calls, the first that waits and how many wait; and in `states`, bytes
+ * the mark owns, what the elements' parse records keep (`state.kept`, the
+ * dialect's `kept_size` bytes) and after it the record each call keeps
+ * (element.h, `candidate_state_size`), the call's at its index in room for
+ * the dialect's largest; `state_capacity` counts bytes. */
 struct markdown_core_candidate_mark {
     S_snapshot_mark state;
     size_t miss_count, miss_label_size, miss_root_count;
@@ -3924,7 +3926,7 @@ const void *markdown_core_parser_kept(const markdown_core_parser *parser, const 
 static inline void *S_call_state(const markdown_core_parser *parser, const struct markdown_core_candidate_mark *mark,
                                  size_t index) {
     const size_t size = parser->dialect->candidate_state_size;
-    return size ? mark->states + index * size : NULL;
+    return size ? mark->states + parser->dialect->kept_size + index * size : NULL;
 }
 
 void markdown_core_parser_request_candidate(markdown_core_parser *parser, const markdown_core_element_instance *owner,
@@ -4175,15 +4177,20 @@ static struct markdown_core_candidate_mark *S_mark_make(markdown_core_parser *pa
     }
     stream->marks = marks;
     if (stream->mark_count == stream->mark_made) {
-        memset(&marks[stream->mark_made], 0, sizeof(*marks));
-        if (parser->dialect->kept_size &&
-            !(marks[stream->mark_made].state.kept = markdown_core_alloc(1, parser->dialect->kept_size))) {
+        memset(&marks[stream->mark_made++], 0, sizeof(*marks));
+    }
+    struct markdown_core_candidate_mark *mark = &marks[stream->mark_count];
+    /* Room for what the records keep and the call the mark is made for. */
+    const size_t room = parser->dialect->kept_size + parser->dialect->candidate_state_size;
+    if (room) {
+        unsigned char *states = markdown_core_reserve(mark->states, &mark->state_capacity, room, 1);
+        if (!states) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return NULL;
         }
-        stream->mark_made++;
+        mark->states = mark->state.kept = states;
     }
-    struct markdown_core_candidate_mark *mark = &marks[stream->mark_count++];
+    stream->mark_count++;
     mark->miss_count = stream->miss_count;
     mark->miss_label_size = (size_t)stream->miss_labels.size;
     mark->miss_root_count = stream->miss_root_count;
@@ -4229,12 +4236,13 @@ static void S_candidate_make(markdown_core_parser *parser) {
     mark->calls = calls;
     const size_t size = parser->dialect->candidate_state_size;
     if (size) {
-        unsigned char *states = markdown_core_reserve(mark->states, &mark->state_capacity, mark->call_count + 1, size);
+        unsigned char *states = markdown_core_reserve(mark->states, &mark->state_capacity,
+                                                      parser->dialect->kept_size + (mark->call_count + 1) * size, 1);
         if (!states) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
             return;
         }
-        mark->states = states;
+        mark->states = mark->state.kept = states;
         memcpy(S_call_state(parser, mark, mark->call_count), stream->candidate_room, size);
     }
     const size_t index = mark->call_count++;
@@ -4530,7 +4538,6 @@ static void S_candidates_release(markdown_core_parser *parser) {
         markdown_core_free(stream->marks[i].path);
         markdown_core_free(stream->marks[i].calls);
         markdown_core_free(stream->marks[i].states);
-        markdown_core_free(stream->marks[i].state.kept);
     }
     markdown_core_free(stream->marks);
     stream->marks = NULL;
