@@ -580,23 +580,9 @@ static markdown_core_place runs_window(const markdown_core_node *node, uint32_t 
  * done. The records of a node's relations are in the order the walk met
  * them, relation by relation, each linked from the one before, the first
  * from the node's own record; the root's record is the first of all. The
- * records stay from one publish to the next: a publish that walks from a
- * block (blocks.c, THE WALK ROOT) keeps new records of what that block
- * holds below its own record, and frees the old ones, and the nodes they
- * own, once it is done.
- *
- * THE SPINE: the blocks below the one a publish walks from, down to the
- * root. Each is open and continues itself, and holds what it held when a
- * publish last walked it, but for the open block above it, which ends
- * further on (blocks.c, THE WALK ROOT): the publish gives each its new end
- * -- its extent's span, and its last run's, which runs to its end -- and
- * lists it in its lookup table when its slot says the tables find it, as
- * the walk would, and the record of each leads to the record of the block
- * above it by that block's id. A definition's body is no node of the tree
- * but a relation of its definition (THE SHAPE): the spine steps from the
- * definition to the open block of its body, whose record is among the
- * definition's, and a walk that would start at a body starts at its
- * definition.
+ * records stay from one publish to the next: a publish keeps new records of
+ * what the root holds below the root's record, and frees the old ones, and
+ * the nodes they own, once it is done.
  *
  * THE FINAL PREFIX of a relation of a node a publish placed before: the
  * items up to its last FINAL one, which are all FINAL, as a block settles
@@ -1382,6 +1368,16 @@ static uint32_t record_take(markdown_core_tail_records *records) {
     return (uint32_t)++records->count;
 }
 
+/* The root's record, the first of all, holding nothing yet. False when the
+ * records could not grow. */
+static bool record_root(markdown_core_tail_records *records) {
+    if (!record_take(records)) {
+        return false;
+    }
+    records->items[0] = (markdown_core_tail_record){0};
+    return true;
+}
+
 /* The records from `at`, plus one, on, and all they hold, freed, with the
  * nodes they own released when `release` says so -- a publish that failed
  * leaves the nodes its records name to the take-back that lets them go. */
@@ -1425,9 +1421,9 @@ static bool publish_record(markdown_core_parser *parser, publish_match_frame *ow
                                                 .end = source.end,
                                                 .field = (uint32_t)owner->field,
                                                 .kind = node->kind};
-    /* A node that keeps a record of what it holds is the one the publish
-     * walks from or one its owner recorded: what a node its owner makes
-     * FINAL holds is FINAL too. */
+    /* A node that keeps a record of what it holds is the root or one its
+     * owner recorded: what a node its owner makes FINAL holds is FINAL
+     * too. */
     assert(owner->kept || owner->recorded);
     if (owner->kept) {
         items[owner->kept - 1].next = at;
@@ -1468,11 +1464,10 @@ static inline bool publish_hold(markdown_core_parser *parser, publish_match_fram
  * below its own record, `recorded`, plus one (THE RECORDS); a candidate
  * keeps none. One frame per node whose relations are open sits on the walk
  * stack, and what continues nothing and does not persist is published above
- * them (publish_fresh). While a candidate waits, the root is a holder, at
- * depth `depth` among the blocks the first mark lent (THE SPINE). */
-static bool publish_matched(publish_walk *walk, markdown_core_node *root, size_t depth,
-                            const markdown_core_node *previous, const publish_relation *start, uint32_t held,
-                            uint32_t recorded) {
+ * them (publish_fresh). While a candidate waits, the root is a holder, the
+ * first of the blocks the first mark lent. */
+static bool publish_matched(publish_walk *walk, markdown_core_node *root, const markdown_core_node *previous,
+                            const publish_relation *start, uint32_t held, uint32_t recorded) {
     markdown_core_parser *parser = walk->stack.parser;
     const markdown_core_tail_records *records = &parser->stream->records;
     publish_match_frame *frame = NULL;
@@ -1501,7 +1496,7 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, size_t
     markdown_core_holder holds = {0};
     publish_decided decided = DECIDED;
     if (markdown_core_parser_undecided(parser)) {
-        const bool holder_root = markdown_core_parser_holder(parser, depth, root, &holds);
+        const bool holder_root = markdown_core_parser_holder(parser, 0, root, &holds);
         assert(!previous && holder_root);
         (void)holder_root;
         decided = HOLDER;
@@ -1701,10 +1696,10 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, size_t
     }
 }
 
-/* A walk root that continues nothing and does not persist is published
- * whole, as the nodes such a frame holds are; any other is matched. */
+/* A root that continues nothing and does not persist is published whole,
+ * as the nodes such a frame holds are; any other is matched. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_in_place(publish_walk *walk,
-                                                                             markdown_core_node *root, size_t depth,
+                                                                             markdown_core_node *root,
                                                                              const markdown_core_node *previous,
                                                                              const publish_relation *start,
                                                                              uint32_t held, uint32_t recorded) {
@@ -1713,57 +1708,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool publish_in_place(pub
         publish_relation items = {&root, &root + 1, start->anchor, start->source};
         return publish_fresh(walk, &from, &items);
     }
-    return publish_matched(walk, root, depth, previous, start, held, recorded);
-}
-
-/* THE SPINE (THE RECORDS) below the block the publish walks from, from the
- * root up, each block's open block above it its last child: each block
- * takes its new end and is listed as the walk lists it. The publish walks
- * from `*from`, or, while a candidate waits, from the last holder on the
- * way to it (THE DECIDED CONTENT, parser.h), which `*from` gives, with its
- * depth `*depth` and its record, plus one, `*record`, which the records of
- * the spine lead to from the root's. False when the records or a table
- * could not grow. */
-static bool publish_spine(publish_walk *walk, markdown_core_node **from, size_t *depth, uint32_t *record) {
-    markdown_core_parser *parser = walk->stack.parser;
-    markdown_core_tail_records *records = &parser->stream->records;
-    if (!records->count) {
-        if (!record_take(records)) {
-            return false;
-        }
-        records->items[0] = (markdown_core_tail_record){0};
-    }
-    const bool undecided = markdown_core_parser_undecided(parser);
-    if (undecided) {
-        *from = markdown_core_parser_last_holder(parser, *from, depth);
-    }
-    if (*from != parser->root && shape_of(markdown_core_scaffold_parent(*from)) == SHAPE_DEFINITION) {
-        *from = markdown_core_scaffold_parent(*from);
-        *depth -= undecided;
-    }
-    markdown_core_tail_record *const items = records->items;
-    markdown_core_node *const stop = *from;
-    uint32_t at = 1;
-    for (markdown_core_node *node = parser->root; node != stop;) {
-        const uint32_t span = node->place.end - node->place.start;
-        markdown_core_runs *runs = node->source.runs;
-        runs->items[runs->count - 1].span += span - node->extent.span;
-        node->extent.span = span;
-        const unsigned slot = slot_of(node);
-        if (SLOT_TABLE(slot) && !publish_list(walk, node, SLOT_TABLE(slot) - 1, node->place.start)) {
-            return false;
-        }
-        markdown_core_node *const above = markdown_core_parser_last_child(node);
-        node = (slot & SLOT_SHAPE) == SHAPE_DEFINITION ? markdown_core_parser_last_child(above) : above;
-        at = items[at - 1].held;
-        while (items[at - 1].id != node->id) {
-            at = items[at - 1].next;
-            assert(at);
-        }
-        items[at - 1].end = node->place.end;
-    }
-    *record = at;
-    return true;
+    return publish_matched(walk, root, previous, start, held, recorded);
 }
 
 /* Takes `node`, which starts at `start`, into the `*taken` entries when its
@@ -2144,16 +2089,16 @@ static bool publish_tables(markdown_core_parser *parser, publish_walk *walk, mar
     return ok && reference_targets(parser, value, &walk->tables[TABLE_HEADINGS]);
 }
 
-/* A publish is made in place: it walks from its walk root (blocks.c, THE
- * WALK ROOT), measured from what the spine gave it, and keeps the records
- * of what that holds in place of the old ones (THE RECORDS); a snapshot's
- * keeps the COMMITTED definitions, and the finalize lists them first.
+/* A publish is made in place: it walks from the root, matched against the
+ * records the publish before it kept, if any, past the FINAL prefix of
+ * every relation of a node a publish placed before, and keeps the records
+ * of what the root holds in place of the old ones (THE RECORDS); a
+ * snapshot's keeps the COMMITTED definitions, and the finalize lists them
+ * first.
  *
  * THE LAST PUBLISH, the finalize's, is the one no publish follows, so it
- * keeps nothing for one: no records and no COMMITTED definitions. It walks
- * from the root, which no candidate holds once the text ends, matched
- * against the records the publish before it kept, if any, which it then
- * lets go. */
+ * keeps nothing for one: no records and no COMMITTED definitions, and no
+ * candidate holds the root once the text ends. */
 bool markdown_core_publish_tree(markdown_core_parser *parser) {
     markdown_core_node *root = parser->root;
     markdown_core_document_value *value = root->as.document;
@@ -2163,24 +2108,20 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
     const bool snapshot = parser->snapshot;
     walk.keeps = snapshot;
     publish_clear(value);
-    markdown_core_node *from = snapshot ? parser->stream->walk_root : root;
-    size_t depth = 0;
-    /* The record of the node the publish walks from, plus one, whose old
-     * records it is matched against: the root's, if any, for the last. */
-    uint32_t record = !snapshot && records->count ? 1 : 0, old = 0;
-    bool ok = snapshot ? publish_spine(&walk, &from, &depth, &record) : publish_prefill(&walk, parser);
+    /* The root's record, plus one, whose old records the walk is matched
+     * against, if any; a snapshot's publish keeps its new ones below it. */
+    bool ok = !snapshot || records->count || record_root(records);
+    const uint32_t record = records->count ? 1 : 0;
+    uint32_t old = 0;
+    ok = ok && (snapshot || publish_prefill(&walk, parser));
     if (ok) {
         assert(snapshot || !markdown_core_parser_undecided(parser));
         if (record) {
-            old = records->items[record - 1].held;
-            records->items[record - 1].held = 0;
+            old = records->items[0].held;
+            records->items[0].held = 0;
         }
-        const uint32_t at = from->place.start;
-        const publish_relation start =
-            from == root ? (publish_relation){0}
-                         : (publish_relation){NULL, NULL, (uint32_t)((int64_t)at - from->extent.lead),
-                                              (uint32_t)((int64_t)at - from->source.runs->items[0].lead)};
-        ok = publish_in_place(&walk, from, depth, NULL, &start, old, snapshot ? record : 0) &&
+        const publish_relation start = {0};
+        ok = publish_in_place(&walk, root, NULL, &start, old, snapshot ? record : 0) &&
              (snapshot ? keep_committed(parser, &walk) && snapshot_tables(parser, &walk, value)
                        : publish_tables(parser, &walk, value));
     }
@@ -2188,7 +2129,7 @@ bool markdown_core_publish_tree(markdown_core_parser *parser) {
         parser->revision->last_id = walk.next_id;
     }
     if (record) {
-        markdown_core_tail_record *kept = &records->items[record - 1];
+        markdown_core_tail_record *kept = &records->items[0];
         records_free(parser, ok ? old : kept->held, ok);
         kept->held = ok ? kept->held : old;
     }
@@ -2215,7 +2156,7 @@ bool markdown_core_publish_candidate(markdown_core_parser *parser, markdown_core
         root->id ? (publish_relation){NULL, NULL, (uint32_t)((int64_t)start - root->extent.lead),
                                       (uint32_t)((int64_t)start - root->source.runs->items[0].lead)}
                  : (publish_relation){NULL, NULL, 0, holder_start};
-    bool ok = publish_in_place(&walk, candidate, 0, root, &hand, 0, 0);
+    bool ok = publish_in_place(&walk, candidate, root, &hand, 0, 0);
     if (ok && walk.kept_count) {
         markdown_core_defined *defined =
             markdown_core_reserve(parser->stream->defined, &parser->stream->defined_capacity,

@@ -11275,11 +11275,10 @@ static void session_finalize_matches_a_parse(test_batch_runner *runner) {
 }
 
 /* A SNAPSHOT WALKS THROUGH A DEFINITION'S BODY, which is no node of the
- * tree but a relation of its definition: the snapshot's walk root is the
- * body, as a list closes inside it and the text goes on below the list, or
- * an open block inside it, a quote or a list. The session opens with every
- * prefix of the text and takes the rest in chunks of one, two, three and
- * five bytes. */
+ * tree but a relation of its definition: the commits change the body, as a
+ * list closes inside it and the text goes on below the list, or a block
+ * open inside it, a quote or a list. The session opens with every prefix of
+ * the text and takes the rest in chunks of one, two, three and five bytes. */
 static void session_walks_through_definition_bodies(test_batch_runner *runner) {
     static const char *const sources[] = {
         "m\n:\n  -\n\n  d|\n",
