@@ -3041,6 +3041,7 @@ read:
         if (stream) {
             S_meet_from_stop(parser);
         }
+        parser->at.asks = parser->at.step_asks = 0;
         document->element->read_document_prefix(document, parser);
         if (stream && stream->requested) {
             S_stop_at_root(parser);
@@ -3301,6 +3302,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
          * spine, each naming the line by number, as matching a container can
          * read lines ahead, which can move the line table. */
         markdown_core_parser_visited_line(parser, parser->at.line_number)->own = (uint32_t)parser->at.offset;
+        parser->at.step_asks = parser->at.asks;
         markdown_core_node *const above = container;
         container = container->children[container->child_count - 1];
 
@@ -3871,10 +3873,9 @@ struct markdown_core_candidate {
     size_t depth, container_depth;
     markdown_core_line_stop stop;
     /* What a reading anew meets the call by, with its owner and its line:
-     * where on the line it was asked, and the kind of its container and of
-     * the block it would open. */
-    bufsize_t offset;
-    uint16_t kind;
+     * its number among the line's asks; and the kind of the block it would
+     * open. */
+    size_t ask;
     markdown_core_node_type child;
     /* The call after it in its mark, past which the next that waits stands:
      * decided calls on the way are stepped over once (S_call_next). */
@@ -3935,7 +3936,8 @@ void markdown_core_parser_request_candidate(markdown_core_parser *parser, const 
     stream->request_owner = owner;
     stream->request_container = container;
     stream->request_child = child;
-    stream->request_offset = parser->at.offset;
+    assert(parser->at.asks);
+    stream->request_ask = parser->at.asks - 1;
     if (owner->element->candidate_state_size) {
         memcpy(stream->candidate_room, state, owner->element->candidate_state_size);
     }
@@ -3992,10 +3994,10 @@ static bool S_path_reach(markdown_core_parser *parser, struct markdown_core_cand
     return true;
 }
 
-/* Whether `call` was made at `stop` of line `line`. */
+/* Whether `call` was made at `stop` of line `line`: a reading that holds
+ * there asks no later call of the line. */
 static bool S_made_at(const struct markdown_core_candidate *call, const markdown_core_line_stop *stop, int line) {
-    return call->line == line && call->stop.offset == stop->offset && call->stop.step == stop->step &&
-           call->stop.depth == stop->depth && call->stop.container == stop->container;
+    return call->line == line && call->ask >= stop->asks;
 }
 
 /* A reading that starts where the commit holds its line, or at the
@@ -4030,17 +4032,18 @@ static void S_meet_from_stop(markdown_core_parser *parser) {
  * CLAIMANT, which claims. A commit's reading takes the call's container and
  * path anew; a snapshot's writes no call. */
 bool markdown_core_parser_meets_call(markdown_core_parser *parser, const markdown_core_element_instance *owner,
-                                     markdown_core_node *container) {
+                                     markdown_core_node *container, size_t ask) {
     markdown_core_stream *stream = parser->stream;
     struct markdown_core_candidate_mark *mark = &stream->marks[stream->meet_mark];
     if (stream->meet_call >= mark->call_count) {
         return false;
     }
     struct markdown_core_candidate *call = &mark->calls[stream->meet_call];
-    if (call == stream->claimant || call->line != parser->at.line_number || call->owner != owner ||
-        call->offset != parser->at.offset || call->kind != container->kind) {
+    if (call == stream->claimant || call->line != parser->at.line_number || call->ask != ask) {
         return false;
     }
+    assert(call->owner == owner);
+    (void)owner;
     stream->meet_call++;
     if (parser->snapshot) {
         return true;
@@ -4206,7 +4209,7 @@ static void S_candidate_make(markdown_core_parser *parser) {
         return;
     }
     markdown_core_node *const container = stream->request_container;
-    assert(stream->stop.container == container && stream->stop.offset == stream->request_offset);
+    assert(stream->stop.container == container && stream->stop.asks <= stream->request_ask);
     struct markdown_core_candidate_mark *mark = stream->mark_count ? &stream->marks[stream->mark_count - 1] : NULL;
     assert(!mark || mark->live);
     size_t at = 0;
@@ -4243,8 +4246,7 @@ static void S_candidate_make(markdown_core_parser *parser) {
         .depth = depth,
         .container_depth = at,
         .stop = stream->stop,
-        .offset = stream->request_offset,
-        .kind = container->kind,
+        .ask = stream->request_ask,
         .child = stream->request_child,
         .next = index + 1,
         .line = parser->at.line_number,
@@ -4832,6 +4834,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void open_new_blocks(mark
                                        .all_matched = all_matched,
                                        .depth = depth + 1,
                                        .thematic_kill = parser->at.thematic_break_kill_pos};
+        parser->at.step_asks = parser->at.asks;
         if (hold && !S_start_decided(parser, &context)) {
             *opens = (S_opens){maybe_lazy, depth};
             *held = true;
@@ -5061,6 +5064,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_hold(markdown_core_parser *par
     parser->stream->stop = (markdown_core_line_stop){
         .container = container,
         .depth = opens.depth,
+        .asks = parser->at.step_asks,
         .offset = parser->at.offset,
         .column = parser->at.column,
         .own = markdown_core_parser_visited_line(parser, parser->at.line_number)->own,
@@ -5117,6 +5121,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_line_machine(markd
     input.len = parser->curline.size;
     input.alloc = 0;
 
+    parser->at.asks = parser->at.step_asks = from ? from->asks : 0;
     if (from) {
         parser->at.offset = from->offset;
         parser->at.column = from->column;
@@ -5170,6 +5175,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_line_machine(markd
         goto finished;
     }
 
+    parser->at.step_asks = parser->at.asks;
     /* The text a held line leaves to its leaf is read to the line's end. */
     if (hold) {
         held = true;

@@ -275,9 +275,10 @@ typedef struct {
  * `container`, opening a block in `container`, or adding the rest of the
  * line to `container` as text, with `all_matched` whether the line matched
  * every open block, `opened` whether it has opened one, `maybe_lazy` whether
- * it may still be lazy and `depth` the blocks it has asked to open -- and
- * the line's cursor there and where its own bytes begin, which the next
- * reading of the line starts from. */
+ * it may still be lazy and `depth` the blocks it has asked to open -- the
+ * calls of the line that asked before the step (markdown_core_parser_at,
+ * THE ASKS), and the line's cursor there and where its own bytes begin,
+ * which the next reading of the line starts from. */
 typedef enum {
     MARKDOWN_CORE_LINE_AT_MATCH,
     MARKDOWN_CORE_LINE_AT_OPEN,
@@ -286,7 +287,7 @@ typedef enum {
 
 typedef struct markdown_core_line_stop {
     struct markdown_core_node *container;
-    size_t depth;
+    size_t depth, asks;
     bufsize_t offset, column;
     uint32_t own;
     markdown_core_line_step step;
@@ -369,7 +370,7 @@ typedef struct markdown_core_stream {
     const markdown_core_element_instance *request_owner;
     struct markdown_core_node *request_container;
     markdown_core_node_type request_child;
-    bufsize_t request_offset;
+    size_t request_ask;
     bool request_ends, requested;
     struct markdown_core_parser_mark *snapshot_mark;
     markdown_core_state_alignment candidate_room[];
@@ -422,6 +423,13 @@ typedef struct markdown_core_parser_at {
      * first line is processed; markdown_core_parser_input_ends answers true
      * for it once the input has run out. */
     const unsigned char *lookahead_cursor;
+    /* THE ASKS: how many calls of the line have asked whether they meet a
+     * candidate (markdown_core_parser_candidate_meets), the first numbered
+     * 0, and how many had as the step being taken began. A reading holds a
+     * line before a step, keeping the second in its stop, and a reading
+     * that goes on from the stop starts from it, so a call has the same
+     * number in every reading of its line (blocks.c, THE CANDIDATES). */
+    size_t asks, step_asks;
 } markdown_core_parser_at;
 
 struct markdown_core_parser {
@@ -1249,7 +1257,9 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
  * the call's line (element.h, `feed_candidate`). The commit ends at the
  * call, completes, marks its state there unless an earlier call of the line
  * did, and reads on from the call. A call asks first whether it MEETS its
- * candidate, for the owner, the line, where on it and `container`: the
+ * candidate, as the owner, in `container`, and asks for its candidate right
+ * after: a call is the line and its number among the line's asks
+ * (markdown_core_parser_at, THE ASKS). The
  * reading that made the candidate meets it as it reads on, and so does a
  * reading anew of its line after an accept, while it waits or once it is
  * rejected, and the call declines as it did. Once a later line decides, an
@@ -1259,14 +1269,15 @@ void markdown_core_parser_request_candidate(markdown_core_parser *parser, const 
                                             struct markdown_core_node *container, markdown_core_node_type child,
                                             const void *state, bool ends);
 bool markdown_core_parser_meets_call(markdown_core_parser *parser, const markdown_core_element_instance *owner,
-                                     struct markdown_core_node *container);
+                                     struct markdown_core_node *container, size_t ask);
 /* Every opener asks, so the parse reads whether a mark is left to meet
  * here and calls out only when one is. */
 static inline bool markdown_core_parser_candidate_meets(markdown_core_parser *parser,
                                                         const markdown_core_element_instance *owner,
                                                         struct markdown_core_node *container) {
     const markdown_core_stream *stream = parser->stream;
-    return stream->meet_mark < stream->mark_count && markdown_core_parser_meets_call(parser, owner, container);
+    const size_t ask = parser->at.asks++;
+    return stream->meet_mark < stream->mark_count && markdown_core_parser_meets_call(parser, owner, container, ask);
 }
 /* The decision of the candidate being decided (element.h, `decide_candidate`)
  * reads its line as its call did: `start` puts the parser's line state at
