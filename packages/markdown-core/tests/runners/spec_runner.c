@@ -5,6 +5,10 @@
  * with the expected block; each example is also dumped twice to assert dump
  * determinism.  No renderer is involved.
  *
+ * Each example is also streamed: a session opens with every prefix of it,
+ * takes the next one or three bytes in one append and the rest in another,
+ * and its final document dumps as the expected block (plan 5.10).
+ *
  *   spec_runner --spec FILE [--list] [--example N] [--section TEXT] [--dump]
  *
  * Every example parses the one dialect, exactly as a consumer would. A fence
@@ -59,6 +63,49 @@ static uint8_t *dump_example(const ts_spec_case *test_case, size_t *dump_length)
     }
     markdown_core_document_free(document);
     return dump;
+}
+
+/* The tail sizes a streamed example takes after each prefix. */
+static const size_t stream_tails[] = {1, 3};
+
+/* Whether a session that opens with the first `cut` bytes of the example,
+ * takes the next `tail` in one append and the rest in another, finalizes to
+ * a document that dumps as the expected block. */
+static int streams_as_expected(const ts_spec_case *test_case, size_t cut, size_t tail) {
+    const char *expected = test_case->expected;
+    const uint8_t *source = (const uint8_t *)test_case->markdown;
+    const size_t size = test_case->markdown_length;
+    const size_t next = cut + tail < size ? cut + tail : size;
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document = NULL;
+    uint8_t *dump = NULL;
+    size_t dump_size = 0;
+    int same = markdown_core_session_new(source, cut, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) == MARKDOWN_CORE_OK &&
+               markdown_core_session_append(session, source + cut, next - cut, &document) == MARKDOWN_CORE_OK &&
+               (next == size ||
+                markdown_core_session_append(session, source + next, size - next, &document) == MARKDOWN_CORE_OK) &&
+               markdown_core_session_finalize(session, &document) == MARKDOWN_CORE_OK &&
+               markdown_core_document_dump(document, markdown_core_document_root(document), source, size, &dump,
+                                           &dump_size) == MARKDOWN_CORE_OK;
+    same = same && strlen(expected) == dump_size && memcmp(expected, dump, dump_size) == 0;
+    markdown_core_dump_free(dump);
+    markdown_core_session_free(session);
+    return same;
+}
+
+/* Whether every streamed reading of the example dumps as the expected
+ * block; the first that does not is reported. */
+static int streams_all_as_expected(const ts_spec_case *test_case) {
+    for (size_t cut = 0; cut < test_case->markdown_length; cut++) {
+        for (size_t i = 0; i < sizeof(stream_tails) / sizeof(stream_tails[0]); i++) {
+            if (!streams_as_expected(test_case, cut, stream_tails[i])) {
+                fprintf(stderr, "example %d: streamed from byte %zu, then %zu byte(s), differs\n", test_case->example,
+                        cut, stream_tails[i]);
+                return 0;
+            }
+        }
+    }
+    return 1;
 }
 
 /* Checks for the `disabled` tag within the fence-open line only (the line is
@@ -276,7 +323,14 @@ int main(int argc, char **argv) {
             fwrite(dump, 1, dump_length, stdout);
             passed++;
         } else if (strlen(test_case->expected) == dump_length && memcmp(test_case->expected, dump, dump_length) == 0) {
-            passed++;
+            if (streams_all_as_expected(test_case)) {
+                passed++;
+            } else {
+                fprintf(stderr, "FAILED example %d (lines %d-%d) %s, streamed\n", test_case->example,
+                        test_case->start_line, test_case->end_line, test_case->section);
+                fputs(test_case->markdown, stderr);
+                failed++;
+            }
         } else {
             fprintf(stderr, "FAILED example %d (lines %d-%d) %s\n", test_case->example, test_case->start_line,
                     test_case->end_line, test_case->section);
