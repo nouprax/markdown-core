@@ -292,8 +292,6 @@ void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revi
     parser->stream = markdown_core_alloc(1, sizeof(*parser->stream));
     if (parser->stream) {
         markdown_core_strbuf_init(&parser->stream->miss_labels, 0);
-        /* No publish has walked the root yet (THE WALK ROOT). */
-        parser->stream->changed = document;
     }
 
     /* A transaction that could not build its initial structures is poisoned:
@@ -1272,9 +1270,6 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_close_current(mark
     if (closing == parser->stream->boundary) {
         S_lend_below(parser, closing);
     }
-    if (closing == parser->stream->changed) {
-        parser->stream->changed = parent;
-    }
     const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, closing);
     S_settle_pending_as(parser, closing, kind);
     S_shut(parser, closing);
@@ -2178,28 +2173,11 @@ void markdown_core_parser_discard(markdown_core_parser *parser) { S_release_pars
  * where the text ends without closing, and the snapshot writes only what
  * they publish (S_close_tail): their ends and what they take from their
  * folds, which it reads without writing their flags; the publish gives
- * them their extents and runs (ast.c, THE SPINE). The published document reads the views until
- * the next TAKE-BACK, at the next commit, at the finalize or at the release
- * (S_take_back): each lent block takes its own state back with the storage
- * its view grew, each room what it held, and the nodes the snapshot made
- * are the publish's records' from then on (ast.c, THE RECORDS).
- *
- * THE WALK ROOT. A publish walks the blocks whose relations changed since
- * the publish before (ast.c, PUBLISHING IN PLACE); every other block is open
- * and continues itself, and takes only its new end (ast.c, THE SPINE). The
- * commits change the relations of the blocks on the builder stack, and only
- * of the current block and of a block whose child closes, so the block they
- * changed nearest the root (`changed`) is on the builder stack: a block that
- * closes gives it to the block below it (S_close_current), and a line's
- * mark, which lends every open block, and a candidate's decision, which
- * reads from the call of its candidate again, give it to the root. The
- * take-back gives it the block the lending reached, or the root when the
- * lending reached nothing, as the snapshot wrote below there, and a
- * streaming parse starts with the root. The snapshot's publish walks from
- * the block the lending reaches, or from `changed` when that is open below
- * it (S_close_tail), and, while a candidate waits, from the last holder of
- * THE DECIDED CONTENT (parser.h) on the way there (ast.c, THE SPINE); the
- * finalize's walks from the root. */
+ * them their extents and runs. The published document reads the views
+ * until the next TAKE-BACK, at the next commit, at the finalize or at the
+ * release (S_take_back): each lent block takes its own state back with the
+ * storage its view grew, each room what it held, and the nodes the snapshot
+ * made are the publish's records' from then on (ast.c, THE RECORDS). */
 typedef struct {
     markdown_core_node *root, *block_root, *current, *pending;
     int line_number, indent;
@@ -2589,9 +2567,8 @@ static void S_take_back_room(const markdown_core_room *room) {
 
 /* THE TAKE-BACK (THE LENDING): the lent blocks, the last lent first, and
  * then the rooms, the last reached first, each unhooking what the snapshot
- * gave it; the commits that follow change what lies below the block the
- * lending reached last (THE WALK ROOT). With `release`, a snapshot that
- * failed lets the nodes it made go. */
+ * gave it. With `release`, a snapshot that failed lets the nodes it made
+ * go. */
 static void S_take_back(markdown_core_parser *parser, bool release) {
     markdown_core_stream *stream = parser->stream;
     for (size_t i = stream->lend_count; i-- > 0;) {
@@ -2602,7 +2579,6 @@ static void S_take_back(markdown_core_parser *parser, bool release) {
         (release ? S_release_added : S_unhook_added)(parser, room->node, room->count, room->last);
         S_take_back_room(room);
     }
-    stream->changed = stream->boundary ? stream->boundary : parser->root;
     stream->lend_count = stream->room_count = 0;
     stream->boundary = NULL;
 }
@@ -2615,23 +2591,17 @@ static void S_take_back(markdown_core_parser *parser, bool release) {
  * anchor as a complete block does, and folds into the block below as its
  * children fold, which gives the block below the flags it ends with and
  * what it publishes of them, and writes none of its flags -- and join no
- * queue. With nothing below the stop, the document closes. The publish
- * walks from THE WALK ROOT. */
+ * queue. With nothing below the stop, the document closes. */
 static void S_close_tail(markdown_core_parser *parser) {
     markdown_core_stream *stream = parser->stream;
     markdown_core_node *boundary = stream->boundary;
     if (!boundary) {
-        stream->walk_root = parser->root;
         S_close_document(parser);
         return;
     }
     markdown_core_parser_close_below(parser, boundary);
     S_settle_pending(parser, boundary);
     S_parse_block_inputs(parser);
-    /* What the commits changed nearest the root is open, below the block
-     * the lending reaches or that block itself, as a block that closes gives
-     * it to the block below it (THE WALK ROOT). */
-    stream->walk_root = stream->changed;
     const uint32_t end = (uint32_t)parser->last_line_end;
     markdown_core_node_internal_flags flags = boundary->flags;
     const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, boundary);
@@ -4220,25 +4190,10 @@ bool markdown_core_parser_holder(const markdown_core_parser *parser, size_t dept
     return true;
 }
 
-markdown_core_node *markdown_core_parser_last_holder(const markdown_core_parser *parser,
-                                                     const markdown_core_node *block, size_t *depth) {
-    const struct markdown_core_candidate_mark *first = &parser->stream->marks[0];
-    const markdown_core_lend *lend = first->lends;
-    const markdown_core_lend *const end = lend + first->lend_count;
-    while (lend->address != block && lend + 1 < end &&
-           lend[1].address == markdown_core_parser_last_child(lend->address)) {
-        lend++;
-    }
-    *depth = (size_t)(lend - first->lends);
-    return lend->address;
-}
-
 /* The open blocks lent to `mark` from the root up, the pending block last,
- * each a view no publish placed, so the next publish walks from the root
- * (THE WALK ROOT). The path holds them, the root first. False, with the
- * parse failed, when storage could not be had. */
+ * each a view no publish placed. The path holds them, the root first.
+ * False, with the parse failed, when storage could not be had. */
 static bool S_mark_lend(markdown_core_parser *parser, struct markdown_core_candidate_mark *mark) {
-    parser->stream->changed = parser->root;
     size_t depth = 0;
     for (markdown_core_node *node = parser->current; node; node = markdown_core_scaffold_parent(node)) {
         depth++;
@@ -4462,7 +4417,6 @@ static void S_candidate_take_back(markdown_core_parser *parser, const markdown_c
 static void S_candidate_put_back(markdown_core_parser *parser, size_t m) {
     markdown_core_stream *stream = parser->stream;
     struct markdown_core_candidate_mark *mark = &stream->marks[m];
-    stream->changed = parser->root;
     const markdown_core_element_instance *document = parser->dialect->document_structure;
     if (document->element->undo_candidate) {
         document->element->undo_candidate(document, parser, m);
@@ -4596,7 +4550,6 @@ static void S_mark_unlend(markdown_core_parser *parser, size_t m) {
 static void S_candidate_drop(markdown_core_parser *parser, size_t m, size_t index) {
     markdown_core_stream *stream = parser->stream;
     struct markdown_core_candidate_mark *mark = &stream->marks[m];
-    stream->changed = parser->root;
     mark->calls[index].decided = true;
     mark->live--;
     if (index == mark->first) {

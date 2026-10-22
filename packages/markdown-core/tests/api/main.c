@@ -11187,9 +11187,10 @@ static uint8_t *dump_of(const markdown_core_document *document, const char *sour
     return dump;
 }
 
-/* Whether a session fed `source` in chunks of `chunk` bytes, or line by
- * line when it is 0, finalizes to the dump of a fresh parse of it. */
-static bool finalizes_as_a_parse(const char *source, size_t chunk) {
+/* Whether a session opened with the first `cut` bytes of `source` and fed
+ * the rest in chunks of `chunk` bytes, or line by line when it is 0,
+ * finalizes to the dump of a fresh parse of it. */
+static bool splits_as_a_parse(const char *source, size_t cut, size_t chunk) {
     const size_t length = strlen(source);
     size_t expected_length = 0, actual_length = 0;
     markdown_core_document *parsed = NULL;
@@ -11197,9 +11198,9 @@ static bool finalizes_as_a_parse(const char *source, size_t chunk) {
                             ? dump_of(parsed, source, length, &expected_length)
                             : NULL;
     markdown_core_session *session = NULL;
-    bool appended = markdown_core_session_new((const uint8_t *)source, 0, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
+    bool appended = markdown_core_session_new((const uint8_t *)source, cut, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
                     MARKDOWN_CORE_OK;
-    for (size_t at = 0; appended && at < length;) {
+    for (size_t at = cut; appended && at < length;) {
         size_t step = chunk;
         if (!step) {
             const char *newline = memchr(source + at, '\n', length - at);
@@ -11223,6 +11224,9 @@ static bool finalizes_as_a_parse(const char *source, size_t chunk) {
     markdown_core_document_free(parsed);
     return same;
 }
+
+/* The same of a session opened empty. */
+static bool finalizes_as_a_parse(const char *source, size_t chunk) { return splits_as_a_parse(source, 0, chunk); }
 
 /* A STREAMED SESSION FINALIZES TO WHAT A FRESH PARSE OF ITS TEXT IS (plan
  * 5.4, 5.10). The text arrives byte by byte, three bytes at a time and line
@@ -11267,6 +11271,33 @@ static void session_finalize_matches_a_parse(test_batch_runner *runner) {
                                 : "lines",
                sources[i]);
         }
+    }
+}
+
+/* A SNAPSHOT WALKS THROUGH A DEFINITION'S BODY, which is no node of the
+ * tree but a relation of its definition: the commits change the body, as a
+ * list closes inside it and the text goes on below the list, or a block
+ * open inside it, a quote or a list. The session opens with every prefix of
+ * the text and takes the rest in chunks of one, two, three and five bytes. */
+static void session_walks_through_definition_bodies(test_batch_runner *runner) {
+    static const char *const sources[] = {
+        "m\n:\n  -\n\n  d|\n",
+        "Term\n:\n  - item\n\n  more text|\n",
+        "m\n: > a\n  > b\n  > c\n\n  > d\n  > e\n",
+        "m\n: - a\n\n  - b\n\n    c\n    d\n",
+    };
+    static const size_t chunks[] = {1, 2, 3, 5};
+    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        const size_t length = strlen(sources[i]);
+        bool same = true;
+        size_t cut = 0, c = 0;
+        for (cut = 0; same && cut < length; cut++) {
+            for (c = 0; same && c < sizeof(chunks) / sizeof(chunks[0]); c++) {
+                same = splits_as_a_parse(sources[i], cut, chunks[c]);
+            }
+        }
+        OK(runner, same, "a session split through a definition's body finalizes as a parse, at byte %zu: %s",
+           same ? length : cut - 1, sources[i]);
     }
 }
 
@@ -12316,6 +12347,7 @@ int main(void) {
     session_opener_fields(runner);
     node_view_views(runner);
     session_finalize_matches_a_parse(runner);
+    session_walks_through_definition_bodies(runner);
     session_roots_at_every_depth(runner);
     session_allocation_failures(runner);
 

@@ -319,10 +319,6 @@ typedef struct markdown_core_stream {
     markdown_core_room *rooms;
     size_t room_count, room_capacity;
     struct markdown_core_node *boundary;
-    /* THE WALK ROOT (blocks.c): the open block the commits changed since
-     * the last publish nearest the root, which is on the builder stack, or
-     * NULL; and the block the snapshot's publish walks from. */
-    struct markdown_core_node *changed, *walk_root;
     /* THE RECORDS (ast.c). */
     markdown_core_tail_records records;
     /* The definitions the published document holds as committed (ast.c),
@@ -1286,15 +1282,10 @@ void markdown_core_parser_candidate_end(markdown_core_parser *parser);
  * one aside when it is a holder too, are DECIDED, with everything they
  * hold, and so are the fields an accept keeps; so is every block while no
  * candidate waits. `holder` gives the entry of `block` at depth `depth`
- * (markdown_core_holder) when it is a holder, and false otherwise;
- * `last_holder` gives the last holder on the way from the root to `block`,
- * an open block, each holder before it the block below the next, with its
- * depth `*depth`. */
+ * (markdown_core_holder) when it is a holder, and false otherwise. */
 bool markdown_core_parser_undecided(const markdown_core_parser *parser);
 bool markdown_core_parser_holder(const markdown_core_parser *parser, size_t depth,
                                  const struct markdown_core_node *block, markdown_core_holder *entry);
-struct markdown_core_node *markdown_core_parser_last_holder(const markdown_core_parser *parser,
-                                                            const struct markdown_core_node *block, size_t *depth);
 
 /* THE DEFINITION LOOKUP of inline content: the record of `kind` that
  * declares `label`, as written, for the block being completed, or NULL.
