@@ -154,7 +154,7 @@ bool markdown_core_block_attach_identifier_line(const markdown_core_element_inst
         !S_scan_block_identifier(work, input->data + parser->first_nonspace, input->len - parser->first_nonspace,
                                  &candidate) ||
         !candidate.own_line || candidate.content_end || !markdown_core_block_ends_with_blank_line(owner) ||
-        (parser->stream && markdown_core_parser_candidate_meets(parser, self, parent))) {
+        markdown_core_parser_candidate_meets(parser, self, parent)) {
         return false;
     }
     bool undecided;

@@ -53,7 +53,7 @@ static bool accepts_blank(const markdown_core_element_instance *self, markdown_c
         return true;
     }
     markdown_core_node *parent = markdown_core_parser_parent(parser, body);
-    if (parser->stream && markdown_core_parser_candidate_meets(parser, self, parent)) {
+    if (markdown_core_parser_candidate_meets(parser, self, parent)) {
         return false;
     }
     const int continuation = body->as.definition_body->continuation;
@@ -290,7 +290,7 @@ static markdown_core_node *try_paragraph(const markdown_core_element_instance *s
                                          markdown_core_parser *parser, markdown_core_node *parent, unsigned char *data,
                                          int length) {
     (void)indented;
-    if (parser->stream && markdown_core_parser_candidate_meets(parser, self, parent)) {
+    if (markdown_core_parser_candidate_meets(parser, self, parent)) {
         return NULL;
     }
     markdown_core_chunk input = {data, length, 0};

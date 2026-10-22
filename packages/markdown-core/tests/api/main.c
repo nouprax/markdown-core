@@ -6213,12 +6213,10 @@ static void line_facts_survive_moved_text(test_batch_runner *runner) {
     if (before && after && parser) {
         memcpy(before, source.ptr, size);
         markdown_core_parser_start(parser, &revision);
-        if (markdown_core_parser_stream(parser)) {
-            markdown_core_parser_commit(parser, before, last_line, false);
-            memcpy(after, source.ptr, size);
-            memset(before, 'x', size);
-            markdown_core_parser_commit(parser, after, size, true);
-        }
+        markdown_core_parser_commit(parser, before, last_line, false);
+        memcpy(after, source.ptr, size);
+        memset(before, 'x', size);
+        markdown_core_parser_commit(parser, after, size, true);
         moved = markdown_core_parser_finalize(parser);
     }
     markdown_core_node *whole = markdown_core_parse_document((const char *)source.ptr, size);
@@ -8679,7 +8677,9 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
             memset(bytes, 'a', sizeof(bytes));
             bytes[position] = (unsigned char)value;
             bytes[sizeof(bytes) - 1] = '\n';
-            markdown_core_parser reader = {0};
+            /* The whole text: no commit follows. */
+            markdown_core_stream whole = {.ends = true};
+            markdown_core_parser reader = {.stream = &whole};
             reader.input.source = bytes;
             reader.input.size = sizeof(bytes);
             reader.input.first_line = 1;
@@ -8700,7 +8700,8 @@ static void source_line_geometry_is_shared(test_batch_runner *runner) {
         }
     }
     static const unsigned char source[] = "a\0b\r\nc\rd\nlast";
-    markdown_core_parser parser = {0};
+    markdown_core_stream whole = {.ends = true};
+    markdown_core_parser parser = {.stream = &whole};
     parser.input.source = source;
     parser.input.size = sizeof(source) - 1;
     parser.input.first_line = 7;
