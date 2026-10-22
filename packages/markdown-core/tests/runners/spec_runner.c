@@ -93,10 +93,11 @@ static int streams_as_expected(const ts_spec_case *test_case, size_t cut, size_t
     return same;
 }
 
-/* Whether every streamed reading of the example dumps as the expected
- * block; the first that does not is reported. */
+/* Whether every streamed reading of the example, from every prefix through
+ * the whole example, dumps as the expected block; the first that does not
+ * is reported. */
 static int streams_all_as_expected(const ts_spec_case *test_case) {
-    for (size_t cut = 0; cut < test_case->markdown_length; cut++) {
+    for (size_t cut = 0; cut <= test_case->markdown_length; cut++) {
         for (size_t i = 0; i < sizeof(stream_tails) / sizeof(stream_tails[0]); i++) {
             if (!streams_as_expected(test_case, cut, stream_tails[i])) {
                 fprintf(stderr, "example %d: streamed from byte %zu, then %zu byte(s), differs\n", test_case->example,
