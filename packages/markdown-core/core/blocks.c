@@ -289,7 +289,7 @@ void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revi
      * nodes they own, the committed definitions and the records of the
      * lookups that found nothing. Every parse streams: a one-shot parse is
      * a stream whose first commit is its whole text, and its finalize. */
-    parser->stream = markdown_core_alloc(1, sizeof(*parser->stream));
+    parser->stream = markdown_core_alloc(1, sizeof(*parser->stream) + parser->dialect->candidate_state_size);
     if (parser->stream) {
         markdown_core_strbuf_init(&parser->stream->miss_labels, 0);
     }
@@ -3940,7 +3940,6 @@ struct markdown_core_candidate {
     /* The call's line, 0 for the document's prefix, and the last line
      * fed. */
     int line, fed;
-    int words[MARKDOWN_CORE_CANDIDATE_WORDS];
     /* Whether the call could claim the lines fed were the text to end
      * after them, whether a line ended the construct, and whether its
      * decision rejected it. */
@@ -3951,7 +3950,9 @@ struct markdown_core_candidate {
 
 /* A LINE'S MARK: the state, the misses and the lent blocks, the root first,
  * the pending block last, so a block's lend stands at its depth; the path;
- * the calls, the first that waits and how many wait. */
+ * the calls, the first that waits and how many wait; and the record each
+ * call keeps (element.h, `candidate_state_size`), the call's at its index in
+ * room for the dialect's largest. */
 struct markdown_core_candidate_mark {
     S_snapshot_mark state;
     size_t miss_count, miss_label_size, miss_root_count;
@@ -3961,11 +3962,20 @@ struct markdown_core_candidate_mark {
     size_t path_capacity;
     struct markdown_core_candidate *calls;
     size_t call_count, call_capacity, first, live;
+    unsigned char *states;
+    size_t state_capacity;
 };
+
+/* The record the call at `index` of `mark` keeps. */
+static inline void *S_call_state(const markdown_core_parser *parser, const struct markdown_core_candidate_mark *mark,
+                                 size_t index) {
+    const size_t size = parser->dialect->candidate_state_size;
+    return size ? mark->states + index * size : NULL;
+}
 
 void markdown_core_parser_request_candidate(markdown_core_parser *parser, const markdown_core_element_instance *owner,
                                             markdown_core_node *container, markdown_core_node_type child,
-                                            const int *words, bool ends) {
+                                            const void *state, bool ends) {
     markdown_core_stream *stream = parser->stream;
     assert(stream && !markdown_core_parser_candidate_final(parser) && !stream->requested);
     stream->requested = true;
@@ -3973,7 +3983,9 @@ void markdown_core_parser_request_candidate(markdown_core_parser *parser, const 
     stream->request_container = container;
     stream->request_child = child;
     stream->request_offset = parser->offset;
-    memcpy(stream->request_words, words, sizeof(stream->request_words));
+    if (owner->element->candidate_state_size) {
+        memcpy(stream->candidate_room, state, owner->element->candidate_state_size);
+    }
     stream->request_ends = ends;
 }
 
@@ -4282,6 +4294,16 @@ static void S_candidate_make(markdown_core_parser *parser) {
         return;
     }
     mark->calls = calls;
+    const size_t size = parser->dialect->candidate_state_size;
+    if (size) {
+        unsigned char *states = markdown_core_reserve(mark->states, &mark->state_capacity, mark->call_count + 1, size);
+        if (!states) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            return;
+        }
+        mark->states = states;
+        memcpy(S_call_state(parser, mark, mark->call_count), stream->candidate_room, size);
+    }
     const size_t index = mark->call_count++;
     const size_t depth = S_holder_depth(parser, mark->path, at, stream->request_child);
     struct markdown_core_candidate *candidate = &calls[index];
@@ -4299,7 +4321,6 @@ static void S_candidate_make(markdown_core_parser *parser) {
         .fed = parser->line_number,
         .ends = stream->request_ends,
     };
-    memcpy(candidate->words, stream->request_words, sizeof(candidate->words));
     mark->live++;
 }
 
@@ -4318,7 +4339,7 @@ static size_t S_line_next(const markdown_core_parser *parser, int line) {
  * with the line after them. */
 static markdown_core_candidate_step S_candidate_feed(markdown_core_parser *parser,
                                                      const struct markdown_core_candidate_mark *mark,
-                                                     struct markdown_core_candidate *candidate,
+                                                     struct markdown_core_candidate *candidate, void *state,
                                                      const unsigned char *limit, bool waits) {
     markdown_core_block_lookahead lookahead;
     if (!S_lookahead_room(parser, (int)candidate->depth + 1)) {
@@ -4331,12 +4352,12 @@ static markdown_core_candidate_step S_candidate_feed(markdown_core_parser *parse
     const markdown_core_element_instance *owner = candidate->owner;
     markdown_core_candidate_step step = MARKDOWN_CORE_CANDIDATE_CONTINUES;
     for (;;) {
-        markdown_core_chunk line;
-        int first, indent, blanks;
+        markdown_core_chunk content;
+        markdown_core_candidate_line line = {.content = &content};
         bool ends = candidate->ends;
-        if (markdown_core_parser_lookahead_next(&lookahead, &line, &first, &indent, &blanks)) {
-            step = owner->element->feed_candidate(owner, parser, candidate->words, &line, first, indent, blanks,
-                                                  waits && lookahead.incomplete, &ends);
+        if (markdown_core_parser_lookahead_next(&lookahead, &content, &line.first, &line.indent, &line.blanks)) {
+            line.unfinished = waits && lookahead.incomplete;
+            step = owner->element->feed_candidate(owner, parser, state, &line, &ends);
             if (step != MARKDOWN_CORE_CANDIDATE_CONTINUES) {
                 break;
             }
@@ -4346,8 +4367,9 @@ static markdown_core_candidate_step S_candidate_feed(markdown_core_parser *parse
         }
         if (parser->error || (!lookahead.exhausted && !lookahead.waited)) {
             step = MARKDOWN_CORE_CANDIDATE_ENDS;
-        } else if (blanks) {
-            step = owner->element->feed_candidate(owner, parser, candidate->words, NULL, 0, 0, blanks, false, &ends);
+        } else if (line.blanks) {
+            line = (markdown_core_candidate_line){.blanks = line.blanks};
+            step = owner->element->feed_candidate(owner, parser, state, &line, &ends);
             if (step == MARKDOWN_CORE_CANDIDATE_CONTINUES) {
                 candidate->ends = ends;
                 if (lookahead.waited) {
@@ -4374,7 +4396,8 @@ static markdown_core_candidate_decision S_candidate_decide(markdown_core_parser 
     markdown_core_parser_clear_end_read(parser);
     stream->deciding = candidate;
     stream->decision_mark = &stream->marks[m];
-    markdown_core_candidate_decision decision = owner->element->decide_candidate(owner, parser, candidate->words);
+    markdown_core_candidate_decision decision =
+        owner->element->decide_candidate(owner, parser, S_call_state(parser, &stream->marks[m], index));
     stream->deciding = NULL;
     stream->decision_mark = NULL;
     if (markdown_core_parser_end_read(parser)) {
@@ -4586,6 +4609,7 @@ static void S_candidates_release(markdown_core_parser *parser) {
         markdown_core_free(stream->marks[i].lends);
         markdown_core_free(stream->marks[i].path);
         markdown_core_free(stream->marks[i].calls);
+        markdown_core_free(stream->marks[i].states);
     }
     markdown_core_free(stream->marks);
     stream->marks = NULL;
@@ -4625,10 +4649,10 @@ static bool S_feed(markdown_core_parser *parser, int through, const unsigned cha
         bool gone = false;
         for (size_t k = mark->first; k < mark->call_count && !parser->error && !gone;) {
             struct markdown_core_candidate *candidate = &mark->calls[k];
-            if (candidate->ended
-                    ? candidate->size == parser->input.size
-                    : candidate->fed >= through || S_candidate_feed(parser, mark, candidate, limit, !stream->ends) !=
-                                                       MARKDOWN_CORE_CANDIDATE_ENDS) {
+            if (candidate->ended ? candidate->size == parser->input.size
+                                 : candidate->fed >= through ||
+                                       S_candidate_feed(parser, mark, candidate, S_call_state(parser, mark, k), limit,
+                                                        !stream->ends) != MARKDOWN_CORE_CANDIDATE_ENDS) {
                 k = S_call_next(mark, k);
                 continue;
             }
@@ -4684,8 +4708,12 @@ static bool S_candidates_see_end(markdown_core_parser *parser, size_t *m, size_t
             bool possible = mark->calls[k].ended;
             if (!possible) {
                 struct markdown_core_candidate fed = mark->calls[k];
+                void *state = S_call_state(parser, mark, k);
+                if (state) {
+                    state = memcpy(stream->candidate_room, state, parser->dialect->candidate_state_size);
+                }
                 const markdown_core_candidate_step step =
-                    S_candidate_feed(parser, mark, &fed, parser->input.source + parser->input.size, false);
+                    S_candidate_feed(parser, mark, &fed, state, parser->input.source + parser->input.size, false);
                 possible =
                     step == MARKDOWN_CORE_CANDIDATE_ENDS || (step == MARKDOWN_CORE_CANDIDATE_CONTINUES && fed.ends);
             }

@@ -511,6 +511,9 @@ static void S_project_instances(markdown_core_dialect *dialect, const markdown_c
         instance->run_offset = dialect->run_state_size;
         state_at += markdown_core_state_align(element->state_size);
         dialect->run_state_size += markdown_core_state_align(element->run_state_size);
+        if (dialect->candidate_state_size < markdown_core_state_align(element->candidate_state_size)) {
+            dialect->candidate_state_size = markdown_core_state_align(element->candidate_state_size);
+        }
         size_t at = markdown_core_instance_hash(element, bits);
         while (table[at]) {
             assert(table[at]->element != element);

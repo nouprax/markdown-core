@@ -154,11 +154,6 @@ typedef struct markdown_core_parser_input {
     bool last_line_ready;
 } markdown_core_parser_input;
 
-/* The words a call keeps of its candidate's grammars (blocks.c, THE
- * CANDIDATES), which its feed writes: where a table opener's grammars that
- * read on stand, with what its call found before a caption. */
-#define MARKDOWN_CORE_CANDIDATE_WORDS 13
-
 /* A BLOCK A SNAPSHOT OR A LINE'S MARK LENT (blocks.c, THE LENDING, THE
  * CANDIDATES): the block's address, which holds the view of it, the slot
  * that holds the block's own state, its last child as the lending found it,
@@ -356,7 +351,11 @@ typedef struct markdown_core_stream {
      * the last mark, whose line a reading reads anew; the call a snapshot
      * accepted, which claims in the snapshot's reading anew; the line through
      * which the feed has fed every call; and the request the line being read
-     * made of its opener's call. */
+     * made of its opener's call; and room for one record a candidate keeps
+     * (element.h, `candidate_state_size`), the dialect's largest: the one
+     * the request gives, which its call's mark copies, and the copy of a
+     * call's that a snapshot feeds (blocks.c, A SNAPSHOT SEES A CANDIDATE
+     * END). */
     struct markdown_core_candidate_mark *marks;
     size_t mark_count, mark_capacity, mark_made;
     struct markdown_core_candidate *deciding;
@@ -369,8 +368,8 @@ typedef struct markdown_core_stream {
     struct markdown_core_node *request_container;
     markdown_core_node_type request_child;
     bufsize_t request_offset;
-    int request_words[MARKDOWN_CORE_CANDIDATE_WORDS];
     bool request_ends, requested;
+    markdown_core_state_alignment candidate_room[];
 } markdown_core_stream;
 
 struct markdown_core_parser {
@@ -1243,8 +1242,9 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
  * candidate in `container`, and declines: an opener's, the text step's, a
  * blank line's acceptance, or the document's prefix, which is called before
  * line 1 (element.h, `read_document_prefix`). `child` is the kind of block
- * it would open, whose lines its candidate is fed, `words` what it keeps of
- * the grammar, and `ends` whether it could claim were the text to end after
+ * it would open, whose lines its candidate is fed, `state` the record it
+ * keeps of the grammar, the owner's `candidate_state_size` bytes, which the
+ * request copies, and `ends` whether it could claim were the text to end after
  * the call's line (element.h, `feed_candidate`). The commit ends at the
  * call, completes, marks its state there unless an earlier call of the line
  * did, and reads on from the call. A call asks first whether it MEETS its
@@ -1256,7 +1256,7 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
  * a reject keeps what the commit read. */
 void markdown_core_parser_request_candidate(markdown_core_parser *parser, const markdown_core_element_instance *owner,
                                             struct markdown_core_node *container, markdown_core_node_type child,
-                                            const int *words, bool ends);
+                                            const void *state, bool ends);
 bool markdown_core_parser_meets_call(markdown_core_parser *parser, const markdown_core_element_instance *owner,
                                      struct markdown_core_node *container);
 /* Every opener asks, so the parse reads whether a mark is left to meet

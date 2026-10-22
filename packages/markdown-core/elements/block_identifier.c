@@ -163,8 +163,7 @@ bool markdown_core_block_attach_identifier_line(const markdown_core_element_inst
         return false;
     }
     if (undecided) {
-        const int words[MARKDOWN_CORE_CANDIDATE_WORDS] = {0};
-        markdown_core_parser_request_candidate(parser, self, parent, MARKDOWN_CORE_NODE_PARAGRAPH, words, true);
+        markdown_core_parser_request_candidate(parser, self, parent, MARKDOWN_CORE_NODE_PARAGRAPH, NULL, true);
         return true;
     }
     if (!boundary || !S_attach_block_identifier(parser, owner, &candidate)) {
@@ -179,18 +178,13 @@ bool markdown_core_block_attach_identifier_line(const markdown_core_element_inst
  * ending after the identifier line is a boundary, so the request says the
  * call could claim there. */
 markdown_core_candidate_step markdown_core_block_feed_identifier_line(const markdown_core_element_instance *self,
-                                                                      markdown_core_parser *parser, int *words,
-                                                                      const markdown_core_chunk *input, int first,
-                                                                      int indent, int blanks, bool unfinished,
+                                                                      markdown_core_parser *parser, void *state,
+                                                                      const markdown_core_candidate_line *line,
                                                                       bool *ends) {
     (void)self;
     (void)parser;
-    (void)words;
-    (void)input;
-    (void)first;
-    (void)indent;
-    (void)blanks;
-    (void)unfinished;
+    (void)state;
+    (void)line;
     (void)ends;
     return MARKDOWN_CORE_CANDIDATE_ENDS;
 }
@@ -200,9 +194,9 @@ markdown_core_candidate_step markdown_core_block_feed_identifier_line(const mark
  * it asked, so what decides is the boundary after its line. */
 markdown_core_candidate_decision markdown_core_block_decide_identifier_line(const markdown_core_element_instance *self,
                                                                             markdown_core_parser *parser,
-                                                                            const int *words) {
+                                                                            const void *state) {
     (void)self;
-    (void)words;
+    (void)state;
     markdown_core_chunk line;
     markdown_core_node *container;
     if (!markdown_core_parser_candidate_start(parser, &line, &container)) {

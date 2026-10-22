@@ -41,6 +41,18 @@ typedef enum {
     MARKDOWN_CORE_INLINE_FALLBACK
 } markdown_core_inline_precedence;
 
+/* A LINE A CANDIDATE IS FED (blocks.c, THE CANDIDATES; `feed_candidate`):
+ * its content after the prefixes of the candidate's holder, NULL when the
+ * lines read so far end after the blank lines; its first non-space byte and
+ * its indentation there; the blank lines before it; and whether the text has
+ * not finished it, whose bytes past the prefixes are read only as far as
+ * they decide. */
+typedef struct {
+    const markdown_core_chunk *content;
+    int first, indent, blanks;
+    bool unfinished;
+} markdown_core_candidate_line;
+
 /* What a line tells a candidate (blocks.c, THE CANDIDATES;
  * `feed_candidate`), and what its decision is (`decide_candidate`). */
 typedef enum {
@@ -288,24 +300,20 @@ struct markdown_core_element {
     markdown_core_open_block_func try_opening_block;
     /* THE CANDIDATES (blocks.c): an element whose calls ask for candidates
      * (markdown_core_parser_request_candidate) is fed each later line its
-     * candidate's holder carries, after `blanks` blank lines, with `first`
-     * and `indent` its first non-space byte and its indentation after the
-     * prefixes; the line is NULL when the lines read so far end after the
-     * blank lines, and `unfinished` when the text has not finished it, whose
-     * bytes past the prefixes it reads only as far as they decide. It
-     * answers that the line continues the construct, and then in `*ends`
-     * whether the call could claim the lines through it were the text to
-     * end after it; that the construct ended before it; or that the
-     * unfinished line does not tell yet. It keeps what it read in the
-     * candidate's words, which it writes only for a line it answers goes
-     * on. `decide_candidate` decides as the call would read now
+     * candidate's holder carries (markdown_core_candidate_line). It answers
+     * that the line continues the construct, and then in `*ends` whether
+     * the call could claim the lines through it were the text to end after
+     * it; that the construct ended before it; or that the unfinished line
+     * does not tell yet. It keeps what it read in the candidate's record
+     * (`candidate_state_size`), which it writes only for a line it answers
+     * goes on. `decide_candidate` decides as the call would read now
      * (markdown_core_parser_candidate_start): ACCEPT when it would claim
      * lines, REJECT when it would not, and WAIT when more text may follow
      * and the decision read where the text ends. */
     markdown_core_candidate_step (*feed_candidate)(const markdown_core_element_instance *, markdown_core_parser *,
-                                                   int *, const markdown_core_chunk *, int, int, int, bool, bool *);
+                                                   void *, const markdown_core_candidate_line *, bool *);
     markdown_core_candidate_decision (*decide_candidate)(const markdown_core_element_instance *, markdown_core_parser *,
-                                                         const int *);
+                                                         const void *);
     /* What `try_opening_block` needs on the line before it is worth entering. */
     markdown_core_block_gate open_block_gate;
     /* What `try_interrupting_block` needs on a non-indented line. */
@@ -407,8 +415,10 @@ struct markdown_core_element {
     markdown_core_visit_owned_subtrees_func visit_owned_subtrees_func;
     /* The bytes of the element's parse record and of its record in each
      * inline run (markdown-core-element-api.h, "AN ELEMENT AS ONE PARSE HOLDS
-     * IT"); zero declares none. */
-    size_t state_size, run_state_size;
+     * IT"), and of the record each of its candidates keeps (THE CANDIDATES
+     * above), which its call's request gives and its feed writes; zero
+     * declares none. */
+    size_t state_size, run_state_size, candidate_state_size;
     /* The elements whose state this element's code reads, NULL-terminated
      * (markdown-core-element-api.h, "AN ELEMENT AS ONE PARSE HOLDS IT").
      * Sealing resolves them, in this order, into the instance's `peers`. */

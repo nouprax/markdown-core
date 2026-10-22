@@ -2899,8 +2899,6 @@ typedef struct {
     bool separated, headed, body, after, first_body, boundary, blanks, split, trailing;
 } table_feed;
 
-typedef char table_feed_fits_its_words[sizeof(table_feed) <= sizeof(int[MARKDOWN_CORE_CANDIDATE_WORDS]) ? 1 : -1];
-
 /* The grammars the line `source` holds first names, each ALIVE, as the feed
  * starts at the line after it, a call that found a table a caption can
  * trail when `trailing`. A caption's line names none (it reads its own
@@ -2953,11 +2951,9 @@ static void table_request(const markdown_core_element_instance *self, markdown_c
         line->dash_count = 0;
         line->full_boundary = false;
     }
-    int words[MARKDOWN_CORE_CANDIDATE_WORDS] = {0};
     const table_feed feed = table_feed_start(source, trailing);
     if (!parser->error) {
-        memcpy(words, &feed, sizeof(feed));
-        markdown_core_parser_request_candidate(parser, self, parent, MARKDOWN_CORE_NODE_TABLE, words, feed.trailing);
+        markdown_core_parser_request_candidate(parser, self, parent, MARKDOWN_CORE_NODE_TABLE, &feed, feed.trailing);
     }
 }
 
@@ -3170,11 +3166,12 @@ static bool table_multiline_step(table_feed *feed, unsigned char *state, table_s
  * lines the text read so far ends after leave each grammar as the line
  * before them did; the line after them tells. */
 static markdown_core_candidate_step feed_candidate(const markdown_core_element_instance *self,
-                                                   markdown_core_parser *parser, int *words,
-                                                   const markdown_core_chunk *input, int first, int indent, int blanks,
-                                                   bool unfinished, bool *ends) {
-    table_feed feed;
-    memcpy(&feed, words, sizeof(feed));
+                                                   markdown_core_parser *parser, void *state,
+                                                   const markdown_core_candidate_line *line, bool *ends) {
+    table_feed feed = *(const table_feed *)state;
+    const markdown_core_chunk *input = line->content;
+    const int blanks = line->blanks;
+    const bool unfinished = line->unfinished;
     if (!input) {
         /* Blank lines tell a grammar nothing until the line after them, and
          * end a caption's lines. */
@@ -3188,27 +3185,27 @@ static markdown_core_candidate_step feed_candidate(const markdown_core_element_i
     if (!table_source_push(&source, (table_source_line){.data = input->data,
                                                         .length = input->len,
                                                         .offset = parser->offset,
-                                                        .first = first,
+                                                        .first = line->first,
                                                         .first_column = parser->first_nonspace_column,
-                                                        .indent = indent})) {
+                                                        .indent = line->indent})) {
         goto done;
     }
     for (size_t i = 0; i < 2; i++) {
-        unsigned char *state = &feed.states[i];
+        unsigned char *grammar = &feed.states[i];
         bool told = true, claim = false;
-        if (*state == TABLE_ALIVE) {
+        if (*grammar == TABLE_ALIVE) {
             switch (feed.grammars[i]) {
             case TABLE_GRID:
-                told = table_grid_step(&feed, state, &source, blanks, unfinished, &claim);
+                told = table_grid_step(&feed, grammar, &source, blanks, unfinished, &claim);
                 break;
             case TABLE_SIMPLE:
-                told = table_simple_step(&feed, state, &source, blanks, unfinished);
+                told = table_simple_step(&feed, grammar, &source, blanks, unfinished);
                 break;
             case TABLE_HEADERLESS:
-                told = table_headerless_step(&feed, state, &source, blanks, unfinished);
+                told = table_headerless_step(&feed, grammar, &source, blanks, unfinished);
                 break;
             default:
-                told = table_multiline_step(&feed, state, &source, blanks, unfinished,
+                told = table_multiline_step(&feed, grammar, &source, blanks, unfinished,
                                             feed.grammars[i] == TABLE_HEADLESS, &claim);
                 break;
             }
@@ -3217,7 +3214,7 @@ static markdown_core_candidate_step feed_candidate(const markdown_core_element_i
             step = MARKDOWN_CORE_CANDIDATE_WAITS;
             goto done;
         }
-        claims = claims || claim || *state == TABLE_CLAIMED || *state == TABLE_DONE;
+        claims = claims || claim || *grammar == TABLE_CLAIMED || *grammar == TABLE_DONE;
     }
     for (size_t i = 0; i < 2 && feed.states[i] != TABLE_CLAIMED; i++) {
         if (feed.states[i] == TABLE_ALIVE) {
@@ -3226,7 +3223,7 @@ static markdown_core_candidate_step feed_candidate(const markdown_core_element_i
         }
     }
     if (step == MARKDOWN_CORE_CANDIDATE_CONTINUES) {
-        memcpy(words, &feed, sizeof(feed));
+        *(table_feed *)state = feed;
         *ends = claims;
     }
 done:
@@ -3237,9 +3234,8 @@ done:
 /* The opener's call decided as it would read now (blocks.c, THE
  * CANDIDATES), with the table before it as the call found it. */
 static markdown_core_candidate_decision decide_candidate(const markdown_core_element_instance *self,
-                                                         markdown_core_parser *parser, const int *words) {
-    table_feed feed;
-    memcpy(&feed, words, sizeof(feed));
+                                                         markdown_core_parser *parser, const void *state) {
+    const table_feed feed = *(const table_feed *)state;
     markdown_core_chunk line;
     markdown_core_node *container;
     if (!markdown_core_parser_candidate_start(parser, &line, &container)) {
@@ -3356,6 +3352,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .try_opening_block = try_opening_table_block,
     .feed_candidate = feed_candidate,
     .decide_candidate = decide_candidate,
+    .candidate_state_size = sizeof(table_feed),
     .containment_kinds = containment_kinds,
     .contains_inlines_func = contains_inlines,
     .opaque_alloc_func = opaque_alloc,
