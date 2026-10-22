@@ -137,9 +137,21 @@ static bufsize_t topic_end(const markdown_core_inline_state *inline_state, bufsi
     return end;
 }
 
+/* THE TOPIC A RUN'S TEXT FOUND (the element's run record): the text scan
+ * asks at a `#` whether a topic starts there, and the match at that `#`
+ * reads the end the question found, `end` past the `#` at `at`. */
+typedef struct {
+    bufsize_t at, end;
+} topic_run;
+
 static bool is_inline_start(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
                             bufsize_t at) {
-    return topic_end(inline_state, at) != 0;
+    const bufsize_t end = topic_end(inline_state, at);
+    topic_run *run = markdown_core_run_state(inline_state, self);
+    if (run) {
+        *run = (topic_run){at, end};
+    }
+    return end != 0;
 }
 
 static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
@@ -149,7 +161,8 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
         return NULL;
     }
     const bufsize_t start = inline_state->pos;
-    const bufsize_t end = topic_end(inline_state, start);
+    const topic_run *run = markdown_core_run_state(inline_state, self);
+    const bufsize_t end = run && run->end && run->at == start ? run->end : topic_end(inline_state, start);
     if (!end) {
         return NULL;
     }
@@ -161,6 +174,7 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_TOPIC = {
     .name = "topic",
+    .run_state_size = sizeof(topic_run),
     .match_inline = match,
     .is_inline_start = is_inline_start,
     .terminates_text = "#",
