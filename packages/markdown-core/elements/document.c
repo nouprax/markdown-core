@@ -45,38 +45,6 @@ static void finish_document(const markdown_core_element_instance *self, markdown
         markdown_core_headings_dispose(headings);
     }
 }
-static void start_snapshot(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
-    if (headings) {
-        markdown_core_headings_start_snapshot(headings, parser);
-    }
-}
-static void end_snapshot(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
-    if (headings) {
-        markdown_core_headings_end_snapshot(headings, parser);
-    }
-}
-static void mark_candidate(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
-    if (headings) {
-        markdown_core_headings_mark_candidate(headings, parser);
-    }
-}
-static void undo_candidate(const markdown_core_element_instance *self, markdown_core_parser *parser, size_t index) {
-    (void)parser;
-    const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
-    if (headings) {
-        markdown_core_headings_undo_candidate(headings, index);
-    }
-}
-static void drop_candidate(const markdown_core_element_instance *self, markdown_core_parser *parser, size_t index) {
-    (void)parser;
-    const markdown_core_element_instance *headings = self->peers[DOCUMENT_HEADING];
-    if (headings) {
-        markdown_core_headings_drop_candidate(headings, index);
-    }
-}
 static void publish_document(const markdown_core_element_instance *self, markdown_core_parser *parser) {
     (void)self;
     if (!markdown_core_publish_tree(parser)) {
@@ -104,8 +72,8 @@ static size_t read_document_prefix(const markdown_core_element_instance *self, m
     const bool closed = markdown_core_properties_closed(self->state, parser, &fence);
     if (markdown_core_parser_end_read(parser)) {
         if (!parser->error) {
-            const int words[MARKDOWN_CORE_CANDIDATE_WORDS] = {0};
-            markdown_core_parser_request_candidate(parser, self, parser->root, MARKDOWN_CORE_NODE_METADATA, words,
+            const bool opened = false;
+            markdown_core_parser_request_candidate(parser, self, parser->root, MARKDOWN_CORE_NODE_METADATA, &opened,
                                                    false);
         }
         return 0;
@@ -114,28 +82,25 @@ static size_t read_document_prefix(const markdown_core_element_instance *self, m
 }
 
 /* THE FEED of the prefix's candidate: the first line opens the envelope
- * when it is a fence, which the first of the words keeps, and ends the
+ * when it is a fence, which the candidate's record keeps, and ends the
  * construct otherwise; after it, a fence line closes the envelope and ends
  * the construct, and any other line goes on with it, a line the text has
  * not finished once its bytes rule a fence out. An envelope its text leaves
  * open is not claimed. */
 static markdown_core_candidate_step feed_candidate(const markdown_core_element_instance *self,
-                                                   markdown_core_parser *parser, int *words,
-                                                   const markdown_core_chunk *input, int first, int indent, int blanks,
-                                                   bool unfinished, bool *ends) {
+                                                   markdown_core_parser *parser, void *state,
+                                                   const markdown_core_candidate_line *line, bool *ends) {
     (void)self;
     (void)parser;
-    (void)first;
-    (void)indent;
-    const bool opened = words[0];
-    const int fence = input ? markdown_core_properties_fence(input->data) : -1;
-    if (unfinished && fence > 0) {
+    bool *opened = state;
+    const int fence = line->content ? markdown_core_properties_fence(line->content->data) : -1;
+    if (line->unfinished && fence > 0) {
         return MARKDOWN_CORE_CANDIDATE_WAITS;
     }
-    if (opened ? fence == 3 : blanks || fence != 3) {
+    if (*opened ? fence == 3 : line->blanks || fence != 3) {
         return MARKDOWN_CORE_CANDIDATE_ENDS;
     }
-    words[0] = 1;
+    *opened = true;
     *ends = false;
     return MARKDOWN_CORE_CANDIDATE_CONTINUES;
 }
@@ -143,8 +108,8 @@ static markdown_core_candidate_step feed_candidate(const markdown_core_element_i
 /* The prefix's call decided as it would read now: the envelope closes at
  * the fence that ended the construct. */
 static markdown_core_candidate_decision decide_candidate(const markdown_core_element_instance *self,
-                                                         markdown_core_parser *parser, const int *words) {
-    (void)words;
+                                                         markdown_core_parser *parser, const void *state) {
+    (void)state;
     size_t fence;
     return markdown_core_properties_closed(self->state, parser, &fence) ? MARKDOWN_CORE_CANDIDATE_ACCEPT
                                                                         : MARKDOWN_CORE_CANDIDATE_REJECT;
@@ -159,13 +124,9 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DOCUMENT = {
     .read_document_prefix = read_document_prefix,
     .feed_candidate = feed_candidate,
     .decide_candidate = decide_candidate,
+    .candidate_state_size = sizeof(bool),
     .prepare_document = prepare_document,
     .finish_document = finish_document,
-    .start_snapshot = start_snapshot,
-    .end_snapshot = end_snapshot,
-    .mark_candidate = mark_candidate,
-    .undo_candidate = undo_candidate,
-    .drop_candidate = drop_candidate,
     .publish_document = publish_document,
     .publish_candidate = publish_candidate,
 };

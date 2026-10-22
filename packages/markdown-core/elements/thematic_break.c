@@ -35,11 +35,11 @@ static bool open_thematic(const markdown_core_element_instance *self, markdown_c
 
     // it's only now that we know the line is not part of a setext heading:
     *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_THEMATIC_BREAK,
-                                                parser->first_nonspace + 1);
+                                                parser->at.first_nonspace + 1);
     if (!*container) {
         return false;
     }
-    markdown_core_block_advance_offset(parser, input, input->len - 1 - parser->offset, false);
+    markdown_core_block_advance_offset(parser, input, input->len - 1 - parser->at.offset, false);
 
     return true;
 }

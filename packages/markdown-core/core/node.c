@@ -459,7 +459,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_visit_fields(markdo
  * (markdown_core_node_candidate) as its release begins, which then gives
  * back what the candidate still holds as it does for any node: exactly what
  * it owns. */
-static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_let_go(markdown_core_node *candidate) {
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_drop_borrowed(markdown_core_node *candidate) {
     markdown_core_strbuf_init_zeroed(&candidate->content);
 }
 
@@ -469,7 +469,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_free_stack(markdow
     while (stack) {
         markdown_core_node *e = stack;
         if (e->flags & MARKDOWN_CORE_NODE__BORROWS_CONTENT) {
-            S_let_go(e);
+            S_drop_borrowed(e);
         }
         /* Almost no node owns an attribute value or a content buffer: the
          * test each releaser makes first -- its own predicate, defined once
@@ -937,7 +937,10 @@ markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_nod
      * a node the snapshot made once its kind changes (blocks.c, THE
      * LENDING). */
     node->id = 0;
-    node->flags &= (markdown_core_node_internal_flags)~MARKDOWN_CORE_NODE__LENT;
+    /* The element flags were the old kind's element's (node.h), which no
+     * longer owns the node. */
+    node->flags &=
+        (markdown_core_node_internal_flags)((MARKDOWN_CORE_NODE__ELEMENT_FIRST - 1) & ~MARKDOWN_CORE_NODE__LENT);
     return MARKDOWN_CORE_NODE_SET_KIND_OK;
 }
 

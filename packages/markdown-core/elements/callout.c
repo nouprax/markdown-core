@@ -10,12 +10,12 @@ bool markdown_core_block_parse_callout_prefix(markdown_core_parser *parser, mark
     bool res = false;
     bufsize_t matched = 0;
 
-    matched = parser->indent <= 3 && BLOCK_PEEK(input, parser->first_nonspace) == '>';
+    matched = parser->at.indent <= 3 && BLOCK_PEEK(input, parser->at.first_nonspace) == '>';
     if (matched) {
 
-        markdown_core_block_advance_offset(parser, input, parser->indent + 1, true);
+        markdown_core_block_advance_offset(parser, input, parser->at.indent + 1, true);
 
-        if (markdown_core_is_space_or_tab(BLOCK_PEEK(input, parser->offset))) {
+        if (markdown_core_is_space_or_tab(BLOCK_PEEK(input, parser->at.offset))) {
             markdown_core_block_advance_offset(parser, input, 1, true);
         }
 
@@ -26,14 +26,14 @@ bool markdown_core_block_parse_callout_prefix(markdown_core_parser *parser, mark
 
 static bool markdown_core_block_parse_callout_metadata(markdown_core_callout_work *counts, markdown_core_parser *parser,
                                                        markdown_core_node *node, markdown_core_chunk *input) {
-    bufsize_t pos = parser->offset;
+    bufsize_t pos = parser->at.offset;
     bufsize_t begin = pos;
     while (pos < input->len && input->data[pos] == ' ' && pos - begin < 3) {
         pos++;
         counts->scan++;
     }
     counts->scan++;
-    if (parser->partially_consumed_tab || pos + 2 >= input->len || input->data[pos] != '[' ||
+    if (parser->at.partially_consumed_tab || pos + 2 >= input->len || input->data[pos] != '[' ||
         input->data[pos + 1] != '!') {
         return false;
     }
@@ -81,27 +81,27 @@ static bool markdown_core_block_parse_callout_metadata(markdown_core_callout_wor
         }
         node->as.callout->title = title;
         title->place =
-            (markdown_core_place){(uint32_t)markdown_core_parser_source_offset(parser, parser->line_number, pos + 1),
-                                  (uint32_t)markdown_core_parser_source_end(parser, parser->line_number, end)};
+            (markdown_core_place){(uint32_t)markdown_core_parser_source_offset(parser, parser->at.line_number, pos + 1),
+                                  (uint32_t)markdown_core_parser_source_end(parser, parser->at.line_number, end)};
         markdown_core_strbuf_put(&title->content, input->data + pos, end - pos);
-        if (title->content.oom || !markdown_core_parser_append_source_marks(parser, title, parser->line_number, pos + 1,
-                                                                            title->content.size, 0)) {
+        if (title->content.oom || !markdown_core_parser_append_source_marks(parser, title, parser->at.line_number,
+                                                                            pos + 1, title->content.size, 0)) {
             markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         }
         markdown_core_block_settle_field(parser, title, node);
     }
-    markdown_core_block_advance_offset(parser, input, input->len - 1 - parser->offset, false);
+    markdown_core_block_advance_offset(parser, input, input->len - 1 - parser->at.offset, false);
     return true;
 }
 
 static bool markdown_core_callout_open(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                        markdown_core_node **container, markdown_core_chunk *input, block_start *start) {
 
-    bufsize_t blockquote_startpos = parser->first_nonspace;
+    bufsize_t blockquote_startpos = parser->at.first_nonspace;
 
-    markdown_core_block_advance_offset(parser, input, parser->first_nonspace + 1 - parser->offset, false);
+    markdown_core_block_advance_offset(parser, input, parser->at.first_nonspace + 1 - parser->at.offset, false);
     // optional following character
-    if (markdown_core_is_space_or_tab(input->data[parser->offset])) {
+    if (markdown_core_is_space_or_tab(input->data[parser->at.offset])) {
         markdown_core_block_advance_offset(parser, input, 1, true);
     }
     *container =
@@ -135,7 +135,7 @@ static bool accepts_lazy(const markdown_core_element_instance *self, markdown_co
     (void)self;
     return node->kind == MARKDOWN_CORE_NODE_CALLOUT && node->as.callout->variant.has_value &&
            !markdown_core_parser_last_child(node) &&
-           markdown_core_parser_starts_on_line(parser, node, parser->line_number - 1);
+           markdown_core_parser_starts_on_line(parser, node, parser->at.line_number - 1);
 }
 
 static bool continue_container(const markdown_core_element_instance *self, markdown_core_parser *parser,
@@ -151,8 +151,8 @@ static bufsize_t continue_reach(const markdown_core_element_instance *self, mark
                                 const markdown_core_node *node, const markdown_core_chunk *input) {
     (void)self;
     (void)node;
-    const bufsize_t first = parser->first_nonspace;
-    if (parser->indent > 3 || input->data[first] != '>') {
+    const bufsize_t first = parser->at.first_nonspace;
+    if (parser->at.indent > 3 || input->data[first] != '>') {
         return first;
     }
     const bufsize_t after = markdown_core_block_scalar_end(input, first + 1);

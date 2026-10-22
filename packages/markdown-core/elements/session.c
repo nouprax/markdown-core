@@ -65,7 +65,8 @@ static markdown_core_status session_snapshot(markdown_core_session *session) {
 }
 
 /* Commits every line of the text and publishes the committed parse ended
- * there, which ends the session's appends. */
+ * there, which ends the session's appends. A commit that fails fails the
+ * parse, which the finalize then publishes as nothing. */
 static markdown_core_status session_finalize(markdown_core_session *session) {
     markdown_core_parser_commit(session->committed, session_source(session), session->size, true);
     session->finalized = true;
@@ -120,8 +121,8 @@ static void session_close(markdown_core_session *session) {
     markdown_core_free(session->text);
 }
 
-/* Opens a zeroed session in place: makes its parser, takes the source and
- * starts its committed parse. */
+/* Opens a zeroed session in place: makes its parser, takes the source and,
+ * once it holds it, starts its committed parse. */
 static markdown_core_status session_open(markdown_core_session *session, const uint8_t *source, size_t size,
                                          markdown_core_text_unit unit) {
     session->document.unit = unit;
@@ -131,7 +132,9 @@ static markdown_core_status session_open(markdown_core_session *session, const u
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     markdown_core_status status = session_take(session, source, size);
-    markdown_core_parser_start(session->committed, &session->revision);
+    if (status == MARKDOWN_CORE_OK) {
+        markdown_core_parser_start(session->committed, &session->revision);
+    }
     return status;
 }
 

@@ -1,8 +1,9 @@
 # Incremental parsing for streaming
 
-Status: rollout steps 0 to 5 (section 9) are on `main`: the gates, the public
+Status: rollout steps 0 to 7 (section 9) are on `main`: the gates, the public
 model, sessions with a whole-document restart, Reference nodes and content
-runs, node runs, and sessions that only append. On 2026-10-14 the owner
+runs, node runs, sessions that only append, builders, and the streaming
+session with `finalize`. Step 8 is next. On 2026-10-14 the owner
 narrowed the requirement to one workload, appending tokens from a language
 model, and this revision replaces the general-edit engine that steps 4 to 8
 of the previous revision specified. Steps 4 to 8 now build a streaming
@@ -450,10 +451,9 @@ other decision is final once it is made.**
 A decision sees the end of the input when its lookahead reaches the end of
 the input, when it asks for the last line before that line is complete, or
 when it asks whether a line is the last one. Every such
-question goes through one entry of the lookahead API, and an audit in
-`scripts/audit/` refuses any other comparison with the end of the input, such
-as the direct `lookahead_cursor == lookahead_end` tests in `table.c` and
-`block_identifier.c` today.
+question goes through one entry of the lookahead API, and
+`scripts/audit/check-input-end.mjs` refuses any other comparison with the end
+of the input.
 
 ### 5.2 What a session holds
 
@@ -885,8 +885,8 @@ which also says at which rollout step each one becomes a gate.
   finalized status. The allocator-seam OOM sweep fails every append and
   `finalize` at every allocation boundary and asserts that the call throws
   and that freeing the session leaks nothing.
-- **Audits.** The single lookahead entry of 5.1 and the dependency inventory
-  (section 3) are enforced by scripts in `scripts/audit/`.
+- **Audits.** `scripts/audit/check-input-end.mjs` enforces the single
+  lookahead entry of 5.1.
 
 ## 9. Rollout
 
@@ -922,7 +922,7 @@ activates for it.
    function and settled nodes are immutable (5.2); the completion queue
    replaces the finish walk (5.4); the registry is a log with rollback marks;
    `Document.parse` is a commit and a `finalize` (5.10).
-- [ ] **Step 7: Streaming session.** The append-only text, the commit rule and
+- [x] **Step 7: Streaming session.** The append-only text, the commit rule and
    the single lookahead entry (5.1, 5.3), snapshots (5.5), tail ids (5.9),
    `finalize` in C and every binding (4.4, 5.10), container folds (5.6) and
    pipe and simple tables read a row at a time (5.7).

@@ -18,7 +18,7 @@ static bool close_paragraph(const markdown_core_element_instance *self, markdown
 
 static int continue_paragraph(const markdown_core_element_instance *self, markdown_core_parser *parser,
                               unsigned char *data, int length, markdown_core_node *container) {
-    return !parser->blank;
+    return !parser->at.blank;
 }
 /* The paragraph reads whether the line is blank: its first non-space byte. */
 static bufsize_t continue_reach(const markdown_core_element_instance *self, markdown_core_parser *parser,
@@ -26,7 +26,7 @@ static bufsize_t continue_reach(const markdown_core_element_instance *self, mark
     (void)self;
     (void)node;
     (void)input;
-    return parser->first_nonspace;
+    return parser->at.first_nonspace;
 }
 static bool accepts_lazy(const markdown_core_element_instance *self, markdown_core_parser *parser,
                          markdown_core_node *node) {
@@ -52,9 +52,9 @@ static markdown_core_node *open_text(const markdown_core_element_instance *self,
         return NULL;
     }
     container = markdown_core_parser_add_child_validated(parser, container, MARKDOWN_CORE_NODE_PARAGRAPH,
-                                                         parser->first_nonspace + 1);
+                                                         parser->at.first_nonspace + 1);
     if (container) {
-        markdown_core_block_advance_offset(parser, input, parser->first_nonspace - parser->offset, false);
+        markdown_core_block_advance_offset(parser, input, parser->at.first_nonspace - parser->at.offset, false);
     }
     return container;
 }

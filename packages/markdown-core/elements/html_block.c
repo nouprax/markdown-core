@@ -21,7 +21,7 @@ static int continue_html(const markdown_core_element_instance *self, markdown_co
         break;
     case 6:
     case 7:
-        res = !parser->blank;
+        res = !parser->at.blank;
         break;
     }
 
@@ -45,13 +45,13 @@ static bool open_html(const markdown_core_element_instance *self, markdown_core_
     (void)self;
     bufsize_t matched = start->matched;
 
-    *container =
-        markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_HTML_BLOCK, parser->first_nonspace + 1);
+    *container = markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_HTML_BLOCK,
+                                                parser->at.first_nonspace + 1);
     if (!*container) {
         return false;
     }
     (*container)->as.html_block->block_type = matched;
-    // note, we don't adjust parser->offset because the tag is part of the
+    // note, we don't adjust parser->at.offset because the tag is part of the
     // text
 
     return true;
@@ -73,15 +73,15 @@ static bool ends_html(const markdown_core_element_instance *self, markdown_core_
     (void)self;
     switch (container->as.html_block->block_type) {
     case 1:
-        return scan_html_block_end_1(input->data, input->len, parser->first_nonspace);
+        return scan_html_block_end_1(input->data, input->len, parser->at.first_nonspace);
     case 2:
-        return scan_html_block_end_2(input->data, input->len, parser->first_nonspace);
+        return scan_html_block_end_2(input->data, input->len, parser->at.first_nonspace);
     case 3:
-        return scan_html_block_end_3(input->data, input->len, parser->first_nonspace);
+        return scan_html_block_end_3(input->data, input->len, parser->at.first_nonspace);
     case 4:
-        return scan_html_block_end_4(input->data, input->len, parser->first_nonspace);
+        return scan_html_block_end_4(input->data, input->len, parser->at.first_nonspace);
     case 5:
-        return scan_html_block_end_5(input->data, input->len, parser->first_nonspace);
+        return scan_html_block_end_5(input->data, input->len, parser->at.first_nonspace);
     default:
         return false;
     }

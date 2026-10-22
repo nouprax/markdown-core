@@ -367,8 +367,10 @@ struct markdown_core_element_instance {
     const markdown_core_element *element;
     /* The parse record, or NULL when the element declares none. */
     void *state;
-    /* Where the element's record lies in a run's block of records. */
-    size_t run_offset;
+    /* Where the element's record lies in a run's block of records, and
+     * where what a mark keeps of its parse record (element.h, `kept_size`)
+     * lies in a mark's. */
+    size_t run_offset, kept_offset;
     /* The instances of the descriptor's `peers`, in its order. */
     const markdown_core_element_instance *const *peers;
 };

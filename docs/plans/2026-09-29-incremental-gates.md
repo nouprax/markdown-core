@@ -1,11 +1,11 @@
 # Gates for incremental parsing
 
-Status: steps 0 to 5 of the rollout implemented this harness: the stream
+Status: steps 0 to 7 of the rollout implemented this harness: the stream
 workloads, the correctness runner on every platform, the stream benchmark with
-rules 6.3 and 6.4, and the `buffer_to_ast` rule of the one-shot gate. On
-2026-10-14 the owner narrowed the requirement to streaming
-([plan](2026-09-29-incremental-parsing.md) section 1, D7); step 7 adds
-`finalize` and the stream oracles of 4.6. This document specifies the
+rules 6.3 and 6.4, the `buffer_to_ast` rule of the one-shot gate, `finalize`
+and the stream oracles of 4.6. On 2026-10-14 the owner narrowed the
+requirement to streaming ([plan](2026-09-29-incremental-parsing.md) section 1,
+D7). This document specifies the
 correctness suite and the benchmarks that decide whether each step of
 [incremental parsing](2026-09-29-incremental-parsing.md) is done.
 

@@ -97,7 +97,7 @@ static bool comment_reads(const markdown_core_element_instance *self, markdown_c
         markdown_core_parser_lookahead_wait(&lines.lookahead);
     }
     markdown_core_block_reader reader = {&lines, read_block_line};
-    const bool closed = probe_comment_block(self, parser, line, first, parser->indent, &reader);
+    const bool closed = probe_comment_block(self, parser, line, first, parser->at.indent, &reader);
     markdown_core_parser_lookahead_end(&lines.lookahead);
     *undecided = !closed && lines.undecided;
     return closed && !parser->error;
@@ -119,8 +119,7 @@ static markdown_core_node *open_block(const markdown_core_element_instance *self
     bool undecided;
     const bool closed = comment_reads(self, parser, parent_container, &line, first_nonspace, &undecided);
     if (undecided && !parser->error) {
-        const int words[MARKDOWN_CORE_CANDIDATE_WORDS] = {0};
-        markdown_core_parser_request_candidate(parser, self, parent_container, MARKDOWN_CORE_NODE_COMMENT_BLOCK, words,
+        markdown_core_parser_request_candidate(parser, self, parent_container, MARKDOWN_CORE_NODE_COMMENT_BLOCK, NULL,
                                                false);
     }
     if (!closed) {
@@ -143,19 +142,20 @@ static markdown_core_node *open_block(const markdown_core_element_instance *self
  * with it, a line the text has not finished once its bytes rule a fence
  * out. A block its text leaves open is not claimed. */
 static markdown_core_candidate_step feed_candidate(const markdown_core_element_instance *self,
-                                                   markdown_core_parser *parser, int *words,
-                                                   const markdown_core_chunk *input, int first, int indent, int blanks,
-                                                   bool unfinished, bool *ends) {
+                                                   markdown_core_parser *parser, void *state,
+                                                   const markdown_core_candidate_line *line, bool *ends) {
     (void)self;
     (void)parser;
-    (void)words;
-    (void)blanks;
-    if (input && indent < 4) {
+    (void)state;
+    const markdown_core_chunk *input = line->content;
+    if (input && line->indent < 4) {
+        const int first = line->first;
         const bool fence = is_fence_line(input->data, input->len, first);
-        if (fence && !unfinished) {
+        if (fence && !line->unfinished) {
             return MARKDOWN_CORE_CANDIDATE_ENDS;
         }
-        if (unfinished && (fence || (input->data[first] == '%' && markdown_core_is_line_end(input->data[first + 1])))) {
+        if (line->unfinished &&
+            (fence || (input->data[first] == '%' && markdown_core_is_line_end(input->data[first + 1])))) {
             return MARKDOWN_CORE_CANDIDATE_WAITS;
         }
     }
@@ -166,16 +166,16 @@ static markdown_core_candidate_step feed_candidate(const markdown_core_element_i
 /* The opener's call decided as it would read now (blocks.c, THE
  * CANDIDATES). */
 static markdown_core_candidate_decision decide_candidate(const markdown_core_element_instance *self,
-                                                         markdown_core_parser *parser, const int *words) {
-    (void)words;
+                                                         markdown_core_parser *parser, const void *state) {
+    (void)state;
     markdown_core_chunk line;
     markdown_core_node *container;
     if (!markdown_core_parser_candidate_start(parser, &line, &container)) {
         return MARKDOWN_CORE_CANDIDATE_REJECT;
     }
     bool closed = false, undecided = false;
-    if (parser->indent < 4 && is_fence_line(line.data, line.len, parser->first_nonspace)) {
-        closed = comment_reads(self, parser, container, &line, parser->first_nonspace, &undecided);
+    if (parser->at.indent < 4 && is_fence_line(line.data, line.len, parser->at.first_nonspace)) {
+        closed = comment_reads(self, parser, container, &line, parser->at.first_nonspace, &undecided);
     }
     markdown_core_parser_candidate_end(parser);
     return undecided ? MARKDOWN_CORE_CANDIDATE_WAIT

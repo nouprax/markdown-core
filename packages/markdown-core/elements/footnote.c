@@ -260,7 +260,7 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
                                         block_start *start) {
     bufsize_t matched = start->matched;
 
-    markdown_core_chunk c = markdown_core_chunk_dup(input, parser->first_nonspace + 2, matched - 2);
+    markdown_core_chunk c = markdown_core_chunk_dup(input, parser->at.first_nonspace + 2, matched - 2);
 
     while (c.data[c.len - 1] != ']') {
         --c.len;
@@ -273,7 +273,7 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
         return false;
     }
 
-    markdown_core_block_advance_offset(parser, input, parser->first_nonspace + matched - parser->offset, false);
+    markdown_core_block_advance_offset(parser, input, parser->at.first_nonspace + matched - parser->at.offset, false);
     /* THE ANCHOR RULE (§5.1): a definition is a block node at the byte
      * where its OPENING BRACKET was written. It used to start at the
      * byte after `[^label]:`, which is a column that need not exist --
@@ -282,7 +282,7 @@ static bool markdown_core_footnote_open(const markdown_core_element_instance *se
      * its own first byte and the marker is inside it; a footnote
      * definition was the one that started after its own marker. */
     *container =
-        markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_FOOTNOTE, parser->first_nonspace + 1);
+        markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_FOOTNOTE, parser->at.first_nonspace + 1);
     if (!*container) {
         markdown_core_chunk_free(&c);
         return false;

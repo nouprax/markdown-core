@@ -72,7 +72,7 @@ static bool markdown_core_specimen_open(const markdown_core_element_instance *se
         return false;
     }
     *container =
-        markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_SPECIMEN, parser->first_nonspace + 1);
+        markdown_core_parser_add_child(parser, *container, MARKDOWN_CORE_NODE_SPECIMEN, parser->at.first_nonspace + 1);
     if (!*container) {
         markdown_core_optional_chunk_free(&specimen.label);
         return false;
@@ -94,8 +94,8 @@ static bool markdown_core_specimen_open(const markdown_core_element_instance *se
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
-    markdown_core_block_advance_offset(parser, input, parser->first_nonspace + matched - parser->offset, false);
-    while (markdown_core_is_space_or_tab(input->data[parser->offset])) {
+    markdown_core_block_advance_offset(parser, input, parser->at.first_nonspace + matched - parser->at.offset, false);
+    while (markdown_core_is_space_or_tab(input->data[parser->at.offset])) {
         markdown_core_block_advance_offset(parser, input, 1, true);
         state->work++;
     }
