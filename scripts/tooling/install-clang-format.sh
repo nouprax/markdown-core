@@ -2,7 +2,7 @@
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
-VERSION="23.1.0"
+VERSION="23.1.3"
 INSTALL_DIR="${CLANG_FORMAT_INSTALL_DIR:-$root/.tools/clang-format/$VERSION}"
 executable="$INSTALL_DIR/venv/bin/clang-format"
 

@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-EXPECTED_VERSION="23.1.0"
+EXPECTED_VERSION="23.1.3"
 REPO_CLANG_FORMAT="$PWD/.tools/clang-format/$EXPECTED_VERSION/venv/bin/clang-format"
 if [ -n "${CLANG_FORMAT:-}" ]; then
     :

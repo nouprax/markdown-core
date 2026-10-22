@@ -3,7 +3,7 @@
 The [insertion module](../../../docs/specs/dialect/insertion.md) owns the
 language. This oracle supplies independent executable evidence for I0/I1.
 
-`markdown-it@14.2.0` and `markdown-it-ins@4.0.0` are exact development dependencies.
+`markdown-it@15.0.3` and `markdown-it-ins@4.0.0` are exact development dependencies.
 Their SHA-512 package integrity values are checked against both the lockfile
 and the normative module. The plugin is registered with `use`; HTML token
 recognition is enabled so token opacity is exercised. Other markdown-it defaults
@@ -49,6 +49,10 @@ cases exercise the [14.2.0 Unicode fixes](https://github.com/markdown-it/markdow
 astral symbol and punctuation flanking, plus paragraph/heading whitespace
 preservation. Each changes the old oracle result and agrees with the existing
 product under 14.2.0. The upgrade requires no product rule or projection change.
+
+The 14.2.0 → 15.0.3 upgrade preserves all 57 projected oracle trees and all
+twelve registered divergence digests. It requires no corpus, product rule, or
+projection change.
 
 ## Comparison and policy
 

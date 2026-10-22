@@ -13,8 +13,8 @@
 # Keep them in sync when those files change.
 FROM ubuntu:24.04
 
-ARG NODE_VERSION=26.8.1
-ARG PNPM_VERSION=11.25.0
+ARG NODE_VERSION=26.12.1
+ARG PNPM_VERSION=11.28.7
 ARG ANDROID_CMDLINE_TOOLS=13114758
 ARG ANDROID_PLATFORM=android-36
 ARG ANDROID_CMAKE_VERSION=3.22.1
@@ -54,7 +54,7 @@ RUN usermod -aG sudo ubuntu \
     && echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/90-ubuntu \
     && chmod 0440 /etc/sudoers.d/90-ubuntu
 
-# Node.js 26.8.1 (exact) installed system-wide. The repository pins this exact
+# Node.js 26.12.1 (exact) installed system-wide. The repository pins this exact
 # version and its checks refuse any other, so it is baked into the image
 # rather than selected by a version manager at bootstrap time.
 RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \

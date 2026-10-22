@@ -2,10 +2,10 @@
     "name": "markdown-core",
     "private": true,
     "type": "module",
-    "packageManager": "pnpm@11.25.0",
+    "packageManager": "pnpm@11.28.7",
     "engines": {
-        "node": "26.8.1",
-        "pnpm": "11.25.0"
+        "node": "26.12.1",
+        "pnpm": "11.28.7"
     },
     "scripts": {
         "audit:ast-projections": "node scripts/audit/check-ast-projections.mjs",
@@ -92,18 +92,18 @@
     },
     "devDependencies": {
         "@eslint/js": "10.0.1",
-        "@quartz-community/remark-obsidian": "0.2.4",
-        "eslint": "10.0.1",
-        "markdown-it": "14.2.0",
+        "@quartz-community/remark-obsidian": "1.1.0",
+        "eslint": "10.13.0",
+        "markdown-it": "15.0.3",
         "markdown-it-ins": "4.0.0",
-        "prettier": "3.9.5",
+        "prettier": "3.9.10",
         "remark-directive": "^4.0.0",
         "remark-gfm": "^4.0.1",
         "remark-math": "^6.0.0",
         "remark-parse": "^11.0.0",
         "typescript": "6.0.3",
-        "typescript-eslint": "8.63.0",
+        "typescript-eslint": "8.72.0",
         "unified": "^11.0.5",
-        "yaml": "2.9.0"
+        "yaml": "2.9.1"
     }
 }
