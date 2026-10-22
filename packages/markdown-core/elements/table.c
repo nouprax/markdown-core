@@ -1516,42 +1516,254 @@ done:
     return;
 }
 
-/* A SIMPLE TABLE OPENS ON THE LINES THAT DECIDE IT: its header, its dashes
- * and the line after them, which is its first row or its footer, or, with no
- * header, its dashes and every line through the footer such a table needs.
- * It makes a row of each line it read after its dashes, and a footer closes
- * it. A table its opening lines leave open reads each later line on its own
- * as that line comes (`matches`, `table_take_line`). */
-static bool table_parse_simple(table_source *source, size_t start, table_candidate *candidate) {
-    size_t count = table_dash_count(source, start);
-    bool headerless = count > 1;
+static bool table_grid_opening(table_source *source, size_t index, int *left, int *right);
+static int table_horizontal(table_source_line *line, int left, int right);
+
+/* THE EXTENTS. Each grammar that reads lines after its first decides, line
+ * by line, which lines are its own -- its EXTENT -- before it reads what
+ * they make; the parse and the feed of the opener's candidate (THE OPENER'S
+ * CANDIDATE) take the same steps over the same lines. The line a reading
+ * starts on names the grammars that can claim it, in the order the opener
+ * tries them, and the first that claims lines wins: a grid on a line that
+ * opens one; then a multiline table with a header on a full boundary,
+ * before a simple table, or a simple table, before a multiline table
+ * without a header on two dash runs or more; a simple table is one without
+ * a header on two dash runs or more, and one with a header otherwise. A
+ * grammar is ALIVE while a later line may change its extent, DEAD once it
+ * has none, and once it has one CLAIMS its lines through the line it read
+ * last, HERE, or through the line before it, BEFORE; a grid's lines ENDED
+ * before the line it read last, and its parse alone tells whether they are
+ * a grid. A simple table with a header has read its separator,
+ * `separated`. A multiline table has read its header's first line,
+ * `headed`, and its separator, `body`; of the line it read last, whether
+ * that was the separator, `after`, the first body line, `first_body`, a full
+ * boundary, `boundary`, and after blank lines, `blanks`; and whether a body
+ * line after the first came after blank lines before that line, `split`,
+ * which tells one row from more. A simple table without a header compares a
+ * line with the runs of its first line, `line`, whose content starts at
+ * `offset` with its first non-space byte at `first` in column `column`,
+ * indented `indent`, and holds `runs` runs, the last ending at `last_end`.
+ * A grid's walls stand at columns `left` and `right`. A caption's line names
+ * no grammar: its own reads on to the first line or blank lines after it,
+ * and the decision reads it whole; the call keeps whether it found a table
+ * before it the caption can trail, `trailing`, as the tree told it there. */
+enum { TABLE_DEAD, TABLE_ALIVE, TABLE_CLAIMS_HERE, TABLE_CLAIMS_BEFORE, TABLE_ENDED };
+enum { TABLE_GRID, TABLE_SIMPLE, TABLE_HEADERLESS, TABLE_MULTILINE, TABLE_HEADLESS };
+
+typedef struct {
+    int left, right;
+    int line, offset, first, column, indent, runs, last_end;
+    unsigned char grammars[3], states[3], count;
+    bool separated, headed, body, after, first_body, boundary, blanks, split, trailing;
+} table_extent;
+
+static void table_extent_name(table_extent *extent, unsigned char grammar) {
+    extent->grammars[extent->count] = grammar;
+    extent->states[extent->count++] = TABLE_ALIVE;
+}
+
+/* The grammars line `start` of `source` names, each ALIVE. */
+static void table_extent_start(table_source *source, size_t start, table_extent *extent) {
+    *extent = (table_extent){0};
+    if (table_grid_opening(source, start, &extent->left, &extent->right)) {
+        table_extent_name(extent, TABLE_GRID);
+    }
+    const size_t runs = table_dash_count(source, start);
+    const bool headerless = runs > 1 && table_prepare_dashes(source, start);
+    if (headerless) {
+        table_source_line *line = &source->lines[start];
+        extent->line = line->line;
+        extent->offset = line->offset;
+        extent->first = line->first;
+        extent->column = line->first_column;
+        extent->indent = line->indent;
+        extent->runs = (int)runs;
+        extent->last_end = table_dash(source, line->dash_offset, runs - 1).end;
+    }
+    const unsigned char simple = headerless ? TABLE_HEADERLESS : TABLE_SIMPLE;
+    if (table_full_boundary(source, start)) {
+        table_extent_name(extent, TABLE_MULTILINE);
+        table_extent_name(extent, simple);
+    } else {
+        table_extent_name(extent, simple);
+        if (headerless) {
+            extent->body = extent->after = true;
+            table_extent_name(extent, TABLE_HEADLESS);
+        }
+    }
+}
+
+/* The line of the grammar's first line in `source`: at `call`, or, when
+ * SIZE_MAX, pushed from what the extent keeps of it. SIZE_MAX when the
+ * parse failed. */
+static size_t table_extent_call(const table_extent *extent, table_source *source, size_t call) {
+    if (call != SIZE_MAX) {
+        return call;
+    }
+    bufsize_t length;
+    const unsigned char *data = markdown_core_parser_line_content(source->parser, extent->line, &length);
+    if (!data || !table_source_push(source, (table_source_line){.data = data,
+                                                                .length = (int)length,
+                                                                .offset = extent->offset,
+                                                                .first = extent->first,
+                                                                .first_column = extent->column,
+                                                                .indent = extent->indent,
+                                                                .line = extent->line})) {
+        return SIZE_MAX;
+    }
+    return source->count - 1;
+}
+
+/* A GRAMMAR'S STEP, the grammar at `g` of the extent's, over line `at` of
+ * `source`, after `blanks` blank lines, which the text has not finished
+ * when `unfinished`, the grammar's first line at `call` (table_extent_call):
+ * false when the line's bytes do not tell yet; otherwise its state moves
+ * on, and `*claims` says whether it would claim the lines through this one
+ * were the text to end after it. A grid goes on while its walls lead and
+ * end the line and could end after a border; any other line ends its
+ * lines, and the bytes up to its wall tell that. Every other grammar reads
+ * a line whole. A simple table with a header claims its separator's line
+ * and the line after it; a blank line before either, or a separator of
+ * fewer than two runs, leaves it none. One without a header claims its
+ * lines through its footer, a line of its first line's runs, and a blank
+ * line before it leaves it none; a line is compared run by run with the
+ * first only when it holds as many runs, the last ending where the first's
+ * does. A multiline table reads its header's lines up to a separator of two
+ * runs or more, which may not be the line right after its first, and a
+ * blank line in its header leaves it none; one without a header starts its
+ * body on the line after its first, which may not follow a blank line. Its
+ * body closes at the first full boundary a blank line follows, or the end,
+ * and it claims its lines when that is not the first body line and its
+ * body holds more than one row or the boundary came after blank lines. */
+static bool table_extent_step(table_extent *extent, size_t g, table_source *source, size_t at, int blanks,
+                              bool unfinished, size_t call, bool *claims) {
+    unsigned char *state = &extent->states[g];
+    *claims = false;
+    if (extent->grammars[g] == TABLE_GRID) {
+        int wall = 0;
+        if (!blanks && table_source_columns(source, at)) {
+            source->workspace->work.scan++;
+            wall = table_character(&source->lines[at], extent->left);
+        }
+        const table_source_line *line = &source->lines[at];
+        if ((wall != '+' && wall != '|') || line->indent != extent->left) {
+            *state = TABLE_ENDED;
+            return true;
+        }
+        if (unfinished) {
+            return false;
+        }
+        source->workspace->work.scan++;
+        const int edge = table_character(line, extent->right);
+        if (table_trim_spaces(line, extent->left + 1, line->columns) - 1 != extent->right ||
+            (edge != '+' && edge != '|')) {
+            *state = TABLE_DEAD;
+            return true;
+        }
+        *claims = table_horizontal(&source->lines[at], extent->left, extent->right) != 0;
+        return true;
+    }
+    if (unfinished) {
+        return false;
+    }
+    switch (extent->grammars[g]) {
+    case TABLE_SIMPLE:
+        if (blanks) {
+            *state = TABLE_DEAD;
+        } else if (extent->separated) {
+            *state = TABLE_CLAIMS_HERE;
+        } else if (table_dash_count(source, at) < 2) {
+            *state = TABLE_DEAD;
+        } else {
+            extent->separated = true;
+        }
+        return true;
+    case TABLE_HEADERLESS: {
+        if (blanks) {
+            *state = TABLE_DEAD;
+            return true;
+        }
+        if (table_dash_count(source, at) != (size_t)extent->runs || !table_prepare_dashes(source, at) ||
+            table_dash(source, source->lines[at].dash_offset, (size_t)extent->runs - 1).end != extent->last_end) {
+            return true;
+        }
+        const size_t first = table_extent_call(extent, source, call);
+        if (first != SIZE_MAX && table_same_dashes(source, first, at)) {
+            *state = TABLE_CLAIMS_HERE;
+        }
+        return true;
+    }
+    default:
+        break;
+    }
+    if (!extent->body) {
+        if (blanks) {
+            *state = TABLE_DEAD;
+        } else if (table_dash_count(source, at) < 2) {
+            extent->headed = true;
+        } else if (!extent->headed) {
+            *state = TABLE_DEAD;
+        } else {
+            extent->body = extent->after = true;
+        }
+        return true;
+    }
+    if (extent->after && extent->grammars[g] == TABLE_HEADLESS && blanks) {
+        *state = TABLE_DEAD;
+        return true;
+    }
+    if (extent->boundary && blanks) {
+        *state = !extent->first_body && (extent->split || extent->blanks) ? TABLE_CLAIMS_BEFORE : TABLE_DEAD;
+        return true;
+    }
+    extent->split = extent->split || (!extent->after && !extent->first_body && extent->blanks);
+    extent->first_body = extent->after;
+    extent->after = false;
+    extent->boundary = table_full_boundary(source, at);
+    extent->blanks = blanks != 0;
+    *claims = extent->boundary && !extent->first_body && (extent->split || extent->blanks);
+    return true;
+}
+
+/* A SIMPLE TABLE OPENS ON THE LINES THAT DECIDE IT, its extent (THE
+ * EXTENTS): its header, its dashes and the line after them, which is its
+ * first row or its footer, or, with no header, its dashes and every line
+ * through the footer such a table needs. It makes a row of each line it
+ * read after its dashes, and a footer closes it. A table its opening lines
+ * leave open reads each later line on its own as that line comes
+ * (`matches`, `table_take_line`). */
+static bool table_parse_simple(table_source *source, size_t start, table_candidate *candidate, table_extent *extent,
+                               size_t g) {
+    const bool headerless = extent->grammars[g] == TABLE_HEADERLESS;
     if (headerless && table_search_absent(source, start, TABLE_NO_SIMPLE_FOOTER)) {
         goto failed;
     }
-    if (!headerless) {
-        if (!table_source_get(source, start + 1) || source->lines[start + 1].blanks ||
-            (count = table_dash_count(source, start + 1)) < 2 || !table_header_allowed(source, start)) {
+    size_t end = start, i = start + 1;
+    for (; table_source_get(source, i); i++) {
+        bool claims;
+        table_extent_step(extent, g, source, i, source->lines[i].blanks, false, start, &claims);
+        if (extent->states[g] != TABLE_ALIVE) {
+            break;
+        }
+        end = i;
+        if (!headerless && !table_header_allowed(source, start)) {
             goto failed;
         }
-    }
-    size_t delimiter = start + (headerless ? 0 : 1), body = delimiter + 1, end = delimiter;
-    size_t deciding = headerless ? SIZE_MAX : body;
-    if (!table_prepare_dashes(source, delimiter)) {
-        goto failed;
-    }
-    bool footer = false;
-    for (size_t i = body; i <= deciding && !footer && table_source_get(source, i) && !source->lines[i].blanks; i++) {
-        end = i;
-        footer = table_same_dashes(source, delimiter, i);
     }
     if (source->parser->error) {
         goto failed;
     }
-    if (headerless && !footer) {
-        table_simple_search_finish(source, delimiter, end);
+    if (extent->states[g] != TABLE_CLAIMS_HERE) {
+        if (headerless) {
+            table_simple_search_finish(source, start, end);
+        }
         goto failed;
     }
-    if (end == delimiter) {
+    end = i;
+    const size_t delimiter = start + (headerless ? 0 : 1), body = delimiter + 1;
+    const size_t count = table_dash_count(source, delimiter);
+    const bool footer = headerless || table_same_dashes(source, delimiter, end);
+    if (!table_prepare_dashes(source, delimiter)) {
         goto failed;
     }
     size_t runs = source->lines[delimiter].dash_offset;
@@ -1569,8 +1781,8 @@ static bool table_parse_simple(table_source *source, size_t start, table_candida
     if (!headerless && !table_rectangular_row(source, candidate, start, start, source->workspace->dashes + runs)) {
         goto failed;
     }
-    for (size_t i = body; i <= end - (footer ? 1u : 0u); i++) {
-        if (!table_rectangular_row(source, candidate, i, i, source->workspace->dashes + runs)) {
+    for (size_t row = body; row <= end - (footer ? 1u : 0u); row++) {
+        if (!table_rectangular_row(source, candidate, row, row, source->workspace->dashes + runs)) {
             goto failed;
         }
     }
@@ -1580,62 +1792,64 @@ failed:
     return false;
 }
 
-static bool table_parse_multiline(table_source *source, size_t start, table_candidate *candidate) {
-    size_t count = 0;
-    bool header = table_full_boundary(source, start);
-    size_t delimiter = start;
-    if (header) {
-        if (table_search_absent(source, start, TABLE_NO_SEGMENTED_SEPARATOR)) {
-            goto failed;
-        }
-        for (delimiter = start + 1; table_source_get(source, delimiter); delimiter++) {
-            if (source->lines[delimiter].blanks) {
-                table_search_finish(source, start, delimiter, TABLE_NO_SEGMENTED_SEPARATOR);
-                goto failed;
-            }
-            if ((count = table_dash_count(source, delimiter)) > 1) {
-                break;
-            }
-        }
-        if (delimiter >= source->count) {
-            table_search_finish(source, start, source->count, TABLE_NO_SEGMENTED_SEPARATOR);
-        }
-        if (delimiter == start + 1 || delimiter >= source->count || count < 2) {
-            goto failed;
-        }
-    } else if ((count = table_dash_count(source, start)) < 2 || !table_source_get(source, start + 1) ||
-               source->lines[start + 1].blanks) {
-        /* A headless table's body starts on the line after its opening
-         * separator, as Pandoc's `multilineRow` requires: a blank line there
-         * leaves the dashes a rule and what follows ordinary blocks. Rows are
-         * separated by blank lines only once the body has begun. */
+/* A MULTILINE TABLE OPENS ON ITS EXTENT (THE EXTENTS), through its closing
+ * boundary: its header's lines, when it has one, its separator, and its
+ * body's rows, which blank lines part. Its searches judge with
+ * `table_full_boundary`, `table_dash_count` and `.blanks`, which read RAW
+ * BYTES, and build no per-scalar column map: the lines they walk may never
+ * become part of a table, and every routine that does read the map builds
+ * it for the lines it reads. On `block-hr.x1` a lone ` -  -  -  -  -` keeps
+ * a headerless multiline alive to EOF, and the map built there covered
+ * 56,680 of that document's 56,704 non-blank characters for a candidate
+ * that then failed. */
+static bool table_parse_multiline(table_source *source, size_t start, table_candidate *candidate, table_extent *extent,
+                                  size_t g) {
+    const bool header = extent->grammars[g] == TABLE_MULTILINE;
+    if (header && table_search_absent(source, start, TABLE_NO_SEGMENTED_SEPARATOR)) {
         goto failed;
     }
+    size_t i = start + 1;
+    bool claims = false;
+    for (; header && !extent->body; i++) {
+        if (!table_source_get(source, i)) {
+            table_search_finish(source, start, source->count, TABLE_NO_SEGMENTED_SEPARATOR);
+            goto failed;
+        }
+        table_extent_step(extent, g, source, i, source->lines[i].blanks, false, start, &claims);
+        if (extent->states[g] == TABLE_DEAD) {
+            if (source->lines[i].blanks) {
+                table_search_finish(source, start, i, TABLE_NO_SEGMENTED_SEPARATOR);
+            }
+            goto failed;
+        }
+    }
+    const size_t delimiter = i - 1;
     if (table_search_absent(source, delimiter, TABLE_NO_CLOSING_BOUNDARY)) {
         goto failed;
     }
-    size_t end = delimiter + 1;
-    /* This search judges with `table_full_boundary` and `.blanks`, both of
-     * which read RAW BYTES. It must not build the per-scalar column map: the
-     * lines it walks may never become part of a table, and every routine that
-     * does read the map builds it for the lines it reads. On `block-hr.x1` a
-     * lone ` -  -  -  -  -` keeps a headerless multiline alive to EOF, and the
-     * map built here covered 56,680 of that document's 56,704 non-blank
-     * characters for a candidate that then failed. */
-    for (; table_source_get(source, end); end++) {
-        if (table_full_boundary(source, end) && (!table_source_get(source, end + 1) || source->lines[end + 1].blanks)) {
+    for (;; i++) {
+        if (!table_source_get(source, i)) {
+            if (!extent->boundary) {
+                table_search_finish(source, delimiter, source->count, TABLE_NO_CLOSING_BOUNDARY);
+            }
+            if (!claims) {
+                goto failed;
+            }
+            break;
+        }
+        table_extent_step(extent, g, source, i, source->lines[i].blanks, false, start, &claims);
+        if (extent->states[g] == TABLE_DEAD) {
+            goto failed;
+        }
+        if (extent->states[g] == TABLE_CLAIMS_BEFORE) {
             break;
         }
     }
-    if (end >= source->count) {
-        table_search_finish(source, delimiter, source->count, TABLE_NO_CLOSING_BOUNDARY);
-    }
-    if (end >= source->count || end == delimiter + 1) {
+    const size_t end = i - 1;
+    if (source->parser->error || !table_prepare_dashes(source, delimiter)) {
         goto failed;
     }
-    if (!table_prepare_dashes(source, delimiter)) {
-        goto failed;
-    }
+    const size_t count = table_dash_count(source, delimiter);
     size_t runs = source->lines[delimiter].dash_offset;
     candidate->block_content = true;
     candidate->padding_limit = INT_MAX;
@@ -1650,18 +1864,14 @@ static bool table_parse_multiline(table_source *source, size_t start, table_cand
         !table_rectangular_row(source, candidate, start + 1, delimiter - 1, source->workspace->dashes + runs)) {
         goto failed;
     }
-    size_t first = delimiter + 1, body_count = 0;
-    for (size_t i = first + 1; i <= end; i++) {
-        if (i == end || source->lines[i].blanks) {
-            if (!table_rectangular_row(source, candidate, first, i - 1, source->workspace->dashes + runs)) {
+    size_t first = delimiter + 1;
+    for (size_t row = first + 1; row <= end; row++) {
+        if (row == end || source->lines[row].blanks) {
+            if (!table_rectangular_row(source, candidate, first, row - 1, source->workspace->dashes + runs)) {
                 goto failed;
             }
-            body_count++;
-            first = i;
+            first = row;
         }
-    }
-    if (body_count == 1 && !source->lines[end].blanks) {
-        goto failed;
     }
     return true;
 failed:
@@ -2047,13 +2257,13 @@ static bool table_grid_search_finish(table_source *source, size_t first, size_t 
     return valid;
 }
 
-static bool table_parse_grid(table_source *source, size_t start, table_candidate *candidate) {
+static bool table_parse_grid(table_source *source, size_t start, table_candidate *candidate, table_extent *extent,
+                             size_t g) {
     int *parents = NULL, *positions = NULL, *sizes = NULL;
     size_t *boundaries = NULL;
     size_t boundary_count = 0;
-    int left, right;
-    if (!table_source_get(source, start) || table_search_absent(source, start, TABLE_NO_GRID) ||
-        !table_grid_opening(source, start, &left, &right)) {
+    const int left = extent->left, right = extent->right;
+    if (table_search_absent(source, start, TABLE_NO_GRID)) {
         return false;
     }
     table_workspace *workspace = source->workspace;
@@ -2094,35 +2304,25 @@ static bool table_parse_grid(table_source *source, size_t start, table_candidate
      * end (THE OPENER'S CANDIDATE). */
     source->holds = start == 0 && source->lookahead.limit;
     for (size_t i = start; table_source_get(source, i); i++) {
-        if (i > start && source->lines[i].blanks) {
-            break;
-        }
-        if (!table_source_columns(source, i)) {
-            goto failed;
-        }
-        table_source_line *line = &source->lines[i];
-        source->workspace->work.scan++;
         /* A grid line BEGINS with its wall: its indentation reaches the
          * wall's column exactly. Text left of the wall is not a wall-led
          * line; it ends the candidate instead of being dropped from a table
-         * that starts after it. */
-        int first = table_character(line, left);
-        if ((first != '+' && first != '|') || line->indent != left) {
-            break;
-        }
-        /* A wall-led line the text has not finished does not tell where
-         * its walls end. */
-        if (source->holds && source->incomplete == i + 1) {
+         * that starts after it. A wall-led line the text has not finished
+         * does not tell where its walls end. */
+        bool claims;
+        if (!table_extent_step(extent, g, source, i, i > start ? source->lines[i].blanks : 0,
+                               source->holds && source->incomplete == i + 1, start, &claims)) {
             source->exhausted = true;
             break;
         }
-        int last = table_trim_spaces(line, left + 1, line->columns) - 1;
-        source->workspace->work.scan++;
-        int edge = table_character(line, right);
-        if (last != right || (edge != '+' && edge != '|')) {
+        if (extent->states[g] == TABLE_ENDED) {
+            break;
+        }
+        if (extent->states[g] == TABLE_DEAD) {
             table_grid_search_finish(source, start, end, left, right, false);
             goto failed;
         }
+        table_source_line *line = &source->lines[i];
         int previous = -1;
         bool horizontal = true;
         source->workspace->work.scan += (size_t)(right - left) + 1;
@@ -2416,16 +2616,28 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool table_grammar_admits
  * the successful opener never repeats its raw-source lookahead. */
 static bool table_parse_admitted_candidate(table_source *source, size_t start, table_candidate *candidate, bool pipe) {
     assert(start < source->count && source->lines[start].indent < 4);
-    bool boundary = table_full_boundary(source, start);
-    if (table_parse_grid(source, start, candidate)) {
-        return true;
-    }
-    if (source->undecided || source->parser->error) {
-        return false;
-    }
-    if ((boundary && table_parse_multiline(source, start, candidate)) || table_parse_simple(source, start, candidate) ||
-        (!boundary && table_parse_multiline(source, start, candidate))) {
-        return true;
+    table_extent extent;
+    table_extent_start(source, start, &extent);
+    for (size_t g = 0; g < extent.count; g++) {
+        bool claims;
+        switch (extent.grammars[g]) {
+        case TABLE_GRID:
+            claims = table_parse_grid(source, start, candidate, &extent, g);
+            break;
+        case TABLE_SIMPLE:
+        case TABLE_HEADERLESS:
+            claims = table_parse_simple(source, start, candidate, &extent, g);
+            break;
+        default:
+            claims = table_parse_multiline(source, start, candidate, &extent, g);
+            break;
+        }
+        if (claims) {
+            return true;
+        }
+        if (source->undecided || source->parser->error) {
+            return false;
+        }
     }
     return pipe && table_parse_pipe_header(source, start, candidate);
 }
@@ -2869,76 +3081,6 @@ static bool table_opener_reads(table_workspace *workspace, markdown_core_parser 
     return !parser->error && (matched || found->trailing);
 }
 
-/* THE OPENER'S GRAMMARS THAT READ ON (THE OPENER'S CANDIDATE), as its
- * candidate's feed keeps them in the candidate's words. The opener tries a
- * grid on a line that opens one, a multiline table with a header on a full
- * boundary, a simple table, and a multiline table without one on two dash
- * runs or more, in that order, and the first that claims lines wins; so the
- * call's own line names the grammars that can claim and their order. Each
- * is ALIVE while a later line may change what it makes, CLAIMED once it
- * claims lines, DEAD once it cannot, and DONE once a grid's lines end, which
- * the opener's reading alone tells claimed or not. A simple table with a
- * header has read its separator, `separated`. A multiline table has read
- * its header's first line, `headed`, and its separator, `body`; of the line
- * it read last, whether that was the separator, `after`, the first body
- * line, `first_body`, a full boundary, `boundary`, and after blank lines,
- * `blanks`; and whether a body line after the first came after blank lines
- * before that line, `split`, which tells one row from more. A simple table
- * without a header compares a line with the runs of the call's line, `line`,
- * whose content starts at `offset` with its first non-space byte at `first`
- * in column `column`, indented `indent`, and holds `runs` runs, the last
- * ending at `last_end`. A caption's line names no grammar: its own reads
- * on to the first line or blank lines after it, and the decision reads it
- * whole; the call keeps whether it found a table before it the caption can
- * trail, `trailing`, as the tree told it there. */
-enum { TABLE_DEAD, TABLE_ALIVE, TABLE_CLAIMED, TABLE_DONE };
-enum { TABLE_GRID, TABLE_SIMPLE, TABLE_HEADERLESS, TABLE_MULTILINE, TABLE_HEADLESS };
-
-typedef struct {
-    int left, right;
-    int line, offset, first, column, indent, runs, last_end;
-    unsigned char grammars[2], states[2];
-    bool separated, headed, body, after, first_body, boundary, blanks, split, trailing;
-} table_feed;
-
-/* The grammars the line `source` holds first names, each ALIVE, as the feed
- * starts at the line after it, a call that found a table a caption can
- * trail when `trailing`. A caption's line names none (it reads its own
- * grammar). */
-static table_feed table_feed_start(table_source *source, bool trailing) {
-    table_feed feed = {0};
-    table_source_line *line = &source->lines[0];
-    if (table_caption_start(line->data, line->length, line->first, line->indent) >= 0) {
-        feed.trailing = trailing;
-        return feed;
-    }
-    const size_t runs = table_dash_count(source, 0);
-    if (table_grid_opening(source, 0, &feed.left, &feed.right)) {
-        feed.grammars[0] = TABLE_GRID;
-        feed.grammars[1] = TABLE_SIMPLE;
-    } else if (table_full_boundary(source, 0)) {
-        feed.grammars[0] = TABLE_MULTILINE;
-        feed.grammars[1] = TABLE_SIMPLE;
-    } else if (runs > 1 && table_prepare_dashes(source, 0)) {
-        feed.grammars[0] = TABLE_HEADERLESS;
-        feed.grammars[1] = TABLE_HEADLESS;
-        feed.body = feed.after = true;
-        feed.line = line->line;
-        feed.offset = line->offset;
-        feed.first = line->first;
-        feed.column = line->first_column;
-        feed.indent = line->indent;
-        feed.runs = (int)runs;
-        feed.last_end = table_dash(source, line->dash_offset, runs - 1).end;
-    } else {
-        feed.grammars[0] = TABLE_SIMPLE;
-        feed.states[0] = TABLE_ALIVE;
-        return feed;
-    }
-    feed.states[0] = feed.states[1] = TABLE_ALIVE;
-    return feed;
-}
-
 /* THE OPENER'S REQUEST: its call on the line `source` holds first asks to
  * be a candidate, with the grammars that line names; a caption that trails
  * a table is claimed were the text to end after its line. The line holds no
@@ -2953,9 +3095,14 @@ static void table_request(const markdown_core_element_instance *self, markdown_c
         line->dash_count = 0;
         line->full_boundary = false;
     }
-    const table_feed feed = table_feed_start(source, trailing);
+    table_extent extent = {.trailing = trailing};
+    table_source_line *line = &source->lines[0];
+    if (table_caption_start(line->data, line->length, line->first, line->indent) < 0) {
+        table_extent_start(source, 0, &extent);
+    }
     if (!parser->error) {
-        markdown_core_parser_request_candidate(parser, self, parent, MARKDOWN_CORE_NODE_TABLE, &feed, feed.trailing);
+        markdown_core_parser_request_candidate(parser, self, parent, MARKDOWN_CORE_NODE_TABLE, &extent,
+                                               extent.trailing);
     }
 }
 
@@ -3035,150 +3182,29 @@ done:
     return result;
 }
 
-/* A GRAMMAR'S STEP over the line `source` holds first, after `blanks`
- * blank lines, which the text has not finished when `unfinished`: false
- * when the line's bytes do not tell yet; otherwise its state moves on, and
- * `claims` says whether it would claim the lines through this one were the
- * text to end after it. A grid goes on while its walls lead and end the
- * line and could end after a border; any other line ends its lines, and the
- * bytes up to its wall tell that. Every other grammar reads a line whole,
- * and the reading that decides it reads the line after a blank one, so a
- * line the text has not finished never tells it. */
-static bool table_grid_step(table_feed *feed, unsigned char *state, table_source *source, int blanks, bool unfinished,
-                            bool *claims) {
-    table_source_line *line = &source->lines[0];
-    const int wall = blanks || !table_source_columns(source, 0) ? 0 : table_character(line, feed->left);
-    if ((wall != '+' && wall != '|') || line->indent != feed->left) {
-        *state = TABLE_DONE;
-        return true;
-    }
-    if (unfinished) {
-        return false;
-    }
-    const int edge = table_character(line, feed->right);
-    if (table_trim_spaces(line, feed->left + 1, line->columns) - 1 != feed->right || (edge != '+' && edge != '|')) {
-        *state = TABLE_DONE;
-        return true;
-    }
-    *claims = table_horizontal(line, feed->left, feed->right) != 0;
-    return true;
-}
-
-/* A simple table with a header claims its separator's line and the row
- * after it; a blank line before either, or a separator of fewer than two
- * runs, leaves it none. */
-static bool table_simple_step(table_feed *feed, unsigned char *state, table_source *source, int blanks,
-                              bool unfinished) {
-    if (unfinished) {
-        return false;
-    }
-    if (blanks) {
-        *state = TABLE_DEAD;
-    } else if (feed->separated) {
-        *state = TABLE_CLAIMED;
-    } else if (table_dash_count(source, 0) < 2) {
-        *state = TABLE_DEAD;
-    } else {
-        feed->separated = true;
-    }
-    return true;
-}
-
-/* A simple table without a header claims its lines through its footer,
- * the line of the call's runs, and a blank line before it leaves it none.
- * A line is compared run by run with the call's line only when it holds as
- * many runs, the last ending where the call's does. */
-static bool table_headerless_step(const table_feed *feed, unsigned char *state, table_source *source, int blanks,
-                                  bool unfinished) {
-    if (unfinished) {
-        return false;
-    }
-    if (blanks) {
-        *state = TABLE_DEAD;
-        return true;
-    }
-    if (table_dash_count(source, 0) != (size_t)feed->runs || !table_prepare_dashes(source, 0) ||
-        table_dash(source, source->lines[0].dash_offset, (size_t)feed->runs - 1).end != feed->last_end) {
-        return true;
-    }
-    bufsize_t length;
-    const unsigned char *data = markdown_core_parser_line_content(source->parser, feed->line, &length);
-    if (data &&
-        table_source_push(source, (table_source_line){.data = data,
-                                                      .length = (int)length,
-                                                      .offset = feed->offset,
-                                                      .first = feed->first,
-                                                      .first_column = feed->column,
-                                                      .indent = feed->indent,
-                                                      .line = feed->line}) &&
-        table_same_dashes(source, 1, 0)) {
-        *state = TABLE_CLAIMED;
-    }
-    return true;
-}
-
-/* A multiline table reads its header's lines up to a separator of two
- * runs or more, which may not be the line right after the call's, and a
- * blank line in its header leaves it none; one without a header starts its
- * body on the line after the call's, which may not follow a blank line.
- * Its body closes at the first full boundary a blank line follows, or the
- * end, and it claims its lines when that is not the first body line and its
- * body holds more than one row or the boundary came after blank lines. */
-static bool table_multiline_step(table_feed *feed, unsigned char *state, table_source *source, int blanks,
-                                 bool unfinished, bool headless, bool *claims) {
-    if (unfinished) {
-        return false;
-    }
-    if (!feed->body) {
-        if (blanks) {
-            *state = TABLE_DEAD;
-        } else if (table_dash_count(source, 0) < 2) {
-            feed->headed = true;
-        } else if (!feed->headed) {
-            *state = TABLE_DEAD;
-        } else {
-            feed->body = feed->after = true;
-        }
-        return true;
-    }
-    if (feed->after && headless && blanks) {
-        *state = TABLE_DEAD;
-        return true;
-    }
-    if (feed->boundary && blanks) {
-        *state = !feed->first_body && (feed->split || feed->blanks) ? TABLE_CLAIMED : TABLE_DEAD;
-        return true;
-    }
-    feed->split = feed->split || (!feed->after && !feed->first_body && feed->blanks);
-    feed->first_body = feed->after;
-    feed->after = false;
-    feed->boundary = table_full_boundary(source, 0);
-    feed->blanks = blanks != 0;
-    *claims = feed->boundary && !feed->first_body && (feed->split || feed->blanks);
-    return true;
-}
-
 /* THE FEED of the opener's candidate (blocks.c, THE CANDIDATES): each
- * grammar still ALIVE steps over the line (THE OPENER'S GRAMMARS THAT READ
- * ON), and the line ends the construct once no grammar before the first that
- * claimed is ALIVE, or none is, as the opener's reading then decides from
- * the lines through it alone. Until then the line goes on, which a line the
- * text has not finished never does, and the opener could claim were the text
- * to end after it when a grammar would or a grid's lines ended there. Blank
- * lines the text read so far ends after leave each grammar as the line
- * before them did; the line after them tells. */
+ * grammar still ALIVE takes its step over the line (THE EXTENTS), and the
+ * line ends the construct once no grammar before the first that claims
+ * lines is ALIVE, or none is, as the opener's reading then decides from the
+ * lines through it alone. Until then the line goes on, which a line the
+ * text has not finished never does, and the opener could claim were the
+ * text to end after it when a grammar would or a grid's lines ended there.
+ * Blank lines the text read so far ends after leave each grammar as the
+ * line before them did; the line after them tells. */
 static markdown_core_candidate_step feed_candidate(const markdown_core_element_instance *self,
                                                    markdown_core_parser *parser, void *state,
                                                    const markdown_core_candidate_line *line, bool *ends) {
-    table_feed feed = *(const table_feed *)state;
+    table_extent extent = *(const table_extent *)state;
     const markdown_core_chunk *input = line->content;
-    const int blanks = line->blanks;
-    const bool unfinished = line->unfinished;
     if (!input) {
         /* Blank lines tell a grammar nothing until the line after them, and
          * end a caption's lines. */
-        return feed.states[0] == TABLE_ALIVE || feed.states[1] == TABLE_ALIVE ? MARKDOWN_CORE_CANDIDATE_CONTINUES
-                                                                              : MARKDOWN_CORE_CANDIDATE_ENDS;
+        for (size_t g = 0; g < extent.count; g++) {
+            if (extent.states[g] == TABLE_ALIVE) {
+                return MARKDOWN_CORE_CANDIDATE_CONTINUES;
+            }
+        }
+        return MARKDOWN_CORE_CANDIDATE_ENDS;
     }
     table_workspace *workspace = self->state;
     table_source source = {.parser = parser, .workspace = workspace, .lines = workspace->lines};
@@ -3192,40 +3218,28 @@ static markdown_core_candidate_step feed_candidate(const markdown_core_element_i
                                                         .indent = line->indent})) {
         goto done;
     }
-    for (size_t i = 0; i < 2; i++) {
-        unsigned char *grammar = &feed.states[i];
-        bool told = true, claim = false;
-        if (*grammar == TABLE_ALIVE) {
-            switch (feed.grammars[i]) {
-            case TABLE_GRID:
-                told = table_grid_step(&feed, grammar, &source, blanks, unfinished, &claim);
-                break;
-            case TABLE_SIMPLE:
-                told = table_simple_step(&feed, grammar, &source, blanks, unfinished);
-                break;
-            case TABLE_HEADERLESS:
-                told = table_headerless_step(&feed, grammar, &source, blanks, unfinished);
-                break;
-            default:
-                told = table_multiline_step(&feed, grammar, &source, blanks, unfinished,
-                                            feed.grammars[i] == TABLE_HEADLESS, &claim);
-                break;
-            }
-        }
-        if (!told || parser->error) {
+    for (size_t g = 0; g < extent.count; g++) {
+        bool claim = false;
+        if (extent.states[g] == TABLE_ALIVE &&
+            !table_extent_step(&extent, g, &source, 0, line->blanks, line->unfinished, SIZE_MAX, &claim)) {
             step = MARKDOWN_CORE_CANDIDATE_WAITS;
             goto done;
         }
-        claims = claims || claim || *grammar == TABLE_CLAIMED || *grammar == TABLE_DONE;
+        if (parser->error) {
+            step = MARKDOWN_CORE_CANDIDATE_WAITS;
+            goto done;
+        }
+        claims = claims || claim || extent.states[g] >= TABLE_CLAIMS_HERE;
     }
-    for (size_t i = 0; i < 2 && feed.states[i] != TABLE_CLAIMED; i++) {
-        if (feed.states[i] == TABLE_ALIVE) {
-            step = unfinished ? MARKDOWN_CORE_CANDIDATE_WAITS : MARKDOWN_CORE_CANDIDATE_CONTINUES;
+    for (size_t g = 0;
+         g < extent.count && extent.states[g] != TABLE_CLAIMS_HERE && extent.states[g] != TABLE_CLAIMS_BEFORE; g++) {
+        if (extent.states[g] == TABLE_ALIVE) {
+            step = line->unfinished ? MARKDOWN_CORE_CANDIDATE_WAITS : MARKDOWN_CORE_CANDIDATE_CONTINUES;
             break;
         }
     }
     if (step == MARKDOWN_CORE_CANDIDATE_CONTINUES) {
-        *(table_feed *)state = feed;
+        *(table_extent *)state = extent;
         *ends = claims;
     }
 done:
@@ -3237,7 +3251,7 @@ done:
  * CANDIDATES), with the table before it as the call found it. */
 static markdown_core_candidate_decision decide_candidate(const markdown_core_element_instance *self,
                                                          markdown_core_parser *parser, const void *state) {
-    const table_feed feed = *(const table_feed *)state;
+    const table_extent extent = *(const table_extent *)state;
     markdown_core_chunk line;
     markdown_core_node *container;
     if (!markdown_core_parser_candidate_start(parser, &line, &container)) {
@@ -3246,10 +3260,10 @@ static markdown_core_candidate_decision decide_candidate(const markdown_core_ele
     table_workspace *workspace = self->state;
     bool claims = false, undecided = false;
     if (table_opener_fits(parser, container) && table_opener_admits(parser, workspace, line.data, (int)line.len) &&
-        table_opener_ends_admit(parser, feed.trailing)) {
+        table_opener_ends_admit(parser, extent.trailing)) {
         table_read found;
         claims =
-            table_opener_reads(workspace, parser, container, line.data, (int)line.len, true, feed.trailing, &found);
+            table_opener_reads(workspace, parser, container, line.data, (int)line.len, true, extent.trailing, &found);
         undecided = found.source.undecided;
         table_candidate_reset(&workspace->candidate);
         table_source_end(&found.source);
@@ -3354,7 +3368,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .try_opening_block = try_opening_table_block,
     .feed_candidate = feed_candidate,
     .decide_candidate = decide_candidate,
-    .candidate_state_size = sizeof(table_feed),
+    .candidate_state_size = sizeof(table_extent),
     .containment_kinds = containment_kinds,
     .contains_inlines_func = contains_inlines,
     .opaque_alloc_func = opaque_alloc,
