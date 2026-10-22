@@ -186,21 +186,6 @@ struct markdown_core_element {
     size_t (*read_document_prefix)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*prepare_document)(const markdown_core_element_instance *, markdown_core_parser *);
     void (*finish_document)(const markdown_core_element_instance *, markdown_core_parser *);
-    /* A SNAPSHOT (blocks.c, THE SNAPSHOT) begins once it has lent the
-     * blocks it writes, and ends once the parse is back at its commit: what
-     * the document's elements keep across the parse keeps nothing it
-     * made. */
-    void (*start_snapshot)(const markdown_core_element_instance *, markdown_core_parser *);
-    void (*end_snapshot)(const markdown_core_element_instance *, markdown_core_parser *);
-    /* A LINE'S MARK (blocks.c, THE CANDIDATES), taken as a commit holds at
-     * the first opener's call of a line that asks to be a candidate, with
-     * every block settled before it completed: the accept of a call of the
-     * mark at `index` among the marks puts what the document's elements keep
-     * back as it was at the mark and forgets the marks from `index` on, and
-     * the mark's drop forgets it. */
-    void (*mark_candidate)(const markdown_core_element_instance *, markdown_core_parser *);
-    void (*undo_candidate)(const markdown_core_element_instance *, markdown_core_parser *, size_t);
-    void (*drop_candidate)(const markdown_core_element_instance *, markdown_core_parser *, size_t);
     /* The last step of the parse: the tree is final, and the owner publishes
      * it (ids, extents, definition tables). */
     void (*publish_document)(const markdown_core_element_instance *, markdown_core_parser *);
@@ -417,8 +402,13 @@ struct markdown_core_element {
      * inline run (markdown-core-element-api.h, "AN ELEMENT AS ONE PARSE HOLDS
      * IT"), and of the record each of its candidates keeps (THE CANDIDATES
      * above), which its call's request gives and its feed writes; zero
-     * declares none. */
-    size_t state_size, run_state_size, candidate_state_size;
+     * declares none. `kept_size` is how many bytes at the front of the
+     * parse record are WHAT A MARK KEEPS (blocks.c, THE MARK): what the
+     * element's record says of the reading so far, which a reading put back
+     * to a mark -- a snapshot's end, an accept -- finds as the mark found
+     * it; the rest of the record says nothing a reading put back takes
+     * back. */
+    size_t state_size, run_state_size, candidate_state_size, kept_size;
     /* The elements whose state this element's code reads, NULL-terminated
      * (markdown-core-element-api.h, "AN ELEMENT AS ONE PARSE HOLDS IT").
      * Sealing resolves them, in this order, into the instance's `peers`. */

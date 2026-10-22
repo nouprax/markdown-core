@@ -1612,7 +1612,7 @@ static void element_decline_yields_turn(test_batch_runner *runner) {
      * hide a table matcher that wrongly returns its unchanged parent. */
     markdown_core_parser parser = {0};
     /* An instance with no record: a declining hook reads none. */
-    const markdown_core_element_instance table = {&MARKDOWN_CORE_ELEMENT_TABLE, NULL, 0, NULL};
+    const markdown_core_element_instance table = {.element = &MARKDOWN_CORE_ELEMENT_TABLE};
     markdown_core_node *candidate = markdown_core_node_new(MARKDOWN_CORE_NODE_PARAGRAPH);
     markdown_core_strbuf_puts(&candidate->content, "text\n");
     unsigned char line[] = ":::note\n";
@@ -5637,8 +5637,8 @@ static void speculative_probe_allocations(test_batch_runner *runner) {
     OK(runner, root != NULL, "directive probes run inside a parse");
     markdown_core_node_free(root);
     /* Instances with no record: these paths read none. */
-    const markdown_core_element_instance table_instance = {&MARKDOWN_CORE_ELEMENT_TABLE, NULL, 0, NULL};
-    const markdown_core_element_instance autolink_instance = {&MARKDOWN_CORE_ELEMENT_AUTOLINK, NULL, 0, NULL};
+    const markdown_core_element_instance table_instance = {.element = &MARKDOWN_CORE_ELEMENT_TABLE};
+    const markdown_core_element_instance autolink_instance = {.element = &MARKDOWN_CORE_ELEMENT_AUTOLINK};
     const char *rows[] = {"| a | b |\n", "| a \\| b | c |\n", "\n"};
     for (size_t i = 0; i < sizeof(rows) / sizeof(*rows); i++) {
         markdown_core_parser parser = {0};
@@ -9278,7 +9278,7 @@ static void formula_promotion_views_content(test_batch_runner *runner) {
         payload_probe_arm();
         markdown_core_parser parser = {0};
         /* An instance with no record: the formula element keeps none. */
-        const markdown_core_element_instance formula_instance = {&MARKDOWN_CORE_ELEMENT_FORMULA, NULL, 0, NULL};
+        const markdown_core_element_instance formula_instance = {.element = &MARKDOWN_CORE_ELEMENT_FORMULA};
         markdown_core_node *root = markdown_core_node_new(MARKDOWN_CORE_NODE_DOCUMENT);
         markdown_core_node *old = markdown_core_node_new(MARKDOWN_CORE_NODE_CODE_BLOCK);
         append_child(root, old);

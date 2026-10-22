@@ -9,6 +9,8 @@
 
 /* The elements whose state this element reads, as `self->peers` holds them. */
 enum { HEADING_CITATION };
+/* A heading whose inline content is parsed (heading_state.h). */
+enum { MARKDOWN_CORE_NODE__HEADING_PARSED = MARKDOWN_CORE_NODE__ELEMENT_FIRST };
 static const markdown_core_element *const HEADING_PEERS[] = {[HEADING_CITATION] = &MARKDOWN_CORE_ELEMENT_CITATION,
                                                              NULL};
 typedef enum { ANCHOR_CONTENT, ANCHOR_CITATIONS, ANCHOR_KEY } anchor_projection_kind;
@@ -68,23 +70,30 @@ void markdown_core_headings_prepare(const markdown_core_element_instance *self, 
      * scheduled and headings closed in. */
     for (size_t i = first; i < headings->count && !parser->error; i++) {
         markdown_core_heading_parse *heading = &headings->values[i];
-        if (!heading->parsed && markdown_core_parser_settled(parser, heading->node)) {
+        if (!(heading->node->flags & MARKDOWN_CORE_NODE__HEADING_PARSED) &&
+            markdown_core_parser_settled(parser, heading->node)) {
+            *heading = (markdown_core_heading_parse){.node = heading->node, .start = heading->start};
             parser->completing = heading->node;
             markdown_core_prepare_heading(self, parser, heading);
         }
     }
     for (size_t i = first; i < headings->count && !parser->error; i++) {
         markdown_core_heading_parse *heading = &headings->values[i];
-        if (heading->parsed || !markdown_core_parser_settled(parser, heading->node)) {
+        markdown_core_node *node = heading->node;
+        if ((node->flags & MARKDOWN_CORE_NODE__HEADING_PARSED) || !markdown_core_parser_settled(parser, node)) {
             continue;
         }
-        markdown_core_node *node = heading->node;
         parser->completing = node;
         markdown_core_finish_heading(parser, heading);
-        heading->parsed = true;
+        node->flags |= MARKDOWN_CORE_NODE__HEADING_PARSED;
         heading->authored = node->attributes.anchor.len != 0;
     }
-    while (headings->parsed < headings->count && headings->values[headings->parsed].parsed) {
+    /* A failed parse lets go the inline states it held for the headings. */
+    for (size_t i = first; parser->error && i < headings->count; i++) {
+        markdown_core_dispose_heading(&headings->values[i]);
+    }
+    while (headings->parsed < headings->count &&
+           (headings->values[headings->parsed].node->flags & MARKDOWN_CORE_NODE__HEADING_PARSED)) {
         headings->parsed++;
     }
 }
@@ -142,87 +151,6 @@ static void reparse_inlines(const markdown_core_element_instance *self, markdown
     entry->name = NULL;
 }
 
-/* A SNAPSHOT'S HEADINGS (element.h, `start_snapshot`). After a commit every
- * heading is parsed but the pending block's, which a later line can still
- * write: it closed last, so it comes after every other heading in source
- * order. The snapshot lends the pending block (blocks.c, THE LENDING), so
- * its entry names it as it is. */
-void markdown_core_headings_start_snapshot(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    markdown_core_heading_state *state = self->state;
-    markdown_core_heading_collection *headings = &state->headings;
-    state->snapshot_count = headings->count;
-    state->snapshot_parsed = headings->parsed;
-    state->snapshot_records = parser->registry.count;
-    assert(headings->count - headings->parsed <= 1);
-    assert(headings->parsed == headings->count || (!headings->values[headings->parsed].parsed &&
-                                                   headings->values[headings->parsed].node == parser->at.pending));
-}
-
-/* The snapshot ends with the collection as its commit left it: the entries
- * it made go, and the pending block's entry names the block again, not
- * parsed. The anchors it computed for the headings commits settled stay,
- * which the published document holds. */
-void markdown_core_headings_end_snapshot(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    markdown_core_heading_state *state = self->state;
-    markdown_core_heading_collection *headings = &state->headings;
-    for (size_t i = state->snapshot_parsed; i < headings->count; i++) {
-        markdown_core_dispose_heading(&headings->values[i]);
-    }
-    headings->count = headings->parsed = state->snapshot_parsed;
-    if (state->snapshot_count > state->snapshot_parsed) {
-        markdown_core_node *pending = parser->at.pending;
-        headings->values[headings->count++] =
-            (markdown_core_heading_parse){.node = pending, .start = pending->place.start};
-    }
-}
-
-/* THE HEADINGS A CANDIDATE MARKS (element.h, `mark_candidate`): the mark
- * finds every heading parsed but the pending block's, as a snapshot does. An
- * accept puts the collection back as the mark found it, the pending block's
- * entry naming the block again, not parsed; and the names a snapshot commits
- * are of the headings and the ANCHOR records before the oldest mark (THE
- * COMMITTED NAMES), which no accept puts back. */
-void markdown_core_headings_mark_candidate(const markdown_core_element_instance *self, markdown_core_parser *parser) {
-    markdown_core_heading_state *state = self->state;
-    markdown_core_heading_collection *headings = &state->headings;
-    markdown_core_heading_mark *marks =
-        markdown_core_reserve(state->marks, &state->mark_capacity, state->mark_count + 1, sizeof(*marks));
-    if (!marks) {
-        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return;
-    }
-    state->marks = marks;
-    assert(headings->count - headings->parsed <= 1);
-    markdown_core_heading_mark *mark = &marks[state->mark_count++];
-    *mark = (markdown_core_heading_mark){
-        .count = headings->count, .parsed = headings->parsed, .records = parser->registry.count};
-    if (headings->count > headings->parsed) {
-        mark->pending = headings->values[headings->parsed];
-        assert(!mark->pending.parsed && !mark->pending.pending && mark->pending.node == parser->at.pending);
-    }
-}
-
-void markdown_core_headings_undo_candidate(const markdown_core_element_instance *self, size_t index) {
-    markdown_core_heading_state *state = self->state;
-    markdown_core_heading_collection *headings = &state->headings;
-    const markdown_core_heading_mark *mark = &state->marks[index];
-    for (size_t i = mark->parsed; i < headings->count; i++) {
-        assert(!headings->values[i].holds_name);
-        markdown_core_dispose_heading(&headings->values[i]);
-    }
-    headings->count = headings->parsed = mark->parsed;
-    if (mark->count > mark->parsed) {
-        headings->values[headings->count++] = mark->pending;
-    }
-    state->mark_count = index;
-}
-
-void markdown_core_headings_drop_candidate(const markdown_core_element_instance *self, size_t index) {
-    markdown_core_heading_state *state = self->state;
-    memmove(&state->marks[index], &state->marks[index + 1], (state->mark_count - index - 1) * sizeof(*state->marks));
-    state->mark_count--;
-}
-
 /* Release the headings and the names they took, with the committed names
  * their entries hold. The anchors are assigned by then, or the parse failed;
  * either way nothing reads them again. */
@@ -242,9 +170,6 @@ void markdown_core_headings_dispose(const markdown_core_element_instance *self) 
     state->renamed = NULL;
     state->renamed_count = state->renamed_capacity = 0;
     state->records_at = state->records_read = state->named = 0;
-    markdown_core_free(state->marks);
-    state->marks = NULL;
-    state->mark_count = state->mark_capacity = 0;
 }
 
 static void project_anchor_literal(markdown_core_heading_state *state, markdown_core_strbuf *base,
@@ -821,16 +746,14 @@ void markdown_core_headings_finish(const markdown_core_element_instance *self, m
     markdown_core_heading_state *state = self->state;
     markdown_core_heading_collection *headings = &state->headings;
     const bool snapshot = parser->snapshot;
-    if (!snapshot) {
-        assert(!state->mark_count);
+    size_t committed = headings->count, committed_records = parser->registry.count;
+    if (snapshot) {
+        committed =
+            ((const markdown_core_heading_collection *)markdown_core_parser_kept(parser, self, &committed_records))
+                ->parsed;
+    } else {
         names_reset(state);
     }
-    const markdown_core_heading_mark *oldest = state->mark_count ? &state->marks[0] : NULL;
-    const size_t committed = !snapshot                                           ? headings->count
-                             : oldest && oldest->parsed < state->snapshot_parsed ? oldest->parsed
-                                                                                 : state->snapshot_parsed;
-    const size_t committed_records =
-        oldest && oldest->records < state->snapshot_records ? oldest->records : state->snapshot_records;
     if (!state->taken.size) {
         /* Nothing is named yet: the authored headings ask for no name. */
         while (state->named < committed && headings->values[state->named].authored) {
@@ -1103,5 +1026,6 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_HEADING = {
     .close_block = close_heading,
     .blank_opaque = true,
     .state_size = sizeof(markdown_core_heading_state),
+    .kept_size = offsetof(markdown_core_heading_state, headings.values),
     .run_state_size = sizeof(markdown_core_heading_run),
 };

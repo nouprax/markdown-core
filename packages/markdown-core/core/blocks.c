@@ -289,7 +289,8 @@ void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revi
      * nodes they own, the committed definitions and the records of the
      * lookups that found nothing. Every parse streams: a one-shot parse is
      * a stream whose first commit is its whole text, and its finalize. */
-    parser->stream = markdown_core_alloc(1, sizeof(*parser->stream) + parser->dialect->candidate_state_size);
+    parser->stream = markdown_core_alloc(1, sizeof(*parser->stream) + parser->dialect->candidate_state_size +
+                                                parser->dialect->kept_size);
     if (parser->stream) {
         markdown_core_strbuf_init(&parser->stream->miss_labels, 0);
     }
@@ -2166,8 +2167,15 @@ void markdown_core_parser_discard(markdown_core_parser *parser) { S_release_pars
  * until the next TAKE-BACK, at the next commit, at the finalize or at the
  * release (S_take_back): each lent block takes its own state back with the
  * storage its view grew, each room what it held, and the nodes the snapshot
- * made are the publish's records' from then on (ast.c, THE RECORDS). */
-typedef struct {
+ * made are the publish's records' from then on (ast.c, THE RECORDS).
+ *
+ * THE MARK: what a reading so far says, which a reading put back to the
+ * mark finds as the mark found it -- where the reading stands, the input's
+ * index, the content map's last mark, the registry, the completion queue,
+ * the cell inputs, and what each element's parse record keeps (element.h,
+ * `kept_size`), in the dialect's `kept_size` bytes at `kept`, which its
+ * taker owns. */
+typedef struct markdown_core_parser_mark {
     markdown_core_parser_at at;
     bool mapped;
     size_t line_count, fact_count, scanned;
@@ -2177,6 +2185,7 @@ typedef struct {
     markdown_core_registry_mark registry;
     markdown_core_node *completion_first, *completion_last;
     size_t block_input_count, block_input_cursor;
+    unsigned char *kept;
 } S_snapshot_mark;
 
 /* A snapshot takes a mark and rolls back to it on every append, so the
@@ -2184,6 +2193,11 @@ typedef struct {
  * making and undo share them. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_mark(const markdown_core_parser *parser,
                                                                    S_snapshot_mark *mark) {
+    const markdown_core_dialect *dialect = parser->dialect;
+    for (size_t i = 0; i < dialect->kept_count; i++) {
+        const markdown_core_element_instance *instance = dialect->kept_instances[i];
+        memcpy(mark->kept + instance->kept_offset, instance->state, instance->element->kept_size);
+    }
     *mark = (S_snapshot_mark){
         .at = parser->at,
         .mapped = parser->input.mapped,
@@ -2197,6 +2211,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_mark(const markdow
         .completion_last = parser->completion_last,
         .block_input_count = parser->block_input_count,
         .block_input_cursor = parser->block_input_cursor,
+        .kept = mark->kept,
     };
     if (parser->line_marks_size) {
         mark->last_mark = parser->line_marks[parser->line_marks_size - 1];
@@ -2204,10 +2219,15 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_mark(const markdow
 }
 
 /* Puts back the parser's state as `mark` found it: where the reading stood,
- * the content map, the registry, the completion queue and the cell
- * inputs. */
+ * the content map, the registry, the completion queue, the cell inputs and
+ * what the elements' parse records keep. */
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_restore(markdown_core_parser *parser,
                                                                       const S_snapshot_mark *mark) {
+    const markdown_core_dialect *dialect = parser->dialect;
+    for (size_t i = 0; i < dialect->kept_count; i++) {
+        const markdown_core_element_instance *instance = dialect->kept_instances[i];
+        memcpy(instance->state, mark->kept + instance->kept_offset, instance->element->kept_size);
+    }
     parser->at = mark->at;
     parser->input.last_line_ready = false;
     parser->line_marks_size = mark->line_marks_size;
@@ -2580,20 +2600,12 @@ static void S_close_tail(markdown_core_parser *parser) {
     }
 }
 
-static void S_snapshot_hook(markdown_core_parser *parser, bool start) {
-    const markdown_core_element_instance *document = parser->dialect->document_structure;
-    void (*hook)(const markdown_core_element_instance *, markdown_core_parser *) =
-        start ? document->element->start_snapshot : document->element->end_snapshot;
-    if (hook) {
-        hook(document, parser);
-    }
-}
-
 markdown_core_node *markdown_core_parser_snapshot(markdown_core_parser *parser, const char *source, size_t length) {
     if (parser->error) {
         return NULL;
     }
-    S_snapshot_mark mark;
+    markdown_core_stream *const stream = parser->stream;
+    S_snapshot_mark mark = {.kept = (unsigned char *)stream->candidate_room + parser->dialect->candidate_state_size};
     S_mark(parser, &mark);
     parser->settle_flags = 0;
     parser->snapshot = true;
@@ -2602,17 +2614,16 @@ markdown_core_node *markdown_core_parser_snapshot(markdown_core_parser *parser, 
      * back what it read since the call and holds there, its calls waiting,
      * and the snapshot reads the lines anew, where the call accepted
      * claims. */
-    markdown_core_stream *const stream = parser->stream;
     size_t accepted_mark, accepted_call;
     if (stream->mark_count && S_candidates_see_end(parser, &accepted_mark, &accepted_call)) {
         S_rollback(parser, &mark);
         S_candidate_see(parser, accepted_mark, accepted_call);
         S_mark(parser, &mark);
     }
+    stream->snapshot_mark = &mark;
 
     const bool lent = !parser->error && S_lend_tail(parser, length);
     if (lent) {
-        S_snapshot_hook(parser, true);
         S_parse_source(parser, (const unsigned char *)source, length);
         if (!parser->error) {
             S_close_tail(parser);
@@ -2637,9 +2648,7 @@ markdown_core_node *markdown_core_parser_snapshot(markdown_core_parser *parser, 
     }
     S_rollback(parser, &mark);
     stream->claimant = NULL;
-    if (lent) {
-        S_snapshot_hook(parser, false);
-    }
+    stream->snapshot_mark = NULL;
     parser->settle_flags = MARKDOWN_CORE_NODE__COMMITTED;
     parser->snapshot = false;
     return result;
@@ -3821,8 +3830,8 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_line_take(markdown
  *
  * A LINE'S MARK. The first call of a line MARKS the commit's state where it
  * holds: what settled completes, and the mark keeps the parser's state
- * (S_snapshot_mark), the misses, what the document's elements keep (element.h,
- * `mark_candidate`), and every open block, the root included, and the pending
+ * with what the elements' records keep (THE MARK), the misses, and every
+ * open block, the root included, and the pending
  * block, LENT (THE LENDING) from the root up, as what the commit reads after
  * the call can close any of them; and the mark's PATH, the open blocks from
  * the root to the container the call was asked in. Each later call of the
@@ -3900,6 +3909,15 @@ struct markdown_core_candidate_mark {
     unsigned char *states;
     size_t state_capacity;
 };
+
+const void *markdown_core_parser_kept(const markdown_core_parser *parser, const markdown_core_element_instance *self,
+                                      size_t *records) {
+    const markdown_core_stream *stream = parser->stream;
+    assert(parser->snapshot && stream->snapshot_mark);
+    const S_snapshot_mark *mark = stream->mark_count ? &stream->marks[0].state : stream->snapshot_mark;
+    *records = mark->registry.count;
+    return mark->kept + self->kept_offset;
+}
 
 /* The record the call at `index` of `mark` keeps. */
 static inline void *S_call_state(const markdown_core_parser *parser, const struct markdown_core_candidate_mark *mark,
@@ -4154,7 +4172,13 @@ static struct markdown_core_candidate_mark *S_mark_make(markdown_core_parser *pa
     }
     stream->marks = marks;
     if (stream->mark_count == stream->mark_made) {
-        memset(&marks[stream->mark_made++], 0, sizeof(*marks));
+        memset(&marks[stream->mark_made], 0, sizeof(*marks));
+        if (parser->dialect->kept_size &&
+            !(marks[stream->mark_made].state.kept = markdown_core_alloc(1, parser->dialect->kept_size))) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            return NULL;
+        }
+        stream->mark_made++;
     }
     struct markdown_core_candidate_mark *mark = &marks[stream->mark_count++];
     mark->miss_count = stream->miss_count;
@@ -4162,10 +4186,6 @@ static struct markdown_core_candidate_mark *S_mark_make(markdown_core_parser *pa
     mark->miss_root_count = stream->miss_root_count;
     mark->lend_count = mark->call_count = mark->first = mark->live = 0;
     S_mark(parser, &mark->state);
-    const markdown_core_element_instance *document = parser->dialect->document_structure;
-    if (document->element->mark_candidate) {
-        document->element->mark_candidate(document, parser);
-    }
     if (!S_mark_lend(parser, mark)) {
         return NULL;
     }
@@ -4350,10 +4370,6 @@ static void S_candidate_take_back(markdown_core_parser *parser, const markdown_c
 static void S_candidate_put_back(markdown_core_parser *parser, size_t m) {
     markdown_core_stream *stream = parser->stream;
     struct markdown_core_candidate_mark *mark = &stream->marks[m];
-    const markdown_core_element_instance *document = parser->dialect->document_structure;
-    if (document->element->undo_candidate) {
-        document->element->undo_candidate(document, parser, m);
-    }
     for (size_t i = mark->miss_root_count; i < stream->miss_root_count; i++) {
         if (stream->miss_roots[i].position.places) {
             markdown_core_node_pool_bytes_free(parser->pool, stream->miss_roots[i].position.places);
@@ -4393,10 +4409,6 @@ static void S_mark_anew(markdown_core_parser *parser, size_t m) {
     markdown_core_stream *stream = parser->stream;
     struct markdown_core_candidate_mark *mark = &stream->marks[m];
     if (mark->live) {
-        const markdown_core_element_instance *document = parser->dialect->document_structure;
-        if (document->element->mark_candidate) {
-            document->element->mark_candidate(document, parser);
-        }
         S_mark_lend(parser, mark);
     } else if (!mark->call_count) {
         stream->mark_count = m;
@@ -4492,10 +4504,6 @@ static void S_candidate_drop(markdown_core_parser *parser, size_t m, size_t inde
         return;
     }
     S_mark_unlend(parser, m);
-    const markdown_core_element_instance *document = parser->dialect->document_structure;
-    if (document->element->drop_candidate) {
-        document->element->drop_candidate(document, parser, m);
-    }
     const struct markdown_core_candidate_mark gone = *mark;
     memmove(mark, mark + 1, (stream->mark_count - m - 1) * sizeof(*mark));
     stream->marks[--stream->mark_count] = gone;
@@ -4520,6 +4528,7 @@ static void S_candidates_release(markdown_core_parser *parser) {
         markdown_core_free(stream->marks[i].path);
         markdown_core_free(stream->marks[i].calls);
         markdown_core_free(stream->marks[i].states);
+        markdown_core_free(stream->marks[i].state.kept);
     }
     markdown_core_free(stream->marks);
     stream->marks = NULL;

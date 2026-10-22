@@ -7,11 +7,6 @@
 void markdown_core_headings_prepare(const markdown_core_element_instance *self, markdown_core_parser *parser);
 void markdown_core_headings_finish(const markdown_core_element_instance *self, markdown_core_parser *parser);
 void markdown_core_headings_dispose(const markdown_core_element_instance *self);
-void markdown_core_headings_start_snapshot(const markdown_core_element_instance *self, markdown_core_parser *parser);
-void markdown_core_headings_end_snapshot(const markdown_core_element_instance *self, markdown_core_parser *parser);
-void markdown_core_headings_mark_candidate(const markdown_core_element_instance *self, markdown_core_parser *parser);
-void markdown_core_headings_undo_candidate(const markdown_core_element_instance *self, size_t index);
-void markdown_core_headings_drop_candidate(const markdown_core_element_instance *self, size_t index);
 void markdown_core_heading_begin_inlines(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                          markdown_core_inline_state *inline_state, markdown_core_node *parent);
 bool markdown_core_heading_claim_tail(const markdown_core_element_instance *self,

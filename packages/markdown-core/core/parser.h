@@ -355,7 +355,9 @@ typedef struct markdown_core_stream {
      * (element.h, `candidate_state_size`), the dialect's largest: the one
      * the request gives, which its call's mark copies, and the copy of a
      * call's that a snapshot feeds (blocks.c, A SNAPSHOT SEES A CANDIDATE
-     * END). */
+     * END); after it, the room of what the mark of the snapshot under way
+     * keeps of the elements' records (blocks.c, THE MARK), the mark being
+     * `snapshot_mark` while the snapshot lasts. */
     struct markdown_core_candidate_mark *marks;
     size_t mark_count, mark_capacity, mark_made;
     struct markdown_core_candidate *deciding;
@@ -369,6 +371,7 @@ typedef struct markdown_core_stream {
     markdown_core_node_type request_child;
     bufsize_t request_offset;
     bool request_ends, requested;
+    struct markdown_core_parser_mark *snapshot_mark;
     markdown_core_state_alignment candidate_room[];
 } markdown_core_stream;
 
@@ -789,6 +792,14 @@ static inline markdown_core_node *markdown_core_parser_current(const markdown_co
 
 /* Whether a block that closed has settled: every one has but the pending
  * block, which a later line can still write. */
+/* WHAT THE COMMITS KEEP: in a snapshot, what `self`'s parse record keeps
+ * with a mark (element.h, `kept_size`) as the earliest mark the reading can
+ * be put back to found it -- the oldest candidate's, else the snapshot's --
+ * and, in `*records`, the registry's length there. No put-back reaches what
+ * the reading made before it. */
+const void *markdown_core_parser_kept(const markdown_core_parser *parser, const markdown_core_element_instance *self,
+                                      size_t *records);
+
 static inline bool markdown_core_parser_settled(const markdown_core_parser *parser, const markdown_core_node *node) {
     return node != parser->at.pending;
 }
