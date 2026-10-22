@@ -379,7 +379,7 @@ static inline bool S_may_be_lazy(markdown_core_parser *parser, const markdown_co
  * as the several columns it expands to. */
 /* One vector owns all content/source runs. A run can start on the same
  * source line as its predecessor when a transformation removes bytes. */
-static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_grow_content_marks(markdown_core_parser *parser, bufsize_t count) {
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_extend_content_marks(markdown_core_parser *parser, bufsize_t count) {
     if (count > INT32_MAX - parser->line_marks_size) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
@@ -404,7 +404,7 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_grow_content_marks(markdown_co
 }
 
 static inline bool S_reserve_content_marks(markdown_core_parser *parser, bufsize_t count) {
-    return count <= parser->line_marks_alloc - parser->line_marks_size || S_grow_content_marks(parser, count);
+    return count <= parser->line_marks_alloc - parser->line_marks_size || S_extend_content_marks(parser, count);
 }
 
 /* A map's marks are contiguous and a map grows at the end of the vector. An
@@ -3059,9 +3059,9 @@ static void S_parse_source(markdown_core_parser *parser, const unsigned char *so
     if (!at_root || !parser->input.source || parser->input.size != length) {
         parser->input.epoch = ++parser->epochs;
     }
-    const bool grows = at_root && parser->input.source;
+    const bool extends = at_root && parser->input.source;
     parser->input.complete =
-        at_root ? S_complete_end(source, length, grows ? parser->input.size : 0, grows ? parser->input.complete : 0)
+        at_root ? S_complete_end(source, length, extends ? parser->input.size : 0, extends ? parser->input.complete : 0)
                 : length;
     parser->input.source = source;
     parser->input.size = length;
@@ -4456,7 +4456,7 @@ static void S_candidate_put_back(markdown_core_parser *parser, size_t m) {
 /* The mark at `m` marked and lent again while one of its calls waits; with
  * none, it stays while it keeps a decided call for the reading anew to meet,
  * lending nothing. */
-static void S_mark_again(markdown_core_parser *parser, size_t m) {
+static void S_mark_anew(markdown_core_parser *parser, size_t m) {
     markdown_core_stream *stream = parser->stream;
     struct markdown_core_candidate_mark *mark = &stream->marks[m];
     if (mark->live) {
@@ -4485,7 +4485,7 @@ static void S_candidate_undo(markdown_core_parser *parser, size_t m, size_t inde
         mark->first = index;
     }
     stream->anew = index > 0;
-    S_mark_again(parser, m);
+    S_mark_anew(parser, m);
 }
 
 /* A SNAPSHOT'S ACCEPT: the commit back at the mark at `m`
@@ -4497,7 +4497,7 @@ static void S_candidate_see(markdown_core_parser *parser, size_t m, size_t index
     markdown_core_stream *stream = parser->stream;
     stream->claimant = &stream->marks[m].calls[index];
     stream->anew = true;
-    S_mark_again(parser, m);
+    S_mark_anew(parser, m);
 }
 
 /* The lend of the block a lend of the mark at `m` names, at the same depth,

@@ -459,7 +459,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_visit_fields(markdo
  * (markdown_core_node_candidate) as its release begins, which then gives
  * back what the candidate still holds as it does for any node: exactly what
  * it owns. */
-static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_let_go(markdown_core_node *candidate) {
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_drop_borrowed(markdown_core_node *candidate) {
     markdown_core_strbuf_init_zeroed(&candidate->content);
 }
 
@@ -469,7 +469,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_free_stack(markdow
     while (stack) {
         markdown_core_node *e = stack;
         if (e->flags & MARKDOWN_CORE_NODE__BORROWS_CONTENT) {
-            S_let_go(e);
+            S_drop_borrowed(e);
         }
         /* Almost no node owns an attribute value or a content buffer: the
          * test each releaser makes first -- its own predicate, defined once

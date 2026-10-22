@@ -560,7 +560,7 @@ static const unsigned char *give_name_apart(name_pass *pass, size_t at, bufsize_
  * buffer, of which the first `base_size` bytes are its base, and its node
  * shows it, unless it shows it already: the entry names the bytes its node
  * shows. The node's bytes, or NULL with the parse failed. */
-static inline const unsigned char *give_name(name_pass *pass, markdown_core_heading_parse *heading,
+static inline const unsigned char *hand_name(name_pass *pass, markdown_core_heading_parse *heading,
                                              bufsize_t base_size) {
     const unsigned char *shown = show_name(pass, heading, heading->name, heading->name_size, NULL);
     if (shown) {
@@ -628,7 +628,7 @@ static void take_last(name_pass *pass, markdown_core_heading_parse *heading, siz
         return;
     }
     assert(!heading->holds_name && !(pass->beneath && at < pass->state->named));
-    const unsigned char *bytes = give_name(pass, heading, base_size);
+    const unsigned char *bytes = hand_name(pass, heading, base_size);
     if (bytes) {
         const size_t holder = claim_name(pass, at, candidate, bytes);
         assert(!holder);
@@ -660,7 +660,7 @@ static void displace(name_pass *pass, size_t at) {
         } while (candidate->key && (!candidate->extra || candidate->extra <= at + 1));
         const unsigned char *bytes = heading->holds_name || (pass->beneath && at < state->named)
                                          ? give_name_apart(pass, at, base_size)
-                                         : give_name(pass, heading, base_size);
+                                         : hand_name(pass, heading, base_size);
         holder = bytes ? claim_name(pass, at, candidate, bytes) : 0;
     }
 }
