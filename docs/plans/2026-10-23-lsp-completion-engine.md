@@ -146,8 +146,8 @@ extension Document {
   block identifier, and the right context decides. The server offers both.
   `typed` is the partial token the user has written, so the server can filter
   and replace it; `rest` is the same field's continuation after the cursor,
-  read by the same scanner in the whole source, so that an LSP
-  `InsertReplaceEdit` replaces a whole token when the user completes inside
+  read by the same scanner in the whole source, so that the
+  completion's edit replaces the whole token when the user completes inside
   one. `prefix` carries the fields before the slot that scope its candidates,
   such as `Note` in `[[Note#`.
 - The query is a method of the whole document, which the server parses once
@@ -260,10 +260,10 @@ Version 1 implements:
 - **Completion.** `textDocument/completion` with the trigger characters of
   section 3.4, answering a `CompletionList` whose items carry a `textEdit`:
   the slot's `spell` of the candidate, as a snippet whose `$0` is the
-  insertion's `cursor` when the client supports snippets. When the client
-  supports `InsertReplaceEdit`, `insert` covers `typed` and `replace` covers
-  `typed` and `rest`. Otherwise a plain `TextEdit` covers `typed` and `rest`,
-  so that accepting `getting-started` at `[text](#ge‸tting-started)` gives
+  insertion's `cursor` when the client supports snippets. The edit is a
+  plain `TextEdit` over `typed` and `rest`, never an `InsertReplaceEdit`.
+  A client may accept an `InsertReplaceEdit` in insert mode, which would
+  leave `rest` in place and break R2. Covering both means that accepting `getting-started` at `[text](#ge‸tting-started)` gives
   the anchor and not `#getting-startedtting-started`. `completionItem/resolve`
   fills `documentation` lazily: the heading's section, the footnote's text,
   the bibliography entry. Every item sets `filterText` to its own
