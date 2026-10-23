@@ -19,10 +19,10 @@
     },
     "oracle": {
         "package": "@quartz-community/remark-obsidian",
-        "version": "0.2.4",
+        "version": "1.1.0",
         "repository": "https://github.com/quartz-community/remark-obsidian",
-        "commit": "bb36c5db9f343dd82af2ffe47b5ec271a15c080d",
-        "integrity": "sha512-R0gv8sW3IbVylrMH5kItjQVxqMfCfXvfXtLXmspZY8yFV4TLR2Cf/9T2hW0PXl2EsUcEtwcsZmYbH1BPJEsh1w==",
+        "commit": "a59b279c86367bc3f22e13d909b8bd6846c796b0",
+        "integrity": "sha512-h03rF1pAL6hFv/U/mAaS9XAF7/b/IHkPH6tOzVtdCkwsj0yd2F4P9UThXYquyu2mswzoWFyTb0tpYSE9yIBI3Q==",
         "runner": "unified@11 / remark-parse@11 / remark-gfm@4",
         "why": "This is the direct parser used by the most-downloaded current npm Obsidian-flavored Markdown integration. npm's official point API reported 43,766 direct-package downloads for 2026-08-23..2026-08-29; the 44,174-download umbrella package delegates parsing to it.",
         "candidateDownloads": [
@@ -66,10 +66,10 @@
     "metadataOracle": {
         "yaml": {
             "package": "yaml",
-            "version": "2.9.0",
+            "version": "2.9.1",
             "repository": "https://github.com/eemeli/yaml",
-            "commit": "ddb21b04cb889722cec8f89dc1b67f19d62d7f7d",
-            "integrity": "sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA=="
+            "commit": "1440ecd3d1bff41e4ac399f8f6839e810328bd16",
+            "integrity": "sha512-3NxN8+78OdzbT7C/WjGsyfPAtJaN3FNDsWxv7Y7mcDsT/oOmgW8BpyQQFFBnvZE3j9Y2Sdz1ULFLezL7Eb2yFw=="
         },
         "runner": "exact Obsidian envelope scanner / yaml Document API with CST source tokens",
         "why": "This repository has no runnable Obsidian host for the offline gate. Obsidian exposes parseYaml, but that public API does not document the source-preserving evidence this AST needs. The pinned yaml Document/CST API supplies ordered pairs, decoded scalar values, original scalar sources, comments, and ranges. It is a syntax witness within the Properties domain, not Obsidian's implementation or a mandate to support the library's complete language. The recorded npm week reported 202,359,392 downloads.",

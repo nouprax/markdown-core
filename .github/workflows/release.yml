@@ -33,9 +33,9 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+            - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
               with:
-                  node-version: 26.8.1
+                  node-version: 26.12.1
             - name: Validate exact SemVer tag and coordinated versions
               run: node scripts/release/check-version.mjs --skip-swift --tag="$GITHUB_REF_NAME"
             - name: Require the tag commit to be on main
@@ -71,7 +71,7 @@ jobs:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
             - name: Build and audit C release artifact
               run: scripts/release/stage-c.sh build/release-c
-            - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+            - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
               with:
                   name: release-c-${{ matrix.artifact-label }}
                   path: build/release-c/*.tar.gz
@@ -90,7 +90,7 @@ jobs:
               run: scripts/tooling/setup-environment.sh --check wrappers swift
             - name: Validate Swift source archive and product consumer
               run: scripts/release/check-swift-source-archive.sh build/release-swift
-            - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+            - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
               with:
                   name: release-swift-source
                   path: build/release-swift/*.zip
@@ -102,13 +102,13 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+            - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
               with:
-                  node-version: 26.8.1
-            - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+                  node-version: 26.12.1
+            - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
               with:
                   run_install: false
-                  version: 11.25.0
+                  version: 11.28.7
             - uses: emscripten-core/setup-emsdk@4528d102f7230f0e7b276855c01ea1159be0e984 # v16
               with:
                   version: 6.0.9
@@ -117,7 +117,7 @@ jobs:
               run: scripts/tooling/setup-environment.sh --check node emscripten dependencies
             - name: Build, pack, and run the npm artifact consumer
               run: scripts/release/stage-npm.sh build/release-npm
-            - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+            - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
               with:
                   name: release-npm-package
                   path: build/release-npm/*.tgz
@@ -131,7 +131,7 @@ jobs:
             GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-user-home
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-            - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+            - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
               with:
                   distribution: temurin
                   java-version: 26
@@ -143,7 +143,7 @@ jobs:
             # what these jobs need (adb), so it is named rather than inherited; the
             # empty string would drop it too. Remove this once upstream ships a fix:
             # https://github.com/android-actions/setup-android/issues/537
-            - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+            - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
               with:
                   packages: platform-tools
             - run: sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
@@ -151,7 +151,7 @@ jobs:
               run: scripts/tooling/setup-environment.sh --check java wrappers android
             - name: Build Linux, root, JVM, and Android Maven publications
               run: scripts/release/stage-maven-publications.sh build/release-maven-linux linux-release
-            - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+            - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
               with:
                   name: release-maven-linux
                   path: build/release-maven-linux
@@ -165,7 +165,7 @@ jobs:
             GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-user-home
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-            - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+            - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
               with:
                   distribution: temurin
                   java-version: 26
@@ -173,7 +173,7 @@ jobs:
               run: scripts/tooling/setup-environment.sh --check java wrappers
             - name: Build macOS Native publication and JVM payload
               run: scripts/release/stage-maven-publications.sh build/release-maven-macos macos-native
-            - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+            - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
               with:
                   name: release-maven-macos
                   path: build/release-maven-macos
@@ -190,24 +190,24 @@ jobs:
             GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-user-home
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+            - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
               with:
-                  node-version: 26.8.1
-            - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+                  node-version: 26.12.1
+            - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
               with:
                   distribution: temurin
                   java-version: 26
-            - uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+            - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
               with:
                   packages: platform-tools
             - run: sdkmanager "platforms;android-36" "cmake;3.22.1" "ndk;28.2.13676358"
             - name: Check prepared staged-consumer environment
               run: scripts/tooling/setup-environment.sh --check java wrappers android
-            - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+            - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
               with:
                   name: release-maven-linux
                   path: build/release-maven-linux
-            - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+            - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
               with:
                   name: release-maven-macos
                   path: build/release-maven-macos
@@ -228,7 +228,7 @@ jobs:
                   node scripts/audit/check-maven-publications.mjs \
                       build/release-maven-central --full --signed
                   (cd build/release-maven-central && zip -qr ../markdown-core-maven-central.zip com/nouprax)
-            - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+            - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
               with:
                   name: release-maven-central
                   path: build/markdown-core-maven-central.zip
@@ -262,7 +262,7 @@ jobs:
             deployment-id: ${{ steps.central.outputs['deployment-id'] }}
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-            - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+            - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
               with:
                   name: release-maven-central
                   path: build
@@ -286,7 +286,7 @@ jobs:
               # must recover the deployment this run created, and only this
               # run's own record can prove which deployment that is.
               if: ${{ always() }}
-              uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
               with:
                   name: release-central-deployment
                   path: build/central-deployment
@@ -301,11 +301,11 @@ jobs:
             contents: read
             id-token: write
         steps:
-            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+            - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
               with:
-                  node-version: 26.8.1
+                  node-version: 26.12.1
                   registry-url: https://registry.npmjs.org
-            - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+            - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
               with:
                   name: release-npm-package
                   path: release-npm
@@ -341,27 +341,27 @@ jobs:
             attestations: write
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-            - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+            - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
               with:
                   pattern: release-c-*
                   path: release-files
                   merge-multiple: true
-            - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+            - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
               with:
                   name: release-swift-source
                   path: release-files
-            - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+            - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
               with:
                   name: release-npm-package
                   path: release-files
-            - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+            - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
               with:
                   name: release-maven-central
                   path: release-files
             - name: Create release checksums
               run: scripts/release/create-checksums.sh release-files
             - name: Attest release artifact provenance
-              uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+              uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
               with:
                   subject-path: release-files/*
             - name: Create the GitHub Release from the protected tag
@@ -392,9 +392,9 @@ jobs:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
               with:
                   ref: ${{ inputs.release-tag }}
-            - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+            - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
               with:
-                  node-version: 26.8.1
+                  node-version: 26.12.1
                   registry-url: https://registry.npmjs.org
             - name: Validate the protected release tag
               run: |
@@ -474,7 +474,7 @@ jobs:
             - name: Create release checksums
               run: scripts/release/create-checksums.sh release-files
             - name: Attest release artifact provenance
-              uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+              uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
               with:
                   subject-path: release-files/*
             - name: Create the GitHub Release from the protected tag

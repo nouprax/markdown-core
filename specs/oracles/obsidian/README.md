@@ -8,7 +8,7 @@ This is a user-defined format borrowing Obsidian/Pandoc notation, not full
 compatibility with either application or YAML. The pinned package remains
 comparison tooling for the valid intersection.
 
-This oracle runs `@quartz-community/remark-obsidian@0.2.4` through the same
+This oracle runs `@quartz-community/remark-obsidian@1.1.0` through the same
 unified/remark parser family already used by the repository. The package is
 exact-pinned in `package.json` and integrity-pinned in `pnpm-lock.yaml`.
 
@@ -20,13 +20,13 @@ delegates Markdown recognition to this parser. The comparison candidates
 `remark-obsidian`, `@thecae/remark-obsidian`, and `markdown-it-obsidian` had
 135, 11, and 35 downloads respectively during the same window. The selected
 release records git commit
-`bb36c5db9f343dd82af2ffe47b5ec271a15c080d` in npm metadata.
+`a59b279c86367bc3f22e13d909b8bd6846c796b0` in npm metadata.
 
 Properties use a separate executable oracle because that Markdown package
-does not recognize file metadata. The gate runs `yaml@2.9.0` through its
+does not recognize file metadata. The gate runs `yaml@2.9.1` through its
 Document/node API with CST source tokens retained. The package is exact- and
 integrity-pinned and its npm release records git commit
-`ddb21b04cb889722cec8f89dc1b67f19d62d7f7d`. npm's official download API
+`1440ecd3d1bff41e4ac399f8f6839e810328bd16`. npm's official download API
 reported 202,359,392 downloads for `yaml` during 2026-08-23 through 2026-08-29.
 `js-yaml` had 298,229,346 downloads, but its public load API projects mappings
 to JavaScript objects and thereby erases source order, key shape, colliding

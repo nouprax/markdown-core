@@ -3,8 +3,8 @@
     "oracle": [
         {
             "package": "markdown-it",
-            "version": "14.2.0",
-            "integrity": "sha512-1TGiQiJVRQ3NPmZH6sx5Cfnmg6GQm9jvC1ch4TK511NjSJvjzKLzn5pPfZRNZkRPZP0HqCioSndqH8v2nRaWVQ=="
+            "version": "15.0.3",
+            "integrity": "sha512-+Az7Ojz3iRGu8KYMvJ6xVhvrxP3eE+vEtJX75Ow88XBpcQNV/0lGX5ZynIIBftREo4DC2jsveAMDaeltmm8QvQ=="
         },
         {
             "package": "markdown-it-ins",

@@ -17,10 +17,10 @@ that source of truth. The versions below were reviewed on 2026-09-02.
 | Android NDK / CMake | 28.2.13676358 / 3.22.1 | AGP-tested NDK and reproducible Android native build tool |
 | Xcode / Swift | 26.6 / 6.3.3 | Xcode is selected exactly in Apple CI jobs |
 | Swift tools / deployment | 6.3 / iOS 26, macOS 26 | Applies to root, release, and consumer manifests |
-| Node.js / pnpm | 26.8.1 / 11.25.0 | Exact local, CI, and cloud-image versions |
+| Node.js / pnpm | 26.12.1 / 11.28.7 | Exact local, CI, and cloud-image versions |
 | Emscripten | 6.0.9 | emsdk release tag and immutable emsdk commit are paired |
 | Maven | 3.9.16 | Maven 3 GA line; Maven 4 remains prerelease |
-| clang-format / cmake-format | 23.1.0 / 0.6.13 | Repository-managed, hash-locked formatting tools |
+| clang-format / cmake-format | 23.1.3 / 0.6.13 | Repository-managed, hash-locked formatting tools |
 | SwiftLint | 0.65.1 | Release assets are selected per host and verified by SHA-256 |
 
 Android API 37 is still a preview SDK, so the production contract remains API
