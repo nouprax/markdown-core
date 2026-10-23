@@ -155,9 +155,13 @@ extension Document {
   cursor's byte and reads its open state. It then confirms each provisional
   opener against the document it is called on, so that no request parses
   the text after the cursor. An opener at offset `o` survives only if the
-  whole document reads the source at `o` as one of these: the opener of a
-  finished node of the slot's owner kind whose runs hold the cursor, or
-  `Text` in an inline root whose runs hold the cursor. An opener that the
+  whole document reads the source at `o` as one of these: part of a field of
+  the slot's kind, on a finished node of the slot's owner kind whose runs
+  hold the cursor, or `Text` in an inline root whose runs hold the cursor.
+  Ownership is checked with the field's own scope (3.3), not with the
+  node's opener. In `` `x`{.co‸de} ``, the `{` is not where the `Code` node
+  opens, but it does open that node's attribute field, so the
+  `attributeClass` slot survives. An opener that the
   whole document absorbs into another node is dropped, and so are its slots.
   That node may be a code span, HTML, a formula, an autolink, a comment, or
   a construct that closes before the cursor. Last, the query scans forward
@@ -262,8 +266,17 @@ Version 1 implements:
   so that accepting `getting-started` at `[text](#ge‸tting-started)` gives
   the anchor and not `#getting-startedtting-started`. `completionItem/resolve`
   fills `documentation` lazily: the heading's section, the footnote's text,
-  the bibliography entry. Every item sets `filterText` to the slot's token so
-  that the client's own filtering stays consistent with `typed`.
+  the bibliography entry. Every item sets `filterText` to its own
+  candidate's spelled value, without closers, so that a client that keeps
+  filtering a cached list as the user types still matches `Field notes`
+  after `[[Fi` turns into `[[Fie`.
+- **Single-line edits.** LSP requires a completion's edit range to be one
+  line, but some fields span line endings, such as a reference label
+  `[text][getting\nsta‸rted]`. The primary edit then covers only the part of
+  `typed` and `rest` on the cursor's line, and `additionalTextEdits` delete
+  the parts on other lines. The ranges do not overlap, and applied together
+  they give the same text as the parser's `Insertion`. R2's round-trip test
+  applies them as one edit.
 - **Workspace.** `workspace/didChangeWatchedFiles` and the workspace folders
   from `initialize`, which feed the workspace index of section 5.2.
 
