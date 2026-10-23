@@ -43,7 +43,17 @@ owner's decisions, and section 11 records rejected alternatives.
   encoding negotiated at `initialize`: UTF-16 code units unless the client
   offers `utf-8`. Markdown Core's `TextUnit` already counts columns in either
   unit (incremental plan, 4.4), so the server converts only between LSP's
-  0-based lines and characters and the parser's 1-based lines and columns.
+  coordinates and the parser's. A parser `Position`, such as the cursor or
+  a scope's `start`, is the column of a character counted from 1, and maps
+  to LSP `(line - 1, column - 1)`. A `Scope`'s `end` keeps the parser's
+  existing convention: the count of columns from its line's start to the
+  end of the range, which is already LSP's exclusive end, so it maps to
+  `(line - 1, column)`. Under this one rule, `abc` at `1:1..1:3` becomes
+  `0:0..0:3`, and an empty scope `L:C..L:C-1` such as an empty `typed`
+  becomes the empty range `L-1:C-1..L-1:C-1`. A range ending right after a
+  line terminator, at `L:0` of the next line, becomes `L-1:0`. The slot
+  scopes of section 3 follow the `Scope` contract unchanged, and the
+  protocol transcripts (section 8) cover each of these cases.
 - **R5 Latency.** A completion request answers in time proportional to the
   document's length with the parser's constant, not the server's: one parse
   of the text before the cursor and, at most once per document version, one
