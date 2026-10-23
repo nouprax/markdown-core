@@ -648,7 +648,7 @@ ktlint {
 
 // AGP 9.2.1 exposed testedAbi in the managed-device DSL but its setup-task
 // CreationAction did not copy that value into the task input. Keep the public
-// DSL declaration above and the explicit task input on AGP 9.3.2 until the
+// DSL declaration above and the explicit task input on AGP 9.4.1 until the
 // two-device remote smoke proves the upstream assignment on both page sizes.
 tasks.withType<com.android.build.gradle.internal.tasks.ManagedDeviceInstrumentationTestSetupTask>().configureEach {
     testedAbi.set(androidManagedDeviceTestAbi)

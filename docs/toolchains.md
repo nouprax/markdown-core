@@ -10,8 +10,8 @@ that source of truth. The versions below were reviewed on 2026-09-02.
 | Area | Supported version | Contract |
 | --- | --- | --- |
 | Gradle | 9.7.1 | Distribution/JAR SHA-256 and the release signing subkey are pinned |
-| AGP | 9.3.2 | Stable patch line; compile/target SDK 36, min SDK 21 |
-| Kotlin Gradle plugin | 2.4.10 | Stable bug-fix release |
+| AGP | 9.4.1 | Stable patch line; compile/target SDK 36, min SDK 21 |
+| Kotlin Gradle plugin | 2.4.21 | Stable bug-fix release |
 | Kotlin source/API and stdlib | 2.2 / 2.2.21 | Deliberate consumer compatibility floor; independent of the build plugin |
 | Gradle daemon JDK / JVM bytecode | 26 / 17 | JDK 26 runs the build; published JVM code remains Java 17 compatible |
 | Android NDK / CMake | 28.2.13676358 / 3.22.1 | AGP-tested NDK and reproducible Android native build tool |
@@ -29,8 +29,8 @@ have a higher version number. The Android CMake pin is intentionally the
 reproducible SDK package used by the JNI build; the host CMake requirement
 remains the lower compatibility floor declared by the CMake project.
 
-Kotlin 2.4.10's published compatibility table does not yet classify Gradle
-9.7.1 and AGP 9.3.2 as fully supported. This repository treats that as an
+Kotlin 2.4.21's published compatibility table does not yet classify Gradle
+9.7.1 and AGP 9.4.1 as fully supported. This repository treats that as an
 explicit compatibility edge: Gradle model checks, Android/KMP/JVM consumers,
 dependency verification, publications, and package audits must all pass. A
 future version bump must not weaken those gates to suppress an incompatibility.
