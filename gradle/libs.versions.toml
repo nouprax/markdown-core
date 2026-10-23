@@ -1,11 +1,11 @@
 [versions]
-agp = "9.3.2"
+agp = "9.4.1"
 android-compile-sdk = "36"
 android-min-sdk = "21"
 android-target-sdk = "36"
 jdk = "26"
 jvm-bytecode = "17"
-kotlin = "2.4.10"
+kotlin = "2.4.21"
 kotlin-stdlib = "2.2.21"
 ktlintCli = "1.8.0"
 ktlintPlugin = "14.2.0"
