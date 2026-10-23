@@ -117,11 +117,18 @@ public struct Slot: Sendable, Equatable {
     public let typed: Scope          // slot start ..< cursor
     public let rest: Scope           // cursor ..< end of the slot's token
     public let prefix: [String]      // earlier fields the slot depends on
+    public let closed: Bool          // the whole document finishes the construct
+    public func spell(_ value: String) -> Insertion?   // section 3.2
+}
+
+public struct Insertion: Sendable, Equatable {
+    public let text: String          // replaces typed and rest
+    public let cursor: Int           // offset in text where the caret lands
 }
 
 extension Document {
-    public static func context(at position: Position, in source: String,
-                               unit: TextUnit = .utf16) throws -> Context
+    /// `self` is the parse of `source`, the whole text of this version.
+    public func context(at position: Position, in source: String) throws -> Context
 }
 ```
 
@@ -143,10 +150,11 @@ extension Document {
   `InsertReplaceEdit` replaces a whole token when the user completes inside
   one. `prefix` carries the fields before the slot that scope its candidates,
   such as `Note` in `[[Note#`.
-- The query runs a session over the source up to the cursor's byte and reads
-  its open state. It then confirms each provisional opener against the
-  whole document, using the parse the session's `finalize` produces once the
-  remaining text is appended. An opener at offset `o` survives only if the
+- The query is a method of the whole document, which the server parses once
+  per version (section 6). It runs a session over the source up to the
+  cursor's byte and reads its open state. It then confirms each provisional
+  opener against the document it is called on, so that no request parses
+  the text after the cursor. An opener at offset `o` survives only if the
   whole document reads the source at `o` as one of these: the opener of a
   finished node of the slot's owner kind whose runs hold the cursor, or
   `Text` in an inline root whose runs hold the cursor. An opener that the
@@ -157,8 +165,24 @@ extension Document {
   open state and the whole document are the engine's own results, read and
   not recomputed (incremental plan R6).
 
-C exposes `markdown_core_context_at(source, length, unit, position,
-&context)` and `markdown_core_context_free`, with accessors for the arrays.
+- **`closed`** is true when the whole document finishes the slot's
+  construct after the cursor, as in `[[Fi‸eld notes]]`, and false when the
+  construct is still open, as in `See [[Field no‸`.
+- **`spell(_:)`** is the parser's spelling of a value in the slot. It returns
+  the text that replaces `typed` and `rest`. That text writes the value in
+  the field's own syntax and escapes or brackets what the field cannot hold
+  as written, such as a space in a link destination (written `<…>`) or a `|`
+  or `]]` in a cross target. When the construct is not `closed`, the text
+  also adds the shortest closing syntax that finishes the construct, such as
+  `]]`, `)` or `}`. `cursor` places the caret after the value, before any
+  closer that a later field could follow, such as the `|label` of a cross
+  link. `spell` returns nil for a value the field cannot hold in any
+  spelling, and the server drops that candidate. The server never writes
+  Markdown syntax itself (R1). R2's round-trip test checks every spelling.
+
+C exposes `markdown_core_document_context(document, source, length, position,
+&context)`, `markdown_core_slot_spell(context, slot, value, length, &insertion)`
+and `markdown_core_context_free`, with accessors for the arrays.
 Kotlin and ECMAScript mirror the Swift shape (R6).
 
 ### 3.2 Slot kinds
@@ -231,8 +255,12 @@ Version 1 implements:
   change to its copy of the text (section 6).
 - **Completion.** `textDocument/completion` with the trigger characters of
   section 3.4, answering a `CompletionList` whose items carry a `textEdit`:
-  an `InsertReplaceEdit` from the slot's `typed` and `rest` when the client
-  supports it, a `TextEdit` over `typed` otherwise. `completionItem/resolve`
+  the slot's `spell` of the candidate, as a snippet whose `$0` is the
+  insertion's `cursor` when the client supports snippets. When the client
+  supports `InsertReplaceEdit`, `insert` covers `typed` and `replace` covers
+  `typed` and `rest`. Otherwise a plain `TextEdit` covers `typed` and `rest`,
+  so that accepting `getting-started` at `[text](#ge‸tting-started)` gives
+  the anchor and not `#getting-startedtting-started`. `completionItem/resolve`
   fills `documentation` lazily: the heading's section, the footnote's text,
   the bibliography entry. Every item sets `filterText` to the slot's token so
   that the client's own filtering stays consistent with `typed`.
@@ -295,8 +323,11 @@ text anywhere. This plan does not revive general edits. Instead:
 - A document version is parsed with `Document.parse` at most once, lazily,
   on the first request that needs the whole document, and the result is
   cached by version.
-- A completion request runs `Document.context(at:in:)`, whose cost is one
-  session over the text before the cursor plus the forward scan for `rest`.
+- A completion request runs `context(at:in:)` on the version's cached
+  document. Its cost is one session over the text before the cursor, the
+  confirmation lookups in the cached document, and the forward scan for
+  `rest`. A completion request is therefore one of the requests that need
+  the whole document, and the first one after a change pays for its parse.
 - The workspace index parses a file when it changes on disk or closes in the
   editor, never per keystroke.
 
@@ -307,9 +338,12 @@ second parse path (AGENTS.md).
 ## 7. Complexity
 
 - A completion request costs O(p) for the parse of the text before the
-  cursor, p its length, plus O(n) once per document version for the whole
-  parse when a provider needs declarations, plus the providers' lookups,
-  which are hash-table reads in the index.
+  cursor, where p is its length. Confirmation is a path lookup in the cached
+  document, O(depth + log n) with the runs indexed per version, or O(n)
+  with one walk as `nodeAt` does today. On top of that comes O(n) once per
+  document version for the whole parse, which the first request after a
+  change pays, plus the providers' lookups, which are hash-table reads in
+  the index.
 - **Budget.** The p95 latency of a completion request on the benchmark
   grammar corpus, measured in the ECMAScript binding on the gates' machine,
   stays under 10 ms for documents up to 256 KiB. The figure is a proposal for
@@ -334,7 +368,11 @@ second parse path (AGENTS.md).
   candidate a provider offers there from a fixed fixture workspace, applying
   the item's edit and parsing yields, at the edited range, a node of the
   slot's owner kind whose field holds the candidate. A provider that offers
-  a candidate the grammar would not read as intended fails the test.
+  a candidate the grammar would not read as intended fails the test. The
+  offsets include unfinished constructs such as `See [[Field no‸`, where
+  only `spell`'s closer makes the edit parse as a `CrossLink`, and values
+  that need escaping, such as destinations with spaces and cross targets
+  with `|`.
 - **Slot coverage.** Every slot kind of section 3.2 appears in at least one
   spec example's context, and every field the audit of step 2 marks as
   completable has a slot kind.
