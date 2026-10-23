@@ -90,9 +90,15 @@ each is still reading. This plan's central observation follows:
 > **The syntactic context at the cursor is the open state of a parse of the
 > text before the cursor.**
 
-Left context decides what is being typed; the text after the cursor decides
-only how far the completion's replacement reaches. Section 3 turns the open
-state into a public value.
+The text after the cursor still matters in two ways. It decides how far the
+completion's replacement reaches, and it can also decide whether a provisional
+opener before the cursor opens anything at all. In `` `[[No‸]]` `` the closing
+backtick makes the whole run a code span, which is opaque, while in
+`` `[[No‸]] `` the backtick has no closer and the `[[` opens a cross link. The
+two prefixes are identical. So the prefix's open state proposes what the
+cursor may be typing, and the parse of the whole text confirms it
+(section 3.1). Both are the parser's own decisions. Section 3 turns them into
+a public value.
 
 ## 3. Public model
 
@@ -137,9 +143,18 @@ extension Document {
   `InsertReplaceEdit` replaces a whole token when the user completes inside
   one. `prefix` carries the fields before the slot that scope its candidates,
   such as `Note` in `[[Note#`.
-- The query runs a session over the source up to the cursor's byte, reads its
-  open state, and scans forward in the whole source for `rest`. It is one
-  algorithm with the parse: the open state is the engine's own state, read and
+- The query runs a session over the source up to the cursor's byte and reads
+  its open state. It then confirms each provisional opener against the
+  whole document, using the parse the session's `finalize` produces once the
+  remaining text is appended. An opener at offset `o` survives only if the
+  whole document reads the source at `o` as one of these: the opener of a
+  finished node of the slot's owner kind whose runs hold the cursor, or
+  `Text` in an inline root whose runs hold the cursor. An opener that the
+  whole document absorbs into another node is dropped, and so are its slots.
+  That node may be a code span, HTML, a formula, an autolink, a comment, or
+  a construct that closes before the cursor. Last, the query scans forward
+  in the whole source for `rest`. It is one algorithm with the parse: the
+  open state and the whole document are the engine's own results, read and
   not recomputed (incremental plan R6).
 
 C exposes `markdown_core_context_at(source, length, unit, position,
@@ -307,8 +322,14 @@ second parse path (AGENTS.md).
 
 - **Context agreement.** For every spec example and every byte offset in it,
   `Document.context(at:)` equals the open state of a session whose text is the
-  example up to that offset. This checks that the query reads the engine's
-  state and recomputes nothing.
+  example up to that offset, after the confirmation against the whole
+  example that section 3.1 defines. This checks that the query reads the
+  engine's state and recomputes nothing.
+- **Right-context ownership.** Pairs of texts with the same prefix whose
+  suffixes decide ownership differently each get their own context. Examples
+  are `` `[[No‸]]` `` against `` `[[No‸]] ``, `<a href="[[No‸">` against
+  `<a [[No‸`, and `$[[No‸$` against `$[[No‸`. No slot is offered inside an
+  opaque node.
 - **Oracle round trip (R2).** For every spec example, every offset, and every
   candidate a provider offers there from a fixed fixture workspace, applying
   the item's edit and parsing yields, at the edited range, a node of the
