@@ -589,8 +589,11 @@ static markdown_core_place runs_window(const markdown_core_node *node, uint32_t 
  * after the COMMITTED blocks of its relation (blocks.c, A BLOCK SETTLES) and
  * a publish places every item it walks. The walk goes on past them, its
  * next node measured from where the last of them ends: a block's source is
- * its range. A relation of an inline root's content is FINAL whole or not at
- * all, as its holder is COMMITTED or not. A definition's bodies are its
+ * its range, and an inline node's the window of the runs it reads in the
+ * content: the content of a paragraph a snapshot settles has a FINAL prefix,
+ * the nodes before its settle point (blocks.c, THE SETTLE POINT), and the
+ * content of any other inline root is FINAL whole or not at all, as its
+ * holder is COMMITTED or not. A definition's bodies are its
  * children: a body is FINAL once its relation is placed while it is
  * COMMITTED, and the walk goes on from the body after the last FINAL one. */
 
@@ -823,43 +826,55 @@ static inline bool publish_range_run(markdown_core_node_pool *pool, markdown_cor
     return true;
 }
 
-/* An inline node's runs, its content range `place` measured in the root
- * whose places the walk holds: the source from where its first content byte
- * was read to where its last was, or the empty source where its start was
- * read when it holds none, less the gaps between the root's places; the
- * first measured from `anchor`, each other from the end of the run before,
- * and its source `window` from the start of the first to the end of the
- * last (runs_window). One pass over the places from the one its start is
- * read from to the one its last byte is: each gap between two of them in
- * that source ends a run. False when they could not be allocated. */
-static inline bool publish_inline_runs(publish_walk *walk, markdown_core_node *node, markdown_core_place place,
-                                       uint32_t anchor, markdown_core_place *window) {
-    assert(!node->source.places);
-    const content_place *const past = walk->places.items + walk->places.count;
-    const content_place *const at = content_place_at(&walk->places, place.start);
-    const uint32_t first = place.start >= at->content + at->length ? at->end
-                           : content_place_copied(at)              ? at->start + (place.start - at->content)
-                                                                   : at->start;
-    uint32_t end = first;
-    /* The place its last byte is read from: the last that starts before its
-     * end and reads content. */
-    const content_place *to = at;
+/* Where an inline node's content range `place`, measured in the root whose
+ * places `table` holds, is read from: the place `at` its start is read from
+ * and the place `to` its last byte is -- the last that starts before its
+ * end and reads content -- and the source byte `first` its start is read
+ * from and the one `end` its last byte is read from ends at. */
+typedef struct {
+    const content_place *at, *to;
+    uint32_t first, end;
+} inline_span;
+
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) inline_span
+    inline_span_of(const content_places *table, markdown_core_place place) {
+    const content_place *const past = table->items + table->count;
+    inline_span span = {.at = content_place_at(table, place.start)};
+    const content_place *const at = span.at;
+    span.first = place.start >= at->content + at->length ? at->end
+                 : content_place_copied(at)              ? at->start + (place.start - at->content)
+                                                         : at->start;
+    span.end = span.first;
+    span.to = at;
     if (place.end > place.start) {
         for (const content_place *p = at + 1; p < past && p->content < place.end; p++) {
             if (p->length) {
-                to = p;
+                span.to = p;
             }
         }
-        end = place.end - 1 >= to->content + to->length || !content_place_copied(to)
-                  ? to->end
-                  : to->start + (place.end - to->content);
+        const content_place *const to = span.to;
+        span.end = place.end - 1 >= to->content + to->length || !content_place_copied(to)
+                       ? to->end
+                       : to->start + (place.end - to->content);
     }
-    markdown_core_runs *runs = markdown_core_node_pool_bytes(walk->pool, runs_bytes((uint32_t)(to - at + 1)));
-    if (!runs) {
-        return false;
-    }
+    return span;
+}
+
+/* An inline node's runs, read as `span` says in the root whose places
+ * `table` holds: the source from where its first content byte was read to
+ * where its last was, or the empty source where its start was read when it
+ * holds none, less the gaps between the root's places; the first measured
+ * from `anchor`, each other from the end of the run before, written to
+ * `runs` unless it is NULL, and its source window from the start of the
+ * first to the end of the last (runs_window), returned. One pass over the
+ * places from the one its start is read from to the one its last byte is:
+ * each gap between two of them in that source ends a run. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) markdown_core_place
+    inline_runs(const content_places *table, inline_span span, uint32_t anchor, markdown_core_runs *runs) {
+    const content_place *const past = table->items + table->count;
+    const uint32_t first = span.first, end = span.end;
     uint32_t count = 0, from = anchor, start = first, last = first;
-    const content_place *p = at;
+    const content_place *p = span.at;
     while (p + 1 < past && p->end <= start) {
         p++;
     }
@@ -869,18 +884,40 @@ static inline bool publish_inline_runs(publish_walk *walk, markdown_core_node *n
             continue;
         }
         if (gap > start) {
-            runs->items[count++] = (markdown_core_run){(int32_t)((int64_t)start - from), gap - start};
+            if (runs) {
+                runs->items[count] = (markdown_core_run){(int32_t)((int64_t)start - from), gap - start};
+            }
+            count++;
             from = last = gap;
         }
         start = next > start ? next : start;
     }
     if (start < end || !count) {
         last = start < end ? end : start;
-        runs->items[count++] = (markdown_core_run){(int32_t)((int64_t)start - from), last - start};
+        if (runs) {
+            runs->items[count] = (markdown_core_run){(int32_t)((int64_t)start - from), last - start};
+        }
+        count++;
     }
-    runs->count = count;
+    if (runs) {
+        runs->count = count;
+    }
+    return (markdown_core_place){first, last};
+}
+
+/* An inline node's runs (inline_runs), its content range `place` in the
+ * root whose places the walk holds, cut from the walk's pool, and its
+ * source `window`. False when they could not be allocated. */
+static inline bool publish_inline_runs(publish_walk *walk, markdown_core_node *node, markdown_core_place place,
+                                       uint32_t anchor, markdown_core_place *window) {
+    assert(!node->source.places);
+    const inline_span span = inline_span_of(&walk->places, place);
+    markdown_core_runs *runs = markdown_core_node_pool_bytes(walk->pool, runs_bytes((uint32_t)(span.to - span.at + 1)));
+    if (!runs) {
+        return false;
+    }
+    *window = inline_runs(&walk->places, span, anchor, runs);
     node->source.runs = runs;
-    *window = (markdown_core_place){first, last};
     return true;
 }
 
@@ -1189,9 +1226,10 @@ static inline void publish_pair_first(publish_match_frame *frame, const markdown
 
 /* The relation in hand of a node a publish placed before, past its FINAL
  * prefix (THE FINAL PREFIX): its next node is measured from where the last
- * of them ends. A relation of an inline root's content is passed whole or
- * not at all. */
-static inline void publish_pass_final(publish_relation *hand, bool content) {
+ * of them ends, in the content of the root whose places `places` holds when
+ * the relation is that content, and from their runs when it is the content
+ * of a root whose places the walk does not hold. */
+static inline void publish_pass_final(publish_relation *hand, const content_places *places) {
     markdown_core_node **last = hand->end;
     while (last != hand->item && !(last[-1]->flags & MARKDOWN_CORE_NODE__FINAL)) {
         last--;
@@ -1199,10 +1237,21 @@ static inline void publish_pass_final(publish_relation *hand, bool content) {
     if (last == hand->item) {
         return;
     }
-    assert(!content || last == hand->end);
+    markdown_core_node **const prefix = hand->item;
     hand->item = last;
-    if (!content) {
-        hand->anchor = hand->source = last[-1]->place.end;
+    const markdown_core_place place = last[-1]->place;
+    hand->anchor = place.end;
+    if (places) {
+        hand->source = inline_runs(places, inline_span_of(places, place), 0, NULL).end;
+    } else if (MARKDOWN_CORE_NODE_TYPE_INLINE_P(last[-1]->kind)) {
+        /* Inline content whose places the walk does not hold: a closed
+         * root's, whose items are measured one after another, as the walk
+         * would measure them. */
+        for (markdown_core_node **item = prefix; item != last; item++) {
+            hand->source = runs_window(*item, hand->source).end;
+        }
+    } else {
+        hand->source = place.end;
     }
 }
 
@@ -1258,9 +1307,9 @@ static void publish_relation_decided(const markdown_core_parser *parser, publish
  * relation before when it goes on from it, its decided content, and, for a
  * persisting node, its FINAL prefix passed when a publish placed the node
  * before, and a definition's body FINAL when it is COMMITTED and DECIDED. */
-static inline void publish_relation_begin(const markdown_core_parser *parser, publish_match_frame *frame,
-                                          publish_relation *hand, const markdown_core_node *holder,
-                                          relation_shape shape, bool continues) {
+static inline void publish_relation_begin(const markdown_core_parser *parser, const content_places *places,
+                                          publish_match_frame *frame, publish_relation *hand,
+                                          const markdown_core_node *holder, relation_shape shape, bool continues) {
     frame->holder = holder;
     if (!continues) {
         frame->field = shape == SHAPE_CHILDREN ? 0 : relation_field(&frame->walk.cursor);
@@ -1268,7 +1317,7 @@ static inline void publish_relation_begin(const markdown_core_parser *parser, pu
     publish_relation_decided(parser, frame, holder, shape, hand->item, hand->end);
     if (frame->published) {
         markdown_core_node **const first = hand->item;
-        publish_pass_final(hand, frame->walk.content);
+        publish_pass_final(hand, frame->walk.content ? places : NULL);
         /* Only a node that continues itself holds FINAL items (PUBLISHING
          * IN PLACE). */
         assert(frame->old == OLD_RECORDS || hand->item == first);
@@ -1401,6 +1450,49 @@ static void records_free(markdown_core_parser *parser, uint32_t at, bool release
         records->free = at;
         at = next;
     }
+}
+
+bool markdown_core_publish_keep_left(markdown_core_parser *parser, const markdown_core_node *root,
+                                     markdown_core_node *const *nodes, uint32_t count) {
+    markdown_core_tail_records *records = &parser->stream->records;
+    uint32_t owner = 0;
+    for (size_t i = 0; i < records->count && !owner; i++) {
+        const markdown_core_tail_record *record = &records->items[i];
+        if (record->id == root->id && record->kind == root->kind && !record->node) {
+            owner = (uint32_t)i + 1;
+        }
+    }
+    /* The records go before those of the content's other old nodes, in
+     * source order, each node's source measured as the publish measured it:
+     * the first from where the paragraph's begins, each other from where the
+     * one before ends. */
+    uint32_t i = 0, first = 0, last = 0, source = root->place.start;
+    bool kept = true;
+    for (; owner && i < count && nodes[i]->id; i++) {
+        const uint32_t at = record_take(records);
+        if (!at) {
+            kept = false;
+            break;
+        }
+        const markdown_core_place window = runs_window(nodes[i], source);
+        source = window.end;
+        records->items[at - 1] = (markdown_core_tail_record){
+            .node = nodes[i], .id = nodes[i]->id, .start = window.start, .end = window.end, .kind = nodes[i]->kind};
+        if (last) {
+            records->items[last - 1].next = at;
+        } else {
+            first = at;
+        }
+        last = at;
+    }
+    if (last) {
+        records->items[last - 1].next = records->items[owner - 1].held;
+        records->items[owner - 1].held = first;
+    }
+    for (; i < count; i++) {
+        markdown_core_parser_release_node(parser, nodes[i]);
+    }
+    return kept;
 }
 
 /* `node`, whose source is `source`, in the relation in hand of `owner`,
@@ -1555,7 +1647,7 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, const 
                 frame->old_start = old_start;
                 publish_pair_first(frame, old, shape);
             }
-            publish_relation_begin(parser, frame, &hand, holder, shape, false);
+            publish_relation_begin(parser, &walk->places, frame, &hand, holder, shape, false);
         }
         /* The next node with relations to enter, or the end of the walk. */
         for (node = NULL; count && !node;) {
@@ -1570,7 +1662,7 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, const 
                     if (frame->old == OLD_LIVE) {
                         publish_pair(frame, relation_field(&frame->walk.cursor), relation.continues);
                     }
-                    publish_relation_begin(parser, frame, &hand, relation.holder,
+                    publish_relation_begin(parser, &walk->places, frame, &hand, relation.holder,
                                            (relation_shape)frame->walk.cursor.shape, relation.continues);
                     continue;
                 }

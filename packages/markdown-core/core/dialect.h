@@ -55,8 +55,9 @@ typedef enum {
 
 /* THE INLINE-CONTENT HOOK FAMILIES, projected for the same reason and with one
  * difference: a block hook family is asked per LINE and can be gated on the
- * line's first byte, while these three are asked once per inline-content NODE
- * and have nothing to gate on. So they get the projection and not the gate
+ * line's first byte, while these are asked once per inline-content NODE, or
+ * at a token start a settle point may be (`open`, from
+ * `markdown_core_inline_finish_inlines`), and have nothing to gate on. So they get the projection and not the gate
  * maps.
  *
  * Each of the three was a scan of every attached element looking for the few
@@ -74,6 +75,7 @@ typedef enum {
     MARKDOWN_CORE_INLINE_HOOK_INIT,
     MARKDOWN_CORE_INLINE_HOOK_FINISH,
     MARKDOWN_CORE_INLINE_HOOK_DISPOSE,
+    MARKDOWN_CORE_INLINE_HOOK_OPEN,
     MARKDOWN_CORE_INLINE_HOOK_COUNT
 } markdown_core_inline_hook;
 

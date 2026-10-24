@@ -446,10 +446,17 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
     // parenthesis may each follow spaces, tabs and up to one line ending.
     const unsigned char *data = inline_state->input.data;
     const bufsize_t len = inline_state->input.len;
-    if (link_allowed && markdown_core_inline_peek_char(inline_state) == '(' &&
-        ((n = markdown_core_inline_manual_scan_link_url(
-              &inline_state->input, starturl = markdown_core_skip_spaces_and_line_end(data, inline_state->pos + 1, len),
-              &url_chunk)) > -1)) {
+    /* A destination, title or parenthesis the end cuts short may be one
+     * once the input goes on. */
+    n = -1;
+    if (link_allowed && markdown_core_inline_peek_char(inline_state) == '(') {
+        starturl = markdown_core_skip_spaces_and_line_end(data, inline_state->pos + 1, len);
+        n = markdown_core_inline_manual_scan_link_url(&inline_state->input, starturl, &url_chunk);
+        if (n < 0) {
+            markdown_core_inline_saw_end(inline_state);
+        }
+    }
+    if (n > -1) {
 
         // try to parse an explicit link:
         endurl = starturl + n;
@@ -459,6 +466,10 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
         // separator already read is the one before the parenthesis.
         endtitle = starttitle == endurl ? starttitle : starttitle + scan_link_title(data, len, starttitle);
         endall = endtitle == starttitle ? starttitle : markdown_core_skip_spaces_and_line_end(data, endtitle, len);
+        if (markdown_core_inline_tracks_end(inline_state) &&
+            (endall >= len || (endtitle == starttitle && starttitle < len && strchr("\"'(", data[starttitle])))) {
+            markdown_core_inline_saw_end(inline_state);
+        }
 
         if (markdown_core_inline_peek_at(inline_state, endall) == ')') {
             explicit_tail = true;
@@ -810,9 +821,16 @@ static void init_inline(const markdown_core_element_instance *self, markdown_cor
     markdown_core_brackets(self, inline_state)->no_link_openers = true;
 }
 
+/* An open bracket, or one whose citation tail waits for its key's owner. */
+static bool holds_open(const markdown_core_element_instance *self, const markdown_core_inline_state *inline_state) {
+    const markdown_core_bracket_scope *brackets = markdown_core_run_state(inline_state, self);
+    return brackets->last || brackets->pending;
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK = {
     .peers = LINK_PEERS,
     .init_inline = init_inline,
+    .holds_open = holds_open,
     .state_size = sizeof(markdown_core_bracket_work),
     .run_state_size = sizeof(markdown_core_bracket_scope),
 

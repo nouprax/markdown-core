@@ -72,6 +72,7 @@ static bool markdown_core_inline_citation_opener(markdown_core_inline_state *inl
 
 static bool markdown_core_inline_citation_key_follows(markdown_core_inline_state *inline_state, bufsize_t at) {
     if (at >= inline_state->input.len) {
+        markdown_core_inline_saw_end(inline_state);
         return false;
     }
     return inline_state->input.data[at] == '{' ||
@@ -209,6 +210,8 @@ static bool scan_citation_key(const markdown_core_element_instance *self, markdo
         }
         if (index->cursor == index->count || index->entries[index->cursor].start != pos ||
             !index->entries[index->cursor].end) {
+            /* A brace that does not close may close once the input goes on. */
+            markdown_core_inline_saw_end(inline_state);
             return false;
         }
         token->key_start = pos + 1;
@@ -759,6 +762,10 @@ static bool is_inline_start(const markdown_core_element_instance *self, markdown
                             bufsize_t at) {
     unsigned char c = inline_state->input.data[at];
     if (c == '-') {
+        if (at + 1 >= inline_state->input.len) {
+            markdown_core_inline_saw_end(inline_state);
+            return false;
+        }
         return markdown_core_inline_peek_at(inline_state, at + 1) == '@';
     }
     if (c == ';') {
@@ -790,6 +797,12 @@ static void finish_inline(const markdown_core_element_instance *self, markdown_c
     markdown_core_inline_finish_citation_tokens(
         self, inline_state, &((markdown_core_citation_run *)markdown_core_run_state(inline_state, self))->tokens);
 }
+/* A token read outside every bracket, which the run's finish gives its
+ * owner. */
+static bool holds_open(const markdown_core_element_instance *self, const markdown_core_inline_state *inline_state) {
+    const markdown_core_citation_run *run = markdown_core_run_state(inline_state, self);
+    return run->tokens.first != NULL;
+}
 static void dispose_inline(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state) {
     markdown_core_citation_run *run = markdown_core_run_state(inline_state, self);
     markdown_core_inline_free_citation_tokens(inline_state, &run->tokens);
@@ -801,6 +814,7 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_CITATION = {
     .peers = CITATION_PEERS,
     .finish_inline = finish_inline,
     .dispose_inline = dispose_inline,
+    .holds_open = holds_open,
     .state_size = sizeof(markdown_core_citation_work),
     .run_state_size = sizeof(markdown_core_citation_run),
 

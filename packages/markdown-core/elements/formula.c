@@ -381,6 +381,12 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     bufsize_t closer_len;
     int open;
 
+    /* Every delimiter is at most three bytes, and the byte after a `$` says
+     * whether it opens or closes. */
+    if (offset + 3 > len) {
+        markdown_core_inline_state_saw_end(inline_state);
+    }
+
     if (character == '$') {
         if (scan_formula_dollar_display_open(chunk->data, len, offset)) {
             open = markdown_core_inline_state_has_unmatched_opener(inline_state, FORMULA_DELIM_DOLLAR_DISPLAY);

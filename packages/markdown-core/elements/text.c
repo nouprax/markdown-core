@@ -42,6 +42,9 @@ static markdown_core_node *handle_backslash(const markdown_core_element_instance
                markdown_core_is_space_or_tab(markdown_core_inline_peek_at(inline_state, end))) {
             end++;
         }
+        if (end == inline_state->input.len) {
+            markdown_core_inline_saw_end(inline_state);
+        }
         counts->whitespace += (size_t)(end - inline_state->pos);
         if ((end == inline_state->input.len && !MARKDOWN_CORE_NODE_TYPE_INLINE_P(inline_state->owner->kind)) ||
             (end < inline_state->input.len &&
@@ -64,6 +67,9 @@ static markdown_core_node *handle_backslash(const markdown_core_element_instance
             while (end + 1 < inline_state->input.len && inline_state->input.data[end] == '\\' &&
                    inline_state->input.data[end + 1] == '\\') {
                 end += 2;
+            }
+            if (end + 1 >= inline_state->input.len) {
+                markdown_core_inline_saw_end(inline_state);
             }
             if (end - start >= 4) {
                 bufsize_t output_len = (end - start) / 2;
@@ -127,6 +133,16 @@ static markdown_core_node *handle_entity(markdown_core_inline_state *inline_stat
                                inline_state->input.len - inline_state->pos);
 
     if (len == 0) {
+        /* A reference that runs to the end may be one once the input goes
+         * on: its name and its `;` are still to come. */
+        bufsize_t end = inline_state->pos;
+        while (markdown_core_inline_tracks_end(inline_state) && end < inline_state->input.len &&
+               (markdown_core_isalnum((char)inline_state->input.data[end]) || inline_state->input.data[end] == '#')) {
+            end++;
+        }
+        if (end == inline_state->input.len) {
+            markdown_core_inline_saw_end(inline_state);
+        }
         markdown_core_node *literal = make_str(inline_state, inline_state->pos - 1, inline_state->pos - 1,
                                                markdown_core_chunk_dup(&inline_state->input, inline_state->pos - 1, 1));
         /* Not an entity: the `&` IS the literal, so it is content. */

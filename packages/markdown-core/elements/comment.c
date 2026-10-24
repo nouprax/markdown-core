@@ -222,6 +222,9 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     }
     ((markdown_core_comment_work *)self->state)->scan++;
     if (start + 1 >= input->len || input->data[start + 1] != '%') {
+        if (start + 1 >= input->len) {
+            markdown_core_inline_state_saw_end(inline_state);
+        }
         return NULL;
     }
     close = markdown_core_inline_state_find_opaque_close(inline_state, MARKDOWN_CORE_DELIM_RULE_COMMENT, start + 2,

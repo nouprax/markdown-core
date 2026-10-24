@@ -101,6 +101,10 @@ test("the adversarial shapes hold the counts and depths section 3.1 names", () =
     assert.deepEqual(shapeSizes("single-line"), [65536]);
     assert.ok(smallest("unclosed-strong", "ascii").text.startsWith("**"));
     assert.equal(smallest("single-line", "ascii").text.trimEnd().split("\n").length, 1);
+    assert.deepEqual(shapeSizes("short-lines"), [65536]);
+    const lines = smallest("short-lines", "ascii").text.trimEnd().split("\n");
+    assert.ok(lines.length > 1000);
+    assert.ok(lines.every((line) => line.length > 0 && line.length < 80 && !/^\s/.test(line)));
 });
 
 test("the streaming shapes write the definition after its uses and leave the envelope and the grid table open", () => {
@@ -116,8 +120,8 @@ test("the streaming shapes write the definition after its uses and leave the env
     assert.match(grid.at(-1), /^\| .*\|$/);
 });
 
-test("6.2 holds the streams of every scale shape, the long list and the deep quotes, and no other", () => {
-    assert.deepEqual(LOCAL_SHAPES, [...Object.keys(SCALE_SHAPES), "long-list", "deep-quotes"]);
+test("6.2 holds the streams of every scale shape, the long list, the deep quotes and the paragraph of short lines, and no other", () => {
+    assert.deepEqual(LOCAL_SHAPES, [...Object.keys(SCALE_SHAPES), "long-list", "deep-quotes", "short-lines"]);
     const { workloads } = benchmarkWorkloads();
     for (const workload of workloads) {
         assert.equal(workload.local, LOCAL_SHAPES.includes(workload.document.shape), workload.name);
@@ -135,6 +139,7 @@ test("6.3 measures every step of each shape 6.2 leaves to it, at the shape's sma
     const names = workloads.filter((workload) => workload.stepwise).map((workload) => workload.name);
     assert.ok(names.includes("unclosed-grid-ascii-16k.rows"));
     assert.ok(names.includes("unclosed-strong-utf8-64k.tokens"));
+    assert.ok(!names.some((name) => name.startsWith("short-lines-")));
     assert.ok(!names.some((name) => name.includes("-1024k.")));
 });
 

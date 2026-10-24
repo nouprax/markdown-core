@@ -293,6 +293,7 @@ void markdown_core_parser_start(markdown_core_parser *parser, markdown_core_revi
                                                 parser->dialect->kept_size);
     if (parser->stream) {
         markdown_core_strbuf_init(&parser->stream->miss_labels, 0);
+        markdown_core_strbuf_init(&parser->stream->settled.labels, 0);
     }
 
     /* A transaction that could not build its initial structures is poisoned:
@@ -973,6 +974,26 @@ static inline void S_places_add_own(markdown_core_places *places, uint32_t start
     }
 }
 
+/* Where a read of the settled paragraph's content stands before its last
+ * mark, `mark` of its map, at content offset `from`, with `places` read
+ * before it, ending at `at`: where the next read goes on (THE SETTLE
+ * POINT). False, with the parse failed, when storage could not be had. */
+static bool S_keep_read(markdown_core_parser *parser, markdown_core_settled *settled,
+                        const markdown_core_places *places, uint32_t mark, bufsize_t from, uint32_t at) {
+    const size_t bytes = sizeof(*places) + places->count * sizeof(*places->items);
+    markdown_core_places *kept = markdown_core_realloc(settled->places, bytes);
+    if (!kept) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return false;
+    }
+    memcpy(kept, places, bytes);
+    settled->places = kept;
+    settled->mark = mark;
+    settled->from = from;
+    settled->at = at;
+    return true;
+}
+
 /* AN INLINE ROOT'S CONTENT BECOMES THE INPUT ITS NODES ARE PLACED IN
  * (markdown_core_inline_start_inlines). The `length` bytes its parse reads
  * keep their map to the source in the root's places: one place per run of
@@ -988,7 +1009,9 @@ static inline void S_places_add_own(markdown_core_places *places, uint32_t start
  * so the parse places its nodes at offsets of the content; a root is read
  * once, and a root parsed again (A LOOKUP THAT FOUND NOTHING) is placed in
  * the content it was read as. */
-void markdown_core_parser_read_content(markdown_core_parser *parser, markdown_core_node *node, bufsize_t length) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_read_content(markdown_core_parser *parser,
+                                                                           markdown_core_node *node, bufsize_t length,
+                                                                           markdown_core_settled *settled) {
     const markdown_core_content_map map = node->content_map;
     if (map.first == MARKDOWN_CORE_IDENTITY_MARK) {
         return;
@@ -1004,11 +1027,20 @@ void markdown_core_parser_read_content(markdown_core_parser *parser, markdown_co
     /* The node's own lines, when it has places of them; one line without. */
     markdown_core_places *const lines = node->source.places;
     const uint32_t line_count = lines ? lines->count : 0;
+    /* A read the settled paragraph kept goes on where it stopped: at the
+     * mark the last read ended in, which the content's text keeps as it
+     * grows (THE SETTLE POINT). */
+    const markdown_core_places *kept = settled && !lines ? settled->places : NULL;
+    if (kept && (settled->mark >= (uint32_t)map.count ||
+                 parser->line_marks[map.first + settled->mark].content_offset != settled->from)) {
+        kept = NULL;
+    }
+    const markdown_core_line_mark *const resume = kept ? &parser->line_marks[map.first + settled->mark] : mark;
     /* At most one content place per mark from the first to the end of the
      * map, one place of length 0 before each and one after each line. */
-    markdown_core_places *places =
-        markdown_core_node_pool_bytes(parser->pool, sizeof(*places) + ((size_t)(past - mark) * 2 + line_count + 1) *
-                                                                          sizeof(markdown_core_source_place));
+    markdown_core_places *places = markdown_core_node_pool_bytes(
+        parser->pool, sizeof(*places) + ((size_t)(past - resume) * 2 + line_count + 1 + (kept ? kept->count : 0)) *
+                                            sizeof(markdown_core_source_place));
     if (!places) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return;
@@ -1016,8 +1048,21 @@ void markdown_core_parser_read_content(markdown_core_parser *parser, markdown_co
     places->count = 0;
     places->content = (uint32_t)length;
     uint32_t line = 0, at = 0;
-    for (bufsize_t from = map.offset; from < end; mark++) {
+    bufsize_t from = map.offset;
+    if (kept) {
+        memcpy(places->items, kept->items, kept->count * sizeof(*places->items));
+        places->count = kept->count;
+        mark = resume;
+        from = settled->from;
+        at = settled->at;
+    }
+    for (; from < end; mark++) {
         const bufsize_t to = mark + 1 < past && mark[1].content_offset < end ? mark[1].content_offset : end;
+        if (settled && !lines && to == end &&
+            !S_keep_read(parser, settled, places, (uint32_t)(mark - parser->line_marks - map.first), from, at)) {
+            markdown_core_node_pool_bytes_free(parser->pool, places);
+            return;
+        }
         const uint32_t start = (uint32_t)(mark->source + (from - mark->content_offset) * mark->source_step);
         const uint32_t stop = start + (uint32_t)((to - from - 1) * mark->source_step + mark->source_width);
         const uint32_t size = (uint32_t)(to - from);
@@ -1060,6 +1105,10 @@ void markdown_core_parser_read_content(markdown_core_parser *parser, markdown_co
         markdown_core_node_pool_bytes_free(parser->pool, lines);
     }
     node->source.places = places;
+}
+
+void markdown_core_parser_read_content(markdown_core_parser *parser, markdown_core_node *node, bufsize_t length) {
+    S_read_content(parser, node, length, NULL);
 }
 
 /* `cut` bytes are cut off the FRONT of `node`'s text, leaving `remaining`
@@ -1748,25 +1797,33 @@ static markdown_core_finish_result S_consolidate_text(markdown_core_parser *pars
     return MARKDOWN_CORE_FINISH_CONTINUE;
 }
 
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_node **S_settle_after(markdown_core_parser *parser,
+                                                                               markdown_core_node *node,
+                                                                               uint32_t count);
+
 /* A CONTAINER'S CHILDREN SETTLE AT ITS EXIT: its scaffold children, every one
  * of them complete, become its children array, in order, in storage of the
  * pool's whose capacity their count determines (node.h), and their scaffold
  * links are cleared, so a node outside an inline tree under construction has
  * none. */
-static bool S_settle_scaffold(markdown_core_parser *parser, markdown_core_node *node) {
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_settle_scaffold_after(markdown_core_parser *parser,
+                                                                                    markdown_core_node *node,
+                                                                                    uint32_t held) {
     markdown_core_scaffold *holder = markdown_core_scaffold_of(node);
     uint32_t count = 0;
     for (markdown_core_node *child = holder->first; child; child = markdown_core_scaffold_next(child)) {
         count++;
     }
-    assert(!node->child_count);
     markdown_core_node **items =
-        markdown_core_node_pool_bytes(parser->pool, (size_t)markdown_core_node_array_capacity(count) * sizeof(*items));
+        held ? S_settle_after(parser, node, count)
+             : markdown_core_node_pool_bytes(parser->pool,
+                                             (size_t)markdown_core_node_array_capacity(count) * sizeof(*items));
     if (!items) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return false;
     }
-    uint32_t at = 0;
+    uint32_t at = held;
+    count += held;
     for (markdown_core_node *child = holder->first, *next; child; child = next) {
         markdown_core_scaffold *link = markdown_core_scaffold_of(child);
         next = link->next;
@@ -1778,6 +1835,18 @@ static bool S_settle_scaffold(markdown_core_parser *parser, markdown_core_node *
     node->children = items;
     node->child_count = count;
     return true;
+}
+
+static bool S_settle_scaffold(markdown_core_parser *parser, markdown_core_node *node) {
+    assert(!node->child_count);
+    return S_settle_scaffold_after(parser, node, 0);
+}
+
+/* The same of a root that holds its settled nodes, which takes its scaffold
+ * after them (THE SETTLE POINT). */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool S_settle_scaffold_held(markdown_core_parser *parser,
+                                                                       markdown_core_node *node) {
+    return S_settle_scaffold_after(parser, node, node->child_count);
 }
 
 /* The steps projected for one event, in descriptor order, each behind its
@@ -1831,6 +1900,377 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_reserve_anchor(mar
                                           start);
 }
 
+/* THE SETTLE POINT (docs/plans/2026-09-29-incremental-parsing.md, 5.8). A
+ * snapshot reads the open paragraph's content again on every append, and
+ * what it makes of the content before the paragraph's settle point is what
+ * it made before: the top-level nodes there were made by tokens no reading
+ * of which reached the end of the content, and nothing read before the
+ * point holds anything open past it (parser.h, markdown_core_inline_settle).
+ * The paragraph's content grows only at its end while it stays the same
+ * paragraph -- the same block with the same id, its text read from the same
+ * offset, and no shorter than the read before, which covers every byte a
+ * token before the point read -- so the stream keeps those nodes (parser.h,
+ * markdown_core_settled): the paragraph's next completion in a snapshot
+ * takes them as its first children and parses from the point, and so does
+ * the commit's that completes it, after which the tree owns them. A node
+ * that settles is COMMITTED, so the publish makes it FINAL (ast.c, THE
+ * FINAL PREFIX), never walks it again and leaves it its id (plan 5.9).
+ *
+ * A read's point is the latest start it listed that is no later than its
+ * earliest undecided start and at which a top-level node starts whose node
+ * before it is no Text: a node starting there began with a token, and
+ * neither consolidation nor a scanner that takes back the bytes of the Text
+ * before it (an address's scheme) reaches across a node that is no Text.
+ *
+ * A node that settles owns the bytes its record views: the content buffer
+ * it was read from moves as the paragraph grows. What a completion does
+ * besides making the nodes is the stream's to do again for those it keeps:
+ * the explicit anchors below them are reserved at every completion, as a
+ * snapshot's registry goes with the snapshot, and the lookups they made
+ * that found nothing are the paragraph's when the commit completes it (A
+ * LOOKUP THAT FOUND NOTHING). */
+
+static bool S_record_miss(markdown_core_parser *parser, markdown_core_node *root, markdown_core_registry_kind kind,
+                          const unsigned char *label, bufsize_t size);
+
+/* Whether `node`'s completion settles its content: a snapshot's, of a
+ * paragraph it lent, read on its own lines, while no candidate waits. */
+static inline bool S_settles(const markdown_core_parser *parser, const markdown_core_node *node) {
+    return parser->stream->snapshot_mark && node->kind == MARKDOWN_CORE_NODE_PARAGRAPH &&
+           (node->flags & MARKDOWN_CORE_NODE__LENT) && !node->source.places && !markdown_core_parser_undecided(parser);
+}
+
+/* The settled record emptied, the nodes it held its owner's. */
+static void S_settled_clear(markdown_core_settled *settled) {
+    settled->address = settled->root = NULL;
+    settled->taken = false;
+    settled->count = 0;
+    settled->point = 0;
+    settled->miss_count = settled->miss_total = 0;
+    markdown_core_strbuf_truncate(&settled->labels, 0);
+    settled->anchored_count = 0;
+    markdown_core_free(settled->places);
+    settled->places = NULL;
+}
+
+/* The settled nodes let go, unless the tree holds them, and the record
+ * emptied. */
+static void S_settled_release(markdown_core_parser *parser, markdown_core_settled *settled) {
+    for (uint32_t i = 0; !settled->taken && i < settled->count; i++) {
+        markdown_core_parser_release_node(parser, settled->nodes[i]);
+    }
+    S_settled_clear(settled);
+}
+
+/* The settled nodes of the paragraph `node` leave it, and the record is
+ * emptied: the paragraph goes on, but its content no longer goes on from
+ * them, so what it holds now is read whole, and continues them as the last
+ * publish placed them (markdown_core_publish_keep_left). */
+static void S_settled_leave(markdown_core_parser *parser, markdown_core_settled *settled,
+                            const markdown_core_node *node) {
+    if (!markdown_core_publish_keep_left(parser, node, settled->nodes, settled->count)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+    S_settled_clear(settled);
+}
+
+/* Whether the settled nodes are of `node`, whose content is `size` bytes. */
+static inline bool S_settled_holds(const markdown_core_settled *settled, const markdown_core_node *node,
+                                   bufsize_t size) {
+    return settled->address == node && !settled->taken && settled->id == node->id &&
+           node->kind == MARKDOWN_CORE_NODE_PARAGRAPH && settled->offset == node->content_map.offset &&
+           size >= settled->size;
+}
+
+/* The explicit anchors below the settled nodes reserved as starting at
+ * `start`. False when storage could not be had. */
+static bool S_settled_anchors(markdown_core_parser *parser, const markdown_core_settled *settled, uint32_t start) {
+    for (size_t i = 0; i < settled->anchored_count; i++) {
+        if (!S_reserve_anchor(parser, settled->anchored[i], start)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* The node in `*slot` pushed on the stack `context` holds, linked through
+ * the nodes' scaffolds, which a complete node no longer uses. */
+static int S_settled_push(markdown_core_node **slot, void *context) {
+    markdown_core_node **stack = context;
+    if (*slot) {
+        markdown_core_scaffold_of(*slot)->next = *stack;
+        *stack = *slot;
+    }
+    return 1;
+}
+
+/* The node `node` settles, and with it every node below it, the field roots
+ * of its inline nodes included: each owns the bytes its record views, and
+ * one that holds an explicit anchor is listed with the settled ones, after
+ * the first `*anchored`. False when storage could not be had. */
+static bool S_settled_own(markdown_core_settled *settled, markdown_core_node *node, size_t *anchored) {
+    markdown_core_node *stack = node;
+    bool owned = true;
+    while (stack) {
+        markdown_core_node *below = stack;
+        stack = markdown_core_scaffold_of(below)->next;
+        markdown_core_scaffold_of(below)->next = NULL;
+        if (!owned) {
+            continue;
+        }
+        owned = markdown_core_node_own_viewed(below);
+        if (owned && below->attributes.anchor.len && !(below->flags & MARKDOWN_CORE_NODE__ANCHOR_COMPUTED)) {
+            markdown_core_node **nodes =
+                markdown_core_reserve(settled->anchored, &settled->anchored_capacity, *anchored + 1, sizeof(*nodes));
+            owned = nodes != NULL;
+            if (owned) {
+                settled->anchored = nodes;
+                nodes[(*anchored)++] = below;
+            }
+        }
+        if (owned) {
+            markdown_core_visit_inline_subtrees(below, S_settled_push, &stack);
+            for (uint32_t i = 0; i < below->child_count; i++) {
+                S_settled_push(&below->children[i], &stack);
+            }
+        }
+    }
+    return owned;
+}
+
+/* The end of the labels of the settled lookups that found nothing. */
+static inline size_t S_settled_labels(const markdown_core_settled *settled) {
+    return settled->miss_count ? (size_t)(settled->misses[settled->miss_count - 1].label_start +
+                                          settled->misses[settled->miss_count - 1].label_size)
+                               : 0;
+}
+
+/* A lookup the snapshot's reading of the settling paragraph found nothing
+ * for, listed after the settled ones. False when storage could not be
+ * had. */
+static bool S_settled_miss(markdown_core_settled *settled, markdown_core_registry_kind kind,
+                           const markdown_core_chunk *label) {
+    markdown_core_settled_miss *misses =
+        markdown_core_reserve(settled->misses, &settled->miss_capacity, settled->miss_total + 1, sizeof(*misses));
+    if (!misses) {
+        return false;
+    }
+    settled->misses = misses;
+    misses[settled->miss_total++] = (markdown_core_settled_miss){kind, settled->labels.size, label->len};
+    markdown_core_strbuf_put(&settled->labels, label->data, label->len);
+    settled->settle.misses++;
+    return !settled->labels.oom;
+}
+
+/* The bytes of `node`'s content its inline parse reads. */
+static inline bufsize_t S_content_bytes(const markdown_core_node *node) {
+    markdown_core_chunk content = markdown_core_node_text(node);
+    markdown_core_chunk_rtrim(&content);
+    return content.len;
+}
+
+/* The commit completes the settled paragraph `node`, whose content is
+ * `size` bytes: the settled nodes are its first children, the tree's from
+ * now on, the lookups they made that found nothing its own, their anchors
+ * reserved, and its content parsed from the point. While a candidate waits,
+ * an accept may put the paragraph back as the candidate's mark found it,
+ * open, and the nodes come back to the stream (S_candidate_take_back): the
+ * stream keeps them as taken until no candidate waits. */
+static void S_settled_take(markdown_core_parser *parser, markdown_core_node *node, bufsize_t size) {
+    markdown_core_settled *settled = &parser->stream->settled;
+    markdown_core_node **items = markdown_core_node_pool_bytes(
+        parser->pool, (size_t)markdown_core_node_array_capacity(settled->count) * sizeof(*items));
+    if (!items) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return;
+    }
+    memcpy(items, settled->nodes, settled->count * sizeof(*items));
+    node->children = items;
+    node->child_count = settled->count;
+    const bool undecided = markdown_core_parser_undecided(parser);
+    /* A lookup's record keeps where the root lies once its content is read.
+     * Only a snapshot's completion records one (markdown_core_parser_find_definition). */
+    markdown_core_parser_read_content(parser, node, size);
+    for (size_t i = 0; parser->snapshot && !parser->error && i < settled->miss_count; i++) {
+        const markdown_core_settled_miss *miss = &settled->misses[i];
+        if (!S_record_miss(parser, node, miss->kind, (const unsigned char *)settled->labels.ptr + miss->label_start,
+                           miss->label_size)) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        }
+    }
+    if (!parser->error && !S_settled_anchors(parser, settled, node->place.start)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
+    if (!parser->error) {
+        settled->settle.from = settled->point;
+        markdown_core_parse_inlines_settle(parser, node, &settled->settle);
+    }
+    if (undecided && !parser->error) {
+        settled->taken = true;
+    } else {
+        S_settled_clear(settled);
+    }
+}
+
+/* A snapshot completes the paragraph `node`, whose content is `size` bytes:
+ * it takes the settled nodes as its first children when they are its, and
+ * parses its content from the point, listing where the next point may be
+ * when the read `settles`. A read that does not settle leaves the held nodes
+ * as they are: they are the published document's, which made them FINAL. */
+static void S_settled_read(markdown_core_parser *parser, markdown_core_node *node, bufsize_t size, bool settles) {
+    markdown_core_settled *settled = &parser->stream->settled;
+    if (!settled->address) {
+        settled->address = node;
+        settled->id = node->id;
+    }
+    settled->root = node;
+    settled->offset = node->content_map.offset;
+    if (settles) {
+        settled->size = size;
+    }
+    settled->miss_total = settled->miss_count;
+    markdown_core_strbuf_truncate(&settled->labels, (bufsize_t)S_settled_labels(settled));
+    if (settled->count) {
+        node->children = settled->nodes;
+        node->child_count = settled->count;
+    }
+    if (!S_settled_anchors(parser, settled, node->place.start)) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        return;
+    }
+    S_read_content(parser, node, size, settled);
+    if (!parser->error) {
+        settled->settle.from = settled->point;
+        markdown_core_parse_inlines_settle(parser, node, &settled->settle);
+        if (!settles) {
+            settled->settle.count = 0;
+        }
+    }
+}
+
+/* The inline content of the paragraph `node` read with the settled nodes,
+ * or read to settle (THE SETTLE POINT). */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_parse_settled(markdown_core_parser *parser, markdown_core_node *node,
+                                                                bool settles) {
+    markdown_core_settled *settled = &parser->stream->settled;
+    const bufsize_t size = S_content_bytes(node);
+    if (settled->address == node && !settled->taken && settled->id == node->id &&
+        node->kind == MARKDOWN_CORE_NODE_PARAGRAPH && !S_settled_holds(settled, node, size)) {
+        S_settled_leave(parser, settled, node);
+    } else if (settled->address && !S_settled_holds(settled, node, size)) {
+        S_settled_release(parser, settled);
+    }
+    if (parser->error) {
+        return;
+    }
+    /* The commit's completion takes the nodes; a snapshot's reads with them,
+     * and settles more of the content only when it may (S_settles). */
+    const bool commits = !parser->stream->snapshot_mark;
+    if (settled->count && commits && (node->flags & MARKDOWN_CORE_NODE__COMMITTED)) {
+        S_settled_take(parser, node, size);
+    } else if (settles || (settled->count && !commits)) {
+        S_settled_read(parser, node, size, settles);
+    } else {
+        S_settled_release(parser, settled);
+        markdown_core_parse_inlines(parser, node, true);
+    }
+}
+
+/* The inline content of the queued root `node` parsed. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_parse_root(markdown_core_parser *parser,
+                                                                         markdown_core_node *node) {
+    const bool settles = S_settles(parser, node);
+    if (settles || parser->stream->settled.address == node) {
+        S_parse_settled(parser, node, settles);
+    } else {
+        markdown_core_parse_inlines(parser, node, true);
+    }
+}
+
+/* The index of the first child of `node` from `from` on that starts at
+ * content offset `start`, or the child count when none does. */
+static uint32_t S_child_at(const markdown_core_node *node, uint32_t from, bufsize_t start) {
+    uint32_t low = from, top = node->child_count;
+    while (low < top) {
+        const uint32_t middle = low + (top - low) / 2;
+        if ((bufsize_t)node->children[middle]->place.start < start) {
+            low = middle + 1;
+        } else {
+            top = middle;
+        }
+    }
+    return low < node->child_count && (bufsize_t)node->children[low]->place.start == start ? low : node->child_count;
+}
+
+/* The settling paragraph `node` is complete: its nodes before the point its
+ * read leaves settle. False when storage could not be had. */
+static bool S_settle_end(markdown_core_parser *parser, markdown_core_node *node) {
+    markdown_core_settled *settled = &parser->stream->settled;
+    const markdown_core_inline_settle *settle = &settled->settle;
+    const uint32_t held = settled->count;
+    for (size_t k = settle->count; k-- > 0;) {
+        const markdown_core_settle_start *start = &settle->starts[k];
+        if (start->start > settle->undecided) {
+            continue;
+        }
+        const uint32_t at = S_child_at(node, held, start->start);
+        if (at == node->child_count || (at && node->children[at - 1]->kind == MARKDOWN_CORE_NODE_TEXT)) {
+            continue;
+        }
+        /* The point the read began at: nothing more settles. */
+        if (at == held) {
+            return true;
+        }
+        if (node->children != settled->nodes) {
+            markdown_core_node **nodes =
+                markdown_core_reserve(settled->nodes, &settled->capacity, at, sizeof(*settled->nodes));
+            if (!nodes) {
+                return false;
+            }
+            settled->nodes = nodes;
+            memcpy(nodes + held, node->children + held, (size_t)(at - held) * sizeof(*nodes));
+        }
+        size_t anchored = settled->anchored_count;
+        for (uint32_t i = held; i < at; i++) {
+            node->children[i]->flags |= MARKDOWN_CORE_NODE__COMMITTED;
+            if (!S_settled_own(settled, node->children[i], &anchored)) {
+                return false;
+            }
+        }
+        settled->anchored_count = anchored;
+        settled->count = at;
+        settled->point = start->start;
+        settled->miss_count += start->misses;
+        return true;
+    }
+    return true;
+}
+
+/* The scaffold of the root `node`, `count` nodes, after the nodes it holds
+ * already: the settled ones a snapshot's read keeps in the stream's storage,
+ * which grows to hold them all, or those a commit's took, in storage of the
+ * pool's (THE SETTLE POINT). NULL when storage could not be had. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) markdown_core_node **S_settle_after(markdown_core_parser *parser,
+                                                                               markdown_core_node *node,
+                                                                               uint32_t count) {
+    markdown_core_settled *settled = &parser->stream->settled;
+    const uint32_t total = node->child_count + count;
+    if (node->children == settled->nodes) {
+        markdown_core_node **nodes = markdown_core_reserve(settled->nodes, &settled->capacity, total, sizeof(*nodes));
+        if (nodes) {
+            settled->nodes = nodes;
+        }
+        return nodes;
+    }
+    markdown_core_node **items =
+        markdown_core_node_pool_bytes(parser->pool, (size_t)markdown_core_node_array_capacity(total) * sizeof(*items));
+    if (items) {
+        memcpy(items, node->children, node->child_count * sizeof(*items));
+        markdown_core_node_pool_bytes_free(parser->pool, node->children);
+    }
+    return items;
+}
+
 /* What completion does at a node's ENTER, in the frame at `index`: it parses
  * the node's inline content when the node is the queued root (see
  * owned_tree_frame; the content of a kind the record marks PARSES, not
@@ -1853,7 +2293,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) int S_enter_node(owned_tr
     const bool queued = !index && !frame->parsed;
     if (queued && S_kind_contains_inlines(facts, node)) {
         if (!(flags & MARKDOWN_CORE_KIND_DEFERRED)) {
-            markdown_core_parse_inlines(parser, node, true);
+            S_parse_root(parser, node);
             if (parser->error) {
                 return -1;
             }
@@ -1982,10 +2422,17 @@ static int walk_owned_trees(markdown_core_parser *parser) {
                     frame->script_depth += event == MARKDOWN_CORE_EVENT_ENTER ? 1 : -1;
                 }
                 if (event == MARKDOWN_CORE_EVENT_EXIT) {
-                    if (node == frame->parsed) {
+                    const bool parsed = node == frame->parsed;
+                    if (parsed) {
                         frame->parsed = NULL;
                     }
-                    if (markdown_core_scaffold_first(node) && !S_settle_scaffold(parser, node)) {
+                    if (markdown_core_scaffold_first(node) &&
+                        !(parsed && node->child_count ? S_settle_scaffold_held(parser, node)
+                                                      : S_settle_scaffold(parser, node))) {
+                        break;
+                    }
+                    if (parsed && node == parser->stream->settled.root && !S_settle_end(parser, node)) {
+                        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
                         break;
                     }
                     const size_t index = markdown_core_finish_kind_index((markdown_core_node_type)node->kind);
@@ -2318,6 +2765,13 @@ static void S_release_stream(markdown_core_parser *parser) {
         }
     }
     markdown_core_free(stream->miss_roots);
+    markdown_core_settled *settled = &stream->settled;
+    S_settled_release(parser, settled);
+    markdown_core_free(settled->nodes);
+    markdown_core_free(settled->misses);
+    markdown_core_strbuf_free(&settled->labels);
+    markdown_core_free(settled->anchored);
+    markdown_core_free(settled->settle.starts);
     markdown_core_free(stream);
     parser->stream = NULL;
 }
@@ -2440,23 +2894,28 @@ static void S_take_back_children(markdown_core_parser *parser, markdown_core_nod
         if (block->child_count) {
             block->children[block->child_count - 1] = last;
         }
-    } else if (view->children) {
+    } else if (view->children && view->children != parser->stream->settled.nodes) {
         markdown_core_node_pool_bytes_free(parser->pool, view->children);
     }
 }
 
 /* The children `node` holds that a reading added after it found the node
- * holding `count`, the last of them `last`, released: every one from the
- * place of that last on but the last itself, which a block that settled
- * before it may have moved on (markdown_core_block_settle_before). */
-static void S_release_added(markdown_core_parser *parser, const markdown_core_node *node, uint32_t count,
+ * holding `count`, the last of them `last`, from the one at `from` on: every
+ * one from the place of that last on but the last itself, which a block
+ * that settled before it may have moved on (markdown_core_block_settle_before),
+ * released. */
+static void S_release_added(markdown_core_parser *parser, const markdown_core_node *node, uint32_t from,
                             const markdown_core_node *last) {
-    for (uint32_t i = count ? count - 1 : 0; i < node->child_count; i++) {
+    for (uint32_t i = from; i < node->child_count; i++) {
         if (node->children[i] != last) {
             markdown_core_parser_release_node(parser, node->children[i]);
         }
     }
 }
+
+/* Where the children a reading added to a node that held `count` start,
+ * the last of those it held included. */
+static inline uint32_t S_added_from(uint32_t count) { return count ? count - 1 : 0; }
 
 /* A node the snapshot made that the take-back unhooks: one its publish
  * placed is its record's (ast.c, THE RECORDS); one no publish places is a
@@ -2470,9 +2929,9 @@ static void S_unhook(markdown_core_parser *parser, markdown_core_node *node) {
 }
 
 /* The same of the children a snapshot added, as S_release_added finds them. */
-static void S_unhook_added(markdown_core_parser *parser, const markdown_core_node *node, uint32_t count,
+static void S_unhook_added(markdown_core_parser *parser, const markdown_core_node *node, uint32_t from,
                            const markdown_core_node *last) {
-    for (uint32_t i = count ? count - 1 : 0; i < node->child_count; i++) {
+    for (uint32_t i = from; i < node->child_count; i++) {
         if (node->children[i] != last) {
             S_unhook(parser, node->children[i]);
         }
@@ -2506,11 +2965,18 @@ static void S_take_back_lend(markdown_core_parser *parser, const markdown_core_l
         markdown_core_parser_release_node(parser, backup);
         return;
     }
+    /* The settled nodes a lent paragraph holds first are the stream's (THE
+     * SETTLE POINT). */
+    const markdown_core_settled *settled = &parser->stream->settled;
+    uint32_t from = S_added_from(backup->child_count);
+    if (address == settled->address && settled->count > from) {
+        from = settled->count;
+    }
     if (release) {
-        S_release_added(parser, address, backup->child_count, entry->last);
+        S_release_added(parser, address, from, entry->last);
     } else {
         markdown_core_node_view_taken(address, backup, S_unhook_field, parser);
-        S_unhook_added(parser, address, backup->child_count, entry->last);
+        S_unhook_added(parser, address, from, entry->last);
     }
     S_take_back_children(parser, address, backup, entry->last);
     S_take_back_content(address, backup);
@@ -2549,7 +3015,7 @@ static void S_take_back(markdown_core_parser *parser, bool release) {
     }
     for (size_t i = stream->room_count; i-- > 0;) {
         const markdown_core_room *room = &stream->rooms[i];
-        (release ? S_release_added : S_unhook_added)(parser, room->node, room->count, room->last);
+        (release ? S_release_added : S_unhook_added)(parser, room->node, S_added_from(room->count), room->last);
         S_take_back_room(room);
     }
     stream->lend_count = stream->room_count = 0;
@@ -2641,11 +3107,23 @@ markdown_core_node *markdown_core_parser_snapshot(markdown_core_parser *parser, 
         if (!parser->error) {
             result = parser->root;
             parser->stream->miss_published = parser->stream->miss_root_count;
+            /* The settling paragraph keeps the id the publish gave it. */
+            if (stream->settled.root) {
+                stream->settled.id = stream->settled.root->id;
+            }
         }
     }
     if (!result) {
         S_take_back(parser, true);
     }
+    /* Settled nodes this snapshot's document does not hold are no
+     * paragraph's to take: what it published continues them no more. Those
+     * the commit took are the tree's once no candidate waits. */
+    if (!stream->settled.root && stream->settled.address &&
+        !(stream->settled.taken && markdown_core_parser_undecided(parser))) {
+        S_settled_release(parser, &stream->settled);
+    }
+    stream->settled.root = NULL;
     S_rollback(parser, &mark);
     stream->claimant = NULL;
     stream->snapshot_mark = NULL;
@@ -4365,7 +4843,15 @@ static void S_candidate_take_back(markdown_core_parser *parser, const markdown_c
         markdown_core_parser_release_node(parser, backup);
         return;
     }
-    S_release_added(parser, address, backup->child_count, entry->last);
+    /* The settled nodes the commit took come back to the stream (THE
+     * SETTLE POINT). */
+    markdown_core_settled *settled = &parser->stream->settled;
+    uint32_t from = S_added_from(backup->child_count);
+    if (address == settled->address && settled->taken) {
+        settled->taken = false;
+        from = settled->count > from ? settled->count : from;
+    }
+    S_release_added(parser, address, from, entry->last);
     S_take_back_children(parser, address, backup, entry->last);
     S_take_back_content(address, backup);
     markdown_core_node_view_let_go(parser->pool, address, backup);
@@ -5327,24 +5813,35 @@ const markdown_core_registry_record *markdown_core_parser_find_at_snapshot(markd
         return record;
     }
     /* Only a committed root is asked again: a snapshot's own are gone with
-     * it. */
+     * it, but for the lookups of the open paragraph it settles, whose
+     * settled nodes stay (THE SETTLE POINT). */
     if (!(root->flags & MARKDOWN_CORE_NODE__COMMITTED)) {
+        if (root == parser->stream->settled.root && !S_settled_miss(&parser->stream->settled, kind, label)) {
+            *failed = true;
+        }
         return NULL;
     }
+    *failed = !S_record_miss(parser, root, kind, label->data, label->len);
+    return NULL;
+}
+
+/* A lookup of the committed root `root` that found nothing for `label`, of
+ * `size` bytes, recorded for the finalize. False when storage could not be
+ * had. */
+static bool S_record_miss(markdown_core_parser *parser, markdown_core_node *root, markdown_core_registry_kind kind,
+                          const unsigned char *label, bufsize_t size) {
     markdown_core_definition_miss *misses = markdown_core_reserve(
         parser->stream->misses, &parser->stream->miss_capacity, parser->stream->miss_count + 1, sizeof(*misses));
     if (misses) {
         parser->stream->misses = misses;
     }
     if (!misses || (parser->stream->miss_root != root && !S_miss_root(parser, root))) {
-        *failed = true;
-        return NULL;
+        return false;
     }
-    misses[parser->stream->miss_count++] = (markdown_core_definition_miss){
-        parser->stream->miss_root_count - 1, kind, parser->stream->miss_labels.size, label->len};
-    markdown_core_strbuf_put(&parser->stream->miss_labels, label->data, label->len);
-    *failed = parser->stream->miss_labels.oom;
-    return NULL;
+    misses[parser->stream->miss_count++] = (markdown_core_definition_miss){parser->stream->miss_root_count - 1, kind,
+                                                                           parser->stream->miss_labels.size, size};
+    markdown_core_strbuf_put(&parser->stream->miss_labels, label, size);
+    return !parser->stream->miss_labels.oom;
 }
 
 /* The nodes of what completion made of a root, gathered as their anchors

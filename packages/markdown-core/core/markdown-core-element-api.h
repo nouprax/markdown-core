@@ -682,6 +682,14 @@ unsigned char markdown_core_inline_state_peek_at(markdown_core_inline_state *inl
  */
 int markdown_core_inline_state_is_eof(markdown_core_inline_state *inline_state);
 
+/** The token being read read the end of the input: what it decided may change
+ * once the input goes on (docs/plans/2026-09-29-incremental-parsing.md, 5.8).
+ * The calls above that answer about a byte at or past the end say so
+ * themselves; a scan that reads the input's bytes directly and reaches the
+ * end, or fails where a longer input might match, says it here.
+ */
+void markdown_core_inline_state_saw_end(markdown_core_inline_state *inline_state);
+
 /** Get the characters located after the current inline parsing offset
  * while 'pred' matches. Free after usage.
  */

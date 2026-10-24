@@ -141,6 +141,12 @@ struct markdown_core_element {
                               markdown_core_node *);
     void (*finish_inline)(const markdown_core_element_instance *, markdown_core_inline_state *);
     void (*dispose_inline)(const markdown_core_element_instance *, markdown_core_inline_state *);
+    /* Whether the run's record holds something open at the token start the
+     * run reads next -- a bracket, a token whose owner is still to come --
+     * which a token after it may close or take. A settle point is a start at
+     * which no element holds anything open (inlines.h,
+     * markdown_core_inline_settle). */
+    bool (*holds_open)(const markdown_core_element_instance *, const markdown_core_inline_state *);
     /* The element's completion of a node, which completion's walk asks at the
      * ENTER of every node of a kind the element is the structure of, after
      * the node's inline content is parsed and before its explicit anchor is

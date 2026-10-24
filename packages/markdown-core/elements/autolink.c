@@ -94,6 +94,17 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(markdown_core_inli
     return link;
 }
 
+/* A failed angle autolink at `from` read the end of the input unless the
+ * byte there starts neither a scheme nor a local part. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_angle_saw_end(markdown_core_inline_state *inline_state,
+                                                                bufsize_t from) {
+    const unsigned char first = from < inline_state->input.len ? inline_state->input.data[from] : 0;
+    if (!first || markdown_core_isalnum((char)first) ||
+        (first > ' ' && first < 0x7f && strchr(".!#$%&'*+/=?^_`{|}~-", first))) {
+        markdown_core_inline_saw_end(inline_state);
+    }
+}
+
 static markdown_core_node *match_angle(markdown_core_inline_state *inline_state) {
     bufsize_t from = inline_state->pos + 1;
     bufsize_t length = scan_autolink_uri(inline_state->input.data, inline_state->input.len, from);
@@ -103,6 +114,12 @@ static markdown_core_node *match_angle(markdown_core_inline_state *inline_state)
         email = true;
     }
     if (!length) {
+        /* Either scan may still match once the input goes on, unless the
+         * byte after `<` starts neither a scheme nor a local part; a run
+         * that holds the token undecided already needs no answer. */
+        if (markdown_core_inline_tracks_end(inline_state)) {
+            S_angle_saw_end(inline_state, from);
+        }
         return NULL;
     }
     markdown_core_chunk content = markdown_core_chunk_dup(&inline_state->input, from, length - 1);
@@ -285,6 +302,10 @@ static size_t check_domain(const markdown_core_element_instance *self, markdown_
         i++;
     }
 
+    /* The domain may go on with the input. */
+    if (i >= size - 1) {
+        markdown_core_inline_saw_end(inline_state);
+    }
     if (uscore1 > 0 || uscore2 > 0) {
         /* Every later candidate before this underscore still has it in its
          * last two segments. Keep that rejection frontier, not the whole
@@ -339,6 +360,9 @@ static size_t autolink_extent(const markdown_core_element_instance *self, markdo
         }
         offset++;
     }
+    if (offset >= size) {
+        markdown_core_inline_saw_end(inline_state);
+    }
     return offset;
 }
 
@@ -357,6 +381,9 @@ static markdown_core_node *www_match(const markdown_core_element_instance *self,
     }
 
     if (size < 4 || memcmp(data, "www.", strlen("www.")) != 0) {
+        if (size < 4 && memcmp(data, "www.", size) == 0) {
+            markdown_core_inline_state_saw_end(inline_state);
+        }
         return 0;
     }
 
@@ -422,6 +449,9 @@ static markdown_core_node *url_match(const markdown_core_element_instance *self,
     size_t size = chunk->len - max_rewind;
 
     if (size < 4 || data[1] != '/' || data[2] != '/') {
+        if (size < 4 && (size < 2 || data[1] == '/') && (size < 3 || data[2] == '/')) {
+            markdown_core_inline_state_saw_end(inline_state);
+        }
         return 0;
     }
 
@@ -506,6 +536,9 @@ static markdown_core_node *address_match(markdown_core_parser *parser, markdown_
     /* The local part, then '@'. */
     for (at = 1; at < size && (markdown_core_isalnum(data[at]) || strchr(".+-_", data[at]) != NULL); at++) {
     }
+    if (at >= size) {
+        markdown_core_inline_state_saw_end(inline_state);
+    }
     if (at == 1 || at >= size || data[at] != '@') {
         return NULL;
     }
@@ -522,6 +555,9 @@ static markdown_core_node *address_match(markdown_core_parser *parser, markdown_
         if (c != '-' && c != '_') {
             break;
         }
+    }
+    if (end + 1 >= size) {
+        markdown_core_inline_state_saw_end(inline_state);
     }
     if (end - at < 2 || np == 0 || (!markdown_core_isalpha(data[end - 1]) && data[end - 1] != '.')) {
         return NULL;

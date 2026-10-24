@@ -98,7 +98,7 @@ static bool topic_opener(const markdown_core_inline_state *inline_state, bufsize
  * belongs to it only when a segment character follows, so a name neither
  * starts nor ends with one. A name of numbers alone, or one followed at once
  * by `#` or `://`, is not a topic. */
-static bufsize_t topic_end(const markdown_core_inline_state *inline_state, bufsize_t at) {
+static bufsize_t topic_end(markdown_core_inline_state *inline_state, bufsize_t at) {
     const unsigned char *data = inline_state->input.data;
     const bufsize_t len = inline_state->input.len;
     if (!topic_opener(inline_state, at)) {
@@ -124,6 +124,11 @@ static bufsize_t topic_end(const markdown_core_inline_state *inline_state, bufsi
         } else {
             break;
         }
+    }
+    /* The name may go on with the input, and what follows it decides
+     * whether it is one. */
+    if (end + 3 > len) {
+        markdown_core_inline_saw_end(inline_state);
     }
     if (!word) {
         return 0;

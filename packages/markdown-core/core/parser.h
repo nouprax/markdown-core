@@ -215,6 +215,17 @@ typedef struct markdown_core_tail_records {
 /* The nodes `records` owns, released, and the records emptied. */
 void markdown_core_parser_release_records(markdown_core_parser *parser, markdown_core_tail_records *records);
 
+/* The `count` top-level nodes `nodes` of the content of the paragraph
+ * `root`, which the last publish placed, leave it while it goes on (blocks.c,
+ * THE SETTLE POINT): each one that publish placed becomes an old node of the
+ * content that publish kept a record of, owned by its record (ast.c, THE
+ * RECORDS), and the next publish matches the new content against them. The
+ * others, and all of them when that publish kept no record of `root`, are
+ * released. False, with them all released, when the records could not
+ * grow. */
+bool markdown_core_publish_keep_left(markdown_core_parser *parser, const markdown_core_node *root,
+                                     markdown_core_node *const *nodes, uint32_t count);
+
 /* THE COMMITTED TABLES (ast.c, THE DEFINITION TABLES A STREAMING PARSE
  * KEEPS): the definitions the published document holds as COMMITTED. Each
  * of the document's tables -- Footnotes, Specimens, References, Headings --
@@ -298,6 +309,64 @@ typedef struct markdown_core_line_stop {
  * between its commits (blocks.c, THE SNAPSHOT) and publishes its tree in
  * place. The parser owns it from markdown_core_parser_start until the parse
  * is released. */
+/* THE SETTLE POINT OF AN INLINE ROOT (docs/plans/2026-09-29-incremental-parsing.md,
+ * 5.8). A root a snapshot reads is parsed from `from`, a token start before
+ * which its nodes are its caller's (0: the whole content). The parse lists
+ * in `starts` the starts of the top-level tokens it read before any token
+ * read the end of the content, where nothing read before holds anything
+ * open, each with how many lookups had found nothing before it (`misses`,
+ * which the lookups count), and leaves in `undecided` the earliest start of
+ * a token whose reading read the end, or of an opener left unmatched,
+ * INT32_MAX when there is none. */
+typedef struct {
+    bufsize_t start;
+    uint32_t misses;
+} markdown_core_settle_start;
+
+typedef struct markdown_core_inline_settle {
+    bufsize_t from, undecided;
+    uint32_t misses;
+    markdown_core_settle_start *starts;
+    size_t count, capacity;
+} markdown_core_inline_settle;
+
+/* A lookup a snapshot's reading of an open paragraph found nothing for: its
+ * kind and its label, at `label_start` in the settled labels. */
+typedef struct {
+    markdown_core_registry_kind kind;
+    bufsize_t label_start, label_size;
+} markdown_core_settled_miss;
+
+/* THE SETTLED NODES OF AN OPEN PARAGRAPH (blocks.c, THE SETTLE POINT): the
+ * paragraph at `address` whose id is `id`, as the last snapshot that
+ * completed it read it -- its content from `offset` in its text, `size`
+ * bytes of it -- the top-level nodes before its settle point `point`, the
+ * first `count` of `nodes`, which the stream owns, the lookups before the
+ * point that found nothing, the first `miss_count` of `misses`, and the nodes
+ * below them that hold an explicit anchor. Its content's next read goes on
+ * at the mark `mark` of its map, content offset `from`, with the places
+ * read before it, which end at `at` in the source. While a snapshot reads
+ * the paragraph, `root` is the paragraph, `settle` what its parse lists,
+ * and the misses and labels past the held ones are the parse's. While the
+ * nodes are `taken`, the commit's completion of the paragraph holds them,
+ * and an accept that puts the paragraph back gives them back. */
+typedef struct {
+    struct markdown_core_node *address, *root;
+    uint64_t id;
+    bufsize_t offset, size, point, from;
+    struct markdown_core_node **nodes;
+    uint32_t count, mark, at;
+    size_t capacity;
+    markdown_core_places *places;
+    markdown_core_settled_miss *misses;
+    size_t miss_count, miss_total, miss_capacity;
+    markdown_core_strbuf labels;
+    struct markdown_core_node **anchored;
+    size_t anchored_count, anchored_capacity;
+    markdown_core_inline_settle settle;
+    bool taken;
+} markdown_core_settled;
+
 typedef struct markdown_core_stream {
     /* The line the last commit stopped in, when `held`. */
     markdown_core_line_stop stop;
@@ -373,6 +442,8 @@ typedef struct markdown_core_stream {
     size_t request_ask;
     bool request_ends, requested;
     struct markdown_core_parser_mark *snapshot_mark;
+    /* THE SETTLE POINT (blocks.c). */
+    markdown_core_settled settled;
     markdown_core_state_alignment candidate_room[];
 } markdown_core_stream;
 

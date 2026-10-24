@@ -54,8 +54,8 @@ static node_directive *get_directive(markdown_core_node *node) {
  * `12:30` text is not the `3` but the absence of a bracket part, which is
  * where the inline form is anchored (see match_colon_directive). */
 enum { NAME_END = 1 };
-static const uint8_t NAME_BYTES[256] = {MARKDOWN_CORE_WHITESPACE_BYTES(NAME_END), ['['] = NAME_END, ['{'] = NAME_END,
-                                        [':'] = NAME_END};
+static const uint8_t NAME_BYTES[256] = {
+    MARKDOWN_CORE_WHITESPACE_BYTES(NAME_END), ['['] = NAME_END, ['{'] = NAME_END, [':'] = NAME_END};
 
 static int scan_name(const unsigned char *data, bufsize_t len, bufsize_t pos, bufsize_t *name_start,
                      bufsize_t *name_len) {
@@ -391,6 +391,9 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
     }
 
     if (offset + 1 >= chunk->len || chunk->data[offset + 1] == ':') {
+        if (offset + 1 >= chunk->len) {
+            markdown_core_inline_state_saw_end(inline_state);
+        }
         return NULL;
     }
 
@@ -404,13 +407,22 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
      * from the colon in `12:30` or `http://`. A part that fails to scan does
      * not anchor; the name commits only once one part has. */
     pos = name_start + name_len;
+    /* The name, and the label after it, may go on with the input. */
+    if (pos >= chunk->len) {
+        markdown_core_inline_state_saw_end(inline_state);
+    }
     if (pos < chunk->len && chunk->data[pos] == '[') {
         bufsize_t label_end;
         if (scan_label(chunk->data, chunk->len, pos, &label_start, &label_len, &label_end)) {
             has_label = 1;
             label_open = pos;
             pos = label_end;
+        } else {
+            markdown_core_inline_state_saw_end(inline_state);
         }
+    }
+    if (pos >= chunk->len) {
+        markdown_core_inline_state_saw_end(inline_state);
     }
 
     int has_attributes = 0;

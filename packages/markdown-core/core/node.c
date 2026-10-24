@@ -900,6 +900,38 @@ void markdown_core_node_take_borrowed(markdown_core_node *taker, markdown_core_n
     lender->flags |= borrowed;
 }
 
+/* A chunk that views bytes, made to own a copy of them. An empty one reads
+ * none. */
+static bool S_chunk_own_viewed(markdown_core_chunk *chunk) {
+    return chunk->alloc || !chunk->len || markdown_core_chunk_to_cstr(chunk);
+}
+
+/* The inline kinds whose records view the content they were read from:
+ * every other inline record owns its bytes, its labels in the pool's
+ * storage, its resource in the pool's slabs, an element's payload its
+ * own. */
+bool markdown_core_node_own_viewed(markdown_core_node *node) {
+    switch (node->kind) {
+    case MARKDOWN_CORE_NODE_TEXT:
+    case MARKDOWN_CORE_NODE_HTML:
+    case MARKDOWN_CORE_NODE_CODE:
+    case MARKDOWN_CORE_NODE_COMMENT:
+    case MARKDOWN_CORE_NODE_TOPIC:
+        return S_chunk_own_viewed(node->as.literal);
+    case MARKDOWN_CORE_NODE_CROSS_LINK:
+    case MARKDOWN_CORE_NODE_CROSS_EMBEDDED: {
+        markdown_core_cross_reference *cross = markdown_core_node_cross_reference(node);
+        return S_chunk_own_viewed(&cross->path) &&
+               (!cross->anchor.has_value || S_chunk_own_viewed(&cross->anchor.value)) &&
+               (!cross->label.has_value || S_chunk_own_viewed(&cross->label.value));
+    }
+    case MARKDOWN_CORE_NODE_CITATION:
+        return S_chunk_own_viewed(&node->as.citation->value);
+    default:
+        return true;
+    }
+}
+
 markdown_core_node_set_kind_result markdown_core_node_set_kind(markdown_core_node *node, markdown_core_node *parent,
                                                                markdown_core_node_type kind) {
     markdown_core_node_type initial_kind = (markdown_core_node_type)node->kind;
