@@ -132,6 +132,8 @@ static markdown_core_node *handle_backticks(const markdown_core_element_instance
 
     if (endpos == 0) {                // not found
         inline_state->pos = startpos; // rewind
+        /* A run with no closer opens a code span once one follows. */
+        markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_CODE, startpos - openticks.len, startpos, NULL, 0);
         /* The run stands as its own literal, so it covers ITS OWN BYTES:
          * `startpos` is one past the last of them and the run is
          * `openticks.len` long. Both offsets used to be `inline_state->pos`, one past

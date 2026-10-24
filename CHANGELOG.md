@@ -6,6 +6,18 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Ask what the cursor may be typing (language engine plan, step 2b).
+  `markdown_core_document_context` parses the source before a position and
+  reads what that parse leaves open: the open blocks, the inline openers,
+  and the slots, each with its slot kind, its owner kind, the field's source
+  before and after the cursor, the earlier fields it depends on, such as
+  `Note` in `[[Note#`, and whether the whole document finishes its
+  construct. The whole document confirms every opener and slot, so nothing
+  inside a code span, a formula or another construct that absorbs it is
+  offered. `markdown_core_document_path` returns the nodes that hold a
+  position, the root first. The context covers every slot kind but
+  `Metadata`'s fields, which come with the reworked YAML parser.
+
 - Name the slots an editor completes (language engine plan, step 2a). The
   canonical AST contract lists fourteen slot kinds, the roles of the fields
   whose source holds a name, a key or a path: `dest`, `anchor`, `label`,

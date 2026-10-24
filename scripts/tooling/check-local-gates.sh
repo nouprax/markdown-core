@@ -29,6 +29,7 @@ echo "canonical-ast     : $(node scripts/conformance/check-canonical-ast.mjs 2>&
 # 9b.1, which is how a script that claims to run every gate came to run two
 # fewer than the acceptance checklist names.
 echo "ast-projections   : $(node scripts/audit/check-ast-projections.mjs 2>&1 | tail -1)"
+echo "context-coverage  : $(node scripts/audit/check-context-coverage.mjs 2>&1 | tail -1)"
 echo "source-lists      : $(node scripts/audit/check-source-lists.mjs 2>&1 | tail -1)"
 echo "public-surface    : $(bash scripts/audit/check-public-surface.sh 2>&1 | tail -1)"
 echo "package-contents  : $(bash scripts/audit/check-package-contents.sh 2>&1 | tail -1)"

@@ -30,6 +30,7 @@ set(LIBRARY_SOURCES
     html_block.c
     html_scanners.c
     session.c
+    context.c
     insertion.c
     line_break.c
     link.c

@@ -1,6 +1,7 @@
 #include "callout.h"
 #define BLOCK_PEEK(input, at) ((input)->data[(at)])
 #include "block_internal.h"
+#include "sink.h"
 
 static bool markdown_core_block_parse_callout_metadata(markdown_core_callout_work *counts, markdown_core_parser *parser,
                                                        markdown_core_node *node, markdown_core_chunk *input);
@@ -24,6 +25,35 @@ bool markdown_core_block_parse_callout_prefix(markdown_core_parser *parser, mark
     return res;
 }
 
+static bool variant_byte(unsigned char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
+}
+
+/* Where a variant goes on past a cursor. */
+static bufsize_t variant_end(const unsigned char *data, bufsize_t length) {
+    bufsize_t end = 0;
+    while (end < length && variant_byte(data[end])) {
+        end++;
+    }
+    return end;
+}
+
+/* A `[!` at `open` whose variant the line's end cuts short, to the parse's
+ * context sink. */
+static void S_report_variant(markdown_core_parser *parser, const markdown_core_chunk *input, bufsize_t open) {
+    bufsize_t end = input->len;
+    while (end > open && markdown_core_is_line_end(input->data[end - 1])) {
+        end--;
+    }
+    if (end - open < 2 || input->data[open] != '[' || input->data[open + 1] != '!' ||
+        open + 2 + variant_end(input->data + open + 2, end - open - 2) != end) {
+        return;
+    }
+    const markdown_core_field variant = {
+        MARKDOWN_CORE_SLOT_VARIANT, MARKDOWN_CORE_KIND_CALLOUT, open + 2, variant_end, {{0}}, 0, false};
+    markdown_core_parser_open(parser, MARKDOWN_CORE_KIND_CALLOUT, open, open + 2, &variant, 1);
+}
+
 static bool markdown_core_block_parse_callout_metadata(markdown_core_callout_work *counts, markdown_core_parser *parser,
                                                        markdown_core_node *node, markdown_core_chunk *input) {
     bufsize_t pos = parser->at.offset;
@@ -33,6 +63,9 @@ static bool markdown_core_block_parse_callout_metadata(markdown_core_callout_wor
         counts->scan++;
     }
     counts->scan++;
+    if (parser->sink && !parser->at.partially_consumed_tab) {
+        S_report_variant(parser, input, pos);
+    }
     if (parser->at.partially_consumed_tab || pos + 2 >= input->len || input->data[pos] != '[' ||
         input->data[pos + 1] != '!') {
         return false;
@@ -42,7 +75,7 @@ static bool markdown_core_block_parse_callout_metadata(markdown_core_callout_wor
     while (pos < input->len) {
         unsigned char c = input->data[pos];
         counts->scan++;
-        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-')) {
+        if (!variant_byte(c)) {
             break;
         }
         pos++;

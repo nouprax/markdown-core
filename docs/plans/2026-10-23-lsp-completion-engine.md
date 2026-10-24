@@ -1,10 +1,9 @@
 # A Markdown language engine on Markdown Core
 
-Status: proposed. Nothing in this plan is built. On 2026-10-24 the owner
-decided where the engine lives and its language (D1, D2): a native C engine
-in this repository, reached in process through the platform bindings.
-Section 10 lists the remaining decisions, which the owner makes before
-rollout step 2.
+Status: in progress. Step 1 has landed, and step 2 lands in five parts
+(section 9). On 2026-10-24 the owner decided where the engine lives and its
+language (D1, D2): a native C engine in this repository, reached in process
+through the platform bindings, and made the other decisions of section 10.
 
 The owner's requirements, 2026-10-23 and 2026-10-24:
 
@@ -147,8 +146,8 @@ public struct Edit: Sendable, Equatable {
 public struct Slot: Sendable, Equatable {
     public let kind: Kind            // section 3.2
     public let owner: NodeKind       // the construct the slot belongs to
-    public let before: [Scope]       // the field's runs from its start to the cursor
-    public let after: [Scope]        // its runs from the cursor to the token's end
+    public let before: Scope         // the field from its start to the cursor
+    public let after: Scope          // the field from the cursor to its end
     public let prefix: [String]      // earlier fields the slot depends on
     public let closed: Bool          // the whole document finishes the construct
     public func spell(_ value: String) -> Insertion?   // section 3.2
@@ -221,6 +220,33 @@ C exposes `markdown_core_document_context(document, source, length, position,
 &context)`, `markdown_core_slot_spell(context, slot, value, length, &insertion)`
 and `markdown_core_context_free`, with accessors for the arrays.
 Kotlin and ECMAScript mirror the Swift shape (R6).
+
+Step 2b built the query this way:
+
+- `before` and `after` are one scope each, not a list of runs. A slot is
+  reported only on the cursor's line, so its field before and after the
+  cursor is one run of the source.
+- The parse of the source before the cursor carries a context sink. The
+  block phase lists the blocks open at its end. An inline run whose content
+  reaches the end lists the openers its scanners leave open and the fields
+  they read when the content ends, each with the scanner's own function for
+  where the field goes on past the cursor. A line of the block phase that
+  ends the text reports the same way, for a callout's variant, a fence's
+  info string, a directive block's name and an attribute tail. A reference
+  definition reports its destination when its paragraph closes.
+- The confirmation checks nodes, not field scopes, until step 2d adds them:
+  a slot is closed when the document holds a node of its owner kind over
+  the field's start and the cursor's last byte, and an `id` slot's node must
+  also carry an anchor. Otherwise the opener must be `Text` in an inline
+  root that holds the cursor's last byte. A slot that declares a name, such
+  as a definition's label, stands only when closed. The inline openers are
+  confirmed the same way. A block owner, such as a `CodeBlock` or a
+  `Callout`, holds the whole opening line, so its slots read as closed even
+  where the attribute block or the variant is still open; step 2d's field
+  scopes make that exact.
+- A `#` at the end of a paragraph reports both a topic's name and the
+  paragraph's block identifier, and the whole document keeps the one it
+  reads.
 
 ### 3.2 Slot kinds
 
@@ -627,7 +653,11 @@ second parse path (AGENTS.md).
   with `|`.
 - **Slot coverage.** Every slot kind of section 3.2 appears in at least one
   spec example's context, and every field the audit of step 2 marks as
-  completable has a slot kind.
+  completable has a slot kind. In C, `tests/fixtures/context.txt` holds the
+  expected contexts, `scripts/audit/check-context-coverage.mjs` requires an
+  example of every slot kind and owner the contract derives, and the context
+  runner's sweep asks for the context at every position of every spec
+  example in both units.
 - **Protocol transcripts.** JSON-RPC request and response transcripts for the
   lifecycle, both position encodings, incremental sync with CRLF, astral
   characters and empty documents, cancellation, and malformed requests, run
@@ -646,7 +676,10 @@ it (D6).
 - [ ] **Step 0: This plan.** The owner's decisions of section 10.
 - [ ] **Step 1: Settle point.** Step 8 of the incremental parsing plan
    (section 3.5).
-- [ ] **Step 2: Context in C.** The slot audit of `canonical-ast.md`, the
+- [ ] **Step 2: Context in C.** In five pull requests: 2a the slot audit
+   and the generated slot kinds (#448), 2b the context query and the path
+   query, 2c `markdown_core_slot_spell`, 2d field scopes and marker ranges,
+   and 2e the YAML parser and `Metadata`'s member scopes. The slot audit of `canonical-ast.md`, the
    generated slot kinds, `markdown_core_document_context` and
    `markdown_core_slot_spell`, the context agreement tests and the dialect
    spec's description of slots, and per-member name and value scopes on

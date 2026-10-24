@@ -9,6 +9,7 @@
     },
     "scripts": {
         "audit:ast-projections": "node scripts/audit/check-ast-projections.mjs",
+        "audit:context-coverage": "node scripts/audit/check-context-coverage.mjs",
         "audit:node-kinds": "node --test scripts/tooling/tests/generate-node-kinds.test.mjs && node scripts/tooling/generate-node-kinds.mjs --check",
         "audit:ci": "scripts/audit/check-ci-policy.sh",
         "audit:element-attach-order": "node scripts/audit/check-element-attach-order.mjs",

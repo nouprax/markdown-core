@@ -232,6 +232,8 @@ static bool S_element_implements_inline(const markdown_core_element *element, ma
         return element->dispose_inline != NULL;
     case MARKDOWN_CORE_INLINE_HOOK_OPEN:
         return element->holds_open != NULL;
+    case MARKDOWN_CORE_INLINE_HOOK_REPORT:
+        return element->report_open != NULL;
     case MARKDOWN_CORE_INLINE_HOOK_COUNT:
         break;
     }

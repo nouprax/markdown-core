@@ -506,6 +506,18 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_document_node_at(const mark
                                                                       markdown_core_position position,
                                                                       const uint8_t *source, size_t length,
                                                                       const markdown_core_node **node);
+/** `*nodes` receives a new array of every node one of whose source ranges
+ * holds the byte at `position`, in canonical walk order, so the root first
+ * and the node markdown_core_document_node_at answers last, and `*count`
+ * their number: none, with `*nodes` NULL, when no node holds it or the
+ * position names no byte. markdown_core_path_free releases the array; its
+ * nodes borrow from the document. OUT_OF_BOUNDS when the line or the column
+ * is below 1. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_document_path(const markdown_core_document *document,
+                                                                   markdown_core_position position,
+                                                                   const uint8_t *source, size_t length,
+                                                                   const markdown_core_node ***nodes, size_t *count);
+MARKDOWN_CORE_API void markdown_core_path_free(const markdown_core_node **nodes);
 MARKDOWN_CORE_API markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *node);
 /** The kind's name in the canonical AST. OUT_OF_BOUNDS for a value that is
  * not a markdown_core_node_kind. */
@@ -513,6 +525,72 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_node_kind_name(markdown_cor
 /** The slot kind's name in the canonical AST contract. OUT_OF_BOUNDS for a
  * value that is not a markdown_core_slot_kind. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_slot_kind_name(markdown_core_slot_kind kind, const char **name);
+
+/** CONTEXT QUERIES (docs/plans/2026-10-23-lsp-completion-engine.md, 3.1).
+ * The syntactic context at a cursor is the open state of a parse of the
+ * text before it, confirmed against the document parsed from the whole
+ * text.
+ *
+ * `markdown_core_document_context` takes `document`, parsed from `length`
+ * bytes of `source`, and a cursor `position`, which stands between bytes:
+ * its column may also stand at its line's end or at the source's end. It
+ * parses the source before the cursor, which the document does not hold,
+ * and `*context` receives a new context, which markdown_core_context_free
+ * releases; it owns every string it hands out. OUT_OF_BOUNDS when the
+ * position names no place of the source or its line or column is below 1.
+ *
+ * A context lists
+ * - its BLOCKS: the blocks the parse of the text before the cursor leaves
+ *   open as that text ends, outermost first, each with its kind and the
+ *   scope of its opening line up to the cursor;
+ * - its INLINES: the constructs the text before the cursor leaves open in
+ *   the inline content that holds it, earliest first, each with the kind it
+ *   opens, NONE when that is still open too (a `[` may open a link, a span
+ *   or a cite), and the scope of its opening syntax, which the document
+ *   confirms as a slot's opener is confirmed;
+ * - its SLOTS: the fields an open construct reads at the cursor, which the
+ *   document confirms (markdown_core_slot). */
+typedef struct markdown_core_context markdown_core_context;
+typedef struct markdown_core_opener {
+    markdown_core_node_kind kind;
+    markdown_core_scope scope;
+} markdown_core_opener;
+/** A SLOT: the field of slot kind `kind` of a construct of kind `owner` that
+ * the cursor may be writing. `before` is the field's source from its start
+ * to the cursor and `after` its continuation from the cursor, as the
+ * construct's own grammar reads it; neither leaves the cursor's line.
+ * `closed` is whether the document finishes the construct after the cursor;
+ * otherwise the document reads its opener as text. `prefix_count` earlier
+ * fields the slot depends on, such as the path before a cross link's
+ * anchor, are read with markdown_core_context_slot_prefix_at, as written. */
+typedef struct markdown_core_slot {
+    markdown_core_slot_kind kind;
+    markdown_core_node_kind owner;
+    markdown_core_scope before;
+    markdown_core_scope after;
+    bool closed;
+    size_t prefix_count;
+} markdown_core_slot;
+
+MARKDOWN_CORE_API markdown_core_status markdown_core_document_context(const markdown_core_document *document,
+                                                                      const uint8_t *source, size_t length,
+                                                                      markdown_core_position position,
+                                                                      markdown_core_context **context);
+MARKDOWN_CORE_API size_t markdown_core_context_block_count(const markdown_core_context *context);
+MARKDOWN_CORE_API markdown_core_status markdown_core_context_block_at(const markdown_core_context *context,
+                                                                      size_t index, markdown_core_opener *block);
+MARKDOWN_CORE_API size_t markdown_core_context_inline_count(const markdown_core_context *context);
+MARKDOWN_CORE_API markdown_core_status markdown_core_context_inline_at(const markdown_core_context *context,
+                                                                       size_t index, markdown_core_opener *opener);
+MARKDOWN_CORE_API size_t markdown_core_context_slot_count(const markdown_core_context *context);
+MARKDOWN_CORE_API markdown_core_status markdown_core_context_slot_at(const markdown_core_context *context, size_t index,
+                                                                     markdown_core_slot *slot);
+/** The `index`th earlier field slot `slot` depends on, as written. It borrows
+ * from the context. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_context_slot_prefix_at(const markdown_core_context *context,
+                                                                            size_t slot, size_t index,
+                                                                            markdown_core_string *prefix);
+MARKDOWN_CORE_API void markdown_core_context_free(markdown_core_context *context);
 
 /** A SEQUENCE OF NODES: `count` nodes at `items`, in order, borrowed from the
  * document. An empty one may have no `items`. */

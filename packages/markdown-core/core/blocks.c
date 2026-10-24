@@ -18,6 +18,7 @@
 #include "element.h"
 #include "config.h"
 #include "parser.h"
+#include "sink.h"
 #include "node_type.h"
 #include "node.h"
 #include "registry.h"
@@ -701,6 +702,33 @@ static inline bool S_starts_on_line(markdown_core_parser *parser, const markdown
 
 bufsize_t markdown_core_parser_line_offset(markdown_core_parser *parser, int line) {
     return S_line_offset(parser, line);
+}
+
+void markdown_core_parser_open(markdown_core_parser *parser, markdown_core_node_kind opens, bufsize_t from,
+                               bufsize_t to, const markdown_core_field *fields, size_t count) {
+    markdown_core_context_sink *sink = parser->sink;
+    if (!sink || markdown_core_parser_block_root(parser) != parser->root ||
+        (size_t)parser->at.line_end < sink->length) {
+        return;
+    }
+    const bufsize_t line = parser->at.line_start;
+    const int32_t opener = markdown_core_context_opener_add(
+        sink, opens, (markdown_core_place){(uint32_t)(line + from), (uint32_t)(line + to)}, true);
+    for (size_t i = 0; i < count && opener >= 0; i++) {
+        const markdown_core_field *field = &fields[i];
+        markdown_core_context_field open = {.kind = field->slot,
+                                            .owner = field->owner,
+                                            .opener = opener,
+                                            .start = (uint32_t)(line + field->start),
+                                            .end = field->end,
+                                            .declares = field->declares};
+        for (size_t j = 0; j < field->prefix_count && j < 2; j++) {
+            open.prefix[j] =
+                (markdown_core_place){(uint32_t)(line + field->prefix[j][0]), (uint32_t)(line + field->prefix[j][1])};
+            open.prefix_count++;
+        }
+        markdown_core_context_field_add(sink, &open);
+    }
 }
 
 const unsigned char *markdown_core_parser_line_content(markdown_core_parser *parser, int line, bufsize_t *length) {
@@ -2496,8 +2524,29 @@ static int walk_owned_trees(markdown_core_parser *parser) {
  * document closes last, so it is the last block the queue holds, where its
  * input ended. */
 static void S_parse_block_inputs(markdown_core_parser *parser);
+/* THE OPEN BLOCKS of the parse of the text before a cursor, as its text
+ * ends: the builders from the document's last child to the current block,
+ * outermost first, which the context sink lists (sink.h). */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_context_blocks(markdown_core_parser *parser) {
+    markdown_core_context_sink *sink = parser->sink;
+    for (markdown_core_node *open = parser->root; open != parser->at.current && open->child_count;) {
+        open = open->children[open->child_count - 1];
+        const markdown_core_node **blocks =
+            markdown_core_reserve(sink->blocks, &sink->block_capacity, sink->block_count + 1, sizeof(*blocks));
+        if (!blocks) {
+            sink->failed = true;
+            return;
+        }
+        sink->blocks = blocks;
+        blocks[sink->block_count++] = open;
+    }
+}
+
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_close_document(markdown_core_parser *parser) {
     markdown_core_node *root = parser->root;
+    if (parser->sink) {
+        S_context_blocks(parser);
+    }
     markdown_core_parser_close_below(parser, root);
     const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, root);
     S_settle_pending_as(parser, root, kind);

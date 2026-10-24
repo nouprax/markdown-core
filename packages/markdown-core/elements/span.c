@@ -12,7 +12,8 @@ markdown_core_bracket_match markdown_core_span_close(const markdown_core_element
         markdown_core_node *inl;
         markdown_core_attributes attributes = {0};
         bufsize_t end;
-        if (markdown_core_inline_state_attributes(inline_state, initial_pos, &attributes, &end)) {
+        if (markdown_core_inline_state_attributes(inline_state, initial_pos, MARKDOWN_CORE_KIND_SPAN, &attributes,
+                                                  &end)) {
             if (!markdown_core_node_can_contain_type(markdown_core_scaffold_parent(opener->inl_text),
                                                      MARKDOWN_CORE_NODE_SPAN)) {
                 markdown_core_attributes_free(&attributes);

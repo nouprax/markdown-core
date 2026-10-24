@@ -751,8 +751,102 @@ int markdown_core_attributes_parse(markdown_core_attribute_parser *p, bufsize_t 
 #include "inline_internal.h"
 #include "block_internal.h"
 
+/* Where a member's field goes on past a cursor: a name, an unquoted value,
+ * and a value in either quote. */
+static bufsize_t name_end(const unsigned char *data, bufsize_t length) {
+    return markdown_core_scan_to_class(BYTE_CLASS, BYTE_NAME_END, data, 0, length);
+}
+static bufsize_t value_end(const unsigned char *data, bufsize_t length) {
+    bufsize_t at = 0;
+    while ((at = markdown_core_scan_to_class(BYTE_CLASS, BYTE_VALUE_END | BYTE_ESCAPE, data, at, length)) < length &&
+           escaped(data, length, at)) {
+        at += 2;
+    }
+    return at < length ? at : length;
+}
+static bufsize_t quoted_end(const unsigned char *data, bufsize_t length, unsigned char quote) {
+    bufsize_t at = 0;
+    while (at < length && data[at] != quote) {
+        at += escaped(data, length, at) ? 2 : 1;
+    }
+    return at < length ? at : length;
+}
+static bufsize_t double_end(const unsigned char *data, bufsize_t length) { return quoted_end(data, length, '"'); }
+static bufsize_t single_end(const unsigned char *data, bufsize_t length) { return quoted_end(data, length, '\''); }
+
+/* (attributes.h) A member boundary reads as a name not yet begun. */
+bool markdown_core_attributes_open_member(const unsigned char *s, bufsize_t n, bufsize_t start,
+                                          markdown_core_field *field) {
+    bufsize_t b = start + 1;
+    for (;;) {
+        bool lines = false;
+        while (b < n && (horizontal(s[b]) || newline(s[b]))) {
+            if (newline(s[b])) {
+                if (lines && !(s[b] == '\n' && s[b - 1] == '\r')) {
+                    return false;
+                }
+                lines = true;
+            }
+            b++;
+        }
+        if (b >= n) {
+            *field = (markdown_core_field){MARKDOWN_CORE_SLOT_RECORD, 0, b, name_end, {{0}}, 0, false};
+            return true;
+        }
+        const unsigned char c = s[b];
+        if (c == '}' || c == '=' || c == '"' || c == '\'' || c == '{') {
+            return false;
+        }
+        if (c == '-' && b + 1 < n && member_boundary(s, n, b + 1)) {
+            b++;
+            continue;
+        }
+        if (c == '#' || c == '.') {
+            const markdown_core_slot_kind slot = c == '#' ? MARKDOWN_CORE_SLOT_ID : MARKDOWN_CORE_SLOT_CLASS;
+            if (b + 1 < n && name_terminator(s[b + 1])) {
+                return false;
+            }
+            bufsize_t e = b + 1;
+            while (e < n && !name_terminator(s[e])) {
+                e++;
+            }
+            if (e >= n) {
+                *field = (markdown_core_field){slot, 0, b + 1, name_end, {{0}}, 0, false};
+                return true;
+            }
+            b = e;
+            continue;
+        }
+        bufsize_t e = b + 1;
+        while (e < n && !name_terminator(s[e])) {
+            e++;
+        }
+        if (e >= n) {
+            *field = (markdown_core_field){MARKDOWN_CORE_SLOT_RECORD, 0, b, name_end, {{0}}, 0, false};
+            return true;
+        }
+        if (s[e] != '=') {
+            if (!member_boundary(s, n, e)) {
+                return false;
+            }
+            b = e;
+            continue;
+        }
+        const bool quoted = e + 1 < n && (s[e + 1] == '"' || s[e + 1] == '\'');
+        bufsize_t v = quoted ? e + 2 : e + 1;
+        bufsize_t close = quoted ? v + quoted_end(s + v, n - v, s[e + 1]) : v + value_end(s + v, n - v);
+        if (close >= n) {
+            const markdown_core_field_end end = !quoted ? value_end : s[e + 1] == '"' ? double_end : single_end;
+            *field = (markdown_core_field){MARKDOWN_CORE_SLOT_VALUE, 0, v, end, {{b, e}}, 1, false};
+            return true;
+        }
+        b = quoted ? close + 1 : close;
+    }
+}
+
 int markdown_core_inline_state_attributes(markdown_core_inline_state *inline_state, bufsize_t start,
-                                          markdown_core_attributes *value, bufsize_t *end) {
+                                          markdown_core_node_kind owner, markdown_core_attributes *value,
+                                          bufsize_t *end) {
     /* The run owner's tail is its own: a heading's trailing attributes are
      * claimed there, so no inline construct takes an attribute block that
      * begins in it. */
@@ -775,6 +869,12 @@ int markdown_core_inline_state_attributes(markdown_core_inline_state *inline_sta
     if (markdown_core_inline_tracks_end(inline_state) &&
         (start >= inline_state->input.len || (!matched && inline_state->input.data[start] == '{'))) {
         markdown_core_inline_saw_end(inline_state);
+        markdown_core_field field;
+        if (inline_state->context && start < inline_state->input.len &&
+            markdown_core_attributes_open_member(inline_state->input.data, inline_state->input.len, start, &field)) {
+            field.owner = owner;
+            markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_NONE, start, start + 1, &field, 1);
+        }
     }
     return matched;
 }
@@ -782,10 +882,29 @@ int markdown_core_inline_state_attributes(markdown_core_inline_state *inline_sta
 void markdown_core_inline_attach_inline_attributes(markdown_core_inline_state *inline_state, markdown_core_node *node,
                                                    bufsize_t from) {
     bufsize_t end;
-    if (markdown_core_inline_state_attributes(inline_state, inline_state->pos, &node->attributes, &end)) {
+    if (markdown_core_inline_state_attributes(inline_state, inline_state->pos, markdown_core_node_get_kind(node),
+                                              &node->attributes, &end)) {
         inline_state->pos = end;
         markdown_core_inline_state_place(inline_state, node, from, end - 1);
     }
+}
+
+bool markdown_core_attributes_report_tail(markdown_core_parser *parser, markdown_core_node_kind owner,
+                                          const unsigned char *line, bufsize_t from, bufsize_t end) {
+    if (!parser->sink) {
+        return false;
+    }
+    markdown_core_field field;
+    for (bufsize_t at = from; at < end; at++) {
+        if (escaped(line, end, at)) {
+            at++;
+        } else if (line[at] == '{' && markdown_core_attributes_open_member(line, end, at, &field)) {
+            field.owner = owner;
+            markdown_core_parser_open(parser, MARKDOWN_CORE_KIND_NONE, at, at + 1, &field, 1);
+            return true;
+        }
+    }
+    return false;
 }
 
 bufsize_t markdown_core_attributes_attach_tail(markdown_core_parser *parser, markdown_core_node *node,

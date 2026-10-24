@@ -180,6 +180,54 @@ static void prepare_citation_braces(const markdown_core_element_instance *self,
     }
 }
 
+/* How a key goes on past a cursor: key characters, and single internal
+ * punctuation a key character follows; a braced key to its `}`. */
+static bufsize_t key_end(const unsigned char *data, bufsize_t length) {
+    bufsize_t pos = 0;
+    while (pos < length) {
+        int width = citation_key_width(data + pos, length - pos);
+        if (width) {
+            pos += width;
+        } else if (data[pos] < 128 && data[pos] && strchr(":.#$%&-+?<>~/", data[pos]) &&
+                   citation_key_width(data + pos + 1, length - pos - 1)) {
+            pos++;
+        } else {
+            break;
+        }
+    }
+    return pos;
+}
+static bufsize_t braced_key_end(const unsigned char *data, bufsize_t length) {
+    bufsize_t pos = 0;
+    while (pos < length && data[pos] != '}') {
+        pos++;
+    }
+    return pos;
+}
+
+/* The key the content's end cuts short, from `field`, of the citation whose
+ * `@` or `-@` starts at `start`, to the run's context sink. Outside brackets
+ * the key names a bibliography entry or a specimen, which only the
+ * definitions decide; a `(@` at the start of its content may open a specimen
+ * definition, which the document must finish. */
+static void S_report_key(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
+                         bufsize_t start, bufsize_t at, bufsize_t field, bool braced) {
+    markdown_core_field fields[3];
+    size_t count = 0;
+    const markdown_core_field_end end = braced ? braced_key_end : key_end;
+    fields[count++] =
+        (markdown_core_field){MARKDOWN_CORE_SLOT_BIB, MARKDOWN_CORE_KIND_CITATION, field, end, {{0}}, 0, false};
+    if (!braced && !markdown_core_open_bracket(self->peers[CITATION_LINK], inline_state)) {
+        fields[count++] = (markdown_core_field){
+            MARKDOWN_CORE_SLOT_SPECIMEN, MARKDOWN_CORE_KIND_CITATION, field, end, {{0}}, 0, false};
+        if (start == 1 && inline_state->input.data[0] == '(') {
+            fields[count++] = (markdown_core_field){
+                MARKDOWN_CORE_SLOT_SPECIMEN, MARKDOWN_CORE_KIND_SPECIMEN, field, end, {{0}}, 0, true};
+        }
+    }
+    markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_CITE, start, at, fields, count);
+}
+
 static bool scan_citation_key(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state,
                               bufsize_t start, citation_token *token) {
     markdown_core_citation_work *counts = citation_work(self);
@@ -212,6 +260,9 @@ static bool scan_citation_key(const markdown_core_element_instance *self, markdo
             !index->entries[index->cursor].end) {
             /* A brace that does not close may close once the input goes on. */
             markdown_core_inline_saw_end(inline_state);
+            if (inline_state->context) {
+                S_report_key(self, inline_state, start, pos, pos + 1, true);
+            }
             return false;
         }
         token->key_start = pos + 1;
@@ -239,6 +290,10 @@ static bool scan_citation_key(const markdown_core_element_instance *self, markdo
         }
     }
     token->key_end = token->end = pos;
+    if (inline_state->context &&
+        (pos == len || (pos + 1 == len && pos > token->key_start && strchr(":.#$%&-+?<>~/", data[pos])))) {
+        S_report_key(self, inline_state, start, token->key_start, token->key_start, false);
+    }
     return pos > token->key_start;
 }
 
@@ -771,8 +826,13 @@ static bool is_inline_start(const markdown_core_element_instance *self, markdown
     if (c == ';') {
         return markdown_core_open_bracket(self->peers[CITATION_LINK], inline_state) != NULL;
     }
-    return markdown_core_inline_citation_opener(inline_state, at) &&
-           markdown_core_inline_citation_key_follows(inline_state, at + 1);
+    if (!markdown_core_inline_citation_opener(inline_state, at)) {
+        return false;
+    }
+    if (inline_state->context && at + 1 == inline_state->input.len) {
+        S_report_key(self, inline_state, at, at + 1, at + 1, false);
+    }
+    return markdown_core_inline_citation_key_follows(inline_state, at + 1);
 }
 static markdown_core_node *match(const markdown_core_element_instance *self, markdown_core_parser *parser,
                                  markdown_core_node *parent, unsigned char character,

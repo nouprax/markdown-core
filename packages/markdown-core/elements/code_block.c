@@ -1,6 +1,7 @@
 #include "code_block_scanners.h"
 #include "code_block.h"
 #include "block_internal.h"
+#include "sink.h"
 #include "attributes.h"
 #include "formula.h"
 #define peek_at(input, at) ((input)->data[(at)])
@@ -93,6 +94,35 @@ static void complete_code(const markdown_core_element_instance *self, markdown_c
         markdown_core_formula_promote_fence(formula, parser, node, markdown_core_scaffold_parent(node));
     }
 }
+/* Where an info string's first word goes on past a cursor. */
+static bufsize_t info_end(const unsigned char *data, bufsize_t length) {
+    bufsize_t end = 0;
+    while (end < length && !markdown_core_is_whitespace(data[end]) && data[end] != '{') {
+        end++;
+    }
+    return end;
+}
+
+/* The fence line's field the line's end cuts short, `rest` its `length`
+ * bytes past the fence, to the parse's context sink: a member of an open
+ * attribute tail, or else the info string's first word. */
+static void S_report_info(markdown_core_parser *parser, const unsigned char *rest, bufsize_t length) {
+    const bufsize_t offset = parser->at.offset;
+    const unsigned char *line = rest - offset;
+    if (markdown_core_attributes_report_tail(parser, MARKDOWN_CORE_KIND_CODE_BLOCK, line, offset, offset + length)) {
+        return;
+    }
+    bufsize_t start = 0;
+    while (start < length && markdown_core_is_space_or_tab(rest[start])) {
+        start++;
+    }
+    if (start + info_end(rest + start, length - start) == length) {
+        const markdown_core_field info = {
+            MARKDOWN_CORE_SLOT_INFO, MARKDOWN_CORE_KIND_CODE_BLOCK, offset + start, info_end, {{0}}, 0, false};
+        markdown_core_parser_open(parser, MARKDOWN_CORE_KIND_CODE_BLOCK, parser->at.first_nonspace, offset, &info, 1);
+    }
+}
+
 /* THE FENCE LINE GIVES THE INFO STRING AS THE BLOCK OPENS, once: `rest`,
  * `length` bytes, is the line past the fence, which the block's content
  * begins with, and the literal starts past it. The info string is the rest
@@ -104,6 +134,9 @@ static void S_fence_info(markdown_core_parser *parser, markdown_core_node *b, co
     const unsigned char *line_end = memchr(rest, '\n', (size_t)length);
     assert(line_end);
     const bufsize_t pos = (bufsize_t)(line_end - rest);
+    if (parser->sink) {
+        S_report_info(parser, rest, pos);
+    }
     b->as.code->literal_start = pos + 1;
     markdown_core_strbuf tmp = MARKDOWN_CORE_BUF_INIT();
     bufsize_t info_end = markdown_core_attributes_attach_tail(parser, b, rest, pos);
