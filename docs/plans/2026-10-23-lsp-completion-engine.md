@@ -430,8 +430,13 @@ completion does, and it takes it from the parser for the same reason (R1).
   one canonical spelling. The repository has none today. It gets a plan of
   its own before it is built, because it is the grammar written backwards
   and has to hold two invariants for every input: parsing its output gives
-  the same canonical dump as parsing its input (no change of meaning), and
-  writing its own output changes nothing (idempotence). The engine diffs the
+  the same semantic tree as parsing its input (no change of meaning), and
+  writing its own output changes nothing (idempotence). The semantic tree is
+  the canonical AST without source coordinates: no scopes, extents or runs,
+  which a canonical spelling changes by design (`#   Title` written as
+  `# Title` moves every scope in the heading). The writer plan defines that
+  projection; the canonical dump of `docs/specs/canonical-ast-dump.md`
+  carries scopes on every node, so it is not the comparison. The engine diffs the
   written text against the document and answers only the changed blocks as
   `TextEdit`s, so a format keeps the editor's undo history and cursor
   usable.
