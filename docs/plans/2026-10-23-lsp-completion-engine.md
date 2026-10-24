@@ -506,8 +506,8 @@ node has one scope for the whole envelope and its fields have none
 (canonical AST), so the `field` and `value` slots of 3.2 cannot say which
 member holds the cursor. Each decoded member gains the scopes of its name
 and its value, in step 2. CSL YAML's entries are nested maps, which the
-properties language rejects today; D9 proposes extending the properties
-reader with nested maps and lists so that one YAML reader serves both. The host supplies the
+properties language rejects today; under D9 one vendored YAML parser, libyaml,
+reads both. The host supplies the
 named file among the workspace files (4.1, 5.2), and the engine reads it in
 C, so that no platform parses it on its own. A document without the field
 offers only the keys used in the workspace.
@@ -521,7 +521,7 @@ academic writing, chosen by the file's extension as Pandoc chooses them:
 | Format | Extension | Source | Reader |
 | --- | --- | --- | --- |
 | CSL JSON | `.json` | Zotero, Pandoc, Mendeley | the JSON reader of D8 |
-| CSL YAML | `.yaml`, `.yml` | Pandoc | the properties reader, extended with nested maps and lists (D9) |
+| CSL YAML | `.yaml`, `.yml` | Pandoc | the vendored libyaml of D9 |
 | BibTeX | `.bib`, `.bibtex` | LaTeX, Google Scholar, publishers' exports | a BibTeX reader: entries, `@string` macros, `#` concatenation, braces and LaTeX escapes in values |
 | BibLaTeX | `.bib` | BibLaTeX | the BibTeX reader, with BibLaTeX's field names (`date`, `journaltitle`) |
 | RIS | `.ris` | EndNote, publishers' exports | a line reader of `TAG  - value` records; an entry's key is its `ID`, and an entry without one offers no key |
@@ -622,7 +622,7 @@ it (D6).
    generated slot kinds, `markdown_core_document_context` and
    `markdown_core_slot_spell`, the context agreement tests and the dialect
    spec's description of slots, and per-member name and value scopes on
-   `Metadata` (5.4). The audit also checks that every marker
+   `Metadata` (5.4), on the vendored libyaml of D9. The audit also checks that every marker
    (`**`, `##`, `]]`, list markers, fences) has a source range, from a node's
    scope minus its fields' runs; where one does not, the parser gains a
    marker query, used by semantic tokens and formatting, instead of a CST.
@@ -705,17 +705,27 @@ it (D6).
   writer are a small one in this repository, which keeps no third-party
   runtime dependency, rather than a vendored C library such as yyjson.
 
-- **D9 One YAML reader. Proposed: extend the properties reader
-  (`elements/properties.c`) with nested block and flow maps and lists,** so
-  that front matter and CSL YAML share it. It keeps what it has: member
-  recovery, exact number spellings, the `yaml@2.9.0` oracle over the
-  supported intersection, and the scopes step 2 adds; it still rejects
-  aliases, anchors, tags and folding. `Metadata` keeps its fixed fields and
-  value model: nesting is used inside the reader, not exposed in the AST.
-  This revises O6 of the Obsidian plan (2026-09-02), which ruled out a
-  general YAML parser. The owner: "为什么不能让我们peroperties支持嵌套，这样不就统一解析器了么？甚至于我不排斥像cmark引入hodini一样以source code copy的形式直接引进YAML parser". The alternative is vendoring libyaml's source, as cmark vendors
-  houdini: complete YAML 1.1, but it stops at the first error, so member
-  recovery, typed scalars and scopes would need a wrapper around it.
+- **D9 One YAML parser. Decided 2026-10-24: vendor libyaml's source and
+  adapt it,** as cmark vendors houdini, so that front matter and CSL YAML
+  share one parser. The properties language was kept narrow because writing
+  every YAML case by hand was too much, not as a goal; the owner: "有意做窄是因为当时春自己写做起来太多case了，如果引入libyaml然后我们再魔改，我是没意见的". libyaml is C and MIT
+  licensed; its source lives under the parser package with its licence and
+  a record of each local change. What stays ours, around it:
+  - **Member recovery.** libyaml stops at the first error, so the envelope
+    is still split into top-level members as `elements/properties.c` splits
+    it today, and each member is parsed on its own: an invalid member is
+    skipped and its neighbours kept.
+  - **Values.** libyaml leaves scalars untyped, so null, booleans and exact
+    number spellings keep the rules of `docs/specs/dialect/properties.md`.
+    Aliases, anchors and tags make a member invalid, as they do now.
+  - **Scopes.** libyaml's marks give each member's name and value scopes
+    (5.4), in the parser's text units.
+  - **AST.** `Metadata` keeps its fixed fields and value model; nesting is
+    read, for CSL YAML, and not exposed in the canonical AST.
+  The decoding half of `properties.c` retires; its spec, fixtures and the
+  `yaml@2.9.0` oracle stay and must pass unchanged. This revises O6 of the
+  Obsidian plan (2026-09-02), which ruled out a general YAML parser or
+  dependency. It lands in step 2 with the member scopes.
 
 ## 11. Rejected alternatives
 
