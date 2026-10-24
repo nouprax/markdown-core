@@ -363,6 +363,8 @@ bufsize_t markdown_core_reference_definition_length(markdown_core_chunk *input,
 
 static void S_report_reference(markdown_core_parser *parser, markdown_core_node *b, const markdown_core_chunk *input,
                                bufsize_t before, const markdown_core_chunk *url);
+static void S_report_angled(markdown_core_parser *parser, markdown_core_node *b, const markdown_core_chunk *input,
+                            bufsize_t before);
 
 static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_node *b, markdown_core_node *parent,
                                   markdown_core_chunk *input, markdown_core_attribute_parser *attributes,
@@ -370,6 +372,9 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_no
     reference_definition definition;
     bufsize_t length = S_reference_definition(input, attributes, &definition);
     if (!length) {
+        if (parser->sink) {
+            S_report_angled(parser, b, input, before);
+        }
         return 0;
     }
     if (parser->sink) {
@@ -508,20 +513,13 @@ static void S_report_destination(markdown_core_inline_state *inline_state, const
 }
 
 /* The destination of the definition at the front of `input`, content
- * offset `before` of the paragraph `b`, that its content's end cuts short,
- * to the parse's context sink: its fragment after a `#`, with the path
- * before it, or else its path. A destination in angle brackets has closed. */
-static void S_report_reference(markdown_core_parser *parser, markdown_core_node *b, const markdown_core_chunk *input,
-                               bufsize_t before, const markdown_core_chunk *url) {
-    bufsize_t len = input->len;
-    while (len > 0 && markdown_core_is_whitespace(input->data[len - 1])) {
-        len--;
-    }
-    if (!url->len || url->data < input->data || url->data + url->len != input->data + len) {
-        return;
-    }
-    const bufsize_t path = (bufsize_t)(url->data - input->data);
-    const bufsize_t hash = path + field_end(input->data + path, len - path, false, false);
+ * offset `before` of the paragraph `b`, from `path` to the content's end at
+ * `len`, which cuts it short, to the parse's context sink: its fragment
+ * after a `#`, with the path before it, or else its path. */
+static void S_report_destination_field(markdown_core_parser *parser, markdown_core_node *b,
+                                       const markdown_core_chunk *input, bufsize_t before, bufsize_t path,
+                                       bufsize_t len, bool angled) {
+    const bufsize_t hash = path + field_end(input->data + path, len - path, angled, false);
     int ignored;
     uint32_t place[4];
     const bufsize_t at[4] = {0, path, hash, hash + 1};
@@ -539,15 +537,57 @@ static void S_report_reference(markdown_core_parser *parser, markdown_core_node 
                                          .owner = MARKDOWN_CORE_KIND_REFERENCE,
                                          .opener = opener,
                                          .start = place[1],
-                                         .end = path_end};
+                                         .end = angled ? angled_path_end : path_end};
     if (hash < len) {
         field.kind = MARKDOWN_CORE_SLOT_ANCHOR;
         field.start = place[3];
-        field.end = fragment_end;
+        field.end = angled ? angled_fragment_end : fragment_end;
         field.prefix[0] = (markdown_core_place){place[1], place[2]};
         field.prefix_count = 1;
     }
     markdown_core_context_field_add(parser->sink, &field);
+}
+
+/* The content of `input` without the spaces and line endings at its end. */
+static bufsize_t S_content_length(const markdown_core_chunk *input) {
+    bufsize_t len = input->len;
+    while (len > 0 && markdown_core_is_whitespace(input->data[len - 1])) {
+        len--;
+    }
+    return len;
+}
+
+/* The bare destination `url` of the definition read at the front of
+ * `input`, when the content's end cuts it short, to the parse's context
+ * sink. A destination in angle brackets has closed. */
+static void S_report_reference(markdown_core_parser *parser, markdown_core_node *b, const markdown_core_chunk *input,
+                               bufsize_t before, const markdown_core_chunk *url) {
+    const bufsize_t len = S_content_length(input);
+    if (!url->len || url->data < input->data || url->data + url->len != input->data + len) {
+        return;
+    }
+    S_report_destination_field(parser, b, input, before, (bufsize_t)(url->data - input->data), len, false);
+}
+
+/* A definition at the front of `input` whose destination in angle brackets
+ * the content's end cuts short, `[label]: <pa`, which no definition reads
+ * until its `>`, to the parse's context sink. */
+static void S_report_angled(markdown_core_parser *parser, markdown_core_node *b, const markdown_core_chunk *input,
+                            bufsize_t before) {
+    const unsigned char *data = input->data;
+    const bufsize_t len = S_content_length(input);
+    if (len < 2 || data[0] != '[') {
+        return;
+    }
+    bufsize_t at = 1 + markdown_core_inline_reference_label_length(data + 1, len - 1);
+    if (at == 1 || at > MAX_LINK_LABEL_LENGTH + 1 || at + 1 >= len || data[at] != ']' || data[at + 1] != ':') {
+        return;
+    }
+    at = markdown_core_skip_spaces_and_line_end(data, at + 2, len);
+    if (at >= len || data[at] != '<' || at + 1 + field_end(data + at + 1, len - at - 1, true, true) < len) {
+        return;
+    }
+    S_report_destination_field(parser, b, input, before, at + 1, len, true);
 }
 
 /* The label of `[text][label` the content's end cuts short, read from the

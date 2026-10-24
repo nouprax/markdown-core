@@ -236,11 +236,16 @@ Step 2b built the query this way:
   `)` after it go on. A line of the block phase that
   ends the text reports the same way, for a callout's variant, a fence's
   info string, a directive block's name and an attribute tail. A reference
-  definition reports its destination when its paragraph closes.
+  definition reports its destination when its paragraph closes, and one in
+  angle brackets that no `>` closes yet when the definition fails.
 - The confirmation checks nodes, not field scopes, until step 2d adds them:
   a slot is closed when the document holds a node of its owner kind over
-  the field's start and the cursor's last byte, and an `id` slot's node must
-  also carry an anchor. Otherwise the opener must be `Text` in an inline
+  the field's start and the cursor's last byte, and no code span, formula,
+  inline HTML or comment inside that node holds the byte; an `id` slot's
+  node must also carry an anchor. One walk of the document indexes its
+  source ranges, so each confirmation climbs the ranges that hold a byte
+  rather than walking the document again. A field that ended at a space
+  before the cursor is dropped. Otherwise the opener must be `Text` in an inline
   root that holds the cursor's last byte. A slot that declares a name, such
   as a definition's label, stands only when closed. The inline openers are
   confirmed the same way. A block owner, such as a `CodeBlock` or a

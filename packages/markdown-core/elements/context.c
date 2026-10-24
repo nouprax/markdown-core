@@ -30,14 +30,29 @@ struct markdown_core_context {
     uint8_t *bytes;
 };
 
+/* A source range of a node of the document, the range of the holding that
+ * encloses it, by index, or -1, and its place in the document's walk. */
+typedef struct {
+    const markdown_core_node *node;
+    uint32_t start, end;
+    size_t order;
+    ptrdiff_t enclosing;
+} holding;
+
 /* What the query reads: the whole text and its line starts, the document
- * parsed from it, and the cursor's byte. */
+ * parsed from it, and the cursor's byte. `holdings` are the document's
+ * source ranges, read by one walk, in source order, outer before inner; when
+ * they nest, `nested`, the nodes that hold a byte are found by climbing
+ * from the last that starts at or before it, not by another walk. */
 typedef struct {
     const markdown_core_document *document;
     const uint8_t *source;
     size_t length;
     markdown_core_source_lines lines;
     size_t cursor;
+    holding *holdings;
+    size_t holding_count;
+    bool nested;
 } context_query;
 
 static markdown_core_scope query_scope(const context_query *query, size_t start, size_t end) {
@@ -54,17 +69,136 @@ static size_t line_end(const context_query *query, size_t offset) {
     return offset;
 }
 
+static int holding_order(const void *left, const void *right) {
+    const holding *a = left, *b = right;
+    if (a->start != b->start) {
+        return a->start < b->start ? -1 : 1;
+    }
+    if (a->end != b->end) {
+        return a->end > b->end ? -1 : 1;
+    }
+    return a->order < b->order ? -1 : a->order > b->order ? 1 : 0;
+}
+
+/* Reads the document's source ranges into the query's holdings with one
+ * walk, sorts them and links each to the range that encloses it; false when
+ * the walk or the list could not be allocated. */
+static bool read_holdings(context_query *query) {
+    size_t capacity = 0;
+    bool grown = true;
+    markdown_core_walk walk;
+    markdown_core_walk_item item;
+    markdown_core_walk_begin(&walk, query->document->root);
+    for (size_t order = 0; grown && markdown_core_walk_next(&walk, &item); order++) {
+        const markdown_core_place *ranges;
+        size_t count;
+        if (!item.node || !markdown_core_walk_ranges(&walk, &item, &ranges, &count)) {
+            continue;
+        }
+        for (size_t i = 0; grown && i < count; i++) {
+            if (ranges[i].start >= ranges[i].end) {
+                continue;
+            }
+            holding *grew =
+                markdown_core_reserve(query->holdings, &capacity, query->holding_count + 1, sizeof(*query->holdings));
+            grown = grew != NULL;
+            if (grew) {
+                query->holdings = grew;
+                query->holdings[query->holding_count++] =
+                    (holding){item.node, ranges[i].start, ranges[i].end, order, -1};
+            }
+        }
+    }
+    const bool failed = walk.failed || !grown;
+    markdown_core_walk_end(&walk);
+    if (failed) {
+        return false;
+    }
+    if (query->holding_count) {
+        qsort(query->holdings, query->holding_count, sizeof(*query->holdings), holding_order);
+    }
+    /* Each range's enclosing range is the innermost one still open where it
+     * starts; a range that crosses one's end leaves the ranges unnested. */
+    query->nested = true;
+    ptrdiff_t open = -1;
+    for (size_t i = 0; i < query->holding_count; i++) {
+        holding *at = &query->holdings[i];
+        while (open >= 0 && query->holdings[open].end <= at->start) {
+            open = query->holdings[open].enclosing;
+        }
+        if (open >= 0 && query->holdings[open].end < at->end) {
+            query->nested = false;
+        }
+        at->enclosing = open;
+        open = (ptrdiff_t)i;
+    }
+    return true;
+}
+
+/* The nodes of the document that hold the byte at `offset`, outermost
+ * first, as markdown_core_tree_holders lists them; false when the list
+ * could not be allocated. */
+static bool query_holders(const context_query *query, size_t offset, const markdown_core_node ***nodes, size_t *count) {
+    const markdown_core_node *last;
+    if (!query->nested) {
+        return markdown_core_tree_holders(query->document->root, offset, nodes, count, &last);
+    }
+    size_t low = 0, high = query->holding_count;
+    while (low < high) {
+        const size_t middle = low + (high - low) / 2;
+        if (query->holdings[middle].start <= offset) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    ptrdiff_t at = (ptrdiff_t)low - 1;
+    while (at >= 0 && query->holdings[at].end <= offset) {
+        at = query->holdings[at].enclosing;
+    }
+    size_t depth = 0;
+    for (ptrdiff_t up = at; up >= 0; up = query->holdings[up].enclosing) {
+        depth++;
+    }
+    *nodes = NULL;
+    *count = depth;
+    if (!depth) {
+        return true;
+    }
+    const markdown_core_node **held = markdown_core_alloc(depth, sizeof(*held));
+    size_t *orders = markdown_core_alloc(depth, sizeof(*orders));
+    if (!held || !orders) {
+        markdown_core_free((void *)held);
+        markdown_core_free(orders);
+        return false;
+    }
+    /* In walk order, as the walk lists them: a node the walk reaches through
+     * another, as a note through its citation, may nest otherwise. */
+    for (ptrdiff_t up = at; up >= 0; up = query->holdings[up].enclosing) {
+        size_t i = --depth;
+        for (; i + 1 < *count && query->holdings[up].order > orders[i + 1]; i++) {
+            held[i] = held[i + 1];
+            orders[i] = orders[i + 1];
+        }
+        held[i] = query->holdings[up].node;
+        orders[i] = query->holdings[up].order;
+    }
+    markdown_core_free(orders);
+    *nodes = held;
+    return true;
+}
+
 /* The deepest node of the document that holds the byte at `offset`, and its
  * holder before it, or NULL for either; false when the walk failed. */
 static bool held_by(const context_query *query, size_t offset, const markdown_core_node **node,
                     const markdown_core_node **holder) {
-    const markdown_core_node **path = NULL, *last;
+    const markdown_core_node **path = NULL;
     size_t count = 0;
     *node = *holder = NULL;
     if (offset >= query->length) {
         return true;
     }
-    if (!markdown_core_tree_holders(query->document->root, offset, &path, &count, &last)) {
+    if (!query_holders(query, offset, &path, &count)) {
         return false;
     }
     if (count) {
@@ -78,13 +212,13 @@ static bool held_by(const context_query *query, size_t offset, const markdown_co
 /* Whether `node` is one of the nodes of the document that hold the byte at
  * `offset`, in `*found`; false when the walk failed. */
 static bool holds(const context_query *query, const markdown_core_node *node, size_t offset, bool *found) {
-    const markdown_core_node **path = NULL, *last;
+    const markdown_core_node **path = NULL;
     size_t count = 0;
     *found = false;
     if (offset >= query->length) {
         return true;
     }
-    if (!markdown_core_tree_holders(query->document->root, offset, &path, &count, &last)) {
+    if (!query_holders(query, offset, &path, &count)) {
         return false;
     }
     for (size_t i = 0; i < count && !*found; i++) {
@@ -92,6 +226,20 @@ static bool holds(const context_query *query, const markdown_core_node *node, si
     }
     markdown_core_free((void *)path);
     return true;
+}
+
+/* Whether `node` holds its source as literal text, which no construct
+ * reads inside: a code span, a formula, inline HTML or a comment. */
+static bool literal(const markdown_core_node *node) {
+    switch (markdown_core_node_get_kind(node)) {
+    case MARKDOWN_CORE_KIND_CODE:
+    case MARKDOWN_CORE_KIND_FORMULA:
+    case MARKDOWN_CORE_KIND_HTML:
+    case MARKDOWN_CORE_KIND_COMMENT:
+        return true;
+    default:
+        return false;
+    }
 }
 
 /* Whether the document holds a node of kind `owner` whose source holds the
@@ -103,7 +251,7 @@ static bool holds(const context_query *query, const markdown_core_node *node, si
 static bool finished_by(const context_query *query, markdown_core_node_kind owner, size_t first, bool anchored,
                         bool *found) {
     size_t probe = query->cursor > first || query->cursor >= query->length ? query->cursor - 1 : query->cursor;
-    const markdown_core_node **at_probe = NULL, **at_first = NULL, *last;
+    const markdown_core_node **at_probe = NULL, **at_first = NULL;
     size_t probe_count = 0, first_count = 0;
     *found = false;
     if ((!query->cursor && !query->length) || owner == MARKDOWN_CORE_KIND_NONE) {
@@ -112,16 +260,24 @@ static bool finished_by(const context_query *query, markdown_core_node_kind owne
     if (first >= query->length) {
         first = probe;
     }
-    if (!markdown_core_tree_holders(query->document->root, probe, &at_probe, &probe_count, &last) ||
-        !markdown_core_tree_holders(query->document->root, first, &at_first, &first_count, &last)) {
+    if (!query_holders(query, probe, &at_probe, &probe_count) ||
+        !query_holders(query, first, &at_first, &first_count)) {
         markdown_core_free((void *)at_probe);
         return false;
+    }
+    /* A node that holds its bytes as literal text, deeper than the one
+     * found, holds them instead: a construct inside a code span is text. */
+    size_t opaque = 0;
+    for (size_t i = 0; i < probe_count; i++) {
+        if (literal(at_probe[i])) {
+            opaque = i + 1;
+        }
     }
     for (size_t i = 0; i < probe_count && !*found; i++) {
         if (markdown_core_node_get_kind(at_probe[i]) != owner || (anchored && !at_probe[i]->attributes.anchor.len)) {
             continue;
         }
-        for (size_t j = 0; j < first_count; j++) {
+        for (size_t j = 0; j < first_count && opaque <= i + 1; j++) {
             if (at_first[j] == at_probe[i]) {
                 *found = true;
                 break;
@@ -334,6 +490,11 @@ markdown_core_status markdown_core_document_context(const markdown_core_document
         markdown_core_free(query.lines.starts);
         return MARKDOWN_CORE_OUT_OF_BOUNDS;
     }
+    if (!read_holdings(&query)) {
+        markdown_core_free(query.holdings);
+        markdown_core_free(query.lines.starts);
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
     markdown_core_context_sink sink = {.source = source, .length = query.cursor};
     markdown_core_document *before = NULL;
     markdown_core_context *made = markdown_core_alloc(1, sizeof(*made));
@@ -345,6 +506,7 @@ markdown_core_status markdown_core_document_context(const markdown_core_document
     }
     markdown_core_document_free(before);
     markdown_core_context_sink_clear(&sink);
+    markdown_core_free(query.holdings);
     markdown_core_free(query.lines.starts);
     if (status != MARKDOWN_CORE_OK) {
         markdown_core_context_free(made);
