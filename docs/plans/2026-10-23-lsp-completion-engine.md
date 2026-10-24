@@ -1,9 +1,7 @@
 # A Markdown language server on Markdown Core
 
-Status: proposed. Nothing in this plan is built. On 2026-10-24 the owner
-decided D1 and D2: the server is a TypeScript package in this repository.
-Section 10 lists the remaining decisions, which the owner makes before
-rollout step 2.
+Status: proposed. Nothing in this plan is built. Section 10 lists the
+decisions the owner makes before rollout step 2.
 
 The owner's requirement, 2026-10-23:
 
@@ -436,7 +434,7 @@ Each step is one pull request and leaves `main` releasable.
 
 ## 10. Decisions for the owner
 
-- **D1 Where the server lives. Decided 2026-10-24: a package in this repository,**
+- **D1 Where the server lives. Proposed: a package in this repository,**
   `packages/markdown-language-server`, in the pnpm workspace beside
   `es-markdown-core`. A parser change and the server change that uses it then
   land in one pull request, and the server tests run against the parser at
@@ -445,7 +443,7 @@ Each step is one pull request and leaves `main` releasable.
   it keeps this repository a parser, at the cost of a release between every
   parser change and the server change that uses it. A new repository has to
   be created on GitHub by the owner.
-- **D2 Language. Decided 2026-10-24: TypeScript on the WebAssembly binding.** The
+- **D2 Language. Proposed: TypeScript on the WebAssembly binding.** The
   ECMAScript binding already runs the C parser in Node and in browsers, and
   already counts UTF-16 columns by default. `vscode-languageserver` is the
   protocol's reference implementation, and one build serves VS Code, Node
