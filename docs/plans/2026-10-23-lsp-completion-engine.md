@@ -547,14 +547,17 @@ second parse path (AGENTS.md).
 
 ## 9. Rollout
 
-Each step is one pull request and leaves `main` releasable.
+Each step is one pull request and leaves `main` releasable. Track W runs
+beside steps 1 to 7: it does not depend on the engine, and step 8 depends on
+it (D6).
 
 - [ ] **Step 0: This plan.** The owner's decisions of section 10.
 - [ ] **Step 1: Settle point.** Step 8 of the incremental parsing plan
    (section 3.5).
 - [ ] **Step 2: Context in C.** The slot audit of `canonical-ast.md`, the
-   generated slot kinds, `markdown_core_document_context` and `markdown_core_slot_spell`, the context agreement
-   tests and the dialect spec's description of slots.
+   generated slot kinds, `markdown_core_document_context` and
+   `markdown_core_slot_spell`, the context agreement tests and the dialect
+   spec's description of slots.
 - [ ] **Step 3: Bindings.** Context, path and field scopes in Swift, Kotlin
    and ECMAScript, and the vocabulary exports (3.3, 3.4).
 - [ ] **Step 4: Engine skeleton.** `markdown-core-lsp` in C with the
@@ -565,15 +568,20 @@ Each step is one pull request and leaves `main` releasable.
    round-trip test, in C and Swift.
 - [ ] **Step 6: Workspace completion.** The workspace index with
    host-supplied files, and the providers of 5.2 and 5.3.
-- [ ] **Step 7: Kotlin and ECMAScript.** The engine's Kotlin binding for
+- [ ] **Step 7 onward: Navigation.** Hover, definition, references, links,
+   rename, symbols, folding, semantic tokens and diagnostics (section 4.3),
+   one feature per step, in C and Swift.
+- [ ] **Step 8: Formatting.** `markdown_core_context_enter` with its
+   round-trip test and on-type formatting on it, then document and range
+   formatting on track W's writer (4.4), in C and Swift.
+- [ ] **Step 9: Kotlin and ECMAScript.** The engine's Kotlin binding for
    Android and its ECMAScript binding for the web, one binding per step
    (D7).
-- [ ] **Step 8 onward: Navigation.** Hover, definition, references, links,
-   rename, symbols, folding, semantic tokens and diagnostics (section 4.3),
-   one feature per step.
-- [ ] **Then: Formatting.** `markdown_core_context_enter` in C and every
-   binding, with its round-trip test, then on-type formatting on it (4.4). The Markdown
-   writer's own plan, then document and range formatting on it.
+- [ ] **Track W: Markdown writer.** Its own plan, then the writer in the
+   parser library and every binding: `markdown_core_document_write`, Swift
+   `Document.write()`, with the meaning and idempotence invariants of 4.4.
+   It is a parser feature, not an engine one, and needs none of steps 1
+   to 7.
 
 ## 10. Decisions for the owner
 
@@ -595,10 +603,12 @@ Each step is one pull request and leaves `main` releasable.
 - **D5 Latency budget.** 10 ms p95 for documents up to 256 KiB, reported and
   not gated until the owner decides (section 7).
 - **D6 Scope and order. Decided 2026-10-24: completion, then navigation,
-  then formatting,** all in scope (4.3, 4.4). The owner: "navigation是LSP的一部分么？format呢？如果是的话可能也得支持，只不过是在completion之后". Still
+  then formatting, all on C and Swift before the other bindings,** with the
+  Markdown writer as track W in parallel (4.3, 4.4, section 9). The owner,
+  on the order: "我们需要在Step 7前实现Step 8而Then里的Markdown Generator，因为AST->Markdown是LSP独立的前置依赖它应该在前序step时可以并行处理". The owner: "navigation是LSP的一部分么？format呢？如果是的话可能也得支持，只不过是在completion之后". Still
   proposed: no bibliography format in step 6 beyond CSL JSON.
 - **D7 Platform order. Decided 2026-10-24: C and Swift first, then Kotlin
-  and ECMAScript** (R6, step 7). The owner: "我们这个repo里没有任何的Windows
+  and ECMAScript** (R6, step 9). The owner: "我们这个repo里没有任何的Windows
   支持，所以我的建议是先做C和Swift binding，然后做Kotlin及TS的binding". This
   repository ships no Windows binding, so Windows is outside this plan. The
   parser's own new queries keep landing in every binding at once.
