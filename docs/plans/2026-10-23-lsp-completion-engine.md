@@ -62,7 +62,7 @@ owner's decisions, and section 11 records rejected alternatives.
   existing convention: the count of columns from its line's start to the
   end of the range, which is already LSP's exclusive end, so it maps to
   `(line - 1, column)`. Under this one rule, `abc` at `1:1..1:3` becomes
-  `0:0..0:3`, and an empty scope `L:C..L:C-1` such as an empty `typed`
+  `0:0..0:3`, and an empty scope `L:C..L:C-1` such as an empty `before`
   becomes the empty range `L-1:C-1..L-1:C-1`. A range ending right after a
   line terminator, at `L:0` of the next line, becomes `L-1:0`. The slot
   scopes of section 3 follow the `Scope` contract unchanged, and the
@@ -134,23 +134,23 @@ a public value.
 
 ```swift
 public struct Context: Sendable, Equatable {
-    public let blocks: [OpenBlock]   // open blocks, outermost first
+    public let blocks: [Opener]      // open blocks, outermost first
     public let inlines: [Opener]     // provisional openers, earliest first
     public let slots: [Slot]         // what the cursor may be typing
 }
 
 public struct Slot: Sendable, Equatable {
-    public let kind: SlotKind        // section 3.2
+    public let kind: Kind            // section 3.2
     public let owner: NodeKind       // the construct the slot belongs to
-    public let typed: Scope          // slot start ..< cursor
-    public let rest: Scope           // cursor ..< end of the slot's token
+    public let before: Scope         // slot start ..< cursor
+    public let after: Scope          // cursor ..< end of the slot's token
     public let prefix: [String]      // earlier fields the slot depends on
     public let closed: Bool          // the whole document finishes the construct
     public func spell(_ value: String) -> Insertion?   // section 3.2
 }
 
 public struct Insertion: Sendable, Equatable {
-    public let text: String          // replaces typed and rest
+    public let text: String          // replaces before and after
     public let cursor: Int           // offset in text where the caret lands
 }
 
@@ -172,8 +172,8 @@ extension Document {
   cursor. There is more than one only where the left context is ambiguous in
   the grammar itself: `#` at the end of a paragraph may start a topic or a
   block identifier, and the right context decides. The server offers both.
-  `typed` is the partial token the user has written, so the server can filter
-  and replace it; `rest` is the same field's continuation after the cursor,
+  `before` is the partial token the user has written, so the server can filter
+  and replace it; `after` is the same field's continuation after the cursor,
   read by the same scanner in the whole source, so that the
   completion's edit replaces the whole token when the user completes inside
   one. `prefix` carries the fields before the slot that scope its candidates,
@@ -189,11 +189,11 @@ extension Document {
   Ownership is checked with the field's own scope (3.3), not with the
   node's opener. In `` `x`{.co‸de} ``, the `{` is not where the `Code` node
   opens, but it does open that node's attribute field, so the
-  `attributeClass` slot survives. An opener that the
+  `class` slot survives. An opener that the
   whole document absorbs into another node is dropped, and so are its slots.
   That node may be a code span, HTML, a formula, an autolink, a comment, or
   a construct that closes before the cursor. Last, the query scans forward
-  in the whole source for `rest`. It is one algorithm with the parse: the
+  in the whole source for `after`. It is one algorithm with the parse: the
   open state and the whole document are the engine's own results, read and
   not recomputed (incremental plan R6).
 
@@ -201,7 +201,7 @@ extension Document {
   construct after the cursor, as in `[[Fi‸eld notes]]`, and false when the
   construct is still open, as in `See [[Field no‸`.
 - **`spell(_:)`** is the parser's spelling of a value in the slot. It returns
-  the text that replaces `typed` and `rest`. That text writes the value in
+  the text that replaces `before` and `after`. That text writes the value in
   the field's own syntax and escapes or brackets what the field cannot hold
   as written, such as a space in a link destination (written `<…>`) or a `|`
   or `]]` in a cross target. When the construct is not `closed`, the text
@@ -219,31 +219,37 @@ Kotlin and ECMAScript mirror the Swift shape (R6).
 
 ### 3.2 Slot kinds
 
-One slot kind per field of the dialect that holds a name, a key or a path
+One slot kind per role of a field of the dialect that holds a name, a key or a path
 that an editor can complete. The list is generated from the node-kind
 schemas, as `markdown_core_node_kind` is, so a new field with a completable
 value appears in the context query by construction.
 
 | Slot kind | Example, cursor at `‸` | Owner |
 | --- | --- | --- |
-| `linkDestination` | `[text](‸` | `Link`, `Embedded` |
-| `linkAnchor` | `[text](#‸`, `[text](file.md#‸` | `Link` |
-| `referenceLabel` | `[text][‸` | `Link`, `Embedded` |
-| `crossTarget` | `[[‸`, `![[‸` | `CrossLink`, `CrossEmbedded` |
-| `crossAnchor` | `[[Note#‸`, `[[#‸` | `CrossLink`, `CrossEmbedded` |
-| `footnoteLabel` | `[^‸` | `Citation` |
-| `citationKey` | `[@‸`, `[see @‸` | `Citation` |
-| `specimenLabel` | `(@‸` | `Cite` |
-| `directiveName` | `:‸`, `:::‸` | `Directive`, `DirectiveBlock` |
-| `attributeId` | `{#‸` | any attribute site |
-| `attributeClass` | `{.‸` | any attribute site |
-| `attributeKey` | `{‸`, `{.a ‸` | any attribute site |
-| `calloutType` | `> [!‸` | `Callout` |
-| `codeLanguage` | ` ```‸ ` | `CodeBlock` |
-| `topicName` | `#‸` | `Topic` |
-| `blockIdentifier` | `text #‸` at a paragraph's end | `Paragraph`, `ListItem` |
-| `metadataKey` | a line start in an open `---` envelope | `Metadata` |
-| `metadataValue` | after `state: ` | `Metadata` |
+| `dest` | `[text](‸`, `[[‸`, `![[‸` | `Link`, `Embedded`, `CrossLink`, `CrossEmbedded`, `Reference` |
+| `anchor` | `[text](#‸`, `[text](file.md#‸`, `[[Note#‸`, `[[#‸` | `Link`, `CrossLink`, `CrossEmbedded` |
+| `anchor` | `text #‸` at a paragraph's end | `Paragraph`, `ListItem` |
+| `label` | `[text][‸` | `Link`, `Embedded` |
+| `footnote` | `[^‸` | `Cite` |
+| `bib` | `[@‸`, `[see @‸` | `Cite` |
+| `specimen` | `(@‸` | `Cite` |
+| `name` | `:‸`, `:::‸`, `#‸` | `Directive`, `DirectiveBlock`, `Topic` |
+| `id` | `{#‸` | any attribute site |
+| `class` | `{.‸` | any attribute site |
+| `record` | `{‸`, `{.a ‸` | any attribute site |
+| `variant` | `> [!‸` | `Callout` |
+| `info` | ` ```‸ ` | `CodeBlock` |
+| `field` | a line start in an open `---` envelope | `Metadata` |
+| `value` | after `state: ` | `Metadata` |
+
+A slot kind is one word without the letters `g`, `j` or `y` (the owner's
+naming preference, 2026-10-24). Where the canonical AST already names the
+field in such a word, the slot kind is that name: `dest`, `anchor`,
+`label`, `name`, `id`, `variant` and `info`. The three citation families
+take the names of `CitationReferent`'s branches, `footnote`, `bib` and
+`specimen`, and an attribute record's name is `record`. A kind that several
+owners share, such as `name` or `dest`, means the same role in each, and
+`owner` tells the providers which construct it is.
 
 The list is the starting point for review against the dialect spec, not a
 closed set: section 9 step 2 audits every field of `docs/specs/canonical-ast.md`.
@@ -256,8 +262,8 @@ closed set: section 9 step 2 audits every field of `docs/specs/canonical-ast.md`
 - **`Document.scope(of:field:in:)`** answers a field's source ranges, computed
   on request from the node's runs by the scanner that read the field, as
   `scope(of:in:)` computes a node's (incremental plan D1). Hover, go to
-  definition and rename need it; completion uses the slot's `typed` and
-  `rest` instead.
+  definition and rename need it; completion uses the slot's `before` and
+  `after` instead.
 
 ### 3.4 Vocabularies
 
@@ -279,8 +285,8 @@ are not recorded, and the query has no `inlines`.
 
 ### 4.1 One C engine, reached in process
 
-The engine is a C library, `markdown-core-language`, beside the parser in
-`packages/markdown-core/language` and built by the same CMake project. It
+The engine is a C library, `markdown-core-workspace`, beside the parser in
+`packages/markdown-core/workspace` and built by the same CMake project. It
 links the parser directly, so the context query, the cached documents and
 the providers share one address space and one allocator, and no request
 copies a document across a boundary. It owns:
@@ -305,10 +311,10 @@ parser:
 
 | Platform | Host | Binding |
 | --- | --- | --- |
-| iOS, macOS (first) | the notebook's native editor | Swift `MarkdownLanguage` in `swift-markdown-core`, values of the LSP types |
-| Android | the Android editor | Kotlin `MarkdownLanguage` in `kotlin-markdown-core` |
+| iOS, macOS (first) | the notebook's native editor | Swift `Workspace` in `swift-markdown-core`, values of the LSP types |
+| Android | the Android editor | Kotlin `Workspace` in `kotlin-markdown-core` |
 | Windows | the Windows editor | the C ABI, or the Kotlin native target |
-| Web | the web editor | ECMAScript `MarkdownLanguage` in `es-markdown-core`, from WebAssembly |
+| Web | the web editor | ECMAScript `Workspace` in `es-markdown-core`, from WebAssembly |
 
 On every platform the editor calls the engine as a library, in process. For
 the notebook's use of Markdown as a command input, a completion therefore
@@ -338,9 +344,9 @@ Version 1 implements:
   section 3.4, answering a `CompletionList` whose items carry a `textEdit`:
   the slot's `spell` of the candidate, as a snippet whose `$0` is the
   insertion's `cursor` when the client supports snippets. The edit is a
-  plain `TextEdit` over `typed` and `rest`, never an `InsertReplaceEdit`.
+  plain `TextEdit` over `before` and `after`, never an `InsertReplaceEdit`.
   A client may accept an `InsertReplaceEdit` in insert mode, which would
-  leave `rest` in place and break R2. Covering both means that accepting `getting-started` at `[text](#ge‸tting-started)` gives
+  leave `after` in place and break R2. Covering both means that accepting `getting-started` at `[text](#ge‸tting-started)` gives
   the anchor and not `#getting-startedtting-started`. `completionItem/resolve`
   fills `documentation` lazily: the heading's section, the footnote's text,
   the bibliography entry. Every item sets `filterText` to its own
@@ -350,7 +356,7 @@ Version 1 implements:
 - **Single-line edits.** LSP requires a completion's edit range to be one
   line, but some fields span line endings, such as a reference label
   `[text][getting\nsta‸rted]`. The primary edit then covers only the part of
-  `typed` and `rest` on the cursor's line, and `additionalTextEdits` delete
+  `before` and `after` on the cursor's line, and `additionalTextEdits` delete
   the parts on other lines. The ranges do not overlap, and applied together
   they give the same text as the parser's `Insertion`. R2's round-trip test
   applies them as one edit.
@@ -372,13 +378,13 @@ candidates; it never reads the source text.
 
 | Slot kind | Candidates |
 | --- | --- |
-| `linkAnchor` (no file) | heading anchors, explicit anchors, block identifiers |
-| `crossAnchor` (`[[#`) | headings by text, then `^` block identifiers |
-| `referenceLabel` | `Document.references` labels |
-| `footnoteLabel` | `Document.footnotes` labels |
-| `specimenLabel` | `Document.specimens` labels |
-| `attributeId`, `attributeClass`, `attributeKey` | ids, classes and keys used elsewhere in the document |
-| `metadataKey`, `metadataValue` | the vocabulary of section 3.4, minus keys already present |
+| `anchor` in a `Link` with no file | heading anchors, explicit anchors, block identifiers |
+| `anchor` in a `CrossLink` with no note (`[[#`) | headings by text, then `^` block identifiers |
+| `label` | `Document.references` labels |
+| `footnote` | `Document.footnotes` labels |
+| `specimen` | `Document.specimens` labels |
+| `id`, `class`, `record` | ids, classes and keys used elsewhere in the document |
+| `field`, `value` | the vocabulary of section 3.4, minus keys already present |
 
 ### 5.2 From the workspace
 
@@ -394,18 +400,18 @@ heading renamed in an unsaved editor, and no keystroke updates the index.
 
 | Slot kind | Candidates |
 | --- | --- |
-| `linkDestination` | workspace files by relative path |
-| `linkAnchor` (with file), `crossAnchor` (with note) | that file's anchors and headings |
-| `crossTarget` | notes by name, and for embeds every file |
-| `topicName` | topics used in the workspace |
-| `directiveName` | configured directive names, then names used in the workspace |
-| `citationKey` | keys of the configured bibliography, then keys used in the workspace |
+| `dest` in a `Link` or `Embedded` | workspace files by relative path |
+| `anchor` in a `Link` with a file, or a `CrossLink` with a note | that file's anchors and headings |
+| `dest` in a `CrossLink` or `CrossEmbedded` | notes by name, and for embeds every file |
+| `name` in a `Topic` | topics used in the workspace |
+| `name` in a `Directive` or `DirectiveBlock` | configured directive names, then names used in the workspace |
+| `bib` | keys of the configured bibliography, then keys used in the workspace |
 
 ### 5.3 From configuration
 
-`calloutType` (a default set, extensible), `codeLanguage` (a default set,
-extensible), directive names with their documentation, and the bibliography
-file. Configuration arrives through `workspace/configuration`.
+`variant` (a default set of callout types, extensible), `info` (a default
+set of code languages, extensible), directive names with their
+documentation, and the bibliography file. Configuration arrives through `workspace/configuration`.
 
 ## 6. Documents and edits
 
@@ -421,7 +427,7 @@ text anywhere. This plan does not revive general edits. Instead:
 - A completion request runs `context(at:in:)` on the version's cached
   document. Its cost is one session over the text before the cursor, the
   confirmation lookups in the cached document, and the forward scan for
-  `rest`. A completion request is therefore one of the requests that need
+  `after`. A completion request is therefore one of the requests that need
   the whole document, and the first one after a change pays for its parse.
 - The workspace index parses a file when it changes on disk or closes in the
   editor, never per keystroke. While a file is open, its current version's
@@ -497,7 +503,7 @@ Each step is one pull request and leaves `main` releasable.
    tests and the dialect spec's description of slots.
 - [ ] **Step 3: Bindings.** Context, path and field scopes in Swift, Kotlin
    and ECMAScript, and the vocabulary exports (3.3, 3.4).
-- [ ] **Step 4: Engine skeleton.** `markdown-core-language` in C with the
+- [ ] **Step 4: Engine skeleton.** `markdown-core-workspace` in C with the
    lifecycle, position encoding, document store and sync, its Swift binding,
    the JSON-RPC adapter and the transcript harness, and the latency report
    (sections 4, 6, 7). Completion answers an empty list.
@@ -515,7 +521,7 @@ Each step is one pull request and leaves `main` releasable.
 ## 10. Decisions for the owner
 
 - **D1 Where the engine lives. Decided 2026-10-24: this repository,** as
-  the C library `markdown-core-language` in `packages/markdown-core/language`
+  the C library `markdown-core-workspace` in `packages/markdown-core/workspace`
   with its bindings in the existing platform packages (4.1). A parser change
   and the engine change that uses it land in one pull request, and the
   engine's tests run against the parser at the same commit.
