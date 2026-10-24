@@ -867,6 +867,18 @@ int markdown_core_inline_state_attributes(markdown_core_inline_state *inline_sta
     if (inline_state->text_end >= 0 && start >= inline_state->text_end) {
         return 0;
     }
+    /* Most constructs have no attribute block after them: only a `{` is
+     * read further. At the input's end a block may yet begin, once the
+     * input goes on. */
+    if (start >= inline_state->input.len) {
+        if (markdown_core_inline_tracks_end(inline_state)) {
+            S_saw_end(inline_state, start, owner);
+        }
+        return 0;
+    }
+    if (inline_state->input.data[start] != '{') {
+        return 0;
+    }
     if (!inline_state->attributes.data) {
         inline_state->attributes = (markdown_core_attribute_parser){
             .data = inline_state->input.data,
@@ -878,10 +890,8 @@ int markdown_core_inline_state_attributes(markdown_core_inline_state *inline_sta
     if (inline_state->attributes.oom) {
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
     }
-    /* A block may begin at the end, and one that does not close may close
-     * once the input goes on. */
-    if (markdown_core_inline_tracks_end(inline_state) &&
-        (start >= inline_state->input.len || (!matched && inline_state->input.data[start] == '{'))) {
+    /* A block that does not close may close once the input goes on. */
+    if (!matched && markdown_core_inline_tracks_end(inline_state)) {
         S_saw_end(inline_state, start, owner);
     }
     return matched;
