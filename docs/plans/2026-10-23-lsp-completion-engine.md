@@ -651,11 +651,12 @@ it (D6).
   支持，所以我的建议是先做C和Swift binding，然后做Kotlin及TS的binding". This
   repository ships no Windows binding, so Windows is outside this plan. The
   parser's own new queries keep landing in every binding at once.
-- **D8 JSON. Proposed: a small JSON reader and writer in this repository,**
-  used by `markdown-core-server` for the protocol and by the engine to read a
-  CSL JSON bibliography (5.4), so that no platform library parses JSON on its
-  own and the repository keeps no third-party runtime dependency. The
-  alternative is vendoring an existing C JSON library such as yyjson.
+- **D8 JSON. Decided 2026-10-24: JSON is parsed in C,** by
+  `markdown-core-server` for the protocol and by the engine for a CSL JSON
+  bibliography (5.4), so that no platform library parses JSON on its own.
+  The owner: "我认为D8这项应该放在C侧进行解析". Proposed: the reader and
+  writer are a small one in this repository, which keeps no third-party
+  runtime dependency, rather than a vendored C library such as yyjson.
 
 ## 11. Rejected alternatives
 
