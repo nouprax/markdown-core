@@ -145,9 +145,9 @@ static inline void markdown_core_inline_seat_cursor(markdown_core_inline_state *
     }
     int cursor = inline_state->mark_cursor, last = owner->content_map.first + owner->content_map.count - 1;
     assert(cursor >= owner->content_map.first && cursor <= last);
-    const markdown_core_line_mark *mark = &parser->line_marks[cursor];
+    const markdown_core_line_mark *mark = &parser->line_marks.values[cursor];
     inline_state->mark_run_start = mark->content_offset;
-    inline_state->mark_run_end = cursor < last ? parser->line_marks[cursor + 1].content_offset : INT32_MAX;
+    inline_state->mark_run_end = cursor < last ? parser->line_marks.values[cursor + 1].content_offset : INT32_MAX;
     inline_state->mark_line = mark->line;
     inline_state->mark_source = mark->source;
     inline_state->mark_step = mark->source_step;

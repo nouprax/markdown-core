@@ -25,6 +25,7 @@ void markdown_core_strbuf_init(markdown_core_strbuf *buf, bufsize_t initial_size
     buf->asize = 0;
     buf->size = 0;
     buf->oom = 0;
+    buf->ahead = 0;
     /* The cast drops const and nothing writes through it: `asize` is 0 exactly
      * while `ptr` is this sentinel, and every write path either grows first or
      * is guarded by `asize > 0`. */
@@ -49,6 +50,28 @@ static MARKDOWN_CORE_INLINE void S_strbuf_grow_by(markdown_core_strbuf *buf, buf
     if (target >= buf->asize) {
         markdown_core_strbuf_grow(buf, target);
     }
+}
+
+/* THE STORAGE OF A BUFFER THAT GROWS AHEAD: its bytes, after the header
+ * (buffer.h, MARKDOWN_CORE_STRBUF_HEADER). */
+static void *S_header_take(void *pool, size_t capacity, size_t width) {
+    (void)pool;
+    unsigned char *base = markdown_core_realloc(NULL, MARKDOWN_CORE_STRBUF_HEADER + capacity * width);
+    return base ? base + MARKDOWN_CORE_STRBUF_HEADER : NULL;
+}
+
+static void S_header_release(void *pool, void *values) {
+    (void)pool;
+    markdown_core_free((unsigned char *)values - MARKDOWN_CORE_STRBUF_HEADER);
+}
+
+static const markdown_core_ahead_source S_header_storage = {S_header_take, S_header_release, NULL};
+
+/* The storage of a buffer that grows ahead, and the storage it was moving
+ * to, given back. */
+static void S_release_ahead(markdown_core_strbuf *buf) {
+    markdown_core_ahead_free(markdown_core_strbuf_header(buf), &S_header_storage);
+    S_header_release(NULL, buf->ptr);
 }
 
 void markdown_core_strbuf_grow(markdown_core_strbuf *buf, bufsize_t target_size) {
@@ -83,7 +106,17 @@ void markdown_core_strbuf_grow(markdown_core_strbuf *buf, bufsize_t target_size)
         new_size = MARKDOWN_CORE_STRBUF_LIMIT + 1;
     }
 
-    unsigned char *new_ptr = (unsigned char *)markdown_core_realloc(buf->asize ? buf->ptr : NULL, new_size);
+    unsigned char *new_ptr;
+    if (buf->ahead) {
+        /* A buffer that grew ahead moves whole and grows as any other. */
+        if ((new_ptr = (unsigned char *)markdown_core_realloc(NULL, new_size))) {
+            memcpy(new_ptr, buf->ptr, (size_t)buf->size);
+            S_release_ahead(buf);
+            buf->ahead = 0;
+        }
+    } else {
+        new_ptr = (unsigned char *)markdown_core_realloc(buf->asize ? buf->ptr : NULL, new_size);
+    }
     if (!new_ptr) {
         buf->oom = 1;
         return;
@@ -102,7 +135,9 @@ void markdown_core_strbuf_free(markdown_core_strbuf *buf) {
         return;
     }
 
-    if (markdown_core_strbuf_owns(buf)) {
+    if (buf->ahead && markdown_core_strbuf_owns(buf)) {
+        S_release_ahead(buf);
+    } else if (markdown_core_strbuf_owns(buf)) {
         markdown_core_free(buf->ptr);
     }
 
@@ -111,6 +146,7 @@ void markdown_core_strbuf_free(markdown_core_strbuf *buf) {
 
 void markdown_core_strbuf_clear(markdown_core_strbuf *buf) {
     buf->size = 0;
+    markdown_core_strbuf_unsettle(buf, 0);
 
     /* An allocation failure is a fact about the write that failed, not a
      * property the buffer keeps. `oom` says "content was lost"; after a clear
@@ -138,6 +174,7 @@ void markdown_core_strbuf_set(markdown_core_strbuf *buf, const unsigned char *da
             }
             memmove(buf->ptr, data, len);
         }
+        markdown_core_strbuf_unsettle(buf, data != buf->ptr ? 0 : len);
         buf->size = len;
         buf->ptr[buf->size] = '\0';
     }
@@ -153,6 +190,61 @@ void markdown_core_strbuf_put_grown(markdown_core_strbuf *buf, const unsigned ch
         return;
     }
     memmove(buf->ptr + buf->size, data, len);
+    buf->size += len;
+    buf->ptr[buf->size] = '\0';
+}
+
+void markdown_core_strbuf_put_ahead_grown(markdown_core_strbuf *buf, const unsigned char *data, bufsize_t len) {
+    /* A buffer of at most two slices moves whole, as any buffer does. */
+    if (!buf->ahead && (size_t)buf->asize <= 2 * markdown_core_ahead_slice(1)) {
+        markdown_core_strbuf_put_grown(buf, data, len);
+        return;
+    }
+    if (len <= 0 || buf->oom) {
+        return;
+    }
+    if (len > MARKDOWN_CORE_STRBUF_LIMIT - buf->size) {
+        buf->oom = 1;
+        return;
+    }
+    /* The bytes and the terminator, which is not one of the bytes the
+     * buffer copies ahead: the next append writes over it. */
+    const size_t total = (size_t)buf->size + (size_t)len + 1;
+    markdown_core_ahead state = {(size_t)buf->asize, NULL, 0};
+    if (buf->ahead) {
+        state = *markdown_core_strbuf_header(buf);
+    }
+    size_t larger = state.capacity;
+    while (larger < total) {
+        larger *= 2;
+    }
+    if (larger > (size_t)MARKDOWN_CORE_STRBUF_LIMIT + 1) {
+        /* Room past the limit could never be written (buffer.h): the
+         * buffer moves whole. */
+        markdown_core_strbuf_put_grown(buf, data, len);
+        return;
+    }
+    size_t room = (size_t)buf->asize;
+    unsigned char *moved;
+    if (buf->ahead) {
+        moved = markdown_core_ahead_extend(&state, &S_header_storage, buf->ptr, &room, (size_t)buf->size, total, 1);
+    } else if ((moved = S_header_take(NULL, larger, 1))) {
+        /* The buffer starts to grow ahead: it moves whole once more, to
+         * storage with the header. */
+        memcpy(moved, buf->ptr, (size_t)buf->size);
+        markdown_core_free(buf->ptr);
+        buf->ahead = 1;
+        state.capacity = larger;
+        room = markdown_core_ahead_room(larger, total, 1);
+    }
+    if (!moved) {
+        buf->oom = 1;
+        return;
+    }
+    buf->ptr = moved;
+    buf->asize = (bufsize_t)room;
+    *markdown_core_strbuf_header(buf) = state;
+    memmove(buf->ptr + buf->size, data, (size_t)len);
     buf->size += len;
     buf->ptr[buf->size] = '\0';
 }
@@ -204,6 +296,17 @@ unsigned char *markdown_core_strbuf_detach(markdown_core_strbuf *buf) {
         return (unsigned char *)markdown_core_alloc(1, 1);
     }
 
+    if (buf->ahead) {
+        /* What leaves the buffer is storage of the allocator's own. */
+        unsigned char *own = markdown_core_realloc(NULL, (size_t)buf->size + 1);
+        if (!own) {
+            markdown_core_strbuf_free(buf);
+            return NULL;
+        }
+        memcpy(own, buf->ptr, (size_t)buf->size + 1);
+        S_release_ahead(buf);
+        data = own;
+    }
     markdown_core_strbuf_init(buf, 0);
     return data;
 }
@@ -254,6 +357,7 @@ void markdown_core_strbuf_truncate(markdown_core_strbuf *buf, bufsize_t len) {
 
     if (len < buf->size) {
         buf->size = len;
+        markdown_core_strbuf_unsettle(buf, len);
         buf->ptr[buf->size] = '\0';
     }
 }
@@ -264,6 +368,7 @@ void markdown_core_strbuf_drop(markdown_core_strbuf *buf, bufsize_t n) {
             n = buf->size;
         }
         buf->size = buf->size - n;
+        markdown_core_strbuf_unsettle(buf, 0);
         if (buf->size) {
             memmove(buf->ptr, buf->ptr + n, buf->size);
         }
@@ -285,6 +390,7 @@ void markdown_core_strbuf_rtrim(markdown_core_strbuf *buf) {
         buf->size--;
     }
 
+    markdown_core_strbuf_unsettle(buf, buf->size);
     buf->ptr[buf->size] = '\0';
 }
 
@@ -308,6 +414,7 @@ void markdown_core_strbuf_trim(markdown_core_strbuf *buf) {
 extern void markdown_core_strbuf_unescape(markdown_core_strbuf *buf) {
     bufsize_t r, w;
 
+    markdown_core_strbuf_unsettle(buf, 0);
     for (r = 0, w = 0; r < buf->size; ++r) {
         if (buf->ptr[r] == '\\' && markdown_core_ispunct(buf->ptr[r + 1])) {
             r++;

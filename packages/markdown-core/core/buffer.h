@@ -9,6 +9,7 @@
 #include <limits.h>
 #include <stdint.h>
 #include "config.h"
+#include "ahead.h"
 
 /* A length or offset within one parse input or buffer. */
 typedef int32_t bufsize_t;
@@ -31,12 +32,24 @@ extern "C" {
 typedef struct {
     unsigned char *ptr;
     bufsize_t asize, size;
-    int oom;
+    unsigned oom : 1;
+    /* Whether the buffer grows ahead (markdown_core_strbuf_put_ahead): it
+     * moves as a growing array of bytes does (array.h), its storage holds
+     * how it moves in a header before `ptr`
+     * (MARKDOWN_CORE_STRBUF_HEADER), and `asize` is its room. */
+    unsigned ahead : 1;
 } markdown_core_strbuf;
+
+/* The header before the bytes of a buffer that grows ahead: how it moves. */
+#define MARKDOWN_CORE_STRBUF_HEADER sizeof(markdown_core_ahead)
+
+static MARKDOWN_CORE_INLINE markdown_core_ahead *markdown_core_strbuf_header(const markdown_core_strbuf *buf) {
+    return (markdown_core_ahead *)(void *)(buf->ptr - MARKDOWN_CORE_STRBUF_HEADER);
+}
 
 extern const unsigned char markdown_core_strbuf__initbuf[];
 
-#define MARKDOWN_CORE_BUF_INIT() {(unsigned char *)markdown_core_strbuf__initbuf, 0, 0, 0}
+#define MARKDOWN_CORE_BUF_INIT() {(unsigned char *)markdown_core_strbuf__initbuf, 0, 0, 0, 0}
 
 /**
  * Initialize a markdown_core_strbuf structure.
@@ -119,6 +132,52 @@ static MARKDOWN_CORE_INLINE void markdown_core_strbuf_put(markdown_core_strbuf *
         return;
     }
     markdown_core_strbuf_put_grown(buf, data, len);
+}
+
+/* APPEND, MOVING AHEAD OF THE GROWTH: the append of a buffer that grows by
+ * many appends at its end, each a small part of it -- a block's content,
+ * one line at a time. The buffer grows by the operations of a growing array
+ * (array.h): from half full it copies its bytes ahead, a slice at a time,
+ * so no append copies the buffer whole. A write in place through this
+ * header's operations voids the copies it reaches; a write through `ptr`
+ * that does not end the buffer says so first (markdown_core_strbuf_unsettle).
+ * A growth by any other append moves the buffer whole and drops what was
+ * copied. */
+void markdown_core_strbuf_put_ahead_grown(markdown_core_strbuf *buf, const unsigned char *data, bufsize_t len);
+static MARKDOWN_CORE_INLINE void markdown_core_strbuf_put_ahead(markdown_core_strbuf *buf, const unsigned char *data,
+                                                                bufsize_t len) {
+    if (len <= 0) {
+        return;
+    }
+    if (len < buf->asize - buf->size && !buf->oom) {
+        memmove(buf->ptr + buf->size, data, (size_t)len);
+        buf->size += len;
+        buf->ptr[buf->size] = '\0';
+        return;
+    }
+    markdown_core_strbuf_put_ahead_grown(buf, data, len);
+}
+
+/* The bytes from `first` on change in place: what a buffer that grows ahead
+ * copied of them is void. */
+static MARKDOWN_CORE_INLINE void markdown_core_strbuf_unsettle(markdown_core_strbuf *buf, bufsize_t first) {
+    if (buf->ahead) {
+        markdown_core_ahead_unsettle(markdown_core_strbuf_header(buf), first < 0 ? 0 : (size_t)first);
+    }
+}
+
+/* `buf`, whose bytes `from` holds first and grew past, holds them in the
+ * storage of `from`, which then holds none. */
+static MARKDOWN_CORE_INLINE void markdown_core_strbuf_take_storage(markdown_core_strbuf *buf,
+                                                                   markdown_core_strbuf *from) {
+    buf->ptr = from->ptr;
+    buf->asize = from->asize;
+    buf->ahead = from->ahead;
+    markdown_core_strbuf_unsettle(buf, buf->size);
+    buf->ptr[buf->size] = '\0';
+    from->ptr = (unsigned char *)markdown_core_strbuf__initbuf;
+    from->asize = from->size = 0;
+    from->oom = from->ahead = 0;
 }
 
 static MARKDOWN_CORE_INLINE void markdown_core_strbuf_putc(markdown_core_strbuf *buf, int c) {

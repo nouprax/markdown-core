@@ -3,6 +3,7 @@
 
 #include <assert.h>
 #include <stdint.h>
+#include "array.h"
 #include "registry.h"
 #include "node.h"
 #include "buffer.h"
@@ -130,11 +131,10 @@ typedef struct markdown_core_parser_input {
      * (markdown_core_parser_extend_source_lines). A cell's content is
      * complete when it is read, so this is its end. */
     size_t complete;
-    struct markdown_core_input_line *lines;
+    MARKDOWN_CORE_ARRAY(struct markdown_core_input_line) lines;
     struct markdown_core_normalized_line *normalized;
     struct markdown_core_line_facts *facts;
     size_t fact_count, fact_capacity;
-    size_t line_count, line_capacity;
     /* Whether a column of the input may stand elsewhere than the same
      * offset from its line's start in the source: true for a cell's content,
      * and for the document once its scan finds NUL, which the block parser
@@ -345,13 +345,15 @@ typedef struct {
  * paragraph at `address` whose id is `id` and kind `kind`, as the last
  * snapshot that completed it read it -- its content from `offset` in its
  * text, `size` bytes of it -- the top-level nodes before its settle point
- * `point`, the first `count` of `nodes`, which the stream owns, the lookups
+ * `point`, the `nodes`, which the stream owns, the lookups
  * before the point that found nothing, the first `miss_count` of `misses`,
  * and the nodes below them that hold an explicit anchor. Its content's next read goes on
  * at the mark `mark` of its map, content offset `from`, with the places
  * read before it, which end at `at` in the source. While a snapshot reads
  * the paragraph, `root` is the paragraph, `settle` what its parse lists,
- * and the misses and labels past the held ones are the parse's. While the
+ * and the nodes, misses and labels past the held ones are the parse's: the
+ * paragraph's children are the nodes' storage, which the parse writes past
+ * their count (array.h, markdown_core_array_reserve_past). While the
  * nodes are `taken`, the commit's completion of the paragraph holds them,
  * and an accept that puts the paragraph back gives them back. */
 typedef struct {
@@ -359,9 +361,8 @@ typedef struct {
     uint64_t id;
     uint16_t kind;
     bufsize_t offset, size, point, from;
-    struct markdown_core_node **nodes;
-    uint32_t count, mark, at;
-    size_t capacity;
+    MARKDOWN_CORE_ARRAY(struct markdown_core_node *) nodes;
+    uint32_t mark, at;
     markdown_core_places *places;
     markdown_core_settled_miss *misses;
     size_t miss_count, miss_total, miss_capacity;
@@ -684,9 +685,7 @@ struct markdown_core_parser {
      * parse is still running -- the block phase reads it as blocks close and
      * the inline phase reads it before the transaction returns -- and it is
      * released with the rest of the per-parse state. */
-    markdown_core_line_mark *line_marks;
-    bufsize_t line_marks_size;
-    bufsize_t line_marks_alloc;
+    MARKDOWN_CORE_ARRAY(markdown_core_line_mark) line_marks;
 };
 
 /* THE RUN AN OFFSET LIES IN, FOUND FROM WHERE THE LAST ONE WAS.
@@ -711,7 +710,7 @@ struct markdown_core_parser {
 static MARKDOWN_CORE_INLINE int markdown_core_block_content_mark_near(const markdown_core_parser *parser,
                                                                       const markdown_core_content_map *map,
                                                                       bufsize_t offset, int hint, size_t *probes) {
-    const markdown_core_line_mark *marks = parser->line_marks;
+    const markdown_core_line_mark *marks = parser->line_marks.values;
     int lo = map->first, hi = lo + map->count - 1;
     int at = hint >= lo && hint <= hi ? hint : lo;
     size_t probed = 1;
@@ -778,7 +777,7 @@ static MARKDOWN_CORE_INLINE int markdown_core_parser_content_span(markdown_core_
     if (from >= 0) {
         bufsize_t offset = from + map->offset;
         span->first = markdown_core_block_content_mark_near(parser, map, offset, hint, &probes);
-        const markdown_core_line_mark *mark = &parser->line_marks[span->first];
+        const markdown_core_line_mark *mark = &parser->line_marks.values[span->first];
         span->start = mark->source + (offset - mark->content_offset) * mark->source_step;
         span->has_start = true;
         hint = span->first;
@@ -787,7 +786,7 @@ static MARKDOWN_CORE_INLINE int markdown_core_parser_content_span(markdown_core_
         bufsize_t offset = to + map->offset;
         span->last = markdown_core_block_content_mark_near(parser, map, offset, hint, &probes);
         hint = span->last;
-        const markdown_core_line_mark *mark = &parser->line_marks[span->last];
+        const markdown_core_line_mark *mark = &parser->line_marks.values[span->last];
         span->end = mark->source + (offset - mark->content_offset) * mark->source_step + mark->source_width;
         span->has_end = true;
     }
@@ -1035,7 +1034,7 @@ typedef struct markdown_core_line_facts {
 static inline size_t markdown_core_input_line_next(const markdown_core_parser *parser,
                                                    const markdown_core_input_line *line) {
     const markdown_core_input_line *next = line + 1;
-    return next < parser->input.lines + parser->input.line_count ? next->start : parser->input.scanned;
+    return next < parser->input.lines.values + parser->input.lines.count ? next->start : parser->input.scanned;
 }
 
 /* Returned pointers are borrowed until the next request that grows the
@@ -1047,8 +1046,8 @@ static inline markdown_core_input_line *markdown_core_parser_source_line(markdow
         return NULL;
     }
     size_t index = (size_t)(line - parser->input.first_line);
-    return index < parser->input.line_count ? &parser->input.lines[index]
-                                            : markdown_core_parser_extend_source_lines(parser, index);
+    return index < parser->input.lines.count ? &parser->input.lines.values[index]
+                                             : markdown_core_parser_extend_source_lines(parser, index);
 }
 
 /* Whether the end of the active input is the end of its text (blocks.c, THE
@@ -1123,7 +1122,11 @@ static inline markdown_core_line_facts *markdown_core_parser_get_line_facts(mark
     if (!line) {
         return NULL;
     }
-    return line->facts ? &parser->input.facts[line->facts - 1] : markdown_core_parser_extend_line_facts(parser, line);
+    if (line->facts) {
+        return &parser->input.facts[line->facts - 1];
+    }
+    return markdown_core_parser_extend_line_facts(
+        parser, markdown_core_array_write(&parser->input.lines, (size_t)(number - parser->input.first_line)));
 }
 
 /* The flags of a container a lookahead matches: as it first matched it, and
@@ -1244,8 +1247,15 @@ bufsize_t markdown_core_parser_mapped_source_end(markdown_core_parser *parser, i
 static inline markdown_core_input_line *markdown_core_parser_visited_line(const markdown_core_parser *parser,
                                                                           int line) {
     size_t index = (size_t)(line - parser->input.first_line);
-    assert(line >= parser->input.first_line && index < parser->input.line_count);
-    return &parser->input.lines[index];
+    assert(line >= parser->input.first_line && index < parser->input.lines.count);
+    return &parser->input.lines.values[index];
+}
+
+/* The same, to change in place (array.h, markdown_core_array_write). */
+static inline markdown_core_input_line *markdown_core_parser_rewritten_line(markdown_core_parser *parser, int line) {
+    size_t index = (size_t)(line - parser->input.first_line);
+    assert(line >= parser->input.first_line && index < parser->input.lines.count);
+    return markdown_core_array_write(&parser->input.lines, index);
 }
 
 /* An input that is not mapped is a copy of its source, so a line's column c
