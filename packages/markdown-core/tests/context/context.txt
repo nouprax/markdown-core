@@ -283,6 +283,29 @@ slot dest Reference open before=1:6..1:5 after=1:6..1:5
 ````````````````````````````````
 
 ```````````````````````````````` example
+[x](‸<foo bar>) after
+.
+block Paragraph 1:1..1:4
+inline Link 1:1..1:1
+slot dest Link closed before=1:5..1:4 after=1:5..1:13
+````````````````````````````````
+
+```````````````````````````````` example
+[x](‸<foo#bar>)
+.
+block Paragraph 1:1..1:4
+inline Link 1:1..1:1
+slot dest Link closed before=1:5..1:4 after=1:5..1:8
+````````````````````````````````
+
+```````````````````````````````` example
+[x]: ‸<foo bar>
+.
+block Paragraph 1:1..1:5
+slot dest Reference closed before=1:6..1:5 after=1:6..1:14
+````````````````````````````````
+
+```````````````````````````````` example
 [x]: <pa‸th>
 .
 block Paragraph 1:1..1:8

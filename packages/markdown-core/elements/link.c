@@ -471,6 +471,15 @@ static bufsize_t angled_path_end(const unsigned char *data, bufsize_t length) {
 static bufsize_t angled_fragment_end(const unsigned char *data, bufsize_t length) {
     return field_end(data, length, true, true);
 }
+/* A destination not begun before the cursor, read from its first byte: one
+ * in angle brackets takes them, to its `>`, but for a fragment's `#`. */
+static bufsize_t unbegun_end(const unsigned char *data, bufsize_t length) {
+    if (!length || data[0] != '<') {
+        return path_end(data, length);
+    }
+    const bufsize_t end = 1 + field_end(data + 1, length - 1, true, false);
+    return end < length && data[end] == '>' ? end + 1 : end;
+}
 static bufsize_t label_end(const unsigned char *data, bufsize_t length) {
     return markdown_core_inline_reference_label_length(data, length);
 }
@@ -505,8 +514,8 @@ static void S_report_destination(markdown_core_inline_state *inline_state, const
         markdown_core_inline_open(inline_state, kind, at, opener->position, &fragment, 1);
         *reported = MARKDOWN_CORE_SLOT_ANCHOR;
     } else {
-        const markdown_core_field destination = {
-            MARKDOWN_CORE_SLOT_DEST, kind, path, angled ? angled_path_end : path_end, {{0}}, 0, false};
+        const markdown_core_field_end read = angled ? angled_path_end : path == len ? unbegun_end : path_end;
+        const markdown_core_field destination = {MARKDOWN_CORE_SLOT_DEST, kind, path, read, {{0}}, 0, false};
         markdown_core_inline_open(inline_state, kind, at, opener->position, &destination, 1);
         *reported = MARKDOWN_CORE_SLOT_DEST;
     }
@@ -537,7 +546,9 @@ static void S_report_destination_field(markdown_core_parser *parser, markdown_co
                                          .owner = MARKDOWN_CORE_KIND_REFERENCE,
                                          .opener = opener,
                                          .start = place[1],
-                                         .end = angled ? angled_path_end : path_end};
+                                         .end = angled        ? angled_path_end
+                                                : path == len ? unbegun_end
+                                                              : path_end};
     if (hash < len) {
         field.kind = MARKDOWN_CORE_SLOT_ANCHOR;
         field.start = place[3];
