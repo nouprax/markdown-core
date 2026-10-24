@@ -311,8 +311,14 @@ set(MARKDOWN_CORE_CONTEXT_FIXTURE "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/context/con
 markdown_core_add_test(elements_context elements 120 context_runner --spec "${MARKDOWN_CORE_CONTEXT_FIXTURE}")
 # elements: the context query at every position of every example.
 file(GLOB _markdown_core_context_sweep CONFIGURE_DEPENDS "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/*.txt")
-markdown_core_add_test(elements_context_sweep elements 600 context_runner --sweep "${MARKDOWN_CORE_CONTEXT_FIXTURE}"
-                       ${_markdown_core_context_sweep})
+markdown_core_add_test(
+    elements_context_sweep
+    elements
+    600
+    context_runner
+    --sweep
+    "${MARKDOWN_CORE_CONTEXT_FIXTURE}"
+    ${_markdown_core_context_sweep})
 # elements: attaching one element must not change another's block opener.
 markdown_core_add_test(elements_conflicts elements 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/elements-conflicts.txt")
