@@ -861,8 +861,9 @@ void markdown_core_dispose_heading(markdown_core_heading_parse *heading) {
     }
 }
 
-/* The attribute tail the content's end leaves open on the heading's last
- * line, to the run's context sink. */
+/* The attribute tails the content's end may leave open on the heading's
+ * last line, to the run's context sink: every brace that may be one, since
+ * which is the tail only the finished line tells. */
 static void S_report_tail(markdown_core_inline_state *inline_state) {
     const unsigned char *data = inline_state->input.data;
     const bufsize_t len = inline_state->input.len;
@@ -877,7 +878,6 @@ static void S_report_tail(markdown_core_inline_state *inline_state) {
         } else if (data[at] == '{' && markdown_core_attributes_open_member(data, len, at, &field)) {
             field.owner = MARKDOWN_CORE_KIND_HEADING;
             markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_NONE, at, at + 1, &field, 1);
-            return;
         }
     }
 }

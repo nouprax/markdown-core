@@ -18,9 +18,10 @@ bufsize_t markdown_core_attributes_attach_tail(markdown_core_parser *parser, mar
  * block whatever follows. The field's owner is left to the caller. */
 bool markdown_core_attributes_open_member(const unsigned char *s, bufsize_t n, bufsize_t start,
                                           struct markdown_core_field *field);
-/* The attribute tail a block of kind `owner` opens on the line being read,
- * `line`, at or after `from`, that the line's end at `end` leaves open, to
- * the parse's context sink: whether there is one. */
+/* The attribute tails a block of kind `owner` may open on the line being
+ * read, `line`, at or after `from`, that the line's end at `end` leaves
+ * open, to the parse's context sink: every brace that may be one, since
+ * which is the tail only the finished line tells; whether there is one. */
 bool markdown_core_attributes_report_tail(markdown_core_parser *parser, markdown_core_node_kind owner,
                                           const unsigned char *line, bufsize_t from, bufsize_t end);
 extern const markdown_core_element MARKDOWN_CORE_ELEMENT_ATTRIBUTES;

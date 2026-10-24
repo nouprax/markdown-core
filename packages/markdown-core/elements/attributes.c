@@ -928,16 +928,17 @@ bool markdown_core_attributes_report_tail(markdown_core_parser *parser, markdown
         return false;
     }
     markdown_core_field field;
+    bool open = false;
     for (bufsize_t at = from; at < end; at++) {
         if (escaped(line, end, at)) {
             at++;
         } else if (line[at] == '{' && markdown_core_attributes_open_member(line, end, at, &field)) {
             field.owner = owner;
             markdown_core_parser_open(parser, MARKDOWN_CORE_KIND_NONE, at, at + 1, &field, 1);
-            return true;
+            open = true;
         }
     }
-    return false;
+    return open;
 }
 
 bufsize_t markdown_core_attributes_attach_tail(markdown_core_parser *parser, markdown_core_node *node,

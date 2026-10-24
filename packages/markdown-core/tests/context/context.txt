@@ -426,6 +426,15 @@ slot bib Citation closed before=1:7..1:9 after=1:10..1:11
 ````````````````````````````````
 
 ```````````````````````````````` example
+See @‸{foo} after
+.
+block Paragraph 1:1..1:5
+inline Cite 1:5..1:5
+slot bib Citation closed before=1:6..1:5 after=1:6..1:10
+slot specimen Citation closed before=1:6..1:5 after=1:6..1:10
+````````````````````````````````
+
+```````````````````````````````` example
 See @‸.foo after
 .
 block Paragraph 1:1..1:5
@@ -758,6 +767,14 @@ block Heading 1:1..1:11
 inline None 1:8..1:8
 ````````````````````````````````
 
+```````````````````````````````` example
+# text {k="x {.ba‸r}
+.
+block Heading 1:1..1:17
+inline None 1:8..1:8
+slot class Heading closed before=1:16..1:17 after=1:18..1:18
+````````````````````````````````
+
 ## Callouts
 
 ```````````````````````````````` example
@@ -841,6 +858,13 @@ slot class CodeBlock closed before=1:10..1:10 after=1:11..1:10
 .
 block CodeBlock 1:1..1:13
 slot value CodeBlock closed before=1:13..1:13 after=1:14..1:13 prefix="r"
+````````````````````````````````
+
+```````````````````````````````` example
+```py {k="x {.ba‸r}
+.
+block CodeBlock 1:1..1:16
+slot class CodeBlock closed before=1:15..1:16 after=1:17..1:17
 ````````````````````````````````
 
 ```````````````````````````````` example

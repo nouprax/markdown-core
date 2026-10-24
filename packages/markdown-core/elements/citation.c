@@ -208,6 +208,16 @@ static bufsize_t braced_key_end(const unsigned char *data, bufsize_t length) {
     return pos;
 }
 
+/* A key not begun before the cursor, read from its first byte: a braced
+ * one takes its braces. */
+static bufsize_t unbegun_key_end(const unsigned char *data, bufsize_t length) {
+    if (!length || data[0] != '{') {
+        return key_end(data, length);
+    }
+    const bufsize_t end = 1 + braced_key_end(data + 1, length - 1);
+    return end < length ? end + 1 : end;
+}
+
 /* The key the content's end cuts short, from `field`, of the citation whose
  * `@` or `-@` starts at `start`, to the run's context sink. Outside brackets
  * the key names a bibliography entry or a specimen, which only the
@@ -217,7 +227,9 @@ static void S_report_key(const markdown_core_element_instance *self, markdown_co
                          bufsize_t start, bufsize_t at, bufsize_t field, bool braced) {
     markdown_core_field fields[3];
     size_t count = 0;
-    const markdown_core_field_end end = braced ? braced_key_end : key_end;
+    const markdown_core_field_end end = braced                             ? braced_key_end
+                                        : field == inline_state->input.len ? unbegun_key_end
+                                                                           : key_end;
     fields[count++] =
         (markdown_core_field){MARKDOWN_CORE_SLOT_BIB, MARKDOWN_CORE_KIND_CITATION, field, end, {{0}}, 0, false};
     if (!braced && !markdown_core_open_bracket(self->peers[CITATION_LINK], inline_state)) {
