@@ -80,7 +80,7 @@ owner's decisions, and section 11 records rejected alternatives.
   instead (D7): it ships in C and Swift first, then in Kotlin and
   ECMAScript.
 
-Non-goals for this plan: rendering and preview, formatting, editing the AST,
+Non-goals for this plan: rendering and preview, editing the AST,
 a second dialect, and reviving the general-edit engine that D7 of the
 [incremental parsing plan](2026-09-29-incremental-parsing.md) removed.
 
@@ -367,11 +367,39 @@ Version 1 implements:
 - **Workspace.** `workspace/didChangeWatchedFiles` and the workspace folders
   from `initialize`, which feed the workspace index of section 5.2.
 
-Later versions add, each on the same context, path and field-scope queries:
-`textDocument/hover`, `definition`, `references`, `rename` of labels and
-anchors, `documentSymbol`, `foldingRange`, `semanticTokens` from node runs,
-and diagnostics for references, footnotes, specimens and anchors that name
-nothing. None needs a parser change beyond section 3.
+Later versions add the rest of the protocol's language features in two
+phases, after completion (D6).
+
+- **Navigation**, on the same context, path and field-scope queries:
+  `textDocument/hover`, `definition`, `references`, `documentLink`,
+  `rename` of labels and anchors, `documentSymbol`, `foldingRange`,
+  `semanticTokens` from node runs, and diagnostics for references,
+  footnotes, specimens and anchors that name nothing. None needs a parser
+  change beyond section 3.
+- **Formatting**: `textDocument/onTypeFormatting`, then `formatting` and
+  `rangeFormatting` (section 4.4).
+
+### 4.4 Formatting
+
+Formatting writes Markdown, so it needs the grammar's spelling as much as
+completion does, and it takes it from the parser for the same reason (R1).
+
+- **On-type formatting** answers a typed character from the context of
+  section 3 alone: after Enter, the open blocks' `blocks` say which list
+  item, quote, callout or fence the new line continues, and the engine
+  writes its continuation marker, or ends an empty item. It needs no writer,
+  so it is the first formatting feature, and for the notebook's command
+  input it is the one that matters most while typing.
+- **Document and range formatting** need a Markdown writer: a function in
+  the parser library that writes a document, or a range of its blocks, in
+  one canonical spelling. The repository has none today. It gets a plan of
+  its own before it is built, because it is the grammar written backwards
+  and has to hold two invariants for every input: parsing its output gives
+  the same canonical dump as parsing its input (no change of meaning), and
+  writing its own output changes nothing (idempotence). The engine diffs the
+  written text against the document and answers only the changed blocks as
+  `TextEdit`s, so a format keeps the editor's undo history and cursor
+  usable.
 
 ## 5. Completion catalog
 
@@ -518,9 +546,11 @@ Each step is one pull request and leaves `main` releasable.
 - [ ] **Step 7: Kotlin and ECMAScript.** The engine's Kotlin binding for
    Android and its ECMAScript binding for the web, one binding per step
    (D7).
-- [ ] **Step 8 onward: Navigation.** Hover, definition, references, rename,
-   symbols, folding, semantic tokens and diagnostics (section 4), one feature
-   per step.
+- [ ] **Step 8 onward: Navigation.** Hover, definition, references, links,
+   rename, symbols, folding, semantic tokens and diagnostics (section 4.3),
+   one feature per step.
+- [ ] **Then: Formatting.** On-type formatting first (4.4). The Markdown
+   writer's own plan, then document and range formatting on it.
 
 ## 10. Decisions for the owner
 
@@ -541,9 +571,9 @@ Each step is one pull request and leaves `main` releasable.
   2 and 3), which makes step 8 of the incremental plan a prerequisite.
 - **D5 Latency budget.** 10 ms p95 for documents up to 256 KiB, reported and
   not gated until the owner decides (section 7).
-- **D6 Version 1 scope. Proposed: in-document and workspace completion**
-  (steps 5 and 6) before any navigation feature, and no bibliography format
-  in step 6 beyond CSL JSON.
+- **D6 Scope and order. Decided 2026-10-24: completion, then navigation,
+  then formatting,** all in scope (4.3, 4.4). The owner: "navigation是LSP的一部分么？format呢？如果是的话可能也得支持，只不过是在completion之后". Still
+  proposed: no bibliography format in step 6 beyond CSL JSON.
 - **D7 Platform order. Decided 2026-10-24: C and Swift first, then Kotlin
   and ECMAScript** (R6, step 7). The owner: "我们这个repo里没有任何的Windows
   支持，所以我的建议是先做C和Swift binding，然后做Kotlin及TS的binding". This
