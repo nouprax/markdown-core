@@ -53,6 +53,25 @@ static const char *const FIELDS[][2] = {
     {"Directive", "name"}, {"Topic", "name"},     {"Callout", "variant"},    {"CodeBlock", "language"},
 };
 
+/* `memmem` and `strdup` are POSIX, not C: the runner builds on Windows too. */
+static const char *seek(const char *start, size_t length, const char *needle, size_t size) {
+    for (size_t i = 0; size <= length && i <= length - size; i++) {
+        if (!memcmp(start + i, needle, size)) {
+            return start + i;
+        }
+    }
+    return NULL;
+}
+
+static char *copy(const char *text) {
+    const size_t size = strlen(text) + 1;
+    char *out = malloc(size);
+    if (out) {
+        memcpy(out, text, size);
+    }
+    return out;
+}
+
 /* A canonical dump with its scopes removed, cut into lines. */
 typedef struct tree {
     char *text;
@@ -428,7 +447,7 @@ static bool read_exceptions(report *r, const char *path) {
         r->exceptions = grown;
         *colon = *space = 0;
         exception *e = &r->exceptions[r->exception_count++];
-        *e = (exception){strdup(text), strdup(space + 1), atoi(colon + 1), 0};
+        *e = (exception){copy(text), copy(space + 1), atoi(colon + 1), 0};
         if (!e->file || !e->what) {
             fclose(in);
             return false;
@@ -604,8 +623,8 @@ static const char *verify_kept(const uint8_t *source, size_t length, size_t from
             const word *was = &diff.at[i].was, *now = &diff.at[i].now;
             line_parts parts;
             split_line(both.lines[diff.at[i].line], &parts);
-            const char *first = memmem(now->start, now->length, SENTINEL, SENTINEL_LENGTH);
-            const char *second = memmem(now->start, now->length, OTHER, SENTINEL_LENGTH);
+            const char *first = seek(now->start, now->length, SENTINEL, SENTINEL_LENGTH);
+            const char *second = seek(now->start, now->length, OTHER, SENTINEL_LENGTH);
             if (!first && !second) {
                 why = naming(was) ? NULL : "another node changes";
                 continue;
@@ -851,7 +870,7 @@ static const char *member_lands(const uint8_t *source, size_t length, size_t fro
         }
         for (size_t k = 0; k < parts.count && !lands; k++) {
             const word *w = &parts.words[k];
-            const char *at = memmem(w->start, w->length, SENTINEL, SENTINEL_LENGTH);
+            const char *at = seek(w->start, w->length, SENTINEL, SENTINEL_LENGTH);
             if (!at) {
                 continue;
             }

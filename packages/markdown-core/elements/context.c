@@ -947,7 +947,7 @@ static bool weigh(const context_query *query, const markdown_core_context_sink *
     if (field->kind == MARKDOWN_CORE_SLOT_DEST && !reach && !field->lead && blank(query, field->start)) {
         /* A destination not yet begun begins after the spaces and the line
          * ending the run dropped from its end: at the cursor. */
-        moved.start = query->cursor;
+        moved.start = (uint32_t)query->cursor;
         field = &moved;
         origin = query->cursor;
         reach = field->end(query->source + origin, (bufsize_t)(last - origin));
