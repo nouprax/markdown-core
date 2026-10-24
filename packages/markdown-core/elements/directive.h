@@ -32,6 +32,11 @@ static inline markdown_core_node *markdown_core_directive_label(const markdown_c
     return ((const markdown_core_directive_value *)node->opaque)->label;
 }
 
+/* The name a line's `:` at `colon`, which the input's end cuts short, may
+ * yet begin, to the parse's context sink: the line is a definition's
+ * marker only while nothing follows it. */
+void markdown_core_directive_report_line(struct markdown_core_parser *parser, bufsize_t colon);
+
 #ifdef __cplusplus
 }
 #endif

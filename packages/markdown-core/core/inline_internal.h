@@ -118,6 +118,10 @@ static inline bool markdown_core_inline_tracks_end(const markdown_core_inline_st
  * one. */
 void markdown_core_inline_open(markdown_core_inline_state *inline_state, markdown_core_node_kind opens, bufsize_t from,
                                bufsize_t to, const markdown_core_field *fields, size_t count);
+/* The same for a construct the line, not the run, may open: a block's tail.
+ * The context lists no inline opener for it. */
+void markdown_core_inline_open_line(markdown_core_inline_state *inline_state, markdown_core_node_kind opens,
+                                    bufsize_t from, bufsize_t to, const markdown_core_field *fields, size_t count);
 
 /* The inline note `note`, a field its Citation holds, settles as a field
  * does (markdown_core_parser_settle_field), and a run that lists settle

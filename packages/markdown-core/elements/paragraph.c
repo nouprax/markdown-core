@@ -3,6 +3,7 @@
 
 #include "link.h"
 #include "block_identifier.h"
+#include "heading.h"
 /* A paragraph closing inside `parent` yields the reference definitions at
  * the front of its text, settled into `parent` before it, and then itself,
  * less a block identifier at the back of its text, when anything of it is
@@ -59,7 +60,21 @@ static markdown_core_node *open_text(const markdown_core_element_instance *self,
     return container;
 }
 
+/* A paragraph a setext underline may yet follow is a heading, whose tail
+ * its last line may hold: a context run reports the tails it may, which
+ * stand only where the document finishes the heading. */
+static void begin_inline(const markdown_core_element_instance *self, markdown_core_parser *parser,
+                         markdown_core_inline_state *inline_state, markdown_core_node *parent) {
+    (void)self;
+    (void)parser;
+    (void)parent;
+    if (inline_state->context) {
+        markdown_core_heading_report_tail(inline_state, true);
+    }
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_PARAGRAPH = {
+    .begin_inline = begin_inline,
     .state_size = sizeof(markdown_core_block_identifier_work),
     .accepts_lazy = accepts_lazy,
     .open_lazy = open_lazy,

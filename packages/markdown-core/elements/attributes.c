@@ -757,6 +757,9 @@ int markdown_core_attributes_parse(markdown_core_attribute_parser *p, bufsize_t 
 static bufsize_t name_end(const unsigned char *data, bufsize_t length) {
     return markdown_core_scan_to_class(BYTE_CLASS, BYTE_NAME_END, data, 0, length);
 }
+bufsize_t markdown_core_attributes_name_end(const unsigned char *data, bufsize_t length) {
+    return name_end(data, length);
+}
 static bufsize_t value_end(const unsigned char *data, bufsize_t length) {
     bufsize_t at = 0;
     while ((at = markdown_core_scan_to_class(BYTE_CLASS, BYTE_VALUE_END | BYTE_ESCAPE, data, at, length)) < length &&
@@ -781,7 +784,12 @@ static bufsize_t quote_led_end(const unsigned char *data, bufsize_t length) {
     if (close < length) {
         return close + 1;
     }
-    return memchr(data, '}', (size_t)length) ? value_end(data, length) : length;
+    for (bufsize_t at = 1; at < length; at += escaped(data, length, at) ? 2 : 1) {
+        if (data[at] == '}') {
+            return value_end(data, length);
+        }
+    }
+    return length;
 }
 /* A value's field, read from its first byte, which may follow the cursor. */
 static bufsize_t member_value_end(const unsigned char *data, bufsize_t length) {
@@ -989,8 +997,13 @@ int markdown_core_inline_state_attributes(markdown_core_inline_state *inline_sta
                                           bufsize_t *end) {
     /* The run owner's tail is its own: a heading's trailing attributes are
      * claimed there, so no inline construct takes an attribute block that
-     * begins in it. */
+     * begins in it. One the input's end leaves open is the tail only once
+     * the line ends after it: until then it may be the construct's. */
     if (inline_state->text_end >= 0 && start >= inline_state->text_end) {
+        if (inline_state->context && start < inline_state->input.len && inline_state->input.data[start] == '{' &&
+            markdown_core_inline_tracks_end(inline_state)) {
+            S_saw_end(inline_state, start, owner);
+        }
         return 0;
     }
     /* Most constructs have no attribute block after them: only a `{` is
@@ -1016,8 +1029,10 @@ int markdown_core_inline_state_attributes(markdown_core_inline_state *inline_sta
     if (inline_state->attributes.oom) {
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
     }
-    /* A block that does not close may close once the input goes on. */
-    if (!matched && markdown_core_inline_tracks_end(inline_state)) {
+    /* A block that does not close may close once the input goes on, and
+     * one that closes inside a quote the input's end leaves open, which
+     * reads it as text of a bare value, may close past it. */
+    if ((!matched || inline_state->context) && markdown_core_inline_tracks_end(inline_state)) {
         S_saw_end(inline_state, start, owner);
     }
     return matched;

@@ -3,6 +3,7 @@
 #include "link.h"
 #include "table.h"
 #include "block_internal.h"
+#include "directive.h"
 
 /* The elements whose state this element reads, as `self->peers` holds them. */
 enum { DEFINITION_LIST_TABLE };
@@ -273,6 +274,9 @@ static bool markdown_core_definition_list_scan(const markdown_core_element_insta
     if (!(context->container->kind == MARKDOWN_CORE_NODE_DEFINITION &&
           markdown_core_block_definition_marker(input, first, context->indent))) {
         return false;
+    }
+    if (parser->sink && input->data[first] == ':' && markdown_core_is_line_end(input->data[first + 1])) {
+        markdown_core_directive_report_line(parser, first);
     }
     start->kind = MARKDOWN_CORE_NODE_DEFINITION_BODY;
     start->open = markdown_core_definition_list_open;

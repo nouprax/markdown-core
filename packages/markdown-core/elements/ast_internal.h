@@ -62,10 +62,13 @@ bool markdown_core_tree_holders(const markdown_core_node *root, size_t offset, c
                                 size_t *count, const markdown_core_node **last);
 
 /* Parses `sink`'s text, the text before a cursor, as a fresh parse whose
- * parser reports what it leaves open to `sink` (session.c). */
+ * parser reports what it leaves open to `sink`, with the labels `whole`
+ * defines declared (session.c). */
 struct markdown_core_context_sink;
 markdown_core_status markdown_core_parse_before_cursor(struct markdown_core_context_sink *sink,
-                                                       markdown_core_text_unit unit, markdown_core_document **document);
+                                                       markdown_core_text_unit unit,
+                                                       const markdown_core_document *whole,
+                                                       markdown_core_document **document);
 
 /* The scopes of `node` in the published tree `root` parsed from `source`,
  * with columns in `unit`, in a new array markdown_core_scopes_free frees;

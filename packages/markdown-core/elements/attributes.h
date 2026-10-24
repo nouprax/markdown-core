@@ -28,6 +28,8 @@ void markdown_core_member_memo_free(markdown_core_member_memo *memo);
  * or NULL, is shared by the braces asked about on the same `n` bytes. */
 bool markdown_core_attributes_open_member(const unsigned char *s, bufsize_t n, bufsize_t start,
                                           struct markdown_core_field *field, markdown_core_member_memo *memo);
+/* Where a member's name, read from `data`, ends. */
+bufsize_t markdown_core_attributes_name_end(const unsigned char *data, bufsize_t length);
 /* The attribute tails a block of kind `owner` may open on the line being
  * read, `line`, at or after `from`, that the line's end at `end` leaves
  * open, to the parse's context sink: every brace that may be one, since

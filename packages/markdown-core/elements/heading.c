@@ -7,6 +7,7 @@
 #include "inline_internal.h"
 #include "block_internal.h"
 #include "attributes.h"
+#include "topic.h"
 
 /* The elements whose state this element reads, as `self->peers` holds them. */
 enum { HEADING_CITATION };
@@ -861,10 +862,10 @@ void markdown_core_dispose_heading(markdown_core_heading_parse *heading) {
     }
 }
 
-/* The attribute tails the content's end may leave open on the heading's
- * last line, to the run's context sink: every brace that may be one, since
- * which is the tail only the finished line tells. */
-static void S_report_tail(markdown_core_inline_state *inline_state) {
+/* (heading.h) The attribute tails the content's end may leave open on the
+ * heading's last line, to the run's context sink: every brace that may be
+ * one, since which is the tail only the finished line tells. */
+void markdown_core_heading_report_tail(markdown_core_inline_state *inline_state, bool declares) {
     const unsigned char *data = inline_state->input.data;
     const bufsize_t len = inline_state->input.len;
     bufsize_t at = len;
@@ -878,7 +879,12 @@ static void S_report_tail(markdown_core_inline_state *inline_state) {
             at++;
         } else if (data[at] == '{' && markdown_core_attributes_open_member(data, len, at, &field, &memo)) {
             field.owner = MARKDOWN_CORE_KIND_HEADING;
-            markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_NONE, at, at + 1, &field, 1);
+            field.declares = declares;
+            if (declares) {
+                markdown_core_inline_open_line(inline_state, MARKDOWN_CORE_KIND_NONE, at, at + 1, &field, 1);
+            } else {
+                markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_NONE, at, at + 1, &field, 1);
+            }
         }
     }
     markdown_core_member_memo_free(&memo);
@@ -933,7 +939,7 @@ void markdown_core_heading_begin_inlines(const markdown_core_element_instance *s
             }
         }
         if (inline_state->context && run->attributes_start < 0) {
-            S_report_tail(inline_state);
+            markdown_core_heading_report_tail(inline_state, false);
         }
         if (inline_state->attributes.oom) {
             inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
@@ -1021,6 +1027,19 @@ static bool scan_heading(const markdown_core_element_instance *self, markdown_co
     (void)self;
     if ((start->matched = scan_atx_heading_start(context->input->data, context->input->len, context->first))) {
         start->open = open_atx;
+        if (parser->sink) {
+            const unsigned char *data = context->input->data;
+            bufsize_t end = context->first, last = context->input->len;
+            while (end < last && data[end] == '#') {
+                end++;
+            }
+            while (last > end && (data[last - 1] == '\n' || data[last - 1] == '\r')) {
+                last--;
+            }
+            if (end == last) {
+                markdown_core_topic_report_line(parser, context->first, end);
+            }
+        }
     } else if (context->paragraph &&
                (start->matched = scan_setext_heading_line(context->input->data, context->input->len, context->first))) {
         start->open = open_setext;

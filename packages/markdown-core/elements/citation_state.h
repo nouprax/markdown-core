@@ -18,9 +18,13 @@ typedef struct {
     citation_token *first, *last;
 } citation_tokens;
 
+/* A brace of a run: where it starts, where it closes, the brace around it,
+ * whether it may be a key and holds anything, and whether a code span or a
+ * comment in it is cut short, which may close past its `}` once the input
+ * goes on. */
 typedef struct {
     bufsize_t start, end, previous;
-    bool valid, content;
+    bool valid, content, cut;
 } citation_brace;
 
 typedef struct {

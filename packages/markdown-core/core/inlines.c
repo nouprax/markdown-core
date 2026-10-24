@@ -1021,7 +1021,9 @@ static uint32_t S_context_root_offset(markdown_core_inline_state *inline_state, 
 }
 
 /* A run of the parse of the text before a cursor reports to its sink when
- * its content reaches the text's end, but for spaces and tabs: an inline
+ * its content reaches the text's end, but for spaces, tabs and one line
+ * ending, after which the line the cursor is on, past its quote markers,
+ * may go on with it: an inline
  * root whose content does, and a field of it whose content reaches the
  * root's end. */
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_context_begin(markdown_core_parser *parser,
@@ -1046,10 +1048,21 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_context_begin(markdown_core_pa
     if (inline_state->input.len == 0 || !places) {
         return;
     }
-    for (size_t at = S_root_source(inline_state->owner, places->content); at < sink->length; at++) {
-        if (sink->source[at] != ' ' && sink->source[at] != '\t') {
-            return;
-        }
+    size_t at = S_root_source(inline_state->owner, places->content);
+    while (at < sink->length && (sink->source[at] == ' ' || sink->source[at] == '\t')) {
+        at++;
+    }
+    if (at < sink->length && sink->source[at] == '\r') {
+        at++;
+    }
+    if (at < sink->length && sink->source[at] == '\n' && (at == 0 || sink->source[at - 1] != '\n')) {
+        at++;
+    }
+    while (at < sink->length && (sink->source[at] == ' ' || sink->source[at] == '\t' || sink->source[at] == '>')) {
+        at++;
+    }
+    if (at < sink->length) {
+        return;
     }
     sink->root = inline_state->owner;
     inline_state->context = sink;
@@ -1170,14 +1183,14 @@ static uint32_t S_context_source(markdown_core_inline_state *inline_state, bufsi
     return S_sink_source(inline_state->context, S_context_root_offset(inline_state, offset));
 }
 
-void markdown_core_inline_open(markdown_core_inline_state *inline_state, markdown_core_node_kind opens, bufsize_t from,
-                               bufsize_t to, const markdown_core_field *fields, size_t count) {
+static void S_inline_open(markdown_core_inline_state *inline_state, markdown_core_node_kind opens, bufsize_t from,
+                          bufsize_t to, const markdown_core_field *fields, size_t count, bool line) {
     markdown_core_context_sink *sink = inline_state->context;
     if (!sink) {
         return;
     }
     const markdown_core_place place = {S_context_source(inline_state, from), S_context_source(inline_state, to)};
-    const int32_t opener = markdown_core_context_opener_add(sink, opens, place, false);
+    const int32_t opener = markdown_core_context_opener_add(sink, opens, place, line);
     for (size_t i = 0; i < count && opener >= 0; i++) {
         const markdown_core_field *field = &fields[i];
         const uint32_t start = S_context_source(inline_state, field->start);
@@ -1196,6 +1209,16 @@ void markdown_core_inline_open(markdown_core_inline_state *inline_state, markdow
         }
         markdown_core_context_field_add(sink, &open);
     }
+}
+
+void markdown_core_inline_open(markdown_core_inline_state *inline_state, markdown_core_node_kind opens, bufsize_t from,
+                               bufsize_t to, const markdown_core_field *fields, size_t count) {
+    S_inline_open(inline_state, opens, from, to, fields, count, false);
+}
+
+void markdown_core_inline_open_line(markdown_core_inline_state *inline_state, markdown_core_node_kind opens,
+                                    bufsize_t from, bufsize_t to, const markdown_core_field *fields, size_t count) {
+    S_inline_open(inline_state, opens, from, to, fields, count, true);
 }
 
 /* The run's elements list what their records hold open to its sink. */

@@ -101,6 +101,7 @@ endfunction()
 
 markdown_core_add_runner(spec_runner runners/spec_runner.c)
 markdown_core_add_runner(context_runner runners/context_runner.c)
+markdown_core_add_runner(oracle_runner runners/oracle_runner.c)
 markdown_core_add_runner(pathological_runner runners/pathological_runner.c)
 
 # oom_runner injects an allocator into the internal implementation of the
@@ -319,6 +320,19 @@ markdown_core_add_test(
     --sweep
     "${MARKDOWN_CORE_CONTEXT_FIXTURE}"
     ${_markdown_core_context_sweep})
+# elements: the context's slots against the document the whole text parses
+# to, at every position of every example and of the generated nestings; the
+# exceptions name what the oracle cannot judge, each with its reason.
+markdown_core_add_test(
+    elements_context_oracle
+    elements
+    900
+    oracle_runner
+    --exceptions
+    "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/context/oracle-exceptions.txt"
+    --generate
+    ${_markdown_core_context_sweep}
+    "${MARKDOWN_CORE_CONTEXT_FIXTURE}")
 # elements: attaching one element must not change another's block opener.
 markdown_core_add_test(elements_conflicts elements 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/elements-conflicts.txt")

@@ -359,6 +359,12 @@ static void S_report_name(markdown_core_inline_state *inline_state, bufsize_t co
     markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_DIRECTIVE, colon, colon + 1, &name, 1);
 }
 
+void markdown_core_directive_report_line(markdown_core_parser *parser, bufsize_t colon) {
+    const markdown_core_field name = {
+        MARKDOWN_CORE_SLOT_NAME, MARKDOWN_CORE_KIND_DIRECTIVE, colon + 1, name_end, {{0}}, 0, false, 0};
+    markdown_core_parser_open(parser, MARKDOWN_CORE_KIND_DIRECTIVE, colon, colon + 1, &name, 1);
+}
+
 /* THE WHOLE CONSTRUCT IS SCANNED AT THE COLON, and that is the difference
  * between this and what was here before.
  *
@@ -407,7 +413,9 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
     if (offset + 1 >= chunk->len || chunk->data[offset + 1] == ':') {
         if (offset + 1 >= chunk->len) {
             markdown_core_inline_state_saw_end(inline_state);
-            S_report_name(inline_state, offset);
+            if (inline_state->context) {
+                S_report_name(inline_state, offset);
+            }
         }
         return NULL;
     }
@@ -415,7 +423,7 @@ static markdown_core_node *match_colon_directive(const markdown_core_element *el
     if (!scan_name(chunk->data, chunk->len, offset + 1, &name_start, &name_len)) {
         return NULL;
     }
-    if (name_start + name_len >= chunk->len) {
+    if (inline_state->context && name_start + name_len >= chunk->len) {
         S_report_name(inline_state, offset);
     }
 
@@ -552,9 +560,20 @@ static int parse_nameless_suffix(markdown_core_parser *parser, unsigned char *da
     return 1;
 }
 
+/* Where a nameless container's class word ends. */
+static bufsize_t class_word_end(const unsigned char *data, bufsize_t length) {
+    bufsize_t end = 0;
+    while (end < length && !markdown_core_is_whitespace(data[end]) && data[end] != ':' && data[end] != '{' &&
+           data[end] != '}') {
+        end++;
+    }
+    return end;
+}
+
 /* The field a directive block's opening line, its colons from `first` to
  * `suffix`, leaves open at its end, to the parse's context sink: a member
- * of an open attribute block, or else the name the colons begin. */
+ * of an open attribute block, else the name the colons begin, or the class
+ * word a space puts after three or more of them. */
 static void S_report_block(markdown_core_parser *parser, const unsigned char *input, bufsize_t len, bufsize_t first,
                            bufsize_t suffix) {
     while (len > suffix && markdown_core_is_line_end(input[len - 1])) {
@@ -563,7 +582,15 @@ static void S_report_block(markdown_core_parser *parser, const unsigned char *in
     if (markdown_core_attributes_report_tail(parser, MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, input, suffix, len)) {
         return;
     }
-    if (suffix + name_end(input + suffix, len - suffix) == len) {
+    bufsize_t word = suffix;
+    while (word < len && markdown_core_is_space_or_tab(input[word])) {
+        word++;
+    }
+    if (word > suffix && suffix - first >= 3 && word + class_word_end(input + word, len - word) == len) {
+        const markdown_core_field name = {
+            MARKDOWN_CORE_SLOT_CLASS, MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, word, class_word_end, {{0}}, 0, false, 0};
+        markdown_core_parser_open(parser, MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, first, suffix, &name, 1);
+    } else if (suffix + name_end(input + suffix, len - suffix) == len) {
         const markdown_core_field name = {
             MARKDOWN_CORE_SLOT_NAME, MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, suffix, name_end, {{0}}, 0, false, 0};
         markdown_core_parser_open(parser, MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, first, suffix, &name, 1);
@@ -672,7 +699,15 @@ static int directive_block_continues(const markdown_core_element_instance *self,
         return 0;
     }
 
-    return directive_closer_line(directive, parser, input, len) ? MARKDOWN_CORE_BLOCK_PENDING_CLOSE : 1;
+    if (!directive_closer_line(directive, parser, input, len)) {
+        return 1;
+    }
+    /* A closer the input's end cuts short may yet be an opener's colons. */
+    if (parser->sink) {
+        const bufsize_t first = (bufsize_t)markdown_core_parser_get_first_nonspace(parser);
+        S_report_block(parser, input, len, first, first + count_colons(input, (bufsize_t)len, first));
+    }
+    return MARKDOWN_CORE_BLOCK_PENDING_CLOSE;
 }
 
 static int directive_block_matches(const markdown_core_element_instance *self, markdown_core_parser *parser,
