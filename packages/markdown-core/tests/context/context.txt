@@ -381,6 +381,15 @@ slot bib Citation closed before=1:7..1:9 after=1:10..1:11
 ````````````````````````````````
 
 ```````````````````````````````` example
+See @‸.foo after
+.
+block Paragraph 1:1..1:5
+inline Cite 1:5..1:5
+slot bib Citation open before=1:6..1:5 after=1:6..1:5
+slot specimen Citation open before=1:6..1:5 after=1:6..1:5
+````````````````````````````````
+
+```````````````````````````````` example
 See @{a b‸
 .
 block Paragraph 1:1..1:9
