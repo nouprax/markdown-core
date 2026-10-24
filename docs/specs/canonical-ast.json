@@ -1,6 +1,6 @@
 {
     "schemaVersion": 1,
-    "purpose": "The machine-readable, normative canonical AST contract. Each kind's ordinal is its wire number in every binding; scripts/tooling/generate-node-kinds.mjs generates every table that enumerates kinds from this file. C, Swift, Kotlin, and TypeScript declare projections of this shape, and scripts/audit/check-ast-projections.mjs checks the hand-written projections plus the prose and debug-dump tables against this file. Formula is the only kind whose placement mode varies; placement for Code, CodeBlock, Directive, DirectiveBlock, and FormulaBlock is implied by the kind.",
+    "purpose": "The machine-readable, normative canonical AST contract. Each kind's ordinal is its wire number in every binding; scripts/tooling/generate-node-kinds.mjs generates every table that enumerates kinds or slot kinds from this file. A slot is the source of a field that holds a name, a key or a path an editor can complete; `slots` numbers the slot kinds, and a field's `slots` names those its source writes, in source order. C, Swift, Kotlin, and TypeScript declare projections of this shape, and scripts/audit/check-ast-projections.mjs checks the hand-written projections plus the prose and debug-dump tables against this file. Formula is the only kind whose placement mode varies; placement for Code, CodeBlock, Directive, DirectiveBlock, and FormulaBlock is implied by the kind.",
     "prose": "docs/specs/canonical-ast.md",
     "dumpGrammar": "docs/specs/canonical-ast-dump.md",
     "walk": {
@@ -14,6 +14,78 @@
         "ListFlavor": ["bullet", "ordered"],
         "Flow": ["none", "left", "center", "right"]
     },
+    "slots": [
+        {
+            "name": "dest",
+            "ordinal": 1,
+            "purpose": "A destination: a URL or file path, or the note path of a cross link or embed."
+        },
+        {
+            "name": "anchor",
+            "ordinal": 2,
+            "purpose": "An anchor a destination names: the fragment of a URL or the anchor of a cross destination."
+        },
+        {
+            "name": "label",
+            "ordinal": 3,
+            "purpose": "A reference label, at a reference link or embed or at the reference definition that states it."
+        },
+        {
+            "name": "footnote",
+            "ordinal": 4,
+            "purpose": "A footnote label, at a footnote call or at the definition that states it."
+        },
+        {
+            "name": "bib",
+            "ordinal": 5,
+            "purpose": "A bibliography key."
+        },
+        {
+            "name": "specimen",
+            "ordinal": 6,
+            "purpose": "A specimen label, at a specimen reference or at the definition that states it."
+        },
+        {
+            "name": "name",
+            "ordinal": 7,
+            "purpose": "The name of a directive or a topic."
+        },
+        {
+            "name": "id",
+            "ordinal": 8,
+            "purpose": "An anchor a node declares: an attribute identifier or a block identifier."
+        },
+        {
+            "name": "class",
+            "ordinal": 9,
+            "purpose": "An attribute class."
+        },
+        {
+            "name": "record",
+            "ordinal": 10,
+            "purpose": "The name of an attribute record."
+        },
+        {
+            "name": "variant",
+            "ordinal": 11,
+            "purpose": "The authored type of a callout."
+        },
+        {
+            "name": "info",
+            "ordinal": 12,
+            "purpose": "The info string of a fenced code block."
+        },
+        {
+            "name": "field",
+            "ordinal": 13,
+            "purpose": "The name of a properties member."
+        },
+        {
+            "name": "value",
+            "ordinal": 14,
+            "purpose": "The value of an attribute record or of a properties member."
+        }
+    ],
     "kinds": [
         {
             "name": "Document",
@@ -39,7 +111,8 @@
                 {
                     "name": "variant",
                     "type": "String",
-                    "optional": true
+                    "optional": true,
+                    "slots": ["variant"]
                 },
                 {
                     "name": "collapsed",
@@ -155,7 +228,8 @@
                 {
                     "name": "info",
                     "type": "String",
-                    "optional": true
+                    "optional": true,
+                    "slots": ["info"]
                 },
                 {
                     "name": "language",
@@ -289,7 +363,8 @@
                 {
                     "name": "name",
                     "type": "String",
-                    "optional": true
+                    "optional": true,
+                    "slots": ["name"]
                 },
                 {
                     "name": "label",
@@ -584,7 +659,8 @@
                 {
                     "name": "name",
                     "type": "String",
-                    "optional": false
+                    "optional": false,
+                    "slots": ["name"]
                 },
                 {
                     "name": "label",
@@ -613,7 +689,8 @@
                 {
                     "name": "name",
                     "type": "String",
-                    "optional": false
+                    "optional": false,
+                    "slots": ["name"]
                 }
             ],
             "invariants": "inline leaf; the name as written, without the `#`; null anchor and empty attributes"
@@ -681,7 +758,8 @@
                 {
                     "name": "label",
                     "type": "String",
-                    "optional": true
+                    "optional": true,
+                    "slots": ["footnote"]
                 },
                 {
                     "name": "content",
@@ -698,7 +776,8 @@
                 {
                     "name": "label",
                     "type": "String",
-                    "optional": true
+                    "optional": true,
+                    "slots": ["specimen"]
                 },
                 {
                     "name": "start",
@@ -720,52 +799,62 @@
                 {
                     "name": "name",
                     "type": "MetadataValue",
-                    "optional": true
+                    "optional": true,
+                    "slots": ["field", "value"]
                 },
                 {
                     "name": "title",
                     "type": "MetadataValue",
-                    "optional": true
+                    "optional": true,
+                    "slots": ["field", "value"]
                 },
                 {
                     "name": "subtitle",
                     "type": "MetadataValue",
-                    "optional": true
+                    "optional": true,
+                    "slots": ["field", "value"]
                 },
                 {
                     "name": "time",
                     "type": "MetadataValue",
-                    "optional": true
+                    "optional": true,
+                    "slots": ["field", "value"]
                 },
                 {
                     "name": "date",
                     "type": "MetadataValue",
-                    "optional": true
+                    "optional": true,
+                    "slots": ["field", "value"]
                 },
                 {
                     "name": "authors",
                     "type": "MetadataValue",
-                    "optional": true
+                    "optional": true,
+                    "slots": ["field", "value"]
                 },
                 {
                     "name": "keywords",
                     "type": "MetadataValue",
-                    "optional": true
+                    "optional": true,
+                    "slots": ["field", "value"]
                 },
                 {
                     "name": "abstract",
                     "type": "MetadataValue",
-                    "optional": true
+                    "optional": true,
+                    "slots": ["field", "value"]
                 },
                 {
                     "name": "state",
                     "type": "MetadataValue",
-                    "optional": true
+                    "optional": true,
+                    "slots": ["field", "value"]
                 },
                 {
                     "name": "comment",
                     "type": "MetadataValue",
-                    "optional": true
+                    "optional": true,
+                    "slots": ["field", "value"]
                 }
             ],
             "invariants": "A leaf Markup node owned by Document.metadata. Field absence differs from explicit null. Its scope covers the authored properties block; unsupported attribute syntax yields null anchor and empty attributes."
@@ -777,7 +866,8 @@
                 {
                     "name": "label",
                     "type": "String",
-                    "optional": false
+                    "optional": false,
+                    "slots": ["label"]
                 },
                 {
                     "name": "dest",
@@ -801,28 +891,37 @@
                     {
                         "name": "value",
                         "type": "String",
-                        "optional": false
+                        "optional": false,
+                        "slots": ["dest", "anchor"]
                     }
                 ],
                 "cross": [
                     {
                         "name": "path",
                         "type": "String",
-                        "optional": false
+                        "optional": false,
+                        "slots": ["dest"]
                     },
                     {
                         "name": "anchor",
                         "type": "String",
-                        "optional": true
+                        "optional": true,
+                        "slots": ["anchor"]
                     }
                 ],
                 "reference": [
                     {
                         "name": "label",
                         "type": "String",
-                        "optional": false
+                        "optional": false,
+                        "slots": ["label"]
                     }
                 ]
+            },
+            "holders": {
+                "url": ["Link", "Embedded", "Reference"],
+                "cross": ["CrossLink", "CrossEmbedded"],
+                "reference": ["Link", "Embedded"]
             },
             "dump": "url(\"...\"), cross(path=\"...\",anchor=null) or reference(\"...\")"
         },
@@ -833,7 +932,8 @@
                     {
                         "name": "key",
                         "type": "String",
-                        "optional": false
+                        "optional": false,
+                        "slots": ["bib"]
                     },
                     {
                         "name": "mode",
@@ -852,7 +952,8 @@
                     {
                         "name": "label",
                         "type": "String",
-                        "optional": false
+                        "optional": false,
+                        "slots": ["specimen"]
                     }
                 ]
             },
@@ -865,7 +966,8 @@
                     {
                         "name": "value",
                         "type": "String",
-                        "optional": false
+                        "optional": false,
+                        "slots": ["footnote"]
                     }
                 ],
                 "note": [
@@ -961,12 +1063,14 @@
                 {
                     "name": "name",
                     "type": "String",
-                    "optional": false
+                    "optional": false,
+                    "slots": ["record"]
                 },
                 {
                     "name": "value",
                     "type": "String",
-                    "optional": false
+                    "optional": false,
+                    "slots": ["value"]
                 }
             ],
             "dump": "name=\"value\" within attributes"
@@ -977,7 +1081,8 @@
                 {
                     "name": "classes",
                     "type": "[String]",
-                    "optional": false
+                    "optional": false,
+                    "slots": ["class"]
                 },
                 {
                     "name": "records",
@@ -1150,7 +1255,8 @@
         {
             "name": "anchor",
             "type": "String",
-            "optional": true
+            "optional": true,
+            "slots": ["id"]
         },
         {
             "name": "attributes",

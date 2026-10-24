@@ -6,6 +6,7 @@
 #include "../include/markdown_core.h"
 
 #include "ast_internal.h"
+#include "sink.h"
 #include "markdown-core-elements.h"
 
 #include <parser.h>
@@ -209,6 +210,36 @@ markdown_core_status markdown_core_document_parse_in(const uint8_t *source, size
     markdown_core_status status = session_open(&session, source, length, unit);
     if (status == MARKDOWN_CORE_OK) {
         status = session_finalize(&session);
+    }
+    if (status != MARKDOWN_CORE_OK) {
+        session_close(&session);
+        markdown_core_free(parsed);
+        return status;
+    }
+    *parsed = session.document;
+    session.document.root = NULL;
+    session_close(&session);
+    *document = parsed;
+    return MARKDOWN_CORE_OK;
+}
+
+/* The parse of the text before a cursor is a fresh parse whose parser
+ * reports what it leaves open to `sink` (sink.h): the sink names the
+ * text, and the document is the context query's alone. */
+markdown_core_status markdown_core_parse_before_cursor(markdown_core_context_sink *sink, markdown_core_text_unit unit,
+                                                       markdown_core_document **document) {
+    markdown_core_document *parsed = markdown_core_alloc(1, sizeof(*parsed));
+    if (!parsed) {
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    markdown_core_session session = {0};
+    markdown_core_status status = session_open(&session, sink->source, sink->length, unit);
+    if (status == MARKDOWN_CORE_OK) {
+        session.committed->sink = sink;
+        status = session_finalize(&session);
+    }
+    if (status == MARKDOWN_CORE_OK && sink->failed) {
+        status = MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     if (status != MARKDOWN_CORE_OK) {
         session_close(&session);

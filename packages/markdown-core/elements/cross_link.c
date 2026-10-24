@@ -4,6 +4,41 @@
 #include "inlines.h"
 #include "node.h"
 #include "parser.h"
+#include "inline_internal.h"
+
+/* How a cross link's target goes on past a cursor: its path up to the `#`
+ * that starts its anchor, and its anchor, which may hold more parts, up to
+ * the separator or the closer. Neither crosses a bracket or a line. */
+static bufsize_t target_end(const unsigned char *data, bufsize_t length, bool anchor) {
+    bufsize_t i = 0;
+    while (i < length && data[i] != '[' && data[i] != ']' && data[i] != '|' && data[i] != '\n' && data[i] != '\r' &&
+           !(data[i] == '\\' && i + 1 < length && data[i + 1] == '|') && (anchor || data[i] != '#')) {
+        i++;
+    }
+    return i;
+}
+static bufsize_t path_end(const unsigned char *data, bufsize_t length) { return target_end(data, length, false); }
+static bufsize_t anchor_end(const unsigned char *data, bufsize_t length) { return target_end(data, length, true); }
+
+/* The field a body the content's end cuts short reads, to the run's context
+ * sink: the anchor after the first `#`, with the path before it, or else the
+ * path; a body past its separator reads the label, which is no slot. */
+static void S_report(markdown_core_inline_state *inline_state, bool embedded, bufsize_t start, bufsize_t body,
+                     bufsize_t hash, bufsize_t label) {
+    const markdown_core_node_kind kind = embedded ? MARKDOWN_CORE_KIND_CROSS_EMBEDDED : MARKDOWN_CORE_KIND_CROSS_LINK;
+    if (label >= 0) {
+        markdown_core_inline_open(inline_state, kind, start, body, NULL, 0);
+    } else if (hash >= 0) {
+        /* The anchor keeps a leading `^`: whether it marks a block identifier
+         * or starts a heading depends on the anchor's whole text, cursor on. */
+        const markdown_core_field anchor = {
+            MARKDOWN_CORE_SLOT_ANCHOR, kind, hash + 1, anchor_end, {{body, hash}}, 1, false, 0};
+        markdown_core_inline_open(inline_state, kind, start, body, &anchor, 1);
+    } else {
+        const markdown_core_field path = {MARKDOWN_CORE_SLOT_DEST, kind, body, path_end, {{0}}, 0, false, 0};
+        markdown_core_inline_open(inline_state, kind, start, body, &path, 1);
+    }
+}
 
 /* No speculative allocation and no cursor movement until recognition succeeds.
  * A candidate stops at the first bracket or line ending. Thus candidates cannot
@@ -43,6 +78,11 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
         if (c == ']') {
             if (i + 1 >= input->len) {
                 markdown_core_inline_state_saw_end(inline_state);
+                if (inline_state->context) {
+                    markdown_core_inline_open(
+                        inline_state, embedded ? MARKDOWN_CORE_KIND_CROSS_EMBEDDED : MARKDOWN_CORE_KIND_CROSS_LINK,
+                        start, body, NULL, 0);
+                }
             }
             if (i + 1 >= input->len || s[i + 1] != ']') {
                 return NULL;
@@ -89,6 +129,9 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     /* A body the end cuts short may close once the input goes on. */
     if (i == input->len) {
         markdown_core_inline_state_saw_end(inline_state);
+        if (inline_state->context) {
+            S_report(inline_state, embedded, start, body, hash, label);
+        }
     }
     if (i == input->len || target_end == body || part_empty) {
         return NULL;

@@ -8,6 +8,15 @@ MARKDOWN_CORE_1.0 {
     markdown_core_citation_prefix;
     markdown_core_citation_referent;
     markdown_core_citation_suffix;
+    markdown_core_context_block_at;
+    markdown_core_context_block_count;
+    markdown_core_context_free;
+    markdown_core_context_inline_at;
+    markdown_core_context_inline_count;
+    markdown_core_context_slot_at;
+    markdown_core_context_slot_count;
+    markdown_core_context_slot_prefix_at;
+    markdown_core_document_context;
     markdown_core_document_dump;
     markdown_core_document_footnote_at;
     markdown_core_document_footnote_count;
@@ -16,6 +25,7 @@ MARKDOWN_CORE_1.0 {
     markdown_core_document_node_at;
     markdown_core_document_parse;
     markdown_core_document_parse_in;
+    markdown_core_document_path;
     markdown_core_document_reference_at;
     markdown_core_document_reference_count;
     markdown_core_document_reference_for;
@@ -80,6 +90,7 @@ MARKDOWN_CORE_1.0 {
     markdown_core_node_table_column_at;
     markdown_core_node_table_properties;
     markdown_core_node_title;
+    markdown_core_path_free;
     markdown_core_reference_label;
     markdown_core_scopes_free;
     markdown_core_session_append;
@@ -90,6 +101,7 @@ MARKDOWN_CORE_1.0 {
     markdown_core_session_text;
     markdown_core_session_text_size;
     markdown_core_session_unit;
+    markdown_core_slot_kind_name;
     markdown_core_specimen_content;
     markdown_core_specimen_properties;
     markdown_core_topic_name;

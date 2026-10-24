@@ -1,0 +1,1181 @@
+# Context queries
+
+Each example is a document with one `‸`, the cursor, and the context the
+query returns there (tests/runners/context_runner.c): the open blocks, the
+inline openers the document confirms, and the slots, or `none`.
+
+## Cross links
+
+```````````````````````````````` example
+[[No‸
+.
+block Paragraph 1:1..1:4
+inline CrossLink 1:1..1:2
+inline None 1:1..1:1
+inline None 1:2..1:2
+slot dest CrossLink open before=1:3..1:4 after=1:5..1:4
+````````````````````````````````
+
+```````````````````````````````` example
+[[No‸te]] after
+.
+block Paragraph 1:1..1:4
+inline CrossLink 1:1..1:2
+slot dest CrossLink closed before=1:3..1:4 after=1:5..1:6
+````````````````````````````````
+
+```````````````````````````````` example
+![[Im‸
+.
+block Paragraph 1:1..1:5
+inline CrossEmbedded 1:1..1:3
+inline Embedded 1:1..1:2
+inline None 1:3..1:3
+slot dest CrossEmbedded open before=1:4..1:5 after=1:6..1:5
+````````````````````````````````
+
+```````````````````````````````` example
+![[Im#He‸
+.
+block Paragraph 1:1..1:8
+inline CrossEmbedded 1:1..1:3
+inline Embedded 1:1..1:2
+inline None 1:3..1:3
+slot anchor CrossEmbedded open before=1:7..1:8 after=1:9..1:8 prefix="Im"
+````````````````````````````````
+
+```````````````````````````````` example
+[[Note#He‸
+.
+block Paragraph 1:1..1:9
+inline CrossLink 1:1..1:2
+inline None 1:1..1:1
+inline None 1:2..1:2
+slot anchor CrossLink open before=1:8..1:9 after=1:10..1:9 prefix="Note"
+````````````````````````````````
+
+```````````````````````````````` example
+[[Note#^bl‸
+.
+block Paragraph 1:1..1:10
+inline CrossLink 1:1..1:2
+inline None 1:1..1:1
+inline None 1:2..1:2
+slot anchor CrossLink open before=1:8..1:10 after=1:11..1:10 prefix="Note"
+````````````````````````````````
+
+```````````````````````````````` example
+[[Note#^‸
+.
+block Paragraph 1:1..1:8
+inline CrossLink 1:1..1:2
+inline None 1:1..1:1
+inline None 1:2..1:2
+slot anchor CrossLink open before=1:8..1:8 after=1:9..1:8 prefix="Note"
+````````````````````````````````
+
+```````````````````````````````` example
+[[Note#^He‸ading Name]] after
+.
+block Paragraph 1:1..1:10
+inline CrossLink 1:1..1:2
+slot anchor CrossLink closed before=1:8..1:10 after=1:11..1:20 prefix="Note"
+````````````````````````````````
+
+```````````````````````````````` example
+[[Note|La‸
+.
+block Paragraph 1:1..1:9
+inline CrossLink 1:1..1:2
+inline None 1:1..1:1
+inline None 1:2..1:2
+````````````````````````````````
+
+```````````````````````````````` example
+> [[No‸
+.
+block Callout 1:1..1:6
+block Paragraph 1:3..1:6
+inline CrossLink 1:3..1:4
+inline None 1:3..1:3
+inline None 1:4..1:4
+slot dest CrossLink open before=1:5..1:6 after=1:7..1:6
+````````````````````````````````
+
+```````````````````````````````` example
+# [[No‸
+.
+block Heading 1:1..1:6
+inline CrossLink 1:3..1:4
+inline None 1:3..1:3
+inline None 1:4..1:4
+slot dest CrossLink open before=1:5..1:6 after=1:7..1:6
+````````````````````````````````
+
+## Links and images
+
+```````````````````````````````` example
+[t](pa‸
+.
+block Paragraph 1:1..1:6
+inline Link 1:1..1:1
+slot dest Link open before=1:5..1:6 after=1:7..1:6
+````````````````````````````````
+
+```````````````````````````````` example
+[t](pa‸th) after
+.
+block Paragraph 1:1..1:6
+inline Link 1:1..1:1
+slot dest Link closed before=1:5..1:6 after=1:7..1:8
+````````````````````````````````
+
+```````````````````````````````` example
+[t](page#se‸)
+.
+block Paragraph 1:1..1:11
+inline Link 1:1..1:1
+slot anchor Link closed before=1:10..1:11 after=1:12..1:11 prefix="page"
+````````````````````````````````
+
+```````````````````````````````` example
+[t](foo&#38;ba‸r)
+.
+block Paragraph 1:1..1:14
+inline Link 1:1..1:1
+slot dest Link closed before=1:5..1:14 after=1:15..1:15
+````````````````````````````````
+
+```````````````````````````````` example
+[t](foo&#38;ba#se‸)
+.
+block Paragraph 1:1..1:17
+inline Link 1:1..1:1
+slot anchor Link closed before=1:16..1:17 after=1:18..1:17 prefix="foo&#38;ba"
+````````````````````````````````
+
+```````````````````````````````` example
+[t](foo&#3‸8;bar)
+.
+block Paragraph 1:1..1:10
+````````````````````````````````
+
+```````````````````````````````` example
+[x]: foo&#x2‸6;bar
+.
+block Paragraph 1:1..1:12
+````````````````````````````````
+
+```````````````````````````````` example
+[x]: foo&#38;ba‸r
+.
+block Paragraph 1:1..1:15
+slot dest Reference closed before=1:6..1:15 after=1:16..1:16
+````````````````````````````````
+
+```````````````````````````````` example
+[x](foo(bar#ba‸z)tail)
+.
+block Paragraph 1:1..1:14
+inline Link 1:1..1:1
+slot anchor Link closed before=1:13..1:14 after=1:15..1:20 prefix="foo(bar"
+````````````````````````````````
+
+```````````````````````````````` example
+[x]: foo(bar#ba‸z)tail
+.
+block Paragraph 1:1..1:15
+slot anchor Reference closed before=1:14..1:15 after=1:16..1:21 prefix="foo(bar"
+````````````````````````````````
+
+```````````````````````````````` example
+[outer](url "a [t](fo‸o)")
+.
+block Paragraph 1:1..1:21
+````````````````````````````````
+
+```````````````````````````````` example
+[outer](url "a [inner](u){.fo‸o}")
+.
+block Paragraph 1:1..1:29
+````````````````````````````````
+
+```````````````````````````````` example
+[outer](url "a [inner](u){key=fo‸o}")
+.
+block Paragraph 1:1..1:32
+````````````````````````````````
+
+```````````````````````````````` example
+[outer](url "a [inner](u){.fo‸o")
+.
+block Paragraph 1:1..1:29
+````````````````````````````````
+
+```````````````````````````````` example
+[t](foo‸(bar)baz) after
+.
+block Paragraph 1:1..1:7
+inline Link 1:1..1:1
+slot dest Link closed before=1:5..1:7 after=1:8..1:15
+````````````````````````````````
+
+```````````````````````````````` example
+[t](foo(bar‸)baz) after
+.
+block Paragraph 1:1..1:11
+inline Link 1:1..1:1
+slot dest Link closed before=1:5..1:11 after=1:12..1:15
+````````````````````````````````
+
+```````````````````````````````` example
+[t](foo(bar)ba‸z) after
+.
+block Paragraph 1:1..1:14
+inline Link 1:1..1:1
+slot dest Link closed before=1:5..1:14 after=1:15..1:15
+````````````````````````````````
+
+```````````````````````````````` example
+[t](foo(bar)‸
+.
+block Paragraph 1:1..1:12
+inline Link 1:1..1:1
+slot dest Link open before=1:5..1:12 after=1:13..1:12
+````````````````````````````````
+
+```````````````````````````````` example
+[t](foo ‸
+.
+block Paragraph 1:1..1:8
+inline Link 1:1..1:1
+````````````````````````````````
+
+```````````````````````````````` example
+[outer `[t](fo‸o)`](url)
+.
+block Paragraph 1:1..1:14
+inline Code 1:8..1:8
+````````````````````````````````
+
+```````````````````````````````` example
+[t](<a b‸
+.
+block Paragraph 1:1..1:8
+inline Link 1:1..1:1
+inline None 1:5..1:5
+slot dest Link open before=1:6..1:8 after=1:9..1:8
+````````````````````````````````
+
+```````````````````````````````` example
+![a](im‸
+.
+block Paragraph 1:1..1:7
+inline Embedded 1:1..1:2
+slot dest Embedded open before=1:6..1:7 after=1:8..1:7
+````````````````````````````````
+
+```````````````````````````````` example
+![a](im#a‸)
+.
+block Paragraph 1:1..1:9
+inline Embedded 1:1..1:2
+slot anchor Embedded closed before=1:9..1:9 after=1:10..1:9 prefix="im"
+````````````````````````````````
+
+```````````````````````````````` example
+[t][la‸]
+
+[la]: /u
+.
+block Paragraph 1:1..1:6
+inline Link 1:1..1:1
+slot label Link closed before=1:5..1:6 after=1:7..1:6
+````````````````````````````````
+
+```````````````````````````````` example
+![a][la‸]
+
+[la]: /u
+.
+block Paragraph 1:1..1:7
+inline Embedded 1:1..1:2
+slot label Embedded closed before=1:6..1:7 after=1:8..1:7
+````````````````````````````````
+
+```````````````````````````````` example
+[t](‸
+.
+block Paragraph 1:1..1:4
+inline Link 1:1..1:1
+slot dest Link open before=1:5..1:4 after=1:5..1:4
+````````````````````````````````
+
+## Definitions
+
+```````````````````````````````` example
+[la‸]: /u
+.
+block Paragraph 1:1..1:3
+slot label Reference closed before=1:2..1:3 after=1:4..1:3
+````````````````````````````````
+
+```````````````````````````````` example
+[la‸
+.
+block Paragraph 1:1..1:3
+inline None 1:1..1:1
+````````````````````````````````
+
+```````````````````````````````` example
+a [x‸]: /u
+.
+block Paragraph 1:1..1:4
+inline None 1:3..1:3
+````````````````````````````````
+
+```````````````````````````````` example
+[x]: ‸foo
+.
+block Paragraph 1:1..1:5
+slot dest Reference closed before=1:6..1:5 after=1:6..1:8
+````````````````````````````````
+
+```````````````````````````````` example
+[x]:   ‸foo "t"
+.
+block Paragraph 1:1..1:7
+slot dest Reference closed before=1:8..1:7 after=1:8..1:10
+````````````````````````````````
+
+```````````````````````````````` example
+[x]: ‸
+.
+block Paragraph 1:1..1:5
+inline Directive 1:4..1:4
+slot dest Reference open before=1:6..1:5 after=1:6..1:5
+````````````````````````````````
+
+```````````````````````````````` example
+[x](‸<foo bar>) after
+.
+block Paragraph 1:1..1:4
+inline Link 1:1..1:1
+slot dest Link closed before=1:5..1:4 after=1:5..1:13
+````````````````````````````````
+
+```````````````````````````````` example
+[x](‸<foo#bar>)
+.
+block Paragraph 1:1..1:4
+inline Link 1:1..1:1
+slot dest Link closed before=1:5..1:4 after=1:5..1:8
+````````````````````````````````
+
+```````````````````````````````` example
+[x]: ‸<foo bar>
+.
+block Paragraph 1:1..1:5
+slot dest Reference closed before=1:6..1:5 after=1:6..1:14
+````````````````````````````````
+
+```````````````````````````````` example
+[x]: <pa‸th>
+.
+block Paragraph 1:1..1:8
+slot dest Reference closed before=1:7..1:8 after=1:9..1:10
+````````````````````````````````
+
+```````````````````````````````` example
+[x]: <pa‸
+.
+block Paragraph 1:1..1:8
+inline None 1:6..1:6
+slot dest Reference open before=1:7..1:8 after=1:9..1:8
+````````````````````````````````
+
+```````````````````````````````` example
+[x]: <a#fr‸
+.
+block Paragraph 1:1..1:10
+inline None 1:6..1:6
+slot anchor Reference open before=1:9..1:10 after=1:11..1:10 prefix="a"
+````````````````````````````````
+
+```````````````````````````````` example
+[x]: /u‸
+.
+block Paragraph 1:1..1:7
+slot dest Reference closed before=1:6..1:7 after=1:8..1:7
+````````````````````````````````
+
+```````````````````````````````` example
+[x]: /u#an‸
+.
+block Paragraph 1:1..1:10
+slot anchor Reference closed before=1:9..1:10 after=1:11..1:10 prefix="/u"
+````````````````````````````````
+
+```````````````````````````````` example
+[x]: /u‸rl "t"
+.
+block Paragraph 1:1..1:7
+slot dest Reference closed before=1:6..1:7 after=1:8..1:9
+````````````````````````````````
+
+## Footnotes
+
+```````````````````````````````` example
+[^no‸
+.
+block Paragraph 1:1..1:4
+inline Cite 1:1..1:2
+slot footnote Citation open before=1:3..1:4 after=1:5..1:4
+````````````````````````````````
+
+```````````````````````````````` example
+a [^no‸] b
+.
+block Paragraph 1:1..1:6
+inline Cite 1:3..1:4
+slot footnote Citation open before=1:5..1:6 after=1:7..1:6
+````````````````````````````````
+
+```````````````````````````````` example
+[^no‸]: text
+.
+block Paragraph 1:1..1:4
+slot footnote Footnote closed before=1:3..1:4 after=1:5..1:4
+````````````````````````````````
+
+```````````````````````````````` example
+[^‸
+.
+block Paragraph 1:1..1:2
+inline Cite 1:1..1:2
+slot footnote Citation open before=1:3..1:2 after=1:3..1:2
+````````````````````````````````
+
+## Citations and specimens
+
+```````````````````````````````` example
+See @do‸
+.
+block Paragraph 1:1..1:7
+inline Cite 1:5..1:5
+slot bib Citation closed before=1:6..1:7 after=1:8..1:7
+slot specimen Citation closed before=1:6..1:7 after=1:8..1:7
+````````````````````````````````
+
+```````````````````````````````` example
+See [@do‸]
+.
+block Paragraph 1:1..1:8
+inline Cite 1:6..1:6
+slot bib Citation closed before=1:7..1:8 after=1:9..1:8
+````````````````````````````````
+
+```````````````````````````````` example
+(@sp‸) text
+.
+block Paragraph 1:1..1:4
+slot specimen Specimen closed before=1:3..1:4 after=1:5..1:4
+````````````````````````````````
+
+```````````````````````````````` example
+(@sp‸
+.
+block Paragraph 1:1..1:4
+inline Cite 1:2..1:2
+slot bib Citation closed before=1:3..1:4 after=1:5..1:4
+slot specimen Citation closed before=1:3..1:4 after=1:5..1:4
+````````````````````````````````
+
+```````````````````````````````` example
+See @{a{b‸}c} after
+.
+block Paragraph 1:1..1:9
+inline Cite 1:5..1:5
+slot bib Citation closed before=1:7..1:9 after=1:10..1:11
+````````````````````````````````
+
+```````````````````````````````` example
+See @‸{foo} after
+.
+block Paragraph 1:1..1:5
+inline Cite 1:5..1:5
+slot bib Citation closed before=1:6..1:5 after=1:6..1:10
+slot specimen Citation closed before=1:6..1:5 after=1:6..1:10
+````````````````````````````````
+
+```````````````````````````````` example
+See @‸.foo after
+.
+block Paragraph 1:1..1:5
+inline Cite 1:5..1:5
+slot bib Citation open before=1:6..1:5 after=1:6..1:5
+slot specimen Citation open before=1:6..1:5 after=1:6..1:5
+````````````````````````````````
+
+```````````````````````````````` example
+See @{a@{b‸
+.
+block Paragraph 1:1..1:10
+inline Cite 1:5..1:5
+slot bib Citation open before=1:7..1:10 after=1:11..1:10
+````````````````````````````````
+
+```````````````````````````````` example
+See @{a b‸
+.
+block Paragraph 1:1..1:9
+````````````````````````````````
+
+```````````````````````````````` example
+See @{foo [x](ba‸r)
+.
+block Paragraph 1:1..1:16
+inline Link 1:11..1:11
+slot dest Link closed before=1:15..1:16 after=1:17..1:17
+````````````````````````````````
+
+```````````````````````````````` example
+See @{fo‸o bar}
+.
+block Paragraph 1:1..1:8
+inline Cite 1:5..1:5
+slot bib Citation open before=1:7..1:8 after=1:9..1:9
+````````````````````````````````
+
+## Topics and block identifiers
+
+```````````````````````````````` example
+see #to‸
+.
+block Paragraph 1:1..1:7
+inline Topic 1:5..1:5
+slot name Topic closed before=1:6..1:7 after=1:8..1:7
+````````````````````````````````
+
+```````````````````````````````` example
+see #to‸pic/sub here
+.
+block Paragraph 1:1..1:7
+inline Topic 1:5..1:5
+slot name Topic closed before=1:6..1:7 after=1:8..1:14
+````````````````````````````````
+
+```````````````````````````````` example
+see #topic‸/sub here
+.
+block Paragraph 1:1..1:10
+inline Topic 1:5..1:5
+slot name Topic closed before=1:6..1:10 after=1:11..1:14
+````````````````````````````````
+
+```````````````````````````````` example
+see #‸/sub
+.
+block Paragraph 1:1..1:5
+inline Topic 1:5..1:5
+slot name Topic open before=1:6..1:5 after=1:6..1:5
+````````````````````````````````
+
+```````````````````````````````` example
+see #‸
+.
+block Paragraph 1:1..1:5
+inline Topic 1:5..1:5
+slot name Topic open before=1:6..1:5 after=1:6..1:5
+````````````````````````````````
+
+```````````````````````````````` example
+para #i‸d#
+.
+block Paragraph 1:1..1:7
+slot id Paragraph closed before=1:7..1:7 after=1:8..1:8
+````````````````````````````````
+
+```````````````````````````````` example
+para
+#i‸d#
+.
+block Paragraph 1:1..1:4
+slot id Paragraph closed before=2:2..2:2 after=2:3..2:3
+````````````````````````````````
+
+```````````````````````````````` example
+see #fo‸o text #realid#
+.
+block Paragraph 1:1..1:7
+inline Topic 1:5..1:5
+slot name Topic closed before=1:6..1:7 after=1:8..1:8
+````````````````````````````````
+
+## Directives
+
+```````````````````````````````` example
+a :ba‸
+.
+block Paragraph 1:1..1:5
+inline Directive 1:3..1:3
+slot name Directive open before=1:4..1:5 after=1:6..1:5
+````````````````````````````````
+
+```````````````````````````````` example
+a :ba‸dge[x]
+.
+block Paragraph 1:1..1:5
+inline Directive 1:3..1:3
+slot name Directive closed before=1:4..1:5 after=1:6..1:8
+````````````````````````````````
+
+```````````````````````````````` example
+a :‸
+.
+block Paragraph 1:1..1:3
+inline Directive 1:3..1:3
+slot name Directive open before=1:4..1:3 after=1:4..1:3
+````````````````````````````````
+
+```````````````````````````````` example
+:::no‸
+.
+block DirectiveBlock 1:1..1:5
+slot name DirectiveBlock closed before=1:4..1:5 after=1:6..1:5
+````````````````````````````````
+
+```````````````````````````````` example
+:::no‸te
+x
+:::
+.
+block DirectiveBlock 1:1..1:5
+slot name DirectiveBlock closed before=1:4..1:5 after=1:6..1:7
+````````````````````````````````
+
+```````````````````````````````` example
+::vi‸
+.
+block DirectiveBlock 1:1..1:4
+slot name DirectiveBlock closed before=1:3..1:4 after=1:5..1:4
+````````````````````````````````
+
+```````````````````````````````` example
+:::note {.c‸
+.
+block Paragraph 1:1..1:11
+slot class DirectiveBlock open before=1:11..1:11 after=1:12..1:11
+````````````````````````````````
+
+```````````````````````````````` example
+- :::‸
+.
+block List 1:1..1:5
+block ListItem 1:1..1:5
+block Paragraph 1:3..1:5
+slot name DirectiveBlock open before=1:6..1:5 after=1:6..1:5
+````````````````````````````````
+
+## Attributes
+
+```````````````````````````````` example
+[x](u){#i‸}
+.
+block Paragraph 1:1..1:9
+slot id Link closed before=1:9..1:9 after=1:10..1:9
+````````````````````````````````
+
+```````````````````````````````` example
+[x](u){#i‸
+.
+block Paragraph 1:1..1:9
+inline None 1:7..1:7
+inline Topic 1:8..1:8
+slot id Link open before=1:9..1:9 after=1:10..1:9
+slot name Topic closed before=1:9..1:9 after=1:10..1:9
+````````````````````````````````
+
+```````````````````````````````` example
+[x]{.c‸
+.
+block Paragraph 1:1..1:6
+inline None 1:4..1:4
+slot class Span open before=1:6..1:6 after=1:7..1:6
+````````````````````````````````
+
+```````````````````````````````` example
+`c`{.c‸}
+.
+block Paragraph 1:1..1:6
+slot class Code closed before=1:6..1:6 after=1:7..1:6
+````````````````````````````````
+
+```````````````````````````````` example
+[x]{‸
+.
+block Paragraph 1:1..1:4
+inline None 1:4..1:4
+slot record Span open before=1:5..1:4 after=1:5..1:4
+````````````````````````````````
+
+```````````````````````````````` example
+[x]{rec=va‸}
+.
+block Paragraph 1:1..1:10
+slot value Span closed before=1:9..1:10 after=1:11..1:10 prefix="rec"
+````````````````````````````````
+
+```````````````````````````````` example
+[x]{key=fo‸o\bar} after
+.
+block Paragraph 1:1..1:10
+slot value Span closed before=1:9..1:10 after=1:11..1:15 prefix="key"
+````````````````````````````````
+
+```````````````````````````````` example
+[x]{key=foo\b‸ar} after
+.
+block Paragraph 1:1..1:13
+slot value Span closed before=1:9..1:13 after=1:14..1:15 prefix="key"
+````````````````````````````````
+
+```````````````````````````````` example
+[x]{key="fo‸o} after
+.
+block Paragraph 1:1..1:11
+slot value Span closed before=1:9..1:11 after=1:12..1:12 prefix="key"
+````````````````````````````````
+
+```````````````````````````````` example
+[x]{key="fo‸o bar"} after
+.
+block Paragraph 1:1..1:11
+slot value Span closed before=1:9..1:11 after=1:12..1:17 prefix="key"
+````````````````````````````````
+
+```````````````````````````````` example
+[x]{key='fo‸o' .c} after
+.
+block Paragraph 1:1..1:11
+slot value Span closed before=1:9..1:11 after=1:12..1:13 prefix="key"
+````````````````````````````````
+
+```````````````````````````````` example
+[x]{key=‸"foo bar"} after
+.
+block Paragraph 1:1..1:8
+slot value Span closed before=1:9..1:8 after=1:9..1:17 prefix="key"
+````````````````````````````````
+
+```````````````````````````````` example
+[x]{.foo ‸bar}
+.
+block Paragraph 1:1..1:9
+````````````````````````````````
+
+```````````````````````````````` example
+[x]{rec="a b‸
+.
+block Paragraph 1:1..1:12
+inline None 1:4..1:4
+slot value Span open before=1:9..1:12 after=1:13..1:12 prefix="rec"
+````````````````````````````````
+
+```````````````````````````````` example
+[x]{#a .b r‸}
+.
+block Paragraph 1:1..1:11
+slot record Span closed before=1:11..1:11 after=1:12..1:11
+````````````````````````````````
+
+```````````````````````````````` example
+:d[x]{.c‸}
+.
+block Paragraph 1:1..1:8
+slot class Directive closed before=1:8..1:8 after=1:9..1:8
+````````````````````````````````
+
+```````````````````````````````` example
+<http://a>{.c‸}
+.
+block Paragraph 1:1..1:13
+slot class Link closed before=1:13..1:13 after=1:14..1:13
+````````````````````````````````
+
+```````````````````````````````` example
+# Head {#i‸}
+.
+block Heading 1:1..1:10
+slot id Heading closed before=1:10..1:10 after=1:11..1:10
+````````````````````````````````
+
+```````````````````````````````` example
+## A {.b‸} ##
+.
+block Heading 1:1..1:8
+inline None 1:6..1:6
+slot class Heading closed before=1:8..1:8 after=1:9..1:8
+````````````````````````````````
+
+```````````````````````````````` example
+# text {.fo‸o} trailing
+.
+block Heading 1:1..1:11
+inline None 1:8..1:8
+````````````````````````````````
+
+```````````````````````````````` example
+# text {.fo‸o trailing
+.
+block Heading 1:1..1:11
+inline None 1:8..1:8
+````````````````````````````````
+
+```````````````````````````````` example
+# [x](url{.fo‸o})
+.
+block Heading 1:1..1:13
+inline Link 1:3..1:3
+slot dest Link closed before=1:7..1:13 after=1:14..1:15
+````````````````````````````````
+
+```````````````````````````````` example
+# text {.fo‸o} ##
+.
+block Heading 1:1..1:11
+inline None 1:8..1:8
+slot class Heading closed before=1:10..1:11 after=1:12..1:12
+````````````````````````````````
+
+```````````````````````````````` example
+# text {.fo‸o}##
+.
+block Heading 1:1..1:11
+inline None 1:8..1:8
+````````````````````````````````
+
+```````````````````````````````` example
+# text {k="x {.ba‸r}
+.
+block Heading 1:1..1:17
+inline None 1:8..1:8
+slot class Heading closed before=1:16..1:17 after=1:18..1:18
+````````````````````````````````
+
+```````````````````````````````` example
+# text {k={.fo‸o}
+.
+block Heading 1:1..1:14
+slot value Heading closed before=1:11..1:14 after=1:15..1:15 prefix="k"
+````````````````````````````````
+
+## Callouts
+
+```````````````````````````````` example
+> [!no‸
+.
+block Callout 1:1..1:6
+block Paragraph 1:3..1:6
+inline None 1:3..1:3
+slot variant Callout closed before=1:5..1:6 after=1:7..1:6
+````````````````````````````````
+
+```````````````````````````````` example
+> [!no‸te] Title
+.
+block Callout 1:1..1:6
+block Paragraph 1:3..1:6
+slot variant Callout closed before=1:5..1:6 after=1:7..1:8
+````````````````````````````````
+
+```````````````````````````````` example
+> [!‸
+.
+block Callout 1:1..1:4
+block Paragraph 1:3..1:4
+inline None 1:3..1:3
+slot variant Callout open before=1:5..1:4 after=1:5..1:4
+````````````````````````````````
+
+```````````````````````````````` example
+> x
+> [!no‸
+.
+block Callout 1:1..1:3
+block Paragraph 1:3..1:3
+inline None 2:3..2:3
+````````````````````````````````
+
+```````````````````````````````` example
+- > [!wa‸]
+.
+block List 1:1..1:8
+block ListItem 1:1..1:8
+block Callout 1:3..1:8
+block Paragraph 1:5..1:8
+slot variant Callout closed before=1:7..1:8 after=1:9..1:8
+````````````````````````````````
+
+## Code blocks
+
+```````````````````````````````` example
+```py‸
+.
+block CodeBlock 1:1..1:5
+slot info CodeBlock closed before=1:4..1:5 after=1:6..1:5
+````````````````````````````````
+
+```````````````````````````````` example
+```py‸thon
+x
+```
+.
+block CodeBlock 1:1..1:5
+slot info CodeBlock closed before=1:4..1:5 after=1:6..1:9
+````````````````````````````````
+
+```````````````````````````````` example
+```‸
+.
+block CodeBlock 1:1..1:3
+````````````````````````````````
+
+```````````````````````````````` example
+```fo‸o&#32;bar
+x
+```
+.
+block CodeBlock 1:1..1:5
+slot info CodeBlock closed before=1:4..1:5 after=1:6..1:6
+````````````````````````````````
+
+```````````````````````````````` example
+```foo&#32;ba‸r
+x
+```
+.
+block CodeBlock 1:1..1:13
+````````````````````````````````
+
+```````````````````````````````` example
+```foo&Tab;ba‸r
+.
+block CodeBlock 1:1..1:13
+````````````````````````````````
+
+```````````````````````````````` example
+```&#x20;fo‸o
+.
+block CodeBlock 1:1..1:11
+slot info CodeBlock closed before=1:10..1:11 after=1:12..1:12
+````````````````````````````````
+
+```````````````````````````````` example
+```fo‸o\&#32;bar
+.
+block CodeBlock 1:1..1:5
+slot info CodeBlock closed before=1:4..1:5 after=1:6..1:7
+````````````````````````````````
+
+```````````````````````````````` example
+```foo\&#32;ba‸r
+```
+.
+block CodeBlock 1:1..1:14
+````````````````````````````````
+
+```````````````````````````````` example
+```fo‸o\&#33;bar
+```
+.
+block CodeBlock 1:1..1:5
+slot info CodeBlock closed before=1:4..1:5 after=1:6..1:15
+````````````````````````````````
+
+```````````````````````````````` example
+```lan‸g{junk
+x
+```
+.
+block CodeBlock 1:1..1:6
+slot info CodeBlock closed before=1:4..1:6 after=1:7..1:12
+````````````````````````````````
+
+```````````````````````````````` example
+```lan‸g{.c}
+x
+```
+.
+block CodeBlock 1:1..1:6
+slot info CodeBlock closed before=1:4..1:6 after=1:7..1:7
+````````````````````````````````
+
+```````````````````````````````` example
+```lang{k=fo‸o junk
+x
+```
+.
+block CodeBlock 1:1..1:12
+slot info CodeBlock closed before=1:4..1:12 after=1:13..1:13
+````````````````````````````````
+
+```````````````````````````````` example
+```lang{.fo‸o}
+x
+```
+.
+block CodeBlock 1:1..1:11
+slot class CodeBlock closed before=1:10..1:11 after=1:12..1:12
+````````````````````````````````
+
+```````````````````````````````` example
+```lang{.fo‸
+.
+block CodeBlock 1:1..1:11
+slot class CodeBlock closed before=1:10..1:11 after=1:12..1:11
+slot info CodeBlock closed before=1:4..1:11 after=1:12..1:11
+````````````````````````````````
+
+```````````````````````````````` example
+```c {k={.fo‸o}
+```
+.
+block CodeBlock 1:1..1:12
+slot value CodeBlock closed before=1:9..1:12 after=1:13..1:13 prefix="k"
+````````````````````````````````
+
+```````````````````````````````` example
+``` py {.c‸
+.
+block CodeBlock 1:1..1:10
+slot class CodeBlock closed before=1:10..1:10 after=1:11..1:10
+````````````````````````````````
+
+```````````````````````````````` example
+```py {#a r=v‸}
+.
+block CodeBlock 1:1..1:13
+slot value CodeBlock closed before=1:13..1:13 after=1:14..1:13 prefix="r"
+````````````````````````````````
+
+```````````````````````````````` example
+```py {k="x {.ba‸r}
+.
+block CodeBlock 1:1..1:16
+slot class CodeBlock closed before=1:15..1:16 after=1:17..1:17
+````````````````````````````````
+
+```````````````````````````````` example
+```py {#a r=v‸} more
+.
+block CodeBlock 1:1..1:13
+````````````````````````````````
+
+```````````````````````````````` example
+- ~~~ru‸
+.
+block List 1:1..1:7
+block ListItem 1:1..1:7
+block CodeBlock 1:3..1:7
+slot info CodeBlock closed before=1:6..1:7 after=1:8..1:7
+````````````````````````````````
+
+```````````````````````````````` example
+```py x‸
+.
+block CodeBlock 1:1..1:7
+````````````````````````````````
+
+## Opaque openers
+
+```````````````````````````````` example
+a `x [[No‸
+.
+block Paragraph 1:1..1:9
+inline Code 1:3..1:3
+inline CrossLink 1:6..1:7
+inline None 1:6..1:6
+inline None 1:7..1:7
+slot dest CrossLink open before=1:8..1:9 after=1:10..1:9
+````````````````````````````````
+
+```````````````````````````````` example
+a `x [[No‸]]`
+.
+block Paragraph 1:1..1:9
+inline Code 1:3..1:3
+````````````````````````````````
+
+```````````````````````````````` example
+`[[No‸]]`
+.
+block Paragraph 1:1..1:5
+inline Code 1:1..1:1
+````````````````````````````````
+
+```````````````````````````````` example
+`[[No‸]]
+.
+block Paragraph 1:1..1:5
+inline Code 1:1..1:1
+inline CrossLink 1:2..1:3
+slot dest CrossLink closed before=1:4..1:5 after=1:6..1:5
+````````````````````````````````
+
+```````````````````````````````` example
+a $x [[No‸
+.
+block Paragraph 1:1..1:9
+inline Formula 1:3..1:3
+inline CrossLink 1:6..1:7
+inline None 1:6..1:6
+inline None 1:7..1:7
+slot dest CrossLink open before=1:8..1:9 after=1:10..1:9
+````````````````````````````````
+
+```````````````````````````````` example
+a $x [[No‸$
+.
+block Paragraph 1:1..1:9
+inline Formula 1:3..1:3
+````````````````````````````````
+
+```````````````````````````````` example
+a <htt‸
+.
+block Paragraph 1:1..1:6
+inline None 1:3..1:3
+````````````````````````````````
+
+```````````````````````````````` example
+a <di‸v>
+.
+block Paragraph 1:1..1:5
+````````````````````````````````
+
+## Nothing to complete
+
+```````````````````````````````` example
+‸
+.
+none
+````````````````````````````````
+
+```````````````````````````````` example
+plain‸ text
+.
+block Paragraph 1:1..1:5
+````````````````````````````````
+
+```````````````````````````````` example
+x#to‸
+.
+block Paragraph 1:1..1:4
+````````````````````````````````
+
+```````````````````````````````` example
+a ::b‸
+.
+block Paragraph 1:1..1:5
+````````````````````````````````

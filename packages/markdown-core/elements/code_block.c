@@ -1,8 +1,10 @@
 #include "code_block_scanners.h"
 #include "code_block.h"
 #include "block_internal.h"
+#include "sink.h"
 #include "attributes.h"
 #include "formula.h"
+#include <string.h>
 #define peek_at(input, at) ((input)->data[(at)])
 
 /* The elements whose state this element reads, as `self->peers` holds them:
@@ -93,6 +95,119 @@ static void complete_code(const markdown_core_element_instance *self, markdown_c
         markdown_core_formula_promote_fence(formula, parser, node, markdown_core_scaffold_parent(node));
     }
 }
+/* The character reference at `at`, an `&`, when it spells whitespace, as
+ * the info string's decoding reads it: its length; 0 when it spells
+ * anything else or nothing; -1 when the data ends while it may still be
+ * one. */
+static bufsize_t space_reference(const unsigned char *data, bufsize_t at, bufsize_t length) {
+    bufsize_t i = at + 1;
+    if (i < length && data[i] == '#') {
+        i++;
+        const bool hex = i < length && (data[i] | 0x20) == 'x';
+        i += hex;
+        const bufsize_t digits = i, most = hex ? 6 : 7;
+        long point = 0;
+        for (; i < length && i - digits < most; i++) {
+            const unsigned char c = data[i], low = c | 0x20;
+            if (markdown_core_isdigit((char)c)) {
+                point = point * (hex ? 16 : 10) + (c - '0');
+            } else if (hex && low >= 'a' && low <= 'f') {
+                point = point * 16 + (low - 'a' + 10);
+            } else {
+                break;
+            }
+        }
+        if (i >= length) {
+            return -1;
+        }
+        return i > digits && data[i] == ';' && (point == 9 || point == 10 || point == 13 || point == 32) ? i + 1 - at
+                                                                                                         : 0;
+    }
+    static const char *const names[] = {"Tab;", "NewLine;"};
+    for (size_t n = 0; n < sizeof(names) / sizeof(*names); n++) {
+        const bufsize_t size = (bufsize_t)strlen(names[n]);
+        const bufsize_t have = length - i < size ? length - i : size;
+        if (!memcmp(data + i, names[n], (size_t)have)) {
+            return have < size ? -1 : 1 + size;
+        }
+    }
+    return 0;
+}
+
+/* Where an info string's first word goes on past a cursor: at a space or a
+ * reference that spells one, or at the attribute tail that ends the line,
+ * as the fence's info string leaves it; a brace that opens no tail is a
+ * byte of the word. `cut` says whether a reference the data's end cuts
+ * short may yet spell a space. */
+static bufsize_t info_word(const unsigned char *data, bufsize_t length, bool *cut) {
+    bufsize_t stop = length;
+    while (stop > 0 && markdown_core_is_whitespace(data[stop - 1])) {
+        stop--;
+    }
+    markdown_core_attribute_parser attributes = {.data = data, .length = stop};
+    const bufsize_t tail = markdown_core_attributes_tail(&attributes, 0, stop);
+    const int oom = attributes.oom;
+    markdown_core_attribute_parser_free(&attributes);
+    if (oom) {
+        return -1;
+    }
+    bufsize_t end = 0;
+    *cut = false;
+    while (end < length && !markdown_core_is_whitespace(data[end]) && end != tail) {
+        /* References decode before escapes, as S_fence_info decodes them:
+         * a backslash before one escapes what it spells, and a space it
+         * spells still ends the word. */
+        if (data[end] == '\\' && end + 1 < length && markdown_core_ispunct(data[end + 1]) && data[end + 1] != '&') {
+            end += 2;
+            continue;
+        }
+        if (data[end] == '&') {
+            const bufsize_t space = space_reference(data, end, length);
+            if (space > 0) {
+                break;
+            }
+            *cut = *cut || space < 0;
+        }
+        end++;
+    }
+    return end;
+}
+static bufsize_t info_end(const unsigned char *data, bufsize_t length) {
+    bool cut;
+    return info_word(data, length, &cut);
+}
+
+/* The fence line's fields the line's end cuts short, `rest` its `length`
+ * bytes past the fence, to the parse's context sink: a member of an open
+ * attribute tail, and the info string's first word, after the spaces and
+ * the references that spell them before it. Both are candidates: what
+ * follows the cursor decides whether the brace opens a tail or is a byte of
+ * the word, so the query confirms one against the whole line. */
+static void S_report_info(markdown_core_parser *parser, const unsigned char *rest, bufsize_t length) {
+    const bufsize_t offset = parser->at.offset;
+    const unsigned char *line = rest - offset;
+    markdown_core_attributes_report_tail(parser, MARKDOWN_CORE_KIND_CODE_BLOCK, line, offset, offset + length);
+    bufsize_t start = 0, space;
+    while (start < length) {
+        if (markdown_core_is_space_or_tab(rest[start])) {
+            start++;
+        } else if (rest[start] == '&' && (space = space_reference(rest, start, length)) > 0) {
+            start += space;
+        } else {
+            break;
+        }
+    }
+    bool cut;
+    const bufsize_t end = info_word(rest + start, length - start, &cut);
+    if (end < 0) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    } else if (!cut && start + end == length) {
+        const markdown_core_field info = {
+            MARKDOWN_CORE_SLOT_INFO, MARKDOWN_CORE_KIND_CODE_BLOCK, offset + start, info_end, {{0}}, 0, false, 0};
+        markdown_core_parser_open(parser, MARKDOWN_CORE_KIND_CODE_BLOCK, parser->at.first_nonspace, offset, &info, 1);
+    }
+}
+
 /* THE FENCE LINE GIVES THE INFO STRING AS THE BLOCK OPENS, once: `rest`,
  * `length` bytes, is the line past the fence, which the block's content
  * begins with, and the literal starts past it. The info string is the rest
@@ -104,6 +219,9 @@ static void S_fence_info(markdown_core_parser *parser, markdown_core_node *b, co
     const unsigned char *line_end = memchr(rest, '\n', (size_t)length);
     assert(line_end);
     const bufsize_t pos = (bufsize_t)(line_end - rest);
+    if (parser->sink) {
+        S_report_info(parser, rest, pos);
+    }
     b->as.code->literal_start = pos + 1;
     markdown_core_strbuf tmp = MARKDOWN_CORE_BUF_INIT();
     bufsize_t info_end = markdown_core_attributes_attach_tail(parser, b, rest, pos);

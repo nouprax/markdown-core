@@ -18,6 +18,7 @@ const core = [
     "buffer.c",
     "registry.c",
     "map.c",
+    "sink.c",
     "houdini_html_u.c",
     "markdown_core_ctype.c"
 ].map((file) => path.join(root, "packages/markdown-core/core", file));
@@ -63,6 +64,7 @@ const elements = [
     "embedded.c",
     "properties.c",
     "session.c",
+    "context.c",
     "span.c",
     "specimen.c",
     "strikethrough.c",

@@ -38,6 +38,35 @@ bool markdown_core_publish_tree(markdown_core_parser *parser);
 bool markdown_core_publish_candidate(markdown_core_parser *parser, markdown_core_node *candidate,
                                      markdown_core_node *root, uint32_t holder_start);
 
+/* THE LINES OF A SOURCE: the offset each begins at. A line ends after LF,
+ * after CR, or after CRLF, which is one terminator. */
+typedef struct {
+    size_t *starts;
+    size_t count;
+} markdown_core_source_lines;
+
+/* Reads the line starts of `length` bytes of `source`: false when the table
+ * could not be allocated. */
+bool markdown_core_source_lines_read(markdown_core_source_lines *lines, const uint8_t *source, size_t length);
+/* A byte range as editor coordinates in `unit`. */
+markdown_core_scope markdown_core_source_scope(const markdown_core_source_lines *lines, const uint8_t *source,
+                                               markdown_core_place place, markdown_core_text_unit unit);
+/* The byte `position` names, or the place between bytes a CURSOR at it
+ * stands, in `*offset` (ast.c, THE BYTE A POSITION NAMES). */
+bool markdown_core_position_offset(const markdown_core_source_lines *lines, const uint8_t *source, size_t length,
+                                   markdown_core_position position, markdown_core_text_unit unit, bool cursor,
+                                   size_t *offset);
+/* The nodes that hold the byte at `offset`, root first (ast.c, THE NODES
+ * THAT HOLD A BYTE). */
+bool markdown_core_tree_holders(const markdown_core_node *root, size_t offset, const markdown_core_node ***nodes,
+                                size_t *count, const markdown_core_node **last);
+
+/* Parses `sink`'s text, the text before a cursor, as a fresh parse whose
+ * parser reports what it leaves open to `sink` (session.c). */
+struct markdown_core_context_sink;
+markdown_core_status markdown_core_parse_before_cursor(struct markdown_core_context_sink *sink,
+                                                       markdown_core_text_unit unit, markdown_core_document **document);
+
 /* The scopes of `node` in the published tree `root` parsed from `source`,
  * with columns in `unit`, in a new array markdown_core_scopes_free frees;
  * markdown_core_document_scope is this query over a document's tree and

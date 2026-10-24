@@ -147,6 +147,11 @@ struct markdown_core_element {
      * which no element holds anything open (inlines.h,
      * markdown_core_inline_settle). */
     bool (*holds_open)(const markdown_core_element_instance *, const markdown_core_inline_state *);
+    /* Lists to the run's context sink what the run's record holds open as
+     * its last token ends -- the brackets no closer met -- in the parse of
+     * the text before a cursor (sink.h). Asked only of a run that has a
+     * sink, before the run finishes. */
+    void (*report_open)(const markdown_core_element_instance *, markdown_core_inline_state *);
     /* The element's completion of a node, which completion's walk asks at the
      * ENTER of every node of a kind the element is the structure of, after
      * the node's inline content is parsed and before its explicit anchor is

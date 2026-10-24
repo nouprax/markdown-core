@@ -29,7 +29,8 @@ set(HEADERS
     element.h
     delimiter.h
     ahead.h
-    array.h)
+    array.h
+    sink.h)
 set(LIBRARY_SOURCES
     alloc.c
     ahead.c
@@ -42,6 +43,7 @@ set(LIBRARY_SOURCES
     buffer.c
     registry.c
     map.c
+    sink.c
     houdini_html_u.c
     markdown_core_ctype.c
     ${HEADERS})
