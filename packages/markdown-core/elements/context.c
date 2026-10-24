@@ -55,6 +55,7 @@ typedef struct {
     size_t holding_count;
     bool nested;
     struct column_mark *marks;
+    struct tail_memo *tail;
 } context_query;
 
 /* The last byte a UTF-16 column was counted to: its line, its offset and
@@ -67,6 +68,13 @@ typedef struct column_mark {
     size_t line, offset, units;
     bool set;
 } column_mark;
+
+/* The attribute parser of the line whose tails are being confirmed, from
+ * `from` to `to`: the candidate braces of one line share its memo. */
+typedef struct tail_memo {
+    size_t from, to;
+    markdown_core_attribute_parser parser;
+} tail_memo;
 
 static size_t query_line(const context_query *query, size_t offset) {
     size_t lo = 0, hi = query->lines.count;
@@ -496,13 +504,19 @@ static bool spaced(const context_query *query, size_t end) {
  * recognition ran out of memory. */
 static bool tail_ends(const context_query *query, markdown_core_node_kind owner, size_t brace, size_t line,
                       bool *ends) {
-    markdown_core_attribute_parser attributes = {.data = query->source + brace, .length = (bufsize_t)(line - brace)};
-    bufsize_t at = markdown_core_attributes_end(&attributes, 0);
-    const int oom = attributes.oom;
-    markdown_core_attribute_parser_free(&attributes);
-    size_t end = at ? brace + (size_t)at : query->cursor, spaces = end;
+    tail_memo *tail = query->tail;
+    const size_t from = query->lines.starts[query_line(query, brace)];
+    if (!tail->parser.data || tail->from != from || tail->to != line) {
+        markdown_core_attribute_parser_free(&tail->parser);
+        tail->from = from;
+        tail->to = line;
+        tail->parser = (markdown_core_attribute_parser){.data = query->source + tail->from,
+                                                         .length = (bufsize_t)(line - tail->from)};
+    }
+    bufsize_t at = markdown_core_attributes_end(&tail->parser, (bufsize_t)(brace - tail->from));
+    size_t end = at ? tail->from + (size_t)at : query->cursor, spaces = end;
     *ends = false;
-    if (oom) {
+    if (tail->parser.oom) {
         return false;
     }
     while (end < line && (query->source[end] == ' ' || query->source[end] == '\t')) {
@@ -678,7 +692,9 @@ markdown_core_status markdown_core_document_context(const markdown_core_document
         return MARKDOWN_CORE_OUT_OF_BOUNDS;
     }
     column_mark marks[2] = {{0}};
-    context_query query = {.document = document, .source = source, .length = length, .marks = marks};
+    tail_memo tail = {0};
+    context_query query = {
+        .document = document, .source = source, .length = length, .marks = marks, .tail = &tail};
     if (!markdown_core_source_lines_read(&query.lines, source, length)) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
@@ -702,6 +718,7 @@ markdown_core_status markdown_core_document_context(const markdown_core_document
     }
     markdown_core_document_free(before);
     markdown_core_context_sink_clear(&sink);
+    markdown_core_attribute_parser_free(&tail.parser);
     markdown_core_free(query.holdings);
     markdown_core_free(query.lines.starts);
     if (status != MARKDOWN_CORE_OK) {
