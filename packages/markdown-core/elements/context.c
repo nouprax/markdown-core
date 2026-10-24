@@ -511,7 +511,7 @@ static bool tail_ends(const context_query *query, markdown_core_node_kind owner,
         tail->from = from;
         tail->to = line;
         tail->parser = (markdown_core_attribute_parser){.data = query->source + tail->from,
-                                                         .length = (bufsize_t)(line - tail->from)};
+                                                        .length = (bufsize_t)(line - tail->from)};
     }
     bufsize_t at = markdown_core_attributes_end(&tail->parser, (bufsize_t)(brace - tail->from));
     size_t end = at ? tail->from + (size_t)at : query->cursor, spaces = end;
@@ -693,8 +693,7 @@ markdown_core_status markdown_core_document_context(const markdown_core_document
     }
     column_mark marks[2] = {{0}};
     tail_memo tail = {0};
-    context_query query = {
-        .document = document, .source = source, .length = length, .marks = marks, .tail = &tail};
+    context_query query = {.document = document, .source = source, .length = length, .marks = marks, .tail = &tail};
     if (!markdown_core_source_lines_read(&query.lines, source, length)) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
