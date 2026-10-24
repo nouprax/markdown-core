@@ -81,6 +81,10 @@ typedef struct markdown_core_context_sink {
     size_t opener_count, opener_capacity;
     markdown_core_context_field *fields;
     size_t field_count, field_capacity;
+    /* The openers and the fields by hash, so a listing finds its duplicate
+     * in bounded work: each slot holds an index plus one, or 0. */
+    uint32_t *opener_slots, *field_slots;
+    size_t opener_slot_count, field_slot_count;
     bool failed;
 } markdown_core_context_sink;
 

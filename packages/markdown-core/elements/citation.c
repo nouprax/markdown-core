@@ -181,7 +181,8 @@ static void prepare_citation_braces(const markdown_core_element_instance *self,
 }
 
 /* How a key goes on past a cursor: key characters, and single internal
- * punctuation a key character follows; a braced key to its `}`. */
+ * punctuation a key character follows; a braced key to the `}` that closes
+ * it, past the braces it nests. */
 static bufsize_t key_end(const unsigned char *data, bufsize_t length) {
     bufsize_t pos = 0;
     while (pos < length) {
@@ -199,8 +200,10 @@ static bufsize_t key_end(const unsigned char *data, bufsize_t length) {
 }
 static bufsize_t braced_key_end(const unsigned char *data, bufsize_t length) {
     bufsize_t pos = 0;
-    while (pos < length && data[pos] != '}') {
-        pos++;
+    size_t depth = 0;
+    for (; pos < length && (data[pos] != '}' || depth); pos++) {
+        depth += data[pos] == '{';
+        depth -= data[pos] == '}';
     }
     return pos;
 }
