@@ -783,6 +783,10 @@ static bufsize_t quote_led_end(const unsigned char *data, bufsize_t length) {
     }
     return memchr(data, '}', (size_t)length) ? value_end(data, length) : length;
 }
+/* A value's field, read from its first byte, which may follow the cursor. */
+static bufsize_t member_value_end(const unsigned char *data, bufsize_t length) {
+    return length && (data[0] == '"' || data[0] == '\'') ? quote_led_end(data, length) : value_end(data, length);
+}
 
 /* (attributes.h) A member boundary reads as a name not yet begun. */
 bool markdown_core_attributes_open_member(const unsigned char *s, bufsize_t n, bufsize_t start,
@@ -846,8 +850,7 @@ bool markdown_core_attributes_open_member(const unsigned char *s, bufsize_t n, b
         bufsize_t v = e + 1;
         bufsize_t close = quoted ? v + 1 + quoted_end(s + v + 1, n - v - 1, s[v]) : v + value_end(s + v, n - v);
         if (close >= n) {
-            const markdown_core_field_end end = quoted ? quote_led_end : value_end;
-            *field = (markdown_core_field){MARKDOWN_CORE_SLOT_VALUE, 0, v, end, {{b, e}}, 1, false};
+            *field = (markdown_core_field){MARKDOWN_CORE_SLOT_VALUE, 0, v, member_value_end, {{b, e}}, 1, false};
             return true;
         }
         b = quoted ? close + 1 : close;

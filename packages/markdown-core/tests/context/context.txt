@@ -620,6 +620,13 @@ slot value Span closed before=1:9..1:11 after=1:12..1:13 prefix="key"
 ````````````````````````````````
 
 ```````````````````````````````` example
+[x]{key=‸"foo bar"} after
+.
+block Paragraph 1:1..1:8
+slot value Span closed before=1:9..1:8 after=1:9..1:17 prefix="key"
+````````````````````````````````
+
+```````````````````````````````` example
 [x]{.foo ‸bar}
 .
 block Paragraph 1:1..1:9
