@@ -498,7 +498,16 @@ A rich editor does not render the front matter and changes it only through
 its own interface, so the field is metadata, not text the writer types. The
 properties grammar recognizes ten names today and drops unknown ones, so
 `bib` becomes an eleventh field of `Metadata` (docs/specs/dialect/properties.md),
-a parser change that lands in every binding at once. The host supplies the
+a parser change that lands in every binding at once. The parser already
+decodes the envelope (`elements/properties.c`): a bounded properties
+language of scalars and flat lists, not general YAML, so it is the reader
+for `bib` and needs no second one. What it lacks is positions: a `Metadata`
+node has one scope for the whole envelope and its fields have none
+(canonical AST), so the `field` and `value` slots of 3.2 cannot say which
+member holds the cursor. Each decoded member gains the scopes of its name
+and its value, in step 2. CSL YAML is a different matter: its entries are
+nested maps, which the properties language rejects, so it gets its own
+reader below. The host supplies the
 named file among the workspace files (4.1, 5.2), and the engine reads it in
 C, so that no platform parses it on its own. A document without the field
 offers only the keys used in the workspace.
@@ -612,7 +621,8 @@ it (D6).
 - [ ] **Step 2: Context in C.** The slot audit of `canonical-ast.md`, the
    generated slot kinds, `markdown_core_document_context` and
    `markdown_core_slot_spell`, the context agreement tests and the dialect
-   spec's description of slots. The audit also checks that every marker
+   spec's description of slots, and per-member name and value scopes on
+   `Metadata` (5.4). The audit also checks that every marker
    (`**`, `##`, `]]`, list markers, fences) has a source range, from a node's
    scope minus its fields' runs; where one does not, the parser gains a
    marker query, used by semantic tokens and formatting, instead of a CST.
