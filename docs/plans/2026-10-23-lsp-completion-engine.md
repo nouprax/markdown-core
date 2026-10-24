@@ -141,8 +141,8 @@ public struct Context: Sendable, Equatable {
 public struct Slot: Sendable, Equatable {
     public let kind: Kind            // section 3.2
     public let owner: NodeKind       // the construct the slot belongs to
-    public let before: Scope         // slot start ..< cursor
-    public let after: Scope          // cursor ..< end of the slot's token
+    public let before: [Scope]       // the field's runs from its start to the cursor
+    public let after: [Scope]        // its runs from the cursor to the token's end
     public let prefix: [String]      // earlier fields the slot depends on
     public let closed: Bool          // the whole document finishes the construct
     public func spell(_ value: String) -> Insertion?   // section 3.2
@@ -348,7 +348,7 @@ Version 1 implements:
   section 3.4, answering a `CompletionList` whose items carry a `textEdit`:
   the slot's `spell` of the candidate, as a snippet whose `$0` is the
   insertion's `cursor` when the client supports snippets. The edit is a
-  plain `TextEdit` over `before` and `after`, never an `InsertReplaceEdit`.
+  plain `TextEdit` over the runs of `before` and `after` (below), never an `InsertReplaceEdit`.
   A client may accept an `InsertReplaceEdit` in insert mode, which would
   leave `after` in place and break R2. Covering both means that accepting `getting-started` at `[text](#ge‸tting-started)` gives
   the anchor and not `#getting-startedtting-started`. `completionItem/resolve`
@@ -357,13 +357,19 @@ Version 1 implements:
   candidate's spelled value, without closers, so that a client that keeps
   filtering a cached list as the user types still matches `Field notes`
   after `[[Fi` turns into `[[Fie`.
-- **Single-line edits.** LSP requires a completion's edit range to be one
-  line, but some fields span line endings, such as a reference label
-  `[text][getting\nsta‸rted]`. The primary edit then covers only the part of
-  `before` and `after` on the cursor's line, and `additionalTextEdits` delete
-  the parts on other lines. The ranges do not overlap, and applied together
-  they give the same text as the parser's `Insertion`. R2's round-trip test
-  applies them as one edit.
+- **Runs, not spans.** A field's source can be discontiguous, as every
+  node's can (incremental plan 4.3): a reference label written over two
+  lines of a quote has the `> ` marker between its lines, and one in a grid
+  table cell has the cell's border and its neighbours' content there. So
+  `before` and `after` are the field's runs, as `Scope` arrays like the
+  ones scope queries answer, and an edit touches only those runs, never
+  the source between them. The primary edit replaces the cursor's run,
+  which is on the cursor's line as LSP requires, with the whole of the
+  `Insertion`; `additionalTextEdits` delete the field's other runs. Gaps
+  such as quote markers and table borders survive, the ranges do not
+  overlap, and applied together they give the parser's `Insertion`. R2's
+  round-trip test applies them as one edit, over spec examples that put a
+  multi-line field in a quote, a list item and a grid table cell.
 - **Workspace.** `workspace/didChangeWatchedFiles` and the workspace folders
   from `initialize`, which feed the workspace index of section 5.2.
 
