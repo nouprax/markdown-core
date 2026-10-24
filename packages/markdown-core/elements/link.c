@@ -435,14 +435,33 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_no
     return length;
 }
 
+/* The numeric character reference whose `#` is at `hash`, after an `&`:
+ * its length past the `#` through its `;`, 0 when the bytes are no
+ * reference, or -1 when the data ends while they may still be one. */
+static bufsize_t numeric_reference(const unsigned char *data, bufsize_t hash, bufsize_t length) {
+    bufsize_t i = hash + 1;
+    const bool hex = i < length && (data[i] == 'x' || data[i] == 'X');
+    i += hex;
+    const bufsize_t digits = i, most = hex ? 6 : 7;
+    while (i < length && i - digits < most &&
+           (markdown_core_isdigit((char)data[i]) || (hex && (data[i] | 0x20) >= 'a' && (data[i] | 0x20) <= 'f'))) {
+        i++;
+    }
+    if (i >= length) {
+        return -1;
+    }
+    return i > digits && data[i] == ';' ? i + 1 - hash : 0;
+}
+
 /* HOW A LINK'S FIELDS GO ON PAST A CURSOR. A destination's path runs to
  * the `#` that starts its fragment, and the fragment to the destination's
  * end: a bare destination ends at a space, a control or a `)` that closes
  * no `(` of its own, as manual_scan_link_url_2 reads it, and one in angle
  * brackets at its `>`, a `<` or a line ending. A label runs to a bracket. A
- * backslash escapes the byte after it. */
+ * backslash escapes the byte after it, and the `#` of a numeric character
+ * reference starts no fragment. */
 static bufsize_t field_end(const unsigned char *data, bufsize_t length, bool angled, bool fragment) {
-    bufsize_t i = 0;
+    bufsize_t i = 0, amp = -1;
     size_t depth = 0;
     while (i < length) {
         const unsigned char c = data[i];
@@ -450,6 +469,14 @@ static bufsize_t field_end(const unsigned char *data, bufsize_t length, bool ang
             i += 2;
             continue;
         }
+        if (c == '#' && !fragment && amp == i - 1) {
+            const bufsize_t reference = numeric_reference(data, i, length);
+            if (reference > 0) {
+                i += reference;
+                continue;
+            }
+        }
+        amp = c == '&' ? i : amp;
         if ((!fragment && c == '#') ||
             (angled ? c == '>' || c == '<' || markdown_core_is_line_end(c)
                     : destination_excludes(c) || (c == ')' && !depth) || (c == '(' && depth == 32))) {
@@ -484,6 +511,21 @@ static bufsize_t label_end(const unsigned char *data, bufsize_t length) {
     return markdown_core_inline_reference_label_length(data, length);
 }
 
+/* Whether the `#` at `hash` of a destination from `path`, cut short at
+ * `end`, may be a numeric character reference's that the text after the
+ * cursor finishes: whether it starts a fragment only that text tells. */
+static bool S_reference_cut(const unsigned char *data, bufsize_t path, bufsize_t hash, bufsize_t end) {
+    if (hash >= end || hash <= path || data[hash - 1] != '&') {
+        return false;
+    }
+    /* An `&` after an odd run of backslashes is escaped. */
+    bufsize_t slashes = hash - 1;
+    while (slashes > path && data[slashes - 1] == '\\') {
+        slashes--;
+    }
+    return (hash - 1 - slashes) % 2 == 0 && numeric_reference(data, hash, end) < 0;
+}
+
 /* The destination the content's end cuts short, read from `start`, to the
  * run's context sink, as the field of a link or an image whose `[` the
  * opener holds: the fragment after its first `#`, with the path before it,
@@ -500,6 +542,9 @@ static void S_report_destination(markdown_core_inline_state *inline_state, const
         return;
     }
     const bufsize_t hash = path + field_end(data + path, end - path, angled, false);
+    if (S_reference_cut(data, path, hash, end)) {
+        return;
+    }
     const bool image = opener->kind == BRACKET_IMAGE;
     const markdown_core_node_kind kind = image ? MARKDOWN_CORE_KIND_EMBEDDED : MARKDOWN_CORE_KIND_LINK;
     const bufsize_t at = opener->position - (image ? 2 : 1);
@@ -529,6 +574,9 @@ static void S_report_destination_field(markdown_core_parser *parser, markdown_co
                                        const markdown_core_chunk *input, bufsize_t before, bufsize_t path,
                                        bufsize_t len, bool angled) {
     const bufsize_t hash = path + field_end(input->data + path, len - path, angled, false);
+    if (S_reference_cut(input->data, path, hash, len)) {
+        return;
+    }
     int ignored;
     uint32_t place[4];
     const bufsize_t at[4] = {0, path, hash, hash + 1};

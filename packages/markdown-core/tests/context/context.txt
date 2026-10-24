@@ -139,6 +139,41 @@ slot anchor Link closed before=1:10..1:11 after=1:12..1:11 prefix="page"
 ````````````````````````````````
 
 ```````````````````````````````` example
+[t](foo&#38;ba‸r)
+.
+block Paragraph 1:1..1:14
+inline Link 1:1..1:1
+slot dest Link closed before=1:5..1:14 after=1:15..1:15
+````````````````````````````````
+
+```````````````````````````````` example
+[t](foo&#38;ba#se‸)
+.
+block Paragraph 1:1..1:17
+inline Link 1:1..1:1
+slot anchor Link closed before=1:16..1:17 after=1:18..1:17 prefix="foo&#38;ba"
+````````````````````````````````
+
+```````````````````````````````` example
+[t](foo&#3‸8;bar)
+.
+block Paragraph 1:1..1:10
+````````````````````````````````
+
+```````````````````````````````` example
+[x]: foo&#x2‸6;bar
+.
+block Paragraph 1:1..1:12
+````````````````````````````````
+
+```````````````````````````````` example
+[x]: foo&#38;ba‸r
+.
+block Paragraph 1:1..1:15
+slot dest Reference closed before=1:6..1:15 after=1:16..1:16
+````````````````````````````````
+
+```````````````````````````````` example
 [t](foo‸(bar)baz) after
 .
 block Paragraph 1:1..1:7
