@@ -54,13 +54,15 @@ typedef struct {
     holding *holdings;
     size_t holding_count;
     bool nested;
-    struct column_mark *mark;
+    struct column_mark *marks;
 } context_query;
 
 /* The last byte a UTF-16 column was counted to: its line, its offset and
  * its column. The query asks for the scopes of its blocks, openers and
  * slots mostly in source order, so a count on the same line goes on from
- * the last instead of from the line's start. */
+ * the last instead of from the line's start. Scope starts and scope ends
+ * keep a mark each, since the blocks nested on one line start in order but
+ * all end at the line's end. */
 typedef struct column_mark {
     size_t line, offset, units;
     bool set;
@@ -80,20 +82,23 @@ static size_t query_line(const context_query *query, size_t offset) {
 }
 
 /* The line holding `offset`, as a 1-based number, and the UTF-16 units from
- * its start to `offset`. */
-static size_t query_units(const context_query *query, size_t offset, int32_t *line) {
+ * its start to `offset`, counted on from the nearer mark before it; the
+ * count is left in mark `which`. */
+static size_t query_units(const context_query *query, size_t offset, int32_t *line, size_t which) {
     const size_t at = query_line(query, offset);
-    column_mark *mark = query->mark;
     size_t from = query->lines.starts[at], units = 0;
-    if (mark->set && mark->line == at && mark->offset <= offset) {
-        from = mark->offset;
-        units = mark->units;
+    for (size_t i = 0; i < 2; i++) {
+        const column_mark *mark = &query->marks[i];
+        if (mark->set && mark->line == at && mark->offset <= offset && mark->offset >= from) {
+            from = mark->offset;
+            units = mark->units;
+        }
     }
     for (; from < offset; from++) {
         const uint8_t byte = query->source[from];
         units += (byte & 0xC0) == 0x80 ? 0 : byte >= 0xF0 ? 2 : 1;
     }
-    *mark = (column_mark){at, offset, units, true};
+    query->marks[which] = (column_mark){at, offset, units, true};
     *line = (int32_t)(at + 1);
     return units;
 }
@@ -104,8 +109,8 @@ static markdown_core_scope query_scope(const context_query *query, size_t start,
                                           (markdown_core_place){(uint32_t)start, (uint32_t)end}, query->document->unit);
     }
     markdown_core_scope scope;
-    scope.start.column = (int32_t)query_units(query, start, &scope.start.line) + 1;
-    scope.end.column = (int32_t)query_units(query, end, &scope.end.line);
+    scope.start.column = (int32_t)query_units(query, start, &scope.start.line, 0) + 1;
+    scope.end.column = (int32_t)query_units(query, end, &scope.end.line, 1);
     return scope;
 }
 
@@ -395,10 +400,16 @@ static bool take_blocks(markdown_core_context *context, const context_query *que
     if (!context->blocks) {
         return false;
     }
+    /* Blocks nested on one line share its end: a start the last scan
+     * passed takes the end it found. */
+    size_t from = SIZE_MAX, end = 0;
     for (size_t i = 0; i < sink->block_count; i++) {
         const markdown_core_node *block = sink->blocks[i];
         size_t start = block->place.start < query->cursor ? block->place.start : query->cursor;
-        size_t end = line_end(query, start);
+        if (start < from || start > end) {
+            from = start;
+            end = line_end(query, start);
+        }
         context->blocks[context->block_count++] = (markdown_core_opener){
             markdown_core_node_get_kind(block), query_scope(query, start, end < query->cursor ? end : query->cursor)};
     }
@@ -666,8 +677,8 @@ markdown_core_status markdown_core_document_context(const markdown_core_document
     if (position.line < 1 || position.column < 1) {
         return MARKDOWN_CORE_OUT_OF_BOUNDS;
     }
-    column_mark mark = {0};
-    context_query query = {.document = document, .source = source, .length = length, .mark = &mark};
+    column_mark marks[2] = {{0}};
+    context_query query = {.document = document, .source = source, .length = length, .marks = marks};
     if (!markdown_core_source_lines_read(&query.lines, source, length)) {
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
