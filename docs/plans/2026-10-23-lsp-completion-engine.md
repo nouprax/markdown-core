@@ -459,13 +459,34 @@ heading renamed in an unsaved editor, and no keystroke updates the index.
 | `dest` in a `CrossLink` or `CrossEmbedded` | notes by name, and for embeds every file |
 | `name` in a `Topic` | topics used in the workspace |
 | `name` in a `Directive` or `DirectiveBlock` | configured directive names, then names used in the workspace |
-| `bib` | keys of the configured bibliography, then keys used in the workspace |
+| `bib` | keys of the document's bibliography (5.4), then keys used in the workspace |
 
 ### 5.3 From configuration
 
 `variant` (a default set of callout types, extensible), `info` (a default
 set of code languages, extensible), directive names with their
-documentation, and the bibliography file. Configuration arrives through `workspace/configuration`.
+documentation. Configuration arrives through `workspace/configuration`.
+
+### 5.4 The bibliography
+
+A document names its bibliography in its front matter, with a `bib` field
+whose value is one relative path or a list of them:
+
+```markdown
+---
+title: Notes
+bib: refs.json
+---
+```
+
+A rich editor does not render the front matter and changes it only through
+its own interface, so the field is metadata, not text the writer types. The
+properties grammar recognizes ten names today and drops unknown ones, so
+`bib` becomes an eleventh field of `Metadata` (docs/specs/dialect/properties.md),
+a parser change that lands in every binding at once. The host supplies the
+named file among the workspace files (4.1, 5.2); the engine reads it as CSL
+JSON with the reader of D8, so that no platform parses it on its own. A
+document without the field offers only the keys used in the workspace.
 
 ## 6. Documents and edits
 
@@ -567,7 +588,8 @@ it (D6).
 - [ ] **Step 5: In-document completion.** The providers of 5.1 and the oracle
    round-trip test, in C and Swift.
 - [ ] **Step 6: Workspace completion.** The workspace index with
-   host-supplied files, and the providers of 5.2 and 5.3.
+   host-supplied files, the providers of 5.2 and 5.3, and the bibliography
+   of 5.4 with the `bib` metadata field in the parser and every binding.
 - [ ] **Step 7 onward: Navigation.** Hover, definition, references, links,
    rename, symbols, folding, semantic tokens and diagnostics (section 4.3),
    one feature per step, in C and Swift.
@@ -606,17 +628,19 @@ it (D6).
   then formatting, all on C and Swift before the other bindings,** with the
   Markdown writer as track W in parallel (4.3, 4.4, section 9). The owner,
   on the order: "我们需要在Step 7前实现Step 8而Then里的Markdown Generator，因为AST->Markdown是LSP独立的前置依赖它应该在前序step时可以并行处理". The owner: "navigation是LSP的一部分么？format呢？如果是的话可能也得支持，只不过是在completion之后". Still
-  proposed: no bibliography format in step 6 beyond CSL JSON.
+  proposed: no bibliography format in step 6 beyond CSL JSON. Decided
+  2026-10-24: a document names its bibliography in its front matter (5.4).
+  The owner: "我觉得这个东西可以靠写进front matter？对于rich editor而言，front matter是一个纯纯的metadata block不会被渲染，也没有编辑接口，只能通过UI重新指定".
 - **D7 Platform order. Decided 2026-10-24: C and Swift first, then Kotlin
   and ECMAScript** (R6, step 9). The owner: "我们这个repo里没有任何的Windows
   支持，所以我的建议是先做C和Swift binding，然后做Kotlin及TS的binding". This
   repository ships no Windows binding, so Windows is outside this plan. The
   parser's own new queries keep landing in every binding at once.
-- **D8 JSON for the adapter. Proposed: a small JSON reader and writer in
-  this repository, used only by `markdown-core-server`,** so that the engine and
-  the platform libraries carry no JSON code and the repository keeps no
-  third-party runtime dependency. The alternative is vendoring an existing C
-  JSON library such as yyjson for the adapter alone.
+- **D8 JSON. Proposed: a small JSON reader and writer in this repository,**
+  used by `markdown-core-server` for the protocol and by the engine to read a
+  CSL JSON bibliography (5.4), so that no platform library parses JSON on its
+  own and the repository keeps no third-party runtime dependency. The
+  alternative is vendoring an existing C JSON library such as yyjson.
 
 ## 11. Rejected alternatives
 
