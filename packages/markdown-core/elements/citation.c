@@ -182,7 +182,7 @@ static void prepare_citation_braces(const markdown_core_element_instance *self,
 
 /* How a key goes on past a cursor: key characters, and single internal
  * punctuation between key characters; a braced key to the `}` that closes
- * it, past the braces it nests. */
+ * it, past the braces it nests, or to the whitespace no key holds. */
 static bufsize_t key_end(const unsigned char *data, bufsize_t length) {
     bufsize_t pos = 0;
     while (pos < length) {
@@ -201,7 +201,7 @@ static bufsize_t key_end(const unsigned char *data, bufsize_t length) {
 static bufsize_t braced_key_end(const unsigned char *data, bufsize_t length) {
     bufsize_t pos = 0;
     size_t depth = 0;
-    for (; pos < length && (data[pos] != '}' || depth); pos++) {
+    for (; pos < length && (data[pos] != '}' || depth) && !markdown_core_is_whitespace(data[pos]); pos++) {
         depth += data[pos] == '{';
         depth -= data[pos] == '}';
     }
@@ -273,9 +273,12 @@ static bool scan_citation_key(const markdown_core_element_instance *self, markdo
         }
         if (index->cursor == index->count || index->entries[index->cursor].start != pos ||
             !index->entries[index->cursor].end) {
-            /* A brace that does not close may close once the input goes on. */
+            /* A brace that does not close may close once the input goes on,
+             * unless what it holds already makes it no key. */
             markdown_core_inline_saw_end(inline_state);
-            if (inline_state->context) {
+            const bool open = index->cursor < index->count && index->entries[index->cursor].start == pos &&
+                              index->entries[index->cursor].valid;
+            if (inline_state->context && open) {
                 S_report_key(self, inline_state, start, pos, pos + 1, true);
             }
             return false;

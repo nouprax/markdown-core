@@ -490,8 +490,22 @@ slot bib Citation open before=1:7..1:10 after=1:11..1:10
 See @{a b‸
 .
 block Paragraph 1:1..1:9
+````````````````````````````````
+
+```````````````````````````````` example
+See @{foo [x](ba‸r)
+.
+block Paragraph 1:1..1:16
+inline Link 1:11..1:11
+slot dest Link closed before=1:15..1:16 after=1:17..1:17
+````````````````````````````````
+
+```````````````````````````````` example
+See @{fo‸o bar}
+.
+block Paragraph 1:1..1:8
 inline Cite 1:5..1:5
-slot bib Citation open before=1:7..1:9 after=1:10..1:9
+slot bib Citation open before=1:7..1:8 after=1:9..1:9
 ````````````````````````````````
 
 ## Topics and block identifiers
