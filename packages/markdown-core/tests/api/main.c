@@ -11716,6 +11716,24 @@ static void session_snapshot_simple_tables(test_batch_runner *runner) {
     }
 }
 
+/* A SETTLED LOOKUP IS ASKED AGAIN AT THE FINALIZE (step 8, THE SETTLE
+ * POINT): the text arrives byte by byte and finalizes to a fresh parse's
+ * dump. The paragraph settles a reference or note that finds nothing, and
+ * the definition that ends the text, which only the finalize completes,
+ * defines it. */
+static void session_settled_lookups_at_finalize(test_batch_runner *runner) {
+    static const char *const sources[] = {
+        "[x]\na\nb\n\n[x]: /u",
+        "a [x] b\nc\nd\ne\n\n[x]: /u \"t\"",
+        "[x]\na\nb\n\n[x]:\n/u",
+        "[^n] a\nb\nc\n\n[^n]: note",
+    };
+    for (size_t i = 0; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        OK(runner, finalizes_as_a_parse(sources[i], 1),
+           "a settled lookup is asked again at the finalize, as a parse of the text: %s", sources[i]);
+    }
+}
+
 /* WHAT A CANDIDATE DECIDES, IN EVERY SNAPSHOT (step 7, THE CANDIDATES): the
  * text arrives byte by byte, and after each append the snapshot's dump is a
  * fresh parse's of the same text. A construct whose call reads to the end
@@ -12340,6 +12358,7 @@ int main(void) {
     session_snapshot_lists(runner);
     session_snapshot_openers(runner);
     session_snapshot_simple_tables(runner);
+    session_settled_lookups_at_finalize(runner);
     session_snapshot_candidates(runner);
     session_held_scalars(runner);
     session_decisions_keep_lines(runner);

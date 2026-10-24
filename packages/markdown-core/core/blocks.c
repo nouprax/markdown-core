@@ -1912,7 +1912,9 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_reserve_anchor(mar
  * the explicit anchors below them are reserved at every completion, as a
  * snapshot's registry goes with the snapshot, and the lookups they made
  * that found nothing are the paragraph's when the commit completes it (A
- * LOOKUP THAT FOUND NOTHING). */
+ * LOOKUP THAT FOUND NOTHING). The finalize's completion, which sees every
+ * definition, asks them again, and reads the content whole when one finds a
+ * definition. */
 
 static bool S_record_miss(markdown_core_parser *parser, markdown_core_node *root, markdown_core_registry_kind kind,
                           const unsigned char *label, bufsize_t size);
@@ -2053,6 +2055,27 @@ static inline bufsize_t S_content_bytes(const markdown_core_node *node) {
     return content.len;
 }
 
+/* Whether a lookup the settled nodes made that found nothing finds a
+ * definition at the finalize's completion, which sees every definition: the
+ * content then no longer goes on from them. A commit's completion keeps the
+ * lookups for the finalize instead (S_settled_take). */
+static bool S_settled_found(markdown_core_parser *parser, const markdown_core_settled *settled) {
+    for (size_t i = 0; !parser->snapshot && i < settled->miss_count; i++) {
+        const markdown_core_settled_miss *miss = &settled->misses[i];
+        const markdown_core_chunk label = {(unsigned char *)settled->labels.ptr + miss->label_start, miss->label_size,
+                                           0};
+        bool failed = false;
+        const bool found = markdown_core_parser_find_definition(parser, miss->kind, &label, &failed);
+        if (failed) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+        }
+        if (found || failed) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /* The commit completes the settled paragraph `node`, whose content is
  * `size` bytes: the settled nodes are its first children, the tree's from
  * now on, the lookups they made that found nothing its own, their anchors
@@ -2152,7 +2175,12 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_parse_settled(markdown_core_pa
      * and settles more of the content only when it may (S_settles). */
     const bool commits = !parser->stream->snapshot_mark;
     if (settled->nodes.count && commits && (node->flags & MARKDOWN_CORE_NODE__COMMITTED)) {
-        S_settled_take(parser, node, size);
+        if (!S_settled_found(parser, settled)) {
+            S_settled_take(parser, node, size);
+        } else if (!parser->error) {
+            S_settled_leave(parser, settled, node);
+            markdown_core_parse_inlines(parser, node, true);
+        }
     } else if (settles || (settled->nodes.count && !commits)) {
         S_settled_read(parser, node, size, settles);
     } else {
