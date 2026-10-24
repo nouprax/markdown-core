@@ -770,6 +770,12 @@ int markdown_core_inline_state_attributes(markdown_core_inline_state *inline_sta
     if (inline_state->attributes.oom) {
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
     }
+    /* A block may begin at the end, and one that does not close may close
+     * once the input goes on. */
+    if (markdown_core_inline_tracks_end(inline_state) &&
+        (start >= inline_state->input.len || (!matched && inline_state->input.data[start] == '{'))) {
+        markdown_core_inline_saw_end(inline_state);
+    }
     return matched;
 }
 

@@ -853,6 +853,11 @@ markdown_core_node *markdown_core_node_candidate(markdown_core_node_pool *pool, 
  * borrows it from it: `taker` is a candidate (markdown_core_node_candidate)
  * and `lender` the root whose state it was made from, released after it. */
 void markdown_core_node_take_borrowed(markdown_core_node *taker, markdown_core_node *lender);
+/* The bytes the record of the inline node `node` views of the content it was
+ * read from, copied into storage it owns: the content's buffer may move
+ * while the node stays (blocks.c, THE SETTLE POINT). False, with what was
+ * not copied still viewed, when storage could not be had. */
+bool markdown_core_node_own_viewed(markdown_core_node *node);
 /* `markdown_core_node_free` into a pool: the node slots and the slots of
  * the resources the nodes held last go back to it for reuse rather than
  * dropping their slabs. A NULL pool is the plain release. */

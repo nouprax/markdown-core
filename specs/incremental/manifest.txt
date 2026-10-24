@@ -300,6 +300,12 @@ stream documents/single-line-ascii-64k.md rows
 document documents/single-line-utf8-64k.md parts 65540
 stream documents/single-line-utf8-64k.md tokens
 stream documents/single-line-utf8-64k.md rows
+document documents/short-lines-ascii-64k.md parts 65549
+stream documents/short-lines-ascii-64k.md tokens
+stream documents/short-lines-ascii-64k.md rows
+document documents/short-lines-utf8-64k.md parts 65575
+stream documents/short-lines-utf8-64k.md tokens
+stream documents/short-lines-utf8-64k.md rows
 document documents/unclosed-properties-ascii-16k.md parts 16385
 stream documents/unclosed-properties-ascii-16k.md tokens
 stream documents/unclosed-properties-ascii-16k.md rows

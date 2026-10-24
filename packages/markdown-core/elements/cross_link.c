@@ -27,6 +27,7 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
     markdown_core_cross_link_work *counts = self->state;
     counts->scan++;
     if (input->len - start < opener_length) {
+        markdown_core_inline_state_saw_end(inline_state);
         return NULL;
     }
     body = start + opener_length;
@@ -40,6 +41,9 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
             return NULL;
         }
         if (c == ']') {
+            if (i + 1 >= input->len) {
+                markdown_core_inline_state_saw_end(inline_state);
+            }
             if (i + 1 >= input->len || s[i + 1] != ']') {
                 return NULL;
             }
@@ -82,6 +86,10 @@ static markdown_core_node *match(const markdown_core_element_instance *self, mar
         }
     }
     target_end = separator >= 0 ? separator : i;
+    /* A body the end cuts short may close once the input goes on. */
+    if (i == input->len) {
+        markdown_core_inline_state_saw_end(inline_state);
+    }
     if (i == input->len || target_end == body || part_empty) {
         return NULL;
     }

@@ -27,9 +27,12 @@ set(HEADERS
     houdini.h
     markdown_core_ctype.h
     element.h
-    delimiter.h)
+    delimiter.h
+    ahead.h
+    array.h)
 set(LIBRARY_SOURCES
     alloc.c
+    ahead.c
     slab.c
     node.c
     dialect.c

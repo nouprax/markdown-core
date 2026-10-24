@@ -153,6 +153,9 @@ void markdown_core_inline_state_from_buf(markdown_core_parser *parser, markdown_
     inline_state->input = *chunk;
     inline_state->owner_parser = parser;
     inline_state->text_end = -1;
+    /* A run that lists no settle starts holds everything it reads
+     * undecided (`undecided` 0): nothing asks it where its end reads
+     * began. */
     if (parser) {
         inline_state->dialect = parser->dialect;
         size_t records = parser->dialect->run_state_size;
@@ -177,7 +180,11 @@ unsigned char markdown_core_inline_peek_char_n(markdown_core_inline_state *inlin
     // NULL bytes should have been stripped out by now.  If they're
     // present, it's a programming error:
     assert(!(inline_state->pos + n < inline_state->input.len && inline_state->input.data[inline_state->pos + n] == 0));
-    return (inline_state->pos + n < inline_state->input.len) ? inline_state->input.data[inline_state->pos + n] : 0;
+    if (inline_state->pos + n < inline_state->input.len) {
+        return inline_state->input.data[inline_state->pos + n];
+    }
+    markdown_core_inline_saw_end(inline_state);
+    return 0;
 }
 
 unsigned char markdown_core_inline_peek_char(markdown_core_inline_state *inline_state) {
@@ -206,7 +213,11 @@ static MARKDOWN_CORE_INLINE unsigned char flanking_skip_at(markdown_core_inline_
 
 // Return true if there are more characters in the inline state.
 int markdown_core_inline_is_eof(markdown_core_inline_state *inline_state) {
-    return (inline_state->pos >= inline_state->input.len);
+    if (inline_state->pos < inline_state->input.len) {
+        return 0;
+    }
+    markdown_core_inline_saw_end(inline_state);
+    return 1;
 }
 
 // Advance the inline state.  Doesn't check for eof.
@@ -262,6 +273,9 @@ static const delimiter_run *scan_delimiter(markdown_core_inline_state *inline_st
             inline_state->owner_parser->delimiter_work++;
         }
     }
+    if (run.end == inline_state->input.len) {
+        markdown_core_inline_saw_end(inline_state);
+    }
     if (spec->body == DELIMITER_WORD_BODY) {
         run.can_open = run.can_close = true;
         inline_state->cached_run = run;
@@ -305,6 +319,8 @@ static const delimiter_run *scan_delimiter(markdown_core_inline_state *inline_st
     if (after_char_pos < inline_state->input.len) {
         markdown_core_utf8proc_decode(inline_state->input.data + after_char_pos,
                                       inline_state->input.len - after_char_pos, &after_char);
+    } else {
+        markdown_core_inline_saw_end(inline_state);
     }
     const uint8_t before = markdown_core_utf8proc_classes(before_char);
     const uint8_t after = markdown_core_utf8proc_classes(after_char);
@@ -525,8 +541,12 @@ int markdown_core_byte_set_has(const char *set, unsigned char c) {
     return 0;
 }
 
-void markdown_core_inline_process_delimiters(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
-                                             bufsize_t stack_bottom, delimiter *after) {
+/* Pairs the delimiters of the range from `stack_bottom` to `after`; with
+ * `settle`, the run's last pairing, the start of each opener none pairs with
+ * is an undecided start: a closer the input goes on with may take it. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_process_delimiters(
+    markdown_core_parser *parser, markdown_core_inline_state *inline_state, bufsize_t stack_bottom, delimiter *after,
+    bool settle) {
     delimiter *candidate;
     delimiter *closer = after;
     delimiter *opener;
@@ -642,7 +662,21 @@ void markdown_core_inline_process_delimiters(markdown_core_parser *parser, markd
             closer = closer->next;
         }
     }
+    if (settle) {
+        for (delimiter *entry = after ? after->previous : inline_state->last_delim; entry != candidate;
+             entry = entry->previous) {
+            if (entry->kind == DELIMITER_MARKER && entry->can_open &&
+                (bufsize_t)entry->node->place.start < inline_state->undecided) {
+                inline_state->undecided = (bufsize_t)entry->node->place.start;
+            }
+        }
+    }
     reduce_delimiter_range(inline_state, candidate, after);
+}
+
+void markdown_core_inline_process_delimiters(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
+                                             bufsize_t stack_bottom, delimiter *after) {
+    S_process_delimiters(parser, inline_state, stack_bottom, after, false);
 }
 
 static delimiter *S_insert_delimited_inline(markdown_core_inline_state *inline_state, delimiter *opener,
@@ -790,6 +824,9 @@ static bufsize_t inline_state_find_special_char(markdown_core_inline_state *inli
         } else {
             n++;
         }
+    }
+    if (len == inline_state->input.len) {
+        markdown_core_inline_saw_end(inline_state);
     }
     return len;
 }
@@ -953,14 +990,79 @@ void markdown_core_inline_clear_inlines(markdown_core_inline_state *inline_state
     }
 }
 
-bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_core_inline_state *inline_state) {
+/* Whether no element's run record holds anything open at the token start
+ * the run reads next, and no opaque body runs past it. */
+static bool S_holds_none_open(markdown_core_parser *parser, const markdown_core_inline_state *inline_state) {
+    if (inline_state->pos < inline_state->opaque_end) {
+        return false;
+    }
+    const markdown_core_element_instance *const *owners = parser->dialect->inline_hooks[MARKDOWN_CORE_INLINE_HOOK_OPEN];
+    size_t count = parser->dialect->inline_hook_counts[MARKDOWN_CORE_INLINE_HOOK_OPEN];
+    for (size_t i = 0; i < count; i++) {
+        if (owners[i]->element->holds_open(owners[i], inline_state)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* The token start the run reads next listed as one a settle point may be. */
+static void S_settle_start(markdown_core_inline_state *inline_state) {
+    markdown_core_inline_settle *settle = inline_state->settle;
+    markdown_core_settle_start *starts =
+        markdown_core_reserve(settle->starts, &settle->capacity, settle->count + 1, sizeof(*starts));
+    if (!starts) {
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
+        return;
+    }
+    settle->starts = starts;
+    starts[settle->count++] = (markdown_core_settle_start){inline_state->pos, settle->misses};
+}
+
+void markdown_core_inline_settle_note(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
+                                      markdown_core_node *note) {
+    markdown_core_parser_settle_field(parser, note);
+    markdown_core_inline_settle *settle = inline_state->settle;
+    if (!settle) {
+        return;
+    }
+    markdown_core_node **notes =
+        markdown_core_reserve(settle->notes, &settle->note_capacity, settle->note_count + 1, sizeof(*notes));
+    if (!notes) {
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
+        return;
+    }
+    settle->notes = notes;
+    notes[settle->note_count++] = note;
+}
+
+/* The tokens of a run that lists settle starts: each token's start is where
+ * its end reads begin, and a start with no end read before it at which no
+ * element holds anything open is listed. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_parse_settling(markdown_core_parser *parser,
+                                                                 markdown_core_inline_state *inline_state) {
     while (!parser->error && !inline_state->error) {
         complete_inline_token(parser, inline_state);
-        if (parser->error || inline_state->error || markdown_core_inline_is_eof(inline_state) ||
-            !markdown_core_inline_parse_inline(parser, inline_state)) {
+        if (parser->error || inline_state->error || inline_state->pos >= inline_state->input.len) {
+            break;
+        }
+        inline_state->token = inline_state->pos;
+        if (inline_state->undecided == INT32_MAX && S_holds_none_open(parser, inline_state)) {
+            S_settle_start(inline_state);
+        }
+        if (inline_state->error || !markdown_core_inline_parse_inline(parser, inline_state)) {
             break;
         }
     }
+}
+
+/* What a run does once its last token is read: the elements finish it, its
+ * delimiters pair, and, when it lists settle starts, the earliest
+ * undecided start is its settle's. Whether its content ended in raw
+ * whitespace. */
+static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_finish_run(markdown_core_parser *parser,
+                                                                         markdown_core_inline_state *inline_state,
+                                                                         bool settle) {
     if (!parser->error && !inline_state->error) {
         const markdown_core_element_instance *const *owners =
             parser->dialect->inline_hooks[MARKDOWN_CORE_INLINE_HOOK_FINISH];
@@ -969,17 +1071,49 @@ bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_
             parser->inline_hook_work++;
             owners[i]->element->finish_inline(owners[i], inline_state);
         }
-        markdown_core_inline_process_delimiters(parser, inline_state, 0, NULL);
+        if (settle) {
+            S_process_delimiters(parser, inline_state, 0, NULL, true);
+        } else {
+            markdown_core_inline_process_delimiters(parser, inline_state, 0, NULL);
+        }
+    }
+    if (settle) {
+        inline_state->settle->undecided = inline_state->undecided;
     }
     bool whitespace = inline_state->last_delim && inline_state->last_delim->kind == DELIMITER_BOUNDARY;
     markdown_core_inline_clear_inlines(inline_state);
     return whitespace;
 }
 
+bool markdown_core_inline_finish_inlines(markdown_core_parser *parser, markdown_core_inline_state *inline_state) {
+    while (!parser->error && !inline_state->error) {
+        complete_inline_token(parser, inline_state);
+        if (parser->error || inline_state->error || markdown_core_inline_is_eof(inline_state) ||
+            !markdown_core_inline_parse_inline(parser, inline_state)) {
+            break;
+        }
+    }
+    return S_finish_run(parser, inline_state, false);
+}
+
 bool markdown_core_parse_inlines(markdown_core_parser *parser, markdown_core_node *parent, bool root) {
     markdown_core_inline_state inline_state;
     markdown_core_inline_start_inlines(parser, parent, root, &inline_state);
     return markdown_core_inline_finish_inlines(parser, &inline_state);
+}
+
+bool markdown_core_parse_inlines_settle(markdown_core_parser *parser, markdown_core_node *parent,
+                                        markdown_core_inline_settle *settle) {
+    markdown_core_inline_state inline_state;
+    markdown_core_inline_start_inlines(parser, parent, true, &inline_state);
+    settle->count = 0;
+    settle->note_count = 0;
+    settle->misses = 0;
+    inline_state.settle = settle;
+    inline_state.undecided = INT32_MAX;
+    inline_state.pos = settle->from;
+    S_parse_settling(parser, &inline_state);
+    return S_finish_run(parser, &inline_state, true);
 }
 
 void markdown_core_inline_state_set_opaque_body_end(markdown_core_inline_state *inline_state, int end) {
@@ -989,7 +1123,10 @@ void markdown_core_inline_state_set_opaque_body_end(markdown_core_inline_state *
 int markdown_core_inline_state_find_opaque_close(markdown_core_inline_state *inline_state,
                                                  markdown_core_delimiter_rule rule, int from,
                                                  markdown_core_opaque_delimiter_scanner scan) {
+    /* No closer is an end read, and so is one the end bounds: a scanner
+     * reads the byte after a closer to know it is one. */
     if (inline_state->opaque_failed_from[rule] && from >= inline_state->opaque_failed_from[rule] - 1) {
+        markdown_core_inline_saw_end(inline_state);
         return -1;
     }
     for (int at = from; at < inline_state->input.len;) {
@@ -997,10 +1134,14 @@ int markdown_core_inline_state_find_opaque_close(markdown_core_inline_state *inl
         int width = scan(inline_state->input.data, inline_state->input.len, at, rule, &closes);
         inline_state->owner_parser->opaque_scan_work++;
         if (closes) {
+            if (at + width >= inline_state->input.len) {
+                markdown_core_inline_saw_end(inline_state);
+            }
             return at;
         }
         at += width;
     }
+    markdown_core_inline_saw_end(inline_state);
     inline_state->opaque_failed_from[rule] = from + 1;
     return -1;
 }
@@ -1010,7 +1151,14 @@ unsigned char markdown_core_inline_state_peek_char(markdown_core_inline_state *i
 }
 
 unsigned char markdown_core_inline_state_peek_at(markdown_core_inline_state *inline_state, bufsize_t pos) {
+    if (pos >= inline_state->input.len) {
+        markdown_core_inline_saw_end(inline_state);
+    }
     return markdown_core_inline_peek_at(inline_state, pos);
+}
+
+void markdown_core_inline_state_saw_end(markdown_core_inline_state *inline_state) {
+    markdown_core_inline_saw_end(inline_state);
 }
 
 int markdown_core_inline_state_is_eof(markdown_core_inline_state *inline_state) {

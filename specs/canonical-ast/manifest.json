@@ -567,7 +567,8 @@
                     "Directive",
                     "DirectiveLabel",
                     "Citation",
-                    "Footnote"
+                    "Footnote",
+                    "SoftBreak"
                 ],
                 "states": [
                     "footnote.content.inline",

@@ -305,7 +305,7 @@ const OPENERS = Object.freeze({
  * (10,000 list items, 10,000 references) has that count at the largest size
  * and proportionally fewer at the smaller ones, because the smallest size
  * cannot hold ten thousand items; the nesting depth of the quotes is a depth,
- * not a size, and stays at 1,000. The two streamed paragraphs are built at
+ * not a size, and stays at 1,000. The three streamed paragraphs are built at
  * the 64 KB they are named with.
  */
 export const ADVERSARIAL_SHAPES = Object.freeze({
@@ -380,6 +380,13 @@ export const ADVERSARIAL_SHAPES = Object.freeze({
         out.put("\n");
         out.part();
     },
+    "short-lines"(out, size, letters) {
+        fill(out, size, (i) => {
+            const w = wordsOf(i, letters);
+            out.put(`${w(1)} ${w(2)} ${w(3, 2)}\n`);
+        });
+        out.part();
+    },
     "unclosed-properties"(out, size, letters) {
         out.put("---\n");
         fill(out, size, (i) => {
@@ -398,13 +405,14 @@ export const ADVERSARIAL_SHAPES = Object.freeze({
         out.part();
     }
 });
-const FIXED_SIZES = Object.freeze({ "unclosed-strong": [65536], "single-line": [65536] });
+const FIXED_SIZES = Object.freeze({ "unclosed-strong": [65536], "single-line": [65536], "short-lines": [65536] });
 
 /**
  * The shapes whose cost per chunk the language keeps local, which 6.2 holds
- * flat: every scale shape, the 10,000-item list and the 1,000 nested quotes.
+ * flat: every scale shape, the 10,000-item list, the 1,000 nested quotes and,
+ * from step 8, the paragraph of short lines.
  */
-export const LOCAL_SHAPES = Object.freeze([...Object.keys(SCALE_SHAPES), "long-list", "deep-quotes"]);
+export const LOCAL_SHAPES = Object.freeze([...Object.keys(SCALE_SHAPES), "long-list", "deep-quotes", "short-lines"]);
 
 /** A generated document: shape, alphabet and size. */
 export function shapeDocument(shape, alphabet, size) {

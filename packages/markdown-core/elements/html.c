@@ -51,7 +51,19 @@ bufsize_t markdown_core_inline_scan_inline_html(markdown_core_inline_state *inli
             }
         } else {
             matchlen = scan_html_tag(inline_state->input.data, inline_state->input.len, pos);
+            /* A tag ends at its `>`; one a name or `/` begins may end once
+             * the input goes on. */
+            if (!matchlen && (markdown_core_isalpha((char)c) || c == '/')) {
+                markdown_core_inline_saw_end(inline_state);
+            }
         }
+        /* A declaration, processing instruction or CDATA section that does
+         * not close may close once the input goes on. */
+        if (!matchlen && (inline_state->input.data[pos] == '!' || inline_state->input.data[pos] == '?')) {
+            markdown_core_inline_saw_end(inline_state);
+        }
+    } else {
+        markdown_core_inline_saw_end(inline_state);
     }
     if (is_comment) {
         *is_comment = comment;

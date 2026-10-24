@@ -1,9 +1,9 @@
 # Incremental parsing for streaming
 
-Status: rollout steps 0 to 7 (section 9) are on `main`: the gates, the public
+Status: rollout steps 0 to 8 (section 9) are on `main`: the gates, the public
 model, sessions with a whole-document restart, Reference nodes and content
-runs, node runs, sessions that only append, builders, and the streaming
-session with `finalize`. Step 8 is next. On 2026-10-14 the owner
+runs, node runs, sessions that only append, builders, the streaming session
+with `finalize`, and the settle point of an open paragraph. On 2026-10-14 the owner
 narrowed the requirement to one workload, appending tokens from a language
 model, and this revision replaces the general-edit engine that steps 4 to 8
 of the previous revision specified. Steps 4 to 8 now build a streaming
@@ -637,13 +637,24 @@ level:
   bracket, a backtick run with no closer, an autolink, HTML, entity or link
   destination scanned to the end, and the last Text node, which autolink
   completion and Text consolidation can still change.
-- The **settle point** is the start of the earliest provisional decision. The
-  paragraph's top-level inline nodes before it are settled and kept in the
-  paragraph's builder, and the next snapshot parses from the settle point.
+- The **settle point** is the latest start of a top-level token at or before
+  the start of the earliest provisional decision where nothing read before
+  it is still open (a bracket, a citation, a code or formula body) and a
+  top-level node starts after a node that is not Text. The paragraph's
+  top-level inline nodes before it are settled and kept by the session for
+  the paragraph, and the next snapshot parses from the settle point.
 
 When the paragraph closes, only the content after the settle point is parsed
 too. So a paragraph's inline content is parsed in full once, plus, on each
 append, the short stretch after the settle point.
+
+The kept nodes stay the paragraph's while its content goes on from them. A
+candidate that is still deciding can put a completed paragraph back open,
+and the kept nodes return to the session with it. When the content stops
+going on from them, as when a table takes the paragraph's last line or a
+trailing identifier leaves it, the paragraph's content is parsed in full,
+and the next publish matches it against the kept nodes as it matches
+against the nodes a snapshot made (5.9).
 
 ### 5.9 Identity matching
 
@@ -926,7 +937,7 @@ activates for it.
    the single lookahead entry (5.1, 5.3), snapshots (5.5), tail ids (5.9),
    `finalize` in C and every binding (4.4, 5.10), container folds (5.6) and
    pipe and simple tables read a row at a time (5.7).
-- [ ] **Step 8: Settle point.** The settle point of an open paragraph (5.8).
+- [x] **Step 8: Settle point.** The settle point of an open paragraph (5.8).
 
 ## 10. Decisions for the owner
 

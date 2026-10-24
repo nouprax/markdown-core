@@ -86,7 +86,38 @@ struct markdown_core_inline_state {
     /* Sticky allocation-failure flag, copied to the parser after the inline
      * pass so a lossy parse is reported instead of silently truncated. */
     markdown_core_parse_error error;
+    /* THE END READS (docs/plans/2026-09-29-incremental-parsing.md, 5.8):
+     * where the top-level token being read starts, and the earliest such
+     * start whose reading read the end of `input` -- asked for a byte at or
+     * past it, or found what it looked for only there -- or INT32_MAX while
+     * none has. What a token decided before its reading reached the end
+     * stays decided however the input goes on. */
+    bufsize_t token, undecided;
+    /* The token starts a settle point may be (markdown_core_inline_settle),
+     * or NULL when the run's caller asks for none. */
+    markdown_core_inline_settle *settle;
 };
+
+/* Whether an end read of the token being read would be one the run lists:
+ * no earlier token read the end, and the run lists settle starts. A check
+ * whose only use is to say a token read the end asks this first. */
+static inline bool markdown_core_inline_tracks_end(const markdown_core_inline_state *inline_state) {
+    return inline_state->token < inline_state->undecided;
+}
+
+/* The inline note `note`, a field its Citation holds, settles as a field
+ * does (markdown_core_parser_settle_field), and a run that lists settle
+ * starts lists it, so it commits with the node that holds it as that
+ * settles (blocks.c, THE SETTLE POINT). */
+void markdown_core_inline_settle_note(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
+                                      markdown_core_node *note);
+
+/* The token being read read the end of the input. */
+static inline void markdown_core_inline_saw_end(markdown_core_inline_state *inline_state) {
+    if (inline_state->token < inline_state->undecided) {
+        inline_state->undecided = inline_state->token;
+    }
+}
 
 /* The run record of `self` (markdown-core-element-api.h, "AN ELEMENT AS ONE
  * PARSE HOLDS IT"), or NULL when the run has none. The record lives until the
@@ -114,9 +145,9 @@ static inline void markdown_core_inline_seat_cursor(markdown_core_inline_state *
     }
     int cursor = inline_state->mark_cursor, last = owner->content_map.first + owner->content_map.count - 1;
     assert(cursor >= owner->content_map.first && cursor <= last);
-    const markdown_core_line_mark *mark = &parser->line_marks[cursor];
+    const markdown_core_line_mark *mark = &parser->line_marks.values[cursor];
     inline_state->mark_run_start = mark->content_offset;
-    inline_state->mark_run_end = cursor < last ? parser->line_marks[cursor + 1].content_offset : INT32_MAX;
+    inline_state->mark_run_end = cursor < last ? parser->line_marks.values[cursor + 1].content_offset : INT32_MAX;
     inline_state->mark_line = mark->line;
     inline_state->mark_source = mark->source;
     inline_state->mark_step = mark->source_step;

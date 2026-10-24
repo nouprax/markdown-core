@@ -41,7 +41,7 @@ typedef struct {
 /* Decode a pre-indexed envelope. Return geometry by value so a later parser
  * operation cannot invalidate a decoder's line reference. */
 static source_line property_line(const properties *p, size_t line) {
-    return p->parser->input.lines[p->first_line + line];
+    return p->parser->input.lines.values[p->first_line + line];
 }
 
 static bool plain_start(const unsigned char *s, size_t start, size_t end) {

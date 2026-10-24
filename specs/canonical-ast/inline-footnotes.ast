@@ -1,4 +1,4 @@
-Document scope=1:1..4:21 anchor=null attributes={} children=3
+Document scope=1:1..8:5 anchor=null attributes={} children=4
 ├── Paragraph scope=1:1..1:67 anchor=null attributes={} children=7
 │   ├── Cite scope=1:1..1:11 anchor=null attributes={} children=1
 │   │   └── Citation scope=1:2..1:10 anchor=null attributes={} referent=footnote(label="inline-1") children=0
@@ -52,6 +52,18 @@ Document scope=1:1..4:21 anchor=null attributes={} children=3
 │               │           └── CitationSuffix children=0
 │               ├── CitationPrefix children=0
 │               └── CitationSuffix children=0
-└── Footnote scope=4:1..4:21 anchor=null attributes={} label="inline-1" children=1
-    └── Paragraph scope=4:14..4:21 anchor=null attributes={} children=1
-        └── Text scope=4:14..4:21 anchor=null attributes={} literal="authored" children=0
+├── Footnote scope=4:1..5:0 anchor=null attributes={} label="inline-1" children=1
+│   └── Paragraph scope=4:14..4:21 anchor=null attributes={} children=1
+│       └── Text scope=4:14..4:21 anchor=null attributes={} literal="authored" children=0
+└── Paragraph scope=6:1..8:5 anchor=null attributes={} children=6
+    ├── Cite scope=6:1..6:10 anchor=null attributes={} children=1
+    │   └── Citation scope=6:3..6:9 anchor=null attributes={} referent=footnote(note) children=0
+    │       ├── Footnote scope=6:1..6:10 anchor=null attributes={} label=null children=1
+    │       │   └── Text scope=6:3..6:9 anchor=null attributes={} literal="settled" children=0
+    │       ├── CitationPrefix children=0
+    │       └── CitationSuffix children=0
+    ├── Text scope=6:11..6:17 anchor=null attributes={} literal=" before" children=0
+    ├── SoftBreak scope=6:18..7:0 anchor=null attributes={} children=0
+    ├── Text scope=7:1..7:5 anchor=null attributes={} literal="later" children=0
+    ├── SoftBreak scope=7:6..8:0 anchor=null attributes={} children=0
+    └── Text scope=8:1..8:5 anchor=null attributes={} literal="lines" children=0
