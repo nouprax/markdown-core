@@ -50,7 +50,7 @@ typedef struct markdown_core_ahead {
 } markdown_core_ahead;
 
 /* The bytes an array gains between two copies, at most. */
-#define MARKDOWN_CORE_AHEAD_SLICE_BYTES 1024
+#define MARKDOWN_CORE_AHEAD_SLICE_BYTES 2048
 
 /* The places an array of elements of `width` bytes gains between two
  * copies: as many as fit in a slice's bytes, one at least. */
