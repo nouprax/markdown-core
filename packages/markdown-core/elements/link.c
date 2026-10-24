@@ -363,7 +363,7 @@ bufsize_t markdown_core_reference_definition_length(markdown_core_chunk *input,
 
 static void S_report_reference(markdown_core_parser *parser, markdown_core_node *b, const markdown_core_chunk *input,
                                bufsize_t before, const markdown_core_chunk *url);
-static void S_report_angled(markdown_core_parser *parser, markdown_core_node *b, const markdown_core_chunk *input,
+static void S_report_unread(markdown_core_parser *parser, markdown_core_node *b, const markdown_core_chunk *input,
                             bufsize_t before);
 
 static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_node *b, markdown_core_node *parent,
@@ -373,7 +373,7 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_no
     bufsize_t length = S_reference_definition(input, attributes, &definition);
     if (!length) {
         if (parser->sink) {
-            S_report_angled(parser, b, input, before);
+            S_report_unread(parser, b, input, before);
         }
         return 0;
     }
@@ -569,10 +569,11 @@ static void S_report_reference(markdown_core_parser *parser, markdown_core_node 
     S_report_destination_field(parser, b, input, before, (bufsize_t)(url->data - input->data), len, false);
 }
 
-/* A definition at the front of `input` whose destination in angle brackets
- * the content's end cuts short, `[label]: <pa`, which no definition reads
- * until its `>`, to the parse's context sink. */
-static void S_report_angled(markdown_core_parser *parser, markdown_core_node *b, const markdown_core_chunk *input,
+/* A definition at the front of `input` that no definition reads yet, to
+ * the parse's context sink: one whose destination the content's end has
+ * not begun, `[label]: `, or whose destination in angle brackets it cuts
+ * short, `[label]: <pa`, which no definition reads until its `>`. */
+static void S_report_unread(markdown_core_parser *parser, markdown_core_node *b, const markdown_core_chunk *input,
                             bufsize_t before) {
     const unsigned char *data = input->data;
     const bufsize_t len = S_content_length(input);
@@ -581,6 +582,19 @@ static void S_report_angled(markdown_core_parser *parser, markdown_core_node *b,
     }
     bufsize_t at = 1 + markdown_core_inline_reference_label_length(data + 1, len - 1);
     if (at == 1 || at > MAX_LINK_LABEL_LENGTH + 1 || at + 1 >= len || data[at] != ']' || data[at + 1] != ':') {
+        return;
+    }
+    /* No destination yet: a bare one starts after the spaces, at the end of
+     * the input but for the line ending the block phase gave it. */
+    bufsize_t stop = input->len, rest = at + 2;
+    while (stop > rest && (data[stop - 1] == '\n' || data[stop - 1] == '\r')) {
+        stop--;
+    }
+    while (rest < stop && (data[rest] == ' ' || data[rest] == '\t')) {
+        rest++;
+    }
+    if (rest == stop) {
+        S_report_destination_field(parser, b, input, before, stop, stop, false);
         return;
     }
     at = markdown_core_skip_spaces_and_line_end(data, at + 2, len);
