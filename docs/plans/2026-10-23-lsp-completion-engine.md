@@ -284,8 +284,8 @@ are not recorded, and the query has no `inlines`.
 
 ### 4.1 One C engine, reached in process
 
-The engine is a C library, `markdown-core-workspace`, beside the parser in
-`packages/markdown-core/workspace` and built by the same CMake project. It
+The engine is a C library, `markdown-core-lsp`, beside the parser in
+`packages/markdown-core/lsp` and built by the same CMake project. It
 links the parser directly, so the context query, the cached documents and
 the providers share one address space and one allocator, and no request
 copies a document across a boundary. It owns:
@@ -320,7 +320,7 @@ costs the engine's work and one call into Swift, not a message round trip.
 
 ### 4.2 The JSON-RPC adapter
 
-`markdown-core-lsp` is a small C executable that maps LSP 3.17 JSON-RPC
+`markdown-core-server` is a small C executable that maps LSP 3.17 JSON-RPC
 messages on stdio onto the engine's API and back, for editors that speak the
 protocol on the wire, such as VS Code, Neovim and Zed. It holds no state the
 engine does not hold, and it is where the protocol transcripts of section 8
@@ -501,7 +501,7 @@ Each step is one pull request and leaves `main` releasable.
    tests and the dialect spec's description of slots.
 - [ ] **Step 3: Bindings.** Context, path and field scopes in Swift, Kotlin
    and ECMAScript, and the vocabulary exports (3.3, 3.4).
-- [ ] **Step 4: Engine skeleton.** `markdown-core-workspace` in C with the
+- [ ] **Step 4: Engine skeleton.** `markdown-core-lsp` in C with the
    lifecycle, position encoding, document store and sync, its Swift binding,
    the JSON-RPC adapter and the transcript harness, and the latency report
    (sections 4, 6, 7). Completion answers an empty list.
@@ -519,7 +519,7 @@ Each step is one pull request and leaves `main` releasable.
 ## 10. Decisions for the owner
 
 - **D1 Where the engine lives. Decided 2026-10-24: this repository,** as
-  the C library `markdown-core-workspace` in `packages/markdown-core/workspace`
+  the C library `markdown-core-lsp` in `packages/markdown-core/lsp`
   with its bindings in the existing platform packages (4.1). A parser change
   and the engine change that uses it land in one pull request, and the
   engine's tests run against the parser at the same commit.
@@ -544,7 +544,7 @@ Each step is one pull request and leaves `main` releasable.
   repository ships no Windows binding, so Windows is outside this plan. The
   parser's own new queries keep landing in every binding at once.
 - **D8 JSON for the adapter. Proposed: a small JSON reader and writer in
-  this repository, used only by `markdown-core-lsp`,** so that the engine and
+  this repository, used only by `markdown-core-server`,** so that the engine and
   the platform libraries carry no JSON code and the repository keeps no
   third-party runtime dependency. The alternative is vendoring an existing C
   JSON library such as yyjson for the adapter alone.
