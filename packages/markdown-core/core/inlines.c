@@ -1180,12 +1180,15 @@ void markdown_core_inline_open(markdown_core_inline_state *inline_state, markdow
     const int32_t opener = markdown_core_context_opener_add(sink, opens, place, false);
     for (size_t i = 0; i < count && opener >= 0; i++) {
         const markdown_core_field *field = &fields[i];
-        markdown_core_context_field open = {.kind = field->slot,
-                                            .owner = field->owner,
-                                            .opener = opener,
-                                            .start = S_context_source(inline_state, field->start),
-                                            .end = field->end,
-                                            .declares = field->declares};
+        const uint32_t start = S_context_source(inline_state, field->start);
+        markdown_core_context_field open = {
+            .kind = field->slot,
+            .owner = field->owner,
+            .opener = opener,
+            .start = start,
+            .end = field->end,
+            .declares = field->declares,
+            .lead = field->lead ? start - S_context_source(inline_state, field->start - field->lead) : 0};
         for (size_t j = 0; j < field->prefix_count && j < 2; j++) {
             open.prefix[j] = (markdown_core_place){S_context_source(inline_state, field->prefix[j][0]),
                                                    S_context_source(inline_state, field->prefix[j][1])};

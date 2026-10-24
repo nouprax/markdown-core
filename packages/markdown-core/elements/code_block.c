@@ -200,7 +200,7 @@ static void S_report_info(markdown_core_parser *parser, const unsigned char *res
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
     } else if (!cut && start + end == length) {
         const markdown_core_field info = {
-            MARKDOWN_CORE_SLOT_INFO, MARKDOWN_CORE_KIND_CODE_BLOCK, offset + start, info_end, {{0}}, 0, false};
+            MARKDOWN_CORE_SLOT_INFO, MARKDOWN_CORE_KIND_CODE_BLOCK, offset + start, info_end, {{0}}, 0, false, 0};
         markdown_core_parser_open(parser, MARKDOWN_CORE_KIND_CODE_BLOCK, parser->at.first_nonspace, offset, &info, 1);
     }
 }

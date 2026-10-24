@@ -721,7 +721,8 @@ void markdown_core_parser_open(markdown_core_parser *parser, markdown_core_node_
                                             .opener = opener,
                                             .start = (uint32_t)(line + field->start),
                                             .end = field->end,
-                                            .declares = field->declares};
+                                            .declares = field->declares,
+                                            .lead = (uint32_t)field->lead};
         for (size_t j = 0; j < field->prefix_count && j < 2; j++) {
             open.prefix[j] =
                 (markdown_core_place){(uint32_t)(line + field->prefix[j][0]), (uint32_t)(line + field->prefix[j][1])};

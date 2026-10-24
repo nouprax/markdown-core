@@ -50,7 +50,7 @@ static void S_report_variant(markdown_core_parser *parser, const markdown_core_c
         return;
     }
     const markdown_core_field variant = {
-        MARKDOWN_CORE_SLOT_VARIANT, MARKDOWN_CORE_KIND_CALLOUT, open + 2, variant_end, {{0}}, 0, false};
+        MARKDOWN_CORE_SLOT_VARIANT, MARKDOWN_CORE_KIND_CALLOUT, open + 2, variant_end, {{0}}, 0, false, 0};
     markdown_core_parser_open(parser, MARKDOWN_CORE_KIND_CALLOUT, open, open + 2, &variant, 1);
 }
 

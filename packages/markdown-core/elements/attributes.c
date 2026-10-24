@@ -844,7 +844,7 @@ static int member_step(markdown_core_member_memo *memo, const unsigned char *s, 
         b++;
     }
     if (b >= n) {
-        *field = (markdown_core_field){MARKDOWN_CORE_SLOT_RECORD, 0, b, name_end, {{0}}, 0, false};
+        *field = (markdown_core_field){MARKDOWN_CORE_SLOT_RECORD, 0, b, name_end, {{0}}, 0, false, 0};
         return MEMBER_FIELD;
     }
     const unsigned char c = s[b];
@@ -865,7 +865,7 @@ static int member_step(markdown_core_member_memo *memo, const unsigned char *s, 
             e++;
         }
         if (e >= n) {
-            *field = (markdown_core_field){slot, 0, b + 1, name_end, {{0}}, 0, false};
+            *field = (markdown_core_field){slot, 0, b + 1, name_end, {{0}}, 0, false, 0};
             return MEMBER_FIELD;
         }
         *next = e;
@@ -876,7 +876,7 @@ static int member_step(markdown_core_member_memo *memo, const unsigned char *s, 
         e++;
     }
     if (e >= n) {
-        *field = (markdown_core_field){MARKDOWN_CORE_SLOT_RECORD, 0, b, name_end, {{0}}, 0, false};
+        *field = (markdown_core_field){MARKDOWN_CORE_SLOT_RECORD, 0, b, name_end, {{0}}, 0, false, 0};
         return MEMBER_FIELD;
     }
     if (s[e] != '=') {
@@ -890,7 +890,7 @@ static int member_step(markdown_core_member_memo *memo, const unsigned char *s, 
     bufsize_t v = e + 1;
     bufsize_t close = quoted ? v + 1 + quoted_end(s + v + 1, n - v - 1, s[v]) : memo_value_end(memo, s, n, v);
     if (close >= n) {
-        *field = (markdown_core_field){MARKDOWN_CORE_SLOT_VALUE, 0, v, member_value_end, {{b, e}}, 1, false};
+        *field = (markdown_core_field){MARKDOWN_CORE_SLOT_VALUE, 0, v, member_value_end, {{b, e}}, 1, false, 0};
         return MEMBER_FIELD;
     }
     *next = quoted ? close + 1 : close;

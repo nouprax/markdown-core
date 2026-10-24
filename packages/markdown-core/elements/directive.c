@@ -355,7 +355,7 @@ static markdown_core_node *make_directive_node(const markdown_core_element *elem
  * end cuts short, to the run's context sink. */
 static void S_report_name(markdown_core_inline_state *inline_state, bufsize_t colon) {
     const markdown_core_field name = {
-        MARKDOWN_CORE_SLOT_NAME, MARKDOWN_CORE_KIND_DIRECTIVE, colon + 1, name_end, {{0}}, 0, false};
+        MARKDOWN_CORE_SLOT_NAME, MARKDOWN_CORE_KIND_DIRECTIVE, colon + 1, name_end, {{0}}, 0, false, 0};
     markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_DIRECTIVE, colon, colon + 1, &name, 1);
 }
 
@@ -565,7 +565,7 @@ static void S_report_block(markdown_core_parser *parser, const unsigned char *in
     }
     if (suffix + name_end(input + suffix, len - suffix) == len) {
         const markdown_core_field name = {
-            MARKDOWN_CORE_SLOT_NAME, MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, suffix, name_end, {{0}}, 0, false};
+            MARKDOWN_CORE_SLOT_NAME, MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, suffix, name_end, {{0}}, 0, false, 0};
         markdown_core_parser_open(parser, MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, first, suffix, &name, 1);
     }
 }

@@ -130,12 +130,12 @@ static bufsize_t identifier_end(const unsigned char *data, bufsize_t length) {
 static void S_report(markdown_core_inline_state *inline_state, bufsize_t at) {
     const bufsize_t len = inline_state->input.len;
     markdown_core_field fields[2] = {
-        {MARKDOWN_CORE_SLOT_NAME, MARKDOWN_CORE_KIND_TOPIC, at + 1, name_end, {{0}}, 0, false}};
+        {MARKDOWN_CORE_SLOT_NAME, MARKDOWN_CORE_KIND_TOPIC, at + 1, name_end, {{0}}, 0, false, 0}};
     size_t count = 1;
     if (markdown_core_node_get_kind(inline_state->owner) == MARKDOWN_CORE_KIND_PARAGRAPH &&
         at + 1 + identifier_end(inline_state->input.data + at + 1, len - at - 1) == len) {
         fields[count++] = (markdown_core_field){
-            MARKDOWN_CORE_SLOT_ID, MARKDOWN_CORE_KIND_PARAGRAPH, at + 1, identifier_end, {{0}}, 0, true};
+            MARKDOWN_CORE_SLOT_ID, MARKDOWN_CORE_KIND_PARAGRAPH, at + 1, identifier_end, {{0}}, 0, true, 0};
     }
     markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_TOPIC, at, at + 1, fields, count);
 }

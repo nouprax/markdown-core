@@ -318,9 +318,12 @@ static bool names(const context_query *query, const markdown_core_chunk *anchor,
  * when the field is empty: the construct the field belongs to, which the
  * document finishes at or after the cursor. At the document's end, where no
  * byte follows, the last byte stands for both. An `anchored` construct
- * names its node, which then carries the anchor written at `first`. */
+ * names its node, which then carries the anchor written at `first`. A
+ * construct whose opener the field names starts at it, at `begins`, or
+ * else is another of its kind that holds the bytes: a link whose title
+ * holds the text of one. SIZE_MAX names no start. */
 static bool finished_by(const context_query *query, markdown_core_node_kind owner, size_t first, bool anchored,
-                        bool *found) {
+                        size_t begins, bool *found) {
     size_t probe = query->cursor > first || query->cursor >= query->length ? query->cursor - 1 : query->cursor;
     const markdown_core_node **at_probe = NULL, **at_first = NULL;
     size_t probe_count = 0, first_count = 0;
@@ -349,6 +352,16 @@ static bool finished_by(const context_query *query, markdown_core_node_kind owne
             (anchored && !names(query, &at_probe[i]->attributes.anchor, first))) {
             continue;
         }
+        bool starts = true, before = false;
+        if (begins != SIZE_MAX && (!holds(query, at_probe[i], begins, &starts) ||
+                                   (begins && !holds(query, at_probe[i], begins - 1, &before)))) {
+            markdown_core_free((void *)at_probe);
+            markdown_core_free((void *)at_first);
+            return false;
+        }
+        if (!starts || before) {
+            continue;
+        }
         for (size_t j = 0; j < first_count && opaque <= i + 1; j++) {
             if (at_first[j] == at_probe[i]) {
                 *found = true;
@@ -369,9 +382,9 @@ static bool finished_by(const context_query *query, markdown_core_node_kind owne
  * the document absorbed it into another node otherwise, and `*kept` is
  * false. */
 static bool confirm(const context_query *query, markdown_core_node_kind owner, size_t first, bool anchored,
-                    size_t opener, bool *kept, bool *closed) {
+                    size_t opener, size_t begins, bool *kept, bool *closed) {
     *kept = *closed = false;
-    if (!finished_by(query, owner, first, anchored, closed)) {
+    if (!finished_by(query, owner, first, anchored, begins, closed)) {
         return false;
     }
     if (*closed) {
@@ -446,7 +459,11 @@ static bool take_inlines(markdown_core_context *context, const context_query *qu
         if (sorted[i].block) {
             continue;
         }
-        if (!confirm(query, sorted[i].kind, sorted[i].place.start, false, sorted[i].place.start, &kept, &closed)) {
+        if (!confirm(query, sorted[i].kind, sorted[i].place.start, false, sorted[i].place.start,
+                     sorted[i].kind == MARKDOWN_CORE_KIND_NONE || sorted[i].kind == MARKDOWN_CORE_KIND_CITE
+                         ? SIZE_MAX
+                         : sorted[i].place.start,
+                     &kept, &closed)) {
             markdown_core_free(sorted);
             return false;
         }
@@ -555,8 +572,9 @@ static bool weigh(const context_query *query, const markdown_core_context_sink *
     if (field->start > query->cursor || field->start < line) {
         return true;
     }
-    if (!confirm(query, field->owner, field->start, field->kind == MARKDOWN_CORE_SLOT_ID, opener->place.start, &kept,
-                 &closed)) {
+    const size_t begins = !opener->block && opener->kind == field->owner ? opener->place.start : SIZE_MAX;
+    if (!confirm(query, field->owner, field->start, field->kind == MARKDOWN_CORE_SLOT_ID, opener->place.start, begins,
+                 &kept, &closed)) {
         return false;
     }
     if (!kept || (field->declares && !closed)) {
@@ -575,11 +593,12 @@ static bool weigh(const context_query *query, const markdown_core_context_sink *
             return true;
         }
     }
-    const bufsize_t reach = field->end(query->source + field->start, (bufsize_t)(last - field->start));
+    const size_t origin = field->start - field->lead;
+    const bufsize_t reach = field->end(query->source + origin, (bufsize_t)(last - origin));
     if (reach < 0) {
         return false;
     }
-    const size_t end = field->start + (size_t)reach;
+    const size_t end = origin + (size_t)reach;
     if (!spaced(query, end)) {
         *out = (verdict){true, closed, end};
     }

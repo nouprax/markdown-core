@@ -18,15 +18,18 @@ extern "C" {
  * element that read the field's start reads the rest of it. The scan starts
  * at the field's start, not at a cursor in it, so what the field holds
  * before the cursor (a segment before a `/`, an open parenthesis) decides
- * how it goes on past the cursor. Negative when the scan could not
+ * how it goes on past the cursor; a field with a `lead` is scanned from
+ * that many bytes before its start, through what decides it there (the
+ * path before a fragment), and the length counts from there. Negative when the scan could not
  * allocate. */
 typedef bufsize_t (*markdown_core_field_end)(const unsigned char *data, bufsize_t length);
 
 /* A FIELD a scanner reads when its input ends, as the scanner reports it:
  * its slot kind, the kind of the construct that owns it, the offset it
  * starts at in the scanner's input, how it goes on past a cursor, the input
- * ranges of the earlier fields it depends on, and whether it declares a
- * name, which the document must confirm by finishing its construct. */
+ * ranges of the earlier fields it depends on, whether it declares a name,
+ * which the document must confirm by finishing its construct, and the bytes
+ * before its start its end is scanned from. */
 typedef struct markdown_core_field {
     markdown_core_slot_kind slot;
     markdown_core_node_kind owner;
@@ -35,6 +38,7 @@ typedef struct markdown_core_field {
     bufsize_t prefix[2][2];
     size_t prefix_count;
     bool declares;
+    bufsize_t lead;
 } markdown_core_field;
 
 /* A construct the parse of the text before a cursor leaves open: the kind it
@@ -62,6 +66,7 @@ typedef struct markdown_core_context_field {
     markdown_core_place prefix[2];
     uint32_t prefix_count;
     bool declares;
+    uint32_t lead;
 } markdown_core_context_field;
 
 /* THE CONTEXT SINK (docs/plans/2026-10-23-lsp-completion-engine.md, 3.1):

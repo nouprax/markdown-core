@@ -32,10 +32,10 @@ static void S_report(markdown_core_inline_state *inline_state, bool embedded, bu
         /* The anchor keeps a leading `^`: whether it marks a block identifier
          * or starts a heading depends on the anchor's whole text, cursor on. */
         const markdown_core_field anchor = {
-            MARKDOWN_CORE_SLOT_ANCHOR, kind, hash + 1, anchor_end, {{body, hash}}, 1, false};
+            MARKDOWN_CORE_SLOT_ANCHOR, kind, hash + 1, anchor_end, {{body, hash}}, 1, false, 0};
         markdown_core_inline_open(inline_state, kind, start, body, &anchor, 1);
     } else {
-        const markdown_core_field path = {MARKDOWN_CORE_SLOT_DEST, kind, body, path_end, {{0}}, 0, false};
+        const markdown_core_field path = {MARKDOWN_CORE_SLOT_DEST, kind, body, path_end, {{0}}, 0, false, 0};
         markdown_core_inline_open(inline_state, kind, start, body, &path, 1);
     }
 }

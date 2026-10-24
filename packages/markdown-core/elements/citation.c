@@ -231,13 +231,13 @@ static void S_report_key(const markdown_core_element_instance *self, markdown_co
                                         : field == inline_state->input.len ? unbegun_key_end
                                                                            : key_end;
     fields[count++] =
-        (markdown_core_field){MARKDOWN_CORE_SLOT_BIB, MARKDOWN_CORE_KIND_CITATION, field, end, {{0}}, 0, false};
+        (markdown_core_field){MARKDOWN_CORE_SLOT_BIB, MARKDOWN_CORE_KIND_CITATION, field, end, {{0}}, 0, false, 0};
     if (!braced && !markdown_core_open_bracket(self->peers[CITATION_LINK], inline_state)) {
         fields[count++] = (markdown_core_field){
-            MARKDOWN_CORE_SLOT_SPECIMEN, MARKDOWN_CORE_KIND_CITATION, field, end, {{0}}, 0, false};
+            MARKDOWN_CORE_SLOT_SPECIMEN, MARKDOWN_CORE_KIND_CITATION, field, end, {{0}}, 0, false, 0};
         if (start == 1 && inline_state->input.data[0] == '(') {
             fields[count++] = (markdown_core_field){
-                MARKDOWN_CORE_SLOT_SPECIMEN, MARKDOWN_CORE_KIND_SPECIMEN, field, end, {{0}}, 0, true};
+                MARKDOWN_CORE_SLOT_SPECIMEN, MARKDOWN_CORE_KIND_SPECIMEN, field, end, {{0}}, 0, true, 0};
         }
     }
     markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_CITE, start, at, fields, count);

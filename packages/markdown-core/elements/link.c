@@ -489,6 +489,8 @@ static bufsize_t field_end(const unsigned char *data, bufsize_t length, bool ang
     return i;
 }
 static bufsize_t path_end(const unsigned char *data, bufsize_t length) { return field_end(data, length, false, false); }
+/* A fragment's end is read from its path's start, through the `(` before
+ * its `#` that a `)` after it closes. */
 static bufsize_t fragment_end(const unsigned char *data, bufsize_t length) {
     return field_end(data, length, false, true);
 }
@@ -555,12 +557,13 @@ static void S_report_destination(markdown_core_inline_state *inline_state, const
                                               angled ? angled_fragment_end : fragment_end,
                                               {{path, hash}},
                                               1,
-                                              false};
+                                              false,
+                                              hash + 1 - path};
         markdown_core_inline_open(inline_state, kind, at, opener->position, &fragment, 1);
         *reported = MARKDOWN_CORE_SLOT_ANCHOR;
     } else {
         const markdown_core_field_end read = angled ? angled_path_end : path == len ? unbegun_end : path_end;
-        const markdown_core_field destination = {MARKDOWN_CORE_SLOT_DEST, kind, path, read, {{0}}, 0, false};
+        const markdown_core_field destination = {MARKDOWN_CORE_SLOT_DEST, kind, path, read, {{0}}, 0, false, 0};
         markdown_core_inline_open(inline_state, kind, at, opener->position, &destination, 1);
         *reported = MARKDOWN_CORE_SLOT_DEST;
     }
@@ -603,6 +606,7 @@ static void S_report_destination_field(markdown_core_parser *parser, markdown_co
         field.end = angled ? angled_fragment_end : fragment_end;
         field.prefix[0] = (markdown_core_place){place[1], place[2]};
         field.prefix_count = 1;
+        field.lead = place[3] - place[1];
     }
     markdown_core_context_field_add(parser->sink, &field);
 }
@@ -674,7 +678,7 @@ static void S_report_label(markdown_core_inline_state *inline_state, const brack
     }
     const bool image = opener->kind == BRACKET_IMAGE;
     const markdown_core_node_kind kind = image ? MARKDOWN_CORE_KIND_EMBEDDED : MARKDOWN_CORE_KIND_LINK;
-    const markdown_core_field label = {MARKDOWN_CORE_SLOT_LABEL, kind, start + 1, label_end, {{0}}, 0, false};
+    const markdown_core_field label = {MARKDOWN_CORE_SLOT_LABEL, kind, start + 1, label_end, {{0}}, 0, false, 0};
     markdown_core_inline_open(inline_state, kind, opener->position - (image ? 2 : 1), opener->position, &label, 1);
 }
 
@@ -1109,8 +1113,14 @@ static void report_open(const markdown_core_element_instance *self, markdown_cor
             label && b->position < inline_state->input.len && inline_state->input.data[b->position] == '^';
         if (caret) {
             opens = MARKDOWN_CORE_KIND_CITE;
-            fields[count++] = (markdown_core_field){
-                MARKDOWN_CORE_SLOT_FOOTNOTE, MARKDOWN_CORE_KIND_CITATION, b->position + 1, label_end, {{0}}, 0, false};
+            fields[count++] = (markdown_core_field){MARKDOWN_CORE_SLOT_FOOTNOTE,
+                                                    MARKDOWN_CORE_KIND_CITATION,
+                                                    b->position + 1,
+                                                    label_end,
+                                                    {{0}},
+                                                    0,
+                                                    false,
+                                                    0};
         }
         if (label && start == 0) {
             fields[count++] = caret ? (markdown_core_field){MARKDOWN_CORE_SLOT_FOOTNOTE,
@@ -1119,14 +1129,16 @@ static void report_open(const markdown_core_element_instance *self, markdown_cor
                                                             label_end,
                                                             {{0}},
                                                             0,
-                                                            true}
+                                                            true,
+                                                            0}
                                     : (markdown_core_field){MARKDOWN_CORE_SLOT_LABEL,
                                                             MARKDOWN_CORE_KIND_REFERENCE,
                                                             b->position,
                                                             label_end,
                                                             {{0}},
                                                             0,
-                                                            true};
+                                                            true,
+                                                            0};
         }
         markdown_core_inline_open(inline_state, opens, start, caret ? b->position + 1 : b->position, fields, count);
     }
