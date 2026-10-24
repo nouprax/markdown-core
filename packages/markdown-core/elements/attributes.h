@@ -11,13 +11,23 @@ void markdown_core_inline_attach_inline_attributes(markdown_core_inline_state *i
                                                    bufsize_t from);
 bufsize_t markdown_core_attributes_attach_tail(markdown_core_parser *parser, markdown_core_node *node,
                                                const unsigned char *source, bufsize_t length);
+/* What keeps the members of the many braces of one stretch linear: zeroed
+ * before the first brace, freed after the last. */
+typedef struct markdown_core_member_memo {
+    bufsize_t *walks, *values;
+    struct markdown_core_field *found;
+    size_t count, room, asked;
+    bool refused;
+} markdown_core_member_memo;
+void markdown_core_member_memo_free(markdown_core_member_memo *memo);
 /* THE MEMBER AN ATTRIBUTE BLOCK THAT DOES NOT CLOSE IS IN AT ITS END, the
  * block's `{` at `start` of the `n` bytes at `s`: an `#` identifier, a `.`
  * class, a record's name, or its value after the name its prefix holds; a
  * member boundary reads as a name not yet begun. False when the block is no
- * block whatever follows. The field's owner is left to the caller. */
+ * block whatever follows. The field's owner is left to the caller. A memo,
+ * or NULL, is shared by the braces asked about on the same `n` bytes. */
 bool markdown_core_attributes_open_member(const unsigned char *s, bufsize_t n, bufsize_t start,
-                                          struct markdown_core_field *field);
+                                          struct markdown_core_field *field, markdown_core_member_memo *memo);
 /* The attribute tails a block of kind `owner` may open on the line being
  * read, `line`, at or after `from`, that the line's end at `end` leaves
  * open, to the parse's context sink: every brace that may be one, since

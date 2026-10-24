@@ -872,14 +872,16 @@ static void S_report_tail(markdown_core_inline_state *inline_state) {
         at--;
     }
     markdown_core_field field;
+    markdown_core_member_memo memo = {0};
     for (; at < len; at++) {
         if (data[at] == '\\' && at + 1 < len && markdown_core_ispunct(data[at + 1])) {
             at++;
-        } else if (data[at] == '{' && markdown_core_attributes_open_member(data, len, at, &field)) {
+        } else if (data[at] == '{' && markdown_core_attributes_open_member(data, len, at, &field, &memo)) {
             field.owner = MARKDOWN_CORE_KIND_HEADING;
             markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_NONE, at, at + 1, &field, 1);
         }
     }
+    markdown_core_member_memo_free(&memo);
 }
 
 void markdown_core_heading_begin_inlines(const markdown_core_element_instance *self, markdown_core_parser *parser,
