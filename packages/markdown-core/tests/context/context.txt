@@ -644,6 +644,43 @@ inline None 1:6..1:6
 slot class Heading closed before=1:8..1:8 after=1:9..1:8
 ````````````````````````````````
 
+```````````````````````````````` example
+# text {.fo‸o} trailing
+.
+block Heading 1:1..1:11
+inline None 1:8..1:8
+````````````````````````````````
+
+```````````````````````````````` example
+# text {.fo‸o trailing
+.
+block Heading 1:1..1:11
+inline None 1:8..1:8
+````````````````````````````````
+
+```````````````````````````````` example
+# [x](url{.fo‸o})
+.
+block Heading 1:1..1:13
+inline Link 1:3..1:3
+slot dest Link closed before=1:7..1:13 after=1:14..1:15
+````````````````````````````````
+
+```````````````````````````````` example
+# text {.fo‸o} ##
+.
+block Heading 1:1..1:11
+inline None 1:8..1:8
+slot class Heading closed before=1:10..1:11 after=1:12..1:12
+````````````````````````````````
+
+```````````````````````````````` example
+# text {.fo‸o}##
+.
+block Heading 1:1..1:11
+inline None 1:8..1:8
+````````````````````````````````
+
 ## Callouts
 
 ```````````````````````````````` example
@@ -727,6 +764,12 @@ slot class CodeBlock closed before=1:10..1:10 after=1:11..1:10
 .
 block CodeBlock 1:1..1:13
 slot value CodeBlock closed before=1:13..1:13 after=1:14..1:13 prefix="r"
+````````````````````````````````
+
+```````````````````````````````` example
+```py {#a r=v‸} more
+.
+block CodeBlock 1:1..1:13
 ````````````````````````````````
 
 ```````````````````````````````` example

@@ -6,6 +6,7 @@
 
 #include "ast_internal.h"
 #include "sink.h"
+#include "../core/attributes.h"
 
 #include <node.h>
 
@@ -381,32 +382,57 @@ static bool take_inlines(markdown_core_context *context, const context_query *qu
     return true;
 }
 
-/* Whether an earlier field of `sink` reads the slot `field` reads from the
- * same start, under an opener that starts no later: the `[[` of a `![[`
- * reads the target the `![[` reads, and the earlier opener's reading is the
- * one the text has. A declaration's field neither shadows nor is shadowed: it
- * stands only when the document holds the declaration. */
-static bool read_before(const markdown_core_context_sink *sink, size_t index) {
-    const markdown_core_context_field *field = &sink->fields[index];
-    if (field->declares) {
-        return false;
+/* A field's place among those that read the same slot from the same start:
+ * by slot kind and start, then by its opener's start and its listing order. */
+typedef struct reading {
+    markdown_core_slot_kind kind;
+    uint32_t start;
+    uint32_t opener;
+    size_t index;
+} reading;
+
+static int reading_order(const void *left, const void *right) {
+    const reading *a = left, *b = right;
+    if (a->kind != b->kind) {
+        return a->kind < b->kind ? -1 : 1;
     }
-    for (size_t i = 0; i < sink->field_count; i++) {
-        const markdown_core_context_field *other = &sink->fields[i];
-        if (i == index || other->declares || other->kind != field->kind || other->start != field->start) {
-            continue;
-        }
-        const uint32_t mine = sink->openers[field->opener].place.start;
-        const uint32_t theirs = sink->openers[other->opener].place.start;
-        if (theirs < mine || (theirs == mine && i < index)) {
-            return true;
-        }
+    if (a->start != b->start) {
+        return a->start < b->start ? -1 : 1;
     }
-    return false;
+    if (a->opener != b->opener) {
+        return a->opener < b->opener ? -1 : 1;
+    }
+    return a->index < b->index ? -1 : a->index > b->index ? 1 : 0;
 }
 
-/* The context's slots: each field the document confirms, with its source
- * before and after the cursor, and its prefixes, copied. */
+/* Marks each field an earlier field of `sink` shadows: one that reads the
+ * same slot from the same start under an opener that starts no later. The
+ * `[[` of a `![[` reads the target the `![[` reads, and the earlier opener's
+ * reading is the one the text has. A declaration's field neither shadows nor
+ * is shadowed: it stands only when the document holds the declaration. One
+ * sort finds them all. */
+static bool read_before(const markdown_core_context_sink *sink, bool *shadowed) {
+    reading *readings = markdown_core_alloc(sink->field_count, sizeof(*readings));
+    if (!readings) {
+        return false;
+    }
+    size_t count = 0;
+    for (size_t i = 0; i < sink->field_count; i++) {
+        const markdown_core_context_field *field = &sink->fields[i];
+        if (!field->declares) {
+            readings[count++] = (reading){field->kind, field->start, sink->openers[field->opener].place.start, i};
+        }
+    }
+    qsort(readings, count, sizeof(*readings), reading_order);
+    for (size_t i = 1; i < count; i++) {
+        if (readings[i].kind == readings[i - 1].kind && readings[i].start == readings[i - 1].start) {
+            shadowed[readings[i].index] = true;
+        }
+    }
+    markdown_core_free(readings);
+    return true;
+}
+
 /* Whether a field that ends at `end` ended before the cursor at a space or
  * a tab. An inline run's content drops the spaces and tabs at its end, so
  * its scanner reports the field before them as open, though the cursor is
@@ -421,6 +447,43 @@ static bool spaced(const context_query *query, size_t end) {
     return false;
 }
 
+/* The context's slots: each field the document confirms, with its source
+ * before and after the cursor, and its prefixes, copied. */
+/* Whether the attribute block whose brace is at `brace` ends the line of a
+ * block that takes it as its tail, in `*ends`: past its closing brace, only
+ * spaces and tabs, then a heading's closing hashes after a space or a
+ * directive's colons. A block the line leaves open is still being written
+ * when nothing but spaces and tabs follows the cursor. False when
+ * recognition ran out of memory. */
+static bool tail_ends(const context_query *query, markdown_core_node_kind owner, size_t brace, size_t line,
+                      bool *ends) {
+    markdown_core_attribute_parser attributes = {.data = query->source + brace, .length = (bufsize_t)(line - brace)};
+    bufsize_t at = markdown_core_attributes_end(&attributes, 0);
+    const int oom = attributes.oom;
+    markdown_core_attribute_parser_free(&attributes);
+    size_t end = at ? brace + (size_t)at : query->cursor, spaces = end;
+    *ends = false;
+    if (oom) {
+        return false;
+    }
+    while (end < line && (query->source[end] == ' ' || query->source[end] == '\t')) {
+        end++;
+    }
+    const unsigned char close = owner == MARKDOWN_CORE_KIND_HEADING           ? '#'
+                                : owner == MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK ? ':'
+                                                                              : 0;
+    if (at && close && end < line && query->source[end] == close && (close == ':' || end > spaces)) {
+        while (end < line && query->source[end] == close) {
+            end++;
+        }
+        while (close == '#' && end < line && (query->source[end] == ' ' || query->source[end] == '\t')) {
+            end++;
+        }
+    }
+    *ends = end == line;
+    return true;
+}
+
 static bool take_slots(markdown_core_context *context, const context_query *query,
                        const markdown_core_context_sink *sink) {
     if (!sink->field_count) {
@@ -433,26 +496,50 @@ static bool take_slots(markdown_core_context *context, const context_query *quer
             prefixes++;
         }
     }
+    bool *shadowed = markdown_core_alloc(sink->field_count, sizeof(*shadowed));
+    if (!shadowed || !read_before(sink, shadowed)) {
+        markdown_core_free(shadowed);
+        return false;
+    }
     context->slots = markdown_core_alloc(sink->field_count, sizeof(*context->slots));
     context->prefixes = prefixes ? markdown_core_alloc(prefixes, sizeof(*context->prefixes)) : NULL;
     context->bytes = bytes ? markdown_core_alloc(bytes, 1) : NULL;
     if (!context->slots || (prefixes && !context->prefixes) || (bytes && !context->bytes)) {
+        markdown_core_free(shadowed);
         return false;
     }
-    size_t prefix = 0, written = 0;
+    size_t prefix = 0, written = 0, line = query->cursor;
+    const size_t cursor_line = line_end(query, query->cursor);
+    while (line > 0 && query->source[line - 1] != '\n' && query->source[line - 1] != '\r') {
+        line--;
+    }
     for (size_t i = 0; i < sink->field_count; i++) {
         const markdown_core_context_field *field = &sink->fields[i];
-        const size_t cursor_line = line_end(query, query->cursor);
-        if (field->start > query->cursor || line_end(query, field->start) != cursor_line || read_before(sink, i)) {
+        if (field->start > query->cursor || field->start < line || shadowed[i]) {
             continue;
         }
         bool kept, closed;
         if (!confirm(query, field->owner, field->start, field->kind == MARKDOWN_CORE_SLOT_ID,
                      sink->openers[field->opener].place.start, &kept, &closed)) {
+            markdown_core_free(shadowed);
             return false;
         }
         if (!kept || (field->declares && !closed)) {
             continue;
+        }
+        /* A block's attribute tail is its only when nothing but its closing
+         * syntax follows it on the line. */
+        const markdown_core_node_kind owner = field->owner;
+        if (sink->openers[field->opener].kind == MARKDOWN_CORE_KIND_NONE &&
+            (owner == MARKDOWN_CORE_KIND_HEADING || owner == MARKDOWN_CORE_KIND_CODE_BLOCK ||
+             owner == MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK)) {
+            if (!tail_ends(query, owner, sink->openers[field->opener].place.start, cursor_line, &kept)) {
+                markdown_core_free(shadowed);
+                return false;
+            }
+            if (!kept) {
+                continue;
+            }
         }
         const size_t end =
             field->start + (size_t)field->end(query->source + field->start, (bufsize_t)(cursor_line - field->start));
@@ -473,6 +560,7 @@ static bool take_slots(markdown_core_context *context, const context_query *quer
             written += size;
         }
     }
+    markdown_core_free(shadowed);
     return true;
 }
 
