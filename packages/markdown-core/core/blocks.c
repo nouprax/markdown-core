@@ -3248,14 +3248,15 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline))
     markdown_core_input_line *S_extend_source_lines(markdown_core_parser *parser, size_t index) {
     assert(parser->input.size <= MARKDOWN_CORE_SOURCE_CAPACITY);
     while (index >= parser->input.lines.count && parser->input.scanned < parser->input.size) {
+        if (!markdown_core_array_reserve(&parser->input.lines, parser->input.lines.count + 1)) {
+            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+            return NULL;
+        }
         markdown_core_input_line entry = {.start = (uint32_t)parser->input.scanned};
         if (!S_scan_line(parser, &entry, entry.start)) {
             return NULL;
         }
-        if (!markdown_core_array_push(&parser->input.lines, entry)) {
-            markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-            return NULL;
-        }
+        parser->input.lines.values[parser->input.lines.count++] = entry;
     }
     return index < parser->input.lines.count ? &parser->input.lines.values[index] : NULL;
 }
