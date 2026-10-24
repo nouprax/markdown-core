@@ -478,9 +478,8 @@ unparsed edits is parsed off the request path: when the host calls the
 engine's idle entry point (`markdown_core_lsp_idle`), which the notebook calls
 when typing pauses and the adapter calls between messages, or when that
 document itself next serves a request. Until then its overlay may lag its
-newest version by the edits since the last idle call, which only the
-requesting document's own text could make visible, and that text is always
-current.
+newest version by the edits made since the last idle call; the requesting
+document's own text is always current.
 
 | Slot kind | Candidates |
 | --- | --- |
