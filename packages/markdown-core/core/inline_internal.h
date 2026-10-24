@@ -105,6 +105,13 @@ static inline bool markdown_core_inline_tracks_end(const markdown_core_inline_st
     return inline_state->token < inline_state->undecided;
 }
 
+/* The inline note `note`, a field its Citation holds, settles as a field
+ * does (markdown_core_parser_settle_field), and a run that lists settle
+ * starts lists it, so it commits with the node that holds it as that
+ * settles (blocks.c, THE SETTLE POINT). */
+void markdown_core_inline_settle_note(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
+                                      markdown_core_node *note);
+
 /* The token being read read the end of the input. */
 static inline void markdown_core_inline_saw_end(markdown_core_inline_state *inline_state) {
     if (inline_state->token < inline_state->undecided) {

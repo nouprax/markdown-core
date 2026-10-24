@@ -937,9 +937,10 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) bool publish_keep(publish_walk *walk,
 
 /* Records `node` in table `table` at `start`: a publish that keeps what a
  * later one reads keeps it there too when it is COMMITTED and DECIDED, as it is FINAL (THE DECIDED
- * CONTENT). A definition is a block, and every block in the subtree of a
- * COMMITTED block settled in a commit, so it is one (blocks.c, A BLOCK
- * SETTLES). */
+ * CONTENT). A definition is a block or an inline note, and every block in
+ * the subtree of a COMMITTED block settled in a commit, so it is one
+ * (blocks.c, A BLOCK SETTLES), as every note a settled node holds is (THE
+ * SETTLE POINT). */
 static inline bool publish_list(publish_walk *walk, markdown_core_node *node, uint32_t table, uint32_t start) {
     definition_table *values = &walk->tables[table];
     return table_add(values, node, start) && (!walk->keeps || !(node->flags & MARKDOWN_CORE_NODE__COMMITTED) ||

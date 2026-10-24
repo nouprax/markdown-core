@@ -317,7 +317,9 @@ typedef struct markdown_core_line_stop {
  * open, each with how many lookups had found nothing before it (`misses`,
  * which the lookups count), and leaves in `undecided` the earliest start of
  * a token whose reading read the end, or of an opener left unmatched,
- * INT32_MAX when there is none. */
+ * INT32_MAX when there is none. It lists in `notes` the inline notes it
+ * made, fields their Citations hold, which commit with the nodes that hold
+ * them as those settle. */
 typedef struct {
     bufsize_t start;
     uint32_t misses;
@@ -328,6 +330,8 @@ typedef struct markdown_core_inline_settle {
     uint32_t misses;
     markdown_core_settle_start *starts;
     size_t count, capacity;
+    struct markdown_core_node **notes;
+    size_t note_count, note_capacity;
 } markdown_core_inline_settle;
 
 /* A lookup a snapshot's reading of an open paragraph found nothing for: its

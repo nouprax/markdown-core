@@ -2238,6 +2238,12 @@ static bool S_settle_end(markdown_core_parser *parser, markdown_core_node *node)
             }
         }
         settled->anchored_count = anchored;
+        /* The notes the settled nodes hold commit with them. */
+        for (size_t n = 0; n < settle->note_count; n++) {
+            if ((bufsize_t)settle->notes[n]->place.start < start->start) {
+                settle->notes[n]->flags |= MARKDOWN_CORE_NODE__COMMITTED;
+            }
+        }
         settled->count = at;
         settled->point = start->start;
         settled->miss_count += start->misses;
@@ -2772,6 +2778,7 @@ static void S_release_stream(markdown_core_parser *parser) {
     markdown_core_strbuf_free(&settled->labels);
     markdown_core_free(settled->anchored);
     markdown_core_free(settled->settle.starts);
+    markdown_core_free(settled->settle.notes);
     markdown_core_free(stream);
     parser->stream = NULL;
 }

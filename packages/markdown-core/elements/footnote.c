@@ -94,7 +94,7 @@ markdown_core_node *markdown_core_inline_close_inline_footnote(const markdown_co
     markdown_core_scaffold_insert_before(opener->inl_text, cite);
     /* The note is its Citation's own field, as the affixes are. */
     markdown_core_scaffold_first(cite)->as.citation->note = footnote;
-    markdown_core_parser_settle_field(parser, footnote);
+    markdown_core_inline_settle_note(parser, inline_state, footnote);
     markdown_core_parser_release_node(parser, opener->inl_text);
     markdown_core_brackets(self->peers[FOOTNOTE_LINK], inline_state)->no_link_openers = opener->outer_no_link_openers;
     markdown_core_inline_pop_bracket(self->peers[FOOTNOTE_LINK], inline_state);

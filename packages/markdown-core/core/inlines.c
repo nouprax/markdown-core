@@ -1019,6 +1019,23 @@ static void S_settle_start(markdown_core_inline_state *inline_state) {
     starts[settle->count++] = (markdown_core_settle_start){inline_state->pos, settle->misses};
 }
 
+void markdown_core_inline_settle_note(markdown_core_parser *parser, markdown_core_inline_state *inline_state,
+                                      markdown_core_node *note) {
+    markdown_core_parser_settle_field(parser, note);
+    markdown_core_inline_settle *settle = inline_state->settle;
+    if (!settle) {
+        return;
+    }
+    markdown_core_node **notes =
+        markdown_core_reserve(settle->notes, &settle->note_capacity, settle->note_count + 1, sizeof(*notes));
+    if (!notes) {
+        inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
+        return;
+    }
+    settle->notes = notes;
+    notes[settle->note_count++] = note;
+}
+
 /* The tokens of a run that lists settle starts: each token's start is where
  * its end reads begin, and a start with no end read before it at which no
  * element holds anything open is listed. */
@@ -1090,6 +1107,7 @@ bool markdown_core_parse_inlines_settle(markdown_core_parser *parser, markdown_c
     markdown_core_inline_state inline_state;
     markdown_core_inline_start_inlines(parser, parent, true, &inline_state);
     settle->count = 0;
+    settle->note_count = 0;
     settle->misses = 0;
     inline_state.settle = settle;
     inline_state.undecided = INT32_MAX;
