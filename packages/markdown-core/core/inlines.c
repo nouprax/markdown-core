@@ -935,6 +935,11 @@ append:
  * of its last byte when `offset` is the content's end: its content places
  * read content in order, a copied place byte for byte and any other all of
  * its content from all of its source. */
+static uint32_t S_place_source(const markdown_core_source_place *place, uint32_t offset, uint32_t read) {
+    const bool copied = place->end - place->start == place->length;
+    return copied ? place->start + (offset - read) : place->start;
+}
+
 static uint32_t S_root_source(const markdown_core_node *root, uint32_t offset) {
     const markdown_core_places *places = root->source.places;
     uint32_t read = 0, end = 0;
@@ -944,13 +949,56 @@ static uint32_t S_root_source(const markdown_core_node *root, uint32_t offset) {
             continue;
         }
         if (offset < read + place->length) {
-            const bool copied = place->end - place->start == place->length;
-            return copied ? place->start + (offset - read) : place->start;
+            return S_place_source(place, offset, read);
         }
         read += place->length;
         end = place->end;
     }
     return end;
+}
+
+/* S_root_source for the sink's root, by a binary search of the places that
+ * read content, indexed on the first lookup: a run reports many openers,
+ * and a root of many lines, as a quote's, has a place per line. */
+static uint32_t S_sink_source(markdown_core_context_sink *sink, uint32_t offset) {
+    const markdown_core_places *places = sink->root->source.places;
+    if (!places) {
+        return 0;
+    }
+    if (!sink->root_indexed) {
+        sink->root_indexed = true;
+        sink->root_places = markdown_core_alloc(places->count ? places->count : 1, sizeof(*sink->root_places));
+        sink->root_reads = markdown_core_alloc(places->count ? places->count : 1, sizeof(*sink->root_reads));
+        if (!sink->root_places || !sink->root_reads) {
+            sink->failed = true;
+            return S_root_source(sink->root, offset);
+        }
+        uint32_t read = 0;
+        for (uint32_t i = 0; i < places->count; i++) {
+            if (places->items[i].length) {
+                sink->root_places[sink->root_place_count] = i;
+                sink->root_reads[sink->root_place_count++] = read;
+                read += places->items[i].length;
+            }
+        }
+    }
+    if (!sink->root_reads || !sink->root_place_count) {
+        return S_root_source(sink->root, offset);
+    }
+    size_t lo = 0, hi = sink->root_place_count;
+    while (hi - lo > 1) {
+        const size_t mid = lo + (hi - lo) / 2;
+        if (sink->root_reads[mid] <= offset) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    const markdown_core_source_place *place = &places->items[sink->root_places[lo]];
+    if (offset < sink->root_reads[lo] + place->length) {
+        return S_place_source(place, offset, sink->root_reads[lo]);
+    }
+    return place->end;
 }
 
 /* The offset in the content of the sink's root of byte `offset` of the
@@ -989,6 +1037,11 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_context_begin(markdown_core_pa
         return;
     }
     sink->root = NULL;
+    markdown_core_free(sink->root_places);
+    markdown_core_free(sink->root_reads);
+    sink->root_places = sink->root_reads = NULL;
+    sink->root_place_count = 0;
+    sink->root_indexed = false;
     const markdown_core_places *places = inline_state->owner->source.places;
     if (inline_state->input.len == 0 || !places) {
         return;
@@ -1114,7 +1167,7 @@ void markdown_core_inline_settle_note(markdown_core_parser *parser, markdown_cor
 /* The source offset of byte `offset` of the run's content, or of the end
  * of its last byte when `offset` is the content's end. */
 static uint32_t S_context_source(markdown_core_inline_state *inline_state, bufsize_t offset) {
-    return S_root_source(inline_state->context->root, S_context_root_offset(inline_state, offset));
+    return S_sink_source(inline_state->context, S_context_root_offset(inline_state, offset));
 }
 
 void markdown_core_inline_open(markdown_core_inline_state *inline_state, markdown_core_node_kind opens, bufsize_t from,

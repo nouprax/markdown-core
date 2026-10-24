@@ -73,8 +73,13 @@ typedef struct markdown_core_context_field {
 typedef struct markdown_core_context_sink {
     const unsigned char *source;
     size_t length;
-    /* The inline root whose run reports, which reached the end, or NULL. */
+    /* The inline root whose run reports, which reached the end, or NULL,
+     * and, once a report needs them, its source places that read content
+     * with the content bytes before each, so a lookup is a binary search. */
     const struct markdown_core_node *root;
+    uint32_t *root_places, *root_reads;
+    size_t root_place_count;
+    bool root_indexed;
     const markdown_core_node **blocks;
     size_t block_count, block_capacity;
     markdown_core_context_opener *openers;

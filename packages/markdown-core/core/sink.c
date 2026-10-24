@@ -118,5 +118,7 @@ void markdown_core_context_sink_clear(markdown_core_context_sink *sink) {
     markdown_core_free(sink->fields);
     markdown_core_free(sink->opener_slots);
     markdown_core_free(sink->field_slots);
+    markdown_core_free(sink->root_places);
+    markdown_core_free(sink->root_reads);
     *sink = (markdown_core_context_sink){.source = sink->source, .length = sink->length};
 }
