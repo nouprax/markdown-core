@@ -505,9 +505,9 @@ for `bib` and needs no second one. What it lacks is positions: a `Metadata`
 node has one scope for the whole envelope and its fields have none
 (canonical AST), so the `field` and `value` slots of 3.2 cannot say which
 member holds the cursor. Each decoded member gains the scopes of its name
-and its value, in step 2. CSL YAML is a different matter: its entries are
-nested maps, which the properties language rejects, so it gets its own
-reader below. The host supplies the
+and its value, in step 2. CSL YAML's entries are nested maps, which the
+properties language rejects today; D9 proposes extending the properties
+reader with nested maps and lists so that one YAML reader serves both. The host supplies the
 named file among the workspace files (4.1, 5.2), and the engine reads it in
 C, so that no platform parses it on its own. A document without the field
 offers only the keys used in the workspace.
@@ -521,7 +521,7 @@ academic writing, chosen by the file's extension as Pandoc chooses them:
 | Format | Extension | Source | Reader |
 | --- | --- | --- | --- |
 | CSL JSON | `.json` | Zotero, Pandoc, Mendeley | the JSON reader of D8 |
-| CSL YAML | `.yaml`, `.yml` | Pandoc | a reader for the YAML subset CSL uses: maps, lists, scalars |
+| CSL YAML | `.yaml`, `.yml` | Pandoc | the properties reader, extended with nested maps and lists (D9) |
 | BibTeX | `.bib`, `.bibtex` | LaTeX, Google Scholar, publishers' exports | a BibTeX reader: entries, `@string` macros, `#` concatenation, braces and LaTeX escapes in values |
 | BibLaTeX | `.bib` | BibLaTeX | the BibTeX reader, with BibLaTeX's field names (`date`, `journaltitle`) |
 | RIS | `.ris` | EndNote, publishers' exports | a line reader of `TAG  - value` records; an entry's key is its `ID`, and an entry without one offers no key |
@@ -704,6 +704,18 @@ it (D6).
   The owner: "我认为D8这项应该放在C侧进行解析". Proposed: the reader and
   writer are a small one in this repository, which keeps no third-party
   runtime dependency, rather than a vendored C library such as yyjson.
+
+- **D9 One YAML reader. Proposed: extend the properties reader
+  (`elements/properties.c`) with nested block and flow maps and lists,** so
+  that front matter and CSL YAML share it. It keeps what it has: member
+  recovery, exact number spellings, the `yaml@2.9.0` oracle over the
+  supported intersection, and the scopes step 2 adds; it still rejects
+  aliases, anchors, tags and folding. `Metadata` keeps its fixed fields and
+  value model: nesting is used inside the reader, not exposed in the AST.
+  This revises O6 of the Obsidian plan (2026-09-02), which ruled out a
+  general YAML parser. The owner: "为什么不能让我们peroperties支持嵌套，这样不就统一解析器了么？甚至于我不排斥像cmark引入hodini一样以source code copy的形式直接引进YAML parser". The alternative is vendoring libyaml's source, as cmark vendors
+  houdini: complete YAML 1.1, but it stops at the first error, so member
+  recovery, typed scalars and scopes would need a wrapper around it.
 
 ## 11. Rejected alternatives
 
