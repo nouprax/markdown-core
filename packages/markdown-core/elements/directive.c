@@ -54,8 +54,8 @@ static node_directive *get_directive(markdown_core_node *node) {
  * `12:30` text is not the `3` but the absence of a bracket part, which is
  * where the inline form is anchored (see match_colon_directive). */
 enum { NAME_END = 1 };
-static const uint8_t NAME_BYTES[256] = {
-    MARKDOWN_CORE_WHITESPACE_BYTES(NAME_END), ['['] = NAME_END, ['{'] = NAME_END, [':'] = NAME_END};
+static const uint8_t NAME_BYTES[256] = {MARKDOWN_CORE_WHITESPACE_BYTES(NAME_END), ['['] = NAME_END, ['{'] = NAME_END,
+                                        [':'] = NAME_END};
 
 static int scan_name(const unsigned char *data, bufsize_t len, bufsize_t pos, bufsize_t *name_start,
                      bufsize_t *name_len) {
