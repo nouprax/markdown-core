@@ -544,7 +544,7 @@ second parse path (AGENTS.md).
   are a proposal for the owner (D5). The measurement lands in the existing
   benchmark workflow in step 4 as a report, in callgrind Ir as the parser's
   gates count, with wall time on an iPhone and a Mac as the device check.
-  It becomes a gate only by the owner's decision.
+  It becomes a gate in step 10, after every feature has landed (D5).
 - Adversarial shapes are the ones the incremental plan's 7.2 lists: a context
   query inside them costs what a session costs over the same prefix.
 
@@ -617,6 +617,9 @@ it (D6).
 - [ ] **Step 9: Kotlin and ECMAScript.** The engine's Kotlin binding for
    Android and its ECMAScript binding for the web, one binding per step
    (D7).
+- [ ] **Step 10: Latency.** With every feature in place, tune the engine's
+   latency as a whole against the reports of section 7, then set the
+   budget's numbers as a CI gate (D5).
 - [ ] **Track W: Markdown writer.** Its own plan, then the writer in the
    parser library and every binding: `markdown_core_document_write`, Swift
    `Document.write()`, with the meaning and idempotence invariants of 4.4.
@@ -647,8 +650,10 @@ it (D6).
   makes step 8 of the incremental plan a prerequisite. It stands in for a
   CST's error recovery: Markdown has no syntax errors, and the parser knows
   exactly which constructs are open at the cursor.
-- **D5 Latency budget.** 10 ms p95 for documents up to 256 KiB, reported and
-  not gated until the owner decides (section 7).
+- **D5 Latency budget. Decided 2026-10-24: reported, not gated, until every
+  feature has landed;** then step 10 tunes latency across the engine and
+  sets the gate (section 7). 10 ms p95 for documents up to 256 KiB stays the
+  reported target. The owner: "先报告，等我们实现完所有的需求功能后再反过来统一压延迟最后定一个gate".
 - **D6 Scope and order. Decided 2026-10-24: completion, then navigation,
   then formatting, all on C and Swift before the other bindings,** with the
   Markdown writer as track W in parallel (4.3, 4.4, section 9). The owner,
