@@ -427,7 +427,7 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_no
 markdown_core_link_match markdown_core_link_recognize(const markdown_core_element_instance *link,
                                                       markdown_core_inline_state *inline_state, bracket *opener,
                                                       markdown_core_link_candidate *candidate) {
-    bufsize_t initial_pos = inline_state->pos, starturl, endurl, starttitle, endtitle, endall, n;
+    bufsize_t initial_pos = inline_state->pos, starturl = 0, endurl, starttitle, endtitle, endall, n = -1;
     markdown_core_chunk url_chunk, title_chunk, raw_label;
     markdown_core_chunk url = MARKDOWN_CORE_CHUNK_EMPTY;
     markdown_core_optional_chunk title = {MARKDOWN_CORE_CHUNK_EMPTY, false};
@@ -448,7 +448,6 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
     const bufsize_t len = inline_state->input.len;
     /* A destination, title or parenthesis the end cuts short may be one
      * once the input goes on. */
-    n = -1;
     if (link_allowed && markdown_core_inline_peek_char(inline_state) == '(') {
         starturl = markdown_core_skip_spaces_and_line_end(data, inline_state->pos + 1, len);
         n = markdown_core_inline_manual_scan_link_url(&inline_state->input, starturl, &url_chunk);
