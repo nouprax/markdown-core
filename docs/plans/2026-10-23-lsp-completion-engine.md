@@ -511,8 +511,8 @@ node has one scope for the whole envelope and its fields have none
 (canonical AST), so the `field` and `value` slots of 3.2 cannot say which
 member holds the cursor. Each decoded member gains the scopes of its name
 and its value, in step 2. CSL YAML's entries are nested maps, which the
-properties language rejects today; under D9 one vendored YAML parser, libyaml,
-reads both. The host supplies the
+properties language rejects today; under D9 one YAML parser, reworked from
+libyaml, reads both. The host supplies the
 named file among the workspace files (4.1, 5.2), and the engine reads it in
 C, so that no platform parses it on its own. A document without the field
 offers only the keys used in the workspace.
@@ -526,7 +526,7 @@ academic writing, chosen by the file's extension as Pandoc chooses them:
 | Format | Extension | Source | Reader |
 | --- | --- | --- | --- |
 | CSL JSON | `.json` | Zotero, Pandoc, Mendeley | the JSON reader of D8 |
-| CSL YAML | `.yaml`, `.yml` | Pandoc | the vendored libyaml of D9 |
+| CSL YAML | `.yaml`, `.yml` | Pandoc | the YAML parser reworked from libyaml (D9) |
 | BibTeX | `.bib`, `.bibtex` | LaTeX, Google Scholar, publishers' exports | a BibTeX reader: entries, `@string` macros, `#` concatenation, braces and LaTeX escapes in values |
 | BibLaTeX | `.bib` | BibLaTeX | the BibTeX reader, with BibLaTeX's field names (`date`, `journaltitle`) |
 | RIS | `.ris` | EndNote, publishers' exports | a line reader of `TAG  - value` records; an entry's key is its `ID`, and an entry without one offers no key |
@@ -627,7 +627,7 @@ it (D6).
    generated slot kinds, `markdown_core_document_context` and
    `markdown_core_slot_spell`, the context agreement tests and the dialect
    spec's description of slots, and per-member name and value scopes on
-   `Metadata` (5.4), on the vendored libyaml of D9. The audit also checks that every marker
+   `Metadata` (5.4), on the YAML parser reworked from libyaml (D9). The audit also checks that every marker
    (`**`, `##`, `]]`, list markers, fences) has a source range, from a node's
    scope minus its fields' runs; where one does not, the parser gains a
    marker query, used by semantic tokens and formatting, instead of a CST.
@@ -710,27 +710,32 @@ it (D6).
   writer are a small one in this repository, which keeps no third-party
   runtime dependency, rather than a vendored C library such as yyjson.
 
-- **D9 One YAML parser. Decided 2026-10-24: vendor libyaml's source and
-  adapt it,** as cmark vendors houdini, so that front matter and CSL YAML
-  share one parser. The properties language was kept narrow because writing
-  every YAML case by hand was too much, not as a goal; the owner: "有意做窄是因为当时春自己写做起来太多case了，如果引入libyaml然后我们再魔改，我是没意见的". libyaml is C and MIT
-  licensed; its source lives under the parser package with its licence and
-  a record of each local change. What stays ours, around it:
-  - **Member recovery.** libyaml stops at the first error, so the envelope
-    is still split into top-level members as `elements/properties.c` splits
-    it today, and each member is parsed on its own: an invalid member is
-    skipped and its neighbours kept.
-  - **Values.** libyaml leaves scalars untyped, so null, booleans and exact
-    number spellings keep the rules of `docs/specs/dialect/properties.md`.
-    Aliases, anchors and tags make a member invalid, as they do now.
-  - **Scopes.** libyaml's marks give each member's name and value scopes
-    (5.4), in the parser's text units.
+- **D9 One YAML parser. Decided 2026-10-24: take libyaml's scanner and
+  parser source into the parser library and rework it,** as this
+  repository did with cmark and houdini: the code is merged into
+  `elements/` under the repository's naming, allocator and text units, not
+  kept as a separate vendored library behind a wrapper. libyaml's MIT
+  licence and its upstream (repository and the commit taken) are kept in
+  the source and the notices, so upstream fixes can be ported by hand. The
+  owner: "有意做窄是因为当时春自己写做起来太多case了，如果引入libyaml然后我们再魔改，我是没意见的", and: "我们是不是应该把代码从libyaml里copy出来，然后结合我们properties对markdown的语意和streaming适配做一个魔改？我们留着libyaml的license和upstream信息，但是代码完全融合进来就和我们懂cmark、hodini等库的操作一样". The rework builds the properties semantics in, rather than around it:
+  - **Streaming.** The scanner reads the session's appended input as it
+    arrives and resolves the envelope at its closing fence, as
+    `markdown_core_properties_closed` does today, with no second pass over
+    the source.
+  - **Member recovery.** An error ends the current top-level member, not
+    the parse: the scanner resynchronizes at the next member and keeps the
+    valid neighbours, the rule of `docs/specs/dialect/properties.md`.
+  - **Values.** Scalars resolve to null, booleans and exact number
+    spellings by that spec. Aliases, anchors and tags make a member invalid.
+  - **Scopes.** Each member's name and value carry scopes in the parser's
+    text units (5.4).
   - **AST.** `Metadata` keeps its fixed fields and value model; nesting is
     read, for CSL YAML, and not exposed in the canonical AST.
-  The decoding half of `properties.c` retires; its spec, fixtures and the
-  `yaml@2.9.0` oracle stay and must pass unchanged. This revises O6 of the
-  Obsidian plan (2026-09-02), which ruled out a general YAML parser or
-  dependency. It lands in step 2 with the member scopes.
+  The decoder of `properties.c` retires; its spec, fixtures and the
+  `yaml@2.9.0` oracle stay and must pass unchanged, and CSL YAML entries
+  read through the same code. This revises O6 of the Obsidian plan
+  (2026-09-02), which ruled out a general YAML parser or dependency. It
+  lands in step 2 with the member scopes.
 
 ## 11. Rejected alternatives
 
