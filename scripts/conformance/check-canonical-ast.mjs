@@ -24,7 +24,7 @@ const difference = (left, right) => [...left].filter((value) => !right.has(value
 const sameArray = (left, right) => left.length === right.length && left.every((value, index) => value === right[index]);
 const set = (values) => new Set(values);
 
-const nodeTable = proseContract.match(/## Node inventory[\s\S]*?## Parsing/)?.[0];
+const nodeTable = proseContract.match(/## Node inventory\n[\s\S]*?\n## /)?.[0];
 if (nodeTable === undefined) throw new Error("Unable to locate the canonical node inventory");
 
 const rows = [...nodeTable.matchAll(/^\| `([A-Za-z]+)` \| ([^|]+) \|/gm)];
