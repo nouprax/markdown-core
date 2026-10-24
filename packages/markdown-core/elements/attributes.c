@@ -752,15 +752,16 @@ int markdown_core_attributes_parse(markdown_core_attribute_parser *p, bufsize_t 
 #include "block_internal.h"
 
 /* Where a member's field goes on past a cursor: a name, an unquoted value,
- * and a value in either quote. */
+ * and a value in either quote. A backslash that escapes nothing is a value
+ * byte, as in unquoted_end. */
 static bufsize_t name_end(const unsigned char *data, bufsize_t length) {
     return markdown_core_scan_to_class(BYTE_CLASS, BYTE_NAME_END, data, 0, length);
 }
 static bufsize_t value_end(const unsigned char *data, bufsize_t length) {
     bufsize_t at = 0;
     while ((at = markdown_core_scan_to_class(BYTE_CLASS, BYTE_VALUE_END | BYTE_ESCAPE, data, at, length)) < length &&
-           escaped(data, length, at)) {
-        at += 2;
+           data[at] == '\\') {
+        at += escaped(data, length, at) ? 2 : 1;
     }
     return at < length ? at : length;
 }
@@ -771,8 +772,17 @@ static bufsize_t quoted_end(const unsigned char *data, bufsize_t length, unsigne
     }
     return at < length ? at : length;
 }
-static bufsize_t double_end(const unsigned char *data, bufsize_t length) { return quoted_end(data, length, '"'); }
-static bufsize_t single_end(const unsigned char *data, bufsize_t length) { return quoted_end(data, length, '\''); }
+/* A quote-led value's field starts at its quote. Closed on its line, the
+ * field takes the closing quote too; with no closing quote the value falls
+ * back to an unquoted one, as in recognise, once a brace on the line closes
+ * the block, and reads to the line's end while the block is still open. */
+static bufsize_t quote_led_end(const unsigned char *data, bufsize_t length) {
+    const bufsize_t close = 1 + quoted_end(data + 1, length - 1, data[0]);
+    if (close < length) {
+        return close + 1;
+    }
+    return memchr(data, '}', (size_t)length) ? value_end(data, length) : length;
+}
 
 /* (attributes.h) A member boundary reads as a name not yet begun. */
 bool markdown_core_attributes_open_member(const unsigned char *s, bufsize_t n, bufsize_t start,
@@ -833,10 +843,10 @@ bool markdown_core_attributes_open_member(const unsigned char *s, bufsize_t n, b
             continue;
         }
         const bool quoted = e + 1 < n && (s[e + 1] == '"' || s[e + 1] == '\'');
-        bufsize_t v = quoted ? e + 2 : e + 1;
-        bufsize_t close = quoted ? v + quoted_end(s + v, n - v, s[e + 1]) : v + value_end(s + v, n - v);
+        bufsize_t v = e + 1;
+        bufsize_t close = quoted ? v + 1 + quoted_end(s + v + 1, n - v - 1, s[v]) : v + value_end(s + v, n - v);
         if (close >= n) {
-            const markdown_core_field_end end = !quoted ? value_end : s[e + 1] == '"' ? double_end : single_end;
+            const markdown_core_field_end end = quoted ? quote_led_end : value_end;
             *field = (markdown_core_field){MARKDOWN_CORE_SLOT_VALUE, 0, v, end, {{b, e}}, 1, false};
             return true;
         }

@@ -560,6 +560,41 @@ slot value Span closed before=1:9..1:10 after=1:11..1:10 prefix="rec"
 ````````````````````````````````
 
 ```````````````````````````````` example
+[x]{key=fo‸o\bar} after
+.
+block Paragraph 1:1..1:10
+slot value Span closed before=1:9..1:10 after=1:11..1:15 prefix="key"
+````````````````````````````````
+
+```````````````````````````````` example
+[x]{key=foo\b‸ar} after
+.
+block Paragraph 1:1..1:13
+slot value Span closed before=1:9..1:13 after=1:14..1:15 prefix="key"
+````````````````````````````````
+
+```````````````````````````````` example
+[x]{key="fo‸o} after
+.
+block Paragraph 1:1..1:11
+slot value Span closed before=1:9..1:11 after=1:12..1:12 prefix="key"
+````````````````````````````````
+
+```````````````````````````````` example
+[x]{key="fo‸o bar"} after
+.
+block Paragraph 1:1..1:11
+slot value Span closed before=1:9..1:11 after=1:12..1:17 prefix="key"
+````````````````````````````````
+
+```````````````````````````````` example
+[x]{key='fo‸o' .c} after
+.
+block Paragraph 1:1..1:11
+slot value Span closed before=1:9..1:11 after=1:12..1:13 prefix="key"
+````````````````````````````````
+
+```````````````````````````````` example
 [x]{.foo ‸bar}
 .
 block Paragraph 1:1..1:9
@@ -570,7 +605,7 @@ block Paragraph 1:1..1:9
 .
 block Paragraph 1:1..1:12
 inline None 1:4..1:4
-slot value Span open before=1:10..1:12 after=1:13..1:12 prefix="rec"
+slot value Span open before=1:9..1:12 after=1:13..1:12 prefix="rec"
 ````````````````````````````````
 
 ```````````````````````````````` example
