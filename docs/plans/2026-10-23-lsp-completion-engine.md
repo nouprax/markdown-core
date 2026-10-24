@@ -236,7 +236,7 @@ value appears in the context query by construction.
 | `anchor` | `text #‸` at a paragraph's end | `Paragraph`, `ListItem` |
 | `label` | `[text][‸` | `Link`, `Embedded` |
 | `footnote` | `[^‸` | `Cite` |
-| `bib` | `[@‸`, `[see @‸` | `Cite` |
+| `bib` | `[@‸`, `[see @‸`, `@‸` and `-@‸` in text | `Cite` |
 | `specimen` | `(@‸` | `Cite` |
 | `name` | `:‸`, `:::‸`, `#‸` | `Directive`, `DirectiveBlock`, `Topic` |
 | `id` | `{#‸` | any attribute site |
@@ -245,7 +245,7 @@ value appears in the context query by construction.
 | `variant` | `> [!‸` | `Callout` |
 | `info` | ` ```‸ ` | `CodeBlock` |
 | `field` | a line start in an open `---` envelope | `Metadata` |
-| `value` | after `state: ` | `Metadata` |
+| `value` | after `state: `, after `bib: `, after `src=` | `Metadata`, any attribute site |
 
 A slot kind is one word without the letters `g`, `j` or `y` (the owner's
 naming preference, 2026-10-24). Where the canonical AST already names the
@@ -433,8 +433,8 @@ candidates; it never reads the source text.
 | Slot kind | Candidates |
 | --- | --- |
 | `anchor` in a `Link` with no file | heading anchors, explicit anchors, block identifiers |
-| `anchor` in a `CrossLink` with no note (`[[#`) | headings by text, then `^` block identifiers |
-| `label` | `Document.references` labels |
+| `anchor` in a `CrossLink` with no note (`[[#`) | headings by text, as `Parent#Child` paths where a heading repeats, then `^` block identifiers |
+| `label` | `Document.references` labels, then heading labels (implicit heading references) |
 | `footnote` | `Document.footnotes` labels |
 | `specimen` | `Document.specimens` labels |
 | `id`, `class`, `record` | ids, classes and keys used elsewhere in the document |
@@ -460,6 +460,8 @@ heading renamed in an unsaved editor, and no keystroke updates the index.
 | `name` in a `Topic` | topics used in the workspace |
 | `name` in a `Directive` or `DirectiveBlock` | configured directive names, then names used in the workspace |
 | `bib` | keys of the document's bibliography (5.4), then keys used in the workspace |
+| `value` of the `bib` metadata field | workspace CSL JSON files by relative path |
+| `value` of a path attribute (`src` by default, configurable) | workspace files by relative path |
 
 ### 5.3 From configuration
 
