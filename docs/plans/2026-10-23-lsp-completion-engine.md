@@ -310,9 +310,15 @@ parser:
 
 | Platform | Host | Binding |
 | --- | --- | --- |
-| iOS, macOS (first) | the notebook's native editor | Swift `Workspace` in `swift-markdown-core`, values of the LSP types |
-| Android | the Android editor | Kotlin `Workspace` in `kotlin-markdown-core` |
-| Web | the web editor | ECMAScript `Workspace` in `es-markdown-core`, from WebAssembly |
+| iOS, macOS (first) | the notebook's native editor | `MarkdownCoreLSP.Server`, a second library product of `swift-markdown-core`, with values of the LSP types |
+| Android | the Android editor | Kotlin `Server` in `kotlin-markdown-core`, package `lsp` |
+| Web | the web editor | ECMAScript `Server` in `es-markdown-core`, from WebAssembly |
+
+Every binding names the engine's entry type `Server`, in a module or
+package named for the C library, as sourcekit-lsp names its own server
+module `SourceKitLSP`. The protocol's types live beside it in the same
+module, not in a separate `LanguageServerProtocol` module, whose name breaks
+the naming rule of 3.2.
 
 On every platform the editor calls the engine as a library, in process. For
 the notebook's use of Markdown as a command input, a completion therefore
