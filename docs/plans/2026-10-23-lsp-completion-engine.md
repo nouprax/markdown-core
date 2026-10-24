@@ -473,7 +473,7 @@ heading renamed in an unsaved editor, and no keystroke updates the index.
 | `name` in a `Topic` | topics used in the workspace |
 | `name` in a `Directive` or `DirectiveBlock` | configured directive names, then names used in the workspace |
 | `bib` | keys of the document's bibliography (5.4), then keys used in the workspace |
-| `value` of the `bib` metadata field | workspace CSL JSON files by relative path |
+| `value` of the `bib` metadata field | workspace bibliography files of 5.4 by relative path |
 | `value` of a path attribute (`src` by default, configurable) | workspace files by relative path |
 
 ### 5.3 From configuration
@@ -499,9 +499,28 @@ its own interface, so the field is metadata, not text the writer types. The
 properties grammar recognizes ten names today and drops unknown ones, so
 `bib` becomes an eleventh field of `Metadata` (docs/specs/dialect/properties.md),
 a parser change that lands in every binding at once. The host supplies the
-named file among the workspace files (4.1, 5.2); the engine reads it as CSL
-JSON with the reader of D8, so that no platform parses it on its own. A
-document without the field offers only the keys used in the workspace.
+named file among the workspace files (4.1, 5.2), and the engine reads it in
+C, so that no platform parses it on its own. A document without the field
+offers only the keys used in the workspace.
+
+The engine reads bibliographies and never edits them: it takes from each
+entry its key, and its title, authors and year for the completion item's
+detail and for hover. Editing a bibliography file is the job of the tool
+that made it, or of another language server. The formats are those common in
+academic writing, chosen by the file's extension as Pandoc chooses them:
+
+| Format | Extension | Source | Reader |
+| --- | --- | --- | --- |
+| CSL JSON | `.json` | Zotero, Pandoc, Mendeley | the JSON reader of D8 |
+| CSL YAML | `.yaml`, `.yml` | Pandoc | a reader for the YAML subset CSL uses: maps, lists, scalars |
+| BibTeX | `.bib`, `.bibtex` | LaTeX, Google Scholar, publishers' exports | a BibTeX reader: entries, `@string` macros, `#` concatenation, braces and LaTeX escapes in values |
+| BibLaTeX | `.bib` | BibLaTeX | the BibTeX reader, with BibLaTeX's field names (`date`, `journaltitle`) |
+| RIS | `.ris` | EndNote, publishers' exports | a line reader of `TAG  - value` records; an entry's key is its `ID`, and an entry without one offers no key |
+
+Each reader is small, lives in the engine, and is tested against Pandoc's
+reading of the same files: the keys must agree, and a malformed entry is
+skipped without losing the entries after it. EndNote XML, which Pandoc also
+reads, needs an XML reader and stays out of this plan.
 
 ## 6. Documents and edits
 
@@ -607,7 +626,9 @@ it (D6).
    round-trip test, in C and Swift.
 - [ ] **Step 6: Workspace completion.** The workspace index with
    host-supplied files, the providers of 5.2 and 5.3, and the bibliography
-   of 5.4 with the `bib` metadata field in the parser and every binding.
+   of 5.4 with the `bib` metadata field in the parser and every binding:
+   CSL JSON first, then BibTeX and BibLaTeX, CSL YAML and RIS, one reader
+   per change.
 - [ ] **Step 7 onward: Navigation.** Hover, definition, references, links,
    rename, symbols, folding, semantic tokens and diagnostics (section 4.3),
    one feature per step, in C and Swift.
@@ -657,8 +678,9 @@ it (D6).
 - **D6 Scope and order. Decided 2026-10-24: completion, then navigation,
   then formatting, all on C and Swift before the other bindings,** with the
   Markdown writer as track W in parallel (4.3, 4.4, section 9). The owner,
-  on the order: "我们需要在Step 7前实现Step 8而Then里的Markdown Generator，因为AST->Markdown是LSP独立的前置依赖它应该在前序step时可以并行处理". The owner: "navigation是LSP的一部分么？format呢？如果是的话可能也得支持，只不过是在completion之后". Still
-  proposed: no bibliography format in step 6 beyond CSL JSON. Decided
+  on the order: "我们需要在Step 7前实现Step 8而Then里的Markdown Generator，因为AST->Markdown是LSP独立的前置依赖它应该在前序step时可以并行处理". The owner: "navigation是LSP的一部分么？format呢？如果是的话可能也得支持，只不过是在completion之后".
+  Decided 2026-10-24: the engine reads, and never edits, the bibliography
+  formats common in academic writing (5.4). The owner: "需要你把集中学术界常见格式都写进计划，我们针对这些格式都应该是不需要支持编辑，只需要支持理解的对吧". Decided
   2026-10-24: a document names its bibliography in its front matter (5.4).
   The owner: "我觉得这个东西可以靠写进front matter？对于rich editor而言，front matter是一个纯纯的metadata block不会被渲染，也没有编辑接口，只能通过UI重新指定".
 - **D7 Platform order. Decided 2026-10-24: C and Swift first, then Kotlin
