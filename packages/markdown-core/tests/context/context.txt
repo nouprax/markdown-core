@@ -390,6 +390,14 @@ slot specimen Citation open before=1:6..1:5 after=1:6..1:5
 ````````````````````````````````
 
 ```````````````````````````````` example
+See @{a@{b‸
+.
+block Paragraph 1:1..1:10
+inline Cite 1:5..1:5
+slot bib Citation open before=1:7..1:10 after=1:11..1:10
+````````````````````````````````
+
+```````````````````````````````` example
 See @{a b‸
 .
 block Paragraph 1:1..1:9

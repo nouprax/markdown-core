@@ -463,34 +463,6 @@ static int reading_order(const void *left, const void *right) {
     return a->index < b->index ? -1 : a->index > b->index ? 1 : 0;
 }
 
-/* Marks each field an earlier field of `sink` shadows: one that reads the
- * same slot from the same start under an opener that starts no later. The
- * `[[` of a `![[` reads the target the `![[` reads, and the earlier opener's
- * reading is the one the text has. A declaration's field neither shadows nor
- * is shadowed: it stands only when the document holds the declaration. One
- * sort finds them all. */
-static bool read_before(const markdown_core_context_sink *sink, bool *shadowed) {
-    reading *readings = markdown_core_alloc(sink->field_count, sizeof(*readings));
-    if (!readings) {
-        return false;
-    }
-    size_t count = 0;
-    for (size_t i = 0; i < sink->field_count; i++) {
-        const markdown_core_context_field *field = &sink->fields[i];
-        if (!field->declares) {
-            readings[count++] = (reading){field->kind, field->start, sink->openers[field->opener].place.start, i};
-        }
-    }
-    qsort(readings, count, sizeof(*readings), reading_order);
-    for (size_t i = 1; i < count; i++) {
-        if (readings[i].kind == readings[i - 1].kind && readings[i].start == readings[i - 1].start) {
-            shadowed[readings[i].index] = true;
-        }
-    }
-    markdown_core_free(readings);
-    return true;
-}
-
 /* Whether a field that ends at `end` ended before the cursor at a space or
  * a tab. An inline run's content drops the spaces and tabs at its end, so
  * its scanner reports the field before them as open, though the cursor is
@@ -505,8 +477,6 @@ static bool spaced(const context_query *query, size_t end) {
     return false;
 }
 
-/* The context's slots: each field the document confirms, with its source
- * before and after the cursor, and its prefixes, copied. */
 /* Whether the attribute block whose brace is at `brace` ends the line of a
  * block that takes it as its tail, in `*ends`: past its closing brace, only
  * spaces and tabs, then a heading's closing hashes after a space or a
@@ -542,6 +512,101 @@ static bool tail_ends(const context_query *query, markdown_core_node_kind owner,
     return true;
 }
 
+/* What the query makes of a field: whether the document keeps it, whether
+ * its construct is closed, and where it ends on the cursor's line. */
+typedef struct verdict {
+    bool kept, closed;
+    size_t end;
+} verdict;
+
+/* The verdict on the field at `index`, whose line runs from `line` to
+ * `last`; false when the confirmation ran out of memory. */
+static bool weigh(const context_query *query, const markdown_core_context_sink *sink, size_t index, size_t line,
+                  size_t last, verdict *out) {
+    const markdown_core_context_field *field = &sink->fields[index];
+    const markdown_core_context_opener *opener = &sink->openers[field->opener];
+    bool kept, closed;
+    *out = (verdict){false, false, 0};
+    if (field->start > query->cursor || field->start < line) {
+        return true;
+    }
+    if (!confirm(query, field->owner, field->start, field->kind == MARKDOWN_CORE_SLOT_ID, opener->place.start, &kept,
+                 &closed)) {
+        return false;
+    }
+    if (!kept || (field->declares && !closed)) {
+        return true;
+    }
+    /* A block's attribute tail is its only when nothing but its closing
+     * syntax follows it on the line. */
+    const markdown_core_node_kind owner = field->owner;
+    if (opener->kind == MARKDOWN_CORE_KIND_NONE &&
+        (owner == MARKDOWN_CORE_KIND_HEADING || owner == MARKDOWN_CORE_KIND_CODE_BLOCK ||
+         owner == MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK)) {
+        if (!tail_ends(query, owner, opener->place.start, last, &kept)) {
+            return false;
+        }
+        if (!kept) {
+            return true;
+        }
+    }
+    const size_t end =
+        field->start + (size_t)field->end(query->source + field->start, (bufsize_t)(last - field->start));
+    if (!spaced(query, end)) {
+        *out = (verdict){true, closed, end};
+    }
+    return true;
+}
+
+/* The verdicts on the fields of `sink`. A field another reads before it is
+ * text of that field, not one of its own: one that reads the same slot from
+ * the same start under an opener that starts no later, as the `[[` of a
+ * `![[` reads the target the `![[` reads, and one that starts inside a
+ * field of the same slot the document keeps, as an `@{` inside a braced key.
+ * A declaration's field neither reads before another nor is read: it stands
+ * only when the document holds the declaration. One sort orders them, so
+ * the fields one reads are passed over without a scan of their own. */
+static bool judge(const context_query *query, const markdown_core_context_sink *sink, size_t line, size_t last,
+                  verdict *verdicts) {
+    reading *readings = markdown_core_alloc(sink->field_count, sizeof(*readings));
+    if (!readings) {
+        return false;
+    }
+    size_t count = 0;
+    for (size_t i = 0; i < sink->field_count; i++) {
+        const markdown_core_context_field *field = &sink->fields[i];
+        if (!field->declares) {
+            readings[count++] = (reading){field->kind, field->start, sink->openers[field->opener].place.start, i};
+        } else if (!weigh(query, sink, i, line, last, &verdicts[i])) {
+            markdown_core_free(readings);
+            return false;
+        }
+    }
+    qsort(readings, count, sizeof(*readings), reading_order);
+    size_t reach = 0;
+    for (size_t i = 0; i < count; i++) {
+        const bool kind = i && readings[i].kind == readings[i - 1].kind;
+        if (!kind) {
+            reach = 0;
+        }
+        if ((kind && readings[i].start == readings[i - 1].start) || readings[i].start < reach) {
+            continue;
+        }
+        verdict *v = &verdicts[readings[i].index];
+        if (!weigh(query, sink, readings[i].index, line, last, v)) {
+            markdown_core_free(readings);
+            return false;
+        }
+        if (v->kept && v->end > reach) {
+            reach = v->end;
+        }
+    }
+    markdown_core_free(readings);
+    return true;
+}
+
+/* The context's slots: each field the document confirms, with its source
+ * before and after the cursor, and its prefixes, copied. */
 static bool take_slots(markdown_core_context *context, const context_query *query,
                        const markdown_core_context_sink *sink) {
     if (!sink->field_count) {
@@ -554,60 +619,33 @@ static bool take_slots(markdown_core_context *context, const context_query *quer
             prefixes++;
         }
     }
-    bool *shadowed = markdown_core_alloc(sink->field_count, sizeof(*shadowed));
-    if (!shadowed || !read_before(sink, shadowed)) {
-        markdown_core_free(shadowed);
+    size_t line = query->cursor;
+    const size_t last = line_end(query, query->cursor);
+    while (line > 0 && query->source[line - 1] != '\n' && query->source[line - 1] != '\r') {
+        line--;
+    }
+    verdict *verdicts = markdown_core_alloc(sink->field_count, sizeof(*verdicts));
+    if (!verdicts || !judge(query, sink, line, last, verdicts)) {
+        markdown_core_free(verdicts);
         return false;
     }
     context->slots = markdown_core_alloc(sink->field_count, sizeof(*context->slots));
     context->prefixes = prefixes ? markdown_core_alloc(prefixes, sizeof(*context->prefixes)) : NULL;
     context->bytes = bytes ? markdown_core_alloc(bytes, 1) : NULL;
     if (!context->slots || (prefixes && !context->prefixes) || (bytes && !context->bytes)) {
-        markdown_core_free(shadowed);
+        markdown_core_free(verdicts);
         return false;
     }
-    size_t prefix = 0, written = 0, line = query->cursor;
-    const size_t cursor_line = line_end(query, query->cursor);
-    while (line > 0 && query->source[line - 1] != '\n' && query->source[line - 1] != '\r') {
-        line--;
-    }
+    size_t prefix = 0, written = 0;
     for (size_t i = 0; i < sink->field_count; i++) {
         const markdown_core_context_field *field = &sink->fields[i];
-        if (field->start > query->cursor || field->start < line || shadowed[i]) {
+        if (!verdicts[i].kept) {
             continue;
         }
-        bool kept, closed;
-        if (!confirm(query, field->owner, field->start, field->kind == MARKDOWN_CORE_SLOT_ID,
-                     sink->openers[field->opener].place.start, &kept, &closed)) {
-            markdown_core_free(shadowed);
-            return false;
-        }
-        if (!kept || (field->declares && !closed)) {
-            continue;
-        }
-        /* A block's attribute tail is its only when nothing but its closing
-         * syntax follows it on the line. */
-        const markdown_core_node_kind owner = field->owner;
-        if (sink->openers[field->opener].kind == MARKDOWN_CORE_KIND_NONE &&
-            (owner == MARKDOWN_CORE_KIND_HEADING || owner == MARKDOWN_CORE_KIND_CODE_BLOCK ||
-             owner == MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK)) {
-            if (!tail_ends(query, owner, sink->openers[field->opener].place.start, cursor_line, &kept)) {
-                markdown_core_free(shadowed);
-                return false;
-            }
-            if (!kept) {
-                continue;
-            }
-        }
-        const size_t end =
-            field->start + (size_t)field->end(query->source + field->start, (bufsize_t)(cursor_line - field->start));
-        if (spaced(query, end)) {
-            continue;
-        }
-        const size_t after = end > query->cursor ? end : query->cursor;
+        const size_t after = verdicts[i].end > query->cursor ? verdicts[i].end : query->cursor;
         context_slot *slot = &context->slots[context->slot_count++];
         *slot = (context_slot){{field->kind, field->owner, query_scope(query, field->start, query->cursor),
-                                query_scope(query, query->cursor, after), closed, field->prefix_count},
+                                query_scope(query, query->cursor, after), verdicts[i].closed, field->prefix_count},
                                prefix};
         for (uint32_t j = 0; j < field->prefix_count; j++) {
             const size_t size = field->prefix[j].end - field->prefix[j].start;
@@ -618,7 +656,7 @@ static bool take_slots(markdown_core_context *context, const context_query *quer
             written += size;
         }
     }
-    markdown_core_free(shadowed);
+    markdown_core_free(verdicts);
     return true;
 }
 
