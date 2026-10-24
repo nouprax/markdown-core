@@ -593,7 +593,10 @@ it (D6).
 - [ ] **Step 2: Context in C.** The slot audit of `canonical-ast.md`, the
    generated slot kinds, `markdown_core_document_context` and
    `markdown_core_slot_spell`, the context agreement tests and the dialect
-   spec's description of slots.
+   spec's description of slots. The audit also checks that every marker
+   (`**`, `##`, `]]`, list markers, fences) has a source range, from a node's
+   scope minus its fields' runs; where one does not, the parser gains a
+   marker query, used by semantic tokens and formatting, instead of a CST.
 - [ ] **Step 3: Bindings.** Context, path and field scopes in Swift, Kotlin
    and ECMAScript, and the vocabulary exports (3.3, 3.4).
 - [ ] **Step 4: Engine skeleton.** `markdown-core-lsp` in C with the
@@ -632,11 +635,18 @@ it (D6).
   ... The product targets Android/Windows and web in the future, all are
   designed for best perf. Thus I do not think TS version is a correct
   choice." Rejected: a TypeScript server on the WebAssembly binding.
-- **D3 Edits. Proposed: whole-document parses per version, no general-edit
-  engine** (section 6). This keeps D7 of the incremental plan. Rejected: a
-  new edit API on sessions for the server.
-- **D4 Context model. Proposed: the open state of a prefix parse** (sections
-  2 and 3), which makes step 8 of the incremental plan a prerequisite.
+- **D3 Edits. Decided 2026-10-24: whole-document parses per version, no
+  general-edit engine** (section 6). This keeps D7 of the incremental plan:
+  sessions stay append-only, because Markdown's context-dependent grammar
+  and backtracking make random-edit reuse irreconcilable with one-shot and
+  streaming performance. The owner: "仓库现在的增量语意是为streaming优化的，因为markdown的highly contextual语法和backtracking问题导致random optimize与one shot perf+streaming perf之间是不可调和的矛盾。" Rejected: a
+  new edit API on sessions for the server, a concrete syntax tree, and
+  tree-sitter, which would be a second Markdown grammar (R1).
+- **D4 Context model. Decided 2026-10-24: the open state of a prefix parse**
+  (sections 2 and 3), a streaming append from the start to the cursor, which
+  makes step 8 of the incremental plan a prerequisite. It stands in for a
+  CST's error recovery: Markdown has no syntax errors, and the parser knows
+  exactly which constructs are open at the cursor.
 - **D5 Latency budget.** 10 ms p95 for documents up to 256 KiB, reported and
   not gated until the owner decides (section 7).
 - **D6 Scope and order. Decided 2026-10-24: completion, then navigation,
