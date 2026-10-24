@@ -882,6 +882,43 @@ block CodeBlock 1:1..1:3
 ````````````````````````````````
 
 ```````````````````````````````` example
+```fo‸o&#32;bar
+x
+```
+.
+block CodeBlock 1:1..1:5
+slot info CodeBlock closed before=1:4..1:5 after=1:6..1:6
+````````````````````````````````
+
+```````````````````````````````` example
+```foo&#32;ba‸r
+x
+```
+.
+block CodeBlock 1:1..1:13
+````````````````````````````````
+
+```````````````````````````````` example
+```foo&Tab;ba‸r
+.
+block CodeBlock 1:1..1:13
+````````````````````````````````
+
+```````````````````````````````` example
+```&#x20;fo‸o
+.
+block CodeBlock 1:1..1:11
+slot info CodeBlock closed before=1:10..1:11 after=1:12..1:12
+````````````````````````````````
+
+```````````````````````````````` example
+```fo‸o\&#32;bar
+.
+block CodeBlock 1:1..1:5
+slot info CodeBlock closed before=1:4..1:5 after=1:6..1:15
+````````````````````````````````
+
+```````````````````````````````` example
 ```lan‸g{junk
 x
 ```
