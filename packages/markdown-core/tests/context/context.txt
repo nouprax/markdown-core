@@ -845,6 +845,13 @@ inline None 1:8..1:8
 slot class Heading closed before=1:16..1:17 after=1:18..1:18
 ````````````````````````````````
 
+```````````````````````````````` example
+# text {k={.fo‸o}
+.
+block Heading 1:1..1:14
+slot value Heading closed before=1:11..1:14 after=1:15..1:15 prefix="k"
+````````````````````````````````
+
 ## Callouts
 
 ```````````````````````````````` example
@@ -969,6 +976,40 @@ x
 .
 block CodeBlock 1:1..1:6
 slot info CodeBlock closed before=1:4..1:6 after=1:7..1:7
+````````````````````````````````
+
+```````````````````````````````` example
+```lang{k=fo‸o junk
+x
+```
+.
+block CodeBlock 1:1..1:12
+slot info CodeBlock closed before=1:4..1:12 after=1:13..1:13
+````````````````````````````````
+
+```````````````````````````````` example
+```lang{.fo‸o}
+x
+```
+.
+block CodeBlock 1:1..1:11
+slot class CodeBlock closed before=1:10..1:11 after=1:12..1:12
+````````````````````````````````
+
+```````````````````````````````` example
+```lang{.fo‸
+.
+block CodeBlock 1:1..1:11
+slot class CodeBlock closed before=1:10..1:11 after=1:12..1:11
+slot info CodeBlock closed before=1:4..1:11 after=1:12..1:11
+````````````````````````````````
+
+```````````````````````````````` example
+```c {k={.fo‸o}
+```
+.
+block CodeBlock 1:1..1:12
+slot value CodeBlock closed before=1:9..1:12 after=1:13..1:13 prefix="k"
 ````````````````````````````````
 
 ```````````````````````````````` example

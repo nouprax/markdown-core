@@ -530,11 +530,19 @@ static bool tail_ends(const context_query *query, markdown_core_node_kind owner,
         tail->parser = (markdown_core_attribute_parser){.data = query->source + tail->from,
                                                         .length = (bufsize_t)(line - tail->from)};
     }
-    bufsize_t at = markdown_core_attributes_end(&tail->parser, (bufsize_t)(brace - tail->from));
+    const bufsize_t start = (bufsize_t)(brace - tail->from);
+    bufsize_t at = markdown_core_attributes_end(&tail->parser, start);
+    /* A closed block is the tail only when it is the line's first block
+     * ending where it ends, as the block's parser selects it: one inside an
+     * earlier block's value is text of that value. */
+    const bool first = !at || markdown_core_attributes_tail(&tail->parser, 0, at) == start;
     size_t end = at ? tail->from + (size_t)at : query->cursor, spaces = end;
     *ends = false;
     if (tail->parser.oom) {
         return false;
+    }
+    if (!first) {
+        return true;
     }
     while (end < line && (query->source[end] == ' ' || query->source[end] == '\t')) {
         end++;
@@ -599,6 +607,11 @@ static bool weigh(const context_query *query, const markdown_core_context_sink *
         return false;
     }
     const size_t end = origin + (size_t)reach;
+    /* An info string's word stops short of the cursor only at an attribute
+     * tail the cursor is in, which its own field reads. */
+    if (field->kind == MARKDOWN_CORE_SLOT_INFO && end < query->cursor) {
+        return true;
+    }
     if (!spaced(query, end)) {
         *out = (verdict){true, closed, end};
     }

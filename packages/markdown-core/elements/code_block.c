@@ -174,16 +174,16 @@ static bufsize_t info_end(const unsigned char *data, bufsize_t length) {
     return info_word(data, length, &cut);
 }
 
-/* The fence line's field the line's end cuts short, `rest` its `length`
+/* The fence line's fields the line's end cuts short, `rest` its `length`
  * bytes past the fence, to the parse's context sink: a member of an open
- * attribute tail, or else the info string's first word, after the spaces
- * and the references that spell them before it. */
+ * attribute tail, and the info string's first word, after the spaces and
+ * the references that spell them before it. Both are candidates: what
+ * follows the cursor decides whether the brace opens a tail or is a byte of
+ * the word, so the query confirms one against the whole line. */
 static void S_report_info(markdown_core_parser *parser, const unsigned char *rest, bufsize_t length) {
     const bufsize_t offset = parser->at.offset;
     const unsigned char *line = rest - offset;
-    if (markdown_core_attributes_report_tail(parser, MARKDOWN_CORE_KIND_CODE_BLOCK, line, offset, offset + length)) {
-        return;
-    }
+    markdown_core_attributes_report_tail(parser, MARKDOWN_CORE_KIND_CODE_BLOCK, line, offset, offset + length);
     bufsize_t start = 0, space;
     while (start < length) {
         if (markdown_core_is_space_or_tab(rest[start])) {
