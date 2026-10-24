@@ -136,6 +136,12 @@ public struct Context: Sendable, Equatable {
     public let blocks: [Opener]      // open blocks, outermost first
     public let inlines: [Opener]     // provisional openers, earliest first
     public let slots: [Slot]         // what the cursor may be typing
+    public func enter() -> [Edit]    // what Enter writes at the cursor (4.4)
+}
+
+public struct Edit: Sendable, Equatable {
+    public let range: Scope          // source replaced, empty for an insertion
+    public let text: String
 }
 
 public struct Slot: Sendable, Equatable {
@@ -390,12 +396,22 @@ phases, after completion (D6).
 Formatting writes Markdown, so it needs the grammar's spelling as much as
 completion does, and it takes it from the parser for the same reason (R1).
 
-- **On-type formatting** answers a typed character from the context of
-  section 3 alone: after Enter, the open blocks' `blocks` say which list
-  item, quote, callout or fence the new line continues, and the engine
-  writes its continuation marker, or ends an empty item. It needs no writer,
-  so it is the first formatting feature, and for the notebook's command
-  input it is the one that matters most while typing.
+- **On-type formatting** answers Enter with the parser's `Context.enter()`,
+  C's `markdown_core_context_enter`. The parser reads the open blocks at the
+  cursor and writes the edits: the line break and the prefix that keeps
+  every open quote, callout and list item open on the new line, with the
+  indentation each block's content needs; a sibling item's marker, with the
+  next ordinal for an ordered list and an unchecked box for a task list; or,
+  when the innermost item is empty, the edits that remove its marker and
+  close it. The parser already decides each of these when it reads a
+  continuation line, so writing them is its knowledge, not the engine's
+  (R1). The engine only maps the edits to `TextEdit`s. The query needs no
+  writer, so on-type formatting is the first formatting feature, and for the
+  notebook's command input it is the one that matters most while typing.
+  Its test is the round trip of R2 for structure: for every spec example
+  and every line end in it, applying `enter()`'s edits and parsing gives
+  the open blocks of the context plus a new sibling item where one was
+  written, or the innermost item closed where it was empty.
 - **Document and range formatting** need a Markdown writer: a function in
   the parser library that writes a document, or a range of its blocks, in
   one canonical spelling. The repository has none today. It gets a plan of
@@ -555,7 +571,8 @@ Each step is one pull request and leaves `main` releasable.
 - [ ] **Step 8 onward: Navigation.** Hover, definition, references, links,
    rename, symbols, folding, semantic tokens and diagnostics (section 4.3),
    one feature per step.
-- [ ] **Then: Formatting.** On-type formatting first (4.4). The Markdown
+- [ ] **Then: Formatting.** `markdown_core_context_enter` in C and every
+   binding, with its round-trip test, then on-type formatting on it (4.4). The Markdown
    writer's own plan, then document and range formatting on it.
 
 ## 10. Decisions for the owner
