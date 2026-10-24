@@ -61,7 +61,25 @@ block Paragraph 1:1..1:10
 inline CrossLink 1:1..1:2
 inline None 1:1..1:1
 inline None 1:2..1:2
-slot anchor CrossLink open before=1:9..1:10 after=1:11..1:10 prefix="Note"
+slot anchor CrossLink open before=1:8..1:10 after=1:11..1:10 prefix="Note"
+````````````````````````````````
+
+```````````````````````````````` example
+[[Note#^‸
+.
+block Paragraph 1:1..1:8
+inline CrossLink 1:1..1:2
+inline None 1:1..1:1
+inline None 1:2..1:2
+slot anchor CrossLink open before=1:8..1:8 after=1:9..1:8 prefix="Note"
+````````````````````````````````
+
+```````````````````````````````` example
+[[Note#^He‸ading Name]] after
+.
+block Paragraph 1:1..1:10
+inline CrossLink 1:1..1:2
+slot anchor CrossLink closed before=1:8..1:10 after=1:11..1:20 prefix="Note"
 ````````````````````````````````
 
 ```````````````````````````````` example

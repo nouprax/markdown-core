@@ -29,10 +29,10 @@ static void S_report(markdown_core_inline_state *inline_state, bool embedded, bu
     if (label >= 0) {
         markdown_core_inline_open(inline_state, kind, start, body, NULL, 0);
     } else if (hash >= 0) {
-        const bufsize_t field =
-            hash + 1 < inline_state->input.len && inline_state->input.data[hash + 1] == '^' ? hash + 2 : hash + 1;
+        /* The anchor keeps a leading `^`: whether it marks a block identifier
+         * or starts a heading depends on the anchor's whole text, cursor on. */
         const markdown_core_field anchor = {
-            MARKDOWN_CORE_SLOT_ANCHOR, kind, field, anchor_end, {{body, hash}}, 1, false};
+            MARKDOWN_CORE_SLOT_ANCHOR, kind, hash + 1, anchor_end, {{body, hash}}, 1, false};
         markdown_core_inline_open(inline_state, kind, start, body, &anchor, 1);
     } else {
         const markdown_core_field path = {MARKDOWN_CORE_SLOT_DEST, kind, body, path_end, {{0}}, 0, false};
