@@ -470,6 +470,18 @@ engine reads them from that document's current version, through its lazy
 cached parse (section 6), and not from the index. So `[[ThatNote#` offers a
 heading renamed in an unsaved editor, and no keystroke updates the index.
 
+A completion request parses at most one document, its own. Providers that
+aggregate across the workspace (topics, directive names, citation keys) and
+a lookup of another open file read each open document's overlay as of its
+last parsed version. An open document that is not the requester and has
+unparsed edits is parsed off the request path: when the host calls the
+engine's idle entry point (`markdown_core_lsp_idle`), which the notebook calls
+when typing pauses and the adapter calls between messages, or when that
+document itself next serves a request. Until then its overlay may lag its
+newest version by the edits since the last idle call, which only the
+requesting document's own text could make visible, and that text is always
+current.
+
 | Slot kind | Candidates |
 | --- | --- |
 | `dest` in a `Link` or `Embedded` | workspace files by relative path |
@@ -569,7 +581,10 @@ second parse path (AGENTS.md).
   with one walk as `nodeAt` does today. On top of that comes O(n) once per
   document version for the whole parse, which the first request after a
   change pays, plus the providers' lookups, which are hash-table reads in
-  the index.
+  the index and in the overlays' last parsed versions. A request never
+  parses another document (5.2): the overlays' parses, O(total length of
+  the open documents with unparsed edits), run in the idle entry point, and
+  the latency report measures that call separately.
 - **Budget.** Measured in C, the engine's work for a completion request on
   the benchmark grammar corpus stays under 1 ms p95 for documents up to
   16 KiB, the size of a notebook's command input, and under 10 ms for
