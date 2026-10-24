@@ -243,12 +243,21 @@ static bool literal(const markdown_core_node *node) {
     }
 }
 
+/* Whether `anchor` is the identifier written at `first`, ended by the `#`
+ * of a block identifier, or the brace or separator after an attribute
+ * block's `#id`: the one the field declares, not another the node carries. */
+static bool names(const context_query *query, const markdown_core_chunk *anchor, size_t first) {
+    const size_t length = (size_t)anchor->len, end = first + length;
+    return length && end <= query->length && !memcmp(query->source + first, anchor->data, length) &&
+           (end == query->length || (query->source[end] && strchr("#} \t\r\n", query->source[end])));
+}
+
 /* Whether the document holds a node of kind `owner` whose source holds the
  * byte at `first` and the last byte before the cursor, or the cursor's byte
  * when the field is empty: the construct the field belongs to, which the
  * document finishes at or after the cursor. At the document's end, where no
  * byte follows, the last byte stands for both. An `anchored` construct
- * names its node, which then carries an anchor. */
+ * names its node, which then carries the anchor written at `first`. */
 static bool finished_by(const context_query *query, markdown_core_node_kind owner, size_t first, bool anchored,
                         bool *found) {
     size_t probe = query->cursor > first || query->cursor >= query->length ? query->cursor - 1 : query->cursor;
@@ -275,7 +284,8 @@ static bool finished_by(const context_query *query, markdown_core_node_kind owne
         }
     }
     for (size_t i = 0; i < probe_count && !*found; i++) {
-        if (markdown_core_node_get_kind(at_probe[i]) != owner || (anchored && !at_probe[i]->attributes.anchor.len)) {
+        if (markdown_core_node_get_kind(at_probe[i]) != owner ||
+            (anchored && !names(query, &at_probe[i]->attributes.anchor, first))) {
             continue;
         }
         for (size_t j = 0; j < first_count && opaque <= i + 1; j++) {
