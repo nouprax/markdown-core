@@ -18,7 +18,8 @@ extern "C" {
  * element that read the field's start reads the rest of it. The scan starts
  * at the field's start, not at a cursor in it, so what the field holds
  * before the cursor (a segment before a `/`, an open parenthesis) decides
- * how it goes on past the cursor. */
+ * how it goes on past the cursor. Negative when the scan could not
+ * allocate. */
 typedef bufsize_t (*markdown_core_field_end)(const unsigned char *data, bufsize_t length);
 
 /* A FIELD a scanner reads when its input ends, as the scanner reports it:

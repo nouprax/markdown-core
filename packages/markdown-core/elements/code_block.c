@@ -94,10 +94,23 @@ static void complete_code(const markdown_core_element_instance *self, markdown_c
         markdown_core_formula_promote_fence(formula, parser, node, markdown_core_scaffold_parent(node));
     }
 }
-/* Where an info string's first word goes on past a cursor. */
+/* Where an info string's first word goes on past a cursor: at a space, or
+ * at the attribute tail that ends the line, as the fence's info string
+ * leaves it; a brace that opens no tail is a byte of the word. */
 static bufsize_t info_end(const unsigned char *data, bufsize_t length) {
+    bufsize_t stop = length;
+    while (stop > 0 && markdown_core_is_whitespace(data[stop - 1])) {
+        stop--;
+    }
+    markdown_core_attribute_parser attributes = {.data = data, .length = stop};
+    const bufsize_t tail = markdown_core_attributes_tail(&attributes, 0, stop);
+    const int oom = attributes.oom;
+    markdown_core_attribute_parser_free(&attributes);
+    if (oom) {
+        return -1;
+    }
     bufsize_t end = 0;
-    while (end < length && !markdown_core_is_whitespace(data[end]) && data[end] != '{') {
+    while (end < length && !markdown_core_is_whitespace(data[end]) && end != tail) {
         end++;
     }
     return end;
@@ -116,7 +129,10 @@ static void S_report_info(markdown_core_parser *parser, const unsigned char *res
     while (start < length && markdown_core_is_space_or_tab(rest[start])) {
         start++;
     }
-    if (start + info_end(rest + start, length - start) == length) {
+    const bufsize_t end = info_end(rest + start, length - start);
+    if (end < 0) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    } else if (start + end == length) {
         const markdown_core_field info = {
             MARKDOWN_CORE_SLOT_INFO, MARKDOWN_CORE_KIND_CODE_BLOCK, offset + start, info_end, {{0}}, 0, false};
         markdown_core_parser_open(parser, MARKDOWN_CORE_KIND_CODE_BLOCK, parser->at.first_nonspace, offset, &info, 1);

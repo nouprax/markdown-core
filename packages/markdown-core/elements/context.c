@@ -575,8 +575,11 @@ static bool weigh(const context_query *query, const markdown_core_context_sink *
             return true;
         }
     }
-    const size_t end =
-        field->start + (size_t)field->end(query->source + field->start, (bufsize_t)(last - field->start));
+    const bufsize_t reach = field->end(query->source + field->start, (bufsize_t)(last - field->start));
+    if (reach < 0) {
+        return false;
+    }
+    const size_t end = field->start + (size_t)reach;
     if (!spaced(query, end)) {
         *out = (verdict){true, closed, end};
     }
