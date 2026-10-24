@@ -27,7 +27,7 @@ import { buildModel } from "../tooling/generate-node-kinds.mjs";
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 
-const FIXTURE = "packages/markdown-core/tests/fixtures/context.txt";
+const FIXTURE = "packages/markdown-core/tests/context/context.txt";
 
 /** The pairs whose scanner lands with the Metadata rework (plan step 2e). */
 const PENDING = new Set(["field/Metadata", "value/Metadata"]);

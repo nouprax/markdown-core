@@ -656,7 +656,7 @@ second parse path (AGENTS.md).
   with `|`.
 - **Slot coverage.** Every slot kind of section 3.2 appears in at least one
   spec example's context, and every field the audit of step 2 marks as
-  completable has a slot kind. In C, `tests/fixtures/context.txt` holds the
+  completable has a slot kind. In C, `tests/context/context.txt` holds the
   expected contexts, `scripts/audit/check-context-coverage.mjs` requires an
   example of every slot kind and owner the contract derives, and the context
   runner's sweep asks for the context at every position of every spec

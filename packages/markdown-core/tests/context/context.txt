@@ -153,6 +153,13 @@ slot dest Link open before=1:5..1:12 after=1:13..1:12
 ````````````````````````````````
 
 ```````````````````````````````` example
+[t](foo ‸
+.
+block Paragraph 1:1..1:8
+inline Link 1:1..1:1
+````````````````````````````````
+
+```````````````````````````````` example
 [t](<a b‸
 .
 block Paragraph 1:1..1:8
@@ -494,6 +501,12 @@ slot record Span open before=1:5..1:4 after=1:5..1:4
 .
 block Paragraph 1:1..1:10
 slot value Span closed before=1:9..1:10 after=1:11..1:10 prefix="rec"
+````````````````````````````````
+
+```````````````````````````````` example
+[x]{.foo ‸bar}
+.
+block Paragraph 1:1..1:9
 ````````````````````````````````
 
 ```````````````````````````````` example

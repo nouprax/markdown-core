@@ -305,11 +305,14 @@ markdown_core_add_test(elements_formula_conflicts elements 120 spec_runner --spe
 markdown_core_add_test(elements_directive elements 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/elements-directive.txt")
 # elements: the context query at each example's cursor (completion plan 3.1).
-markdown_core_add_test(elements_context elements 120 context_runner --spec
-                       "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/context.txt")
-# elements: the context query at every position of every spec example.
+# Its fixture lives apart from the spec fixtures: its examples render the
+# context, not the document.
+set(MARKDOWN_CORE_CONTEXT_FIXTURE "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/context/context.txt")
+markdown_core_add_test(elements_context elements 120 context_runner --spec "${MARKDOWN_CORE_CONTEXT_FIXTURE}")
+# elements: the context query at every position of every example.
 file(GLOB _markdown_core_context_sweep CONFIGURE_DEPENDS "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/*.txt")
-markdown_core_add_test(elements_context_sweep elements 600 context_runner --sweep ${_markdown_core_context_sweep})
+markdown_core_add_test(elements_context_sweep elements 600 context_runner --sweep "${MARKDOWN_CORE_CONTEXT_FIXTURE}"
+                       ${_markdown_core_context_sweep})
 # elements: attaching one element must not change another's block opener.
 markdown_core_add_test(elements_conflicts elements 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/elements-conflicts.txt")

@@ -251,6 +251,20 @@ static bool read_before(const markdown_core_context_sink *sink, size_t index) {
 
 /* The context's slots: each field the document confirms, with its source
  * before and after the cursor, and its prefixes, copied. */
+/* Whether a field that ends at `end` ended before the cursor at a space or
+ * a tab. An inline run's content drops the spaces and tabs at its end, so
+ * its scanner reports the field before them as open, though the cursor is
+ * past it. A field may end short of the cursor in other ways: `#foo/` reads
+ * its `/` only once a segment follows. */
+static bool spaced(const context_query *query, size_t end) {
+    for (size_t at = end; at < query->cursor; at++) {
+        if (query->source[at] == ' ' || query->source[at] == '\t') {
+            return true;
+        }
+    }
+    return false;
+}
+
 static bool take_slots(markdown_core_context *context, const context_query *query,
                        const markdown_core_context_sink *sink) {
     if (!sink->field_count) {
@@ -286,6 +300,9 @@ static bool take_slots(markdown_core_context *context, const context_query *quer
         }
         const size_t end =
             field->start + (size_t)field->end(query->source + field->start, (bufsize_t)(cursor_line - field->start));
+        if (spaced(query, end)) {
+            continue;
+        }
         const size_t after = end > query->cursor ? end : query->cursor;
         context_slot *slot = &context->slots[context->slot_count++];
         *slot = (context_slot){{field->kind, field->owner, query_scope(query, field->start, query->cursor),
@@ -293,7 +310,9 @@ static bool take_slots(markdown_core_context *context, const context_query *quer
                                prefix};
         for (uint32_t j = 0; j < field->prefix_count; j++) {
             const size_t size = field->prefix[j].end - field->prefix[j].start;
-            memcpy(context->bytes + written, query->source + field->prefix[j].start, size);
+            if (size) {
+                memcpy(context->bytes + written, query->source + field->prefix[j].start, size);
+            }
             context->prefixes[prefix++] = (markdown_core_string){context->bytes + written, size};
             written += size;
         }

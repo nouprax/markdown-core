@@ -844,6 +844,20 @@ bool markdown_core_attributes_open_member(const unsigned char *s, bufsize_t n, b
     }
 }
 
+/* The block at `start` that the input's end leaves open: the input may go
+ * on, and a context query reads the member it cuts short. Kept out of line,
+ * off the path of every attribute block that closes. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_saw_end(markdown_core_inline_state *inline_state, bufsize_t start,
+                                                          markdown_core_node_kind owner) {
+    markdown_core_inline_saw_end(inline_state);
+    markdown_core_field field;
+    if (inline_state->context && start < inline_state->input.len &&
+        markdown_core_attributes_open_member(inline_state->input.data, inline_state->input.len, start, &field)) {
+        field.owner = owner;
+        markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_NONE, start, start + 1, &field, 1);
+    }
+}
+
 int markdown_core_inline_state_attributes(markdown_core_inline_state *inline_state, bufsize_t start,
                                           markdown_core_node_kind owner, markdown_core_attributes *value,
                                           bufsize_t *end) {
@@ -868,13 +882,7 @@ int markdown_core_inline_state_attributes(markdown_core_inline_state *inline_sta
      * once the input goes on. */
     if (markdown_core_inline_tracks_end(inline_state) &&
         (start >= inline_state->input.len || (!matched && inline_state->input.data[start] == '{'))) {
-        markdown_core_inline_saw_end(inline_state);
-        markdown_core_field field;
-        if (inline_state->context && start < inline_state->input.len &&
-            markdown_core_attributes_open_member(inline_state->input.data, inline_state->input.len, start, &field)) {
-            field.owner = owner;
-            markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_NONE, start, start + 1, &field, 1);
-        }
+        S_saw_end(inline_state, start, owner);
     }
     return matched;
 }
@@ -882,8 +890,10 @@ int markdown_core_inline_state_attributes(markdown_core_inline_state *inline_sta
 void markdown_core_inline_attach_inline_attributes(markdown_core_inline_state *inline_state, markdown_core_node *node,
                                                    bufsize_t from) {
     bufsize_t end;
-    if (markdown_core_inline_state_attributes(inline_state, inline_state->pos, markdown_core_node_get_kind(node),
-                                              &node->attributes, &end)) {
+    /* Only a context query reads the owner's kind. */
+    const markdown_core_node_kind owner =
+        inline_state->context ? markdown_core_node_get_kind(node) : MARKDOWN_CORE_KIND_NONE;
+    if (markdown_core_inline_state_attributes(inline_state, inline_state->pos, owner, &node->attributes, &end)) {
         inline_state->pos = end;
         markdown_core_inline_state_place(inline_state, node, from, end - 1);
     }
