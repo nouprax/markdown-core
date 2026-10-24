@@ -70,16 +70,15 @@ owner's decisions, and section 11 records rejected alternatives.
 - **R5 Native performance.** The engine is C, in the same library family as
   the parser, and every platform reaches it without a process boundary,
   JSON or a managed runtime on the request path: Swift on iOS and macOS
-  first, then Kotlin on Android, the C ABI on Windows, and WebAssembly on
-  the web (section 4.1). A completion request answers in time proportional
+  first, then Kotlin on Android and WebAssembly on the web (section 4.1). A completion request answers in time proportional
   to the document's length with the parser's constant: one parse of the
   text before the cursor and, at most once per document version, one parse
   of the whole document (section 6). Section 7 sets the budget.
 - **R6 Bindings stay in step.** Every new parser query lands in C and in the
   Swift, Kotlin and ECMAScript bindings in the same step, as every public
   query has so far. The engine's own API follows the platforms' order
-  instead (D7): it ships in C and Swift first, and in each other binding
-  before that platform's product needs it.
+  instead (D7): it ships in C and Swift first, then in Kotlin and
+  ECMAScript.
 
 Non-goals for this plan: rendering and preview, formatting, editing the AST,
 a second dialect, and reviving the general-edit engine that D7 of the
@@ -313,7 +312,6 @@ parser:
 | --- | --- | --- |
 | iOS, macOS (first) | the notebook's native editor | Swift `Workspace` in `swift-markdown-core`, values of the LSP types |
 | Android | the Android editor | Kotlin `Workspace` in `kotlin-markdown-core` |
-| Windows | the Windows editor | the C ABI, or the Kotlin native target |
 | Web | the web editor | ECMAScript `Workspace` in `es-markdown-core`, from WebAssembly |
 
 On every platform the editor calls the engine as a library, in process. For
@@ -511,9 +509,9 @@ Each step is one pull request and leaves `main` releasable.
    round-trip test, in C and Swift.
 - [ ] **Step 6: Workspace completion.** The workspace index with
    host-supplied files, and the providers of 5.2 and 5.3.
-- [ ] **Step 7: Other platforms.** The engine's Kotlin binding for Android,
-   the C ABI and Kotlin native for Windows, and the ECMAScript binding for
-   the web, one platform per step in the product's order (D7).
+- [ ] **Step 7: Kotlin and ECMAScript.** The engine's Kotlin binding for
+   Android and its ECMAScript binding for the web, one binding per step
+   (D7).
 - [ ] **Step 8 onward: Navigation.** Hover, definition, references, rename,
    symbols, folding, semantic tokens and diagnostics (section 4), one feature
    per step.
@@ -540,10 +538,11 @@ Each step is one pull request and leaves `main` releasable.
 - **D6 Version 1 scope. Proposed: in-document and workspace completion**
   (steps 5 and 6) before any navigation feature, and no bibliography format
   in step 6 beyond CSL JSON.
-- **D7 Platform order. Proposed: C and Swift first,** then Android, Windows
-  and the web in the product's order, each binding of the engine landing
-  before its platform needs it (R6, step 7). The parser's own new queries
-  keep landing in every binding at once.
+- **D7 Platform order. Decided 2026-10-24: C and Swift first, then Kotlin
+  and ECMAScript** (R6, step 7). The owner: "我们这个repo里没有任何的Windows
+  支持，所以我的建议是先做C和Swift binding，然后做Kotlin及TS的binding". This
+  repository ships no Windows binding, so Windows is outside this plan. The
+  parser's own new queries keep landing in every binding at once.
 - **D8 JSON for the adapter. Proposed: a small JSON reader and writer in
   this repository, used only by `markdown-core-lsp`,** so that the engine and
   the platform libraries carry no JSON code and the repository keeps no
