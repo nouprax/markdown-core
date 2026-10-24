@@ -1936,7 +1936,8 @@ static bool S_record_miss(markdown_core_parser *parser, markdown_core_node *root
 /* Whether `node`'s completion settles its content: a snapshot's, of a
  * paragraph it lent, read on its own lines, while no candidate waits. */
 static inline bool S_settles(const markdown_core_parser *parser, const markdown_core_node *node) {
-    return parser->stream->snapshot_mark && node->kind == MARKDOWN_CORE_NODE_PARAGRAPH &&
+    return parser->stream->snapshot_mark &&
+           (markdown_core_parser_kind(parser, node)->flags & MARKDOWN_CORE_KIND_IS_PARAGRAPH) &&
            (node->flags & MARKDOWN_CORE_NODE__LENT) && !node->source.places && !markdown_core_parser_undecided(parser);
 }
 
@@ -1977,9 +1978,8 @@ static void S_settled_leave(markdown_core_parser *parser, markdown_core_settled 
 /* Whether the settled nodes are of `node`, whose content is `size` bytes. */
 static inline bool S_settled_holds(const markdown_core_settled *settled, const markdown_core_node *node,
                                    bufsize_t size) {
-    return settled->address == node && !settled->taken && settled->id == node->id &&
-           node->kind == MARKDOWN_CORE_NODE_PARAGRAPH && settled->offset == node->content_map.offset &&
-           size >= settled->size;
+    return settled->address == node && !settled->taken && settled->id == node->id && settled->kind == node->kind &&
+           settled->offset == node->content_map.offset && size >= settled->size;
 }
 
 /* The explicit anchors below the settled nodes reserved as starting at
@@ -2122,6 +2122,7 @@ static void S_settled_read(markdown_core_parser *parser, markdown_core_node *nod
     if (!settled->address) {
         settled->address = node;
         settled->id = node->id;
+        settled->kind = node->kind;
     }
     settled->root = node;
     settled->offset = node->content_map.offset;
@@ -2154,8 +2155,8 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_parse_settled(markdown_core_pa
                                                                 bool settles) {
     markdown_core_settled *settled = &parser->stream->settled;
     const bufsize_t size = S_content_bytes(node);
-    if (settled->address == node && !settled->taken && settled->id == node->id &&
-        node->kind == MARKDOWN_CORE_NODE_PARAGRAPH && !S_settled_holds(settled, node, size)) {
+    if (settled->address == node && !settled->taken && settled->id == node->id && settled->kind == node->kind &&
+        !S_settled_holds(settled, node, size)) {
         S_settled_leave(parser, settled, node);
     } else if (settled->address && !S_settled_holds(settled, node, size)) {
         S_settled_release(parser, settled);

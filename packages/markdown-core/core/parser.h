@@ -342,12 +342,12 @@ typedef struct {
 } markdown_core_settled_miss;
 
 /* THE SETTLED NODES OF AN OPEN PARAGRAPH (blocks.c, THE SETTLE POINT): the
- * paragraph at `address` whose id is `id`, as the last snapshot that
- * completed it read it -- its content from `offset` in its text, `size`
- * bytes of it -- the top-level nodes before its settle point `point`, the
- * first `count` of `nodes`, which the stream owns, the lookups before the
- * point that found nothing, the first `miss_count` of `misses`, and the nodes
- * below them that hold an explicit anchor. Its content's next read goes on
+ * paragraph at `address` whose id is `id` and kind `kind`, as the last
+ * snapshot that completed it read it -- its content from `offset` in its
+ * text, `size` bytes of it -- the top-level nodes before its settle point
+ * `point`, the first `count` of `nodes`, which the stream owns, the lookups
+ * before the point that found nothing, the first `miss_count` of `misses`,
+ * and the nodes below them that hold an explicit anchor. Its content's next read goes on
  * at the mark `mark` of its map, content offset `from`, with the places
  * read before it, which end at `at` in the source. While a snapshot reads
  * the paragraph, `root` is the paragraph, `settle` what its parse lists,
@@ -357,6 +357,7 @@ typedef struct {
 typedef struct {
     struct markdown_core_node *address, *root;
     uint64_t id;
+    uint16_t kind;
     bufsize_t offset, size, point, from;
     struct markdown_core_node **nodes;
     uint32_t count, mark, at;
