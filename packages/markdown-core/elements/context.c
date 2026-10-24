@@ -284,8 +284,9 @@ static bool take_slots(markdown_core_context *context, const context_query *quer
         if (!kept || (field->declares && !closed)) {
             continue;
         }
-        const size_t after =
-            query->cursor + (size_t)field->end(query->source + query->cursor, (bufsize_t)(cursor_line - query->cursor));
+        const size_t end =
+            field->start + (size_t)field->end(query->source + field->start, (bufsize_t)(cursor_line - field->start));
+        const size_t after = end > query->cursor ? end : query->cursor;
         context_slot *slot = &context->slots[context->slot_count++];
         *slot = (context_slot){{field->kind, field->owner, query_scope(query, field->start, query->cursor),
                                 query_scope(query, query->cursor, after), closed, field->prefix_count},

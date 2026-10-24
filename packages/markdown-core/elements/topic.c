@@ -93,7 +93,8 @@ static bool topic_opener(const markdown_core_inline_state *inline_state, bufsize
            !topic_joiner(scalar);
 }
 
-/* Where a topic's name goes on: segment characters, and a `/` before one. */
+/* Where a topic's name goes on from its start: segment characters, and a
+ * `/` between two. */
 static bufsize_t name_end(const unsigned char *data, bufsize_t length) {
     bool word = false;
     bufsize_t end = 0;

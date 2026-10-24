@@ -121,6 +121,38 @@ slot anchor Link closed before=1:10..1:11 after=1:12..1:11 prefix="page"
 ````````````````````````````````
 
 ```````````````````````````````` example
+[t](foo‸(bar)baz) after
+.
+block Paragraph 1:1..1:7
+inline Link 1:1..1:1
+slot dest Link closed before=1:5..1:7 after=1:8..1:15
+````````````````````````````````
+
+```````````````````````````````` example
+[t](foo(bar‸)baz) after
+.
+block Paragraph 1:1..1:11
+inline Link 1:1..1:1
+slot dest Link closed before=1:5..1:11 after=1:12..1:15
+````````````````````````````````
+
+```````````````````````````````` example
+[t](foo(bar)ba‸z) after
+.
+block Paragraph 1:1..1:14
+inline Link 1:1..1:1
+slot dest Link closed before=1:5..1:14 after=1:15..1:15
+````````````````````````````````
+
+```````````````````````````````` example
+[t](foo(bar)‸
+.
+block Paragraph 1:1..1:12
+inline Link 1:1..1:1
+slot dest Link open before=1:5..1:12 after=1:13..1:12
+````````````````````````````````
+
+```````````````````````````````` example
 [t](<a b‸
 .
 block Paragraph 1:1..1:8
@@ -309,6 +341,22 @@ see #to‸pic/sub here
 block Paragraph 1:1..1:7
 inline Topic 1:5..1:5
 slot name Topic closed before=1:6..1:7 after=1:8..1:14
+````````````````````````````````
+
+```````````````````````````````` example
+see #topic‸/sub here
+.
+block Paragraph 1:1..1:10
+inline Topic 1:5..1:5
+slot name Topic closed before=1:6..1:10 after=1:11..1:14
+````````````````````````````````
+
+```````````````````````````````` example
+see #‸/sub
+.
+block Paragraph 1:1..1:5
+inline Topic 1:5..1:5
+slot name Topic open before=1:6..1:5 after=1:6..1:5
 ````````````````````````````````
 
 ```````````````````````````````` example

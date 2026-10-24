@@ -432,11 +432,13 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_no
 
 /* HOW A LINK'S FIELDS GO ON PAST A CURSOR. A destination's path runs to
  * the `#` that starts its fragment, and the fragment to the destination's
- * end: a bare destination ends at a space, a control or a `)`, and one in
- * angle brackets at its `>`, a `<` or a line ending. A label runs to a
- * bracket. A backslash escapes the byte after it. */
+ * end: a bare destination ends at a space, a control or a `)` that closes
+ * no `(` of its own, as manual_scan_link_url_2 reads it, and one in angle
+ * brackets at its `>`, a `<` or a line ending. A label runs to a bracket. A
+ * backslash escapes the byte after it. */
 static bufsize_t field_end(const unsigned char *data, bufsize_t length, bool angled, bool fragment) {
     bufsize_t i = 0;
+    size_t depth = 0;
     while (i < length) {
         const unsigned char c = data[i];
         if (c == '\\' && i + 1 < length && markdown_core_ispunct(data[i + 1])) {
@@ -444,9 +446,12 @@ static bufsize_t field_end(const unsigned char *data, bufsize_t length, bool ang
             continue;
         }
         if ((!fragment && c == '#') ||
-            (angled ? c == '>' || c == '<' || markdown_core_is_line_end(c) : destination_excludes(c) || c == ')')) {
+            (angled ? c == '>' || c == '<' || markdown_core_is_line_end(c)
+                    : destination_excludes(c) || (c == ')' && !depth) || (c == '(' && depth == 32))) {
             break;
         }
+        depth += !angled && c == '(';
+        depth -= !angled && c == ')';
         i++;
     }
     return i;

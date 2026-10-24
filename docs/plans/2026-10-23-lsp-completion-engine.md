@@ -230,7 +230,10 @@ Step 2b built the query this way:
   block phase lists the blocks open at its end. An inline run whose content
   reaches the end lists the openers its scanners leave open and the fields
   they read when the content ends, each with the scanner's own function for
-  where the field goes on past the cursor. A line of the block phase that
+  where the field goes on past the cursor. That function reads the field
+  from its start, so the part before the cursor counts: a topic's segment
+  lets a `/` after the cursor go on, and a destination's open `(` lets a
+  `)` after it go on. A line of the block phase that
   ends the text reports the same way, for a callout's variant, a fence's
   info string, a directive block's name and an attribute tail. A reference
   definition reports its destination when its paragraph closes.
