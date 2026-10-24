@@ -386,7 +386,11 @@ The engine keeps a workspace index: for each Markdown file, its path, its
 headings and anchors, its block identifiers, its topics, its directive names
 and its citation keys, built by parsing the file with `Document.parse` and
 refreshed when the host reports a change, as `didChangeWatchedFiles` does.
-The host supplies the files (4.1).
+The host supplies the files (4.1). An open document overlays its index
+entry: when a provider asks for the declarations of a file that is open, the
+engine reads them from that document's current version, through its lazy
+cached parse (section 6), and not from the index. So `[[ThatNote#` offers a
+heading renamed in an unsaved editor, and no keystroke updates the index.
 
 | Slot kind | Candidates |
 | --- | --- |
@@ -420,7 +424,9 @@ text anywhere. This plan does not revive general edits. Instead:
   `rest`. A completion request is therefore one of the requests that need
   the whole document, and the first one after a change pays for its parse.
 - The workspace index parses a file when it changes on disk or closes in the
-  editor, never per keystroke.
+  editor, never per keystroke. While a file is open, its current version's
+  cached parse answers for it instead (5.2), and is parsed only when a
+  request needs it.
 
 Section 7 bounds what this costs. If the budget fails on documents the owner
 cares about, the remedy is a measured change to the shared algorithm, not a
