@@ -88,6 +88,7 @@ _markdown_core_session_new
 _markdown_core_session_text
 _markdown_core_session_text_size
 _markdown_core_session_unit
+_markdown_core_slot_kind_name
 _markdown_core_specimen_content
 _markdown_core_specimen_properties
 _markdown_core_topic_name

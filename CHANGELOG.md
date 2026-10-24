@@ -6,6 +6,14 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Name the slots an editor completes (language engine plan, step 2a). The
+  canonical AST contract lists fourteen slot kinds, the roles of the fields
+  whose source holds a name, a key or a path: `dest`, `anchor`, `label`,
+  `footnote`, `bib`, `specimen`, `name`, `id`, `class`, `record`, `variant`,
+  `info`, `field` and `value`. Each field names the slot kinds its source
+  writes. The C facade adds `markdown_core_slot_kind`, numbered by the
+  contract's ordinals, and `markdown_core_slot_kind_name`.
+
 - Add topics: `#` followed by a name, as on social platforms, is an inline
   `Topic` leaf whose `name` excludes the `#`. A name is runs of Unicode
   letters, combining marks, emoji, digits, `_`, `-` and twitter-text's hashtag

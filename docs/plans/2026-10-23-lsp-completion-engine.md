@@ -233,13 +233,12 @@ value appears in the context query by construction.
 | --- | --- | --- |
 | `dest` | `[text](‸`, `[[‸`, `![[‸` | `Link`, `Embedded`, `CrossLink`, `CrossEmbedded`, `Reference` |
 | `anchor` | `[text](#‸`, `[text](file.md#‸`, `[[Note#‸`, `[[#‸` | `Link`, `CrossLink`, `CrossEmbedded` |
-| `anchor` | `text #‸` at a paragraph's end | `Paragraph`, `ListItem` |
-| `label` | `[text][‸` | `Link`, `Embedded` |
-| `footnote` | `[^‸` | `Cite` |
-| `bib` | `[@‸`, `[see @‸`, `@‸` and `-@‸` in text | `Cite` |
-| `specimen` | `(@‸` | `Cite` |
+| `label` | `[text][‸`, `[‸]:` | `Link`, `Embedded`, `Reference` |
+| `footnote` | `[^‸`, `[^‸]:` | `Citation`, `Footnote` |
+| `bib` | `[@‸`, `[see @‸`, `@‸` and `-@‸` in text | `Citation` |
+| `specimen` | `(@‸`, `(@‸)` opening a specimen | `Citation`, `Specimen` |
 | `name` | `:‸`, `:::‸`, `#‸` | `Directive`, `DirectiveBlock`, `Topic` |
-| `id` | `{#‸` | any attribute site |
+| `id` | `{#‸`, `text #‸` at a paragraph's end | any attribute site, any block that takes a block identifier |
 | `class` | `{.‸` | any attribute site |
 | `record` | `{‸`, `{.a ‸` | any attribute site |
 | `variant` | `> [!‸` | `Callout` |
@@ -258,6 +257,16 @@ owners share, such as `name` or `dest`, means the same role in each, and
 
 The list is the starting point for review against the dialect spec, not a
 closed set: section 9 step 2 audits every field of `docs/specs/canonical-ast.md`.
+
+The audit (step 2a) put the slot kinds in the contract: `slots` in
+`docs/specs/canonical-ast.json` numbers them, and each field names the slot
+kinds its source writes, from which the generator derives their owners. It
+changed the list above in three ways. A slot that declares a name is a slot
+too, so a reference definition's, a footnote definition's and a specimen
+definition's label are slots, which complete from the labels used and not
+declared. A block identifier declares an anchor, so it is an `id`, like
+`{#…}`, and `anchor` refers to one. And a citation's slots belong to the
+`Citation`, which holds the referent, not to the `Cite`.
 
 ### 3.3 Ancestors and field scopes
 

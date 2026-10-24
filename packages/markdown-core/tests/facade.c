@@ -867,6 +867,19 @@ static void check_index_boundary(void) {
               markdown_core_node_kind_name((markdown_core_node_kind)-1, &kind_name) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
               kind_name == NULL,
           "a value outside the kinds has no name");
+
+    const char *slot_name = NULL;
+    check(markdown_core_slot_kind_name(MARKDOWN_CORE_SLOT_DEST, &slot_name) == MARKDOWN_CORE_OK &&
+              strcmp(slot_name, "dest") == 0 &&
+              markdown_core_slot_kind_name(MARKDOWN_CORE_SLOT_VALUE, &slot_name) == MARKDOWN_CORE_OK &&
+              strcmp(slot_name, "value") == 0,
+          "a slot kind answers its contract name");
+    slot_name = NULL;
+    check(markdown_core_slot_kind_name((markdown_core_slot_kind)(MARKDOWN_CORE_SLOT_VALUE + 1), &slot_name) ==
+                  MARKDOWN_CORE_OUT_OF_BOUNDS &&
+              markdown_core_slot_kind_name((markdown_core_slot_kind)-1, &slot_name) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
+              slot_name == NULL,
+          "a value outside the slot kinds has no name");
     markdown_core_document_free(metadata_document);
     markdown_core_document_free(document);
 }
