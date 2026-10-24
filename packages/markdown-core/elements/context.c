@@ -321,9 +321,12 @@ static bool names(const context_query *query, const markdown_core_chunk *anchor,
  * names its node, which then carries the anchor written at `first`. A
  * construct whose opener the field names starts at it, at `begins`, or
  * else is another of its kind that holds the bytes: a link whose title
- * holds the text of one. SIZE_MAX names no start. */
+ * holds the text of one. SIZE_MAX names no start. A construct that takes
+ * an attribute block ends with it: it does not hold `past`, the byte after
+ * the block, or the brace when the block is open; a construct that holds it
+ * holds the block as text, in a title. SIZE_MAX names no block. */
 static bool finished_by(const context_query *query, markdown_core_node_kind owner, size_t first, bool anchored,
-                        size_t begins, bool *found) {
+                        size_t begins, size_t past, bool *found) {
     size_t probe = query->cursor > first || query->cursor >= query->length ? query->cursor - 1 : query->cursor;
     const markdown_core_node **at_probe = NULL, **at_first = NULL;
     size_t probe_count = 0, first_count = 0;
@@ -359,7 +362,13 @@ static bool finished_by(const context_query *query, markdown_core_node_kind owne
             markdown_core_free((void *)at_first);
             return false;
         }
-        if (!starts || before) {
+        bool over = false;
+        if (past != SIZE_MAX && !holds(query, at_probe[i], past, &over)) {
+            markdown_core_free((void *)at_probe);
+            markdown_core_free((void *)at_first);
+            return false;
+        }
+        if (!starts || before || over) {
             continue;
         }
         for (size_t j = 0; j < first_count && opaque <= i + 1; j++) {
@@ -382,9 +391,9 @@ static bool finished_by(const context_query *query, markdown_core_node_kind owne
  * the document absorbed it into another node otherwise, and `*kept` is
  * false. */
 static bool confirm(const context_query *query, markdown_core_node_kind owner, size_t first, bool anchored,
-                    size_t opener, size_t begins, bool *kept, bool *closed) {
+                    size_t opener, size_t begins, size_t past, bool *kept, bool *closed) {
     *kept = *closed = false;
-    if (!finished_by(query, owner, first, anchored, begins, closed)) {
+    if (!finished_by(query, owner, first, anchored, begins, past, closed)) {
         return false;
     }
     if (*closed) {
@@ -463,7 +472,7 @@ static bool take_inlines(markdown_core_context *context, const context_query *qu
                      sorted[i].kind == MARKDOWN_CORE_KIND_NONE || sorted[i].kind == MARKDOWN_CORE_KIND_CITE
                          ? SIZE_MAX
                          : sorted[i].place.start,
-                     &kept, &closed)) {
+                     SIZE_MAX, &kept, &closed)) {
             markdown_core_free(sorted);
             return false;
         }
@@ -581,7 +590,23 @@ static bool weigh(const context_query *query, const markdown_core_context_sink *
         return true;
     }
     const size_t begins = !opener->block && opener->kind == field->owner ? opener->place.start : SIZE_MAX;
-    if (!confirm(query, field->owner, field->start, field->kind == MARKDOWN_CORE_SLOT_ID, opener->place.start, begins,
+    const markdown_core_node_kind owner = field->owner;
+    const bool tail = owner == MARKDOWN_CORE_KIND_HEADING || owner == MARKDOWN_CORE_KIND_CODE_BLOCK ||
+                      owner == MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK;
+    size_t past = SIZE_MAX;
+    const size_t brace = opener->place.start;
+    if (opener->kind == MARKDOWN_CORE_KIND_NONE && !tail && brace < query->length && query->source[brace] == '{') {
+        markdown_core_attribute_parser block = {.data = query->source + brace,
+                                                .length = (bufsize_t)(query->length - brace)};
+        const bufsize_t at = markdown_core_attributes_end(&block, 0);
+        const int oom = block.oom;
+        markdown_core_attribute_parser_free(&block);
+        if (oom) {
+            return false;
+        }
+        past = brace + (size_t)at;
+    }
+    if (!confirm(query, owner, field->start, field->kind == MARKDOWN_CORE_SLOT_ID, opener->place.start, begins, past,
                  &kept, &closed)) {
         return false;
     }
@@ -590,10 +615,7 @@ static bool weigh(const context_query *query, const markdown_core_context_sink *
     }
     /* A block's attribute tail is its only when nothing but its closing
      * syntax follows it on the line. */
-    const markdown_core_node_kind owner = field->owner;
-    if (opener->kind == MARKDOWN_CORE_KIND_NONE &&
-        (owner == MARKDOWN_CORE_KIND_HEADING || owner == MARKDOWN_CORE_KIND_CODE_BLOCK ||
-         owner == MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK)) {
+    if (opener->kind == MARKDOWN_CORE_KIND_NONE && tail) {
         if (!tail_ends(query, owner, opener->place.start, last, &kept)) {
             return false;
         }

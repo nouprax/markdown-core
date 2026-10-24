@@ -154,7 +154,10 @@ static bufsize_t info_word(const unsigned char *data, bufsize_t length, bool *cu
     bufsize_t end = 0;
     *cut = false;
     while (end < length && !markdown_core_is_whitespace(data[end]) && end != tail) {
-        if (data[end] == '\\' && end + 1 < length && markdown_core_ispunct(data[end + 1])) {
+        /* References decode before escapes, as S_fence_info decodes them:
+         * a backslash before one escapes what it spells, and a space it
+         * spells still ends the word. */
+        if (data[end] == '\\' && end + 1 < length && markdown_core_ispunct(data[end + 1]) && data[end + 1] != '&') {
             end += 2;
             continue;
         }
