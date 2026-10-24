@@ -405,13 +405,26 @@ completion does, and it takes it from the parser for the same reason (R1).
   when the innermost item is empty, the edits that remove its marker and
   close it. The parser already decides each of these when it reads a
   continuation line, so writing them is its knowledge, not the engine's
-  (R1). The engine only maps the edits to `TextEdit`s. The query needs no
+  (R1). `enter()` is a pre-Enter operation: its edits apply to the document
+  as it was before the key, and the in-process notebook, which intercepts
+  the key, applies them instead of inserting a newline. An LSP client sends
+  `textDocument/onTypeFormatting` after it has already inserted the newline
+  and perhaps its own indentation, so the engine adapts the same edits to
+  the current document: it takes the context at the end of the previous
+  line, whose prefix the client's insertion did not change, and answers
+  `enter()`'s edits with its line break and prefix replacing the range from
+  that line end to the cursor, the client's newline and indentation. Edits
+  before the line end, such as removing an empty item's marker, keep their
+  ranges. Both paths produce the same document. The query needs no
   writer, so on-type formatting is the first formatting feature, and for the
   notebook's command input it is the one that matters most while typing.
   Its test is the round trip of R2 for structure: for every spec example
   and every line end in it, applying `enter()`'s edits and parsing gives
   the open blocks of the context plus a new sibling item where one was
-  written, or the innermost item closed where it was empty.
+  written, or the innermost item closed where it was empty. A protocol
+  transcript sends `didChange` with the newline, with and without client
+  indentation, then `onTypeFormatting`, and checks that the result equals
+  applying `enter()` before the key.
 - **Document and range formatting** need a Markdown writer: a function in
   the parser library that writes a document, or a range of its blocks, in
   one canonical spelling. The repository has none today. It gets a plan of
