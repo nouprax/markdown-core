@@ -1242,3 +1242,33 @@ y‸z"}
 block Paragraph 1:1..1:7
 slot value Directive closed before=2:1..2:1 after=2:2..2:3 prefix="k"
 ````````````````````````````````
+
+```````````````````````````````` example
+see #fo‸o# text #foo#
+.
+block Paragraph 1:1..1:7
+inline Topic 1:5..1:5
+````````````````````````````````
+
+```````````````````````````````` example
+[x](foo\&#38;ba‸r)
+.
+block Paragraph 1:1..1:15
+inline Link 1:1..1:1
+slot dest Link closed before=1:5..1:15 after=1:16..1:16
+````````````````````````````````
+
+```````````````````````````````` example
+[[x #t# ‸y]]
+.
+block Paragraph 1:1..1:8
+inline CrossLink 1:1..1:2
+slot anchor CrossLink closed before=1:6..1:8 after=1:9..1:9 prefix="x "
+````````````````````````````````
+
+```````````````````````````````` example
+[x]{.x #t ‸y #i#}
+.
+block Paragraph 1:1..1:10
+slot record Span closed before=1:11..1:10 after=1:11..1:11
+````````````````````````````````

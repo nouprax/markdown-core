@@ -475,8 +475,10 @@ static bufsize_t field_end(const unsigned char *data, bufsize_t length, bool ang
     size_t depth = 0;
     while (i < length) {
         const unsigned char c = data[i];
+        /* References are decoded before escapes, so an escaped `&` still
+         * begins one. */
         if (c == '\\' && i + 1 < length && markdown_core_ispunct(data[i + 1])) {
-            i += 2;
+            i += data[i + 1] == '&' ? 1 : 2;
             continue;
         }
         if (c == '#' && !fragment && amp == i - 1) {
@@ -537,15 +539,8 @@ static bufsize_t note_end(const unsigned char *data, bufsize_t length) {
  * `end`, may be a numeric character reference's that the text after the
  * cursor finishes: whether it starts a fragment only that text tells. */
 static bool S_reference_cut(const unsigned char *data, bufsize_t path, bufsize_t hash, bufsize_t end) {
-    if (hash >= end || hash <= path || data[hash - 1] != '&') {
-        return false;
-    }
-    /* An `&` after an odd run of backslashes is escaped. */
-    bufsize_t slashes = hash - 1;
-    while (slashes > path && data[slashes - 1] == '\\') {
-        slashes--;
-    }
-    return (hash - 1 - slashes) % 2 == 0 && numeric_reference(data, hash, end) < 0;
+    /* References are decoded before escapes: an escaped `&` begins one. */
+    return hash < end && hash > path && data[hash - 1] == '&' && numeric_reference(data, hash, end) < 0;
 }
 
 /* The destination the content's end cuts short, read from `start`, to the

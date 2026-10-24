@@ -1098,9 +1098,11 @@ static const char *const CONSTRUCTS[] = {
     "\\@",
     "x @ y",
     "[@][r]\n\n[r]: u",
+    "x @ y #i#",
 };
 static const char *const ATOMS[] = {
-    "a", "a b", "\\]", "\\}", "&amp;", "\"q\"", "{.x}", "#t", "@k", "]", "}", "<u>", "`", "(", "|",
+    "a", "a b", "\\]", "\\}", "&amp;", "\"q\"", "{.x}",     "#t",     "@k",  "]",
+    "}", "<u>", "`",   "(",   "|",     "#t#",   "\\&#35;t", "&#35;t", "a#b", "\\#",
 };
 enum {
     CONSTRUCT_COUNT = sizeof(CONSTRUCTS) / sizeof(CONSTRUCTS[0]),
@@ -1120,7 +1122,8 @@ static char *fill(const char *template, const char *with) {
     return out;
 }
 
-/* Runs every generated input, named `generated` and numbered from 1. */
+/* Runs every generated input, named `generated` and numbered by its
+ * outer construct, inner construct and atom, two digits each. */
 static bool check_generated(report *r, size_t *examples) {
     ts_spec_case example = {0};
     r->path = "generated";
@@ -1134,7 +1137,10 @@ static bool check_generated(report *r, size_t *examples) {
                 if (!source) {
                     return false;
                 }
-                example.start_line = (int)++*examples;
+                /* Numbered by place, not by count, so a construct or an atom
+                 * added at a list's end leaves every other's number. */
+                example.start_line = (int)(outer * 10000 + inner * 100 + atom + 1);
+                ++*examples;
                 if (getenv("ORACLE_VERBOSE")) {
                     fprintf(stderr, "generated:%d: %s\n", example.start_line, source);
                 }

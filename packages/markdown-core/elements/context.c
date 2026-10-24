@@ -306,14 +306,26 @@ static bool literal(const markdown_core_node *node) {
 }
 
 /* Whether `anchor` is the identifier written at `first`, ended by the `#`
- * of a block identifier, or the brace or separator after the `#id` of the
- * attribute block whose brace is at `brace`: the one the field declares,
- * not another the node carries, nor the same name as a topic before it. */
+ * of a block identifier that ends its line, or by the brace or separator
+ * after the `#id` of the attribute block whose brace is at `brace`: the one
+ * the field declares, not another the node carries, nor the same name
+ * written as text before it. */
 static bool names(const context_query *query, const markdown_core_chunk *anchor, size_t first, size_t brace) {
     const size_t length = (size_t)anchor->len, end = first + length;
     const bool block = brace < query->length && query->source[brace] == '{';
-    return length && end <= query->length && !memcmp(query->source + first, anchor->data, length) &&
-           (end == query->length ? block : query->source[end] && strchr(block ? "} \t\r\n" : "#", query->source[end]));
+    if (!length || end > query->length || memcmp(query->source + first, anchor->data, length)) {
+        return false;
+    }
+    if (block) {
+        return end == query->length || (query->source[end] && strchr("} \t\r\n", query->source[end]));
+    }
+    /* A block identifier's `#` ends its line. */
+    size_t at = end + 1;
+    while (at < query->length && (query->source[at] == ' ' || query->source[at] == '\t')) {
+        at++;
+    }
+    return end < query->length && query->source[end] == '#' &&
+           (at >= query->length || query->source[at] == '\n' || query->source[at] == '\r');
 }
 
 /* Whether `chunk` begins with the `length` bytes at `text`. */
@@ -471,6 +483,24 @@ static bool finished_by(const context_query *query, markdown_core_node_kind owne
         }
         if (!starts || before || over || !takes) {
             continue;
+        }
+        /* A block identifier ends the paragraph it is written in. */
+        if (slot == MARKDOWN_CORE_SLOT_ID && !(brace < query->length && query->source[brace] == '{')) {
+            const size_t next = line_end(query, first) + 1;
+            bool later = false;
+            for (size_t j = first_count; j-- > 0 && next < query->length;) {
+                if (markdown_core_node_get_kind(at_first[j]) == MARKDOWN_CORE_KIND_PARAGRAPH) {
+                    if (!holds(query, at_first[j], next, &later)) {
+                        markdown_core_free((void *)at_probe);
+                        markdown_core_free((void *)at_first);
+                        return false;
+                    }
+                    break;
+                }
+            }
+            if (later) {
+                continue;
+            }
         }
         for (size_t j = 0; j < first_count && opaque <= i + 1; j++) {
             if (at_first[j] == at_probe[i]) {
@@ -865,6 +895,18 @@ static bool weigh(const context_query *query, const markdown_core_context_sink *
     if (!confirm(query, owner, field->start, field->kind, opener->place.start, begins, brace, past, &kept, &closed)) {
         return false;
     }
+    /* A member the document's node does not carry, an `#id` a later one
+     * replaces, may still be done, and the next one the cursor's: the
+     * construct is weighed alone. */
+    bool done = false;
+    if (!kept && query->cursor > field->start && member(query, field, opener, query->cursor - 1) &&
+        (query->source[query->cursor - 1] == ' ' || query->source[query->cursor - 1] == '\t')) {
+        if (!confirm(query, owner, field->start, MARKDOWN_CORE_SLOT_RECORD, opener->place.start, begins, brace, past,
+                     &kept, &closed)) {
+            return false;
+        }
+        done = kept;
+    }
     if (!kept || (field->declares && !closed)) {
         return true;
     }
@@ -920,6 +962,9 @@ static bool weigh(const context_query *query, const markdown_core_context_sink *
         return true;
     }
     if (!marked(query, field, last, end)) {
+        return true;
+    }
+    if (done && !(end < query->cursor && member(query, field, opener, end))) {
         return true;
     }
     if (end < query->cursor && member(query, field, opener, end)) {
