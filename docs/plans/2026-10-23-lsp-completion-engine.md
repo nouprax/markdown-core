@@ -1,21 +1,33 @@
-# A Markdown language server on Markdown Core
+# A Markdown language engine on Markdown Core
 
-Status: proposed. Nothing in this plan is built. Section 10 lists the
-decisions the owner makes before rollout step 2.
+Status: proposed. Nothing in this plan is built. On 2026-10-24 the owner
+decided where the engine lives and its language (D1, D2): a native C engine
+in this repository, reached in process through the platform bindings.
+Section 10 lists the remaining decisions, which the owner makes before
+rollout step 2.
 
-The owner's requirement, 2026-10-23:
+The owner's requirements, 2026-10-23 and 2026-10-24:
 
 > We want to use this parser as the source of truth and foundation grammar
 > oracle to create a LSP conformed markdown intellisense completion engine.
 
-This document specifies a Language Server Protocol server whose completions
-come from Markdown Core: what the parser must expose so that the server never
-decides a question of Markdown syntax itself, which LSP surface the server
-implements, where it lives, and the order in which it lands.
+> The LSP packages goal is to provide highly performance LSP support for
+> various platform, our first target is an iOS/macOS native notebook that
+> allow we use the markdown as command input for smooth rich editing. The
+> product targets Android/Windows and web in the future, all are designed for
+> best perf. Thus I do not think TS version is a correct choice.
+
+This document specifies a language engine with Language Server Protocol
+semantics whose completions come from Markdown Core: what the parser must
+expose so that the engine never decides a question of Markdown syntax
+itself, how the engine is built and reached on each platform, which LSP
+surface it implements, and the order in which it lands. The word "server"
+below means the engine together with whichever host drives it: a native
+editor calling it in process, or the JSON-RPC adapter of section 4.2.
 
 Sections 1–2 state requirements and the gap between what an editor asks and
 what the parser answers today. Section 3 is the parser's new public model.
-Sections 4–6 are the server, its completion catalog and its document model.
+Sections 4–6 are the engine and its hosts, its completion catalog and its document model.
 Sections 7–9 cover complexity, testing and rollout. Section 10 lists the
 owner's decisions, and section 11 records rejected alternatives.
 
@@ -33,12 +45,13 @@ owner's decisions, and section 11 records rejected alternatives.
   Core parses into the construct the completion names, with the value the
   completion names. Section 8 tests this as a property over the spec
   examples.
-- **R3 LSP conformance.** The server implements LSP 3.17 over JSON-RPC on
-  stdio, and over a message port for browser hosts: the lifecycle,
-  incremental text synchronization, position encoding negotiation, and
-  `textDocument/completion` with `completionItem/resolve` (section 4). Every
-  request answers within the protocol's error model; nothing the client sends
-  crashes the server.
+- **R3 LSP conformance.** The engine implements the semantics of LSP 3.17:
+  the lifecycle, incremental text synchronization, position encoding
+  negotiation, and `textDocument/completion` with `completionItem/resolve`
+  (section 4.3). Its API takes and returns the protocol's types, so that a
+  native editor calling it in process and an editor speaking JSON-RPC to the
+  adapter of section 4.2 get the same answers. Every request answers within
+  the protocol's error model; nothing a host sends crashes the engine.
 - **R4 Positions.** Every position the server takes or returns is in the
   encoding negotiated at `initialize`: UTF-16 code units unless the client
   offers `utf-8`. Markdown Core's `TextUnit` already counts columns in either
@@ -54,14 +67,19 @@ owner's decisions, and section 11 records rejected alternatives.
   line terminator, at `L:0` of the next line, becomes `L-1:0`. The slot
   scopes of section 3 follow the `Scope` contract unchanged, and the
   protocol transcripts (section 8) cover each of these cases.
-- **R5 Latency.** A completion request answers in time proportional to the
-  document's length with the parser's constant, not the server's: one parse
-  of the text before the cursor and, at most once per document version, one
-  parse of the whole document (section 6). Section 7 sets the budget.
+- **R5 Native performance.** The engine is C, in the same library family as
+  the parser, and every platform reaches it without a process boundary,
+  JSON or a managed runtime on the request path: Swift on iOS and macOS
+  first, then Kotlin on Android, the C ABI on Windows, and WebAssembly on
+  the web (section 4.1). A completion request answers in time proportional
+  to the document's length with the parser's constant: one parse of the
+  text before the cursor and, at most once per document version, one parse
+  of the whole document (section 6). Section 7 sets the budget.
 - **R6 Bindings stay in step.** Every new parser query lands in C and in the
   Swift, Kotlin and ECMAScript bindings in the same step, as every public
-  query has so far, so that an on-device editor on any platform can use the
-  same oracle without the server.
+  query has so far. The engine's own API follows the platforms' order
+  instead (D7): it ships in C and Swift first, and in each other binding
+  before that platform's product needs it.
 
 Non-goals for this plan: rendering and preview, formatting, editing the AST,
 a second dialect, and reviving the general-edit engine that D7 of the
@@ -257,7 +275,56 @@ step 8 of the incremental plan introduces. Step 8 therefore lands before
 step 2 of this plan. Until it does, an open paragraph's provisional decisions
 are not recorded, and the query has no `inlines`.
 
-## 4. The LSP surface
+## 4. The engine, its hosts and its LSP surface
+
+### 4.1 One C engine, reached in process
+
+The engine is a C library, `markdown-core-language`, beside the parser in
+`packages/markdown-core/language` and built by the same CMake project. It
+links the parser directly, so the context query, the cached documents and
+the providers share one address space and one allocator, and no request
+copies a document across a boundary. It owns:
+
+- the **document store**: each open document's text, version and cached
+  parse (section 6);
+- the **workspace index** of section 5.2;
+- the **providers** of section 5, which turn slots into candidates;
+- the **LSP types** of the surface below, as C structs whose strings and
+  arrays borrow from a result the caller frees.
+
+The engine does no I/O. A host hands it document text, workspace files and
+configuration, so that an iOS app inside its sandbox, an Android app with
+its storage access framework and a browser tab each decide how files are
+read. It has one writer per workspace; the results it returns are immutable
+and may be read on any thread. A request names the document version it was
+computed for, and the host drops a result whose version is stale, as LSP's
+`ContentModified` error does.
+
+Each platform reaches the engine through the binding it already uses for the
+parser:
+
+| Platform | Host | Binding |
+| --- | --- | --- |
+| iOS, macOS (first) | the notebook's native editor | Swift `MarkdownLanguage` in `swift-markdown-core`, values of the LSP types |
+| Android | the Android editor | Kotlin `MarkdownLanguage` in `kotlin-markdown-core` |
+| Windows | the Windows editor | the C ABI, or the Kotlin native target |
+| Web | the web editor | ECMAScript `MarkdownLanguage` in `es-markdown-core`, from WebAssembly |
+
+On every platform the editor calls the engine as a library, in process. For
+the notebook's use of Markdown as a command input, a completion therefore
+costs the engine's work and one call into Swift, not a message round trip.
+
+### 4.2 The JSON-RPC adapter
+
+`markdown-core-lsp` is a small C executable that maps LSP 3.17 JSON-RPC
+messages on stdio onto the engine's API and back, for editors that speak the
+protocol on the wire, such as VS Code, Neovim and Zed. It holds no state the
+engine does not hold, and it is where the protocol transcripts of section 8
+run, so it is also the conformance harness for the in-process bindings: a
+binding test replays a transcript's requests through the binding and
+compares the answers. It needs a JSON reader and writer in C (D8).
+
+### 4.3 The LSP surface
 
 Version 1 implements:
 
@@ -315,10 +382,11 @@ candidates; it never reads the source text.
 
 ### 5.2 From the workspace
 
-The server keeps a workspace index: for each Markdown file, its path, its
+The engine keeps a workspace index: for each Markdown file, its path, its
 headings and anchors, its block identifiers, its topics, its directive names
 and its citation keys, built by parsing the file with `Document.parse` and
-refreshed on `didChangeWatchedFiles`.
+refreshed when the host reports a change, as `didChangeWatchedFiles` does.
+The host supplies the files (4.1).
 
 | Slot kind | Candidates |
 | --- | --- |
@@ -367,11 +435,14 @@ second parse path (AGENTS.md).
   document version for the whole parse, which the first request after a
   change pays, plus the providers' lookups, which are hash-table reads in
   the index.
-- **Budget.** The p95 latency of a completion request on the benchmark
-  grammar corpus, measured in the ECMAScript binding on the gates' machine,
-  stays under 10 ms for documents up to 256 KiB. The figure is a proposal for
-  the owner (D5); the measurement lands in the existing benchmark workflow in
-  step 4 as a report, and becomes a gate only by the owner's decision.
+- **Budget.** Measured in C, the engine's work for a completion request on
+  the benchmark grammar corpus stays under 1 ms p95 for documents up to
+  16 KiB, the size of a notebook's command input, and under 10 ms for
+  documents up to 256 KiB, including the version's whole parse. The figures
+  are a proposal for the owner (D5). The measurement lands in the existing
+  benchmark workflow in step 4 as a report, in callgrind Ir as the parser's
+  gates count, with wall time on an iPhone and a Mac as the device check.
+  It becomes a gate only by the owner's decision.
 - Adversarial shapes are the ones the incremental plan's 7.2 lists: a context
   query inside them costs what a session costs over the same prefix.
 
@@ -401,10 +472,12 @@ second parse path (AGENTS.md).
   completable has a slot kind.
 - **Protocol transcripts.** JSON-RPC request and response transcripts for the
   lifecycle, both position encodings, incremental sync with CRLF, astral
-  characters and empty documents, cancellation, and malformed requests. The
-  same transcripts run against the stdio and browser transports.
+  characters and empty documents, cancellation, and malformed requests, run
+  against the adapter of section 4.2.
 - **Bindings.** The context, path and field-scope queries run the C tests'
   fixtures in Swift, Kotlin and ECMAScript, as the scope queries do today.
+  Each binding of the engine replays the protocol transcripts' requests in
+  process and must give the adapter's answers.
 
 ## 9. Rollout
 
@@ -414,42 +487,37 @@ Each step is one pull request and leaves `main` releasable.
 - [ ] **Step 1: Settle point.** Step 8 of the incremental parsing plan
    (section 3.5).
 - [ ] **Step 2: Context in C.** The slot audit of `canonical-ast.md`, the
-   generated slot kinds, `markdown_core_context_at`, the context agreement
+   generated slot kinds, `markdown_core_document_context` and `markdown_core_slot_spell`, the context agreement
    tests and the dialect spec's description of slots.
 - [ ] **Step 3: Bindings.** Context, path and field scopes in Swift, Kotlin
    and ECMAScript, and the vocabulary exports (3.3, 3.4).
-- [ ] **Step 4: Server skeleton.** The server package, lifecycle, position
-   encoding, document store and sync, the transcript harness, both
-   transports, and the latency report (sections 4, 6, 7). Completion answers
-   an empty list.
+- [ ] **Step 4: Engine skeleton.** `markdown-core-language` in C with the
+   lifecycle, position encoding, document store and sync, its Swift binding,
+   the JSON-RPC adapter and the transcript harness, and the latency report
+   (sections 4, 6, 7). Completion answers an empty list.
 - [ ] **Step 5: In-document completion.** The providers of 5.1 and the oracle
-   round-trip test.
-- [ ] **Step 6: Workspace completion.** The workspace index and the
-   providers of 5.2 and 5.3.
-- [ ] **Step 7: Clients.** A VS Code extension and a web-worker build for
-   Monaco and CodeMirror hosts.
+   round-trip test, in C and Swift.
+- [ ] **Step 6: Workspace completion.** The workspace index with
+   host-supplied files, and the providers of 5.2 and 5.3.
+- [ ] **Step 7: Other platforms.** The engine's Kotlin binding for Android,
+   the C ABI and Kotlin native for Windows, and the ECMAScript binding for
+   the web, one platform per step in the product's order (D7).
 - [ ] **Step 8 onward: Navigation.** Hover, definition, references, rename,
    symbols, folding, semantic tokens and diagnostics (section 4), one feature
    per step.
 
 ## 10. Decisions for the owner
 
-- **D1 Where the server lives. Proposed: a package in this repository,**
-  `packages/markdown-language-server`, in the pnpm workspace beside
-  `es-markdown-core`. A parser change and the server change that uses it then
-  land in one pull request, and the server tests run against the parser at
-  the same commit, which is what "source of truth" asks. The alternative is a
-  new repository that depends on a published `@nouprax/es-markdown-core`;
-  it keeps this repository a parser, at the cost of a release between every
-  parser change and the server change that uses it. A new repository has to
-  be created on GitHub by the owner.
-- **D2 Language. Proposed: TypeScript on the WebAssembly binding.** The
-  ECMAScript binding already runs the C parser in Node and in browsers, and
-  already counts UTF-16 columns by default. `vscode-languageserver` is the
-  protocol's reference implementation, and one build serves VS Code, Node
-  hosts and browser editors. The alternatives are a native server in C, which
-  would have to write its own JSON-RPC and protocol types, or a Swift or
-  Kotlin server, which would serve one platform's editors.
+- **D1 Where the engine lives. Decided 2026-10-24: this repository,** as
+  the C library `markdown-core-language` in `packages/markdown-core/language`
+  with its bindings in the existing platform packages (4.1). A parser change
+  and the engine change that uses it land in one pull request, and the
+  engine's tests run against the parser at the same commit.
+- **D2 Language. Decided 2026-10-24: C, reached in process on every
+  platform.** The owner: "our first target is an iOS/macOS native notebook
+  ... The product targets Android/Windows and web in the future, all are
+  designed for best perf. Thus I do not think TS version is a correct
+  choice." Rejected: a TypeScript server on the WebAssembly binding.
 - **D3 Edits. Proposed: whole-document parses per version, no general-edit
   engine** (section 6). This keeps D7 of the incremental plan. Rejected: a
   new edit API on sessions for the server.
@@ -460,8 +528,28 @@ Each step is one pull request and leaves `main` releasable.
 - **D6 Version 1 scope. Proposed: in-document and workspace completion**
   (steps 5 and 6) before any navigation feature, and no bibliography format
   in step 6 beyond CSL JSON.
+- **D7 Platform order. Proposed: C and Swift first,** then Android, Windows
+  and the web in the product's order, each binding of the engine landing
+  before its platform needs it (R6, step 7). The parser's own new queries
+  keep landing in every binding at once.
+- **D8 JSON for the adapter. Proposed: a small JSON reader and writer in
+  this repository, used only by `markdown-core-lsp`,** so that the engine and
+  the platform libraries carry no JSON code and the repository keeps no
+  third-party runtime dependency. The alternative is vendoring an existing C
+  JSON library such as yyjson for the adapter alone.
 
 ## 11. Rejected alternatives
+
+- **A TypeScript server on the WebAssembly binding.** Rejected by the owner
+  on 2026-10-24 (D2): the products are native and performance-first, and a
+  Node or browser runtime would sit on every native platform's request path.
+- **A language server process per platform, reached over JSON-RPC.** An
+  in-process editor such as the notebook would pay a message round trip and
+  JSON encoding on every keystroke for nothing; the adapter exists for
+  editors that only speak the wire protocol (4.2).
+- **An engine per platform in Swift, Kotlin and TypeScript.** Three
+  implementations of the providers and the protocol mapping would drift, as
+  three grammars would (R1).
 
 - **A Markdown grammar in the server.** Regular expressions, a TextMate
   grammar, or the scanners of an existing Markdown language server. Each is a
