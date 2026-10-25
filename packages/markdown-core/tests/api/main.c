@@ -31,6 +31,7 @@
 #include "markdown-core-elements.h"
 #include "document.h"
 #include "../../elements/attributes.h"
+#include "sink.h"
 #include "block_identifier.h"
 #include "link.h"
 #include "callout.h"
@@ -6461,6 +6462,45 @@ static void attribute_recognition_is_memoised(test_batch_runner *runner) {
     }
 }
 
+/* THE MEMBERS OF MANY BRACES ON ONE STRETCH, read with a shared memo, are
+ * what each brace reads alone: the shapes are the ones whose walks share a
+ * value's scan, an escaped `=`, a quoted lookahead, a run of members, or a
+ * walk that ends where an earlier one passed. */
+static void open_members_are_memoised(test_batch_runner *runner) {
+    static const char *const units[] = {"{k=",      "{k=a{k=a", "{a\\=x", "{k=\"\\\"", "{k=x a ",  "{#a {.b ",
+                                        "{ - k=v ", "{k='",     "{k=x}{", "{a\n{b ",   "{k=\"x\" "};
+    static const char *const suffixes[] = {"", "x", " b c", "\"", "=", "}"};
+    for (size_t u = 0; u < sizeof(units) / sizeof(*units); u++) {
+        for (size_t f = 0; f < sizeof(suffixes) / sizeof(*suffixes); f++) {
+            markdown_core_strbuf source = MARKDOWN_CORE_BUF_INIT();
+            for (size_t i = 0; i < 64; i++) {
+                markdown_core_strbuf_puts(&source, units[u]);
+            }
+            markdown_core_strbuf_puts(&source, suffixes[f]);
+            markdown_core_member_memo memo = {0};
+            size_t braces = 0, agreed = 0;
+            for (bufsize_t at = 0; at < source.size; at++) {
+                if (source.ptr[at] != '{') {
+                    continue;
+                }
+                braces++;
+                markdown_core_field alone = {0}, shared = {0};
+                const bool read = markdown_core_attributes_open_member(source.ptr, source.size, at, &alone, NULL);
+                const bool memoised = markdown_core_attributes_open_member(source.ptr, source.size, at, &shared, &memo);
+                agreed += read == memoised &&
+                          (!read || (alone.slot == shared.slot && alone.start == shared.start &&
+                                     alone.end == shared.end && alone.prefix_count == shared.prefix_count &&
+                                     !memcmp(alone.prefix, shared.prefix, sizeof(alone.prefix))));
+            }
+            INT_EQ(runner, (int)agreed, (int)braces, "a memoised brace reads its member as alone: unit=%zu suffix=%zu",
+                   u, f);
+            OK(runner, memo.count <= braces, "the memo holds a field per brace at most: unit=%zu suffix=%zu", u, f);
+            markdown_core_member_memo_free(&memo);
+            markdown_core_strbuf_free(&source);
+        }
+    }
+}
+
 /* A QUOTE-LED VALUE WITH NO CLOSER IS THE UNQUOTED VALUE THAT STARTS WITH
  * THE QUOTE, whatever the scratch holds when it is read. The reader decodes a
  * quote-led value as quoted and gives back what it staged when the container
@@ -12216,6 +12256,7 @@ int main(void) {
     image_cursor_stops_at_buffer_limit(runner);
     attribute_linear_work(runner);
     attribute_recognition_is_memoised(runner);
+    open_members_are_memoised(runner);
     attribute_unclosed_quote_is_unquoted(runner);
     attribute_reads_refuse_every_allocation(runner);
     attribute_values_are_one_allocation(runner);

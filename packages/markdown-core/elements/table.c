@@ -11,6 +11,7 @@
 
 #include "strikethrough.h"
 #include "table.h"
+#include "directive.h"
 #include "block_internal.h"
 #include "markdown-core-elements.h"
 
@@ -347,6 +348,18 @@ static markdown_core_node *try_opening_table_header(const markdown_core_element_
 
     if (!scan_table_start(input, len, markdown_core_parser_get_first_nonspace(parser))) {
         return NULL;
+    }
+    /* A delimiter row that opens with `:` is one only while the input's
+     * end leaves it be: written on, it may be a directive's name. */
+    const int first = markdown_core_parser_get_first_nonspace(parser);
+    if (parser->sink && input[first] == ':' && first + 1 < len && !markdown_core_is_whitespace(input[first + 1])) {
+        int end = first;
+        while (end < len && !markdown_core_is_whitespace(input[end])) {
+            end++;
+        }
+        if (end == len || markdown_core_is_line_end(input[end])) {
+            markdown_core_directive_report_line(parser, first);
+        }
     }
 
     if (!recognize_pipe_row(input + markdown_core_parser_get_first_nonspace(parser),

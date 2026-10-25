@@ -751,12 +751,271 @@ int markdown_core_attributes_parse(markdown_core_attribute_parser *p, bufsize_t 
 #include "inline_internal.h"
 #include "block_internal.h"
 
+/* Where a member's field goes on past a cursor: a name, an unquoted value,
+ * and a value in either quote. A backslash that escapes nothing is a value
+ * byte, as in unquoted_end. */
+static bufsize_t name_end(const unsigned char *data, bufsize_t length) {
+    return markdown_core_scan_to_class(BYTE_CLASS, BYTE_NAME_END, data, 0, length);
+}
+bufsize_t markdown_core_attributes_name_end(const unsigned char *data, bufsize_t length) {
+    return name_end(data, length);
+}
+static bufsize_t value_end(const unsigned char *data, bufsize_t length) {
+    bufsize_t at = 0;
+    while ((at = markdown_core_scan_to_class(BYTE_CLASS, BYTE_VALUE_END | BYTE_ESCAPE, data, at, length)) < length &&
+           data[at] == '\\') {
+        at += escaped(data, length, at) ? 2 : 1;
+    }
+    return at < length ? at : length;
+}
+static bufsize_t quoted_end(const unsigned char *data, bufsize_t length, unsigned char quote) {
+    bufsize_t at = 0;
+    while (at < length && data[at] != quote) {
+        at += escaped(data, length, at) ? 2 : 1;
+    }
+    return at < length ? at : length;
+}
+/* A quote-led value's field starts at its quote. Closed on its line, the
+ * field takes the closing quote too; with no closing quote the value falls
+ * back to an unquoted one, as in recognise, once a brace on the line closes
+ * the block, and reads to the line's end while the block is still open. */
+static bufsize_t quote_led_end(const unsigned char *data, bufsize_t length) {
+    const bufsize_t close = 1 + quoted_end(data + 1, length - 1, data[0]);
+    if (close < length) {
+        return close + 1;
+    }
+    for (bufsize_t at = 1; at < length; at += escaped(data, length, at) ? 2 : 1) {
+        if (data[at] == '}') {
+            return value_end(data, length);
+        }
+    }
+    return length;
+}
+/* A value's field, read from its first byte, which may follow the cursor. */
+static bufsize_t member_value_end(const unsigned char *data, bufsize_t length) {
+    return length && (data[0] == '"' || data[0] == '\'') ? quote_led_end(data, length) : value_end(data, length);
+}
+
+/* AN UNQUOTED VALUE'S END, MEMOISED BY THE POSITION IT IS READ FROM. A value
+ * opens after an `=`, and a scan that steps over an `=`, escaped or not,
+ * lands on the byte after it, so the value from there ends where the scan
+ * does: the scan notes its end at each such byte, and a later value read
+ * from one of them takes the end there. */
+static bufsize_t memo_value_end(markdown_core_member_memo *memo, const unsigned char *s, bufsize_t n, bufsize_t v) {
+    if (!memo) {
+        return v + value_end(s + v, n - v);
+    }
+    if (memo->values[v]) {
+        return memo->values[v] - 1;
+    }
+    const unsigned char stops = BYTE_VALUE_END | BYTE_ESCAPE | BYTE_ASSIGN;
+    bufsize_t at = v, end = n;
+    while ((at = markdown_core_scan_to_class(BYTE_CLASS, stops, s, at, n)) < n) {
+        if (s[at] != '\\' && s[at] != '=') {
+            end = at;
+            break;
+        }
+        at += escaped(s, n, at) ? 2 : 1;
+        if (s[at - 1] == '=' && memo->values[at]) {
+            end = memo->values[at] - 1;
+            break;
+        }
+    }
+    memo->values[v] = end + 1;
+    for (at = v; (at = markdown_core_scan_to_class(BYTE_CLASS, stops, s, at, end)) < end;) {
+        at += escaped(s, n, at) ? 2 : 1;
+        if (s[at - 1] == '=') {
+            if (memo->values[at]) {
+                break;
+            }
+            memo->values[at] = end + 1;
+        }
+    }
+    return end;
+}
+
+enum { MEMBER_FAIL, MEMBER_FIELD, MEMBER_NEXT };
+
+/* One member of a block that does not close, read from the boundary `b`:
+ * the field the input's end cuts it short in, the boundary after it, or
+ * neither when the block is no block whatever follows. */
+static int member_step(markdown_core_member_memo *memo, const unsigned char *s, bufsize_t n, bufsize_t b,
+                       bufsize_t *next, markdown_core_field *field) {
+    bool lines = false;
+    while (b < n && (horizontal(s[b]) || newline(s[b]))) {
+        if (newline(s[b])) {
+            if (lines && !(s[b] == '\n' && s[b - 1] == '\r')) {
+                return MEMBER_FAIL;
+            }
+            lines = true;
+        }
+        b++;
+    }
+    if (b >= n) {
+        *field = (markdown_core_field){MARKDOWN_CORE_SLOT_RECORD, 0, b, name_end, {{0}}, 0, false, 0};
+        return MEMBER_FIELD;
+    }
+    const unsigned char c = s[b];
+    if (c == '}' || c == '=' || c == '"' || c == '\'' || c == '{') {
+        return MEMBER_FAIL;
+    }
+    if (c == '-' && b + 1 < n && member_boundary(s, n, b + 1)) {
+        *next = b + 1;
+        return MEMBER_NEXT;
+    }
+    if (c == '#' || c == '.') {
+        const markdown_core_slot_kind slot = c == '#' ? MARKDOWN_CORE_SLOT_ID : MARKDOWN_CORE_SLOT_CLASS;
+        if (b + 1 < n && name_terminator(s[b + 1])) {
+            return MEMBER_FAIL;
+        }
+        bufsize_t e = b + 1;
+        while (e < n && !name_terminator(s[e])) {
+            e++;
+        }
+        if (e >= n) {
+            *field = (markdown_core_field){slot, 0, b + 1, name_end, {{0}}, 0, false, 0};
+            return MEMBER_FIELD;
+        }
+        *next = e;
+        return MEMBER_NEXT;
+    }
+    bufsize_t e = b + 1;
+    while (e < n && !name_terminator(s[e])) {
+        e++;
+    }
+    if (e >= n) {
+        *field = (markdown_core_field){MARKDOWN_CORE_SLOT_RECORD, 0, b, name_end, {{0}}, 0, false, 0};
+        return MEMBER_FIELD;
+    }
+    if (s[e] != '=') {
+        if (!member_boundary(s, n, e)) {
+            return MEMBER_FAIL;
+        }
+        *next = e;
+        return MEMBER_NEXT;
+    }
+    const bool quoted = e + 1 < n && (s[e + 1] == '"' || s[e + 1] == '\'');
+    bufsize_t v = e + 1;
+    bufsize_t close = quoted ? v + 1 + quoted_end(s + v + 1, n - v - 1, s[v]) : memo_value_end(memo, s, n, v);
+    if (close >= n) {
+        *field = (markdown_core_field){MARKDOWN_CORE_SLOT_VALUE, 0, v, member_value_end, {{b, e}}, 1, false, 0};
+        return MEMBER_FIELD;
+    }
+    *next = quoted ? close + 1 : close;
+    return MEMBER_NEXT;
+}
+
+/* The memo's tables, made on the second brace it is asked about: one brace
+ * needs none. A refusal leaves the walks unmemoised. */
+static bool member_memo_made(markdown_core_member_memo *memo, bufsize_t n) {
+    if (memo->walks) {
+        return true;
+    }
+    if (memo->refused || !memo->asked++) {
+        return false;
+    }
+    memo->walks = markdown_core_alloc((size_t)n + 1, sizeof(*memo->walks));
+    memo->values = markdown_core_alloc((size_t)n + 1, sizeof(*memo->values));
+    if (!memo->walks || !memo->values) {
+        markdown_core_member_memo_free(memo);
+        memo->refused = true;
+        return false;
+    }
+    return true;
+}
+
+void markdown_core_member_memo_free(markdown_core_member_memo *memo) {
+    markdown_core_free(memo->walks);
+    markdown_core_free(memo->values);
+    markdown_core_free(memo->found);
+    *memo = (markdown_core_member_memo){0};
+}
+
+/* (attributes.h) A member boundary reads as a name not yet begun. Whether a
+ * block from a boundary is cut short, and in which field, depends on the
+ * boundary alone, so with a memo every boundary a walk passes takes the
+ * walk's answer, `walks[b]`: 0 not yet asked, -1 no block, else one past the
+ * field's index in `found`. A walk that reaches a known boundary stops
+ * there; the answer is written back by walking again to it. */
+bool markdown_core_attributes_open_member(const unsigned char *s, bufsize_t n, bufsize_t start,
+                                          markdown_core_field *field, markdown_core_member_memo *memo) {
+    if (memo && !member_memo_made(memo, n)) {
+        memo = NULL;
+    }
+    bufsize_t b = start + 1, next = 0;
+    int step = MEMBER_FAIL;
+    while (!(memo && memo->walks[b]) && (step = member_step(memo, s, n, b, &next, field)) == MEMBER_NEXT) {
+        b = next;
+    }
+    if (!memo) {
+        return step == MEMBER_FIELD;
+    }
+    bufsize_t answer = memo->walks[b];
+    if (!answer) {
+        answer = -1;
+        if (step == MEMBER_FIELD) {
+            markdown_core_field *found =
+                markdown_core_reserve(memo->found, &memo->room, memo->count + 1, sizeof(*memo->found));
+            if (!found) {
+                return true;
+            }
+            memo->found = found;
+            memo->found[memo->count++] = *field;
+            answer = (bufsize_t)memo->count;
+        }
+    }
+    markdown_core_field unused;
+    for (bufsize_t at = start + 1; !memo->walks[at]; at = next) {
+        memo->walks[at] = answer;
+        if (member_step(memo, s, n, at, &next, &unused) != MEMBER_NEXT) {
+            break;
+        }
+    }
+    if (answer < 0) {
+        return false;
+    }
+    *field = memo->found[answer - 1];
+    return true;
+}
+
+/* The block at `start` that the input's end leaves open: the input may go
+ * on, and a context query reads the member it cuts short. Kept out of line,
+ * off the path of every attribute block that closes. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_saw_end(markdown_core_inline_state *inline_state, bufsize_t start,
+                                                          markdown_core_node_kind owner) {
+    markdown_core_inline_saw_end(inline_state);
+    markdown_core_field field;
+    if (inline_state->context && start < inline_state->input.len &&
+        markdown_core_attributes_open_member(inline_state->input.data, inline_state->input.len, start, &field, NULL)) {
+        field.owner = owner;
+        markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_NONE, start, start + 1, &field, 1);
+    }
+}
+
 int markdown_core_inline_state_attributes(markdown_core_inline_state *inline_state, bufsize_t start,
-                                          markdown_core_attributes *value, bufsize_t *end) {
+                                          markdown_core_node_kind owner, markdown_core_attributes *value,
+                                          bufsize_t *end) {
     /* The run owner's tail is its own: a heading's trailing attributes are
      * claimed there, so no inline construct takes an attribute block that
-     * begins in it. */
+     * begins in it. One the input's end leaves open is the tail only once
+     * the line ends after it: until then it may be the construct's. */
     if (inline_state->text_end >= 0 && start >= inline_state->text_end) {
+        if (inline_state->context && start < inline_state->input.len && inline_state->input.data[start] == '{' &&
+            markdown_core_inline_tracks_end(inline_state)) {
+            S_saw_end(inline_state, start, owner);
+        }
+        return 0;
+    }
+    /* Most constructs have no attribute block after them: only a `{` is
+     * read further. At the input's end a block may yet begin, once the
+     * input goes on. */
+    if (start >= inline_state->input.len) {
+        if (markdown_core_inline_tracks_end(inline_state)) {
+            S_saw_end(inline_state, start, owner);
+        }
+        return 0;
+    }
+    if (inline_state->input.data[start] != '{') {
         return 0;
     }
     if (!inline_state->attributes.data) {
@@ -770,11 +1029,11 @@ int markdown_core_inline_state_attributes(markdown_core_inline_state *inline_sta
     if (inline_state->attributes.oom) {
         inline_state->error = MARKDOWN_CORE_PARSE_ALLOCATION_FAILED;
     }
-    /* A block may begin at the end, and one that does not close may close
-     * once the input goes on. */
-    if (markdown_core_inline_tracks_end(inline_state) &&
-        (start >= inline_state->input.len || (!matched && inline_state->input.data[start] == '{'))) {
-        markdown_core_inline_saw_end(inline_state);
+    /* A block that does not close may close once the input goes on, and
+     * one that closes inside a quote the input's end leaves open, which
+     * reads it as text of a bare value, may close past it. */
+    if ((!matched || inline_state->context) && markdown_core_inline_tracks_end(inline_state)) {
+        S_saw_end(inline_state, start, owner);
     }
     return matched;
 }
@@ -782,10 +1041,34 @@ int markdown_core_inline_state_attributes(markdown_core_inline_state *inline_sta
 void markdown_core_inline_attach_inline_attributes(markdown_core_inline_state *inline_state, markdown_core_node *node,
                                                    bufsize_t from) {
     bufsize_t end;
-    if (markdown_core_inline_state_attributes(inline_state, inline_state->pos, &node->attributes, &end)) {
+    /* Only a context query reads the owner's kind. */
+    const markdown_core_node_kind owner =
+        inline_state->context ? markdown_core_node_get_kind(node) : MARKDOWN_CORE_KIND_NONE;
+    if (markdown_core_inline_state_attributes(inline_state, inline_state->pos, owner, &node->attributes, &end)) {
         inline_state->pos = end;
         markdown_core_inline_state_place(inline_state, node, from, end - 1);
     }
+}
+
+bool markdown_core_attributes_report_tail(markdown_core_parser *parser, markdown_core_node_kind owner,
+                                          const unsigned char *line, bufsize_t from, bufsize_t end) {
+    if (!parser->sink) {
+        return false;
+    }
+    markdown_core_field field;
+    markdown_core_member_memo memo = {0};
+    bool open = false;
+    for (bufsize_t at = from; at < end; at++) {
+        if (escaped(line, end, at)) {
+            at++;
+        } else if (line[at] == '{' && markdown_core_attributes_open_member(line, end, at, &field, &memo)) {
+            field.owner = owner;
+            markdown_core_parser_open(parser, MARKDOWN_CORE_KIND_NONE, at, at + 1, &field, 1);
+            open = true;
+        }
+    }
+    markdown_core_member_memo_free(&memo);
+    return open;
 }
 
 bufsize_t markdown_core_attributes_attach_tail(markdown_core_parser *parser, markdown_core_node *node,

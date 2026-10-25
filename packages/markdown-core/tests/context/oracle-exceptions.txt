@@ -1,0 +1,58 @@
+# Failures the context oracle cannot judge (tests/runners/oracle_runner.c).
+#
+# One per line: FIXTURE:EXAMPLE-LINE WHAT # reason. An entry that no
+# failure meets any more fails the run, so the list only shrinks.
+
+# A specimen's label decides what citations elsewhere resolve to: a sentinel
+# in the label unresolves them, so other nodes change with the slot.
+dialect-specimens.txt:25 slot specimen Specimen # citations elsewhere name the label
+dialect-specimens.txt:25 slot bib Citation # the key is also a specimen's label
+dialect-specimens.txt:25 slot specimen Citation # the key is also a specimen's label
+dialect-specimens.txt:52 slot specimen Specimen # citations elsewhere name the label
+dialect-specimens.txt:52 slot bib Citation # the key is also a specimen's label
+dialect-specimens.txt:52 slot specimen Citation # the key is also a specimen's label
+dialect-specimens.txt:142 slot specimen Specimen # citations elsewhere name the label
+dialect-specimens.txt:142 slot bib Citation # the key is also a specimen's label
+dialect-specimens.txt:142 slot specimen Citation # the key is also a specimen's label
+dialect-specimens.txt:291 slot specimen Specimen # citations elsewhere name the label
+dialect-specimens.txt:291 slot bib Citation # the key is also a specimen's label
+dialect-specimens.txt:291 slot specimen Citation # the key is also a specimen's label
+
+# `# @a` declares the label `@a` from the heading's text, so a sentinel in
+# the citation's key changes which references resolve.
+dialect-citations.txt:638 slot bib Citation # a heading's text declares a reference label
+dialect-citations.txt:638 slot specimen Citation # a heading's text declares a reference label
+
+# A multiline table aligns its cells by column: a sentinel shifts the
+# columns, and the table reads a different shape.
+dialect-tables.txt:997 slot dest CrossLink # column-aligned cells
+dialect-tables.txt:1026 slot dest CrossLink # column-aligned cells
+dialect-tables.txt:1045 slot dest CrossLink # column-aligned cells
+
+# `[[a#^]]` keeps `^` as its anchor; a sentinel after it makes the anchor a
+# block identifier, whose value drops the `^`.
+dialect-cross-links.txt:225 slot anchor CrossLink # the anchor's value is normalized
+
+# A label that goes on to another line is normalized across the line
+# break, so a sentinel at its edge lands beside a collapsed space.
+spec.txt:9702 slot label Reference # a label on two lines
+
+# A table caption's lines are read by the table's own lookahead, which tells
+# the context sink nothing: a line after a caption gets no context. A known
+# gap, not an oracle limit.
+dialect-tables.txt:1726 missed DirectiveBlock.attributes # line after a table caption
+dialect-tables.txt:1726 missed DirectiveBlock.name # line after a table caption
+
+# A directive's label that the text before the cursor leaves open is prose
+# there, so its opening `[` meets the bytes after it, `[[` a cross link's;
+# the document reads the label's content on its own once a `]` closes it.
+# A known gap, not an oracle limit.
+generated:90003 missed Link.dest # `:d[[\]](u)]`: the label holds a link
+generated:90303 missed Span.attributes # `:d[[\]]{.c}]`: the label holds a span
+
+# A cross link's path keeps a backslash, which the directive's label reads
+# as the escape of the `]` after it: a sentinel between them moves where
+# the label ends.
+generated:91303 slot dest CrossLink # `\` escapes the label's `]`
+generated:91503 slot dest CrossEmbedded # `\` escapes the label's `]`
+generated:92803 slot dest CrossLink # `\` escapes the label's `]`

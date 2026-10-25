@@ -521,6 +521,10 @@ struct markdown_core_parser {
     /* What the parse keeps as a stream (markdown_core_stream), made as the
      * parse starts. */
     markdown_core_stream *stream;
+    /* What the parse of the text before a cursor reports of what it leaves
+     * open (sink.h), or NULL: a parse with a sink is never published but
+     * to the context query. */
+    struct markdown_core_context_sink *sink;
     /* Every definition and explicit anchor the parse declared (registry.h):
      * the block phase declares definitions as it reads them, the headings
      * declare their labels before inline content is parsed, and completion
@@ -1279,6 +1283,14 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bufsize_t
  * begin in increasing source order, so a node began on `line` or later when
  * its start is at least this offset. */
 bufsize_t markdown_core_parser_line_offset(markdown_core_parser *parser, int line);
+struct markdown_core_field;
+/* THE OPEN CONSTRUCT a block scanner reads on the line being read, when the
+ * parse reports to a context sink and the line is the document's last: it
+ * opens a construct of kind `opens` whose opening syntax is the line's bytes
+ * `from` up to `to`, and reads the `count` fields at `fields`, their offsets
+ * on the line too, when the line ends. A parse with no sink lists nothing. */
+void markdown_core_parser_open(markdown_core_parser *parser, markdown_core_node_kind opens, bufsize_t from,
+                               bufsize_t to, const struct markdown_core_field *fields, size_t count);
 /* The content of line `line` of the active input, which the driver read,
  * as the block parser reads it, a NUL as U+FFFD, without its terminator, and
  * its length; NULL, with the parse failed, when storage could not be had. */

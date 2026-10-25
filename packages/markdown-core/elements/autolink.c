@@ -95,13 +95,15 @@ static MARKDOWN_CORE_INLINE markdown_core_node *make_autolink(markdown_core_inli
 }
 
 /* A failed angle autolink at `from` read the end of the input unless the
- * byte there starts neither a scheme nor a local part. */
+ * byte there starts neither a scheme nor a local part; its `<` may then open
+ * an autolink or HTML. */
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_angle_saw_end(markdown_core_inline_state *inline_state,
                                                                 bufsize_t from) {
     const unsigned char first = from < inline_state->input.len ? inline_state->input.data[from] : 0;
     if (!first || markdown_core_isalnum((char)first) ||
         (first > ' ' && first < 0x7f && strchr(".!#$%&'*+/=?^_`{|}~-", first))) {
         markdown_core_inline_saw_end(inline_state);
+        markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_NONE, from - 1, from, NULL, 0);
     }
 }
 

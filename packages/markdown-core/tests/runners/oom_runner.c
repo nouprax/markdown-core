@@ -375,6 +375,63 @@ static int sweep_dump(const oom_case *test) {
     return result;
 }
 
+/* A context query refuses each allocation in turn the same way: no context
+ * and ALLOCATION_FAILED. The cursors read slots of every reporting path:
+ * an inline run's, a line's and a definition's. */
+static const char OOM_CONTEXT_SOURCE[] = "See [[Note#He]] and [t](pa#se){.c} @do\n"
+                                         "> [!no]\n"
+                                         "```py {#a r=v}\n"
+                                         "```\n"
+                                         "[x]: /u#an\n"
+                                         "a `x [[No para #id#\n";
+static const markdown_core_position OOM_CONTEXT_CURSORS[] = {{1, 14}, {1, 29}, {1, 34}, {1, 39}, {2, 7},
+                                                             {3, 6},  {3, 14}, {5, 10}, {6, 12}, {6, 19}};
+
+static int sweep_context(void) {
+    const size_t length = sizeof(OOM_CONTEXT_SOURCE) - 1;
+    markdown_core_document *document = NULL;
+    int result = 0;
+    allocation_count = 0;
+    fail_at = 0;
+    if (markdown_core_document_parse((const uint8_t *)OOM_CONTEXT_SOURCE, length, &document) != MARKDOWN_CORE_OK) {
+        fputs("context: parse for the context sweep failed\n", stderr);
+        return -1;
+    }
+    for (size_t cursor = 0; result == 0 && cursor < sizeof(OOM_CONTEXT_CURSORS) / sizeof(*OOM_CONTEXT_CURSORS);
+         cursor++) {
+        const markdown_core_position position = OOM_CONTEXT_CURSORS[cursor];
+        markdown_core_context *context = NULL;
+        allocation_count = 0;
+        if (markdown_core_document_context(document, (const uint8_t *)OOM_CONTEXT_SOURCE, length, position, &context) !=
+                MARKDOWN_CORE_OK ||
+            markdown_core_context_slot_count(context) == 0) {
+            fprintf(stderr, "context %d:%d: counting query read no slot\n", position.line, position.column);
+            markdown_core_context_free(context);
+            result = -1;
+            break;
+        }
+        markdown_core_context_free(context);
+        const unsigned long total = allocation_count;
+        for (unsigned long allocation = 1; result == 0 && allocation <= total; allocation++) {
+            allocation_count = 0;
+            fail_at = allocation;
+            failure_fired = 0;
+            context = NULL;
+            markdown_core_status status = markdown_core_document_context(document, (const uint8_t *)OOM_CONTEXT_SOURCE,
+                                                                         length, position, &context);
+            fail_at = 0;
+            if (!failure_fired || context || status != MARKDOWN_CORE_ALLOCATION_FAILED) {
+                fprintf(stderr, "context %d:%d: allocation %lu / %lu was not reported as OOM\n", position.line,
+                        position.column, allocation, total);
+                markdown_core_context_free(context);
+                result = -1;
+            }
+        }
+    }
+    markdown_core_document_free(document);
+    return result;
+}
+
 static int case_strict_oom(void) {
     size_t index;
     for (index = 0; index < sizeof(OOM_CASES) / sizeof(OOM_CASES[0]); index++) {
@@ -382,7 +439,7 @@ static int case_strict_oom(void) {
             return -1;
         }
     }
-    return 0;
+    return sweep_context();
 }
 
 int main(int argc, char **argv) {

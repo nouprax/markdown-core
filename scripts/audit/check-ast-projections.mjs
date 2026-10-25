@@ -42,6 +42,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { buildModel } from "../tooling/generate-node-kinds.mjs";
+
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 
@@ -431,12 +433,41 @@ for (const { label, fieldsOf } of modelProjections) {
     }
 }
 
+/* THE SLOT TABLE of the prose is a copy of the contract's slots too: each
+ * slot kind, in ordinal order, with the fields whose source holds one. */
+function proseSlots() {
+    const lines = read(PROSE_PATH).split("\n");
+    const header = lines.findIndex((line) => line.startsWith("| Slot | Fields"));
+    if (header < 0) throw new Error(`${PROSE_PATH}: the slot table is gone or renamed`);
+    const slots = [];
+    for (const line of lines.slice(header + 2)) {
+        if (!line.startsWith("|")) break;
+        const [slot, fields] = line
+            .trim()
+            .replace(/^\||\|$/g, "")
+            .split("|")
+            .map((cell) => cell.trim());
+        slots.push(`${slot.replace(/`/g, "")}: ${[...fields.matchAll(/`([A-Za-z.]+)`/g)].map((m) => m[1]).join(", ")}`);
+    }
+    return slots;
+}
+const contractSlots = buildModel(contract, JSON.parse(read("packages/markdown-core/node-types.json"))).slots.map(
+    (slot) => `${slot.name}: ${slot.fields.join(", ")}`
+);
+const writtenSlots = proseSlots();
+if (JSON.stringify(writtenSlots) !== JSON.stringify(contractSlots)) {
+    console.error(
+        `${PROSE_PATH}: the slot table reads\n  ${writtenSlots.join("\n  ")}\nand the contract says\n  ${contractSlots.join("\n  ")}`
+    );
+    failed = true;
+}
+
 if (failed) {
     console.error("\nAST-projection audit failed: a platform's definition layer has drifted from the contract.");
     process.exit(1);
 }
 console.log(
     `AST-projection audit passed: ${String(kinds.size)} kinds over ` +
-        `${String(kindSurfaces.length)} surfaces, the C dump's fields, the prose table, the dump grammar, and ` +
+        `${String(kindSurfaces.length)} surfaces, the C dump's fields, the prose tables, the dump grammar, and ` +
         `${String(modelProjections.length)} models.`
 );

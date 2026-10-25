@@ -867,6 +867,19 @@ static void check_index_boundary(void) {
               markdown_core_node_kind_name((markdown_core_node_kind)-1, &kind_name) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
               kind_name == NULL,
           "a value outside the kinds has no name");
+
+    const char *slot_name = NULL;
+    check(markdown_core_slot_kind_name(MARKDOWN_CORE_SLOT_DEST, &slot_name) == MARKDOWN_CORE_OK &&
+              strcmp(slot_name, "dest") == 0 &&
+              markdown_core_slot_kind_name(MARKDOWN_CORE_SLOT_VALUE, &slot_name) == MARKDOWN_CORE_OK &&
+              strcmp(slot_name, "value") == 0,
+          "a slot kind answers its contract name");
+    slot_name = NULL;
+    check(markdown_core_slot_kind_name((markdown_core_slot_kind)(MARKDOWN_CORE_SLOT_VALUE + 1), &slot_name) ==
+                  MARKDOWN_CORE_OUT_OF_BOUNDS &&
+              markdown_core_slot_kind_name((markdown_core_slot_kind)-1, &slot_name) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
+              slot_name == NULL,
+          "a value outside the slot kinds has no name");
     markdown_core_document_free(metadata_document);
     markdown_core_document_free(document);
 }
@@ -944,6 +957,60 @@ static void check_source_boundary(void) {
     markdown_core_dump_free(NULL);
 }
 
+/* A context query reads the text before a position the document's unit
+ * counts, answers each list's entries by index, and refuses a position no
+ * source holds; the path of a position is the nodes that hold it, the
+ * root first. */
+static void check_context_query(void) {
+    static const char source[] = "\xc3\xa9 [[No]]\n";
+    const size_t length = sizeof(source) - 1;
+    markdown_core_document *document = NULL;
+    if (!ok(markdown_core_document_parse_in((const uint8_t *)source, length, MARKDOWN_CORE_TEXT_UNIT_UTF16, &document),
+            "a UTF-16 document parses")) {
+        return;
+    }
+    markdown_core_context *context = NULL;
+    markdown_core_slot slot;
+    markdown_core_opener opener;
+    markdown_core_string prefix;
+    /* The cursor is after `No`: `é` is one UTF-16 unit. */
+    check(markdown_core_document_context(document, (const uint8_t *)source, length, (markdown_core_position){1, 7},
+                                         &context) == MARKDOWN_CORE_OK &&
+              markdown_core_context_block_count(context) == 1 && markdown_core_context_slot_count(context) == 1 &&
+              markdown_core_context_slot_at(context, 0, &slot) == MARKDOWN_CORE_OK &&
+              slot.kind == MARKDOWN_CORE_SLOT_DEST && slot.owner == MARKDOWN_CORE_KIND_CROSS_LINK && slot.closed &&
+              slot.before.start.column == 5 && slot.before.end.column == 6 && slot.prefix_count == 0,
+          "a context query reads the slot before a cursor its unit counts");
+    check(markdown_core_context_block_at(context, 1, &opener) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
+              markdown_core_context_inline_at(context, markdown_core_context_inline_count(context), &opener) ==
+                  MARKDOWN_CORE_OUT_OF_BOUNDS &&
+              markdown_core_context_slot_at(context, 1, &slot) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
+              markdown_core_context_slot_prefix_at(context, 0, 0, &prefix) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
+              markdown_core_context_slot_prefix_at(context, 1, 0, &prefix) == MARKDOWN_CORE_OUT_OF_BOUNDS,
+          "a context entry at its list's count is out of bounds");
+    markdown_core_context_free(context);
+    markdown_core_context_free(NULL);
+
+    const markdown_core_position outside[] = {{0, 1}, {1, 0}, {3, 1}, {1, 40}};
+    for (size_t index = 0; index < sizeof(outside) / sizeof(*outside); index++) {
+        context = NULL;
+        check(markdown_core_document_context(document, (const uint8_t *)source, length, outside[index], &context) ==
+                      MARKDOWN_CORE_OUT_OF_BOUNDS &&
+                  context == NULL,
+              "a context query at a position no source holds is out of bounds");
+    }
+
+    const markdown_core_node **nodes = NULL;
+    size_t count = 0;
+    check(markdown_core_document_path(document, (markdown_core_position){1, 5}, (const uint8_t *)source, length, &nodes,
+                                      &count) == MARKDOWN_CORE_OK &&
+              count == 3 && markdown_core_node_get_kind(nodes[0]) == MARKDOWN_CORE_KIND_DOCUMENT &&
+              markdown_core_node_get_kind(nodes[2]) == MARKDOWN_CORE_KIND_CROSS_LINK,
+          "a path holds the nodes over a position, the root first");
+    markdown_core_path_free(nodes);
+    markdown_core_document_free(document);
+}
+
 int main(int argc, char **argv) {
     const char *fixture_dir;
     int i;
@@ -968,6 +1035,7 @@ int main(int argc, char **argv) {
     check_kind_boundary();
     check_index_boundary();
     check_source_boundary();
+    check_context_query();
     for (i = 3; i < argc; i++) {
         check_fixture(fixture_dir, argv[i]);
     }

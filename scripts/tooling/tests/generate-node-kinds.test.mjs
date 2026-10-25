@@ -69,10 +69,54 @@ test("a native type name is used once across both classes", () => {
     assert.throws(() => buildModel(contract(), broken), /DOCUMENT: named twice/);
 });
 
-test("a hand-written file carries exactly one generated region", () => {
+test("a hand-written file carries each of its generated regions exactly once", () => {
     const model = buildModel(contract(), native());
-    const without = (relative) => read(relative).replace(/\/\* BEGIN GENERATED[^\n]*\n/, "");
-    assert.throws(() => outputs(model, without), /needs exactly one generated region/);
+    const without = (relative) => read(relative).replace(/\/\* BEGIN GENERATED node kinds[^\n]*\n/, "");
+    assert.throws(() => outputs(model, without), /needs exactly one generated region of node kinds/);
     const twice = (relative) => read(relative) + read(relative);
-    assert.throws(() => outputs(model, twice), /needs exactly one generated region/);
+    assert.throws(() => outputs(model, twice), /needs exactly one generated region of node kinds/);
+    const header = "packages/markdown-core/include/markdown_core.h";
+    const noSlots = (relative) =>
+        relative === header ? read(relative).replace(/\/\* BEGIN GENERATED slot kinds[^\n]*\n/, "") : read(relative);
+    assert.throws(() => outputs(model, noSlots), /markdown_core\.h: needs exactly one generated region of slot kinds/);
+});
+
+test("slot kinds are numbered densely from 1 and each names one lowercase word without g, j or y", () => {
+    const model = buildModel(contract(), native());
+    assert.deepEqual(
+        model.slots.map((slot) => slot.ordinal),
+        model.slots.map((_, index) => index + 1)
+    );
+    const gap = contract();
+    gap.slots[0].ordinal = gap.slots.length + 1;
+    assert.throws(() => buildModel(gap, native()), /slot ordinals must run 1\.\./);
+    for (const name of ["key", "twoWords", "fragment"]) {
+        const broken = contract();
+        broken.slots[0].name = name;
+        assert.throws(() => buildModel(broken, native()), /is not one lowercase word without g, j or y/);
+    }
+});
+
+test("a field names declared slot kinds, and every slot kind is some field's", () => {
+    const unknown = contract();
+    unknown.kinds.find((kind) => kind.name === "Topic").fields[0].slots = ["tag"];
+    assert.throws(() => buildModel(unknown, native()), /Topic\.name names the slot tag, which is not a slot kind/);
+    const unused = contract();
+    unused.kinds.find((kind) => kind.name === "Callout").fields[0].slots = [];
+    assert.throws(() => buildModel(unused, native()), /no field holds the slot variant/);
+});
+
+test("a slot is owned by its field's kind, by the kinds holding its value, or by any kind", () => {
+    const slots = new Map(buildModel(contract(), native()).slots.map((slot) => [slot.name, slot]));
+    assert.deepEqual(slots.get("variant").owners, ["Callout"]);
+    assert.deepEqual(slots.get("footnote").owners.sort(), ["Citation", "Footnote"]);
+    assert.deepEqual(slots.get("label").owners.sort(), ["Embedded", "Link", "Reference"]);
+    assert.equal(slots.get("class").any, true);
+    assert.deepEqual(slots.get("class").owners, []);
+    const broken = contract();
+    broken.values.Destination.holders.cross.push("Topic");
+    assert.throws(
+        () => buildModel(broken, native()),
+        /Destination\.holders\.cross names Topic, which holds no Destination/
+    );
 });

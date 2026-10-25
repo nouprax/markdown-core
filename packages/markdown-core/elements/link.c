@@ -361,13 +361,33 @@ bufsize_t markdown_core_reference_definition_length(markdown_core_chunk *input,
     return length;
 }
 
+static bool S_report_reference(markdown_core_parser *parser, markdown_core_node *b, const markdown_core_chunk *input,
+                               bufsize_t before, const markdown_core_chunk *url);
+static void S_report_unread(markdown_core_parser *parser, markdown_core_node *b, const markdown_core_chunk *input,
+                            bufsize_t before);
+static void S_report_tail(markdown_core_parser *parser, markdown_core_node *b, markdown_core_chunk *input,
+                          bufsize_t before);
+
 static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_node *b, markdown_core_node *parent,
                                   markdown_core_chunk *input, markdown_core_attribute_parser *attributes,
                                   bufsize_t before, int *line) {
     reference_definition definition;
     bufsize_t length = S_reference_definition(input, attributes, &definition);
     if (!length) {
+        if (parser->sink) {
+            S_report_unread(parser, b, input, before);
+            S_report_tail(parser, b, input, before);
+        }
         return 0;
+    }
+    /* A definition whose destination the content's end cuts short may yet
+     * be text: the run reads it too. */
+    if (parser->sink) {
+        S_report_tail(parser, b, input, before);
+        if (S_report_reference(parser, b, input, before, &definition.url)) {
+            markdown_core_attributes_free(&definition.value);
+            return 0;
+        }
     }
     /* The destination and title are cleaned here, the way a direct link's
      * are, so a Reference and a direct link state the same values. */
@@ -424,6 +444,327 @@ static bufsize_t S_read_reference(markdown_core_parser *parser, markdown_core_no
     return length;
 }
 
+/* The numeric character reference whose `#` is at `hash`, after an `&`:
+ * its length past the `#` through its `;`, 0 when the bytes are no
+ * reference, or -1 when the data ends while they may still be one. */
+static bufsize_t numeric_reference(const unsigned char *data, bufsize_t hash, bufsize_t length) {
+    bufsize_t i = hash + 1;
+    const bool hex = i < length && (data[i] == 'x' || data[i] == 'X');
+    i += hex;
+    const bufsize_t digits = i, most = hex ? 6 : 7;
+    while (i < length && i - digits < most &&
+           (markdown_core_isdigit((char)data[i]) || (hex && (data[i] | 0x20) >= 'a' && (data[i] | 0x20) <= 'f'))) {
+        i++;
+    }
+    if (i >= length) {
+        return -1;
+    }
+    return i > digits && data[i] == ';' ? i + 1 - hash : 0;
+}
+
+/* HOW A LINK'S FIELDS GO ON PAST A CURSOR. A destination's path runs to
+ * the `#` that starts its fragment, outside the parentheses it opens, as an
+ * edit of the path alone must keep them whole, and the fragment to the destination's
+ * end: a bare destination ends at a space, a control or a `)` that closes
+ * no `(` of its own, as manual_scan_link_url_2 reads it, and one in angle
+ * brackets at its `>`, a `<` or a line ending. A label runs to a bracket. A
+ * backslash escapes the byte after it, and the `#` of a numeric character
+ * reference starts no fragment. */
+static bufsize_t field_end(const unsigned char *data, bufsize_t length, bool angled, bool fragment) {
+    bufsize_t i = 0, amp = -1;
+    size_t depth = 0;
+    while (i < length) {
+        const unsigned char c = data[i];
+        /* References are decoded before escapes, so an escaped `&` still
+         * begins one. */
+        if (c == '\\' && i + 1 < length && markdown_core_ispunct(data[i + 1])) {
+            i += data[i + 1] == '&' ? 1 : 2;
+            continue;
+        }
+        if (c == '#' && !fragment && amp == i - 1) {
+            const bufsize_t reference = numeric_reference(data, i, length);
+            if (reference > 0) {
+                i += reference;
+                continue;
+            }
+        }
+        amp = c == '&' ? i : amp;
+        if ((!fragment && c == '#' && !depth) ||
+            (angled ? c == '>' || c == '<' || markdown_core_is_line_end(c)
+                    : destination_excludes(c) || (c == ')' && !depth) || (c == '(' && depth == 32))) {
+            break;
+        }
+        depth += !angled && c == '(';
+        depth -= !angled && c == ')';
+        i++;
+    }
+    return i;
+}
+static bufsize_t path_end(const unsigned char *data, bufsize_t length) { return field_end(data, length, false, false); }
+/* A fragment's end is read from its path's start, through the `(` before
+ * its `#` that a `)` after it closes. */
+static bufsize_t fragment_end(const unsigned char *data, bufsize_t length) {
+    return field_end(data, length, false, true);
+}
+static bufsize_t angled_path_end(const unsigned char *data, bufsize_t length) {
+    return field_end(data, length, true, false);
+}
+static bufsize_t angled_fragment_end(const unsigned char *data, bufsize_t length) {
+    return field_end(data, length, true, true);
+}
+/* A destination not begun before the cursor, read from its first byte: one
+ * in angle brackets takes them, to its `>`, fragment and all. */
+static bufsize_t unbegun_end(const unsigned char *data, bufsize_t length) {
+    if (!length || data[0] != '<') {
+        return path_end(data, length);
+    }
+    const bufsize_t end = 1 + field_end(data + 1, length - 1, true, true);
+    return end < length && data[end] == '>' ? end + 1 : end;
+}
+static bufsize_t label_end(const unsigned char *data, bufsize_t length) {
+    return markdown_core_inline_reference_label_length(data, length);
+}
+
+/* Where a footnote definition's label goes on past a cursor: to a `]`, a
+ * space, a tab or the line's end. */
+static bufsize_t note_end(const unsigned char *data, bufsize_t length) {
+    bufsize_t end = 0;
+    while (end < length && data[end] != ']' && !markdown_core_is_whitespace(data[end]) && data[end]) {
+        end++;
+    }
+    return end;
+}
+
+/* Whether the `#` at `hash` of a destination from `path`, cut short at
+ * `end`, may be a numeric character reference's that the text after the
+ * cursor finishes: whether it starts a fragment only that text tells. */
+static bool S_reference_cut(const unsigned char *data, bufsize_t path, bufsize_t hash, bufsize_t end) {
+    /* References are decoded before escapes: an escaped `&` begins one. */
+    return hash < end && hash > path && data[hash - 1] == '&' && numeric_reference(data, hash, end) < 0;
+}
+
+/* The destination the content's end cuts short, read from `start`, to the
+ * run's context sink, as the field of a link or an image whose `[` the
+ * opener holds: the fragment after its first `#`, with the path before it,
+ * or else the path. A destination that ended before the content's end is
+ * not open. */
+static void S_report_destination(markdown_core_inline_state *inline_state, const bracket *opener, bufsize_t start,
+                                 markdown_core_slot_kind *reported) {
+    const unsigned char *data = inline_state->input.data;
+    const bufsize_t len = inline_state->input.len;
+    const bool angled = start < len && data[start] == '<';
+    const bufsize_t path = angled ? start + 1 : start;
+    const bufsize_t end = path + field_end(data + path, len - path, angled, true);
+    if (end < len || (!angled && end == start && start < len)) {
+        return;
+    }
+    const bufsize_t hash = path + field_end(data + path, end - path, angled, false);
+    if (S_reference_cut(data, path, hash, end)) {
+        return;
+    }
+    const bool image = opener->kind == BRACKET_IMAGE;
+    const markdown_core_node_kind kind = image ? MARKDOWN_CORE_KIND_EMBEDDED : MARKDOWN_CORE_KIND_LINK;
+    const bufsize_t at = opener->position - (image ? 2 : 1);
+    if (hash < end) {
+        const markdown_core_field fragment = {MARKDOWN_CORE_SLOT_ANCHOR,
+                                              kind,
+                                              hash + 1,
+                                              angled ? angled_fragment_end : fragment_end,
+                                              {{path, hash}},
+                                              1,
+                                              false,
+                                              hash + 1 - path};
+        markdown_core_inline_open(inline_state, kind, at, opener->position, &fragment, 1);
+        *reported = MARKDOWN_CORE_SLOT_ANCHOR;
+    } else {
+        const markdown_core_field_end read = angled ? angled_path_end : path == len ? unbegun_end : path_end;
+        const markdown_core_field destination = {MARKDOWN_CORE_SLOT_DEST, kind, path, read, {{0}}, 0, false, 0};
+        markdown_core_inline_open(inline_state, kind, at, opener->position, &destination, 1);
+        *reported = MARKDOWN_CORE_SLOT_DEST;
+    }
+}
+
+/* The destination of the definition at the front of `input`, content
+ * offset `before` of the paragraph `b`, from `path` to the content's end at
+ * `len`, which cuts it short, to the parse's context sink: its fragment
+ * after a `#`, with the path before it, or else its path. */
+static void S_report_destination_field(markdown_core_parser *parser, markdown_core_node *b,
+                                       const markdown_core_chunk *input, bufsize_t before, bufsize_t path,
+                                       bufsize_t len, bool angled) {
+    const bufsize_t hash = path + field_end(input->data + path, len - path, angled, false);
+    if (S_reference_cut(input->data, path, hash, len)) {
+        return;
+    }
+    int ignored;
+    uint32_t place[4];
+    const bufsize_t at[4] = {0, path, hash, hash + 1};
+    for (size_t i = 0; i < 4; i++) {
+        bufsize_t source = 0;
+        markdown_core_parser_content_place(parser, &b->content_map, before + at[i], &ignored, &source);
+        place[i] = (uint32_t)source;
+    }
+    const int32_t opener = markdown_core_context_opener_add(parser->sink, MARKDOWN_CORE_KIND_REFERENCE,
+                                                            (markdown_core_place){place[0], place[0] + 1}, true);
+    if (opener < 0) {
+        return;
+    }
+    markdown_core_context_field field = {.kind = MARKDOWN_CORE_SLOT_DEST,
+                                         .owner = MARKDOWN_CORE_KIND_REFERENCE,
+                                         .opener = opener,
+                                         .start = place[1],
+                                         .end = angled        ? angled_path_end
+                                                : path == len ? unbegun_end
+                                                              : path_end};
+    if (hash < len) {
+        field.kind = MARKDOWN_CORE_SLOT_ANCHOR;
+        field.start = place[3];
+        field.end = angled ? angled_fragment_end : fragment_end;
+        field.prefix[0] = (markdown_core_place){place[1], place[2]};
+        field.prefix_count = 1;
+        field.lead = place[3] - place[1];
+    }
+    markdown_core_context_field_add(parser->sink, &field);
+}
+
+/* The content of `input` without the spaces and line endings at its end. */
+static bufsize_t S_content_length(const markdown_core_chunk *input) {
+    bufsize_t len = input->len;
+    while (len > 0 && markdown_core_is_whitespace(input->data[len - 1])) {
+        len--;
+    }
+    return len;
+}
+
+/* The bare destination `url` of the definition read at the front of
+ * `input`, when the content's end cuts it short, to the parse's context
+ * sink; whether it does. A destination in angle brackets has closed. */
+static bool S_report_reference(markdown_core_parser *parser, markdown_core_node *b, const markdown_core_chunk *input,
+                               bufsize_t before, const markdown_core_chunk *url) {
+    const bufsize_t len = S_content_length(input);
+    if (!url->len || url->data < input->data || url->data + url->len != input->data + len) {
+        return false;
+    }
+    S_report_destination_field(parser, b, input, before, (bufsize_t)(url->data - input->data), len, false);
+    return true;
+}
+
+/* A definition at the front of `input` that no definition reads yet, to
+ * the parse's context sink: one whose destination the content's end has
+ * not begun, `[label]: `, or whose destination in angle brackets it cuts
+ * short, `[label]: <pa`, which no definition reads until its `>`. */
+static void S_report_unread(markdown_core_parser *parser, markdown_core_node *b, const markdown_core_chunk *input,
+                            bufsize_t before) {
+    const unsigned char *data = input->data;
+    const bufsize_t len = S_content_length(input);
+    if (len < 2 || data[0] != '[') {
+        return;
+    }
+    bufsize_t at = 1 + markdown_core_inline_reference_label_length(data + 1, len - 1);
+    if (at == 1 || at > MAX_LINK_LABEL_LENGTH + 1 || at + 1 >= len || data[at] != ']' || data[at + 1] != ':') {
+        return;
+    }
+    /* No destination yet: a bare one starts after the spaces, at the end of
+     * the input but for the line ending the block phase gave it. */
+    bufsize_t stop = input->len, rest = at + 2;
+    while (stop > rest && (data[stop - 1] == '\n' || data[stop - 1] == '\r')) {
+        stop--;
+    }
+    while (rest < stop && (data[rest] == ' ' || data[rest] == '\t')) {
+        rest++;
+    }
+    if (rest == stop) {
+        S_report_destination_field(parser, b, input, before, stop, stop, false);
+        return;
+    }
+    at = markdown_core_skip_spaces_and_line_end(data, at + 2, len);
+    if (at >= len || data[at] != '<' || at + 1 + field_end(data + at + 1, len - at - 1, true, true) < len) {
+        return;
+    }
+    S_report_destination_field(parser, b, input, before, at + 1, len, true);
+}
+
+/* The `{` of the attribute block a definition at the front of `input`
+ * opens after its destination or title, or -1: the block is the
+ * definition's once it closes its line. */
+static bufsize_t S_tail_brace(markdown_core_chunk *input) {
+    markdown_core_inline_state inline_state;
+    markdown_core_chunk label, url;
+    markdown_core_inline_state_from_buf(NULL, &inline_state, input);
+    if (!markdown_core_inline_link_label(&inline_state, &label) || !label.len ||
+        markdown_core_inline_peek_char(&inline_state) != ':') {
+        return -1;
+    }
+    inline_state.pos++;
+    spnl(&inline_state);
+    const bufsize_t n = markdown_core_inline_manual_scan_link_url(&inline_state.input, inline_state.pos, &url);
+    if (n < 0) {
+        return -1;
+    }
+    const bufsize_t before = inline_state.pos += n;
+    spnl(&inline_state);
+    if (inline_state.pos > before) {
+        inline_state.pos += scan_link_title(inline_state.input.data, inline_state.input.len, inline_state.pos);
+        spnl(&inline_state);
+        if (markdown_core_inline_peek_char(&inline_state) == '{') {
+            return inline_state.pos;
+        }
+        inline_state.pos = before;
+        spnl(&inline_state);
+    }
+    return markdown_core_inline_peek_char(&inline_state) == '{' ? inline_state.pos : -1;
+}
+
+/* The member of the attribute block after a definition's destination or
+ * title that the content's end leaves open, to the parse's context sink. */
+static void S_report_tail(markdown_core_parser *parser, markdown_core_node *b, markdown_core_chunk *input,
+                          bufsize_t before) {
+    const bufsize_t brace = S_tail_brace(input);
+    markdown_core_field member;
+    if (brace < 0 ||
+        !markdown_core_attributes_open_member(input->data, S_content_length(input), brace, &member, NULL)) {
+        return;
+    }
+    int ignored;
+    bufsize_t at[5] = {brace, member.start, member.prefix[0][0], member.prefix[0][1], 0};
+    uint32_t place[5];
+    for (size_t i = 0; i < 4; i++) {
+        bufsize_t source = 0;
+        markdown_core_parser_content_place(parser, &b->content_map, before + at[i], &ignored, &source);
+        place[i] = (uint32_t)source;
+    }
+    const int32_t opener = markdown_core_context_opener_add(parser->sink, MARKDOWN_CORE_KIND_NONE,
+                                                            (markdown_core_place){place[0], place[0] + 1}, true);
+    if (opener < 0) {
+        return;
+    }
+    markdown_core_context_field field = {.kind = member.slot,
+                                         .owner = MARKDOWN_CORE_KIND_REFERENCE,
+                                         .opener = opener,
+                                         .start = place[1],
+                                         .end = member.end,
+                                         .lead = (uint32_t)member.lead};
+    if (member.prefix_count) {
+        field.prefix[0] = (markdown_core_place){place[2], place[3]};
+        field.prefix_count = 1;
+    }
+    markdown_core_context_field_add(parser->sink, &field);
+}
+
+/* The label of `[text][label` the content's end cuts short, read from the
+ * `[` at `start`, to the run's context sink. */
+static void S_report_label(markdown_core_inline_state *inline_state, const bracket *opener, bufsize_t start) {
+    const unsigned char *data = inline_state->input.data;
+    const bufsize_t len = inline_state->input.len;
+    if (start >= len || data[start] != '[' ||
+        start + 1 + markdown_core_inline_reference_label_length(data + start + 1, len - start - 1) < len) {
+        return;
+    }
+    const bool image = opener->kind == BRACKET_IMAGE;
+    const markdown_core_node_kind kind = image ? MARKDOWN_CORE_KIND_EMBEDDED : MARKDOWN_CORE_KIND_LINK;
+    const markdown_core_field label = {MARKDOWN_CORE_SLOT_LABEL, kind, start + 1, label_end, {{0}}, 0, false, 0};
+    markdown_core_inline_open(inline_state, kind, opener->position - (image ? 2 : 1), opener->position, &label, 1);
+}
+
 markdown_core_link_match markdown_core_link_recognize(const markdown_core_element_instance *link,
                                                       markdown_core_inline_state *inline_state, bracket *opener,
                                                       markdown_core_link_candidate *candidate) {
@@ -453,6 +794,10 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
         n = markdown_core_inline_manual_scan_link_url(&inline_state->input, starturl, &url_chunk);
         if (n < 0) {
             markdown_core_inline_saw_end(inline_state);
+            if (inline_state->context) {
+                markdown_core_slot_kind reported = MARKDOWN_CORE_SLOT_NONE;
+                S_report_destination(inline_state, opener, starturl, &reported);
+            }
         }
     }
     if (n > -1) {
@@ -500,6 +845,9 @@ markdown_core_link_match markdown_core_link_recognize(const markdown_core_elemen
     // skip spaces
     raw_label = markdown_core_chunk_literal("");
     found_label = markdown_core_inline_link_label(inline_state, &raw_label);
+    if (!found_label && inline_state->context) {
+        S_report_label(inline_state, opener, inline_state->pos);
+    }
     explicit_tail = found_label;
     if (!found_label) {
         // If we have a shortcut reference link, back up
@@ -826,10 +1174,75 @@ static bool holds_open(const markdown_core_element_instance *self, const markdow
     return brackets->last || brackets->pending;
 }
 
+/* The brackets no closer met, each an opener: a `[` whose construct is
+ * still open, an image's `![` and an inline note's `^[`. A `[^` reads a
+ * footnote call's label, and at the start of a line of its content a
+ * definition's; any other `[` there reads a reference definition's label. A
+ * definition is one only where the document finishes it. */
+static void report_open(const markdown_core_element_instance *self, markdown_core_inline_state *inline_state) {
+    for (const bracket *b = markdown_core_brackets(self, inline_state)->last; b; b = b->previous) {
+        const bool wide = b->kind != BRACKET_LINK;
+        const bufsize_t start = b->position - (wide ? 2 : 1);
+        markdown_core_field fields[2];
+        size_t count = 0;
+        markdown_core_node_kind opens = b->kind == BRACKET_IMAGE      ? MARKDOWN_CORE_KIND_EMBEDDED
+                                        : b->kind == BRACKET_FOOTNOTE ? MARKDOWN_CORE_KIND_FOOTNOTE
+                                                                      : MARKDOWN_CORE_KIND_NONE;
+        const bool label = b->kind == BRACKET_LINK && b->position + markdown_core_inline_reference_label_length(
+                                                                        inline_state->input.data + b->position,
+                                                                        inline_state->input.len - b->position) ==
+                                                          inline_state->input.len;
+        const bool caret =
+            label && b->position < inline_state->input.len && inline_state->input.data[b->position] == '^';
+        if (caret) {
+            opens = MARKDOWN_CORE_KIND_CITE;
+            fields[count++] = (markdown_core_field){MARKDOWN_CORE_SLOT_FOOTNOTE,
+                                                    MARKDOWN_CORE_KIND_CITATION,
+                                                    b->position + 1,
+                                                    label_end,
+                                                    {{0}},
+                                                    0,
+                                                    false,
+                                                    0};
+        }
+        const unsigned char *data = inline_state->input.data;
+        const bool line = start == 0 || data[start - 1] == '\n' || data[start - 1] == '\r';
+        /* A footnote definition's label holds any byte but `]` and white
+         * space, brackets too, which no other label does. */
+        if (!label && line && b->kind == BRACKET_LINK && b->position < inline_state->input.len &&
+            data[b->position] == '^' &&
+            b->position + 1 + note_end(data + b->position + 1, inline_state->input.len - b->position - 1) ==
+                inline_state->input.len) {
+            fields[count++] = (markdown_core_field){
+                MARKDOWN_CORE_SLOT_FOOTNOTE, MARKDOWN_CORE_KIND_FOOTNOTE, b->position + 1, note_end, {{0}}, 0, true, 0};
+        }
+        if (label && line) {
+            fields[count++] = caret ? (markdown_core_field){MARKDOWN_CORE_SLOT_FOOTNOTE,
+                                                            MARKDOWN_CORE_KIND_FOOTNOTE,
+                                                            b->position + 1,
+                                                            label_end,
+                                                            {{0}},
+                                                            0,
+                                                            true,
+                                                            0}
+                                    : (markdown_core_field){MARKDOWN_CORE_SLOT_LABEL,
+                                                            MARKDOWN_CORE_KIND_REFERENCE,
+                                                            b->position,
+                                                            label_end,
+                                                            {{0}},
+                                                            0,
+                                                            true,
+                                                            0};
+        }
+        markdown_core_inline_open(inline_state, opens, start, caret ? b->position + 1 : b->position, fields, count);
+    }
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK = {
     .peers = LINK_PEERS,
     .init_inline = init_inline,
     .holds_open = holds_open,
+    .report_open = report_open,
     .state_size = sizeof(markdown_core_bracket_work),
     .run_state_size = sizeof(markdown_core_bracket_scope),
 

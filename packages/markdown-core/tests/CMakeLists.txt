@@ -100,6 +100,8 @@ function(markdown_core_add_runner name)
 endfunction()
 
 markdown_core_add_runner(spec_runner runners/spec_runner.c)
+markdown_core_add_runner(context_runner runners/context_runner.c)
+markdown_core_add_runner(oracle_runner runners/oracle_runner.c)
 markdown_core_add_runner(pathological_runner runners/pathological_runner.c)
 
 # oom_runner injects an allocator into the internal implementation of the
@@ -303,6 +305,34 @@ markdown_core_add_test(elements_formula_conflicts elements 120 spec_runner --spe
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/elements-formula-conflicts.txt")
 markdown_core_add_test(elements_directive elements 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/elements-directive.txt")
+# elements: the context query at each example's cursor (completion plan 3.1).
+# Its fixture lives apart from the spec fixtures: its examples render the
+# context, not the document.
+set(MARKDOWN_CORE_CONTEXT_FIXTURE "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/context/context.txt")
+markdown_core_add_test(elements_context elements 120 context_runner --spec "${MARKDOWN_CORE_CONTEXT_FIXTURE}")
+# elements: the context query at every position of every example.
+file(GLOB _markdown_core_context_sweep CONFIGURE_DEPENDS "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/*.txt")
+markdown_core_add_test(
+    elements_context_sweep
+    elements
+    600
+    context_runner
+    --sweep
+    "${MARKDOWN_CORE_CONTEXT_FIXTURE}"
+    ${_markdown_core_context_sweep})
+# elements: the context's slots against the document the whole text parses
+# to, at every position of every example and of the generated nestings; the
+# exceptions name what the oracle cannot judge, each with its reason.
+markdown_core_add_test(
+    elements_context_oracle
+    elements
+    900
+    oracle_runner
+    --exceptions
+    "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/context/oracle-exceptions.txt"
+    --generate
+    ${_markdown_core_context_sweep}
+    "${MARKDOWN_CORE_CONTEXT_FIXTURE}")
 # elements: attaching one element must not change another's block opener.
 markdown_core_add_test(elements_conflicts elements 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/elements-conflicts.txt")

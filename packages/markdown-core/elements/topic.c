@@ -93,6 +93,83 @@ static bool topic_opener(const markdown_core_inline_state *inline_state, bufsize
            !topic_joiner(scalar);
 }
 
+/* Where a topic's name goes on from its start: segment characters, and a
+ * `/` between two. */
+static bufsize_t name_end(const unsigned char *data, bufsize_t length) {
+    bool word = false;
+    bufsize_t end = 0;
+    for (;;) {
+        int width = segment_width(data + end, length - end, &word);
+        if (width) {
+            end += width;
+        } else if (end && end < length && data[end] == '/' && segment_width(data + end + 1, length - end - 1, &word)) {
+            end++;
+        } else {
+            return end;
+        }
+    }
+}
+
+static bool identifier_byte(unsigned char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-';
+}
+
+/* Where a block identifier goes on past a cursor. */
+static bufsize_t identifier_end(const unsigned char *data, bufsize_t length) {
+    bufsize_t end = 0;
+    while (end < length && identifier_byte(data[end])) {
+        end++;
+    }
+    return end;
+}
+
+/* The blocks a block identifier may name: the paragraph whose line it ends,
+ * or the block before it that its own line follows, as a list, a list item
+ * or a table. Which one the document decides, and the identifier the node
+ * carries confirms it. */
+static const markdown_core_node_kind NAMED[] = {
+    MARKDOWN_CORE_KIND_PARAGRAPH,       MARKDOWN_CORE_KIND_HEADING,        MARKDOWN_CORE_KIND_LIST,
+    MARKDOWN_CORE_KIND_LIST_ITEM,       MARKDOWN_CORE_KIND_CALLOUT,        MARKDOWN_CORE_KIND_TABLE,
+    MARKDOWN_CORE_KIND_CODE_BLOCK,      MARKDOWN_CORE_KIND_HTML_BLOCK,     MARKDOWN_CORE_KIND_FORMULA_BLOCK,
+    MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, MARKDOWN_CORE_KIND_THEMATIC_BREAK, MARKDOWN_CORE_KIND_DEFINITION_LIST,
+    MARKDOWN_CORE_KIND_DEFINITION,      MARKDOWN_CORE_KIND_FOOTNOTE,       MARKDOWN_CORE_KIND_SPECIMEN,
+};
+enum { NAMED_COUNT = sizeof(NAMED) / sizeof(NAMED[0]) };
+
+/* The name of the topic whose `#` is at `at`, which the content's end cuts
+ * short, to the run's context sink. At the end of a paragraph the `#` may
+ * open a block identifier, which the document must close. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_report(markdown_core_inline_state *inline_state, bufsize_t at) {
+    const bufsize_t len = inline_state->input.len;
+    markdown_core_field fields[1 + NAMED_COUNT] = {
+        {MARKDOWN_CORE_SLOT_NAME, MARKDOWN_CORE_KIND_TOPIC, at + 1, name_end, {{0}}, 0, false, 0}};
+    size_t count = 1;
+    if (markdown_core_node_get_kind(inline_state->owner) == MARKDOWN_CORE_KIND_PARAGRAPH &&
+        at + 1 + identifier_end(inline_state->input.data + at + 1, len - at - 1) == len) {
+        for (size_t i = 0; i < NAMED_COUNT; i++) {
+            fields[count++] =
+                (markdown_core_field){MARKDOWN_CORE_SLOT_ID, NAMED[i], at + 1, identifier_end, {{0}}, 0, true, 0};
+        }
+    }
+    markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_TOPIC, at, at + 1, fields, count);
+}
+
+/* (topic.h) A line of `#` signs the input's end cuts short, from `first`
+ * to `end`, is a heading only while nothing follows its last sign: the
+ * name that may yet follow is a topic's, or a block identifier's. */
+void markdown_core_topic_report_line(markdown_core_parser *parser, bufsize_t first, bufsize_t end) {
+    markdown_core_field fields[1 + NAMED_COUNT] = {
+        {MARKDOWN_CORE_SLOT_NAME, MARKDOWN_CORE_KIND_TOPIC, end, name_end, {{0}}, 0, false, 0}};
+    size_t count = 1;
+    if (end == first + 1) {
+        for (size_t i = 0; i < NAMED_COUNT; i++) {
+            fields[count++] =
+                (markdown_core_field){MARKDOWN_CORE_SLOT_ID, NAMED[i], end, identifier_end, {{0}}, 0, true, 0};
+        }
+    }
+    markdown_core_parser_open(parser, MARKDOWN_CORE_KIND_TOPIC, end - 1, end, fields, count);
+}
+
 /* THE END OF THE TOPIC whose `#` is at `at`, or 0 when there is none. The
  * name is runs of segment characters joined by single `/` signs: a `/`
  * belongs to it only when a segment character follows, so a name neither
@@ -126,9 +203,13 @@ static bufsize_t topic_end(markdown_core_inline_state *inline_state, bufsize_t a
         }
     }
     /* The name may go on with the input, and what follows it decides
-     * whether it is one. */
+     * whether it is one; a name the input's end cuts short is a field, as
+     * is one a `/` the input ends with may go on from. */
     if (end + 3 > len) {
         markdown_core_inline_saw_end(inline_state);
+    }
+    if (inline_state->context && (end == len || (end + 1 == len && end > at + 1 && data[end] == '/'))) {
+        S_report(inline_state, at);
     }
     if (!word) {
         return 0;

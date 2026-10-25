@@ -2,6 +2,7 @@
 #include "formula_scanners.h"
 #include "formula.h"
 #include "element.h"
+#include "inline_internal.h"
 
 #include <assert.h>
 #include <string.h>
@@ -255,6 +256,10 @@ static markdown_core_node *match_formula_delimiter(const markdown_core_element_i
         int from = start + len;
         int close = markdown_core_inline_state_find_opaque_close(inline_state, rule, from, scan_formula_closer);
         markdown_core_chunk *input = markdown_core_inline_state_get_chunk(inline_state);
+        /* An opener with no closer opens a formula once one follows. */
+        if (close < 0) {
+            markdown_core_inline_open(inline_state, MARKDOWN_CORE_KIND_FORMULA, start, from, NULL, 0);
+        }
         if (close >= 0 && formula_body_admitted(rule, input->data + from, close - from)) {
             /* A dynamic parent's policy is observed at delimiter reduction, in
              * source order with other deferred replacements. Keep that lifetime

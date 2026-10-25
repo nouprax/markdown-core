@@ -930,6 +930,144 @@ append:
     return 1;
 }
 
+/* The source offset of byte `offset` of the content of `root`, an inline
+ * root that has read its content (S_read_content in blocks.c), or of the end
+ * of its last byte when `offset` is the content's end: its content places
+ * read content in order, a copied place byte for byte and any other all of
+ * its content from all of its source. */
+static uint32_t S_place_source(const markdown_core_source_place *place, uint32_t offset, uint32_t read) {
+    const bool copied = place->end - place->start == place->length;
+    return copied ? place->start + (offset - read) : place->start;
+}
+
+static uint32_t S_root_source(const markdown_core_node *root, uint32_t offset) {
+    const markdown_core_places *places = root->source.places;
+    uint32_t read = 0, end = 0;
+    for (uint32_t i = 0; places && i < places->count; i++) {
+        const markdown_core_source_place *place = &places->items[i];
+        if (!place->length) {
+            continue;
+        }
+        if (offset < read + place->length) {
+            return S_place_source(place, offset, read);
+        }
+        read += place->length;
+        end = place->end;
+    }
+    return end;
+}
+
+/* S_root_source for the sink's root, by a binary search of the places that
+ * read content, indexed on the first lookup: a run reports many openers,
+ * and a root of many lines, as a quote's, has a place per line. */
+static uint32_t S_sink_source(markdown_core_context_sink *sink, uint32_t offset) {
+    const markdown_core_places *places = sink->root->source.places;
+    if (!places) {
+        return 0;
+    }
+    if (!sink->root_indexed) {
+        sink->root_indexed = true;
+        sink->root_places = markdown_core_alloc(places->count ? places->count : 1, sizeof(*sink->root_places));
+        sink->root_reads = markdown_core_alloc(places->count ? places->count : 1, sizeof(*sink->root_reads));
+        if (!sink->root_places || !sink->root_reads) {
+            sink->failed = true;
+            return S_root_source(sink->root, offset);
+        }
+        uint32_t read = 0;
+        for (uint32_t i = 0; i < places->count; i++) {
+            if (places->items[i].length) {
+                sink->root_places[sink->root_place_count] = i;
+                sink->root_reads[sink->root_place_count++] = read;
+                read += places->items[i].length;
+            }
+        }
+    }
+    if (!sink->root_reads || !sink->root_place_count) {
+        return S_root_source(sink->root, offset);
+    }
+    size_t lo = 0, hi = sink->root_place_count;
+    while (hi - lo > 1) {
+        const size_t mid = lo + (hi - lo) / 2;
+        if (sink->root_reads[mid] <= offset) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    const markdown_core_source_place *place = &places->items[sink->root_places[lo]];
+    if (offset < sink->root_reads[lo] + place->length) {
+        return S_place_source(place, offset, sink->root_reads[lo]);
+    }
+    return place->end;
+}
+
+/* The offset in the content of the sink's root of byte `offset` of the
+ * run's content: the same offset in the root's own run, and in a field's
+ * the root's offset its map names. */
+static uint32_t S_context_root_offset(markdown_core_inline_state *inline_state, bufsize_t offset) {
+    const markdown_core_content_map *map = &inline_state->owner->content_map;
+    if (map->first == MARKDOWN_CORE_IDENTITY_MARK || inline_state->owner == inline_state->context->root) {
+        return (uint32_t)offset;
+    }
+    int line;
+    bufsize_t at = 0;
+    if (offset < inline_state->input.len) {
+        markdown_core_parser_content_place(inline_state->owner_parser, map, offset, &line, &at);
+    } else if (inline_state->input.len > 0) {
+        markdown_core_parser_content_end_place(inline_state->owner_parser, map, inline_state->input.len - 1, &line,
+                                               &at);
+    }
+    return (uint32_t)at;
+}
+
+/* A run of the parse of the text before a cursor reports to its sink when
+ * its content reaches the text's end, but for spaces, tabs and one line
+ * ending, after which the line the cursor is on, past its quote markers,
+ * may go on with it: an inline
+ * root whose content does, and a field of it whose content reaches the
+ * root's end. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_context_begin(markdown_core_parser *parser,
+                                                                markdown_core_inline_state *inline_state, bool root) {
+    markdown_core_context_sink *sink = parser->sink;
+    if (!root) {
+        if (sink->root && inline_state->input.len > 0) {
+            inline_state->context = sink;
+            if (S_context_root_offset(inline_state, inline_state->input.len) != sink->root->source.places->content) {
+                inline_state->context = NULL;
+            }
+        }
+        return;
+    }
+    sink->root = NULL;
+    markdown_core_free(sink->root_places);
+    markdown_core_free(sink->root_reads);
+    sink->root_places = sink->root_reads = NULL;
+    sink->root_place_count = 0;
+    sink->root_indexed = false;
+    const markdown_core_places *places = inline_state->owner->source.places;
+    if (inline_state->input.len == 0 || !places) {
+        return;
+    }
+    size_t at = S_root_source(inline_state->owner, places->content);
+    while (at < sink->length && (sink->source[at] == ' ' || sink->source[at] == '\t')) {
+        at++;
+    }
+    if (at < sink->length && sink->source[at] == '\r') {
+        at++;
+    }
+    if (at < sink->length && sink->source[at] == '\n' && (at == 0 || sink->source[at - 1] != '\n')) {
+        at++;
+    }
+    while (at < sink->length && (sink->source[at] == ' ' || sink->source[at] == '\t' || sink->source[at] == '>')) {
+        at++;
+    }
+    if (at < sink->length) {
+        return;
+    }
+    sink->root = inline_state->owner;
+    inline_state->context = sink;
+}
+
 void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_core_node *parent, bool root,
                                         markdown_core_inline_state *inline_state) {
     markdown_core_chunk content = markdown_core_node_text(parent);
@@ -960,6 +1098,9 @@ void markdown_core_inline_start_inlines(markdown_core_parser *parser, markdown_c
     inline_state->owner_structure = markdown_core_parser_structure(parser, parent);
     inline_state->mark_cursor = parent->content_map.first;
     markdown_core_inline_seat_cursor(inline_state);
+    if (parser->sink) {
+        S_context_begin(parser, inline_state, root);
+    }
 
     const markdown_core_element_instance *structure = inline_state->owner_structure;
     if (structure && structure->element->begin_inline && S_inline_run_began(inline_state)) {
@@ -1036,6 +1177,61 @@ void markdown_core_inline_settle_note(markdown_core_parser *parser, markdown_cor
     notes[settle->note_count++] = note;
 }
 
+/* The source offset of byte `offset` of the run's content, or of the end
+ * of its last byte when `offset` is the content's end. */
+static uint32_t S_context_source(markdown_core_inline_state *inline_state, bufsize_t offset) {
+    return S_sink_source(inline_state->context, S_context_root_offset(inline_state, offset));
+}
+
+static void S_inline_open(markdown_core_inline_state *inline_state, markdown_core_node_kind opens, bufsize_t from,
+                          bufsize_t to, const markdown_core_field *fields, size_t count, bool line) {
+    markdown_core_context_sink *sink = inline_state->context;
+    if (!sink) {
+        return;
+    }
+    const markdown_core_place place = {S_context_source(inline_state, from), S_context_source(inline_state, to)};
+    const int32_t opener = markdown_core_context_opener_add(sink, opens, place, line);
+    for (size_t i = 0; i < count && opener >= 0; i++) {
+        const markdown_core_field *field = &fields[i];
+        const uint32_t start = S_context_source(inline_state, field->start);
+        markdown_core_context_field open = {
+            .kind = field->slot,
+            .owner = field->owner,
+            .opener = opener,
+            .start = start,
+            .end = field->end,
+            .declares = field->declares,
+            .lead = field->lead ? start - S_context_source(inline_state, field->start - field->lead) : 0};
+        for (size_t j = 0; j < field->prefix_count && j < 2; j++) {
+            open.prefix[j] = (markdown_core_place){S_context_source(inline_state, field->prefix[j][0]),
+                                                   S_context_source(inline_state, field->prefix[j][1])};
+            open.prefix_count++;
+        }
+        markdown_core_context_field_add(sink, &open);
+    }
+}
+
+void markdown_core_inline_open(markdown_core_inline_state *inline_state, markdown_core_node_kind opens, bufsize_t from,
+                               bufsize_t to, const markdown_core_field *fields, size_t count) {
+    S_inline_open(inline_state, opens, from, to, fields, count, false);
+}
+
+void markdown_core_inline_open_line(markdown_core_inline_state *inline_state, markdown_core_node_kind opens,
+                                    bufsize_t from, bufsize_t to, const markdown_core_field *fields, size_t count) {
+    S_inline_open(inline_state, opens, from, to, fields, count, true);
+}
+
+/* The run's elements list what their records hold open to its sink. */
+static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_context_report(markdown_core_parser *parser,
+                                                                 markdown_core_inline_state *inline_state) {
+    const markdown_core_element_instance *const *owners =
+        parser->dialect->inline_hooks[MARKDOWN_CORE_INLINE_HOOK_REPORT];
+    size_t count = parser->dialect->inline_hook_counts[MARKDOWN_CORE_INLINE_HOOK_REPORT];
+    for (size_t i = 0; i < count; i++) {
+        owners[i]->element->report_open(owners[i], inline_state);
+    }
+}
+
 /* The tokens of a run that lists settle starts: each token's start is where
  * its end reads begin, and a start with no end read before it at which no
  * element holds anything open is listed. */
@@ -1063,6 +1259,9 @@ static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_parse_settling(markdown_core_p
 static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) bool S_finish_run(markdown_core_parser *parser,
                                                                          markdown_core_inline_state *inline_state,
                                                                          bool settle) {
+    if (inline_state->context && !parser->error && !inline_state->error) {
+        S_context_report(parser, inline_state);
+    }
     if (!parser->error && !inline_state->error) {
         const markdown_core_element_instance *const *owners =
             parser->dialect->inline_hooks[MARKDOWN_CORE_INLINE_HOOK_FINISH];

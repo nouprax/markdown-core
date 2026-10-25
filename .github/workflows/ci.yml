@@ -68,6 +68,7 @@ jobs:
                   pnpm audit:node-kinds
                   pnpm audit:incremental-set
                   pnpm audit:ast-projections
+                  pnpm audit:context-coverage
 
     health-check-c:
         needs: changes

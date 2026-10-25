@@ -1,6 +1,7 @@
 #include "block_identifier.h"
 #include "block_internal.h"
 #include "markdown-core-elements.h"
+#include "sink.h"
 
 typedef struct {
     markdown_core_chunk identifier;
@@ -71,12 +72,34 @@ static bool S_attach_block_identifier(markdown_core_parser *parser, markdown_cor
     return true;
 }
 
+/* Whether the content of `paragraph`, `length` bytes, ends the text
+ * before the cursor but for spaces and line endings. */
+static bool S_ends_text(markdown_core_parser *parser, markdown_core_node *paragraph, bufsize_t length) {
+    const markdown_core_context_sink *sink = parser->sink;
+    int line;
+    bufsize_t end = 0;
+    if (!length || !markdown_core_parser_content_end_place(parser, &paragraph->content_map, length - 1, &line, &end)) {
+        return false;
+    }
+    size_t at = (size_t)end;
+    while (at < sink->length && (sink->source[at] == ' ' || sink->source[at] == '\t' || sink->source[at] == '\n' ||
+                                 sink->source[at] == '\r')) {
+        at++;
+    }
+    return at >= sink->length;
+}
+
 void markdown_core_block_attach_paragraph_identifier(markdown_core_block_identifier_work *work,
                                                      markdown_core_parser *parser, markdown_core_node *paragraph,
                                                      markdown_core_node *parent) {
     block_identifier candidate;
     const markdown_core_chunk text = markdown_core_node_text(paragraph);
     if (!S_scan_block_identifier(work, text.data, text.len, &candidate)) {
+        return;
+    }
+    /* In the text before a cursor, an identifier the cursor follows may be
+     * text of a construct the line goes on with: the run reads it. */
+    if (parser->sink && S_ends_text(parser, paragraph, text.len)) {
         return;
     }
     markdown_core_node *owner = paragraph;
