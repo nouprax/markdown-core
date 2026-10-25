@@ -6,6 +6,19 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Write a value into a slot (language engine plan, step 2c).
+  `markdown_core_slot_spell` returns the text that replaces a slot's source
+  before and after the cursor: the value in the field's own syntax, with
+  escapes, `<…>`, braces or quotes where the field cannot hold it bare, the
+  shortest closer when the construct is still open, and the caret after the
+  value, before the closer. It returns no text for a value the field cannot
+  hold there, such as a `]` in a footnote's label, or a byte that would end
+  or begin a construct around the slot. The context query no longer offers
+  a slot inside an autolink or inside an attribute's value or name, the
+  name of a directive that a reference definition's `:` begins, or a
+  container directive whose braces follow a space after its name.
+  `[^a^b]` with its definition no longer frees the superscript twice.
+
 - Ask what the cursor may be typing (language engine plan, step 2b).
   `markdown_core_document_context` parses the source before a position and
   reads what that parse leaves open: the open blocks, the inline openers,

@@ -40,6 +40,7 @@ MARKDOWN_CORE_1.0 {
     markdown_core_dump_free;
     markdown_core_footnote_content;
     markdown_core_footnote_label;
+    markdown_core_insertion_free;
     markdown_core_metadata_abstract;
     markdown_core_metadata_authors;
     markdown_core_metadata_comment;
@@ -102,6 +103,7 @@ MARKDOWN_CORE_1.0 {
     markdown_core_session_text_size;
     markdown_core_session_unit;
     markdown_core_slot_kind_name;
+    markdown_core_slot_spell;
     markdown_core_specimen_content;
     markdown_core_specimen_properties;
     markdown_core_topic_name;

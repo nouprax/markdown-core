@@ -239,8 +239,11 @@ bool markdown_core_footnote_close_reference(const markdown_core_element_instance
             /* A valid definition label contains no ']'; a completed inline
              * footnote necessarily does. This label therefore cannot own a
              * committed Footnote from the parser collection. */
+            /* Read after the delimiters are processed, which may have
+             * wrapped the label's first node: `[^a^b]` makes `^a^` a
+             * superscript. */
             markdown_core_node *next_node;
-            markdown_core_node *current_node = label;
+            markdown_core_node *current_node = markdown_core_scaffold_next(opener->inl_text);
             while (current_node) {
                 next_node = markdown_core_scaffold_next(current_node);
                 markdown_core_parser_release_node(parser, current_node);

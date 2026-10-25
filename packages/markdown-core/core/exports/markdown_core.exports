@@ -38,6 +38,7 @@ _markdown_core_document_unit
 _markdown_core_dump_free
 _markdown_core_footnote_content
 _markdown_core_footnote_label
+_markdown_core_insertion_free
 _markdown_core_metadata_abstract
 _markdown_core_metadata_authors
 _markdown_core_metadata_comment
@@ -100,6 +101,7 @@ _markdown_core_session_text
 _markdown_core_session_text_size
 _markdown_core_session_unit
 _markdown_core_slot_kind_name
+_markdown_core_slot_spell
 _markdown_core_specimen_content
 _markdown_core_specimen_properties
 _markdown_core_topic_name

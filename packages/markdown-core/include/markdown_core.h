@@ -592,6 +592,32 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_context_slot_prefix_at(cons
                                                                             markdown_core_string *prefix);
 MARKDOWN_CORE_API void markdown_core_context_free(markdown_core_context *context);
 
+/** AN INSERTION: `size` bytes at `text` that replace a slot's `before` and
+ * `after`, and `cursor`, the bytes of `text` before the caret. */
+typedef struct markdown_core_insertion {
+    const uint8_t *text;
+    size_t size;
+    size_t cursor;
+} markdown_core_insertion;
+
+/** The parser's spelling of `value`, `size` bytes of UTF-8, in slot `slot`
+ * of `context` (docs/plans/2026-10-23-lsp-completion-engine.md, 3.1).
+ * `*insertion` receives a new insertion, which markdown_core_insertion_free
+ * releases, whose text writes the value in the field's own syntax: it
+ * escapes what the field reads as syntax, and writes in `<...>`, in braces
+ * or in quotes a value whose bare spelling the field does not read whole.
+ * When the construct is not closed, the text goes on with the shortest
+ * closer that finishes it, such as `]]`, `)` or `}`, and `cursor` stands
+ * after the value, before the closer. `*insertion` receives NULL when the
+ * field holds the value in no spelling there: a line ending, a `|` in a
+ * cross target, a space in a key, or a byte that would end or begin a
+ * construct around the slot, such as a `]` inside an open link's text.
+ * OUT_OF_BOUNDS when `slot` names no slot of the context. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_slot_spell(const markdown_core_context *context, size_t slot,
+                                                                const uint8_t *value, size_t size,
+                                                                markdown_core_insertion **insertion);
+MARKDOWN_CORE_API void markdown_core_insertion_free(markdown_core_insertion *insertion);
+
 /** A SEQUENCE OF NODES: `count` nodes at `items`, in order, borrowed from the
  * document. An empty one may have no `items`. */
 typedef struct markdown_core_nodes {

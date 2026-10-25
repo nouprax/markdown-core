@@ -256,6 +256,41 @@ Step 2b built the query this way:
   paragraph's block identifier, and the whole document keeps the one it
   reads.
 
+Step 2c built `spell` this way:
+
+- The context keeps a copy of the cursor's line, and each slot its offsets
+  in it, the field's own scanner, and what wraps the field: a `<` before a
+  destination, the `{` of `@{`, or the quote of a value that began on an
+  earlier line. `spell` writes the value as the slot kind's syntax says,
+  then has the field's scanner read the spelling with the line after the
+  slot, and returns nothing unless the scanner reads it whole. A field that
+  begins on an earlier line or goes on to a later one is not written.
+- A field that keeps its bytes as written (a cross target, a label, a key,
+  a name) refuses what it cannot hold; a destination or a value escapes it
+  or brackets the value. A value keeps the quotes its slot has.
+- The spelling must leave the constructs around the slot as they are. It
+  refuses a literal token's closer (`` ` ``, `$`, `%%`), which no escape
+  keeps from closing one the text before opens; a bracket or parenthesis it
+  does not match where the line before leaves one open; a brace or `=`
+  inside an open brace; a `|` inside an open cross link; a space, a quote
+  or an angle bracket inside an open tag or autolink; a `:` that would
+  begin a directive running on to a label or braces; and a last byte whose
+  class (space, punctuation, other) differs from the old one's before a
+  delimiter run or a citation's `@`.
+- The closer is the shortest that finishes the construct: `]]`, `]`, `)`,
+  `>)`, `}`, `}]` and so on. A block owner's attribute tail or variant gets
+  its closer when the line lacks it, though its slot reads as closed.
+- `elements_context_spell` is the oracle (`oracle_runner --spell`). At every
+  position of every fixture example and generated nesting, it spells a
+  sentinel as the witness, which must land in a field of the slot's owner;
+  then it spells 57 values, each applied and parsed: the tree must equal the
+  witness's with the value for the sentinel, and the caret must stand
+  before closers only. A refused value must be one the grammar cannot hold
+  there, by rules restated from the dialect spec. A slot whose own text
+  keeps a construct around it from holding, such as a space in a
+  destination the slot encloses, a `|` that keeps a line from a table's
+  row, or a row of a table whose layout sets its columns, is not judged.
+
 ### 3.2 Slot kinds
 
 One slot kind per role of a field of the dialect that holds a name, a key or a path
