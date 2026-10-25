@@ -8,6 +8,7 @@
 #include <string.h>
 #include <limits.h>
 #include "utf8.h"
+#include "parts.h"
 
 #include "strikethrough.h"
 #include "table.h"
@@ -3428,3 +3429,35 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_TABLE = {
     .opaque_adopt_func = opaque_adopt,
     .visit_owned_subtrees_func = visit_owned_subtrees,
 };
+
+/* A pipe row's part: the cells written past its table's width, which the
+ * row drops, as one field of no slot kind. */
+void markdown_core_table_row_parts(markdown_core_parts *parts) {
+    const unsigned char *text = parts->text;
+    bufsize_t start = markdown_core_parts_last(parts, 0), end = parts->length;
+    while (start < end && markdown_core_is_space_or_tab(text[start])) {
+        start++;
+    }
+    if (start == 0 || start >= end || text[start] != '|') {
+        return;
+    }
+    start++;
+    for (bufsize_t at = start; at < end; at++) {
+        if (markdown_core_is_line_end(text[at])) {
+            return;
+        }
+    }
+    while (end > start && markdown_core_is_whitespace(text[end - 1])) {
+        end--;
+    }
+    if (end > start && text[end - 1] == '|' && !(end - 1 > start && text[end - 2] == '\\')) {
+        end--;
+    }
+    while (start < end && markdown_core_is_space_or_tab(text[start])) {
+        start++;
+    }
+    while (end > start && markdown_core_is_space_or_tab(text[end - 1])) {
+        end--;
+    }
+    markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NONE, start, end);
+}

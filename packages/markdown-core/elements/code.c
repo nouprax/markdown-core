@@ -2,6 +2,7 @@
 #include "code.h"
 #include "inline_internal.h"
 #include "attributes.h"
+#include "parts.h"
 #define advance(inline_state) ((inline_state)->pos += 1)
 
 #define MAXBACKTICKS 80
@@ -182,6 +183,48 @@ static void dispose_inline(const markdown_core_element_instance *self, markdown_
     code_backticks *backticks = markdown_core_run_state(inline_state, self);
     markdown_core_free(backticks->positions);
     backticks->positions = NULL;
+}
+
+/* THE PARTS OF A CODE SPAN (parts.h): its literal, the bytes between its
+ * backtick runs less the one space S_normalize_code takes from each end,
+ * and the attribute container after its closing run. */
+void markdown_core_code_parts(markdown_core_parts *parts) {
+    const unsigned char *s = parts->text;
+    const bufsize_t n = parts->length;
+    bufsize_t ticks = 0, at;
+    while (ticks < n && s[ticks] == '`') {
+        ticks++;
+    }
+    /* The closer is the first run of as many backticks. */
+    bufsize_t close = n;
+    for (at = ticks; at < n;) {
+        if (s[at] != '`') {
+            at++;
+            continue;
+        }
+        const bufsize_t run = at;
+        while (at < n && s[at] == '`') {
+            at++;
+        }
+        if (at - run == ticks) {
+            close = run;
+            break;
+        }
+    }
+    bufsize_t from = ticks, to = close;
+    bool space = false;
+    for (bufsize_t i = from; i < to && !space; i++) {
+        space = s[i] != ' ' && s[i] != '\n' && s[i] != '\r';
+    }
+    if (space && to - from >= 2 && (s[from] == ' ' || s[from] == '\n' || s[from] == '\r') &&
+        (s[to - 1] == ' ' || s[to - 1] == '\n' || s[to - 1] == '\r')) {
+        from += s[from] == '\r' && s[from + 1] == '\n' ? 2 : 1;
+        to -= s[to - 1] == '\n' && to - 2 >= from && s[to - 2] == '\r' ? 2 : 1;
+    }
+    markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NONE, from, to);
+    if (close + ticks < n && s[close + ticks] == '{') {
+        markdown_core_attributes_parts(parts, close + ticks);
+    }
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE = {

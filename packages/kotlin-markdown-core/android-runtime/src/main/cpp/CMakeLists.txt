@@ -66,6 +66,7 @@ add_library(
     "${MARKDOWN_CORE_ELEMENTS_DIR}/properties.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/session.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/context.c"
+    "${MARKDOWN_CORE_ELEMENTS_DIR}/parts.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/span.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/specimen.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/strikethrough.c"

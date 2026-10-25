@@ -2,6 +2,7 @@
 #include "specimen.h"
 #define BLOCK_PEEK(input, at) ((input)->data[(at)])
 #include "block_internal.h"
+#include "parts.h"
 
 static bufsize_t markdown_core_block_parse_specimen_marker(markdown_core_specimen_state *state,
                                                            markdown_core_chunk *input, bufsize_t pos,
@@ -136,3 +137,28 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_SPECIMEN = {
     .continue_reach = markdown_core_block_indent_reach,
     .scan_block_gate = {.bytes = "("},
 };
+
+/* A specimen's parts: its start number, a field of no slot kind, and its
+ * label, between the `@` and the `)`. */
+void markdown_core_specimen_parts(markdown_core_parts *parts) {
+    const unsigned char *text = parts->text;
+    bufsize_t at = 0;
+    while (at < parts->length && text[at] != '(') {
+        at++;
+    }
+    const bufsize_t digits = ++at;
+    while (at < parts->length && markdown_core_isdigit(text[at])) {
+        at++;
+    }
+    if (at >= parts->length || text[at] != '@') {
+        return;
+    }
+    markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NONE, digits, at);
+    const bufsize_t label = ++at;
+    while (at < parts->length && text[at] != ')') {
+        at++;
+    }
+    if (at < parts->length) {
+        markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_SPECIMEN, label, at);
+    }
+}

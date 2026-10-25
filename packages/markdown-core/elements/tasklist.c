@@ -1,6 +1,7 @@
 #include "tasklist.h"
 #include "parser.h"
 #include "utf8.h"
+#include "parts.h"
 
 void markdown_core_parse_task_prefix(markdown_core_parser *parser, markdown_core_node *item, const unsigned char *input,
                                      bufsize_t len) {
@@ -32,4 +33,23 @@ void markdown_core_parse_task_prefix(markdown_core_parser *parser, markdown_core
     }
     item->as.list->task_marker = markdown_core_optional_chunk_present(marker);
     markdown_core_parser_advance_offset(parser, (const char *)input, end - parser->at.offset, false);
+}
+
+/* THE PARTS OF A LIST ITEM (parts.h): a task item's marker, the character
+ * between the brackets markdown_core_parse_task_prefix reads after the
+ * item's marker, and the block identifier at its first paragraph's end. */
+void markdown_core_list_item_parts(markdown_core_parts *parts) {
+    const markdown_core_list *item = parts->node->as.list;
+    if (item->task_marker.has_value) {
+        const bufsize_t stop = markdown_core_parts_next(parts, 0);
+        bufsize_t at = 0;
+        while (at < stop && parts->text[at] != '[') {
+            at++;
+        }
+        if (at < stop) {
+            markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NONE, at + 1,
+                                    at + 1 + markdown_core_utf8proc_width(parts->text[at + 1]));
+        }
+    }
+    markdown_core_block_identifier_parts(parts);
 }

@@ -3,6 +3,8 @@
 #include "comment.h"
 #include "inline_internal.h"
 #include "block_internal.h"
+#include "parts.h"
+#include <string.h>
 #include "element.h"
 #include "node.h"
 #include "parser.h"
@@ -380,4 +382,21 @@ markdown_core_node *markdown_core_comment_make_html(markdown_core_inline_state *
     markdown_core_chunk body = markdown_core_chunk_dup(&inline_state->input, pos + 3, body_length);
     inline_state->pos = pos + length;
     return markdown_core_comment_make_inline(inline_state, pos - 1, inline_state->pos - 1, body);
+}
+
+/* THE PARTS OF A COMMENT (parts.h): its literal, the body between its
+ * delimiters, after its opening `%%` or `<!--`. */
+void markdown_core_comment_parts(markdown_core_parts *parts) {
+    const unsigned char *s = parts->text;
+    const bufsize_t n = parts->length;
+    bufsize_t from = 0;
+    if (n >= 4 && !memcmp(s, "<!--", 4)) {
+        from = 4;
+    } else {
+        while (from < n && from < 2 && s[from] == '%') {
+            from++;
+        }
+    }
+    const markdown_core_chunk *literal = parts->node->as.literal;
+    markdown_core_parts_find(parts, from, literal->data, literal->len);
 }

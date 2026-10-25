@@ -5,6 +5,7 @@
 #include "span.h"
 #define advance(inline_state) ((inline_state)->pos += 1)
 #include "attributes.h"
+#include "parts.h"
 #include "citation.h"
 #include "link.h"
 #include "embedded.h"
@@ -597,12 +598,15 @@ static void S_report_destination_field(markdown_core_parser *parser, markdown_co
     }
     int ignored;
     uint32_t place[4];
-    const bufsize_t at[4] = {0, path, hash, hash + 1};
-    for (size_t i = 0; i < 4; i++) {
+    const bufsize_t at[3] = {0, path, hash};
+    for (size_t i = 0; i < 3; i++) {
         bufsize_t source = 0;
         markdown_core_parser_content_place(parser, &b->content_map, before + at[i], &ignored, &source);
         place[i] = (uint32_t)source;
     }
+    /* The fragment starts past the `#`, a byte of the source, which may
+     * end the content, where no byte of it has a place. */
+    place[3] = place[2] + 1;
     const int32_t opener = markdown_core_context_opener_add(parser->sink, MARKDOWN_CORE_KIND_REFERENCE,
                                                             (markdown_core_place){place[0], place[0] + 1}, true);
     if (opener < 0) {
@@ -1236,6 +1240,123 @@ static void report_open(const markdown_core_element_instance *self, markdown_cor
         }
         markdown_core_inline_open(inline_state, opens, start, caret ? b->position + 1 : b->position, fields, count);
     }
+}
+
+/* A destination's parts, from `start` to `end` of the text: its path and,
+ * after its first `#` that starts a fragment, as field_end reads it, its
+ * anchor. */
+static void S_destination_parts(markdown_core_parts *parts, bufsize_t start, bufsize_t end, bool angled) {
+    const bufsize_t hash = start + field_end(parts->text + start, end - start, angled, false);
+    markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_DEST, start, hash < end ? hash : end);
+    if (hash < end) {
+        markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_ANCHOR, hash + 1, end);
+    }
+}
+
+/* THE PARTS OF A LINK OR AN IMAGE (parts.h), read as
+ * markdown_core_link_recognize reads its tail after the `]` that closes its
+ * text: an inline tail's destination, as manual_scan_link_url reads it, and
+ * its title inside its quotes; a full reference's label; an image's
+ * dimensions after the `|` that ends its text; and the attribute container
+ * after them. An autolink's destination is the text inside its angle
+ * brackets, or all of a bare one. */
+void markdown_core_link_parts(markdown_core_parts *parts) {
+    const unsigned char *s = parts->text;
+    const bufsize_t n = parts->length;
+    const markdown_core_link *link = parts->node->as.link;
+    if (!n) {
+        return;
+    }
+    if (s[0] == '<') {
+        bufsize_t close = 1;
+        while (close < n && s[close] != '>') {
+            close++;
+        }
+        markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_DEST, 1, close);
+        if (close + 1 < n && s[close + 1] == '{') {
+            markdown_core_attributes_parts(parts, close + 1);
+        }
+        return;
+    }
+    if (s[0] != '[' && s[0] != '!') {
+        markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_DEST, 0, n);
+        return;
+    }
+    /* The text's `]`: the first after the nodes the text holds. */
+    const bufsize_t open = s[0] == '!' ? 2 : 1, last = markdown_core_parts_last(parts, open);
+    bufsize_t close = last;
+    while (close < n && s[close] != ']') {
+        close += s[close] == '\\' && close + 1 < n ? 2 : 1;
+    }
+    if (link->dimensions.has_value) {
+        bufsize_t pipe = close;
+        while (pipe > last && s[pipe - 1] != '|') {
+            pipe--;
+        }
+        markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NONE, pipe, close);
+    }
+    bufsize_t at = close + 1;
+    markdown_core_chunk input = {(unsigned char *)s, n, 0}, url;
+    if (link->resource && at < n && s[at] == '(') {
+        at = markdown_core_skip_spaces_and_line_end(s, at + 1, n);
+        const bufsize_t matched = markdown_core_inline_manual_scan_link_url(&input, at, &url);
+        if (matched < 0) {
+            return;
+        }
+        const bufsize_t path = (bufsize_t)(url.data - s);
+        S_destination_parts(parts, path, path + url.len, s[at] == '<');
+        const bufsize_t past = at + matched, title = markdown_core_skip_spaces_and_line_end(s, past, n);
+        const bufsize_t quoted = title == past ? 0 : scan_link_title(s, n, title);
+        if (quoted) {
+            markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NONE, title + 1, title + quoted - 1);
+            at = markdown_core_skip_spaces_and_line_end(s, title + quoted, n);
+        } else {
+            at = title;
+        }
+        at += at < n && s[at] == ')';
+    } else if (at < n && s[at] == '[') {
+        const bufsize_t label = at + 1, end = label + markdown_core_inline_reference_label_length(s + label, n - label);
+        markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_LABEL, label, end);
+        at = end + (end < n);
+    }
+    if (at < n && s[at] == '{') {
+        markdown_core_attributes_parts(parts, at);
+    }
+}
+
+/* THE PARTS OF A REFERENCE DEFINITION (parts.h), as S_reference_definition
+ * reads it: its label, its destination, its title inside its quotes, and
+ * the attribute container after them. */
+void markdown_core_reference_parts(markdown_core_parts *parts) {
+    /* Through the line ending after the text, which ends a bare
+     * destination. */
+    markdown_core_chunk input = {(unsigned char *)parts->text, parts->length + 1, 0};
+    markdown_core_attribute_scratch scratch = {0};
+    markdown_core_attribute_parser attributes = {.data = parts->text, .length = input.len, .scratch = &scratch};
+    reference_definition definition;
+    const bufsize_t length = S_reference_definition(&input, &attributes, &definition);
+    parts->failed = parts->failed || attributes.oom;
+    if (length) {
+        const unsigned char *s = parts->text;
+        const bufsize_t n = parts->length, label = (bufsize_t)(definition.label.data - s);
+        markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_LABEL, label, label + definition.label.len);
+        bufsize_t at = (bufsize_t)(definition.url.data - s) + definition.url.len;
+        const bool angled = at > 0 && definition.url.data > s && definition.url.data[-1] == '<';
+        S_destination_parts(parts, at - definition.url.len, at, angled);
+        at += angled;
+        if (definition.title.data) {
+            const bufsize_t title = (bufsize_t)(definition.title.data - s);
+            markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NONE, title + 1, title + definition.title.len - 1);
+            at = title + definition.title.len;
+        }
+        at = markdown_core_skip_spaces_and_line_end(s, at, n);
+        if (at < n && s[at] == '{') {
+            markdown_core_attributes_parts(parts, at);
+        }
+        markdown_core_attributes_free(&definition.value);
+    }
+    markdown_core_attribute_parser_free(&attributes);
+    markdown_core_attribute_scratch_free(&scratch);
 }
 
 const markdown_core_element MARKDOWN_CORE_ELEMENT_LINK = {

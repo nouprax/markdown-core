@@ -1011,6 +1011,82 @@ static void check_context_query(void) {
     markdown_core_document_free(document);
 }
 
+/* Whether `scopes` hold one scope on line 1 from `start` to `end`. */
+static bool one_scope(const markdown_core_scope *scopes, size_t count, int32_t start, int32_t end) {
+    return count == 1 && scopes[0].start.line == 1 && scopes[0].start.column == start && scopes[0].end.line == 1 &&
+           scopes[0].end.column == end;
+}
+
+/* A field query answers the scopes of a node's fields of one slot kind, in
+ * the document's unit, and a marker query the rest of the node's own
+ * source; a value that is no slot kind, or a source that ends before the
+ * node, is out of bounds. */
+static void check_fields(void) {
+    static const char source[] = "\xc3\xa9 [x](/u#a \"t\"){#i .c}\n";
+    const size_t length = sizeof(source) - 1;
+    const uint8_t *text = (const uint8_t *)source;
+    markdown_core_document *document = NULL;
+    if (!ok(markdown_core_document_parse_in(text, length, MARKDOWN_CORE_TEXT_UNIT_UTF16, &document),
+            "a UTF-16 document parses")) {
+        return;
+    }
+    const markdown_core_node **nodes = NULL;
+    size_t count = 0;
+    const bool read =
+        ok(markdown_core_document_path(document, (markdown_core_position){1, 4}, text, length, &nodes, &count),
+           "the path to a link's text reads");
+    const bool linked = read && count == 4 && markdown_core_node_get_kind(nodes[2]) == MARKDOWN_CORE_KIND_LINK;
+    check(linked, "the path holds the link");
+    if (!linked) {
+        markdown_core_path_free(nodes);
+        markdown_core_document_free(document);
+        return;
+    }
+    const markdown_core_node *link = nodes[2];
+    markdown_core_path_free(nodes);
+    static const struct {
+        markdown_core_slot_kind slot;
+        int32_t start, end;
+    } fields[] = {{MARKDOWN_CORE_SLOT_DEST, 7, 8},
+                  {MARKDOWN_CORE_SLOT_ANCHOR, 10, 10},
+                  {MARKDOWN_CORE_SLOT_ID, 18, 18},
+                  {MARKDOWN_CORE_SLOT_CLASS, 21, 21},
+                  {MARKDOWN_CORE_SLOT_NONE, 13, 13}};
+    markdown_core_scope *scopes = NULL;
+    for (size_t i = 0; i < sizeof(fields) / sizeof(*fields); i++) {
+        check(markdown_core_document_field(document, link, fields[i].slot, text, length, &scopes, &count) ==
+                      MARKDOWN_CORE_OK &&
+                  one_scope(scopes, count, fields[i].start, fields[i].end),
+              "a field query answers the scope of the field as written");
+        markdown_core_scopes_free(scopes);
+    }
+    check(markdown_core_document_field(document, link, MARKDOWN_CORE_SLOT_LABEL, text, length, &scopes, &count) ==
+                  MARKDOWN_CORE_OK &&
+              scopes == NULL && count == 0,
+          "a field query for a slot kind the node does not write answers none");
+    /* `[`, `](`, `#`, ` "`, `"){#`, ` .` and `}`: the text `x` is the
+     * link's child's. */
+    static const int32_t markers[][2] = {{3, 3}, {5, 6}, {9, 9}, {11, 12}, {14, 17}, {19, 20}, {22, 22}};
+    bool same = markdown_core_document_markers(document, link, text, length, &scopes, &count) == MARKDOWN_CORE_OK &&
+                count == sizeof(markers) / sizeof(*markers);
+    for (size_t i = 0; same && i < count; i++) {
+        same = scopes[i].start.line == 1 && scopes[i].start.column == markers[i][0] && scopes[i].end.line == 1 &&
+               scopes[i].end.column == markers[i][1];
+    }
+    check(same, "a marker query answers the node's own source no field holds");
+    markdown_core_scopes_free(scopes);
+    scopes = (markdown_core_scope *)1;
+    check(markdown_core_document_field(document, link, (markdown_core_slot_kind)99, text, length, &scopes, &count) ==
+                  MARKDOWN_CORE_OUT_OF_BOUNDS &&
+              scopes == NULL && count == 0,
+          "a field query for a value that is no slot kind is out of bounds");
+    check(markdown_core_document_markers(document, link, text, 6, &scopes, &count) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
+              scopes == NULL && count == 0,
+          "a marker query over a source that ends before the node is out of bounds");
+    markdown_core_scopes_free(NULL);
+    markdown_core_document_free(document);
+}
+
 int main(int argc, char **argv) {
     const char *fixture_dir;
     int i;
@@ -1036,6 +1112,7 @@ int main(int argc, char **argv) {
     check_index_boundary();
     check_source_boundary();
     check_context_query();
+    check_fields();
     for (i = 3; i < argc; i++) {
         check_fixture(fixture_dir, argv[i]);
     }

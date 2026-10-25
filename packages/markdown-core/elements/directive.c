@@ -4,6 +4,7 @@
 #include "directive.h"
 #include "element.h"
 #include "inline_internal.h"
+#include "parts.h"
 
 #include <limits.h>
 #include <stdint.h>
@@ -786,3 +787,37 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_DIRECTIVE = {
     .terminates_text = ":",
     .dispatch = ":",
 };
+
+/* THE PARTS OF A DIRECTIVE (parts.h), as parse_directive_suffix reads what
+ * follows its colons: its name, the label node after it, and the attribute
+ * container; a nameless container's class word or container instead, as
+ * parse_nameless_suffix reads them. */
+void markdown_core_directive_parts(markdown_core_parts *parts) {
+    const unsigned char *s = parts->text;
+    const bufsize_t n = parts->length;
+    bufsize_t at = 0;
+    while (at < n && markdown_core_is_space_or_tab(s[at])) {
+        at++;
+    }
+    const bufsize_t colons = count_colons(s, n, at);
+    at += colons;
+    const bool block = markdown_core_node_get_kind(parts->node) == MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK;
+    if (block && colons >= 3 && at < n && (markdown_core_is_space_or_tab(s[at]) || s[at] == '{')) {
+        while (at < n && markdown_core_is_space_or_tab(s[at])) {
+            at++;
+        }
+        if (at < n && s[at] == '{') {
+            markdown_core_attributes_parts(parts, at);
+        } else {
+            markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_CLASS, at, at + class_word_end(s + at, n - at));
+        }
+        return;
+    }
+    const bufsize_t name = at;
+    at += name_end(s + at, n - at);
+    markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NAME, name, at);
+    at = markdown_core_parts_skip(parts, at);
+    if (at < n && s[at] == '{') {
+        markdown_core_attributes_parts(parts, at);
+    }
+}

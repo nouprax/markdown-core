@@ -6,6 +6,7 @@
 #include "citation.h"
 #include "inline_internal.h"
 #include "block_internal.h"
+#include "parts.h"
 
 /* The elements whose state this element reads, as `self->peers` holds them. */
 enum { CITATION_LINK, CITATION_CODE };
@@ -1004,4 +1005,44 @@ void markdown_core_citation_open_bracket(const markdown_core_element_instance *s
     if (b->kind == BRACKET_LINK && author && author->key && author->tail_start == inline_state->pos - 1) {
         b->author = author;
     }
+}
+
+/* THE PARTS OF A CITATION (parts.h): its key or label, after the prefix
+ * node and the `-`, `@` or `^` before it, inside a key's braces; a
+ * citation that stands for an inline note has none of its own. */
+void markdown_core_citation_parts(markdown_core_parts *parts) {
+    const markdown_core_citation_item *item = parts->node->as.citation;
+    const unsigned char *s = parts->text;
+    const bufsize_t n = parts->length;
+    if (item->note) {
+        return;
+    }
+    const markdown_core_slot_kind slot =
+        item->referent == MARKDOWN_CORE_NODE_REFERENT_FOOTNOTE   ? MARKDOWN_CORE_SLOT_FOOTNOTE
+        : item->referent == MARKDOWN_CORE_NODE_REFERENT_SPECIMEN ? MARKDOWN_CORE_SLOT_SPECIMEN
+                                                                 : MARKDOWN_CORE_SLOT_BIB;
+    /* The referent's sigil is the first after the prefix. */
+    bufsize_t at = markdown_core_parts_skip(parts, 0);
+    while (at < n && s[at] != '@' && s[at] != '^') {
+        at++;
+    }
+    at++;
+    const bufsize_t stop = markdown_core_parts_next(parts, at);
+    if (at < stop && s[at] == '{') {
+        bufsize_t close = stop;
+        while (close > at && s[close - 1] != '}') {
+            close--;
+        }
+        markdown_core_parts_add(parts, slot, at + 1, close > at ? close - 1 : at + 1);
+        return;
+    }
+    bufsize_t end = stop;
+    if (slot == MARKDOWN_CORE_SLOT_FOOTNOTE) {
+        while (end > at && markdown_core_is_whitespace(s[end - 1])) {
+            end--;
+        }
+    } else {
+        end = at + key_end(s + at, stop - at);
+    }
+    markdown_core_parts_add(parts, slot, at, end);
 }

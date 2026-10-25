@@ -3,6 +3,7 @@
 #include "block_internal.h"
 #include "sink.h"
 #include "attributes.h"
+#include "parts.h"
 #include "formula.h"
 #include <string.h>
 #define peek_at(input, at) ((input)->data[(at)])
@@ -325,6 +326,38 @@ static bool blank_line(const markdown_core_element_instance *self, markdown_core
     (void)self;
     return !node->as.code->fenced;
 }
+/* THE PARTS OF A CODE BLOCK (parts.h): a fenced block's info string, the
+ * rest of its fence line less the attribute tail and the spaces around it,
+ * as S_fence_info reads it, and the tail; and its literal. */
+void markdown_core_code_block_parts(markdown_core_parts *parts) {
+    const markdown_core_code *code = parts->node->as.code;
+    const unsigned char *s = parts->text;
+    const bufsize_t n = parts->length;
+    bufsize_t at = 0;
+    if (code->fenced) {
+        while (at < n && markdown_core_is_space_or_tab(s[at])) {
+            at++;
+        }
+        while (at < n && s[at] == code->fence_char) {
+            at++;
+        }
+        bufsize_t eol = at;
+        while (eol < n && !markdown_core_is_line_end(s[eol])) {
+            eol++;
+        }
+        bufsize_t end = markdown_core_attributes_tail_parts(parts, at, eol);
+        while (at < end && markdown_core_is_space_or_tab(s[at])) {
+            at++;
+        }
+        while (end > at && markdown_core_is_space_or_tab(s[end - 1])) {
+            end--;
+        }
+        markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_INFO, at, end);
+        at = eol + (eol < n && s[eol] == '\r' && eol + 1 < n && s[eol + 1] == '\n') + (eol < n);
+    }
+    markdown_core_parts_lines(parts, at, code->literal.data, code->literal.len);
+}
+
 const markdown_core_element MARKDOWN_CORE_ELEMENT_CODE_BLOCK = {
     .name = "code_block",
     .maximum_block_indent = INT_MAX,

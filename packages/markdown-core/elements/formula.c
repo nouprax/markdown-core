@@ -3,6 +3,7 @@
 #include "formula.h"
 #include "element.h"
 #include "inline_internal.h"
+#include "parts.h"
 
 #include <assert.h>
 #include <string.h>
@@ -685,3 +686,26 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .terminates_text = "$",
     .dispatch = "$\\",
 };
+
+/* THE PARTS OF A FORMULA (parts.h): its literal, after its opening `$`
+ * run or `\(` or `\[`, or its fence line. */
+void markdown_core_formula_parts(markdown_core_parts *parts) {
+    const unsigned char *s = parts->text;
+    const bufsize_t n = parts->length;
+    bufsize_t from = 0;
+    while (from < n && from < 2 && s[from] == '\\') {
+        from++;
+    }
+    from = from && from < n && (s[from] == '(' || s[from] == '[') ? from + 1 : 0;
+    while (from < n && s[from] == '$') {
+        from++;
+    }
+    /* A fence's line is the fence and the word that names a formula. */
+    if (n && (s[0] == '`' || s[0] == '~' || markdown_core_is_space_or_tab(s[0]))) {
+        while (from < n && !markdown_core_is_line_end(s[from])) {
+            from++;
+        }
+    }
+    const markdown_core_chunk literal = markdown_core_elements_formula_literal(parts->node);
+    markdown_core_parts_find(parts, from, literal.data, literal.len);
+}

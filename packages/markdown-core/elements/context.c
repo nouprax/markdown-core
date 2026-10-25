@@ -6,6 +6,7 @@
 
 #include "ast_internal.h"
 #include "sink.h"
+#include "parts.h"
 #include "attributes.h"
 #include "../core/attributes.h"
 
@@ -425,6 +426,56 @@ static bool refers(const markdown_core_node *citation, markdown_core_slot_kind s
     }
 }
 
+/* Whether `node` misses the field of the slot of kind `slot` written from
+ * `first` to the cursor (3.3): bytes of it are written, and no field of the
+ * node of that kind holds the first of them, so the node does not finish
+ * its construct (a callout whose `[!` no `]` closes holds no variant). The
+ * written bytes start past the spaces and line endings after `first`, a
+ * quoted value's quote and a block anchor's caret, and end at the spaces
+ * before the cursor. A citation's key is a bibliography entry's or a
+ * specimen's, which only the definitions decide. A slot no field of the
+ * node's kind reads, an opener's or a member's of the metadata, is never
+ * missed. */
+static bool field_misses(const context_query *query, const markdown_core_node *node, markdown_core_slot_kind slot,
+                         size_t first, bool *misses) {
+    const markdown_core_node_kind kind = markdown_core_node_get_kind(node);
+    size_t from = first, end = query->cursor;
+    *misses = false;
+    if (slot == MARKDOWN_CORE_SLOT_NONE || kind == MARKDOWN_CORE_KIND_METADATA || first > query->cursor) {
+        return true;
+    }
+    while (end > from && (query->source[end - 1] == ' ' || query->source[end - 1] == '\t')) {
+        end--;
+    }
+    while (from < end && strchr(" \t\r\n>", query->source[from])) {
+        from++;
+    }
+    from += from < end && (query->source[from] == '"' || query->source[from] == '\'' ||
+                           (slot == MARKDOWN_CORE_SLOT_ANCHOR && query->source[from] == '^'));
+    if (from >= end) {
+        return true;
+    }
+    const bool key =
+        kind == MARKDOWN_CORE_KIND_CITATION && (slot == MARKDOWN_CORE_SLOT_BIB || slot == MARKDOWN_CORE_SLOT_SPECIMEN);
+    const markdown_core_slot_kind kinds[2] = {slot, slot == MARKDOWN_CORE_SLOT_BIB ? MARKDOWN_CORE_SLOT_SPECIMEN
+                                                                                   : MARKDOWN_CORE_SLOT_BIB};
+    bool held = false;
+    for (size_t k = 0; k < (key ? 2u : 1u) && !held; k++) {
+        markdown_core_place *places;
+        size_t count;
+        if (markdown_core_parts_fields(query->document->root, node, kinds[k], query->source, query->length, &places,
+                                       &count) == MARKDOWN_CORE_ALLOCATION_FAILED) {
+            return false;
+        }
+        for (size_t i = 0; i < count && !held; i++) {
+            held = places[i].start <= from && from < places[i].end;
+        }
+        markdown_core_free(places);
+    }
+    *misses = !held;
+    return true;
+}
+
 /* Whether the document holds a node of kind `owner` whose source holds the
  * byte at `first` and the last byte before the cursor, or the cursor's byte
  * when the field is empty: the construct the field belongs to, which the
@@ -432,7 +483,9 @@ static bool refers(const markdown_core_node *citation, markdown_core_slot_kind s
  * byte follows, the last byte stands for both. An identifier's `slot` names
  * its node, which then carries the anchor written at `first`; a class's or
  * a value's in an inline block is one that `carries` it, and a citation's
- * one it `refers` to.
+ * one it `refers` to. A node that `field_misses` the field written does not
+ * finish its construct: a block's, which holds the whole opening line, is
+ * exact so.
  * A construct whose opener the field names starts at it, at `begins`, or
  * else is another of its kind that holds the bytes: a link whose title
  * holds the text of one. SIZE_MAX names no start. A construct that takes
@@ -465,6 +518,7 @@ static bool finished_by(const context_query *query, markdown_core_node_kind owne
     if ((!query->cursor && !query->length) || owner == MARKDOWN_CORE_KIND_NONE) {
         return true;
     }
+    const size_t written = first;
     if (first >= query->length) {
         first = probe;
     }
@@ -482,8 +536,19 @@ static bool finished_by(const context_query *query, markdown_core_node_kind owne
         }
     }
     for (size_t i = 0; i < probe_count && !*found; i++) {
-        if (markdown_core_node_get_kind(at_probe[i]) != owner ||
-            (slot == MARKDOWN_CORE_SLOT_ID && !names(query, &at_probe[i]->attributes.anchor, first, brace)) ||
+        bool misses = false;
+        if (markdown_core_node_get_kind(at_probe[i]) != owner) {
+            continue;
+        }
+        if (!field_misses(query, at_probe[i], slot, written, &misses)) {
+            markdown_core_free((void *)at_probe);
+            markdown_core_free((void *)at_first);
+            return false;
+        }
+        if (misses) {
+            continue;
+        }
+        if ((slot == MARKDOWN_CORE_SLOT_ID && !names(query, &at_probe[i]->attributes.anchor, first, brace)) ||
             (owner == MARKDOWN_CORE_KIND_CITATION && !refers(at_probe[i], slot)) ||
             (past != SIZE_MAX && !carries(query, at_probe[i], slot, first))) {
             continue;
@@ -556,6 +621,13 @@ static bool confirm(const context_query *query, markdown_core_node_kind owner, s
     const markdown_core_node *text, *root;
     if (!held_by(query, opener, &text, &root)) {
         return false;
+    }
+    /* A block's attribute tail the document leaves open is text of its
+     * line, which the block holds itself: a fence's info string. */
+    if (text && query->source[opener] == '{' && markdown_core_node_get_kind(text) == owner &&
+        (owner == MARKDOWN_CORE_KIND_CODE_BLOCK || owner == MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK)) {
+        *kept = true;
+        return true;
     }
     if (!text || markdown_core_node_get_kind(text) != MARKDOWN_CORE_KIND_TEXT || !root) {
         return true;
@@ -922,7 +994,7 @@ static bool weigh(const context_query *query, const markdown_core_context_sink *
     bool done = false;
     if (!kept && query->cursor > field->start && member(query, field, opener, query->cursor - 1) &&
         (query->source[query->cursor - 1] == ' ' || query->source[query->cursor - 1] == '\t')) {
-        if (!confirm(query, owner, field->start, MARKDOWN_CORE_SLOT_RECORD, opener->place.start, begins, brace, past,
+        if (!confirm(query, owner, field->start, MARKDOWN_CORE_SLOT_NONE, opener->place.start, begins, brace, past,
                      &kept, &closed)) {
             return false;
         }

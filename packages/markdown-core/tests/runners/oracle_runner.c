@@ -36,6 +36,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "samples.h"
 #include "test_support.h"
 
 static const char CURSOR[] = "\xe2\x80\xb8";
@@ -396,6 +397,8 @@ typedef struct report {
     size_t failures, checks, expected;
     exception *exceptions;
     size_t exception_count;
+    /* The generated inputs checked so far. */
+    size_t generated;
 } report;
 
 static const char *base_name(const char *path) {
@@ -1944,91 +1947,24 @@ static void check_example(report *r, const uint8_t *source, size_t length) {
     tree_free(&original);
 }
 
-/* THE GENERATED INPUTS: each atom inside each inner construct inside each
- * outer one, where the nesting and the escapes the fixtures write one at a
- * time meet. A construct is a template whose `@` the next one fills. */
-static const char *const CONSTRUCTS[] = {
-    "[@](u)",
-    "[x](@)",
-    "[x](u \"@\")",
-    "[@]{.c}",
-    "[x]{k=\"@\"}",
-    "[x]{@=1}",
-    "[x]{.@}",
-    "*@*",
-    "`@`",
-    ":d[@]{.a}",
-    ":d{k=@}",
-    "[@k; @]",
-    "@{@}",
-    "[[@]]",
-    "[[a|@]]",
-    "![[@]]",
-    "[^@]",
-    "^[@]",
-    "#@",
-    "# @ {.c}",
-    "> @",
-    "- @",
-    "| @ |\n| - |",
-    "[r]: @",
-    "> [!@]",
-    "<i t=\"@\">",
-    "\\@",
-    "x @ y",
-    "[@][r]\n\n[r]: u",
-    "x @ y #i#",
-};
-static const char *const ATOMS[] = {
-    "a", "a b", "\\]", "\\}", "&amp;", "\"q\"", "{.x}",     "#t",     "@k",  "]",
-    "}", "<u>", "`",   "(",   "|",     "#t#",   "\\&#35;t", "&#35;t", "a#b", "\\#",
-};
-enum {
-    CONSTRUCT_COUNT = sizeof(CONSTRUCTS) / sizeof(CONSTRUCTS[0]),
-    ATOM_COUNT = sizeof(ATOMS) / sizeof(ATOMS[0]),
-};
-
-/* `template` with its first `@` filled with `with`, in a new string. */
-static char *fill(const char *template, const char *with) {
-    const char *hole = strchr(template, '@');
-    const size_t head = (size_t)(hole - template), size = strlen(template) + strlen(with);
-    char *out = malloc(size);
-    if (out) {
-        memcpy(out, template, head);
-        strcpy(out + head, with);
-        strcat(out, hole + 1);
-    }
-    return out;
+/* Checks one generated input, named `generated` and numbered as
+ * samples_each numbers it. */
+static void check_one(void *context, const char *source, int number) {
+    report *r = context;
+    ts_spec_case *example = (ts_spec_case *)r->example;
+    example->start_line = number;
+    r->generated++;
+    check_example(r, (const uint8_t *)source, strlen(source));
 }
 
-/* Runs every generated input, named `generated` and numbered by its
- * outer construct, inner construct and atom, two digits each. */
 static bool check_generated(report *r, size_t *examples) {
     ts_spec_case example = {0};
     r->path = "generated";
     r->example = &example;
-    for (size_t outer = 0; outer < CONSTRUCT_COUNT; outer++) {
-        for (size_t inner = 0; inner < CONSTRUCT_COUNT; inner++) {
-            for (size_t atom = 0; atom < ATOM_COUNT; atom++) {
-                char *in = fill(CONSTRUCTS[inner], ATOMS[atom]);
-                char *source = in ? fill(CONSTRUCTS[outer], in) : NULL;
-                free(in);
-                if (!source) {
-                    return false;
-                }
-                /* Numbered by place, not by count, so a construct or an atom
-                 * added at a list's end leaves every other's number. */
-                example.start_line = (int)(outer * 10000 + inner * 100 + atom + 1);
-                ++*examples;
-                if (getenv("ORACLE_VERBOSE")) {
-                    fprintf(stderr, "generated:%d: %s\n", example.start_line, source);
-                }
-                check_example(r, (const uint8_t *)source, strlen(source));
-                free(source);
-            }
-        }
-    }
-    return true;
+    r->generated = 0;
+    const bool ran = samples_each(check_one, r);
+    *examples += r->generated;
+    return ran;
 }
 
 int main(int argc, char **argv) {
