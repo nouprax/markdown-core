@@ -11,11 +11,27 @@
 
 #include <node.h>
 
-/* A slot as the context keeps it: the public value, and where its prefix
- * strings begin in the context's prefixes. */
+/* A slot as the context keeps it: the public value, where its prefix
+ * strings begin in the context's prefixes, and what its spelling reads
+ * (markdown_core_slot_spell): the offsets in the context's copy of the
+ * cursor's line of the field's start, or SIZE_MAX when it began on an
+ * earlier line, of the slot's start, the cursor and the slot's end, and of
+ * its construct's opener, or SIZE_MAX; how the field goes on past a cursor,
+ * from `lead` bytes before its start, or NULL when the line does not hold
+ * them. */
 typedef struct {
     markdown_core_slot slot;
     size_t prefix;
+    size_t field, start, cursor, end, opener;
+    markdown_core_field_end scan;
+    size_t lead;
+    /* The delimiter before the slot that its source opens with and does not
+     * hold: a destination's `<`, a braced key's `{`, or the quote of a
+     * value that began on an earlier line; or 0. */
+    uint8_t wrap;
+    /* Whether the field goes on to another line, which no insertion on the
+     * cursor's line replaces whole. */
+    bool split;
 } context_slot;
 
 /* THE CONTEXT (docs/plans/2026-10-23-lsp-completion-engine.md, 3.1): its
@@ -30,6 +46,11 @@ struct markdown_core_context {
     size_t slot_count;
     markdown_core_string *prefixes;
     uint8_t *bytes;
+    /* The cursor's line, its terminator not included, and whether it is a
+     * table's row, whose cells an unescaped `|` splits. */
+    uint8_t *line;
+    size_t size;
+    bool row;
 };
 
 /* A source range of a node of the document, the range of the holding that
@@ -917,6 +938,16 @@ static bool weigh(const context_query *query, const markdown_core_context_sink *
         if (!tail_ends(query, opener->place.start, last, owner == MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK, &kept)) {
             return false;
         }
+        /* A container's braces follow its name or label at once; only a
+         * nameless one's follow spaces after the colons. */
+        if (owner == MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK && brace > 0 &&
+            (query->source[brace - 1] == ' ' || query->source[brace - 1] == '\t')) {
+            size_t before = brace - 1;
+            while (before > line && (query->source[before - 1] == ' ' || query->source[before - 1] == '\t')) {
+                before--;
+            }
+            kept = kept && before > line && query->source[before - 1] == ':';
+        }
         if (!kept) {
             return true;
         }
@@ -956,6 +987,17 @@ static bool weigh(const context_query *query, const markdown_core_context_sink *
         }
     }
     const size_t end = origin + (size_t)reach;
+    if (field->owner == MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK && field->kind == MARKDOWN_CORE_SLOT_NAME) {
+        /* After a container's name only its label and braces follow at
+         * once, and spaces to the line's end. */
+        size_t after = end;
+        while (after < last && (query->source[after] == ' ' || query->source[after] == '\t')) {
+            after++;
+        }
+        if (after > end && after < last) {
+            return true;
+        }
+    }
     /* An info string's word stops short of the cursor only at an attribute
      * tail the cursor is in, which its own field reads. */
     if (field->kind == MARKDOWN_CORE_SLOT_INFO && end < query->cursor) {
@@ -1045,6 +1087,35 @@ static bool judge(const context_query *query, const markdown_core_context_sink *
         }
     }
     markdown_core_free(readings);
+    /* A field that begins inside a closed field of raw text, as an
+     * attribute's value or name, is text of it, and one whose opener is
+     * inside a reference definition before its destination, the `:` after
+     * its label, is the definition's. A label is not raw: a link's text
+     * may be its label, and a fence's attribute tail is read from its
+     * info string. */
+    for (size_t i = 0; i < sink->field_count; i++) {
+        const verdict *v = &verdicts[i];
+        const markdown_core_context_field *field = &sink->fields[i];
+        const bool raw = v->kind != MARKDOWN_CORE_SLOT_LABEL && v->kind != MARKDOWN_CORE_SLOT_INFO && v->closed;
+        const bool defines =
+            field->owner == MARKDOWN_CORE_KIND_REFERENCE && v->kind == MARKDOWN_CORE_SLOT_DEST && field->opener >= 0;
+        if (!v->kept || (!raw && !defines)) {
+            continue;
+        }
+        const size_t from = defines ? sink->openers[field->opener].place.start : v->start;
+        for (size_t other = 0; other < sink->field_count; other++) {
+            if (defines && sink->fields[other].opener < 0) {
+                continue;
+            }
+            const size_t at = defines ? sink->openers[sink->fields[other].opener].place.start : verdicts[other].start;
+            /* A bare value reads on to the brace a field inside it may
+             * begin before. */
+            const size_t end = defines ? v->start : v->end + (v->kind == MARKDOWN_CORE_SLOT_VALUE);
+            if (other != i && verdicts[other].kept && !sink->fields[other].declares && at > from && at < end) {
+                verdicts[other].kept = false;
+            }
+        }
+    }
     return true;
 }
 
@@ -1075,9 +1146,35 @@ static bool take_slots(markdown_core_context *context, const context_query *quer
     context->slots = markdown_core_alloc(sink->field_count, sizeof(*context->slots));
     context->prefixes = prefixes ? markdown_core_alloc(prefixes, sizeof(*context->prefixes)) : NULL;
     context->bytes = bytes ? markdown_core_alloc(bytes, 1) : NULL;
-    if (!context->slots || (prefixes && !context->prefixes) || (bytes && !context->bytes)) {
+    context->size = last - line;
+    context->line = markdown_core_alloc(context->size + 1, 1);
+    if (!context->slots || (prefixes && !context->prefixes) || (bytes && !context->bytes) || !context->line) {
         markdown_core_free(verdicts);
         return false;
+    }
+    memcpy(context->line, query->source + line, context->size);
+    const markdown_core_node **path = NULL;
+    size_t depth = 0;
+    const size_t held = query->cursor > line ? query->cursor - 1 : query->cursor;
+    if (held < query->length && !query_holders(query, held, &path, &depth)) {
+        markdown_core_free(verdicts);
+        return false;
+    }
+    for (size_t i = 0; i < depth && !context->row; i++) {
+        context->row = markdown_core_node_get_kind(path[i]) == MARKDOWN_CORE_KIND_TABLE_CELL;
+    }
+    markdown_core_free((void *)path);
+    /* An autolink holds its text as written: what the run read as fields
+     * inside it is text, though the autolink is a link. */
+    bool autolinked = false;
+    for (size_t i = 0; i < query->holding_count && !autolinked; i++) {
+        const holding *at = &query->holdings[i];
+        if (at->start < held && held < at->end && query->source[at->start] == '<' &&
+            markdown_core_node_get_kind(at->node) == MARKDOWN_CORE_KIND_LINK) {
+            /* Its attributes follow its `>`. */
+            const uint8_t *close = memchr(query->source + at->start, '>', at->end - at->start);
+            autolinked = !close || query->source + held < close;
+        }
     }
     /* A slot keeps to the cursor's line: a field that began on an earlier
      * one, a label or a quoted value, is written from past the line's
@@ -1091,7 +1188,7 @@ static bool take_slots(markdown_core_context *context, const context_query *quer
     size_t prefix = 0, written = 0;
     for (size_t i = 0; i < sink->field_count; i++) {
         const markdown_core_context_field *field = &sink->fields[i];
-        if (!verdicts[i].kept) {
+        if (!verdicts[i].kept || autolinked) {
             continue;
         }
         const size_t start = verdicts[i].start < line ? from : verdicts[i].start;
@@ -1101,7 +1198,38 @@ static bool take_slots(markdown_core_context *context, const context_query *quer
         context_slot *slot = &context->slots[context->slot_count++];
         *slot = (context_slot){{verdicts[i].kind, field->owner, query_scope(query, start, query->cursor),
                                 query_scope(query, query->cursor, after), verdicts[i].closed, count},
-                               prefix};
+                               prefix,
+                               verdicts[i].start < line ? SIZE_MAX : verdicts[i].start - line,
+                               start - line,
+                               query->cursor - line,
+                               after - line,
+                               SIZE_MAX,
+                               NULL,
+                               0,
+                               0,
+                               verdicts[i].start < line || verdicts[i].end > last};
+        const size_t opener = field->opener >= 0 ? sink->openers[field->opener].place.start : SIZE_MAX;
+        slot->opener = opener >= line && opener < last ? opener - line : SIZE_MAX;
+        const markdown_core_slot_kind kind = verdicts[i].kind;
+        const size_t origin = verdicts[i].start - (kind == MARKDOWN_CORE_SLOT_ANCHOR ? field->lead : 0);
+        if ((kind == MARKDOWN_CORE_SLOT_DEST || kind == MARKDOWN_CORE_SLOT_ANCHOR) && origin > line &&
+            query->source[origin - 1] == '<' && field->owner != MARKDOWN_CORE_KIND_CROSS_LINK &&
+            field->owner != MARKDOWN_CORE_KIND_CROSS_EMBEDDED) {
+            slot->wrap = '<';
+        } else if ((kind == MARKDOWN_CORE_SLOT_BIB || kind == MARKDOWN_CORE_SLOT_SPECIMEN) && start > line + 1 &&
+                   query->source[start - 1] == '{' && query->source[start - 2] == '@') {
+            slot->wrap = '{';
+        } else if (kind == MARKDOWN_CORE_SLOT_VALUE && verdicts[i].start < line &&
+                   (query->source[verdicts[i].start] == '"' || query->source[verdicts[i].start] == '\'')) {
+            slot->wrap = query->source[verdicts[i].start];
+        }
+        /* The field's own scanner reads a spelling, from where it reads the
+         * field: a member the run cut short is read by another. */
+        if (verdicts[i].kind == field->kind && verdicts[i].start >= line + field->lead &&
+            (verdicts[i].start == field->start || !field->lead)) {
+            slot->scan = field->end;
+            slot->lead = field->lead;
+        }
         for (uint32_t j = 0; j < count; j++) {
             const size_t size = field->prefix[j].end - field->prefix[j].start;
             if (size) {
@@ -1209,5 +1337,599 @@ void markdown_core_context_free(markdown_core_context *context) {
     markdown_core_free(context->slots);
     markdown_core_free(context->prefixes);
     markdown_core_free(context->bytes);
+    markdown_core_free(context->line);
     markdown_core_free(context);
 }
+
+/* SPELLING (docs/plans/2026-10-23-lsp-completion-engine.md, 3.1): the text
+ * that writes a value in a slot's field, in the field's own syntax, and the
+ * closer that finishes a construct the document leaves open. */
+
+/* The text being written, in a buffer the value's size bounds. */
+typedef struct {
+    uint8_t *text;
+    size_t size;
+} spelled;
+
+static const char PUNCTUATION[] = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
+
+static void put(spelled *out, uint8_t c) { out->text[out->size++] = c; }
+
+static bool among(uint8_t c, const char *set) { return c && strchr(set, c); }
+
+/* Whether `value` is well formed UTF-8 with no line ending: no field holds
+ * one, since a slot keeps to its line. */
+static bool readable(const uint8_t *value, size_t size) {
+    for (size_t i = 0; i < size;) {
+        const uint8_t c = value[i];
+        if (c == '\n' || c == '\r') {
+            return false;
+        }
+        const size_t width = c < 0x80             ? 1
+                             : (c & 0xE0) == 0xC0 ? 2
+                             : (c & 0xF0) == 0xE0 ? 3
+                             : (c & 0xF8) == 0xF0 ? 4
+                                                  : 0;
+        if (!width || i + width > size || (width == 2 && c < 0xC2) || (width == 4 && c > 0xF4)) {
+            return false;
+        }
+        for (size_t j = 1; j < width; j++) {
+            if ((value[i + j] & 0xC0) != 0x80) {
+                return false;
+            }
+        }
+        if ((width == 3 && c == 0xE0 && value[i + 1] < 0xA0) || (width == 3 && c == 0xED && value[i + 1] >= 0xA0) ||
+            (width == 4 && c == 0xF0 && value[i + 1] < 0x90) || (width == 4 && c == 0xF4 && value[i + 1] >= 0x90)) {
+            return false;
+        }
+        i += width;
+    }
+    return true;
+}
+
+/* Whether `&` at `at` begins what reads as a character reference. */
+static bool referent(const uint8_t *value, size_t size, size_t at) {
+    size_t i = at + 1;
+    i += i < size && value[i] == '#';
+    const size_t first = i;
+    while (i < size &&
+           ((value[i] >= '0' && value[i] <= '9') || ((value[i] | 0x20) >= 'a' && (value[i] | 0x20) <= 'z'))) {
+        i++;
+    }
+    return i > first && i < size && value[i] == ';';
+}
+
+/* Writes `value` as it is, false when it holds a byte of `barred`, or a
+ * `|` on a table's row, which would split its cell. */
+static bool plain(spelled *out, const uint8_t *value, size_t size, const char *barred, bool row) {
+    for (size_t i = 0; i < size; i++) {
+        if (among(value[i], barred) || (row && value[i] == '|')) {
+            return false;
+        }
+        put(out, value[i]);
+    }
+    return true;
+}
+
+/* Writes `value` with a backslash before each byte of `marked` and before
+ * a `|` on a table's row, whose own backslash the row removes first, and an
+ * `&` that would begin a character reference as one, `&amp;`: the field
+ * reads references before escapes. */
+static void escaped(spelled *out, const uint8_t *value, size_t size, const char *marked, bool row) {
+    for (size_t i = 0; i < size; i++) {
+        const uint8_t c = value[i];
+        if (c == '&' && referent(value, size, i)) {
+            for (const char *e = "&amp;"; *e; e++) {
+                put(out, (uint8_t)*e);
+            }
+            continue;
+        }
+        if ((row && c == '|') || among(c, marked)) {
+            put(out, '\\');
+        }
+        put(out, c);
+    }
+}
+
+/* Whether a backslash in `value` ends it or a bracket stands in it that no
+ * backslash escapes: a raw label holds neither. */
+static bool bracketed(const uint8_t *value, size_t size) {
+    bool odd = false;
+    for (size_t i = 0; i < size; i++) {
+        if (!odd && (value[i] == '[' || value[i] == ']')) {
+            return true;
+        }
+        odd = value[i] == '\\' && !odd;
+    }
+    return odd;
+}
+
+static bool blank_value(const uint8_t *value, size_t size) {
+    for (size_t i = 0; i < size; i++) {
+        if (value[i] != ' ' && value[i] != '\t') {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* Whether every byte of `value` is an ASCII letter, a numeral or one of
+ * `also`. */
+static bool word(const uint8_t *value, size_t size, const char *also) {
+    for (size_t i = 0; i < size; i++) {
+        const uint8_t c = value[i];
+        if (!((c >= '0' && c <= '9') || ((c | 0x20) >= 'a' && (c | 0x20) <= 'z') || among(c, also))) {
+            return false;
+        }
+    }
+    return size > 0;
+}
+
+/* The character of the fence the line opens, a backtick or a tilde, or 0:
+ * the first run of three before `before`. */
+static uint8_t fence_of(const markdown_core_context *context, size_t before) {
+    for (size_t i = 0; i + 2 < before && i + 2 < context->size; i++) {
+        const uint8_t c = context->line[i];
+        if ((c == '`' || c == '~') && context->line[i + 1] == c && context->line[i + 2] == c) {
+            return c;
+        }
+    }
+    return 0;
+}
+
+/* A destination or its fragment: inside `<…>` as written, bare when the
+ * value allows it, otherwise in `<…>` when the slot may write them. */
+static bool spell_destination(spelled *out, const context_slot *slot, bool row, const uint8_t *value, size_t size,
+                              const uint8_t *tail, size_t rest) {
+    const bool fragment = slot->slot.kind == MARKDOWN_CORE_SLOT_ANCHOR;
+    if (slot->wrap == '<') {
+        escaped(out, value, size, fragment ? "\\<>()[]{}" : "\\<>()[]{}#", row);
+        return true;
+    }
+    bool bare = size > 0 && value[0] != '<';
+    for (size_t i = 0; i < size && bare; i++) {
+        bare = value[i] > ' ' && value[i] != 0x7F;
+    }
+    if (bare) {
+        /* A destination's `#` would begin its fragment. */
+        escaped(out, value, size, fragment ? "\\()<>`$%[]{}" : "\\()<>`$%[]{}#", row);
+        return true;
+    }
+    /* `<...>` is the whole destination: it stands only where the field
+     * ends with it, before the call's `)` or a space. */
+    if (fragment || (rest && tail[0] != ')' && tail[0] != ' ' && tail[0] != '\t')) {
+        return false;
+    }
+    for (size_t i = 0; i < size; i++) {
+        if (value[i] < ' ' && value[i] != '\t') {
+            return false;
+        }
+    }
+    put(out, '<');
+    escaped(out, value, size, "\\<>()[]{}", row);
+    put(out, '>');
+    return true;
+}
+
+/* An attribute value: bare when nothing in it ends or opens a quoted one,
+ * otherwise double quoted; inside the quotes of one already begun. */
+static bool spell_attribute(spelled *out, const context_slot *slot, const uint8_t *line, bool row, const uint8_t *value,
+                            size_t size) {
+    if (slot->wrap) {
+        const char marked[] = {'\\', (char)slot->wrap, '`', '$', '<', '>', '[', ']', '(', ')', '{', '}', 0};
+        escaped(out, value, size, marked, row);
+        put(out, slot->wrap);
+        return true;
+    }
+    /* A value keeps the quotes it has, since what holds the attributes may
+     * read them; one without is bare when nothing in it needs quotes. */
+    const uint8_t had = line[slot->start] == '"' || line[slot->start] == '\'' ? line[slot->start] : 0;
+    bool bare = !had && size > 0 && value[0] != '"' && value[0] != '\'';
+    for (size_t i = 0; i < size && bare; i++) {
+        bare = value[i] != ' ' && value[i] != '\t' && value[i] != '&';
+    }
+    if (bare) {
+        escaped(out, value, size, "\\`$<>[](){}", row);
+        return true;
+    }
+    const uint8_t quote = had ? had : '"';
+    const char marked[] = {'\\', (char)quote, '`', '$', '<', '>', '[', ']', '(', ')', '{', '}', 0};
+    put(out, quote);
+    escaped(out, value, size, marked, row);
+    put(out, quote);
+    return true;
+}
+
+/* A key as written: braces in it balanced, and no space, which ends it. */
+static bool spell_cite(spelled *out, bool row, const uint8_t *value, size_t size) {
+    int depth = 0;
+    for (size_t i = 0; i < size; i++) {
+        depth += value[i] == '{' ? 1 : value[i] == '}' ? -1 : 0;
+        if (depth < 0) {
+            return false;
+        }
+    }
+    return size > 0 && !depth && plain(out, value, size, " \t", row);
+}
+
+/* Whether the field's own scanner, reading `text` with `tail` after it,
+ * ends exactly where `text` does. */
+static bool scans(const markdown_core_context *context, const context_slot *slot, const spelled *text,
+                  const uint8_t *tail, size_t rest, bool *ok) {
+    *ok = true;
+    if (!slot->scan) {
+        return true;
+    }
+    const size_t total = slot->lead + text->size + rest;
+    uint8_t *data = markdown_core_alloc(total + 1, 1);
+    if (!data) {
+        return false;
+    }
+    memcpy(data, context->line + slot->field - slot->lead, slot->lead);
+    memcpy(data + slot->lead, text->text, text->size);
+    if (rest) {
+        memcpy(data + slot->lead + text->size, tail, rest);
+    }
+    const bufsize_t end = slot->scan(data, (bufsize_t)total);
+    markdown_core_free(data);
+    if (end < 0) {
+        return false;
+    }
+    *ok = (size_t)end == slot->lead + text->size;
+    return true;
+}
+
+/* Whether `value` holds a byte that opens or closes a literal token, which
+ * owns its whole extent whatever field it stands in: a code span's
+ * backtick, a formula's `$`, an HTML tag's or an autolink's in_markup bracket,
+ * or a comment's `%%`. A field that keeps its bytes as written cannot hold
+ * one, since the text around it may pair with it. */
+static bool opaque(const uint8_t *value, size_t size) {
+    for (size_t i = 0; i < size; i++) {
+        if (among(value[i], "`$<>") || (value[i] == '%' && i + 1 < size && value[i + 1] == '%')) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Whether `value` holds a literal token's closer no escape keeps from
+ * closing one the text before it opens: a code span's backtick, a
+ * formula's `$`, a comment's `%%`. */
+static bool closes(const uint8_t *value, size_t size) {
+    for (size_t i = 0; i < size; i++) {
+        if (value[i] == '`' || value[i] == '$' || (value[i] == '%' && i + 1 < size && value[i + 1] == '%')) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Whether the line before the slot leaves an `open` that no `close`
+ * matches: a construct around the slot that a `close` would end. */
+static bool opened(const markdown_core_context *context, const context_slot *slot, uint8_t open, uint8_t close) {
+    size_t depth = 0;
+    for (size_t i = 0; i < slot->start && i < context->size; i++) {
+        const uint8_t c = context->line[i];
+        if (c == '\\') {
+            i++;
+        } else if (c == open) {
+            depth++;
+        } else if (c == close && depth) {
+            depth--;
+        }
+    }
+    return depth > 0;
+}
+
+/* Whether the spelling would end a construct the line before the slot
+ * leaves open: a bracket or a parenthesis it does not match itself, or a
+ * brace or the `=` that makes a braced name a key, which a name's or a
+ * bare value's scan reads escaped or not, or what ends a cross link's
+ * part, an autolink or a tag. */
+static bool ends(const markdown_core_context *context, const context_slot *slot, const spelled *text) {
+    const bool in_brackets = opened(context, slot, '[', ']'), in_parens = opened(context, slot, '(', ')'),
+               in_braces = opened(context, slot, '{', '}');
+    bool in_markup = false;
+    const size_t before = slot->start - (slot->wrap == '<' && slot->start > 0);
+    for (size_t i = 0; i < before && i < context->size; i++) {
+        const uint8_t c = context->line[i], next = i + 1 < context->size ? context->line[i + 1] : 0;
+        if (c == '<' && (among(next, "/!?") || ((next | 0x20) >= 'a' && (next | 0x20) <= 'z'))) {
+            in_markup = true;
+        } else if (c == '>') {
+            in_markup = false;
+        }
+    }
+    /* A cross link's part ends at a `|`, and an autolink or a tag at a
+     * space, a quote or an in_markup bracket. */
+    size_t cross = 0;
+    for (size_t i = 0; i + 1 < slot->start && i + 1 < context->size; i++) {
+        if (context->line[i] == context->line[i + 1] && (context->line[i] == '[' || context->line[i] == ']')) {
+            cross = context->line[i] == '[' ? cross + 1 : cross ? cross - 1 : 0;
+            i++;
+        }
+    }
+    size_t brackets = 0, parens = 0;
+    for (size_t i = 0; i < text->size; i++) {
+        const uint8_t c = text->text[i];
+        if ((in_braces && (c == '}' || c == '=')) || (cross && c == '|') || (in_markup && among(c, " \t\"'<>"))) {
+            return true;
+        }
+        if (c == '\\') {
+            i += i + 1 < text->size && !among(text->text[i + 1], "}=|");
+            continue;
+        }
+        if ((c == ']' && !brackets && in_brackets) || (c == ')' && !parens && in_parens)) {
+            return true;
+        }
+        brackets += c == '[' ? 1 : c == ']' ? (size_t)-1 : 0;
+        parens += c == '(' ? 1 : c == ')' ? (size_t)-1 : 0;
+    }
+    return (brackets && in_brackets) || (parens && in_parens);
+}
+
+/* Whether the spelling would make a directive: a `:` before or in it
+ * whose name runs on, through it, the closer and the line after, to a
+ * label or braces. */
+static bool names_directive(const markdown_core_context *context, const context_slot *slot, const spelled *text,
+                            const char *closer, const uint8_t *tail, size_t rest) {
+    /* A directive's name slot follows its own `:`. */
+    bool run = false;
+    const bool own = slot->slot.kind == MARKDOWN_CORE_SLOT_NAME && slot->slot.owner != MARKDOWN_CORE_KIND_TOPIC;
+    for (size_t i = own ? 0 : slot->start; i > 0; i--) {
+        const uint8_t c = context->line[i - 1];
+        if (among(c, " \t[{:")) {
+            run = c == ':';
+            break;
+        }
+    }
+    for (size_t i = 0; i < text->size; i++) {
+        const uint8_t c = text->text[i];
+        if (c == '[' || c == '{') {
+            if (run) {
+                return true;
+            }
+        } else if (c == ':') {
+            run = true;
+        } else if (c == ' ' || c == '\t') {
+            run = false;
+        }
+    }
+    for (const char *c = closer; *c && run; c++) {
+        if (among((uint8_t)*c, " \t[{:")) {
+            return *c == '[' || *c == '{';
+        }
+    }
+    for (size_t i = 0; i < rest && run; i++) {
+        if (among(tail[i], " \t\r\n[{:")) {
+            return tail[i] == '[' || tail[i] == '{';
+        }
+    }
+    return false;
+}
+
+/* The class of a byte to a delimiter run beside it: a space, punctuation,
+ * or neither. */
+static int flank(uint8_t c) { return c == ' ' || c == '\t' || !c ? 0 : among(c, PUNCTUATION) ? 1 : 2; }
+
+/* Whether a block's attribute tail or callout marker the slot is in is
+ * still open on the line: the document reads such a line's opening as
+ * text, though the block's node holds the slot. */
+static bool unfinished(const markdown_core_context *context, const context_slot *slot, const uint8_t *tail, size_t rest,
+                       uint8_t closer) {
+    if (!slot->slot.closed) {
+        return true;
+    }
+    const markdown_core_node_kind owner = slot->slot.owner;
+    if (owner != MARKDOWN_CORE_KIND_HEADING && owner != MARKDOWN_CORE_KIND_CODE_BLOCK &&
+        owner != MARKDOWN_CORE_KIND_DIRECTIVE_BLOCK && owner != MARKDOWN_CORE_KIND_CALLOUT) {
+        return false;
+    }
+    /* A nameless container's class word has no braces to close. */
+    return closer == ']' ? !(rest && tail[0] == ']') : opened(context, slot, '{', '}') && !memchr(tail, closer, rest);
+}
+
+markdown_core_status markdown_core_slot_spell(const markdown_core_context *context, size_t index, const uint8_t *value,
+                                              size_t size, markdown_core_insertion **insertion) {
+    *insertion = NULL;
+    if (index >= context->slot_count) {
+        return MARKDOWN_CORE_OUT_OF_BOUNDS;
+    }
+    const context_slot *slot = &context->slots[index];
+    if (!readable(value, size) || slot->split) {
+        return MARKDOWN_CORE_OK;
+    }
+    const markdown_core_slot_kind kind = slot->slot.kind;
+    const markdown_core_node_kind owner = slot->slot.owner;
+    const bool row = context->row, closed = slot->slot.closed;
+    const uint8_t *tail = context->line + slot->end;
+    const size_t rest = context->size - slot->end;
+    /* An escape doubles a byte, a reference's `&` takes five, and quotes,
+     * braces and the closer a few more. */
+    markdown_core_insertion *made = markdown_core_alloc(1, sizeof(*made) + 8 * size + 64);
+    if (!made) {
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    spelled out = {(uint8_t *)(made + 1), 0};
+    const char *closer = "";
+    bool held = true;
+    const bool cross = owner == MARKDOWN_CORE_KIND_CROSS_LINK || owner == MARKDOWN_CORE_KIND_CROSS_EMBEDDED;
+    const bool call = owner == MARKDOWN_CORE_KIND_LINK || owner == MARKDOWN_CORE_KIND_EMBEDDED;
+    const uint8_t fence = owner == MARKDOWN_CORE_KIND_CODE_BLOCK ? fence_of(context, slot->start) : 0;
+    switch (kind) {
+    case MARKDOWN_CORE_SLOT_DEST:
+    case MARKDOWN_CORE_SLOT_ANCHOR:
+        if (cross) {
+            /* A cross target keeps its bytes: what ends a part, a bracket
+             * or a line ending it cannot hold, and a final backslash would
+             * escape the separator after it. */
+            held = size > 0 && value[size - 1] != '\\' && !opaque(value, size) && plain(&out, value, size, "|[]", row);
+            if (kind == MARKDOWN_CORE_SLOT_DEST) {
+                held = held && !memchr(value, '#', size);
+            } else {
+                /* A heading's parts are not empty, and a leading `^` marks a
+                 * block's identifier, which the anchor drops. */
+                held = held && value[0] != '#' && value[size - 1] != '#' && value[0] != '^';
+                for (size_t i = 0; held && i + 1 < size; i++) {
+                    held = !(value[i] == '#' && value[i + 1] == '#');
+                }
+            }
+            closer = closed ? "" : "]]";
+        } else {
+            held = !closes(value, size) && spell_destination(&out, slot, row, value, size, tail, rest);
+            /* An open `<` closes after the field: where a fragment goes on
+             * after the slot, the closers cannot stand at it. */
+            const bool in_markup = slot->wrap == '<' && !(rest && tail[0] == '>');
+            const bool goes = in_markup && rest && tail[0] != ' ' && tail[0] != '\t';
+            closer = closed || goes ? "" : call ? (in_markup ? ">)" : ")") : (in_markup ? ">" : "");
+        }
+        break;
+    case MARKDOWN_CORE_SLOT_LABEL:
+        /* A label keeps its bytes. One that begins with `^` is a
+         * footnote's. A closed one whose `]` is on a later line goes on
+         * past the line. */
+        if (closed && !memchr(tail, ']', rest)) {
+            held = false;
+            break;
+        }
+        held = !blank_value(value, size) && size < 1000 && value[0] != '^' && !bracketed(value, size) &&
+               !opaque(value, size) && plain(&out, value, size, "", row);
+        closer = closed ? "" : "]";
+        break;
+    case MARKDOWN_CORE_SLOT_FOOTNOTE:
+        /* A footnote's label keeps its bytes, holds no bracket even
+         * escaped, and a final backslash would escape its `]`. */
+        if (closed && !memchr(tail, ']', rest)) {
+            held = false;
+            break;
+        }
+        held = size > 0 && size <= 1000 && value[size - 1] != '\\' && !opaque(value, size) &&
+               plain(&out, value, size, " \t[]", row);
+        closer = closed ? "" : "]";
+        break;
+    case MARKDOWN_CORE_SLOT_BIB:
+    case MARKDOWN_CORE_SLOT_SPECIMEN: {
+        held = !opaque(value, size) && spell_cite(&out, row, value, size);
+        if (kind == MARKDOWN_CORE_SLOT_SPECIMEN) {
+            /* A label is key characters with single hyphens between, and
+             * no braces write one. */
+            held = held && slot->wrap != '{' && value[0] != '-' && value[size - 1] != '-';
+            for (size_t i = 0; held && i < size; i++) {
+                const uint8_t c = value[i];
+                held = c >= 0x80 || word(&c, 1, "_") || (c == '-' && value[i + 1] != '-');
+            }
+        } else if (held && slot->wrap != '{') {
+            /* A key the bare scanner does not read whole is written in
+             * braces. */
+            bool whole = true;
+            if (!scans(context, slot, &out, tail, rest, &whole)) {
+                markdown_core_free(made);
+                return MARKDOWN_CORE_ALLOCATION_FAILED;
+            }
+            if (!whole) {
+                memmove(out.text + 1, out.text, out.size);
+                out.text[0] = '{';
+                out.size++;
+                put(&out, '}');
+            }
+        }
+        const uint8_t open = slot->opener != SIZE_MAX ? context->line[slot->opener] : 0;
+        closer = slot->wrap == '{' && !closed ? (open == '['   ? "}]"
+                                                 : open == '(' ? "})"
+                                                               : "}")
+                 : closed                     ? ""
+                 : open == '['                ? "]"
+                 : open == '('                ? ")"
+                                              : "";
+        break;
+    }
+    case MARKDOWN_CORE_SLOT_NAME:
+        if (owner == MARKDOWN_CORE_KIND_TOPIC) {
+            held = size > 0 && plain(&out, value, size, " \t#", row);
+        } else {
+            /* A final backslash would escape the label or braces after. */
+            held =
+                size > 0 && value[size - 1] != '\\' && !opaque(value, size) && plain(&out, value, size, " \t[{:", row);
+            closer = owner == MARKDOWN_CORE_KIND_DIRECTIVE && !closed ? "[]" : "";
+        }
+        break;
+    case MARKDOWN_CORE_SLOT_ID:
+        if (owner == MARKDOWN_CORE_KIND_PARAGRAPH || owner == MARKDOWN_CORE_KIND_LIST_ITEM ||
+            owner == MARKDOWN_CORE_KIND_LIST || owner == MARKDOWN_CORE_KIND_CALLOUT ||
+            owner == MARKDOWN_CORE_KIND_TABLE) {
+            /* A block identifier: ASCII letters, numerals and hyphens. */
+            held = word(value, size, "-") && plain(&out, value, size, "", row);
+            closer = closed ? "" : "#";
+            break;
+        }
+        /* fall through */
+    case MARKDOWN_CORE_SLOT_CLASS:
+    case MARKDOWN_CORE_SLOT_RECORD:
+        /* A shorthand or a name keeps its bytes; a final backslash would
+         * escape the container's closer. */
+        held = size > 0 && value[size - 1] != '\\' && !opaque(value, size) &&
+               plain(&out, value, size, " \t=}\"'{", row) &&
+               !(kind == MARKDOWN_CORE_SLOT_RECORD &&
+                 (value[0] == '#' || value[0] == '.' || (size == 1 && value[0] == '-')));
+        closer = unfinished(context, slot, tail, rest, '}') ? "}" : "";
+        break;
+    case MARKDOWN_CORE_SLOT_VALUE:
+        if (owner == MARKDOWN_CORE_KIND_METADATA) {
+            held = false;
+            break;
+        }
+        held = !closes(value, size) && spell_attribute(&out, slot, context->line, row, value, size);
+        closer = unfinished(context, slot, tail, rest, '}') ? "}" : "";
+        break;
+    case MARKDOWN_CORE_SLOT_VARIANT:
+        held = word(value, size, "_-") && plain(&out, value, size, "", row);
+        closer = unfinished(context, slot, tail, rest, ']') ? "]" : "";
+        break;
+    case MARKDOWN_CORE_SLOT_INFO:
+        /* The slot is the info string's first word, the language. */
+        held = size > 0 && !memchr(value, ' ', size) && !memchr(value, '\t', size) &&
+               !(fence == '`' && memchr(value, '`', size));
+        if (held) {
+            escaped(&out, value, size, "\\{", row);
+        }
+        break;
+    default:
+        held = false;
+        break;
+    }
+    if (held && fence && kind != MARKDOWN_CORE_SLOT_INFO) {
+        /* A backtick fence's info string holds no backtick. */
+        held = !(fence == '`' && memchr(out.text, '`', out.size));
+    }
+    /* The spelling must leave the constructs around the slot as they are:
+     * it ends none the line opens before it, begins no directive, and
+     * leaves a delimiter run or a citation's `@` after it the byte class
+     * before it it had. */
+    if (held && kind != MARKDOWN_CORE_SLOT_INFO) {
+        held = !ends(context, slot, &out) && !names_directive(context, slot, &out, closer, tail, rest);
+    }
+    if (held && !*closer && rest && (among(tail[0], "*_~^@") || (tail[0] == '=' && rest > 1 && tail[1] == '='))) {
+        const uint8_t was = slot->end > 0 ? context->line[slot->end - 1] : 0;
+        const uint8_t now = out.size ? out.text[out.size - 1] : slot->start > 0 ? context->line[slot->start - 1] : 0;
+        held = flank(was) == flank(now);
+    }
+    bool whole = true;
+    if (held && !scans(context, slot, &out, tail, rest, &whole)) {
+        markdown_core_free(made);
+        return MARKDOWN_CORE_ALLOCATION_FAILED;
+    }
+    if (!held || !whole) {
+        markdown_core_free(made);
+        return MARKDOWN_CORE_OK;
+    }
+    made->text = out.text;
+    made->cursor = out.size;
+    for (const char *c = closer; *c; c++) {
+        put(&out, (uint8_t)*c);
+    }
+    made->size = out.size;
+    *insertion = made;
+    return MARKDOWN_CORE_OK;
+}
+
+void markdown_core_insertion_free(markdown_core_insertion *insertion) { markdown_core_free(insertion); }

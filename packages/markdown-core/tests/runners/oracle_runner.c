@@ -29,6 +29,7 @@
  *
  * The context fixture's cursor marks are dropped, so its examples are
  * documents like any other. */
+#include <ctype.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -1010,6 +1011,860 @@ static const char *kind_name(markdown_core_node_kind kind) {
     return name;
 }
 
+/* THE SPELLING CHECK (plan 3.1, `spell`; plan 8, oracle in_parens trip). Each
+ * value is spelled in the slot, the spell_mode written over the slot's source
+ * and the text parsed; so is the sentinel, the witness. The two trees must
+ * agree but for the value where the witness holds the sentinel: the value
+ * lands in the field the sentinel does, whole, and nothing else changes. A
+ * slot that the document leaves open is checked too, since the spell_mode
+ * writes its closer. A value the slot refuses must be one its grammar
+ * cannot hold (refusable). */
+static bool spell_mode;
+
+static const char *const VALUES[] = {
+    "qz xq",        "qz|xq",     "qz]xq",
+    "qz[xq",        "qz]]xq",    "qz)xq",
+    "qz(xq",        "qz\\xq",    "qzxq\\",
+    "qz#xq",        "qz}xq",     "qz{xq",
+    "qz\"xq",       "qz'xq",     "qz<xq",
+    "qz>xq",        "qz&amp;xq", "qz&xq",
+    "qz*xq",        "qz`xq",     "qz=xq",
+    "qz.xq",        "qz-xq",     "qz_xq",
+    "qz@xq",        "qz^xq",     "qz:xq",
+    "qz/xq",        "qz%xq",     "qz%%xq",
+    "qz$xq",        "qz!xq",     "qz\xe4\xb8\xadxq",
+    "qz\xc3\xa9xq", "qz\txq",    "",
+    " qzxq",        "qzxq ",     "^qzxq",
+    "#qzxq",        "qz##xq",    "<qzxq>",
+    "qz\\|xq",      "qz~xq",     "qz+xq",
+    "qz==xq",       "qz;xq",     "qz,xq",
+    "qz?xq",        "qz\\]xq",   "{qzxq}",
+    "qz{x}q",       "-qzxq",     "qzxq-",
+    "qz--xq",       "qz&#35;xq", "qz\nxq",
+};
+enum { VALUE_COUNT = sizeof(VALUES) / sizeof(VALUES[0]) };
+
+static bool holds(const char *value, const char *set) {
+    for (const char *c = value; *c; c++) {
+        if (strchr(set, *c)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool ascii_word(const char *value, const char *also) {
+    for (const char *c = value; *c; c++) {
+        const unsigned char u = (unsigned char)*c;
+        if (!(u >= 0x80 || (u >= '0' && u <= '9') || ((u | 0x20) >= 'a' && (u | 0x20) <= 'z') || strchr(also, u))) {
+            return false;
+        }
+    }
+    return *value != 0;
+}
+
+/* Whether `value` holds a byte that opens a literal token: a code span,
+ * math, an autolink or HTML, or a comment. A raw field cannot escape it,
+ * and text after the slot may close it. */
+static bool literal(const char *value) { return holds(value, "`$<>") || strstr(value, "%%"); }
+
+/* Whether the grammar holds `value` in the slot in no spell_mode, by the
+ * dialect's own words (docs/specs/dialect): a refusal of any other value
+ * fails the check. `row` is whether the slot is in a table's cell, and
+ * `wrap` the byte before the slot. */
+/* Whether the line before `from` leaves an `open` no `close` matches. */
+static bool opened(const uint8_t *source, size_t from, char open, char close) {
+    size_t start = from, depth = 0;
+    while (start > 0 && source[start - 1] != '\n') {
+        start--;
+    }
+    for (size_t i = start; i < from; i++) {
+        if (source[i] == '\\') {
+            i++;
+        } else if (source[i] == open) {
+            depth++;
+        } else if (source[i] == close && depth) {
+            depth--;
+        }
+    }
+    return depth > 0;
+}
+
+/* Whether the value would end a construct the line opens before it: a
+ * bracket or a parenthesis it does not match, or a brace or an `=`, which
+ * a name's or a bare value's scan reads escaped or not. */
+static bool ends(const char *value, const uint8_t *source, size_t from) {
+    const bool in_brackets = opened(source, from, '[', ']'), in_parens = opened(source, from, '(', ')'),
+               in_braces = opened(source, from, '{', '}');
+    long brackets = 0, parens = 0;
+    for (const char *c = value; *c; c++) {
+        if (in_braces && (*c == '}' || *c == '=')) {
+            return true;
+        }
+        if (*c == '\\' && c[1]) {
+            c++;
+            continue;
+        }
+        if ((*c == ']' && !brackets && in_brackets) || (*c == ')' && !parens && in_parens)) {
+            return true;
+        }
+        brackets += *c == '[' ? 1 : *c == ']' ? -1 : 0;
+        parens += *c == '(' ? 1 : *c == ')' ? -1 : 0;
+    }
+    return (brackets && in_brackets) || (parens && in_parens);
+}
+
+/* Whether a `:` before or in the value begins a directive whose name
+ * runs on through it, and past the slot, to a label or braces. */
+static bool directs(const char *value, const uint8_t *source, size_t length, size_t from, size_t to, bool own) {
+    bool run = false;
+    for (size_t i = own ? 0 : from; i > 0 && source[i - 1] != '\n'; i--) {
+        if (strchr(" \t[{:", source[i - 1])) {
+            run = source[i - 1] == ':';
+            break;
+        }
+    }
+    for (const char *c = value; *c; c++) {
+        if ((*c == '[' || *c == '{') && run) {
+            return true;
+        }
+        run = *c == ':' || (run && *c != ' ' && *c != '\t');
+    }
+    for (size_t i = to; i < length && run; i++) {
+        if (strchr(" \t\r\n[{:", source[i])) {
+            return source[i] == '[' || source[i] == '{';
+        }
+    }
+    return false;
+}
+
+/* Whether a delimiter run or a citation's `@` begins at `at`. */
+static bool delimits(const uint8_t *source, size_t length, size_t at) {
+    return at < length &&
+           (strchr("*_~^@", source[at]) || (source[at] == '=' && at + 1 < length && source[at + 1] == '='));
+}
+
+/* Whether the line before `from` leaves a cross link, or an autolink or a
+ * tag, open. */
+static bool crossed(const uint8_t *source, size_t from) {
+    size_t start = from, cross = 0;
+    while (start > 0 && source[start - 1] != '\n') {
+        start--;
+    }
+    for (size_t i = start; i + 1 < from; i++) {
+        if (source[i] == source[i + 1] && (source[i] == '[' || source[i] == ']')) {
+            cross = source[i] == '[' ? cross + 1 : cross ? cross - 1 : 0;
+            i++;
+        }
+    }
+    return cross > 0;
+}
+
+static bool marked_up(const uint8_t *source, size_t from, unsigned char wrap) {
+    size_t start = from;
+    while (start > 0 && source[start - 1] != '\n') {
+        start--;
+    }
+    bool in_markup = false;
+    for (size_t i = start; i < from - (wrap == '<'); i++) {
+        const unsigned char next = source[i + 1];
+        if (source[i] == '<' && (strchr("/!?", next) || isalpha(next))) {
+            in_markup = true;
+        } else if (source[i] == '>') {
+            in_markup = false;
+        }
+    }
+    return in_markup;
+}
+
+static int flank(unsigned char c) { return c == ' ' || c == '\t' || c == '\n' || !c ? 0 : ispunct(c) ? 1 : 2; }
+
+static bool refusable(const char *kind, const char *owner, const char *value, bool row, unsigned char wrap,
+                      const uint8_t *source, size_t length, size_t from, size_t to) {
+    if (strchr(value, '\n')) {
+        return true;
+    }
+    const size_t size = strlen(value);
+    /* A code span's backtick, a formula's `$` or a comment's `%%` closes
+     * one the text before opens, escaped or not. */
+    if (holds(value, "`$") || strstr(value, "%%")) {
+        return true;
+    }
+    /* A value that changes the byte class before a delimiter run or a
+     * citation's `@` changes what the run or the `@` opens; a key in
+     * braces or a quoted value ends in punctuation. */
+    if (delimits(source, length, to)) {
+        const unsigned char was = to > 0 ? source[to - 1] : 0;
+        const unsigned char now = size ? (unsigned char)value[size - 1] : from > 0 ? source[from - 1] : 0;
+        if (flank(was) != flank(now) || !strcmp(kind, "bib") || !strcmp(kind, "value")) {
+            return true;
+        }
+    }
+    if (strcmp(kind, "info") &&
+        (ends(value, source, from) ||
+         directs(value, source, length, from, to, !strcmp(kind, "name") && strcmp(owner, "Topic")))) {
+        return true;
+    }
+    if (strcmp(kind, "info") && ((crossed(source, from) && strchr(value, '|')) ||
+                                 (marked_up(source, from, wrap) && (!size || holds(value, " \t\"'<>"))))) {
+        return true;
+    }
+    /* A key that needs braces writes a `}`. */
+    if (!strcmp(kind, "bib") && opened(source, from, '{', '}') && !ascii_word(value, "")) {
+        return true;
+    }
+    const bool cross = !strcmp(owner, "CrossLink") || !strcmp(owner, "CrossEmbedded");
+    const bool brace = wrap == '{' && from >= 2 && source[from - 2] == '@';
+    if (!strcmp(kind, "dest") && cross) {
+        return !size || literal(value) || holds(value, "|[]#") || value[size - 1] == '\\';
+    }
+    if (!strcmp(kind, "anchor") && cross) {
+        return !size || literal(value) || holds(value, "|[]") || value[0] == '#' || value[size - 1] == '#' ||
+               strstr(value, "##") || value[0] == '^' || value[size - 1] == '\\';
+    }
+    if (!strcmp(kind, "dest") || !strcmp(kind, "anchor")) {
+        /* A fragment after a bare path holds no space, nor does a
+         * destination that goes on after the slot, since `<...>` is a whole
+         * destination; a destination holds every other value. */
+        const bool spaced = !size || holds(value, " \t") || value[0] == '<';
+        const bool goes = to < length && !strchr(") \t\r\n", source[to]);
+        return wrap != '<' && spaced && (!strcmp(kind, "anchor") || goes);
+    }
+    if (!strcmp(kind, "label") || !strcmp(kind, "footnote")) {
+        bool odd = false, bracket = false;
+        for (const char *c = value; *c; c++) {
+            bracket = bracket || (!odd && (*c == '[' || *c == ']'));
+            odd = *c == '\\' && !odd;
+        }
+        bool blank = true;
+        for (const char *c = value; *c; c++) {
+            blank = blank && (*c == ' ' || *c == '\t');
+        }
+        /* A footnote's label holds no bracket, even escaped: the
+         * definition would be a link reference's. */
+        return blank || bracket || odd || literal(value) || (row && strchr(value, '|')) ||
+               (!strcmp(kind, "label") && value[0] == '^') || (!strcmp(kind, "footnote") && holds(value, " \t[]"));
+    }
+    if (!strcmp(kind, "bib") || !strcmp(kind, "specimen")) {
+        int depth = 0;
+        bool unbalanced = false;
+        for (const char *c = value; *c; c++) {
+            depth += *c == '{' ? 1 : *c == '}' ? -1 : 0;
+            unbalanced = unbalanced || depth < 0;
+        }
+        if (!size || literal(value) || holds(value, " \t") || unbalanced || depth || (row && strchr(value, '|'))) {
+            return true;
+        }
+        if (!strcmp(kind, "specimen")) {
+            return !ascii_word(value, "-_") || value[0] == '-' || value[size - 1] == '-' || strstr(value, "--");
+        }
+        (void)brace;
+        return false;
+    }
+    if (!strcmp(kind, "name") && !strcmp(owner, "Topic")) {
+        return !ascii_word(value, "_-/") || value[0] == '/' || value[size - 1] == '/' || strstr(value, "//");
+    }
+    if (!strcmp(kind, "name")) {
+        return !size || literal(value) || value[size - 1] == '\\' || holds(value, " \t[{:") ||
+               (row && strchr(value, '|'));
+    }
+    if (!strcmp(kind, "id") && (!strcmp(owner, "Paragraph") || !strcmp(owner, "ListItem") || !strcmp(owner, "List") ||
+                                !strcmp(owner, "Callout") || !strcmp(owner, "Table"))) {
+        return !ascii_word(value, "-") || holds(value, "\xc3\xe4");
+    }
+    if (!strcmp(kind, "class") && !strcmp(owner, "DirectiveBlock") && holds(value, ":{")) {
+        /* A nameless container's class word is a word. */
+        return true;
+    }
+    if (!strcmp(kind, "id") || !strcmp(kind, "class") || !strcmp(kind, "record")) {
+        /* A shorthand or a name keeps its bytes, so a final backslash
+         * would escape the closer after it. */
+        return !size || literal(value) || value[size - 1] == '\\' || holds(value, " \t=}\"'{") ||
+               (row && strchr(value, '|')) ||
+               (!strcmp(kind, "record") && (value[0] == '#' || value[0] == '.' || !strcmp(value, "-")));
+    }
+    if (!strcmp(kind, "value")) {
+        /* A backtick fence's info string holds no backtick. */
+        size_t start = from;
+        while (start > 0 && source[start - 1] != '\n') {
+            start--;
+        }
+        while (start < from && (source[start] == ' ' || source[start] == '>')) {
+            start++;
+        }
+        return !strcmp(owner, "CodeBlock") && source[start] == '`' && strchr(value, '`');
+    }
+    if (!strcmp(kind, "variant")) {
+        return !ascii_word(value, "_-") || holds(value, "\xc3\xe4");
+    }
+    if (!strcmp(kind, "info")) {
+        /* The slot is the info string's first word. */
+        return !size || holds(value, " \t`");
+    }
+    return true;
+}
+
+/* The value as the dump writes a string, between its quotes. */
+static char *dumped(const char *value) {
+    char *out = malloc(strlen(value) * 6 + 1), *at = out;
+    if (!out) {
+        return NULL;
+    }
+    for (const unsigned char *c = (const unsigned char *)value; *c; c++) {
+        if (*c == '"' || *c == '\\') {
+            *at++ = '\\';
+            *at++ = (char)*c;
+        } else if (*c == '\b' || *c == '\t' || *c == '\n' || *c == '\f' || *c == '\r') {
+            *at++ = '\\';
+            *at++ = *c == '\b' ? 'b' : *c == '\t' ? 't' : *c == '\n' ? 'n' : *c == '\f' ? 'f' : 'r';
+        } else if (*c < 0x20) {
+            at += sprintf(at, "\\u%04x", *c);
+        } else {
+            *at++ = (char)*c;
+        }
+    }
+    *at = 0;
+    return out;
+}
+
+/* `text` with every `from` replaced by `to`, in place of `text`. */
+static char *swapped(char *text, const char *from, const char *to) {
+    const size_t a = strlen(from), b = strlen(to);
+    if (!a || !text) {
+        return text;
+    }
+    size_t count = 0;
+    for (const char *at = text; (at = strstr(at, from)); at += a) {
+        count++;
+    }
+    if (!count) {
+        return text;
+    }
+    char *out = malloc(strlen(text) + count * (b > a ? b - a : 0) + 1), *put = out;
+    if (!out) {
+        free(text);
+        return NULL;
+    }
+    const char *at = text, *hit;
+    while ((hit = strstr(at, from))) {
+        memcpy(put, at, (size_t)(hit - at));
+        put += hit - at;
+        memcpy(put, to, b);
+        put += b;
+        at = hit + a;
+    }
+    strcpy(put, at);
+    free(text);
+    return out;
+}
+
+/* Whether the dump line holding offset `at` is a node of kind `owner`. */
+static bool line_of(const uint8_t *dump, size_t size, size_t at, const char *owner) {
+    size_t start = at;
+    while (start > 0 && dump[start - 1] != '\n') {
+        start--;
+    }
+    size_t end = start;
+    while (end < size && dump[end] != '\n') {
+        end++;
+    }
+    char *line = malloc(end - start + 1);
+    if (!line) {
+        return false;
+    }
+    memcpy(line, dump + start, end - start);
+    line[end - start] = 0;
+    line_parts parts;
+    split_line(line, &parts);
+    const bool same = same_kind(&parts, owner, strlen(owner));
+    free(line);
+    return same;
+}
+
+/* The dump of `source` with its scopes, an info string's derived language
+ * when `info`, and the anchor of every node not of kind `owner` removed:
+ * a heading's anchor is made from its text, which a field in it is part
+ * of. NULL when it does not parse. */
+static char *plain_dump(const uint8_t *source, size_t length, bool info, const char *owner) {
+    markdown_core_document *document = NULL;
+    if (markdown_core_document_parse(source, length, &document) != MARKDOWN_CORE_OK) {
+        return NULL;
+    }
+    uint8_t *dump = NULL;
+    size_t size = 0;
+    const markdown_core_status status =
+        markdown_core_document_dump(document, markdown_core_document_root(document), source, length, &dump, &size);
+    markdown_core_document_free(document);
+    if (status != MARKDOWN_CORE_OK) {
+        return NULL;
+    }
+    char *out = malloc(size + 1), *put = out;
+    if (!out) {
+        markdown_core_dump_free(dump);
+        return NULL;
+    }
+    for (size_t i = 0; i < size;) {
+        const char *rest = (const char *)dump + i;
+        const bool scope = size - i > 7 && !memcmp(rest, " scope=", 7);
+        const bool language = info && size - i > 10 && !memcmp(rest, " language=", 10);
+        const bool anchor = size - i > 8 && !memcmp(rest, " anchor=", 8) && !line_of(dump, size, i, owner);
+        if (scope || language || anchor) {
+            i += scope ? 7 : language ? 10 : 8;
+            bool quoted = false;
+            for (; i < size && (quoted || (dump[i] != ' ' && dump[i] != '\n')); i++) {
+                if (quoted && dump[i] == '\\') {
+                    i++;
+                } else if (dump[i] == '"') {
+                    quoted = !quoted;
+                }
+            }
+            continue;
+        }
+        *put++ = (char)dump[i++];
+    }
+    *put = 0;
+    markdown_core_dump_free(dump);
+    return out;
+}
+
+/* A label as the definitions match it: trimmed, its white space runs one
+ * space, ASCII letters lowercase. */
+static char *normalized(const char *value) {
+    char *out = malloc(strlen(value) + 1), *put = out;
+    if (!out) {
+        return NULL;
+    }
+    bool space = false;
+    for (const char *c = value; *c; c++) {
+        if (*c == ' ' || *c == '\t') {
+            space = put != out;
+            continue;
+        }
+        if (space) {
+            *put++ = ' ';
+            space = false;
+        }
+        *put++ = (char)((*c >= 'A' && *c <= 'Z') ? *c + 32 : *c);
+    }
+    *put = 0;
+    return out;
+}
+
+/* The source with the slot's `[from, to)` replaced by `text`, `later` at
+ * the end of its line, and the definition a reference needs to resolve,
+ * spelled `label`, appended. */
+static uint8_t *spelled_source(const uint8_t *source, size_t length, size_t from, size_t to, const char *text,
+                               size_t text_size, const char *later, const char *kind, const char *owner,
+                               const char *label, size_t label_size, size_t *out_size) {
+    char tail[2048] = "";
+    const bool call = !strcmp(owner, "Link") || !strcmp(owner, "Embedded");
+    if (!strcmp(kind, "label") && call) {
+        snprintf(tail, sizeof(tail), "\n\n[%.*s]: /o\n", (int)label_size, label);
+    } else if (!strcmp(kind, "footnote") && !strcmp(owner, "Citation")) {
+        snprintf(tail, sizeof(tail), "\n\n[^%.*s]: o\n", (int)label_size, label);
+    } else if (!strcmp(kind, "specimen") && !strcmp(owner, "Citation")) {
+        snprintf(tail, sizeof(tail), "\n\n(@%.*s) o\n", (int)label_size, label);
+    }
+    size_t end = to;
+    while (end < length && source[end] != '\n' && source[end] != '\r') {
+        end++;
+    }
+    const size_t extra = strlen(tail), more = strlen(later);
+    *out_size = length - (to - from) + text_size + more + extra;
+    uint8_t *out = malloc(*out_size + 1), *put = out;
+    if (!out) {
+        return NULL;
+    }
+    memcpy(put, source, from);
+    put += from;
+    memcpy(put, text, text_size);
+    put += text_size;
+    memcpy(put, source + to, end - to);
+    put += end - to;
+    memcpy(put, later, more);
+    put += more;
+    memcpy(put, source + end, length - end);
+    put += length - end;
+    memcpy(put, tail, extra);
+    out[*out_size] = 0;
+    return out;
+}
+
+/* The tree of the slot's source spelled `made`, with a definition for its
+ * label; NULL when it does not parse. */
+static char *spelled_tree(const uint8_t *source, size_t length, size_t from, size_t to,
+                          const markdown_core_insertion *made, const char *later, const char *kind, const char *owner) {
+    size_t size = 0;
+    uint8_t *text = spelled_source(source, length, from, to, (const char *)made->text, made->size, later, kind, owner,
+                                   (const char *)made->text, made->cursor, &size);
+    char *tree = text ? plain_dump(text, size, !strcmp(kind, "info"), owner) : NULL;
+    if (tree && getenv("ORACLE_VERBOSE")) {
+        fprintf(stderr, "  spelled: %s\n", (const char *)text);
+    }
+    free(text);
+    return tree;
+}
+
+/* The offset of a dump line's node name, past the tree's drawing. */
+static size_t indent(const char *line) {
+    size_t at = 0;
+    while (line[at] && !isalpha((unsigned char)line[at])) {
+        at++;
+    }
+    return at;
+}
+
+/* `tree` without the children of each node whose line holds `needle`. */
+static void pruned(char *tree, const char *needle) {
+    if (!tree) {
+        return;
+    }
+    char *out = tree;
+    const char *line = tree;
+    size_t depth = SIZE_MAX;
+    while (*line) {
+        const char *next = strchr(line, '\n');
+        next = next ? next + 1 : line + strlen(line);
+        const size_t at = indent(line);
+        if (depth != SIZE_MAX && at <= depth) {
+            depth = SIZE_MAX;
+        }
+        if (depth == SIZE_MAX) {
+            size_t size = (size_t)(next - line);
+            const char *found = seek(line, size, needle, strlen(needle));
+            memmove(out, line, size);
+            if (found) {
+                /* Its count of children goes with them. */
+                depth = at;
+                char *count = (char *)seek(out, size, " children=", 10);
+                if (count) {
+                    size_t width = 10;
+                    while (isdigit((unsigned char)count[width])) {
+                        width++;
+                    }
+                    memmove(count, count + width, size - (size_t)(count - out) - width);
+                    size -= width;
+                }
+            }
+            out += size;
+        }
+        line = next;
+    }
+    *out = 0;
+}
+
+/* Whether a line of `tree` is a node of kind `owner` with the sentinel in a
+ * field the slot writes. */
+static bool lands_in(const char *tree, const char *owner, bool id) {
+    char *lines = copy(tree);
+    bool lands = false;
+    for (char *line = lines; line && *line && !lands;) {
+        char *end = strchr(line, '\n');
+        if (end) {
+            *end = 0;
+        }
+        lands = takes_sentinel(line, owner, id);
+        line = end ? end + 1 : NULL;
+    }
+    free(lines);
+    return lands;
+}
+
+/* Whether the slot holds no value at all: a label that follows `@{`, which
+ * no braces write; a key or a topic's segment that the text after it goes
+ * on, so that no value is read whole, as a value the text after it
+ * continues; or a value that goes on to another
+ * line, which a spell_mode on the cursor's line cannot replace. A quote that
+ * the line does not pair tells the last. */
+static bool unheld(const char *kind, const char *owner, const uint8_t *source, size_t length, size_t from, size_t to,
+                   bool closed) {
+    const unsigned char next = to < length ? source[to] : 0;
+    /* A delimiter run after the slot that the sentinel's letters would
+     * keep from opening, or a destination that goes on after it. */
+    if (delimits(source, length, to) && flank(to > 0 ? source[to - 1] : 0) != flank('q')) {
+        return true;
+    }
+    if ((!strcmp(kind, "dest") || !strcmp(kind, "anchor")) && strcmp(owner, "CrossLink") &&
+        strcmp(owner, "CrossEmbedded") && next && !strchr(") \t\r\n", next)) {
+        return true;
+    }
+    /* A label that goes on to the next line, or a slot whose `|` keeps
+     * its line from a table's row. */
+    size_t end = to;
+    while (end < length && source[end] != '\n') {
+        end++;
+    }
+    size_t start = from;
+    while (start > 0 && source[start - 1] != '\n') {
+        start--;
+    }
+    if ((!strcmp(kind, "label") || !strcmp(kind, "footnote")) &&
+        ((closed && !memchr(source + to, ']', end - to)) || !memchr(source + start, '[', from - start))) {
+        return true;
+    }
+    if (memchr(source + from, '|', to - from)) {
+        return true;
+    }
+    /* Text that reads as a tag but for the quotes in the slot reads as
+     * one once a value replaces them. */
+    for (size_t i = from; i < to && marked_up(source, from, 0); i++) {
+        if (source[i] == '"' || source[i] == '\'') {
+            return true;
+        }
+    }
+    if (!strcmp(kind, "specimen")) {
+        return (from >= 2 && source[from - 1] == '{' && source[from - 2] == '@') ||
+               (next && (strchr(".:-_/", next) || isalnum(next)));
+    }
+    if (!strcmp(kind, "name") && !strcmp(owner, "Topic")) {
+        return next == '/';
+    }
+    if (!strcmp(kind, "value") && next && !strchr(" \t}\r\n", next)) {
+        return true;
+    }
+    if (!strcmp(kind, "value")) {
+        size_t quotes = 0;
+        for (size_t i = start; i < end; i++) {
+            quotes += source[i] == '"' && (i == start || source[i - 1] != '\\');
+        }
+        return quotes % 2 == 1;
+    }
+    return false;
+}
+
+/* Whether the line at `at` is a grid table's border or a simple table's
+ * rule: lines whose columns their bytes' positions set. */
+static bool ruled(const uint8_t *source, size_t length, size_t at) {
+    size_t dashes = 0, i = at;
+    for (; i < length && source[i] != '\n'; i++) {
+        if (source[i] == '-' || source[i] == '=') {
+            dashes++;
+        } else if (!strchr(" :+|", source[i])) {
+            return false;
+        }
+    }
+    return dashes >= 3 && (source[at] == '+' || !memchr(source + at, '|', i - at));
+}
+
+/* Whether the cursor's line is a row of a table its layout sets: a value
+ * of another size moves its columns. */
+static bool laid(const uint8_t *source, size_t length, size_t from) {
+    size_t start = from, end = from;
+    while (start > 0 && source[start - 1] != '\n') {
+        start--;
+    }
+    while (end < length && source[end] != '\n') {
+        end++;
+    }
+    size_t before = start;
+    if (before > 0) {
+        before--;
+        while (before > 0 && source[before - 1] != '\n') {
+            before--;
+        }
+    }
+    return (start > 0 && ruled(source, length, before)) || (end + 1 < length && ruled(source, length, end + 1));
+}
+
+static void check_spell(report *r, const uint8_t *source, size_t length, size_t cursor, size_t from, size_t to,
+                        const markdown_core_context *context, size_t index, const markdown_core_slot *slot, bool row,
+                        const char *what, const char *kind, const char *owner) {
+    markdown_core_insertion *witness = NULL;
+    const bool laid_out = laid(source, length, from);
+    if (laid_out && to - from != SENTINEL_LENGTH) {
+        return;
+    }
+    /* A `|` in the slot may keep its line from a table's row, and a quote
+     * in it may end a title or a value the line opens before it: the
+     * slot's text is what the reading around it stands on. */
+    size_t quotes = 0, start = from;
+    while (start > 0 && source[start - 1] != '\n') {
+        start--;
+    }
+    for (size_t i = start; i < from; i++) {
+        quotes += source[i] == '"';
+    }
+    if (memchr(source + from, '|', to - from) || (quotes % 2 && memchr(source + from, '"', to - from))) {
+        return;
+    }
+    r->checks++;
+    if (markdown_core_slot_spell(context, index, (const uint8_t *)SENTINEL, SENTINEL_LENGTH, &witness) !=
+            MARKDOWN_CORE_OK ||
+        !witness) {
+        if (!witness && unheld(kind, owner, source, length, from, to, slot->closed)) {
+            return;
+        }
+        fail_at(r, source, length, cursor, from, to, what, "the slot refuses the sentinel");
+        markdown_core_insertion_free(witness);
+        return;
+    }
+    /* A construct whose field goes on after the slot, as a path before its
+     * fragment, closes after the field: the user writes that closer. */
+    static const char *const LATER[] = {"", ">)", ">", ")", "]]", "]", "}", NULL};
+    const bool id = !strcmp(kind, "id") || !strcmp(kind, "value");
+    /* A block's slot reads as closed while its attribute tail or variant
+     * is not (step 2d tells them apart), so its closer may be written. */
+    const bool block = !strcmp(owner, "Heading") || !strcmp(owner, "CodeBlock") || !strcmp(owner, "DirectiveBlock") ||
+                       !strcmp(owner, "Callout");
+    const bool closed = slot->closed && !block;
+    const char *later = "";
+    char *expected = NULL;
+    for (size_t i = 0; LATER[i] && (i == 0 || !closed); i++) {
+        free(expected);
+        later = LATER[i];
+        expected = spelled_tree(source, length, from, to, witness, later, kind, owner);
+        if (expected && lands_in(expected, owner, id)) {
+            break;
+        }
+    }
+    markdown_core_insertion_free(witness);
+    /* An open construct the text after the slot keeps from holding, with
+     * any closer, is text whatever the slot holds: no value is judged. */
+    /* So is a slot whose text keeps a construct around it from holding,
+     * as a space or a quote in a destination it encloses, which any value
+     * in its place lets hold. */
+    bool breaks = false;
+    for (size_t i = from; i < to && !breaks; i++) {
+        breaks = strchr(" \t\"'(){}[]\\|", source[i]) != NULL;
+    }
+    if (expected && !lands_in(expected, owner, id) && (!slot->closed || breaks)) {
+        free(expected);
+        return;
+    }
+    if (expected && breaks) {
+        /* Where the witness lands but the nodes around it change, the
+         * slot's text kept them from it. */
+        char *was = plain_dump(source, length, !strcmp(kind, "info"), owner);
+        size_t lines[2] = {0, 0};
+        for (const char *c = was ? was : ""; *c; c++) {
+            lines[0] += *c == '\n';
+        }
+        for (const char *c = expected; *c; c++) {
+            lines[1] += *c == '\n';
+        }
+        free(was);
+        if (lines[0] != lines[1]) {
+            free(expected);
+            return;
+        }
+    }
+    if (!expected || !lands_in(expected, owner, id)) {
+        fail_at(r, source, length, cursor, from, to, what,
+                expected ? "the spelled sentinel lands in no field of the owner" : "the spelled text does not parse");
+        free(expected);
+        return;
+    }
+    const unsigned char wrap = from > 0 ? source[from - 1] : 0;
+    /* An `id` or `class` value is the node's identifier or classes, which
+     * drop an empty one and split one at its spaces: those are not
+     * judged. */
+    size_t key = from;
+    key -= key > 0 && (source[key - 1] == '"' || source[key - 1] == '\'');
+    const bool special =
+        !strcmp(kind, "value") &&
+        ((key >= 4 && !memcmp(source + key - 4, " id=", 4)) || (key >= 4 && !memcmp(source + key - 4, "{id=", 4)) ||
+         (key >= 7 && (!memcmp(source + key - 7, " class=", 7) || !memcmp(source + key - 7, "{class=", 7))));
+    for (size_t v = 0; v < VALUE_COUNT; v++) {
+        const char *value = VALUES[v];
+        if ((special && (!*value || holds(value, " \t"))) || (laid_out && strlen(value) != SENTINEL_LENGTH)) {
+            continue;
+        }
+        markdown_core_insertion *made = NULL;
+        r->checks++;
+        if (markdown_core_slot_spell(context, index, (const uint8_t *)value, strlen(value), &made) !=
+            MARKDOWN_CORE_OK) {
+            fail_at(r, source, length, cursor, from, to, what, "spell fails");
+            continue;
+        }
+        char why[256];
+        char *desc = dumped(value);
+        if (!made || strchr(value, '\n')) {
+            if (made) {
+                snprintf(why, sizeof(why), "spells \"%s\", which no field holds", desc);
+                fail_at(r, source, length, cursor, from, to, what, why);
+            } else if (!refusable(kind, owner, value, row, wrap, source, length, from, to)) {
+                snprintf(why, sizeof(why), "refuses \"%s\"", desc);
+                fail_at(r, source, length, cursor, from, to, what, why);
+            }
+            free(desc);
+            markdown_core_insertion_free(made);
+            continue;
+        }
+        /* The caret stands after the value, before the closer. */
+        bool placed = made->cursor <= made->size && (!closed || made->cursor == made->size);
+        for (size_t i = made->cursor; placed && i < made->size; i++) {
+            placed = strchr("[](){}>#\"'", made->text[i]) != NULL;
+        }
+        char *result = spelled_tree(source, length, from, to, made, later, kind, owner);
+        /* The value's forms in the dump, each the sentinel in the witness:
+         * a quoted string, a label as definitions match it, the same inside
+         * a longer string, as a destination before its fragment, and the
+         * value bare, as a class or a record's name. Each is marked first,
+         * so that no replacement reads another's. */
+        char *norm = normalized(value), *form = norm ? dumped(norm) : NULL;
+        char quoted[2][1024];
+        snprintf(quoted[0], sizeof(quoted[0]), "\"%s\"", desc);
+        snprintf(quoted[1], sizeof(quoted[1]), "\"%s\"", form ? form : "");
+        const char *forms[] = {quoted[0], quoted[1], desc, form, value};
+        const char *marks[] = {"\"\x01\"", "\"\x01\"", "\x01", "\x01", "\x01"};
+        for (size_t f = 0; f < 5 && result && *value; f++) {
+            if (forms[f] && *forms[f]) {
+                result = swapped(result, forms[f], marks[f]);
+            }
+        }
+        result = swapped(result, ".\"\x01\"", ".\x01");
+        result = swapped(result, "\x01", "qzxq");
+        /* The empty value is checked the other way: the witness with its
+         * sentinel taken out. */
+        char *want = *value ? copy(expected) : swapped(copy(expected), "qzxq", "");
+        if (!*value) {
+            free(result);
+            result = spelled_tree(source, length, from, to, made, later, kind, owner);
+        }
+        if (!strcmp(kind, "label")) {
+            /* A label that is also the link's text reads as inlines
+             * there, which the label does not write. */
+            pruned(result, "reference(\"qzxq\")");
+            pruned(want, "reference(\"qzxq\")");
+        }
+        const bool same = result && want && !strcmp(result, want);
+        free(want);
+        if (!placed || !same) {
+            snprintf(why, sizeof(why), "%s \"%s\" as \"%.*s\"", placed ? "misspells" : "misplaces the caret in", desc,
+                     (int)made->size, (const char *)made->text);
+            fail_at(r, source, length, cursor, from, to, what, why);
+            if (getenv("ORACLE_VERBOSE") && result) {
+                ts_print_line_diff(stderr, expected, result);
+            }
+        }
+        free(norm);
+        free(form);
+        free(desc);
+        free(result);
+        markdown_core_insertion_free(made);
+    }
+    free(expected);
+}
+
+/* Whether `position` is in a table's cell, whose `|` a field cannot hold
+ * bare. */
+static bool in_row(const markdown_core_document *document, const uint8_t *source, size_t length,
+                   markdown_core_position position) {
+    const markdown_core_node **nodes = NULL;
+    size_t count = 0;
+    bool row = false;
+    if (position.column > 1) {
+        position.column--;
+    }
+    if (markdown_core_document_path(document, position, source, length, &nodes, &count) == MARKDOWN_CORE_OK) {
+        for (size_t i = 0; i < count && !row; i++) {
+            row = markdown_core_node_get_kind(nodes[i]) == MARKDOWN_CORE_KIND_TABLE_CELL;
+        }
+        markdown_core_path_free(nodes);
+    }
+    return row;
+}
+
 /* The checks at every position of `source`. */
 static void check_example(report *r, const uint8_t *source, size_t length) {
     tree original;
@@ -1038,10 +1893,10 @@ static void check_example(report *r, const uint8_t *source, size_t length) {
         for (size_t i = 0; i < markdown_core_context_slot_count(context); i++) {
             markdown_core_slot slot;
             const char *name = "?";
-            if (markdown_core_context_slot_at(context, i, &slot) != MARKDOWN_CORE_OK || !slot.closed) {
+            if (markdown_core_context_slot_at(context, i, &slot) != MARKDOWN_CORE_OK || (!slot.closed && !spell_mode)) {
                 continue;
             }
-            closed = true;
+            closed = closed || slot.closed;
             const size_t from =
                 line_offset(source, length, slot.before.start.line) + (size_t)(slot.before.start.column - 1);
             const size_t to = line_offset(source, length, slot.after.end.line) + (size_t)slot.after.end.column;
@@ -1060,7 +1915,12 @@ static void check_example(report *r, const uint8_t *source, size_t length) {
             }
             markdown_core_slot_kind_name(slot.kind, &name);
             char what[96];
-            snprintf(what, sizeof(what), "slot %s %s", name, kind_name(slot.owner));
+            snprintf(what, sizeof(what), "%s %s %s", spell_mode ? "spell" : "slot", name, kind_name(slot.owner));
+            if (spell_mode) {
+                check_spell(r, source, length, at, from, to, context, i, &slot,
+                            in_row(document, source, length, position), what, name, kind_name(slot.owner));
+                continue;
+            }
             const bool call = slot.owner == MARKDOWN_CORE_KIND_LINK || slot.owner == MARKDOWN_CORE_KIND_EMBEDDED;
             const check_mode mode = !strcmp(name, "record")          ? CHECK_RECORD
                                     : !strcmp(name, "label") && call ? CHECK_CALL
@@ -1072,7 +1932,7 @@ static void check_example(report *r, const uint8_t *source, size_t length) {
             check_slot(r, source, length, at, from, to, what, name, kind_name(slot.owner), mode);
         }
         markdown_core_context_free(context);
-        if (!closed) {
+        if (!closed && !spell_mode) {
             check_gap(r, source, length, &original, at);
         }
         if (at < length && source[at] == '\n') {
@@ -1181,10 +2041,12 @@ int main(int argc, char **argv) {
         }
         first = 3;
     }
+    spell_mode = argc > first && !strcmp(argv[first], "--spell");
+    first += spell_mode;
     const bool generate = argc > first && !strcmp(argv[first], "--generate");
     first += generate;
     if (argc <= first && !generate) {
-        fputs("usage: oracle_runner [--exceptions FILE] [--generate] [FILE...]\n", stderr);
+        fputs("usage: oracle_runner [--exceptions FILE] [--spell] [--generate] [FILE...]\n", stderr);
         return 2;
     }
     size_t examples = 0;

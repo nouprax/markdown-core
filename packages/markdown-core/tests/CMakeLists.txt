@@ -333,6 +333,19 @@ markdown_core_add_test(
     --generate
     ${_markdown_core_context_sweep}
     "${MARKDOWN_CORE_CONTEXT_FIXTURE}")
+# elements: each slot's spelling of a set of values, applied and parsed,
+# against the sentinel's: the value lands in the sentinel's field, whole,
+# and nothing else changes; a value the slot refuses is one its grammar
+# cannot hold there (completion plan 3.1, step 2c).
+markdown_core_add_test(
+    elements_context_spell
+    elements
+    1800
+    oracle_runner
+    --spell
+    --generate
+    ${_markdown_core_context_sweep}
+    "${MARKDOWN_CORE_CONTEXT_FIXTURE}")
 # elements: attaching one element must not change another's block opener.
 markdown_core_add_test(elements_conflicts elements 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/elements-conflicts.txt")
