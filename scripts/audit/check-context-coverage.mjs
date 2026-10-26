@@ -29,8 +29,8 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8");
 
 const FIXTURE = "packages/markdown-core/tests/context/context.txt";
 
-/** The pairs whose scanner lands with the Metadata rework (plan step 2e). */
-const PENDING = new Set(["field/Metadata", "value/Metadata"]);
+/** The pairs whose scanner has not landed yet: none since plan step 2e. */
+const PENDING = new Set();
 
 const model = buildModel(
     JSON.parse(read("docs/specs/canonical-ast.json")),
