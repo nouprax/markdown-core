@@ -49,13 +49,6 @@ typedef struct {
  * caller frees; false when an allocation failed. */
 bool markdown_core_metadata_places_read(const unsigned char *text, size_t length,
                                         markdown_core_metadata_places *places);
-/* Reads the fields of the envelope `text`, as `places_read` takes it,
- * into `fields`, which the caller frees, as the parse does when `direct`
- * and with the YAML parser alone otherwise, counting into `*taken` the
- * members the direct reader read; false when an allocation failed. The
- * direct suite holds the two readings to each other. */
-bool markdown_core_metadata_fields_read(const unsigned char *text, size_t length, bool direct,
-                                        markdown_core_metadata_fields *fields, size_t *taken);
 /* Whether a plain scalar of `size` bytes of `text` resolves to text, not
  * to null, a boolean or a number. */
 bool markdown_core_metadata_text(const unsigned char *text, size_t size);

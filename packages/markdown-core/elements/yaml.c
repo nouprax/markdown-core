@@ -74,7 +74,8 @@ struct markdown_core_yaml_token {
     token_kind kind;
     markdown_core_yaml_mark start, end;
     markdown_core_yaml_style style;
-    unsigned char *text;
+    const unsigned char *text;
+    unsigned char *owned;
     size_t size, from, to;
 };
 
@@ -115,7 +116,9 @@ static bool marker(const parser *p, int c) {
 /* The width of the character at the mark, as the validation walked it. */
 static size_t width(const parser *p) {
     int32_t scalar;
-    return (size_t)markdown_core_utf8proc_decode(p->text + p->mark.at, (bufsize_t)(p->end - p->mark.at), &scalar);
+    return p->text[p->mark.at] < 0x80
+               ? 1
+               : (size_t)markdown_core_utf8proc_decode(p->text + p->mark.at, (bufsize_t)(p->end - p->mark.at), &scalar);
 }
 static void skip(parser *p) {
     p->mark.at += width(p);
@@ -126,16 +129,24 @@ static void skip_line(parser *p) {
     p->mark.line++;
     p->mark.column = 0;
 }
+/* Appends the text from `from` to `to`, each NUL as U+FFFD. */
+static void put(const parser *p, markdown_core_strbuf *text, size_t from, size_t to) {
+    for (;;) {
+        const unsigned char *nul = memchr(p->text + from, 0, to - from);
+        const size_t stop = nul ? (size_t)(nul - p->text) : to;
+        markdown_core_strbuf_put(text, p->text + from, (bufsize_t)(stop - from));
+        if (!nul) {
+            return;
+        }
+        markdown_core_strbuf_put(text, (const unsigned char *)"\xEF\xBF\xBD", 3);
+        from = stop + 1;
+    }
+}
 /* Appends the character at the mark, a NUL as U+FFFD, and skips it. */
 static void take(parser *p, markdown_core_strbuf *text) {
-    if (!p->text[p->mark.at]) {
-        markdown_core_strbuf_put(text, (const unsigned char *)"\xEF\xBF\xBD", 3);
-        skip(p);
-        return;
-    }
     const size_t at = p->mark.at;
     skip(p);
-    markdown_core_strbuf_put(text, p->text + at, (bufsize_t)(p->mark.at - at));
+    put(p, text, at, p->mark.at);
 }
 
 static bool fail(parser *p, const char *problem) {
@@ -158,10 +169,38 @@ static bool abandon(parser *p, markdown_core_strbuf *text, const char *problem) 
     return oom ? exhausted(p) : fail(p, problem);
 }
 
+/* Moves `text` into the token, which then owns it; an empty text is none. */
+static bool own(parser *p, token *t, markdown_core_strbuf *text) {
+    if (text->oom) {
+        markdown_core_strbuf_free(text);
+        return exhausted(p);
+    }
+    t->size = (size_t)text->size;
+    t->owned = t->size ? markdown_core_strbuf_detach(text) : NULL;
+    t->text = t->owned;
+    markdown_core_strbuf_free(text);
+    return !t->size || t->owned || exhausted(p);
+}
+
+/* A SCALAR'S TEXT is the bytes it is written in, read in place, unless
+ * reading it changes them: an escape, a doubled apostrophe, a NUL, which
+ * reads as U+FFFD, or a literal's indentation and line endings. Then the
+ * scanner writes the text into a buffer the token owns. */
+static bool view(parser *p, token *t, size_t from, size_t to) {
+    if (!memchr(p->text + from, 0, to - from)) {
+        t->text = p->text + from;
+        t->size = to - from;
+        return true;
+    }
+    markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT();
+    put(p, &text, from, to);
+    return own(p, t, &text);
+}
+
 /* THE QUEUE of tokens the scanner has read and the parser has not taken. */
 static void token_free(token *t) {
-    markdown_core_free(t->text);
-    t->text = NULL;
+    markdown_core_free(t->owned);
+    t->owned = NULL;
 }
 static bool insert(parser *p, size_t index, token t) {
     token *grown = markdown_core_reserve(p->tokens, &p->room, p->tail + 1, sizeof(*p->tokens));
@@ -409,6 +448,9 @@ static bool scan_quoted(parser *p, token *t, bool apostrophe) {
     const mark start = p->mark;
     const int quote = apostrophe ? '\'' : '"';
     markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT();
+    /* Whether the text is written into `text`: from the first character
+     * that reading changes on. */
+    bool copied = false;
     skip(p);
     const size_t from = p->mark.at;
     for (;;) {
@@ -419,12 +461,17 @@ static bool scan_quoted(parser *p, token *t, bool apostrophe) {
         if (newline(c)) {
             return abandon(p, &text, "found a line break in a quoted scalar");
         }
-        if (apostrophe && c == '\'' && peek(p, 1) == '\'') {
+        if (c == quote && !(apostrophe && peek(p, 1) == '\'')) {
+            break;
+        }
+        if (!copied && (c == 0 || c == (apostrophe ? '\'' : '\\'))) {
+            put(p, &text, from, p->mark.at);
+            copied = true;
+        }
+        if (apostrophe && c == '\'') {
             markdown_core_strbuf_putc(&text, '\'');
             skip(p);
             skip(p);
-        } else if (c == quote) {
-            break;
         } else if (!apostrophe && c == '\\') {
             /* JSON's escapes, with a surrogate pair written as two. */
             const char *found = among(peek(p, 1), "btnfr\"/\\") ? strchr("btnfr\"/\\", peek(p, 1)) : NULL;
@@ -467,27 +514,25 @@ static bool scan_quoted(parser *p, token *t, bool apostrophe) {
                 }
             }
             markdown_core_utf8proc_encode_char((int32_t)scalar, &text);
-        } else {
+        } else if (copied) {
             take(p, &text);
+        } else {
+            skip(p);
         }
     }
     const size_t to = p->mark.at;
     skip(p);
-    if (text.oom) {
+    *t = (token){.kind = SCALAR,
+                 .start = start,
+                 .end = p->mark,
+                 .style = apostrophe ? MARKDOWN_CORE_YAML_APOSTROPHE : MARKDOWN_CORE_YAML_QUOTE,
+                 .from = from,
+                 .to = to};
+    if (!copied) {
         markdown_core_strbuf_free(&text);
-        return exhausted(p);
+        return view(p, t, from, to);
     }
-    const size_t size = (size_t)text.size;
-    *t = (token){SCALAR,
-                 start,
-                 p->mark,
-                 apostrophe ? MARKDOWN_CORE_YAML_APOSTROPHE : MARKDOWN_CORE_YAML_QUOTE,
-                 size ? markdown_core_strbuf_detach(&text) : NULL,
-                 size,
-                 from,
-                 to};
-    markdown_core_strbuf_free(&text);
-    return !size || t->text || exhausted(p);
+    return own(p, t, &text);
 }
 
 /* A plain scalar, which its line ends: a scalar that would go on to the
@@ -496,8 +541,6 @@ static bool scan_quoted(parser *p, token *t, bool apostrophe) {
 static bool scan_plain(parser *p, token *t) {
     const mark start = p->mark;
     mark end = p->mark;
-    markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT();
-    size_t spaces = 0;
     for (;;) {
         if (marker(p, '-') || marker(p, '.') || peek(p, 0) == '#') {
             break;
@@ -505,16 +548,12 @@ static bool scan_plain(parser *p, token *t) {
         while (!blankz(peek(p, 0))) {
             const int c = peek(p, 0);
             if (p->depth && c == ':' && among(peek(p, 1), ",?[]{}")) {
-                return abandon(p, &text, "found unexpected ':'");
+                return fail(p, "found unexpected ':'");
             }
             if ((c == ':' && blankz(peek(p, 1))) || (p->depth && among(c, ",[]{}"))) {
                 break;
             }
-            if (spaces) {
-                markdown_core_strbuf_put(&text, p->text + end.at, (bufsize_t)spaces);
-                spaces = 0;
-            }
-            take(p, &text);
+            skip(p);
             end = p->mark;
         }
         if (!blank(peek(p, 0))) {
@@ -523,17 +562,10 @@ static bool scan_plain(parser *p, token *t) {
         while (blank(peek(p, 0))) {
             skip(p);
         }
-        spaces = p->mark.at - end.at;
     }
-    if (text.oom) {
-        markdown_core_strbuf_free(&text);
-        return exhausted(p);
-    }
-    const size_t size = (size_t)text.size;
-    *t = (token){SCALAR, start,    end,   MARKDOWN_CORE_YAML_PLAIN, size ? markdown_core_strbuf_detach(&text) : NULL,
-                 size,   start.at, end.at};
-    markdown_core_strbuf_free(&text);
-    return !size || t->text || exhausted(p);
+    *t = (token){
+        .kind = SCALAR, .start = start, .end = end, .style = MARKDOWN_CORE_YAML_PLAIN, .from = start.at, .to = end.at};
+    return view(p, t, start.at, end.at);
 }
 
 /* A literal: a bare `|`, then the lines its first nonblank line's
@@ -596,9 +628,11 @@ static bool scan_literal(parser *p, token *t) {
             from = p->mark.at;
             first = false;
         }
+        const size_t line = p->mark.at;
         while (!breakz(peek(p, 0))) {
-            take(p, &text);
+            skip(p);
         }
+        put(p, &text, line, p->mark.at);
         to = p->mark.at;
         markdown_core_strbuf_putc(&text, '\n');
         clipped = (size_t)text.size;
@@ -610,15 +644,9 @@ static bool scan_literal(parser *p, token *t) {
         from = to = start.at;
     }
     markdown_core_strbuf_truncate(&text, (bufsize_t)clipped);
-    if (text.oom) {
-        markdown_core_strbuf_free(&text);
-        return exhausted(p);
-    }
     *t = (token){
-        SCALAR,  start, p->mark, MARKDOWN_CORE_YAML_LITERAL, clipped ? markdown_core_strbuf_detach(&text) : NULL,
-        clipped, from,  to};
-    markdown_core_strbuf_free(&text);
-    return !clipped || t->text || exhausted(p);
+        .kind = SCALAR, .start = start, .end = p->mark, .style = MARKDOWN_CORE_YAML_LITERAL, .from = from, .to = to};
+    return own(p, t, &text);
 }
 
 static bool fetch_scalar(parser *p, int c) {
@@ -854,10 +882,11 @@ static bool parse_node(parser *p, event *e, bool block, bool indentless) {
         emit(e, MARKDOWN_CORE_YAML_SCALAR, t->start, t->end);
         e->style = t->style;
         e->text = t->text;
+        e->owned = t->owned;
         e->size = t->size;
         e->from = t->from;
         e->to = t->to;
-        t->text = NULL;
+        t->owned = NULL;
         skip_token(p);
         return true;
     case FLOW_LIST_START:
@@ -1295,6 +1324,15 @@ static bool state_machine(parser *p, event *e) {
  * a line ending, or a printable scalar, with a NUL read as U+FFFD. */
 static bool printable(const unsigned char *text, size_t start, size_t end, size_t *bad) {
     for (size_t i = start; i < end;) {
+        if (text[i] < 0x80) {
+            const unsigned char c = text[i];
+            if (c < 0x20 ? c && c != 9 && c != 10 && c != 13 : c == 0x7f) {
+                *bad = i;
+                return false;
+            }
+            i++;
+            continue;
+        }
         int32_t c;
         const int n = markdown_core_utf8proc_decode(text + i, (bufsize_t)(end - i), &c);
         if (!(c == 0 || c == 9 || c == 10 || c == 13 || (c >= 0x20 && c <= 0x7e) || c == 0x85 ||
@@ -1346,7 +1384,8 @@ bool markdown_core_yaml_next(parser *p, event *e) {
 }
 
 void markdown_core_yaml_event_free(event *e) {
-    markdown_core_free(e->text);
+    markdown_core_free(e->owned);
+    e->owned = NULL;
     e->text = NULL;
 }
 

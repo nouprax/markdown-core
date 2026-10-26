@@ -49,16 +49,18 @@ typedef enum {
 
 /* AN EVENT, from `start` to `end`. A collection's start says whether it is
  * written in flow, between brackets or braces; a document's start or end
- * whether a marker writes it. A scalar holds its value, `size` bytes the
- * event owns (NULL when empty), and `from` to `to` are its bytes as
- * written, without the quotes around them, and for a literal from its
- * first line's text to its last line's end. */
+ * whether a marker writes it. A scalar holds its value, `size` bytes at
+ * `text` (NULL when empty): the bytes it is written in, read in place, or,
+ * when reading changes them, a buffer the event owns, `owned`. `from` to
+ * `to` are its bytes as written, without the quotes around them, and for a
+ * literal from its first line's text to its last line's end. */
 typedef struct {
     markdown_core_yaml_kind kind;
     markdown_core_yaml_mark start, end;
     bool flow, explicit;
     markdown_core_yaml_style style;
-    unsigned char *text;
+    const unsigned char *text;
+    unsigned char *owned;
     size_t size, from, to;
 } markdown_core_yaml_event;
 
