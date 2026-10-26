@@ -19,7 +19,11 @@ promised to remain compatible between releases.
   `variant` slot open, and so does `{.fo` in a fence's info string for the
   `class` slot. A reference definition's fragment that ends the text now
   starts after its `#`. A field with a NUL, which the parse reads as U+FFFD,
-  is found where it is written.
+  is found where it is written. A quoted attribute value that no quote
+  closes ends with its line, so the next line's slot is a new member's,
+  and a fence that interrupts the paragraph ends the attribute block. A
+  spelling no longer ends a directive's label or a quoted value that an
+  earlier line leaves open.
 
 - Write a value into a slot (language engine plan, step 2c).
   `markdown_core_slot_spell` returns the text that replaces a slot's source

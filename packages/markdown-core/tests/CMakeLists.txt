@@ -356,8 +356,6 @@ markdown_core_add_test(
     elements
     1800
     oracle_runner
-    --exceptions
-    "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/context/spell-exceptions.txt"
     --spell
     --generate
     ${_markdown_core_context_sweep}

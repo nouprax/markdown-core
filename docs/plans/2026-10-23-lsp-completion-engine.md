@@ -335,7 +335,11 @@ Step 2d built field scopes and marker ranges this way:
   renamed at every field that writes it. Failures the oracle cannot judge
   are listed with their reasons in `tests/context/field-exceptions.txt`.
   The generated inputs nest formulas (`$`, `$$$`), comments (`%%`,
-  `<!--`) and fences too, and one atom holds a NUL.
+  `<!--`) and fences too, and one atom holds a NUL. The context and spell
+  oracles share them, and found four context gaps, fixed with 2d: a NUL
+  in a destination, a quoted value a fence cuts short, and a directive's
+  label or a quoted value left open by an earlier line, which a spelled
+  `]` or quote would end.
 
 ### 3.2 Slot kinds
 
