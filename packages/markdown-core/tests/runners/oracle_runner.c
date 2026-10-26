@@ -1033,6 +1033,44 @@ static bool leaves(const uint8_t *source, size_t length, const char *name) {
     return found;
 }
 
+/* THE MEMBER CHECK of an open Metadata `field` slot: the slot names no
+ * field yet, so a member written there, `with` and a value, begins a member
+ * of its own: the Metadata reads the value in field `with`, which it left
+ * unset, and every other field and node as it did. A slot whose line goes
+ * on past it is judged by the name check alone. */
+static const char *verify_member(const uint8_t *source, size_t length, size_t from, size_t to, const char *with) {
+    char member[64];
+    snprintf(member, sizeof(member), "%s: %s", with, SENTINEL);
+    tree base = {0}, grown = {0};
+    line_parts was, now;
+    size_t line, other;
+    const char *why = NULL;
+    if (!parse_tree(source, length, &base) || !parse_spliced(source, length, from, to, member, &grown) ||
+        !metadata_of(&base, &was, &line) || !metadata_of(&grown, &now, &other) || line != other ||
+        base.count != grown.count || was.count != now.count) {
+        why = "the edited text does not parse to a Metadata";
+        goto done;
+    }
+    const word *taken = field_of(&now, with);
+    if (!taken || unset(taken) || !seek(taken->start, taken->length, SENTINEL, strlen(SENTINEL))) {
+        why = "the member written in the slot sets no field";
+    }
+    for (size_t i = 0; i < was.count && !why; i++) {
+        if (&now.words[i] != taken && !same_word(&was.words[i], &now.words[i])) {
+            why = "the member written in the slot changes another field";
+        }
+    }
+    for (size_t i = 0; i < base.count && !why; i++) {
+        if (i != line && strcmp(base.lines[i], grown.lines[i])) {
+            why = "another node changes";
+        }
+    }
+done:
+    tree_free(&base);
+    tree_free(&grown);
+    return why;
+}
+
 /* The checks of one closed slot whose source is `[from, to)`. */
 static void check_slot(report *r, const uint8_t *source, size_t length, size_t cursor, size_t from, size_t to,
                        const char *what, const char *kind, const char *owner, check_mode mode) {
@@ -2106,9 +2144,27 @@ static void check_spell(report *r, const uint8_t *source, size_t length, size_t 
 /* THE NAME SPELLING CHECK of a Metadata's `field` slot: a member's name is
  * one of the grammar's field names, so a name is written as it is, ASCII
  * letters, numerals, `_` and `-` after the first, and any other value is
- * refused. The name check (verify_name) judges where a name lands. */
+ * refused. The name check (verify_name) judges where a name lands, and
+ * the member check (verify_member) where a member written in an open slot
+ * does. */
 static void check_name_spell(report *r, const uint8_t *source, size_t length, size_t cursor, size_t from, size_t to,
-                             const markdown_core_context *context, size_t index, const char *what) {
+                             const markdown_core_context *context, size_t index, bool closed, const char *what) {
+    size_t rest = to;
+    while (rest < length && (source[rest] == ' ' || source[rest] == '\t')) {
+        rest++;
+    }
+    if (!closed && (rest == length || source[rest] == '\n' || source[rest] == '\r')) {
+        const char *why = NULL;
+        r->checks++;
+        for (size_t i = 0; i < NAME_COUNT; i++) {
+            if (leaves(source, length, NAMES[i]) && !(why = verify_member(source, length, from, to, NAMES[i]))) {
+                break;
+            }
+        }
+        if (why) {
+            fail_at(r, source, length, cursor, from, to, what, why);
+        }
+    }
     for (size_t v = 0; v < VALUE_COUNT + NAME_COUNT; v++) {
         const char *value = v < VALUE_COUNT ? VALUES[v] : NAMES[v - VALUE_COUNT];
         const size_t size = strlen(value);
@@ -2207,7 +2263,7 @@ static void check_example(report *r, const uint8_t *source, size_t length) {
             char what[96];
             snprintf(what, sizeof(what), "%s %s %s", spell_mode ? "spell" : "slot", name, kind_name(slot.owner));
             if (spell_mode && slot.owner == MARKDOWN_CORE_KIND_METADATA && slot.kind == MARKDOWN_CORE_SLOT_FIELD) {
-                check_name_spell(r, source, length, at, from, to, context, i, what);
+                check_name_spell(r, source, length, at, from, to, context, i, slot.closed, what);
                 continue;
             }
             if (spell_mode) {

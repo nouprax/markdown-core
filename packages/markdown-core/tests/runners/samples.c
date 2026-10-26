@@ -49,8 +49,13 @@ static const char *const CONSTRUCTS[] = {
 /* The properties envelopes, which open the document: outer constructs
  * only, numbered after the others. */
 static const char *const ENVELOPES[] = {
-    "---\ntitle: @\n---\n",        "---\ntitle: \"@\"\n---\n",     "---\n'state': '@'\n---\n",
-    "---\nauthors: [a, @]\n---\n", "---\nkeywords:\n  - @\n---\n", "---\nabstract: |\n  @\n---\n",
+    "---\ntitle: @\n---\n",
+    "---\ntitle: \"@\"\n---\n",
+    "---\n'state': '@'\n---\n",
+    "---\nauthors: [a, @]\n---\n",
+    "---\nkeywords:\n  - @\n---\n",
+    "---\nabstract: |\n  @\n---\n",
+    "---\nauthors: [a,\n# c\n  @]\n---\n",
 };
 static const char *const ATOMS[] = {
     "a",   "a b", "\\]", "\\}", "&amp;", "\"q\"",    "{.x}",   "#t",  "@k",  "]",      "}",

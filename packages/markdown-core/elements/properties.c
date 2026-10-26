@@ -418,10 +418,14 @@ static size_t block_boundary(properties *p, size_t line, size_t indent) {
     enum { VALUE_PREFIX, VALUE_SCALAR, VALUE_QUOTED, VALUE_SEQUENCE, VALUE_BRACKETED } form = VALUE_PREFIX;
     size_t array_depth = 0, object_depth = 0;
     unsigned char quote = 0;
-    bool first = true;
+    bool first = true, probed = false;
     for (; line < p->end; line = next_line(s, p->stop, p->end)) {
         classify_line(p, line);
         size_t cursor = line, e = p->stop, nonspace = p->first;
+        if (!first && p->places && line == p->places->line) {
+            probed = true;
+            p->places->held = array_depth != 0 || object_depth != 0;
+        }
         if (!first && nonspace < e && nonspace - cursor <= indent) {
             bool list_line = nonspace - cursor == indent && s[nonspace] == '-' &&
                              (nonspace + 1 == e || markdown_core_is_space_or_tab(s[nonspace + 1]));
@@ -437,6 +441,13 @@ static size_t block_boundary(properties *p, size_t line, size_t indent) {
             if (!continuation) {
                 return line;
             }
+        }
+        if (probed && line != p->places->line) {
+            size_t content = nonspace;
+            while (content < e && markdown_core_is_space_or_tab(s[content])) {
+                content++;
+            }
+            p->places->held = p->places->held || (content < e && s[content] != '#');
         }
         size_t token = first ? p->key : 0;
         for (size_t i = token ? token : nonspace; i < e; i++) {

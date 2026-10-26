@@ -1443,7 +1443,7 @@ static bool blanks(const context_query *query, size_t from, size_t to) {
  * follow on the line. Each of these the parse confirms, so it is closed.
  * At a line that begins a member and holds no name the parse reads, the
  * name characters before the cursor are an open `field`: the member names
- * no field yet. Answers whether it found a slot, as `*kind`, `*from`,
+ * no field yet. A line a member holds (properties.h) begins none. Answers whether it found a slot, as `*kind`, `*from`,
  * `*to`, `*field` (where its field starts), `*wrap` and `*closed`. */
 static bool member_slot(const context_query *query, const markdown_core_metadata_places *places, size_t line,
                         size_t last, markdown_core_slot_kind *kind, size_t *from, size_t *to, size_t *field,
@@ -1510,7 +1510,7 @@ static bool member_slot(const context_query *query, const markdown_core_metadata
         begins = (begins || (at->slot == MARKDOWN_CORE_SLOT_NONE && at->from == line && at->to > line)) &&
                  !(at->slot == MARKDOWN_CORE_SLOT_VALUE && at->from < line && line <= at->to);
     }
-    if (start != cursor || !begins || (end > line && query->source[line] == '-')) {
+    if (start != cursor || !begins || places->held || (end > line && query->source[line] == '-')) {
         return false;
     }
     *kind = MARKDOWN_CORE_SLOT_FIELD;
@@ -1552,12 +1552,12 @@ static bool take_envelope(markdown_core_context *context, const context_query *q
     if (cursor < payload || cursor >= close) {
         return true;
     }
-    markdown_core_metadata_places places = {0};
+    const size_t line = query->lines.starts[query_line(query, cursor)], last = line_end(query, cursor);
+    markdown_core_metadata_places places = {.line = line};
     if (!markdown_core_metadata_places_read(query->source, metadata->place.end, &places)) {
         markdown_core_free(places.items);
         return false;
     }
-    const size_t line = query->lines.starts[query_line(query, cursor)], last = line_end(query, cursor);
     markdown_core_slot_kind kind;
     size_t from, to, field;
     uint8_t wrap;

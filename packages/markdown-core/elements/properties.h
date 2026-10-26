@@ -39,9 +39,15 @@ typedef struct {
     size_t from, to;
 } markdown_core_metadata_place;
 
+/* The places, and what the reader answers of one line, `line`, of the
+ * payload: whether a member holds it, a bracketed value it leaves open or
+ * a line it owns after it that holds more than a comment, so that a name
+ * written there would not begin a member of its own lines. */
 typedef struct {
     markdown_core_metadata_place *items;
     size_t count, capacity;
+    size_t line;
+    bool held;
 } markdown_core_metadata_places;
 
 /* Reads the places of the envelope `text`, `length` bytes from its opening
