@@ -2140,7 +2140,8 @@ static bool bare(const uint8_t *value, size_t size) {
         const uint8_t c = value[i];
         const size_t width = c < 0x80 ? 1 : c < 0xE0 ? 2 : c < 0xF0 ? 3 : 4;
         if (among(c, ",[]{}\t") || !printable(value + i, width) ||
-            (c == ':' && (i + 1 == size || value[i + 1] == ' ' || value[i + 1] == '?')) || (c == '#' && value[i - 1] == ' ')) {
+            (c == ':' && (i + 1 == size || value[i + 1] == ' ' || value[i + 1] == '?')) ||
+            (c == '#' && value[i - 1] == ' ')) {
             return false;
         }
         i += width;
