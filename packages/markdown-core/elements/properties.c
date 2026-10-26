@@ -418,7 +418,7 @@ static size_t block_boundary(properties *p, size_t line, size_t indent) {
     enum { VALUE_PREFIX, VALUE_SCALAR, VALUE_QUOTED, VALUE_SEQUENCE, VALUE_BRACKETED } form = VALUE_PREFIX;
     size_t array_depth = 0, object_depth = 0;
     unsigned char quote = 0;
-    bool first = true, probed = false;
+    bool first = true, probed = false, node = true;
     for (; line < p->end; line = next_line(s, p->stop, p->end)) {
         classify_line(p, line);
         size_t cursor = line, e = p->stop, nonspace = p->first;
@@ -483,8 +483,11 @@ static size_t block_boundary(properties *p, size_t line, size_t indent) {
                         }
                     }
                 }
-            } else if ((c == '\'' || c == '"') &&
-                       (i == nonspace || markdown_core_is_space_or_tab(s[i - 1]) || strchr(":,[{?", s[i - 1]))) {
+            } else if (markdown_core_is_space_or_tab(c)) {
+                continue;
+            } else if ((c == '\'' || c == '"') && node) {
+                /* A quote opens a scalar only where a node starts: inside a
+                 * plain scalar it is the scalar's. */
                 quote = c;
             } else if (c == '#' && (i == nonspace || markdown_core_is_space_or_tab(s[i - 1]))) {
                 break;
@@ -503,6 +506,7 @@ static size_t block_boundary(properties *p, size_t line, size_t indent) {
                     form = VALUE_SCALAR;
                 }
             }
+            node = !quote && (c == '[' || c == '{' || c == ',' || c == ':' || c == '?');
         }
         first = false;
     }

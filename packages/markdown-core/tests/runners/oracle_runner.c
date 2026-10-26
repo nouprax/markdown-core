@@ -1226,7 +1226,7 @@ static const char *const VALUES[] = {
     "qz{x}q",       "-qzxq",     "qzxq-",
     "qz--xq",       "qz&#35;xq", "qz\nxq",
     "qz:?xq",       "qz: xq",    "qzxq:",
-    "qz #xq",
+    "qz #xq",       "qz 'xq",    "qz \"xq",
 };
 enum { VALUE_COUNT = sizeof(VALUES) / sizeof(VALUES[0]) };
 
