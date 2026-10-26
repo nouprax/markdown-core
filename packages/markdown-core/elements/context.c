@@ -2129,7 +2129,7 @@ static void quoted(spelled *out, const uint8_t *value, size_t size) {
 
 /* Whether `value` written bare is a plain scalar of its bytes that reads as
  * text in any member: it starts with no indicator, ends with no space, holds
- * no flow indicator, no `: ` and no ` #`, no character a scalar must escape,
+ * no flow indicator, no `: `, `:?` and ` #`, no character a scalar must escape,
  * and is no null, boolean or number. */
 static bool bare(const uint8_t *value, size_t size) {
     if (!size || among(value[0], "-?:,[]{}#&*!|>'\"%@`~ \t") || value[size - 1] == ' ' || value[size - 1] == '\t' ||
@@ -2140,7 +2140,7 @@ static bool bare(const uint8_t *value, size_t size) {
         const uint8_t c = value[i];
         const size_t width = c < 0x80 ? 1 : c < 0xE0 ? 2 : c < 0xF0 ? 3 : 4;
         if (among(c, ",[]{}\t") || !printable(value + i, width) ||
-            (c == ':' && (i + 1 == size || value[i + 1] == ' ')) || (c == '#' && value[i - 1] == ' ')) {
+            (c == ':' && (i + 1 == size || value[i + 1] == ' ' || value[i + 1] == '?')) || (c == '#' && value[i - 1] == ' ')) {
             return false;
         }
         i += width;
