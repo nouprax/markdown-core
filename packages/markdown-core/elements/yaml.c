@@ -153,7 +153,7 @@ static bool exhausted(parser *p) {
 /* A scalar's text given up on a problem: an allocation that failed while
  * it was read is the problem, whatever the text goes on to be. */
 static bool abandon(parser *p, markdown_core_strbuf *text, const char *problem) {
-    const bool oom = text->oom;
+    const bool oom = text->oom != 0;
     markdown_core_strbuf_free(text);
     return oom ? exhausted(p) : fail(p, problem);
 }
