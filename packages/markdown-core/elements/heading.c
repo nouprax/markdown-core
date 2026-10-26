@@ -8,6 +8,7 @@
 #include "block_internal.h"
 #include "attributes.h"
 #include "topic.h"
+#include "parts.h"
 
 /* The elements whose state this element reads, as `self->peers` holds them. */
 enum { HEADING_CITATION };
@@ -965,6 +966,31 @@ bool markdown_core_heading_claim_tail(const markdown_core_element_instance *self
         return true;
     }
     return false;
+}
+
+/* THE PARTS OF A HEADING (parts.h): the attribute tail that ends its last
+ * content line, as markdown_core_heading_begin_inlines finds it, unless a
+ * node of its content holds the brace. A setext heading's last content line
+ * is the one before its underline. */
+void markdown_core_heading_parts(markdown_core_parts *parts) {
+    const unsigned char *s = parts->text;
+    bufsize_t end = parts->length;
+    while (end > 0 && markdown_core_is_line_end(s[end - 1])) {
+        end--;
+    }
+    if (parts->node->as.heading->setext) {
+        while (end > 0 && !markdown_core_is_line_end(s[end - 1])) {
+            end--;
+        }
+        while (end > 0 && markdown_core_is_line_end(s[end - 1])) {
+            end--;
+        }
+    }
+    bufsize_t line = end;
+    while (line > 0 && !markdown_core_is_line_end(s[line - 1])) {
+        line--;
+    }
+    markdown_core_attributes_tail_parts(parts, line, end);
 }
 
 #define peek_at(input, at) ((input)->data[(at)])

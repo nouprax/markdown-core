@@ -36,6 +36,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "samples.h"
 #include "test_support.h"
 
 static const char CURSOR[] = "\xe2\x80\xb8";
@@ -396,6 +397,8 @@ typedef struct report {
     size_t failures, checks, expected;
     exception *exceptions;
     size_t exception_count;
+    /* The generated inputs checked so far. */
+    size_t generated;
 } report;
 
 static const char *base_name(const char *path) {
@@ -1044,6 +1047,10 @@ static const char *const VALUES[] = {
 };
 enum { VALUE_COUNT = sizeof(VALUES) / sizeof(VALUES[0]) };
 
+/* Whether the source byte `c` is one of `set`: a NUL, which the parse
+ * reads as U+FFFD, is none. */
+static bool among(unsigned char c, const char *set) { return c && strchr(set, c); }
+
 static bool holds(const char *value, const char *set) {
     for (const char *c = value; *c; c++) {
         if (strchr(set, *c)) {
@@ -1090,15 +1097,70 @@ static bool opened(const uint8_t *source, size_t from, char open, char close) {
     return depth > 0;
 }
 
+/* What the earlier lines of the paragraph leave open at the start of the
+ * line that holds `from`: a directive's label, `:name[`, which any `]`
+ * ends, and the quote of a value in braces. */
+static void carried(const uint8_t *source, size_t from, bool *label, char *quote) {
+    size_t line = from;
+    while (line > 0 && source[line - 1] != '\n') {
+        line--;
+    }
+    size_t start = line;
+    while (start > 0) {
+        size_t before = start - 1;
+        while (before > 0 && source[before - 1] != '\n') {
+            before--;
+        }
+        size_t at = before;
+        while (at < start - 1 && (source[at] == ' ' || source[at] == '\t')) {
+            at++;
+        }
+        if (at == start - 1) {
+            break;
+        }
+        start = before;
+    }
+    size_t labels = 0, braces = 0;
+    *quote = 0;
+    for (size_t i = start; i < line; i++) {
+        const uint8_t c = source[i];
+        if (c == '\\') {
+            i++;
+        } else if (*quote) {
+            *quote = c == (uint8_t)*quote ? 0 : *quote;
+        } else if (braces && (c == '"' || c == '\'')) {
+            *quote = (char)c;
+        } else if (c == '{') {
+            braces++;
+        } else if (c == '}' && braces) {
+            braces--;
+        } else if (c == '[') {
+            size_t name = i;
+            while (name > start && !among(source[name - 1], " \t\r\n[{:")) {
+                name--;
+            }
+            labels += name < i && name > start && source[name - 1] == ':';
+        } else if (c == ']' && labels) {
+            labels--;
+        }
+    }
+    *label = labels > 0;
+    *quote = braces ? *quote : 0;
+}
+
 /* Whether the value would end a construct the line opens before it: a
  * bracket or a parenthesis it does not match, or a brace or an `=`, which
- * a name's or a bare value's scan reads escaped or not. */
+ * a name's or a bare value's scan reads escaped or not; or one an earlier
+ * line leaves open, a directive's label or a quoted value. */
 static bool ends(const char *value, const uint8_t *source, size_t from) {
-    const bool in_brackets = opened(source, from, '[', ']'), in_parens = opened(source, from, '(', ')'),
+    bool label;
+    char quote;
+    carried(source, from, &label, &quote);
+    const bool in_brackets = label || opened(source, from, '[', ']'), in_parens = opened(source, from, '(', ')'),
                in_braces = opened(source, from, '{', '}');
     long brackets = 0, parens = 0;
     for (const char *c = value; *c; c++) {
-        if (in_braces && (*c == '}' || *c == '=')) {
+        if ((in_braces && (*c == '}' || *c == '=')) || (quote && *c == quote)) {
             return true;
         }
         if (*c == '\\' && c[1]) {
@@ -1119,7 +1181,7 @@ static bool ends(const char *value, const uint8_t *source, size_t from) {
 static bool directs(const char *value, const uint8_t *source, size_t length, size_t from, size_t to, bool own) {
     bool run = false;
     for (size_t i = own ? 0 : from; i > 0 && source[i - 1] != '\n'; i--) {
-        if (strchr(" \t[{:", source[i - 1])) {
+        if (among(source[i - 1], " \t[{:")) {
             run = source[i - 1] == ':';
             break;
         }
@@ -1131,7 +1193,7 @@ static bool directs(const char *value, const uint8_t *source, size_t length, siz
         run = *c == ':' || (run && *c != ' ' && *c != '\t');
     }
     for (size_t i = to; i < length && run; i++) {
-        if (strchr(" \t\r\n[{:", source[i])) {
+        if (among(source[i], " \t\r\n[{:")) {
             return source[i] == '[' || source[i] == '{';
         }
     }
@@ -1141,7 +1203,7 @@ static bool directs(const char *value, const uint8_t *source, size_t length, siz
 /* Whether a delimiter run or a citation's `@` begins at `at`. */
 static bool delimits(const uint8_t *source, size_t length, size_t at) {
     return at < length &&
-           (strchr("*_~^@", source[at]) || (source[at] == '=' && at + 1 < length && source[at + 1] == '='));
+           (among(source[at], "*_~^@") || (source[at] == '=' && at + 1 < length && source[at + 1] == '='));
 }
 
 /* Whether the line before `from` leaves a cross link, or an autolink or a
@@ -1227,7 +1289,7 @@ static bool refusable(const char *kind, const char *owner, const char *value, bo
          * destination that goes on after the slot, since `<...>` is a whole
          * destination; a destination holds every other value. */
         const bool spaced = !size || holds(value, " \t") || value[0] == '<';
-        const bool goes = to < length && !strchr(") \t\r\n", source[to]);
+        const bool goes = to < length && !among(source[to], ") \t\r\n");
         return wrap != '<' && spaced && (!strcmp(kind, "anchor") || goes);
     }
     if (!strcmp(kind, "label") || !strcmp(kind, "footnote")) {
@@ -1622,6 +1684,11 @@ static bool unheld(const char *kind, const char *owner, const uint8_t *source, s
     if (!strcmp(kind, "value") && next && !strchr(" \t}\r\n", next)) {
         return true;
     }
+    /* A value that begins its line began on an earlier one, in quotes the
+     * line does not open: no insertion on the line replaces it whole. */
+    if (!strcmp(kind, "value") && from == start) {
+        return true;
+    }
     if (!strcmp(kind, "value")) {
         size_t quotes = 0;
         for (size_t i = start; i < end; i++) {
@@ -1639,7 +1706,7 @@ static bool ruled(const uint8_t *source, size_t length, size_t at) {
     for (; i < length && source[i] != '\n'; i++) {
         if (source[i] == '-' || source[i] == '=') {
             dashes++;
-        } else if (!strchr(" :+|", source[i])) {
+        } else if (!among(source[i], " :+|")) {
             return false;
         }
     }
@@ -1944,91 +2011,24 @@ static void check_example(report *r, const uint8_t *source, size_t length) {
     tree_free(&original);
 }
 
-/* THE GENERATED INPUTS: each atom inside each inner construct inside each
- * outer one, where the nesting and the escapes the fixtures write one at a
- * time meet. A construct is a template whose `@` the next one fills. */
-static const char *const CONSTRUCTS[] = {
-    "[@](u)",
-    "[x](@)",
-    "[x](u \"@\")",
-    "[@]{.c}",
-    "[x]{k=\"@\"}",
-    "[x]{@=1}",
-    "[x]{.@}",
-    "*@*",
-    "`@`",
-    ":d[@]{.a}",
-    ":d{k=@}",
-    "[@k; @]",
-    "@{@}",
-    "[[@]]",
-    "[[a|@]]",
-    "![[@]]",
-    "[^@]",
-    "^[@]",
-    "#@",
-    "# @ {.c}",
-    "> @",
-    "- @",
-    "| @ |\n| - |",
-    "[r]: @",
-    "> [!@]",
-    "<i t=\"@\">",
-    "\\@",
-    "x @ y",
-    "[@][r]\n\n[r]: u",
-    "x @ y #i#",
-};
-static const char *const ATOMS[] = {
-    "a", "a b", "\\]", "\\}", "&amp;", "\"q\"", "{.x}",     "#t",     "@k",  "]",
-    "}", "<u>", "`",   "(",   "|",     "#t#",   "\\&#35;t", "&#35;t", "a#b", "\\#",
-};
-enum {
-    CONSTRUCT_COUNT = sizeof(CONSTRUCTS) / sizeof(CONSTRUCTS[0]),
-    ATOM_COUNT = sizeof(ATOMS) / sizeof(ATOMS[0]),
-};
-
-/* `template` with its first `@` filled with `with`, in a new string. */
-static char *fill(const char *template, const char *with) {
-    const char *hole = strchr(template, '@');
-    const size_t head = (size_t)(hole - template), size = strlen(template) + strlen(with);
-    char *out = malloc(size);
-    if (out) {
-        memcpy(out, template, head);
-        strcpy(out + head, with);
-        strcat(out, hole + 1);
-    }
-    return out;
+/* Checks one generated input, named `generated` and numbered as
+ * samples_each numbers it. */
+static void check_one(void *context, const char *source, size_t length, int number) {
+    report *r = context;
+    ts_spec_case *example = (ts_spec_case *)r->example;
+    example->start_line = number;
+    r->generated++;
+    check_example(r, (const uint8_t *)source, length);
 }
 
-/* Runs every generated input, named `generated` and numbered by its
- * outer construct, inner construct and atom, two digits each. */
 static bool check_generated(report *r, size_t *examples) {
     ts_spec_case example = {0};
     r->path = "generated";
     r->example = &example;
-    for (size_t outer = 0; outer < CONSTRUCT_COUNT; outer++) {
-        for (size_t inner = 0; inner < CONSTRUCT_COUNT; inner++) {
-            for (size_t atom = 0; atom < ATOM_COUNT; atom++) {
-                char *in = fill(CONSTRUCTS[inner], ATOMS[atom]);
-                char *source = in ? fill(CONSTRUCTS[outer], in) : NULL;
-                free(in);
-                if (!source) {
-                    return false;
-                }
-                /* Numbered by place, not by count, so a construct or an atom
-                 * added at a list's end leaves every other's number. */
-                example.start_line = (int)(outer * 10000 + inner * 100 + atom + 1);
-                ++*examples;
-                if (getenv("ORACLE_VERBOSE")) {
-                    fprintf(stderr, "generated:%d: %s\n", example.start_line, source);
-                }
-                check_example(r, (const uint8_t *)source, strlen(source));
-                free(source);
-            }
-        }
-    }
-    return true;
+    r->generated = 0;
+    const bool ran = samples_each(check_one, r);
+    *examples += r->generated;
+    return ran;
 }
 
 int main(int argc, char **argv) {

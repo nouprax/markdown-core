@@ -3,6 +3,7 @@
 #include "attributes.h"
 #include "citation.h"
 #include "span.h"
+#include "parts.h"
 markdown_core_bracket_match markdown_core_span_close(const markdown_core_element_instance *link,
                                                      const markdown_core_element_instance *citation,
                                                      markdown_core_parser *parser,
@@ -37,4 +38,18 @@ markdown_core_bracket_match markdown_core_span_close(const markdown_core_element
         }
     }
     return BRACKET_UNMATCHED;
+}
+
+/* THE PARTS OF A BRACKETED SPAN (parts.h): the attribute container after
+ * the `]` that closes its text. */
+void markdown_core_span_parts(markdown_core_parts *parts) {
+    const unsigned char *s = parts->text;
+    const bufsize_t n = parts->length;
+    bufsize_t close = markdown_core_parts_last(parts, 1);
+    while (close < n && s[close] != ']') {
+        close += s[close] == '\\' && close + 1 < n ? 2 : 1;
+    }
+    if (close + 1 < n && s[close + 1] == '{') {
+        markdown_core_attributes_parts(parts, close + 1);
+    }
 }

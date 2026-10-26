@@ -6,6 +6,7 @@
 #include "footnote.h"
 #include "inline_internal.h"
 #include "block_internal.h"
+#include "parts.h"
 
 /* The elements whose state this element reads, as `self->peers` holds them. */
 enum { FOOTNOTE_LINK, FOOTNOTE_CITATION };
@@ -346,4 +347,21 @@ static bool markdown_core_footnote_scan(const markdown_core_element_instance *se
 bool markdown_core_footnote_continue(markdown_core_parser *parser, markdown_core_node *container,
                                      markdown_core_chunk *input) {
     return markdown_core_block_continue_indented(parser, input, 4, true);
+}
+
+/* A definition's part: its label, inside `[^` and the `]` before its `:`. An
+ * inline note has none. */
+void markdown_core_footnote_parts(markdown_core_parts *parts) {
+    const unsigned char *text = parts->text;
+    if (parts->length < 2 || text[0] != '[' || text[1] != '^') {
+        return;
+    }
+    for (bufsize_t at = 2; at < parts->length; at++) {
+        if (text[at] == '\\') {
+            at++;
+        } else if (text[at] == ']') {
+            markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_FOOTNOTE, 2, at);
+            return;
+        }
+    }
 }

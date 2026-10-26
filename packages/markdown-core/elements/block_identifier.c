@@ -2,6 +2,7 @@
 #include "block_internal.h"
 #include "markdown-core-elements.h"
 #include "sink.h"
+#include "parts.h"
 
 typedef struct {
     markdown_core_chunk identifier;
@@ -231,4 +232,58 @@ markdown_core_candidate_decision markdown_core_block_decide_identifier_line(cons
     return undecided  ? MARKDOWN_CORE_CANDIDATE_WAIT
            : boundary ? MARKDOWN_CORE_CANDIDATE_ACCEPT
                       : MARKDOWN_CORE_CANDIDATE_REJECT;
+}
+
+/* Where the identifier `#anchor#` stands on a line of its own or at a
+ * line's end in the text: the first such place, or the last when `last`;
+ * -1 for none. */
+static bufsize_t S_identifier_place(const markdown_core_parts *parts, const markdown_core_chunk *anchor, bool last) {
+    const unsigned char *s = parts->text;
+    const bufsize_t n = parts->length, size = anchor->len;
+    bufsize_t found = -1;
+    for (bufsize_t at = 0; at + size + 2 <= n; at++) {
+        if (s[at] != '#' || s[at + size + 1] != '#' || memcmp(s + at + 1, anchor->data, (size_t)size) ||
+            (at && !markdown_core_is_space_or_tab(s[at - 1]) && !markdown_core_is_line_end(s[at - 1]))) {
+            continue;
+        }
+        bufsize_t end = at + size + 2;
+        while (end < n && markdown_core_is_space_or_tab(s[end])) {
+            end++;
+        }
+        if (end >= n || markdown_core_is_line_end(s[end])) {
+            found = at;
+            if (!last) {
+                break;
+            }
+        }
+    }
+    return found;
+}
+
+/* THE PARTS OF A BLOCK THAT A BLOCK IDENTIFIER NAMES (parts.h): the
+ * identifier a paragraph's text ends with, as S_scan_block_identifier
+ * reads it, which is the paragraph's own or, when its list item took it,
+ * lent; and a list's, a table's or a callout's on the line after it. */
+void markdown_core_block_identifier_parts(markdown_core_parts *parts) {
+    const markdown_core_node *node = parts->node;
+    if (markdown_core_node_get_kind(node) == MARKDOWN_CORE_KIND_PARAGRAPH) {
+        markdown_core_block_identifier_work work = {0};
+        block_identifier candidate;
+        if (node->cut_back && S_scan_block_identifier(&work, parts->text, parts->length, &candidate)) {
+            const bufsize_t at = (bufsize_t)(candidate.identifier.data - parts->text);
+            if (node->attributes.anchor.len) {
+                markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_ID, at, at + candidate.identifier.len);
+            } else {
+                markdown_core_parts_lend(parts, MARKDOWN_CORE_SLOT_ID, at, at + candidate.identifier.len);
+            }
+        }
+        return;
+    }
+    if (node->attributes.anchor.len) {
+        const bufsize_t at = S_identifier_place(parts, &node->attributes.anchor,
+                                                markdown_core_node_get_kind(node) != MARKDOWN_CORE_KIND_LIST_ITEM);
+        if (at >= 0) {
+            markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_ID, at + 1, at + 1 + node->attributes.anchor.len);
+        }
+    }
 }

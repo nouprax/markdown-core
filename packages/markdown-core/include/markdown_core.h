@@ -518,6 +518,45 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_document_path(const markdow
                                                                    const uint8_t *source, size_t length,
                                                                    const markdown_core_node ***nodes, size_t *count);
 MARKDOWN_CORE_API void markdown_core_path_free(const markdown_core_node **nodes);
+/** FIELD AND MARKER QUERIES (docs/plans/2026-10-23-lsp-completion-engine.md,
+ * 3.3). A node's OWN SOURCE is its runs less the runs of the nodes it holds:
+ * its children and its node-valued fields, such as a link's text or a
+ * callout's title. Its fields and its markers divide it, and each query
+ * reads the node's own source again with the scanners its element read it
+ * with, so a field is where the parse read it. Each answers like
+ * markdown_core_document_scope: a new array of scopes in source order, which
+ * markdown_core_scopes_free releases, NULL with a count of 0 when there are
+ * none.
+ *
+ * `markdown_core_document_field` computes the scopes of `node`'s fields of
+ * slot kind `slot`: the bytes of each value as written, escapes and
+ * references included, without the quotes, the angle brackets or the sigil
+ * around it, one scope per run of each, so a field the container prefix of
+ * a later line interrupts has one scope on each line. `[a](doc.md#part)` has
+ * the dest `doc.md` and the anchor `part`; `{#top .wide k="v"}` the id `top`,
+ * the class `wide`, the record `k` and the value `v`. A field that no slot
+ * kind names, such as a title, a literal or a cross link's label, is a field
+ * of slot kind NONE. A field the parser makes rather than reads, such as a
+ * heading's computed anchor, has no scope. A list item's block identifier,
+ * written at its first paragraph's end, is the list item's field, not the
+ * paragraph's, and a node the parser makes rather than reads, such as a
+ * table row's autocompleted cell, owns no source. OUT_OF_BOUNDS for a value
+ * that is not a slot kind, or when `length` ends before the node does.
+ *
+ * `markdown_core_document_markers` computes the scopes of `node`'s markers:
+ * the rest of its own source, the syntax that no field holds, such as the
+ * `**` of a strong emphasis, the `[`, `](` and `)` of a link, a heading's
+ * `#` run, a list item's marker, a fence, and the spaces and line endings
+ * between them. OUT_OF_BOUNDS when `length` ends before the node does. */
+MARKDOWN_CORE_API markdown_core_status markdown_core_document_field(const markdown_core_document *document,
+                                                                    const markdown_core_node *node,
+                                                                    markdown_core_slot_kind slot, const uint8_t *source,
+                                                                    size_t length, markdown_core_scope **scopes,
+                                                                    size_t *count);
+MARKDOWN_CORE_API markdown_core_status markdown_core_document_markers(const markdown_core_document *document,
+                                                                      const markdown_core_node *node,
+                                                                      const uint8_t *source, size_t length,
+                                                                      markdown_core_scope **scopes, size_t *count);
 MARKDOWN_CORE_API markdown_core_node_kind markdown_core_node_get_kind(const markdown_core_node *node);
 /** The kind's name in the canonical AST. OUT_OF_BOUNDS for a value that is
  * not a markdown_core_node_kind. */

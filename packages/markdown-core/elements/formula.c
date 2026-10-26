@@ -3,6 +3,7 @@
 #include "formula.h"
 #include "element.h"
 #include "inline_internal.h"
+#include "parts.h"
 
 #include <assert.h>
 #include <string.h>
@@ -685,3 +686,32 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_FORMULA = {
     .terminates_text = "$",
     .dispatch = "$\\",
 };
+
+/* THE PARTS OF A FORMULA (parts.h): its literal, after its opening `$` or
+ * `$$`, `\(` or `\[`, or its fence line. A `$` past the opener is the
+ * literal's: `$$$a$$$` is a standalone formula whose literal is `$a`. */
+void markdown_core_formula_parts(markdown_core_parts *parts) {
+    const unsigned char *s = parts->text;
+    const bufsize_t n = parts->length;
+    bufsize_t from = 0;
+    while (from < n && from < 2 && s[from] == '\\') {
+        from++;
+    }
+    from = from && from < n && (s[from] == '(' || s[from] == '[') ? from + 1 : 0;
+    if (!from && n && s[0] == '$') {
+        from = markdown_core_node_get_kind(parts->node) == MARKDOWN_CORE_KIND_FORMULA_BLOCK ||
+                       markdown_core_elements_get_formula_mode((markdown_core_node *)parts->node) ==
+                           MARKDOWN_CORE_FORMULA_MODE_STANDALONE
+                   ? 2
+                   : 1;
+        from = from < n ? from : n;
+    }
+    /* A fence's line is the fence and the word that names a formula. */
+    if (n && (s[0] == '`' || s[0] == '~' || markdown_core_is_space_or_tab(s[0]))) {
+        while (from < n && !markdown_core_is_line_end(s[from])) {
+            from++;
+        }
+    }
+    const markdown_core_chunk literal = markdown_core_elements_formula_literal(parts->node);
+    markdown_core_parts_find(parts, from, literal.data, literal.len);
+}

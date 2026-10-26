@@ -1,6 +1,7 @@
 #include "callout.h"
 #define BLOCK_PEEK(input, at) ((input)->data[(at)])
 #include "block_internal.h"
+#include "parts.h"
 #include "sink.h"
 
 static bool markdown_core_block_parse_callout_metadata(markdown_core_callout_work *counts, markdown_core_parser *parser,
@@ -250,3 +251,21 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_CALLOUT = {
     .start_reach = start_reach,
     .scan_block_gate = {.bytes = ">"},
 };
+
+/* A callout's parts: its variant, inside `[!` and `]` on its first line, and
+ * a block identifier on the line after it. The fold sign is a marker. */
+void markdown_core_callout_parts(markdown_core_parts *parts) {
+    const unsigned char *text = parts->text;
+    bufsize_t at = parts->node->as.callout->variant.has_value ? 0 : parts->length;
+    while (at < parts->length && text[at] != '\n' && text[at] != '\r' &&
+           !(text[at] == '[' && at + 1 < parts->length && text[at + 1] == '!')) {
+        at++;
+    }
+    if (at + 1 < parts->length && text[at] == '[' && text[at + 1] == '!') {
+        const bufsize_t end = at + 2 + variant_end(text + at + 2, parts->length - at - 2);
+        if (end < parts->length && text[end] == ']') {
+            markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_VARIANT, at + 2, end);
+        }
+    }
+    markdown_core_block_identifier_parts(parts);
+}

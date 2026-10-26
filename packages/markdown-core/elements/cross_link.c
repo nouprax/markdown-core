@@ -5,6 +5,7 @@
 #include "node.h"
 #include "parser.h"
 #include "inline_internal.h"
+#include "parts.h"
 
 /* How a cross link's target goes on past a cursor: its path up to the `#`
  * that starts its anchor, and its anchor, which may hold more parts, up to
@@ -183,3 +184,45 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_CROSS_LINK = {
     .match_inline = match,
     .dispatch = "[!",
 };
+
+/* THE PARTS OF A CROSS LINK OR A CROSS EMBED (parts.h), as `match` reads
+ * its body: the path up to the first `#`, the anchor after it and after
+ * the `^` of a block identifier, up to the separator, and the label after
+ * the separator, up to an embed's last separator before its dimensions. */
+void markdown_core_cross_link_parts(markdown_core_parts *parts) {
+    const unsigned char *s = parts->text;
+    const bufsize_t n = parts->length;
+    const bool embedded = markdown_core_node_get_kind(parts->node) == MARKDOWN_CORE_KIND_CROSS_EMBEDDED;
+    const markdown_core_cross_reference *cross = markdown_core_node_cross_reference((markdown_core_node *)parts->node);
+    const bufsize_t body = embedded ? 3 : 2, close = n >= 2 ? n - 2 : n;
+    bufsize_t target = body, hash = -1;
+    while (target < close && s[target] != '|' && !(s[target] == '\\' && target + 1 < close && s[target + 1] == '|')) {
+        hash = hash < 0 && s[target] == '#' ? target : hash;
+        target++;
+    }
+    markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_DEST, body, hash >= 0 ? hash : target);
+    if (hash >= 0) {
+        const bool block = s[hash + 1] == '^' && cross->anchor.value.len == target - hash - 2;
+        markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_ANCHOR, hash + 1 + block, target);
+    }
+    if (target >= close) {
+        return;
+    }
+    const bufsize_t label = target + (s[target] == '|' ? 1 : 2);
+    bufsize_t end = close;
+    if (embedded && parts->node->as.cross_embedded->dimensions.has_value) {
+        /* The dimensions follow the label's last separator, or are all of
+         * it. */
+        bufsize_t separator = -1;
+        for (bufsize_t at = label; at < close; at++) {
+            if (s[at] == '|' || (s[at] == '\\' && at + 1 < close && s[at + 1] == '|')) {
+                separator = at;
+                at += s[at] == '\\';
+            }
+        }
+        end = separator >= 0 ? separator : label;
+        const bufsize_t dimensions = separator < 0 ? label : separator + (s[separator] == '|' ? 1 : 2);
+        markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NONE, dimensions, close);
+    }
+    markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NONE, label, end);
+}

@@ -6,6 +6,25 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Ask where a node's fields and markers are (language engine plan, step
+  2d). `markdown_core_document_field` returns the source ranges of a node's
+  fields of one slot kind, as written: a link's destination without its
+  angle brackets, a value without its quotes, a class without its dot. The
+  slot kind `none` returns the node's other fields, such as a literal or a
+  title. `markdown_core_document_markers` returns the rest of the node's own
+  source, its syntax: `**`, `##`, `]]`, list markers, fences. Both are
+  computed on request by the scanners that read the fields. The context
+  query uses them to confirm a slot, so a block's slot is closed only when
+  the document reads the field: `> [!no` without its `]` leaves the
+  `variant` slot open, and so does `{.fo` in a fence's info string for the
+  `class` slot. A reference definition's fragment that ends the text now
+  starts after its `#`. A field with a NUL, which the parse reads as U+FFFD,
+  is found where it is written. A quoted attribute value that no quote
+  closes ends with its line, so the next line's slot is a new member's,
+  and a fence that interrupts the paragraph ends the attribute block. A
+  spelling no longer ends a directive's label or a quoted value that an
+  earlier line leaves open.
+
 - Write a value into a slot (language engine plan, step 2c).
   `markdown_core_slot_spell` returns the text that replaces a slot's source
   before and after the cursor: the value in the field's own syntax, with

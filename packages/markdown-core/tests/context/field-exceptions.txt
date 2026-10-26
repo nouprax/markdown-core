@@ -1,0 +1,9 @@
+# Failures the field and marker oracle cannot judge (tests/runners/field_runner.c).
+#
+# One per line: FIXTURE:EXAMPLE-LINE: WHAT # reason. An entry that no
+# failure meets any more fails the run, so the list only shrinks.
+
+# A citation's key is also the text of the heading `# @a` and of the link
+# `[@a][]`, whose label is its text: a sentinel in the key changes what the
+# links resolve to.
+dialect-citations.txt:638: Citation bib a # the key is also a heading's and a link's label

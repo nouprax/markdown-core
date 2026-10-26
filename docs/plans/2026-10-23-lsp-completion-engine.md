@@ -238,8 +238,8 @@ Step 2b built the query this way:
   info string, a directive block's name and an attribute tail. A reference
   definition reports its destination when its paragraph closes, and one in
   angle brackets that no `>` closes yet when the definition fails.
-- The confirmation checks nodes, not field scopes, until step 2d adds them:
-  a slot is closed when the document holds a node of its owner kind over
+- The confirmation checked nodes, not field scopes, until step 2d added
+  them: a slot is closed when the document holds a node of its owner kind over
   the field's start and the cursor's last byte, and no code span, formula,
   inline HTML or comment inside that node holds the byte; an `id` slot's
   node must also carry an anchor. One walk of the document indexes its
@@ -251,7 +251,7 @@ Step 2b built the query this way:
   confirmed the same way. A block owner, such as a `CodeBlock` or a
   `Callout`, holds the whole opening line, so its slots read as closed even
   where the attribute block or the variant is still open; step 2d's field
-  scopes make that exact.
+  scopes make that exact (below).
 - A `#` at the end of a paragraph reports both a topic's name and the
   paragraph's block identifier, and the whole document keeps the one it
   reads.
@@ -290,6 +290,56 @@ Step 2c built `spell` this way:
   keeps a construct around it from holding, such as a space in a
   destination the slot encloses, a `|` that keeps a line from a table's
   row, or a row of a table whose layout sets its columns, is not judged.
+
+Step 2d built field scopes and marker ranges this way:
+
+- `markdown_core_document_field` answers the source ranges of a node's
+  fields of one slot kind, one per run of each field, and the slot kind
+  `none` answers its other fields: a literal, a title, a cross link's label,
+  an image's dimensions, a task box, a specimen's number, the payload of the
+  metadata and the cells a pipe row drops. `markdown_core_document_markers`
+  answers the rest of the node's own source. A node's own source is its runs
+  less the runs of the nodes it holds, its children and its node-valued
+  fields, so every byte of the source is one node's field, marker or held
+  node, and the audit of step 2 holds: every marker has a source range,
+  and no CST is needed.
+- Each element whose nodes hold fields has a reader (`elements/parts.c`
+  and one function in each element's file). The reader re-reads the node's
+  joined text with the element's own scanners, as the parse read it, so a
+  field is where the parse read it. Nothing is stored on the node: the
+  ranges are computed on request, as a node's scope is. The joined text
+  reads a NUL as U+FFFD, as the parse does, and a query finds the runs a
+  held node or a range meets by binary search, so one query is linear in
+  the node's runs.
+- A node the parse makes rather than reads owns no source. A row's
+  autocompleted cell sits on the row's last byte, which the cell before it
+  holds, so that byte stays the row's. A cell that spans rows holds bytes
+  of the rows it spans, and a block inside a cell of a table drawn in
+  columns holds only the cell's columns.
+- The confirmation asks the field: a node of the owner kind that holds the
+  written bytes but has no field of the slot's kind over the first of them
+  does not finish the construct. `> [!no` is a quote, not a callout with a
+  variant, so its `variant` slot is open; in ```` ```lang{.fo ```` the brace
+  is the info string's, so the `class` slot is open. A citation's key may be
+  a bibliography entry's or a specimen's, so either kind holds it.
+- `elements_fields` is the oracle (`field_runner`). At every node of every
+  fixture example and generated nesting it checks four things. A marker
+  holds only punctuation and white space, but for a list item's ordinal, a
+  formula's fence and a caption's `Table:`. No two fields share a byte, nor
+  a field and a marker. A field written without escapes is its node's value
+  in the dump, byte for byte (exactness). A field replaced with a sentinel
+  parses to the same tree with the sentinel in its node's line
+  (substitution); a field whose bytes a construct around it reads too, such
+  as a space that keeps a destination from being one, is judged by
+  inserting the sentinel before it instead, and a definition's label is
+  renamed at every field that writes it. Failures the oracle cannot judge
+  are listed with their reasons in `tests/context/field-exceptions.txt`.
+  The generated inputs nest formulas (`$`, `$$$`), comments (`%%`,
+  `<!--`) and fences too, and one atom holds a NUL. The context and spell
+  oracles share them, and found four context gaps, fixed with 2d: a NUL
+  in a destination, a quoted value a fence cuts short, and a directive's
+  label or a quoted value left open by an earlier line, which a spelled
+  `]` or quote would end.
 
 ### 3.2 Slot kinds
 

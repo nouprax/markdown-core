@@ -1,4 +1,5 @@
 #include "topic.h"
+#include "parts.h"
 #include "inline_internal.h"
 #include "utf8.h"
 
@@ -266,3 +267,8 @@ const markdown_core_element MARKDOWN_CORE_ELEMENT_TOPIC = {
     .terminates_text = "#",
     .dispatch = "#",
 };
+
+/* THE PARTS OF A TOPIC (parts.h): its name, after its `#`. */
+void markdown_core_topic_parts(markdown_core_parts *parts) {
+    markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NAME, 1, parts->length);
+}

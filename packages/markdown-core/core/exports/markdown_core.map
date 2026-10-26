@@ -18,10 +18,12 @@ MARKDOWN_CORE_1.0 {
     markdown_core_context_slot_prefix_at;
     markdown_core_document_context;
     markdown_core_document_dump;
+    markdown_core_document_field;
     markdown_core_document_footnote_at;
     markdown_core_document_footnote_count;
     markdown_core_document_footnote_for;
     markdown_core_document_free;
+    markdown_core_document_markers;
     markdown_core_document_node_at;
     markdown_core_document_parse;
     markdown_core_document_parse_in;

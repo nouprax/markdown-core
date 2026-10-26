@@ -3,6 +3,7 @@
 #include "metadata.h"
 #include "parser.h"
 #include "node.h"
+#include "parts.h"
 #include "buffer.h"
 #include "utf8.h"
 #include <string.h>
@@ -839,4 +840,19 @@ size_t markdown_core_properties_parse(markdown_core_properties_work *work, markd
     parser->at.line_number = (int)(p.count + 2);
     parser->at.last_line_end = (bufsize_t)(close + 3);
     return consumed;
+}
+
+/* An envelope's part: its payload, the lines between its fences, as one
+ * field of no slot kind; its members' scopes are its own. */
+void markdown_core_metadata_parts(markdown_core_parts *parts) {
+    const unsigned char *text = parts->text;
+    bufsize_t start = 0, end = parts->length >= 3 ? parts->length - 3 : 0;
+    while (start < end && !markdown_core_is_line_end(text[start])) {
+        start++;
+    }
+    start += start < end && text[start] == '\r';
+    start += start < end && text[start] == '\n';
+    end -= end > start && text[end - 1] == '\n';
+    end -= end > start && text[end - 1] == '\r';
+    markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NONE, start, end);
 }

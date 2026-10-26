@@ -2,6 +2,7 @@
 
 #include "alloc.h"
 #include "attributes.h"
+#include "parts.h"
 #include "../core/attributes.h"
 #include "houdini.h"
 #include "node.h"
@@ -794,6 +795,77 @@ static bufsize_t quote_led_end(const unsigned char *data, bufsize_t length) {
 /* A value's field, read from its first byte, which may follow the cursor. */
 static bufsize_t member_value_end(const unsigned char *data, bufsize_t length) {
     return length && (data[0] == '"' || data[0] == '\'') ? quote_led_end(data, length) : value_end(data, length);
+}
+
+/* THE PARTS OF A CONTAINER (parts.h): its members as read_container reads
+ * them, with the scanners its fields are read with past a cursor. An `#`
+ * identifier's name is an id and a `.` class's a class; a record's name is
+ * a record and its value, inside its quotes, a value. */
+bufsize_t markdown_core_attributes_parts(markdown_core_parts *parts, bufsize_t brace) {
+    markdown_core_attribute_parser p = {.data = parts->text, .length = parts->length};
+    const bufsize_t finish = markdown_core_attributes_end(&p, brace);
+    const bool oom = p.oom;
+    markdown_core_attribute_parser_free(&p);
+    if (!finish) {
+        parts->failed = parts->failed || oom;
+        return brace;
+    }
+    const unsigned char *s = parts->text;
+    const bufsize_t limit = finish - 1;
+    bufsize_t at = brace + 1;
+    while (at < limit) {
+        if (BYTE_CLASS[s[at]] & (BYTE_SPACE | BYTE_NEWLINE)) {
+            at++;
+            continue;
+        }
+        if (s[at] == '-' && member_boundary(s, finish, at + 1)) {
+            at++;
+            continue;
+        }
+        if (s[at] == '#' || s[at] == '.') {
+            const markdown_core_slot_kind slot = s[at] == '#' ? MARKDOWN_CORE_SLOT_ID : MARKDOWN_CORE_SLOT_CLASS;
+            const bufsize_t from = ++at;
+            at += name_end(s + at, limit - at);
+            markdown_core_parts_add(parts, slot, from, at);
+            continue;
+        }
+        const bufsize_t name = at;
+        at += name_end(s + at, limit - at);
+        markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_RECORD, name, at);
+        if (at >= limit || s[at] != '=') {
+            continue;
+        }
+        at++;
+        if (at < limit && (s[at] == '"' || s[at] == '\'')) {
+            const bufsize_t close = at + 1 + quoted_end(s + at + 1, limit - at - 1, s[at]);
+            if (close < limit) {
+                markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_VALUE, at + 1, close);
+                at = close + 1;
+                continue;
+            }
+        }
+        const bufsize_t value = at;
+        at += value_end(s + at, limit - at);
+        markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_VALUE, value, at);
+    }
+    return finish;
+}
+
+bufsize_t markdown_core_attributes_tail_parts(markdown_core_parts *parts, bufsize_t from, bufsize_t end) {
+    while (end > from && markdown_core_is_space_or_tab(parts->text[end - 1])) {
+        end--;
+    }
+    markdown_core_attribute_parser p = {.data = parts->text, .length = end};
+    const bufsize_t brace = markdown_core_attributes_tail(&p, from, end);
+    const bool oom = p.oom;
+    markdown_core_attribute_parser_free(&p);
+    /* A brace a node of the block's content holds is that node's. */
+    if (brace < 0 || markdown_core_parts_within(parts, brace)) {
+        parts->failed = parts->failed || oom;
+        return end;
+    }
+    markdown_core_attributes_parts(parts, brace);
+    return brace;
 }
 
 /* AN UNQUOTED VALUE'S END, MEMOISED BY THE POSITION IT IS READ FROM. A value

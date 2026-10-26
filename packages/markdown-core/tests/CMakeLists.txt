@@ -101,7 +101,8 @@ endfunction()
 
 markdown_core_add_runner(spec_runner runners/spec_runner.c)
 markdown_core_add_runner(context_runner runners/context_runner.c)
-markdown_core_add_runner(oracle_runner runners/oracle_runner.c)
+markdown_core_add_runner(oracle_runner runners/oracle_runner.c runners/samples.c)
+markdown_core_add_runner(field_runner runners/field_runner.c runners/samples.c)
 markdown_core_add_runner(pathological_runner runners/pathological_runner.c)
 
 # oom_runner injects an allocator into the internal implementation of the
@@ -330,6 +331,19 @@ markdown_core_add_test(
     oracle_runner
     --exceptions
     "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/context/oracle-exceptions.txt"
+    --generate
+    ${_markdown_core_context_sweep}
+    "${MARKDOWN_CORE_CONTEXT_FIXTURE}")
+# elements: each node's fields and markers against the parse, at every node
+# of every example and of the generated nestings (completion plan 3.3,
+# step 2d); the exceptions name what the oracle cannot judge.
+markdown_core_add_test(
+    elements_fields
+    elements
+    600
+    field_runner
+    --exceptions
+    "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/context/field-exceptions.txt"
     --generate
     ${_markdown_core_context_sweep}
     "${MARKDOWN_CORE_CONTEXT_FIXTURE}")
