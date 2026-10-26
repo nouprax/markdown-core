@@ -41,6 +41,7 @@ set(LIBRARY_SOURCES
     embedded.c
     paragraph.c
     properties.c
+    yaml.c
     span.c
     specimen.c
     strikethrough.c

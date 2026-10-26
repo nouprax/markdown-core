@@ -63,6 +63,7 @@ const elements = [
     "mark.c",
     "embedded.c",
     "properties.c",
+    "yaml.c",
     "session.c",
     "context.c",
     "parts.c",

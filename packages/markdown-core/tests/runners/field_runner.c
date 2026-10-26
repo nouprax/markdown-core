@@ -741,6 +741,9 @@ static void check_example(report *r, const uint8_t *source, size_t length) {
                 markdown_core_scopes_free(scopes);
             }
         }
+        /* A properties member's name is one of the grammar's fixed field
+         * names, which no sentinel spells, so exactness alone judges it. */
+        first = first && f->slot != MARKDOWN_CORE_SLOT_FIELD;
         /* An identifier a later one overrides is no value of its node, nor
          * is a record named `id` or `class`, or its value, whose node holds
          * it as an anchor or classes. */

@@ -64,6 +64,7 @@ add_library(
     "${MARKDOWN_CORE_ELEMENTS_DIR}/mark.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/embedded.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/properties.c"
+    "${MARKDOWN_CORE_ELEMENTS_DIR}/yaml.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/session.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/context.c"
     "${MARKDOWN_CORE_ELEMENTS_DIR}/parts.c"
