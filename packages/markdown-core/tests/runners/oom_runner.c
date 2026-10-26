@@ -377,15 +377,16 @@ static int sweep_dump(const oom_case *test) {
 
 /* A context query refuses each allocation in turn the same way: no context
  * and ALLOCATION_FAILED. The cursors read slots of every reporting path:
- * an inline run's, a line's and a definition's. */
-static const char OOM_CONTEXT_SOURCE[] = "See [[Note#He]] and [t](pa#se){.c} @do\n"
+ * an envelope's member's, an inline run's, a line's and a definition's. */
+static const char OOM_CONTEXT_SOURCE[] = "---\ntitle: Hi\n---\n"
+                                         "See [[Note#He]] and [t](pa#se){.c} @do\n"
                                          "> [!no]\n"
                                          "```py {#a r=v}\n"
                                          "```\n"
                                          "[x]: /u#an\n"
                                          "a `x [[No para #id#\n";
-static const markdown_core_position OOM_CONTEXT_CURSORS[] = {{1, 14}, {1, 29}, {1, 34}, {1, 39}, {2, 7},
-                                                             {3, 6},  {3, 14}, {5, 10}, {6, 12}, {6, 19}};
+static const markdown_core_position OOM_CONTEXT_CURSORS[] = {{2, 3}, {2, 9}, {4, 14}, {4, 29}, {4, 34}, {4, 39},
+                                                             {5, 7}, {6, 6}, {6, 14}, {8, 10}, {9, 12}, {9, 19}};
 
 static int sweep_context(void) {
     const size_t length = sizeof(OOM_CONTEXT_SOURCE) - 1;

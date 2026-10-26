@@ -362,7 +362,7 @@ value appears in the context query by construction.
 | `record` | `{‸`, `{.a ‸` | any attribute site |
 | `variant` | `> [!‸` | `Callout` |
 | `info` | ` ```‸ ` | `CodeBlock` |
-| `field` | a line start in an open `---` envelope | `Metadata` |
+| `field` | a name, or a line start, in a `---` envelope | `Metadata` |
 | `value` | after `state: `, after `bib: `, after `src=` | `Metadata`, any attribute site |
 
 A slot kind is one word without the letters `g`, `j` or `y` (the owner's

@@ -7,6 +7,7 @@
 #include "ast_internal.h"
 #include "sink.h"
 #include "parts.h"
+#include "properties.h"
 #include "attributes.h"
 #include "../core/attributes.h"
 
@@ -27,8 +28,9 @@ typedef struct {
     markdown_core_field_end scan;
     size_t lead;
     /* The delimiter before the slot that its source opens with and does not
-     * hold: a destination's `<`, a braced key's `{`, or the quote of a
-     * value that began on an earlier line; or 0. */
+     * hold: a destination's `<`, a braced key's `{`, the quote of a value
+     * that began on an earlier line, or a properties member's quote or
+     * literal's `|`; or 0. */
     uint8_t wrap;
     /* Whether the field goes on to another line, which no insertion on the
      * cursor's line replaces whole. */
@@ -1417,6 +1419,177 @@ static bool take_slots(markdown_core_context *context, const context_query *quer
     return true;
 }
 
+/* Whether `c` is a byte of a member's name as the field names spell it. */
+static bool name_byte(uint8_t c) {
+    return (c >= '0' && c <= '9') || ((c | 0x20) >= 'a' && (c | 0x20) <= 'z') || c == '_' || c == '-';
+}
+
+/* Whether the bytes from `from` to `to` are spaces and tabs. */
+static bool blanks(const context_query *query, size_t from, size_t to) {
+    for (size_t at = from; at < to; at++) {
+        if (query->source[at] != ' ' && query->source[at] != '\t') {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* The slot of the envelope's member at the cursor, from its places (plan
+ * 3.2): `field` on a name, `value` on a value. A scalar on one line holds
+ * the cursor from its first byte to its last, inside its quotes; a
+ * literal's line from past the literal's indentation to the line's end.
+ * After a name's colon and a space, where the member reads an empty value,
+ * the empty value's slot holds it when no more than spaces and a comment
+ * follow on the line. Each of these the parse confirms, so it is closed.
+ * At a line that begins a member and holds no name the parse reads, the
+ * name characters before the cursor are an open `field`: the member names
+ * no field yet. Answers whether it found a slot, as `*kind`, `*from`,
+ * `*to`, `*field` (where its field starts), `*wrap` and `*closed`. */
+static bool member_slot(const context_query *query, const markdown_core_metadata_places *places, size_t line,
+                        size_t last, markdown_core_slot_kind *kind, size_t *from, size_t *to, size_t *field,
+                        uint8_t *wrap, bool *closed) {
+    const size_t cursor = query->cursor;
+    *closed = true;
+    for (size_t i = 0; i < places->count; i++) {
+        const markdown_core_metadata_place *at = &places->items[i];
+        if (at->slot == MARKDOWN_CORE_SLOT_NONE) {
+            continue;
+        }
+        *kind = at->slot;
+        *field = at->from;
+        *wrap = at->style == MARKDOWN_CORE_YAML_QUOTE        ? '"'
+                : at->style == MARKDOWN_CORE_YAML_APOSTROPHE ? '\''
+                : at->style == MARKDOWN_CORE_YAML_LITERAL    ? '|'
+                                                             : 0;
+        if (at->style == MARKDOWN_CORE_YAML_LITERAL) {
+            /* Its first line's text starts past the indentation every
+             * line of it has. */
+            const size_t first = query->lines.starts[query_line(query, at->from)];
+            const size_t start = line == first ? at->from : line + (at->from - first);
+            if (line >= first && line <= at->to && start <= last && start <= cursor && blanks(query, line, start)) {
+                *from = start;
+                *to = last;
+                return true;
+            }
+            continue;
+        }
+        if (at->style == MARKDOWN_CORE_YAML_PLAIN && at->from == at->to) {
+            /* An empty value, read where the name's colon ends: the value
+             * written after a space takes its place. */
+            size_t rest = cursor;
+            while (rest < last && (query->source[rest] == ' ' || query->source[rest] == '\t')) {
+                rest++;
+            }
+            if (at->from >= line && at->from < cursor && blanks(query, at->from, cursor) &&
+                (rest == last || (rest > cursor && query->source[rest] == '#'))) {
+                *from = *to = cursor;
+                return true;
+            }
+            continue;
+        }
+        if (at->from >= line && at->to <= last && at->from <= cursor && cursor <= at->to) {
+            *from = at->from;
+            *to = at->to;
+            return true;
+        }
+    }
+    /* A line that begins a member, the bytes before the cursor and after it
+     * a name: a member the parse skipped begins at the line, or the line is
+     * empty, and no value goes on through it. */
+    size_t start = line;
+    while (start < cursor && name_byte(query->source[start])) {
+        start++;
+    }
+    size_t end = cursor;
+    while (end < last && name_byte(query->source[end])) {
+        end++;
+    }
+    bool begins = line == last;
+    for (size_t i = 0; i < places->count; i++) {
+        const markdown_core_metadata_place *at = &places->items[i];
+        begins = (begins || (at->slot == MARKDOWN_CORE_SLOT_NONE && at->from == line && at->to > line)) &&
+                 !(at->slot == MARKDOWN_CORE_SLOT_VALUE && at->from < line && line <= at->to);
+    }
+    if (start != cursor || !begins || (end > line && query->source[line] == '-')) {
+        return false;
+    }
+    *kind = MARKDOWN_CORE_SLOT_FIELD;
+    *from = line;
+    *to = end;
+    *field = line;
+    *wrap = 0;
+    *closed = false;
+    return true;
+}
+
+/* THE ENVELOPE'S CONTEXT. A cursor in a properties envelope, from its
+ * opening fence through its closing one, is in the document's Metadata, not
+ * in the blocks its lines would be without the fences: its block is the
+ * Metadata, on the opening fence's line. In the payload, past the opening
+ * fence's line and before the closing fence's, its slot is the member's
+ * (member_slot), which the places' reader reads. An envelope that no fence
+ * closes is no envelope. `*inside` answers whether the cursor is in one;
+ * false when an allocation failed. */
+static bool take_envelope(markdown_core_context *context, const context_query *query, bool *inside) {
+    const markdown_core_node *metadata = query->document->root->as.document->metadata;
+    *inside = false;
+    if (!metadata || metadata->place.end < 6 || metadata->place.end > query->length) {
+        return true;
+    }
+    const size_t close = metadata->place.end - 3, cursor = query->cursor;
+    const size_t payload = query->lines.count > 1 ? query->lines.starts[1] : close;
+    if (cursor > metadata->place.end) {
+        return true;
+    }
+    *inside = true;
+    context->blocks = markdown_core_alloc(1, sizeof(*context->blocks));
+    if (!context->blocks) {
+        return false;
+    }
+    const size_t opening = line_end(query, 0);
+    context->blocks[context->block_count++] =
+        (markdown_core_opener){MARKDOWN_CORE_KIND_METADATA, query_scope(query, 0, cursor < opening ? cursor : opening)};
+    if (cursor < payload || cursor >= close) {
+        return true;
+    }
+    markdown_core_metadata_places places = {0};
+    if (!markdown_core_metadata_places_read(query->source, metadata->place.end, &places)) {
+        markdown_core_free(places.items);
+        return false;
+    }
+    const size_t line = query->lines.starts[query_line(query, cursor)], last = line_end(query, cursor);
+    markdown_core_slot_kind kind;
+    size_t from, to, field;
+    uint8_t wrap;
+    bool closed;
+    const bool found = member_slot(query, &places, line, last, &kind, &from, &to, &field, &wrap, &closed);
+    markdown_core_free(places.items);
+    if (!found) {
+        return true;
+    }
+    context->slots = markdown_core_alloc(1, sizeof(*context->slots));
+    context->size = last - line;
+    context->line = markdown_core_alloc(context->size + 1, 1);
+    if (!context->slots || !context->line) {
+        return false;
+    }
+    memcpy(context->line, query->source + line, context->size);
+    context->slots[context->slot_count++] =
+        (context_slot){{kind, MARKDOWN_CORE_KIND_METADATA, query_scope(query, from, cursor),
+                        query_scope(query, cursor, to), closed, 0},
+                       0,
+                       field < line ? SIZE_MAX : field - line,
+                       from - line,
+                       cursor - line,
+                       to - line,
+                       SIZE_MAX,
+                       NULL,
+                       0,
+                       wrap,
+                       false};
+    return true;
+}
+
 markdown_core_status markdown_core_document_context(const markdown_core_document *document, const uint8_t *source,
                                                     size_t length, markdown_core_position position,
                                                     markdown_core_context **context) {
@@ -1441,10 +1614,15 @@ markdown_core_status markdown_core_document_context(const markdown_core_document
     markdown_core_context_sink sink = {.source = source, .length = query.cursor};
     markdown_core_document *before = NULL;
     markdown_core_context *made = markdown_core_alloc(1, sizeof(*made));
-    markdown_core_status status = made ? markdown_core_parse_before_cursor(&sink, document->unit, document, &before)
-                                       : MARKDOWN_CORE_ALLOCATION_FAILED;
-    if (status == MARKDOWN_CORE_OK && (sink.failed || !take_blocks(made, &query, &sink) ||
-                                       !take_inlines(made, &query, &sink) || !take_slots(made, &query, &sink))) {
+    bool inside = false;
+    markdown_core_status status =
+        made && take_envelope(made, &query, &inside) ? MARKDOWN_CORE_OK : MARKDOWN_CORE_ALLOCATION_FAILED;
+    if (status == MARKDOWN_CORE_OK && !inside) {
+        status = markdown_core_parse_before_cursor(&sink, document->unit, document, &before);
+    }
+    if (status == MARKDOWN_CORE_OK && !inside &&
+        (sink.failed || !take_blocks(made, &query, &sink) || !take_inlines(made, &query, &sink) ||
+         !take_slots(made, &query, &sink))) {
         status = MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     markdown_core_document_free(before);
@@ -1904,6 +2082,124 @@ static bool unfinished(const markdown_core_context *context, const context_slot 
     return closer == ']' ? !(rest && tail[0] == ']') : opened(context, slot, '{', '}') && !memchr(tail, closer, rest);
 }
 
+/* Whether the character of `width` bytes at `value` is one a YAML scalar
+ * holds as it is: a tab, or printable, U+0085 and U+FEFF among them, but
+ * not the other C1 controls, U+FFFE or U+FFFF (yaml.c). */
+static bool printable(const uint8_t *value, size_t width) {
+    const uint8_t c = value[0];
+    if (width == 1) {
+        return c == '\t' || (c >= 0x20 && c != 0x7F);
+    }
+    if (width == 2 && c == 0xC2) {
+        return value[1] == 0x85 || value[1] >= 0xA0;
+    }
+    return !(width == 3 && c == 0xEF && value[1] == 0xBF && value[2] >= 0xBE);
+}
+
+/* Writes `value` between double quotes' bytes: a quote and a backslash
+ * escaped, and a character no scalar holds as JSON's escape of it. */
+static void quoted(spelled *out, const uint8_t *value, size_t size) {
+    for (size_t i = 0; i < size;) {
+        const uint8_t c = value[i];
+        const size_t width = c < 0x80 ? 1 : c < 0xE0 ? 2 : c < 0xF0 ? 3 : 4;
+        if (c == '"' || c == '\\') {
+            put(out, '\\');
+            put(out, c);
+        } else if (c == '\t') {
+            put(out, '\\');
+            put(out, 't');
+        } else if (!printable(value + i, width)) {
+            const uint32_t code = width == 1   ? c
+                                  : width == 2 ? (uint32_t)(c & 0x1F) << 6 | (value[i + 1] & 0x3F)
+                                               : 0xFFFFu - (0xBFu - value[i + 2]);
+            for (const char *e = "\\u"; *e; e++) {
+                put(out, (uint8_t)*e);
+            }
+            for (int shift = 12; shift >= 0; shift -= 4) {
+                put(out, (uint8_t)"0123456789abcdef"[(code >> shift) & 0xF]);
+            }
+        } else {
+            for (size_t j = 0; j < width; j++) {
+                put(out, value[i + j]);
+            }
+        }
+        i += width;
+    }
+}
+
+/* Whether `value` written bare is a plain scalar of its bytes that reads as
+ * text in any member: it starts with no indicator, ends with no space, holds
+ * no flow indicator, no `: ` and no ` #`, no character a scalar must escape,
+ * and is no null, boolean or number. */
+static bool bare(const uint8_t *value, size_t size) {
+    if (!size || among(value[0], "-?:,[]{}#&*!|>'\"%@`~ \t") || value[size - 1] == ' ' || value[size - 1] == '\t' ||
+        !markdown_core_metadata_text(value, size)) {
+        return false;
+    }
+    for (size_t i = 0; i < size;) {
+        const uint8_t c = value[i];
+        const size_t width = c < 0x80 ? 1 : c < 0xE0 ? 2 : c < 0xF0 ? 3 : 4;
+        if (among(c, ",[]{}\t") || !printable(value + i, width) ||
+            (c == ':' && (i + 1 == size || value[i + 1] == ' ')) || (c == '#' && value[i - 1] == ' ')) {
+            return false;
+        }
+        i += width;
+    }
+    return true;
+}
+
+/* A properties member's name or value (docs/specs/dialect/properties.md).
+ * A name is one of the grammar's field names, letters, numerals, `_` and
+ * `-`, written as it is. A value is written as the scalar its slot is in
+ * holds it: inside double quotes escaped, inside apostrophes with each
+ * doubled and nothing a scalar must escape, on a literal's line as it is,
+ * with text there and, on its first line, no space to start it, which
+ * would deepen its indentation; and bare where the slot is, as a plain
+ * scalar when it reads as that text, else between double quotes. */
+static bool spell_member(spelled *out, const context_slot *slot, const uint8_t *value, size_t size) {
+    if (slot->slot.kind == MARKDOWN_CORE_SLOT_FIELD) {
+        return word(value, size, "_-") && value[0] != '-' && plain(out, value, size, "", false);
+    }
+    switch (slot->wrap) {
+    case '"':
+        quoted(out, value, size);
+        return true;
+    case '\'':
+        for (size_t i = 0; i < size;) {
+            const size_t width = value[i] < 0x80 ? 1 : value[i] < 0xE0 ? 2 : value[i] < 0xF0 ? 3 : 4;
+            if (!printable(value + i, width)) {
+                return false;
+            }
+            if (value[i] == '\'') {
+                put(out, '\'');
+            }
+            for (size_t j = 0; j < width; j++) {
+                put(out, value[i + j]);
+            }
+            i += width;
+        }
+        return true;
+    case '|':
+        for (size_t i = 0; i < size;) {
+            const size_t width = value[i] < 0x80 ? 1 : value[i] < 0xE0 ? 2 : value[i] < 0xF0 ? 3 : 4;
+            if (!printable(value + i, width)) {
+                return false;
+            }
+            i += width;
+        }
+        return !blank_value(value, size) && !(slot->field == slot->start && value[0] == ' ') &&
+               plain(out, value, size, "", false);
+    default:
+        if (bare(value, size)) {
+            return plain(out, value, size, "", false);
+        }
+        put(out, '"');
+        quoted(out, value, size);
+        put(out, '"');
+        return true;
+    }
+}
+
 markdown_core_status markdown_core_slot_spell(const markdown_core_context *context, size_t index, const uint8_t *value,
                                               size_t size, markdown_core_insertion **insertion) {
     *insertion = NULL;
@@ -1926,6 +2222,16 @@ markdown_core_status markdown_core_slot_spell(const markdown_core_context *conte
         return MARKDOWN_CORE_ALLOCATION_FAILED;
     }
     spelled out = {(uint8_t *)(made + 1), 0};
+    if (owner == MARKDOWN_CORE_KIND_METADATA) {
+        if (!spell_member(&out, slot, value, size)) {
+            markdown_core_free(made);
+            return MARKDOWN_CORE_OK;
+        }
+        made->text = out.text;
+        made->cursor = made->size = out.size;
+        *insertion = made;
+        return MARKDOWN_CORE_OK;
+    }
     const char *closer = "";
     bool held = true;
     const bool cross = owner == MARKDOWN_CORE_KIND_CROSS_LINK || owner == MARKDOWN_CORE_KIND_CROSS_EMBEDDED;
@@ -2049,10 +2355,6 @@ markdown_core_status markdown_core_slot_spell(const markdown_core_context *conte
         closer = unfinished(context, slot, tail, rest, '}') ? "}" : "";
         break;
     case MARKDOWN_CORE_SLOT_VALUE:
-        if (owner == MARKDOWN_CORE_KIND_METADATA) {
-            held = false;
-            break;
-        }
         held = !closes(value, size) && spell_attribute(&out, slot, context->line, row, value, size);
         closer = unfinished(context, slot, tail, rest, '}') ? "}" : "";
         break;

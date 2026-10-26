@@ -103,7 +103,10 @@ static bool blankz(int c) { return c < 0 || blank(c) || newline(c); }
 static bool breakz(int c) { return c < 0 || newline(c); }
 static bool among(int c, const char *set) { return c > 0 && strchr(set, c); }
 static int hex(int c) {
-    return c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
+    return c >= '0' && c <= '9'   ? c - '0'
+           : c >= 'a' && c <= 'f' ? c - 'a' + 10
+           : c >= 'A' && c <= 'F' ? c - 'A' + 10
+                                  : -1;
 }
 static bool marker(const parser *p, int c) {
     return p->mark.column == 0 && peek(p, 0) == c && peek(p, 1) == c && peek(p, 2) == c && blankz(peek(p, 3));
@@ -435,7 +438,8 @@ static bool scan_quoted(parser *p, token *t, bool apostrophe) {
             for (int half = 0; half < 2; half++) {
                 uint32_t code = 0;
                 if (peek(p, 0) != '\\' || peek(p, 1) != 'u') {
-                    return abandon(p, &text, half ? "found an unpaired surrogate escape" : "found unknown escape character");
+                    return abandon(p, &text,
+                                   half ? "found an unpaired surrogate escape" : "found unknown escape character");
                 }
                 for (size_t k = 2; k < 6; k++) {
                     const int digit = hex(peek(p, k));
@@ -474,8 +478,14 @@ static bool scan_quoted(parser *p, token *t, bool apostrophe) {
         return exhausted(p);
     }
     const size_t size = (size_t)text.size;
-    *t = (token){SCALAR, start, p->mark, apostrophe ? MARKDOWN_CORE_YAML_APOSTROPHE : MARKDOWN_CORE_YAML_QUOTE,
-                 size ? markdown_core_strbuf_detach(&text) : NULL, size, from, to};
+    *t = (token){SCALAR,
+                 start,
+                 p->mark,
+                 apostrophe ? MARKDOWN_CORE_YAML_APOSTROPHE : MARKDOWN_CORE_YAML_QUOTE,
+                 size ? markdown_core_strbuf_detach(&text) : NULL,
+                 size,
+                 from,
+                 to};
     markdown_core_strbuf_free(&text);
     return !size || t->text || exhausted(p);
 }
@@ -520,8 +530,8 @@ static bool scan_plain(parser *p, token *t) {
         return exhausted(p);
     }
     const size_t size = (size_t)text.size;
-    *t = (token){SCALAR, start, end, MARKDOWN_CORE_YAML_PLAIN, size ? markdown_core_strbuf_detach(&text) : NULL, size,
-                 start.at, end.at};
+    *t = (token){SCALAR, start,    end,   MARKDOWN_CORE_YAML_PLAIN, size ? markdown_core_strbuf_detach(&text) : NULL,
+                 size,   start.at, end.at};
     markdown_core_strbuf_free(&text);
     return !size || t->text || exhausted(p);
 }
@@ -604,8 +614,9 @@ static bool scan_literal(parser *p, token *t) {
         markdown_core_strbuf_free(&text);
         return exhausted(p);
     }
-    *t = (token){SCALAR, start, p->mark, MARKDOWN_CORE_YAML_LITERAL, clipped ? markdown_core_strbuf_detach(&text) : NULL,
-                 clipped, from, to};
+    *t = (token){
+        SCALAR,  start, p->mark, MARKDOWN_CORE_YAML_LITERAL, clipped ? markdown_core_strbuf_detach(&text) : NULL,
+        clipped, from,  to};
     markdown_core_strbuf_free(&text);
     return !clipped || t->text || exhausted(p);
 }
@@ -642,9 +653,7 @@ static bool idle(const parser *p) {
 }
 /* Whether a `#` at the mark starts a comment: a blank or a line start
  * comes before it. */
-static bool separated(const parser *p) {
-    return p->mark.column == 0 || blank(p->text[p->mark.at - 1]);
-}
+static bool separated(const parser *p) { return p->mark.column == 0 || blank(p->text[p->mark.at - 1]); }
 
 /* Skips spaces, comments and line breaks to the next token. In a block
  * collection a tab may only follow its line's first token, or lead to a
@@ -806,9 +815,7 @@ static bool parse_error(parser *p, const char *problem, mark at) {
     p->mark = at;
     return fail(p, problem);
 }
-static bool push_state(parser *p, int state) {
-    return push_int(p, &p->states, &p->state_count, &p->state_room, state);
-}
+static bool push_state(parser *p, int state) { return push_int(p, &p->states, &p->state_count, &p->state_room, state); }
 static int pop_state(parser *p) { return p->states[--p->state_count]; }
 static bool push_mark(parser *p, mark at) {
     mark *grown = markdown_core_reserve(p->marks, &p->mark_room, p->mark_count + 1, sizeof(*p->marks));

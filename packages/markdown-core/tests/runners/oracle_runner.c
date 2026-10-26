@@ -46,14 +46,21 @@ enum { SENTINEL_LENGTH = sizeof(SENTINEL) - 1 };
 
 /* The PROPERTIES a slot completes, by the kind of node that holds them
  * (the slot model of scripts/tooling/generate-node-kinds.mjs): any node's
- * anchor and attributes, and the fields of the owners the model names. A
- * Metadata's fields wait for its slots (plan step 2e). */
+ * anchor and attributes, and the fields of the owners the model names. */
 static const char *const FIELDS[][2] = {
-    {"", "anchor"},        {"", "attributes"},    {"Link", "dest"},          {"Embedded", "dest"},
-    {"Reference", "dest"}, {"CrossLink", "dest"}, {"CrossEmbedded", "dest"}, {"Reference", "label"},
-    {"Footnote", "label"}, {"Specimen", "label"}, {"Citation", "referent"},  {"DirectiveBlock", "name"},
-    {"Directive", "name"}, {"Topic", "name"},     {"Callout", "variant"},    {"CodeBlock", "language"},
+    {"", "anchor"},        {"", "attributes"},      {"Link", "dest"},          {"Embedded", "dest"},
+    {"Reference", "dest"}, {"CrossLink", "dest"},   {"CrossEmbedded", "dest"}, {"Reference", "label"},
+    {"Footnote", "label"}, {"Specimen", "label"},   {"Citation", "referent"},  {"DirectiveBlock", "name"},
+    {"Directive", "name"}, {"Topic", "name"},       {"Callout", "variant"},    {"CodeBlock", "language"},
+    {"Metadata", "name"},  {"Metadata", "title"},   {"Metadata", "subtitle"},  {"Metadata", "time"},
+    {"Metadata", "date"},  {"Metadata", "authors"}, {"Metadata", "keywords"},  {"Metadata", "abstract"},
+    {"Metadata", "state"}, {"Metadata", "comment"},
 };
+
+/* The properties grammar's field names, a Metadata's fields. */
+static const char *const NAMES[] = {"name",    "title",    "subtitle", "time",  "date",
+                                    "authors", "keywords", "abstract", "state", "comment"};
+enum { NAME_COUNT = sizeof(NAMES) / sizeof(NAMES[0]) };
 
 /* `memmem` and `strdup` are POSIX, not C: the runner builds on Windows too. */
 static const char *seek(const char *start, size_t length, const char *needle, size_t size) {
@@ -136,6 +143,22 @@ static void strip_scopes(char *text) {
     *out = 0;
 }
 
+static char *swapped(char *text, const char *from, const char *to);
+
+/* `text` with a Metadata's scalars all read as text, in place of `text`: a
+ * plain scalar's type follows from its bytes, which an edit changes, so
+ * `2020` reads as `text("2020")` and an empty value or `null` as
+ * `text("null")`. */
+static char *scalars_as_text(char *text) {
+    if (!text || !strstr(text, "Metadata ")) {
+        return text;
+    }
+    text = swapped(text, "number(\"", "text(\"");
+    text = swapped(text, "bool(true)", "text(\"true\")");
+    text = swapped(text, "bool(false)", "text(\"false\")");
+    return swapped(text, "scalar(null)", "scalar(text(\"null\"))");
+}
+
 static bool parse_tree(const uint8_t *source, size_t length, tree *out) {
     *out = (tree){0};
     markdown_core_document *document = NULL;
@@ -159,6 +182,9 @@ static bool parse_tree(const uint8_t *source, size_t length, tree *out) {
     out->text[size] = 0;
     markdown_core_dump_free(dump);
     strip_scopes(out->text);
+    if (!(out->text = scalars_as_text(out->text))) {
+        return false;
+    }
     size_t lines = 1;
     for (const char *c = out->text; *c; c++) {
         lines += *c == '\n';
@@ -663,6 +689,16 @@ static const char *verify_kept(const uint8_t *source, size_t length, size_t from
     return why;
 }
 
+/* Whether `[from, to)` of a Metadata's field word `w` is a whole string of
+ * it, or a whole line of a literal's: a quote or an escaped line ending
+ * before it and after it. */
+static bool whole(const word *w, size_t from, size_t to) {
+    const char *s = w->start;
+    const bool starts = (from >= 1 && s[from - 1] == '"') || (from >= 2 && s[from - 2] == '\\' && s[from - 1] == 'n');
+    const bool ends = to < w->length && (s[to] == '"' || (to + 1 < w->length && s[to] == '\\' && s[to + 1] == 'n'));
+    return starts && ends;
+}
+
 static const char *verify(const uint8_t *source, size_t length, size_t from, size_t to, const char *owner, bool id,
                           check_mode mode, bool closing) {
     tree base = {0}, sub = {0}, other = {0}, edge = {0}, side_base = {0};
@@ -770,6 +806,10 @@ static const char *verify(const uint8_t *source, size_t length, size_t from, siz
             why = ("a property changes other than by the field's value");
             goto done;
         }
+        if (!strcmp(owner, "Metadata") && !whole(&mine[i].was, starts[i], ends[i])) {
+            why = ("the field is part of a value");
+            goto done;
+        }
     }
     if (mode == CHECK_RECORD) {
         goto done;
@@ -858,7 +898,8 @@ static char member_at(const word *w, size_t at) {
 static const char *member_lands(const uint8_t *source, size_t length, size_t from, size_t to, const char *owner,
                                 const char *kind, bool closing) {
     const bool class = !strcmp(kind, "class"), value = !strcmp(kind, "value"), id = !strcmp(kind, "id");
-    if (!class && !value && !id) {
+    /* A Metadata's member has one value, no attribute's members. */
+    if ((!class && !value && !id) || !strcmp(owner, "Metadata")) {
         return NULL;
     }
     tree edited = {0};
@@ -909,15 +950,99 @@ static const char *member_lands(const uint8_t *source, size_t length, size_t fro
     return "the sentinel lands in another member";
 }
 
+/* The Metadata line of `t` split into parts, or false. */
+static bool metadata_of(const tree *t, line_parts *parts, size_t *line) {
+    for (size_t i = 0; i < t->count; i++) {
+        split_line(t->lines[i], parts);
+        if (same_kind(parts, "Metadata", 8)) {
+            *line = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+/* The value of the Metadata's field `name` in `parts`, or NULL. */
+static const word *field_of(const line_parts *parts, const char *name) {
+    for (size_t i = 0; i < parts->count; i++) {
+        if (parts->words[i].key == strlen(name) && !memcmp(parts->words[i].start, name, parts->words[i].key)) {
+            return &parts->words[i];
+        }
+    }
+    return NULL;
+}
+
+/* Whether field word `w` is unset, `=null`. */
+static bool unset(const word *w) { return w && w->length - w->key == 5 && !memcmp(w->start + w->key, "=null", 5); }
+
+static bool same_word(const word *a, const word *b) {
+    return a && b && a->length - a->key == b->length - b->key &&
+           !memcmp(a->start + a->key, b->start + b->key, a->length - a->key);
+}
+
+/* THE NAME CHECK of a Metadata's `field` slot: the sentinel names no field,
+ * so a name that sets no field, `with`, is written over the slot's source,
+ * `[from, to)`, instead, which must move the member's value there: `with`
+ * reads the value one field read, which reads null instead, or the value of
+ * a later member that names it, the first is set, and nothing else changes.
+ * A slot that holds less or more than the name names no field. */
+static const char *verify_name(const uint8_t *source, size_t length, size_t from, size_t to, const char *with) {
+    tree base = {0}, moved = {0};
+    line_parts was, now;
+    size_t line, other;
+    const char *why = NULL;
+    if (!parse_tree(source, length, &base) || !parse_spliced(source, length, from, to, with, &moved) ||
+        !metadata_of(&base, &was, &line) || !metadata_of(&moved, &now, &other) || line != other ||
+        base.count != moved.count || was.count != now.count) {
+        why = "the edited text does not parse to a Metadata";
+        goto done;
+    }
+    const word *old = NULL, *taken = field_of(&now, with);
+    for (size_t i = 0; i < was.count && !why; i++) {
+        const word *w = &was.words[i], *v = &now.words[i];
+        if (same_word(w, v) || v == taken) {
+            continue;
+        }
+        if (old || unset(w)) {
+            why = "another field changes";
+        }
+        old = w;
+    }
+    if (!why && (!old || !same_word(old, taken))) {
+        why = "another name does not move the value";
+    }
+    for (size_t i = 0; i < base.count && !why; i++) {
+        if (i != line && strcmp(base.lines[i], moved.lines[i])) {
+            why = "another node changes";
+        }
+    }
+done:
+    tree_free(&base);
+    tree_free(&moved);
+    return why;
+}
+
+/* Whether the Metadata of `source` leaves field `name` unset. */
+static bool leaves(const uint8_t *source, size_t length, const char *name) {
+    tree t = {0};
+    line_parts parts;
+    size_t line;
+    const bool found =
+        parse_tree(source, length, &t) && metadata_of(&t, &parts, &line) && unset(field_of(&parts, name));
+    tree_free(&t);
+    return found;
+}
+
 /* The checks of one closed slot whose source is `[from, to)`. */
 static void check_slot(report *r, const uint8_t *source, size_t length, size_t cursor, size_t from, size_t to,
                        const char *what, const char *kind, const char *owner, check_mode mode) {
     /* A field written in its own brackets or quotes holds its value
      * between them: a destination's `<...>`, a key's `{...}`, a quoted
      * attribute value. A cross link's anchor keeps the `^` that marks a
-     * block identifier, which its value drops when the rest is one. */
+     * block identifier, which its value drops when the rest is one. A
+     * Metadata's slot is inside its scalar's quotes already. */
     size_t starts[2] = {from, from}, ends[2] = {to, to};
-    if (to - from >= 2) {
+    if (to - from >= 2 && strcmp(owner, "Metadata")) {
         const uint8_t first = source[from], last = source[to - 1];
         if ((!strcmp(kind, "dest") && first == '<' && last == '>') ||
             ((!strcmp(kind, "bib") || !strcmp(kind, "specimen")) && first == '{' && last == '}') ||
@@ -935,6 +1060,27 @@ static void check_slot(report *r, const uint8_t *source, size_t length, size_t c
         }
     }
     r->checks++;
+    if (!strcmp(owner, "Metadata") && !strcmp(kind, "field")) {
+        /* A literal moves only to a prose field, which the Metadata may
+         * set already: then no name is checked. */
+        size_t after = to + (to < length && (source[to] == '"' || source[to] == '\''));
+        while (after < length && (source[after] == ' ' || source[after] == '\t' || source[after] == ':')) {
+            after++;
+        }
+        const bool literal = after < length && source[after] == '|';
+        const char *why = NULL;
+        for (size_t i = 0; i < NAME_COUNT; i++) {
+            const bool prose = !strcmp(NAMES[i], "abstract") || !strcmp(NAMES[i], "comment");
+            if ((prose || !literal) && leaves(source, length, NAMES[i]) &&
+                !(why = verify_name(source, length, from, to, NAMES[i]))) {
+                break;
+            }
+        }
+        if (why) {
+            fail_at(r, source, length, cursor, from, to, what, why);
+        }
+        return;
+    }
     const bool id = !strcmp(kind, "id") || !strcmp(kind, "value");
     const char *why = verify(source, length, starts[0], ends[0], owner, id, mode, true);
     if (why && (starts[1] != starts[0] || ends[1] != ends[0]) &&
@@ -952,9 +1098,6 @@ static void check_slot(report *r, const uint8_t *source, size_t length, size_t c
 /* Whether `w`, a property of a node of kind `parts`, is a field a slot
  * completes. */
 static bool completable(const line_parts *parts, const word *w) {
-    if (same_kind(parts, "Metadata", 8)) {
-        return false;
-    }
     for (size_t i = 0; i < sizeof(FIELDS) / sizeof(FIELDS[0]); i++) {
         if (strlen(FIELDS[i][1]) == w->key && !memcmp(w->start, FIELDS[i][1], w->key) &&
             (!*FIELDS[i][0] || same_kind(parts, FIELDS[i][0], strlen(FIELDS[i][0])))) {
@@ -1241,10 +1384,55 @@ static bool marked_up(const uint8_t *source, size_t from, unsigned char wrap) {
 
 static int flank(unsigned char c) { return c == ' ' || c == '\t' || c == '\n' || !c ? 0 : ispunct(c) ? 1 : 2; }
 
+/* Whether `from` is on a line of a literal's text, after its indentation:
+ * the member line before it, the last line indented less than `from`,
+ * ends with the literal's `|`; `*first` whether no line of text comes
+ * before it. */
+static bool literal_line(const uint8_t *source, size_t from, bool *first) {
+    size_t line = from;
+    while (line > 0 && source[line - 1] != '\n') {
+        line--;
+    }
+    for (size_t i = line; i < from; i++) {
+        if (source[i] != ' ') {
+            return false;
+        }
+    }
+    const size_t column = from - line;
+    *first = true;
+    while (line > 0) {
+        size_t start = line - 1;
+        while (start > 0 && source[start - 1] != '\n') {
+            start--;
+        }
+        size_t end = line - 1;
+        while (end > start && (source[end - 1] == ' ' || source[end - 1] == '\t' || source[end - 1] == '\r')) {
+            end--;
+        }
+        size_t indent = start;
+        while (indent < end && source[indent] == ' ') {
+            indent++;
+        }
+        if (indent < end && indent - start < column) {
+            return source[end - 1] == '|';
+        }
+        *first = *first && end == start;
+        line = start;
+    }
+    return false;
+}
+
 static bool refusable(const char *kind, const char *owner, const char *value, bool row, unsigned char wrap,
                       const uint8_t *source, size_t length, size_t from, size_t to) {
     if (strchr(value, '\n')) {
         return true;
+    }
+    if (!strcmp(owner, "Metadata")) {
+        /* A literal's line holds text, and its first a value that adds no
+         * indentation; a quoted or bare value holds any. */
+        bool first;
+        const bool blank = !value[strspn(value, " \t")];
+        return !strcmp(kind, "value") && literal_line(source, from, &first) && (blank || (first && value[0] == ' '));
     }
     const size_t size = strlen(value);
     /* A code span's backtick, a formula's `$` or a comment's `%%` closes
@@ -1913,6 +2101,39 @@ static void check_spell(report *r, const uint8_t *source, size_t length, size_t 
     free(expected);
 }
 
+/* THE NAME SPELLING CHECK of a Metadata's `field` slot: a member's name is
+ * one of the grammar's field names, so a name is written as it is, ASCII
+ * letters, numerals, `_` and `-` after the first, and any other value is
+ * refused. The name check (verify_name) judges where a name lands. */
+static void check_name_spell(report *r, const uint8_t *source, size_t length, size_t cursor, size_t from, size_t to,
+                             const markdown_core_context *context, size_t index, const char *what) {
+    for (size_t v = 0; v < VALUE_COUNT + NAME_COUNT; v++) {
+        const char *value = v < VALUE_COUNT ? VALUES[v] : NAMES[v - VALUE_COUNT];
+        const size_t size = strlen(value);
+        bool name = size && value[0] != '-';
+        for (size_t i = 0; i < size && name; i++) {
+            name = isalnum((unsigned char)value[i]) || value[i] == '_' || value[i] == '-';
+        }
+        markdown_core_insertion *made = NULL;
+        char why[256];
+        r->checks++;
+        if (markdown_core_slot_spell(context, index, (const uint8_t *)value, size, &made) != MARKDOWN_CORE_OK) {
+            fail_at(r, source, length, cursor, from, to, what, "spell fails");
+            continue;
+        }
+        char *desc = dumped(value);
+        if (!name && made) {
+            snprintf(why, sizeof(why), "spells \"%s\", which no name holds", desc);
+            fail_at(r, source, length, cursor, from, to, what, why);
+        } else if (name && (!made || made->size != size || made->cursor != size || memcmp(made->text, value, size))) {
+            snprintf(why, sizeof(why), "%s \"%s\"", made ? "misspells" : "refuses", desc);
+            fail_at(r, source, length, cursor, from, to, what, why);
+        }
+        free(desc);
+        markdown_core_insertion_free(made);
+    }
+}
+
 /* Whether `position` is in a table's cell, whose `|` a field cannot hold
  * bare. */
 static bool in_row(const markdown_core_document *document, const uint8_t *source, size_t length,
@@ -1983,6 +2204,10 @@ static void check_example(report *r, const uint8_t *source, size_t length) {
             markdown_core_slot_kind_name(slot.kind, &name);
             char what[96];
             snprintf(what, sizeof(what), "%s %s %s", spell_mode ? "spell" : "slot", name, kind_name(slot.owner));
+            if (spell_mode && slot.owner == MARKDOWN_CORE_KIND_METADATA && slot.kind == MARKDOWN_CORE_SLOT_FIELD) {
+                check_name_spell(r, source, length, at, from, to, context, i, what);
+                continue;
+            }
             if (spell_mode) {
                 check_spell(r, source, length, at, from, to, context, i, &slot,
                             in_row(document, source, length, position), what, name, kind_name(slot.owner));
