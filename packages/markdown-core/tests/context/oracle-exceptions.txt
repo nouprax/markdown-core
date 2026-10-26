@@ -56,3 +56,10 @@ generated:90303 missed Span.attributes # `:d[[\]]{.c}]`: the label holds a span
 generated:91303 slot dest CrossLink # `\` escapes the label's `]`
 generated:91503 slot dest CrossEmbedded # `\` escapes the label's `]`
 generated:92803 slot dest CrossLink # `\` escapes the label's `]`
+
+# A quoted value that runs on past its line, to a line of only `}` before a
+# fence: the query reads the cursor's line, where the quote is open, and
+# the span the document closes on the next line is not yet there. A known
+# gap, not an oracle limit.
+generated:43404 missed Span.attributes # `[x]{k="```` then `\}` then a fence
+generated:43411 missed Span.attributes # `[x]{k="```` then `}` then a fence

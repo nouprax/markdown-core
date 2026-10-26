@@ -307,7 +307,10 @@ Step 2d built field scopes and marker ranges this way:
   and one function in each element's file). The reader re-reads the node's
   joined text with the element's own scanners, as the parse read it, so a
   field is where the parse read it. Nothing is stored on the node: the
-  ranges are computed on request, as a node's scope is.
+  ranges are computed on request, as a node's scope is. The joined text
+  reads a NUL as U+FFFD, as the parse does, and a query finds the runs a
+  held node or a range meets by binary search, so one query is linear in
+  the node's runs.
 - A node the parse makes rather than reads owns no source. A row's
   autocompleted cell sits on the row's last byte, which the cell before it
   holds, so that byte stays the row's. A cell that spans rows holds bytes
@@ -331,6 +334,8 @@ Step 2d built field scopes and marker ranges this way:
   inserting the sentinel before it instead, and a definition's label is
   renamed at every field that writes it. Failures the oracle cannot judge
   are listed with their reasons in `tests/context/field-exceptions.txt`.
+  The generated inputs nest formulas (`$`, `$$$`), comments (`%%`,
+  `<!--`) and fences too, and one atom holds a NUL.
 
 ### 3.2 Slot kinds
 

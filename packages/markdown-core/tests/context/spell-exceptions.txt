@@ -1,0 +1,48 @@
+# Spellings the spell oracle finds wrong (tests/runners/oracle_runner.c,
+# --spell), known gaps of markdown_core_slot_spell.
+#
+# One per line: FIXTURE:EXAMPLE-LINE WHAT # reason. An entry that no
+# failure meets any more fails the run, so the list only shrinks.
+
+# A NUL later on the line, which the parse reads as U+FFFD: the slot refuses
+# a key or a cross link's path with a `:`, which the document would read
+# whole.
+generated:30421 spell record Span # NUL in the value after the key
+generated:41221 spell record Span # NUL in the value after the key
+generated:90421 spell record Span # NUL in the value after the key
+generated:120421 spell record Span # NUL in the value after the key
+generated:280421 spell record Span # NUL in the value after the key
+generated:31021 spell record Directive # NUL in the value after the key
+generated:91021 spell record Directive # NUL in the value after the key
+generated:101221 spell record Directive # NUL in the value after the key
+generated:121021 spell record Directive # NUL in the value after the key
+generated:281021 spell record Directive # NUL in the value after the key
+generated:31421 spell dest CrossLink # NUL in the label after the path
+generated:91421 spell dest CrossLink # NUL in the label after the path
+generated:121421 spell dest CrossLink # NUL in the label after the path
+generated:141221 spell dest CrossLink # NUL in the label after the path
+generated:280121 spell dest CrossLink # NUL in the label after the path
+generated:281421 spell dest CrossLink # NUL in the label after the path
+
+# A quoted value that runs on past its line into a fence: the slot refuses
+# every value there, and a citation key on the fence's next line is
+# spelled in braces that the document reads as the key's own.
+generated:43401 spell value Span # value runs into a fence
+generated:43402 spell value Span # value runs into a fence
+generated:43403 spell value Span # value runs into a fence
+generated:43405 spell value Span # value runs into a fence
+generated:43407 spell value Span # value runs into a fence
+generated:43408 spell value Span # value runs into a fence
+generated:43409 spell value Span # value runs into a fence
+generated:43410 spell value Span # value runs into a fence
+generated:43412 spell value Span # value runs into a fence
+generated:43413 spell value Span # value runs into a fence
+generated:43414 spell value Span # value runs into a fence
+generated:43416 spell value Span # value runs into a fence
+generated:43417 spell value Span # value runs into a fence
+generated:43418 spell value Span # value runs into a fence
+generated:43419 spell value Span # value runs into a fence
+generated:43420 spell value Span # value runs into a fence
+generated:43421 spell value Span # value runs into a fence
+generated:43409 spell bib Citation # key after a value that runs into a fence
+generated:93409 spell bib Citation # key after a value that runs into a fence

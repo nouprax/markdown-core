@@ -470,7 +470,8 @@ static bufsize_t numeric_reference(const unsigned char *data, bufsize_t hash, bu
  * no `(` of its own, as manual_scan_link_url_2 reads it, and one in angle
  * brackets at its `>`, a `<` or a line ending. A label runs to a bracket. A
  * backslash escapes the byte after it, and the `#` of a numeric character
- * reference starts no fragment. */
+ * reference starts no fragment. The source's NUL is the parse's U+FFFD,
+ * which a destination holds. */
 static bufsize_t field_end(const unsigned char *data, bufsize_t length, bool angled, bool fragment) {
     bufsize_t i = 0, amp = -1;
     size_t depth = 0;
@@ -492,7 +493,7 @@ static bufsize_t field_end(const unsigned char *data, bufsize_t length, bool ang
         amp = c == '&' ? i : amp;
         if ((!fragment && c == '#' && !depth) ||
             (angled ? c == '>' || c == '<' || markdown_core_is_line_end(c)
-                    : destination_excludes(c) || (c == ')' && !depth) || (c == '(' && depth == 32))) {
+                    : (c && destination_excludes(c)) || (c == ')' && !depth) || (c == '(' && depth == 32))) {
             break;
         }
         depth += !angled && c == '(';

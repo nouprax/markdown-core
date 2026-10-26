@@ -6,7 +6,9 @@
 
 /* THE GENERATED INPUTS: each atom inside each inner construct inside each
  * outer one, where the nesting and the escapes the fixtures write one at a
- * time meet. A construct is a template whose `@` the next one fills. */
+ * time meet. A construct is a template whose `@` the next one fills. An
+ * atom's \001 stands for NUL, which a C string cannot hold and which the
+ * parser reads as U+FFFD. */
 static const char *const CONSTRUCTS[] = {
     "[@](u)",
     "[x](@)",
@@ -38,10 +40,15 @@ static const char *const CONSTRUCTS[] = {
     "x @ y",
     "[@][r]\n\n[r]: u",
     "x @ y #i#",
+    "$@$",
+    "$$$@$$$",
+    "%%@%%",
+    "<!--@-->",
+    "```\n@\n```",
 };
 static const char *const ATOMS[] = {
-    "a", "a b", "\\]", "\\}", "&amp;", "\"q\"", "{.x}",     "#t",     "@k",  "]",
-    "}", "<u>", "`",   "(",   "|",     "#t#",   "\\&#35;t", "&#35;t", "a#b", "\\#",
+    "a",   "a b", "\\]", "\\}", "&amp;", "\"q\"",    "{.x}",   "#t",  "@k",  "]",      "}",
+    "<u>", "`",   "(",   "|",   "#t#",   "\\&#35;t", "&#35;t", "a#b", "\\#", "a\001b",
 };
 enum {
     CONSTRUCT_COUNT = sizeof(CONSTRUCTS) / sizeof(CONSTRUCTS[0]),
@@ -61,7 +68,7 @@ static char *fill(const char *template, const char *with) {
     return out;
 }
 
-bool samples_each(void (*check)(void *context, const char *source, int number), void *context) {
+bool samples_each(void (*check)(void *context, const char *source, size_t length, int number), void *context) {
     for (size_t outer = 0; outer < CONSTRUCT_COUNT; outer++) {
         for (size_t inner = 0; inner < CONSTRUCT_COUNT; inner++) {
             for (size_t atom = 0; atom < ATOM_COUNT; atom++) {
@@ -77,7 +84,11 @@ bool samples_each(void (*check)(void *context, const char *source, int number), 
                 if (getenv("ORACLE_VERBOSE")) {
                     fprintf(stderr, "generated:%d: %s\n", number, source);
                 }
-                check(context, source, number);
+                const size_t length = strlen(source);
+                for (char *at = source; (at = strchr(at, '\x01')) != NULL;) {
+                    *at = '\0';
+                }
+                check(context, source, length, number);
                 free(source);
             }
         }

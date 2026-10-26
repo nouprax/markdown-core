@@ -18,7 +18,8 @@ promised to remain compatible between releases.
   the document reads the field: `> [!no` without its `]` leaves the
   `variant` slot open, and so does `{.fo` in a fence's info string for the
   `class` slot. A reference definition's fragment that ends the text now
-  starts after its `#`.
+  starts after its `#`. A field with a NUL, which the parse reads as U+FFFD,
+  is found where it is written.
 
 - Write a value into a slot (language engine plan, step 2c).
   `markdown_core_slot_spell` returns the text that replaces a slot's source

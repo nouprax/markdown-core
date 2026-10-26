@@ -794,10 +794,10 @@ static void check_example(report *r, const uint8_t *source, size_t length) {
     markdown_core_document_free(document);
 }
 
-static void check_one(void *context, const char *source, int number) {
+static void check_one(void *context, const char *source, size_t length, int number) {
     report *r = context;
     r->line = number;
-    check_example(r, (const uint8_t *)source, strlen(source));
+    check_example(r, (const uint8_t *)source, length);
 }
 
 int main(int argc, char **argv) {

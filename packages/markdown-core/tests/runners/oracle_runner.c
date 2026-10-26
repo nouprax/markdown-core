@@ -1949,12 +1949,12 @@ static void check_example(report *r, const uint8_t *source, size_t length) {
 
 /* Checks one generated input, named `generated` and numbered as
  * samples_each numbers it. */
-static void check_one(void *context, const char *source, int number) {
+static void check_one(void *context, const char *source, size_t length, int number) {
     report *r = context;
     ts_spec_case *example = (ts_spec_case *)r->example;
     example->start_line = number;
     r->generated++;
-    check_example(r, (const uint8_t *)source, strlen(source));
+    check_example(r, (const uint8_t *)source, length);
 }
 
 static bool check_generated(report *r, size_t *examples) {
