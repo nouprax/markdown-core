@@ -437,6 +437,7 @@ set(MARKDOWN_CORE_PATHOLOGICAL_CASES
     empty_lines_in_deep_list_blockquote
     emphasis_in_deep_blockquote
     nul_in_input
+    properties_carriage_returns
     backticks
     flanking_stray_continuations
     flanking_continuation_runs
