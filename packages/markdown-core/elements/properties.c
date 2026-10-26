@@ -18,6 +18,8 @@
  * the parser reads as one name and one value of the properties grammar
  * (docs/specs/dialect/properties.md) sets its field, the first time only;
  * any other member is skipped as a whole. No source range is read twice.
+ * The parse reads the members of the common shapes directly (direct), as
+ * the parser would, and leaves it the rest.
  *
  * The parse decodes the payload once, into the document's metadata, and
  * the places' reader decodes it again on request (properties.h): each
@@ -32,6 +34,10 @@ typedef struct {
     /* The reader's places, or NULL in the parse. */
     markdown_core_metadata_places *places;
     markdown_core_yaml_parser yaml;
+    /* Whether the direct reader may read a member (direct), and how many
+     * it read. */
+    bool direct;
+    size_t taken;
     bool failed;
     /* One-line lookahead: the boundary line is the next member's line, and
      * its classification belongs to it. `line` starts it, `first` is its
@@ -142,42 +148,55 @@ static bool number(const unsigned char *s, size_t size) {
     return i == size;
 }
 
-/* A scalar's value: quoted text is text; plain text is null when empty or
+/* A scalar's kind: quoted text is text; plain text is null when empty or
  * `null`, a boolean when `true` or `false`, a number when it spells one,
- * and text otherwise. A value on one line holds no decoded line ending.
- * The scalar's text moves into the value. */
+ * and text otherwise. */
+static markdown_core_metadata_scalar_kind kind_of(bool plain, const unsigned char *text, size_t size) {
+    return !plain                                                      ? MARKDOWN_CORE_METADATA_TEXT
+           : !size || equals(text, size, "null")                       ? MARKDOWN_CORE_METADATA_NULL
+           : equals(text, size, "true") || equals(text, size, "false") ? MARKDOWN_CORE_METADATA_BOOL
+           : number(text, size)                                        ? MARKDOWN_CORE_METADATA_NUMBER
+                                                                       : MARKDOWN_CORE_METADATA_TEXT;
+}
+
+/* A scalar's value of `kind` and `size` bytes, its text moved in, if any:
+ * a boolean keeps no text,
+ * and empty text owns one byte, as every string of the value does. */
+static bool settle(properties *p, markdown_core_metadata_scalar_kind kind, unsigned char *text, size_t size,
+                   markdown_core_metadata_scalar *scalar) {
+    scalar->kind = kind;
+    if (kind == MARKDOWN_CORE_METADATA_BOOL) {
+        /* `true` is the boolean of four letters, `false` of five. */
+        scalar->value.boolean = size == 4;
+    } else if (kind == MARKDOWN_CORE_METADATA_TEXT || kind == MARKDOWN_CORE_METADATA_NUMBER) {
+        unsigned char *owned = text ? text : markdown_core_alloc(1, 1);
+        if (!owned) {
+            p->failed = true;
+            return false;
+        }
+        scalar->value.string = (markdown_core_string){owned, size};
+        return true;
+    }
+    markdown_core_free(text);
+    return true;
+}
+
+/* A scalar's value from its event. A value on one line holds no decoded
+ * line ending. The scalar's text moves into the value. */
 static bool resolve(properties *p, markdown_core_yaml_event *e, markdown_core_metadata_scalar *scalar) {
-    const unsigned char *text = e->text;
+    unsigned char *text = e->text;
     const size_t size = e->size;
     if (e->style != MARKDOWN_CORE_YAML_LITERAL && (memchr(text ? text : (const unsigned char *)"", '\n', size) ||
                                                    memchr(text ? text : (const unsigned char *)"", '\r', size))) {
         return false;
     }
-    scalar->kind = e->style != MARKDOWN_CORE_YAML_PLAIN                        ? MARKDOWN_CORE_METADATA_TEXT
-                   : !size || equals(text, size, "null")                       ? MARKDOWN_CORE_METADATA_NULL
-                   : equals(text, size, "true") || equals(text, size, "false") ? MARKDOWN_CORE_METADATA_BOOL
-                   : number(text, size)                                        ? MARKDOWN_CORE_METADATA_NUMBER
-                                                                               : MARKDOWN_CORE_METADATA_TEXT;
-    if (scalar->kind == MARKDOWN_CORE_METADATA_BOOL) {
-        scalar->value.boolean = equals(text, size, "true");
-    } else if (scalar->kind == MARKDOWN_CORE_METADATA_TEXT || scalar->kind == MARKDOWN_CORE_METADATA_NUMBER) {
-        /* Empty text owns one byte, as every string of the value does. */
-        unsigned char *owned = e->text ? e->text : markdown_core_alloc(1, 1);
-        if (!owned) {
-            p->failed = true;
-            return false;
-        }
-        e->text = NULL;
-        scalar->value.string = (markdown_core_string){owned, size};
-    }
-    return true;
+    e->text = NULL;
+    return settle(p, kind_of(e->style == MARKDOWN_CORE_YAML_PLAIN, text, size), text, size, scalar);
 }
 
-static void place(properties *p, markdown_core_slot_kind slot, markdown_core_yaml_style style, size_t from, size_t to) {
+static void record(properties *p, markdown_core_slot_kind slot, markdown_core_yaml_style style, size_t from,
+                   size_t to) {
     markdown_core_metadata_places *places = p->places;
-    if (!places) {
-        return;
-    }
     markdown_core_metadata_place *items =
         markdown_core_reserve(places->items, &places->capacity, places->count + 1, sizeof(*items));
     if (!items) {
@@ -186,6 +205,14 @@ static void place(properties *p, markdown_core_slot_kind slot, markdown_core_yam
     }
     places->items = items;
     items[places->count++] = (markdown_core_metadata_place){slot, style, from, to};
+}
+
+/* Records a place for the reader; the parse keeps none. */
+static inline void place(properties *p, markdown_core_slot_kind slot, markdown_core_yaml_style style, size_t from,
+                         size_t to) {
+    if (p->places) {
+        record(p, slot, style, from, to);
+    }
 }
 
 /* Reads the member that starts its line at `start`, its name at `first`,
@@ -267,6 +294,269 @@ static bool decode(properties *p, size_t start, size_t end, markdown_core_metada
     return valid;
 }
 
+/* THE DIRECT READER. The parse reads the members of the common shapes
+ * without the YAML parser: a name at the line's start, then on its line
+ * nothing, a plain scalar, a quoted one without escapes, a flow list of
+ * those, or a literal of the default header; the member's other lines are
+ * blank, or the literal's. It knows each such shape as the YAML parser
+ * reads it, so its verdict is the parser's (the direct suite holds the two
+ * to each other); any other member, and any byte it does not know, it
+ * leaves to the parser. */
+typedef enum { DIRECT_UNSURE, DIRECT_KEPT, DIRECT_DROPPED } direct_verdict;
+
+/* The width of the character at `at` that a scalar may hold as it is: an
+ * ASCII one that prints, or a tab where `tab`, or a well-formed UTF-8 one,
+ * of its shortest form, that prints and breaks no line; else 0. */
+static size_t direct_width(const unsigned char *s, size_t at, size_t end, bool tab) {
+    const unsigned char c = s[at];
+    if (c < 0x80) {
+        return (c >= 0x20 && c < 0x7f) || (tab && c == '\t') ? 1 : 0;
+    }
+    const size_t width = c < 0xc2 ? 0 : c < 0xe0 ? 2 : c < 0xf0 ? 3 : c < 0xf5 ? 4 : 0;
+    if (!width || end - at < width) {
+        return 0;
+    }
+    uint32_t code = c & (0x7f >> width);
+    for (size_t i = 1; i < width; i++) {
+        if ((s[at + i] & 0xc0) != 0x80) {
+            return 0;
+        }
+        code = code << 6 | (s[at + i] & 0x3f);
+    }
+    const uint32_t least = width == 2 ? 0x80 : width == 3 ? 0x800 : 0x10000;
+    return code >= least && code <= 0x10ffff && code >= 0xa0 && code != 0x2028 && code != 0x2029 && code != 0xfeff &&
+                   !(code >= 0xd800 && code <= 0xdfff) && code != 0xfffe && code != 0xffff
+               ? width
+               : 0;
+}
+
+/* The end of a plain scalar's text from `at` on its line before `stop`,
+ * or 0 when it holds a byte the reader does not know: a `: `, a ` #`
+ * starts no text, and in a flow list nor does a flow indicator or `:`. */
+static size_t direct_plain(const unsigned char *s, size_t at, size_t stop, bool flow) {
+    if (at == stop || (strchr("-?:,[]{}#&*!|>'\"%@`", s[at]) &&
+                       !(s[at] == '-' && at + 1 < stop && s[at + 1] != ' ' && s[at + 1] != '\t'))) {
+        return 0;
+    }
+    size_t last = at;
+    for (size_t i = at; i < stop;) {
+        const unsigned char c = s[i];
+        if (c == ' ') {
+            i++;
+            continue;
+        }
+        if ((c == '#' && s[i - 1] == ' ') || (flow && (c == ',' || c == ']'))) {
+            break;
+        }
+        if (c == ':' ? flow || i + 1 == stop || s[i + 1] == ' ' || s[i + 1] == '\t' : flow && strchr("[{}", c)) {
+            return 0;
+        }
+        const size_t width = direct_width(s, i, stop, false);
+        if (!width) {
+            return 0;
+        }
+        i += width;
+        last = i;
+    }
+    return last;
+}
+
+/* The end of a quoted scalar opened at `at`, past its closing quote, or 0
+ * when it escapes, doubles its quote or leaves its line. */
+static size_t direct_quoted(const unsigned char *s, size_t at, size_t stop) {
+    const unsigned char quote = s[at];
+    for (size_t i = at + 1; i < stop;) {
+        if (s[i] == quote) {
+            return i + 1 < stop && s[i + 1] == quote ? 0 : i + 1;
+        }
+        const size_t width = s[i] == '\\' && quote == '"' ? 0 : direct_width(s, i, stop, true);
+        if (!width) {
+            return 0;
+        }
+        i += width;
+    }
+    return 0;
+}
+
+/* Whether the line goes on from `at` to `stop` with nothing but blanks and
+ * then a comment separated from what precedes `at`. */
+static bool direct_rest(const unsigned char *s, size_t at, size_t stop) {
+    size_t i = at;
+    while (i < stop && s[i] == ' ') {
+        i++;
+    }
+    return i == stop || (i > at && s[i] == '#');
+}
+
+/* A scalar's value from the text at `from` to `to`, copied. */
+static direct_verdict direct_scalar(properties *p, bool plain, size_t from, size_t to,
+                                    markdown_core_metadata_scalar *scalar) {
+    const unsigned char *text = p->text + from;
+    const size_t size = to - from;
+    const markdown_core_metadata_scalar_kind kind = kind_of(plain, text, size);
+    unsigned char *copy = NULL;
+    if (kind == MARKDOWN_CORE_METADATA_TEXT || kind == MARKDOWN_CORE_METADATA_NUMBER) {
+        copy = markdown_core_alloc(size + 1, 1);
+        if (!copy) {
+            p->failed = true;
+            return DIRECT_DROPPED;
+        }
+        memcpy(copy, text, size);
+    }
+    return settle(p, kind, copy, size, scalar) ? DIRECT_KEPT : DIRECT_DROPPED;
+}
+
+/* A flow list from its `[` at `at` on its line before `stop`. */
+static direct_verdict direct_list(properties *p, size_t at, size_t stop, markdown_core_metadata_value *value) {
+    const unsigned char *s = p->text;
+    size_t capacity = 0;
+    value->kind = MARKDOWN_CORE_METADATA_LIST;
+    for (size_t i = at + 1;;) {
+        while (i < stop && s[i] == ' ') {
+            i++;
+        }
+        if (i < stop && s[i] == ']') {
+            return direct_rest(s, i + 1, stop) ? DIRECT_KEPT : DIRECT_UNSURE;
+        }
+        if (i == stop) {
+            return DIRECT_UNSURE;
+        }
+        const bool plain = s[i] != '"' && s[i] != '\'';
+        const size_t to = plain ? direct_plain(s, i, stop, true) : direct_quoted(s, i, stop);
+        if (!to) {
+            return DIRECT_UNSURE;
+        }
+        /* A null or boolean item drops the list, whatever follows. */
+        markdown_core_metadata_scalar item = {0};
+        if (direct_scalar(p, plain, plain ? i : i + 1, plain ? to : to - 1, &item) != DIRECT_KEPT ||
+            (item.kind != MARKDOWN_CORE_METADATA_TEXT && item.kind != MARKDOWN_CORE_METADATA_NUMBER)) {
+            return DIRECT_DROPPED;
+        }
+        markdown_core_metadata_list_item *items =
+            markdown_core_reserve(value->as.list.items, &capacity, value->as.list.count + 1, sizeof(*items));
+        if (!items) {
+            markdown_core_free((void *)item.value.string.data);
+            p->failed = true;
+            return DIRECT_DROPPED;
+        }
+        value->as.list.items = items;
+        items[value->as.list.count++] = (markdown_core_metadata_list_item){item.kind == MARKDOWN_CORE_METADATA_NUMBER
+                                                                               ? MARKDOWN_CORE_METADATA_ITEM_NUMBER
+                                                                               : MARKDOWN_CORE_METADATA_ITEM_TEXT,
+                                                                           item.value.string};
+        i = to;
+        while (i < stop && s[i] == ' ') {
+            i++;
+        }
+        if (i < stop && s[i] == ',') {
+            i++;
+        } else if (i == stop || s[i] != ']') {
+            return DIRECT_UNSURE;
+        }
+    }
+}
+
+/* A literal of the default header, its lines from `line` to `end`: each
+ * past the indentation of its first line with text, blank lines kept
+ * between them and one line ending kept after the last. A blank line of
+ * more spaces than that indentation, a line of less, a tab in it and a
+ * carriage return are the parser's. */
+static direct_verdict direct_literal(properties *p, size_t line, size_t end, markdown_core_metadata_scalar *scalar) {
+    const unsigned char *s = p->text;
+    unsigned char *text = markdown_core_alloc(end - line + 1, 1);
+    if (!text) {
+        p->failed = true;
+        return DIRECT_DROPPED;
+    }
+    /* Blank lines before the first line with text are no deeper than it. */
+    size_t size = 0, kept = 0, indent = 0, deepest = 0;
+    for (size_t at = line; at < end;) {
+        size_t stop = at, spaces;
+        while (stop < end && s[stop] != '\n') {
+            stop++;
+        }
+        for (spaces = at; spaces < stop && s[spaces] == ' '; spaces++) {
+        }
+        bool known = stop < end;
+        if (spaces == stop) {
+            known = known && (!indent || spaces - at <= indent);
+            deepest = indent || deepest > spaces - at ? deepest : spaces - at;
+            text[size++] = '\n';
+        } else {
+            indent = indent ? indent : spaces - at;
+            known = known && spaces - at >= indent && deepest <= indent && s[spaces] != '\t';
+            for (size_t i = at + indent; known && i < stop;) {
+                const size_t width = direct_width(s, i, stop, true);
+                known = width != 0;
+                memcpy(text + size, s + i, width);
+                size += width;
+                i += width;
+            }
+            text[size++] = '\n';
+            kept = size;
+        }
+        if (!known) {
+            markdown_core_free(text);
+            return DIRECT_UNSURE;
+        }
+        at = stop + 1;
+    }
+    return settle(p, MARKDOWN_CORE_METADATA_TEXT, text, kept, scalar) ? DIRECT_KEPT : DIRECT_DROPPED;
+}
+
+/* Reads the member at `start`, whose plain name, from `start` to its colon
+ * before `key`, names the unset field `slot`, and which ends at `end`. */
+static direct_verdict direct(properties *p, size_t start, size_t key, size_t end,
+                             const markdown_core_metadata_value *slot, markdown_core_metadata_value *value) {
+    const unsigned char *s = p->text;
+    if (s[key - 2] == ' ' || s[key - 2] == '\t') {
+        return DIRECT_UNSURE;
+    }
+    size_t stop = key;
+    while (stop < end && s[stop] != '\n' && s[stop] != '\r') {
+        stop++;
+    }
+    size_t next = stop < end && s[stop] == '\r' ? stop + 1 : stop;
+    if (next == end || s[next] != '\n') {
+        return DIRECT_UNSURE;
+    }
+    size_t at = key;
+    while (at < stop && s[at] == ' ') {
+        at++;
+    }
+    const bool prose = slot == &p->metadata->abstract || slot == &p->metadata->comment;
+    if (at + 1 == stop && s[at] == '|') {
+        value->kind = MARKDOWN_CORE_METADATA_SCALAR;
+        if (!prose) {
+            return DIRECT_DROPPED;
+        }
+        return s[stop] == '\r' ? DIRECT_UNSURE : direct_literal(p, next + 1, end, &value->as.scalar);
+    }
+    /* The member's other lines are blank. */
+    for (size_t i = next + 1; i < end; i++) {
+        if (s[i] != ' ' && s[i] != '\n' && !(s[i] == '\r' && i + 1 < end && s[i + 1] == '\n')) {
+            return DIRECT_UNSURE;
+        }
+    }
+    if (at < stop && at == key) {
+        return DIRECT_UNSURE;
+    }
+    if (at == stop || s[at] == '#') {
+        value->kind = MARKDOWN_CORE_METADATA_SCALAR;
+        return DIRECT_KEPT;
+    }
+    if (s[at] == '[') {
+        return direct_list(p, at, stop, value);
+    }
+    const bool plain = s[at] != '"' && s[at] != '\'';
+    const size_t to = plain ? direct_plain(s, at, stop, false) : direct_quoted(s, at, stop);
+    if (!to || !direct_rest(s, to, stop)) {
+        return DIRECT_UNSURE;
+    }
+    value->kind = MARKDOWN_CORE_METADATA_SCALAR;
+    return direct_scalar(p, plain, plain ? at : at + 1, plain ? to : to - 1, &value->as.scalar);
+}
+
 /* Reads the member that starts its line at `start`, its name at `first`
  * and the byte after the name's colon at `key`, and ends at `end`. The
  * line's classification found the name: a member without one, and one
@@ -287,9 +577,16 @@ static void member(properties *p, size_t start, size_t first, size_t key, size_t
     if (known) {
         p->work->decoded_bytes += end - start;
     }
-    if (known && decode(p, start, end, &slot, &value) && !p->failed) {
+    direct_verdict verdict =
+        slot && known && p->direct && first == start ? direct(p, start, key, end, slot, &value) : DIRECT_UNSURE;
+    p->taken += verdict != DIRECT_UNSURE;
+    if (verdict == DIRECT_UNSURE && known) {
+        free_value(&value);
+        verdict = decode(p, start, end, &slot, &value) ? DIRECT_KEPT : DIRECT_DROPPED;
+    }
+    if (verdict == DIRECT_KEPT && !p->failed) {
         *slot = value;
-        for (size_t i = 0; i < p->yaml.comment_count; i++) {
+        for (size_t i = 0; p->places && i < p->yaml.comment_count; i++) {
             place(p, MARKDOWN_CORE_SLOT_NONE, MARKDOWN_CORE_YAML_PLAIN, p->yaml.comments[i].from,
                   p->yaml.comments[i].to);
         }
@@ -361,10 +658,12 @@ static void classify_line(properties *p, size_t line) {
     }
     p->classified = true;
     p->line = line;
-    size_t stop = line;
-    while (stop < p->end && !markdown_core_is_line_end(p->text[stop])) {
-        stop++;
-    }
+    /* The line ends at its first carriage return or line feed: two scans
+     * that skip whole words of the line. */
+    const unsigned char *feed = memchr(p->text + line, '\n', p->end - line);
+    const size_t limit = feed ? (size_t)(feed - p->text) : p->end;
+    const unsigned char *ret = memchr(p->text + line, '\r', limit - line);
+    const size_t stop = ret ? (size_t)(ret - p->text) : limit;
     p->stop = stop;
     size_t first = line;
     while (first < stop && p->text[first] == ' ') {
@@ -568,7 +867,7 @@ size_t markdown_core_properties_parse(markdown_core_properties_work *work, markd
         return 0;
     }
     size_t consumed = next_line(source, close + 3, length);
-    properties p = {.text = source, .end = close, .work = work, .metadata = node->as.metadata};
+    properties p = {.text = source, .end = close, .work = work, .metadata = node->as.metadata, .direct = true};
     node->place = (markdown_core_place){0, (uint32_t)(close + 3)};
     payload(&p, next_line(source, 3, length));
     properties_close(&p);
@@ -600,6 +899,17 @@ bool markdown_core_metadata_places_read(const unsigned char *text, size_t length
     payload(&p, next_line(text, 3 < end ? 3 : end, end));
     properties_close(&p);
     markdown_core_metadata_fields_free(&fields);
+    return !p.failed;
+}
+
+bool markdown_core_metadata_fields_read(const unsigned char *text, size_t length, bool direct,
+                                        markdown_core_metadata_fields *fields, size_t *taken) {
+    const size_t end = length >= 3 ? length - 3 : 0;
+    markdown_core_properties_work work = {0};
+    properties p = {.text = text, .end = end, .work = &work, .metadata = fields, .direct = direct};
+    payload(&p, next_line(text, 3 < end ? 3 : end, end));
+    properties_close(&p);
+    *taken = p.taken;
     return !p.failed;
 }
 

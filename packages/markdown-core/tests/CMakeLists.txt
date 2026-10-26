@@ -113,6 +113,11 @@ if(MARKDOWN_CORE_STATIC)
         oom_runner PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_BINARY_DIR}"
                            "${MARKDOWN_CORE_ELEMENTS_SOURCE_DIR}" "${MARKDOWN_CORE_ELEMENTS_BINARY_DIR}")
     target_link_libraries(oom_runner libmarkdown-core-public-static)
+    # direct_runner reads envelopes with the properties reader itself, the
+    # parse's direct reader and the YAML parser (elements/properties.h).
+    add_executable(direct_runner runners/direct_runner.c support/test_support.c)
+    target_include_directories(direct_runner PRIVATE ${MARKDOWN_CORE_TEST_SUPPORT_INCLUDES})
+    target_link_libraries(direct_runner libmarkdown-core-public-static)
 endif()
 markdown_core_add_runner(entity_runner runners/entity_runner.c)
 markdown_core_add_runner(dump_cli_runner runners/dump_cli_runner.c)
@@ -360,6 +365,12 @@ markdown_core_add_test(
     --generate
     ${_markdown_core_context_sweep}
     "${MARKDOWN_CORE_CONTEXT_FIXTURE}")
+# elements: the parse's direct reader of properties against the YAML parser,
+# on every envelope of every fixture and of the generated members.
+if(MARKDOWN_CORE_STATIC)
+    markdown_core_add_test(elements_metadata_direct elements 120 direct_runner ${_markdown_core_context_sweep}
+                           "${MARKDOWN_CORE_CONTEXT_FIXTURE}")
+endif()
 # elements: attaching one element must not change another's block opener.
 markdown_core_add_test(elements_conflicts elements 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/elements-conflicts.txt")
