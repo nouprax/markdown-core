@@ -59,11 +59,14 @@ lookup tables are immutable, while parser, option, allocation, and extension
 attachment state belongs to each one-shot parse instance. Independent parser
 instances may therefore execute concurrently.
 
-The properties grammar's YAML parser, `elements/yaml.c`, is reworked from
+The properties grammar's YAML parser, `elements/yaml.c`, reads YAML as
 libyaml's scanner and parser at commit
 `90a56d4500aa1a1798514c5cb55c3ad4cb095f94` (<https://github.com/yaml/libyaml>,
-MIT). It keeps libyaml's structure, so an upstream fix is ported by hand; the
-file's header records what the rework changes.
+MIT) read it, and its scalar scanners keep their logic. It replaced a rework
+that kept libyaml's structure, its token queue and its parser states, with
+one recursive-descent pass; `tests/yaml/events.txt` freezes the rework's
+readings, which the two parsers shared on about six million generated texts.
+An upstream fix is ported as a reading: a case in that file, then the code.
 
 Original copyright, attribution, and license notices remain in `LICENSE` and
 `COPYING`. They apply to inherited code and data as described in those files.

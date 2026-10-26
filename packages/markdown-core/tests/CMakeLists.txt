@@ -113,6 +113,10 @@ if(MARKDOWN_CORE_STATIC)
         oom_runner PRIVATE "${MARKDOWN_CORE_CORE_SOURCE_DIR}" "${MARKDOWN_CORE_CORE_BINARY_DIR}"
                            "${MARKDOWN_CORE_ELEMENTS_SOURCE_DIR}" "${MARKDOWN_CORE_ELEMENTS_BINARY_DIR}")
     target_link_libraries(oom_runner libmarkdown-core-public-static)
+    # yaml_runner reads the YAML parser's events, an internal interface.
+    add_executable(yaml_runner runners/yaml_runner.c)
+    target_include_directories(yaml_runner PRIVATE "${MARKDOWN_CORE_ELEMENTS_SOURCE_DIR}")
+    target_link_libraries(yaml_runner libmarkdown-core-public-static)
 endif()
 markdown_core_add_runner(entity_runner runners/entity_runner.c)
 markdown_core_add_runner(dump_cli_runner runners/dump_cli_runner.c)
@@ -360,6 +364,11 @@ markdown_core_add_test(
     --generate
     ${_markdown_core_context_sweep}
     "${MARKDOWN_CORE_CONTEXT_FIXTURE}")
+# elements: the YAML parser's events for the frozen readings of the libyaml
+# rework it replaced, and its nesting and name limits.
+if(MARKDOWN_CORE_STATIC)
+    markdown_core_add_test(elements_yaml elements 120 yaml_runner "${MARKDOWN_CORE_TESTS_SOURCE_DIR}/yaml/events.txt")
+endif()
 # elements: attaching one element must not change another's block opener.
 markdown_core_add_test(elements_conflicts elements 120 spec_runner --spec
                        "${MARKDOWN_CORE_TEST_FIXTURES_DIR}/elements-conflicts.txt")

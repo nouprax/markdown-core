@@ -1,134 +1,155 @@
-/* The YAML parser (yaml.h), reworked from libyaml's scanner (src/scanner.c)
- * and parser (src/parser.c), https://github.com/yaml/libyaml at commit
- * 90a56d4500aa1a1798514c5cb55c3ad4cb095f94 (2026-08-21). Its structure,
- * the token queue, the simple-key candidates, the indentation stack and the
- * parser's states, is libyaml's, so a fix upstream can be ported by hand.
- * The rework reads UTF-8 text in place with the repository's allocator and
- * buffers, and reads the properties language (yaml.h): no encodings, BOM,
- * directives, tags, anchors, aliases, explicit names or folded scalars; a
- * scalar ends with its line; double-quoted escapes are JSON's; a literal is
- * a bare `|` whose first nonblank line sets its indentation; a `- ` where no
- * block item may begin starts plain text; NEL, LS and PS are text, not line
- * breaks; a simple name's 1024 limit counts characters; and the scanner
- * keeps the comments it skips.
- *
- * libyaml's licence:
- *
- * Copyright (c) 2017-2020 Ingy döt Net
- * Copyright (c) 2006-2016 Kirill Simonov
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy of
- * this software and associated documentation files (the "Software"), to deal in
- * the Software without restriction, including without limitation the rights to
- * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
- * of the Software, and to permit persons to whom the Software is furnished to do
- * so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- */
+/* The YAML parser (yaml.h). It reads a text in one pass by recursive
+ * descent: each block collection is a call that knows its column, each
+ * flow collection a call that knows its depth, and a node that a `:`
+ * follows on its line becomes a name once it is read, its mapping's start
+ * written before it. The readings are libyaml's (https://github.com/yaml/libyaml)
+ * as the properties language takes them: a name may start only where a
+ * block item may, or after a flow collection's `[`, `{` or `,`; a name at
+ * a block collection's column must be one; an item or a name deeper than
+ * its collection opens a nested one, and a token shallower closes it; a
+ * value left out reads as an empty plain scalar. */
 #include "yaml.h"
 #include "alloc.h"
 #include "buffer.h"
 #include "utf8.h"
 
-#include <limits.h>
 #include <stdint.h>
 #include <string.h>
 
-/* The deepest nesting of collections, libyaml's default. */
+/* The deepest nesting of collections, block and flow together. */
 #define NESTING 1000
-/* The most characters a simple name may hold. */
+/* The most characters a simple name and the spaces after it may hold. */
 #define NAME_LIMIT 1024
 
-typedef enum {
-    STREAM_START,
-    STREAM_END,
-    DOCUMENT_START,
-    DOCUMENT_END,
-    BLOCK_LIST_START,
-    BLOCK_MAP_START,
-    BLOCK_END,
-    FLOW_LIST_START,
-    FLOW_LIST_END,
-    FLOW_MAP_START,
-    FLOW_MAP_END,
-    /* A block item's `-`. */
-    ITEM,
-    /* A flow collection's `,`. */
-    COMMA,
-    NAME,
-    VALUE,
-    SCALAR,
-} token_kind;
-
-struct markdown_core_yaml_token {
-    token_kind kind;
-    markdown_core_yaml_mark start, end;
-    markdown_core_yaml_style style;
-    const unsigned char *text;
-    unsigned char *owned;
-    size_t size, from, to;
-};
-
-/* A place a simple name may start, at one flow depth: libyaml's simple
- * key. */
-struct markdown_core_yaml_candidate {
-    bool possible, required;
-    size_t number;
-    markdown_core_yaml_mark mark;
-};
-
 typedef markdown_core_yaml_parser parser;
-typedef markdown_core_yaml_token token;
-typedef markdown_core_yaml_candidate candidate;
-typedef markdown_core_yaml_mark mark;
 typedef markdown_core_yaml_event event;
 
 /* THE TEXT, read in place. A byte past the end reads as -1. */
 static int peek(const parser *p, size_t k) {
-    const size_t at = p->mark.at + k;
+    const size_t at = p->at + k;
     return at < p->end ? p->text[at] : -1;
 }
 static bool blank(int c) { return c == ' ' || c == '\t'; }
 static bool newline(int c) { return c == '\r' || c == '\n'; }
 static bool blankz(int c) { return c < 0 || blank(c) || newline(c); }
 static bool breakz(int c) { return c < 0 || newline(c); }
-static bool among(int c, const char *set) { return c > 0 && strchr(set, c); }
+/* A flow collection's punctuation. */
+static bool punctuation(int c) { return c == ',' || c == '[' || c == ']' || c == '{' || c == '}'; }
+/* A character that starts a token other than plain text. */
+static bool indicator(int c) {
+    switch (c) {
+    case '-':
+    case '?':
+    case ':':
+    case ',':
+    case '[':
+    case ']':
+    case '{':
+    case '}':
+    case '#':
+    case '&':
+    case '*':
+    case '!':
+    case '|':
+    case '>':
+    case '\'':
+    case '"':
+    case '%':
+    case '@':
+    case '`':
+        return true;
+    default:
+        return false;
+    }
+}
 static int hex(int c) {
     return c >= '0' && c <= '9'   ? c - '0'
            : c >= 'a' && c <= 'f' ? c - 'a' + 10
            : c >= 'A' && c <= 'F' ? c - 'A' + 10
                                   : -1;
 }
+/* The column of `at`. A block token's column counts the spaces, dashes
+ * and indicators before it on its line, which are ASCII, so bytes count
+ * characters. */
+static size_t column(const parser *p) { return p->at - p->head; }
 static bool marker(const parser *p, int c) {
-    return p->mark.column == 0 && peek(p, 0) == c && peek(p, 1) == c && peek(p, 2) == c && blankz(peek(p, 3));
+    return p->at == p->head && peek(p, 0) == c && peek(p, 1) == c && peek(p, 2) == c && blankz(peek(p, 3));
+}
+static void feed(parser *p) {
+    p->at += peek(p, 0) == '\r' && peek(p, 1) == '\n' ? 2 : 1;
+    p->line++;
+    p->head = p->at;
 }
 
-/* The width of the character at the mark, as the validation walked it. */
-static size_t width(const parser *p) {
-    int32_t scalar;
-    return p->text[p->mark.at] < 0x80
-               ? 1
-               : (size_t)markdown_core_utf8proc_decode(p->text + p->mark.at, (bufsize_t)(p->end - p->mark.at), &scalar);
+static bool fail(parser *p, const char *problem) {
+    if (!p->problem) {
+        p->problem = problem;
+        p->place = p->at;
+    }
+    return false;
 }
-static void skip(parser *p) {
-    p->mark.at += width(p);
-    p->mark.column++;
+static bool exhausted(parser *p) {
+    p->failed = true;
+    return fail(p, "an allocation failed");
 }
-static void skip_line(parser *p) {
-    p->mark.at += peek(p, 0) == '\r' && peek(p, 1) == '\n' ? 2 : 1;
-    p->mark.line++;
-    p->mark.column = 0;
+
+/* THE EVENTS, written in order; a mapping's start goes back before the
+ * name that opens it. */
+static event *insert(parser *p, size_t index, markdown_core_yaml_kind kind) {
+    event *wider = markdown_core_reserve(p->events, &p->room, p->count + 1, sizeof(*p->events));
+    if (!wider) {
+        exhausted(p);
+        return NULL;
+    }
+    p->events = wider;
+    memmove(wider + index + 1, wider + index, (p->count - index) * sizeof(*wider));
+    p->count++;
+    wider[index] = (event){.kind = kind, .line = p->line};
+    return wider + index;
 }
+static event *emit(parser *p, markdown_core_yaml_kind kind) {
+    if (p->count == p->room) {
+        return insert(p, p->count, kind);
+    }
+    event *e = p->events + p->count++;
+    *e = (event){.kind = kind, .line = p->line};
+    return e;
+}
+/* An empty plain scalar where a node is left out, at `at` on `line`. */
+static bool absent(parser *p, size_t index, size_t at, size_t line) {
+    event *e = insert(p, index, MARKDOWN_CORE_YAML_SCALAR);
+    if (!e) {
+        return false;
+    }
+    e->from = e->to = at;
+    e->line = line;
+    return true;
+}
+/* Opens a collection, at most NESTING deep. */
+static event *open(parser *p, markdown_core_yaml_kind kind, size_t index, bool flow) {
+    if (p->open + p->depth >= NESTING) {
+        fail(p, "exceeded maximum nesting depth");
+        return NULL;
+    }
+    event *e = insert(p, index, kind);
+    if (e) {
+        e->flow = flow;
+        if (flow) {
+            p->depth++;
+        } else {
+            p->open++;
+        }
+    }
+    return e;
+}
+static bool shut(parser *p, markdown_core_yaml_kind kind, bool flow) {
+    event *e = emit(p, kind);
+    if (e) {
+        e->flow = flow;
+    }
+    return e != NULL;
+}
+
 /* Appends the text from `from` to `to`, each NUL as U+FFFD. */
 static void put(const parser *p, markdown_core_strbuf *text, size_t from, size_t to) {
     for (;;) {
@@ -142,25 +163,6 @@ static void put(const parser *p, markdown_core_strbuf *text, size_t from, size_t
         from = stop + 1;
     }
 }
-/* Appends the character at the mark, a NUL as U+FFFD, and skips it. */
-static void take(parser *p, markdown_core_strbuf *text) {
-    const size_t at = p->mark.at;
-    skip(p);
-    put(p, text, at, p->mark.at);
-}
-
-static bool fail(parser *p, const char *problem) {
-    if (!p->problem) {
-        p->problem = problem;
-        p->place = p->mark;
-    }
-    return false;
-}
-static bool exhausted(parser *p) {
-    p->failed = true;
-    return fail(p, "an allocation failed");
-}
-
 /* A scalar's text given up on a problem: an allocation that failed while
  * it was read is the problem, whatever the text goes on to be. */
 static bool abandon(parser *p, markdown_core_strbuf *text, const char *problem) {
@@ -169,290 +171,207 @@ static bool abandon(parser *p, markdown_core_strbuf *text, const char *problem) 
     return oom ? exhausted(p) : fail(p, problem);
 }
 
-/* Moves `text` into the token, which then owns it; an empty text is none. */
-static bool own(parser *p, token *t, markdown_core_strbuf *text) {
-    if (text->oom) {
-        markdown_core_strbuf_free(text);
-        return exhausted(p);
-    }
-    t->size = (size_t)text->size;
-    t->owned = t->size ? markdown_core_strbuf_detach(text) : NULL;
-    t->text = t->owned;
-    markdown_core_strbuf_free(text);
-    return !t->size || t->owned || exhausted(p);
-}
-
 /* A SCALAR'S TEXT is the bytes it is written in, read in place, unless
  * reading it changes them: an escape, a doubled apostrophe, a NUL, which
  * reads as U+FFFD, or a literal's indentation and line endings. Then the
- * scanner writes the text into a buffer the token owns. */
-static bool view(parser *p, token *t, size_t from, size_t to) {
-    if (!memchr(p->text + from, 0, to - from)) {
-        t->text = p->text + from;
-        t->size = to - from;
+ * parser writes the text into a buffer the event owns. */
+static event *scalar(parser *p, markdown_core_yaml_style style, size_t from, size_t to, size_t line) {
+    event *e = emit(p, MARKDOWN_CORE_YAML_SCALAR);
+    if (e) {
+        e->style = style;
+        e->from = from;
+        e->to = to;
+        e->line = line;
+    }
+    return e;
+}
+/* Moves `text` into the event, which then owns it; an empty text is none. */
+static bool own(parser *p, event *e, markdown_core_strbuf *text) {
+    if (!e || text->oom) {
+        markdown_core_strbuf_free(text);
+        return e ? exhausted(p) : false;
+    }
+    e->size = (size_t)text->size;
+    e->owned = e->size ? markdown_core_strbuf_detach(text) : NULL;
+    e->text = e->owned;
+    markdown_core_strbuf_free(text);
+    return !e->size || e->owned || exhausted(p);
+}
+static bool view(parser *p, event *e) {
+    if (!e) {
+        return false;
+    }
+    if (!memchr(p->text + e->from, 0, e->to - e->from)) {
+        e->text = e->to > e->from ? p->text + e->from : NULL;
+        e->size = e->to - e->from;
         return true;
     }
     markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT();
-    put(p, &text, from, to);
-    return own(p, t, &text);
+    put(p, &text, e->from, e->to);
+    return own(p, e, &text);
 }
 
-/* THE QUEUE of tokens the scanner has read and the parser has not taken. */
-static void token_free(token *t) {
-    markdown_core_free(t->owned);
-    t->owned = NULL;
-}
-static bool insert(parser *p, size_t index, token t) {
-    token *grown = markdown_core_reserve(p->tokens, &p->room, p->tail + 1, sizeof(*p->tokens));
-    if (!grown) {
-        token_free(&t);
-        return exhausted(p);
-    }
-    p->tokens = grown;
-    memmove(p->tokens + p->head + index + 1, p->tokens + p->head + index,
-            (p->tail - p->head - index) * sizeof(*p->tokens));
-    p->tokens[p->head + index] = t;
-    p->tail++;
-    return true;
-}
-static bool enqueue(parser *p, token t) { return insert(p, p->tail - p->head, t); }
-static bool simple(parser *p, token_kind kind, mark start, mark end) {
-    return enqueue(p, (token){.kind = kind, .start = start, .end = end});
-}
-
-static bool push_int(parser *p, int **values, size_t *count, size_t *room, int value) {
-    int *grown = markdown_core_reserve(*values, room, *count + 1, sizeof(**values));
-    if (!grown) {
-        return exhausted(p);
-    }
-    *values = grown;
-    grown[(*count)++] = value;
-    return true;
-}
-
-/* THE SIMPLE NAMES. A scalar or a flow collection that a `:` follows on its
- * line within 1024 characters is a name; the scanner keeps where each one
- * that may be starts, and a `:` turns it into a NAME token before it. */
-static bool stale(parser *p) {
-    for (size_t i = 0; i < p->candidate_count; i++) {
-        candidate *c = &p->candidates[i];
-        if (c->possible && (c->mark.line < p->mark.line || c->mark.column + NAME_LIMIT < p->mark.column)) {
-            if (c->required) {
-                p->mark = c->mark;
-                return fail(p, "could not find expected ':'");
-            }
-            c->possible = false;
-        }
-    }
-    return true;
-}
-static bool remove_candidate(parser *p) {
-    candidate *c = &p->candidates[p->candidate_count - 1];
-    if (c->possible && c->required) {
-        return fail(p, "could not find expected ':'");
-    }
-    c->possible = false;
-    return true;
-}
-static bool save_candidate(parser *p) {
-    /* A name is required where a block collection's indentation puts it. */
-    const bool required = !p->depth && p->indent == (int)p->mark.column;
-    if (p->allowed) {
-        const candidate c = {true, required, p->parsed + (p->tail - p->head), p->mark};
-        if (!remove_candidate(p)) {
-            return false;
-        }
-        p->candidates[p->candidate_count - 1] = c;
-    }
-    return true;
-}
-static bool push_candidate(parser *p) {
-    candidate *grown =
-        markdown_core_reserve(p->candidates, &p->candidate_room, p->candidate_count + 1, sizeof(*p->candidates));
-    if (!grown) {
-        return exhausted(p);
-    }
-    p->candidates = grown;
-    p->candidates[p->candidate_count++] = (candidate){0};
-    return true;
-}
-
-static bool deeper(parser *p) {
-    if (!push_candidate(p)) {
-        return false;
-    }
-    if (p->indent_count >= (size_t)(NESTING - p->depth)) {
-        return fail(p, "exceeded maximum nesting depth");
-    }
-    p->depth++;
-    return true;
-}
-static void shallower(parser *p) {
-    if (p->depth) {
-        p->depth--;
-        p->candidate_count--;
-    }
-}
-
-/* THE INDENTATION of block collections. A token at a deeper column opens a
- * collection, its start token queued at `number`, or last when -1; a token
- * at a shallower one closes each collection deeper than it. */
-static bool roll(parser *p, int column, ptrdiff_t number, token_kind kind, mark at) {
-    if (p->depth || p->indent >= column) {
-        return true;
-    }
-    if (!push_int(p, &p->indents, &p->indent_count, &p->indent_room, p->indent)) {
-        return false;
-    }
-    if (p->indent_count > (size_t)(NESTING - p->depth)) {
-        return fail(p, "exceeded maximum nesting depth");
-    }
-    p->indent = column;
-    const token t = {.kind = kind, .start = at, .end = at};
-    return number < 0 ? enqueue(p, t) : insert(p, (size_t)number - p->parsed, t);
-}
-static bool unroll(parser *p, int column) {
-    if (p->depth) {
-        return true;
-    }
-    while (p->indent > column) {
-        if (!simple(p, BLOCK_END, p->mark, p->mark)) {
-            return false;
-        }
-        p->indent = p->indents[--p->indent_count];
-    }
-    return true;
-}
-
-/* THE TOKENS. */
-static bool fetch_stream_start(parser *p) {
-    p->indent = -1;
-    if (!push_candidate(p)) {
-        return false;
-    }
-    p->allowed = true;
-    p->started = true;
-    return simple(p, STREAM_START, p->mark, p->mark);
-}
-static bool fetch_stream_end(parser *p) {
-    if (p->mark.column != 0) {
-        p->mark.column = 0;
-        p->mark.line++;
-    }
-    if (!unroll(p, -1) || !remove_candidate(p)) {
-        return false;
-    }
-    p->allowed = false;
-    return simple(p, STREAM_END, p->mark, p->mark);
-}
-static bool fetch_document_marker(parser *p, token_kind kind) {
-    if (!unroll(p, -1) || !remove_candidate(p)) {
-        return false;
-    }
-    p->allowed = false;
-    const mark start = p->mark;
-    skip(p);
-    skip(p);
-    skip(p);
-    return simple(p, kind, start, p->mark);
-}
-static bool fetch_flow_start(parser *p, token_kind kind) {
-    if (!save_candidate(p) || !deeper(p)) {
-        return false;
-    }
-    p->allowed = true;
-    const mark start = p->mark;
-    skip(p);
-    return simple(p, kind, start, p->mark);
-}
-static bool fetch_flow_end(parser *p, token_kind kind) {
-    if (!remove_candidate(p)) {
-        return false;
-    }
-    shallower(p);
-    p->allowed = false;
-    const mark start = p->mark;
-    skip(p);
-    return simple(p, kind, start, p->mark);
-}
-static bool fetch_comma(parser *p) {
-    if (!remove_candidate(p)) {
-        return false;
-    }
-    p->allowed = true;
-    const mark start = p->mark;
-    skip(p);
-    return simple(p, COMMA, start, p->mark);
-}
-static bool fetch_item(parser *p) {
-    if (!p->depth) {
-        if (!p->allowed) {
-            return fail(p, "block sequence entries are not allowed in this context");
-        }
-        if (!roll(p, (int)p->mark.column, -1, BLOCK_LIST_START, p->mark)) {
-            return false;
-        }
-    }
-    if (!remove_candidate(p)) {
-        return false;
-    }
-    p->allowed = true;
-    const mark start = p->mark;
-    skip(p);
-    return simple(p, ITEM, start, p->mark);
-}
-static bool fetch_value(parser *p) {
-    candidate *c = &p->candidates[p->candidate_count - 1];
-    if (c->possible) {
-        /* The candidate was a name: its NAME token, and the block mapping it
-         * opens, go before it. */
-        if (!insert(p, c->number - p->parsed, (token){.kind = NAME, .start = c->mark, .end = c->mark}) ||
-            !roll(p, (int)c->mark.column, (ptrdiff_t)c->number, BLOCK_MAP_START, c->mark)) {
-            return false;
-        }
-        c->possible = false;
-        p->allowed = false;
-    } else {
-        if (!p->depth) {
-            if (!p->allowed) {
-                return fail(p, "mapping values are not allowed in this context");
-            }
-            if (!roll(p, (int)p->mark.column, -1, BLOCK_MAP_START, p->mark)) {
-                return false;
-            }
-        }
-        p->allowed = !p->depth;
-    }
-    const mark start = p->mark;
-    skip(p);
-    return simple(p, VALUE, start, p->mark);
-}
-
+/* Skips to the end of the line a comment starts on, keeping its span. */
 static bool comment(parser *p) {
-    markdown_core_yaml_span *grown =
+    markdown_core_yaml_span *wider =
         markdown_core_reserve(p->comments, &p->comment_room, p->comment_count + 1, sizeof(*p->comments));
-    if (!grown) {
+    if (!wider) {
         return exhausted(p);
     }
-    p->comments = grown;
-    const size_t from = p->mark.at;
+    p->comments = wider;
+    const size_t from = p->at;
     while (!breakz(peek(p, 0))) {
-        skip(p);
+        p->at++;
     }
-    p->comments[p->comment_count++] = (markdown_core_yaml_span){from, p->mark.at};
+    p->comments[p->comment_count++] = (markdown_core_yaml_span){from, p->at};
     return true;
 }
+/* Whether only blanks and a comment follow `at` on its line. */
+static bool idle(const parser *p) {
+    size_t k = 0;
+    while (blank(peek(p, k))) {
+        k++;
+    }
+    return breakz(peek(p, k)) || peek(p, k) == '#';
+}
+/* Skips spaces, comments and line breaks to the next token. A `#` starts a
+ * comment where a blank or the line's start comes before it. In a block
+ * collection a tab may only follow its line's first token, or lead to a
+ * comment or the line's end. */
+static bool pass(parser *p) {
+    for (;;) {
+        while (peek(p, 0) == ' ' || (peek(p, 0) == '\t' && (p->depth || !p->allowed))) {
+            p->at++;
+        }
+        /* A tab that leads to a comment or the line's end: so does each
+         * blank after it. */
+        if (peek(p, 0) == '\t' && idle(p)) {
+            while (blank(peek(p, 0))) {
+                p->at++;
+            }
+        }
+        if (peek(p, 0) == '#' && (p->at == p->head || blank(p->text[p->at - 1])) && !comment(p)) {
+            return false;
+        }
+        if (!newline(peek(p, 0))) {
+            return true;
+        }
+        feed(p);
+        if (!p->depth) {
+            p->allowed = true;
+        }
+    }
+}
+
+/* THE TOKEN at `at`, which a pass has reached: what starts there. */
+typedef enum {
+    END,
+    BAD,
+    DOCUMENT_START,
+    DOCUMENT_END,
+    LIST_OPEN,
+    MAP_OPEN,
+    LIST_CLOSE,
+    MAP_CLOSE,
+    COMMA,
+    /* A block item's `-`. */
+    ITEM,
+    /* A name's `:`. */
+    VALUE,
+    LITERAL,
+    QUOTED,
+    PLAIN,
+} token;
+
+static token look(parser *p) {
+    const int c = peek(p, 0);
+    if (c < 0) {
+        return END;
+    }
+    if (p->at == p->head) {
+        if (c == '%') {
+            fail(p, "directives are unsupported");
+            return BAD;
+        }
+        if (c == '-' && marker(p, '-')) {
+            return DOCUMENT_START;
+        }
+        if (c == '.' && marker(p, '.')) {
+            return DOCUMENT_END;
+        }
+    }
+    switch (c) {
+    case '[':
+        return LIST_OPEN;
+    case '{':
+        return MAP_OPEN;
+    case ']':
+        return LIST_CLOSE;
+    case '}':
+        return MAP_CLOSE;
+    case ',':
+        return COMMA;
+    case '*':
+        fail(p, "aliases are unsupported");
+        return BAD;
+    case '&':
+        fail(p, "anchors are unsupported");
+        return BAD;
+    case '!':
+        fail(p, "tags are unsupported");
+        return BAD;
+    default:
+        break;
+    }
+    const int next = peek(p, 1);
+    /* A `- ` where no block item may begin, as after a name's `:` on its
+     * line, is plain text: `authors: - Ada` is the text "- Ada". */
+    if (c == '-' && blankz(next) && (p->depth || p->allowed)) {
+        return ITEM;
+    }
+    if (c == '?' && (p->depth || blankz(next))) {
+        fail(p, "explicit names are unsupported");
+        return BAD;
+    }
+    if (c == ':' && (p->depth || blankz(next))) {
+        return VALUE;
+    }
+    if (c == '|' && !p->depth) {
+        return LITERAL;
+    }
+    if (c == '>' && !p->depth) {
+        fail(p, "folded scalars are unsupported");
+        return BAD;
+    }
+    if (c == '\'' || c == '"') {
+        return QUOTED;
+    }
+    /* A dash left here starts plain text: one no blank follows, or one
+     * where no block item may begin. */
+    if (!(blankz(c) || indicator(c)) || c == '-' || (!p->depth && (c == '?' || c == ':') && !blankz(next))) {
+        return PLAIN;
+    }
+    fail(p, "found character that cannot start any token");
+    return BAD;
+}
+/* Whether a token ends what holds a block node: the text's end, a
+ * document marker, or a token left of `column`. */
+static bool closes(const parser *p, token t, size_t inset) {
+    return t == END || t == DOCUMENT_START || t == DOCUMENT_END || column(p) < inset;
+}
+
+/* THE SCALARS. */
 
 /* A scalar between apostrophes or double quotes, on one line. */
-static bool scan_quoted(parser *p, token *t, bool apostrophe) {
-    const mark start = p->mark;
+static bool quoted(parser *p) {
+    const size_t line = p->line;
+    const bool apostrophe = peek(p, 0) == '\'';
     const int quote = apostrophe ? '\'' : '"';
     markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT();
     /* Whether the text is written into `text`: from the first character
      * that reading changes on. */
     bool copied = false;
-    skip(p);
-    const size_t from = p->mark.at;
+    const size_t from = ++p->at;
     for (;;) {
         const int c = peek(p, 0);
         if (c < 0) {
@@ -465,122 +384,110 @@ static bool scan_quoted(parser *p, token *t, bool apostrophe) {
             break;
         }
         if (!copied && (c == 0 || c == (apostrophe ? '\'' : '\\'))) {
-            put(p, &text, from, p->mark.at);
+            put(p, &text, from, p->at);
             copied = true;
         }
         if (apostrophe && c == '\'') {
             markdown_core_strbuf_putc(&text, '\'');
-            skip(p);
-            skip(p);
+            p->at += 2;
         } else if (!apostrophe && c == '\\') {
             /* JSON's escapes, with a surrogate pair written as two. */
-            const char *found = among(peek(p, 1), "btnfr\"/\\") ? strchr("btnfr\"/\\", peek(p, 1)) : NULL;
-            if (found) {
-                markdown_core_strbuf_putc(&text, (unsigned char)"\b\t\n\f\r\"/\\"[found - "btnfr\"/\\"]);
-                skip(p);
-                skip(p);
+            const char *hit = peek(p, 1) > 0 ? strchr("btnfr\"/\\", peek(p, 1)) : NULL;
+            if (hit) {
+                markdown_core_strbuf_putc(&text, (unsigned char)"\b\t\n\f\r\"/\\"[hit - "btnfr\"/\\"]);
+                p->at += 2;
                 continue;
             }
-            uint32_t scalar = 0;
+            uint32_t code = 0;
             for (int half = 0; half < 2; half++) {
-                uint32_t code = 0;
+                uint32_t unit = 0;
                 if (peek(p, 0) != '\\' || peek(p, 1) != 'u') {
                     return abandon(p, &text,
                                    half ? "found an unpaired surrogate escape" : "found unknown escape character");
                 }
                 for (size_t k = 2; k < 6; k++) {
-                    const int digit = hex(peek(p, k));
-                    if (digit < 0) {
+                    const int nibble = hex(peek(p, k));
+                    if (nibble < 0) {
                         return abandon(p, &text, "did not find expected hexdecimal number");
                     }
-                    code = (code << 4) | (uint32_t)digit;
+                    unit = (unit << 4) | (uint32_t)nibble;
                 }
-                for (size_t k = 0; k < 6; k++) {
-                    skip(p);
-                }
+                p->at += 6;
                 if (half) {
-                    if (code < 0xDC00 || code > 0xDFFF) {
+                    if (unit < 0xDC00 || unit > 0xDFFF) {
                         return abandon(p, &text, "found an unpaired surrogate escape");
                     }
-                    scalar = 0x10000 + ((scalar - 0xD800) << 10) + (code - 0xDC00);
+                    code = 0x10000 + ((code - 0xD800) << 10) + (unit - 0xDC00);
                     break;
                 }
-                scalar = code;
-                if (code >= 0xDC00 && code <= 0xDFFF) {
+                code = unit;
+                if (unit >= 0xDC00 && unit <= 0xDFFF) {
                     return abandon(p, &text, "found an unpaired surrogate escape");
                 }
-                if (code < 0xD800 || code > 0xDBFF) {
+                if (unit < 0xD800 || unit > 0xDBFF) {
                     break;
                 }
             }
-            markdown_core_utf8proc_encode_char((int32_t)scalar, &text);
+            markdown_core_utf8proc_encode_char((int32_t)code, &text);
         } else if (copied) {
-            take(p, &text);
+            const size_t at = p->at++;
+            put(p, &text, at, p->at);
         } else {
-            skip(p);
+            p->at++;
         }
     }
-    const size_t to = p->mark.at;
-    skip(p);
-    *t = (token){.kind = SCALAR,
-                 .start = start,
-                 .end = p->mark,
-                 .style = apostrophe ? MARKDOWN_CORE_YAML_APOSTROPHE : MARKDOWN_CORE_YAML_QUOTE,
-                 .from = from,
-                 .to = to};
+    event *e = scalar(p, apostrophe ? MARKDOWN_CORE_YAML_APOSTROPHE : MARKDOWN_CORE_YAML_QUOTE, from, p->at, line);
+    p->at++;
+    p->allowed = false;
     if (!copied) {
         markdown_core_strbuf_free(&text);
-        return view(p, t, from, to);
+        return view(p, e);
     }
-    return own(p, t, &text);
+    return own(p, e, &text);
 }
 
 /* A plain scalar, which its line ends: a scalar that would go on to the
  * next line is no scalar of the language, and the next line reads as the
- * tokens it holds. */
-static bool scan_plain(parser *p, token *t) {
-    const mark start = p->mark;
-    mark end = p->mark;
-    for (;;) {
-        if (marker(p, '-') || marker(p, '.') || peek(p, 0) == '#') {
-            break;
-        }
-        while (!blankz(peek(p, 0))) {
-            const int c = peek(p, 0);
-            if (p->depth && c == ':' && among(peek(p, 1), ",?[]{}")) {
+ * tokens it holds. It reads the blanks after it, as libyaml does. */
+static bool plain(parser *p) {
+    const size_t from = p->at;
+    size_t to = from;
+    while (peek(p, 0) != '#') {
+        int c;
+        while (!blankz(c = peek(p, 0))) {
+            if (p->depth && c == ':' && (punctuation(peek(p, 1)) || peek(p, 1) == '?')) {
                 return fail(p, "found unexpected ':'");
             }
-            if ((c == ':' && blankz(peek(p, 1))) || (p->depth && among(c, ",[]{}"))) {
+            if ((c == ':' && blankz(peek(p, 1))) || (p->depth && punctuation(c))) {
                 break;
             }
-            skip(p);
-            end = p->mark;
+            to = ++p->at;
         }
         if (!blank(peek(p, 0))) {
             break;
         }
         while (blank(peek(p, 0))) {
-            skip(p);
+            p->at++;
         }
     }
-    *t = (token){
-        .kind = SCALAR, .start = start, .end = end, .style = MARKDOWN_CORE_YAML_PLAIN, .from = start.at, .to = end.at};
-    return view(p, t, start.at, end.at);
+    p->allowed = false;
+    return view(p, scalar(p, MARKDOWN_CORE_YAML_PLAIN, from, to, p->line));
 }
 
 /* A literal: a bare `|`, then the lines its first nonblank line's
- * indentation holds, which must be deeper than the collection's. Each
- * line keeps what follows that indentation; a blank line is an empty one;
- * the text ends with one line ending after its last nonblank line. A
- * nonblank line indented less ends it. */
-static bool scan_literal(parser *p, token *t) {
-    const mark start = p->mark;
-    skip(p);
+ * indentation holds, which must be deeper than the block collection's
+ * column `indent` and at least one space deep. Each line keeps what
+ * follows that indentation; a blank line is an empty one; the text ends
+ * with one line ending after its last nonblank line. A nonblank line
+ * indented less ends it. */
+static bool literal(parser *p, ptrdiff_t indent) {
+    const size_t start = p->at, line = p->line;
+    p->at++;
     if (!blankz(peek(p, 0))) {
         return fail(p, "only a bare '|' is supported");
     }
     while (blank(peek(p, 0))) {
-        skip(p);
+        p->at++;
     }
     if (peek(p, 0) == '#' && !comment(p)) {
         return false;
@@ -589,741 +496,417 @@ static bool scan_literal(parser *p, token *t) {
         return fail(p, "did not find expected comment or line break");
     }
     if (newline(peek(p, 0))) {
-        skip_line(p);
+        feed(p);
     }
     markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT();
-    size_t indent = 0, clipped = 0, from = p->mark.at, to = p->mark.at;
+    size_t depth = 0, clipped = 0, from = start, to = start;
     bool first = true;
     while (peek(p, 0) >= 0) {
-        size_t spaces = 0, content = 0;
+        size_t spaces = 0, content;
         while (peek(p, spaces) == ' ') {
             spaces++;
         }
         for (content = spaces; blank(peek(p, content)); content++) {
         }
         if (breakz(peek(p, content))) {
-            for (size_t k = 0; k < content; k++) {
-                skip(p);
-            }
+            p->at += content;
             markdown_core_strbuf_putc(&text, '\n');
             if (newline(peek(p, 0))) {
-                skip_line(p);
+                feed(p);
             }
             continue;
         }
-        if (!indent) {
-            /* Deeper than the collection, and at least one space deep. */
-            if ((int)spaces <= p->indent || !spaces) {
+        if (!depth) {
+            if ((ptrdiff_t)spaces <= indent || !spaces) {
                 break;
             }
-            indent = spaces;
+            depth = spaces;
         }
-        if (spaces < indent) {
+        if (spaces < depth) {
             break;
         }
-        for (size_t k = 0; k < indent; k++) {
-            skip(p);
-        }
+        p->at += depth;
         if (first) {
-            from = p->mark.at;
+            from = p->at;
             first = false;
         }
-        const size_t line = p->mark.at;
+        const size_t at = p->at;
         while (!breakz(peek(p, 0))) {
-            skip(p);
+            p->at++;
         }
-        put(p, &text, line, p->mark.at);
-        to = p->mark.at;
+        put(p, &text, at, p->at);
+        to = p->at;
         markdown_core_strbuf_putc(&text, '\n');
         clipped = (size_t)text.size;
         if (newline(peek(p, 0))) {
-            skip_line(p);
+            feed(p);
         }
-    }
-    if (first) {
-        from = to = start.at;
     }
     markdown_core_strbuf_truncate(&text, (bufsize_t)clipped);
-    *t = (token){
-        .kind = SCALAR, .start = start, .end = p->mark, .style = MARKDOWN_CORE_YAML_LITERAL, .from = from, .to = to};
-    return own(p, t, &text);
+    p->allowed = true;
+    return own(p, scalar(p, MARKDOWN_CORE_YAML_LITERAL, from, to, line), &text);
 }
 
-static bool fetch_scalar(parser *p, int c) {
-    token t;
-    if (c == '|') {
-        if (!remove_candidate(p)) {
-            return false;
-        }
-        p->allowed = true;
-        if (!scan_literal(p, &t)) {
-            return false;
-        }
-    } else {
-        if (!save_candidate(p)) {
-            return false;
-        }
-        p->allowed = false;
-        if (!(c == '\'' || c == '"' ? scan_quoted(p, &t, c == '\'') : scan_plain(p, &t))) {
-            return false;
-        }
-    }
-    return enqueue(p, t);
+/* THE NODES. */
+
+/* What a block node's read found: the node; a name at the column of the
+ * collection that holds it, so that the node is left out (NAME); or the
+ * node, and after it a name at that column (AFTER). Either name is read,
+ * its events from `index` on, and `at` is at its `:`. */
+typedef enum { FAILED, NODE, NAME, AFTER } found;
+
+static bool flow(parser *p);
+static found block(parser *p, ptrdiff_t indent, bool indentless, size_t *index);
+
+/* A node of a flow collection: a scalar or a flow collection. */
+static bool element(parser *p, token t) {
+    return t == QUOTED                       ? quoted(p)
+           : t == PLAIN                      ? plain(p)
+           : t == LIST_OPEN || t == MAP_OPEN ? flow(p)
+                                             : t != BAD && fail(p, "did not find expected node content");
 }
 
-/* Whether only blanks and a comment follow the mark on its line. */
-static bool idle(const parser *p) {
-    size_t k = 0;
-    while (blank(peek(p, k))) {
-        k++;
+/* Whether the node read from `start`, on line `line`, is a name: a `:`
+ * follows it on that line, within NAME_LIMIT characters of its start.
+ * Blanks before the `:` are read. */
+static bool named(parser *p, size_t start, size_t line) {
+    while (blank(peek(p, 0))) {
+        p->at++;
     }
-    return breakz(peek(p, k)) || peek(p, k) == '#';
-}
-/* Whether a `#` at the mark starts a comment: a blank or a line start
- * comes before it. */
-static bool separated(const parser *p) { return p->mark.column == 0 || blank(p->text[p->mark.at - 1]); }
-
-/* Skips spaces, comments and line breaks to the next token. In a block
- * collection a tab may only follow its line's first token, or lead to a
- * comment or the line's end. */
-static bool scan_to_next(parser *p) {
-    for (;;) {
-        while (peek(p, 0) == ' ' || (peek(p, 0) == '\t' && (p->depth || !p->allowed || idle(p)))) {
-            skip(p);
-        }
-        if (peek(p, 0) == '#' && separated(p) && !comment(p)) {
-            return false;
-        }
-        if (!newline(peek(p, 0))) {
-            return true;
-        }
-        skip_line(p);
-        if (!p->depth) {
-            p->allowed = true;
-        }
-    }
-}
-
-static bool fetch_next(parser *p) {
-    if (!p->started) {
-        return fetch_stream_start(p);
-    }
-    if (!scan_to_next(p) || !stale(p) || !unroll(p, (int)p->mark.column)) {
+    if (p->line != line || peek(p, 0) != ':' || !(p->depth || blankz(peek(p, 1)))) {
         return false;
     }
-    const int c = peek(p, 0);
-    if (c < 0) {
-        return fetch_stream_end(p);
+    /* No more characters than bytes. */
+    size_t characters = 0;
+    for (size_t i = start; p->at - start > NAME_LIMIT && i < p->at && characters <= NAME_LIMIT; i++) {
+        characters += (p->text[i] & 0xC0) != 0x80;
     }
-    if (p->mark.column == 0 && c == '%') {
-        return fail(p, "directives are unsupported");
-    }
-    if (marker(p, '-')) {
-        return fetch_document_marker(p, DOCUMENT_START);
-    }
-    if (marker(p, '.')) {
-        return fetch_document_marker(p, DOCUMENT_END);
-    }
-    switch (c) {
-    case '[':
-        return fetch_flow_start(p, FLOW_LIST_START);
-    case '{':
-        return fetch_flow_start(p, FLOW_MAP_START);
-    case ']':
-        return fetch_flow_end(p, FLOW_LIST_END);
-    case '}':
-        return fetch_flow_end(p, FLOW_MAP_END);
-    case ',':
-        return fetch_comma(p);
-    case '*':
-        return fail(p, "aliases are unsupported");
-    case '&':
-        return fail(p, "anchors are unsupported");
-    case '!':
-        return fail(p, "tags are unsupported");
-    default:
-        break;
-    }
-    const int next = peek(p, 1);
-    /* A `- ` where no block item may begin, as after a name's `:` on its
-     * line, is plain text: `authors: - Ada` is the text "- Ada". */
-    if (c == '-' && blankz(next) && (p->depth || p->allowed)) {
-        return fetch_item(p);
-    }
-    if (c == '?' && (p->depth || blankz(next))) {
-        return fail(p, "explicit names are unsupported");
-    }
-    if (c == ':' && (p->depth || blankz(next))) {
-        return fetch_value(p);
-    }
-    if (c == '|' && !p->depth) {
-        return fetch_scalar(p, c);
-    }
-    if (c == '>' && !p->depth) {
-        return fail(p, "folded scalars are unsupported");
-    }
-    if (c == '\'' || c == '"') {
-        return fetch_scalar(p, c);
-    }
-    /* A dash left here starts plain text: one no blank follows, or one
-     * where no block item may begin. */
-    if (!(blankz(c) || among(c, "-?:,[]{}#&*!|>'\"%@`")) || c == '-' ||
-        (!p->depth && (c == '?' || c == ':') && !blankz(next))) {
-        return fetch_scalar(p, c);
-    }
-    return fail(p, "found character that cannot start any token");
+    return characters <= NAME_LIMIT || fail(p, "could not find expected ':'");
 }
 
-static bool fetch_more(parser *p) {
-    for (;;) {
-        bool need = p->head == p->tail;
-        if (!need) {
-            if (!stale(p)) {
-                return false;
-            }
-            for (size_t i = 0; i < p->candidate_count && !need; i++) {
-                need = p->candidates[i].possible && p->candidates[i].number == p->parsed;
+/* A flow collection, from its `[` or `{`. A node a `:` follows is a name:
+ * in a list it opens a mapping of one pair; in a mapping a node no `:`
+ * follows is a name whose value is left out. */
+static bool flow(parser *p) {
+    const bool map = peek(p, 0) == '{';
+    const token close = map ? MAP_CLOSE : LIST_CLOSE;
+    if (!open(p, map ? MARKDOWN_CORE_YAML_MAP_START : MARKDOWN_CORE_YAML_LIST_START, p->count, true)) {
+        return false;
+    }
+    p->at++;
+    p->allowed = true;
+    for (bool first = true;; first = false) {
+        if (!pass(p)) {
+            return false;
+        }
+        token t = look(p);
+        if (t != close) {
+            if (!first) {
+                if (t != COMMA) {
+                    return t != BAD &&
+                           fail(p, map ? "did not find expected ',' or '}'" : "did not find expected ',' or ']'");
+                }
+                p->at++;
+                p->allowed = true;
+                if (!pass(p)) {
+                    return false;
+                }
+                t = look(p);
             }
         }
-        if (!need) {
+        if (t == close) {
             break;
         }
-        if (!fetch_next(p)) {
+        const size_t index = p->count, start = p->at, line = p->line;
+        if (!element(p, t)) {
             return false;
         }
-    }
-    p->available = true;
-    return true;
-}
-
-static token *peek_token(parser *p) {
-    if (p->problem || (!p->available && !fetch_more(p))) {
-        return NULL;
-    }
-    return &p->tokens[p->head];
-}
-static void skip_token(parser *p) {
-    p->available = false;
-    p->parsed++;
-    token_free(&p->tokens[p->head]);
-    if (++p->head == p->tail) {
-        p->head = p->tail = 0;
-    }
-}
-
-/* THE PARSER, libyaml's state machine. */
-enum {
-    PARSE_STREAM_START,
-    PARSE_IMPLICIT_DOCUMENT_START,
-    PARSE_DOCUMENT_START,
-    PARSE_DOCUMENT_CONTENT,
-    PARSE_DOCUMENT_END,
-    PARSE_BLOCK_NODE,
-    PARSE_BLOCK_NODE_OR_INDENTLESS_LIST,
-    PARSE_FLOW_NODE,
-    PARSE_BLOCK_LIST_FIRST_ITEM,
-    PARSE_BLOCK_LIST_ITEM,
-    PARSE_INDENTLESS_LIST_ITEM,
-    PARSE_BLOCK_MAP_FIRST_NAME,
-    PARSE_BLOCK_MAP_NAME,
-    PARSE_BLOCK_MAP_VALUE,
-    PARSE_FLOW_LIST_FIRST_ITEM,
-    PARSE_FLOW_LIST_ITEM,
-    PARSE_FLOW_LIST_ITEM_MAP_NAME,
-    PARSE_FLOW_LIST_ITEM_MAP_VALUE,
-    PARSE_FLOW_LIST_ITEM_MAP_END,
-    PARSE_FLOW_MAP_FIRST_NAME,
-    PARSE_FLOW_MAP_NAME,
-    PARSE_FLOW_MAP_VALUE,
-    PARSE_FLOW_MAP_ABSENT_VALUE,
-    PARSE_END,
-};
-
-static bool parse_error(parser *p, const char *problem, mark at) {
-    p->mark = at;
-    return fail(p, problem);
-}
-static bool push_state(parser *p, int state) { return push_int(p, &p->states, &p->state_count, &p->state_room, state); }
-static int pop_state(parser *p) { return p->states[--p->state_count]; }
-static bool push_mark(parser *p, mark at) {
-    mark *grown = markdown_core_reserve(p->marks, &p->mark_room, p->mark_count + 1, sizeof(*p->marks));
-    if (!grown) {
-        return exhausted(p);
-    }
-    p->marks = grown;
-    p->marks[p->mark_count++] = at;
-    return true;
-}
-static mark pop_mark(parser *p) { return p->marks[--p->mark_count]; }
-
-static void emit(event *e, markdown_core_yaml_kind kind, mark start, mark end) {
-    *e = (event){.kind = kind, .start = start, .end = end};
-}
-/* An empty plain scalar where a node is left out. */
-static bool absent(event *e, mark at) {
-    emit(e, MARKDOWN_CORE_YAML_SCALAR, at, at);
-    e->from = e->to = at.at;
-    return true;
-}
-
-static bool parse_node(parser *p, event *e, bool block, bool indentless) {
-    token *t = peek_token(p);
-    if (!t) {
-        return false;
-    }
-    if (indentless && t->kind == ITEM) {
-        p->state = PARSE_INDENTLESS_LIST_ITEM;
-        emit(e, MARKDOWN_CORE_YAML_LIST_START, t->start, t->end);
-        return true;
-    }
-    switch (t->kind) {
-    case SCALAR:
-        p->state = pop_state(p);
-        emit(e, MARKDOWN_CORE_YAML_SCALAR, t->start, t->end);
-        e->style = t->style;
-        e->text = t->text;
-        e->owned = t->owned;
-        e->size = t->size;
-        e->from = t->from;
-        e->to = t->to;
-        t->owned = NULL;
-        skip_token(p);
-        return true;
-    case FLOW_LIST_START:
-        p->state = PARSE_FLOW_LIST_FIRST_ITEM;
-        emit(e, MARKDOWN_CORE_YAML_LIST_START, t->start, t->end);
-        e->flow = true;
-        return true;
-    case FLOW_MAP_START:
-        p->state = PARSE_FLOW_MAP_FIRST_NAME;
-        emit(e, MARKDOWN_CORE_YAML_MAP_START, t->start, t->end);
-        e->flow = true;
-        return true;
-    case BLOCK_LIST_START:
-        if (block) {
-            p->state = PARSE_BLOCK_LIST_FIRST_ITEM;
-            emit(e, MARKDOWN_CORE_YAML_LIST_START, t->start, t->end);
-            return true;
-        }
-        break;
-    case BLOCK_MAP_START:
-        if (block) {
-            p->state = PARSE_BLOCK_MAP_FIRST_NAME;
-            emit(e, MARKDOWN_CORE_YAML_MAP_START, t->start, t->end);
-            return true;
-        }
-        break;
-    default:
-        break;
-    }
-    return parse_error(p, "did not find expected node content", t->start);
-}
-
-static bool parse_document_start(parser *p, event *e, bool implicit) {
-    token *t = peek_token(p);
-    if (!t) {
-        return false;
-    }
-    if (!implicit) {
-        while (t->kind == DOCUMENT_END) {
-            skip_token(p);
-            if (!(t = peek_token(p))) {
+        if (named(p, start, line)) {
+            /* A list's pair is a mapping of the parser's, not the text's
+             * flow depth. */
+            event *pair = map ? NULL : insert(p, index, MARKDOWN_CORE_YAML_MAP_START);
+            if (!map && !pair) {
+                return false;
+            }
+            if (pair) {
+                pair->flow = true;
+            }
+            p->at++;
+            p->allowed = false;
+            if (!pass(p)) {
+                return false;
+            }
+            t = look(p);
+            if (t == COMMA || t == close) {
+                if (!absent(p, p->count, p->at, p->line)) {
+                    return false;
+                }
+            } else if (!element(p, t)) {
+                return false;
+            }
+            if (!map && !shut(p, MARKDOWN_CORE_YAML_MAP_END, true)) {
+                return false;
+            }
+        } else if (p->problem) {
+            return false;
+        } else if (map) {
+            if (!pass(p) || !absent(p, p->count, p->at, p->line)) {
                 return false;
             }
         }
     }
-    if (implicit && t->kind != DOCUMENT_START && t->kind != STREAM_END) {
-        if (!push_state(p, PARSE_DOCUMENT_END)) {
-            return false;
-        }
-        p->state = PARSE_BLOCK_NODE;
-        emit(e, MARKDOWN_CORE_YAML_DOCUMENT_START, t->start, t->start);
-        return true;
-    }
-    if (t->kind != STREAM_END) {
-        if (t->kind != DOCUMENT_START) {
-            return parse_error(p, "did not find expected <document start>", t->start);
-        }
-        if (!push_state(p, PARSE_DOCUMENT_END)) {
-            return false;
-        }
-        p->state = PARSE_DOCUMENT_CONTENT;
-        emit(e, MARKDOWN_CORE_YAML_DOCUMENT_START, t->start, t->end);
-        e->explicit = true;
-        skip_token(p);
-        return true;
-    }
-    p->state = PARSE_END;
-    emit(e, MARKDOWN_CORE_YAML_STREAM_END, t->start, t->end);
-    skip_token(p);
-    return true;
+    p->at++;
+    p->depth--;
+    p->allowed = false;
+    return shut(p, map ? MARKDOWN_CORE_YAML_MAP_END : MARKDOWN_CORE_YAML_LIST_END, true);
 }
 
-static bool parse_document_content(parser *p, event *e) {
-    token *t = peek_token(p);
-    if (!t) {
-        return false;
-    }
-    if (t->kind == DOCUMENT_START || t->kind == DOCUMENT_END || t->kind == STREAM_END) {
-        p->state = pop_state(p);
-        return absent(e, t->start);
-    }
-    return parse_node(p, e, true, false);
-}
-
-static bool parse_document_end(parser *p, event *e) {
-    token *t = peek_token(p);
-    if (!t) {
-        return false;
-    }
-    const mark start = t->start;
-    mark end = t->start;
-    bool explicit = false;
-    if (t->kind == DOCUMENT_END) {
-        end = t->end;
-        skip_token(p);
-        explicit = true;
-    }
-    p->state = PARSE_DOCUMENT_START;
-    emit(e, MARKDOWN_CORE_YAML_DOCUMENT_END, start, end);
-    e->explicit = explicit;
-    return true;
-}
-
-static bool parse_block_list_item(parser *p, event *e, bool first) {
-    token *t;
-    if (first) {
-        t = peek_token(p);
-        if (!push_mark(p, t->start)) {
+/* A block mapping at `inset`, whose first name is read and whose `:`
+ * is at `at`. Each name is at that column; a token left of it ends the
+ * mapping. */
+static bool pairs(parser *p, size_t inset) {
+    for (;;) {
+        const size_t value = p->at + 1, line = p->line;
+        p->at++;
+        p->allowed = false;
+        if (!pass(p)) {
             return false;
         }
-        skip_token(p);
-    }
-    if (!(t = peek_token(p))) {
-        return false;
-    }
-    if (t->kind == ITEM) {
-        const mark at = t->end;
-        skip_token(p);
-        if (!(t = peek_token(p))) {
+        token t = look(p);
+        if (t == BAD) {
             return false;
         }
-        if (t->kind != ITEM && t->kind != BLOCK_END) {
-            return push_state(p, PARSE_BLOCK_LIST_ITEM) && parse_node(p, e, true, false);
-        }
-        p->state = PARSE_BLOCK_LIST_ITEM;
-        return absent(e, at);
-    }
-    if (t->kind == BLOCK_END) {
-        p->state = pop_state(p);
-        pop_mark(p);
-        emit(e, MARKDOWN_CORE_YAML_LIST_END, t->start, t->end);
-        skip_token(p);
-        return true;
-    }
-    pop_mark(p);
-    return parse_error(p, "did not find expected '-' indicator", t->start);
-}
-
-static bool parse_indentless_list_item(parser *p, event *e) {
-    token *t = peek_token(p);
-    if (!t) {
-        return false;
-    }
-    if (t->kind == ITEM) {
-        const mark at = t->end;
-        skip_token(p);
-        if (!(t = peek_token(p))) {
-            return false;
-        }
-        if (t->kind != ITEM && t->kind != NAME && t->kind != VALUE && t->kind != BLOCK_END) {
-            return push_state(p, PARSE_INDENTLESS_LIST_ITEM) && parse_node(p, e, true, false);
-        }
-        p->state = PARSE_INDENTLESS_LIST_ITEM;
-        return absent(e, at);
-    }
-    p->state = pop_state(p);
-    emit(e, MARKDOWN_CORE_YAML_LIST_END, t->start, t->start);
-    return true;
-}
-
-static bool parse_block_map_name(parser *p, event *e, bool first) {
-    token *t;
-    if (first) {
-        t = peek_token(p);
-        if (!push_mark(p, t->start)) {
-            return false;
-        }
-        skip_token(p);
-    }
-    if (!(t = peek_token(p))) {
-        return false;
-    }
-    if (t->kind == NAME) {
-        const mark at = t->end;
-        skip_token(p);
-        if (!(t = peek_token(p))) {
-            return false;
-        }
-        if (t->kind != NAME && t->kind != VALUE && t->kind != BLOCK_END) {
-            return push_state(p, PARSE_BLOCK_MAP_VALUE) && parse_node(p, e, true, true);
-        }
-        p->state = PARSE_BLOCK_MAP_VALUE;
-        return absent(e, at);
-    }
-    if (t->kind == BLOCK_END) {
-        p->state = pop_state(p);
-        pop_mark(p);
-        emit(e, MARKDOWN_CORE_YAML_MAP_END, t->start, t->end);
-        skip_token(p);
-        return true;
-    }
-    pop_mark(p);
-    return parse_error(p, "did not find expected key", t->start);
-}
-
-static bool parse_block_map_value(parser *p, event *e) {
-    token *t = peek_token(p);
-    if (!t) {
-        return false;
-    }
-    if (t->kind == VALUE) {
-        const mark at = t->end;
-        skip_token(p);
-        if (!(t = peek_token(p))) {
-            return false;
-        }
-        if (t->kind != NAME && t->kind != VALUE && t->kind != BLOCK_END) {
-            return push_state(p, PARSE_BLOCK_MAP_NAME) && parse_node(p, e, true, true);
-        }
-        p->state = PARSE_BLOCK_MAP_NAME;
-        return absent(e, at);
-    }
-    p->state = PARSE_BLOCK_MAP_NAME;
-    return absent(e, t->start);
-}
-
-static bool parse_flow_list_item(parser *p, event *e, bool first) {
-    token *t;
-    if (first) {
-        t = peek_token(p);
-        if (!push_mark(p, t->start)) {
-            return false;
-        }
-        skip_token(p);
-    }
-    if (!(t = peek_token(p))) {
-        return false;
-    }
-    if (t->kind != FLOW_LIST_END) {
-        if (!first) {
-            if (t->kind != COMMA) {
-                pop_mark(p);
-                return parse_error(p, "did not find expected ',' or ']'", t->start);
-            }
-            skip_token(p);
-            if (!(t = peek_token(p))) {
+        if (closes(p, t, inset)) {
+            if (!absent(p, p->count, value, line)) {
                 return false;
             }
+            break;
         }
-        if (t->kind == NAME) {
-            p->state = PARSE_FLOW_LIST_ITEM_MAP_NAME;
-            emit(e, MARKDOWN_CORE_YAML_MAP_START, t->start, t->end);
-            e->flow = true;
-            skip_token(p);
-            return true;
-        }
-        if (t->kind != FLOW_LIST_END) {
-            return push_state(p, PARSE_FLOW_LIST_ITEM) && parse_node(p, e, false, false);
-        }
-    }
-    p->state = pop_state(p);
-    pop_mark(p);
-    emit(e, MARKDOWN_CORE_YAML_LIST_END, t->start, t->end);
-    skip_token(p);
-    return true;
-}
-
-static bool parse_flow_list_item_map_name(parser *p, event *e) {
-    token *t = peek_token(p);
-    if (!t) {
-        return false;
-    }
-    if (t->kind != VALUE && t->kind != COMMA && t->kind != FLOW_LIST_END) {
-        return push_state(p, PARSE_FLOW_LIST_ITEM_MAP_VALUE) && parse_node(p, e, false, false);
-    }
-    p->state = PARSE_FLOW_LIST_ITEM_MAP_VALUE;
-    if (t->kind == FLOW_LIST_END) {
-        return absent(e, t->start);
-    }
-    const mark at = t->end;
-    skip_token(p);
-    return absent(e, at);
-}
-
-static bool parse_flow_list_item_map_value(parser *p, event *e) {
-    token *t = peek_token(p);
-    if (!t) {
-        return false;
-    }
-    if (t->kind == VALUE) {
-        skip_token(p);
-        if (!(t = peek_token(p))) {
+        size_t index;
+        const found f = block(p, (ptrdiff_t)inset, true, &index);
+        if (f == FAILED) {
             return false;
         }
-        if (t->kind != COMMA && t->kind != FLOW_LIST_END) {
-            return push_state(p, PARSE_FLOW_LIST_ITEM_MAP_END) && parse_node(p, e, false, false);
-        }
-    }
-    p->state = PARSE_FLOW_LIST_ITEM_MAP_END;
-    return absent(e, t->start);
-}
-
-static bool parse_flow_list_item_map_end(parser *p, event *e) {
-    token *t = peek_token(p);
-    if (!t) {
-        return false;
-    }
-    p->state = PARSE_FLOW_LIST_ITEM;
-    emit(e, MARKDOWN_CORE_YAML_MAP_END, t->start, t->start);
-    return true;
-}
-
-static bool parse_flow_map_name(parser *p, event *e, bool first) {
-    token *t;
-    if (first) {
-        t = peek_token(p);
-        if (!push_mark(p, t->start)) {
-            return false;
-        }
-        skip_token(p);
-    }
-    if (!(t = peek_token(p))) {
-        return false;
-    }
-    if (t->kind != FLOW_MAP_END) {
-        if (!first) {
-            if (t->kind != COMMA) {
-                pop_mark(p);
-                return parse_error(p, "did not find expected ',' or '}'", t->start);
-            }
-            skip_token(p);
-            if (!(t = peek_token(p))) {
+        if (f == NAME) {
+            if (!absent(p, index, value, line)) {
                 return false;
             }
+            continue;
         }
-        if (t->kind == NAME) {
-            skip_token(p);
-            if (!(t = peek_token(p))) {
-                return false;
-            }
-            if (t->kind != VALUE && t->kind != COMMA && t->kind != FLOW_MAP_END) {
-                return push_state(p, PARSE_FLOW_MAP_VALUE) && parse_node(p, e, false, false);
-            }
-            p->state = PARSE_FLOW_MAP_VALUE;
-            return absent(e, t->start);
+        if (f == AFTER) {
+            continue;
         }
-        if (t->kind != FLOW_MAP_END) {
-            return push_state(p, PARSE_FLOW_MAP_ABSENT_VALUE) && parse_node(p, e, false, false);
-        }
-    }
-    p->state = pop_state(p);
-    pop_mark(p);
-    emit(e, MARKDOWN_CORE_YAML_MAP_END, t->start, t->end);
-    skip_token(p);
-    return true;
-}
-
-static bool parse_flow_map_value(parser *p, event *e, bool missing) {
-    token *t = peek_token(p);
-    if (!t) {
-        return false;
-    }
-    if (missing) {
-        p->state = PARSE_FLOW_MAP_NAME;
-        return absent(e, t->start);
-    }
-    if (t->kind == VALUE) {
-        skip_token(p);
-        if (!(t = peek_token(p))) {
+        if (!pass(p)) {
             return false;
         }
-        if (t->kind != COMMA && t->kind != FLOW_MAP_END) {
-            return push_state(p, PARSE_FLOW_MAP_NAME) && parse_node(p, e, false, false);
+        t = look(p);
+        if (t == BAD) {
+            return false;
+        }
+        if (closes(p, t, inset)) {
+            break;
+        }
+        if (column(p) > inset || !(t == QUOTED || t == PLAIN || t == LIST_OPEN || t == MAP_OPEN)) {
+            return fail(p, "did not find expected key");
+        }
+        const size_t start = p->at, at = p->line;
+        if (!(t == QUOTED ? quoted(p) : t == PLAIN ? plain(p) : flow(p))) {
+            return false;
+        }
+        if (!named(p, start, at)) {
+            return fail(p, "could not find expected ':'");
         }
     }
-    p->state = PARSE_FLOW_MAP_NAME;
-    return absent(e, t->start);
+    p->open--;
+    return shut(p, MARKDOWN_CORE_YAML_MAP_END, false);
 }
 
-static bool parse_stream_start(parser *p, event *e) {
-    token *t = peek_token(p);
-    if (!t) {
+/* A block list whose items' `-` is at `inset`, from its first. An
+ * indentless list is a mapping's value whose items are at the mapping's
+ * column: it opens no block collection, and a name at that column ends it
+ * (AFTER). */
+static found items(parser *p, size_t inset, bool indentless, size_t *index) {
+    if (indentless ? !emit(p, MARKDOWN_CORE_YAML_LIST_START)
+                   : !open(p, MARKDOWN_CORE_YAML_LIST_START, p->count, false)) {
+        return FAILED;
+    }
+    for (;;) {
+        const size_t item = p->at + 1, line = p->line;
+        p->at++;
+        p->allowed = true;
+        if (!pass(p)) {
+            return FAILED;
+        }
+        token t = look(p);
+        if (t == BAD) {
+            return FAILED;
+        }
+        if (closes(p, t, inset)) {
+            if (!absent(p, p->count, item, line)) {
+                return FAILED;
+            }
+            break;
+        }
+        if (column(p) == inset && t == ITEM) {
+            if (!absent(p, p->count, item, line)) {
+                return FAILED;
+            }
+            continue;
+        }
+        const found g = block(p, (ptrdiff_t)inset, false, index);
+        if (g == FAILED) {
+            return FAILED;
+        }
+        if (g != NODE) {
+            if (!indentless) {
+                fail(p, "did not find expected '-' indicator");
+                return FAILED;
+            }
+            /* The item is left out and the list ends before the name. */
+            if (!absent(p, *index, item, line) || !insert(p, *index + 1, MARKDOWN_CORE_YAML_LIST_END)) {
+                return FAILED;
+            }
+            *index += 2;
+            return AFTER;
+        }
+        if (!pass(p)) {
+            return FAILED;
+        }
+        t = look(p);
+        if (t == BAD) {
+            return FAILED;
+        }
+        if (t == ITEM && column(p) == inset) {
+            continue;
+        }
+        if (indentless || closes(p, t, inset)) {
+            break;
+        }
+        fail(p, "did not find expected '-' indicator");
+        return FAILED;
+    }
+    if (!indentless) {
+        p->open--;
+    }
+    return shut(p, MARKDOWN_CORE_YAML_LIST_END, false) ? NODE : FAILED;
+}
+
+/* A block node at `at`, a token a pass reached, inside a block collection
+ * at column `indent` (-1 for a document's root). */
+static found block(parser *p, ptrdiff_t indent, bool indentless, size_t *index) {
+    const token t = look(p);
+    const size_t at = column(p);
+    *index = p->count;
+    if (t == ITEM) {
+        if ((ptrdiff_t)at > indent) {
+            return items(p, at, false, index);
+        }
+        if (indentless) {
+            return items(p, at, true, index);
+        }
+        fail(p, "did not find expected node content");
+        return FAILED;
+    }
+    if (t == LITERAL) {
+        return literal(p, indent) ? NODE : FAILED;
+    }
+    if (t == QUOTED || t == PLAIN || t == LIST_OPEN || t == MAP_OPEN) {
+        const bool candidate = p->allowed, required = candidate && (ptrdiff_t)at == indent;
+        const size_t start = p->at, line = p->line;
+        if (!(t == QUOTED ? quoted(p) : t == PLAIN ? plain(p) : flow(p))) {
+            return FAILED;
+        }
+        if (candidate && named(p, start, line)) {
+            if ((ptrdiff_t)at == indent) {
+                return NAME;
+            }
+            return open(p, MARKDOWN_CORE_YAML_MAP_START, *index, false) && pairs(p, at) ? NODE : FAILED;
+        }
+        if (p->problem || required) {
+            fail(p, "could not find expected ':'");
+            return FAILED;
+        }
+        return NODE;
+    }
+    if (t != BAD) {
+        fail(p, "did not find expected node content");
+    }
+    return FAILED;
+}
+
+/* THE STREAM: documents, each implicit or opened by `---`, closed by `...`
+ * or by the next document or the stream's end. */
+static bool stream(parser *p) {
+    if (!emit(p, MARKDOWN_CORE_YAML_STREAM_START) || !pass(p)) {
         return false;
     }
-    p->state = PARSE_IMPLICIT_DOCUMENT_START;
-    emit(e, MARKDOWN_CORE_YAML_STREAM_START, t->start, t->start);
-    skip_token(p);
-    return true;
-}
-
-static bool state_machine(parser *p, event *e) {
-    switch (p->state) {
-    case PARSE_STREAM_START:
-        return parse_stream_start(p, e);
-    case PARSE_IMPLICIT_DOCUMENT_START:
-        return parse_document_start(p, e, true);
-    case PARSE_DOCUMENT_START:
-        return parse_document_start(p, e, false);
-    case PARSE_DOCUMENT_CONTENT:
-        return parse_document_content(p, e);
-    case PARSE_DOCUMENT_END:
-        return parse_document_end(p, e);
-    case PARSE_BLOCK_NODE:
-        return parse_node(p, e, true, false);
-    case PARSE_BLOCK_NODE_OR_INDENTLESS_LIST:
-        return parse_node(p, e, true, true);
-    case PARSE_FLOW_NODE:
-        return parse_node(p, e, false, false);
-    case PARSE_BLOCK_LIST_FIRST_ITEM:
-        return parse_block_list_item(p, e, true);
-    case PARSE_BLOCK_LIST_ITEM:
-        return parse_block_list_item(p, e, false);
-    case PARSE_INDENTLESS_LIST_ITEM:
-        return parse_indentless_list_item(p, e);
-    case PARSE_BLOCK_MAP_FIRST_NAME:
-        return parse_block_map_name(p, e, true);
-    case PARSE_BLOCK_MAP_NAME:
-        return parse_block_map_name(p, e, false);
-    case PARSE_BLOCK_MAP_VALUE:
-        return parse_block_map_value(p, e);
-    case PARSE_FLOW_LIST_FIRST_ITEM:
-        return parse_flow_list_item(p, e, true);
-    case PARSE_FLOW_LIST_ITEM:
-        return parse_flow_list_item(p, e, false);
-    case PARSE_FLOW_LIST_ITEM_MAP_NAME:
-        return parse_flow_list_item_map_name(p, e);
-    case PARSE_FLOW_LIST_ITEM_MAP_VALUE:
-        return parse_flow_list_item_map_value(p, e);
-    case PARSE_FLOW_LIST_ITEM_MAP_END:
-        return parse_flow_list_item_map_end(p, e);
-    case PARSE_FLOW_MAP_FIRST_NAME:
-        return parse_flow_map_name(p, e, true);
-    case PARSE_FLOW_MAP_NAME:
-        return parse_flow_map_name(p, e, false);
-    case PARSE_FLOW_MAP_VALUE:
-        return parse_flow_map_value(p, e, false);
-    case PARSE_FLOW_MAP_ABSENT_VALUE:
-        return parse_flow_map_value(p, e, true);
-    default:
-        return fail(p, "the stream has ended");
+    token t = look(p);
+    for (bool implicit = true;; implicit = false) {
+        if (t == BAD) {
+            return false;
+        }
+        if (t == END) {
+            break;
+        }
+        if (!implicit && t != DOCUMENT_START) {
+            return fail(p, "did not find expected <document start>");
+        }
+        event *start = emit(p, MARKDOWN_CORE_YAML_DOCUMENT_START);
+        if (!start) {
+            return false;
+        }
+        size_t index;
+        if (t == DOCUMENT_START) {
+            start->explicit = true;
+            p->at += 3;
+            p->allowed = false;
+            if (!pass(p)) {
+                return false;
+            }
+            t = look(p);
+            if (t == DOCUMENT_START || t == DOCUMENT_END || t == END) {
+                /* The stream's end is on a line of its own, as libyaml
+                 * marks it. */
+                if (!absent(p, p->count, p->at, p->line + (t == END && column(p) != 0))) {
+                    return false;
+                }
+            } else if (block(p, -1, false, &index) == FAILED) {
+                return false;
+            }
+        } else if (block(p, -1, false, &index) == FAILED) {
+            return false;
+        }
+        if (!pass(p)) {
+            return false;
+        }
+        t = look(p);
+        event *end = emit(p, MARKDOWN_CORE_YAML_DOCUMENT_END);
+        if (!end) {
+            return false;
+        }
+        while (t == DOCUMENT_END) {
+            end->explicit = true;
+            p->at += 3;
+            p->allowed = false;
+            if (!pass(p)) {
+                return false;
+            }
+            t = look(p);
+        }
     }
+    return emit(p, MARKDOWN_CORE_YAML_STREAM_END) != NULL;
 }
 
 /* Whether each character from `start` to `end` is one YAML prints: a tab,
  * a line ending, or a printable scalar, with a NUL read as U+FFFD. */
 static bool printable(const unsigned char *text, size_t start, size_t end, size_t *bad) {
     for (size_t i = start; i < end;) {
+        while (i < end && text[i] >= 0x20 && text[i] < 0x7f) {
+            i++;
+        }
+        if (i == end) {
+            break;
+        }
         if (text[i] < 0x80) {
             const unsigned char c = text[i];
             if (c < 0x20 ? c && c != 9 && c != 10 && c != 13 : c == 0x7f) {
@@ -1345,59 +928,35 @@ static bool printable(const unsigned char *text, size_t start, size_t end, size_
     return true;
 }
 
-void markdown_core_yaml_open(parser *p, const unsigned char *text, size_t start, size_t end) {
-    for (size_t i = p->head; i < p->tail; i++) {
-        token_free(&p->tokens[i]);
+static void release(parser *p) {
+    for (size_t i = 0; i < p->count; i++) {
+        if (p->events[i].owned) {
+            markdown_core_free(p->events[i].owned);
+        }
     }
+    p->count = 0;
+}
+
+bool markdown_core_yaml_read(parser *p, const unsigned char *text, size_t start, size_t end) {
+    release(p);
     p->text = text;
+    p->at = p->head = start;
     p->end = end;
-    p->mark = (mark){start, 0, 0};
+    p->line = p->depth = p->open = p->comment_count = 0;
+    p->allowed = true;
     p->problem = NULL;
     p->failed = false;
-    p->started = p->ended = p->available = p->allowed = false;
-    p->head = p->tail = p->parsed = 0;
-    p->candidate_count = p->indent_count = p->state_count = p->mark_count = p->comment_count = 0;
-    p->indent = -1;
-    p->depth = 0;
-    p->state = PARSE_STREAM_START;
     size_t bad;
     if (!printable(text, start, end, &bad)) {
-        p->mark.at = bad;
-        fail(p, "found a character that is not printable");
+        p->at = bad;
+        return fail(p, "found a character that is not printable");
     }
-}
-
-bool markdown_core_yaml_next(parser *p, event *e) {
-    *e = (event){0};
-    if (p->problem) {
-        return false;
-    }
-    if (p->ended || p->state == PARSE_END) {
-        return fail(p, "the stream has ended");
-    }
-    if (!state_machine(p, e)) {
-        markdown_core_yaml_event_free(e);
-        return false;
-    }
-    p->ended = e->kind == MARKDOWN_CORE_YAML_STREAM_END;
-    return true;
-}
-
-void markdown_core_yaml_event_free(event *e) {
-    markdown_core_free(e->owned);
-    e->owned = NULL;
-    e->text = NULL;
+    return stream(p);
 }
 
 void markdown_core_yaml_close(parser *p) {
-    for (size_t i = p->head; i < p->tail; i++) {
-        token_free(&p->tokens[i]);
-    }
-    markdown_core_free(p->tokens);
-    markdown_core_free(p->candidates);
-    markdown_core_free(p->indents);
-    markdown_core_free(p->states);
-    markdown_core_free(p->marks);
+    release(p);
+    markdown_core_free(p->events);
     markdown_core_free(p->comments);
     *p = (parser){0};
 }

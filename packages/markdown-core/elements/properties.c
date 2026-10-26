@@ -43,6 +43,11 @@ typedef struct {
      * `end`: each search resumes past the last one's hit, so the lines'
      * ends cost one pass over the payload for each byte. */
     size_t feed, ret;
+    /* The parse's lines, as the engine measured them (parser.h), from the
+     * opening fence's, and the one `line` is; the places' reader, which
+     * has the text alone, has none and finds the lines' ends itself. */
+    const markdown_core_input_line *lines;
+    size_t index;
 } properties;
 
 static bool plain_start(const unsigned char *s, size_t start, size_t end) {
@@ -206,83 +211,78 @@ static inline void place(properties *p, markdown_core_slot_kind slot, markdown_c
     }
 }
 
-/* Reads the member that starts its line at `start`, its name at `first`,
- * and ends at `end`: a block mapping of one name, whose value is a scalar
- * on the name's line, a literal there on a prose field, or a list of text
- * and numbers. */
+/* Reads the member that starts its line at `start` and ends at `end`: a
+ * block mapping of one name, whose value is a scalar on the name's line, a
+ * literal there on a prose field, or a list of text and numbers. */
 static bool decode(properties *p, size_t start, size_t end, markdown_core_metadata_value **slot,
                    markdown_core_metadata_value *value) {
     markdown_core_yaml_parser *yaml = &p->yaml;
-    markdown_core_yaml_event e;
-    markdown_core_yaml_open(yaml, p->text, start, end);
-    size_t list_capacity = 0;
-    bool valid = markdown_core_yaml_next(yaml, &e) && e.kind == MARKDOWN_CORE_YAML_STREAM_START &&
-                 markdown_core_yaml_next(yaml, &e) && e.kind == MARKDOWN_CORE_YAML_DOCUMENT_START && !e.explicit &&
-                 markdown_core_yaml_next(yaml, &e) && e.kind == MARKDOWN_CORE_YAML_MAP_START && !e.flow &&
-                 markdown_core_yaml_next(yaml, &e);
+    if (!markdown_core_yaml_read(yaml, p->text, start, end)) {
+        p->failed = p->failed || yaml->failed;
+        return false;
+    }
+    markdown_core_yaml_event *e = yaml->events, *last = yaml->events + yaml->count;
+    /* The stream, its implicit document and its block mapping, around one
+     * name and its value. */
+    bool valid = yaml->count >= 8 && e[0].kind == MARKDOWN_CORE_YAML_STREAM_START &&
+                 e[1].kind == MARKDOWN_CORE_YAML_DOCUMENT_START && !e[1].explicit &&
+                 e[2].kind == MARKDOWN_CORE_YAML_MAP_START && !e[2].flow &&
+                 last[-1].kind == MARKDOWN_CORE_YAML_STREAM_END && last[-2].kind == MARKDOWN_CORE_YAML_DOCUMENT_END &&
+                 !last[-2].explicit && last[-3].kind == MARKDOWN_CORE_YAML_MAP_END;
+    e += 3;
+    last -= 3;
     /* The name. */
-    valid = valid && e.kind == MARKDOWN_CORE_YAML_SCALAR && e.style != MARKDOWN_CORE_YAML_LITERAL && e.size &&
-            !memchr(e.text, '\n', e.size) && !memchr(e.text, '\r', e.size);
-    const size_t line = e.start.line;
-    *slot = valid ? field_slot(p->metadata, e.text, e.size) : NULL;
+    valid = valid && e->kind == MARKDOWN_CORE_YAML_SCALAR && e->style != MARKDOWN_CORE_YAML_LITERAL && e->size &&
+            !memchr(e->text, '\n', e->size) && !memchr(e->text, '\r', e->size);
+    if (!valid) {
+        return false;
+    }
+    const size_t line = e->line;
+    *slot = field_slot(p->metadata, e->text, e->size);
     const bool prose = *slot == &p->metadata->abstract || *slot == &p->metadata->comment;
-    valid = valid && *slot && !(*slot)->kind;
-    if (valid) {
-        place(p, MARKDOWN_CORE_SLOT_FIELD, e.style, e.from, e.to);
+    if (!*slot || (*slot)->kind) {
+        return false;
     }
-    markdown_core_yaml_event_free(&e);
+    place(p, MARKDOWN_CORE_SLOT_FIELD, e->style, e->from, e->to);
+    e++;
     /* The value. */
-    valid = valid && markdown_core_yaml_next(yaml, &e);
-    if (valid && e.kind == MARKDOWN_CORE_YAML_SCALAR) {
+    if (e->kind == MARKDOWN_CORE_YAML_SCALAR) {
         value->kind = MARKDOWN_CORE_METADATA_SCALAR;
-        valid = e.start.line == line && (e.style != MARKDOWN_CORE_YAML_LITERAL || prose) &&
-                resolve(p, &e, &value->as.scalar);
+        valid = e + 1 == last && e->line == line && (e->style != MARKDOWN_CORE_YAML_LITERAL || prose) &&
+                resolve(p, e, &value->as.scalar);
         if (valid) {
-            place(p, MARKDOWN_CORE_SLOT_VALUE, e.style, e.from, e.to);
+            place(p, MARKDOWN_CORE_SLOT_VALUE, e->style, e->from, e->to);
         }
-        markdown_core_yaml_event_free(&e);
-    } else if (valid && e.kind == MARKDOWN_CORE_YAML_LIST_START) {
-        value->kind = MARKDOWN_CORE_METADATA_LIST;
-        while ((valid = markdown_core_yaml_next(yaml, &e)) && e.kind == MARKDOWN_CORE_YAML_SCALAR) {
-            markdown_core_metadata_scalar item = {0};
-            valid = e.style != MARKDOWN_CORE_YAML_LITERAL && resolve(p, &e, &item) &&
-                    (item.kind == MARKDOWN_CORE_METADATA_TEXT || item.kind == MARKDOWN_CORE_METADATA_NUMBER);
-            markdown_core_metadata_list_item *items = NULL;
-            if (valid) {
-                place(p, MARKDOWN_CORE_SLOT_VALUE, e.style, e.from, e.to);
-                items = markdown_core_reserve(value->as.list.items, &list_capacity, value->as.list.count + 1,
-                                              sizeof(*items));
-                p->failed = p->failed || !items;
-            } else if (item.kind == MARKDOWN_CORE_METADATA_TEXT || item.kind == MARKDOWN_CORE_METADATA_NUMBER) {
-                markdown_core_free((void *)item.value.string.data);
-            }
-            markdown_core_yaml_event_free(&e);
-            if (!items) {
-                if (valid) {
-                    markdown_core_free((void *)item.value.string.data);
-                }
-                valid = false;
-                break;
-            }
-            value->as.list.items = items;
-            items[value->as.list.count++] = (markdown_core_metadata_list_item){
-                item.kind == MARKDOWN_CORE_METADATA_NUMBER ? MARKDOWN_CORE_METADATA_ITEM_NUMBER
-                                                           : MARKDOWN_CORE_METADATA_ITEM_TEXT,
-                item.value.string};
-        }
-        valid = valid && e.kind == MARKDOWN_CORE_YAML_LIST_END;
-        markdown_core_yaml_event_free(&e);
-    } else {
-        valid = false;
-        markdown_core_yaml_event_free(&e);
+        return valid;
     }
-    /* The end of the mapping, the document and the stream. */
-    valid = valid && markdown_core_yaml_next(yaml, &e) && e.kind == MARKDOWN_CORE_YAML_MAP_END &&
-            markdown_core_yaml_next(yaml, &e) && e.kind == MARKDOWN_CORE_YAML_DOCUMENT_END && !e.explicit &&
-            markdown_core_yaml_next(yaml, &e) && e.kind == MARKDOWN_CORE_YAML_STREAM_END;
-    markdown_core_yaml_event_free(&e);
-    p->failed = p->failed || yaml->failed;
-    return valid;
+    if (e->kind != MARKDOWN_CORE_YAML_LIST_START || last[-1].kind != MARKDOWN_CORE_YAML_LIST_END) {
+        return false;
+    }
+    value->kind = MARKDOWN_CORE_METADATA_LIST;
+    size_t room = 0;
+    for (e++; e < last - 1; e++) {
+        markdown_core_metadata_scalar item = {0};
+        if (e->kind != MARKDOWN_CORE_YAML_SCALAR || e->style == MARKDOWN_CORE_YAML_LITERAL || !resolve(p, e, &item)) {
+            return false;
+        }
+        if (item.kind != MARKDOWN_CORE_METADATA_TEXT && item.kind != MARKDOWN_CORE_METADATA_NUMBER) {
+            return false;
+        }
+        place(p, MARKDOWN_CORE_SLOT_VALUE, e->style, e->from, e->to);
+        markdown_core_metadata_list_item *items =
+            markdown_core_reserve(value->as.list.items, &room, value->as.list.count + 1, sizeof(*items));
+        if (!items) {
+            markdown_core_free((void *)item.value.string.data);
+            p->failed = true;
+            return false;
+        }
+        value->as.list.items = items;
+        items[value->as.list.count++] = (markdown_core_metadata_list_item){item.kind == MARKDOWN_CORE_METADATA_NUMBER
+                                                                               ? MARKDOWN_CORE_METADATA_ITEM_NUMBER
+                                                                               : MARKDOWN_CORE_METADATA_ITEM_TEXT,
+                                                                           item.value.string};
+    }
+    return true;
 }
 
 /* Reads the member that starts its line at `start`, its name at `first`
@@ -383,15 +383,23 @@ static void classify_line(properties *p, size_t line) {
     if (p->classified && p->line == line) {
         return;
     }
-    if (!p->classified || p->feed < line) {
-        p->feed = next_byte(p->text, line, p->end, '\n');
-    }
-    if (!p->classified || p->ret < line) {
-        p->ret = next_byte(p->text, line, p->end, '\r');
+    size_t stop;
+    if (p->lines) {
+        while (p->lines[p->index].start < line) {
+            p->index++;
+        }
+        stop = p->lines[p->index].end;
+    } else {
+        if (!p->classified || p->feed < line) {
+            p->feed = next_byte(p->text, line, p->end, '\n');
+        }
+        if (!p->classified || p->ret < line) {
+            p->ret = next_byte(p->text, line, p->end, '\r');
+        }
+        stop = p->feed < p->ret ? p->feed : p->ret;
     }
     p->classified = true;
     p->line = line;
-    const size_t stop = p->feed < p->ret ? p->feed : p->ret;
     p->stop = stop;
     size_t first = line;
     while (first < stop && p->text[first] == ' ') {
@@ -595,7 +603,11 @@ size_t markdown_core_properties_parse(markdown_core_properties_work *work, markd
         return 0;
     }
     size_t consumed = next_line(source, close + 3, length);
-    properties p = {.text = source, .end = close, .work = work, .metadata = node->as.metadata};
+    properties p = {.text = source,
+                    .end = close,
+                    .work = work,
+                    .metadata = node->as.metadata,
+                    .lines = markdown_core_parser_source_line(parser, 1)};
     node->place = (markdown_core_place){0, (uint32_t)(close + 3)};
     payload(&p, next_line(source, 3, length));
     properties_close(&p);

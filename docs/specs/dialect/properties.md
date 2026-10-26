@@ -143,8 +143,8 @@ a whole, with no partial values.
 
 This is a bounded properties language, not general YAML: nested objects/lists,
 aliases, tags, merge keys, JSON root objects, and multiline quoted/plain folding
-are unsupported. A YAML parser reworked from libyaml's scanner and parser
-(`elements/yaml.c`) reads each member in this language, so a member YAML
+are unsupported. A YAML parser that reads as libyaml's scanner and parser
+do (`elements/yaml.c`) reads each member in this language, so a member YAML
 reads one way the properties grammar reads the same way or rejects.
 
 `Metadata` is a leaf Markup node exposed through `Document.metadata`, outside

@@ -6,10 +6,10 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
-- Read properties with a YAML parser reworked from libyaml (language engine
-  plan, step 2e). Each member of the envelope is read by libyaml's scanner
-  and parser, reworked to the properties language and the repository's
-  allocator (`elements/yaml.c`), in place of the hand-written decoder; the
+- Read properties with a YAML parser that reads as libyaml does (language
+  engine plan, step 2e). Each member of the envelope is read by one
+  recursive-descent pass in the properties language, with libyaml's
+  readings (`elements/yaml.c`), in place of the hand-written decoder; the
   fields, their values and the recovery between members are as before. A
   few readings now follow YAML: a NUL in a value reads as U+FFFD, as in
   the rest of the document, instead of invalidating the member; an item may

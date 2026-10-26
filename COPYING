@@ -142,7 +142,8 @@ Released under the Creative Commons CC-BY-SA 4.0 license:
 
 elements/yaml.c
 
-is reworked from libyaml's scanner and parser, https://github.com/yaml/libyaml
+reads YAML as libyaml's scanner and parser read it, https://github.com/yaml/libyaml,
+and its scalar scanners keep their logic
 
 Copyright (c) 2017-2020 Ingy döt Net
 Copyright (c) 2006-2016 Kirill Simonov
