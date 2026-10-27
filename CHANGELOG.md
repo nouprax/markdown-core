@@ -17,14 +17,36 @@ promised to remain compatible between releases.
   the server answers, and the bindings will replay it. The library is not
   installed yet.
 
-- Export the dialect's lexicons in C (language engine plan, step 3):
+- Ask the context, the path, the fields and the markers of a Kotlin
+  `MarkdownSession` (language engine plan, step 3b), as the Swift session
+  answers them: `context(position)`, with `Slot.spell` spelling until the
+  session closes, which frees the contexts it made; `path(position)`;
+  `scope(node, field)`; and `markers(node)`. `NodeKind` and `SlotKind` are
+  public and generated from the contract, and `Metadata.fields` and
+  `Slot.cues` export the dialect's lexicons. The queries cross the MCB3
+  wire as answers of their own (`markdown_core_wire_context`,
+  `markdown_core_wire_spell`, `markdown_core_wire_field`,
+  `markdown_core_wire_markers` and `markdown_core_wire_dialect`), which the
+  ECMAScript binding will read too, and the Kotlin tests answer the shared
+  corpus `specs/context` line for line.
+
+- Ask the context, the path, the fields and the markers of a Swift
+  `MarkdownSession` (language engine plan, step 3a), which holds the native
+  parse of its text, so no query parses it again and none takes the source.
+  `MarkdownSession.context(at:)` answers a `Context` of open blocks, inline
+  openers and `Slot`s, and `Slot.spell(_:)` spells values in a slot, each as
+  a `Slot.Insertion` whose caret counts columns in the session's unit;
+  `path(at:)` answers the nodes over a position, `scope(of:field:)` a node's
+  fields of a slot kind and `markers(of:)` its markers, for a node of the
+  current document or one an append left unchanged. An editor holds a
+  finalized session per version of a text. `NodeKind` and `Slot.Kind` are
+  generated from the contract. The dialect's lexicons are exported:
   `markdown_core_metadata_field_count` and `markdown_core_metadata_field_at`
-  name the properties fields, and `markdown_core_slot_cues` the bytes after
-  which a slot may begin empty, an editor's completion triggers.
-  `specs/context` records what the C context, spelling, path, field and
-  marker queries answer over the context fixture, asked of a finalized
-  session, and `elements_queries` keeps it current. The queries stay C's:
-  the platform bindings will expose the language engine, not the queries.
+  (Swift `Metadata.fields`) name the properties fields, and
+  `markdown_core_slot_cues` (Swift `Slot.cues`) the bytes after which a slot
+  may begin empty, an editor's completion triggers. `specs/context` holds
+  what the C queries answer over the context fixture, asked of a finalized
+  session, which the Swift binding must answer too.
 
 - Read properties with a YAML parser that reads as libyaml does (language
   engine plan, step 2e). Each member of the envelope is read by one

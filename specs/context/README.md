@@ -1,13 +1,14 @@
-# Context query corpus
+# Shared context query corpus
 
 `queries.json` is what the C context, spelling, path, field and marker
 queries answer for every example of the context fixture,
 `packages/markdown-core/tests/context/context.txt`, in both text units, asked
 of the document of a finalized session of the example's source, as the
-language engine holds one per version of a text. It is a reviewed record of
-those answers: a change to any query shows in its diff. The queries are C's
-alone; the platform bindings expose the language engine, not the queries
-(docs/plans/2026-10-23-lsp-completion-engine.md, R6).
+bindings ask their sessions. Every binding asks its own session's public
+queries the same questions and renders the answers the same way, then
+compares the text byte for byte, so a binding that maps a position, a unit, a
+node or a string differently from C fails
+(docs/plans/2026-10-23-lsp-completion-engine.md, section 8, Bindings).
 
 The C runner writes the file and the CTest `elements_queries` fails when it is
 stale, so the corpus is always the C queries' own answer:

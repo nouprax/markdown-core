@@ -39,16 +39,22 @@ extension Document {
         var text = source
         return text.withUTF8 { bytes in
             guard let offset = SourceLines(bytes).offset(of: position, in: bytes, unit: unit) else { return nil }
-            var walk = CanonicalWalk(root: record)
-            var places: [(start: Int, end: Int)] = []
-            var found: MarkupRecord?
-            while let item = walk.next() {
-                guard let node = item.record else { continue }
-                walk.places(of: item, into: &places)
-                if places.contains(where: { $0.start <= offset && offset < $0.end }) { found = node }
-            }
-            return found?.markup
+            return holders(of: offset).last?.markup
         }
+    }
+
+    /// The records one of whose source ranges holds the byte at `offset`, in
+    /// canonical walk order, found by one walk.
+    func holders(of offset: Int) -> [MarkupRecord] {
+        var walk = CanonicalWalk(root: record)
+        var places: [(start: Int, end: Int)] = []
+        var found: [MarkupRecord] = []
+        while let item = walk.next() {
+            guard let node = item.record else { continue }
+            walk.places(of: item, into: &places)
+            if places.contains(where: { $0.start <= offset && offset < $0.end }) { found.append(node) }
+        }
+        return found
     }
 
     /// The canonical dump of the document, with scopes computed from `source`,

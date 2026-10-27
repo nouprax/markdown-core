@@ -12,7 +12,7 @@ enum CanonicalASTResourceGenerator {
     }
 
     private static func generate(arguments: [String]) throws {
-        guard arguments.count == 2 else { throw GeneratorFailure.invalidArguments }
+        guard arguments.count == 4 else { throw GeneratorFailure.invalidArguments }
         let specDirectory =
             URL(fileURLWithPath: arguments[0], isDirectory: true)
             .resolvingSymlinksInPath()
@@ -52,6 +52,10 @@ enum CanonicalASTResourceGenerator {
             withIntermediateDirectories: true
         )
         try data.write(to: output, options: .atomic)
+        // The bindings' query corpus is the C queries' own rendering, so it
+        // is copied as it is.
+        try Data(contentsOf: URL(fileURLWithPath: arguments[2], isDirectory: false))
+            .write(to: URL(fileURLWithPath: arguments[3], isDirectory: false), options: .atomic)
     }
 
     private static func fixtureContents(at relativePath: String, in root: URL) throws -> String {
@@ -76,7 +80,7 @@ private enum GeneratorFailure: Error, CustomStringConvertible {
     var description: String {
         switch self {
         case .invalidArguments:
-            "usage: CanonicalASTResourceGenerator SPEC_DIRECTORY OUTPUT_FILE"
+            "usage: CanonicalASTResourceGenerator SPEC_DIRECTORY OUTPUT_FILE QUERIES_FILE QUERIES_OUTPUT_FILE"
         case .invalidManifest(let reason):
             "invalid canonical AST manifest: \(reason)"
         case .invalidRelativePath(let path):

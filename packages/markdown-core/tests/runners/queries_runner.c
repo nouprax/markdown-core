@@ -1,9 +1,10 @@
-/* The query corpus (specs/context): the C queries' answers, kept as a
- * reviewed record so a change to any of them shows in the diff.
+/* The bindings' query corpus (docs/plans/2026-10-23-lsp-completion-engine.md,
+ * section 8, Bindings).
  *
  * Each example of the context fixture is a document with one `‸`, the cursor.
  * For each, in both units, the runner renders what the C queries answer, one
- * line per entry (specs/context/README.md):
+ * line per entry, and every binding renders the same from its own queries
+ * and compares (specs/context/README.md):
  *
  *   block KIND START..END
  *   inline KIND START..END
@@ -121,8 +122,8 @@ static bool scopes(text *out, const char *label, markdown_core_status status, ma
 static char *render(const uint8_t *source, size_t length, markdown_core_position position,
                     markdown_core_text_unit unit) {
     text out = {0};
-    /* A finalized session of the source, as the engine holds one per
-     * version of a text. */
+    /* The bindings ask a session, which holds the document they copy: a
+     * finalized session of the source, as an editor holds one per version. */
     markdown_core_session *session = NULL;
     const markdown_core_document *document = NULL;
     markdown_core_context *context = NULL;

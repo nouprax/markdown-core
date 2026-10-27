@@ -74,16 +74,15 @@ owner's decisions, and section 11 records rejected alternatives.
   to the document's length with the parser's constant: one parse of the
   text before the cursor and, at most once per document version, one parse
   of the whole document (section 6). Section 7 sets the budget.
-- **R6 The engine is the platforms' surface.** The completion queries of
-  sections 2 and 3 (context, spelling, path, field and marker scopes) and
-  the lexicons are C's: the engine calls them in process, and the
-  platform bindings expose the engine (section 4.1), not the queries. A
-  parser change to the document value, such as a new `Metadata` field,
-  still lands in every binding at once. The engine's own API follows the
-  platforms' order (D7): it ships in C and Swift first, then in Kotlin and
-  ECMAScript. The owner, 2026-10-27, replacing "bindings stay in step":
-  "我的理解是LSP的实现我们都统一到C端了，我们最后只暴露LSP的platform
-  binding就可以了吧？"
+- **R6 Bindings stay in step.** Every new parser query lands in C and in the
+  Swift, Kotlin and ECMAScript bindings in the same step, as every public
+  query has so far. The engine's own API follows the platforms' order
+  instead (D7): it ships in C and Swift first, then in Kotlin and
+  ECMAScript. The owner first kept the queries in C (2026-10-27, #456) and
+  restored this the same day, while the Swift binding of the engine was
+  being planned: "在做binding时，我想了一下我们之前去掉的那组Swift/Kotlin/ES
+  的裸的Context查询API还是要加回来的". The bindings expose both the queries
+  and the engine (section 4.1).
 
 Non-goals for this plan: rendering and preview, editing the AST,
 a second dialect, and reviving the general-edit engine that D7 of the
@@ -130,8 +129,7 @@ backtick makes the whole run a code span, which is opaque, while in
 two prefixes are identical. So the prefix's open state proposes what the
 cursor may be typing, and the parse of the whole text confirms it
 (section 3.1). Both are the parser's own decisions. Section 3 turns them into
-a value of the C API, which the engine reads in process; no binding exposes
-it (R6), and the Swift below only sketches its shape.
+a public value.
 
 ## 3. Public model
 
@@ -226,7 +224,7 @@ extension Document {
 C exposes `markdown_core_document_context(document, source, length, position,
 &context)`, `markdown_core_slot_spell(context, slot, value, length, &insertion)`
 and `markdown_core_context_free`, with accessors for the arrays.
-No binding exposes them (R6): the engine calls them in C.
+Kotlin and ECMAScript mirror the Swift shape (R6).
 
 Step 2b built the query this way:
 
@@ -436,12 +434,26 @@ Step 3a built them this way:
   generated inputs gained envelopes with `[a,@]`, `[a,\t@]` and CR line
   endings to meet `,`, the tab and CR.
 
-Step 3a also gave the Swift session these queries, and step 3b the Kotlin
-session with MCB3 answers for them; step 3c had the ECMAScript session
-ready. The owner then decided that no binding exposes them (R6), so the
-Swift and Kotlin queries and their wire answers were removed and step 3c
-was not merged. `specs/context/queries.json` stays as the C queries'
-reviewed record, which `elements_queries` keeps current.
+Step 3b built the Kotlin binding this way:
+
+- Kotlin reads the engine through MCB3 messages, so each query crosses the
+  wire as an answer of its own (docs/architecture/wire-format.md, Queries):
+  `markdown_core_wire_context` answers a context and makes the native
+  context, which the Kotlin session keeps to spell from;
+  `markdown_core_wire_spell` answers a spelling; `markdown_core_wire_field`
+  and `markdown_core_wire_markers` answer scopes; and
+  `markdown_core_wire_dialect` the lexicons. JNI and cinterop call the
+  same functions, and the ECMAScript binding will too.
+- Kotlin has no deinit, so the session owns every context it makes and
+  frees them in `close()`; a slot spells until then. An editor that holds a
+  finalized session per version frees each version's contexts with it.
+- `path` walks the Kotlin document, as `Document.node` does. A field or
+  marker query names the node to the engine by its id and the position of
+  the first byte it holds, after checking that the current document holds
+  the node or an equal one with its id; `wire_test` asks every node of the
+  canonical corpus that way and compares the answers with the facade's.
+- `NodeKind` and `SlotKind` are generated public enums, which the MCB3
+  reader uses too, in place of the internal `WireNodeKind`.
 
 ### 3.5 Prerequisite: the settle point
 
@@ -822,7 +834,9 @@ second parse path (AGENTS.md).
   lifecycle, both position encodings, incremental sync with CRLF, astral
   characters and empty documents, cancellation, and malformed requests, run
   against the adapter of section 4.2.
-- **Bindings.** Each binding of the engine replays the protocol transcripts' requests in
+- **Bindings.** The context, path and field-scope queries run the C tests'
+  fixtures in Swift, Kotlin and ECMAScript, as the scope queries do today.
+  Each binding of the engine replays the protocol transcripts' requests in
   process and must give the adapter's answers.
 
 ## 9. Rollout
@@ -845,10 +859,19 @@ it (D6).
    (`**`, `##`, `]]`, list markers, fences) has a source range, from a node's
    scope minus its fields' runs; where one does not, the parser gains a
    marker query, used by semantic tokens and formatting, instead of a CST.
-- [ ] **Step 3: Lexicons.** The lexicon exports in C (3.3, 3.4) and
-   the query corpus `specs/context/queries.json`, in 3a. The queries stay
-   in C (R6): 3a and 3b gave the Swift and Kotlin sessions the queries too,
-   which were then removed, and 3c, the ECMAScript session, was not merged.
+- [ ] **Step 3: Bindings.** Context, path and field scopes in Swift, Kotlin
+   and ECMAScript, and the lexicon exports (3.3, 3.4). In three pull
+   requests: 3a the lexicon exports in C and the Swift binding, with the
+   shared query corpus `specs/context/queries.json` that every binding
+   renders its answers against; 3b Kotlin; 3c ECMAScript. The queries
+   belong to a binding's session, not its document: the session already
+   holds the native parse of its text and a release (Swift's deinit,
+   Kotlin's `close()`, ECMAScript's `dispose()`), so the document stays a
+   value, no query parses the text again or takes the source, and an editor
+   holds a finalized session per version. A slot keeps the native context it
+   was read from, so `Slot.spell` parses nothing. 3a and 3b merged, were
+   removed with 3c unmerged when the queries were kept in C, and came back
+   when R6 was restored; 3c follows them.
 - [ ] **Step 4: Engine skeleton.** `markdown-core-lsp` in C with the
    lifecycle, position encoding, document store and sync, its Swift binding,
    the JSON-RPC adapter and the transcript harness, and the latency report
@@ -921,7 +944,7 @@ it (D6).
   and ECMAScript** (R6, step 9). The owner: "我们这个repo里没有任何的Windows
   支持，所以我的建议是先做C和Swift binding，然后做Kotlin及TS的binding". This
   repository ships no Windows binding, so Windows is outside this plan. The
-  parser's completion queries stay in C (R6).
+  parser's own new queries keep landing in every binding at once.
 - **D8 JSON. Decided 2026-10-24: JSON is parsed in C,** by
   `markdown-core-server` for the protocol and by the engine for a CSL JSON
   bibliography (5.4), so that no platform library parses JSON on its own.

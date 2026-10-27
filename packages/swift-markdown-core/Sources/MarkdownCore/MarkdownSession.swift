@@ -19,7 +19,7 @@ import MarkdownCoreC
 ///
 /// A session has one writer. It is not `Sendable`.
 public final class MarkdownSession {
-    private let session: OpaquePointer
+    let session: OpaquePointer
 
     /// How the scope queries of the session's documents count columns.
     public let unit: TextUnit

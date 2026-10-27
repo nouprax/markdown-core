@@ -26,7 +26,7 @@ class ComposeStabilityTest {
                 .flatMap { NodeVisitor().also { visitor -> Document.parse(it.source).walk(visitor) }.nodes }
                 .map { it.javaClass.name }
                 .toSet()
-        assertEquals(WireNodeKind.entries.size, kinds.size)
+        assertEquals(NodeKind.entries.size, kinds.size)
         for (kind in kinds) {
             assertTrue(kind in listed, "$kind is not listed as stable")
         }

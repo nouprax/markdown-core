@@ -178,7 +178,9 @@ const modelProjections = [
         label: "Swift model",
         directories: ["packages/swift-markdown-core/Sources/MarkdownCore"],
         // Public value records may expose stored or computed read-only fields.
-        declaration: (kind) => new RegExp(`public (?:final class|struct) ${kind}\\b[^\\n]*\\{`),
+        // A kind is declared at the top level, so a nested type that shares
+        // its name, such as `Slot.Insertion`, is not the kind.
+        declaration: (kind) => new RegExp(`^public (?:final class|struct) ${kind}\\b[^\\n]*\\{`, "m"),
         field: /public (?:let|var) ([A-Za-z]+)\s*:\s*([^\n{]+)/g,
         optional: (m) => m[2].trim().endsWith("?")
     }),
