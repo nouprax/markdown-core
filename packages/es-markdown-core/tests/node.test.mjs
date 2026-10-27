@@ -804,6 +804,11 @@ test("api: the context is the session's state, which a locate replaces and text 
     const [last] = session.context.slots;
     assert.throws(() => session.finalize(), { code: "sessionFinalized" });
     assert.equal(session.context.slots[0], last);
+    assert.deepEqual(session.spell(last, "x"), { text: "x", cursor: 1 });
+    const other = new MarkdownSession("[[No te]]\n");
+    other.locate({ line: 1, column: 5 });
+    assert.throws(() => other.spell(last, "x"), { code: "outOfBounds" });
+    other.dispose();
     session.dispose();
 });
 

@@ -6,9 +6,10 @@ package com.nouprax.markdown.core
  * as [WireDecoder] is. A failure's message throws what it carries.
  */
 internal object AnswerDecoder {
-    /** The context of [message], whose slots spell in the session's turn [turn]. */
+    /** The context of [message], whose slots spell in [session]'s turn [turn]. */
     fun context(
         message: ByteArray,
+        session: MarkdownSession,
         turn: Int,
     ): Context {
         val reader = Reader(message)
@@ -24,6 +25,7 @@ internal object AnswerDecoder {
                     reader.scope(),
                     closed = reader.u8() == 1,
                     prefix = reader.list { reader.string() },
+                    session = session,
                     index = index++,
                     turn = turn,
                 )

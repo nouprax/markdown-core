@@ -83,9 +83,10 @@ public class Slot internal constructor(
      * before a cross link's anchor.
      */
     public val prefix: kotlin.collections.List<String>,
-    /** The slot's place among its context's slots. */
+    /** The session whose context holds the slot, its place among the
+     * context's slots, and the session's turn that read it. */
+    internal val session: MarkdownSession,
     internal val index: Int,
-    /** The session's turn whose context holds the slot. */
     internal val turn: Int,
 ) {
     /** What replaces a slot's [before] and [after] to write a value in it. */

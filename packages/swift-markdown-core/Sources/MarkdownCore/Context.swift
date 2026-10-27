@@ -62,8 +62,9 @@ public struct Slot: Sendable {
     /// Whether the whole document finishes the construct after the cursor;
     /// otherwise it reads the construct's opener as text.
     public let closed: Bool
-    /// The slot's place among the context's slots, and the session's turn
-    /// whose context holds it.
+    /// The session whose context holds the slot, the slot's place among the
+    /// context's slots, and the session's turn that read it.
+    let session: ObjectIdentifier
     let index: Int
     let turn: Int
 
@@ -135,11 +136,13 @@ extension MarkdownSession {
     /// spelling parses nothing.
     ///
     /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/outOfBounds`` when
-    ///   `slot` is not a slot of ``context``, because a later locate, append
-    ///   or finalize replaced the context that held it, and
+    ///   `slot` is not a slot of ``context``: another session's, or one a
+    ///   later locate, append or finalize replaced the context of, and
     ///   ``ErrorCode/allocationFailed`` when an allocation fails.
     public func spell(_ values: [String], in slot: Slot) throws -> [Slot.Insertion?] {
-        guard slot.turn == turn else { throw MarkdownCoreError(code: .outOfBounds) }
+        guard slot.session == ObjectIdentifier(self), slot.turn == turn else {
+            throw MarkdownCoreError(code: .outOfBounds)
+        }
         let context = markdown_core_session_context(session)
         return try values.map { value -> Slot.Insertion? in
             var text = value
@@ -183,7 +186,7 @@ extension MarkdownSession {
                 answer(markdown_core_string()) { markdown_core_context_slot_prefix_at(context, index, part, $0) }
                     .required
             }
-            return Slot(slot, prefix: prefix, index: index, turn: turn)
+            return Slot(slot, prefix: prefix, session: ObjectIdentifier(self), index: index, turn: turn)
         }
         return Context(blocks: blocks, inlines: inlines, slots: slots)
     }
@@ -196,7 +199,7 @@ extension Opener {
 }
 
 extension Slot {
-    init(_ slot: markdown_core_slot, prefix: [String], index: Int, turn: Int) {
+    init(_ slot: markdown_core_slot, prefix: [String], session: ObjectIdentifier, index: Int, turn: Int) {
         // A context's slot always has a kind and an owner.
         guard let kind = Kind(rawValue: Int32(slot.kind.rawValue)),
             let owner = NodeKind(rawValue: Int32(slot.owner.rawValue))
@@ -208,6 +211,7 @@ extension Slot {
             after: Scope(slot.after),
             prefix: prefix,
             closed: slot.closed,
+            session: session,
             index: index,
             turn: turn
         )

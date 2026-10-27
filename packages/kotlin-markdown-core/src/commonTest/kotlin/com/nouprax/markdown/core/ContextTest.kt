@@ -81,6 +81,16 @@ class ContextTest {
         session.locate(Position(1, 5))
         assertTrue(session.context.slots.single().closed)
         val last = session.context.slots.single()
+        assertOutOfBounds { session.locate(Position(9, 1)) }
+        assertEquals("x", session.spell(last, "x")?.text)
+        // Another session at the same turn holds a slot at the same place.
+        MarkdownSession("[[No").use { other ->
+            repeat(3) { other.locate(Position(1, 1)) }
+            other.append("te]]\n")
+            other.locate(Position(1, 5))
+            assertEquals(1, other.context.slots.size)
+            assertOutOfBounds { other.spell(last, "x") }
+        }
         session.close()
         assertFailsWith<IllegalStateException> { session.spell(last, "x") }
         assertFailsWith<IllegalStateException> { session.locate(Position(1, 1)) }

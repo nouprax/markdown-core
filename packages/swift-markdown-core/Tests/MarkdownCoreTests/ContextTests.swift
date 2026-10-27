@@ -60,7 +60,17 @@ import Testing
         #expect(session.context.slots.isEmpty)
         #expect(outOfBounds { try session.spell("x", in: next) })
         try session.locate(Position(line: 1, column: 5))
-        #expect(session.context.slots.first?.closed == true)
+        let last = try #require(session.context.slots.first)
+        #expect(last.closed)
+        #expect(outOfBounds { try session.locate(Position(line: 9, column: 1)) })
+        #expect(try session.spell("x", in: last)?.text == "x")
+        // Another session at the same turn holds a slot at the same place.
+        let other = try MarkdownSession("[[No")
+        for _ in 0..<3 { try other.locate(Position(line: 1, column: 1)) }
+        try other.append("te]]\n")
+        try other.locate(Position(line: 1, column: 5))
+        #expect(other.context.slots.count == 1)
+        #expect(outOfBounds { try other.spell("x", in: last) })
     }
 
     @Test("a cursor outside the text, or below 1, is out of bounds and keeps the context")

@@ -106,8 +106,9 @@ public class MarkdownSession
         public fun locate(position: Position) {
             if (position.line < 1 || position.column < 1) throw MarkdownCoreException(ErrorCode.OUT_OF_BOUNDS)
             val message = open().locate(position.line, position.column)
+            // A failure's answer throws here, before the turn moves on.
+            context = AnswerDecoder.context(message, this, turn + 1)
             turn++
-            context = AnswerDecoder.context(message, turn)
         }
 
         /**
@@ -124,8 +125,8 @@ public class MarkdownSession
          * a spelling parses nothing.
          *
          * @throws MarkdownCoreException [ErrorCode.OUT_OF_BOUNDS] when [slot]
-         *   is not a slot of [context], because a later locate, append or
-         *   finalize replaced the context that held it, and
+         *   is not a slot of [context]: another session's, or one a later
+         *   locate, append or finalize replaced the context of, and
          *   [ErrorCode.ALLOCATION_FAILED] when an allocation fails.
          * @throws IllegalStateException when the session is closed.
          */
@@ -134,7 +135,7 @@ public class MarkdownSession
             values: kotlin.collections.List<String>,
         ): kotlin.collections.List<Slot.Insertion?> {
             val platform = open()
-            if (slot.turn != turn) throw MarkdownCoreException(ErrorCode.OUT_OF_BOUNDS)
+            if (slot.session !== this || slot.turn != turn) throw MarkdownCoreException(ErrorCode.OUT_OF_BOUNDS)
             return values.map { AnswerDecoder.insertion(platform.spell(slot.index, it.encodeToByteArray()), unit) }
         }
 
