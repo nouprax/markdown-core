@@ -1,7 +1,7 @@
 # CTest is the single source of truth for the C test graph.  Suites are
 # grouped by label:
 #
-#   api facade consumer spec elements regression pathological fuzz packaging
+#   api facade consumer spec elements regression pathological fuzz packaging lsp
 #
 # The default correctness preset excludes conformance. Performance measurement
 # is not in this graph at all: the stage benchmark lives in ../benchmarks and
@@ -151,6 +151,11 @@ endif()
 add_executable(facade_test facade.c)
 target_include_directories(facade_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../include")
 target_link_libraries(facade_test ${MARKDOWN_CORE_TEST_LIBRARIES})
+
+# The language engine and its JSON-RPC adapter, which link the static parser
+# as the engine does, so the runner takes nothing from the test support.
+add_executable(lsp_runner runners/lsp_runner.c)
+target_link_libraries(lsp_runner libmarkdown-core-adapter)
 
 # The MCB2 encoder the ES and Kotlin bindings decode, over the same corpus.
 add_executable(wire_test wire.c)
@@ -398,6 +403,27 @@ markdown_core_add_test(
     --generate
     ${_markdown_core_context_sweep}
     "${MARKDOWN_CORE_CONTEXT_FIXTURE}")
+# lsp: the language engine (completion plan, section 8): the protocol
+# transcripts through the JSON-RPC adapter, the JSON reader, the base framing, the
+# synchronization oracle, and the server executable on its own stdio.
+file(GLOB _markdown_core_lsp_transcripts CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/specs/lsp/transcripts/*.json")
+markdown_core_add_test(lsp_transcripts lsp 120 lsp_runner --transcripts ${_markdown_core_lsp_transcripts})
+markdown_core_add_test(lsp_json lsp 60 lsp_runner --json)
+markdown_core_add_test(lsp_frames lsp 60 lsp_runner --frames)
+markdown_core_add_test(lsp_sync lsp 300 lsp_runner --sync)
+foreach(_markdown_core_serve_case shutdown eof broken)
+    markdown_core_add_test(
+        lsp_serve_${_markdown_core_serve_case}
+        lsp
+        60
+        ${CMAKE_COMMAND}
+        -DSERVER=$<TARGET_FILE:markdown-core-server>
+        -DRUNNER=$<TARGET_FILE:lsp_runner>
+        -DCASE=${_markdown_core_serve_case}
+        -DWORK=${CMAKE_CURRENT_BINARY_DIR}
+        -P
+        "${CMAKE_CURRENT_SOURCE_DIR}/lsp/serve.cmake")
+endforeach()
 # elements: the YAML parser's events for the frozen readings of the libyaml
 # rework it replaced, and its nesting and name limits.
 if(MARKDOWN_CORE_STATIC)

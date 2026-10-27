@@ -1,0 +1,96 @@
+{
+    "description": "Before initialize every request answers ServerNotInitialized, every notification but exit is dropped, and exit without shutdown ends with code 1.",
+    "messages": [
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "textDocument/completion",
+                "params": {
+                    "textDocument": {
+                        "uri": "file:///a.md"
+                    },
+                    "position": {
+                        "line": 0,
+                        "character": 0
+                    }
+                }
+            }
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": {
+                    "code": -32002,
+                    "message": "the server is not initialized"
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "shutdown"
+            }
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "error": {
+                    "code": -32002,
+                    "message": "the server is not initialized"
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "textDocument/hover",
+                "params": {}
+            }
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "error": {
+                    "code": -32002,
+                    "message": "the server is not initialized"
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {
+                    "textDocument": {
+                        "uri": "file:///a.md",
+                        "languageId": "markdown",
+                        "version": 1,
+                        "text": "text"
+                    }
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "method": "initialized",
+                "params": {}
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "method": "exit"
+            }
+        },
+        {
+            "exit": 1
+        }
+    ]
+}

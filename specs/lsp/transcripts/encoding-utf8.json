@@ -1,0 +1,87 @@
+{
+    "description": "A client that offers UTF-8 among its encodings gets it, whatever its order.",
+    "messages": [
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "processId": null,
+                    "rootUri": null,
+                    "capabilities": {
+                        "general": {
+                            "positionEncodings": ["utf-32", "utf-16", "utf-8"]
+                        }
+                    }
+                }
+            }
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                    "capabilities": {
+                        "positionEncoding": "utf-8",
+                        "textDocumentSync": {
+                            "openClose": true,
+                            "change": 2
+                        },
+                        "completionProvider": {
+                            "triggerCharacters": [
+                                "\t",
+                                "\n",
+                                "\r",
+                                " ",
+                                "!",
+                                "\"",
+                                "#",
+                                "'",
+                                "(",
+                                ",",
+                                ".",
+                                ":",
+                                ";",
+                                "<",
+                                "=",
+                                "@",
+                                "[",
+                                "^",
+                                "`",
+                                "{",
+                                "~"
+                            ]
+                        }
+                    },
+                    "serverInfo": {
+                        "name": "markdown-core"
+                    }
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "shutdown"
+            }
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "result": null
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "method": "exit"
+            }
+        },
+        {
+            "exit": 0
+        }
+    ]
+}
