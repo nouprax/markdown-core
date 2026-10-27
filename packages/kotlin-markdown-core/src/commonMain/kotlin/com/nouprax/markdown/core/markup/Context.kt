@@ -1,5 +1,8 @@
 package com.nouprax.markdown.core
 
+import kotlin.concurrent.atomics.AtomicBoolean
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
+
 /**
  * The syntactic context at a cursor: the open state of a parse of the text
  * before it, confirmed against the document parsed from the whole text.
@@ -130,13 +133,44 @@ public class Slot internal constructor(
 }
 
 /**
- * An engine's context that a session made and frees when it closes, which
- * the slots read from it spell from.
+ * An engine's context that a session made, which the slots read from it
+ * spell from. It is freed once no slot can reach it, or when the session
+ * closes, whichever comes first.
  */
 internal class ContextHandle(
     val session: MarkdownSession,
+    val native: NativeContext,
+) {
+    val address: Long get() = native.address
+
+    /** What frees [native] once the handle is unreachable, which it keeps. */
+    private var watch: Any? = null
+
+    /** Frees [native] once no slot can reach the handle. */
+    fun watch() {
+        watch = reclaim(this, native::free)
+    }
+}
+
+/**
+ * The engine's context at [address], freed once by whichever of its
+ * handle's reclaim and its session's close comes first, on any thread.
+ */
+@OptIn(ExperimentalAtomicApi::class)
+internal class NativeContext(
+    private val platform: PlatformSession,
     val address: Long,
-)
+) {
+    private val freed = AtomicBoolean(false)
+
+    /** Whether the context is freed. */
+    val isFreed: Boolean get() = freed.load()
+
+    /** Frees the context; a second call, or a call for no context, does nothing. */
+    fun free() {
+        if (address != 0L && freed.compareAndSet(false, true)) platform.release(address)
+    }
+}
 
 /** The metadata field names and the slot cues, read from the engine once. */
 internal val dialect: Pair<kotlin.collections.List<String>, kotlin.collections.List<Char>> by lazy {
