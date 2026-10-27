@@ -154,8 +154,8 @@ extension Document {
             }
             let slots = (0..<markdown_core_context_slot_count(context)).map { index in
                 let slot = answer(markdown_core_slot()) { markdown_core_context_slot_at(context, index, $0) }
-                let prefix = (0..<slot.prefix_count).map { at in
-                    answer(markdown_core_string()) { markdown_core_context_slot_prefix_at(context, index, at, $0) }
+                let prefix = (0..<slot.prefix_count).map { part in
+                    answer(markdown_core_string()) { markdown_core_context_slot_prefix_at(context, index, part, $0) }
                         .required
                 }
                 return Slot(slot, prefix: prefix, request: request, index: index)
