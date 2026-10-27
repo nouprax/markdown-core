@@ -157,9 +157,9 @@ export class MarkdownSession {
      * session holds. Before `finalize()` it confirms as the document resolves:
      * a label sees only the definitions before the inline root asking. Throws
      * `MarkdownCoreError` `outOfBounds` when the position names no place of
-     * the text or its line or column is not an integer of at least 1, and
-     * `allocationFailed` when an allocation fails; either leaves `context` as
-     * it was.
+     * the text or its line or column is not an integer of at least 1, which
+     * leaves `context` as it was, and `allocationFailed` when an allocation
+     * fails, which clears it.
      */
     locate(position: Position): void {
         if (!valid(position)) throw new MarkdownCoreError("outOfBounds");
@@ -168,6 +168,11 @@ export class MarkdownSession {
         try {
             const message = native.markdown_core_wire_locate(session, positionPointer);
             this.#context = readAnswer(native, message, (answer) => answer.context());
+        } catch (failure) {
+            // The engine may have moved its context before its answer failed
+            // to allocate, so no slot read before stays good.
+            if (failure instanceof MarkdownCoreError && failure.code === "allocationFailed") this.#context = blank;
+            throw failure;
         } finally {
             native.free(positionPointer);
         }

@@ -175,8 +175,9 @@ the session's current document and text, so none takes the source.
   `inlines: [Opener]`, `slots: [Slot]`. An `Opener` is a `u8` node kind
   ordinal, 0 for an inline opener whose kind is still open, and a `Scope`. A
   `Slot` is a `u8` slot kind ordinal, a `u8` owner kind ordinal, its `before`
-  and `after` scopes, `closed: Bool` and `prefix: [String]`. A failed locate
-  keeps the state. The context lives and goes with the session, so the
+  and `after` scopes, `closed: Bool` and `prefix: [String]`. `OUT_OF_BOUNDS` keeps
+  the state; after `ALLOCATION_FAILED`, which the answer itself may meet, a
+  binding drops the slots it read before. The context lives and goes with the session, so the
   binding holds nothing to release.
 - **Spell**: spells in slot `slot` of the session's context as it stands: an
   `Insertion?`, which is `text: String` and a `u32` cursor, the bytes of the

@@ -100,15 +100,26 @@ public class MarkdownSession
          *
          * @throws MarkdownCoreException [ErrorCode.OUT_OF_BOUNDS] when the
          *   position names no place of the text or its line or column is
-         *   below 1, and [ErrorCode.ALLOCATION_FAILED] when an allocation
-         *   fails; either leaves [context] as it was.
+         *   below 1, which leaves [context] as it was, and
+         *   [ErrorCode.ALLOCATION_FAILED] when an allocation fails, which
+         *   clears it.
          */
         public fun locate(position: Position) {
             if (position.line < 1 || position.column < 1) throw MarkdownCoreException(ErrorCode.OUT_OF_BOUNDS)
-            val message = open().locate(position.line, position.column)
-            // A failure's answer throws here, before the turn moves on.
-            context = AnswerDecoder.context(message, this, turn + 1)
-            turn++
+            try {
+                val message = open().locate(position.line, position.column)
+                // A failure's answer throws here, before the turn moves on.
+                context = AnswerDecoder.context(message, this, turn + 1)
+                turn++
+            } catch (failure: MarkdownCoreException) {
+                // The engine may have moved its context before its answer
+                // failed to allocate, so no slot read before stays good.
+                if (failure.code == ErrorCode.ALLOCATION_FAILED) {
+                    turn++
+                    context = blank
+                }
+                throw failure
+            }
         }
 
         /**

@@ -48,6 +48,8 @@ uint8_t *markdown_core_wire_session_finalize(markdown_core_session *session);
  * markdown_core_wire_locate answers markdown_core_session_locate at the
  * cursor `position` with the session's context as the locate leaves it, the
  * state the binding reads its context from: there is no context to release.
+ * OUT_OF_BOUNDS leaves the state as it was; after ALLOCATION_FAILED, which
+ * the answer itself may meet, the binding holds no slot of it.
  *
  * markdown_core_wire_spell answers markdown_core_slot_spell of `size` bytes of
  * `value` in slot `slot` of the session's context as it stands.
