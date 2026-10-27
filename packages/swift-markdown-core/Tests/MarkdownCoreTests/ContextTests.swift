@@ -73,6 +73,22 @@ import Testing
         #expect(outOfBounds { try other.spell("x", in: last) })
     }
 
+    @Test("a session made after a slot's session ends, perhaps at its address, refuses the slot")
+    func releasedSlot() throws {
+        func held() throws -> Slot {
+            let session = try MarkdownSession("[[No")
+            try session.locate(Position(line: 1, column: 5))
+            return try #require(session.context.slots.first)
+        }
+        for _ in 0..<8 {
+            let slot = try held()
+            let session = try MarkdownSession("[x](foo")
+            try session.locate(Position(line: 1, column: 8))
+            #expect(!session.context.slots.isEmpty)
+            #expect(outOfBounds { try session.spell("x", in: slot) })
+        }
+    }
+
     @Test("a cursor outside the text, or below 1, is out of bounds and keeps the context")
     func cursorBounds() throws {
         let session = try MarkdownSession("a\n")

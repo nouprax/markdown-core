@@ -34,6 +34,8 @@ public final class MarkdownSession {
     /// Counts the steps that replace ``context``: a slot spells only in the
     /// turn that read it.
     var turn = 0
+    /// Names the session to its slots.
+    let token = Token()
 
     /// Parses `source` into a new session, as its first append; its
     /// ``document`` is a snapshot.
