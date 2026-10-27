@@ -5,7 +5,8 @@ import path from "node:path";
 const packageDirectory = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 const repositoryRoot = path.resolve(packageDirectory, "../..");
 const specDirectory = path.join(repositoryRoot, "specs/canonical-ast");
-const output = path.join(packageDirectory, "build/generated/conformance/canonical-ast-fixtures.json");
+const generatedDirectory = path.join(packageDirectory, "build/generated/conformance");
+const output = path.join(generatedDirectory, "canonical-ast-fixtures.json");
 
 const manifest = JSON.parse(await readFile(path.join(specDirectory, "manifest.json"), "utf8"));
 if (manifest.schemaVersion !== 1 || !Array.isArray(manifest.cases) || manifest.cases.length === 0) {
@@ -36,15 +37,28 @@ const cases = await Promise.all(
         };
     })
 );
-const generated = `${JSON.stringify({ schemaVersion: 1, cases }, null, 2)}\n`;
 
-let current;
-try {
-    current = await readFile(output, "utf8");
-} catch (error) {
-    if (error?.code !== "ENOENT") throw error;
+// The bindings' query corpus is already one file of what C answers; it is
+// copied as it is, after the same check of its shape.
+const queries = await readFile(path.join(repositoryRoot, "specs/context/queries.json"), "utf8");
+const corpus = JSON.parse(queries);
+if (corpus.schemaVersion !== 1 || !Array.isArray(corpus.cases) || corpus.cases.length === 0) {
+    throw new Error("shared context query corpus v1 must contain at least one case");
 }
-if (current !== generated) {
-    await mkdir(path.dirname(output), { recursive: true });
-    await writeFile(output, generated, "utf8");
+
+/** Writes `text` to `file` unless it already holds it. */
+async function emit(file, text) {
+    let current;
+    try {
+        current = await readFile(file, "utf8");
+    } catch (error) {
+        if (error?.code !== "ENOENT") throw error;
+    }
+    if (current !== text) {
+        await mkdir(path.dirname(file), { recursive: true });
+        await writeFile(file, text, "utf8");
+    }
 }
+
+await emit(output, `${JSON.stringify({ schemaVersion: 1, cases }, null, 2)}\n`);
+await emit(path.join(generatedDirectory, "context-queries.json"), queries);

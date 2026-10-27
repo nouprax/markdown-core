@@ -6,6 +6,16 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Ask the context, the path, the fields and the markers of an ECMAScript
+  `MarkdownSession` (language engine plan, step 3c), as the Swift and Kotlin
+  sessions answer them: `context(position)`, with `slot.spell` spelling an
+  `Edit` until `dispose()`, which frees the contexts the session made;
+  `path(position)`; `scope(node, field)`, where a field is a `SlotKind` or
+  null; and `markers(node)`. `Metadata.fields` and `Slot.cues` export the
+  dialect's vocabularies. The WebAssembly module exports the wire's query
+  answers, and the conformance tests answer the shared corpus
+  `specs/context` line for line.
+
 - Ask the context, the path, the fields and the markers of a Kotlin
   `MarkdownSession` (language engine plan, step 3b), as the Swift session
   answers them: `context(position)`, with `Slot.spell` spelling until the

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
-import { Document, MarkupDumper, markupEquals, walk } from "../dist/index.js";
+import { Document, MarkdownSession, MarkupDumper, markupEquals, walk } from "../dist/index.js";
 import { emptyVisitor } from "./visitor.mjs";
 
 const canonicalFixtures = new URL("../build/generated/conformance/canonical-ast-fixtures.json", import.meta.url);
@@ -9,6 +9,9 @@ const canonicalManifest = JSON.parse(await readFile(canonicalFixtures, "utf8"));
 if (canonicalManifest.schemaVersion !== 1 || !canonicalManifest.cases?.length) {
     throw new Error("shared canonical AST manifest v1 must contain at least one case");
 }
+const contextCorpus = JSON.parse(
+    await readFile(new URL("../build/generated/conformance/context-queries.json", import.meta.url), "utf8")
+);
 
 test("conformance: public node schema is reachable", () => {
     const sources = [
@@ -204,3 +207,108 @@ test("conformance: task markers preserve scalars and derive completion", () => {
     assert.equal(item.tasked, false);
     assert.equal(item.completed, false);
 });
+
+// The bindings' query corpus (specs/context): what the C queries answer at the
+// cursor of every example of the context fixture, in both units, which the
+// session's queries must answer line for line.
+test("conformance: the context, spelling, path, field and marker queries answer as the C queries do", () => {
+    assert.ok(contextCorpus.cases.length > 0);
+    for (const testCase of contextCorpus.cases) {
+        for (const unit of ["utf8", "utf16"]) {
+            const { cursor, expected } = testCase[unit];
+            const position = { line: cursor[0], column: cursor[1] };
+            assert.equal(
+                renderQueries(testCase.source, unit, position),
+                expected,
+                `context.txt:${testCase.line} in ${unit}`
+            );
+        }
+    }
+});
+
+/** The slot kinds in the contract's order, then the fields none names. */
+const slotKinds = [
+    "dest",
+    "anchor",
+    "label",
+    "footnote",
+    "bib",
+    "specimen",
+    "name",
+    "id",
+    "class",
+    "record",
+    "variant",
+    "info",
+    "field",
+    "value",
+    null
+];
+
+/** Every query at `position` of `source`, asked of a finalized session of it
+ * and rendered as specs/context's README says. */
+function renderQueries(source, unit, position) {
+    const session = new MarkdownSession(source, { unit });
+    try {
+        const document = session.finalize();
+        const context = session.context(position);
+        const lines = [];
+        for (const block of context.blocks) lines.push(`block ${contractName(block.kind)} ${scopeText(block.scope)}`);
+        for (const opener of context.inlines)
+            lines.push(`inline ${contractName(opener.kind)} ${scopeText(opener.scope)}`);
+        for (const slot of context.slots) {
+            const prefix = slot.prefix.map((text) => ` prefix="${text}"`).join("");
+            lines.push(
+                `slot ${slot.kind} ${contractName(slot.owner)} ${slot.closed ? "closed" : "open"} ` +
+                    `before=${scopeText(slot.before)} after=${scopeText(slot.after)}${prefix}`
+            );
+        }
+        context.slots.forEach((slot, index) => {
+            const spelled = slot.spell(contextCorpus.values);
+            contextCorpus.values.forEach((value, at) => {
+                const insertion = spelled[at];
+                lines.push(
+                    `spell ${index} "${value}" ` + (insertion ? `"${insertion.text}" ${insertion.cursor}` : "none")
+                );
+            });
+        });
+        lines.push(["path", ...session.path(position).map((node) => node.id)].join(" "));
+        walk(document, {
+            ...emptyVisitor,
+            ...Object.fromEntries(
+                Object.keys(emptyVisitor).map((kind) => [
+                    kind,
+                    (node, phase) => {
+                        if (phase !== "enter") return undefined;
+                        let line = `node ${node.id}`;
+                        for (const kind of slotKinds) {
+                            const scopes = session.scope(node, kind);
+                            if (scopes.length) line += ` ${kind ?? "none"}=${scopesText(scopes)}`;
+                        }
+                        const markers = session.markers(node);
+                        if (markers.length) line += ` markers=${scopesText(markers)}`;
+                        lines.push(line);
+                        return undefined;
+                    }
+                ])
+            )
+        });
+        return lines.map((line) => `${line}\n`).join("");
+    } finally {
+        session.dispose();
+    }
+}
+
+/** A kind's name in the canonical AST contract, or `None` for none. */
+function contractName(kind) {
+    if (kind === null) return "None";
+    return kind.startsWith("html") ? `HTML${kind.slice(4)}` : kind[0].toUpperCase() + kind.slice(1);
+}
+
+function scopeText({ start, end }) {
+    return `${start.line}:${start.column}..${end.line}:${end.column}`;
+}
+
+function scopesText(scopes) {
+    return scopes.map(scopeText).join(",");
+}

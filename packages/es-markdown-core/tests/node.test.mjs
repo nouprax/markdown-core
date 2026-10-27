@@ -1,7 +1,16 @@
 import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Document, MarkdownCoreError, MarkdownSession, MarkupDumper, markupEquals, walk } from "../dist/index.js";
+import {
+    Document,
+    MarkdownCoreError,
+    MarkdownSession,
+    MarkupDumper,
+    Metadata,
+    Slot,
+    markupEquals,
+    walk
+} from "../dist/index.js";
 // Past index.js for the instance itself: the heap is what this asserts about,
 // and it is observable without the source carrying anything for the test.
 import { native } from "../dist/runtime/native.js";
@@ -741,6 +750,124 @@ test("errors: a disposed session takes no further call", () => {
     assert.throws(() => session.text, Error);
     assert.equal(session.document.content.length, 1);
 });
+
+test("api: a session's context lists what the text before the cursor leaves open, and its slots spell", () => {
+    const session = new MarkdownSession("[[No\n");
+    session.finalize();
+    const context = session.context({ line: 1, column: 5 });
+    assert.deepEqual(context.blocks, [{ kind: "paragraph", scope: scope(1, 1, 1, 4) }]);
+    assert.deepEqual(
+        context.inlines.map((opener) => opener.kind),
+        ["crossLink", null, null]
+    );
+    const [slot] = context.slots;
+    assert.equal(context.slots.length, 1);
+    assert.equal(slot.kind, "dest");
+    assert.equal(slot.owner, "crossLink");
+    assert.deepEqual(
+        [slot.before, slot.after, slot.closed, slot.prefix],
+        [scope(1, 3, 1, 4), scope(1, 5, 1, 4), false, []]
+    );
+    // The closer follows the value and the caret stands before it, in columns
+    // of the session's unit.
+    assert.deepEqual(slot.spell("é🚀"), { text: "é🚀]]", cursor: 3 });
+    assert.deepEqual(slot.spell(["x", "a|b"]), [{ text: "x]]", cursor: 1 }, null]);
+    const bytes = new MarkdownSession("[[No\n", { unit: "utf8" });
+    assert.deepEqual(bytes.context({ line: 1, column: 5 }).slots[0].spell("é🚀"), { text: "é🚀]]", cursor: 6 });
+    bytes.dispose();
+    // A slot keeps the context it was read from, so it spells the text it was
+    // asked of after the session moves on.
+    const open = new MarkdownSession("[[No");
+    const before = open.context({ line: 1, column: 5 }).slots[0];
+    open.append("]] done\n");
+    assert.deepEqual(before.spell("x"), { text: "x]]", cursor: 1 });
+    open.dispose();
+    session.dispose();
+});
+
+test("api: the vocabularies are the dialect's metadata fields and slot cues", () => {
+    assert.deepEqual(Metadata.fields, [
+        "name",
+        "title",
+        "subtitle",
+        "time",
+        "date",
+        "authors",
+        "keywords",
+        "abstract",
+        "state",
+        "comment"
+    ]);
+    assert.ok(Slot.cues.includes("[") && Slot.cues.includes("(") && Slot.cues.includes("\n"));
+    assert.deepEqual([...Slot.cues].sort(), Slot.cues);
+    assert.ok(Slot.cues.every((cue) => cue.length === 1));
+    assert.equal(Slot.cues, Slot.cues);
+});
+
+test("api: a session's path, field and marker queries divide a node's own source", () => {
+    const source = '**a** [t](/x "T")\n';
+    const session = new MarkdownSession(source, { unit: "utf8" });
+    const document = session.finalize();
+    const [strong, , link] = document.content[0].content;
+    assert.deepEqual(
+        session.path({ line: 1, column: 2 }).map((node) => node.kind),
+        ["document", "paragraph", "strong"]
+    );
+    assert.deepEqual(session.path({ line: 1, column: 3 }).at(-1), document.nodeAt({ line: 1, column: 3 }, source));
+    assert.deepEqual(session.path({ line: 9, column: 1 }), []);
+    assert.deepEqual(session.markers(strong), [scope(1, 1, 1, 2), scope(1, 4, 1, 5)]);
+    assert.deepEqual(session.scope(strong, null), []);
+    assert.deepEqual(session.scope(link, "dest"), [scope(1, 11, 1, 12)]);
+    assert.deepEqual(session.scope(link, null), [scope(1, 15, 1, 15)]);
+    assert.deepEqual(session.scope(link, "label"), []);
+    session.dispose();
+});
+
+test("api: a node an append left alone is held by the later document", () => {
+    const session = new MarkdownSession("**a**\n\n");
+    const strong = session.document.content[0].content[0];
+    session.append("b\n");
+    assert.deepEqual(session.markers(strong), [scope(1, 1, 1, 2), scope(1, 4, 1, 5)]);
+    session.dispose();
+});
+
+test("errors: the session's queries reject a position, node or slot kind they cannot read", () => {
+    const session = new MarkdownSession("**a**\n");
+    const strong = session.document.content[0].content[0];
+    for (const position of [
+        { line: 0, column: 1 },
+        { line: 1, column: 0 },
+        { line: 1.5, column: 1 },
+        { line: 1, column: 2 ** 31 }
+    ]) {
+        assert.throws(() => session.context(position), { code: "outOfBounds" });
+        assert.throws(() => session.path(position), { code: "outOfBounds" });
+    }
+    assert.throws(() => session.context({ line: 3, column: 1 }), { code: "outOfBounds" });
+    const other = new MarkdownSession("*a*\n");
+    // The same id, in a document that holds another node with it.
+    assert.throws(() => session.markers(other.document.content[0].content[0]), { code: "outOfBounds" });
+    other.dispose();
+    assert.throws(() => session.scope(strong, "unknown"), { code: "outOfBounds" });
+    assert.throws(() => session.scope(Document.parse("x").content[0], null), { code: "outOfBounds" });
+    session.dispose();
+});
+
+test("errors: a disposed session answers no query and its slots spell nothing", () => {
+    const session = new MarkdownSession("[[No\n");
+    const slot = session.context({ line: 1, column: 5 }).slots[0];
+    const node = session.document.content[0];
+    session.dispose();
+    assert.throws(() => session.context({ line: 1, column: 5 }), /disposed/);
+    assert.throws(() => session.path({ line: 1, column: 1 }), /disposed/);
+    assert.throws(() => session.scope(node, null), /disposed/);
+    assert.throws(() => session.markers(node), /disposed/);
+    assert.throws(() => slot.spell("x"), /disposed/);
+});
+
+function scope(startLine, startColumn, endLine, endColumn) {
+    return { start: { line: startLine, column: startColumn }, end: { line: endLine, column: endColumn } };
+}
 
 function decoder(bytes, unit = "utf16") {
     return new Decoder(bytes, unit);

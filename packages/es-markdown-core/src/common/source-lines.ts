@@ -5,15 +5,16 @@ const utf8Encoder = new TextEncoder();
 /**
  * THE LINES OF A SOURCE, over its UTF-8 bytes: the offset each line begins
  * at. A line ends after LF, after CR, or after CRLF, which is one terminator.
- * Built per query from the caller's source, and converts between byte offsets
- * and editor coordinates in either unit.
+ * Built per query from the caller's source, or from a session's text as its
+ * bytes, and converts between byte offsets and editor coordinates in either
+ * unit.
  */
 export class SourceLines {
     readonly bytes: Uint8Array;
     private readonly starts: number[] = [0];
 
-    constructor(source: string) {
-        const bytes = utf8Encoder.encode(source);
+    constructor(source: string | Uint8Array) {
+        const bytes = typeof source === "string" ? utf8Encoder.encode(source) : source;
         this.bytes = bytes;
         for (let index = 0; index < bytes.length; index += 1) {
             const byte = bytes[index]!;
