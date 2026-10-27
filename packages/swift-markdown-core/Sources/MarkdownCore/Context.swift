@@ -133,17 +133,18 @@ extension Document {
     /// stands between characters: its column may also stand at its line's end
     /// or at the source's end.
     ///
-    /// `self` is the parse of `source`, the whole text, and the query reads
-    /// its unit. The native document the query confirms against is parsed
-    /// from `source` again, with the text before the cursor, since the
-    /// document holds no native parse.
+    /// `self` is the document of `source`, the whole text, and the query
+    /// reads its unit. The native document the query confirms against is
+    /// read from `source` again, as `self` was, by a parse or, for a
+    /// session's snapshot, by a session, since the document holds no native
+    /// parse.
     ///
     /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/outOfBounds`` when
     ///   the position names no place of the source or its line or column is
     ///   below 1, and ``ErrorCode/allocationFailed`` when an allocation fails.
     public func context(at position: Position, in source: String) throws -> Context {
         guard position.line >= 1, position.column >= 1 else { throw MarkdownCoreError(code: .outOfBounds) }
-        let request = ContextRequest(source: source, position: position, unit: unit)
+        let request = ContextRequest(source: source, position: position, unit: unit, snapshot: snapshot)
         return try request.read { context in
             let blocks = (0..<markdown_core_context_block_count(context)).map { index in
                 Opener(answer(markdown_core_opener()) { markdown_core_context_block_at(context, index, $0) })
@@ -169,21 +170,27 @@ struct ContextRequest: Sendable, Equatable {
     let source: String
     let position: Position
     let unit: TextUnit
+    let snapshot: Bool
 
-    /// Parses the source, asks the context at the position and hands it to
-    /// `body`; the native context lives until `body` returns.
+    /// Reads the source into a native document like the one asked, asks the
+    /// context at the position and hands it to `body`; the native context
+    /// lives until `body` returns.
     func read<Result>(_ body: (OpaquePointer) throws -> Result) throws -> Result {
         var text = source
         return try text.withUTF8 { bytes in
-            var document: OpaquePointer?
-            var status = markdown_core_document_parse_in(bytes.baseAddress, bytes.count, unit.native, &document)
-            guard status == MARKDOWN_CORE_OK, let document else { throw MarkdownCoreError(status) }
-            defer { markdown_core_document_free(document) }
-            var context: OpaquePointer?
-            status = markdown_core_document_context(document, bytes.baseAddress, bytes.count, position.native, &context)
-            guard status == MARKDOWN_CORE_OK, let context else { throw MarkdownCoreError(status) }
-            defer { markdown_core_context_free(context) }
-            return try body(context)
+            try Document.native(of: bytes, unit: unit, snapshot: snapshot) { document in
+                var context: OpaquePointer?
+                let status = markdown_core_document_context(
+                    document,
+                    bytes.baseAddress,
+                    bytes.count,
+                    position.native,
+                    &context
+                )
+                guard status == MARKDOWN_CORE_OK, let context else { throw MarkdownCoreError(status) }
+                defer { markdown_core_context_free(context) }
+                return try body(context)
+            }
         }
     }
 }

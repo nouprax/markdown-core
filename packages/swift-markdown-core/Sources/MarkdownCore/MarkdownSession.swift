@@ -43,7 +43,7 @@ public final class MarkdownSession {
         guard status == MARKDOWN_CORE_OK, let session else { throw MarkdownCoreError(status) }
         self.session = session
         self.unit = unit
-        document = Document(native: markdown_core_session_document(session), unit: unit)
+        document = Document(native: markdown_core_session_document(session), unit: unit, snapshot: true)
     }
 
     deinit {
@@ -75,7 +75,7 @@ public final class MarkdownSession {
         let status = appended.withUTF8 { bytes in
             markdown_core_session_append(session, bytes.baseAddress, bytes.count, &native)
         }
-        return try publish(status, native)
+        return try publish(status, native, snapshot: true)
     }
 
     /// Ends the text and returns the final document, which equals
@@ -89,14 +89,18 @@ public final class MarkdownSession {
     public func finalize() throws -> Document {
         var native: OpaquePointer?
         let status = markdown_core_session_finalize(session, &native)
-        return try publish(status, native)
+        return try publish(status, native, snapshot: false)
     }
 
     /// Builds the document a step returned, which borrows from the session
     /// until its next step.
-    private func publish(_ status: markdown_core_status, _ native: OpaquePointer?) throws -> Document {
+    private func publish(
+        _ status: markdown_core_status,
+        _ native: OpaquePointer?,
+        snapshot: Bool
+    ) throws -> Document {
         guard status == MARKDOWN_CORE_OK, let native else { throw MarkdownCoreError(status) }
-        document = Document(native: native, unit: unit)
+        document = Document(native: native, unit: unit, snapshot: snapshot)
         return document
     }
 }

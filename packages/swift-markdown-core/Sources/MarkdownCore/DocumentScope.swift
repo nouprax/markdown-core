@@ -147,10 +147,12 @@ extension Document {
 
     /// A field or marker query of `node` against a native parse of `source`.
     ///
-    /// The native node is found where the native path query finds it: the
-    /// path at the first byte `node` holds lists the same nodes in the same
-    /// order in both trees, so `node`'s place in this document's path is its
-    /// place in the native one. A node that holds no byte owns no source.
+    /// The native document is read from `source` as this one was, so its tree
+    /// is this one's, and the native node is found where the native path
+    /// query finds it: the path at the first byte `node` holds lists the same
+    /// nodes in the same order in both trees, so `node`'s place in this
+    /// document's path is its place in the native one, which must have its
+    /// kind and runs. A node that holds no byte owns no source.
     private func parts(
         of node: some Markup,
         in source: String,
@@ -168,41 +170,42 @@ extension Document {
         var text = source
         return try text.withUTF8 { bytes in
             guard first < bytes.count else { throw MarkdownCoreError(code: .outOfBounds) }
-            var document: OpaquePointer?
-            var status = markdown_core_document_parse_in(bytes.baseAddress, bytes.count, unit.native, &document)
-            guard status == MARKDOWN_CORE_OK, let document else { throw MarkdownCoreError(status) }
-            defer { markdown_core_document_free(document) }
             let position = SourceLines(bytes).scope(from: first, to: first + 1, in: bytes, unit: unit).start
-            var nodes: UnsafeMutablePointer<OpaquePointer?>?
-            var count = 0
-            status = markdown_core_document_path(
-                document,
-                position.native,
-                bytes.baseAddress,
-                bytes.count,
-                &nodes,
-                &count
-            )
-            guard status == MARKDOWN_CORE_OK else { throw MarkdownCoreError(status) }
-            defer { markdown_core_path_free(nodes) }
-            guard rank < count, let native = nodes?[rank], Self.same(target, native) else {
-                throw MarkdownCoreError(code: .outOfBounds)
+            return try Self.native(of: bytes, unit: unit, snapshot: snapshot) { document in
+                var nodes: UnsafeMutablePointer<OpaquePointer?>?
+                var count = 0
+                var status = markdown_core_document_path(
+                    document,
+                    position.native,
+                    bytes.baseAddress,
+                    bytes.count,
+                    &nodes,
+                    &count
+                )
+                guard status == MARKDOWN_CORE_OK else { throw MarkdownCoreError(status) }
+                defer { markdown_core_path_free(nodes) }
+                guard rank < count, let native = nodes?[rank], Self.same(target, native) else {
+                    throw MarkdownCoreError(code: .outOfBounds)
+                }
+                var scopes: UnsafeMutablePointer<markdown_core_scope>?
+                var found = 0
+                status = query(document, native, bytes, &scopes, &found)
+                guard status == MARKDOWN_CORE_OK else { throw MarkdownCoreError(status) }
+                defer { markdown_core_scopes_free(scopes) }
+                return UnsafeBufferPointer(start: scopes, count: found).map { Scope($0) }
             }
-            var scopes: UnsafeMutablePointer<markdown_core_scope>?
-            var found = 0
-            status = query(document, native, bytes, &scopes, &found)
-            guard status == MARKDOWN_CORE_OK else { throw MarkdownCoreError(status) }
-            defer { markdown_core_scopes_free(scopes) }
-            return UnsafeBufferPointer(start: scopes, count: found).map { Scope($0) }
         }
     }
 
-    /// Whether `native` has `record`'s runs, as the node a parse of another
-    /// source would not.
+    /// Whether `native` has `record`'s kind and runs, which the node read from
+    /// another source would not. Every kind's Markup type has its kind's name
+    /// in the canonical AST, which the projection audit holds.
     private static func same(_ record: MarkupRecord, _ native: OpaquePointer) -> Bool {
         var count = 0
         let runs = markdown_core_node_runs(native, &count)
-        return UnsafeBufferPointer(start: runs, count: count).map { Run($0) } == record.runs
+        let kind = NodeKind(rawValue: Int32(markdown_core_node_get_kind(native).rawValue))
+        return kind?.description == String(describing: type(of: record.markup))
+            && UnsafeBufferPointer(start: runs, count: count).map { Run($0) } == record.runs
     }
 
     /// The source ranges of `node`, found by one canonical walk.

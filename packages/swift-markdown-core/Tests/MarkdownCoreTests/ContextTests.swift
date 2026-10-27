@@ -92,6 +92,22 @@ import Testing
         #expect(outOfBounds { try document.markers(of: link, in: "[a](do") })
     }
 
+    @Test("a session's document is asked its own snapshot, which sees no definition after the asking root")
+    func snapshot() throws {
+        let session = try MarkdownSession("[a]\n\n")
+        let document = try session.append("[a]: /url\n")
+        let source = session.text
+        let text = try #require((document.content.first as? Paragraph)?.content.first as? Text)
+        #expect(try document.path(at: Position(line: 1, column: 1), in: source).last?.id == text.id)
+        // A parse of the whole source would read a link here, not the text.
+        #expect(try document.markers(of: text, in: source).isEmpty)
+        #expect(try document.scope(of: text, field: .label, in: source).isEmpty)
+        #expect(try document.context(at: Position(line: 1, column: 2), in: source).blocks.map(\.kind) == [.paragraph])
+        let final = try session.finalize()
+        let link = try #require((final.content.first as? Paragraph)?.content.first as? Link)
+        #expect(try !final.markers(of: link, in: source).isEmpty)
+    }
+
     @Test("the vocabularies are the dialect's")
     func vocabularies() {
         #expect(
