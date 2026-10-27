@@ -48,9 +48,9 @@ public struct Slot: Sendable, Equatable {
     /// Whether the whole document finishes the construct after the cursor;
     /// otherwise it reads the construct's opener as text.
     public let closed: Bool
-    /// What a spelling reads again: the context's request and the slot's
-    /// place among its slots.
-    let request: ContextRequest
+    /// The native context the slot was read from, which a spelling asks, and
+    /// the slot's place among its slots.
+    let handle: ContextHandle
     let index: Int
 
     /// What replaces a slot's ``Slot/before`` and ``Slot/after`` to write a
@@ -60,7 +60,7 @@ public struct Slot: Sendable, Equatable {
         /// finishes the construct when it is not ``Slot/closed``.
         public let text: String
         /// Where the caret lands: the columns of ``text`` before it, in the
-        /// document's ``TextUnit``. It stands after the value, before any
+        /// session's ``TextUnit``. It stands after the value, before any
         /// closer.
         public let cursor: Int
     }
@@ -73,32 +73,31 @@ public struct Slot: Sendable, Equatable {
     /// is `nil` for a value the field holds in no spelling there, such as a
     /// line ending, a `|` in a cross target or a space in a key.
     ///
-    /// Each call parses the context's source again, so spell every candidate
-    /// in one call.
+    /// The slot keeps the context it was read from, so a spelling parses
+    /// nothing; it stays the spelling of the text the context was asked of
+    /// after the session moves on.
     ///
     /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/allocationFailed``
     ///   when an allocation fails.
     public func spell(_ values: [String]) throws -> [Insertion?] {
-        try request.read { context in
-            try values.map { value -> Insertion? in
-                var text = value
-                var made: UnsafeMutablePointer<markdown_core_insertion>?
-                let status = text.withUTF8 { bytes in
-                    markdown_core_slot_spell(context, index, bytes.baseAddress, bytes.count, &made)
-                }
-                guard status == MARKDOWN_CORE_OK else { throw MarkdownCoreError(status) }
-                guard let made else { return nil }
-                defer { markdown_core_insertion_free(made) }
-                let bytes = UnsafeBufferPointer(start: made.pointee.text, count: made.pointee.size)
-                // A spelling is the value's bytes and the field's syntax, so it
-                // is UTF-8 whenever the value is.
-                // swiftlint:disable:next optional_data_string_conversion
-                let spelled = String(decoding: bytes, as: UTF8.self)
-                return Insertion(
-                    text: spelled,
-                    cursor: SourceLines.columns(bytes, from: 0, to: made.pointee.cursor, unit: request.unit)
-                )
+        try values.map { value -> Insertion? in
+            var text = value
+            var made: UnsafeMutablePointer<markdown_core_insertion>?
+            let status = text.withUTF8 { bytes in
+                markdown_core_slot_spell(handle.context, index, bytes.baseAddress, bytes.count, &made)
             }
+            guard status == MARKDOWN_CORE_OK else { throw MarkdownCoreError(status) }
+            guard let made else { return nil }
+            defer { markdown_core_insertion_free(made) }
+            let bytes = UnsafeBufferPointer(start: made.pointee.text, count: made.pointee.size)
+            // A spelling is the value's bytes and the field's syntax, so it
+            // is UTF-8 whenever the value is.
+            // swiftlint:disable:next optional_data_string_conversion
+            let spelled = String(decoding: bytes, as: UTF8.self)
+            return Insertion(
+                text: spelled,
+                cursor: SourceLines.columns(bytes, from: 0, to: made.pointee.cursor, unit: handle.unit)
+            )
         }
     }
 
@@ -106,6 +105,13 @@ public struct Slot: Sendable, Equatable {
     /// each value.
     public func spell(_ value: String) throws -> Insertion? {
         try spell([value])[0]
+    }
+
+    /// Slots are equal when they read the same, whichever context they were
+    /// read from.
+    public static func == (lhs: Slot, rhs: Slot) -> Bool {
+        lhs.kind == rhs.kind && lhs.owner == rhs.owner && lhs.before == rhs.before && lhs.after == rhs.after
+            && lhs.prefix == rhs.prefix && lhs.closed == rhs.closed && lhs.index == rhs.index
     }
 
     /// The bytes after which a slot may begin with nothing written yet, in
@@ -128,70 +134,70 @@ extension Metadata {
     }
 }
 
-extension Document {
-    /// The syntactic context at the cursor `position` of `source`, which
+extension MarkdownSession {
+    /// The syntactic context at the cursor `position` of ``text``, which
     /// stands between characters: its column may also stand at its line's end
-    /// or at the source's end.
+    /// or at the text's end. It counts columns in the session's ``unit``.
     ///
-    /// `self` is the document of `source`, the whole text, and the query
-    /// reads its unit. The native document the query confirms against is
-    /// read from `source` again, as `self` was, by a parse or, for a
-    /// session's snapshot, by a session, since the document holds no native
-    /// parse.
+    /// The query parses the text before the cursor and confirms what it
+    /// leaves open against the session's current ``document``, whose native
+    /// parse the session holds. A snapshot confirms as it resolves: a label
+    /// sees only the definitions before the inline root asking.
     ///
     /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/outOfBounds`` when
-    ///   the position names no place of the source or its line or column is
+    ///   the position names no place of the text or its line or column is
     ///   below 1, and ``ErrorCode/allocationFailed`` when an allocation fails.
-    public func context(at position: Position, in source: String) throws -> Context {
+    public func context(at position: Position) throws -> Context {
         guard position.line >= 1, position.column >= 1 else { throw MarkdownCoreError(code: .outOfBounds) }
-        let request = ContextRequest(source: source, position: position, unit: unit, snapshot: snapshot)
-        return try request.read { context in
-            let blocks = (0..<markdown_core_context_block_count(context)).map { index in
-                Opener(answer(markdown_core_opener()) { markdown_core_context_block_at(context, index, $0) })
-            }
-            let inlines = (0..<markdown_core_context_inline_count(context)).map { index in
-                Opener(answer(markdown_core_opener()) { markdown_core_context_inline_at(context, index, $0) })
-            }
-            let slots = (0..<markdown_core_context_slot_count(context)).map { index in
-                let slot = answer(markdown_core_slot()) { markdown_core_context_slot_at(context, index, $0) }
-                let prefix = (0..<slot.prefix_count).map { part in
-                    answer(markdown_core_string()) { markdown_core_context_slot_prefix_at(context, index, part, $0) }
-                        .required
-                }
-                return Slot(slot, prefix: prefix, request: request, index: index)
-            }
-            return Context(blocks: blocks, inlines: inlines, slots: slots)
+        let handle = try withBytes { bytes in
+            var context: OpaquePointer?
+            let status = markdown_core_document_context(
+                markdown_core_session_document(session),
+                bytes.baseAddress,
+                bytes.count,
+                position.native,
+                &context
+            )
+            guard status == MARKDOWN_CORE_OK, let context else { throw MarkdownCoreError(status) }
+            return ContextHandle(context, unit: unit)
         }
+        let context = handle.context
+        let blocks = (0..<markdown_core_context_block_count(context)).map { index in
+            Opener(answer(markdown_core_opener()) { markdown_core_context_block_at(context, index, $0) })
+        }
+        let inlines = (0..<markdown_core_context_inline_count(context)).map { index in
+            Opener(answer(markdown_core_opener()) { markdown_core_context_inline_at(context, index, $0) })
+        }
+        let slots = (0..<markdown_core_context_slot_count(context)).map { index in
+            let slot = answer(markdown_core_slot()) { markdown_core_context_slot_at(context, index, $0) }
+            let prefix = (0..<slot.prefix_count).map { part in
+                answer(markdown_core_string()) { markdown_core_context_slot_prefix_at(context, index, part, $0) }
+                    .required
+            }
+            return Slot(slot, prefix: prefix, handle: handle, index: index)
+        }
+        return Context(blocks: blocks, inlines: inlines, slots: slots)
     }
 }
 
-/// A context query as asked: what a slot's spelling asks again.
-struct ContextRequest: Sendable, Equatable {
-    let source: String
-    let position: Position
+/// A native context, which owns everything it hands out and borrows nothing
+/// from the session it was asked of, released when the last slot read from it
+/// goes.
+///
+/// SENDABLE, UNCHECKED, BECAUSE NOTHING WRITES IT. A spelling only reads the
+/// context, so any thread may spell from it.
+final class ContextHandle: @unchecked Sendable {
+    let context: OpaquePointer
+    /// How a spelling counts its caret.
     let unit: TextUnit
-    let snapshot: Bool
 
-    /// Reads the source into a native document like the one asked, asks the
-    /// context at the position and hands it to `body`; the native context
-    /// lives until `body` returns.
-    func read<Result>(_ body: (OpaquePointer) throws -> Result) throws -> Result {
-        var text = source
-        return try text.withUTF8 { bytes in
-            try Document.native(of: bytes, unit: unit, snapshot: snapshot) { document in
-                var context: OpaquePointer?
-                let status = markdown_core_document_context(
-                    document,
-                    bytes.baseAddress,
-                    bytes.count,
-                    position.native,
-                    &context
-                )
-                guard status == MARKDOWN_CORE_OK, let context else { throw MarkdownCoreError(status) }
-                defer { markdown_core_context_free(context) }
-                return try body(context)
-            }
-        }
+    init(_ context: OpaquePointer, unit: TextUnit) {
+        self.context = context
+        self.unit = unit
+    }
+
+    deinit {
+        markdown_core_context_free(context)
     }
 }
 
@@ -202,7 +208,7 @@ extension Opener {
 }
 
 extension Slot {
-    init(_ slot: markdown_core_slot, prefix: [String], request: ContextRequest, index: Int) {
+    init(_ slot: markdown_core_slot, prefix: [String], handle: ContextHandle, index: Int) {
         // A context's slot always has a kind and an owner.
         guard let kind = Kind(rawValue: Int32(slot.kind.rawValue)),
             let owner = NodeKind(rawValue: Int32(slot.owner.rawValue))
@@ -214,7 +220,7 @@ extension Slot {
             after: Scope(slot.after),
             prefix: prefix,
             closed: slot.closed,
-            request: request,
+            handle: handle,
             index: index
         )
     }

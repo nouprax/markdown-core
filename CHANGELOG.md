@@ -6,20 +6,23 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
-- Ask the context, the path, the fields and the markers in Swift (language
-  engine plan, step 3a). `Document.context(at:in:)` answers a `Context` of
-  open blocks, inline openers and `Slot`s, and `Slot.spell(_:)` spells
-  values in a slot, each as a `Slot.Insertion` whose caret counts columns in
-  the document's unit; `Document.path(at:in:)` answers the nodes over a
-  position, `Document.scope(of:field:in:)` a node's fields of a slot kind
-  and `Document.markers(of:in:)` its markers. `NodeKind` and `Slot.Kind` are
+- Ask the context, the path, the fields and the markers of a Swift
+  `MarkdownSession` (language engine plan, step 3a), which holds the native
+  parse of its text, so no query parses it again and none takes the source.
+  `MarkdownSession.context(at:)` answers a `Context` of open blocks, inline
+  openers and `Slot`s, and `Slot.spell(_:)` spells values in a slot, each as
+  a `Slot.Insertion` whose caret counts columns in the session's unit;
+  `path(at:)` answers the nodes over a position, `scope(of:field:)` a node's
+  fields of a slot kind and `markers(of:)` its markers, for a node of the
+  current document or one an append left unchanged. An editor holds a
+  finalized session per version of a text. `NodeKind` and `Slot.Kind` are
   generated from the contract. The dialect's vocabularies are exported:
   `markdown_core_metadata_field_count` and `markdown_core_metadata_field_at`
   (Swift `Metadata.fields`) name the properties fields, and
   `markdown_core_slot_cues` (Swift `Slot.cues`) the bytes after which a slot
   may begin empty, an editor's completion triggers. `specs/context` holds
-  what the C queries answer over the context fixture, which the Swift
-  binding must answer too.
+  what the C queries answer over the context fixture, asked of a finalized
+  session, which the Swift binding must answer too.
 
 - Read properties with a YAML parser that reads as libyaml does (language
   engine plan, step 2e). Each member of the envelope is read by one

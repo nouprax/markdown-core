@@ -806,9 +806,13 @@ it (D6).
    and ECMAScript, and the vocabulary exports (3.3, 3.4). In three pull
    requests: 3a the vocabulary exports in C and the Swift binding, with the
    shared query corpus `specs/context/queries.json` that every binding
-   renders its answers against; 3b Kotlin; 3c ECMAScript. A binding's
-   document holds no native parse, so each context, field or marker query
-   parses the source again, and `Slot.spell` takes every candidate at once.
+   renders its answers against; 3b Kotlin; 3c ECMAScript. The queries
+   belong to a binding's session, not its document: the session already
+   holds the native parse of its text and a release (Swift's deinit,
+   Kotlin's `close()`, ECMAScript's `dispose()`), so the document stays a
+   value, no query parses the text again or takes the source, and an editor
+   holds a finalized session per version. A slot keeps the native context it
+   was read from, so `Slot.spell` parses nothing.
 - [ ] **Step 4: Engine skeleton.** `markdown-core-lsp` in C with the
    lifecycle, position encoding, document store and sync, its Swift binding,
    the JSON-RPC adapter and the transcript harness, and the latency report

@@ -122,9 +122,13 @@ static bool scopes(text *out, const char *label, markdown_core_status status, ma
 static char *render(const uint8_t *source, size_t length, markdown_core_position position,
                     markdown_core_text_unit unit) {
     text out = {0};
-    markdown_core_document *document = NULL;
+    /* The bindings ask a session, which holds the document they copy: a
+     * finalized session of the source, as an editor holds one per version. */
+    markdown_core_session *session = NULL;
+    const markdown_core_document *document = NULL;
     markdown_core_context *context = NULL;
-    bool ok = markdown_core_document_parse_in(source, length, unit, &document) == MARKDOWN_CORE_OK &&
+    bool ok = markdown_core_session_new(source, length, unit, &session) == MARKDOWN_CORE_OK &&
+              markdown_core_session_finalize(session, &document) == MARKDOWN_CORE_OK &&
               markdown_core_document_context(document, source, length, position, &context) == MARKDOWN_CORE_OK;
     for (size_t i = 0; ok && i < markdown_core_context_block_count(context); i++) {
         markdown_core_opener opener;
@@ -195,7 +199,7 @@ static char *render(const uint8_t *source, size_t length, markdown_core_position
     }
     free(all.nodes);
     markdown_core_context_free(context);
-    markdown_core_document_free(document);
+    markdown_core_session_free(session);
     if (!ok) {
         free(out.data);
         return NULL;

@@ -25,7 +25,6 @@ import Testing
             record: DocumentRecord(
                 fields(1),
                 unit: .utf16,
-                snapshot: false,
                 metadata: nil,
                 content: [paragraph, footnote, named, anonymous],
                 footnotes: [footnote],

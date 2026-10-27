@@ -105,49 +105,16 @@ public struct Document: Markup {
         guard status == MARKDOWN_CORE_OK, let document else { throw MarkdownCoreError(status) }
         defer { markdown_core_document_free(document) }
 
-        return Document(native: document, unit: unit, snapshot: false)
+        return Document(native: document, unit: unit)
     }
 }
 
 extension Document {
-    /// The value copy of a native document, from a parse or a session, which
-    /// is a `snapshot` when an open session published it. It borrows nothing
-    /// from `native`, which may be released right after.
-    init(native: OpaquePointer, unit: TextUnit, snapshot: Bool) {
-        var builder = DocumentBuilder(
-            document: native,
-            root: markdown_core_document_root(native),
-            unit: unit,
-            snapshot: snapshot
-        )
+    /// The value copy of a native document, from a parse or a session. It
+    /// borrows nothing from `native`, which may be released right after.
+    init(native: OpaquePointer, unit: TextUnit) {
+        var builder = DocumentBuilder(document: native, root: markdown_core_document_root(native), unit: unit)
         self.init(record: builder.build())
-    }
-
-    /// Whether an open session published the document; see ``MarkdownSession``.
-    var snapshot: Bool { record.snapshot }
-
-    /// A native document read from `bytes` in `unit` and handed to `body`; it
-    /// lives until `body` returns. A `snapshot` is read again by a session,
-    /// whose document is a snapshot of the same text, so that it equals the
-    /// snapshot it stands for, and any other document by a parse.
-    static func native<Result>(
-        of bytes: UnsafeBufferPointer<UInt8>,
-        unit: TextUnit,
-        snapshot: Bool,
-        _ body: (OpaquePointer) throws -> Result
-    ) throws -> Result {
-        if snapshot {
-            var session: OpaquePointer?
-            let status = markdown_core_session_new(bytes.baseAddress, bytes.count, unit.native, &session)
-            guard status == MARKDOWN_CORE_OK, let session else { throw MarkdownCoreError(status) }
-            defer { markdown_core_session_free(session) }
-            return try body(markdown_core_session_document(session))
-        }
-        var document: OpaquePointer?
-        let status = markdown_core_document_parse_in(bytes.baseAddress, bytes.count, unit.native, &document)
-        guard status == MARKDOWN_CORE_OK, let document else { throw MarkdownCoreError(status) }
-        defer { markdown_core_document_free(document) }
-        return try body(document)
     }
 }
 
@@ -157,9 +124,6 @@ extension Document {
 /// binding does not normalize labels itself.
 final class DocumentRecord: MarkupRecord, @unchecked Sendable {
     let unit: TextUnit
-    /// Whether an open session published the document, whose lookups see only
-    /// the definitions before the inline root asking.
-    let snapshot: Bool
     let metadataCount: Int
     let footnotes: [MarkupRecord]
     let specimens: [MarkupRecord]
@@ -171,7 +135,6 @@ final class DocumentRecord: MarkupRecord, @unchecked Sendable {
     init(
         _ fields: InheritedFields,
         unit: TextUnit,
-        snapshot: Bool,
         metadata: MetadataRecord?,
         content: [MarkupRecord],
         footnotes: [FootnoteRecord],
@@ -181,7 +144,6 @@ final class DocumentRecord: MarkupRecord, @unchecked Sendable {
     ) {
         let metadatas: [MarkupRecord] = metadata.map { [$0] } ?? []
         self.unit = unit
-        self.snapshot = snapshot
         metadataCount = metadatas.count
         self.footnotes = footnotes
         self.specimens = specimens
@@ -209,8 +171,8 @@ final class DocumentRecord: MarkupRecord, @unchecked Sendable {
 
     override var markup: any Markup { Document(record: self) }
 
-    /// The unit is how a query counts, not a fact of the tree, and a
-    /// snapshot's tree is what it is, so neither is compared.
+    /// The unit is how a query counts, not a fact of the tree, so it is not
+    /// compared.
     override func hasEqualFields(_ other: MarkupRecord) -> Bool {
         metadataCount == unsafeDowncast(other, to: DocumentRecord.self).metadataCount
     }

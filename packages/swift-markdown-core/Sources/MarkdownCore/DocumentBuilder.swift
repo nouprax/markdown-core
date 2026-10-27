@@ -22,7 +22,6 @@ struct DocumentBuilder {
 
     private let document: OpaquePointer
     private let unit: TextUnit
-    private let snapshot: Bool
     private var queue: [OpaquePointer] = []
     private var relations: [Relations] = []
     private var records: [MarkupRecord?] = []
@@ -30,10 +29,9 @@ struct DocumentBuilder {
     /// and reference, and every heading a label may resolve to.
     private var definitions: [OpaquePointer: MarkupRecord] = [:]
 
-    init(document: OpaquePointer, root: OpaquePointer, unit: TextUnit, snapshot: Bool) {
+    init(document: OpaquePointer, root: OpaquePointer, unit: TextUnit) {
         self.document = document
         self.unit = unit
-        self.snapshot = snapshot
         queue = [root]
         var index = 0
         while index < queue.count {
@@ -175,7 +173,6 @@ extension DocumentBuilder {
             return DocumentRecord(
                 InheritedFields(from: node),
                 unit: unit,
-                snapshot: snapshot,
                 metadata: take(relations.metadata, as: MetadataRecord.self),
                 content: children,
                 footnotes: table(

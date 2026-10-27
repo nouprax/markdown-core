@@ -24,11 +24,12 @@ import Testing
     }
 }
 
-/// Every query at `position` of `source`, rendered as specs/context's README
-/// says.
+/// Every query at `position` of `source`, asked of a finalized session of
+/// it and rendered as specs/context's README says.
 private func render(_ source: String, unit: TextUnit, at position: Position, values: [String]) throws -> String {
-    let document = try Document.parse(source, unit: unit)
-    let context = try document.context(at: position, in: source)
+    let session = try MarkdownSession(source, unit: unit)
+    let document = try session.finalize()
+    let context = try session.context(at: position)
     var lines: [String] = []
     for block in context.blocks {
         lines.append("block \(block.kind.map(String.init(describing:)) ?? "None") \(text(block.scope))")
@@ -49,17 +50,17 @@ private func render(_ source: String, unit: TextUnit, at position: Position, val
             lines.append("spell \(index) \"\(value)\" " + (spelled.map { "\"\($0.text)\" \($0.cursor)" } ?? "none"))
         }
     }
-    let path = try document.path(at: position, in: source)
+    let path = try session.path(at: position)
     lines.append((["path"] + path.map { String($0.id.value) }).joined(separator: " "))
     var visitor = IdentifierVisitor()
     document.walk(with: &visitor)
     for node in visitor.nodes {
         var line = "node \(node.id.value)"
         for kind in Slot.Kind.allCases.map(Optional.some) + [nil] {
-            let scopes = try document.scope(of: node, field: kind, in: source)
+            let scopes = try session.scope(of: node, field: kind)
             if !scopes.isEmpty { line += " \(kind.map(String.init(describing:)) ?? "none")=\(text(scopes))" }
         }
-        let markers = try document.markers(of: node, in: source)
+        let markers = try session.markers(of: node)
         if !markers.isEmpty { line += " markers=\(text(markers))" }
         lines.append(line)
     }
