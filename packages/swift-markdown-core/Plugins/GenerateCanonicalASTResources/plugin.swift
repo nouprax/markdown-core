@@ -10,6 +10,12 @@ struct GenerateCanonicalASTResources: BuildToolPlugin {
         let output =
             context.pluginWorkDirectoryURL
             .appendingPathComponent("canonical-ast-fixtures.json", isDirectory: false)
+        let queries =
+            context.package.directoryURL
+            .appendingPathComponent("specs/context/queries.json", isDirectory: false)
+        let queriesOutput =
+            context.pluginWorkDirectoryURL
+            .appendingPathComponent("context-queries.json", isDirectory: false)
         let tool = try context.tool(named: "CanonicalASTResourceGenerator")
 
         guard
@@ -36,9 +42,9 @@ struct GenerateCanonicalASTResources: BuildToolPlugin {
             .buildCommand(
                 displayName: "Generate canonical AST conformance resource",
                 executable: tool.url,
-                arguments: [specDirectory.path, output.path],
-                inputFiles: inputs,
-                outputFiles: [output]
+                arguments: [specDirectory.path, output.path, queries.path, queriesOutput.path],
+                inputFiles: inputs + [queries],
+                outputFiles: [output, queriesOutput]
             )
         ]
     }

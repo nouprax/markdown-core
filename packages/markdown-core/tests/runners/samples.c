@@ -56,6 +56,9 @@ static const char *const ENVELOPES[] = {
     "---\nkeywords:\n  - @\n---\n",
     "---\nabstract: |\n  @\n---\n",
     "---\nauthors: [a,\n# c\n  @]\n---\n",
+    "---\nauthors: [a,@]\n---\n",
+    "---\nauthors: [a,\t@]\n---\n",
+    "---\rtitle: x\r@: y\r---\r",
 };
 static const char *const ATOMS[] = {
     "a",   "a b", "\\]", "\\}", "&amp;", "\"q\"",    "{.x}",   "#t",  "@k",  "]",      "}",

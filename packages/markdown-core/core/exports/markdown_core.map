@@ -46,6 +46,8 @@ MARKDOWN_CORE_1.0 {
     markdown_core_metadata_abstract;
     markdown_core_metadata_authors;
     markdown_core_metadata_comment;
+    markdown_core_metadata_field_at;
+    markdown_core_metadata_field_count;
     markdown_core_metadata_date;
     markdown_core_metadata_keywords;
     markdown_core_metadata_name;
@@ -104,6 +106,7 @@ MARKDOWN_CORE_1.0 {
     markdown_core_session_text;
     markdown_core_session_text_size;
     markdown_core_session_unit;
+    markdown_core_slot_cues;
     markdown_core_slot_kind_name;
     markdown_core_slot_spell;
     markdown_core_specimen_content;

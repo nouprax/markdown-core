@@ -101,6 +101,7 @@ endfunction()
 
 markdown_core_add_runner(spec_runner runners/spec_runner.c)
 markdown_core_add_runner(context_runner runners/context_runner.c)
+markdown_core_add_runner(queries_runner runners/queries_runner.c)
 markdown_core_add_runner(oracle_runner runners/oracle_runner.c runners/samples.c)
 markdown_core_add_runner(field_runner runners/field_runner.c runners/samples.c)
 markdown_core_add_runner(pathological_runner runners/pathological_runner.c)
@@ -348,6 +349,16 @@ markdown_core_add_test(
     --sweep
     "${MARKDOWN_CORE_CONTEXT_FIXTURE}"
     ${_markdown_core_context_sweep})
+# elements: the corpus every binding renders its queries against
+# (specs/context), current with the C queries over the context fixture.
+markdown_core_add_test(
+    elements_queries
+    elements
+    120
+    queries_runner
+    --check
+    "${MARKDOWN_CORE_CONTEXT_FIXTURE}"
+    "${CMAKE_SOURCE_DIR}/specs/context/queries.json")
 # elements: the context's slots against the document the whole text parses
 # to, at every position of every example and of the generated nestings; the
 # exceptions name what the oracle cannot judge, each with its reason.

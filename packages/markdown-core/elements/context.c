@@ -1638,6 +1638,15 @@ markdown_core_status markdown_core_document_context(const markdown_core_document
     return MARKDOWN_CORE_OK;
 }
 
+/* The bytes after which a slot may begin empty (markdown_core_slot_cues).
+ * The context oracle finds each of them, and no other, before a slot that
+ * begins at the cursor. */
+static const char CUES[] = "\t\n\r !\"#'(,.:;<=@[^`{~";
+
+markdown_core_string markdown_core_slot_cues(void) {
+    return (markdown_core_string){(const uint8_t *)CUES, sizeof(CUES) - 1};
+}
+
 size_t markdown_core_context_block_count(const markdown_core_context *context) { return context->block_count; }
 
 markdown_core_status markdown_core_context_block_at(const markdown_core_context *context, size_t index,

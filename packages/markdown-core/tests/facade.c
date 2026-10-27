@@ -880,6 +880,27 @@ static void check_index_boundary(void) {
               markdown_core_slot_kind_name((markdown_core_slot_kind)-1, &slot_name) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
               slot_name == NULL,
           "a value outside the slot kinds has no name");
+
+    static const char *const fields[] = {"name",    "title",    "subtitle", "time",  "date",
+                                         "authors", "keywords", "abstract", "state", "comment"};
+    bool listed = markdown_core_metadata_field_count() == sizeof(fields) / sizeof(*fields);
+    for (size_t i = 0; listed && i < sizeof(fields) / sizeof(*fields); i++) {
+        markdown_core_string field = {0};
+        listed = markdown_core_metadata_field_at(i, &field) == MARKDOWN_CORE_OK && field.length == strlen(fields[i]) &&
+                 memcmp(field.data, fields[i], field.length) == 0;
+    }
+    markdown_core_string past = {0};
+    check(listed &&
+              markdown_core_metadata_field_at(sizeof(fields) / sizeof(*fields), &past) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
+              past.data == NULL,
+          "the metadata field names are the dialect's, in its order");
+    const markdown_core_string cues = markdown_core_slot_cues();
+    bool ascending = cues.length > 0;
+    for (size_t i = 1; ascending && i < cues.length; i++) {
+        ascending = cues.data[i - 1] < cues.data[i];
+    }
+    check(ascending && memchr(cues.data, '[', cues.length) && !memchr(cues.data, '>', cues.length),
+          "the slot cues are distinct bytes in ascending order");
     markdown_core_document_free(metadata_document);
     markdown_core_document_free(document);
 }
