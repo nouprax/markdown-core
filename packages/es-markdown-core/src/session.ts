@@ -20,26 +20,18 @@ const pointerBytes = 4;
 const positionBytes = 8;
 
 /** What a session holds in WebAssembly: the engine's session and the
- * contexts its queries made that a slot may still spell from. */
+ * contexts its queries made. */
 interface Engine {
     session: number;
-    readonly contexts: Set<number>;
+    readonly contexts: number[];
 }
 
 /** Frees what a collected `MarkdownSession` still held. */
 const sessions = new FinalizationRegistry<Engine>(release);
 
-/** Frees a context once none of its slots can spell, unless its session
- * already freed it. */
-const contexts = new FinalizationRegistry<{ readonly engine: Engine; readonly context: number }>(
-    ({ engine, context }) => {
-        if (engine.contexts.delete(context)) native.markdown_core_context_free(context);
-    }
-);
-
 function release(engine: Engine): void {
     for (const context of engine.contexts) native.markdown_core_context_free(context);
-    engine.contexts.clear();
+    engine.contexts.length = 0;
     native.markdown_core_session_free(engine.session);
     engine.session = 0;
 }
@@ -72,11 +64,9 @@ function valid({ line, column }: Position): boolean {
  * text, which the session holds, so none parses the text again or takes the
  * source, and the documents stay values.
  *
- * The session's state lives in WebAssembly, with the contexts its queries
- * made that a slot may still spell from: `dispose()` releases it, and a
- * session collected without it is released then. A context without slots is
- * freed when its query answers, and one with slots when its last slot is
- * collected.
+ * The session's state lives in WebAssembly, with every context its queries
+ * made: `dispose()` releases it, and a session collected without it is
+ * released then.
  */
 export class MarkdownSession {
     /** The unit every scope query's columns count in. */
@@ -104,7 +94,7 @@ export class MarkdownSession {
                 sessionPointer
             );
             const session = new DataView(native.memory.buffer).getUint32(sessionPointer, true);
-            this.#engine = { session, contexts: new Set() };
+            this.#engine = { session, contexts: [] };
             this.#document = decodeMessage(native, message, this.unit);
         } finally {
             if (sessionPointer) native.free(sessionPointer);
@@ -172,24 +162,9 @@ export class MarkdownSession {
             contextPointer = allocate(native, pointerBytes);
             const message = native.markdown_core_wire_context(session, positionPointer, contextPointer);
             const context = new DataView(native.memory.buffer).getUint32(contextPointer, true);
-            let answer;
-            try {
-                answer = readAnswer(native, message, (reader) => reader.context());
-            } catch (error) {
-                if (context) native.markdown_core_context_free(context);
-                throw error;
-            }
-            const { blocks, inlines, slots } = answer;
-            // Only a slot spells from the context, so one without slots is
-            // freed now, and one with slots when its last slot is collected.
-            if (!slots.length) {
-                if (context) native.markdown_core_context_free(context);
-                return { blocks, inlines, slots: [] };
-            }
-            const holder = { context };
-            this.#engine.contexts.add(context);
-            contexts.register(holder, { engine: this.#engine, context });
-            return { blocks, inlines, slots: slots.map((fields, index) => this.#slot(fields, holder, index)) };
+            if (context) this.#engine.contexts.push(context);
+            const { blocks, inlines, slots } = readAnswer(native, message, (answer) => answer.context());
+            return { blocks, inlines, slots: slots.map((fields, index) => this.#slot(fields, context, index)) };
         } finally {
             if (contextPointer) native.free(contextPointer);
             if (positionPointer) native.free(positionPointer);
@@ -286,7 +261,7 @@ export class MarkdownSession {
     }
 
     /** The slot `fields` of the engine's `context`, at `index` among its slots. */
-    #slot(fields: SlotFields, holder: { readonly context: number }, index: number): Slot {
+    #slot(fields: SlotFields, context: number, index: number): Slot {
         const spell = (value: string): Edit | null => {
             const bytes = utf8Encoder.encode(value);
             // The context outlives no session: a disposed one freed it.
@@ -294,7 +269,7 @@ export class MarkdownSession {
             let valuePointer = 0;
             try {
                 valuePointer = allocateBytes(native, bytes);
-                const message = native.markdown_core_wire_spell(holder.context, index, valuePointer, bytes.length);
+                const message = native.markdown_core_wire_spell(context, index, valuePointer, bytes.length);
                 return readAnswer(native, message, (answer) => answer.edit(this.unit));
             } finally {
                 if (valuePointer) native.free(valuePointer);
