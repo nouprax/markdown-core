@@ -62,6 +62,10 @@ typedef struct run {
      * its cases ran. */
     const char *family;
     size_t checked;
+    /* With `shards` set, the run checks only the cases of its family whose
+     * place among them, counted from 0 in manifest order, leaves `shard` when
+     * divided by `shards`; `cases` counts the family's cases met so far. */
+    size_t shard, shards, cases;
     const char *label;
 } run;
 

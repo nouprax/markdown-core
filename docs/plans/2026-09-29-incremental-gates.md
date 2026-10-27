@@ -473,7 +473,8 @@ scripted-identity cases of 4.5. Streams are rules over the documents and
 scripts are short texts, so the set stays small enough to track.
 
 - C runs it as `incremental_runner` under the `incremental` label, with
-  4.1–4.8: one test per family the set's manifest declares, run in parallel.
+  4.1–4.8: one test per family the set's manifest declares, run in parallel,
+  with a long family dealt into shards of one test each.
 - Swift, Kotlin and ECMAScript consume it through the same lifecycle that
   delivers the canonical manifest to their conformance runners, in both units,
   with 4.1–4.9 except the allocator sweep of 4.7.

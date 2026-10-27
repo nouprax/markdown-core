@@ -90,7 +90,7 @@
         },
         {
             "name": "incremental",
-            "displayName": "The incremental correctness set, one test per family",
+            "displayName": "The incremental correctness set, one test per family or shard",
             "configurePreset": "default",
             "output": { "outputOnFailure": true },
             "filter": { "include": { "label": "^incremental$" } }

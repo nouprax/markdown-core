@@ -62,7 +62,9 @@ one label. The independent `conformance` label is excluded from correctness
 presets. `incremental` runs the
 [incremental correctness set](../../specs/incremental/README.md) as one test
 per family its manifest declares, side by side, in its own release
-`incremental` preset; the correctness presets exclude it.
+`incremental` preset; the correctness presets exclude it. A family that runs
+long is one test per shard instead (`incremental_runner --shard K/N`), and its
+shards deal its cases round, so together they check each case once.
 The [C test graph](../../packages/markdown-core/tests/CMakeLists.txt) owns exact
 case names and timeouts; documentation does not duplicate that registry.
 
