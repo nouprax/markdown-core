@@ -380,8 +380,18 @@ function es({ kinds }) {
     );
 }
 
+/** Swift's reserved words, which a case name must write in backticks. */
+const SWIFT_KEYWORDS = new Set(
+    (
+        "associatedtype borrowing class consuming deinit enum extension fileprivate func import init inout " +
+        "internal let nonisolated open operator private precedencegroup protocol public rethrows static struct " +
+        "subscript typealias var break case catch continue default defer do else fallthrough for guard if in " +
+        "repeat return throw switch where while Any as await false is nil self Self super throws true try"
+    ).split(" ")
+);
+
 /** A Swift identifier: a keyword such as `class` is written in backticks. */
-const swiftCase = (name) => (["class", "default", "import", "in", "is", "as"].includes(name) ? `\`${name}\`` : name);
+const swiftCase = (name) => (SWIFT_KEYWORDS.has(name) ? `\`${name}\`` : name);
 
 function swift({ kinds, slots }) {
     return (

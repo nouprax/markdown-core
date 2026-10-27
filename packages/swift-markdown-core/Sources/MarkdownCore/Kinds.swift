@@ -74,7 +74,7 @@ public enum NodeKind: Int32, Sendable, Hashable, CaseIterable, CustomStringConve
     /// `Superscript`.
     case superscript = 35
     /// `Subscript`.
-    case subscript = 36
+    case `subscript` = 36
     /// `DefinitionList`.
     case definitionList = 37
     /// `Definition`.
