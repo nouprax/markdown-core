@@ -7,7 +7,7 @@ import MarkdownCoreC
 /// inline constructs it leaves open in the inline content that holds the
 /// cursor, and the fields an open construct reads at the cursor, which the
 /// whole document confirms.
-public struct Context: Sendable, Equatable {
+public struct Context: Sendable {
     /// The blocks the text before the cursor leaves open, outermost first,
     /// each with the scope of its opening line up to the cursor.
     public let blocks: [Opener]
@@ -31,7 +31,11 @@ public struct Opener: Sendable, Hashable {
 
 /// A field of kind ``kind`` of a construct of kind ``owner`` that the cursor
 /// may be writing.
-public struct Slot: Sendable, Equatable {
+///
+/// A slot is not `Equatable`: how it spells depends on the syntax of the text
+/// it was read from, such as the `<...>` around a destination, which its
+/// fields do not show.
+public struct Slot: Sendable {
     /// The field's role.
     public let kind: Kind
     /// The construct the field belongs to.
@@ -105,13 +109,6 @@ public struct Slot: Sendable, Equatable {
     /// each value.
     public func spell(_ value: String) throws -> Insertion? {
         try spell([value])[0]
-    }
-
-    /// Slots are equal when they read the same, whichever context they were
-    /// read from.
-    public static func == (lhs: Slot, rhs: Slot) -> Bool {
-        lhs.kind == rhs.kind && lhs.owner == rhs.owner && lhs.before == rhs.before && lhs.after == rhs.after
-            && lhs.prefix == rhs.prefix && lhs.closed == rhs.closed && lhs.index == rhs.index
     }
 
     /// The bytes after which a slot may begin with nothing written yet, in
