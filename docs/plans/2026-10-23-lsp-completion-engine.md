@@ -75,7 +75,7 @@ owner's decisions, and section 11 records rejected alternatives.
   of the whole document (section 6). Section 7 sets the budget.
 - **R6 The engine is the platforms' surface.** The completion queries of
   sections 2 and 3 (context, spelling, path, field and marker scopes) and
-  the vocabularies are C's: the engine calls them in process, and the
+  the lexicons are C's: the engine calls them in process, and the
   platform bindings expose the engine (section 4.1), not the queries. A
   parser change to the document value, such as a new `Metadata` field,
   still lands in every binding at once. The engine's own API follows the
@@ -404,7 +404,7 @@ declared. A block identifier declares an anchor, so it is an `id`, like
   definition and rename need it; completion uses the slot's `before` and
   `after` instead.
 
-### 3.4 Vocabularies
+### 3.4 Lexicons
 
 Where the dialect fixes a set of names, the parser exports it so that the
 server does not repeat it: the ten `Metadata` field names, the scalar values
@@ -418,7 +418,7 @@ Step 3a built them this way:
 - `markdown_core_metadata_field_count` and `markdown_core_metadata_field_at`
   answer the field names from the table the envelope reads them with, so
   the list and the reader are one. No field accepts a fixed set of scalar
-  values today, so there is no value vocabulary yet.
+  values today, so there is no value lexicon yet.
 - `markdown_core_slot_cues` answers the cues: the bytes after which a slot
   may begin with nothing written yet. They are the last byte of a slot's
   opener (`[`, `(`, `<`, `{`, `.`, `#`, `^`, `@`, `:`, `!`, a fence's
@@ -619,7 +619,7 @@ candidates; it never reads the source text.
 | `footnote` | `Document.footnotes` labels |
 | `specimen` | `Document.specimens` labels |
 | `id`, `class`, `record` | ids, classes and keys used elsewhere in the document |
-| `field`, `value` | the vocabulary of section 3.4, minus keys already present |
+| `field`, `value` | the lexicon of section 3.4, minus keys already present |
 
 ### 5.2 From the workspace
 
@@ -813,7 +813,7 @@ it (D6).
    (`**`, `##`, `]]`, list markers, fences) has a source range, from a node's
    scope minus its fields' runs; where one does not, the parser gains a
    marker query, used by semantic tokens and formatting, instead of a CST.
-- [ ] **Step 3: Vocabularies.** The vocabulary exports in C (3.3, 3.4) and
+- [ ] **Step 3: Lexicons.** The lexicon exports in C (3.3, 3.4) and
    the query corpus `specs/context/queries.json`, in 3a. The queries stay
    in C (R6): 3a and 3b gave the Swift and Kotlin sessions the queries too,
    which were then removed, and 3c, the ECMAScript session, was not merged.

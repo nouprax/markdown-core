@@ -6,7 +6,7 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
-- Export the dialect's vocabularies in C (language engine plan, step 3):
+- Export the dialect's lexicons in C (language engine plan, step 3):
   `markdown_core_metadata_field_count` and `markdown_core_metadata_field_at`
   name the properties fields, and `markdown_core_slot_cues` the bytes after
   which a slot may begin empty, an editor's completion triggers.
