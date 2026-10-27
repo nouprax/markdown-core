@@ -418,6 +418,7 @@ foreach(_markdown_core_serve_case shutdown eof broken)
         60
         ${CMAKE_COMMAND}
         -DSERVER=$<TARGET_FILE:markdown-core-server>
+        -DRUNNER=$<TARGET_FILE:lsp_runner>
         -DCASE=${_markdown_core_serve_case}
         -DWORK=${CMAKE_CURRENT_BINARY_DIR}
         -P

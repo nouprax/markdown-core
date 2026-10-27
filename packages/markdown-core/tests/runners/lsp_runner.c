@@ -773,7 +773,47 @@ static void json_cases(void) {
     }
 }
 
+/* Appends one framed message to `out`. */
+static void frame_put(FILE *out, const char *body) {
+    fprintf(out, "Content-Length: %zu\r\n\r\n%s", strlen(body), body);
+}
+
+/* The server's input for one case of tests/lsp/serve.cmake. */
+static int stream_case(const char *name, const char *path) {
+    static const char *const INITIALIZE =
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"capabilities\":{}}}";
+    FILE *out = fopen(path, "wb");
+    if (!out) {
+        fprintf(stderr, "FAIL stream: %s cannot be written\n", path);
+        return 1;
+    }
+    int code = 0;
+    if (strcmp(name, "shutdown") == 0) {
+        frame_put(out, INITIALIZE);
+        frame_put(out, "{\"jsonrpc\":\"2.0\",\"method\":\"initialized\",\"params\":{}}");
+        frame_put(out, "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"shutdown\"}");
+        frame_put(out, "{\"jsonrpc\":\"2.0\",\"method\":\"exit\"}");
+        /* Nothing after exit is read. */
+        frame_put(out, "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"shutdown\"}");
+    } else if (strcmp(name, "eof") == 0) {
+        frame_put(out, INITIALIZE);
+    } else if (strcmp(name, "broken") == 0) {
+        fputs("Content-Size: 2\r\n\r\n{}", out);
+    } else {
+        fprintf(stderr, "FAIL stream: no case %s\n", name);
+        code = 2;
+    }
+    if (fclose(out) != 0 && code == 0) {
+        fprintf(stderr, "FAIL stream: %s cannot be written\n", path);
+        code = 1;
+    }
+    return code;
+}
+
 int main(int argc, char **argv) {
+    if (argc == 4 && strcmp(argv[1], "--stream") == 0) {
+        return stream_case(argv[2], argv[3]);
+    }
     if (argc >= 3 && strcmp(argv[1], "--transcripts") == 0) {
         for (int i = 2; i < argc; i++) {
             replay(argv[i]);
@@ -794,7 +834,7 @@ int main(int argc, char **argv) {
             printf("ok sync: %zu edited texts in both units, and the store\n", cases);
         }
     } else {
-        fprintf(stderr, "usage: lsp_runner --transcripts FILE... | --json | --frames | --sync\n");
+        fprintf(stderr, "usage: lsp_runner --transcripts FILE... | --json | --frames | --sync | --stream CASE FILE\n");
         return 2;
     }
     return failures ? 1 : 0;

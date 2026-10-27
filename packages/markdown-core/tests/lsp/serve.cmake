@@ -2,32 +2,21 @@
 # the answers it frames (completion plan, section 4.2). The transcripts
 # check what each answer says; this checks the process around them.
 #
-#   cmake -DSERVER=... -DCASE=shutdown|eof|broken -DWORK=... -P serve.cmake
+#   cmake -DSERVER=... -DRUNNER=... -DCASE=shutdown|eof|broken -DWORK=... -P serve.cmake
 
-function(frame body out)
-    string(LENGTH "${body}" size)
-    set(${out}
-        "${${out}}Content-Length: ${size}\r\n\r\n${body}"
-        PARENT_SCOPE)
-endfunction()
-
-set(initialize [=[{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{}}}]=])
-set(stream "")
+# CMake writes files in text mode on Windows, so the runner writes the
+# input: lsp_runner --stream frames each case's messages byte for byte.
 if(CASE STREQUAL "shutdown")
-    frame("${initialize}" stream)
-    frame([=[{"jsonrpc":"2.0","method":"initialized","params":{}}]=] stream)
-    frame([=[{"jsonrpc":"2.0","id":2,"method":"shutdown"}]=] stream)
-    frame([=[{"jsonrpc":"2.0","method":"exit"}]=] stream)
-    # Nothing after exit is read.
-    frame([=[{"jsonrpc":"2.0","id":3,"method":"shutdown"}]=] stream)
+    # initialize, initialized, shutdown, exit, and a shutdown after exit
+    # that the server must not read.
     set(expected_code 0)
     set(expected_answers 2)
 elseif(CASE STREQUAL "eof")
-    frame("${initialize}" stream)
+    # initialize, and then the end of the input.
     set(expected_code 1)
     set(expected_answers 1)
 elseif(CASE STREQUAL "broken")
-    set(stream "Content-Size: 2\r\n\r\n{}")
+    # A header the protocol does not have, and no Content-Length.
     set(expected_code 1)
     set(expected_answers 0)
 else()
@@ -36,7 +25,10 @@ endif()
 
 set(input "${WORK}/serve-${CASE}.in")
 set(output "${WORK}/serve-${CASE}.out")
-file(WRITE "${input}" "${stream}")
+execute_process(COMMAND "${RUNNER}" --stream "${CASE}" "${input}" RESULT_VARIABLE written)
+if(NOT written EQUAL 0)
+    message(FATAL_ERROR "${CASE}: the input cannot be written")
+endif()
 execute_process(
     COMMAND "${SERVER}"
     INPUT_FILE "${input}"
