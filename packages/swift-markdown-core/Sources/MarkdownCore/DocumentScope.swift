@@ -1,3 +1,5 @@
+import MarkdownCoreC
+
 extension Document {
     /// The editor scopes of `node`, one per run in source order, computed
     /// from its runs and `source`, with columns in the document's ``unit``;
@@ -25,7 +27,7 @@ extension Document {
 
     /// The last node in canonical walk order one of whose source ranges holds
     /// the byte at `position`, with the column counted in the document's
-    /// ``unit``.
+    /// ``unit``: the last node of ``path(at:in:)``.
     ///
     /// - Parameters:
     ///   - position: a line and column of `source`.
@@ -35,19 +37,69 @@ extension Document {
     /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/outOfBounds`` when the
     ///   position's line or column is below 1.
     public func node(at position: Position, in source: String) throws -> (any Markup)? {
+        try path(at: position, in: source).last
+    }
+
+    /// Every node one of whose source ranges holds the byte at `position`, in
+    /// canonical walk order, so the root first and ``node(at:in:)``'s node
+    /// last, with the column counted in the document's ``unit``.
+    ///
+    /// - Parameters:
+    ///   - position: a line and column of `source`.
+    ///   - source: the source the document was parsed from.
+    /// - Returns: the nodes, none when no node holds the byte or the position
+    ///   names no byte of the source at a scalar boundary.
+    /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/outOfBounds`` when the
+    ///   position's line or column is below 1.
+    public func path(at position: Position, in source: String) throws -> [any Markup] {
         guard position.line >= 1, position.column >= 1 else { throw MarkdownCoreError(code: .outOfBounds) }
         var text = source
         return text.withUTF8 { bytes in
-            guard let offset = SourceLines(bytes).offset(of: position, in: bytes, unit: unit) else { return nil }
-            var walk = CanonicalWalk(root: record)
-            var places: [(start: Int, end: Int)] = []
-            var found: MarkupRecord?
-            while let item = walk.next() {
-                guard let node = item.record else { continue }
-                walk.places(of: item, into: &places)
-                if places.contains(where: { $0.start <= offset && offset < $0.end }) { found = node }
-            }
-            return found?.markup
+            guard let offset = SourceLines(bytes).offset(of: position, in: bytes, unit: unit) else { return [] }
+            return holders(of: offset).map(\.markup)
+        }
+    }
+
+    /// The source ranges of `node`'s fields of slot kind `field`, one per run
+    /// of each, in source order: the bytes of each value as written, escapes
+    /// included, without the quotes, the angle brackets or the sigil around
+    /// it. `nil` asks for the fields no slot kind names, such as a title or a
+    /// literal. A field the parser makes rather than reads, such as a
+    /// heading's computed anchor, has none.
+    ///
+    /// A node's fields and its ``markers(of:in:)`` divide its own source: its
+    /// runs less the runs of the nodes it holds. Each query reads the node's
+    /// own source again with the scanners its element read it with, from a
+    /// native parse of `source`, since the document holds none.
+    ///
+    /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/outOfBounds`` when
+    ///   `source` ends before `node` does or is not the document's source, and
+    ///   ``ErrorCode/allocationFailed`` when an allocation fails.
+    public func scope(of node: some Markup, field: Slot.Kind?, in source: String) throws -> [Scope] {
+        try parts(of: node, in: source) { document, native, bytes, scopes, count in
+            markdown_core_document_field(
+                document,
+                native,
+                field?.native ?? MARKDOWN_CORE_SLOT_NONE,
+                bytes.baseAddress,
+                bytes.count,
+                &scopes,
+                &count
+            )
+        }
+    }
+
+    /// The source ranges of `node`'s markers: the rest of its own source, the
+    /// syntax no field holds, such as the `**` of a strong emphasis, a
+    /// heading's `#` run, a list item's marker or a fence, and the spaces and
+    /// line endings between them; see ``scope(of:field:in:)``.
+    ///
+    /// - Throws: ``MarkdownCoreError`` with ``ErrorCode/outOfBounds`` when
+    ///   `source` ends before `node` does or is not the document's source, and
+    ///   ``ErrorCode/allocationFailed`` when an allocation fails.
+    public func markers(of node: some Markup, in source: String) throws -> [Scope] {
+        try parts(of: node, in: source) { document, native, bytes, scopes, count in
+            markdown_core_document_markers(document, native, bytes.baseAddress, bytes.count, &scopes, &count)
         }
     }
 
@@ -77,6 +129,80 @@ extension Document {
             }
             return output
         }
+    }
+
+    /// The records one of whose source ranges holds the byte at `offset`, in
+    /// canonical walk order, found by one walk.
+    private func holders(of offset: Int) -> [MarkupRecord] {
+        var walk = CanonicalWalk(root: record)
+        var places: [(start: Int, end: Int)] = []
+        var found: [MarkupRecord] = []
+        while let item = walk.next() {
+            guard let node = item.record else { continue }
+            walk.places(of: item, into: &places)
+            if places.contains(where: { $0.start <= offset && offset < $0.end }) { found.append(node) }
+        }
+        return found
+    }
+
+    /// A field or marker query of `node` against a native parse of `source`.
+    ///
+    /// The native node is found where the native path query finds it: the
+    /// path at the first byte `node` holds lists the same nodes in the same
+    /// order in both trees, so `node`'s place in this document's path is its
+    /// place in the native one. A node that holds no byte owns no source.
+    private func parts(
+        of node: some Markup,
+        in source: String,
+        _ query: (
+            OpaquePointer,
+            OpaquePointer,
+            UnsafeBufferPointer<UInt8>,
+            inout UnsafeMutablePointer<markdown_core_scope>?,
+            inout Int
+        ) -> markdown_core_status
+    ) throws -> [Scope] {
+        let target = MarkupRecord.of(node)
+        guard let first = places(of: target).first(where: { $0.start < $0.end })?.start else { return [] }
+        let rank = holders(of: first).firstIndex { $0 === target } ?? 0
+        var text = source
+        return try text.withUTF8 { bytes in
+            guard first < bytes.count else { throw MarkdownCoreError(code: .outOfBounds) }
+            var document: OpaquePointer?
+            var status = markdown_core_document_parse_in(bytes.baseAddress, bytes.count, unit.native, &document)
+            guard status == MARKDOWN_CORE_OK, let document else { throw MarkdownCoreError(status) }
+            defer { markdown_core_document_free(document) }
+            let position = SourceLines(bytes).scope(from: first, to: first + 1, in: bytes, unit: unit).start
+            var nodes: UnsafeMutablePointer<OpaquePointer?>?
+            var count = 0
+            status = markdown_core_document_path(
+                document,
+                position.native,
+                bytes.baseAddress,
+                bytes.count,
+                &nodes,
+                &count
+            )
+            guard status == MARKDOWN_CORE_OK else { throw MarkdownCoreError(status) }
+            defer { markdown_core_path_free(nodes) }
+            guard rank < count, let native = nodes?[rank], Self.same(target, native) else {
+                throw MarkdownCoreError(code: .outOfBounds)
+            }
+            var scopes: UnsafeMutablePointer<markdown_core_scope>?
+            var found = 0
+            status = query(document, native, bytes, &scopes, &found)
+            guard status == MARKDOWN_CORE_OK else { throw MarkdownCoreError(status) }
+            defer { markdown_core_scopes_free(scopes) }
+            return UnsafeBufferPointer(start: scopes, count: found).map { Scope($0) }
+        }
+    }
+
+    /// Whether `native` has `record`'s runs, as the node a parse of another
+    /// source would not.
+    private static func same(_ record: MarkupRecord, _ native: OpaquePointer) -> Bool {
+        var count = 0
+        let runs = markdown_core_node_runs(native, &count)
+        return UnsafeBufferPointer(start: runs, count: count).map { Run($0) } == record.runs
     }
 
     /// The source ranges of `node`, found by one canonical walk.

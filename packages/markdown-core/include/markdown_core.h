@@ -565,6 +565,32 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_node_kind_name(markdown_cor
  * value that is not a markdown_core_slot_kind. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_slot_kind_name(markdown_core_slot_kind kind, const char **name);
 
+/** VOCABULARIES (docs/plans/2026-10-23-lsp-completion-engine.md, 3.4): the
+ * names and the characters the dialect fixes, so that an editor reads them
+ * from the parser and does not repeat them. Each borrows from the library
+ * and lives as long as it.
+ *
+ * `markdown_core_metadata_field_count` is the number of field names the
+ * properties envelope reads, and `markdown_core_metadata_field_at` sets
+ * `*name` to the `index`th of them, in the order of the dialect spec:
+ * `name`, `title`, `subtitle`, `time`, `date`, `authors`, `keywords`,
+ * `abstract`, `state` and `comment`. The envelope drops a member with any
+ * other name. OUT_OF_BOUNDS for an index at or past the count.
+ *
+ * `markdown_core_slot_cues` answers the bytes after which a slot may begin
+ * with nothing written yet, in ascending order: the last byte of a slot's
+ * opener, such as the second `[` of `[[`, the `(` of `](`, the `.` of `{.`
+ * or the `!` of `> [!`; a separator before a field, such as the space
+ * before an attribute record, the `=` before its value or the `,` in a
+ * properties list; and a line ending, before a properties member's name.
+ * An editor that asks for completions when one of them is typed asks
+ * wherever a slot opens empty. A container's prefix, such as a quote's
+ * `>`, is not a cue, since a field that goes on past it began on an
+ * earlier line. */
+MARKDOWN_CORE_API size_t markdown_core_metadata_field_count(void);
+MARKDOWN_CORE_API markdown_core_status markdown_core_metadata_field_at(size_t index, markdown_core_string *name);
+MARKDOWN_CORE_API markdown_core_string markdown_core_slot_cues(void);
+
 /** CONTEXT QUERIES (docs/plans/2026-10-23-lsp-completion-engine.md, 3.1).
  * The syntactic context at a cursor is the open state of a parse of the
  * text before it, confirmed against the document parsed from the whole

@@ -16,6 +16,7 @@ Makefile
 **/*.md
 packages/markdown-core/tests/fixtures/
 packages/markdown-core/tests/canonical-ast/
+specs/context/queries.json
 
 # Generated, copied, and package-manager content
 packages/markdown-core/core/case_fold.inc

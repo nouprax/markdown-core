@@ -2211,6 +2211,35 @@ static bool in_row(const markdown_core_document *document, const uint8_t *source
     return row;
 }
 
+/* THE CUES (markdown_core_slot_cues): the bytes before a slot that begins
+ * at the cursor, each of which must be a cue, and every cue must be met. A
+ * quote's `>` before a field's later line is a container's prefix, not an
+ * opener. */
+static bool cue_met[256];
+
+static void check_cue(report *r, const uint8_t *source, size_t length, size_t line_start, size_t at, size_t from,
+                      const char *what) {
+    if (from != at || !at) {
+        return;
+    }
+    const unsigned char c = source[at - 1];
+    size_t prefix = line_start;
+    while (prefix < at && (source[prefix] == '>' || source[prefix] == ' ' || source[prefix] == '\t')) {
+        prefix++;
+    }
+    if (c == '>' && prefix == at) {
+        return;
+    }
+    const markdown_core_string cues = markdown_core_slot_cues();
+    r->checks++;
+    if (!memchr(cues.data, c, cues.length)) {
+        char why[64];
+        snprintf(why, sizeof(why), "opens after 0x%02x, which is not a cue", c);
+        fail(r, source, length, at, what, why);
+    }
+    cue_met[c] = true;
+}
+
 /* The checks at every position of `source`. */
 static void check_example(report *r, const uint8_t *source, size_t length) {
     tree original;
@@ -2239,12 +2268,19 @@ static void check_example(report *r, const uint8_t *source, size_t length) {
         for (size_t i = 0; i < markdown_core_context_slot_count(context); i++) {
             markdown_core_slot slot;
             const char *name = "?";
-            if (markdown_core_context_slot_at(context, i, &slot) != MARKDOWN_CORE_OK || (!slot.closed && !spell_mode)) {
+            if (markdown_core_context_slot_at(context, i, &slot) != MARKDOWN_CORE_OK) {
+                continue;
+            }
+            const size_t from =
+                line_offset(source, length, slot.before.start.line) + (size_t)(slot.before.start.column - 1);
+            markdown_core_slot_kind_name(slot.kind, &name);
+            if (!spell_mode) {
+                check_cue(r, source, length, line_start, at, from, name);
+            }
+            if (!slot.closed && !spell_mode) {
                 continue;
             }
             closed = closed || slot.closed;
-            const size_t from =
-                line_offset(source, length, slot.before.start.line) + (size_t)(slot.before.start.column - 1);
             const size_t to = line_offset(source, length, slot.after.end.line) + (size_t)slot.after.end.column;
             bool known = false;
             for (size_t k = 0; k < seen_count && !known; k++) {
@@ -2259,7 +2295,6 @@ static void check_example(report *r, const uint8_t *source, size_t length) {
                 seen[seen_count][2] = slot.kind;
                 seen[seen_count++][3] = slot.owner;
             }
-            markdown_core_slot_kind_name(slot.kind, &name);
             char what[96];
             snprintf(what, sizeof(what), "%s %s %s", spell_mode ? "spell" : "slot", name, kind_name(slot.owner));
             if (spell_mode && slot.owner == MARKDOWN_CORE_KIND_METADATA && slot.kind == MARKDOWN_CORE_SLOT_FIELD) {
@@ -2285,7 +2320,8 @@ static void check_example(report *r, const uint8_t *source, size_t length) {
         if (!closed && !spell_mode) {
             check_gap(r, source, length, &original, at);
         }
-        if (at < length && source[at] == '\n') {
+        if (at < length &&
+            (source[at] == '\n' || (source[at] == '\r' && (at + 1 == length || source[at + 1] != '\n')))) {
             position.line++;
             line_start = at + 1;
         }
@@ -2365,6 +2401,15 @@ int main(int argc, char **argv) {
             examples++;
         }
         ts_spec_free(&spec);
+    }
+    /* Only the whole corpus, which the generated inputs are part of, meets
+     * every cue. */
+    const markdown_core_string cues = markdown_core_slot_cues();
+    for (size_t i = 0; generate && !spell_mode && i < cues.length; i++) {
+        if (!cue_met[cues.data[i]]) {
+            fprintf(stderr, "cue 0x%02x: no slot opens after it\n", cues.data[i]);
+            r.failures++;
+        }
     }
     size_t stale = 0;
     for (size_t i = 0; i < r.exception_count; i++) {

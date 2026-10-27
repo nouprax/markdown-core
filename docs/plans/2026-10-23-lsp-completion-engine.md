@@ -407,6 +407,28 @@ section 3.1, which become the server's completion trigger characters. Open
 sets (callout types, code languages, directive names) are not the grammar's
 and come from configuration and from the workspace (section 5).
 
+Step 3a built them this way:
+
+- `markdown_core_metadata_field_count` and `markdown_core_metadata_field_at`
+  answer the field names from the table the envelope reads them with, so
+  the list and the reader are one. No field accepts a fixed set of scalar
+  values today, so there is no value vocabulary yet.
+- `markdown_core_slot_cues` answers the cues: the bytes after which a slot
+  may begin with nothing written yet. They are the last byte of a slot's
+  opener (`[`, `(`, `<`, `{`, `.`, `#`, `^`, `@`, `:`, `!`, a fence's
+  `` ` `` or `~`), a separator before a field (a space or a tab, `=`, `,`
+  in a properties list, a closing quote before the next record, the `;` of
+  an entity before an info string), and a line ending, before a properties
+  member's name. A container's prefix, such as a quote's `>`, is not a cue:
+  a field that goes on past it began on an earlier line. The cues are the
+  server's trigger characters; the engine may advertise fewer.
+- The context oracle (`elements_context_oracle`) checks the list against
+  the grammar: at every position of every fixture and generated input, a
+  slot that begins at the cursor must follow a cue, and every cue must be
+  met somewhere, so a cue the grammar loses or gains fails the test. The
+  generated inputs gained envelopes with `[a,@]`, `[a,\t@]` and CR line
+  endings to meet `,`, the tab and CR.
+
 ### 3.5 Prerequisite: the settle point
 
 The context query reads the open paragraph's provisional decisions, which
@@ -781,7 +803,12 @@ it (D6).
    scope minus its fields' runs; where one does not, the parser gains a
    marker query, used by semantic tokens and formatting, instead of a CST.
 - [ ] **Step 3: Bindings.** Context, path and field scopes in Swift, Kotlin
-   and ECMAScript, and the vocabulary exports (3.3, 3.4).
+   and ECMAScript, and the vocabulary exports (3.3, 3.4). In three pull
+   requests: 3a the vocabulary exports in C and the Swift binding, with the
+   shared query corpus `specs/context/queries.json` that every binding
+   renders its answers against; 3b Kotlin; 3c ECMAScript. A binding's
+   document holds no native parse, so each context, field or marker query
+   parses the source again, and `Slot.spell` takes every candidate at once.
 - [ ] **Step 4: Engine skeleton.** `markdown-core-lsp` in C with the
    lifecycle, position encoding, document store and sync, its Swift binding,
    the JSON-RPC adapter and the transcript harness, and the latency report

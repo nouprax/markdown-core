@@ -96,15 +96,29 @@ static bool equals(const unsigned char *text, size_t size, const char *word) {
     const size_t n = strlen(word);
     return size == n && (!n || memcmp(text, word, n) == 0);
 }
+/* The field names the envelope reads, in the order of the dialect spec and
+ * of the fields of markdown_core_metadata_fields. */
+static const char *const names[] = {"name",    "title",    "subtitle", "time",  "date",
+                                    "authors", "keywords", "abstract", "state", "comment"};
+#define NAME_COUNT (sizeof(names) / sizeof(*names))
+
+size_t markdown_core_metadata_field_count(void) { return NAME_COUNT; }
+
+markdown_core_status markdown_core_metadata_field_at(size_t index, markdown_core_string *name) {
+    if (index >= NAME_COUNT) {
+        return MARKDOWN_CORE_OUT_OF_BOUNDS;
+    }
+    *name = (markdown_core_string){(const uint8_t *)names[index], strlen(names[index])};
+    return MARKDOWN_CORE_OK;
+}
+
 /* Resolve the decoded name directly to its optional destination field. */
 static markdown_core_metadata_value *field_slot(markdown_core_metadata_fields *metadata, const unsigned char *name,
                                                 size_t size) {
-    static const char *const names[] = {"name",    "title",    "subtitle", "time",  "date",
-                                        "authors", "keywords", "abstract", "state", "comment"};
-    markdown_core_metadata_value *const slots[] = {
+    markdown_core_metadata_value *const slots[NAME_COUNT] = {
         &metadata->name,    &metadata->title,    &metadata->subtitle, &metadata->time,  &metadata->date,
         &metadata->authors, &metadata->keywords, &metadata->abstract, &metadata->state, &metadata->comment};
-    for (size_t i = 0; i < sizeof(names) / sizeof(*names); i++) {
+    for (size_t i = 0; i < NAME_COUNT; i++) {
         if (equals(name, size, names[i])) {
             return slots[i];
         }
