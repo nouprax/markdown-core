@@ -43,6 +43,7 @@ struct markdown_core_session {
     markdown_core_revision revision;
     markdown_core_document document;
     markdown_core_context *context;
+    bool located;
     bool finalized;
 };
 
@@ -136,6 +137,15 @@ static markdown_core_status session_open(markdown_core_session *session, const u
     return status;
 }
 
+/* Empties the context a locate left, so a step that never follows one
+ * costs no more than it did. */
+static void session_forget(markdown_core_session *session) {
+    if (session->located) {
+        markdown_core_context_clear(session->context);
+        session->located = false;
+    }
+}
+
 markdown_core_status markdown_core_session_new(const uint8_t *source, size_t size, markdown_core_text_unit unit,
                                                markdown_core_session **session) {
     markdown_core_session *made = markdown_core_alloc(1, sizeof(*made));
@@ -162,7 +172,7 @@ markdown_core_status markdown_core_session_append(markdown_core_session *session
     if (session->finalized) {
         return MARKDOWN_CORE_SESSION_FINALIZED;
     }
-    markdown_core_context_clear(session->context);
+    session_forget(session);
     markdown_core_status status = session_take(session, text, size);
     if (status == MARKDOWN_CORE_OK) {
         status = session_snapshot(session);
@@ -178,7 +188,7 @@ markdown_core_status markdown_core_session_finalize(markdown_core_session *sessi
     if (session->finalized) {
         return MARKDOWN_CORE_SESSION_FINALIZED;
     }
-    markdown_core_context_clear(session->context);
+    session_forget(session);
     markdown_core_status status = session_finalize(session);
     if (status == MARKDOWN_CORE_OK) {
         *document = &session->document;
@@ -187,8 +197,10 @@ markdown_core_status markdown_core_session_finalize(markdown_core_session *sessi
 }
 
 markdown_core_status markdown_core_session_locate(markdown_core_session *session, markdown_core_position position) {
-    return markdown_core_context_locate(session->context, &session->document, (const uint8_t *)session_source(session),
-                                        session->text.count, position);
+    markdown_core_status status = markdown_core_context_locate(
+        session->context, &session->document, (const uint8_t *)session_source(session), session->text.count, position);
+    session->located |= status == MARKDOWN_CORE_OK;
+    return status;
 }
 
 const markdown_core_context *markdown_core_session_context(const markdown_core_session *session) {
