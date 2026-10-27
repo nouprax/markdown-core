@@ -6,6 +6,17 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Start the language engine (language engine plan, step 4a):
+  `markdown-core-lsp`, a C library in `packages/markdown-core/lsp`, serves
+  the Language Server Protocol's lifecycle, position encoding negotiation
+  (UTF-8 when the client offers it, UTF-16 otherwise), and open, incremental
+  change and close of documents, and answers completion with an empty list
+  after parsing the document's version and asking the parser's context at
+  the cursor. `markdown-core-server` serves it as JSON-RPC on stdio, with a
+  JSON reader and writer of its own. `specs/lsp/transcripts` records what
+  the server answers, and the bindings will replay it. The library is not
+  installed yet.
+
 - Export the dialect's lexicons in C (language engine plan, step 3):
   `markdown_core_metadata_field_count` and `markdown_core_metadata_field_at`
   name the properties fields, and `markdown_core_slot_cues` the bytes after

@@ -1,8 +1,9 @@
 # A Markdown language engine on Markdown Core
 
-Status: in progress. Step 1 has landed, and step 2 lands in five parts
-(section 9). On 2026-10-24 the owner decided where the engine lives and its
-language (D1, D2): a native C engine in this repository, reached in process
+Status: in progress. Steps 1 to 3 have landed, step 2 in five parts, and
+step 4 lands in three (section 9). On 2026-10-24 the owner decided where
+the engine lives and its language (D1, D2): a native C engine in this
+repository, reached in process
 through the platform bindings, and made the other decisions of section 10.
 
 The owner's requirements, 2026-10-23 and 2026-10-24:
@@ -503,6 +504,37 @@ run, so it is also the conformance harness for the in-process bindings: a
 binding test replays a transcript's requests through the binding and
 compares the answers. It needs a JSON reader and writer in C (D8).
 
+Step 4a built them this way:
+
+- The engine's C contract is `lsp/include/markdown_core_lsp.h`: a
+  `markdown_core_lsp_server` with one call per protocol method it serves
+  (`_initialize`, `_shutdown`, `_open`, `_update`, `_close`, `_complete`),
+  each answering a status whose value is the protocol's error code, and the
+  lifecycle as a phase, FRESH, ACTIVE or HALTED, from which the adapter
+  takes `exit`'s code. Protocol positions, ranges and content changes are
+  `markdown_core_lsp_position`, `_scope` and `_edit`; a change that names
+  no range is the scope from 0:0 to the largest position, which clamps to
+  the whole text. The negotiated encoding is a `markdown_core_text_unit`,
+  and the trigger characters are the slot cues.
+- A completion already does a request's work: it parses the document's
+  version once, maps the position to the parser's cursor and asks the
+  context there, then answers an empty list, which the providers of
+  section 5 fill. The latency report of 4c therefore measures the path the
+  providers will add to.
+- The library is static and not installed: its contract grows with the
+  providers, and the bindings build it from source. The JSON reader and
+  writer (D8) live with the adapter, which alone reads JSON until the CSL
+  JSON reader of step 6 moves them into the engine.
+- `specs/lsp/transcripts` holds the protocol transcripts (section 8), which
+  `lsp_transcripts` replays through the adapter. Since no answer of the
+  skeleton shows a document's text, `lsp_sync` checks synchronization
+  against a model of the text as scalars: random texts of every line
+  ending and scalar width, random content changes in both units, positions
+  past line ends, inside surrogate pairs and past the last line, and
+  reversed ranges, which leave the text as it was. `lsp_json` holds the
+  reader to RFC 8259 and to reading back every edited text it takes, and
+  `lsp_frames` and `lsp_serve_*` check the framing and the process.
+
 ### 4.3 The LSP surface
 
 Version 1 implements:
@@ -820,7 +852,10 @@ it (D6).
 - [ ] **Step 4: Engine skeleton.** `markdown-core-lsp` in C with the
    lifecycle, position encoding, document store and sync, its Swift binding,
    the JSON-RPC adapter and the transcript harness, and the latency report
-   (sections 4, 6, 7). Completion answers an empty list.
+   (sections 4, 6, 7). Completion answers an empty list. In three pull
+   requests: 4a the C engine, the adapter and the transcripts (section
+   4.2), 4b the Swift binding replaying the transcripts, and 4c the latency
+   report.
 - [ ] **Step 5: In-document completion.** The providers of 5.1 and the oracle
    round-trip test, in C and Swift.
 - [ ] **Step 6: Workspace completion.** The workspace index with

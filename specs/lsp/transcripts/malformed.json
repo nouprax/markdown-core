@@ -1,0 +1,405 @@
+{
+    "description": "Messages that are not JSON, not requests, or whose params are not the method's answer the protocol's errors; responses, unknown notifications and cancellation are read and answer nothing.",
+    "messages": [
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "processId": null,
+                    "rootUri": null,
+                    "capabilities": {}
+                }
+            }
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                    "capabilities": {
+                        "positionEncoding": "utf-16",
+                        "textDocumentSync": {
+                            "openClose": true,
+                            "change": 2
+                        },
+                        "completionProvider": {
+                            "triggerCharacters": [
+                                "\t",
+                                "\n",
+                                "\r",
+                                " ",
+                                "!",
+                                "\"",
+                                "#",
+                                "'",
+                                "(",
+                                ",",
+                                ".",
+                                ":",
+                                ";",
+                                "<",
+                                "=",
+                                "@",
+                                "[",
+                                "^",
+                                "`",
+                                "{",
+                                "~"
+                            ]
+                        }
+                    },
+                    "serverInfo": {
+                        "name": "markdown-core"
+                    }
+                }
+            }
+        },
+        {
+            "raw": "{\"jsonrpc\":\"2.0\",\"id\":2,"
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": null,
+                "error": {
+                    "code": -32700,
+                    "message": "the message is not JSON"
+                }
+            }
+        },
+        {
+            "raw": "[1,2]"
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": null,
+                "error": {
+                    "code": -32600,
+                    "message": "the message is not a request the server takes now"
+                }
+            }
+        },
+        {
+            "raw": ""
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": null,
+                "error": {
+                    "code": -32700,
+                    "message": "the message is not JSON"
+                }
+            }
+        },
+        {
+            "raw": "{\"jsonrpc\":\"2.0\",\"id\":3} trailing"
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": null,
+                "error": {
+                    "code": -32700,
+                    "message": "the message is not JSON"
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": 4
+            }
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": 4,
+                "error": {
+                    "code": -32600,
+                    "message": "the message is not a request the server takes now"
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "1.0",
+                "id": 5,
+                "method": "shutdown"
+            }
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": 5,
+                "error": {
+                    "code": -32600,
+                    "message": "the message is not a request the server takes now"
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": {
+                    "n": 6
+                },
+                "method": "shutdown"
+            }
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": null,
+                "error": {
+                    "code": -32600,
+                    "message": "the message is not a request the server takes now"
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": 7,
+                "method": 7
+            }
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": 7,
+                "error": {
+                    "code": -32600,
+                    "message": "the message is not a request the server takes now"
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": "eight",
+                "method": "textDocument/hover",
+                "params": {}
+            }
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": "eight",
+                "error": {
+                    "code": -32601,
+                    "message": "the server has no such method"
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": 9,
+                "method": "$/unknown"
+            }
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": 9,
+                "error": {
+                    "code": -32601,
+                    "message": "the server has no such method"
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": 10,
+                "method": "textDocument/completion"
+            }
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": 10,
+                "error": {
+                    "code": -32602,
+                    "message": "the params are not the method's"
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": 11,
+                "method": "textDocument/completion",
+                "params": {
+                    "textDocument": {
+                        "uri": 1
+                    },
+                    "position": {
+                        "line": 0,
+                        "character": 0
+                    }
+                }
+            }
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": 11,
+                "error": {
+                    "code": -32602,
+                    "message": "the params are not the method's"
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": 12,
+                "method": "textDocument/completion",
+                "params": {
+                    "textDocument": {
+                        "uri": "file:///a.md"
+                    },
+                    "position": {
+                        "line": -1,
+                        "character": 0
+                    }
+                }
+            }
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": 12,
+                "error": {
+                    "code": -32602,
+                    "message": "the params are not the method's"
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": 13,
+                "method": "textDocument/completion",
+                "params": {
+                    "textDocument": {
+                        "uri": "file:///a.md"
+                    },
+                    "position": {
+                        "line": 0.5,
+                        "character": 0
+                    }
+                }
+            }
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": 13,
+                "error": {
+                    "code": -32602,
+                    "message": "the params are not the method's"
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": 14,
+                "method": "textDocument/completion",
+                "params": {
+                    "textDocument": {
+                        "uri": "file:///a.md"
+                    },
+                    "position": {
+                        "line": 0,
+                        "character": 4294967296
+                    }
+                }
+            }
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": 14,
+                "error": {
+                    "code": -32602,
+                    "message": "the params are not the method's"
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": 15,
+                "result": null
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": 16,
+                "error": {
+                    "code": -32601,
+                    "message": "no"
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "method": "$/cancelRequest",
+                "params": {
+                    "id": 1
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "method": "$/setTrace",
+                "params": {
+                    "value": "off"
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "method": "workspace/didChangeConfiguration",
+                "params": {
+                    "settings": {}
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": -17,
+                "method": "shutdown",
+                "params": null
+            }
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": -17,
+                "result": null
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "method": "exit"
+            }
+        },
+        {
+            "exit": 0
+        }
+    ]
+}

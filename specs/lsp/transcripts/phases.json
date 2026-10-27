@@ -1,0 +1,242 @@
+{
+    "description": "A second initialize, and any request after shutdown, answers InvalidRequest; notifications after shutdown are dropped.",
+    "messages": [
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "processId": null,
+                    "rootUri": null,
+                    "capabilities": {}
+                }
+            }
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                    "capabilities": {
+                        "positionEncoding": "utf-16",
+                        "textDocumentSync": {
+                            "openClose": true,
+                            "change": 2
+                        },
+                        "completionProvider": {
+                            "triggerCharacters": [
+                                "\t",
+                                "\n",
+                                "\r",
+                                " ",
+                                "!",
+                                "\"",
+                                "#",
+                                "'",
+                                "(",
+                                ",",
+                                ".",
+                                ":",
+                                ";",
+                                "<",
+                                "=",
+                                "@",
+                                "[",
+                                "^",
+                                "`",
+                                "{",
+                                "~"
+                            ]
+                        }
+                    },
+                    "serverInfo": {
+                        "name": "markdown-core"
+                    }
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "initialize",
+                "params": {
+                    "processId": null,
+                    "rootUri": null,
+                    "capabilities": {}
+                }
+            }
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "error": {
+                    "code": -32600,
+                    "message": "the message is not a request the server takes now"
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {
+                    "textDocument": {
+                        "uri": "file:///a.md",
+                        "languageId": "markdown",
+                        "version": 1,
+                        "text": "# A\n"
+                    }
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "textDocument/completion",
+                "params": {
+                    "textDocument": {
+                        "uri": "file:///a.md"
+                    },
+                    "position": {
+                        "line": 0,
+                        "character": 1
+                    }
+                }
+            }
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "result": {
+                    "isIncomplete": false,
+                    "items": []
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "shutdown"
+            }
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": 4,
+                "result": null
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": 5,
+                "method": "textDocument/completion",
+                "params": {
+                    "textDocument": {
+                        "uri": "file:///a.md"
+                    },
+                    "position": {
+                        "line": 0,
+                        "character": 1
+                    }
+                }
+            }
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": 5,
+                "error": {
+                    "code": -32600,
+                    "message": "the message is not a request the server takes now"
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": 6,
+                "method": "shutdown"
+            }
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": 6,
+                "error": {
+                    "code": -32600,
+                    "message": "the message is not a request the server takes now"
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": 7,
+                "method": "initialize",
+                "params": {
+                    "processId": null,
+                    "rootUri": null,
+                    "capabilities": {}
+                }
+            }
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": 7,
+                "error": {
+                    "code": -32600,
+                    "message": "the message is not a request the server takes now"
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": 8,
+                "method": "textDocument/hover",
+                "params": {}
+            }
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": 8,
+                "error": {
+                    "code": -32600,
+                    "message": "the message is not a request the server takes now"
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "method": "textDocument/didOpen",
+                "params": {
+                    "textDocument": {
+                        "uri": "file:///b.md",
+                        "languageId": "markdown",
+                        "version": 1,
+                        "text": "b"
+                    }
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "method": "exit"
+            }
+        },
+        {
+            "exit": 0
+        }
+    ]
+}

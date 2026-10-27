@@ -1,0 +1,90 @@
+{
+    "description": "initialize, initialized, shutdown and exit; a client that offers no position encoding gets UTF-16.",
+    "messages": [
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "processId": null,
+                    "rootUri": null,
+                    "capabilities": {}
+                }
+            }
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                    "capabilities": {
+                        "positionEncoding": "utf-16",
+                        "textDocumentSync": {
+                            "openClose": true,
+                            "change": 2
+                        },
+                        "completionProvider": {
+                            "triggerCharacters": [
+                                "\t",
+                                "\n",
+                                "\r",
+                                " ",
+                                "!",
+                                "\"",
+                                "#",
+                                "'",
+                                "(",
+                                ",",
+                                ".",
+                                ":",
+                                ";",
+                                "<",
+                                "=",
+                                "@",
+                                "[",
+                                "^",
+                                "`",
+                                "{",
+                                "~"
+                            ]
+                        }
+                    },
+                    "serverInfo": {
+                        "name": "markdown-core"
+                    }
+                }
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "method": "initialized",
+                "params": {}
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "shutdown"
+            }
+        },
+        {
+            "server": {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "result": null
+            }
+        },
+        {
+            "client": {
+                "jsonrpc": "2.0",
+                "method": "exit"
+            }
+        },
+        {
+            "exit": 0
+        }
+    ]
+}
