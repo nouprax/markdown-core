@@ -1039,14 +1039,15 @@ final class com.nouprax.markdown.core/MarkdownCoreException : kotlin/RuntimeExce
 final class com.nouprax.markdown.core/MarkdownSession : kotlin/AutoCloseable { // com.nouprax.markdown.core/MarkdownSession|null[0]
     constructor <init>(kotlin/String = ..., com.nouprax.markdown.core/TextUnit = ...) // com.nouprax.markdown.core/MarkdownSession.<init>|<init>(kotlin.String;com.nouprax.markdown.core.TextUnit){}[0]
 
-    final var context // com.nouprax.markdown.core/MarkdownSession.context|{}context[0]
-        final fun <get-context>(): com.nouprax.markdown.core/Context // com.nouprax.markdown.core/MarkdownSession.context.<get-context>|<get-context>(){}[0]
     final val document // com.nouprax.markdown.core/MarkdownSession.document|{}document[0]
         final fun <get-document>(): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/MarkdownSession.document.<get-document>|<get-document>(){}[0]
     final val text // com.nouprax.markdown.core/MarkdownSession.text|{}text[0]
         final fun <get-text>(): kotlin/String // com.nouprax.markdown.core/MarkdownSession.text.<get-text>|<get-text>(){}[0]
     final val unit // com.nouprax.markdown.core/MarkdownSession.unit|{}unit[0]
         final fun <get-unit>(): com.nouprax.markdown.core/TextUnit // com.nouprax.markdown.core/MarkdownSession.unit.<get-unit>|<get-unit>(){}[0]
+
+    final var context // com.nouprax.markdown.core/MarkdownSession.context|{}context[0]
+        final fun <get-context>(): com.nouprax.markdown.core/Context // com.nouprax.markdown.core/MarkdownSession.context.<get-context>|<get-context>(){}[0]
 
     final fun append(kotlin/String): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/MarkdownSession.append|append(kotlin.String){}[0]
     final fun close() // com.nouprax.markdown.core/MarkdownSession.close|close(){}[0]
