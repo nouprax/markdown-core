@@ -43,15 +43,8 @@ public class MarkdownSession
         private val session = newPlatformSession(source.encodeToByteArray(), unit)
         private var closed = false
 
-        /**
-         * The engine's contexts with slots the session made, which [close]
-         * frees unless their slots' reclaim already did. Freed ones are
-         * dropped as the list grows.
-         */
-        private val contexts = ArrayList<NativeContext>()
-
-        /** The size at which [context] next drops the freed [contexts]. */
-        private var prune = 64
+        /** The engine's contexts with slots the session made, which [close] frees. */
+        private val contexts = ArrayList<Long>()
 
         /** The document the latest step published: parsed from [source], or from the last append. */
         public val document: Document
@@ -104,27 +97,17 @@ public class MarkdownSession
             if (position.line < 1 || position.column < 1) throw MarkdownCoreException(ErrorCode.OUT_OF_BOUNDS)
             val address = LongArray(1)
             val message = open().context(position.line, position.column, address)
-            val native = NativeContext(session, address[0])
-            val handle = ContextHandle(this, native)
             val context =
                 try {
-                    AnswerDecoder.context(message, handle)
+                    AnswerDecoder.context(message, ContextHandle(this, address[0]))
                 } catch (error: Throwable) {
-                    native.free()
+                    if (address[0] != 0L) session.release(address[0])
                     throw error
                 }
             // Only a slot spells from the engine's context, so one without
-            // slots is freed now, and one with slots once no slot can reach
-            // it or when the session closes.
-            if (context.slots.isEmpty() || native.address == 0L) {
-                native.free()
-            } else {
-                if (contexts.size >= prune) {
-                    contexts.removeAll { it.isFreed }
-                    prune = maxOf(64, contexts.size * 2)
-                }
-                contexts += native
-                handle.watch()
+            // slots is freed now and one with slots when the session closes.
+            if (address[0] != 0L) {
+                if (context.slots.isEmpty()) session.release(address[0]) else contexts += address[0]
             }
             return context
         }
@@ -189,7 +172,7 @@ public class MarkdownSession
         override fun close() {
             if (!closed) {
                 closed = true
-                for (context in contexts) context.free()
+                for (context in contexts) session.release(context)
                 contexts.clear()
                 session.free()
             }
