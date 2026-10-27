@@ -63,6 +63,7 @@ extension APISuite {
             record: DocumentRecord(
                 fields(1),
                 unit: .utf16,
+                snapshot: false,
                 metadata: metadata,
                 content: [],
                 footnotes: [],

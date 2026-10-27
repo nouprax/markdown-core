@@ -72,6 +72,7 @@ func document(holding content: [MarkupRecord]) -> Document {
         record: DocumentRecord(
             fields(1),
             unit: .utf16,
+            snapshot: false,
             metadata: nil,
             content: content,
             footnotes: [],
