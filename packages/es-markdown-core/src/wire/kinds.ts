@@ -104,3 +104,56 @@ type Holds<Claim extends true> = Claim;
 /** Fails to compile unless the wire kinds are exactly the Markup union's kinds, so every
  * switch or mapped type exhaustive over one is exhaustive over the other. */
 export type NativeKindsAreMarkupKinds = Holds<Exactly<NativeKind, Markup["kind"]>>;
+
+/**
+ * A slot's kind: the role of a field whose source holds a name, a key or a
+ * path an editor can complete, as the contract's `slots` lists them:
+ * - `"dest"`: a destination: a URL or file path, or the note path of a cross link or embed.
+ * - `"anchor"`: an anchor a destination names: the fragment of a URL or the anchor of a cross destination.
+ * - `"label"`: a reference label, at a reference link or embed or at the reference definition that states it.
+ * - `"footnote"`: a footnote label, at a footnote call or at the definition that states it.
+ * - `"bib"`: a bibliography key.
+ * - `"specimen"`: a specimen label, at a specimen reference or at the definition that states it.
+ * - `"name"`: the name of a directive or a topic.
+ * - `"id"`: an anchor a node declares: an attribute identifier or a block identifier.
+ * - `"class"`: an attribute class.
+ * - `"record"`: the name of an attribute record.
+ * - `"variant"`: the authored type of a callout.
+ * - `"info"`: the info string of a fenced code block.
+ * - `"field"`: the name of a properties member.
+ * - `"value"`: the value of an attribute record or of a properties member.
+ */
+export type SlotKind =
+    | "dest"
+    | "anchor"
+    | "label"
+    | "footnote"
+    | "bib"
+    | "specimen"
+    | "name"
+    | "id"
+    | "class"
+    | "record"
+    | "variant"
+    | "info"
+    | "field"
+    | "value";
+
+/** Indexed by the ordinal of C's `markdown_core_slot_kind`. */
+export const slotKinds: readonly (SlotKind | null)[] = [
+    null,
+    "dest",
+    "anchor",
+    "label",
+    "footnote",
+    "bib",
+    "specimen",
+    "name",
+    "id",
+    "class",
+    "record",
+    "variant",
+    "info",
+    "field",
+    "value"
+];

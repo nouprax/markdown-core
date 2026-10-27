@@ -455,6 +455,20 @@ Step 3b built the Kotlin binding this way:
 - `NodeKind` and `SlotKind` are generated public enums, which the MCB3
   reader uses too, in place of the internal `WireNodeKind`.
 
+Step 3c built the ECMAScript binding this way:
+
+- The WebAssembly module exports the same wire functions and
+  `markdown_core_context_free`; a position crosses as the address of its two
+  `int32_t`s and an id as a `BigInt`.
+- The session owns every context it makes, as Kotlin's does, and frees them
+  in `dispose()`, or when a session collected without it is finalized.
+- `path`, and the check that the current document holds a queried node, walk
+  the ES document, as `Document.nodeAt` does.
+- `SlotKind` is a generated string union, as the node kinds are, and a
+  spelling is an `Edit`, the other bindings' `Slot.Insertion`, named apart
+  from the `Insertion` node because ESLint rejects the namespace that would
+  nest it.
+
 ### 3.5 Prerequisite: the settle point
 
 The context query reads the open paragraph's provisional decisions, which
