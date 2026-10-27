@@ -5,9 +5,11 @@
  * correctness set, `specs/incremental/`, in both coordinate units, and checks
  * the oracles of incremental_oracles.h after the open and after every step.
  *
- *   incremental_runner --set DIR [--family F]  check the `session` subject
+ *   incremental_runner --set DIR [--family F [--shard K/N]]
+ *                                             check the `session` subject
  *                                             on every case, or on the cases
- *                                             of one declared family
+ *                                             of one declared family, or on
+ *                                             the Kth of N shards of them
  *   incremental_runner --set DIR --self-test   require every faulty subject
  *                                             to fail with its oracle
  *   incremental_runner --fuzz COUNT FILE...    check COUNT seeded inputs on
@@ -16,7 +18,9 @@
  *
  * The manifest declares the set's families, and every run checks that each
  * case belongs to a declared family and each declared family has a case, so a
- * family is never left out of the tests that run one family each.
+ * family is never left out of the tests that run one family each. The shards
+ * of a family deal its cases round in manifest order, so its N shards check
+ * each case once, and a shard that gets no case fails.
  *
  * The faulty subjects (section 8) live here and nowhere else: they are never
  * linked into a product target.
@@ -49,6 +53,9 @@ static bool wanted(run *state, const ih_manifest *manifest, bool *seen, const ch
     }
     seen[index] = true;
     if (state->family && strcmp(state->family, family) != 0) {
+        return false;
+    }
+    if (state->shards && state->cases++ % state->shards != state->shard) {
         return false;
     }
     state->checked++;
@@ -162,7 +169,8 @@ static void run_set(run *state, const char *directory) {
         }
     }
     if (ready && state->family && !state->checked) {
-        fail(state, "harness", "%s: no case of family %s ran", directory, state->family);
+        fail(state, "harness", "%s: no case of family %s ran%s", directory, state->family,
+             state->shards ? " in this shard" : "");
     }
     free(seen);
     ih_sizes_free(&tokens);
@@ -486,6 +494,7 @@ int main(int argc, char **argv) {
     const char *directory = NULL;
     bool self_test = false;
     const char *family = NULL;
+    size_t shard = 0, shards = 0;
     int index;
     if (argc > 3 && strcmp(argv[1], "--fuzz") == 0) {
         return check_harness() ? 1 : run_fuzz((size_t)strtoul(argv[2], NULL, 10), argv + 3, argc - 3);
@@ -497,13 +506,23 @@ int main(int argc, char **argv) {
             self_test = true;
         } else if (strcmp(argv[index], "--family") == 0 && index + 1 < argc && !family) {
             family = argv[++index];
+        } else if (strcmp(argv[index], "--shard") == 0 && index + 1 < argc && !shards) {
+            /* K/N, with 1 <= K <= N. */
+            char *end;
+            shard = (size_t)strtoul(argv[++index], &end, 10);
+            shards = *end == '/' && end[1] >= '0' && end[1] <= '9' ? (size_t)strtoul(end + 1, &end, 10) : 0;
+            if (*end || !shard || shard > shards) {
+                directory = NULL;
+                break;
+            }
         } else {
             directory = NULL;
             break;
         }
     }
-    if (!directory || (self_test && family)) {
-        fputs("usage: incremental_runner --set DIR [--family F | --self-test] | --fuzz COUNT FILE...\n", stderr);
+    if (!directory || (self_test && family) || (shards && !family)) {
+        fputs("usage: incremental_runner --set DIR [--family F [--shard K/N] | --self-test] | --fuzz COUNT FILE...\n",
+              stderr);
         return 2;
     }
     if (check_harness()) {
@@ -543,13 +562,19 @@ int main(int argc, char **argv) {
         memset(&state, 0, sizeof(state));
         state.subject = &ih_session;
         state.family = family;
+        state.shard = shards ? shard - 1 : 0;
+        state.shards = shards;
         run_set(&state, directory);
         if (state.failures) {
             fprintf(stderr, "%zu incremental check(s) failed\n", state.failures);
             return 1;
         }
-        printf("incremental correctness set passed with the %s subject: %zu case(s)%s%s\n", ih_session.name,
+        printf("incremental correctness set passed with the %s subject: %zu case(s)%s%s", ih_session.name,
                state.checked, family ? " of family " : "", family ? family : "");
+        if (shards) {
+            printf(", shard %zu of %zu", shard, shards);
+        }
+        putchar('\n');
     }
     return 0;
 }
