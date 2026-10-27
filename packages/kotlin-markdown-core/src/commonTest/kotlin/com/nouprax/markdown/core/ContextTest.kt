@@ -79,8 +79,8 @@ class ContextTest {
         assertTrue(session.context.slots.isEmpty())
         assertOutOfBounds { session.spell(next, "x") }
         session.locate(Position(1, 5))
-        assertTrue(session.context.slots.single().closed)
         val last = session.context.slots.single()
+        assertTrue(last.closed)
         assertOutOfBounds { session.locate(Position(9, 1)) }
         assertEquals("x", session.spell(last, "x")?.text)
         // Another session at the same turn holds a slot at the same place.
