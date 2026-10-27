@@ -4,8 +4,10 @@
 # platform bindings build it from source.
 set(MARKDOWN_CORE_LSP_SOURCES server.c text.c)
 add_library(libmarkdown-core-lsp STATIC ${MARKDOWN_CORE_LSP_SOURCES} include/markdown_core_lsp.h text.h)
-target_include_directories(libmarkdown-core-lsp PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
-                           PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(
+    libmarkdown-core-lsp
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(libmarkdown-core-lsp PUBLIC MARKDOWN_CORE_LSP_STATIC_DEFINE)
 target_link_libraries(libmarkdown-core-lsp PUBLIC libmarkdown-core-public-static)
 set_target_properties(
