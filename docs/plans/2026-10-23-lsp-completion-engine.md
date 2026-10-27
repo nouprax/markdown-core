@@ -885,7 +885,7 @@ it (D6).
    holds a finalized session per version. A slot keeps the native context it
    was read from, so `Slot.spell` parses nothing. 3a and 3b merged, were
    removed with 3c unmerged when the queries were kept in C, and came back
-   when R6 was restored; 3c follows them.
+   when R6 was restored; 3c landed after them.
 - [ ] **Step 4: Engine skeleton.** `markdown-core-lsp` in C with the
    lifecycle, position encoding, document store and sync, its Swift binding,
    the JSON-RPC adapter and the transcript harness, and the latency report
