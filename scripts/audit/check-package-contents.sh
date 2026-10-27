@@ -428,7 +428,7 @@ for required_source in \
     commonMain/com/nouprax/markdown/core/visitor/MarkupVisitor.kt \
     commonMain/com/nouprax/markdown/core/visitor/MarkupWalker.kt \
     commonMain/com/nouprax/markdown/core/wire/WireDecoder.kt \
-    commonMain/com/nouprax/markdown/core/markup/Kinds.kt \
+    commonMain/com/nouprax/markdown/core/wire/WireNodeKind.kt \
     jvmMain/com/nouprax/markdown/core/PlatformParser.jvm.kt; do
     if ! unzip -Z1 "$kotlin_jvm_sources" | grep -qx "$required_source"; then
         echo "Kotlin JVM source publication is missing $required_source" >&2

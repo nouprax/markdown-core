@@ -15,10 +15,10 @@ internal object WireDecoder {
     ): Document = Reader(message, unit).decode()
 
     /** Where the u8 status follows the magic and the u32 message length. */
-    const val STATUS_OFFSET = 8
+    private const val STATUS_OFFSET = 8
 
     /** The status of a parse failure; the other status is a document. */
-    const val FAILURE = 1
+    private const val FAILURE = 1
 
     /** Each failure's code by the value of the facade's `markdown_core_status`. */
     private val errorCodes =
@@ -28,9 +28,6 @@ internal object WireDecoder {
             3 to ErrorCode.KIND_MISMATCH,
             4 to ErrorCode.SESSION_FINALIZED,
         )
-
-    /** The failure a message's `u32` [status] code carries. */
-    fun failure(status: Int): MarkdownCoreException = MarkdownCoreException(errorCodes.getValue(status))
 
     // The contract's enums, in the order of their wire indices.
     private val flavors = listOf(ListFlavor.BULLET, ListFlavor.ORDERED)
@@ -62,13 +59,13 @@ internal object WireDecoder {
         }
 
         /** A failure's body is its `u32` status code alone. */
-        private fun failure(): MarkdownCoreException = failure(count())
+        private fun failure(): MarkdownCoreException = MarkdownCoreException(errorCodes.getValue(count()))
 
         // ---- Records -----------------------------------------------------------
 
         /** Reads one record, replaces the nodes it names with the node it builds. */
         private fun record() {
-            val kind = NodeKind.from(u8())
+            val kind = WireNodeKind.from(u8())
             val id = MarkupID(int())
             val extent = Extent(i32(), u32().toUInt())
             val runs = list { Run(i32(), u32().toUInt()) }
@@ -86,7 +83,7 @@ internal object WireDecoder {
 
         /** A kind's fields in the contract's order; node-valued fields read their counts. */
         private fun Children.fields(
-            kind: NodeKind,
+            kind: WireNodeKind,
             id: MarkupID,
             extent: Extent,
             runs: kotlin.collections.List<Run>,
@@ -94,7 +91,7 @@ internal object WireDecoder {
             attributes: Attributes,
         ): Markup =
             when (kind) {
-                NodeKind.DOCUMENT -> {
+                WireNodeKind.DOCUMENT -> {
                     val content = count()
                     val metadata = presence()
                     take(content, metadata)
@@ -115,7 +112,7 @@ internal object WireDecoder {
                     )
                 }
 
-                NodeKind.CALLOUT -> {
+                WireNodeKind.CALLOUT -> {
                     val variant = optional { string() }
                     val collapsed = optional { bool() }
                     val title = optional { count() }
@@ -134,20 +131,20 @@ internal object WireDecoder {
                     )
                 }
 
-                NodeKind.PARAGRAPH -> {
+                WireNodeKind.PARAGRAPH -> {
                     Paragraph(content(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.HEADING -> {
+                WireNodeKind.HEADING -> {
                     val level = int().toInt()
                     Heading(level, content(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.THEMATIC_BREAK -> {
+                WireNodeKind.THEMATIC_BREAK -> {
                     ThematicBreak(id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.LIST -> {
+                WireNodeKind.LIST -> {
                     val flavor = index(flavors)
                     val start = optional { int() }
                     val variant = optional { variant() }
@@ -170,12 +167,12 @@ internal object WireDecoder {
                     )
                 }
 
-                NodeKind.LIST_ITEM -> {
+                WireNodeKind.LIST_ITEM -> {
                     val marker = optional { string() }
                     ListItem(marker, content(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.CODE_BLOCK -> {
+                WireNodeKind.CODE_BLOCK -> {
                     CodeBlock(
                         optional { string() },
                         optional { string() },
@@ -190,15 +187,15 @@ internal object WireDecoder {
                     )
                 }
 
-                NodeKind.HTML_BLOCK -> {
+                WireNodeKind.HTML_BLOCK -> {
                     HTMLBlock(string(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.FORMULA_BLOCK -> {
+                WireNodeKind.FORMULA_BLOCK -> {
                     FormulaBlock(string(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.TABLE -> {
+                WireNodeKind.TABLE -> {
                     val caption = presence()
                     val columns = list { TableColumn(index(flows), optional { double() }) }
                     val head = count()
@@ -219,7 +216,7 @@ internal object WireDecoder {
                     )
                 }
 
-                NodeKind.DIRECTIVE_BLOCK -> {
+                WireNodeKind.DIRECTIVE_BLOCK -> {
                     val name = optional { string() }
                     val label = presence()
                     val content = count()
@@ -236,47 +233,47 @@ internal object WireDecoder {
                     )
                 }
 
-                NodeKind.TEXT -> {
+                WireNodeKind.TEXT -> {
                     Text(string(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.SOFT_BREAK -> {
+                WireNodeKind.SOFT_BREAK -> {
                     SoftBreak(id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.LINE_BREAK -> {
+                WireNodeKind.LINE_BREAK -> {
                     LineBreak(id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.CODE -> {
+                WireNodeKind.CODE -> {
                     Code(string(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.HTML -> {
+                WireNodeKind.HTML -> {
                     HTML(string(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.FORMULA -> {
+                WireNodeKind.FORMULA -> {
                     Formula(index(placements), string(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.EMPHASIS -> {
+                WireNodeKind.EMPHASIS -> {
                     Emphasis(content(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.STRONG -> {
+                WireNodeKind.STRONG -> {
                     Strong(content(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.STRIKETHROUGH -> {
+                WireNodeKind.STRIKETHROUGH -> {
                     Strikethrough(content(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.LINK -> {
+                WireNodeKind.LINK -> {
                     Link(destination(), optional { string() }, content(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.EMBEDDED -> {
+                WireNodeKind.EMBEDDED -> {
                     Embedded(
                         destination(),
                         optional { string() },
@@ -290,52 +287,52 @@ internal object WireDecoder {
                     )
                 }
 
-                NodeKind.DIRECTIVE -> {
+                WireNodeKind.DIRECTIVE -> {
                     val name = string()
                     val label = presence()
                     take(label)
                     Directive(name, optional(label), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.TOPIC -> {
+                WireNodeKind.TOPIC -> {
                     Topic(string(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.CITE -> {
+                WireNodeKind.CITE -> {
                     val citations = count()
                     take(citations)
                     Cite(typed(citations), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.TABLE_ROW -> {
+                WireNodeKind.TABLE_ROW -> {
                     val cells = count()
                     take(cells)
                     TableRow(typed(cells), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.TABLE_CELL -> {
+                WireNodeKind.TABLE_CELL -> {
                     val rowspan = int().toInt()
                     val colspan = int().toInt()
                     TableCell(rowspan, colspan, content(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.DIRECTIVE_LABEL -> {
+                WireNodeKind.DIRECTIVE_LABEL -> {
                     DirectiveLabel(content(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.COMMENT -> {
+                WireNodeKind.COMMENT -> {
                     Comment(string(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.CROSS_LINK -> {
+                WireNodeKind.CROSS_LINK -> {
                     CrossLink(cross(), optional { string() }, id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.MARK -> {
+                WireNodeKind.MARK -> {
                     Mark(content(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.CROSS_EMBEDDED -> {
+                WireNodeKind.CROSS_EMBEDDED -> {
                     CrossEmbedded(
                         cross(),
                         optional { string() },
@@ -348,29 +345,29 @@ internal object WireDecoder {
                     )
                 }
 
-                NodeKind.INSERTION -> {
+                WireNodeKind.INSERTION -> {
                     Insertion(content(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.SPAN -> {
+                WireNodeKind.SPAN -> {
                     Span(content(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.SUPERSCRIPT -> {
+                WireNodeKind.SUPERSCRIPT -> {
                     Superscript(content(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.SUBSCRIPT -> {
+                WireNodeKind.SUBSCRIPT -> {
                     Subscript(content(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.DEFINITION_LIST -> {
+                WireNodeKind.DEFINITION_LIST -> {
                     val definitions = count()
                     take(definitions)
                     DefinitionList(typed(definitions), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.DEFINITION -> {
+                WireNodeKind.DEFINITION -> {
                     val term = count()
                     val bodies = list { count() }
                     val compact = bool()
@@ -387,11 +384,11 @@ internal object WireDecoder {
                     )
                 }
 
-                NodeKind.TABLE_CAPTION -> {
+                WireNodeKind.TABLE_CAPTION -> {
                     TableCaption(content(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.CITATION -> {
+                WireNodeKind.CITATION -> {
                     // An inline note writes nothing for its footnote, which is
                     // the first node the record takes, ahead of the affixes.
                     val written = referent()
@@ -402,18 +399,18 @@ internal object WireDecoder {
                     Citation(referent, content(prefix), content(suffix), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.FOOTNOTE -> {
+                WireNodeKind.FOOTNOTE -> {
                     val label = optional { string() }
                     Footnote(label, content(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.SPECIMEN -> {
+                WireNodeKind.SPECIMEN -> {
                     val label = optional { string() }
                     val start = optional { int() }
                     Specimen(label, start, content(), id, extent, runs, anchor, attributes)
                 }
 
-                NodeKind.METADATA -> {
+                WireNodeKind.METADATA -> {
                     Metadata(
                         name = optional { metadataValue() },
                         title = optional { metadataValue() },
@@ -433,7 +430,7 @@ internal object WireDecoder {
                     )
                 }
 
-                NodeKind.REFERENCE -> {
+                WireNodeKind.REFERENCE -> {
                     Reference(
                         string(),
                         destination(),

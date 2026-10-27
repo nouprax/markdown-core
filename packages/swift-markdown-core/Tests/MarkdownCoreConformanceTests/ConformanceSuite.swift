@@ -149,16 +149,12 @@ private func dumpKinds(_ dump: String) -> [String] {
     }
 }
 
-/// A walk's nodes and their ids, in the order it enters them.
-struct IdentifierVisitor: MarkupVisitor {
+/// The ids of a walk's nodes, in the order it enters them.
+private struct IdentifierVisitor: MarkupVisitor {
     var ids: [UInt64] = []
-    var nodes: [any Markup] = []
 
     private mutating func record(_ node: some Markup, _ phase: MarkupVisitPhase) {
-        if phase == .enter {
-            ids.append(node.id.value)
-            nodes.append(node)
-        }
+        if phase == .enter { ids.append(node.id.value) }
     }
 
     mutating func visit(_ node: Document, phase: MarkupVisitPhase) { record(node, phase) }

@@ -17,14 +17,6 @@ private fun decode(
     unit: TextUnit,
 ): Document = WireDecoder.decode(message ?: throw MarkdownCoreException(ErrorCode.ALLOCATION_FAILED), unit)
 
-internal actual fun platformDialect(): ByteArray {
-    DesktopNativeLoader.ensureLoaded()
-    return answer(JniParser.dialectAnswer())
-}
-
-/** An answer, whose absence is [ErrorCode.ALLOCATION_FAILED]. */
-private fun answer(message: ByteArray?): ByteArray = message ?: throw MarkdownCoreException(ErrorCode.ALLOCATION_FAILED)
-
 internal actual fun newPlatformSession(
     source: ByteArray,
     unit: TextUnit,
@@ -56,33 +48,6 @@ private class JniSession(
         JniParser.sessionFree(session[0])
         session[0] = 0
     }
-
-    override fun context(
-        line: Int,
-        column: Int,
-        context: LongArray,
-    ): ByteArray = answer(JniParser.sessionContextAnswer(session[0], line, column, context))
-
-    override fun spell(
-        context: Long,
-        slot: Int,
-        value: ByteArray,
-    ): ByteArray = answer(JniParser.contextSpellAnswer(context, slot, value))
-
-    override fun release(context: Long) = JniParser.contextFree(context)
-
-    override fun field(
-        id: Long,
-        line: Int,
-        column: Int,
-        slot: Int,
-    ): ByteArray = answer(JniParser.sessionFieldAnswer(session[0], id, line, column, slot))
-
-    override fun markers(
-        id: Long,
-        line: Int,
-        column: Int,
-    ): ByteArray = answer(JniParser.sessionMarkersAnswer(session[0], id, line, column))
 
     private fun publish(message: ByteArray?): Document = decode(message, document.unit).also { document = it }
 }
@@ -128,53 +93,6 @@ private object JniParser {
     /** Releases [session]; 0 releases nothing. */
     @JvmSynthetic
     external fun sessionFree(session: Long)
-
-    /** The MCB3 answer of the dialect's names and characters; null as for [parsePayload]. */
-    @JvmSynthetic
-    external fun dialectAnswer(): ByteArray?
-
-    /**
-     * The MCB3 answer of the context at [line] and [column] of [session],
-     * whose engine context goes to `context[0]`; null as for [parsePayload].
-     */
-    @JvmSynthetic
-    external fun sessionContextAnswer(
-        session: Long,
-        line: Int,
-        column: Int,
-        context: LongArray,
-    ): ByteArray?
-
-    /** The MCB3 answer of spelling [value] in slot [slot] of [context]; null as for [parsePayload]. */
-    @JvmSynthetic
-    external fun contextSpellAnswer(
-        context: Long,
-        slot: Int,
-        value: ByteArray,
-    ): ByteArray?
-
-    /** Releases [context]. */
-    @JvmSynthetic
-    external fun contextFree(context: Long)
-
-    /** The MCB3 answer of a field query of [session]; null as for [parsePayload]. */
-    @JvmSynthetic
-    external fun sessionFieldAnswer(
-        session: Long,
-        id: Long,
-        line: Int,
-        column: Int,
-        slot: Int,
-    ): ByteArray?
-
-    /** The MCB3 answer of a marker query of [session]; null as for [parsePayload]. */
-    @JvmSynthetic
-    external fun sessionMarkersAnswer(
-        session: Long,
-        id: Long,
-        line: Int,
-        column: Int,
-    ): ByteArray?
 }
 
 private object DesktopNativeLoader {

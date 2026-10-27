@@ -25,50 +25,7 @@ internal interface PlatformSession {
 
     /** Releases the engine's session once; a second call does nothing. */
     fun free()
-
-    /**
-     * The MCB3 answer of the context at the cursor [line] and [column]. The
-     * engine's context, which [spell] reads and [release] frees, goes to
-     * `context[0]`, which stays 0 unless the answer is the context's.
-     */
-    fun context(
-        line: Int,
-        column: Int,
-        context: LongArray,
-    ): ByteArray
-
-    /** The MCB3 answer of spelling the UTF-8 [value] in slot [slot] of [context]. */
-    fun spell(
-        context: Long,
-        slot: Int,
-        value: ByteArray,
-    ): ByteArray
-
-    /** Releases [context]. */
-    fun release(context: Long)
-
-    /**
-     * The MCB3 answer of the scopes of the fields of slot kind [slot], 0 for
-     * none, of the node with identifier [id] that holds the byte at [line]
-     * and [column].
-     */
-    fun field(
-        id: Long,
-        line: Int,
-        column: Int,
-        slot: Int,
-    ): ByteArray
-
-    /** The MCB3 answer of the scopes of the markers of the node [field] names. */
-    fun markers(
-        id: Long,
-        line: Int,
-        column: Int,
-    ): ByteArray
 }
-
-/** The MCB3 answer of the names and the characters the dialect fixes. */
-internal expect fun platformDialect(): ByteArray
 
 /** A session of the UTF-8 [source], with columns counted in [unit]. */
 internal expect fun newPlatformSession(
