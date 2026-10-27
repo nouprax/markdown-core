@@ -429,6 +429,27 @@ Step 3a built them this way:
   generated inputs gained envelopes with `[a,@]`, `[a,\t@]` and CR line
   endings to meet `,`, the tab and CR.
 
+Step 3b built the Kotlin binding this way:
+
+- Kotlin reads the engine through MCB3 messages, so each query crosses the
+  wire as an answer of its own (docs/architecture/wire-format.md, Queries):
+  `markdown_core_wire_context` answers a context and makes the native
+  context, which the Kotlin session keeps to spell from;
+  `markdown_core_wire_spell` answers a spelling; `markdown_core_wire_field`
+  and `markdown_core_wire_markers` answer scopes; and
+  `markdown_core_wire_dialect` the vocabularies. JNI and cinterop call the
+  same functions, and the ECMAScript binding will too.
+- Kotlin has no deinit, so the session owns every context it makes and
+  frees them in `close()`; a slot spells until then. An editor that holds a
+  finalized session per version frees each version's contexts with it.
+- `path` walks the Kotlin document, as `Document.node` does. A field or
+  marker query names the node to the engine by its id and the position of
+  the first byte it holds, after checking that the current document holds
+  the node or an equal one with its id; `wire_test` asks every node of the
+  canonical corpus that way and compares the answers with the facade's.
+- `NodeKind` and `SlotKind` are generated public enums, which the MCB3
+  reader uses too, in place of the internal `WireNodeKind`.
+
 ### 3.5 Prerequisite: the settle point
 
 The context query reads the open paragraph's provisional decisions, which

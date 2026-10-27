@@ -6,6 +6,19 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Ask the context, the path, the fields and the markers of a Kotlin
+  `MarkdownSession` (language engine plan, step 3b), as the Swift session
+  answers them: `context(position)`, with `Slot.spell` spelling until the
+  session closes, which frees the contexts it made; `path(position)`;
+  `scope(node, field)`; and `markers(node)`. `NodeKind` and `SlotKind` are
+  public and generated from the contract, and `Metadata.fields` and
+  `Slot.cues` export the dialect's vocabularies. The queries cross the MCB3
+  wire as answers of their own (`markdown_core_wire_context`,
+  `markdown_core_wire_spell`, `markdown_core_wire_field`,
+  `markdown_core_wire_markers` and `markdown_core_wire_dialect`), which the
+  ECMAScript binding will read too, and the Kotlin tests answer the shared
+  corpus `specs/context` line for line.
+
 - Ask the context, the path, the fields and the markers of a Swift
   `MarkdownSession` (language engine plan, step 3a), which holds the native
   parse of its text, so no query parses it again and none takes the source.
