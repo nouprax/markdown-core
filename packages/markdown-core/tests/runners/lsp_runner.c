@@ -639,6 +639,8 @@ static const json_case JSON_CASES[] = {
     {"\"\\udc00\\ud800x\"", JSON_READ_OK, "\"\xef\xbf\xbd\xef\xbf\xbdx\""},
     {"\"\\u0000\\u001f\"", JSON_READ_OK, "\"\\u0000\\u001f\""},
     {"\"\xc3\xa9\"", JSON_READ_OK, "\"\xc3\xa9\""},
+    {"\"\"", JSON_READ_OK, "\"\""},
+    {"{\"\":[\"\"]}", JSON_READ_OK, "{\"\":[\"\"]}"},
     {"", JSON_READ_MALFORMED, NULL},
     {" ", JSON_READ_MALFORMED, NULL},
     {"[1,]", JSON_READ_MALFORMED, NULL},
@@ -688,6 +690,8 @@ static void json_cases(void) {
         if (strcmp(test->text, "[\"a\"") == 0) {
             size = 6;
         }
+        /* Each text is read into a fresh tree, which holds no bytes yet. */
+        json_tree_release(&tree);
         json_read_status status = json_read(&tree, (const uint8_t *)test->text, size);
         if (status != test->status) {
             fprintf(stderr, "FAIL json %zu: %s reads %d, not %d\n", i, test->text, (int)status, (int)test->status);

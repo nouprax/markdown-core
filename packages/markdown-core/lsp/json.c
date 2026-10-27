@@ -59,6 +59,10 @@ static size_t push(reader *in, json_kind kind) {
 
 static bool put(reader *in, const uint8_t *bytes, size_t size) {
     json_tree *tree = in->tree;
+    /* An empty tree has no bytes yet, and no copy may name it. */
+    if (size == 0) {
+        return true;
+    }
     if (!widen((void **)&tree->bytes, &tree->room, tree->size + size, 1)) {
         return fail(in, JSON_READ_FAILED);
     }
