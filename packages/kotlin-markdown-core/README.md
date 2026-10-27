@@ -104,6 +104,30 @@ document; afterwards `append` and `finalize` throw
 `close` releases the engine's session; the documents it returned stay complete
 values.
 
+A session also answers an editor's queries from the engine's parse of its
+text, which it holds, so no query parses the text again or takes the source.
+An editor holds a finalized session per version of a text.
+
+```kotlin
+MarkdownSession("See [[Field notes]]\n").use { session ->
+    session.finalize()
+    val slot = session.context(Position(1, 12)).slots.single() // SlotKind.DEST of a NodeKind.CROSS_LINK
+    slot.spell("Old notes")                                  // Insertion(text = "Old notes", cursor = 9)
+    val link = session.path(Position(1, 8)).last()           // the cross link, under the root and paragraph
+    session.scope(link, SlotKind.DEST)                       // [1:7..1:17]
+    session.markers(link)                                    // [1:5..1:6, 1:18..1:19], the `[[` and the `]]`
+}
+```
+
+`context` answers the blocks and inline constructs the text before the cursor
+leaves open and the `Slot`s the cursor may be writing; `Slot.spell` writes a
+value in a slot's own syntax, with the closer an open construct needs, and
+its caret counts columns in the session's unit. A context's slots spell until
+the session closes, which frees them. `scope` and `markers` take a node of the
+current document, or one an append left unchanged. `Metadata.fields` names the
+properties fields and `Slot.cues` the characters after which a slot may begin
+empty, an editor's completion triggers.
+
 ### Identity, equality and scopes
 
 Every node has an `id: MarkupID`, unique within its document across every
