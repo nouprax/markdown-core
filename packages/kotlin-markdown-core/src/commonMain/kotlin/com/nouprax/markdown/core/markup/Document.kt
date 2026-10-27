@@ -96,47 +96,19 @@ public class Document internal constructor(
     ): Markup? {
         if (position.line < 1 || position.column < 1) throw MarkdownCoreException(ErrorCode.OUT_OF_BOUNDS)
         val offset = SourceLines(source).offset(position, unit) ?: return null
-        return holders(offset).lastOrNull()
-    }
-
-    /**
-     * Every node one of whose source ranges holds the byte at [offset], in
-     * canonical walk order, found by one walk.
-     */
-    internal fun holders(offset: Int): kotlin.collections.List<Markup> {
-        val found = ArrayList<Markup>()
+        var found: Markup? = null
         val traversal = MarkupTraversal(this)
         while (traversal.next()) {
             if (traversal.step != MarkupTraversal.Step.ENTER) continue
             val places = traversal.places()
             for (index in 0 until places.count) {
                 if (places.start(index) <= offset && offset < places.end(index)) {
-                    found += traversal.node!!
+                    found = traversal.node
                     break
                 }
             }
         }
         return found
-    }
-
-    /**
-     * The offset of the first byte that [node] holds, found by one walk: the
-     * node of this document that is [node] or, with its id, equals it. Null
-     * when it holds no byte.
-     *
-     * @throws MarkdownCoreException [ErrorCode.OUT_OF_BOUNDS] when this
-     *   document holds no such node.
-     */
-    internal fun lead(node: Markup): Long? {
-        val traversal = MarkupTraversal(this)
-        while (traversal.next()) {
-            val found = traversal.node
-            if (traversal.step != MarkupTraversal.Step.ENTER || found!!.id != node.id) continue
-            if (found !== node && found != node) break
-            val places = traversal.places()
-            return (0 until places.count).firstOrNull { places.start(it) < places.end(it) }?.let { places.start(it) }
-        }
-        throw MarkdownCoreException(ErrorCode.OUT_OF_BOUNDS)
     }
 
     /**

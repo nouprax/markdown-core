@@ -565,7 +565,7 @@ MARKDOWN_CORE_API markdown_core_status markdown_core_node_kind_name(markdown_cor
  * value that is not a markdown_core_slot_kind. */
 MARKDOWN_CORE_API markdown_core_status markdown_core_slot_kind_name(markdown_core_slot_kind kind, const char **name);
 
-/** VOCABULARIES (docs/plans/2026-10-23-lsp-completion-engine.md, 3.4): the
+/** LEXICONS (docs/plans/2026-10-23-lsp-completion-engine.md, 3.4): the
  * names and the characters the dialect fixes, so that an editor reads them
  * from the parser and does not repeat them. Each borrows from the library
  * and lives as long as it.

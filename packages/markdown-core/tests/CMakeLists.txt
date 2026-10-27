@@ -349,8 +349,8 @@ markdown_core_add_test(
     --sweep
     "${MARKDOWN_CORE_CONTEXT_FIXTURE}"
     ${_markdown_core_context_sweep})
-# elements: the corpus every binding renders its queries against
-# (specs/context), current with the C queries over the context fixture.
+# elements: the query corpus (specs/context), current with the C queries
+# over the context fixture.
 markdown_core_add_test(
     elements_queries
     elements
