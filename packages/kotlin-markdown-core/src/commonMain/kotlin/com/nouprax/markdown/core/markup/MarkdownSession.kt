@@ -43,7 +43,7 @@ public class MarkdownSession
         private val session = newPlatformSession(source.encodeToByteArray(), unit)
         private var closed = false
 
-        /** The engine's contexts the session made, which [close] frees. */
+        /** The engine's contexts with slots the session made, which [close] frees. */
         private val contexts = ArrayList<Long>()
 
         /** The document the latest step published: parsed from [source], or from the last append. */
@@ -97,8 +97,19 @@ public class MarkdownSession
             if (position.line < 1 || position.column < 1) throw MarkdownCoreException(ErrorCode.OUT_OF_BOUNDS)
             val address = LongArray(1)
             val message = open().context(position.line, position.column, address)
-            if (address[0] != 0L) contexts += address[0]
-            return AnswerDecoder.context(message, ContextHandle(this, address[0]))
+            val context =
+                try {
+                    AnswerDecoder.context(message, ContextHandle(this, address[0]))
+                } catch (error: Throwable) {
+                    if (address[0] != 0L) session.release(address[0])
+                    throw error
+                }
+            // Only a slot spells from the engine's context, so one without
+            // slots is freed now and one with slots when the session closes.
+            if (address[0] != 0L) {
+                if (context.slots.isEmpty()) session.release(address[0]) else contexts += address[0]
+            }
+            return context
         }
 
         /**
