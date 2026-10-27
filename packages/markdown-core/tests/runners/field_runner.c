@@ -741,6 +741,9 @@ static void check_example(report *r, const uint8_t *source, size_t length) {
                 markdown_core_scopes_free(scopes);
             }
         }
+        /* A properties member's name is one of the grammar's fixed field
+         * names, which no sentinel spells, so exactness alone judges it. */
+        first = first && f->slot != MARKDOWN_CORE_SLOT_FIELD;
         /* An identifier a later one overrides is no value of its node, nor
          * is a record named `id` or `class`, or its value, whose node holds
          * it as an anchor or classes. */
@@ -759,13 +762,15 @@ static void check_example(report *r, const uint8_t *source, size_t length) {
                               (!memcmp(source + f->from - 6, "class=", 6) ||
                                (f->from >= 7 && !memcmp(source + f->from - 7, "class=", 6))));
         /* A label's dump is its normalized form, which folds Unicode case
-         * and decodes escapes. */
+         * and decodes escapes, as an apostrophe-quoted scalar decodes a
+         * doubled apostrophe. */
         bool plain = !special;
         for (size_t k = f->from; naming(f->slot) && k < f->to; k++) {
             plain = plain && source[k] < 0x80;
         }
         for (size_t k = f->from; k < f->to; k++) {
-            plain = plain && source[k] != '\\' && source[k] != '&' && source[k] != '"' && source[k] >= ' ';
+            plain = plain && source[k] != '\\' && source[k] != '&' && source[k] != '"' && source[k] >= ' ' &&
+                    !(source[k] == '\'' && k + 1 < f->to && source[k + 1] == '\'');
         }
         size_t line;
         const char *text;

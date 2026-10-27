@@ -1430,6 +1430,17 @@ static int case_task_marker_runs(pc_context *unused) {
     return 0;
 }
 
+/* AN ENVELOPE OF CARRIAGE RETURNS. The properties reader finds each line's
+ * end; a search for a line feed that ran from every line to the payload's
+ * end made an envelope of CR-only lines quadratic, and these lines ran past
+ * the CTest timeout. */
+static int case_properties_carriage_returns(pc_context *context) {
+    if (pc_build(context, "---\r", "x: 1\r", 1000000, "---\rbody\r") != 0 || pc_parse(context) != 0) {
+        return -1;
+    }
+    return pc_expect_count(context, MARKDOWN_CORE_KIND_PARAGRAPH, 1, "Paragraph");
+}
+
 /* Registry ------------------------------------------------------------------ */
 
 typedef struct pc_case_entry {
@@ -1460,6 +1471,7 @@ static const pc_case_entry PC_CASES[] = {
     {"empty_lines_in_deep_list_blockquote", case_empty_lines_in_deep_list_blockquote},
     {"emphasis_in_deep_blockquote", case_emphasis_in_deep_blockquote},
     {"nul_in_input", case_nul_in_input},
+    {"properties_carriage_returns", case_properties_carriage_returns},
     {"backticks", case_backticks},
     {"flanking_stray_continuations", case_flanking_stray_continuations},
     {"flanking_continuation_runs", case_flanking_continuation_runs},

@@ -46,12 +46,24 @@ static const char *const CONSTRUCTS[] = {
     "<!--@-->",
     "```\n@\n```",
 };
+/* The properties envelopes, which open the document: outer constructs
+ * only, numbered after the others. */
+static const char *const ENVELOPES[] = {
+    "---\ntitle: @\n---\n",
+    "---\ntitle: \"@\"\n---\n",
+    "---\n'state': '@'\n---\n",
+    "---\nauthors: [a, @]\n---\n",
+    "---\nkeywords:\n  - @\n---\n",
+    "---\nabstract: |\n  @\n---\n",
+    "---\nauthors: [a,\n# c\n  @]\n---\n",
+};
 static const char *const ATOMS[] = {
     "a",   "a b", "\\]", "\\}", "&amp;", "\"q\"",    "{.x}",   "#t",  "@k",  "]",      "}",
     "<u>", "`",   "(",   "|",   "#t#",   "\\&#35;t", "&#35;t", "a#b", "\\#", "a\001b",
 };
 enum {
     CONSTRUCT_COUNT = sizeof(CONSTRUCTS) / sizeof(CONSTRUCTS[0]),
+    ENVELOPE_COUNT = sizeof(ENVELOPES) / sizeof(ENVELOPES[0]),
     ATOM_COUNT = sizeof(ATOMS) / sizeof(ATOMS[0]),
 };
 
@@ -69,11 +81,12 @@ static char *fill(const char *template, const char *with) {
 }
 
 bool samples_each(void (*check)(void *context, const char *source, size_t length, int number), void *context) {
-    for (size_t outer = 0; outer < CONSTRUCT_COUNT; outer++) {
+    for (size_t outer = 0; outer < CONSTRUCT_COUNT + ENVELOPE_COUNT; outer++) {
         for (size_t inner = 0; inner < CONSTRUCT_COUNT; inner++) {
             for (size_t atom = 0; atom < ATOM_COUNT; atom++) {
                 char *in = fill(CONSTRUCTS[inner], ATOMS[atom]);
-                char *source = in ? fill(CONSTRUCTS[outer], in) : NULL;
+                const char *around = outer < CONSTRUCT_COUNT ? CONSTRUCTS[outer] : ENVELOPES[outer - CONSTRUCT_COUNT];
+                char *source = in ? fill(around, in) : NULL;
                 free(in);
                 if (!source) {
                     return false;

@@ -84,6 +84,7 @@ let package = Package(
                 "elements/mark.c",
                 "elements/embedded.c",
                 "elements/properties.c",
+                "elements/yaml.c",
                 "elements/session.c",
                 "elements/context.c",
                 "elements/parts.c",

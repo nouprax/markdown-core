@@ -6,6 +6,25 @@ promised to remain compatible between releases.
 
 ## 3.0.0 - unreleased
 
+- Read properties with a YAML parser that reads as libyaml does (language
+  engine plan, step 2e). Each member of the envelope is read by one
+  recursive-descent pass in the properties language, with libyaml's
+  readings (`elements/yaml.c`), in place of the hand-written decoder; the
+  fields, their values and the recovery between members are as before. A
+  few readings now follow YAML: a NUL in a value reads as U+FFFD, as in
+  the rest of the document, instead of invalidating the member; an item may
+  start on the line after its bare `-`; a block list item less indented than
+  the first, or a list inside a list item (`- - a`), invalidates the member;
+  a `...` line inside a bracketed list that goes on to more lines
+  invalidates the member; and a comment line indented less than a literal's
+  text ends the literal. The field query gives each member's name a scope
+  of slot kind `field` and each of its values one of slot kind `value`. In
+  an envelope the context query answers the Metadata block and those
+  slots, an open `field` at a line that names no field yet, and the empty
+  value after `state: `; `markdown_core_slot_spell` writes a name as it is
+  and a value as the scalar it is in holds it, bare when it reads back as
+  that text and in double quotes otherwise.
+
 - Ask where a node's fields and markers are (language engine plan, step
   2d). `markdown_core_document_field` returns the source ranges of a node's
   fields of one slot kind, as written: a link's destination without its

@@ -181,7 +181,7 @@ range of their own.
 | Directive label | Includes its brackets, even when the label is empty. |
 | Directive block | Includes its opening and closing lines, or ends at the last consumed content line when unclosed. |
 | Block identifier | Remains inside the receiving block's scope after removal from visible content. |
-| Metadata | Runs from the first hyphen of the opening fence through the third hyphen of the closing fence. Fields have no individual scopes. |
+| Metadata | Runs from the first hyphen of the opening fence through the third hyphen of the closing fence. Fields have no scopes of their own; the field query gives each decoded member's name and values field scopes (`field` and `value`). |
 | Definition list and definition | Ends at the last nonblank line of the final body. A definition includes its term, markers, padding, and every body. |
 | Specimen definition | Covers its marker and complete block body. |
 
@@ -270,8 +270,10 @@ anchor is the target. Explicit definitions win.
 `Document.metadata: Metadata?` holds ten named optional values defined by the
 [properties grammar](dialect/properties.md). Metadata is a leaf `Markup` node
 produced by the leading properties envelope. It receives ordinary visitor and
-walking callbacks. Its fields have no separate scopes; absent fields differ
-from explicit null values.
+walking callbacks. Its fields have no scopes of their own, but the field
+query reads each decoded member's name as a field of slot kind `field` and
+each of its values as one of slot kind `value`; absent fields differ from
+explicit null values.
 
 ### Dimensions
 

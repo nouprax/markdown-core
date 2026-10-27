@@ -362,7 +362,7 @@ value appears in the context query by construction.
 | `record` | `{‸`, `{.a ‸` | any attribute site |
 | `variant` | `> [!‸` | `Callout` |
 | `info` | ` ```‸ ` | `CodeBlock` |
-| `field` | a line start in an open `---` envelope | `Metadata` |
+| `field` | a name, or a line start, in a `---` envelope | `Metadata` |
 | `value` | after `state: `, after `bib: `, after `src=` | `Metadata`, any attribute site |
 
 A slot kind is one word without the letters `g`, `j` or `y` (the owner's
@@ -650,8 +650,8 @@ node has one scope for the whole envelope and its fields have none
 (canonical AST), so the `field` and `value` slots of 3.2 cannot say which
 member holds the cursor. Each decoded member gains the scopes of its name
 and its value, in step 2. CSL YAML's entries are nested maps, which the
-properties language rejects today; under D9 one YAML parser, reworked from
-libyaml, reads both. The host supplies the
+properties language rejects today; under D9 one YAML parser, which reads
+as libyaml does, reads both. The host supplies the
 named file among the workspace files (4.1, 5.2), and the engine reads it in
 C, so that no platform parses it on its own. A document without the field
 offers only the keys used in the workspace.
@@ -665,7 +665,7 @@ academic writing, chosen by the file's extension as Pandoc chooses them:
 | Format | Extension | Source | Reader |
 | --- | --- | --- | --- |
 | CSL JSON | `.json` | Zotero, Pandoc, Mendeley | the JSON reader of D8 |
-| CSL YAML | `.yaml`, `.yml` | Pandoc | the YAML parser reworked from libyaml (D9) |
+| CSL YAML | `.yaml`, `.yml` | Pandoc | the YAML parser of D9 |
 | BibTeX | `.bib`, `.bibtex` | LaTeX, Google Scholar, publishers' exports | a BibTeX reader: entries, `@string` macros, `#` concatenation, braces and LaTeX escapes in values |
 | BibLaTeX | `.bib` | BibLaTeX | the BibTeX reader, with BibLaTeX's field names (`date`, `journaltitle`) |
 | RIS | `.ris` | EndNote, publishers' exports | a line reader of `TAG  - value` records; an entry's key is its `ID`, and an entry without one offers no key |
@@ -776,7 +776,7 @@ it (D6).
    generated slot kinds, `markdown_core_document_context` and
    `markdown_core_slot_spell`, the context agreement tests and the dialect
    spec's description of slots, and per-member name and value scopes on
-   `Metadata` (5.4), on the YAML parser reworked from libyaml (D9). The audit also checks that every marker
+   `Metadata` (5.4), on the YAML parser of D9. The audit also checks that every marker
    (`**`, `##`, `]]`, list markers, fences) has a source range, from a node's
    scope minus its fields' runs; where one does not, the parser gains a
    marker query, used by semantic tokens and formatting, instead of a CST.
@@ -885,6 +885,21 @@ it (D6).
   read through the same code. This revises O6 of the Obsidian plan
   (2026-09-02), which ruled out a general YAML parser or dependency. It
   lands in step 2 with the member scopes.
+  **Revised 2026-10-26: one recursive-descent pass replaces the rework's
+  structure.** The rework kept libyaml's token queue, simple-key
+  candidates and parser states, and they cost each decoded member about
+  5,200 instructions against the hand-written decoder's 2,000: the
+  metadata documents read 12 to 19% slower than the base, over the 2%
+  stage budget. The owner chose a lean rewrite of the same language over
+  relaxing the budget ("精简重写解析器"). `elements/yaml.c` now reads a text
+  in one pass by recursive descent and writes its events into an array;
+  it still reads nesting, for CSL YAML, and the scalar scanners keep
+  libyaml's logic, so the MIT notice stays. Its readings are libyaml's as
+  the rework had them: the two parsers read about six million generated
+  texts, every text of up to five characters over the structural alphabet
+  among them, to the same events, and `tests/yaml/events.txt` freezes a
+  case of each shape. An upstream fix is ported as a reading, a case in
+  that file, not as a diff.
 
 ## 11. Rejected alternatives
 

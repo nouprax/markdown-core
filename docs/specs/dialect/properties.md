@@ -73,12 +73,16 @@ is empty. Names may also be quoted. Supported values are:
 - Supported plain text or a quoted string: a text scalar.
 - A bracketed comma-separated list, or following `- ` lines: a list of text
   and number items only. Optional trailing commas and indentless block lists
-  are accepted; blank/comment lines do not split a block list.
+  are accepted; blank/comment lines do not split a block list. An item may
+  start on the line after its bare `-`. The items of a block list share one
+  indentation: a less indented item ends the list, which invalidates the
+  member. `- - a` is a list inside a list, which is unsupported.
 
 `authors: - Ada` is text, not a list. A single quote is escaped by doubling it
 inside single-quoted text. Double-quoted strings accept JSON-style escapes and
 valid `\uXXXX` surrogate pairs. A decoded CR or LF invalidates a single-line
-field. Quoted strings are always text.
+field. Quoted strings are always text. A NUL reads as U+FFFD, as it does in
+the rest of the document, and NEL, LS and PS are text, not line endings.
 
 Plain text cannot start with reserved indicators such as `&`, `*`, `!`, `|`,
 `>`, `[`, or `{`; quote them to store text. A separated `#` starts an ignored
@@ -109,8 +113,9 @@ An empty/all-blank literal block becomes empty text.
 
 The first nonblank body line establishes space indentation greater than the
 field line's. That prefix is removed from each body line, preserving extra
-indentation. A field at the same or lower indentation ends the block; an
-insufficiently indented continuation invalidates the member. Only bare `|`
+indentation. A field at the same or lower indentation ends the block, as
+does a comment line indented less than the text; an insufficiently indented
+continuation invalidates the member. Only bare `|`
 with an optional separated comment is supported: no folding `>`, `|-`, `|+`,
 explicit indent indicators, or literal blocks on other fields.
 
@@ -124,7 +129,9 @@ the input follows normal Markdown parsing.
 
 A complete envelope is accepted even when some or all members are unsupported.
 Unknown names, unnamed lines, comments, `...`, invalid values, and later valid
-duplicates are ignored. `...` neither closes nor invalidates the envelope.
+duplicates are ignored. `...` neither closes nor invalidates the envelope;
+at column one inside a bracketed list that goes on to more lines, it ends
+the YAML document the list is in, which invalidates that member.
 The first successfully decoded occurrence of a field wins; an invalid earlier
 occurrence does not reserve its name. A present envelope with no valid fields
 still produces metadata with all fields absent.
@@ -136,11 +143,19 @@ a whole, with no partial values.
 
 This is a bounded properties language, not general YAML: nested objects/lists,
 aliases, tags, merge keys, JSON root objects, and multiline quoted/plain folding
-are unsupported.
+are unsupported. A YAML parser that reads as libyaml's scanner and parser
+do (`elements/yaml.c`) reads each member in this language, so a member YAML
+reads one way the properties grammar reads the same way or rejects.
 
 `Metadata` is a leaf Markup node exposed through `Document.metadata`, outside
 `Document.content`. A document walk reports its `enter` and `exit` callbacks
 before visiting content, including when every metadata field is absent.
-Every `MarkupVisitor` must handle Metadata. The node has one envelope scope;
-its scalar/list values have no individual scopes or separate Markup callbacks.
-The named `comment` field is data, not a `Comment` node.
+Every `MarkupVisitor` must handle Metadata. The node has one envelope scope,
+and the field query gives each decoded member's name a scope of slot kind
+`field` and each of its values one of slot kind `value`, inside a quoted
+value's quotes and from a literal's first text to its last line's end; the
+values have no separate Markup callbacks. In an envelope, the context query
+answers the same slots at a cursor (the completion engine's plan, 3.2): a
+`field` on a name or at the start of a line that names no field yet, and a
+`value` on a value or after a name's colon and a space where the member's
+value is empty. The named `comment` field is data, not a `Comment` node.

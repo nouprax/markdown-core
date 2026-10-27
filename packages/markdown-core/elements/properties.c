@@ -5,45 +5,50 @@
 #include "node.h"
 #include "parts.h"
 #include "buffer.h"
-#include "utf8.h"
+#include "yaml.h"
 #include <string.h>
 #include <limits.h>
 
-/* Properties is an ordered, recovering source decoder. A field owns its
- * indented continuation and bracketed value. Unsupported
- * members are skipped without changing the envelope or interpreting their
- * interiors. No source range is retried. Public allocations belong to the
- * completed document value. */
-/* Plain scalars in bracketed arrays stop at array separators; field-line
- * scalars keep that punctuation as text. Quoted strings share one decoder. */
-typedef enum { PROPERTY_SCALAR, ARRAY_SCALAR } scalar_context;
-/* Frontmatter borrows the active input's physical-line index. */
-typedef markdown_core_input_line source_line;
+/* PROPERTIES decodes an envelope's payload member by member, in order. A
+ * member is a line that holds a name at its start, with the lines it owns:
+ * its indented continuation, its block list, and a bracketed or quoted value
+ * left open (block_boundary). The YAML parser (yaml.h) reads each member on
+ * its own, so an error ends the member, not the payload: the next member
+ * begins where the lines say, and its valid neighbours are kept. A member
+ * the parser reads as one name and one value of the properties grammar
+ * (docs/specs/dialect/properties.md) sets its field, the first time only;
+ * any other member is skipped as a whole. No source range is read twice.
+ *
+ * The parse decodes the payload once, into the document's metadata, and
+ * the places' reader decodes it again on request (properties.h): each
+ * member's name, its values, and the bytes the fields skip, for the
+ * fields' scopes (parts.h) and the context query's slots. */
 typedef struct {
-    markdown_core_parser *parser;
+    const unsigned char *text;
+    /* Where the payload ends: the closing fence's line. */
+    size_t end;
     markdown_core_properties_work *work;
-    const unsigned char *source;
     markdown_core_metadata_fields *metadata;
-    size_t first_line;
-    size_t count;
-    /* One-token lookahead: the boundary line is the next member's line.
-     * Its lexical classification belongs to this decoder, not to the core's
-     * physical-line geometry. */
-    size_t classified_line, first, key;
+    /* The reader's places, or NULL in the parse. */
+    markdown_core_metadata_places *places;
+    markdown_core_yaml_parser yaml;
+    bool failed;
+    /* One-line lookahead: the boundary line is the next member's line, and
+     * its classification belongs to it. `line` starts it, `first` is its
+     * first byte that is no space, `key` the byte after a name's colon, or
+     * 0, and `stop` where its line ending starts. */
+    size_t line, first, key, stop;
     bool classified;
+    /* The first line feed and carriage return at or after `line`, or
+     * `end`: each search resumes past the last one's hit, so the lines'
+     * ends cost one pass over the payload for each byte. */
+    size_t feed, ret;
+    /* The parse's lines, as the engine measured them (parser.h), from the
+     * opening fence's, and the one `line` is; the places' reader, which
+     * has the text alone, has none and finds the lines' ends itself. */
+    const markdown_core_input_line *lines;
+    size_t index;
 } properties;
-typedef struct {
-    properties *owner;
-    size_t pos, end;
-    /* The index of a line at or before `pos`; decoder_line() catches it up. */
-    size_t line;
-} decoder;
-
-/* Decode a pre-indexed envelope. Return geometry by value so a later parser
- * operation cannot invalidate a decoder's line reference. */
-static source_line property_line(const properties *p, size_t line) {
-    return p->parser->input.lines.values[p->first_line + line];
-}
 
 static bool plain_start(const unsigned char *s, size_t start, size_t end) {
     if (start == end || markdown_core_is_space_or_tab(s[start]) || strchr(",[]{}#&*!|>'\"%@`", s[start])) {
@@ -59,27 +64,6 @@ static size_t next_line(const unsigned char *s, size_t p, size_t end) {
         p++;
     }
     return p;
-}
-/* The line holding the decoder's cursor. The cursor only moves forward, so
- * the line index catches up to it through the index and never reads a byte.
- * Past the last member line it rests on the closing fence. */
-static size_t decoder_line(decoder *d) {
-    const properties *p = d->owner;
-    while (d->line < p->count && property_line(p, d->line + 1).start <= d->pos) {
-        d->line++;
-    }
-    return d->line;
-}
-static markdown_core_string copy(properties *p, const unsigned char *s, size_t size) {
-    unsigned char *data = markdown_core_alloc(size + 1, 1);
-    if (!data) {
-        markdown_core_parser_fail(p->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return (markdown_core_string){0};
-    }
-    if (size) {
-        memcpy(data, s, size);
-    }
-    return (markdown_core_string){data, size};
 }
 static void free_value(markdown_core_metadata_value *v) {
     if (v->kind == MARKDOWN_CORE_METADATA_SCALAR &&
@@ -108,475 +92,239 @@ void markdown_core_metadata_fields_free(markdown_core_metadata_fields *metadata)
     free_value(&metadata->state);
     free_value(&metadata->comment);
 }
-static void skip(decoder *d) {
-    const unsigned char *s = d->owner->source;
-    while (d->pos < d->end) {
-        if (markdown_core_is_whitespace(s[d->pos])) {
-            d->pos++;
-        } else if (s[d->pos] == '#' && (d->pos == 0 || markdown_core_is_whitespace(s[d->pos - 1]))) {
-            d->pos = property_line(d->owner, decoder_line(d)).end;
-        } else {
-            break;
-        }
-    }
+static bool equals(const unsigned char *text, size_t size, const char *word) {
+    const size_t n = strlen(word);
+    return size == n && (!n || memcmp(text, word, n) == 0);
 }
-static bool single_line(markdown_core_string s) {
-    return !memchr(s.data, '\n', s.length) && !memchr(s.data, '\r', s.length);
-}
-static bool printable(properties *p, size_t start, size_t end) {
-    for (size_t i = start; i < end;) {
-        int32_t c;
-        int n = markdown_core_utf8proc_decode(p->source + i, (bufsize_t)(end - i), &c);
-        if (!(c == 9 || c == 10 || c == 13 || (c >= 0x20 && c <= 0x7e) || c == 0x85 || (c >= 0xa0 && c <= 0xd7ff) ||
-              (c >= 0xe000 && c <= 0xfffd) || (c >= 0x10000 && c <= 0x10ffff))) {
-            return false;
+/* Resolve the decoded name directly to its optional destination field. */
+static markdown_core_metadata_value *field_slot(markdown_core_metadata_fields *metadata, const unsigned char *name,
+                                                size_t size) {
+    static const char *const names[] = {"name",    "title",    "subtitle", "time",  "date",
+                                        "authors", "keywords", "abstract", "state", "comment"};
+    markdown_core_metadata_value *const slots[] = {
+        &metadata->name,    &metadata->title,    &metadata->subtitle, &metadata->time,  &metadata->date,
+        &metadata->authors, &metadata->keywords, &metadata->abstract, &metadata->state, &metadata->comment};
+    for (size_t i = 0; i < sizeof(names) / sizeof(*names); i++) {
+        if (equals(name, size, names[i])) {
+            return slots[i];
         }
-        i += (size_t)n;
-    }
-    return true;
-}
-static bool finish_string(decoder *d, markdown_core_strbuf *buf, markdown_core_string *value) {
-    if (buf->oom) {
-        markdown_core_parser_fail(d->owner->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        return false;
-    }
-    *value = copy(d->owner, buf->ptr, (size_t)buf->size);
-    return value->data != NULL;
-}
-static bool hex4(decoder *d, uint32_t *scalar) {
-    *scalar = 0;
-    for (size_t i = 0; i < 4; i++) {
-        if (d->pos == d->end) {
-            return false;
-        }
-        unsigned char c = d->owner->source[d->pos++];
-        int digit = c >= '0' && c <= '9'   ? c - '0'
-                    : c >= 'a' && c <= 'f' ? c - 'a' + 10
-                    : c >= 'A' && c <= 'F' ? c - 'A' + 10
-                                           : -1;
-        if (digit < 0) {
-            return false;
-        }
-        *scalar = (*scalar << 4) | (uint32_t)digit;
-    }
-    return true;
-}
-static bool quoted(decoder *d, markdown_core_string *value) {
-    const unsigned char *s = d->owner->source;
-    unsigned char quote = s[d->pos++];
-    markdown_core_strbuf buf = MARKDOWN_CORE_BUF_INIT();
-    bool closed = false, valid = true;
-    while (d->pos < d->end && valid && !buf.oom) {
-        unsigned char c = s[d->pos++];
-        if (c == quote) {
-            if (quote == '\'' && d->pos < d->end && s[d->pos] == '\'') {
-                d->pos++;
-                markdown_core_strbuf_putc(&buf, '\'');
-            } else {
-                closed = true;
-                break;
-            }
-        } else if (quote == '"' && c == '\\') {
-            if (d->pos == d->end) {
-                valid = false;
-                break;
-            }
-            c = s[d->pos++];
-            const char *escapes = "btnfr\"/\\";
-            const unsigned char replacements[] = {8, 9, 10, 12, 13, '"', '/', '\\'};
-            const char *found = c ? strchr(escapes, c) : NULL;
-            if (found) {
-                markdown_core_strbuf_putc(&buf, replacements[found - escapes]);
-            } else if (c == 'u') {
-                uint32_t scalar;
-                valid = hex4(d, &scalar);
-                if (valid && scalar >= 0xd800 && scalar <= 0xdbff) {
-                    uint32_t low;
-                    valid = d->end - d->pos >= 2 && s[d->pos] == '\\' && s[d->pos + 1] == 'u';
-                    if (valid) {
-                        d->pos += 2;
-                        valid = hex4(d, &low) && low >= 0xdc00 && low <= 0xdfff;
-                        if (valid) {
-                            scalar = 0x10000 + ((scalar - 0xd800) << 10) + low - 0xdc00;
-                        }
-                    }
-                }
-                if (valid && !(scalar >= 0xd800 && scalar <= 0xdfff)) {
-                    markdown_core_utf8proc_encode_char((int32_t)scalar, &buf);
-                } else {
-                    valid = false;
-                }
-            } else {
-                valid = false;
-            }
-        } else if (c < 0x20 && c != '\t') {
-            valid = false;
-        } else {
-            markdown_core_strbuf_putc(&buf, c);
-        }
-    }
-    valid = valid && closed && finish_string(d, &buf, value);
-    if (buf.oom) {
-        markdown_core_parser_fail(d->owner->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
-    markdown_core_strbuf_free(&buf);
-    return valid;
-}
-static bool plain(decoder *d, bool delimited, markdown_core_string *value) {
-    const unsigned char *s = d->owner->source;
-    size_t start = d->pos, last = start;
-    if (!plain_start(s, start, d->end) || markdown_core_is_line_end(s[start])) {
-        return false;
-    }
-    while (d->pos < d->end && !markdown_core_is_line_end(s[d->pos])) {
-        unsigned char c = s[d->pos];
-        bool colon = c == ':' && (d->pos + 1 == d->end || markdown_core_is_whitespace(s[d->pos + 1]) ||
-                                  (delimited && strchr(",[]{}", s[d->pos + 1])));
-        if ((delimited && strchr(",[]{}", c)) ||
-            (c == '#' && (d->pos == start || markdown_core_is_space_or_tab(s[d->pos - 1])))) {
-            break;
-        }
-        if (colon) {
-            return false;
-        }
-        d->pos++;
-        if (!markdown_core_is_space_or_tab(c)) {
-            last = d->pos;
-        }
-    }
-    *value = copy(d->owner, s + start, last - start);
-    return value->data != NULL;
-}
-static bool equals(markdown_core_string s, const char *text) {
-    size_t n = strlen(text);
-    return s.length == n && memcmp(s.data, text, n) == 0;
-}
-/* Resolve the source name directly to its optional destination field. */
-static markdown_core_metadata_value *field_slot(markdown_core_metadata_fields *metadata, markdown_core_string name) {
-    if (equals(name, "name")) {
-        return &metadata->name;
-    }
-    if (equals(name, "title")) {
-        return &metadata->title;
-    }
-    if (equals(name, "subtitle")) {
-        return &metadata->subtitle;
-    }
-    if (equals(name, "time")) {
-        return &metadata->time;
-    }
-    if (equals(name, "date")) {
-        return &metadata->date;
-    }
-    if (equals(name, "authors")) {
-        return &metadata->authors;
-    }
-    if (equals(name, "keywords")) {
-        return &metadata->keywords;
-    }
-    if (equals(name, "abstract")) {
-        return &metadata->abstract;
-    }
-    if (equals(name, "state")) {
-        return &metadata->state;
-    }
-    if (equals(name, "comment")) {
-        return &metadata->comment;
     }
     return NULL;
 }
-/* Only the two prose fields accept the literal | form. The first nonblank
- * line fixes its space indentation; inner indentation and blank lines are
- * text. Source line endings normalize to LF, with the default clipped final
- * newline. No folding, escaping, chomping flags or explicit indent indicators. */
-static bool literal(decoder *d, size_t key_start, markdown_core_metadata_value *value) {
-    const unsigned char *s = d->owner->source;
-    size_t key_line = decoder_line(d);
-    size_t key_indent = key_start - property_line(d->owner, key_line).start;
-    d->pos++;
-    if (d->pos < d->end && !markdown_core_is_whitespace(s[d->pos])) {
-        return false;
-    }
-    while (d->pos < d->end && markdown_core_is_space_or_tab(s[d->pos])) {
-        d->pos++;
-    }
-    if (d->pos < d->end && s[d->pos] == '#') {
-        d->pos = property_line(d->owner, key_line).end;
-    }
-    if (d->pos < d->end && !markdown_core_is_line_end(s[d->pos])) {
-        return false;
-    }
-    markdown_core_strbuf text = MARKDOWN_CORE_BUF_INIT();
-    size_t indent = 0, clipped = 0, line = key_line + 1;
-    bool valid = true;
-    for (; property_line(d->owner, line).start < d->end; line++) {
-        size_t start = property_line(d->owner, line).start, end = property_line(d->owner, line).end, content = start;
-        while (content < end && s[content] == ' ') {
-            content++;
-        }
-        size_t nonblank = content;
-        while (nonblank < end && markdown_core_is_space_or_tab(s[nonblank])) {
-            nonblank++;
-        }
-        if (nonblank == end) {
-            markdown_core_strbuf_putc(&text, '\n');
-        } else {
-            if (!indent) {
-                indent = content - start;
-            }
-            if (indent <= key_indent || content - start < indent) {
-                valid = false;
-                break;
-            }
-            markdown_core_strbuf_put(&text, s + start + indent, (bufsize_t)(end - start - indent));
-            markdown_core_strbuf_putc(&text, '\n');
-            clipped = (size_t)text.size;
-        }
-    }
-    d->pos = property_line(d->owner, line).start;
-    value->kind = MARKDOWN_CORE_METADATA_SCALAR;
-    value->as.scalar.kind = MARKDOWN_CORE_METADATA_TEXT;
-    markdown_core_strbuf_truncate(&text, (bufsize_t)clipped);
-    valid = valid && finish_string(d, &text, &value->as.scalar.value.string);
-    if (text.oom) {
-        markdown_core_parser_fail(d->owner->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-    }
-    markdown_core_strbuf_free(&text);
-    return valid;
-}
-static bool number(markdown_core_string s) {
+static bool number(const unsigned char *s, size_t size) {
     size_t i = 0;
-    if (i < s.length && s.data[i] == '-') {
+    if (i < size && s[i] == '-') {
         i++;
     }
-    if (i == s.length) {
+    if (i == size) {
         return false;
     }
-    if (s.data[i] == '0') {
+    if (s[i] == '0') {
         i++;
     } else {
-        if (s.data[i] < '1' || s.data[i] > '9') {
+        if (s[i] < '1' || s[i] > '9') {
             return false;
         }
         do {
             i++;
-        } while (i < s.length && s.data[i] >= '0' && s.data[i] <= '9');
+        } while (i < size && s[i] >= '0' && s[i] <= '9');
     }
-    if (i < s.length && s.data[i] == '.') {
+    if (i < size && s[i] == '.') {
         i++;
-        while (i < s.length && s.data[i] >= '0' && s.data[i] <= '9') {
+        while (i < size && s[i] >= '0' && s[i] <= '9') {
             i++;
         }
     }
-    if (i < s.length && (s.data[i] == 'e' || s.data[i] == 'E')) {
+    if (i < size && (s[i] == 'e' || s[i] == 'E')) {
         i++;
-        if (i < s.length && (s.data[i] == '+' || s.data[i] == '-')) {
+        if (i < size && (s[i] == '+' || s[i] == '-')) {
             i++;
         }
-        size_t digits = i;
-        while (i < s.length && s.data[i] >= '0' && s.data[i] <= '9') {
+        const size_t digits = i;
+        while (i < size && s[i] >= '0' && s[i] <= '9') {
             i++;
         }
         if (digits == i) {
             return false;
         }
     }
-    return i == s.length;
+    return i == size;
 }
-static bool scalar(decoder *d, scalar_context structure, markdown_core_metadata_value *value) {
-    const unsigned char *s = d->owner->source;
-    markdown_core_string text = {0};
-    bool quoted_style = d->pos < d->end && (s[d->pos] == '"' || s[d->pos] == '\'');
-    bool valid = quoted_style ? quoted(d, &text) : plain(d, structure != PROPERTY_SCALAR, &text);
-    if (!valid || (!quoted_style && !text.length) || !single_line(text)) {
-        markdown_core_free((void *)text.data);
+
+/* A scalar's value: quoted text is text; plain text is null when empty or
+ * `null`, a boolean when `true` or `false`, a number when it spells one,
+ * and text otherwise. A value on one line holds no decoded line ending.
+ * The scalar's text moves into the value. */
+static bool resolve(properties *p, markdown_core_yaml_event *e, markdown_core_metadata_scalar *scalar) {
+    const unsigned char *text = e->text;
+    const size_t size = e->size;
+    if (e->style != MARKDOWN_CORE_YAML_LITERAL && (memchr(text ? text : (const unsigned char *)"", '\n', size) ||
+                                                   memchr(text ? text : (const unsigned char *)"", '\r', size))) {
         return false;
     }
-    markdown_core_metadata_scalar *result = &value->as.scalar;
-    value->kind = MARKDOWN_CORE_METADATA_SCALAR;
-    result->kind = quoted_style                                    ? MARKDOWN_CORE_METADATA_TEXT
-                   : equals(text, "null")                          ? MARKDOWN_CORE_METADATA_NULL
-                   : equals(text, "true") || equals(text, "false") ? MARKDOWN_CORE_METADATA_BOOL
-                   : number(text)                                  ? MARKDOWN_CORE_METADATA_NUMBER
-                                                                   : MARKDOWN_CORE_METADATA_TEXT;
-    if (valid && (result->kind == MARKDOWN_CORE_METADATA_TEXT || result->kind == MARKDOWN_CORE_METADATA_NUMBER)) {
-        result->value.string = text;
-    } else {
-        if (result->kind == MARKDOWN_CORE_METADATA_BOOL) {
-            result->value.boolean = equals(text, "true");
+    scalar->kind = e->style != MARKDOWN_CORE_YAML_PLAIN                        ? MARKDOWN_CORE_METADATA_TEXT
+                   : !size || equals(text, size, "null")                       ? MARKDOWN_CORE_METADATA_NULL
+                   : equals(text, size, "true") || equals(text, size, "false") ? MARKDOWN_CORE_METADATA_BOOL
+                   : number(text, size)                                        ? MARKDOWN_CORE_METADATA_NUMBER
+                                                                               : MARKDOWN_CORE_METADATA_TEXT;
+    if (scalar->kind == MARKDOWN_CORE_METADATA_BOOL) {
+        scalar->value.boolean = equals(text, size, "true");
+    } else if (scalar->kind == MARKDOWN_CORE_METADATA_TEXT || scalar->kind == MARKDOWN_CORE_METADATA_NUMBER) {
+        /* The value owns its text: the event's buffer, or a copy of the
+         * bytes the event reads in place. Empty text owns one byte, as
+         * every string of the value does. */
+        unsigned char *owned = e->owned;
+        if (!owned) {
+            owned = markdown_core_alloc(size + 1, 1);
+            if (!owned) {
+                p->failed = true;
+                return false;
+            }
+            if (size) {
+                memcpy(owned, text, size);
+            }
         }
-        markdown_core_free((void *)text.data);
+        e->owned = NULL;
+        scalar->value.string = (markdown_core_string){owned, size};
     }
-    return valid && !d->owner->parser->error;
+    return true;
 }
-static bool list_item(decoder *d, scalar_context structure, markdown_core_metadata_value *list, size_t *capacity) {
-    markdown_core_metadata_value value = {0};
-    bool valid = scalar(d, structure, &value);
-    if (!valid || (value.as.scalar.kind != MARKDOWN_CORE_METADATA_NUMBER &&
-                   value.as.scalar.kind != MARKDOWN_CORE_METADATA_TEXT)) {
-        free_value(&value);
-        return false;
-    }
-    void *items =
-        markdown_core_reserve(list->as.list.items, capacity, list->as.list.count + 1, sizeof(*list->as.list.items));
+
+static void record(properties *p, markdown_core_slot_kind slot, markdown_core_yaml_style style, size_t from,
+                   size_t to) {
+    markdown_core_metadata_places *places = p->places;
+    markdown_core_metadata_place *items =
+        markdown_core_reserve(places->items, &places->capacity, places->count + 1, sizeof(*items));
     if (!items) {
-        markdown_core_parser_fail(d->owner->parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
-        free_value(&value);
+        p->failed = true;
+        return;
+    }
+    places->items = items;
+    items[places->count++] = (markdown_core_metadata_place){slot, style, from, to};
+}
+
+/* Records a place for the reader; the parse keeps none. */
+static inline void place(properties *p, markdown_core_slot_kind slot, markdown_core_yaml_style style, size_t from,
+                         size_t to) {
+    if (p->places) {
+        record(p, slot, style, from, to);
+    }
+}
+
+/* Reads the member that starts its line at `start` and ends at `end`: a
+ * block mapping of one name, whose value is a scalar on the name's line, a
+ * literal there on a prose field, or a list of text and numbers. */
+static bool decode(properties *p, size_t start, size_t end, markdown_core_metadata_value **slot,
+                   markdown_core_metadata_value *value) {
+    markdown_core_yaml_parser *yaml = &p->yaml;
+    if (!markdown_core_yaml_read(yaml, p->text, start, end)) {
+        p->failed = p->failed || yaml->failed;
         return false;
     }
-    list->as.list.items = items;
-    list->as.list.items[list->as.list.count++] = (markdown_core_metadata_list_item){
-        value.as.scalar.kind == MARKDOWN_CORE_METADATA_NUMBER ? MARKDOWN_CORE_METADATA_ITEM_NUMBER
-                                                              : MARKDOWN_CORE_METADATA_ITEM_TEXT,
-        value.as.scalar.value.string};
-    return true;
-}
-static bool sequence(decoder *d, markdown_core_metadata_value *value) {
-    const unsigned char *s = d->owner->source;
+    markdown_core_yaml_event *e = yaml->events, *last = yaml->events + yaml->count;
+    /* The stream, its implicit document and its block mapping, around one
+     * name and its value. */
+    bool valid = yaml->count >= 8 && e[0].kind == MARKDOWN_CORE_YAML_STREAM_START &&
+                 e[1].kind == MARKDOWN_CORE_YAML_DOCUMENT_START && !e[1].explicit &&
+                 e[2].kind == MARKDOWN_CORE_YAML_MAP_START && !e[2].flow &&
+                 last[-1].kind == MARKDOWN_CORE_YAML_STREAM_END && last[-2].kind == MARKDOWN_CORE_YAML_DOCUMENT_END &&
+                 !last[-2].explicit && last[-3].kind == MARKDOWN_CORE_YAML_MAP_END;
+    e += 3;
+    last -= 3;
+    /* The name. */
+    valid = valid && e->kind == MARKDOWN_CORE_YAML_SCALAR && e->style != MARKDOWN_CORE_YAML_LITERAL && e->size &&
+            !memchr(e->text, '\n', e->size) && !memchr(e->text, '\r', e->size);
+    if (!valid) {
+        return false;
+    }
+    const size_t line = e->line;
+    *slot = field_slot(p->metadata, e->text, e->size);
+    const bool prose = *slot == &p->metadata->abstract || *slot == &p->metadata->comment;
+    if (!*slot || (*slot)->kind) {
+        return false;
+    }
+    place(p, MARKDOWN_CORE_SLOT_FIELD, e->style, e->from, e->to);
+    e++;
+    /* The value. */
+    if (e->kind == MARKDOWN_CORE_YAML_SCALAR) {
+        value->kind = MARKDOWN_CORE_METADATA_SCALAR;
+        valid = e + 1 == last && e->line == line && (e->style != MARKDOWN_CORE_YAML_LITERAL || prose) &&
+                resolve(p, e, &value->as.scalar);
+        if (valid) {
+            place(p, MARKDOWN_CORE_SLOT_VALUE, e->style, e->from, e->to);
+        }
+        return valid;
+    }
+    if (e->kind != MARKDOWN_CORE_YAML_LIST_START || last[-1].kind != MARKDOWN_CORE_YAML_LIST_END) {
+        return false;
+    }
     value->kind = MARKDOWN_CORE_METADATA_LIST;
-    size_t capacity = 0;
-    if (s[d->pos] == '[') {
-        d->pos++;
-        skip(d);
-        if (d->pos < d->end && s[d->pos] == ']') {
-            d->pos++;
-            return true;
-        }
-        while (d->pos < d->end && !d->owner->parser->error) {
-            if (!list_item(d, ARRAY_SCALAR, value, &capacity)) {
-                return false;
-            }
-            skip(d);
-            if (d->pos == d->end) {
-                return false;
-            }
-            if (s[d->pos] == ']') {
-                d->pos++;
-                return true;
-            }
-            if (s[d->pos++] != ',') {
-                return false;
-            }
-            skip(d);
-            if (d->pos < d->end && s[d->pos] == ']') {
-                d->pos++;
-                return true;
-            }
-        }
-        return false;
-    }
-    /* Each block member owns exactly its indented continuation. The decoder's
-     * range contracts once, then resumes after it; no member is scanned twice. */
-    size_t outer_end = d->end;
-    while (d->pos < outer_end && !d->owner->parser->error) {
-        size_t start = d->pos;
-        if (s[start] != '-' || (start + 1 < outer_end && !markdown_core_is_whitespace(s[start + 1]))) {
+    size_t room = 0;
+    for (e++; e < last - 1; e++) {
+        markdown_core_metadata_scalar item = {0};
+        if (e->kind != MARKDOWN_CORE_YAML_SCALAR || e->style == MARKDOWN_CORE_YAML_LITERAL || !resolve(p, e, &item)) {
             return false;
         }
-        size_t line = decoder_line(d);
-        size_t item_indent = start - property_line(d->owner, line).start;
-        d->pos++;
-        while (d->pos < outer_end && markdown_core_is_space_or_tab(s[d->pos])) {
-            d->pos++;
-        }
-        for (line++; property_line(d->owner, line).start < outer_end; line++) {
-            size_t p = property_line(d->owner, line).start, end = property_line(d->owner, line).end;
-            while (p < end && markdown_core_is_space_or_tab(s[p])) {
-                p++;
-            }
-            if (p < end && s[p] != '#' && p - property_line(d->owner, line).start <= item_indent) {
-                break;
-            }
-        }
-        size_t e = property_line(d->owner, line).start;
-        d->end = e;
-        bool valid = list_item(d, PROPERTY_SCALAR, value, &capacity);
-        skip(d);
-        valid = valid && d->pos == d->end;
-        d->end = outer_end;
-        if (!valid) {
+        if (item.kind != MARKDOWN_CORE_METADATA_TEXT && item.kind != MARKDOWN_CORE_METADATA_NUMBER) {
             return false;
         }
-        d->pos = e;
-        skip(d);
+        place(p, MARKDOWN_CORE_SLOT_VALUE, e->style, e->from, e->to);
+        markdown_core_metadata_list_item *items =
+            markdown_core_reserve(value->as.list.items, &room, value->as.list.count + 1, sizeof(*items));
+        if (!items) {
+            markdown_core_free((void *)item.value.string.data);
+            p->failed = true;
+            return false;
+        }
+        value->as.list.items = items;
+        items[value->as.list.count++] = (markdown_core_metadata_list_item){item.kind == MARKDOWN_CORE_METADATA_NUMBER
+                                                                               ? MARKDOWN_CORE_METADATA_ITEM_NUMBER
+                                                                               : MARKDOWN_CORE_METADATA_ITEM_TEXT,
+                                                                           item.value.string};
     }
     return true;
 }
-static bool field(decoder *d, size_t key_end) {
-    properties *p = d->owner;
-    const unsigned char *s = p->source;
-    size_t start = d->pos, key_line = decoder_line(d);
-    /* The key must close on the line it opened: its source ends at or before
-     * that line's end. A quoted key can run across lines; the decoded text is
-     * checked separately since escapes can put a newline into it. */
-    size_t value_line_end = property_line(p, key_line).end;
-    markdown_core_string name = {0};
-    markdown_core_metadata_value value = {0};
-    bool quoted_key = d->pos < d->end && (s[d->pos] == '\'' || s[d->pos] == '"');
-    if (!key_end) {
-        return false;
-    }
-    bool valid = true;
-    if (quoted_key) {
-        valid = quoted(d, &name);
-    } else {
-        size_t end = key_end - 1;
-        while (end > start && markdown_core_is_space_or_tab(s[end - 1])) {
-            end--;
+
+/* Reads the member that starts its line at `start`, its name at `first`
+ * and the byte after the name's colon at `key`, and ends at `end`. The
+ * line's classification found the name: a member without one, and one
+ * whose plain name is no field or a field already set, is skipped without
+ * reading its value. */
+static void member(properties *p, size_t start, size_t first, size_t key, size_t end) {
+    markdown_core_metadata_value *slot = NULL, value = {0};
+    const size_t count = p->places ? p->places->count : 0;
+    bool known = key != 0;
+    if (known && p->text[first] != '"' && p->text[first] != '\'') {
+        size_t stop = key - 1;
+        while (stop > first && markdown_core_is_space_or_tab(p->text[stop - 1])) {
+            stop--;
         }
-        name = (markdown_core_string){s + start, end - start};
-        d->pos = key_end - 1;
+        slot = field_slot(p->metadata, p->text + first, stop - first);
+        known = slot && !slot->kind;
     }
-    valid = valid && name.length && single_line(name) && d->pos <= value_line_end;
-    while (d->pos < d->end && markdown_core_is_space_or_tab(s[d->pos])) {
-        d->pos++;
+    if (known) {
+        p->work->decoded_bytes += end - start;
     }
-    markdown_core_metadata_value *slot = field_slot(p->metadata, name);
-    if (!valid || !slot || slot->kind || d->pos == d->end || s[d->pos++] != ':') {
-        goto failed;
-    }
-    if (d->pos < d->end && !markdown_core_is_whitespace(s[d->pos])) {
-        goto failed;
-    }
-    if (!printable(p, start, d->end)) {
-        goto failed;
-    }
-    p->work->decoded_bytes += d->end - start;
-    skip(d);
-    if (d->pos == d->end) {
-        value.kind = MARKDOWN_CORE_METADATA_SCALAR;
-        value.as.scalar.kind = MARKDOWN_CORE_METADATA_NULL;
-    } else if (d->pos < value_line_end && s[d->pos] == '|' && (equals(name, "abstract") || equals(name, "comment"))) {
-        if (!literal(d, start, &value)) {
-            goto failed;
+    if (known && decode(p, start, end, &slot, &value) && !p->failed) {
+        *slot = value;
+        for (size_t i = 0; i < p->yaml.comment_count; i++) {
+            place(p, MARKDOWN_CORE_SLOT_NONE, MARKDOWN_CORE_YAML_PLAIN, p->yaml.comments[i].from,
+                  p->yaml.comments[i].to);
         }
-    } else if (d->pos < d->end &&
-               (s[d->pos] == '[' || (d->pos > value_line_end && s[d->pos] == '-' && d->pos + 1 < d->end &&
-                                     markdown_core_is_space_or_tab(s[d->pos + 1])))) {
-        if (!sequence(d, &value)) {
-            goto failed;
-        }
-    } else {
-        if (d->pos > value_line_end || !scalar(d, PROPERTY_SCALAR, &value)) {
-            goto failed;
-        }
-    }
-    skip(d);
-    if (d->pos != d->end) {
-        goto failed;
-    }
-    *slot = value;
-    if (quoted_key) {
-        markdown_core_free((void *)name.data);
-    }
-    return true;
-failed:
-    if (quoted_key) {
-        markdown_core_free((void *)name.data);
+        return;
     }
     free_value(&value);
-    return false;
+    /* A member skipped as a whole is one field of no slot kind, from its
+     * name to its last byte that is no space or line ending. */
+    if (p->places) {
+        p->places->count = count;
+    }
+    while (end > first && markdown_core_is_whitespace(p->text[end - 1])) {
+        end--;
+    }
+    place(p, MARKDOWN_CORE_SLOT_NONE, MARKDOWN_CORE_YAML_PLAIN, first, end);
 }
+
 /* Return the byte after a directly authored block key's colon. The same
  * lexical rule identifies recovery boundaries. Flow punctuation is
  * ordinary content inside a block plain key; only a separated # is a comment. */
@@ -622,35 +370,62 @@ static size_t block_key_end(const unsigned char *s, size_t start, size_t end) {
     return 0;
 }
 
+/* Where the first `c` from `from` is, or `end`. */
+static size_t next_byte(const unsigned char *text, size_t from, size_t end, unsigned char c) {
+    const unsigned char *hit = memchr(text + from, c, end - from);
+    return hit ? (size_t)(hit - text) : end;
+}
+
 /* A boundary probe leaves its classification for the member it found. All
  * callers progress in line order, so no per-member allocation or rescan is
  * needed, including when a malformed quoted value recovers at a later key. */
 static void classify_line(properties *p, size_t line) {
-    if (p->classified && p->classified_line == line) {
+    if (p->classified && p->line == line) {
         return;
     }
+    size_t stop;
+    if (p->lines) {
+        while (p->lines[p->index].start < line) {
+            p->index++;
+        }
+        stop = p->lines[p->index].end;
+    } else {
+        if (!p->classified || p->feed < line) {
+            p->feed = next_byte(p->text, line, p->end, '\n');
+        }
+        if (!p->classified || p->ret < line) {
+            p->ret = next_byte(p->text, line, p->end, '\r');
+        }
+        stop = p->feed < p->ret ? p->feed : p->ret;
+    }
     p->classified = true;
-    p->classified_line = line;
-    size_t first = property_line(p, line).start, end = property_line(p, line).end;
-    while (first < end && p->source[first] == ' ') {
+    p->line = line;
+    p->stop = stop;
+    size_t first = line;
+    while (first < stop && p->text[first] == ' ') {
         first++;
     }
     p->first = first;
-    p->key = block_key_end(p->source, first, end);
-    p->work->key_work += end - property_line(p, line).start;
+    p->key = block_key_end(p->text, first, stop);
+    p->work->key_work += stop - line;
 }
 
-/* Return the index of the first line after `line` that the member starting
- * there does not own, or `count` when it runs to the closing fence. */
+/* Return where the first line after `line` that the member starting there
+ * does not own starts, or the payload's end when it runs to the closing
+ * fence. */
 static size_t block_boundary(properties *p, size_t line, size_t indent) {
-    const unsigned char *s = p->source;
+    const unsigned char *s = p->text;
     enum { VALUE_PREFIX, VALUE_SCALAR, VALUE_QUOTED, VALUE_SEQUENCE, VALUE_BRACKETED } form = VALUE_PREFIX;
     size_t array_depth = 0, object_depth = 0;
     unsigned char quote = 0;
-    bool first = true;
-    for (; line < p->count; line++) {
+    bool first = true, probed = false, node = true;
+    for (; line < p->end; line = next_line(s, p->stop, p->end)) {
         classify_line(p, line);
-        size_t cursor = property_line(p, line).start, e = property_line(p, line).end, nonspace = p->first;
+        size_t cursor = line, e = p->stop, nonspace = p->first;
+        if (!first && p->places && line == p->places->line) {
+            probed = true;
+            p->places->held = array_depth != 0 || object_depth != 0;
+        }
         if (!first && nonspace < e && nonspace - cursor <= indent) {
             bool list_line = nonspace - cursor == indent && s[nonspace] == '-' &&
                              (nonspace + 1 == e || markdown_core_is_space_or_tab(s[nonspace + 1]));
@@ -666,6 +441,13 @@ static size_t block_boundary(properties *p, size_t line, size_t indent) {
             if (!continuation) {
                 return line;
             }
+        }
+        if (probed && line != p->places->line) {
+            size_t content = nonspace;
+            while (content < e && markdown_core_is_space_or_tab(s[content])) {
+                content++;
+            }
+            p->places->held = p->places->held || (content < e && s[content] != '#');
         }
         size_t token = first ? p->key : 0;
         for (size_t i = token ? token : nonspace; i < e; i++) {
@@ -701,8 +483,11 @@ static size_t block_boundary(properties *p, size_t line, size_t indent) {
                         }
                     }
                 }
-            } else if ((c == '\'' || c == '"') &&
-                       (i == nonspace || markdown_core_is_space_or_tab(s[i - 1]) || strchr(":,[{?", s[i - 1]))) {
+            } else if (markdown_core_is_space_or_tab(c)) {
+                continue;
+            } else if ((c == '\'' || c == '"') && node) {
+                /* A quote opens a scalar only where a node starts: inside a
+                 * plain scalar it is the scalar's. */
                 quote = c;
             } else if (c == '#' && (i == nonspace || markdown_core_is_space_or_tab(s[i - 1]))) {
                 break;
@@ -721,17 +506,22 @@ static size_t block_boundary(properties *p, size_t line, size_t indent) {
                     form = VALUE_SCALAR;
                 }
             }
+            node = !quote && (c == '[' || c == '{' || c == ',' || c == ':' || c == '?');
         }
         first = false;
     }
-    return line;
+    return p->end;
 }
 
-static void payload(properties *p) {
-    const unsigned char *s = p->source;
-    for (size_t line = 0; line < p->count && !p->parser->error;) {
+/* Decodes the payload from `start` to `p->end`. A blank line, a comment
+ * line, a `%` line and a `...` line between members are no member; the
+ * reader takes the bytes of each but a blank one as a field of no slot
+ * kind. */
+static void payload(properties *p, size_t start) {
+    const unsigned char *s = p->text;
+    for (size_t line = start; line < p->end && !p->failed;) {
         classify_line(p, line);
-        size_t first = p->first, key = p->key, e = property_line(p, line).end;
+        size_t first = p->first, e = p->stop;
         size_t content = first;
         while (content < e && markdown_core_is_space_or_tab(s[content])) {
             content++;
@@ -739,16 +529,18 @@ static void payload(properties *p) {
         if (content == e || s[content] == '#' || s[first] == '%' ||
             (e - first >= 3 && memcmp(s + first, "...", 3) == 0 &&
              (e == first + 3 || markdown_core_is_space_or_tab(s[first + 3])))) {
-            line++;
+            place(p, MARKDOWN_CORE_SLOT_NONE, MARKDOWN_CORE_YAML_PLAIN, content, e);
+            line = next_line(s, e, p->end);
             continue;
         }
-        size_t indent = first - property_line(p, line).start;
-        size_t boundary = block_boundary(p, line, indent);
-        decoder d = {.owner = p, .pos = first, .end = property_line(p, boundary).start, .line = line};
-        field(&d, key);
+        const size_t key = p->key, boundary = block_boundary(p, line, first - line);
+        member(p, line, first, key, boundary);
         line = boundary;
     }
 }
+
+static void properties_close(properties *p) { markdown_core_yaml_close(&p->yaml); }
+
 /* Whether the input holds the fence's three dashes at `at`. Each byte asks
  * whether the input goes on there (markdown_core_parser_input_ends). */
 static bool properties_dashes_at(markdown_core_parser *parser, const unsigned char *source, size_t at) {
@@ -811,48 +603,67 @@ bool markdown_core_properties_closed(markdown_core_properties_work *work, markdo
 size_t markdown_core_properties_parse(markdown_core_properties_work *work, markdown_core_parser *parser, size_t close) {
     size_t length;
     const unsigned char *source = markdown_core_parser_input_text(parser, &length);
-    properties p = {.parser = parser, .work = work, .source = source};
     int number = 1;
-    source_line *line;
+    markdown_core_input_line *line;
     do {
         line = markdown_core_parser_source_line(parser, number++);
     } while (line && line->start < close);
     if (!line) {
         return 0;
     }
-    p.count = (size_t)number - 3;
-    p.first_line = 1;
+    const size_t count = (size_t)number - 3;
     markdown_core_node *node = markdown_core_parser_make_node(parser, MARKDOWN_CORE_NODE_METADATA);
     if (!node) {
         markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
         return 0;
     }
     size_t consumed = next_line(source, close + 3, length);
-    p.metadata = node->as.metadata;
+    properties p = {.text = source,
+                    .end = close,
+                    .work = work,
+                    .metadata = node->as.metadata,
+                    .lines = markdown_core_parser_source_line(parser, 1)};
     node->place = (markdown_core_place){0, (uint32_t)(close + 3)};
-    payload(&p);
+    payload(&p, next_line(source, 3, length));
+    properties_close(&p);
+    if (p.failed) {
+        markdown_core_parser_fail(parser, MARKDOWN_CORE_PARSE_ALLOCATION_FAILED);
+    }
     if (parser->error) {
         markdown_core_parser_release_node(parser, node);
         return 0;
     }
     parser->root->as.document->metadata = node;
     markdown_core_parser_settle_field(parser, node);
-    parser->at.line_number = (int)(p.count + 2);
+    parser->at.line_number = (int)(count + 2);
     parser->at.last_line_end = (bufsize_t)(close + 3);
     return consumed;
 }
 
-/* An envelope's part: its payload, the lines between its fences, as one
- * field of no slot kind; its members' scopes are its own. */
+bool markdown_core_metadata_text(const unsigned char *text, size_t size) {
+    return size && !equals(text, size, "null") && !equals(text, size, "true") && !equals(text, size, "false") &&
+           !number(text, size);
+}
+
+bool markdown_core_metadata_places_read(const unsigned char *text, size_t length,
+                                        markdown_core_metadata_places *places) {
+    const size_t end = length >= 3 ? length - 3 : 0;
+    markdown_core_metadata_fields fields = {0};
+    markdown_core_properties_work work = {0};
+    properties p = {.text = text, .end = end, .work = &work, .metadata = &fields, .places = places};
+    payload(&p, next_line(text, 3 < end ? 3 : end, end));
+    properties_close(&p);
+    markdown_core_metadata_fields_free(&fields);
+    return !p.failed;
+}
+
+/* An envelope's parts: its places that hold bytes. */
 void markdown_core_metadata_parts(markdown_core_parts *parts) {
-    const unsigned char *text = parts->text;
-    bufsize_t start = 0, end = parts->length >= 3 ? parts->length - 3 : 0;
-    while (start < end && !markdown_core_is_line_end(text[start])) {
-        start++;
+    markdown_core_metadata_places places = {0};
+    parts->failed = !markdown_core_metadata_places_read(parts->text, (size_t)parts->length, &places) || parts->failed;
+    for (size_t i = 0; i < places.count; i++) {
+        markdown_core_parts_add(parts, places.items[i].slot, (bufsize_t)places.items[i].from,
+                                (bufsize_t)places.items[i].to);
     }
-    start += start < end && text[start] == '\r';
-    start += start < end && text[start] == '\n';
-    end -= end > start && text[end - 1] == '\n';
-    end -= end > start && text[end - 1] == '\r';
-    markdown_core_parts_add(parts, MARKDOWN_CORE_SLOT_NONE, start, end);
+    markdown_core_free(places.items);
 }

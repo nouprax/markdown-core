@@ -4586,6 +4586,28 @@ static void properties_values(test_batch_runner *runner) {
     markdown_core_document_free(document);
 }
 
+/* A NUL in a member reads as U+FFFD, as the Markdown parser reads it. */
+static void properties_nul(test_batch_runner *runner) {
+    static const char source[] = "---\ntitle: a\0b\n---\nbody\n";
+    markdown_core_document *document = facade_parse((const uint8_t *)source, sizeof(source) - 1);
+    OK(runner, document != NULL, "an envelope with a NUL parses");
+    if (!document) {
+        return;
+    }
+    const markdown_core_node *metadata =
+        facade_field(markdown_core_document_root(document), markdown_core_node_document_metadata);
+    markdown_core_metadata_scalar scalar;
+    OK(runner,
+       metadata_scalar(facade_metadata(metadata, markdown_core_metadata_title), &scalar) &&
+           scalar.kind == MARKDOWN_CORE_METADATA_TEXT && scalar.value.string.length == 5 &&
+           !memcmp(scalar.value.string.data,
+                   "a\xEF\xBF\xBD"
+                   "b",
+                   5),
+       "a NUL in a value reads as U+FFFD");
+    markdown_core_document_free(document);
+}
+
 static void properties_source_boundaries(test_batch_runner *runner) {
     const char *prefixes[] = {"", "\t", "  ", " \t"};
     const char *endings[] = {"\n", "\r", "\r\n"};
@@ -12244,6 +12266,7 @@ int main(void) {
     registry_rollback_matches_a_model(runner);
     properties_values(runner);
     properties_source_boundaries(runner);
+    properties_nul(runner);
     properties_member_work(runner);
     peers_resolve_at_seal(runner);
     properties_text_memory(runner);

@@ -1,0 +1,15026 @@
+THE YAML PARSER'S READINGS (elements/yaml.h), frozen from the parser reworked
+from libyaml's scanner and parser that the recursive-descent parser replaced:
+the two read about six million generated texts, every text of up to five
+characters over the structural alphabet among them, to the same events. Each
+case after this header is a text on one line after "> ", with \\, \n, \r,
+\t and \xHH escapes, and the events it reads to, one a line, or "error":
++STR -STR, +DOC and -DOC (" ---" or " ..." when a marker writes it), +MAP and
++SEQ (" {}" or " []" in flow), -MAP -SEQ, and =VAL with its bytes as written
+(from-to), its line, its style (: plain, ' and " quoted, | literal) and its
+text; then "#from-to" for each comment. A blank line ends a case. The cases are a
+shape each: the shortest text for each sequence of events and styles the
+generated texts read to, some longer ones, and for each problem a few texts
+that have it.
+
+> 
++STR
+-STR
+
+> #
++STR
+-STR
+#0-1
+
+> -
++STR
++DOC
++SEQ
+=VAL 1-1 0 :
+-SEQ
+-DOC
+-STR
+
+> a
++STR
++DOC
+=VAL 0-1 0 :a
+-DOC
+-STR
+
+> |
++STR
++DOC
+=VAL 0-0 0 |
+-DOC
+-STR
+
+> ""
++STR
++DOC
+=VAL 1-1 0 "
+-DOC
+-STR
+
+> ''
++STR
++DOC
+=VAL 1-1 0 '
+-DOC
+-STR
+
+> []
++STR
++DOC
++SEQ []
+-SEQ
+-DOC
+-STR
+
+> a:
++STR
++DOC
++MAP
+=VAL 0-1 0 :a
+=VAL 2-2 0 :
+-MAP
+-DOC
+-STR
+
+> {}
++STR
++DOC
++MAP {}
+-MAP
+-DOC
+-STR
+
+> "":
++STR
++DOC
++MAP
+=VAL 1-1 0 "
+=VAL 3-3 0 :
+-MAP
+-DOC
+-STR
+
+> #\n#
++STR
+-STR
+#0-1
+#2-3
+
+> #\n|
++STR
++DOC
+=VAL 2-2 1 |
+-DOC
+-STR
+#0-1
+
+> -\n-
++STR
++DOC
++SEQ
+=VAL 1-1 0 :
+=VAL 3-3 1 :
+-SEQ
+-DOC
+-STR
+
+> - #
++STR
++DOC
++SEQ
+=VAL 1-1 0 :
+-SEQ
+-DOC
+-STR
+#2-3
+
+> - -
++STR
++DOC
++SEQ
++SEQ
+=VAL 3-3 0 :
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - |
++STR
++DOC
++SEQ
+=VAL 2-2 0 |
+-SEQ
+-DOC
+-STR
+
+> ---
++STR
++DOC ---
+=VAL 3-3 1 :
+-DOC
+-STR
+
+> []:
++STR
++DOC
++MAP
++SEQ []
+-SEQ
+=VAL 3-3 0 :
+-MAP
+-DOC
+-STR
+
+> [a]
++STR
++DOC
++SEQ []
+=VAL 1-2 0 :a
+-SEQ
+-DOC
+-STR
+
+> a #
++STR
++DOC
+=VAL 0-1 0 :a
+-DOC
+-STR
+#2-3
+
+> {a}
++STR
++DOC
++MAP {}
+=VAL 1-2 0 :a
+=VAL 2-2 0 :
+-MAP
+-DOC
+-STR
+
+> {}:
++STR
++DOC
++MAP
++MAP {}
+-MAP
+=VAL 3-3 0 :
+-MAP
+-DOC
+-STR
+
+> \r'':
++STR
++DOC
++MAP
+=VAL 2-2 1 '
+=VAL 4-4 1 :
+-MAP
+-DOC
+-STR
+
+> #\n""
++STR
++DOC
+=VAL 3-3 1 "
+-DOC
+-STR
+#0-1
+
+> - ""
++STR
++DOC
++SEQ
+=VAL 3-3 0 "
+-SEQ
+-DOC
+-STR
+
+> - ''
++STR
++DOC
++SEQ
+=VAL 3-3 0 '
+-SEQ
+-DOC
+-STR
+
+> - []
++STR
++DOC
++SEQ
++SEQ []
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - a:
++STR
++DOC
++SEQ
++MAP
+=VAL 2-3 0 :a
+=VAL 4-4 0 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - {}
++STR
++DOC
++SEQ
++MAP {}
+-MAP
+-SEQ
+-DOC
+-STR
+
+> [""]
++STR
++DOC
++SEQ []
+=VAL 2-2 0 "
+-SEQ
+-DOC
+-STR
+
+> [[]]
++STR
++DOC
++SEQ []
++SEQ []
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> [] #
++STR
++DOC
++SEQ []
+-SEQ
+-DOC
+-STR
+#3-4
+
+> [a]:
++STR
++DOC
++MAP
++SEQ []
+=VAL 1-2 0 :a
+-SEQ
+=VAL 4-4 0 :
+-MAP
+-DOC
+-STR
+
+> [{}]
++STR
++DOC
++SEQ []
++MAP {}
+-MAP
+-SEQ
+-DOC
+-STR
+
+> a:\n-
++STR
++DOC
++MAP
+=VAL 0-1 0 :a
++SEQ
+=VAL 4-4 1 :
+-SEQ
+-MAP
+-DOC
+-STR
+
+> a: #
++STR
++DOC
++MAP
+=VAL 0-1 0 :a
+=VAL 2-2 0 :
+-MAP
+-DOC
+-STR
+#3-4
+
+> a: |
++STR
++DOC
++MAP
+=VAL 0-1 0 :a
+=VAL 3-3 0 |
+-MAP
+-DOC
+-STR
+
+> {""}
++STR
++DOC
++MAP {}
+=VAL 2-2 0 "
+=VAL 3-3 0 :
+-MAP
+-DOC
+-STR
+
+> {[]}
++STR
++DOC
++MAP {}
++SEQ []
+-SEQ
+=VAL 3-3 0 :
+-MAP
+-DOC
+-STR
+
+> {a}:
++STR
++DOC
++MAP
++MAP {}
+=VAL 1-2 0 :a
+=VAL 2-2 0 :
+-MAP
+=VAL 4-4 0 :
+-MAP
+-DOC
+-STR
+
+> {{}}
++STR
++DOC
++MAP {}
++MAP {}
+-MAP
+=VAL 3-3 0 :
+-MAP
+-DOC
+-STR
+
+> {} #
++STR
++DOC
++MAP {}
+-MAP
+-DOC
+-STR
+#3-4
+
+> "":\n-
++STR
++DOC
++MAP
+=VAL 1-1 0 "
++SEQ
+=VAL 5-5 1 :
+-SEQ
+-MAP
+-DOC
+-STR
+
+> "": |
++STR
++DOC
++MAP
+=VAL 1-1 0 "
+=VAL 4-4 0 |
+-MAP
+-DOC
+-STR
+
+> #\n"":
++STR
++DOC
++MAP
+=VAL 3-3 1 "
+=VAL 5-5 1 :
+-MAP
+-DOC
+-STR
+#0-1
+
+> #\n#\n#
++STR
+-STR
+#0-1
+#2-3
+#4-5
+
+> #\n#\n|
++STR
++DOC
+=VAL 4-4 2 |
+-DOC
+-STR
+#0-1
+#2-3
+
+> '' #c
++STR
++DOC
+=VAL 1-1 0 '
+-DOC
+-STR
+#3-5
+
+> -\n-\n-
++STR
++DOC
++SEQ
+=VAL 1-1 0 :
+=VAL 3-3 1 :
+=VAL 5-5 2 :
+-SEQ
+-DOC
+-STR
+
+> -\n- -
++STR
++DOC
++SEQ
+=VAL 1-1 0 :
++SEQ
+=VAL 5-5 1 :
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n- |
++STR
++DOC
++SEQ
+=VAL 1-1 0 :
+=VAL 4-4 1 |
+-SEQ
+-DOC
+-STR
+
+> -\n---
++STR
++DOC
++SEQ
+=VAL 1-1 0 :
+-SEQ
+-DOC
++DOC ---
+=VAL 5-5 2 :
+-DOC
+-STR
+
+> -\n...
++STR
++DOC
++SEQ
+=VAL 1-1 0 :
+-SEQ
+-DOC ...
+-STR
+
+> - "":
++STR
++DOC
++SEQ
++MAP
+=VAL 3-3 0 "
+=VAL 5-5 0 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - #\n#
++STR
++DOC
++SEQ
+=VAL 1-1 0 :
+-SEQ
+-DOC
+-STR
+#2-3
+#4-5
+
+> - #\n-
++STR
++DOC
++SEQ
+=VAL 1-1 0 :
+=VAL 5-5 1 :
+-SEQ
+-DOC
+-STR
+#2-3
+
+> - #\n|
++STR
++DOC
++SEQ
+=VAL 4-4 1 |
+-SEQ
+-DOC
+-STR
+#2-3
+
+> - -\n-
++STR
++DOC
++SEQ
++SEQ
+=VAL 3-3 0 :
+-SEQ
+=VAL 5-5 1 :
+-SEQ
+-DOC
+-STR
+
+> - - #
++STR
++DOC
++SEQ
++SEQ
+=VAL 3-3 0 :
+-SEQ
+-SEQ
+-DOC
+-STR
+#4-5
+
+> - - -
++STR
++DOC
++SEQ
++SEQ
++SEQ
+=VAL 5-5 0 :
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - - |
++STR
++DOC
++SEQ
++SEQ
+=VAL 4-4 0 |
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - []:
++STR
++DOC
++SEQ
++MAP
++SEQ []
+-SEQ
+=VAL 5-5 0 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - [a]
++STR
++DOC
++SEQ
++SEQ []
+=VAL 3-4 0 :a
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - {a}
++STR
++DOC
++SEQ
++MAP {}
+=VAL 3-4 0 :a
+=VAL 4-4 0 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - {}:
++STR
++DOC
++SEQ
++MAP
++MAP {}
+-MAP
+=VAL 5-5 0 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - |\n-
++STR
++DOC
++SEQ
+=VAL 2-2 0 |
+=VAL 5-5 1 :
+-SEQ
+-DOC
+-STR
+
+> ---\n-
++STR
++DOC ---
++SEQ
+=VAL 5-5 1 :
+-SEQ
+-DOC
+-STR
+
+> --- #
++STR
++DOC ---
+=VAL 5-5 1 :
+-DOC
+-STR
+#4-5
+
+> --- |
++STR
++DOC ---
+=VAL 4-4 0 |
+-DOC
+-STR
+
+> ["":]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 2-2 0 "
+=VAL 4-4 0 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> [""]:
++STR
++DOC
++MAP
++SEQ []
+=VAL 2-2 0 "
+-SEQ
+=VAL 5-5 0 :
+-MAP
+-DOC
+-STR
+
+> ['c']
++STR
++DOC
++SEQ []
+=VAL 2-3 0 'c
+-SEQ
+-DOC
+-STR
+
+> [[]:]
++STR
++DOC
++SEQ []
++MAP {}
++SEQ []
+-SEQ
+=VAL 4-4 0 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> [[]]:
++STR
++DOC
++MAP
++SEQ []
++SEQ []
+-SEQ
+-SEQ
+=VAL 5-5 0 :
+-MAP
+-DOC
+-STR
+
+> [[a]]
++STR
++DOC
++SEQ []
++SEQ []
+=VAL 2-3 0 :a
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> []:\n-
++STR
++DOC
++MAP
++SEQ []
+-SEQ
++SEQ
+=VAL 5-5 1 :
+-SEQ
+-MAP
+-DOC
+-STR
+
+> []: #
++STR
++DOC
++MAP
++SEQ []
+-SEQ
+=VAL 3-3 0 :
+-MAP
+-DOC
+-STR
+#4-5
+
+> []: |
++STR
++DOC
++MAP
++SEQ []
+-SEQ
+=VAL 4-4 0 |
+-MAP
+-DOC
+-STR
+
+> [a,a]
++STR
++DOC
++SEQ []
+=VAL 1-2 0 :a
+=VAL 3-4 0 :a
+-SEQ
+-DOC
+-STR
+
+> [a: ]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 1-2 0 :a
+=VAL 4-4 0 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> [a] #
++STR
++DOC
++SEQ []
+=VAL 1-2 0 :a
+-SEQ
+-DOC
+-STR
+#4-5
+
+> [{}:]
++STR
++DOC
++SEQ []
++MAP {}
++MAP {}
+-MAP
+=VAL 4-4 0 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> [{}]:
++STR
++DOC
++MAP
++SEQ []
++MAP {}
+-MAP
+-SEQ
+=VAL 5-5 0 :
+-MAP
+-DOC
+-STR
+
+> a\n---
++STR
++DOC
+=VAL 0-1 0 :a
+-DOC
++DOC ---
+=VAL 5-5 2 :
+-DOC
+-STR
+
+> a\n...
++STR
++DOC
+=VAL 0-1 0 :a
+-DOC ...
+-STR
+
+> a #\n#
++STR
++DOC
+=VAL 0-1 0 :a
+-DOC
+-STR
+#2-3
+#4-5
+
+> a:\na:
++STR
++DOC
++MAP
+=VAL 0-1 0 :a
+=VAL 2-2 0 :
+=VAL 3-4 1 :a
+=VAL 5-5 1 :
+-MAP
+-DOC
+-STR
+
+> a: ""
++STR
++DOC
++MAP
+=VAL 0-1 0 :a
+=VAL 4-4 0 "
+-MAP
+-DOC
+-STR
+
+> a: []
++STR
++DOC
++MAP
+=VAL 0-1 0 :a
++SEQ []
+-SEQ
+-MAP
+-DOC
+-STR
+
+> a: {}
++STR
++DOC
++MAP
+=VAL 0-1 0 :a
++MAP {}
+-MAP
+-MAP
+-DOC
+-STR
+
+> {""}:
++STR
++DOC
++MAP
++MAP {}
+=VAL 2-2 0 "
+=VAL 3-3 0 :
+-MAP
+=VAL 5-5 0 :
+-MAP
+-DOC
+-STR
+
+> {'1'}
++STR
++DOC
++MAP {}
+=VAL 2-3 0 '1
+=VAL 4-4 0 :
+-MAP
+-DOC
+-STR
+
+> {[]}:
++STR
++DOC
++MAP
++MAP {}
++SEQ []
+-SEQ
+=VAL 3-3 0 :
+-MAP
+=VAL 5-5 0 :
+-MAP
+-DOC
+-STR
+
+> {[a]}
++STR
++DOC
++MAP {}
++SEQ []
+=VAL 2-3 0 :a
+-SEQ
+=VAL 4-4 0 :
+-MAP
+-DOC
+-STR
+
+> {a,a}
++STR
++DOC
++MAP {}
+=VAL 1-2 0 :a
+=VAL 2-2 0 :
+=VAL 3-4 0 :a
+=VAL 4-4 0 :
+-MAP
+-DOC
+-STR
+
+> {a} #
++STR
++DOC
++MAP {}
+=VAL 1-2 0 :a
+=VAL 2-2 0 :
+-MAP
+-DOC
+-STR
+#4-5
+
+> {{a}}
++STR
++DOC
++MAP {}
++MAP {}
+=VAL 2-3 0 :a
+=VAL 3-3 0 :
+-MAP
+=VAL 4-4 0 :
+-MAP
+-DOC
+-STR
+
+> {{}}:
++STR
++DOC
++MAP
++MAP {}
++MAP {}
+-MAP
+=VAL 3-3 0 :
+-MAP
+=VAL 5-5 0 :
+-MAP
+-DOC
+-STR
+
+> {}:\n-
++STR
++DOC
++MAP
++MAP {}
+-MAP
++SEQ
+=VAL 5-5 1 :
+-SEQ
+-MAP
+-DOC
+-STR
+
+> {}: #
++STR
++DOC
++MAP
++MAP {}
+-MAP
+=VAL 3-3 0 :
+-MAP
+-DOC
+-STR
+#4-5
+
+> {}: |
++STR
++DOC
++MAP
++MAP {}
+-MAP
+=VAL 4-4 0 |
+-MAP
+-DOC
+-STR
+
+> |\n---
++STR
++DOC
+=VAL 0-0 0 |
+-DOC
++DOC ---
+=VAL 5-5 2 :
+-DOC
+-STR
+
+> |\n...
++STR
++DOC
+=VAL 0-0 0 |
+-DOC ...
+-STR
+
+> - - ""
++STR
++DOC
++SEQ
++SEQ
+=VAL 5-5 0 "
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - - ::
++STR
++DOC
++SEQ
++SEQ
++MAP
+=VAL 4-5 0 ::
+=VAL 6-6 0 :
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - - []
++STR
++DOC
++SEQ
++SEQ
++SEQ []
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - ?:\t|
++STR
++DOC
++SEQ
++MAP
+=VAL 2-3 0 :?
+=VAL 5-5 0 |
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - [{}]
++STR
++DOC
++SEQ
++SEQ []
++MAP {}
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> ---\r1:
++STR
++DOC ---
++MAP
+=VAL 4-5 1 :1
+=VAL 6-6 1 :
+-MAP
+-DOC
+-STR
+
+> --- ''
++STR
++DOC ---
+=VAL 5-5 0 '
+-DOC
+-STR
+
+> --- []
++STR
++DOC ---
++SEQ []
+-SEQ
+-DOC
+-STR
+
+> --- {}
++STR
++DOC ---
++MAP {}
+-MAP
+-DOC
+-STR
+
+> []\n...
++STR
++DOC
++SEQ []
+-SEQ
+-DOC ...
+-STR
+
+> b:\t's'
++STR
++DOC
++MAP
+=VAL 0-1 0 :b
+=VAL 4-5 0 's
+-MAP
+-DOC
+-STR
+
+> {}\n...
++STR
++DOC
++MAP {}
+-MAP
+-DOC ...
+-STR
+
+> \n\x00:\r...
++STR
++DOC
++MAP
+=VAL 1-2 1 :�
+=VAL 3-3 1 :
+-MAP
+-DOC ...
+-STR
+
+> ""\r\n...
++STR
++DOC
+=VAL 1-1 0 "
+-DOC ...
+-STR
+
+> "1": []
++STR
++DOC
++MAP
+=VAL 1-2 0 "1
++SEQ []
+-SEQ
+-MAP
+-DOC
+-STR
+
+> "b": {}
++STR
++DOC
++MAP
+=VAL 1-2 0 "b
++MAP {}
+-MAP
+-MAP
+-DOC
+-STR
+
+> #\n---\r-
++STR
++DOC ---
++SEQ
+=VAL 7-7 2 :
+-SEQ
+-DOC
+-STR
+#0-1
+
+> '"': []
++STR
++DOC
++MAP
+=VAL 1-2 0 '"
++SEQ []
+-SEQ
+-MAP
+-DOC
+-STR
+
+> '"': {}
++STR
++DOC
++MAP
+=VAL 1-2 0 '"
++MAP {}
+-MAP
+-MAP
+-DOC
+-STR
+
+> 'a'\n...
++STR
++DOC
+=VAL 1-2 0 'a
+-DOC ...
+-STR
+
+> -\n - {}
++STR
++DOC
++SEQ
++SEQ
++MAP {}
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - \n- {}
++STR
++DOC
++SEQ
+=VAL 1-1 0 :
++MAP {}
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - '1': 
++STR
++DOC
++SEQ
++MAP
+=VAL 3-4 0 '1
+=VAL 6-6 0 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - ["",]
++STR
++DOC
++SEQ
++SEQ []
+=VAL 4-4 0 "
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - ['s']
++STR
++DOC
++SEQ
++SEQ []
+=VAL 4-5 0 's
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - []\n- 
++STR
++DOC
++SEQ
++SEQ []
+-SEQ
+=VAL 6-6 1 :
+-SEQ
+-DOC
+-STR
+
+> - {"c"}
++STR
++DOC
++SEQ
++MAP {}
+=VAL 4-5 0 "c
+=VAL 6-6 0 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - {}\n- 
++STR
++DOC
++SEQ
++MAP {}
+-MAP
+=VAL 6-6 1 :
+-SEQ
+-DOC
+-STR
+
+> ---\n---
++STR
++DOC ---
+=VAL 4-4 1 :
+-DOC
++DOC ---
+=VAL 7-7 2 :
+-DOC
+-STR
+
+> --- "b"
++STR
++DOC ---
+=VAL 5-6 0 "b
+-DOC
+-STR
+
+> --- {z}
++STR
++DOC ---
++MAP {}
+=VAL 5-6 0 :z
+=VAL 6-6 0 :
+-MAP
+-DOC
+-STR
+
+> -:\r\n---
++STR
++DOC
++MAP
+=VAL 0-1 0 :-
+=VAL 2-2 0 :
+-MAP
+-DOC
++DOC ---
+=VAL 7-7 2 :
+-DOC
+-STR
+
+> ?,: {b}
++STR
++DOC
++MAP
+=VAL 0-2 0 :?,
++MAP {}
+=VAL 5-6 0 :b
+=VAL 6-6 0 :
+-MAP
+-MAP
+-DOC
+-STR
+
+> [z]\n...
++STR
++DOC
++SEQ []
+=VAL 1-2 0 :z
+-SEQ
+-DOC ...
+-STR
+
+> [{'1'}]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 3-4 0 '1
+=VAL 5-5 0 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> {z: {}}
++STR
++DOC
++MAP {}
+=VAL 1-2 0 :z
++MAP {}
+-MAP
+-MAP
+-DOC
+-STR
+
+> "1": "a"
++STR
++DOC
++MAP
+=VAL 1-2 0 "1
+=VAL 6-7 0 "a
+-MAP
+-DOC
+-STR
+
+> "b": 'b'
++STR
++DOC
++MAP
+=VAL 1-2 0 "b
+=VAL 6-7 0 'b
+-MAP
+-DOC
+-STR
+
+> 'a': "'"
++STR
++DOC
++MAP
+=VAL 1-2 0 'a
+=VAL 6-7 0 "'
+-MAP
+-DOC
+-STR
+
+> 'a': '1'
++STR
++DOC
++MAP
+=VAL 1-2 0 'a
+=VAL 6-7 0 '1
+-MAP
+-DOC
+-STR
+
+> - \n- 'c'
++STR
++DOC
++SEQ
+=VAL 1-1 0 :
+=VAL 6-7 1 'c
+-SEQ
+-DOC
+-STR
+
+> -  - {b}
++STR
++DOC
++SEQ
++SEQ
++MAP {}
+=VAL 6-7 0 :b
+=VAL 7-7 0 :
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - -\r\n---
++STR
++DOC
++SEQ
++SEQ
+=VAL 3-3 0 :
+-SEQ
+-SEQ
+-DOC
++DOC ---
+=VAL 8-8 2 :
+-DOC
+-STR
+
+> - {''''}
++STR
++DOC
++SEQ
++MAP {}
+=VAL 4-6 0 ''
+=VAL 7-7 0 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - {a, z}
++STR
++DOC
++SEQ
++MAP {}
+=VAL 3-4 0 :a
+=VAL 4-4 0 :
+=VAL 6-7 0 :z
+=VAL 7-7 0 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - {}\n...
++STR
++DOC
++SEQ
++MAP {}
+-MAP
+-SEQ
+-DOC ...
+-STR
+
+> ---\n"a":
++STR
++DOC ---
++MAP
+=VAL 5-6 1 "a
+=VAL 8-8 1 :
+-MAP
+-DOC
+-STR
+
+> ---\n[{}]
++STR
++DOC ---
++SEQ []
++MAP {}
+-MAP
+-SEQ
+-DOC
+-STR
+
+> ---\r\n...
++STR
++DOC ---
+=VAL 5-5 1 :
+-DOC ...
+-STR
+
+> --- [1,]
++STR
++DOC ---
++SEQ []
+=VAL 5-6 0 :1
+-SEQ
+-DOC
+-STR
+
+> ---: [\x00]
++STR
++DOC
++MAP
+=VAL 0-3 0 :---
++SEQ []
+=VAL 6-7 0 :�
+-SEQ
+-MAP
+-DOC
+-STR
+
+> [a#b,{}]
++STR
++DOC
++SEQ []
+=VAL 1-4 0 :a#b
++MAP {}
+-MAP
+-SEQ
+-DOC
+-STR
+
+> [a: {},]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 1-2 0 :a
++MAP {}
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> [z ,'"']
++STR
++DOC
++SEQ []
+=VAL 1-2 0 :z
+=VAL 5-6 0 '"
+-SEQ
+-DOC
+-STR
+
+> [z: "1"]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 1-2 0 :z
+=VAL 5-6 0 "1
+-MAP
+-SEQ
+-DOC
+-STR
+
+> [{},{},]
++STR
++DOC
++SEQ []
++MAP {}
+-MAP
++MAP {}
+-MAP
+-SEQ
+-DOC
+-STR
+
+> z\n---\nb:
++STR
++DOC
+=VAL 0-1 0 :z
+-DOC
++DOC ---
++MAP
+=VAL 6-7 2 :b
+=VAL 8-8 2 :
+-MAP
+-DOC
+-STR
+
+> {"c":{}}
++STR
++DOC
++MAP {}
+=VAL 2-3 0 "c
++MAP {}
+-MAP
+-MAP
+-DOC
+-STR
+
+> {'x':{}}
++STR
++DOC
++MAP {}
+=VAL 2-3 0 'x
++MAP {}
+-MAP
+-MAP
+-DOC
+-STR
+
+> {b, "1"}
++STR
++DOC
++MAP {}
+=VAL 1-2 0 :b
+=VAL 2-2 0 :
+=VAL 5-6 0 "1
+=VAL 7-7 0 :
+-MAP
+-DOC
+-STR
+
+> "a\\n"\r---
++STR
++DOC
+=VAL 1-4 0 "a\n
+-DOC
++DOC ---
+=VAL 9-9 2 :
+-DOC
+-STR
+
+> #\r- "a\\n"
++STR
++DOC
++SEQ
+=VAL 5-8 1 "a\n
+-SEQ
+-DOC
+-STR
+#0-1
+
+> #-?\r?":\r-
++STR
++DOC
++MAP
+=VAL 4-6 1 :?"
++SEQ
+=VAL 9-9 2 :
+-SEQ
+-MAP
+-DOC
+-STR
+#0-3
+
+> 'x''y': |
++STR
++DOC
++MAP
+=VAL 1-5 0 'x'y
+=VAL 8-8 0 |
+-MAP
+-DOC
+-STR
+
+> -\t\r#\r- - 
++STR
++DOC
++SEQ
+=VAL 1-1 0 :
++SEQ
+=VAL 8-8 2 :
+-SEQ
+-SEQ
+-DOC
+-STR
+#3-4
+
+> -\n  - 'c'
++STR
++DOC
++SEQ
++SEQ
+=VAL 7-8 1 'c
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  a: []
++STR
++DOC
++SEQ
++MAP
+=VAL 4-5 1 :a
++SEQ []
+-SEQ
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -  :: \r-\t
++STR
++DOC
++SEQ
++MAP
+=VAL 3-4 0 ::
+=VAL 5-5 0 :
+-MAP
+=VAL 8-8 1 :
+-SEQ
+-DOC
+-STR
+
+> - "b"\n...
++STR
++DOC
++SEQ
+=VAL 3-4 0 "b
+-SEQ
+-DOC ...
+-STR
+
+> - 1\n- "'"
++STR
++DOC
++SEQ
+=VAL 2-3 0 :1
+=VAL 7-8 1 "'
+-SEQ
+-DOC
+-STR
+
+> - ?x\n- []
++STR
++DOC
++SEQ
+=VAL 2-4 0 :?x
++SEQ []
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - []\n- []
++STR
++DOC
++SEQ
++SEQ []
+-SEQ
++SEQ []
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - [c: z,]
++STR
++DOC
++SEQ
++SEQ []
++MAP {}
+=VAL 3-4 0 :c
+=VAL 6-7 0 :z
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - [{}] #c
++STR
++DOC
++SEQ
++SEQ []
++MAP {}
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+#7-9
+
+> - a\n- [c]
++STR
++DOC
++SEQ
+=VAL 2-3 0 :a
++SEQ []
+=VAL 7-8 1 :c
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - b: \r...
++STR
++DOC
++SEQ
++MAP
+=VAL 2-3 0 :b
+=VAL 4-4 0 :
+-MAP
+-SEQ
+-DOC ...
+-STR
+
+> - {}\n- []
++STR
++DOC
++SEQ
++MAP {}
+-MAP
++SEQ []
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - é\n- a:
++STR
++DOC
++SEQ
+=VAL 2-4 0 :é
++MAP
+=VAL 7-8 1 :a
+=VAL 9-9 1 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> ---\n- []\n
++STR
++DOC ---
++SEQ
++SEQ []
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> ---\nc: []
++STR
++DOC ---
++MAP
+=VAL 4-5 1 :c
++SEQ []
+-SEQ
+-MAP
+-DOC
+-STR
+
+> 1:\n  a: c
++STR
++DOC
++MAP
+=VAL 0-1 0 :1
++MAP
+=VAL 5-6 1 :a
+=VAL 8-9 1 :c
+-MAP
+-MAP
+-DOC
+-STR
+
+> ["a",a#b]
++STR
++DOC
++SEQ []
+=VAL 2-3 0 "a
+=VAL 5-8 0 :a#b
+-SEQ
+-DOC
+-STR
+
+> ['''',{}]
++STR
++DOC
++SEQ []
+=VAL 2-4 0 ''
++MAP {}
+-MAP
+-SEQ
+-DOC
+-STR
+
+> [1 ,z: z]
++STR
++DOC
++SEQ []
+=VAL 1-2 0 :1
++MAP {}
+=VAL 4-5 0 :z
+=VAL 7-8 0 :z
+-MAP
+-SEQ
+-DOC
+-STR
+
+> [a:  ,c,]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 1-2 0 :a
+=VAL 5-5 0 :
+-MAP
+=VAL 6-7 0 :c
+-SEQ
+-DOC
+-STR
+
+> [z ,"a",]
++STR
++DOC
++SEQ []
+=VAL 1-2 0 :z
+=VAL 5-6 0 "a
+-SEQ
+-DOC
+-STR
+
+> [{a,z},]\n
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 2-3 0 :a
+=VAL 3-3 0 :
+=VAL 4-5 0 :z
+=VAL 5-5 0 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> [{},2.5,]
++STR
++DOC
++SEQ []
++MAP {}
+-MAP
+=VAL 4-7 0 :2.5
+-SEQ
+-DOC
+-STR
+
+> a#b: [{}]
++STR
++DOC
++MAP
+=VAL 0-3 0 :a#b
++SEQ []
++MAP {}
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> a:\n  - {}
++STR
++DOC
++MAP
+=VAL 0-1 0 :a
++SEQ
++MAP {}
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> b: {'-x'}
++STR
++DOC
++MAP
+=VAL 0-1 0 :b
++MAP {}
+=VAL 5-7 0 '-x
+=VAL 8-8 0 :
+-MAP
+-MAP
+-DOC
+-STR
+
+> k:\n  - []
++STR
++DOC
++MAP
+=VAL 0-1 0 :k
++SEQ
++SEQ []
+-SEQ
+-SEQ
+-MAP
+-DOC
+-STR
+
+> {"'":"'"}
++STR
++DOC
++MAP {}
+=VAL 2-3 0 "'
+=VAL 6-7 0 "'
+-MAP
+-DOC
+-STR
+
+> {"b":'b'}
++STR
++DOC
++MAP {}
+=VAL 2-3 0 "b
+=VAL 6-7 0 'b
+-MAP
+-DOC
+-STR
+
+> {"b"}\n...
++STR
++DOC
++MAP {}
+=VAL 2-3 0 "b
+=VAL 4-4 0 :
+-MAP
+-DOC ...
+-STR
+
+> {'"':'c'}
++STR
++DOC
++MAP {}
+=VAL 2-3 0 '"
+=VAL 6-7 0 'c
+-MAP
+-DOC
+-STR
+
+> {'1'}\n...
++STR
++DOC
++MAP {}
+=VAL 2-3 0 '1
+=VAL 4-4 0 :
+-MAP
+-DOC ...
+-STR
+
+> {'c':"b"}
++STR
++DOC
++MAP {}
+=VAL 2-3 0 'c
+=VAL 6-7 0 "b
+-MAP
+-DOC
+-STR
+
+> {z: "?x"}
++STR
++DOC
++MAP {}
+=VAL 1-2 0 :z
+=VAL 5-7 0 "?x
+-MAP
+-DOC
+-STR
+
+> {z: ''''}
++STR
++DOC
++MAP {}
+=VAL 1-2 0 :z
+=VAL 5-7 0 ''
+-MAP
+-DOC
+-STR
+
+> {}\n---\n:1
++STR
++DOC
++MAP {}
+-MAP
+-DOC
++DOC ---
+=VAL 7-9 2 ::1
+-DOC
+-STR
+
+> \x00\r---    |
++STR
++DOC
+=VAL 0-1 0 :�
+-DOC
++DOC ---
+=VAL 9-9 1 |
+-DOC
+-STR
+
+> "'": 1\n:x:
++STR
++DOC
++MAP
+=VAL 1-2 0 "'
+=VAL 5-6 0 :1
+=VAL 7-9 1 ::x
+=VAL 10-10 1 :
+-MAP
+-DOC
+-STR
+
+> "'": {b: }
++STR
++DOC
++MAP
+=VAL 1-2 0 "'
++MAP {}
+=VAL 6-7 0 :b
+=VAL 9-9 0 :
+-MAP
+-MAP
+-DOC
+-STR
+
+> "a#b":\n...
++STR
++DOC
++MAP
+=VAL 1-4 0 "a#b
+=VAL 6-6 0 :
+-MAP
+-DOC ...
+-STR
+
+> "x ": [{}]
++STR
++DOC
++MAP
+=VAL 1-3 0 "x 
++SEQ []
++MAP {}
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> #\n\n:- \r...
++STR
++DOC
+=VAL 3-5 2 ::-
+-DOC ...
+-STR
+#0-1
+
+> '-a': [b,]
++STR
++DOC
++MAP
+=VAL 1-3 0 '-a
++SEQ []
+=VAL 7-8 0 :b
+-SEQ
+-MAP
+-DOC
+-STR
+
+> '-x': [{}]
++STR
++DOC
++MAP
+=VAL 1-3 0 '-x
++SEQ []
++MAP {}
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> 'b': {'b'}
++STR
++DOC
++MAP
+=VAL 1-2 0 'b
++MAP {}
+=VAL 7-8 0 'b
+=VAL 9-9 0 :
+-MAP
+-MAP
+-DOC
+-STR
+
+> 'c': z\n...
++STR
++DOC
++MAP
+=VAL 1-2 0 'c
+=VAL 5-6 0 :z
+-MAP
+-DOC ...
+-STR
+
+> 'x''y'\r---
++STR
++DOC
+=VAL 1-5 0 'x'y
+-DOC
++DOC ---
+=VAL 10-10 2 :
+-DOC
+-STR
+
+> 'x''y':\r\n-
++STR
++DOC
++MAP
+=VAL 1-5 0 'x'y
++SEQ
+=VAL 10-10 1 :
+-SEQ
+-MAP
+-DOC
+-STR
+
+> -\n  b: "'"
++STR
++DOC
++SEQ
++MAP
+=VAL 4-5 1 :b
+=VAL 8-9 1 "'
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  c: 'c'
++STR
++DOC
++SEQ
++MAP
+=VAL 4-5 1 :c
+=VAL 8-9 1 'c
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  k: {b}
++STR
++DOC
++SEQ
++MAP
+=VAL 4-5 1 :k
++MAP {}
+=VAL 8-9 1 :b
+=VAL 9-9 1 :
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n - [ b,]
++STR
++DOC
++SEQ
++SEQ
++SEQ []
+=VAL 7-8 1 :b
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -   a: #\r\n
++STR
++DOC
++SEQ
++MAP
+=VAL 4-5 0 :a
+=VAL 6-6 0 :
+-MAP
+-SEQ
+-DOC
+-STR
+#7-8
+
+> -   é: {}
++STR
++DOC
++SEQ
++MAP
+=VAL 4-6 0 :é
++MAP {}
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - "a"\n- {}
++STR
++DOC
++SEQ
+=VAL 3-4 0 "a
++MAP {}
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - "a\\n": |
++STR
++DOC
++SEQ
++MAP
+=VAL 3-6 0 "a\n
+=VAL 9-9 0 |
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - "c"\n- ?x
++STR
++DOC
++SEQ
+=VAL 3-4 0 "c
+=VAL 8-10 1 :?x
+-SEQ
+-DOC
+-STR
+
+> - '?x'\n- 1
++STR
++DOC
++SEQ
+=VAL 3-5 0 '?x
+=VAL 9-10 1 :1
+-SEQ
+-DOC
+-STR
+
+> - - - 1": 
++STR
++DOC
++SEQ
++SEQ
++SEQ
++MAP
+=VAL 6-8 0 :1"
+=VAL 9-9 0 :
+-MAP
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - []\n- {z}
++STR
++DOC
++SEQ
++SEQ []
+-SEQ
++MAP {}
+=VAL 8-9 1 :z
+=VAL 9-9 1 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - {'a':{}}
++STR
++DOC
++SEQ
++MAP {}
+=VAL 4-5 0 'a
++MAP {}
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - {c}\n- []
++STR
++DOC
++SEQ
++MAP {}
+=VAL 3-4 0 :c
+=VAL 4-4 0 :
+-MAP
++SEQ []
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - {}\n- 'a'
++STR
++DOC
++SEQ
++MAP {}
+-MAP
+=VAL 8-9 1 'a
+-SEQ
+-DOC
+-STR
+
+> - |\r- ?>::
++STR
++DOC
++SEQ
+=VAL 2-2 0 |
++MAP
+=VAL 6-9 1 :?>:
+=VAL 10-10 1 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> ---\n'a b':
++STR
++DOC ---
++MAP
+=VAL 5-8 1 'a b
+=VAL 10-10 1 :
+-MAP
+-DOC
+-STR
+
+> ---\n- "c"\n
++STR
++DOC ---
++SEQ
+=VAL 7-8 1 "c
+-SEQ
+-DOC
+-STR
+
+> ---\n- '-x'
++STR
++DOC ---
++SEQ
+=VAL 7-9 1 '-x
+-SEQ
+-DOC
+-STR
+
+> ---\n[]\n...
++STR
++DOC ---
++SEQ []
+-SEQ
+-DOC ...
+-STR
+
+> ---\nk:\n...
++STR
++DOC ---
++MAP
+=VAL 4-5 1 :k
+=VAL 6-6 1 :
+-MAP
+-DOC ...
+-STR
+
+> ---\nk: '"'
++STR
++DOC ---
++MAP
+=VAL 4-5 1 :k
+=VAL 8-9 1 '"
+-MAP
+-DOC
+-STR
+
+> ---\nk: {}\n
++STR
++DOC ---
++MAP
+=VAL 4-5 1 :k
++MAP {}
+-MAP
+-MAP
+-DOC
+-STR
+
+> --- ['?x']
++STR
++DOC ---
++SEQ []
+=VAL 6-8 0 '?x
+-SEQ
+-DOC
+-STR
+
+> --- {}\n...
++STR
++DOC ---
++MAP {}
+-MAP
+-DOC ...
+-STR
+
+> ?ax: [a: ]
++STR
++DOC
++MAP
+=VAL 0-3 0 :?ax
++SEQ []
++MAP {}
+=VAL 6-7 0 :a
+=VAL 9-9 0 :
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> ["'|"]\n...
++STR
++DOC
++SEQ []
+=VAL 2-4 0 "'|
+-SEQ
+-DOC ...
+-STR
+
+> ["b": {},]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 2-3 0 "b
++MAP {}
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> ['1', its]
++STR
++DOC
++SEQ []
+=VAL 2-3 0 '1
+=VAL 6-9 0 :its
+-SEQ
+-DOC
+-STR
+
+> [1' ,{}: ]
++STR
++DOC
++SEQ []
+=VAL 1-3 0 :1'
++MAP {}
++MAP {}
+-MAP
+=VAL 9-9 0 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> [z,{},c ,]
++STR
++DOC
++SEQ []
+=VAL 1-2 0 :z
++MAP {}
+-MAP
+=VAL 6-7 0 :c
+-SEQ
+-DOC
+-STR
+
+> [z: {z},]\n
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 1-2 0 :z
++MAP {}
+=VAL 5-6 0 :z
+=VAL 6-6 0 :
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> [{c}, "1"]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 2-3 0 :c
+=VAL 3-3 0 :
+-MAP
+=VAL 7-8 0 "1
+-SEQ
+-DOC
+-STR
+
+> [{},"中"]
++STR
++DOC
++SEQ []
++MAP {}
+-MAP
+=VAL 5-8 0 "中
+-SEQ
+-DOC
+-STR
+
+> [{},'a#b']
++STR
++DOC
++SEQ []
++MAP {}
+-MAP
+=VAL 5-8 0 'a#b
+-SEQ
+-DOC
+-STR
+
+> c: [':b',]
++STR
++DOC
++MAP
+=VAL 0-1 0 :c
++SEQ []
+=VAL 5-7 0 ':b
+-SEQ
+-MAP
+-DOC
+-STR
+
+> c: [a#b,b]
++STR
++DOC
++MAP
+=VAL 0-1 0 :c
++SEQ []
+=VAL 4-7 0 :a#b
+=VAL 8-9 0 :b
+-SEQ
+-MAP
+-DOC
+-STR
+
+> k:\n  - "x"
++STR
++DOC
++MAP
+=VAL 0-1 0 :k
++SEQ
+=VAL 8-9 1 "x
+-SEQ
+-MAP
+-DOC
+-STR
+
+> {"é", ''}
++STR
++DOC
++MAP {}
+=VAL 2-4 0 "é
+=VAL 5-5 0 :
+=VAL 8-8 0 '
+=VAL 9-9 0 :
+-MAP
+-DOC
+-STR
+
+> {'c', a b}
++STR
++DOC
++MAP {}
+=VAL 2-3 0 'c
+=VAL 4-4 0 :
+=VAL 6-9 0 :a b
+=VAL 9-9 0 :
+-MAP
+-DOC
+-STR
+
+> {a, z: {}}
++STR
++DOC
++MAP {}
+=VAL 1-2 0 :a
+=VAL 2-2 0 :
+=VAL 4-5 0 :z
++MAP {}
+-MAP
+-MAP
+-DOC
+-STR
+
+> é: []\n...
++STR
++DOC
++MAP
+=VAL 0-2 0 :é
++SEQ []
+-SEQ
+-MAP
+-DOC ...
+-STR
+
+> 中: ["'"]
++STR
++DOC
++MAP
+=VAL 0-3 0 :中
++SEQ []
+=VAL 7-8 0 "'
+-SEQ
+-MAP
+-DOC
+-STR
+
+> ""\n---\nb: 1
++STR
++DOC
+=VAL 1-1 0 "
+-DOC
++DOC ---
++MAP
+=VAL 7-8 2 :b
+=VAL 10-11 2 :1
+-MAP
+-DOC
+-STR
+
+> "1": ['1',]
++STR
++DOC
++MAP
+=VAL 1-2 0 "1
++SEQ []
+=VAL 7-8 0 '1
+-SEQ
+-MAP
+-DOC
+-STR
+
+> "c":\n  - {}
++STR
++DOC
++MAP
+=VAL 1-2 0 "c
++SEQ
++MAP {}
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> #\r"a\\n"\t#>}
++STR
++DOC
+=VAL 3-6 1 "a\n
+-DOC
+-STR
+#0-1
+#8-11
+
+> 'x''y':\r#*>
++STR
++DOC
++MAP
+=VAL 1-5 0 'x'y
+=VAL 7-7 0 :
+-MAP
+-DOC
+-STR
+#8-11
+
+> -\n  '"': ''
++STR
++DOC
++SEQ
++MAP
+=VAL 5-6 1 '"
+=VAL 10-10 1 '
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  'c': {}
++STR
++DOC
++SEQ
++MAP
+=VAL 5-6 1 'c
++MAP {}
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  - ["b"]
++STR
++DOC
++SEQ
++SEQ
++SEQ []
+=VAL 8-9 1 "b
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  - b\n...
++STR
++DOC
++SEQ
++SEQ
+=VAL 6-7 1 :b
+-SEQ
+-SEQ
+-DOC ...
+-STR
+
+> -\n  z: [{}]
++STR
++DOC
++SEQ
++MAP
+=VAL 4-5 1 :z
++SEQ []
++MAP {}
+-MAP
+-SEQ
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - \n---\nb: 1
++STR
++DOC
++SEQ
+=VAL 1-1 0 :
+-SEQ
+-DOC
++DOC ---
++MAP
+=VAL 7-8 2 :b
+=VAL 10-11 2 :1
+-MAP
+-DOC
+-STR
+
+> - "?x"\n- []
++STR
++DOC
++SEQ
+=VAL 3-5 0 "?x
++SEQ []
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - ["-x" ,a]
++STR
++DOC
++SEQ
++SEQ []
+=VAL 4-6 0 "-x
+=VAL 9-10 0 :a
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - ['1', {}]
++STR
++DOC
++SEQ
++SEQ []
+=VAL 4-5 0 '1
++MAP {}
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - ['b': a,]
++STR
++DOC
++SEQ
++SEQ []
++MAP {}
+=VAL 4-5 0 'b
+=VAL 8-9 0 :a
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - []\n- ''''
++STR
++DOC
++SEQ
++SEQ []
+-SEQ
+=VAL 8-10 1 ''
+-SEQ
+-DOC
+-STR
+
+> - [z]\n- a#b
++STR
++DOC
++SEQ
++SEQ []
+=VAL 3-4 0 :z
+-SEQ
+=VAL 8-11 1 :a#b
+-SEQ
+-DOC
+-STR
+
+> - [{},]\n...
++STR
++DOC
++SEQ
++SEQ []
++MAP {}
+-MAP
+-SEQ
+-SEQ
+-DOC ...
+-STR
+
+> - {---#}: -
++STR
++DOC
++SEQ
++MAP
++MAP {}
+=VAL 3-7 0 :---#
+=VAL 7-7 0 :
+-MAP
+=VAL 10-11 0 :-
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - {-x: 'c'}
++STR
++DOC
++SEQ
++MAP {}
+=VAL 3-5 0 :-x
+=VAL 8-9 0 'c
+-MAP
+-SEQ
+-DOC
+-STR
+
+> ---\n"c"\n...
++STR
++DOC ---
+=VAL 5-6 1 "c
+-DOC ...
+-STR
+
+> ---\n-\n  - \n
++STR
++DOC ---
++SEQ
++SEQ
+=VAL 9-9 2 :
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> ---\n- \r\n---
++STR
++DOC ---
++SEQ
+=VAL 5-5 1 :
+-SEQ
+-DOC
++DOC ---
+=VAL 11-11 3 :
+-DOC
+-STR
+
+> ---\n- [z,]\n
++STR
++DOC ---
++SEQ
++SEQ []
+=VAL 7-8 1 :z
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> ---\n[a: -x]
++STR
++DOC ---
++SEQ []
++MAP {}
+=VAL 5-6 1 :a
+=VAL 8-10 1 :-x
+-MAP
+-SEQ
+-DOC
+-STR
+
+> ---\n[z]\n...
++STR
++DOC ---
++SEQ []
+=VAL 5-6 1 :z
+-SEQ
+-DOC ...
+-STR
+
+> ---\n{"-x"}\n
++STR
++DOC ---
++MAP {}
+=VAL 6-8 1 "-x
+=VAL 9-9 1 :
+-MAP
+-DOC
+-STR
+
+> --- '1'\n...
++STR
++DOC ---
+=VAL 5-6 0 '1
+-DOC ...
+-STR
+
+> --- '2'\n---
++STR
++DOC ---
+=VAL 5-6 0 '2
+-DOC
++DOC ---
+=VAL 11-11 2 :
+-DOC
+-STR
+
+> .>: "a\\n"\r#
++STR
++DOC
++MAP
+=VAL 0-2 0 :.>
+=VAL 5-8 0 "a\n
+-MAP
+-DOC
+-STR
+#10-11
+
+> :: "&" #\n#b
++STR
++DOC
++MAP
+=VAL 0-1 0 ::
+=VAL 4-5 0 "&
+-MAP
+-DOC
+-STR
+#7-8
+#9-11
+
+> [\r\x00&'\n]\n---
++STR
++DOC
++SEQ []
+=VAL 2-5 1 :�&'
+-SEQ
+-DOC
++DOC ---
+=VAL 11-11 4 :
+-DOC
+-STR
+
+> [":x","\\""]
++STR
++DOC
++SEQ []
+=VAL 2-4 0 ":x
+=VAL 7-9 0 ""
+-SEQ
+-DOC
+-STR
+
+> ["?x" ,{},]
++STR
++DOC
++SEQ []
+=VAL 2-4 0 "?x
++MAP {}
+-MAP
+-SEQ
+-DOC
+-STR
+
+> ['-x' ,"c"]
++STR
++DOC
++SEQ []
+=VAL 2-4 0 '-x
+=VAL 8-9 0 "c
+-SEQ
+-DOC
+-STR
+
+> []\n---\nb: 1
++STR
++DOC
++SEQ []
+-SEQ
+-DOC
++DOC ---
++MAP
+=VAL 7-8 2 :b
+=VAL 10-11 2 :1
+-MAP
+-DOC
+-STR
+
+> [a:b: ]\n...
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 1-4 0 :a:b
+=VAL 6-6 0 :
+-MAP
+-SEQ
+-DOC ...
+-STR
+
+> [its: 'c',]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 1-4 0 :its
+=VAL 7-8 0 'c
+-MAP
+-SEQ
+-DOC
+-STR
+
+> [{} ,a ,é]
++STR
++DOC
++SEQ []
++MAP {}
+-MAP
+=VAL 5-6 0 :a
+=VAL 8-10 0 :é
+-SEQ
+-DOC
+-STR
+
+> [{}:"中",]
++STR
++DOC
++SEQ []
++MAP {}
++MAP {}
+-MAP
+=VAL 5-8 0 "中
+-MAP
+-SEQ
+-DOC
+-STR
+
+> b:\n  - 'é'
++STR
++DOC
++MAP
+=VAL 0-1 0 :b
++SEQ
+=VAL 8-10 1 'é
+-SEQ
+-MAP
+-DOC
+-STR
+
+> z: [z ,{},]
++STR
++DOC
++MAP
+=VAL 0-1 0 :z
++SEQ []
+=VAL 4-5 0 :z
++MAP {}
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> {':x', '1'}
++STR
++DOC
++MAP {}
+=VAL 2-4 0 ':x
+=VAL 5-5 0 :
+=VAL 8-9 0 '1
+=VAL 10-10 0 :
+-MAP
+-DOC
+-STR
+
+> {a#b:b}\n...
++STR
++DOC
++MAP {}
+=VAL 1-6 0 :a#b:b
+=VAL 6-6 0 :
+-MAP
+-DOC ...
+-STR
+
+> {c: c, 'c'}
++STR
++DOC
++MAP {}
+=VAL 1-2 0 :c
+=VAL 4-5 0 :c
+=VAL 8-9 0 'c
+=VAL 10-10 0 :
+-MAP
+-DOC
+-STR
+
+> {}\n---\nb: 1
++STR
++DOC
++MAP {}
+-MAP
+-DOC
++DOC ---
++MAP
+=VAL 7-8 2 :b
+=VAL 10-11 2 :1
+-MAP
+-DOC
+-STR
+
+> {é: {}, a}
++STR
++DOC
++MAP {}
+=VAL 1-3 0 :é
++MAP {}
+-MAP
+=VAL 9-10 0 :a
+=VAL 10-10 0 :
+-MAP
+-DOC
+-STR
+
+> é: #\t: 1\r#
++STR
++DOC
++MAP
+=VAL 0-2 0 :é
+=VAL 3-3 0 :
+-MAP
+-DOC
+-STR
+#4-9
+#10-11
+
+> "a": "1"\n...
++STR
++DOC
++MAP
+=VAL 1-2 0 "a
+=VAL 6-7 0 "1
+-MAP
+-DOC ...
+-STR
+
+> "name": [1,]
++STR
++DOC
++MAP
+=VAL 1-5 0 "name
++SEQ []
+=VAL 9-10 0 :1
+-SEQ
+-MAP
+-DOC
+-STR
+
+> 'c'\n---\nb: 1
++STR
++DOC
+=VAL 1-2 0 'c
+-DOC
++DOC ---
++MAP
+=VAL 8-9 2 :b
+=VAL 11-12 2 :1
+-MAP
+-DOC
+-STR
+
+> -\n  ':x': []
++STR
++DOC
++SEQ
++MAP
+=VAL 5-7 1 ':x
++SEQ []
+-SEQ
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  - b\n- {}
++STR
++DOC
++SEQ
++SEQ
+=VAL 6-7 1 :b
+-SEQ
++MAP {}
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  - {}\n- a
++STR
++DOC
++SEQ
++SEQ
++MAP {}
+-MAP
+-SEQ
+=VAL 11-12 2 :a
+-SEQ
+-DOC
+-STR
+
+> -  '-x': [b]
++STR
++DOC
++SEQ
++MAP
+=VAL 4-6 0 '-x
++SEQ []
+=VAL 10-11 0 :b
+-SEQ
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - "é"\n- "'"
++STR
++DOC
++SEQ
+=VAL 3-5 0 "é
+=VAL 10-11 1 "'
+-SEQ
+-DOC
+-STR
+
+> - '2.5'\n- {}
++STR
++DOC
++SEQ
+=VAL 3-6 0 '2.5
++MAP {}
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - '?x'\n- "a"
++STR
++DOC
++SEQ
+=VAL 3-5 0 '?x
+=VAL 10-11 1 "a
+-SEQ
+-DOC
+-STR
+
+> - 'a b'\n- []
++STR
++DOC
++SEQ
+=VAL 3-6 0 'a b
++SEQ []
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - 'a'\n- [{}]
++STR
++DOC
++SEQ
+=VAL 3-4 0 'a
++SEQ []
++MAP {}
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - [-x, a, b]
++STR
++DOC
++SEQ
++SEQ []
+=VAL 3-5 0 :-x
+=VAL 7-8 0 :a
+=VAL 10-11 0 :b
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - [-x: '?x']
++STR
++DOC
++SEQ
++SEQ []
++MAP {}
+=VAL 3-5 0 :-x
+=VAL 8-10 0 '?x
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - []\n- "-x`"
++STR
++DOC
++SEQ
++SEQ []
+-SEQ
+=VAL 8-11 1 "-x`
+-SEQ
+-DOC
+-STR
+
+> - [z,\n  {},]
++STR
++DOC
++SEQ
++SEQ []
+=VAL 3-4 0 :z
++MAP {}
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - {''''}\n...
++STR
++DOC
++SEQ
++MAP {}
+=VAL 4-6 0 ''
+=VAL 7-7 0 :
+-MAP
+-SEQ
+-DOC ...
+-STR
+
+> - {a, "x y"}
++STR
++DOC
++SEQ
++MAP {}
+=VAL 3-4 0 :a
+=VAL 4-4 0 :
+=VAL 7-10 0 "x y
+=VAL 11-11 0 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> ---\n- []\n...
++STR
++DOC ---
++SEQ
++SEQ []
+-SEQ
+-SEQ
+-DOC ...
+-STR
+
+> ---\n- {}\n...
++STR
++DOC ---
++SEQ
++MAP {}
+-MAP
+-SEQ
+-DOC ...
+-STR
+
+> ---\n["true"]
++STR
++DOC ---
++SEQ []
+=VAL 6-10 1 "true
+-SEQ
+-DOC
+-STR
+
+> ---\n[]\n---\nb
++STR
++DOC ---
++SEQ []
+-SEQ
+-DOC
++DOC ---
+=VAL 11-12 3 :b
+-DOC
+-STR
+
+> --- {é}\n...
++STR
++DOC ---
++MAP {}
+=VAL 5-7 0 :é
+=VAL 7-7 0 :
+-MAP
+-DOC ...
+-STR
+
+> --- | #c"c:a
++STR
++DOC ---
+=VAL 4-4 0 |
+-DOC
+-STR
+#6-12
+
+> . ...\n---\n- 
++STR
++DOC
+=VAL 0-5 0 :. ...
+-DOC
++DOC ---
++SEQ
+=VAL 11-11 2 :
+-SEQ
+-DOC
+-STR
+
+> ?x:\n  '"': z
++STR
++DOC
++MAP
+=VAL 0-2 0 :?x
++MAP
+=VAL 7-8 1 '"
+=VAL 11-12 1 :z
+-MAP
+-MAP
+-DOC
+-STR
+
+> ?x: ['c': a]
++STR
++DOC
++MAP
+=VAL 0-2 0 :?x
++SEQ []
++MAP {}
+=VAL 6-7 0 'c
+=VAL 10-11 0 :a
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> ["'": 'a#b']
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 2-3 0 "'
+=VAL 7-10 0 'a#b
+-MAP
+-SEQ
+-DOC
+-STR
+
+> ["'": {2.5}]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 2-3 0 "'
++MAP {}
+=VAL 7-10 0 :2.5
+=VAL 10-10 0 :
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> ["1" ,'2.5']
++STR
++DOC
++SEQ []
+=VAL 2-3 0 "1
+=VAL 7-10 0 '2.5
+-SEQ
+-DOC
+-STR
+
+> ['%Y:x': {}]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 2-6 0 '%Y:x
++MAP {}
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> [-x ,a,]\n...
++STR
++DOC
++SEQ []
+=VAL 1-3 0 :-x
+=VAL 5-6 0 :a
+-SEQ
+-DOC ...
+-STR
+
+> [1 ,null ,z]
++STR
++DOC
++SEQ []
+=VAL 1-2 0 :1
+=VAL 4-8 0 :null
+=VAL 10-11 0 :z
+-SEQ
+-DOC
+-STR
+
+> []: \n---\nb 1
++STR
++DOC
++MAP
++SEQ []
+-SEQ
+=VAL 3-3 0 :
+-MAP
+-DOC
++DOC ---
+=VAL 9-12 2 :b 1
+-DOC
+-STR
+
+> [b: , 'x y']
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 1-2 0 :b
+=VAL 4-4 0 :
+-MAP
+=VAL 7-10 0 'x y
+-SEQ
+-DOC
+-STR
+
+> [{} ,-x ,{}]
++STR
++DOC
++SEQ []
++MAP {}
+-MAP
+=VAL 5-7 0 :-x
++MAP {}
+-MAP
+-SEQ
+-DOC
+-STR
+
+> a b: 'c'\n...
++STR
++DOC
++MAP
+=VAL 0-3 0 :a b
+=VAL 6-7 0 'c
+-MAP
+-DOC ...
+-STR
+
+> c":\n  a: [z]
++STR
++DOC
++MAP
+=VAL 0-2 0 :c"
++MAP
+=VAL 6-7 1 :a
++SEQ []
+=VAL 10-11 1 :z
+-SEQ
+-MAP
+-MAP
+-DOC
+-STR
+
+> x y: {"a#b"}
++STR
++DOC
++MAP
+=VAL 0-3 0 :x y
++MAP {}
+=VAL 7-10 0 "a#b
+=VAL 11-11 0 :
+-MAP
+-MAP
+-DOC
+-STR
+
+> z:\n    a: []
++STR
++DOC
++MAP
+=VAL 0-1 0 :z
++MAP
+=VAL 7-8 1 :a
++SEQ []
+-SEQ
+-MAP
+-MAP
+-DOC
+-STR
+
+> {"'",z: a:b}
++STR
++DOC
++MAP {}
+=VAL 2-3 0 "'
+=VAL 4-4 0 :
+=VAL 5-6 0 :z
+=VAL 8-11 0 :a:b
+-MAP
+-DOC
+-STR
+
+> {":x", "\\""}
++STR
++DOC
++MAP {}
+=VAL 2-4 0 ":x
+=VAL 5-5 0 :
+=VAL 8-10 0 ""
+=VAL 11-11 0 :
+-MAP
+-DOC
+-STR
+
+> {1, -x: 'a'}
++STR
++DOC
++MAP {}
+=VAL 1-2 0 :1
+=VAL 2-2 0 :
+=VAL 4-6 0 :-x
+=VAL 9-10 0 'a
+-MAP
+-DOC
+-STR
+
+> é]%- : |\ra:
++STR
++DOC
++MAP
+=VAL 0-5 0 :é]%-
+=VAL 8-8 0 |
+=VAL 10-11 1 :a
+=VAL 12-12 1 :
+-MAP
+-DOC
+-STR
+
+> \n---\n'b': 'x'
++STR
++DOC ---
++MAP
+=VAL 6-7 2 'b
+=VAL 11-12 2 'x
+-MAP
+-DOC
+-STR
+
+> \r- #-\r\n#b\r---
++STR
++DOC
++SEQ
+=VAL 2-2 1 :
+-SEQ
+-DOC
++DOC ---
+=VAL 13-13 4 :
+-DOC
+-STR
+#3-5
+#7-9
+
+> "-x":\n  - 'c'
++STR
++DOC
++MAP
+=VAL 1-3 0 "-x
++SEQ
+=VAL 11-12 1 'c
+-SEQ
+-MAP
+-DOC
+-STR
+
+> "-x": []\n2.5:
++STR
++DOC
++MAP
+=VAL 1-3 0 "-x
++SEQ []
+-SEQ
+=VAL 9-12 1 :2.5
+=VAL 13-13 1 :
+-MAP
+-DOC
+-STR
+
+> "\\"": {}\nz: x
++STR
++DOC
++MAP
+=VAL 1-3 0 ""
++MAP {}
+-MAP
+=VAL 9-10 1 :z
+=VAL 12-13 1 :x
+-MAP
+-DOC
+-STR
+
+> "a b":\n  z: b
++STR
++DOC
++MAP
+=VAL 1-4 0 "a b
++MAP
+=VAL 9-10 1 :z
+=VAL 12-13 1 :b
+-MAP
+-MAP
+-DOC
+-STR
+
+> "a b": {"é"}
++STR
++DOC
++MAP
+=VAL 1-4 0 "a b
++MAP {}
+=VAL 9-11 0 "é
+=VAL 12-12 0 :
+-MAP
+-MAP
+-DOC
+-STR
+
+> "a":\n  "b": z
++STR
++DOC
++MAP
+=VAL 1-2 0 "a
++MAP
+=VAL 8-9 1 "b
+=VAL 12-13 1 :z
+-MAP
+-MAP
+-DOC
+-STR
+
+> "a": ["true"]
++STR
++DOC
++MAP
+=VAL 1-2 0 "a
++SEQ []
+=VAL 7-11 0 "true
+-SEQ
+-MAP
+-DOC
+-STR
+
+> "a#b":\n:x: {}
++STR
++DOC
++MAP
+=VAL 1-4 0 "a#b
+=VAL 6-6 0 :
+=VAL 7-9 1 ::x
++MAP {}
+-MAP
+-MAP
+-DOC
+-STR
+
+> #c..\n"?x"\n...
++STR
++DOC
+=VAL 6-8 1 "?x
+-DOC ...
+-STR
+#0-4
+
+> '  ': |\r---\r\n
++STR
++DOC
++MAP
+=VAL 1-3 0 '  
+=VAL 6-6 0 |
+-MAP
+-DOC
++DOC ---
+=VAL 13-13 2 :
+-DOC
+-STR
+
+> '''': [{}: ,]
++STR
++DOC
++MAP
+=VAL 1-3 0 ''
++SEQ []
++MAP {}
++MAP {}
+-MAP
+=VAL 11-11 0 :
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> '1': ['x y',]
++STR
++DOC
++MAP
+=VAL 1-2 0 '1
++SEQ []
+=VAL 7-10 0 'x y
+-SEQ
+-MAP
+-DOC
+-STR
+
+> ':x': {"2.5"}
++STR
++DOC
++MAP
+=VAL 1-3 0 ':x
++MAP {}
+=VAL 8-11 0 "2.5
+=VAL 12-12 0 :
+-MAP
+-MAP
+-DOC
+-STR
+
+> 'a#b':\n  - []
++STR
++DOC
++MAP
+=VAL 1-4 0 'a#b
++SEQ
++SEQ []
+-SEQ
+-SEQ
+-MAP
+-DOC
+-STR
+
+> 'a:b': ["é"]
++STR
++DOC
++MAP
+=VAL 1-4 0 'a:b
++SEQ []
+=VAL 9-11 0 "é
+-SEQ
+-MAP
+-DOC
+-STR
+
+> 'b': 1\n-x: {}
++STR
++DOC
++MAP
+=VAL 1-2 0 'b
+=VAL 5-6 0 :1
+=VAL 7-9 1 :-x
++MAP {}
+-MAP
+-MAP
+-DOC
+-STR
+
+> 's':\t\n null: 
++STR
++DOC
++MAP
+=VAL 1-2 0 's
++MAP
+=VAL 7-11 1 :null
+=VAL 12-12 1 :
+-MAP
+-MAP
+-DOC
+-STR
+
+> 'x''y': \r--- 
++STR
++DOC
++MAP
+=VAL 1-5 0 'x'y
+=VAL 7-7 0 :
+-MAP
+-DOC
++DOC ---
+=VAL 13-13 2 :
+-DOC
+-STR
+
+> 'é':\n  - 'b'
++STR
++DOC
++MAP
+=VAL 1-3 0 'é
++SEQ
+=VAL 11-12 1 'b
+-SEQ
+-MAP
+-DOC
+-STR
+
+> -\n  "a b": []
++STR
++DOC
++SEQ
++MAP
+=VAL 5-8 1 "a b
++SEQ []
+-SEQ
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  "c": "-x"
++STR
++DOC
++SEQ
++MAP
+=VAL 5-6 1 "c
+=VAL 10-12 1 "-x
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  - []\n- []
++STR
++DOC
++SEQ
++SEQ
++SEQ []
+-SEQ
+-SEQ
++SEQ []
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  - {b}\n- z
++STR
++DOC
++SEQ
++SEQ
++MAP {}
+=VAL 7-8 1 :b
+=VAL 8-8 1 :
+-MAP
+-SEQ
+=VAL 12-13 2 :z
+-SEQ
+-DOC
+-STR
+
+> - 'a'\n- 'a#b'
++STR
++DOC
++SEQ
+=VAL 3-4 0 'a
+=VAL 9-12 1 'a#b
+-SEQ
+-DOC
+-STR
+
+> - [-x ,'a:b']
++STR
++DOC
++SEQ
++SEQ []
+=VAL 3-5 0 :-x
+=VAL 8-11 0 'a:b
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - [2.5,]\n- []
++STR
++DOC
++SEQ
++SEQ []
+=VAL 3-6 0 :2.5
+-SEQ
++SEQ []
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - []\n---\nb: 1
++STR
++DOC
++SEQ
++SEQ []
+-SEQ
+-SEQ
+-DOC
++DOC ---
++MAP
+=VAL 9-10 2 :b
+=VAL 12-13 2 :1
+-MAP
+-DOC
+-STR
+
+> - [a b]\n- "c"
++STR
++DOC
++SEQ
++SEQ []
+=VAL 3-6 0 :a b
+-SEQ
+=VAL 11-12 1 "c
+-SEQ
+-DOC
+-STR
+
+> - [its,"x y"]
++STR
++DOC
++SEQ
++SEQ []
+=VAL 3-6 0 :its
+=VAL 8-11 0 "x y
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - [x y,\n  c,]
++STR
++DOC
++SEQ
++SEQ []
+=VAL 3-6 0 :x y
+=VAL 10-11 1 :c
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - [{"c", c},]
++STR
++DOC
++SEQ
++SEQ []
++MAP {}
+=VAL 5-6 0 "c
+=VAL 7-7 0 :
+=VAL 9-10 0 :c
+=VAL 10-10 0 :
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - [{},\n  its]
++STR
++DOC
++SEQ
++SEQ []
++MAP {}
+-MAP
+=VAL 9-12 1 :its
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - c\n- []\n- []
++STR
++DOC
++SEQ
+=VAL 2-3 0 :c
++SEQ []
+-SEQ
++SEQ []
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - title\n- {z}
++STR
++DOC
++SEQ
+=VAL 2-7 0 :title
++MAP {}
+=VAL 11-12 1 :z
+=VAL 12-12 1 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - {"b": ':x'}
++STR
++DOC
++SEQ
++MAP {}
+=VAL 4-5 0 "b
+=VAL 9-11 0 ':x
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - {"name":{}}
++STR
++DOC
++SEQ
++MAP {}
+=VAL 4-8 0 "name
++MAP {}
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - {a: "true"}
++STR
++DOC
++SEQ
++MAP {}
+=VAL 3-4 0 :a
+=VAL 7-11 0 "true
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - {}\n- []\n- a
++STR
++DOC
++SEQ
++MAP {}
+-MAP
++SEQ []
+-SEQ
+=VAL 12-13 2 :a
+-SEQ
+-DOC
+-STR
+
+> ---\n-\n  - []\n
++STR
++DOC ---
++SEQ
++SEQ
++SEQ []
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> ---\n-\n  1: {}
++STR
++DOC ---
++SEQ
++MAP
+=VAL 8-9 2 :1
++MAP {}
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> ---\n- "'"\n...
++STR
++DOC ---
++SEQ
+=VAL 7-8 1 "'
+-SEQ
+-DOC ...
+-STR
+
+> ---\n- a#b\n...
++STR
++DOC ---
++SEQ
+=VAL 6-9 1 :a#b
+-SEQ
+-DOC ...
+-STR
+
+> ---\n1: {}\n...
++STR
++DOC ---
++MAP
+=VAL 4-5 1 :1
++MAP {}
+-MAP
+-MAP
+-DOC ...
+-STR
+
+> ---\n[{},]\n...
++STR
++DOC ---
++SEQ []
++MAP {}
+-MAP
+-SEQ
+-DOC ...
+-STR
+
+> --- \n---\nb: 1
++STR
++DOC ---
+=VAL 5-5 1 :
+-DOC
++DOC ---
++MAP
+=VAL 9-10 2 :b
+=VAL 12-13 2 :1
+-MAP
+-DOC
+-STR
+
+> --- ["a", c,]
++STR
++DOC ---
++SEQ []
+=VAL 6-7 0 "a
+=VAL 10-11 0 :c
+-SEQ
+-DOC
+-STR
+
+> --- [é ,{}]\n
++STR
++DOC ---
++SEQ []
+=VAL 5-7 0 :é
++MAP {}
+-MAP
+-SEQ
+-DOC
+-STR
+
+> --- [é,a:b]\n
++STR
++DOC ---
++SEQ []
+=VAL 5-7 0 :é
+=VAL 8-11 0 :a:b
+-SEQ
+-DOC
+-STR
+
+> --- {ab: "b"}
++STR
++DOC ---
++MAP {}
+=VAL 5-7 0 :ab
+=VAL 10-11 0 "b
+-MAP
+-DOC
+-STR
+
+> -x: ['2.5',z]
++STR
++DOC
++MAP
+=VAL 0-2 0 :-x
++SEQ []
+=VAL 6-9 0 '2.5
+=VAL 11-12 0 :z
+-SEQ
+-MAP
+-DOC
+-STR
+
+> .*'.\n---\r#.1 
++STR
++DOC
+=VAL 0-4 0 :.*'.
+-DOC
++DOC ---
+=VAL 13-13 3 :
+-DOC
+-STR
+#9-13
+
+> 1: [{z, a:b}]
++STR
++DOC
++MAP
+=VAL 0-1 0 :1
++SEQ []
++MAP {}
+=VAL 5-6 0 :z
+=VAL 6-6 0 :
+=VAL 8-11 0 :a:b
+=VAL 11-11 0 :
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> 1: z\nb: "2.5"
++STR
++DOC
++MAP
+=VAL 0-1 0 :1
+=VAL 3-4 0 :z
+=VAL 5-6 1 :b
+=VAL 9-12 1 "2.5
+-MAP
+-DOC
+-STR
+
+> 1: {'a:b':{}}
++STR
++DOC
++MAP
+=VAL 0-1 0 :1
++MAP {}
+=VAL 5-8 0 'a:b
++MAP {}
+-MAP
+-MAP
+-MAP
+-DOC
+-STR
+
+> ["ab": {'b'}]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 2-4 0 "ab
++MAP {}
+=VAL 9-10 0 'b
+=VAL 11-11 0 :
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> ["c": its,z,]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 2-3 0 "c
+=VAL 6-9 0 :its
+-MAP
+=VAL 10-11 0 :z
+-SEQ
+-DOC
+-STR
+
+> ['''': 'a#b']
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 2-4 0 ''
+=VAL 8-11 0 'a#b
+-MAP
+-SEQ
+-DOC
+-STR
+
+> ['1': {} ,1,]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 2-3 0 '1
++MAP {}
+-MAP
+-MAP
+=VAL 10-11 0 :1
+-SEQ
+-DOC
+-STR
+
+> ['a', {}, -x]
++STR
++DOC
++SEQ []
+=VAL 2-3 0 'a
++MAP {}
+-MAP
+=VAL 10-12 0 :-x
+-SEQ
+-DOC
+-STR
+
+> ['a': "x y",]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 2-3 0 'a
+=VAL 7-10 0 "x y
+-MAP
+-SEQ
+-DOC
+-STR
+
+> ['name' ,'"']
++STR
++DOC
++SEQ []
+=VAL 2-6 0 'name
+=VAL 10-11 0 '"
+-SEQ
+-DOC
+-STR
+
+> [-a,"c": 1 ,]
++STR
++DOC
++SEQ []
+=VAL 1-3 0 :-a
++MAP {}
+=VAL 5-6 0 "c
+=VAL 9-10 0 :1
+-MAP
+-SEQ
+-DOC
+-STR
+
+> [1,]\n---\nb: 1
++STR
++DOC
++SEQ []
+=VAL 1-2 0 :1
+-SEQ
+-DOC
++DOC ---
++MAP
+=VAL 9-10 2 :b
+=VAL 12-13 2 :1
+-MAP
+-DOC
+-STR
+
+> [c,"é",{\x00},]
++STR
++DOC
++SEQ []
+=VAL 1-2 0 :c
+=VAL 4-6 0 "é
++MAP {}
+=VAL 9-10 0 :�
+=VAL 10-10 0 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> [x y,"a:b",z]
++STR
++DOC
++SEQ []
+=VAL 1-4 0 :x y
+=VAL 6-9 0 "a:b
+=VAL 11-12 0 :z
+-SEQ
+-DOC
+-STR
+
+> [{c}, é, z,]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 2-3 0 :c
+=VAL 3-3 0 :
+-MAP
+=VAL 6-8 0 :é
+=VAL 10-11 0 :z
+-SEQ
+-DOC
+-STR
+
+> a:\nits:\n  - z
++STR
++DOC
++MAP
+=VAL 0-1 0 :a
+=VAL 2-2 0 :
+=VAL 3-6 1 :its
++SEQ
+=VAL 12-13 2 :z
+-SEQ
+-MAP
+-DOC
+-STR
+
+> a: {b: 'a#b'}
++STR
++DOC
++MAP
+=VAL 0-1 0 :a
++MAP {}
+=VAL 4-5 0 :b
+=VAL 8-11 0 'a#b
+-MAP
+-MAP
+-DOC
+-STR
+
+> b: {}\n'-x':  
++STR
++DOC
++MAP
+=VAL 0-1 0 :b
++MAP {}
+-MAP
+=VAL 7-9 1 '-x
+=VAL 11-11 1 :
+-MAP
+-DOC
+-STR
+
+> it: s\n---\nb: 
++STR
++DOC
++MAP
+=VAL 0-2 0 :it
+=VAL 4-5 0 :s
+-MAP
+-DOC
++DOC ---
++MAP
+=VAL 10-11 2 :b
+=VAL 12-12 2 :
+-MAP
+-DOC
+-STR
+
+> k:\n  ?x: ':x'
++STR
++DOC
++MAP
+=VAL 0-1 0 :k
++MAP
+=VAL 5-7 1 :?x
+=VAL 10-12 1 ':x
+-MAP
+-MAP
+-DOC
+-STR
+
+> k:\n nul\tl: {}
++STR
++DOC
++MAP
+=VAL 0-1 0 :k
++MAP
+=VAL 4-9 1 :nul\tl
++MAP {}
+-MAP
+-MAP
+-MAP
+-DOC
+-STR
+
+> z: {}\n'a': []
++STR
++DOC
++MAP
+=VAL 0-1 0 :z
++MAP {}
+-MAP
+=VAL 7-8 1 'a
++SEQ []
+-SEQ
+-MAP
+-DOC
+-STR
+
+> {'c', "true"}
++STR
++DOC
++MAP {}
+=VAL 2-3 0 'c
+=VAL 4-4 0 :
+=VAL 7-11 0 "true
+=VAL 12-12 0 :
+-MAP
+-DOC
+-STR
+
+> {'x''y'}:    
++STR
++DOC
++MAP
++MAP {}
+=VAL 2-6 0 'x'y
+=VAL 7-7 0 :
+-MAP
+=VAL 9-9 0 :
+-MAP
+-DOC
+-STR
+
+> {中, "1":{}}
++STR
++DOC
++MAP {}
+=VAL 1-4 0 :中
+=VAL 4-4 0 :
+=VAL 7-8 0 "1
++MAP {}
+-MAP
+-MAP
+-DOC
+-STR
+
+>  :b:\n  "nul>":
++STR
++DOC
++MAP
+=VAL 1-3 0 ::b
++MAP
+=VAL 8-12 1 "nul>
+=VAL 14-14 1 :
+-MAP
+-MAP
+-DOC
+-STR
+
+> "#b":\n  - [é]
++STR
++DOC
++MAP
+=VAL 1-3 0 "#b
++SEQ
++SEQ []
+=VAL 11-13 1 :é
+-SEQ
+-SEQ
+-MAP
+-DOC
+-STR
+
+> "'": 1\n'b': {}
++STR
++DOC
++MAP
+=VAL 1-2 0 "'
+=VAL 5-6 0 :1
+=VAL 8-9 1 'b
++MAP {}
+-MAP
+-MAP
+-DOC
+-STR
+
+> "?x":\n  - "?x"
++STR
++DOC
++MAP
+=VAL 1-3 0 "?x
++SEQ
+=VAL 11-13 1 "?x
+-SEQ
+-MAP
+-DOC
+-STR
+
+> #1: |&\r{"a\\n"}
++STR
++DOC
++MAP {}
+=VAL 9-12 1 "a\n
+=VAL 13-13 1 :
+-MAP
+-DOC
+-STR
+#0-6
+
+> ':x':\n  a: 'a'
++STR
++DOC
++MAP
+=VAL 1-3 0 ':x
++MAP
+=VAL 8-9 1 :a
+=VAL 12-13 1 'a
+-MAP
+-MAP
+-DOC
+-STR
+
+> ':x': "?x"\n...
++STR
++DOC
++MAP
+=VAL 1-3 0 ':x
+=VAL 7-9 0 "?x
+-MAP
+-DOC ...
+-STR
+
+> '?x':\n  - "-x"
++STR
++DOC
++MAP
+=VAL 1-3 0 '?x
++SEQ
+=VAL 11-13 1 "-x
+-SEQ
+-MAP
+-DOC
+-STR
+
+> '?x':\n---\nb: 1
++STR
++DOC
++MAP
+=VAL 1-3 0 '?x
+=VAL 5-5 0 :
+-MAP
+-DOC
++DOC ---
++MAP
+=VAL 10-11 2 :b
+=VAL 13-14 2 :1
+-MAP
+-DOC
+-STR
+
+> 'a':\n  'c': {}
++STR
++DOC
++MAP
+=VAL 1-2 0 'a
++MAP
+=VAL 8-9 1 'c
++MAP {}
+-MAP
+-MAP
+-MAP
+-DOC
+-STR
+
+> 'b': true\nz: a
++STR
++DOC
++MAP
+=VAL 1-2 0 'b
+=VAL 5-9 0 :true
+=VAL 10-11 1 :z
+=VAL 13-14 1 :a
+-MAP
+-DOC
+-STR
+
+> 'c':\n    "é":
++STR
++DOC
++MAP
+=VAL 1-2 0 'c
++MAP
+=VAL 10-12 1 "é
+=VAL 14-14 1 :
+-MAP
+-MAP
+-DOC
+-STR
+
+> 'null': []\n...
++STR
++DOC
++MAP
+=VAL 1-5 0 'null
++SEQ []
+-SEQ
+-MAP
+-DOC ...
+-STR
+
+> -\n  "1":\n   {}
++STR
++DOC
++SEQ
++MAP
+=VAL 5-6 1 "1
++MAP {}
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  'a:b': "a"
++STR
++DOC
++SEQ
++MAP
+=VAL 5-8 1 'a:b
+=VAL 12-13 1 "a
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  'b': a\n- b
++STR
++DOC
++SEQ
++MAP
+=VAL 5-6 1 'b
+=VAL 9-10 1 :a
+-MAP
+=VAL 13-14 2 :b
+-SEQ
+-DOC
+-STR
+
+> -\n  -\n    - []
++STR
++DOC
++SEQ
++SEQ
++SEQ
++SEQ []
+-SEQ
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  -\n    - {}
++STR
++DOC
++SEQ
++SEQ
++SEQ
++MAP {}
+-MAP
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  -\n-    - b
++STR
++DOC
++SEQ
++SEQ
+=VAL 5-5 1 :
+-SEQ
++SEQ
+=VAL 13-14 2 :b
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  - \n- "中"
++STR
++DOC
++SEQ
++SEQ
+=VAL 5-5 1 :
+-SEQ
+=VAL 10-13 2 "中
+-SEQ
+-DOC
+-STR
+
+> -\n  - 1\n  - ?x
++STR
++DOC
++SEQ
++SEQ
+=VAL 6-7 1 :1
+=VAL 12-14 2 :?x
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  - [é,"b"]
++STR
++DOC
++SEQ
++SEQ
++SEQ []
+=VAL 7-9 1 :é
+=VAL 11-12 1 "b
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - \x00}\x00: |\r\n #- 
++STR
++DOC
++SEQ
++MAP
+=VAL 2-5 0 :�}�
+=VAL 7-7 0 |
+-MAP
+-SEQ
+-DOC
+-STR
+#11-14
+
+> - "'"\n---\nb: 1
++STR
++DOC
++SEQ
+=VAL 3-4 0 "'
+-SEQ
+-DOC
++DOC ---
++MAP
+=VAL 10-11 2 :b
+=VAL 13-14 2 :1
+-MAP
+-DOC
+-STR
+
+> - "name"\n- 'b'
++STR
++DOC
++SEQ
+=VAL 3-7 0 "name
+=VAL 12-13 1 'b
+-SEQ
+-DOC
+-STR
+
+> - -x\n- "c"\n- z
++STR
++DOC
++SEQ
+=VAL 2-4 0 :-x
+=VAL 8-9 1 "c
+=VAL 13-14 2 :z
+-SEQ
+-DOC
+-STR
+
+> - 2.5\n-\n  - {}
++STR
++DOC
++SEQ
+=VAL 2-5 0 :2.5
++SEQ
++MAP {}
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - []\n- -x\n- it
++STR
++DOC
++SEQ
++SEQ []
+-SEQ
+=VAL 7-9 1 :-x
+=VAL 12-14 2 :it
+-SEQ
+-DOC
+-STR
+
+> - [{},'null',]
++STR
++DOC
++SEQ
++SEQ []
++MAP {}
+-MAP
+=VAL 7-11 0 'null
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - z\n- 'é'\n...
++STR
++DOC
++SEQ
+=VAL 2-3 0 :z
+=VAL 7-9 1 'é
+-SEQ
+-DOC ...
+-STR
+
+> - {"2.5": "1"}
++STR
++DOC
++SEQ
++MAP {}
+=VAL 4-7 0 "2.5
+=VAL 11-12 0 "1
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - {':x'}\n- a:b
++STR
++DOC
++SEQ
++MAP {}
+=VAL 4-6 0 ':x
+=VAL 7-7 0 :
+-MAP
+=VAL 11-14 1 :a:b
+-SEQ
+-DOC
+-STR
+
+> - {'c', '2.5'}
++STR
++DOC
++SEQ
++MAP {}
+=VAL 4-5 0 'c
+=VAL 6-6 0 :
+=VAL 9-12 0 '2.5
+=VAL 13-13 0 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - {'c':its, z}
++STR
++DOC
++SEQ
++MAP {}
+=VAL 4-5 0 'c
+=VAL 7-10 0 :its
+=VAL 12-13 0 :z
+=VAL 13-13 0 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - {}\n-\n  é: b
++STR
++DOC
++SEQ
++MAP {}
+-MAP
++MAP
+=VAL 9-11 2 :é
+=VAL 13-14 2 :b
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - {}\n---\nb:' 1
++STR
++DOC
++SEQ
++MAP {}
+-MAP
+-SEQ
+-DOC
++DOC ---
+=VAL 9-14 2 :b:' 1
+-DOC
+-STR
+
+> ---\n  -: "a:b"
++STR
++DOC ---
++MAP
+=VAL 6-7 1 :-
+=VAL 10-13 1 "a:b
+-MAP
+-DOC
+-STR
+
+> ---\n["b",]\n...
++STR
++DOC ---
++SEQ []
+=VAL 6-7 1 "b
+-SEQ
+-DOC ...
+-STR
+
+> ---\n['-x': b,]
++STR
++DOC ---
++SEQ []
++MAP {}
+=VAL 6-8 1 '-x
+=VAL 11-12 1 :b
+-MAP
+-SEQ
+-DOC
+-STR
+
+> ---\n[]\n---\nb: 
++STR
++DOC ---
++SEQ []
+-SEQ
+-DOC
++DOC ---
++MAP
+=VAL 11-12 3 :b
+=VAL 13-13 3 :
+-MAP
+-DOC
+-STR
+
+> ---\n[z,c,]\n...
++STR
++DOC ---
++SEQ []
+=VAL 5-6 1 :z
+=VAL 7-8 1 :c
+-SEQ
+-DOC ...
+-STR
+
+> ---\na  #cb\n...
++STR
++DOC ---
+=VAL 4-5 1 :a
+-DOC ...
+-STR
+#7-10
+
+> ---\na: [z ,é]
++STR
++DOC ---
++MAP
+=VAL 4-5 1 :a
++SEQ []
+=VAL 8-9 1 :z
+=VAL 11-13 1 :é
+-SEQ
+-MAP
+-DOC
+-STR
+
+> ---\nit: []\n...
++STR
++DOC ---
++MAP
+=VAL 4-6 1 :it
++SEQ []
+-SEQ
+-MAP
+-DOC ...
+-STR
+
+> .\n---\r  'x''y'
++STR
++DOC
+=VAL 0-1 0 :.
+-DOC
++DOC ---
+=VAL 9-13 2 'x'y
+-DOC
+-STR
+
+> 1:\n    a: "-x"
++STR
++DOC
++MAP
+=VAL 0-1 0 :1
++MAP
+=VAL 7-8 1 :a
+=VAL 11-13 1 "-x
+-MAP
+-MAP
+-DOC
+-STR
+
+> 2.5:\n  'c': []
++STR
++DOC
++MAP
+=VAL 0-3 0 :2.5
++MAP
+=VAL 8-9 1 'c
++SEQ []
+-SEQ
+-MAP
+-MAP
+-DOC
+-STR
+
+> ?x: 'é'\nc: {}
++STR
++DOC
++MAP
+=VAL 0-2 0 :?x
+=VAL 5-7 0 'é
+=VAL 9-10 1 :c
++MAP {}
+-MAP
+-MAP
+-DOC
+-STR
+
+> ?x: ["-x", é]
++STR
++DOC
++MAP
+=VAL 0-2 0 :?x
++SEQ []
+=VAL 6-8 0 "-x
+=VAL 11-13 0 :é
+-SEQ
+-MAP
+-DOC
+-STR
+
+> ["1"]\n---\nb: 1
++STR
++DOC
++SEQ []
+=VAL 2-3 0 "1
+-SEQ
+-DOC
++DOC ---
++MAP
+=VAL 10-11 2 :b
+=VAL 13-14 2 :1
+-MAP
+-DOC
+-STR
+
+> ["name",{},c,]
++STR
++DOC
++SEQ []
+=VAL 2-6 0 "name
++MAP {}
+-MAP
+=VAL 11-12 0 :c
+-SEQ
+-DOC
+-STR
+
+> ['c': ,  a b,]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 2-3 0 'c
+=VAL 6-6 0 :
+-MAP
+=VAL 9-12 0 :a b
+-SEQ
+-DOC
+-STR
+
+> [2.5,z: b,x y]
++STR
++DOC
++SEQ []
+=VAL 1-4 0 :2.5
++MAP {}
+=VAL 5-6 0 :z
+=VAL 8-9 0 :b
+-MAP
+=VAL 10-13 0 :x y
+-SEQ
+-DOC
+-STR
+
+> [a: 'c',"é",]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 1-2 0 :a
+=VAL 5-6 0 'c
+-MAP
+=VAL 9-11 0 "é
+-SEQ
+-DOC
+-STR
+
+> [c ,'b' ,中,]
++STR
++DOC
++SEQ []
+=VAL 1-2 0 :c
+=VAL 5-6 0 'b
+=VAL 9-12 0 :中
+-SEQ
+-DOC
+-STR
+
+> [z, a#b, 'c',]
++STR
++DOC
++SEQ []
+=VAL 1-2 0 :z
+=VAL 4-7 0 :a#b
+=VAL 10-11 0 'c
+-SEQ
+-DOC
+-STR
+
+> [z, b: "a\t b"]
++STR
++DOC
++SEQ []
+=VAL 1-2 0 :z
++MAP {}
+=VAL 4-5 0 :b
+=VAL 8-12 0 "a\t b
+-MAP
+-SEQ
+-DOC
+-STR
+
+> [z: "?x",':x']
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 1-2 0 :z
+=VAL 5-7 0 "?x
+-MAP
+=VAL 10-12 0 ':x
+-SEQ
+-DOC
+-STR
+
+> [{"2.5":"1"},]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 3-6 0 "2.5
+=VAL 9-10 0 "1
+-MAP
+-SEQ
+-DOC
+-STR
+
+> [{},'é',a b,]
++STR
++DOC
++SEQ []
++MAP {}
+-MAP
+=VAL 5-7 0 'é
+=VAL 9-12 0 :a b
+-SEQ
+-DOC
+-STR
+
+> [{},-x: "-x",]
++STR
++DOC
++SEQ []
++MAP {}
+-MAP
++MAP {}
+=VAL 4-6 0 :-x
+=VAL 9-11 0 "-x
+-MAP
+-SEQ
+-DOC
+-STR
+
+> a: [a#b: "1",]
++STR
++DOC
++MAP
+=VAL 0-1 0 :a
++SEQ []
++MAP {}
+=VAL 4-7 0 :a#b
+=VAL 10-11 0 "1
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> b,: \r\n- ...1*:
++STR
++DOC
++MAP
+=VAL 0-2 0 :b,
++SEQ
++MAP
+=VAL 8-13 1 :...1*
+=VAL 14-14 1 :
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> b: []\n1: "中"
++STR
++DOC
++MAP
+=VAL 0-1 0 :b
++SEQ []
+-SEQ
+=VAL 6-7 1 :1
+=VAL 10-13 1 "中
+-MAP
+-DOC
+-STR
+
+> c:\n  - {c:"c"}
++STR
++DOC
++MAP
+=VAL 0-1 0 :c
++SEQ
++MAP {}
+=VAL 8-13 1 :c:"c"
+=VAL 13-13 1 :
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> true: "?x"\n...
++STR
++DOC
++MAP
+=VAL 0-4 0 :true
+=VAL 7-9 0 "?x
+-MAP
+-DOC ...
+-STR
+
+> z: z\n"ul": {z}
++STR
++DOC
++MAP
+=VAL 0-1 0 :z
+=VAL 3-4 0 :z
+=VAL 6-8 1 "ul
++MAP {}
+=VAL 12-13 1 :z
+=VAL 13-13 1 :
+-MAP
+-MAP
+-DOC
+-STR
+
+> z: {}\nk: '2.5'
++STR
++DOC
++MAP
+=VAL 0-1 0 :z
++MAP {}
+-MAP
+=VAL 6-7 1 :k
+=VAL 10-13 1 '2.5
+-MAP
+-DOC
+-STR
+
+> {"2.5", 1: {}}
++STR
++DOC
++MAP {}
+=VAL 2-5 0 "2.5
+=VAL 6-6 0 :
+=VAL 8-9 0 :1
++MAP {}
+-MAP
+-MAP
+-DOC
+-STR
+
+> {"b":{}, c: z}
++STR
++DOC
++MAP {}
+=VAL 2-3 0 "b
++MAP {}
+-MAP
+=VAL 9-10 0 :c
+=VAL 12-13 0 :z
+-MAP
+-DOC
+-STR
+
+> {"c":{'''':c}}
++STR
++DOC
++MAP {}
+=VAL 2-3 0 "c
++MAP {}
+=VAL 7-9 0 ''
+=VAL 11-12 0 :c
+-MAP
+-MAP
+-DOC
+-STR
+
+> {"é": {1中}}
++STR
++DOC
++MAP {}
+=VAL 2-4 0 "é
++MAP {}
+=VAL 8-12 0 :1中
+=VAL 12-12 0 :
+-MAP
+-MAP
+-DOC
+-STR
+
+> {a#b}\n---\nb: 1
++STR
++DOC
++MAP {}
+=VAL 1-4 0 :a#b
+=VAL 4-4 0 :
+-MAP
+-DOC
++DOC ---
++MAP
+=VAL 10-11 2 :b
+=VAL 13-14 2 :1
+-MAP
+-DOC
+-STR
+
+> {a: "-x", "1"}
++STR
++DOC
++MAP {}
+=VAL 1-2 0 :a
+=VAL 5-7 0 "-x
+=VAL 11-12 0 "1
+=VAL 13-13 0 :
+-MAP
+-DOC
+-STR
+
+> é---': \r\n- - 
++STR
++DOC
++MAP
+=VAL 0-6 0 :é---'
++SEQ
++SEQ
+=VAL 13-13 1 :
+-SEQ
+-SEQ
+-MAP
+-DOC
+-STR
+
+> \x00b\x00:\n"\\u00e9" :
++STR
++DOC
++MAP
+=VAL 0-3 0 :�b�
+=VAL 4-4 0 :
+=VAL 6-12 1 "é
+=VAL 15-15 1 :
+-MAP
+-DOC
+-STR
+
+> "'":\n  a#: "-x"
++STR
++DOC
++MAP
+=VAL 1-2 0 "'
++MAP
+=VAL 7-9 1 :a#
+=VAL 12-14 1 "-x
+-MAP
+-MAP
+-DOC
+-STR
+
+> "-x": z\n"x": {}
++STR
++DOC
++MAP
+=VAL 1-3 0 "-x
+=VAL 6-7 0 :z
+=VAL 9-10 1 "x
++MAP {}
+-MAP
+-MAP
+-DOC
+-STR
+
+> ":x": [z: '?x']
++STR
++DOC
++MAP
+=VAL 1-3 0 ":x
++SEQ []
++MAP {}
+=VAL 7-8 0 :z
+=VAL 11-13 0 '?x
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> "\\"":\n    - {z}
++STR
++DOC
++MAP
+=VAL 1-3 0 ""
++SEQ
++MAP {}
+=VAL 13-14 1 :z
+=VAL 14-14 1 :
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> "a#b": [its: b]
++STR
++DOC
++MAP
+=VAL 1-4 0 "a#b
++SEQ []
++MAP {}
+=VAL 8-11 0 :its
+=VAL 13-14 0 :b
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> "x y":\n  -x: {}
++STR
++DOC
++MAP
+=VAL 1-4 0 "x y
++MAP
+=VAL 9-11 1 :-x
++MAP {}
+-MAP
+-MAP
+-MAP
+-DOC
+-STR
+
+> #1\r\n- |\t#%\t    
++STR
++DOC
++SEQ
+=VAL 6-6 1 |
+-SEQ
+-DOC
+-STR
+#0-2
+#8-15
+
+> ':a?x': {b:"b"}
++STR
++DOC
++MAP
+=VAL 1-5 0 ':a?x
++MAP {}
+=VAL 9-14 0 :b:"b"
+=VAL 14-14 0 :
+-MAP
+-MAP
+-DOC
+-STR
+
+> 'a b': [c,a#b,]
++STR
++DOC
++MAP
+=VAL 1-4 0 'a b
++SEQ []
+=VAL 8-9 0 :c
+=VAL 10-13 0 :a#b
+-SEQ
+-MAP
+-DOC
+-STR
+
+> 'name': '1'\n...
++STR
++DOC
++MAP
+=VAL 1-5 0 'name
+=VAL 9-10 0 '1
+-MAP
+-DOC ...
+-STR
+
+> -\n  "1": {"-x"}
++STR
++DOC
++SEQ
++MAP
+=VAL 5-6 1 "1
++MAP {}
+=VAL 11-13 1 "-x
+=VAL 14-14 1 :
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  -\n    - "'"
++STR
++DOC
++SEQ
++SEQ
++SEQ
+=VAL 13-14 2 "'
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  - '1'\n- 中
++STR
++DOC
++SEQ
++SEQ
+=VAL 7-8 1 '1
+-SEQ
+=VAL 12-15 2 :中
+-SEQ
+-DOC
+-STR
+
+> -\n  - ':x'\n- {}
++STR
++DOC
++SEQ
++SEQ
+=VAL 7-9 1 ':x
+-SEQ
++MAP {}
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  - ["é",z,]
++STR
++DOC
++SEQ
++SEQ
++SEQ []
+=VAL 8-10 1 "é
+=VAL 12-13 1 :z
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  - {'':1a:b}
++STR
++DOC
++SEQ
++SEQ
++MAP {}
+=VAL 8-8 1 '
+=VAL 10-14 1 :1a:b
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  - {c, null}
++STR
++DOC
++SEQ
++SEQ
++MAP {}
+=VAL 7-8 1 :c
+=VAL 8-8 1 :
+=VAL 10-14 1 :null
+=VAL 14-14 1 :
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  1: '中'\n- 
++STR
++DOC
++SEQ
++MAP
+=VAL 4-5 1 :1
+=VAL 8-11 1 '中
+-MAP
+=VAL 14-14 2 :
+-SEQ
+-DOC
+-STR
+
+> -\n  k:\n    - {}
++STR
++DOC
++SEQ
++MAP
+=VAL 4-5 1 :k
++SEQ
++MAP {}
+-MAP
+-SEQ
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  k: {'-x':1}
++STR
++DOC
++SEQ
++MAP
+=VAL 4-5 1 :k
++MAP {}
+=VAL 9-11 1 '-x
+=VAL 13-14 1 :1
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - "\\u00e9":\r- \t
++STR
++DOC
++SEQ
++MAP
+=VAL 3-9 0 "é
+=VAL 11-11 0 :
+-MAP
+=VAL 13-13 1 :
+-SEQ
+-DOC
+-STR
+
+> - "a\\n": 'x''y'
++STR
++DOC
++SEQ
++MAP
+=VAL 3-6 0 "a\n
+=VAL 10-14 0 'x'y
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - 'a:b'\n-\n  -x:
++STR
++DOC
++SEQ
+=VAL 3-6 0 'a:b
++MAP
+=VAL 12-14 2 :-x
+=VAL 15-15 2 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - 'é'\n---\nb: 1
++STR
++DOC
++SEQ
+=VAL 3-5 0 'é
+-SEQ
+-DOC
++DOC ---
++MAP
+=VAL 11-12 2 :b
+=VAL 14-15 2 :1
+-MAP
+-DOC
+-STR
+
+> - -  - - \n#!1],
++STR
++DOC
++SEQ
++SEQ
++SEQ
++SEQ
+=VAL 8-8 0 :
+-SEQ
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+#10-15
+
+> - 2.5\n- []\n- -x
++STR
++DOC
++SEQ
+=VAL 2-5 0 :2.5
++SEQ []
+-SEQ
+=VAL 13-15 2 :-x
+-SEQ
+-DOC
+-STR
+
+> - ["a"]\n- "中"
++STR
++DOC
++SEQ
++SEQ []
+=VAL 4-5 0 "a
+-SEQ
+=VAL 11-14 1 "中
+-SEQ
+-DOC
+-STR
+
+> - ["中", '"',]
++STR
++DOC
++SEQ
++SEQ []
+=VAL 4-7 0 "中
+=VAL 11-12 0 '"
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - []\n-\n  - "\\""
++STR
++DOC
++SEQ
++SEQ []
+-SEQ
++SEQ
+=VAL 12-14 2 ""
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - [c,\n  {true}]
++STR
++DOC
++SEQ
++SEQ []
+=VAL 3-4 0 :c
++MAP {}
+=VAL 9-13 1 :true
+=VAL 13-13 1 :
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - [中,]\n- 'é'
++STR
++DOC
++SEQ
++SEQ []
+=VAL 3-6 0 :中
+-SEQ
+=VAL 12-14 1 'é
+-SEQ
+-DOC
+-STR
+
+> - a b\n- {}\n- []
++STR
++DOC
++SEQ
+=VAL 2-5 0 :a b
++MAP {}
+-MAP
++SEQ []
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - its\n- {"2.5"}
++STR
++DOC
++SEQ
+=VAL 2-5 0 :its
++MAP {}
+=VAL 10-13 1 "2.5
+=VAL 14-14 1 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - z\n- ['true',]
++STR
++DOC
++SEQ
+=VAL 2-3 0 :z
++SEQ []
+=VAL 8-12 1 'true
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - {"\\"", "x y"}
++STR
++DOC
++SEQ
++MAP {}
+=VAL 4-6 0 ""
+=VAL 7-7 0 :
+=VAL 10-13 0 "x y
+=VAL 14-14 0 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - {a b}\n- 'a#b'
++STR
++DOC
++SEQ
++MAP {}
+=VAL 3-6 0 :a b
+=VAL 6-6 0 :
+-MAP
+=VAL 11-14 1 'a#b
+-SEQ
+-DOC
+-STR
+
+> - {}\n-\n  - "\\""
++STR
++DOC
++SEQ
++MAP {}
+-MAP
++SEQ
+=VAL 12-14 2 ""
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> ---\n'''': "中"
++STR
++DOC ---
++MAP
+=VAL 5-7 1 ''
+=VAL 11-14 1 "中
+-MAP
+-DOC
+-STR
+
+> ---\n'name': []\n
++STR
++DOC ---
++MAP
+=VAL 5-9 1 'name
++SEQ []
+-SEQ
+-MAP
+-DOC
+-STR
+
+> ---\n-\n  - ":x"\n
++STR
++DOC ---
++SEQ
++SEQ
+=VAL 11-13 2 ":x
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> ---\n-\n  k: 2.5\n
++STR
++DOC ---
++SEQ
++MAP
+=VAL 8-9 2 :k
+=VAL 11-14 2 :2.5
+-MAP
+-SEQ
+-DOC
+-STR
+
+> ---\n- 'a b'\n...
++STR
++DOC ---
++SEQ
+=VAL 7-10 1 'a b
+-SEQ
+-DOC ...
+-STR
+
+> ---\n- 'b'\n- []\n
++STR
++DOC ---
++SEQ
+=VAL 7-8 1 'b
++SEQ []
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> ---\nz:\n  - a#b\n
++STR
++DOC ---
++MAP
+=VAL 4-5 1 :z
++SEQ
+=VAL 11-14 2 :a#b
+-SEQ
+-MAP
+-DOC
+-STR
+
+> --- ""\n---\nb: 1
++STR
++DOC ---
+=VAL 5-5 0 "
+-DOC
++DOC ---
++MAP
+=VAL 11-12 2 :b
+=VAL 14-15 2 :1
+-MAP
+-DOC
+-STR
+
+> --- ''\n---\nb: \x00
++STR
++DOC ---
+=VAL 5-5 0 '
+-DOC
++DOC ---
++MAP
+=VAL 11-12 2 :b
+=VAL 14-15 2 :�
+-MAP
+-DOC
+-STR
+
+> --- [z: z,]\n...
++STR
++DOC ---
++SEQ []
++MAP {}
+=VAL 5-6 0 :z
+=VAL 8-9 0 :z
+-MAP
+-SEQ
+-DOC ...
+-STR
+
+> --- [{"-x":z},]
++STR
++DOC ---
++SEQ []
++MAP {}
+=VAL 7-9 0 "-x
+=VAL 11-12 0 :z
+-MAP
+-SEQ
+-DOC
+-STR
+
+> --- {"?x":'"'}\n
++STR
++DOC ---
++MAP {}
+=VAL 6-8 0 "?x
+=VAL 11-12 0 '"
+-MAP
+-DOC
+-STR
+
+> --- {}\n---\nb: 1
++STR
++DOC ---
++MAP {}
+-MAP
+-DOC
++DOC ---
++MAP
+=VAL 11-12 2 :b
+=VAL 14-15 2 :1
+-MAP
+-DOC
+-STR
+
+> 1: ?x\n'a:b': {}
++STR
++DOC
++MAP
+=VAL 0-1 0 :1
+=VAL 3-5 0 :?x
+=VAL 7-10 1 'a:b
++MAP {}
+-MAP
+-MAP
+-DOC
+-STR
+
+> 2.5: {a#b: "a"}
++STR
++DOC
++MAP
+=VAL 0-3 0 :2.5
++MAP {}
+=VAL 6-9 0 :a#b
+=VAL 12-13 0 "a
+-MAP
+-MAP
+-DOC
+-STR
+
+> ?: \t\r\r'x''y': |
++STR
++DOC
++MAP
+=VAL 0-1 0 :?
+=VAL 2-2 0 :
+=VAL 7-11 2 'x'y
+=VAL 14-14 2 |
+-MAP
+-DOC
+-STR
+
+> ?: |\r\n#&- -#---
++STR
++DOC
++MAP
+=VAL 0-1 0 :?
+=VAL 3-3 0 |
+-MAP
+-DOC
+-STR
+#6-15
+
+> ?x:\n  "中": #b
++STR
++DOC
++MAP
+=VAL 0-2 0 :?x
++MAP
+=VAL 7-10 1 "中
+=VAL 12-12 1 :
+-MAP
+-MAP
+-DOC
+-STR
+#13-15
+
+> ?x: {"*ab": {}}
++STR
++DOC
++MAP
+=VAL 0-2 0 :?x
++MAP {}
+=VAL 6-9 0 "*ab
++MAP {}
+-MAP
+-MAP
+-MAP
+-DOC
+-STR
+
+> [\nx, 1, "i's",]
++STR
++DOC
++SEQ []
+=VAL 2-3 1 :x
+=VAL 5-6 1 :1
+=VAL 9-12 1 "i's
+-SEQ
+-DOC
+-STR
+
+> [":x", "a": -x]
++STR
++DOC
++SEQ []
+=VAL 2-4 0 ":x
++MAP {}
+=VAL 8-9 0 "a
+=VAL 12-14 0 :-x
+-MAP
+-SEQ
+-DOC
+-STR
+
+> ["中" ,z: -x,]
++STR
++DOC
++SEQ []
+=VAL 2-5 0 "中
++MAP {}
+=VAL 8-9 0 :z
+=VAL 11-13 0 :-x
+-MAP
+-SEQ
+-DOC
+-STR
+
+> ['1',\n  a#: ""]
++STR
++DOC
++SEQ []
+=VAL 2-3 0 '1
++MAP {}
+=VAL 8-10 1 :a#
+=VAL 13-13 1 "
+-MAP
+-SEQ
+-DOC
+-STR
+
+> ['?x':  ,'''',]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 2-4 0 '?x
+=VAL 8-8 0 :
+-MAP
+=VAL 10-12 0 ''
+-SEQ
+-DOC
+-STR
+
+> []\n---\nb: #c 1\x00
++STR
++DOC
++SEQ []
+-SEQ
+-DOC
++DOC ---
++MAP
+=VAL 7-8 2 :b
+=VAL 9-9 2 :
+-MAP
+-DOC
+-STR
+#10-15
+
+> [a#b ,true: {}]
++STR
++DOC
++SEQ []
+=VAL 1-4 0 :a#b
++MAP {}
+=VAL 6-10 0 :true
++MAP {}
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> [b,null: ,'1',]
++STR
++DOC
++SEQ []
+=VAL 1-2 0 :b
++MAP {}
+=VAL 3-7 0 :null
+=VAL 9-9 0 :
+-MAP
+=VAL 11-12 0 '1
+-SEQ
+-DOC
+-STR
+
+> [c,\n  '1': "'"]
++STR
++DOC
++SEQ []
+=VAL 1-2 0 :c
++MAP {}
+=VAL 7-8 1 '1
+=VAL 12-13 1 "'
+-MAP
+-SEQ
+-DOC
+-STR
+
+> [{"c", "a#b"},]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 3-4 0 "c
+=VAL 5-5 0 :
+=VAL 8-11 0 "a#b
+=VAL 12-12 0 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> [{'2.5'},\n  {}]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 3-6 0 '2.5
+=VAL 7-7 0 :
+-MAP
++MAP {}
+-MAP
+-SEQ
+-DOC
+-STR
+
+> [{},\n  a#b: b,]
++STR
++DOC
++SEQ []
++MAP {}
+-MAP
++MAP {}
+=VAL 7-10 1 :a#b
+=VAL 12-13 1 :b
+-MAP
+-SEQ
+-DOC
+-STR
+
+> [中 ,a#b,]\n---
++STR
++DOC
++SEQ []
+=VAL 1-4 0 :中
+=VAL 6-9 0 :a#b
+-SEQ
+-DOC
++DOC ---
+=VAL 15-15 2 :
+-DOC
+-STR
+
+> a:b:\n"b": '2.5'
++STR
++DOC
++MAP
+=VAL 0-3 0 :a:b
+=VAL 4-4 0 :
+=VAL 6-7 1 "b
+=VAL 11-14 1 '2.5
+-MAP
+-DOC
+-STR
+
+> its:\n  - [a#b,]
++STR
++DOC
++MAP
+=VAL 0-3 0 :its
++SEQ
++SEQ []
+=VAL 10-13 1 :a#b
+-SEQ
+-SEQ
+-MAP
+-DOC
+-STR
+
+> its: [{}, '?x']
++STR
++DOC
++MAP
+=VAL 0-3 0 :its
++SEQ []
++MAP {}
+-MAP
+=VAL 11-13 0 '?x
+-SEQ
+-MAP
+-DOC
+-STR
+
+> k: ''''\na#b: []
++STR
++DOC
++MAP
+=VAL 0-1 0 :k
+=VAL 4-6 0 ''
+=VAL 8-11 1 :a#b
++SEQ []
+-SEQ
+-MAP
+-DOC
+-STR
+
+> k: ?x\n'c': ttle
++STR
++DOC
++MAP
+=VAL 0-1 0 :k
+=VAL 3-5 0 :?x
+=VAL 7-8 1 'c
+=VAL 11-15 1 :ttle
+-MAP
+-DOC
+-STR
+
+> z:\n  '"': "a:b"
++STR
++DOC
++MAP
+=VAL 0-1 0 :z
++MAP
+=VAL 6-7 1 '"
+=VAL 11-14 1 "a:b
+-MAP
+-MAP
+-DOC
+-STR
+
+> z: null\na:b: []
++STR
++DOC
++MAP
+=VAL 0-1 0 :z
+=VAL 3-7 0 :null
+=VAL 8-11 1 :a:b
++SEQ []
+-SEQ
+-MAP
+-DOC
+-STR
+
+> {"x -ay":{"a"}}
++STR
++DOC
++MAP {}
+=VAL 2-7 0 "x -ay
++MAP {}
+=VAL 11-12 0 "a
+=VAL 13-13 0 :
+-MAP
+-MAP
+-DOC
+-STR
+
+> {'1', c: "a#b"}
++STR
++DOC
++MAP {}
+=VAL 2-3 0 '1
+=VAL 4-4 0 :
+=VAL 6-7 0 :c
+=VAL 10-13 0 "a#b
+-MAP
+-DOC
+-STR
+
+> {'1': {'true'}}
++STR
++DOC
++MAP {}
+=VAL 2-3 0 '1
++MAP {}
+=VAL 8-12 0 'true
+=VAL 13-13 0 :
+-MAP
+-MAP
+-DOC
+-STR
+
+> {a: 'a#b', its}
++STR
++DOC
++MAP {}
+=VAL 1-2 0 :a
+=VAL 5-8 0 'a#b
+=VAL 11-14 0 :its
+=VAL 14-14 0 :
+-MAP
+-DOC
+-STR
+
+> {c, name: "?x"}
++STR
++DOC
++MAP {}
+=VAL 1-2 0 :c
+=VAL 2-2 0 :
+=VAL 4-8 0 :name
+=VAL 11-13 0 "?x
+-MAP
+-DOC
+-STR
+
+> {its: "'", z:1}
++STR
++DOC
++MAP {}
+=VAL 1-4 0 :its
+=VAL 7-8 0 "'
+=VAL 11-14 0 :z:1
+=VAL 14-14 0 :
+-MAP
+-DOC
+-STR
+
+> 中: '中'\na b:
++STR
++DOC
++MAP
+=VAL 0-3 0 :中
+=VAL 6-9 0 '中
+=VAL 11-14 1 :a b
+=VAL 15-15 1 :
+-MAP
+-DOC
+-STR
+
+> "?x": [a#b, a:b]
++STR
++DOC
++MAP
+=VAL 1-3 0 "?x
++SEQ []
+=VAL 7-10 0 :a#b
+=VAL 12-15 0 :a:b
+-SEQ
+-MAP
+-DOC
+-STR
+
+> "a:b": '中'\n...
++STR
++DOC
++MAP
+=VAL 1-4 0 "a:b
+=VAL 8-11 0 '中
+-MAP
+-DOC ...
+-STR
+
+> "a\\n":\r-: #':é-
++STR
++DOC
++MAP
+=VAL 1-4 0 "a\n
+=VAL 6-6 0 :
+=VAL 7-8 1 :-
+=VAL 9-9 1 :
+-MAP
+-DOC
+-STR
+#10-16
+
+> "b":\n  -\n    - c
++STR
++DOC
++MAP
+=VAL 1-2 0 "b
++SEQ
++SEQ
+=VAL 15-16 2 :c
+-SEQ
+-SEQ
+-MAP
+-DOC
+-STR
+
+> "b": [x y,'中']
++STR
++DOC
++MAP
+=VAL 1-2 0 "b
++SEQ []
+=VAL 6-9 0 :x y
+=VAL 11-14 0 '中
+-SEQ
+-MAP
+-DOC
+-STR
+
+> "true":\n    - []
++STR
++DOC
++MAP
+=VAL 1-5 0 "true
++SEQ
++SEQ []
+-SEQ
+-SEQ
+-MAP
+-DOC
+-STR
+
+> #-\x00 [-*"\r\n- \r...
++STR
++DOC
++SEQ
+=VAL 11-11 1 :
+-SEQ
+-DOC ...
+-STR
+#0-8
+
+> 'c':\n '-x': 1'c'
++STR
++DOC
++MAP
+=VAL 1-2 0 'c
++MAP
+=VAL 7-9 1 '-x
+=VAL 12-16 1 :1'c'
+-MAP
+-MAP
+-DOC
+-STR
+
+> 'é':\n    z: "'"
++STR
++DOC
++MAP
+=VAL 1-3 0 'é
++MAP
+=VAL 10-11 1 :z
+=VAL 14-15 1 "'
+-MAP
+-MAP
+-DOC
+-STR
+
+> -\n  "-x": ['a',]
++STR
++DOC
++SEQ
++MAP
+=VAL 5-7 1 "-x
++SEQ []
+=VAL 12-13 1 'a
+-SEQ
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  -\n    - 'é'
++STR
++DOC
++SEQ
++SEQ
++SEQ
+=VAL 13-15 2 'é
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  -\n    b: 'a'
++STR
++DOC
++SEQ
++SEQ
++MAP
+=VAL 10-11 2 :b
+=VAL 14-15 2 'a
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  - [a,\n  {},]
++STR
++DOC
++SEQ
++SEQ
++SEQ []
+=VAL 7-8 1 :a
++MAP {}
+-MAP
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  - its\n  - []
++STR
++DOC
++SEQ
++SEQ
+=VAL 6-9 1 :its
++SEQ []
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  - {}\n- [a:b]
++STR
++DOC
++SEQ
++SEQ
++MAP {}
+-MAP
+-SEQ
++SEQ []
+=VAL 12-15 2 :a:b
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  a#b: é\n- {}
++STR
++DOC
++SEQ
++MAP
+=VAL 4-7 1 :a#b
+=VAL 9-11 1 :é
+-MAP
++MAP {}
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  b: {}\n- titl
++STR
++DOC
++SEQ
++MAP
+=VAL 4-5 1 :b
++MAP {}
+-MAP
+-MAP
+=VAL 12-16 2 :titl
+-SEQ
+-DOC
+-STR
+
+> -\n  c:\n    - "a"
++STR
++DOC
++SEQ
++MAP
+=VAL 4-5 1 :c
++SEQ
+=VAL 14-15 2 "a
+-SEQ
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  c:\n    k: é
++STR
++DOC
++SEQ
++MAP
+=VAL 4-5 1 :c
++MAP
+=VAL 11-12 2 :k
+=VAL 14-16 2 :é
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  k:\n    - 中
++STR
++DOC
++SEQ
++MAP
+=VAL 4-5 1 :k
++SEQ
+=VAL 13-16 2 :中
+-SEQ
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n '"':\n  a: "c"
++STR
++DOC
++SEQ
++MAP
+=VAL 4-5 1 '"
++MAP
+=VAL 10-11 2 :a
+=VAL 14-15 2 "c
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - "a"\n- {'ttle'}
++STR
++DOC
++SEQ
+=VAL 3-4 0 "a
++MAP {}
+=VAL 10-14 1 'ttle
+=VAL 15-15 1 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - ["c": title,]\n
++STR
++DOC
++SEQ
++SEQ []
++MAP {}
+=VAL 4-5 0 "c
+=VAL 8-13 0 :title
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - ["name",]\n- :x
++STR
++DOC
++SEQ
++SEQ []
+=VAL 4-8 0 "name
+-SEQ
+=VAL 14-16 1 ::x
+-SEQ
+-DOC
+-STR
+
+> - ['true': "b",]
++STR
++DOC
++SEQ
++SEQ []
++MAP {}
+=VAL 4-8 0 'true
+=VAL 12-13 0 "b
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - ['x y',\t its,]
++STR
++DOC
++SEQ
++SEQ []
+=VAL 4-7 0 'x y
+=VAL 11-14 0 :its
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - [a:b: ,title,]
++STR
++DOC
++SEQ
++SEQ []
++MAP {}
+=VAL 3-6 0 :a:b
+=VAL 8-8 0 :
+-MAP
+=VAL 9-14 0 :title
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - [{}]\n-\n  1: []
++STR
++DOC
++SEQ
++SEQ []
++MAP {}
+-MAP
+-SEQ
++MAP
+=VAL 11-12 2 :1
++SEQ []
+-SEQ
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - {\t2.5":is}\n...
++STR
++DOC
++SEQ
++MAP {}
+=VAL 4-11 0 :2.5":is
+=VAL 11-11 0 :
+-MAP
+-SEQ
+-DOC ...
+-STR
+
+> - {'a b':"true"}
++STR
++DOC
++SEQ
++MAP {}
+=VAL 4-7 0 'a b
+=VAL 10-14 0 "true
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - {'it''s':'?x'}
++STR
++DOC
++SEQ
++MAP {}
+=VAL 4-9 0 'it's
+=VAL 12-14 0 '?x
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - {a b: {}}\n- []
++STR
++DOC
++SEQ
++MAP {}
+=VAL 3-6 0 :a b
++MAP {}
+-MAP
+-MAP
++SEQ []
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - {}\n- "é"\n- :x
++STR
++DOC
++SEQ
++MAP {}
+-MAP
+=VAL 8-10 1 "é
+=VAL 14-16 2 ::x
+-SEQ
+-DOC
+-STR
+
+> ---\n"'": "n:ull"
++STR
++DOC ---
++MAP
+=VAL 5-6 1 "'
+=VAL 10-15 1 "n:ull
+-MAP
+-DOC
+-STR
+
+> ---\n'''': é\n...
++STR
++DOC ---
++MAP
+=VAL 5-7 1 ''
+=VAL 10-12 1 :é
+-MAP
+-DOC ...
+-STR
+
+> ---\n-\n  - []\n...
++STR
++DOC ---
++SEQ
++SEQ
++SEQ []
+-SEQ
+-SEQ
+-SEQ
+-DOC ...
+-STR
+
+> ---\n- ":x"\n- []\n
++STR
++DOC ---
++SEQ
+=VAL 7-9 1 ":x
++SEQ []
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> ---\n- 'true'\n- \n
++STR
++DOC ---
++SEQ
+=VAL 7-11 1 'true
+=VAL 14-14 2 :
+-SEQ
+-DOC
+-STR
+
+> ---\n- b\n---\nb: 1
++STR
++DOC ---
++SEQ
+=VAL 6-7 1 :b
+-SEQ
+-DOC
++DOC ---
++MAP
+=VAL 12-13 3 :b
+=VAL 15-16 3 :1
+-MAP
+-DOC
+-STR
+
+> ---\n- title\n- ..
++STR
++DOC ---
++SEQ
+=VAL 6-11 1 :title
+=VAL 14-16 2 :..
+-SEQ
+-DOC
+-STR
+
+> ---\n:null: #c's'
++STR
++DOC ---
++MAP
+=VAL 4-9 1 ::null
+=VAL 10-10 1 :
+-MAP
+-DOC
+-STR
+#11-16
+
+> ---\n?x: ":x"\n...
++STR
++DOC ---
++MAP
+=VAL 4-6 1 :?x
+=VAL 9-11 1 ":x
+-MAP
+-DOC ...
+-STR
+
+> ---\n[z]\n---\nb: 1
++STR
++DOC ---
++SEQ []
+=VAL 5-6 1 :z
+-SEQ
+-DOC
++DOC ---
++MAP
+=VAL 12-13 3 :b
+=VAL 15-16 3 :1
+-MAP
+-DOC
+-STR
+
+> ---\n{c: 'true'}\n
++STR
++DOC ---
++MAP {}
+=VAL 5-6 1 :c
+=VAL 9-13 1 'true
+-MAP
+-DOC
+-STR
+
+> --- [b,"'",]\n...
++STR
++DOC ---
++SEQ []
+=VAL 5-6 0 :b
+=VAL 8-9 0 "'
+-SEQ
+-DOC ...
+-STR
+
+> --- [{},\n  a b]\n
++STR
++DOC ---
++SEQ []
++MAP {}
+-MAP
+=VAL 11-14 1 :a b
+-SEQ
+-DOC
+-STR
+
+> --- [{}]\n---\nb 1
++STR
++DOC ---
++SEQ []
++MAP {}
+-MAP
+-SEQ
+-DOC
++DOC ---
+=VAL 13-16 2 :b 1
+-DOC
+-STR
+
+> --- [{}]\n---\nb: 
++STR
++DOC ---
++SEQ []
++MAP {}
+-MAP
+-SEQ
+-DOC
++DOC ---
++MAP
+=VAL 13-14 2 :b
+=VAL 15-15 2 :
+-MAP
+-DOC
+-STR
+
+> -x: []\ntitle: []
++STR
++DOC
++MAP
+=VAL 0-2 0 :-x
++SEQ []
+-SEQ
+=VAL 7-12 1 :title
++SEQ []
+-SEQ
+-MAP
+-DOC
+-STR
+
+> 1: -xx y\n"c": []
++STR
++DOC
++MAP
+=VAL 0-1 0 :1
+=VAL 3-8 0 :-xx y
+=VAL 10-11 1 "c
++SEQ []
+-SEQ
+-MAP
+-DOC
+-STR
+
+> 2a.5: {}\na: "-x"
++STR
++DOC
++MAP
+=VAL 0-4 0 :2a.5
++MAP {}
+-MAP
+=VAL 9-10 1 :a
+=VAL 13-15 1 "-x
+-MAP
+-DOC
+-STR
+
+> :x: 中\nz: '中'
++STR
++DOC
++MAP
+=VAL 0-2 0 ::x
+=VAL 4-7 0 :中
+=VAL 8-9 1 :z
+=VAL 12-15 1 '中
+-MAP
+-DOC
+-STR
+
+> ['1',\n  "'": é]
++STR
++DOC
++SEQ []
+=VAL 2-3 0 '1
++MAP {}
+=VAL 9-10 1 "'
+=VAL 13-15 1 :é
+-MAP
+-SEQ
+-DOC
+-STR
+
+> ['c',"'","a#b",]
++STR
++DOC
++SEQ []
+=VAL 2-3 0 'c
+=VAL 6-7 0 "'
+=VAL 10-13 0 "a#b
+-SEQ
+-DOC
+-STR
+
+> ['c': ":x",]\n...
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 2-3 0 'c
+=VAL 7-9 0 ":x
+-MAP
+-SEQ
+-DOC ...
+-STR
+
+> [a ,"a:b" ,':x']
++STR
++DOC
++SEQ []
+=VAL 1-2 0 :a
+=VAL 5-8 0 "a:b
+=VAL 12-14 0 ':x
+-SEQ
+-DOC
+-STR
+
+> [a:b ,{} ,"a:b"]
++STR
++DOC
++SEQ []
+=VAL 1-4 0 :a:b
++MAP {}
+-MAP
+=VAL 11-14 0 "a:b
+-SEQ
+-DOC
+-STR
+
+> [b,\n  null: 'a']
++STR
++DOC
++SEQ []
+=VAL 1-2 0 :b
++MAP {}
+=VAL 6-10 1 :null
+=VAL 13-14 1 'a
+-MAP
+-SEQ
+-DOC
+-STR
+
+> [b,"'"]\n---\nb: 1
++STR
++DOC
++SEQ []
+=VAL 1-2 0 :b
+=VAL 4-5 0 "'
+-SEQ
+-DOC
++DOC ---
++MAP
+=VAL 12-13 2 :b
+=VAL 15-16 2 :1
+-MAP
+-DOC
+-STR
+
+> [nul: 'a b',x y]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 1-4 0 :nul
+=VAL 7-10 0 'a b
+-MAP
+=VAL 12-15 0 :x y
+-SEQ
+-DOC
+-STR
+
+> [x y: {},\n  its]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 1-4 0 :x y
++MAP {}
+-MAP
+-MAP
+=VAL 12-15 1 :its
+-SEQ
+-DOC
+-STR
+
+> [z,'it''s': -x,]
++STR
++DOC
++SEQ []
+=VAL 1-2 0 :z
++MAP {}
+=VAL 4-9 0 'it's
+=VAL 12-14 0 :-x
+-MAP
+-SEQ
+-DOC
+-STR
+
+> [{name, "it's"}]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 2-6 0 :name
+=VAL 6-6 0 :
+=VAL 9-13 0 "it's
+=VAL 14-14 0 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> [{中, -x  }, a]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 2-5 0 :中
+=VAL 5-5 0 :
+=VAL 7-9 0 :-x
+=VAL 11-11 0 :
+-MAP
+=VAL 14-15 0 :a
+-SEQ
+-DOC
+-STR
+
+> a#b: ["'": 2.5]\n
++STR
++DOC
++MAP
+=VAL 0-3 0 :a#b
++SEQ []
++MAP {}
+=VAL 7-8 0 "'
+=VAL 11-14 0 :2.5
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> a:\n    '1': 'é'
++STR
++DOC
++MAP
+=VAL 0-1 0 :a
++MAP
+=VAL 8-9 1 '1
+=VAL 13-15 1 'é
+-MAP
+-MAP
+-DOC
+-STR
+
+> b: [é: 'it''s']
++STR
++DOC
++MAP
+=VAL 0-1 0 :b
++SEQ []
++MAP {}
+=VAL 4-6 0 :é
+=VAL 9-14 0 'it's
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> c:\n  - ["name",]
++STR
++DOC
++MAP
+=VAL 0-1 0 :c
++SEQ
++SEQ []
+=VAL 9-13 1 "name
+-SEQ
+-SEQ
+-MAP
+-DOC
+-STR
+
+> c: a#b\n'中': []
++STR
++DOC
++MAP
+=VAL 0-1 0 :c
+=VAL 3-6 0 :a#b
+=VAL 8-11 1 '中
++SEQ []
+-SEQ
+-MAP
+-DOC
+-STR
+
+> k:\n    "中": []
++STR
++DOC
++MAP
+=VAL 0-1 0 :k
++MAP
+=VAL 8-11 1 "中
++SEQ []
+-SEQ
+-MAP
+-MAP
+-DOC
+-STR
+
+> k: ['a:b']\nz: {}
++STR
++DOC
++MAP
+=VAL 0-1 0 :k
++SEQ []
+=VAL 5-8 0 'a:b
+-SEQ
+=VAL 11-12 1 :z
++MAP {}
+-MAP
+-MAP
+-DOC
+-STR
+
+> k: {}\na#b: title
++STR
++DOC
++MAP
+=VAL 0-1 0 :k
++MAP {}
+-MAP
+=VAL 6-9 1 :a#b
+=VAL 11-16 1 :title
+-MAP
+-DOC
+-STR
+
+> true: 'b'\n'c': z
++STR
++DOC
++MAP
+=VAL 0-4 0 :true
+=VAL 7-8 0 'b
+=VAL 11-12 1 'c
+=VAL 15-16 1 :z
+-MAP
+-DOC
+-STR
+
+> x y:\n  b: []\n...
++STR
++DOC
++MAP
+=VAL 0-3 0 :x y
++MAP
+=VAL 7-8 1 :b
++SEQ []
+-SEQ
+-MAP
+-MAP
+-DOC ...
+-STR
+
+> z: ":x"\name: 'c'
++STR
++DOC
++MAP
+=VAL 0-1 0 :z
+=VAL 4-6 0 ":x
+=VAL 8-11 1 :ame
+=VAL 14-15 1 'c
+-MAP
+-DOC
+-STR
+
+> z: ':x'\n---\nb: 1
++STR
++DOC
++MAP
+=VAL 0-1 0 :z
+=VAL 4-6 0 ':x
+-MAP
+-DOC
++DOC ---
++MAP
+=VAL 12-13 2 :b
+=VAL 15-16 2 :1
+-MAP
+-DOC
+-STR
+
+> z: 'null'\n"1": 1
++STR
++DOC
++MAP
+=VAL 0-1 0 :z
+=VAL 4-8 0 'null
+=VAL 11-12 1 "1
+=VAL 15-16 1 :1
+-MAP
+-DOC
+-STR
+
+> {":x": "a", 'c'}
++STR
++DOC
++MAP {}
+=VAL 2-4 0 ":x
+=VAL 8-9 0 "a
+=VAL 13-14 0 'c
+=VAL 15-15 0 :
+-MAP
+-DOC
+-STR
+
+> {"c":, "a":''''}
++STR
++DOC
++MAP {}
+=VAL 2-3 0 "c
+=VAL 5-5 0 :
+=VAL 8-9 0 "a
+=VAL 12-14 0 ''
+-MAP
+-DOC
+-STR
+
+> {'', x y: c, é}
++STR
++DOC
++MAP {}
+=VAL 2-2 0 '
+=VAL 3-3 0 :
+=VAL 5-8 0 :x y
+=VAL 10-11 0 :c
+=VAL 13-15 0 :é
+=VAL 15-15 0 :
+-MAP
+-DOC
+-STR
+
+> {'é': {z:'-x'}}
++STR
++DOC
++MAP {}
+=VAL 2-4 0 'é
++MAP {}
+=VAL 8-14 0 :z:'-x'
+=VAL 14-14 0 :
+-MAP
+-MAP
+-DOC
+-STR
+
+> {-x, "?x":'x y'}
++STR
++DOC
++MAP {}
+=VAL 1-3 0 :-x
+=VAL 3-3 0 :
+=VAL 6-8 0 "?x
+=VAL 11-14 0 'x y
+-MAP
+-DOC
+-STR
+
+> {-x: {a:b:"?x"}}
++STR
++DOC
++MAP {}
+=VAL 1-3 0 :-x
++MAP {}
+=VAL 6-14 0 :a:b:"?x"
+=VAL 14-14 0 :
+-MAP
+-MAP
+-DOC
+-STR
+
+> {a, 'true', 中}
++STR
++DOC
++MAP {}
+=VAL 1-2 0 :a
+=VAL 2-2 0 :
+=VAL 5-9 0 'true
+=VAL 10-10 0 :
+=VAL 12-15 0 :中
+=VAL 15-15 0 :
+-MAP
+-DOC
+-STR
+
+> {z, "?x":"null"}
++STR
++DOC
++MAP {}
+=VAL 1-2 0 :z
+=VAL 2-2 0 :
+=VAL 5-7 0 "?x
+=VAL 10-14 0 "null
+-MAP
+-DOC
+-STR
+
+> 中: []\n':x': {}
++STR
++DOC
++MAP
+=VAL 0-3 0 :中
++SEQ []
+-SEQ
+=VAL 9-11 1 ':x
++MAP {}
+-MAP
+-MAP
+-DOC
+-STR
+
+> \r #c!t\r\n's'\n#c #c
++STR
++DOC
+=VAL 9-10 2 's
+-DOC
+-STR
+#2-6
+#12-17
+
+>  a:b: [" ",'?x',]
++STR
++DOC
++MAP
+=VAL 1-4 0 :a:b
++SEQ []
+=VAL 8-9 0 " 
+=VAL 12-14 0 '?x
+-SEQ
+-MAP
+-DOC
+-STR
+
+> "'":\n a b: 'true'
++STR
++DOC
++MAP
+=VAL 1-2 0 "'
++MAP
+=VAL 6-9 1 :a b
+=VAL 12-16 1 'true
+-MAP
+-MAP
+-DOC
+-STR
+
+> "a#b":\n  'a b': a
++STR
++DOC
++MAP
+=VAL 1-4 0 "a#b
++MAP
+=VAL 10-13 1 'a b
+=VAL 16-17 1 :a
+-MAP
+-MAP
+-DOC
+-STR
+
+> "c":\n    '?x': []
++STR
++DOC
++MAP
+=VAL 1-2 0 "c
++MAP
+=VAL 10-12 1 '?x
++SEQ []
+-SEQ
+-MAP
+-MAP
+-DOC
+-STR
+
+> "it's":\n  "1": {}
++STR
++DOC
++MAP
+=VAL 1-5 0 "it's
++MAP
+=VAL 11-12 1 "1
++MAP {}
+-MAP
+-MAP
+-MAP
+-DOC
+-STR
+
+> "q": "\\u00e9" #c 
++STR
++DOC
++MAP
+=VAL 1-2 0 "q
+=VAL 6-12 0 "é
+-MAP
+-DOC
+-STR
+#14-17
+
+> "x y":\n  true: []
++STR
++DOC
++MAP
+=VAL 1-4 0 "x y
++MAP
+=VAL 9-13 1 :true
++SEQ []
+-SEQ
+-MAP
+-MAP
+-DOC
+-STR
+
+> "中": ':x'\nb: []
++STR
++DOC
++MAP
+=VAL 1-4 0 "中
+=VAL 8-10 0 ':x
+=VAL 12-13 1 :b
++SEQ []
+-SEQ
+-MAP
+-DOC
+-STR
+
+> #"---...\n- 'x''y'
++STR
++DOC
++SEQ
+=VAL 12-16 1 'x'y
+-SEQ
+-DOC
+-STR
+#0-8
+
+> #[!?\r.["a\\n": \t{}
++STR
++DOC
++MAP
+=VAL 5-12 1 :.["a\\n"
++MAP {}
+-MAP
+-MAP
+-DOC
+-STR
+#0-4
+
+> '''':\n    2.5: []
++STR
++DOC
++MAP
+=VAL 1-3 0 ''
++MAP
+=VAL 10-13 1 :2.5
++SEQ []
+-SEQ
+-MAP
+-MAP
+-DOC
+-STR
+
+> '?x': "name"\n"c":
++STR
++DOC
++MAP
+=VAL 1-3 0 '?x
+=VAL 7-11 0 "name
+=VAL 14-15 1 "c
+=VAL 17-17 1 :
+-MAP
+-DOC
+-STR
+
+> 'c': ["true": b,]
++STR
++DOC
++MAP
+=VAL 1-2 0 'c
++SEQ []
++MAP {}
+=VAL 7-11 0 "true
+=VAL 14-15 0 :b
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> 'nam':\n    - - {}
++STR
++DOC
++MAP
+=VAL 1-4 0 'nam
++SEQ
++SEQ
++MAP {}
+-MAP
+-SEQ
+-SEQ
+-MAP
+-DOC
+-STR
+
+> 'title': {}\na: {}
++STR
++DOC
++MAP
+=VAL 1-6 0 'title
++MAP {}
+-MAP
+=VAL 12-13 1 :a
++MAP {}
+-MAP
+-MAP
+-DOC
+-STR
+
+> 'x''y':\r- 'x''y':
++STR
++DOC
++MAP
+=VAL 1-5 0 'x'y
++SEQ
++MAP
+=VAL 11-15 1 'x'y
+=VAL 17-17 1 :
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> -\n  "\\"": :x\n  k:
++STR
++DOC
++SEQ
++MAP
+=VAL 5-7 1 ""
+=VAL 10-12 1 ::x
+=VAL 15-16 2 :k
+=VAL 17-17 2 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  '"':\n      1:
++STR
++DOC
++SEQ
++MAP
+=VAL 5-6 1 '"
++MAP
+=VAL 15-16 2 :1
+=VAL 17-17 2 :
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  - ':x'\n  - []
++STR
++DOC
++SEQ
++SEQ
+=VAL 7-9 1 ':x
++SEQ []
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  - 'a'\n  - a:b
++STR
++DOC
++SEQ
++SEQ
+=VAL 7-8 1 'a
+=VAL 14-17 2 :a:b
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  - []\n- [a b,]
++STR
++DOC
++SEQ
++SEQ
++SEQ []
+-SEQ
+-SEQ
++SEQ []
+=VAL 12-15 2 :a b
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  - {"a": "?x"}
++STR
++DOC
++SEQ
++SEQ
++MAP {}
+=VAL 8-9 1 "a
+=VAL 13-15 1 "?x
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  2.5:\n    - []
++STR
++DOC
++SEQ
++MAP
+=VAL 4-7 1 :2.5
++SEQ
++SEQ []
+-SEQ
+-SEQ
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  a b: ['a#b',]
++STR
++DOC
++SEQ
++MAP
+=VAL 4-7 1 :a b
++SEQ []
+=VAL 11-14 1 'a#b
+-SEQ
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  -\n    -\n      "a#b": b\n      c:\n      true: é
++STR
++DOC
++SEQ
++SEQ
++SEQ
++MAP
+=VAL 19-22 3 "a#b
+=VAL 25-26 3 :b
+=VAL 33-34 4 :c
+=VAL 35-35 4 :
+=VAL 42-46 5 :true
+=VAL 48-50 5 :é
+-MAP
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  -\n    ?x: []\n    null: name
++STR
++DOC
++SEQ
++SEQ
++MAP
+=VAL 10-12 2 :?x
++SEQ []
+-SEQ
+=VAL 21-25 3 :null
+=VAL 27-31 3 :name
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - |\n    lit\n    more\n-\n  "2.5": |\n      lit\n      more\n- []
++STR
++DOC
++SEQ
+=VAL 8-20 0 |lit\nmore\n
++MAP
+=VAL 26-29 4 "2.5
+=VAL 40-54 4 |lit\nmore\n
+-MAP
++SEQ []
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> ---\n-\n  2.5: 'é'\n-\n  - |\n      lit\n      more\n  -\n    - z\n  - |\n      lit\n      more\n- {a#b, 1}\n...
++STR
++DOC ---
++SEQ
++MAP
+=VAL 8-11 2 :2.5
+=VAL 14-16 2 'é
+-MAP
++SEQ
+=VAL 32-46 4 |lit\nmore\n
++SEQ
+=VAL 57-58 8 :z
+-SEQ
+=VAL 71-85 9 |lit\nmore\n
+-SEQ
++MAP {}
+=VAL 89-92 12 :a#b
+=VAL 92-92 12 :
+=VAL 94-95 12 :1
+=VAL 95-95 12 :
+-MAP
+-SEQ
+-DOC ...
+-STR
+
+> --- {1: "c"}\n---\nb: 1
++STR
++DOC ---
++MAP {}
+=VAL 5-6 0 :1
+=VAL 9-10 0 "c
+-MAP
+-DOC
++DOC ---
++MAP
+=VAL 17-18 2 :b
+=VAL 20-21 2 :1
+-MAP
+-DOC
+-STR
+
+> ["x y",\n  1,\n  "null",]
++STR
++DOC
++SEQ []
+=VAL 2-5 0 "x y
+=VAL 10-11 1 :1
+=VAL 16-20 2 "null
+-SEQ
+-DOC
+-STR
+
+> -\n  -\n    z:\n        - 1\n    ?x:\n      - |\n          lit\n          more\n- 中\n- a
++STR
++DOC
++SEQ
++SEQ
++MAP
+=VAL 10-11 2 :z
++SEQ
+=VAL 23-24 3 :1
+-SEQ
+=VAL 29-31 4 :?x
++SEQ
+=VAL 53-71 5 |lit\nmore\n
+-SEQ
+-MAP
+-SEQ
+=VAL 74-77 8 :中
+=VAL 80-81 9 :a
+-SEQ
+-DOC
+-STR
+
+> [c,\n  'true',\n  "'": {},]
++STR
++DOC
++SEQ []
+=VAL 1-2 0 :c
+=VAL 7-11 1 'true
++MAP {}
+=VAL 17-18 2 "'
++MAP {}
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - |\n    lit\n    more\n-\n  -\n    "title": ["中"]\n- "a:b"
++STR
++DOC
++SEQ
+=VAL 8-20 0 |lit\nmore\n
++SEQ
++MAP
+=VAL 32-37 5 "title
++SEQ []
+=VAL 42-45 5 "中
+-SEQ
+-MAP
+-SEQ
+=VAL 51-54 6 "a:b
+-SEQ
+-DOC
+-STR
+
+> 'it''s':\n  null:\n    - its\n  'null': |\n      lit\n      more\n  title: {'-x':é, "it's", 1}
++STR
++DOC
++MAP
+=VAL 1-6 0 'it's
++MAP
+=VAL 11-15 1 :null
++SEQ
+=VAL 23-26 2 :its
+-SEQ
+=VAL 30-34 3 'null
+=VAL 45-59 3 |lit\nmore\n
+=VAL 62-67 6 :title
++MAP {}
+=VAL 71-73 6 '-x
+=VAL 75-77 6 :é
+=VAL 80-84 6 "it's
+=VAL 85-85 6 :
+=VAL 87-88 6 :1
+=VAL 88-88 6 :
+-MAP
+-MAP
+-MAP
+-DOC
+-STR
+
+> - {}\n-\n  - []\n- 'null'
++STR
++DOC
++SEQ
++MAP {}
+-MAP
++SEQ
++SEQ []
+-SEQ
+-SEQ
+=VAL 17-21 3 'null
+-SEQ
+-DOC
+-STR
+
+> a: |\n      lit\n      more\n中: {a#b: ":x", a#b: 2.5, "name":{"null":"true"}}
++STR
++DOC
++MAP
+=VAL 0-1 0 :a
+=VAL 11-25 0 |lit\nmore\n
+=VAL 26-29 3 :中
++MAP {}
+=VAL 32-35 3 :a#b
+=VAL 38-40 3 ":x
+=VAL 43-46 3 :a#b
+=VAL 48-51 3 :2.5
+=VAL 54-58 3 "name
++MAP {}
+=VAL 62-66 3 "null
+=VAL 69-73 3 "true
+-MAP
+-MAP
+-MAP
+-DOC
+-STR
+
+> ---\n'''': |\n    lit\n    more\n---\nb: 1
++STR
++DOC ---
++MAP
+=VAL 5-7 1 ''
+=VAL 16-28 1 |lit\nmore\n
+-MAP
+-DOC
++DOC ---
++MAP
+=VAL 33-34 5 :b
+=VAL 36-37 5 :1
+-MAP
+-DOC
+-STR
+
+> ["\\"",\n  中,\n '|',]
++STR
++DOC
++SEQ []
+=VAL 2-4 0 ""
+=VAL 9-12 1 :中
+=VAL 16-17 2 '|
+-SEQ
+-DOC
+-STR
+
+> {a: {":x":{'name':a#b}}}
++STR
++DOC
++MAP {}
+=VAL 1-2 0 :a
++MAP {}
+=VAL 6-8 0 ":x
++MAP {}
+=VAL 12-16 0 'name
+=VAL 18-21 0 :a#b
+-MAP
+-MAP
+-MAP
+-DOC
+-STR
+
+> -\n "\\"":\n      "\\"":\n        - |\n            lit\n            more
++STR
++DOC
++SEQ
++MAP
+=VAL 4-6 1 ""
++MAP
+=VAL 16-18 2 ""
++SEQ
+=VAL 45-65 3 |lit\nmore\n
+-SEQ
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> k:\n    "a#b": |\n          lit\n          more\n-x:\n    z: "null"
++STR
++DOC
++MAP
+=VAL 0-1 0 :k
++MAP
+=VAL 8-11 1 "a#b
+=VAL 26-44 1 |lit\nmore\n
+-MAP
+=VAL 45-47 4 :-x
++MAP
+=VAL 53-54 5 :z
+=VAL 57-61 5 "null
+-MAP
+-MAP
+-DOC
+-STR
+
+> - name\n-\n  -\n    - name
++STR
++DOC
++SEQ
+=VAL 2-6 0 :name
++SEQ
++SEQ
+=VAL 19-23 3 :name
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - {nu\tltrue, 'title':"naull"}\n-\n  a#b: b
++STR
++DOC
++SEQ
++MAP {}
+=VAL 3-11 0 :nu\tltrue
+=VAL 11-11 0 :
+=VAL 14-19 0 'title
+=VAL 22-27 0 "naull
+-MAP
++MAP
+=VAL 34-37 2 :a#b
+=VAL 39-40 2 :b
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - [ab ,"x y" ,{'b':x y},]
++STR
++DOC
++SEQ
++SEQ []
+=VAL 3-5 0 :ab
+=VAL 8-11 0 "x y
++MAP {}
+=VAL 16-17 0 'b
+=VAL 19-22 0 :x y
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> k:\n  - 'title'\n  - "2.5"\n  - |\n      lit\n      more\nits:\n  - |\n      lit\n      more
++STR
++DOC
++MAP
+=VAL 0-1 0 :k
++SEQ
+=VAL 8-13 1 'title
+=VAL 20-23 2 "2.5
+=VAL 37-51 3 |lit\nmore\n
+-SEQ
+=VAL 52-55 6 :its
++SEQ
+=VAL 69-83 7 |lit\nmore\n
+-SEQ
+-MAP
+-DOC
+-STR
+
+> a: |\n    lit\n    more\n"title": |\n      lit\n      more\na b: "\\""
++STR
++DOC
++MAP
+=VAL 0-1 0 :a
+=VAL 9-21 0 |lit\nmore\n
+=VAL 23-28 3 "title
+=VAL 39-53 3 |lit\nmore\n
+=VAL 54-57 6 :a b
+=VAL 60-62 6 ""
+-MAP
+-DOC
+-STR
+
+> ---\n- ["c",]\n- 'null'\n
++STR
++DOC ---
++SEQ
++SEQ []
+=VAL 8-9 1 "c
+-SEQ
+=VAL 16-20 2 'null
+-SEQ
+-DOC
+-STR
+
+> -\n  -\n    'title':\n      its : 'name'\n    "title":\n      name: a:b\n    1:\n      - "?x"
++STR
++DOC
++SEQ
++SEQ
++MAP
+=VAL 11-16 2 'title
++MAP
+=VAL 25-28 3 :its
+=VAL 32-36 3 'name
+-MAP
+=VAL 43-48 4 "title
++MAP
+=VAL 57-61 5 :name
+=VAL 63-66 5 :a:b
+-MAP
+=VAL 71-72 6 :1
++SEQ
+=VAL 83-85 7 "?x
+-SEQ
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> b:\n    "2.5": "2.5"\n---\nb: 1
++STR
++DOC
++MAP
+=VAL 0-1 0 :b
++MAP
+=VAL 8-11 1 "2.5
+=VAL 15-18 1 "2.5
+-MAP
+-MAP
+-DOC
++DOC ---
++MAP
+=VAL 24-25 3 :b
+=VAL 27-28 3 :1
+-MAP
+-DOC
+-STR
+
+> --- {a:b: "ti tle", x y:"2.5"}\n---\nb 1
++STR
++DOC ---
++MAP {}
+=VAL 5-8 0 :a:b
+=VAL 11-17 0 "ti tle
+=VAL 20-29 0 :x y:"2.5"
+=VAL 29-29 0 :
+-MAP
+-DOC
++DOC ---
+=VAL 35-38 2 :b 1
+-DOC
+-STR
+
+> -\n  - |\n      lit\n      more\n  -\n    - []\n    -\n      - "x y"\n      - 1\n      - ":x"\n    - "null"
++STR
++DOC
++SEQ
++SEQ
+=VAL 14-28 1 |lit\nmore\n
++SEQ
++SEQ []
+-SEQ
++SEQ
+=VAL 57-60 7 "x y
+=VAL 70-71 8 :1
+=VAL 81-83 9 ":x
+-SEQ
+=VAL 92-96 10 "null
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> name:\n  "a#b": {}\n'-x':\n    -\n      a: |\n          lit\n          more\n    - []\n    - {a#b:"a:b"}
++STR
++DOC
++MAP
+=VAL 0-4 0 :name
++MAP
+=VAL 9-12 1 "a#b
++MAP {}
+-MAP
+-MAP
+=VAL 19-21 2 '-x
++SEQ
++MAP
+=VAL 36-37 4 :a
+=VAL 51-69 4 |lit\nmore\n
+-MAP
++SEQ []
+-SEQ
++MAP {}
+=VAL 86-95 8 :a#b:"a:b"
+=VAL 95-95 8 :
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> '中': |\n      lit\n      more\n"null":\n    - |\n        lit\n        more\naé#b:\n  '?`': {z}
++STR
++DOC
++MAP
+=VAL 1-4 0 '中
+=VAL 15-29 0 |lit\nmore\n
+=VAL 31-35 3 "null
++SEQ
+=VAL 54-70 4 |lit\nmore\n
+-SEQ
+=VAL 71-76 7 :aé#b
++MAP
+=VAL 81-83 8 '?`
++MAP {}
+=VAL 87-88 8 :z
+=VAL 88-88 8 :
+-MAP
+-MAP
+-MAP
+-DOC
+-STR
+
+> [{},\n  2. 5: b,\n  a:b]
++STR
++DOC
++SEQ []
++MAP {}
+-MAP
++MAP {}
+=VAL 7-11 1 :2. 5
+=VAL 13-14 1 :b
+-MAP
+=VAL 18-21 2 :a:b
+-SEQ
+-DOC
+-STR
+
+> -\n  -\n    -\n      - {b:x y}\n    -\n      "name": [z,]\n      -x: "name"\n      "true": "?x"
++STR
++DOC
++SEQ
++SEQ
++SEQ
++SEQ
++MAP {}
+=VAL 21-26 3 :b:x y
+=VAL 26-26 3 :
+-MAP
+-SEQ
++MAP
+=VAL 41-45 5 "name
++SEQ []
+=VAL 49-50 5 :z
+-SEQ
+=VAL 59-61 6 :-x
+=VAL 64-68 6 "name
+=VAL 77-81 7 "true
+=VAL 85-87 7 "?x
+-MAP
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> ---\n"b":\n    -\n      -\n        1: é\n        title: x y\n    -\n      its:\n          ?x: z\n
++STR
++DOC ---
++MAP
+=VAL 5-6 1 "b
++SEQ
++SEQ
++MAP
+=VAL 31-32 4 :1
+=VAL 34-36 4 :é
+=VAL 45-50 5 :title
+=VAL 52-55 5 :x y
+-MAP
+-SEQ
++MAP
+=VAL 68-71 7 :its
++MAP
+=VAL 83-85 8 :?x
+=VAL 87-88 8 :z
+-MAP
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> [{1:"a:b", "\\"": {"x y", '?x':"true", 'a': -x}} ,"'" ,true]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 2-9 0 :1:"a:b"
+=VAL 9-9 0 :
+=VAL 12-14 0 ""
++MAP {}
+=VAL 19-22 0 "x y
+=VAL 23-23 0 :
+=VAL 26-28 0 '?x
+=VAL 31-35 0 "true
+=VAL 39-40 0 'a
+=VAL 43-45 0 :-x
+-MAP
+-MAP
+=VAL 50-51 0 "'
+=VAL 54-58 0 :true
+-SEQ
+-DOC
+-STR
+
+> [title ,'a b' ,'''',]
++STR
++DOC
++SEQ []
+=VAL 1-6 0 :title
+=VAL 9-12 0 'a b
+=VAL 16-18 0 ''
+-SEQ
+-DOC
+-STR
+
+> - []\n-\n  "a:b": |\n      lit\n      more
++STR
++DOC
++SEQ
++SEQ []
+-SEQ
++MAP
+=VAL 10-13 2 "a:b
+=VAL 24-38 2 |lit\nmore\n
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - {"?x": {a:null, a}}
++STR
++DOC
++SEQ
++MAP {}
+=VAL 4-6 0 "?x
++MAP {}
+=VAL 10-16 0 :a:null
+=VAL 16-16 0 :
+=VAL 18-19 0 :a
+=VAL 19-19 0 :
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> :x:\n  ?x:\n    a: z\n    'null': {a:b:"\\""}\n    "true": -\n  a#b:\n\r\n    中:\n        - 
++STR
++DOC
++MAP
+=VAL 0-2 0 ::x
++MAP
+=VAL 6-8 1 :?x
++MAP
+=VAL 14-15 2 :a
+=VAL 17-18 2 :z
+=VAL 24-28 3 'null
++MAP {}
+=VAL 32-40 3 :a:b:"\\""
+=VAL 40-40 3 :
+-MAP
+=VAL 47-51 4 "true
+=VAL 54-55 4 :-
+-MAP
+=VAL 58-61 5 :a#b
++MAP
+=VAL 69-72 7 :中
++SEQ
+=VAL 83-83 8 :
+-SEQ
+-MAP
+-MAP
+-MAP
+-DOC
+-STR
+
+> [title,\n  {'c': {}}]\n---\nb: 1
++STR
++DOC
++SEQ []
+=VAL 1-6 0 :title
++MAP {}
+=VAL 12-13 1 'c
++MAP {}
+-MAP
+-MAP
+-SEQ
+-DOC
++DOC ---
++MAP
+=VAL 25-26 3 :b
+=VAL 28-29 3 :1
+-MAP
+-DOC
+-STR
+
+> -\n  -\n    - 1\n    - |\n        lit\n        more
++STR
++DOC
++SEQ
++SEQ
++SEQ
+=VAL 12-13 2 :1
+=VAL 30-46 3 |lit\nmore\n
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> "---1":\n  - |\n    !t lit\n      more\n"a b":\n    - "\\""\n    - 中
++STR
++DOC
++MAP
+=VAL 1-5 0 "---1
++SEQ
+=VAL 18-35 1 |!t lit\n  more\n
+-SEQ
+=VAL 37-40 4 "a b
++SEQ
+=VAL 50-52 5 ""
+=VAL 60-63 6 :中
+-SEQ
+-MAP
+-DOC
+-STR
+
+> a:\n  c: |\n      lit\n      more
++STR
++DOC
++MAP
+=VAL 0-1 0 :a
++MAP
+=VAL 5-6 1 :c
+=VAL 16-30 1 |lit\nmore\n
+-MAP
+-MAP
+-DOC
+-STR
+
+> -\n  'a b':\n      -\n        "b": [name,\n  {é, z}]\n  é: |\n        lit\n        more
++STR
++DOC
++SEQ
++MAP
+=VAL 5-8 1 'a b
++SEQ
++MAP
+=VAL 28-29 3 "b
++SEQ []
+=VAL 33-37 3 :name
++MAP {}
+=VAL 42-44 4 :é
+=VAL 44-44 4 :
+=VAL 46-47 4 :z
+=VAL 47-47 4 :
+-MAP
+-SEQ
+-MAP
+-SEQ
+=VAL 52-54 5 :é
+=VAL 66-82 5 |lit\nmore\n
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  '2.5':\n    -\n      - a b
++STR
++DOC
++SEQ
++MAP
+=VAL 5-8 1 '2.5
++SEQ
++SEQ
+=VAL 25-28 3 :a b
+-SEQ
+-SEQ
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  "a": ["é": '''']\n  'c':\n    - [{}]\n-\n  - {"a b-", 'null': é}\n- ['x y' ,中: 'é']
++STR
++DOC
++SEQ
++MAP
+=VAL 5-6 1 "a
++SEQ []
++MAP {}
+=VAL 11-13 1 "é
+=VAL 17-19 1 ''
+-MAP
+-SEQ
+=VAL 25-26 2 'c
++SEQ
++SEQ []
++MAP {}
+-MAP
+-SEQ
+-SEQ
+-MAP
++SEQ
++MAP {}
+=VAL 48-52 5 "a b-
+=VAL 53-53 5 :
+=VAL 56-60 5 'null
+=VAL 63-65 5 :é
+-MAP
+-SEQ
++SEQ []
+=VAL 71-74 6 'x y
++MAP {}
+=VAL 77-80 6 :中
+=VAL 83-85 6 'é
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  - |\n      lit\n      more\n  - '"'\n-\n  - "x y"
++STR
++DOC
++SEQ
++SEQ
+=VAL 14-28 1 |lit\nmore\n
+=VAL 34-35 4 '"
+-SEQ
++SEQ
+=VAL 44-47 6 "x y
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  -\n    z:\n        - |\n            lit\n            more\n        - na  e\n        - 1
++STR
++DOC
++SEQ
++SEQ
++MAP
+=VAL 10-11 2 :z
++SEQ
+=VAL 37-57 3 |lit\nmore\n
+=VAL 68-73 6 :na  e
+=VAL 84-85 7 :1
+-SEQ
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  k:\n    -\n      a: |\n          lit\n          more\n      "it's": |\n          lit\n          more\n    - []
++STR
++DOC
++SEQ
++MAP
+=VAL 4-5 1 :k
++SEQ
++MAP
+=VAL 19-20 3 :a
+=VAL 34-52 3 |lit\nmore\n
+=VAL 60-64 6 "it's
+=VAL 79-97 6 |lit\nmore\n
+-MAP
++SEQ []
+-SEQ
+-SEQ
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  "2.5": '2.5'\n-\n  - {}\n-\n  - []
++STR
++DOC
++SEQ
++MAP
+=VAL 5-8 1 "2.5
+=VAL 12-15 1 '2.5
+-MAP
++SEQ
++MAP {}
+-MAP
+-SEQ
++SEQ
++SEQ []
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> ["":  "2.5",\n {},\n  '''',]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 2-2 0 "
+=VAL 7-10 0 "2.5
+-MAP
++MAP {}
+-MAP
+=VAL 21-23 2 ''
+-SEQ
+-DOC
+-STR
+
+> é: '"'\n"a":\n  -\n    "c": []\n  -\n    -\n      é: "true"\n    - |\n        lit\n        more
++STR
++DOC
++MAP
+=VAL 0-2 0 :é
+=VAL 5-6 0 '"
+=VAL 9-10 1 "a
++SEQ
++MAP
+=VAL 22-23 3 "c
++SEQ []
+-SEQ
+-MAP
++SEQ
++MAP
+=VAL 45-47 6 :é
+=VAL 50-54 6 "true
+-MAP
+=VAL 72-88 7 |lit\nmore\n
+-SEQ
+-SEQ
+-MAP
+-DOC
+-STR
+
+> -\n  "null":\n      - 'é'\n      -\n        'a#b': "a"\n      - z\n  a#b: "?x"\n- 'null'\n- {}
++STR
++DOC
++SEQ
++MAP
+=VAL 5-9 1 "null
++SEQ
+=VAL 21-23 2 'é
++MAP
+=VAL 42-45 4 'a#b
+=VAL 49-50 4 "a
+-MAP
+=VAL 60-61 5 :z
+-SEQ
+=VAL 64-67 6 :a#b
+=VAL 70-72 6 "?x
+-MAP
+=VAL 77-81 7 'null
++MAP {}
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - {'a:b':{'a', a#b, 'c':{中: "中", name::x, title: ':x'}}, "a:b": {"a b": "name"}, '?x': "name"}
++STR
++DOC
++SEQ
++MAP {}
+=VAL 4-7 0 'a:b
++MAP {}
+=VAL 11-12 0 'a
+=VAL 13-13 0 :
+=VAL 15-18 0 :a#b
+=VAL 18-18 0 :
+=VAL 21-22 0 'c
++MAP {}
+=VAL 25-28 0 :中
+=VAL 31-34 0 "中
+=VAL 37-44 0 :name::x
+=VAL 44-44 0 :
+=VAL 46-51 0 :title
+=VAL 54-56 0 ':x
+-MAP
+-MAP
+=VAL 62-65 0 "a:b
++MAP {}
+=VAL 70-73 0 "a b
+=VAL 77-81 0 "name
+-MAP
+=VAL 86-88 0 '?x
+=VAL 92-96 0 "name
+-MAP
+-SEQ
+-DOC
+-STR
+
+> c:\n  - |\n      lit\n      m...re\nb:
++STR
++DOC
++MAP
+=VAL 0-1 0 :c
++SEQ
+=VAL 15-31 1 |lit\nm...re\n
+-SEQ
+=VAL 32-33 4 :b
+=VAL 34-34 4 :
+-MAP
+-DOC
+-STR
+
+> -\n  x y:\n      é: a\n  'a b': |\n        lit\n        more
++STR
++DOC
++SEQ
++MAP
+=VAL 4-7 1 :x y
++MAP
+=VAL 15-17 2 :é
+=VAL 19-20 2 :a
+-MAP
+=VAL 24-27 3 'a b
+=VAL 40-56 3 |lit\nmore\n
+-MAP
+-SEQ
+-DOC
+-STR
+
+> {a:é, ":x":{'title': z}}
++STR
++DOC
++MAP {}
+=VAL 1-5 0 :a:é
+=VAL 5-5 0 :
+=VAL 8-10 0 ":x
++MAP {}
+=VAL 14-19 0 'title
+=VAL 22-23 0 :z
+-MAP
+-MAP
+-DOC
+-STR
+
+> -\n  - {'"'}\n-\n  b:\n    a#b: []\n-\n  1:\n    name: ['it''s',]\n    its:\n        ":x": 1
++STR
++DOC
++SEQ
++SEQ
++MAP {}
+=VAL 8-9 1 '"
+=VAL 10-10 1 :
+-MAP
+-SEQ
++MAP
+=VAL 16-17 3 :b
++MAP
+=VAL 23-26 4 :a#b
++SEQ []
+-SEQ
+-MAP
+-MAP
++MAP
+=VAL 35-36 6 :1
++MAP
+=VAL 42-46 7 :name
++SEQ []
+=VAL 50-55 7 'it's
+-SEQ
+=VAL 63-66 8 :its
++MAP
+=VAL 77-79 9 ":x
+=VAL 82-83 9 :1
+-MAP
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> ?x:\n    - a#b\n    -\n      -\n        "a:b": "it'"\n"中":\n    2.5:\n      a#b: a#b\n    'a b': {z:'a#b'}\n    b: its
++STR
++DOC
++MAP
+=VAL 0-2 0 :?x
++SEQ
+=VAL 10-13 1 :a#b
++SEQ
++MAP
+=VAL 37-40 4 "a:b
+=VAL 44-47 4 "it'
+-MAP
+-SEQ
+-SEQ
+=VAL 50-53 5 "中
++MAP
+=VAL 60-63 6 :2.5
++MAP
+=VAL 71-74 7 :a#b
+=VAL 76-79 7 :a#b
+-MAP
+=VAL 85-88 8 'a b
++MAP {}
+=VAL 92-99 8 :z:'a#b'
+=VAL 99-99 8 :
+-MAP
+=VAL 105-106 9 :b
+=VAL 108-111 9 :its
+-MAP
+-MAP
+-DOC
+-STR
+
+> title: {nme}\n'name': 1
++STR
++DOC
++MAP
+=VAL 0-5 0 :title
++MAP {}
+=VAL 8-11 0 :nme
+=VAL 11-11 0 :
+-MAP
+=VAL 14-18 1 'name
+=VAL 21-22 1 :1
+-MAP
+-DOC
+-STR
+
+> '''':\n  '''-\t': |\n      lit\n       more\n  中: ':x'\n  "a:b": |\n        lt\n        more
++STR
++DOC
++MAP
+=VAL 1-3 0 ''
++MAP
+=VAL 9-13 1 ''-\t
+=VAL 24-39 1 |lit\n more\n
+=VAL 42-45 4 :中
+=VAL 48-50 4 ':x
+=VAL 55-58 5 "a:b
+=VAL 71-86 5 |lt\nmore\n
+-MAP
+-MAP
+-DOC
+-STR
+
+> ---\n{z: "é", z"a#b"}\n
++STR
++DOC ---
++MAP {}
+=VAL 5-6 1 :z
+=VAL 9-11 1 "é
+=VAL 14-20 1 :z"a#b"
+=VAL 20-20 1 :
+-MAP
+-DOC
+-STR
+
+> -\n  - |\n      lit\n      more\n  - "a#b"\n  -\n    '2.5': |\n        lit\n        more\n    b: z\n- "1"
++STR
++DOC
++SEQ
++SEQ
+=VAL 14-28 1 |lit\nmore\n
+=VAL 34-37 4 "a#b
++MAP
+=VAL 48-51 6 '2.5
+=VAL 64-80 6 |lit\nmore\n
+=VAL 85-86 9 :b
+=VAL 88-89 9 :z
+-MAP
+-SEQ
+=VAL 93-94 10 "1
+-SEQ
+-DOC
+-STR
+
+> ---\nx y:\n  - |\n      lit\n      more\n
++STR
++DOC ---
++MAP
+=VAL 4-7 1 :x y
++SEQ
+=VAL 21-35 2 |lit\nmore\n
+-SEQ
+-MAP
+-DOC
+-STR
+
+> 'it''s': "b"\n"'":\n  "中": "2.5"\n  '1': |\n        lit\n        more\n  k: a#b
++STR
++DOC
++MAP
+=VAL 1-6 0 'it's
+=VAL 10-11 0 "b
+=VAL 14-15 1 "'
++MAP
+=VAL 21-24 2 "中
+=VAL 28-31 2 "2.5
+=VAL 36-37 3 '1
+=VAL 50-66 3 |lit\nmore\n
+=VAL 69-70 6 :k
+=VAL 72-75 6 :a#b
+-MAP
+-MAP
+-DOC
+-STR
+
+> 'null': {null, "a:b":}\ntrue:\n  - true\n  -\n    -\n      - |\n          lit\n          more\n    -\n      k: ''''
++STR
++DOC
++MAP
+=VAL 1-5 0 'null
++MAP {}
+=VAL 9-13 0 :null
+=VAL 13-13 0 :
+=VAL 16-19 0 "a:b
+=VAL 21-21 0 :
+-MAP
+=VAL 23-27 1 :true
++SEQ
+=VAL 33-37 2 :true
++SEQ
++SEQ
+=VAL 68-86 5 |lit\nmore\n
+-SEQ
++MAP
+=VAL 99-100 9 :k
+=VAL 103-105 9 ''
+-MAP
+-SEQ
+-SEQ
+-MAP
+-DOC
+-STR
+
+> a#b:\n  -\n    -\n      - |\n          lit\n          more\n  - |\n      lit\n      more
++STR
++DOC
++MAP
+=VAL 0-3 0 :a#b
++SEQ
++SEQ
++SEQ
+=VAL 35-53 3 |lit\nmore\n
+-SEQ
+-SEQ
+=VAL 66-80 6 |lit\nmore\n
+-SEQ
+-MAP
+-DOC
+-STR
+
+> -\n  -\n    'it''s': |\n          lit\n          more\n    x y: "a b"
++STR
++DOC
++SEQ
++SEQ
++MAP
+=VAL 11-16 2 'it's
+=VAL 31-49 2 |lit\nmore\n
+=VAL 54-57 5 :x y
+=VAL 60-63 5 "a b
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> "a":\n  name: x y\n  :x: |\n        lit\n        more
++STR
++DOC
++MAP
+=VAL 1-2 0 "a
++MAP
+=VAL 7-11 1 :name
+=VAL 13-16 1 :x y
+=VAL 19-21 2 ::x
+=VAL 33-49 2 |lit\nmore\n
+-MAP
+-MAP
+-DOC
+-STR
+
+> -\n  x y:\n    a: a b\n  'c':\n    - |\n        lit\n        more\n-\n  - true
++STR
++DOC
++SEQ
++MAP
+=VAL 4-7 1 :x y
++MAP
+=VAL 13-14 2 :a
+=VAL 16-19 2 :a b
+-MAP
+=VAL 23-24 3 'c
++SEQ
+=VAL 43-59 4 |lit\nmore\n
+-SEQ
+-MAP
++SEQ
+=VAL 66-70 8 :true
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> ---\n"true": 中\na:\n  -\n    c:\n        - 'c'\n        - 1\n  -\n    - a\n
++STR
++DOC ---
++MAP
+=VAL 5-9 1 "true
+=VAL 12-15 1 :中
+=VAL 16-17 2 :a
++SEQ
++MAP
+=VAL 27-28 4 :c
++SEQ
+=VAL 41-42 5 'c
+=VAL 54-55 6 :1
+-SEQ
+-MAP
++SEQ
+=VAL 66-67 8 :a
+-SEQ
+-SEQ
+-MAP
+-DOC
+-STR
+
+> 'true':\n    "x y":\n        - 2.5\na: |\n    lit\n    more\n
++STR
++DOC
++MAP
+=VAL 1-5 0 'true
++MAP
+=VAL 13-16 1 "x y
++SEQ
+=VAL 29-32 2 :2.5
+-SEQ
+-MAP
+=VAL 33-34 3 :a
+=VAL 42-54 3 |lit\nmore\n
+-MAP
+-DOC
+-STR
+
+> -\n  - 'a b'\n  - |\n      lit\n      more\n  - "\\""
++STR
++DOC
++SEQ
++SEQ
+=VAL 7-10 1 'a b
+=VAL 24-38 2 |lit\nmore\n
+=VAL 44-46 5 ""
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n '-x': |\n        lit        more\n- null
++STR
++DOC
++SEQ
++MAP
+=VAL 4-6 1 '-x
+=VAL 19-34 1 |lit        more\n
+-MAP
+=VAL 37-41 3 :null
+-SEQ
+-DOC
+-STR
+
+> 'a b': {2.:: "name", z:"b", c:中}
++STR
++DOC
++MAP
+=VAL 1-4 0 'a b
++MAP {}
+=VAL 8-11 0 :2.:
+=VAL 14-18 0 "name
+=VAL 21-26 0 :z:"b"
+=VAL 26-26 0 :
+=VAL 28-33 0 :c:中
+=VAL 33-33 0 :
+-MAP
+-MAP
+-DOC
+-STR
+
+> -\n  z:\n    "\\"": name\n    'true':\n        "it's": |\n              lit\n              more\n- |\n    lit\n    more
++STR
++DOC
++SEQ
++MAP
+=VAL 4-5 1 :z
++MAP
+=VAL 12-14 2 ""
+=VAL 17-21 2 :name
+=VAL 27-31 3 'true
++MAP
+=VAL 43-47 4 "it's
+=VAL 66-88 4 |lit\nmore\n
+-MAP
+-MAP
+-MAP
+=VAL 97-109 7 |lit\nmore\n
+-SEQ
+-DOC
+-STR
+
+> b:\n  - 'a:b'\n'1': |\n      lit\n      more
++STR
++DOC
++MAP
+=VAL 0-1 0 :b
++SEQ
+=VAL 8-11 1 'a:b
+-SEQ
+=VAL 14-15 2 '1
+=VAL 26-40 2 |lit\nmore\n
+-MAP
+-DOC
+-STR
+
+> :x:\n  name:\n   nae": 'a'
++STR
++DOC
++MAP
+=VAL 0-2 0 ::x
++MAP
+=VAL 6-10 1 :name
++MAP
+=VAL 15-19 2 :nae"
+=VAL 22-23 2 'a
+-MAP
+-MAP
+-MAP
+-DOC
+-STR
+
+> true:\n    b: a:b\n    :x:\n        "a#b": ["'",\n  z: ]\n    ?x: |\n        lit\n        more
++STR
++DOC
++MAP
+=VAL 0-4 0 :true
++MAP
+=VAL 10-11 1 :b
+=VAL 13-16 1 :a:b
+=VAL 21-23 2 ::x
++MAP
+=VAL 34-37 3 "a#b
++SEQ []
+=VAL 42-43 3 "'
++MAP {}
+=VAL 48-49 4 :z
+=VAL 51-51 4 :
+-MAP
+-SEQ
+-MAP
+=VAL 57-59 5 :?x
+=VAL 71-87 5 |lit\nmore\n
+-MAP
+-MAP
+-DOC
+-STR
+
+> -\n  z:\n      -\n       - 'title'\n  z: [{}, '?x']
++STR
++DOC
++SEQ
++MAP
+=VAL 4-5 1 :z
++SEQ
++SEQ
+=VAL 25-30 3 'title
+-SEQ
+-SEQ
+=VAL 34-35 4 :z
++SEQ []
++MAP {}
+-MAP
+=VAL 43-45 4 '?x
+-SEQ
+-MAP
+-SEQ
+-DOC
+-STR
+
+> 2.5: z\n"\\"":\n  "title":\n      '-x': a#b\n      c: |\n          lit\n          more
++STR
++DOC
++MAP
+=VAL 0-3 0 :2.5
+=VAL 5-6 0 :z
+=VAL 8-10 1 ""
++MAP
+=VAL 16-21 2 "title
++MAP
+=VAL 31-33 3 '-x
+=VAL 36-39 3 :a#b
+=VAL 46-47 4 :c
+=VAL 61-79 4 |lit\nmore\n
+-MAP
+-MAP
+-MAP
+-DOC
+-STR
+
+> "\\"":\n  k:\n    -\n      - x y\n      - "x y"\n    - |\n        lit\n        more
++STR
++DOC
++MAP
+=VAL 1-3 0 ""
++MAP
+=VAL 8-9 1 :k
++SEQ
++SEQ
+=VAL 25-28 3 :x y
+=VAL 38-41 4 "x y
+-SEQ
+=VAL 59-75 5 |lit\nmore\n
+-SEQ
+-MAP
+-MAP
+-DOC
+-STR
+
+> ---\n:x:\n  - '中'\n"true":\n  "b":\n      é: "'"\na: b\n
++STR
++DOC ---
++MAP
+=VAL 4-6 1 ::x
++SEQ
+=VAL 13-16 2 '中
+-SEQ
+=VAL 19-23 3 "true
++MAP
+=VAL 29-30 4 "b
++MAP
+=VAL 39-41 5 :é
+=VAL 44-45 5 "'
+-MAP
+-MAP
+=VAL 47-48 6 :a
+=VAL 50-51 6 :b
+-MAP
+-DOC
+-STR
+
+> name:\n  -\n    x y: z\n    "1":\n      b: {"a#b":{'2.5'}, name: {'it''s': {}}, null}\n      "null": {}\n  - true\n  - {}
++STR
++DOC
++MAP
+=VAL 0-4 0 :name
++SEQ
++MAP
+=VAL 14-17 2 :x y
+=VAL 19-20 2 :z
+=VAL 26-27 3 "1
++MAP
+=VAL 36-37 4 :b
++MAP {}
+=VAL 41-44 4 "a#b
++MAP {}
+=VAL 48-51 4 '2.5
+=VAL 52-52 4 :
+-MAP
+=VAL 55-59 4 :name
++MAP {}
+=VAL 63-68 4 'it's
++MAP {}
+-MAP
+-MAP
+=VAL 76-80 4 :null
+=VAL 80-80 4 :
+-MAP
+=VAL 89-93 5 "null
++MAP {}
+-MAP
+-MAP
+-MAP
+=VAL 103-107 6 :true
++MAP {}
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> "2.5":\n  - x y\n  - |\n      lit\n      more\n  - |\n      lit\n      more
++STR
++DOC
++MAP
+=VAL 1-4 0 "2.5
++SEQ
+=VAL 11-14 1 :x y
+=VAL 27-41 2 |lit\nmore\n
+=VAL 54-68 5 |lit\nmore\n
+-SEQ
+-MAP
+-DOC
+-STR
+
+> "中": "a"\n"true":\n   1: {title:ttrueue, true}
++STR
++DOC
++MAP
+=VAL 1-4 0 "中
+=VAL 8-9 0 "a
+=VAL 12-16 1 "true
++MAP
+=VAL 22-23 2 :1
++MAP {}
+=VAL 26-39 2 :title:ttrueue
+=VAL 39-39 2 :
+=VAL 41-45 2 :true
+=VAL 45-45 2 :
+-MAP
+-MAP
+-MAP
+-DOC
+-STR
+
+> a:b:\n  ?x:\n      :x:\n        - |\n            lit\n            more\n        - a\n        - 'a:b'
++STR
++DOC
++MAP
+=VAL 0-3 0 :a:b
++MAP
+=VAL 7-9 1 :?x
++MAP
+=VAL 17-19 2 ::x
++SEQ
+=VAL 45-65 3 |lit\nmore\n
+=VAL 76-77 6 :a
+=VAL 89-92 7 'a:b
+-SEQ
+-MAP
+-MAP
+-MAP
+-DOC
+-STR
+
+> a b: ?x\n"?x":\n  ?x: a b
++STR
++DOC
++MAP
+=VAL 0-3 0 :a b
+=VAL 5-7 0 :?x
+=VAL 9-11 1 "?x
++MAP
+=VAL 16-18 2 :?x
+=VAL 20-23 2 :a b
+-MAP
+-MAP
+-DOC
+-STR
+
+> -\n  -\n    - 1\n- "?x"\n- x?a y
++STR
++DOC
++SEQ
++SEQ
++SEQ
+=VAL 12-13 2 :1
+-SEQ
+-SEQ
+=VAL 17-19 3 "?x
+=VAL 23-28 4 :x?a y
+-SEQ
+-DOC
+-STR
+
+> -\n  -x:\n    name:\n        -x: |\n              lit\n              more\n- 'null'
++STR
++DOC
++SEQ
++MAP
+=VAL 4-6 1 :-x
++MAP
+=VAL 12-16 2 :name
++MAP
+=VAL 26-28 3 :-x
+=VAL 46-68 3 |lit\nmore\n
+-MAP
+-MAP
+-MAP
+=VAL 72-76 6 'null
+-SEQ
+-DOC
+-STR
+
+> [{},x y: {x y:'a'},{'name':中}]
++STR
++DOC
++SEQ []
++MAP {}
+-MAP
++MAP {}
+=VAL 4-7 0 :x y
++MAP {}
+=VAL 10-17 0 :x y:'a'
+=VAL 17-17 0 :
+-MAP
+-MAP
++MAP {}
+=VAL 21-25 0 'name
+=VAL 27-30 0 :中
+-MAP
+-SEQ
+-DOC
+-STR
+
+> its:\n  中:\n    its: a:b\n    a#b:\n      - {x y:true, a:z}\n      - []\n      - é\n    "c": |\n          lit\n          more
++STR
++DOC
++MAP
+=VAL 0-3 0 :its
++MAP
+=VAL 7-10 1 :中
++MAP
+=VAL 16-19 2 :its
+=VAL 21-24 2 :a:b
+=VAL 29-32 3 :a#b
++SEQ
++MAP {}
+=VAL 43-51 4 :x y:true
+=VAL 51-51 4 :
+=VAL 53-56 4 :a:z
+=VAL 56-56 4 :
+-MAP
++SEQ []
+-SEQ
+=VAL 77-79 6 :é
+-SEQ
+=VAL 85-86 7 "c
+=VAL 101-119 7 |lit\nmore\n
+-MAP
+-MAP
+-MAP
+-DOC
+-STR
+
+> -\n  中: b\n  c: |\n      lit\n      more\n-\n  -\n    - c
++STR
++DOC
++SEQ
++MAP
+=VAL 4-7 1 :中
+=VAL 9-10 1 :b
+=VAL 13-14 2 :c
+=VAL 24-38 2 |lit\nmore\n
+-MAP
++SEQ
++SEQ
+=VAL 51-52 7 :c
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  中: b\n- |\n    lit\n    more
++STR
++DOC
++SEQ
++MAP
+=VAL 4-7 1 :中
+=VAL 9-10 1 :b
+-MAP
+=VAL 19-31 2 |lit\nmore\n
+-SEQ
+-DOC
+-STR
+
+> -\n  "c": {"a b"}\n  k:\n      name:\n          - 'a'\n  1: a b\n-\n  -\n    - x y
++STR
++DOC
++SEQ
++MAP
+=VAL 5-6 1 "c
++MAP {}
+=VAL 11-14 1 "a b
+=VAL 15-15 1 :
+-MAP
+=VAL 19-20 2 :k
++MAP
+=VAL 28-32 3 :name
++SEQ
+=VAL 47-48 4 'a
+-SEQ
+-MAP
+=VAL 52-53 5 :1
+=VAL 55-58 5 :a b
+-MAP
++SEQ
++SEQ
+=VAL 71-74 8 :x y
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  -\n    'name':\n      - |\n          lit\n          more\n  - []
++STR
++DOC
++SEQ
++SEQ
++MAP
+=VAL 11-15 2 'name
++SEQ
+=VAL 38-56 3 |lit\nmore\n
+-SEQ
+-MAP
++SEQ []
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> a: #\r\n  b!---&\x00: b}{
++STR
++DOC
++MAP
+=VAL 0-1 0 :a
++MAP
+=VAL 8-15 1 :b!---&�
+=VAL 17-20 1 :b}{
+-MAP
+-MAP
+-DOC
+-STR
+#3-4
+
+> z:\n  -\n    c: "a:b"\n  -\n    - "b"\n    - |\n        lit\n        more\n"'": {}\n"-x": |\n      lit\n      more
++STR
++DOC
++MAP
+=VAL 0-1 0 :z
++SEQ
++MAP
+=VAL 11-12 2 :c
+=VAL 15-18 2 "a:b
+-MAP
++SEQ
+=VAL 31-32 4 "b
+=VAL 50-66 5 |lit\nmore\n
+-SEQ
+-SEQ
+=VAL 68-69 8 "'
++MAP {}
+-MAP
+=VAL 76-78 9 "-x
+=VAL 89-103 9 |lit\nmore\n
+-MAP
+-DOC
+-STR
+
+> -\n  '-x': {2.5, 'a#b': }
++STR
++DOC
++SEQ
++MAP
+=VAL 5-7 1 '-x
++MAP {}
+=VAL 11-14 1 :2.5
+=VAL 14-14 1 :
+=VAL 17-20 1 'a#b
+=VAL 23-23 1 :
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> "中": []\na#b:\n  -\n    "true":\n      - |\n          lit\n          more\n      - -x\n  - 
++STR
++DOC
++MAP
+=VAL 1-4 0 "中
++SEQ []
+-SEQ
+=VAL 10-13 1 :a#b
++SEQ
++MAP
+=VAL 24-28 3 "true
++SEQ
+=VAL 51-69 4 |lit\nmore\n
+=VAL 78-80 7 :-x
+-SEQ
+-MAP
+=VAL 84-84 8 :
+-SEQ
+-MAP
+-DOC
+-STR
+
+> - |\n    lit\n    more\n-\n  a:b:\n      "a:b":\n        - |\n            lit\n            more
++STR
++DOC
++SEQ
+=VAL 8-20 0 |lit\nmore\n
++MAP
+=VAL 25-28 4 :a:b
++MAP
+=VAL 37-40 5 "a:b
++SEQ
+=VAL 67-87 6 |lit\nmore\n
+-SEQ
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> "2.5": []\n"a:b":\n  - []\n  -\n    'a b':\n        - 
++STR
++DOC
++MAP
+=VAL 1-4 0 "2.5
++SEQ []
+-SEQ
+=VAL 11-14 1 "a:b
++SEQ
++SEQ []
+-SEQ
++MAP
+=VAL 33-36 4 'a b
++SEQ
+=VAL 48-48 5 :
+-SEQ
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> '-x':\n  k:\n    - a#b\n  "a":\n      -\n        '"': x y
++STR
++DOC
++MAP
+=VAL 1-3 0 '-x
++MAP
+=VAL 8-9 1 :k
++SEQ
+=VAL 17-20 2 :a#b
+-SEQ
+=VAL 24-25 3 "a
++SEQ
++MAP
+=VAL 45-46 5 '"
+=VAL 49-52 5 :x y
+-MAP
+-SEQ
+-MAP
+-MAP
+-DOC
+-STR
+
+> name:\n    "x y": |\n        lit\n        more\n    "it's": [a#b,'true']\n    a:b: |\n          lit\n          more
++STR
++DOC
++MAP
+=VAL 0-4 0 :name
++MAP
+=VAL 11-14 1 "x y
+=VAL 27-43 1 |lit\nmore\n
+=VAL 49-53 4 "it's
++SEQ []
+=VAL 57-60 4 :a#b
+=VAL 62-66 4 'true
+-SEQ
+=VAL 73-76 5 :a:b
+=VAL 90-108 5 |lit\nmore\n
+-MAP
+-MAP
+-DOC
+-STR
+
+> ---\nx y: [z,]\né: |\n    lit\n    more\n"title": 中\n...
++STR
++DOC ---
++MAP
+=VAL 4-7 1 :x y
++SEQ []
+=VAL 10-11 1 :z
+-SEQ
+=VAL 14-16 2 :é
+=VAL 24-36 2 |lit\nmore\n
+=VAL 38-43 5 "title
+=VAL 46-49 5 :中
+-MAP
+-DOC ...
+-STR
+
+> 'title':\n    'b': z\n    中: []\n    'it''s':\n        -\n          - {}\nb: "\\""\n?x: '2.5'\n...
++STR
++DOC
++MAP
+=VAL 1-6 0 'title
++MAP
+=VAL 14-15 1 'b
+=VAL 18-19 1 :z
+=VAL 24-27 2 :中
++SEQ []
+-SEQ
+=VAL 37-42 3 'it's
++SEQ
++SEQ
++MAP {}
+-MAP
+-SEQ
+-SEQ
+-MAP
+=VAL 70-71 6 :b
+=VAL 74-76 6 ""
+=VAL 78-80 7 :?x
+=VAL 83-86 7 '2.5
+-MAP
+-DOC ...
+-STR
+
+> -\n  "2.5":\n      -\n        - z\n  :x:\n      - |\n          lit\n          more
++STR
++DOC
++SEQ
++MAP
+=VAL 5-8 1 "2.5
++SEQ
++SEQ
+=VAL 29-30 3 :z
+-SEQ
+-SEQ
+=VAL 33-35 4 ::x
++SEQ
+=VAL 57-75 5 |lit\nmore\n
+-SEQ
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -x:\n  -\n    -\n      '"': {2.5, a#b}\n  - |\n      lit\n      more\n  - {title:true, "'": {}}
++STR
++DOC
++MAP
+=VAL 0-2 0 :-x
++SEQ
++SEQ
++MAP
+=VAL 21-22 3 '"
++MAP {}
+=VAL 26-29 3 :2.5
+=VAL 29-29 3 :
+=VAL 31-34 3 :a#b
+=VAL 34-34 3 :
+-MAP
+-MAP
+-SEQ
+=VAL 48-62 4 |lit\nmore\n
++MAP {}
+=VAL 68-78 7 :title:true
+=VAL 78-78 7 :
+=VAL 81-82 7 "'
++MAP {}
+-MAP
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> ":x":\n    - ['name', c, z,]\n    - []\n    - |\n        lit\n        more
++STR
++DOC
++MAP
+=VAL 1-3 0 ":x
++SEQ
++SEQ []
+=VAL 14-18 1 'name
+=VAL 21-22 1 :c
+=VAL 24-25 1 :z
+-SEQ
++SEQ []
+-SEQ
+=VAL 53-69 3 |lit\nmore\n
+-SEQ
+-MAP
+-DOC
+-STR
+
+> - ["title" ,null ,x y,]
++STR
++DOC
++SEQ
++SEQ []
+=VAL 4-9 0 "title
+=VAL 12-16 0 :null
+=VAL 18-21 0 :x y
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> ...x:\n  - [{},]\na:b: 'é'
++STR
++DOC
++MAP
+=VAL 0-4 0 :...x
++SEQ
++SEQ []
++MAP {}
+-MAP
+-SEQ
+-SEQ
+=VAL 16-19 2 :a:b
+=VAL 22-24 2 'é
+-MAP
+-DOC
+-STR
+
+> 中:\n  "a#b": {a:b:---a b", 'it''s': "a b"}
++STR
++DOC
++MAP
+=VAL 0-3 0 :中
++MAP
+=VAL 8-11 1 "a#b
++MAP {}
+=VAL 15-26 1 :a:b:---a b"
+=VAL 26-26 1 :
+=VAL 29-34 1 'it's
+=VAL 38-41 1 "a b
+-MAP
+-MAP
+-MAP
+-DOC
+-STR
+
+> ---\nz:\n  "2.5": |\n        lit\n        more\n  z: |\n      lit\n      more\n
++STR
++DOC ---
++MAP
+=VAL 4-5 1 :z
++MAP
+=VAL 10-13 2 "2.5
+=VAL 26-42 2 |lit\nmore\n
+=VAL 45-46 5 :z
+=VAL 56-70 5 |lit\nmore\n
+-MAP
+-MAP
+-DOC
+-STR
+
+> -\n  "true":\n      -\n        "true": "null"\n        "中": '-x'\n        "a": ["a b",\n  "name",\n  true,]\n- ''''
++STR
++DOC
++SEQ
++MAP
+=VAL 5-9 1 "true
++SEQ
++MAP
+=VAL 29-33 3 "true
+=VAL 37-41 3 "null
+=VAL 52-55 4 "中
+=VAL 59-61 4 '-x
+=VAL 72-73 5 "a
++SEQ []
+=VAL 78-81 5 "a b
+=VAL 87-91 6 "name
+=VAL 96-100 7 :true
+-SEQ
+-MAP
+-SEQ
+-MAP
+=VAL 106-108 8 ''
+-SEQ
+-DOC
+-STR
+
+> "?x":\n  -\n    - a#b\n    -\n      "?x": null\n      '"': |\n            lit\n            more\n  -\n    z: "b"
++STR
++DOC
++MAP
+=VAL 1-3 0 "?x
++SEQ
++SEQ
+=VAL 16-19 2 :a#b
++MAP
+=VAL 33-35 4 "?x
+=VAL 38-42 4 :null
+=VAL 50-51 5 '"
+=VAL 68-88 5 |lit\nmore\n
+-MAP
+-SEQ
++MAP
+=VAL 97-98 9 :z
+=VAL 101-102 9 "b
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> "1": ":x"\nits: ["name"]
++STR
++DOC
++MAP
+=VAL 1-2 0 "1
+=VAL 6-8 0 ":x
+=VAL 10-13 1 :its
++SEQ []
+=VAL 17-21 1 "name
+-SEQ
+-MAP
+-DOC
+-STR
+
+> 2.5: {"c":{"\\"": 'b'}}
++STR
++DOC
++MAP
+=VAL 0-3 0 :2.5
++MAP {}
+=VAL 7-8 0 "c
++MAP {}
+=VAL 12-14 0 ""
+=VAL 18-19 0 'b
+-MAP
+-MAP
+-MAP
+-DOC
+-STR
+
+> 'a':\n  "a#b":\n    - c\n    -\n      - |\n          lit\n          more\n      - |\n          lit\n          more\n      - 1
++STR
++DOC
++MAP
+=VAL 1-2 0 'a
++MAP
+=VAL 8-11 1 "a#b
++SEQ
+=VAL 20-21 2 :c
++SEQ
+=VAL 48-66 4 |lit\nmore\n
+=VAL 87-105 7 |lit\nmore\n
+=VAL 114-115 10 :1
+-SEQ
+-SEQ
+-MAP
+-MAP
+-DOC
+-STR
+
+> "?x":\n  ?x:\n  2.5:\n    - "中"\n?x: ["title": a:b,]\nc:\n    -\n      - |\n         lit\n          more\n    - {"-x"}
++STR
++DOC
++MAP
+=VAL 1-3 0 "?x
++MAP
+=VAL 8-10 1 :?x
+=VAL 11-11 1 :
+=VAL 14-17 2 :2.5
++SEQ
+=VAL 26-29 3 "中
+-SEQ
+-MAP
+=VAL 31-33 4 :?x
++SEQ []
++MAP {}
+=VAL 37-42 4 "title
+=VAL 45-48 4 :a:b
+-MAP
+-SEQ
+=VAL 51-52 5 :c
++SEQ
++SEQ
+=VAL 79-97 7 |lit\n more\n
+-SEQ
++MAP {}
+=VAL 106-108 10 "-x
+=VAL 109-109 10 :
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> - {}\n- '中'\n-\n  - []\n  - |\n      lit\n      more
++STR
++DOC
++SEQ
++MAP {}
+-MAP
+=VAL 8-11 1 '中
++SEQ
++SEQ []
+-SEQ
+=VAL 34-48 4 |lit\nmore\n
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> "tru":\n    'é':\n        中:\n            - a:b\n        ":x": |\n              lit\n              more
++STR
++DOC
++MAP
+=VAL 1-4 0 "tru
++MAP
+=VAL 12-14 1 'é
++MAP
+=VAL 25-28 2 :中
++SEQ
+=VAL 44-47 3 :a:b
+-SEQ
+=VAL 57-59 4 ":x
+=VAL 78-100 4 |lit\nmore\n
+-MAP
+-MAP
+-MAP
+-DOC
+-STR
+
+> -\n  -\n    中: |\n        lit\n        more\n    ?x:\n      - |\n          lit\n          more
++STR
++DOC
++SEQ
++SEQ
++MAP
+=VAL 10-13 2 :中
+=VAL 25-41 2 |lit\nmore\n
+=VAL 46-48 5 :?x
++SEQ
+=VAL 70-88 6 |lit\nmore\n
+-SEQ
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  -\n    -\n      "a b": |\n            lit\n            more\n    -\n      - []\n      - {x y}\n    -\n      - c
++STR
++DOC
++SEQ
++SEQ
++SEQ
++MAP
+=VAL 19-22 3 "a b
+=VAL 39-59 3 |lit\nmore\n
+-MAP
++SEQ
++SEQ []
+-SEQ
++MAP {}
+=VAL 86-89 8 :x y
+=VAL 89-89 8 :
+-MAP
+-SEQ
++SEQ
+=VAL 105-106 10 :c
+-SEQ
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - [b,]\n-\n  "'":\n    -\n      "c": |\n            lit\n            more
++STR
++DOC
++SEQ
++SEQ []
+=VAL 3-4 0 :b
+-SEQ
++MAP
+=VAL 12-13 2 "'
++SEQ
++MAP
+=VAL 29-30 4 "c
+=VAL 47-67 4 |lit\nmore\n
+-MAP
+-SEQ
+-MAP
+-SEQ
+-DOC
+-STR
+
+> [中: ":x",2.5: {title:'tru', "null": z},{},]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 1-4 0 :中
+=VAL 7-9 0 ":x
+-MAP
++MAP {}
+=VAL 11-14 0 :2.5
++MAP {}
+=VAL 17-28 0 :title:'tru'
+=VAL 28-28 0 :
+=VAL 31-35 0 "null
+=VAL 38-39 0 :z
+-MAP
+-MAP
++MAP {}
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  true:\n      -\n        title: 'b'\n        ':x': |\n              lit\n              more\n      -\n        - '?x'
++STR
++DOC
++SEQ
++MAP
+=VAL 4-8 1 :true
++SEQ
++MAP
+=VAL 26-31 3 :title
+=VAL 34-35 3 'b
+=VAL 46-48 4 ':x
+=VAL 67-89 4 |lit\nmore\n
+-MAP
++SEQ
+=VAL 109-111 8 '?x
+-SEQ
+-SEQ
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  -\n    title:\n        - [":x", 'c',]\n        - {}\n  - b
++STR
++DOC
++SEQ
++SEQ
++MAP
+=VAL 10-15 2 :title
++SEQ
++SEQ []
+=VAL 29-31 3 ":x
+=VAL 35-36 3 'c
+-SEQ
++MAP {}
+-MAP
+-SEQ
+-MAP
+=VAL 57-58 5 :b
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> "\\"":\n  'it''s': |\n        lit\n        more\n  :x:\n      a:\n       - {"true": true, "1": "true"}\n  '': {}
++STR
++DOC
++MAP
+=VAL 1-3 0 ""
++MAP
+=VAL 9-14 1 'it's
+=VAL 27-43 1 |lit\nmore\n
+=VAL 46-48 4 ::x
++MAP
+=VAL 56-57 5 :a
++SEQ
++MAP {}
+=VAL 70-74 6 "true
+=VAL 77-81 6 :true
+=VAL 84-85 6 "1
+=VAL 89-93 6 "true
+-MAP
+-SEQ
+-MAP
+=VAL 99-99 7 '
++MAP {}
+-MAP
+-MAP
+-MAP
+-DOC
+-STR
+
+> -\n  "'":\n    -\n      - |\n          lit\n          more
++STR
++DOC
++SEQ
++MAP
+=VAL 5-6 1 "'
++SEQ
++SEQ
+=VAL 35-53 3 |lit\nmore\n
+-SEQ
+-SEQ
+-MAP
+-SEQ
+-DOC
+-STR
+
+> - title\n- ["title"]
++STR
++DOC
++SEQ
+=VAL 2-7 0 :title
++SEQ []
+=VAL 12-17 1 "title
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> null:\n  true: "-x"\n"1":\n  -\n    -x:\n        - -x\n        - [{},中,1]
++STR
++DOC
++MAP
+=VAL 0-4 0 :null
++MAP
+=VAL 8-12 1 :true
+=VAL 15-17 1 "-x
+-MAP
+=VAL 20-21 2 "1
++SEQ
++MAP
+=VAL 32-34 4 :-x
++SEQ
+=VAL 46-48 5 :-x
++SEQ []
++MAP {}
+-MAP
+=VAL 63-66 6 :中
+=VAL 67-68 6 :1
+-SEQ
+-SEQ
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> -\n  2.5: |\n      lit\n      more\n  a:\n      - "a"\n- a#b
++STR
++DOC
++SEQ
++MAP
+=VAL 4-7 1 :2.5
+=VAL 17-31 1 |lit\nmore\n
+=VAL 34-35 4 :a
++SEQ
+=VAL 46-47 5 "a
+-SEQ
+-MAP
+=VAL 51-54 6 :a#b
+-SEQ
+-DOC
+-STR
+
+> "null": []\na#b: ?x\n"a":\n    - '"'
++STR
++DOC
++MAP
+=VAL 1-5 0 "null
++SEQ []
+-SEQ
+=VAL 11-14 1 :a#b
+=VAL 16-18 1 :?x
+=VAL 20-21 2 "a
++SEQ
+=VAL 31-32 3 '"
+-SEQ
+-MAP
+-DOC
+-STR
+
+> z: |\n    lit\n    more\né: 中\nc:\n  -\n    'name':\n        - |\n            lit\n            more
++STR
++DOC
++MAP
+=VAL 0-1 0 :z
+=VAL 9-21 0 |lit\nmore\n
+=VAL 22-24 3 :é
+=VAL 26-29 3 :中
+=VAL 30-31 4 :c
++SEQ
++MAP
+=VAL 42-46 6 'name
++SEQ
+=VAL 73-93 7 |lit\nmore\n
+-SEQ
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> 'null':\n"null":\n    - "it's"
++STR
++DOC
++MAP
+=VAL 1-5 0 'null
+=VAL 7-7 0 :
+=VAL 9-13 1 "null
++SEQ
+=VAL 23-27 2 "it's
+-SEQ
+-MAP
+-DOC
+-STR
+
+> a b:\n  -\n    "c": []\n  - |\n      lit\n      more\n  - |\n      lit\n      more
++STR
++DOC
++MAP
+=VAL 0-3 0 :a b
++SEQ
++MAP
+=VAL 14-15 2 "c
++SEQ []
+-SEQ
+-MAP
+=VAL 33-47 3 |lit\nmore\n
+=VAL 60-74 6 |lit\nmore\n
+-SEQ
+-MAP
+-DOC
+-STR
+
+> ---\n-\n  a:b: ["a:b",z]
++STR
++DOC ---
++SEQ
++MAP
+=VAL 8-11 2 :a:b
++SEQ []
+=VAL 15-18 2 "a:b
+=VAL 20-21 2 :z
+-SEQ
+-MAP
+-SEQ
+-DOC
+-STR
+
+> "c": ['x y']\nz: |\n      lit\n      more
++STR
++DOC
++MAP
+=VAL 1-2 0 "c
++SEQ []
+=VAL 7-10 0 'x y
+-SEQ
+=VAL 13-14 1 :z
+=VAL 24-38 1 |lit\nmore\n
+-MAP
+-DOC
+-STR
+
+> "it's": |\n    lit\n    méore\n"?x":\n    z: ''''
++STR
++DOC
++MAP
+=VAL 1-5 0 "it's
+=VAL 14-28 0 |lit\nméore\n
+=VAL 30-32 3 "?x
++MAP
+=VAL 39-40 4 :z
+=VAL 43-45 4 ''
+-MAP
+-MAP
+-DOC
+-STR
+
+> - -x\n- []\n- |\n    lit\n    mre
++STR
++DOC
++SEQ
+=VAL 2-4 0 :-x
++SEQ []
+-SEQ
+=VAL 18-29 2 |lit\nmre\n
+-SEQ
+-DOC
+-STR
+
+> -\n  ?x:\n      -\n        ?x: |\n              lit\n              more\n      -\n        - 'c'\n  'x y':\n      -\n        - 
++STR
++DOC
++SEQ
++MAP
+=VAL 4-6 1 :?x
++SEQ
++MAP
+=VAL 24-26 3 :?x
+=VAL 44-66 3 |lit\nmore\n
+-MAP
++SEQ
+=VAL 86-87 7 'c
+-SEQ
+-SEQ
+=VAL 92-95 8 'x y
++SEQ
++SEQ
+=VAL 115-115 10 :
+-SEQ
+-SEQ
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  1: []\n- |\n    lit\n    more\n-\n  - true
++STR
++DOC
++SEQ
++MAP
+=VAL 4-5 1 :1
++SEQ []
+-SEQ
+-MAP
+=VAL 18-30 2 |lit\nmore\n
++SEQ
+=VAL 37-41 6 :true
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> {'2.5': -x, a:b: {truée: a b, 'true': a#b, 中"\\n":"its"}}
++STR
++DOC
++MAP {}
+=VAL 2-5 0 '2.5
+=VAL 8-10 0 :-x
+=VAL 12-15 0 :a:b
++MAP {}
+=VAL 18-24 0 :truée
+=VAL 26-29 0 :a b
+=VAL 32-36 0 'true
+=VAL 39-42 0 :a#b
+=VAL 44-57 0 :中"\\n":"its"
+=VAL 57-57 0 :
+-MAP
+-MAP
+-DOC
+-STR
+
+> '?x':\n    a:b: []\n    'é': ":x"\n'true': |\n    lit\n    more
++STR
++DOC
++MAP
+=VAL 1-3 0 '?x
++MAP
+=VAL 10-13 1 :a:b
++SEQ []
+-SEQ
+=VAL 23-25 2 'é
+=VAL 29-31 2 ":x
+-MAP
+=VAL 34-38 3 'true
+=VAL 47-59 3 |lit\nmore\n
+-MAP
+-DOC
+-STR
+
+> 'x y':\n  -\n    -\n      - {}\n      - |\n          lit\n          more\n  - true
++STR
++DOC
++MAP
+=VAL 1-4 0 'x y
++SEQ
++SEQ
++SEQ
++MAP {}
+-MAP
+=VAL 48-66 4 |lit\nmore\n
+-SEQ
+-SEQ
+=VAL 71-75 7 :true
+-SEQ
+-MAP
+-DOC
+-STR
+
+> ---\n{' y': '-x', c: {}}\n
++STR
++DOC ---
++MAP {}
+=VAL 6-8 1 ' y
+=VAL 12-14 1 '-x
+=VAL 17-18 1 :c
++MAP {}
+-MAP
+-MAP
+-DOC
+-STR
+
+> title: {a: 'name', true: 1, "c"}
++STR
++DOC
++MAP
+=VAL 0-5 0 :title
++MAP {}
+=VAL 8-9 0 :a
+=VAL 12-16 0 'name
+=VAL 19-23 0 :true
+=VAL 25-26 0 :1
+=VAL 29-30 0 "c
+=VAL 31-31 0 :
+-MAP
+-MAP
+-DOC
+-STR
+
+> "é":\n    "true":\n        'null': |\n            lit\n            more
++STR
++DOC
++MAP
+=VAL 1-3 0 "é
++MAP
+=VAL 11-15 1 "true
++MAP
+=VAL 27-31 2 'null
+=VAL 48-68 2 |lit\nmore\n
+-MAP
+-MAP
+-MAP
+-DOC
+-STR
+
+> - []\n-\n  -\n    '''':\n      - |\n          lit\n          more,
++STR
++DOC
++SEQ
++SEQ []
+-SEQ
++SEQ
++MAP
+=VAL 16-18 3 ''
++SEQ
+=VAL 41-60 4 |lit\nmore,\n
+-SEQ
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - {}\n-\n  -\n    null's':\n        "[null": ['null',a b,{z: "\\"", title: {}}]\n  - '-x'
++STR
++DOC
++SEQ
++MAP {}
+-MAP
++SEQ
++MAP
+=VAL 15-22 3 :null's'
++MAP
+=VAL 33-38 4 "[null
++SEQ []
+=VAL 43-47 4 'null
+=VAL 49-52 4 :a b
++MAP {}
+=VAL 54-55 4 :z
+=VAL 58-60 4 ""
+=VAL 63-68 4 :title
++MAP {}
+-MAP
+-MAP
+-SEQ
+-MAP
+-MAP
+=VAL 80-82 5 '-x
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> {'a:b': 'null', "1":{2.5:"a#b"}, '1': 'a b'}
++STR
++DOC
++MAP {}
+=VAL 2-5 0 'a:b
+=VAL 9-13 0 'null
+=VAL 17-18 0 "1
++MAP {}
+=VAL 21-30 0 :2.5:"a#b"
+=VAL 30-30 0 :
+-MAP
+=VAL 34-35 0 '1
+=VAL 39-42 0 'a b
+-MAP
+-DOC
+-STR
+
+> "?x": {é:"a:b", '-x': "name"}
++STR
++DOC
++MAP
+=VAL 1-3 0 "?x
++MAP {}
+=VAL 7-15 0 :é:"a:b"
+=VAL 15-15 0 :
+=VAL 18-20 0 '-x
+=VAL 24-28 0 "name
+-MAP
+-MAP
+-DOC
+-STR
+
+> "1":\n    "1": |\n      'it''s'  lit\n        more\n    '*aitle': its
++STR
++DOC
++MAP
+=VAL 1-2 0 "1
++MAP
+=VAL 10-11 1 "1
+=VAL 22-47 1 |'it''s'  lit\n  more\n
+=VAL 53-59 4 '*aitle
+=VAL 62-65 4 :its
+-MAP
+-MAP
+-DOC
+-STR
+
+> ---\né: |\n    lit\n    more\n':x': |\n      lit\n      more\n:x: |\n      lit\n      more\n
++STR
++DOC ---
++MAP
+=VAL 4-6 1 :é
+=VAL 14-26 1 |lit\nmore\n
+=VAL 28-30 4 ':x
+=VAL 41-55 4 |lit\nmore\n
+=VAL 56-58 7 ::x
+=VAL 68-82 7 |lit\nmore\n
+-MAP
+-DOC
+-STR
+
+> ":x": a:b\n"a":\n    - []\nb: |\n    lit\n    more
++STR
++DOC
++MAP
+=VAL 1-3 0 ":x
+=VAL 6-9 0 :a:b
+=VAL 11-12 1 "a
++SEQ
++SEQ []
+-SEQ
+-SEQ
+=VAL 24-25 3 :b
+=VAL 33-45 3 |lit\nmore\n
+-MAP
+-DOC
+-STR
+
+> c:\n  "b":\n      -\n        'a:b': |\n              lit\n              more\n      - |\n          lit\n          more
++STR
++DOC
++MAP
+=VAL 0-1 0 :c
++MAP
+=VAL 6-7 1 "b
++SEQ
++MAP
+=VAL 27-30 3 'a:b
+=VAL 49-71 3 |lit\nmore\n
+-MAP
+=VAL 92-110 6 |lit\nmore\n
+-SEQ
+-MAP
+-MAP
+-DOC
+-STR
+
+> -\n  a:\n      'c':\n          - []\n      "'": b\n  "x y": a\n  :x:
++STR
++DOC
++SEQ
++MAP
+=VAL 4-5 1 :a
++MAP
+=VAL 14-15 2 'c
++SEQ
++SEQ []
+-SEQ
+-SEQ
+=VAL 40-41 4 "'
+=VAL 44-45 4 :b
+-MAP
+=VAL 49-52 5 "x y
+=VAL 55-56 5 :a
+=VAL 59-61 6 ::x
+=VAL 62-62 6 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> a:b"`:\n  é: |\n      lit\n      more  '1': "'"\n---\nb: 1
++STR
++DOC
++MAP
+=VAL 0-5 0 :a:b"`
++MAP
+=VAL 9-11 1 :é
+=VAL 21-45 1 |lit\nmore  '1': "'"\n
+-MAP
+-MAP
+-DOC
++DOC ---
++MAP
+=VAL 50-51 5 :b
+=VAL 53-54 5 :1
+-MAP
+-DOC
+-STR
+
+> - 1\n-\n  'é':\n    k: 'x y'\n    z:\n      'b': 'x y'\n      2.5: |\n            lit\n            more\n  its: []
++STR
++DOC
++SEQ
+=VAL 2-3 0 :1
++MAP
+=VAL 9-11 2 'é
++MAP
+=VAL 18-19 3 :k
+=VAL 22-25 3 'x y
+=VAL 31-32 4 :z
++MAP
+=VAL 41-42 5 'b
+=VAL 46-49 5 'x y
+=VAL 57-60 6 :2.5
+=VAL 76-96 6 |lit\nmore\n
+-MAP
+-MAP
+=VAL 99-102 9 :its
++SEQ []
+-SEQ
+-MAP
+-SEQ
+-DOC
+-STR
+
+> ---\n-\n  -\n   -\n      2.5: |\n          lit\n          more\n
++STR
++DOC ---
++SEQ
++SEQ
++SEQ
++MAP
+=VAL 21-24 4 :2.5
+=VAL 38-56 4 |lit\nmore\n
+-MAP
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  -\n    z: |\n        lit\n        more
++STR
++DOC
++SEQ
++SEQ
++MAP
+=VAL 10-11 2 :z
+=VAL 23-39 2 |lit\nmore\n
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  -\n    name:\n        a#b: []
++STR
++DOC
++SEQ
++SEQ
++MAP
+=VAL 10-14 2 :name
++MAP
+=VAL 24-27 3 :a#b
++SEQ []
+-SEQ
+-MAP
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> [a:b',"x y","1": "2.5",]
++STR
++DOC
++SEQ []
+=VAL 1-5 0 :a:b'
+=VAL 7-10 0 "x y
++MAP {}
+=VAL 13-14 0 "1
+=VAL 18-21 0 "2.5
+-MAP
+-SEQ
+-DOC
+-STR
+
+> x y: |\n    lit\n    more\nk: "null"
++STR
++DOC
++MAP
+=VAL 0-3 0 :x y
+=VAL 11-23 0 |lit\nmore\n
+=VAL 24-25 3 :k
+=VAL 28-32 3 "null
+-MAP
+-DOC
+-STR
+
+> -\n  - |\n     lit      more\n- -x
++STR
++DOC
++SEQ
++SEQ
+=VAL 13-26 1 |lit      more\n
+-SEQ
+=VAL 29-31 3 :-x
+-SEQ
+-DOC
+-STR
+
+> - ["a b",a b]\n- |\n    lit\n    more\n- é
++STR
++DOC
++SEQ
++SEQ []
+=VAL 4-7 0 "a b
+=VAL 9-12 0 :a b
+-SEQ
+=VAL 22-34 1 |lit\nmore\n
+=VAL 37-39 4 :é
+-SEQ
+-DOC
+-STR
+
+> name:\n    - "-x"\n    -\n      k:\n          - |\n              lit\n              more\n    - [{}, {a b},]
++STR
++DOC
++MAP
+=VAL 0-4 0 :name
++SEQ
+=VAL 13-15 1 "-x
++MAP
+=VAL 29-30 3 :k
++SEQ
+=VAL 60-82 4 |lit\nmore\n
+-SEQ
+-MAP
++SEQ []
++MAP {}
+-MAP
++MAP {}
+=VAL 95-98 7 :a b
+=VAL 98-98 7 :
+-MAP
+-SEQ
+-SEQ
+-MAP
+-DOC
+-STR
+
+> ---\n-\n  x y: |\n      lit\n      more\n...
++STR
++DOC ---
++SEQ
++MAP
+=VAL 8-11 2 :x y
+=VAL 21-35 2 |lit\nmore\n
+-MAP
+-SEQ
+-DOC ...
+-STR
+
+> - ['a b', "null",]
++STR
++DOC
++SEQ
++SEQ []
+=VAL 4-7 0 'a b
+=VAL 11-15 0 "null
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  - {'-x':a}\n  -\n    2.5:\n        - [c: 'a:b', title, {'a b', a:b:'"'}]
++STR
++DOC
++SEQ
++SEQ
++MAP {}
+=VAL 8-10 1 '-x
+=VAL 12-13 1 :a
+-MAP
++MAP
+=VAL 23-26 3 :2.5
++SEQ
++SEQ []
++MAP {}
+=VAL 39-40 4 :c
+=VAL 43-46 4 'a:b
+-MAP
+=VAL 49-54 4 :title
++MAP {}
+=VAL 58-61 4 'a b
+=VAL 62-62 4 :
+=VAL 64-71 4 :a:b:'"'
+=VAL 71-71 4 :
+-MAP
+-SEQ
+-SEQ
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  -\n    -\n      - "?x"\n      - 'a:b'\n    -\n      - |\n          lit\n          more\n  - {}
++STR
++DOC
++SEQ
++SEQ
++SEQ
++SEQ
+=VAL 21-23 3 "?x
+=VAL 34-37 4 'a:b
+-SEQ
++SEQ
+=VAL 65-83 6 |lit\nmore\n
+-SEQ
+-SEQ
++MAP {}
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  - |\n     lit\n      more\n  - ''
++STR
++DOC
++SEQ
++SEQ
+=VAL 13-27 1 |lit\n more\n
+=VAL 33-33 4 '
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> '-x': null\na b: |\n    lit\n    more\n---\nb: 1
++STR
++DOC
++MAP
+=VAL 1-3 0 '-x
+=VAL 6-10 0 :null
+=VAL 11-14 1 :a b
+=VAL 22-34 1 |lit\nmore\n
+-MAP
+-DOC
++DOC ---
++MAP
+=VAL 39-40 5 :b
+=VAL 42-43 5 :1
+-MAP
+-DOC
+-STR
+
+> -\n  null:\n      "\\"": []\n- |\n    lit\n    more
++STR
++DOC
++SEQ
++MAP
+=VAL 4-8 1 :null
++MAP
+=VAL 17-19 2 ""
++SEQ []
+-SEQ
+-MAP
+-MAP
+=VAL 33-45 3 |lit\nmore\n
+-SEQ
+-DOC
+-STR
+
+> ["b", "null": {}]
++STR
++DOC
++SEQ []
+=VAL 2-3 0 "b
++MAP {}
+=VAL 7-11 0 "null
++MAP {}
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> {"2.5", a:"null", "é": 'a b'}
++STR
++DOC
++MAP {}
+=VAL 2-5 0 "2.5
+=VAL 6-6 0 :
+=VAL 8-16 0 :a:"null"
+=VAL 16-16 0 :
+=VAL 19-21 0 "é
+=VAL 25-28 0 'a b
+-MAP
+-DOC
+-STR
+
+> 中:\n  ":x": 1\n  name:\n    a:b: |\n          lit\n          more
++STR
++DOC
++MAP
+=VAL 0-3 0 :中
++MAP
+=VAL 8-10 1 ":x
+=VAL 13-14 1 :1
+=VAL 17-21 2 :name
++MAP
+=VAL 27-30 3 :a:b
+=VAL 44-62 3 |lit\nmore\n
+-MAP
+-MAP
+-MAP
+-DOC
+-STR
+
+> -\n  "é": "a#b"\n  "é": |\n      it-a\n      more\n  a:b: |\n        lit\n        more
++STR
++DOC
++SEQ
++MAP
+=VAL 5-7 1 "é
+=VAL 11-14 1 "a#b
+=VAL 19-21 2 "é
+=VAL 32-47 2 |it-a\nmore\n
+=VAL 50-53 5 :a:b
+=VAL 65-81 5 |lit\nmore\n
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n \x00 z:\n    -\n      2.5: 'name'\n      "it's": []\n- {c: }
++STR
++DOC
++SEQ
++MAP
+=VAL 3-6 1 :� z
++SEQ
++MAP
+=VAL 20-23 3 :2.5
+=VAL 26-30 3 'name
+=VAL 39-43 4 "it's
++SEQ []
+-SEQ
+-MAP
+-SEQ
+-MAP
++MAP {}
+=VAL 52-53 5 :c
+=VAL 55-55 5 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> its:\n  'é':\n    :x:\n      - "é"\n    é: |\n        lit\n        more\n    '?x':\n      - ["c",]
++STR
++DOC
++MAP
+=VAL 0-3 0 :its
++MAP
+=VAL 8-10 1 'é
++MAP
+=VAL 17-19 2 ::x
++SEQ
+=VAL 30-32 3 "é
+-SEQ
+=VAL 38-40 4 :é
+=VAL 52-68 4 |lit\nmore\n
+=VAL 74-76 7 '?x
++SEQ
++SEQ []
+=VAL 89-90 8 "c
+-SEQ
+-SEQ
+-MAP
+-MAP
+-MAP
+-DOC
+-STR
+
+> -\n  - |\n      lit\n      more\n  - |\n      lit\n      more\n  - [{},]\n- |\n    lit\n    more
++STR
++DOC
++SEQ
++SEQ
+=VAL 14-28 1 |lit\nmore\n
+=VAL 41-55 4 |lit\nmore\n
++SEQ []
++MAP {}
+-MAP
+-SEQ
+-SEQ
+=VAL 74-86 8 |lit\nmore\n
+-SEQ
+-DOC
+-STR
+
+> - |\n    lit\n    more\n-\n  -x:\n    a b:\n      z: []
++STR
++DOC
++SEQ
+=VAL 8-20 0 |lit\nmore\n
++MAP
+=VAL 25-27 4 :-x
++MAP
+=VAL 33-36 5 :a b
++MAP
+=VAL 44-45 6 :z
++SEQ []
+-SEQ
+-MAP
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> {z: 'true', "\\"":a:b, "中"}
++STR
++DOC
++MAP {}
+=VAL 1-2 0 :z
+=VAL 5-9 0 'true
+=VAL 13-15 0 ""
+=VAL 17-20 0 :a:b
+=VAL 23-26 0 "中
+=VAL 27-27 0 :
+-MAP
+-DOC
+-STR
+
+> c:\n  -\n    "a#b":\n        '"': é\n  -\n    - |\n        lit\n        more\n  - |\n      lit\n      more\n'é': x y
++STR
++DOC
++MAP
+=VAL 0-1 0 :c
++SEQ
++MAP
+=VAL 12-15 2 "a#b
++MAP
+=VAL 27-28 3 '"
+=VAL 31-33 3 :é
+-MAP
+-MAP
++SEQ
+=VAL 54-70 5 |lit\nmore\n
+-SEQ
+=VAL 83-97 8 |lit\nmore\n
+-SEQ
+=VAL 99-101 11 'é
+=VAL 104-107 11 :x y
+-MAP
+-DOC
+-STR
+
+> z:\n  -\n    -\n      - 'name'\n      - {}\n      - |\n          lit\n          more
++STR
++DOC
++MAP
+=VAL 0-1 0 :z
++SEQ
++SEQ
++SEQ
+=VAL 22-26 3 'name
++MAP {}
+-MAP
+=VAL 59-77 5 |lit\nmore\n
+-SEQ
+-SEQ
+-SEQ
+-MAP
+-DOC
+-STR
+
+> -\n  "a b":\n      "b": 'null'\n      null:\n        - |\n            lit\n            more\n- "title"
++STR
++DOC
++SEQ
++MAP
+=VAL 5-8 1 "a b
++MAP
+=VAL 18-19 2 "b
+=VAL 23-27 2 'null
+=VAL 35-39 3 :null
++SEQ
+=VAL 65-85 4 |lit\nmore\n
+-SEQ
+-MAP
+-MAP
+=VAL 89-94 7 "title
+-SEQ
+-DOC
+-STR
+
+> -\n  'a#b': {"a b", 2.5: "a", "'"}\n  c: |\n        lit\n        more\n-\n  "'": [中,{a:b: true},{title},]
++STR
++DOC
++SEQ
++MAP
+=VAL 5-8 1 'a#b
++MAP {}
+=VAL 13-16 1 "a b
+=VAL 17-17 1 :
+=VAL 19-22 1 :2.5
+=VAL 25-26 1 "a
+=VAL 30-31 1 "'
+=VAL 32-32 1 :
+-MAP
+=VAL 36-37 2 :c
+=VAL 49-65 2 |lit\nmore\n
+-MAP
++MAP
+=VAL 71-72 6 "'
++SEQ []
+=VAL 76-79 6 :中
++MAP {}
+=VAL 81-84 6 :a:b
+=VAL 86-90 6 :true
+-MAP
++MAP {}
+=VAL 93-98 6 :title
+=VAL 98-98 6 :
+-MAP
+-SEQ
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  -\n    '-x':\n        2.5: 'x y'\n    "title": ['1',]\n    "中":\n      - {'x y': "中", '?x':null, '?x'}
++STR
++DOC
++SEQ
++SEQ
++MAP
+=VAL 11-13 2 '-x
++MAP
+=VAL 24-27 3 :2.5
+=VAL 30-33 3 'x y
+-MAP
+=VAL 40-45 4 "title
++SEQ []
+=VAL 50-51 4 '1
+-SEQ
+=VAL 60-63 5 "中
++SEQ
++MAP {}
+=VAL 76-79 6 'x y
+=VAL 83-86 6 "中
+=VAL 90-92 6 '?x
+=VAL 94-98 6 :null
+=VAL 101-103 6 '?x
+=VAL 104-104 6 :
+-MAP
+-SEQ
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -x: |\n      lit\n      more\ntitle: |\n    lit\n    more\n'c':\n  -\n    null:\n        - |\n            lit\n            more
++STR
++DOC
++MAP
+=VAL 0-2 0 :-x
+=VAL 12-26 0 |lit\nmore\n
+=VAL 27-32 3 :title
+=VAL 40-52 3 |lit\nmore\n
+=VAL 54-55 6 'c
++SEQ
++MAP
+=VAL 66-70 8 :null
++SEQ
+=VAL 96-116 9 |lit\nmore\n
+-SEQ
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> "中": {1: 'x y', x y}
++STR
++DOC
++MAP
+=VAL 1-4 0 "中
++MAP {}
+=VAL 8-9 0 :1
+=VAL 12-15 0 'x y
+=VAL 18-21 0 :x y
+=VAL 21-21 0 :
+-MAP
+-MAP
+-DOC
+-STR
+
+> "title": a#b\n中:\n  k:\n    "a b":\n    "'": |\n        lit\n        more
++STR
++DOC
++MAP
+=VAL 1-6 0 "title
+=VAL 9-12 0 :a#b
+=VAL 13-16 1 :中
++MAP
+=VAL 20-21 2 :k
++MAP
+=VAL 28-31 3 "a b
+=VAL 33-33 3 :
+=VAL 39-40 4 "'
+=VAL 53-69 4 |lit\nmore\n
+-MAP
+-MAP
+-MAP
+-DOC
+-STR
+
+> -\n  "\\"":\n    true:\n      name: c\n    true:\n      - |\n          lit\n          more\n      - '1'\n      - "b"
++STR
++DOC
++SEQ
++MAP
+=VAL 5-7 1 ""
++MAP
+=VAL 14-18 2 :true
++MAP
+=VAL 26-30 3 :name
+=VAL 32-33 3 :c
+-MAP
+=VAL 38-42 4 :true
++SEQ
+=VAL 64-82 5 |lit\nmore\n
+=VAL 92-93 8 '1
+=VAL 104-105 9 "b
+-SEQ
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  -\n    "'": a b\n    'null':\n        - ':x'\n        - {"c"}\n        - "1"\n    k: é
++STR
++DOC
++SEQ
++SEQ
++MAP
+=VAL 11-12 2 "'
+=VAL 15-18 2 :a b
+=VAL 24-28 3 'null
++SEQ
+=VAL 42-44 4 ':x
++MAP {}
+=VAL 58-59 5 "c
+=VAL 60-60 5 :
+-MAP
+=VAL 73-74 6 "1
+-SEQ
+=VAL 80-81 7 :k
+=VAL 83-85 7 :é
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  -\n    2.5:\n        中: {b:"it's"}\n- |\n    lit\n    more
++STR
++DOC
++SEQ
++SEQ
++MAP
+=VAL 10-13 2 :2.5
++MAP
+=VAL 23-26 3 :中
++MAP {}
+=VAL 29-37 3 :b:"it's"
+=VAL 37-37 3 :
+-MAP
+-MAP
+-MAP
+-SEQ
+=VAL 47-59 4 |lit\nmore\n
+-SEQ
+-DOC
+-STR
+
+> 中: '-x'\n'?x': {"title": c}\n'中': ['''',\n  "x y",\n  its]\n
++STR
++DOC
++MAP
+=VAL 0-3 0 :中
+=VAL 6-8 0 '-x
+=VAL 11-13 1 '?x
++MAP {}
+=VAL 18-23 1 "title
+=VAL 26-27 1 :c
+-MAP
+=VAL 30-33 2 '中
++SEQ []
+=VAL 38-40 2 ''
+=VAL 46-49 3 "x y
+=VAL 54-57 4 :its
+-SEQ
+-MAP
+-DOC
+-STR
+
+> '-x':\n    title: |\n       lit\n        more\n    z:\n      - é
++STR
++DOC
++MAP
+=VAL 1-3 0 '-x
++MAP
+=VAL 10-15 1 :title
+=VAL 26-42 1 |lit\n more\n
+=VAL 47-48 4 :z
++SEQ
+=VAL 58-60 5 :é
+-SEQ
+-MAP
+-MAP
+-DOC
+-STR
+
+> -\n  true:\n      a#b: [{"-x": }, "2.5",]\n- |\n    lt\n    more
++STR
++DOC
++SEQ
++MAP
+=VAL 4-8 1 :true
++MAP
+=VAL 16-19 2 :a#b
++SEQ []
++MAP {}
+=VAL 24-26 2 "-x
+=VAL 29-29 2 :
+-MAP
+=VAL 33-36 2 "2.5
+-SEQ
+-MAP
+-MAP
+=VAL 48-59 3 |lt\nmore\n
+-SEQ
+-DOC
+-STR
+
+> ['it''s' ,"é": 'é' ,x y]
++STR
++DOC
++SEQ []
+=VAL 2-7 0 'it's
++MAP {}
+=VAL 11-13 0 "é
+=VAL 17-19 0 'é
+-MAP
+=VAL 22-25 0 :x y
+-SEQ
+-DOC
+-STR
+
+> ?x:\n  z: {'true':"b", -x: z}\n  "true":\n    k: |\n        lit\n        more
++STR
++DOC
++MAP
+=VAL 0-2 0 :?x
++MAP
+=VAL 6-7 1 :z
++MAP {}
+=VAL 11-15 1 'true
+=VAL 18-19 1 "b
+=VAL 22-24 1 :-x
+=VAL 26-27 1 :z
+-MAP
+=VAL 32-36 2 "true
++MAP
+=VAL 43-44 3 :k
+=VAL 56-72 3 |lit\nmore\n
+-MAP
+-MAP
+-MAP
+-DOC
+-STR
+
+> "a b":\n    - |\n        lit\n        more\n    -\n      -\n        - {}\n        - "a:b"\n        - title
++STR
++DOC
++MAP
+=VAL 1-4 0 "a b
++SEQ
+=VAL 23-39 1 |lit\nmore\n
++SEQ
++SEQ
++MAP {}
+-MAP
+=VAL 78-81 7 "a:b
+=VAL 93-98 8 :title
+-SEQ
+-SEQ
+-SEQ
+-MAP
+-DOC
+-STR
+
+> -\n  "?x": |\n      lit\n      more\n  "2.5":\n      - "é"\n- a:b
++STR
++DOC
++SEQ
++MAP
+=VAL 5-7 1 "?x
+=VAL 18-32 1 |lit\nmore\n
+=VAL 36-39 4 "2.5
++SEQ
+=VAL 51-53 5 "é
+-SEQ
+-MAP
+=VAL 57-60 6 :a:b
+-SEQ
+-DOC
+-STR
+
+> a :a"\\n"':\n  - "'"\n...
++STR
++DOC
++MAP
+=VAL 0-9 0 :a :a"\\n"'
++SEQ
+=VAL 16-17 1 "'
+-SEQ
+-MAP
+-DOC ...
+-STR
+
+> "'": '-x'\n"a:b": |\n    lit\n    more
++STR
++DOC
++MAP
+=VAL 1-2 0 "'
+=VAL 6-8 0 '-x
+=VAL 11-14 1 "a:b
+=VAL 23-35 1 |lit\nmore\n
+-MAP
+-DOC
+-STR
+
+> -\n  -\n    -\n      - nul
++STR
++DOC
++SEQ
++SEQ
++SEQ
++SEQ
+=VAL 20-23 3 :nul
+-SEQ
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> z: {'@:x':{"?x", -x: z}}\n"":\n  k: []
++STR
++DOC
++MAP
+=VAL 0-1 0 :z
++MAP {}
+=VAL 5-8 0 '@:x
++MAP {}
+=VAL 12-14 0 "?x
+=VAL 15-15 0 :
+=VAL 17-19 0 :-x
+=VAL 21-22 0 :z
+-MAP
+-MAP
+=VAL 26-26 1 "
++MAP
+=VAL 31-32 2 :k
++SEQ []
+-SEQ
+-MAP
+-MAP
+-DOC
+-STR
+
+> k:\n  -\n    -\n      - |\n          lit\n          more\n"é": {1: 中}
++STR
++DOC
++MAP
+=VAL 0-1 0 :k
++SEQ
++SEQ
++SEQ
+=VAL 33-51 3 |lit\nmore\n
+-SEQ
+-SEQ
+-SEQ
+=VAL 53-55 6 "é
++MAP {}
+=VAL 59-60 6 :1
+=VAL 62-65 6 :中
+-MAP
+-MAP
+-DOC
+-STR
+
+> ---\n"it's":\n  true: "b"\n---\nb: 1
++STR
++DOC ---
++MAP
+=VAL 5-9 1 "it's
++MAP
+=VAL 14-18 2 :true
+=VAL 21-22 2 "b
+-MAP
+-MAP
+-DOC
++DOC ---
++MAP
+=VAL 28-29 4 :b
+=VAL 31-32 4 :1
+-MAP
+-DOC
+-STR
+
+> -\n  'name': "null"\n  ?x: []
++STR
++DOC
++SEQ
++MAP
+=VAL 5-9 1 'name
+=VAL 13-17 1 "null
+=VAL 21-23 2 :?x
++SEQ []
+-SEQ
+-MAP
+-SEQ
+-DOC
+-STR
+
+> '-x':\n    'x y':\n      -\n        '2.5': {}\n"x y": []
++STR
++DOC
++MAP
+=VAL 1-3 0 '-x
++MAP
+=VAL 11-14 1 'x y
++SEQ
++MAP
+=VAL 34-37 3 '2.5
++MAP {}
+-MAP
+-MAP
+-SEQ
+-MAP
+=VAL 44-47 4 "x y
++SEQ []
+-SEQ
+-MAP
+-DOC
+-STR
+
+> -\n  - |\n      lit\n      more\n  -\n    '"':\n      - its\n      - |\n          lit\n          more
++STR
++DOC
++SEQ
++SEQ
+=VAL 14-28 1 |lit\nmore\n
++MAP
+=VAL 38-39 5 '"
++SEQ
+=VAL 50-53 6 :its
+=VAL 74-92 7 |lit\nmore\n
+-SEQ
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> {1, z:a#b, ":x": '1'}
++STR
++DOC
++MAP {}
+=VAL 1-2 0 :1
+=VAL 2-2 0 :
+=VAL 4-9 0 :z:a#b
+=VAL 9-9 0 :
+=VAL 12-14 0 ":x
+=VAL 18-19 0 '1
+-MAP
+-DOC
+-STR
+
+> ---\n["null": ,\n  '-x']\n...
++STR
++DOC ---
++SEQ []
++MAP {}
+=VAL 6-10 1 "null
+=VAL 13-13 1 :
+-MAP
+=VAL 18-20 2 '-x
+-SEQ
+-DOC ...
+-STR
+
+> -\n  c: "a b"\n- :x
++STR
++DOC
++SEQ
++MAP
+=VAL 4-5 1 :c
+=VAL 8-11 1 "a b
+-MAP
+=VAL 15-17 2 ::x
+-SEQ
+-DOC
+-STR
+
+> -\n  a b: |\n        lit\n        more\n  :x: é\n- |\n    lit\n    more\n- |\n    lit\n    more
++STR
++DOC
++SEQ
++MAP
+=VAL 4-7 1 :a b
+=VAL 19-35 1 |lit\nmore\n
+=VAL 38-40 4 ::x
+=VAL 42-44 4 :é
+-MAP
+=VAL 53-65 5 |lit\nmore\n
+=VAL 74-86 8 |lit\nmore\n
+-SEQ
+-DOC
+-STR
+
+> -\n  b:\n    null:\n      -x: |\n            lit\n            more\n      null: -x\n- []
++STR
++DOC
++SEQ
++MAP
+=VAL 4-5 1 :b
++MAP
+=VAL 11-15 2 :null
++MAP
+=VAL 23-25 3 :-x
+=VAL 41-61 3 |lit\nmore\n
+=VAL 68-72 6 :null
+=VAL 74-76 6 :-x
+-MAP
+-MAP
+-MAP
++SEQ []
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - [name,\n  a,\n  "\\"": {},]
++STR
++DOC
++SEQ
++SEQ []
+=VAL 3-7 0 :name
+=VAL 11-12 1 :a
++MAP {}
+=VAL 17-19 2 ""
++MAP {}
+-MAP
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  -\n    - |\n        lit\n        more\n    - [{},---]: 
++STR
++DOC
++SEQ
++SEQ
++SEQ
+=VAL 22-38 2 |lit\nmore\n
++MAP
++SEQ []
++MAP {}
+-MAP
+=VAL 49-52 5 :---
+-SEQ
+=VAL 54-54 5 :
+-MAP
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  -\n    -\n      - |\n          lit\n          more\n    - |\n        lit\n        more\n    - '-x'
++STR
++DOC
++SEQ
++SEQ
++SEQ
++SEQ
+=VAL 32-50 3 |lit\nmore\n
+-SEQ
+=VAL 67-83 6 |lit\nmore\n
+=VAL 91-93 9 '-x
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> ["c>",a b,a:b'a ',]
++STR
++DOC
++SEQ []
+=VAL 2-4 0 "c>
+=VAL 6-9 0 :a b
+=VAL 10-17 0 :a:b'a '
+-SEQ
+-DOC
+-STR
+
+> ---\n- '"'\n- {}\n---\nb: 1
++STR
++DOC ---
++SEQ
+=VAL 7-8 1 '"
++MAP {}
+-MAP
+-SEQ
+-DOC
++DOC ---
++MAP
+=VAL 19-20 4 :b
+=VAL 22-23 4 :1
+-MAP
+-DOC
+-STR
+
+> b: c\nb: |\n    lit\n    more\né: "a:b"
++STR
++DOC
++MAP
+=VAL 0-1 0 :b
+=VAL 3-4 0 :c
+=VAL 5-6 1 :b
+=VAL 14-26 1 |lit\nmore\n
+=VAL 27-29 4 :é
+=VAL 32-35 4 "a:b
+-MAP
+-DOC
+-STR
+
+> -\n  -\n    true:\n      a: 中\n      'true': |\n          lit\n          more\n  -\n    - {}\n  - 'b'
++STR
++DOC
++SEQ
++SEQ
++MAP
+=VAL 10-14 2 :true
++MAP
+=VAL 22-23 3 :a
+=VAL 25-28 3 :中
+=VAL 36-40 4 'true
+=VAL 55-73 4 |lit\nmore\n
+-MAP
+-MAP
++SEQ
++MAP {}
+-MAP
+-SEQ
+=VAL 92-93 9 'b
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> "中":\n    - "null"\n:x": |\n      lit\n      more\n?x:\n  - z
++STR
++DOC
++MAP
+=VAL 1-4 0 "中
++SEQ
+=VAL 14-18 1 "null
+-SEQ
+=VAL 20-23 2 ::x"
+=VAL 33-47 2 |lit\nmore\n
+=VAL 48-50 5 :?x
++SEQ
+=VAL 56-57 6 :z
+-SEQ
+-MAP
+-DOC
+-STR
+
+> "title": z\n中:\n   - [x y,a b,]
++STR
++DOC
++MAP
+=VAL 1-6 0 "title
+=VAL 9-10 0 :z
+=VAL 11-14 1 :中
++SEQ
++SEQ []
+=VAL 22-25 2 :x y
+=VAL 26-29 2 :a b
+-SEQ
+-SEQ
+-MAP
+-DOC
+-STR
+
+> "a": |\n      lit\n      more\né: |\n      lit\n      more\n'中':\n    -\n      "中":\n          name: z
++STR
++DOC
++MAP
+=VAL 1-2 0 "a
+=VAL 13-27 0 |lit\nmore\n
+=VAL 28-30 3 :é
+=VAL 40-54 3 |lit\nmore\n
+=VAL 56-59 6 '中
++SEQ
++MAP
+=VAL 75-78 8 "中
++MAP
+=VAL 91-95 9 :name
+=VAL 97-98 9 :z
+-MAP
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> é:\n    -\n      "a:b": 2.5\n'a:b': 'title'
++STR
++DOC
++MAP
+=VAL 0-2 0 :é
++SEQ
++MAP
+=VAL 17-20 2 "a:b
+=VAL 23-26 2 :2.5
+-MAP
+-SEQ
+=VAL 28-31 3 'a:b
+=VAL 35-40 3 'title
+-MAP
+-DOC
+-STR
+
+> -\n  '?x':\n      - name\n  "a#b":\n    - "2.5"\n-\n  - a#b
++STR
++DOC
++SEQ
++MAP
+=VAL 5-7 1 '?x
++SEQ
+=VAL 18-22 2 :name
+-SEQ
+=VAL 26-29 3 "a#b
++SEQ
+=VAL 39-42 4 "2.5
+-SEQ
+-MAP
++SEQ
+=VAL 50-53 6 :a#b
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - |\n    lit\n    more\n- |\n    lit\n    more\n-\n  -\n    -\n      - |\n          lit\n          more
++STR
++DOC
++SEQ
+=VAL 8-20 0 |lit\nmore\n
+=VAL 29-41 3 |lit\nmore\n
++SEQ
++SEQ
++SEQ
+=VAL 74-92 9 |lit\nmore\n
+-SEQ
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  - |\n      lit\n      more\n  - "it's"\n  - "title"\n...
++STR
++DOC
++SEQ
++SEQ
+=VAL 14-28 1 |lit\nmore\n
+=VAL 34-38 4 "it's
+=VAL 45-50 5 "title
+-SEQ
+-SEQ
+-DOC ...
+-STR
+
+> 1:\n    -\n      - []\n    -\n      -\n        ":x": ":x"\n        'a:b': a#b
++STR
++DOC
++MAP
+=VAL 0-1 0 :1
++SEQ
++SEQ
++SEQ []
+-SEQ
+-SEQ
++SEQ
++MAP
+=VAL 43-45 5 ":x
+=VAL 49-51 5 ":x
+=VAL 62-65 6 'a:b
+=VAL 68-71 6 :a#b
+-MAP
+-SEQ
+-SEQ
+-MAP
+-DOC
+-STR
+
+> [{":x":2.5},\n  'b',\n  "a b"]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 3-5 0 ":x
+=VAL 7-10 0 :2.5
+-MAP
+=VAL 16-17 1 'b
+=VAL 23-26 2 "a b
+-SEQ
+-DOC
+-STR
+
+> na"\\n"!tme: :x\nits: z\nz: {}
++STR
++DOC
++MAP
+=VAL 0-10 0 :na"\\n"!tme
+=VAL 12-14 0 ::x
+=VAL 15-18 1 :its
+=VAL 20-21 1 :z
+=VAL 22-23 2 :z
++MAP {}
+-MAP
+-MAP
+-DOC
+-STR
+
+> ':x': |\n    lit\n    more\n:x:\n    2.5: "'"\n    "?x": "true"\n    'c': '   1'
++STR
++DOC
++MAP
+=VAL 1-3 0 ':x
+=VAL 12-24 0 |lit\nmore\n
+=VAL 25-27 3 ::x
++MAP
+=VAL 33-36 4 :2.5
+=VAL 39-40 4 "'
+=VAL 47-49 5 "?x
+=VAL 53-57 5 "true
+=VAL 64-65 6 'c
+=VAL 69-73 6 '   1
+-MAP
+-MAP
+-DOC
+-STR
+
+> - [-x,\n ---"null?x",\n  b]\n-\n  "true":\n    - |\n        lit\n        more
++STR
++DOC
++SEQ
++SEQ []
+=VAL 3-5 0 :-x
+=VAL 8-19 1 :---"null?x"
+=VAL 23-24 2 :b
+-SEQ
++MAP
+=VAL 31-35 4 "true
++SEQ
+=VAL 54-70 5 |lit\nmore\n
+-SEQ
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  z:\n    -\n      "'": |\n            lit\n            more\n  "a": 'null'
++STR
++DOC
++SEQ
++MAP
+=VAL 4-5 1 :z
++SEQ
++MAP
+=VAL 20-21 3 "'
+=VAL 38-58 3 |lit\nmore\n
+-MAP
+-SEQ
+=VAL 62-63 6 "a
+=VAL 67-71 6 'null
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  "title":\n    -\n      - a b\n      - 'a#b'\n- '中'\n- |\n    lit\n    more
++STR
++DOC
++SEQ
++MAP
+=VAL 5-10 1 "title
++SEQ
++SEQ
+=VAL 27-30 3 :a b
+=VAL 40-43 4 'a#b
+-SEQ
+-SEQ
+-MAP
+=VAL 48-51 5 '中
+=VAL 61-73 6 |lit\nmore\n
+-SEQ
+-DOC
+-STR
+
+> ?x: its\n:x: ['a b' ,a b: 中 ,'it''s',]\n"1": a#b
++STR
++DOC
++MAP
+=VAL 0-2 0 :?x
+=VAL 4-7 0 :its
+=VAL 8-10 1 ::x
++SEQ []
+=VAL 14-17 1 'a b
++MAP {}
+=VAL 20-23 1 :a b
+=VAL 25-28 1 :中
+-MAP
+=VAL 31-36 1 'it's
+-SEQ
+=VAL 41-42 2 "1
+=VAL 45-48 2 :a#b
+-MAP
+-DOC
+-STR
+
+> {'title': {'?x':'name'}}
++STR
++DOC
++MAP {}
+=VAL 2-7 0 'title
++MAP {}
+=VAL 12-14 0 '?x
+=VAL 17-21 0 'name
+-MAP
+-MAP
+-DOC
+-STR
+
+> a:\n  -\n    "中": 中\n---\nb: 1
++STR
++DOC
++MAP
+=VAL 0-1 0 :a
++SEQ
++MAP
+=VAL 12-15 2 "中
+=VAL 18-21 2 :中
+-MAP
+-SEQ
+-MAP
+-DOC
++DOC ---
++MAP
+=VAL 26-27 4 :b
+=VAL 29-30 4 :1
+-MAP
+-DOC
+-STR
+
+> ---\n- {b, name, "a#b":a#b}
++STR
++DOC ---
++SEQ
++MAP {}
+=VAL 7-8 1 :b
+=VAL 8-8 1 :
+=VAL 10-14 1 :name
+=VAL 14-14 1 :
+=VAL 17-20 1 "a#b
+=VAL 22-25 1 :a#b
+-MAP
+-SEQ
+-DOC
+-STR
+
+> ---\n- "中"\n-\n  -\n    z:\n        - |\n            lit\n            more\n        - |\n            lit\n            more\n...
++STR
++DOC ---
++SEQ
+=VAL 7-10 1 "中
++SEQ
++MAP
+=VAL 22-23 4 :z
++SEQ
+=VAL 49-69 5 |lit\nmore\n
+=VAL 94-114 8 |lit\nmore\n
+-SEQ
+-MAP
+-SEQ
+-SEQ
+-DOC ...
+-STR
+
+> - ["1", "it's", '1': ]\n-\n  k: |\n      lit\n      more
++STR
++DOC
++SEQ
++SEQ []
+=VAL 4-5 0 "1
+=VAL 9-13 0 "it's
++MAP {}
+=VAL 17-18 0 '1
+=VAL 21-21 0 :
+-MAP
+-SEQ
++MAP
+=VAL 27-28 2 :k
+=VAL 38-52 2 |lit\nmore\n
+-MAP
+-SEQ
+-DOC
+-STR
+
+> its: title\n":x":\n  - |\n      lit\n      more\n  - 'a:b'\n  - ":x"\nits:\n    -\n      ":x":\n      '''':\n          - 'true'
++STR
++DOC
++MAP
+=VAL 0-3 0 :its
+=VAL 5-10 0 :title
+=VAL 12-14 1 ":x
++SEQ
+=VAL 29-43 2 |lit\nmore\n
+=VAL 49-52 5 'a:b
+=VAL 59-61 6 ":x
+-SEQ
+=VAL 63-66 7 :its
++SEQ
++MAP
+=VAL 81-83 9 ":x
+=VAL 85-85 9 :
+=VAL 93-95 10 ''
++SEQ
+=VAL 111-115 11 'true
+-SEQ
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> -\n  -\n    中文}null':\n      - [{},"a:b",]
++STR
++DOC
++SEQ
++SEQ
++MAP
+=VAL 10-22 2 :中文}null'
++SEQ
++SEQ []
++MAP {}
+-MAP
+=VAL 37-40 3 "a:b
+-SEQ
+-SEQ
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  -\n    -\n      - []\n    -\n      "2.5": |\n          lit\n          more
++STR
++DOC
++SEQ
++SEQ
++SEQ
++SEQ
++SEQ []
+-SEQ
+-SEQ
++MAP
+=VAL 36-39 5 "2.5
+=VAL 54-72 5 |lit\nmore\n
+-MAP
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> '2.5': []\n"2.5":\n    '?x':\n      '-x':\n        - ["a",]\n    a#b: |\n          lit\n          more\n"é":\n  - []
++STR
++DOC
++MAP
+=VAL 1-4 0 '2.5
++SEQ []
+-SEQ
+=VAL 11-14 1 "2.5
++MAP
+=VAL 22-24 2 '?x
++MAP
+=VAL 34-36 3 '-x
++SEQ
++SEQ []
+=VAL 51-52 4 "a
+-SEQ
+-SEQ
+-MAP
+=VAL 60-63 5 :a#b
+=VAL 77-95 5 |lit\nmore\n
+-MAP
+=VAL 97-99 8 "é
++SEQ
++SEQ []
+-SEQ
+-SEQ
+-MAP
+-DOC
+-STR
+
+> - [c,2.5,]\n-\n  null:\n      b: []
++STR
++DOC
++SEQ
++SEQ []
+=VAL 3-4 0 :c
+=VAL 5-8 0 :2.5
+-SEQ
++MAP
+=VAL 15-19 2 :null
++MAP
+=VAL 27-28 3 :b
++SEQ []
+-SEQ
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> "\\"": |\n    lit\n    more\n'c':\n  null: "title"\n  'name': |\n      lit\n      more
++STR
++DOC
++MAP
+=VAL 1-3 0 ""
+=VAL 12-24 0 |lit\nmore\n
+=VAL 26-27 3 'c
++MAP
+=VAL 32-36 4 :null
+=VAL 39-44 4 "title
+=VAL 49-53 5 'name
+=VAL 64-78 5 |lit\nmore\n
+-MAP
+-MAP
+-DOC
+-STR
+
+> ---\n-\n  z: '?x'\n...
++STR
++DOC ---
++SEQ
++MAP
+=VAL 8-9 2 :z
+=VAL 12-14 2 '?x
+-MAP
+-SEQ
+-DOC ...
+-STR
+
+> ---\n-\n  - |\n      lit\n      more\n...
++STR
++DOC ---
++SEQ
++SEQ
+=VAL 18-32 2 |lit\nmore\n
+-SEQ
+-SEQ
+-DOC ...
+-STR
+
+> -\n  -\n    z:\n      "中":\n      "c": |\n            lit\n            more\n- 'true'
++STR
++DOC
++SEQ
++SEQ
++MAP
+=VAL 10-11 2 :z
++MAP
+=VAL 20-23 3 "中
+=VAL 25-25 3 :
+=VAL 33-34 4 "c
+=VAL 51-71 4 |lit\nmore\n
+-MAP
+-MAP
+-SEQ
+=VAL 75-79 7 'true
+-SEQ
+-DOC
+-STR
+
+> 'éa:b': {'2.5': 'it''s', z}\n"'": |\n      it\n      more
++STR
++DOC
++MAP
+=VAL 1-6 0 'éa:b
++MAP {}
+=VAL 11-14 0 '2.5
+=VAL 18-23 0 'it's
+=VAL 26-27 0 :z
+=VAL 27-27 0 :
+-MAP
+=VAL 30-31 1 "'
+=VAL 42-55 1 |it\nmore\n
+-MAP
+-DOC
+-STR
+
+> {name: "null", '''': z, 'a#b'}
++STR
++DOC
++MAP {}
+=VAL 1-5 0 :name
+=VAL 8-12 0 "null
+=VAL 16-18 0 ''
+=VAL 21-22 0 :z
+=VAL 25-28 0 'a#b
+=VAL 29-29 0 :
+-MAP
+-DOC
+-STR
+
+> a b:\n    title:\n        -\n          z: |\n              lit\n              more\n'a b': |\n      lit\n      more
++STR
++DOC
++MAP
+=VAL 0-3 0 :a b
++MAP
+=VAL 9-14 1 :title
++SEQ
++MAP
+=VAL 36-37 3 :z
+=VAL 55-77 3 |lit\nmore\n
+-MAP
+-SEQ
+-MAP
+=VAL 79-82 6 'a b
+=VAL 93-107 6 |lit\nmore\n
+-MAP
+-DOC
+-STR
+
+> - |\n    lit\n    more\n-\n  - {}\n  -\n    -\n      - {}\n      - "true"\n    -\n      - {}
++STR
++DOC
++SEQ
+=VAL 8-20 0 |lit\nmore\n
++SEQ
++MAP {}
+-MAP
++SEQ
++SEQ
++MAP {}
+-MAP
+=VAL 60-64 8 "true
+-SEQ
++SEQ
++MAP {}
+-MAP
+-SEQ
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> its: b\n1: '2.5'\n...
++STR
++DOC
++MAP
+=VAL 0-3 0 :its
+=VAL 5-6 0 :b
+=VAL 7-8 1 :1
+=VAL 11-14 1 '2.5
+-MAP
+-DOC ...
+-STR
+
+> "title":\n    'é':\n        ?x:\n          - 1\n          - 2.5\n        title: ?x\n    c: t,itle\n"1": |\n      lit\n      more
++STR
++DOC
++MAP
+=VAL 1-6 0 "title
++MAP
+=VAL 14-16 1 'é
++MAP
+=VAL 27-29 2 :?x
++SEQ
+=VAL 43-44 3 :1
+=VAL 57-60 4 :2.5
+-SEQ
+=VAL 69-74 5 :title
+=VAL 76-78 5 :?x
+-MAP
+=VAL 83-84 6 :c
+=VAL 86-92 6 :t,itle
+-MAP
+=VAL 94-95 7 "1
+=VAL 106-120 7 |lit\nmore\n
+-MAP
+-DOC
+-STR
+
+> -\n  -\n    b:\n      - |\n          lit\n          more\n      - ?x\n      - '"'\n  - c
++STR
++DOC
++SEQ
++SEQ
++MAP
+=VAL 10-11 2 :b
++SEQ
+=VAL 33-51 3 |lit\nmore\n
+=VAL 60-62 6 :?x
+=VAL 72-73 7 '"
+-SEQ
+-MAP
+=VAL 79-80 8 :c
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> 'null': |\n    it\n    more\n"a#b":\n  - 'a b'\n  - 
++STR
++DOC
++MAP
+=VAL 1-5 0 'null
+=VAL 14-25 0 |it\nmore\n
+=VAL 27-30 3 "a#b
++SEQ
+=VAL 38-41 4 'a b
+=VAL 46-46 5 :
+-SEQ
+-MAP
+-DOC
+-STR
+
+> -\n  -\n    c:\n        - {}\n    true: |\n        lit\n        more\n    k:\n      - \n  - 'true'\n  - title
++STR
++DOC
++SEQ
++SEQ
++MAP
+=VAL 10-11 2 :c
++SEQ
++MAP {}
+-MAP
+-SEQ
+=VAL 30-34 4 :true
+=VAL 46-62 4 |lit\nmore\n
+=VAL 67-68 7 :k
++SEQ
+=VAL 77-77 8 :
+-SEQ
+-MAP
+=VAL 84-88 9 'true
+=VAL 94-99 10 :title
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> - {"b", '''':'a#b'}\n- a b
++STR
++DOC
++SEQ
++MAP {}
+=VAL 4-5 0 "b
+=VAL 6-6 0 :
+=VAL 9-11 0 ''
+=VAL 14-17 0 'a#b
+-MAP
+=VAL 22-25 1 :a b
+-SEQ
+-DOC
+-STR
+
+> "name":\n  "中": c\n  'a': ["'": b]\n  'c': ["-x",]\n'b':\n  - 'true'\n  -\n    -\n      - title\n      - "a#b"\n:x: c
++STR
++DOC
++MAP
+=VAL 1-5 0 "name
++MAP
+=VAL 11-14 1 "中
+=VAL 17-18 1 :c
+=VAL 22-23 2 'a
++SEQ []
++MAP {}
+=VAL 28-29 2 "'
+=VAL 32-33 2 :b
+-MAP
+-SEQ
+=VAL 38-39 3 'c
++SEQ []
+=VAL 44-46 3 "-x
+-SEQ
+-MAP
+=VAL 51-52 4 'b
++SEQ
+=VAL 60-64 5 'true
++SEQ
++SEQ
+=VAL 84-89 8 :title
+=VAL 99-102 9 "a#b
+-SEQ
+-SEQ
+-SEQ
+=VAL 104-106 10 ::x
+=VAL 108-109 10 :c
+-MAP
+-DOC
+-STR
+
+> {'é':{'?x', title:'name', '''': {}}, a#b}
++STR
++DOC
++MAP {}
+=VAL 2-4 0 'é
++MAP {}
+=VAL 8-10 0 '?x
+=VAL 11-11 0 :
+=VAL 13-25 0 :title:'name'
+=VAL 25-25 0 :
+=VAL 28-30 0 ''
++MAP {}
+-MAP
+-MAP
+=VAL 38-41 0 :a#b
+=VAL 41-41 0 :
+-MAP
+-DOC
+-STR
+
+> -\n  - |\n      lit\n      more\n  - -x\n-\n  null: |\n      lit\n      more\n- 'title'
++STR
++DOC
++SEQ
++SEQ
+=VAL 14-28 1 |lit\nmore\n
+=VAL 33-35 4 :-x
+-SEQ
++MAP
+=VAL 40-44 6 :null
+=VAL 54-68 6 |lit\nmore\n
+-MAP
+=VAL 72-77 9 'title
+-SEQ
+-DOC
+-STR
+
+> b: {title: x y}\n"1":\n  - |\n      lit\n      more\né: "b"
++STR
++DOC
++MAP
+=VAL 0-1 0 :b
++MAP {}
+=VAL 4-9 0 :title
+=VAL 11-14 0 :x y
+-MAP
+=VAL 17-18 1 "1
++SEQ
+=VAL 33-47 2 |lit\nmore\n
+-SEQ
+=VAL 48-50 5 :é
+=VAL 53-54 5 "b
+-MAP
+-DOC
+-STR
+
+> "1":\n  -\n    -\n      'true': null
++STR
++DOC
++MAP
+=VAL 1-2 0 "1
++SEQ
++SEQ
++MAP
+=VAL 22-26 3 'true
+=VAL 29-33 3 :null
+-MAP
+-SEQ
+-SEQ
+-MAP
+-DOC
+-STR
+
+> -\n  z: z\n  'b':\n    1: b\n  "a": |\n      lit\n      more
++STR
++DOC
++SEQ
++MAP
+=VAL 4-5 1 :z
+=VAL 7-8 1 :z
+=VAL 12-13 2 'b
++MAP
+=VAL 20-21 3 :1
+=VAL 23-24 3 :b
+-MAP
+=VAL 28-29 4 "a
+=VAL 40-54 4 |lit\nmore\n
+-MAP
+-SEQ
+-DOC
+-STR
+
+> ---\n- |\n    lit\n    more\n- []\n---\nb: 1
++STR
++DOC ---
++SEQ
+=VAL 12-24 1 |lit\nmore\n
++SEQ []
+-SEQ
+-SEQ
+-DOC
++DOC ---
++MAP
+=VAL 34-35 6 :b
+=VAL 37-38 6 :1
+-MAP
+-DOC
+-STR
+
+> x y:\n  'true':\n    - |\n        lit\n        more\n    - |\n        lit\n        more
++STR
++DOC
++MAP
+=VAL 0-3 0 :x y
++MAP
+=VAL 8-12 1 'true
++SEQ
+=VAL 31-47 2 |lit\nmore\n
+=VAL 64-80 5 |lit\nmore\n
+-SEQ
+-MAP
+-MAP
+-DOC
+-STR
+
+> -\n  -\n    name:\n        x y: 1\n        "b": |\n              lit\n              more
++STR
++DOC
++SEQ
++SEQ
++MAP
+=VAL 10-14 2 :name
++MAP
+=VAL 24-27 3 :x y
+=VAL 29-30 3 :1
+=VAL 40-41 4 "b
+=VAL 60-82 4 |lit\nmore\n
+-MAP
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> 'ab':\n    "true":\n        - [null,\n  'a#b',]\n    '-x': [-x ,name,]\n    z: []
++STR
++DOC
++MAP
+=VAL 1-3 0 'ab
++MAP
+=VAL 11-15 1 "true
++SEQ
++SEQ []
+=VAL 29-33 2 :null
+=VAL 38-41 3 'a#b
+-SEQ
+-SEQ
+=VAL 50-52 4 '-x
++SEQ []
+=VAL 56-58 4 :-x
+=VAL 60-64 4 :name
+-SEQ
+=VAL 71-72 5 :z
++SEQ []
+-SEQ
+-MAP
+-MAP
+-DOC
+-STR
+
+> true: "true"\nname: [{2.5:"b" "it's":a}]\n'''': 1...
++STR
++DOC
++MAP
+=VAL 0-4 0 :true
+=VAL 7-11 0 "true
+=VAL 13-17 1 :name
++SEQ []
++MAP {}
+=VAL 21-37 1 :2.5:"b" "it's":a
+=VAL 37-37 1 :
+-MAP
+-SEQ
+=VAL 41-43 2 ''
+=VAL 46-50 2 :1...
+-MAP
+-DOC
+-STR
+
+> -\n  -\n    -\n      k: |\n          lit\n          more\n  -\n    - |\n       lit\n        more\n    - "é"
++STR
++DOC
++SEQ
++SEQ
++SEQ
++MAP
+=VAL 18-19 3 :k
+=VAL 33-51 3 |lit\nmore\n
+-MAP
+-SEQ
++SEQ
+=VAL 71-87 7 |lit\n more\n
+=VAL 95-97 10 "é
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> --- {a b: {中, x y:null}, 中: "?x"}\n
++STR
++DOC ---
++MAP {}
+=VAL 5-8 0 :a b
++MAP {}
+=VAL 11-14 0 :中
+=VAL 14-14 0 :
+=VAL 16-24 0 :x y:null
+=VAL 24-24 0 :
+-MAP
+=VAL 27-30 0 :中
+=VAL 33-35 0 "?x
+-MAP
+-DOC
+-STR
+
+> -\n  'x y': |\n        lit\n        mre\n  a:b: |\n      lit\n      more\n-\n  - [{}, x -a: {a}, ":x"]
++STR
++DOC
++SEQ
++MAP
+=VAL 5-8 1 'x y
+=VAL 21-36 1 |lit\nmre\n
+=VAL 39-42 4 :a:b
+=VAL 52-66 4 |lit\nmore\n
+-MAP
++SEQ
++SEQ []
++MAP {}
+-MAP
++MAP {}
+=VAL 78-82 8 :x -a
++MAP {}
+=VAL 85-86 8 :a
+=VAL 86-86 8 :
+-MAP
+-MAP
+=VAL 90-92 8 ":x
+-SEQ
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> #b:\n    -\n      -\n        - ""\n        - "c"\n      -\n        a:b: |\n              lit\n              more\n        "name":
++STR
++DOC
++SEQ
++SEQ
++SEQ
+=VAL 29-29 3 "
+=VAL 42-43 4 "c
+-SEQ
++MAP
+=VAL 61-64 6 :a:b
+=VAL 82-104 6 |lit\nmore\n
+=VAL 114-118 9 "name
+=VAL 120-120 9 :
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+#0-3
+
+> ---\n-\n  k: "x y"\n- 'it''s'\n---\nb: 1
++STR
++DOC ---
++SEQ
++MAP
+=VAL 8-9 2 :k
+=VAL 12-15 2 "x y
+-MAP
+=VAL 20-25 3 'it's
+-SEQ
+-DOC
++DOC ---
++MAP
+=VAL 31-32 5 :b
+=VAL 34-35 5 :1
+-MAP
+-DOC
+-STR
+
+> -\n  :x: |\n      lit\n      more\n  k: ':x'
++STR
++DOC
++SEQ
++MAP
+=VAL 4-6 1 ::x
+=VAL 16-30 1 |lit\nmore\n
+=VAL 33-34 4 :k
+=VAL 37-39 4 ':x
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  '''':\n    -\n      a: null\n    - a b\n- |\n    lit\n    more
++STR
++DOC
++SEQ
++MAP
+=VAL 5-7 1 ''
++SEQ
++MAP
+=VAL 22-23 3 :a
+=VAL 25-29 3 :null
+-MAP
+=VAL 36-39 4 :a b
+-SEQ
+-MAP
+=VAL 48-60 5 |lit\nmore\n
+-SEQ
+-DOC
+-STR
+
+> ?x: name\ntrue:\n    "x y":\n      'a:&ab': |\n            l  it\n            more\n"1":\n    z: |\n        lit\n        more
++STR
++DOC
++MAP
+=VAL 0-2 0 :?x
+=VAL 4-8 0 :name
+=VAL 9-13 1 :true
++MAP
+=VAL 20-23 2 "x y
++MAP
+=VAL 33-38 3 'a:&ab
+=VAL 55-77 3 |l  it\nmore\n
+-MAP
+-MAP
+=VAL 79-80 6 "1
++MAP
+=VAL 87-88 7 :z
+=VAL 100-116 7 |lit\nmore\n
+-MAP
+-MAP
+-DOC
+-STR
+
+> "a:b": 'x y'\n'"':\n    -\n      c: [2.5,]
++STR
++DOC
++MAP
+=VAL 1-4 0 "a:b
+=VAL 8-11 0 'x y
+=VAL 14-15 1 '"
++SEQ
++MAP
+=VAL 30-31 3 :c
++SEQ []
+=VAL 34-37 3 :2.5
+-SEQ
+-MAP
+-SEQ
+-MAP
+-DOC
+-STR
+
+> ":x": ['1', 'a:b']\n'a b': 2.5\nz: x y
++STR
++DOC
++MAP
+=VAL 1-3 0 ":x
++SEQ []
+=VAL 8-9 0 '1
+=VAL 13-16 0 'a:b
+-SEQ
+=VAL 20-23 1 'a b
+=VAL 26-29 1 :2.5
+=VAL 30-31 2 :z
+=VAL 33-36 2 :x y
+-MAP
+-DOC
+-STR
+
+> -\n  -\n    "a:":\n        - |\n          !t  lit\n            more\n    "it':\t": -x
++STR
++DOC
++SEQ
++SEQ
++MAP
+=VAL 11-13 2 "a:
++SEQ
+=VAL 38-62 3 |!t  lit\n  more\n
+-SEQ
+=VAL 68-73 6 "it':\t
+=VAL 76-78 6 :-x
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> ---\n- a#b\n- [{'a b': -x, "2.5":{a#b:"?x"}},\n  "a:b",\n  'true',]\n- "?x"\n...
++STR
++DOC ---
++SEQ
+=VAL 6-9 1 :a#b
++SEQ []
++MAP {}
+=VAL 15-18 2 'a b
+=VAL 21-23 2 :-x
+=VAL 26-29 2 "2.5
++MAP {}
+=VAL 32-40 2 :a#b:"?x"
+=VAL 40-40 2 :
+-MAP
+-MAP
+=VAL 47-50 3 "a:b
+=VAL 56-60 4 'true
+-SEQ
+=VAL 67-69 5 "?x
+-SEQ
+-DOC ...
+-STR
+
+> -\n  a:\n    -\n      2.5: .5\n    -\n      - true\n    - :x
++STR
++DOC
++SEQ
++MAP
+=VAL 4-5 1 :a
++SEQ
++MAP
+=VAL 19-22 3 :2.5
+=VAL 24-26 3 :.5
+-MAP
++SEQ
+=VAL 41-45 5 :true
+-SEQ
+=VAL 52-54 6 ::x
+-SEQ
+-MAP
+-SEQ
+-DOC
+-STR
+
+> '?x': |\n    lit\n    more\nits:\n  "?x":\n      'a:b':\n          - |\n              lit\n              more\n"a:b": 'true'
++STR
++DOC
++MAP
+=VAL 1-3 0 '?x
+=VAL 12-24 0 |lit\nmore\n
+=VAL 25-28 3 :its
++MAP
+=VAL 33-35 4 "?x
++MAP
+=VAL 45-48 5 'a:b
++SEQ
+=VAL 79-101 6 |lit\nmore\n
+-SEQ
+-MAP
+-MAP
+=VAL 103-106 9 "a:b
+=VAL 110-114 9 'true
+-MAP
+-DOC
+-STR
+
+> {b: 中, "null", c}
++STR
++DOC
++MAP {}
+=VAL 1-2 0 :b
+=VAL 4-7 0 :中
+=VAL 10-14 0 "null
+=VAL 15-15 0 :
+=VAL 17-18 0 :c
+=VAL 18-18 0 :
+-MAP
+-DOC
+-STR
+
+> z:\n    "c": {"中"}
++STR
++DOC
++MAP
+=VAL 0-1 0 :z
++MAP
+=VAL 8-9 1 "c
++MAP {}
+=VAL 14-17 1 "中
+=VAL 18-18 1 :
+-MAP
+-MAP
+-MAP
+-DOC
+-STR
+
+> 'b': 中\n"-x": 'é'\n"x y": |\n    lit\n    more
++STR
++DOC
++MAP
+=VAL 1-2 0 'b
+=VAL 5-8 0 :中
+=VAL 10-12 1 "-x
+=VAL 16-18 1 'é
+=VAL 21-24 2 "x y
+=VAL 33-45 2 |lit\nmore\n
+-MAP
+-DOC
+-STR
+
+> -\n  k: |\n        *alit\n        more\n  c*a: 2.5\n- |\n    lit\n    more\n...
++STR
++DOC
++SEQ
++MAP
+=VAL 4-5 1 :k
+=VAL 17-35 1 |*alit\nmore\n
+=VAL 38-41 4 :c*a
+=VAL 43-46 4 :2.5
+-MAP
+=VAL 55-67 5 |lit\nmore\n
+-SEQ
+-DOC ...
+-STR
+
+> ["{a": c,\n  {'title':a, null:"中", a:b},]
++STR
++DOC
++SEQ []
++MAP {}
+=VAL 2-4 0 "{a
+=VAL 7-8 0 :c
+-MAP
++MAP {}
+=VAL 14-19 1 'title
+=VAL 21-22 1 :a
+=VAL 24-34 1 :null:"中"
+=VAL 34-34 1 :
+=VAL 36-39 1 :a:b
+=VAL 39-39 1 :
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  x y:\n   name:\n        'x y': {}
++STR
++DOC
++SEQ
++MAP
+=VAL 4-7 1 :x y
++MAP
+=VAL 12-16 2 :name
++MAP
+=VAL 27-30 3 'x y
++MAP {}
+-MAP
+-MAP
+-MAP
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  'null':\n    -\n      b: "?x"\n      z: |\n            lit\n            more\n\n      é: a:b\n- ["2.5", '1': a]
++STR
++DOC
++SEQ
++MAP
+=VAL 5-9 1 'null
++SEQ
++MAP
+=VAL 24-25 3 :b
+=VAL 28-30 3 "?x
+=VAL 38-39 4 :z
+=VAL 55-75 4 |lit\nmore\n
+=VAL 83-85 8 :é
+=VAL 87-90 8 :a:b
+-MAP
+-SEQ
+-MAP
++SEQ []
+=VAL 95-98 9 "2.5
++MAP {}
+=VAL 102-103 9 '1
+=VAL 106-107 9 :a
+-MAP
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> -\n  "c":\n    "中":\n        - |\n            lit\n            more\n        - []\n  "-x": ?x\n- []
++STR
++DOC
++SEQ
++MAP
+=VAL 5-6 1 "c
++MAP
+=VAL 14-17 2 "中
++SEQ
+=VAL 44-64 3 |lit\nmore\n
++SEQ []
+-SEQ
+-SEQ
+-MAP
+=VAL 81-83 7 "-x
+=VAL 86-88 7 :?x
+-MAP
++SEQ []
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> k:\n  a:b:\n    'c': "'"\n"中": |\n      lit\n      more
++STR
++DOC
++MAP
+=VAL 0-1 0 :k
++MAP
+=VAL 5-8 1 :a:b
++MAP
+=VAL 15-16 2 'c
+=VAL 20-21 2 "'
+-MAP
+-MAP
+=VAL 24-27 3 "中
+=VAL 38-52 3 |lit\nmore\n
+-MAP
+-DOC
+-STR
+
+> 2.5: |\n    lit\n    more\né: |\n    lit\n    more\n'"':\n    null: [its]
++STR
++DOC
++MAP
+=VAL 0-3 0 :2.5
+=VAL 11-23 0 |lit\nmore\n
+=VAL 24-26 3 :é
+=VAL 34-46 3 |lit\nmore\n
+=VAL 48-49 6 '"
++MAP
+=VAL 56-60 7 :null
++SEQ []
+=VAL 63-66 7 :its
+-SEQ
+-MAP
+-MAP
+-DOC
+-STR
+
+> a b:\n  'a:b': |\n        lit\n        more\n  a:b:\n      -\n        - name\n      -\n        - 'b'\n      -\n        - []
++STR
++DOC
++MAP
+=VAL 0-3 0 :a b
++MAP
+=VAL 8-11 1 'a:b
+=VAL 24-40 1 |lit\nmore\n
+=VAL 43-46 4 :a:b
++SEQ
++SEQ
+=VAL 66-70 6 :name
+-SEQ
++SEQ
+=VAL 90-91 8 'b
+-SEQ
++SEQ
++SEQ []
+-SEQ
+-SEQ
+-SEQ
+-MAP
+-MAP
+-DOC
+-STR
+
+> ---\n-\n  b:\n      - [title]\n      - {}\n  "2.5": "null"
++STR
++DOC ---
++SEQ
++MAP
+=VAL 8-9 2 :b
++SEQ
++SEQ []
+=VAL 20-25 3 :title
+-SEQ
++MAP {}
+-MAP
+-SEQ
+=VAL 41-44 5 "2.5
+=VAL 48-52 5 "null
+-MAP
+-SEQ
+-DOC
+-STR
+
+> -\n  a b:\n    '中': []\n    'null':\n      - []\n  b: its\n
++STR
++DOC
++SEQ
++MAP
+=VAL 4-7 1 :a b
++MAP
+=VAL 14-17 2 '中
++SEQ []
+-SEQ
+=VAL 28-32 3 'null
++SEQ
++SEQ []
+-SEQ
+-SEQ
+-MAP
+=VAL 48-49 5 :b
+=VAL 51-54 5 :its
+-MAP
+-SEQ
+-DOC
+-STR
+
+> ---\nc:\n    - {}\n-b--b: 1
++STR
++DOC ---
++MAP
+=VAL 4-5 1 :c
++SEQ
++MAP {}
+-MAP
+-SEQ
+=VAL 16-21 3 :-b--b
+=VAL 23-24 3 :1
+-MAP
+-DOC
+-STR
+
+> -\n  - |\n      lit\n      more\n  - "a b"
++STR
++DOC
++SEQ
++SEQ
+=VAL 14-28 1 |lit\nmore\n
+=VAL 34-37 4 "a b
+-SEQ
+-SEQ
+-DOC
+-STR
+
+> ---\n"nam":\n  - z\ntit le: a
++STR
++DOC ---
++MAP
+=VAL 5-8 1 "nam
++SEQ
+=VAL 15-16 2 :z
+-SEQ
+=VAL 17-23 3 :tit le
+=VAL 25-26 3 :a
+-MAP
+-DOC
+-STR
+
+> *
+error
+
+> \n*
+error
+
+> \r*
+error
+
+>  *
+error
+
+> *\x00
+error
+
+> *\t
+error
+
+> *\n
+error
+
+> *\r
+error
+
+> *{|\na    é"?  *1
+error
+
+> *\r\n,{ : >é]\x00%}-
+error
+
+>  .'x''y'\r*"a\\n"\n"".\r\n'\x00:?!%'"a\\n"]?b\t\n-,}...  {b
+error
+
+> *]*]- '-[ \t*#!: ?"a\\n","\r.[\t-\r1   \t%&\r\n\t {
+error
+
+> &
+error
+
+> \n&
+error
+
+> \r&
+error
+
+>  &
+error
+
+> &\x00
+error
+
+> &\t
+error
+
+> &\n
+error
+
+> &\r
+error
+
+> &"\\u00e9"...-#!?"\\u00e9"\t
+error
+
+> &{': 
+error
+
+> &a\r\n,
+error
+
+> &]>    - : !---  *':
+error
+
+> -\n\x00
+error
+
+> -\n.
+error
+
+> -\n[
+error
+
+> -\na
+error
+
+> -\nb
+error
+
+> -\n{
+error
+
+> -\r1
+error
+
+> -\ra
+error
+
+> :]|: ...---  \nb....#...#{,1\t"a\\n"\x00
+error
+
+> -\n\n?!  ["\\u00e9"
+error
+
+> - \n\x00- a:b
+error
+
+> [\x00
+error
+
+> [.
+error
+
+> [1
+error
+
+> [a
+error
+
+> [b
+error
+
+> [c
+error
+
+> [x
+error
+
+> [z
+error
+
+>  ["\\u00e9"  ---{...**!"\\u00e9""a\\n",...
+error
+
+> [a\n# 
+error
+
+> {[{-}
+error
+
+> [a "-
+error
+
+> {\x00
+error
+
+> {.
+error
+
+> {1
+error
+
+> {a
+error
+
+> {b
+error
+
+> {x
+error
+
+> {z
+error
+
+> \n{.
+error
+
+> {a"-]
+error
+
+>  {."a
+error
+
+> {-- !
+error
+
+> [[\t{a
+error
+
+> -\n|\n,
+error
+
+> -\n|\n:
+error
+
+> -\n|\n]
+error
+
+> -\n|\n|
+error
+
+> -\n|\n}
+error
+
+> - "",
+error
+
+> - ""-
+error
+
+> - "".
+error
+
+> -\n  "\\ud83d\\ude00"- [[,  ,true,]
+error
+
+> - "a\\n" }b...:...\x00>'x''y' é
+error
+
+> - .#[ \t['{!\t,\né}-'|---*1:\n%\n*\r  \x00\x00"a\\n"{&\r'x''y'    - [&
+error
+
+> \x00\n\x00
+error
+
+> \x00\n:
+error
+
+> \x00\nb
+error
+
+> \x00\n{
+error
+
+> \x00\n|
+error
+
+> \x00\r1
+error
+
+> \x00\r[
+error
+
+> \x00\r]
+error
+
+> 'x''y'a
+error
+
+> .........\r...- {a[é"\\u00e9"é
+error
+
+> \x00b#}?--->&...&\rb[a\r\t\r.b"\\u00e9"..."\\u00e9"["'x''y'>\x00",!"]?}"\\u00e9"*
+error
+
+> "\\u00e9":-\r"a\\n"?%"\\u00e9"["!a?    >-%  \r : [\r!:...\r\n>{-:: ]]%
+error
+
+> |\t\x00
+error
+
+> |\t!
+error
+
+> |\t"
+error
+
+> |\t%
+error
+
+> |\t&
+error
+
+> |\t'
+error
+
+> |\t,
+error
+
+> |\t-
+error
+
+> \n|\t-
+error
+
+> | a"?
+error
+
+> | %- \r\x00"\\u00e9"|\n"'x''y'
+error
+
+> |  ?]
+error
+
+> :
+error
+
+> \n:
+error
+
+> \r:
+error
+
+>  :
+error
+
+> :\t
+error
+
+> :\n
+error
+
+> :\r
+error
+
+> : 
+error
+
+> :\n] {
+error
+
+> : ]{\t
+error
+
+> ?- [>%...'x''y': "\\u00e9"}......b---a%1\x00.
+error
+
+> : "|-\t\x00---]}\n[
+error
+
+> ,
+error
+
+> [
+error
+
+> ]
+error
+
+> {
+error
+
+> }
+error
+
+> \n,
+error
+
+> \n[
+error
+
+> \n]
+error
+
+> }#}a:
+error
+
+> ,.||[
+error
+
+> {][},
+error
+
+> %
+error
+
+> \n%
+error
+
+> \r%
+error
+
+> %\x00
+error
+
+> %\t
+error
+
+> %\n
+error
+
+> %\r
+error
+
+> % 
+error
+
+> %>?\t"\\u00e9"|    &\x00"{a1    "&: b,
+error
+
+> %,?:\n'x''y''x''y'
+error
+
+> %: -|:!
+error
+
+> %>!"a\\n">"...}\t  :,1    é"\\u00e9"&a'\x00&'x''y'1.- '{:\r[""a\\n"
+error
+
+> ?
+error
+
+> \n?
+error
+
+> \r?
+error
+
+>  ?
+error
+
+> ?\t
+error
+
+> ?\n
+error
+
+> ?\r
+error
+
+> ? 
+error
+
+> {?1\n&\r,?1|.|]},\x00}b\nb...1 é-*... bé
+error
+
+> ?\t*.?
+error
+
+> ?\t.{?
+error
+
+> .\t[\n?
+error
+
+> >
+error
+
+> \n>
+error
+
+> \r>
+error
+
+>  >
+error
+
+> >\x00
+error
+
+> >\t
+error
+
+> >\n
+error
+
+> >\r
+error
+
+> >é?\n
+error
+
+> >"q"&aa\x00bx y%Y
+error
+
+> ---:ab: >&é1  .\r\n:[.: "    b,    - ?'.b!\x00- "a\\n"
+error
+
+> "a\\n">1  }&>].
+error
+
+> \x7f
+error
+
+> \n\x7f
+error
+
+>  \x7f
+error
+
+> "\x7f
+error
+
+> '\x7f
+error
+
+> ,\x7f
+error
+
+> -\x7f
+error
+
+> 1\x7f
+error
+
+> \x7f-1.5e3\x00"q""\\x"true---'s'
+error
+
+> "q"\x7f]:a'it''s'x y\r #c:a?-
+error
+
+>  #c\r\n*a---`\x7f: : &ab}:
+error
+
+> "\n
+error
+
+> "\r
+error
+
+> '\n
+error
+
+> '\r
+error
+
+> \n"\n
+error
+
+> \n"\r
+error
+
+> \r"\n
+error
+
+> \r"\r
+error
+
+>     "    [    \n??\r\n:'x''y'"\r.a%    > \n\x00:\r'x''y'
+error
+
+> "1}|]\r\n: :-?
+error
+
+> "-#.\n
+error
+
+> ['*?\r\n*\r\n:\x00-"\\u00e9"]    \t[
+error
+
+> @
+error
+
+> `
+error
+
+> \t\x00
+error
+
+> \t!
+error
+
+> \t"
+error
+
+> \t%
+error
+
+> \t&
+error
+
+> \t'
+error
+
+> --- {a'x''y'---!a{"">-!
+error
+
+> \t:?:#
+error
+
+> -\t\t.
+error
+
+> \ta-{
+error
+
+> [-:,
+error
+
+> [-:?
+error
+
+> [-:[
+error
+
+> [-:]
+error
+
+> [-:{
+error
+
+> [-:}
+error
+
+> [.:,
+error
+
+> [.:?
+error
+
+> - 'é'\n- [[,,{a:}x y]
+error
+
+> ['é', '-x': {'":[,, '-x':[,},a#b]
+error
+
+> "
+error
+
+> '
+error
+
+> \n"
+error
+
+> \n'
+error
+
+> \r"
+error
+
+> \r'
+error
+
+>  "
+error
+
+>  '
+error
+
+> ",.#a
+error
+
+> "- }\t
+error
+
+> "[:.
+error
+
+> ":\t]#
+error
+
+> "\\x"
+error
+
+> \r"\\x"
+error
+
+>  "\\x"
+error
+
+> "\\\n""
+error
+
+> "\\: "
+error
+
+> "\\x"\t
+error
+
+> "\\x"\n
+error
+
+> "\\x"\r
+error
+
+> "\\x"...true-\ta
+error
+
+> 's'"\\u00e9""""\\x"
+error
+
+> "\\x"]b"\\ud83d\\ude00"  ?- 
+error
+
+> "\\x"a\x00ba\x00b\t:a-a
+error
+
+> -:\t:
+error
+
+> -: :
+error
+
+> .:\t:
+error
+
+> .: :
+error
+
+> 1: :
+error
+
+> ::\t:
+error
+
+> :: :
+error
+
+> ?:\t:
+error
+
+> \r\n.------'x''y'?.b1---"b}"\\u00e9"a&"a\\n"%{}  \x00]: -% : "\\u00e9"
+error
+
+> - é: ...: "\\u00e9""a\\n"a\t{    %\r- "\\u00e9"}
+error
+
+> é>"\\u00e9": : "a\\n"||
+error
+
+> |\x00
+error
+
+> |!
+error
+
+> |"
+error
+
+> |#
+error
+
+> |%
+error
+
+> |&
+error
+
+> |'
+error
+
+> |*
+error
+
+> \n|]|\n
+error
+
+>  |...\r{\t{ \r'x''y':'\x00-..-1|...&: \n|'x''y'*%'*....    % %... , : 
+error
+
+> |?}[\n
+error
+
+> |{#a|
+error
+
+> !
+error
+
+> \n!
+error
+
+> \r!
+error
+
+>  !
+error
+
+> !\x00
+error
+
+> !\t
+error
+
+> !\n
+error
+
+> !\r
+error
+
+> !"\\u00e9"->  "\\u00e9"-?"&---\x00&...."a\\n"1["a\\n"---'x''y'...é  \x00 ?b\t
+error
+
+> éé"a\\n"\r\r#  >\t\n  "a\\n"    !a......éé\r b?##b[
+error
+
+> !\r\n>    "a\\n""\\u00e9"%"a\\n"\n"- 
+error
+
+> ![]- !"a\\n"%  &]]1\r'>\r\n...- -?"\\u00e9"1\r\né\r\n
+error
+
+> "\\ud800"
+error
+
+> "\\udc00"
+error
+
+> "\\u12g4"
+error
+
+> "\\ud83dx"
+error
+
+> "\\ud83d\\u0041"
+error
+
+> "\\ud83d\\ude00"
++STR
++DOC
+=VAL 1-13 0 "😀
+-DOC
+-STR
+
+> a: "\\u00e9\\n"
++STR
++DOC
++MAP
+=VAL 0-1 0 :a
+=VAL 4-12 0 "é\n
+-MAP
+-DOC
+-STR
+
+> - \t- a
+error
+
+> a:\n\t\t\n  b
++STR
++DOC
++MAP
+=VAL 0-1 0 :a
+=VAL 8-9 2 :b
+-MAP
+-DOC
+-STR
+
+> a: b\n...\n---\nc
++STR
++DOC
++MAP
+=VAL 0-1 0 :a
+=VAL 3-4 0 :b
+-MAP
+-DOC ...
++DOC ---
+=VAL 13-14 3 :c
+-DOC
+-STR
+
+> %YAML 1.2\n---
+error
+
+> a:\n|\n  x
++STR
++DOC
++MAP
+=VAL 0-1 0 :a
+=VAL 7-8 1 |x\n
+-MAP
+-DOC
+-STR
+
+> - |\n x\n-
++STR
++DOC
++SEQ
+=VAL 5-6 0 |x\n
+=VAL 8-8 2 :
+-SEQ
+-DOC
+-STR
+
+> ? a
+error
+
+> a: >\n x
+error
+
+> [a, {b: c}, [d]]: e
++STR
++DOC
++MAP
++SEQ []
+=VAL 1-2 0 :a
++MAP {}
+=VAL 5-6 0 :b
+=VAL 8-9 0 :c
+-MAP
++SEQ []
+=VAL 13-14 0 :d
+-SEQ
+-SEQ
+=VAL 18-19 0 :e
+-MAP
+-DOC
+-STR
+
+> a\x00b: "\x00"
++STR
++DOC
++MAP
+=VAL 0-3 0 :a�b
+=VAL 6-7 0 "�
+-MAP
+-DOC
+-STR
