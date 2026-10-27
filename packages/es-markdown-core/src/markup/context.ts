@@ -10,7 +10,12 @@ import { dialect } from "../wire/answer-decoder.js";
  * A context lists the blocks the text before the cursor leaves open, the
  * inline constructs it leaves open in the inline content that holds the
  * cursor, and the fields an open construct reads at the cursor, which the
- * whole document confirms. `MarkdownSession.context` asks one.
+ * whole document confirms.
+ *
+ * A session keeps its context as its state at its cursor:
+ * `MarkdownSession.locate` moves the cursor and updates
+ * `MarkdownSession.context`, and `MarkdownSession.spell` spells from that
+ * state as it stands.
  */
 export interface Context {
     /** The blocks the text before the cursor leaves open, outermost first,
@@ -38,9 +43,10 @@ export interface Opener {
  * A field of kind `kind` of a construct of kind `owner` that the cursor may
  * be writing.
  *
- * A slot is not a plain value: how it spells depends on the syntax of the
- * text it was read from, such as the `<...>` around a destination, which its
- * fields do not show.
+ * A slot names a field of its session's `context` as the locate that read it
+ * left it: it spells only while that context stands. How it spells depends on
+ * the syntax of the text it was read from, such as the `<...>` around a
+ * destination, which its fields do not show.
  */
 export interface Slot {
     /** The field's role. */
@@ -59,24 +65,6 @@ export interface Slot {
     /** The earlier fields the slot depends on, as written, such as the note
      * before a cross link's anchor. */
     readonly prefix: readonly string[];
-    /**
-     * The parser's spelling of `value` in this slot, or of each of `values`
-     * in order.
-     *
-     * A spelling writes the value in the field's own syntax: it escapes what
-     * the field reads as syntax, and writes in `<...>`, in braces or in quotes
-     * a value whose bare spelling the field does not read whole. It is null
-     * for a value the field holds in no spelling there, such as a line
-     * ending, a `|` in a cross target or a space in a key.
-     *
-     * The slot keeps the engine's context it was read from, so a spelling
-     * parses nothing; it stays the spelling of the text the context was asked
-     * of after the session moves on, until the session is disposed. Throws
-     * `MarkdownCoreError` `allocationFailed` when an allocation fails, and an
-     * `Error` once the session is disposed.
-     */
-    spell(value: string): Edit | null;
-    spell(values: readonly string[]): (Edit | null)[];
 }
 
 /** What replaces a slot's `before` and `after` to write a value in it:

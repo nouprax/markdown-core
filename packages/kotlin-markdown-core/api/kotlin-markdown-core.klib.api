@@ -1039,6 +1039,8 @@ final class com.nouprax.markdown.core/MarkdownCoreException : kotlin/RuntimeExce
 final class com.nouprax.markdown.core/MarkdownSession : kotlin/AutoCloseable { // com.nouprax.markdown.core/MarkdownSession|null[0]
     constructor <init>(kotlin/String = ..., com.nouprax.markdown.core/TextUnit = ...) // com.nouprax.markdown.core/MarkdownSession.<init>|<init>(kotlin.String;com.nouprax.markdown.core.TextUnit){}[0]
 
+    final var context // com.nouprax.markdown.core/MarkdownSession.context|{}context[0]
+        final fun <get-context>(): com.nouprax.markdown.core/Context // com.nouprax.markdown.core/MarkdownSession.context.<get-context>|<get-context>(){}[0]
     final val document // com.nouprax.markdown.core/MarkdownSession.document|{}document[0]
         final fun <get-document>(): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/MarkdownSession.document.<get-document>|<get-document>(){}[0]
     final val text // com.nouprax.markdown.core/MarkdownSession.text|{}text[0]
@@ -1048,11 +1050,13 @@ final class com.nouprax.markdown.core/MarkdownSession : kotlin/AutoCloseable { /
 
     final fun append(kotlin/String): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/MarkdownSession.append|append(kotlin.String){}[0]
     final fun close() // com.nouprax.markdown.core/MarkdownSession.close|close(){}[0]
-    final fun context(com.nouprax.markdown.core/Position): com.nouprax.markdown.core/Context // com.nouprax.markdown.core/MarkdownSession.context|context(com.nouprax.markdown.core.Position){}[0]
     final fun finalize(): com.nouprax.markdown.core/Document // com.nouprax.markdown.core/MarkdownSession.finalize|finalize(){}[0]
+    final fun locate(com.nouprax.markdown.core/Position) // com.nouprax.markdown.core/MarkdownSession.locate|locate(com.nouprax.markdown.core.Position){}[0]
     final fun markers(com.nouprax.markdown.core/Markup): kotlin.collections/List<com.nouprax.markdown.core/Scope> // com.nouprax.markdown.core/MarkdownSession.markers|markers(com.nouprax.markdown.core.Markup){}[0]
     final fun path(com.nouprax.markdown.core/Position): kotlin.collections/List<com.nouprax.markdown.core/Markup> // com.nouprax.markdown.core/MarkdownSession.path|path(com.nouprax.markdown.core.Position){}[0]
     final fun scope(com.nouprax.markdown.core/Markup, com.nouprax.markdown.core/SlotKind?): kotlin.collections/List<com.nouprax.markdown.core/Scope> // com.nouprax.markdown.core/MarkdownSession.scope|scope(com.nouprax.markdown.core.Markup;com.nouprax.markdown.core.SlotKind?){}[0]
+    final fun spell(com.nouprax.markdown.core/Slot, kotlin.collections/List<kotlin/String>): kotlin.collections/List<com.nouprax.markdown.core/Slot.Insertion?> // com.nouprax.markdown.core/MarkdownSession.spell|spell(com.nouprax.markdown.core.Slot;kotlin.collections.List<kotlin.String>){}[0]
+    final fun spell(com.nouprax.markdown.core/Slot, kotlin/String): com.nouprax.markdown.core/Slot.Insertion? // com.nouprax.markdown.core/MarkdownSession.spell|spell(com.nouprax.markdown.core.Slot;kotlin.String){}[0]
 }
 
 final class com.nouprax.markdown.core/Metadata : com.nouprax.markdown.core/Markup { // com.nouprax.markdown.core/Metadata|null[0]
@@ -1217,9 +1221,6 @@ final class com.nouprax.markdown.core/Slot { // com.nouprax.markdown.core/Slot|n
         final fun <get-owner>(): com.nouprax.markdown.core/NodeKind // com.nouprax.markdown.core/Slot.owner.<get-owner>|<get-owner>(){}[0]
     final val prefix // com.nouprax.markdown.core/Slot.prefix|{}prefix[0]
         final fun <get-prefix>(): kotlin.collections/List<kotlin/String> // com.nouprax.markdown.core/Slot.prefix.<get-prefix>|<get-prefix>(){}[0]
-
-    final fun spell(kotlin.collections/List<kotlin/String>): kotlin.collections/List<com.nouprax.markdown.core/Slot.Insertion?> // com.nouprax.markdown.core/Slot.spell|spell(kotlin.collections.List<kotlin.String>){}[0]
-    final fun spell(kotlin/String): com.nouprax.markdown.core/Slot.Insertion? // com.nouprax.markdown.core/Slot.spell|spell(kotlin.String){}[0]
 
     final class Insertion { // com.nouprax.markdown.core/Slot.Insertion|null[0]
         final val cursor // com.nouprax.markdown.core/Slot.Insertion.cursor|{}cursor[0]

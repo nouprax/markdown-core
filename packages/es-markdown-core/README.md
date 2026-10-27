@@ -212,19 +212,24 @@ An editor holds a finalized session per version of a text.
 ```js
 const session = new MarkdownSession("See [[Field notes]]\n");
 session.finalize();
-const [slot] = session.context({ line: 1, column: 12 }).slots; // a "dest" of a "crossLink"
-slot.spell("Old notes");                       // { text: "Old notes", cursor: 9 }
+session.locate({ line: 1, column: 12 });       // the session's cursor moves there
+const [slot] = session.context.slots;          // a "dest" of a "crossLink"
+session.spell(slot, "Old notes");              // { text: "Old notes", cursor: 9 }
 const link = session.path({ line: 1, column: 8 }).at(-1); // the cross link, under the root and paragraph
 session.scope(link, "dest");                   // [1:7..1:17]
 session.markers(link);                         // [1:5..1:6, 1:18..1:19], the `[[` and the `]]`
 session.dispose();
 ```
 
-`context` answers the blocks and inline constructs the text before the cursor
-leaves open and the `Slot`s the cursor may be writing; `slot.spell` writes a
-value in a slot's own syntax, with the closer an open construct needs, as an
-`Edit` whose caret counts columns in the session's unit. A context's slots
-spell until the session is disposed, which frees them with it. `scope` takes
+The `context` is the session's state at its cursor: `locate` moves the cursor
+and updates it in place to the blocks and inline constructs the text before
+the cursor leaves open and the `Slot`s the cursor may be writing, and adding
+text or `finalize()` clears it. `session.spell(slot, value)` writes a value in
+a slot of the current context in the slot's own syntax, with the closer an
+open construct needs, as an `Edit` whose caret counts columns in the
+session's unit; a slot of a context a later step replaced throws
+`outOfBounds`. Nothing is handed out to free: the context lives and goes with
+the session. `scope` takes
 a `SlotKind`, or null for the fields no slot kind names, and `scope` and
 `markers` take a node of the current document, or one an append left
 unchanged. `Metadata.fields` names the properties fields and `Slot.cues` the

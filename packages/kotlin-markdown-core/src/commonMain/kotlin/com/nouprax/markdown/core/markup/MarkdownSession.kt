@@ -18,16 +18,16 @@ import kotlin.jvm.JvmOverloads
  * [text] stay readable, and [append] and [finalize] throw
  * [MarkdownCoreException] with [ErrorCode.SESSION_FINALIZED].
  *
- * The session also answers the queries of an editor: the [context] at a
- * cursor, the [path] of nodes that hold a byte, and the [scope] of a node's
- * fields and its [markers]. Each asks the engine's parse of the session's
- * text, which the session holds, so none parses the text again or takes the
- * source, and the documents stay values.
+ * The session also answers the queries of an editor: the [context] at its
+ * cursor, which [locate] moves, the [path] of nodes that hold a byte, and the
+ * [scope] of a node's fields and its [markers]. Each asks the engine's parse
+ * of the session's text, which the session holds, so none parses the text
+ * again or takes the source, and the documents stay values.
  *
- * A session has one writer at a time. [close] releases the engine's session
- * and every context it made: a step, a query, a spelling or a read of [text]
- * after it throws [IllegalStateException], and every document it returned
- * stays a complete value.
+ * A session has one writer at a time. [close] releases the engine's session,
+ * its context with it: a step, a query, a spelling or a read of [text] after
+ * it throws [IllegalStateException], and every document it returned stays a
+ * complete value.
  *
  * @throws MarkdownCoreException [ErrorCode.ALLOCATION_FAILED] when the engine
  *   cannot allocate, or [source] exceeds 1 GiB of UTF-8 or its tree a byte
@@ -43,8 +43,18 @@ public class MarkdownSession
         private val session = newPlatformSession(source.encodeToByteArray(), unit)
         private var closed = false
 
-        /** The engine's contexts the session made, which [close] frees. */
-        private val contexts = ArrayList<Long>()
+        /** Counts the steps that replace [context]: a slot spells only in the turn that read it. */
+        private var turn = 0
+
+        /**
+         * The syntactic context at the session's cursor, which [locate]
+         * moves: the session's state, which it updates in place. It is a
+         * context with nothing open until the first locate, and an append or
+         * [finalize] empties it again, since they change the text it was read
+         * from.
+         */
+        public var context: Context = blank
+            private set
 
         /** The document the latest step published: parsed from [source], or from the last append. */
         public val document: Document
@@ -63,7 +73,7 @@ public class MarkdownSession
          *   tree a byte array's capacity; [ErrorCode.SESSION_FINALIZED] after
          *   [finalize].
          */
-        public fun append(text: String): Document = open().append(text.encodeToByteArray())
+        public fun append(text: String): Document = step { append(text.encodeToByteArray()) }
 
         /**
          * Ends the text and returns the final document, which equals
@@ -75,31 +85,64 @@ public class MarkdownSession
          *   [ErrorCode.SESSION_FINALIZED] when the session was already
          *   finalized.
          */
-        public fun finalize(): Document = open().end()
+        public fun finalize(): Document = step { end() }
 
         /**
-         * The syntactic context at the cursor [position] of [text], which
-         * stands between characters: its column may also stand at its line's
-         * end or at the text's end. It counts columns in the session's [unit].
+         * Moves the session's cursor to [position] of [text], which stands
+         * between characters: its column may also stand at its line's end or
+         * at the text's end. It counts columns in the session's [unit]. The
+         * session's [context] becomes the context there.
          *
          * The query parses the text before the cursor and confirms what it
          * leaves open against the session's current [document], whose engine
          * parse the session holds. A snapshot confirms as it resolves: a label
-         * sees only the definitions before the inline root asking. The
-         * context's slots spell until the session closes.
+         * sees only the definitions before the inline root asking.
          *
          * @throws MarkdownCoreException [ErrorCode.OUT_OF_BOUNDS] when the
          *   position names no place of the text or its line or column is
          *   below 1, and [ErrorCode.ALLOCATION_FAILED] when an allocation
-         *   fails.
+         *   fails; either leaves [context] as it was.
          */
-        public fun context(position: Position): Context {
+        public fun locate(position: Position) {
             if (position.line < 1 || position.column < 1) throw MarkdownCoreException(ErrorCode.OUT_OF_BOUNDS)
-            val address = LongArray(1)
-            val message = open().context(position.line, position.column, address)
-            if (address[0] != 0L) contexts += address[0]
-            return AnswerDecoder.context(message, ContextHandle(this, address[0]))
+            val message = open().locate(position.line, position.column)
+            turn++
+            context = AnswerDecoder.context(message, turn)
         }
+
+        /**
+         * The parser's spelling of each of [values] in [slot] of [context], in
+         * order.
+         *
+         * A spelling writes the value in the field's own syntax: it escapes
+         * what the field reads as syntax, and writes in `<...>`, in braces or
+         * in quotes a value whose bare spelling the field does not read whole.
+         * It is null for a value the field holds in no spelling there, such as
+         * a line ending, a `|` in a cross target or a space in a key.
+         *
+         * The session spells from its context as the last locate left it, so
+         * a spelling parses nothing.
+         *
+         * @throws MarkdownCoreException [ErrorCode.OUT_OF_BOUNDS] when [slot]
+         *   is not a slot of [context], because a later locate, append or
+         *   finalize replaced the context that held it, and
+         *   [ErrorCode.ALLOCATION_FAILED] when an allocation fails.
+         * @throws IllegalStateException when the session is closed.
+         */
+        public fun spell(
+            slot: Slot,
+            values: kotlin.collections.List<String>,
+        ): kotlin.collections.List<Slot.Insertion?> {
+            val platform = open()
+            if (slot.turn != turn) throw MarkdownCoreException(ErrorCode.OUT_OF_BOUNDS)
+            return values.map { AnswerDecoder.insertion(platform.spell(slot.index, it.encodeToByteArray()), unit) }
+        }
+
+        /** The parser's spelling of [value] in [slot] of [context], as the list form spells each value. */
+        public fun spell(
+            slot: Slot,
+            value: String,
+        ): Slot.Insertion? = spell(slot, listOf(value))[0]
 
         /**
          * Every node of [document] one of whose source ranges holds the byte
@@ -157,22 +200,33 @@ public class MarkdownSession
         public fun markers(node: Markup): kotlin.collections.List<Scope> =
             parts(node) { line, column -> markers(node.id.value, line, column) }
 
-        /** Releases the engine's session and every context it made; a second call does nothing. */
+        /** Releases the engine's session and its context; a second call does nothing. */
         override fun close() {
             if (!closed) {
                 closed = true
-                for (context in contexts) session.release(context)
-                contexts.clear()
                 session.free()
             }
         }
 
-        /** The spelling of [value] in slot [slot] of the engine's [context], which this session made. */
-        internal fun spell(
-            context: Long,
-            slot: Int,
-            value: String,
-        ): Slot.Insertion? = AnswerDecoder.insertion(open().spell(context, slot, value.encodeToByteArray()), unit)
+        /**
+         * A step of the text. A step of a session not yet finalized empties
+         * the engine's context whether or not it succeeds, and so [context].
+         */
+        private inline fun step(run: PlatformSession.() -> Document): Document {
+            val platform = open()
+            var finalized = false
+            try {
+                return platform.run()
+            } catch (failure: MarkdownCoreException) {
+                finalized = failure.code == ErrorCode.SESSION_FINALIZED
+                throw failure
+            } finally {
+                if (!finalized) {
+                    turn++
+                    context = blank
+                }
+            }
+        }
 
         /**
          * A field or marker query of [node] against the engine's parse, which

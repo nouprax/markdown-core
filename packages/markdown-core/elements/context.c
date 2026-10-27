@@ -1689,17 +1689,42 @@ markdown_core_status markdown_core_context_slot_prefix_at(const markdown_core_co
     return MARKDOWN_CORE_OK;
 }
 
-void markdown_core_context_free(markdown_core_context *context) {
-    if (!context) {
-        return;
-    }
+void markdown_core_context_clear(markdown_core_context *context) {
     markdown_core_free(context->blocks);
     markdown_core_free(context->inlines);
     markdown_core_free(context->slots);
     markdown_core_free(context->prefixes);
     markdown_core_free(context->bytes);
     markdown_core_free(context->line);
+    *context = (markdown_core_context){0};
+}
+
+void markdown_core_context_free(markdown_core_context *context) {
+    if (!context) {
+        return;
+    }
+    markdown_core_context_clear(context);
     markdown_core_free(context);
+}
+
+/* THE SESSION'S CONTEXT: the state a session keeps of the cursor it was
+ * last located at. A locate reads a fresh context and moves what it holds
+ * into the state, so the state stays where it is and a failed locate leaves
+ * it whole. */
+markdown_core_context *markdown_core_context_new(void) { return markdown_core_alloc(1, sizeof(markdown_core_context)); }
+
+markdown_core_status markdown_core_context_locate(markdown_core_context *context,
+                                                  const markdown_core_document *document, const uint8_t *source,
+                                                  size_t length, markdown_core_position position) {
+    markdown_core_context *fresh = NULL;
+    markdown_core_status status = markdown_core_document_context(document, source, length, position, &fresh);
+    if (status != MARKDOWN_CORE_OK) {
+        return status;
+    }
+    markdown_core_context_clear(context);
+    *context = *fresh;
+    markdown_core_free(fresh);
+    return MARKDOWN_CORE_OK;
 }
 
 /* SPELLING (docs/plans/2026-10-23-lsp-completion-engine.md, 3.1): the text

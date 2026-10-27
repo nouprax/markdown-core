@@ -1044,41 +1044,26 @@ uint8_t *markdown_core_wire_dialect(void) {
     return answer_message(&buffer);
 }
 
-uint8_t *markdown_core_wire_context(const markdown_core_session *session, markdown_core_position position,
-                                    markdown_core_context **context) {
+uint8_t *markdown_core_wire_locate(markdown_core_session *session, markdown_core_position position) {
     wire_buffer buffer = {0};
-    markdown_core_context *made = NULL;
-    uint8_t *text, *message;
-    size_t size = session_text(session, &text);
-    markdown_core_status status;
-    *context = NULL;
-    if (text == NULL) {
-        return error_message(MARKDOWN_CORE_ALLOCATION_FAILED);
-    }
-    status = markdown_core_document_context(markdown_core_session_document(session), text, size, position, &made);
-    free(text);
+    const markdown_core_context *context = markdown_core_session_context(session);
+    markdown_core_status status = markdown_core_session_locate(session, position);
     if (status != MARKDOWN_CORE_OK) {
         return error_message(status);
     }
     put_header(&buffer, WIRE_STATUS_DOCUMENT);
-    put_openers(&buffer, made, markdown_core_context_block_count, markdown_core_context_block_at);
-    put_openers(&buffer, made, markdown_core_context_inline_count, markdown_core_context_inline_at);
-    put_slots(&buffer, made);
-    message = answer_message(&buffer);
-    /* The context is the caller's only with its answer. */
-    if (message != NULL && message[8] == WIRE_STATUS_DOCUMENT) {
-        *context = made;
-    } else {
-        markdown_core_context_free(made);
-    }
-    return message;
+    put_openers(&buffer, context, markdown_core_context_block_count, markdown_core_context_block_at);
+    put_openers(&buffer, context, markdown_core_context_inline_count, markdown_core_context_inline_at);
+    put_slots(&buffer, context);
+    return answer_message(&buffer);
 }
 
-uint8_t *markdown_core_wire_spell(const markdown_core_context *context, size_t slot, const uint8_t *value,
+uint8_t *markdown_core_wire_spell(const markdown_core_session *session, size_t slot, const uint8_t *value,
                                   size_t size) {
     wire_buffer buffer = {0};
     markdown_core_insertion *insertion = NULL;
-    markdown_core_status status = markdown_core_slot_spell(context, slot, value, size, &insertion);
+    markdown_core_status status =
+        markdown_core_slot_spell(markdown_core_session_context(session), slot, value, size, &insertion);
     if (status != MARKDOWN_CORE_OK) {
         return error_message(status);
     }

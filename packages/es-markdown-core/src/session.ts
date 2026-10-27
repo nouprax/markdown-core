@@ -7,7 +7,7 @@ import type { Position, Scope, TextUnit } from "./markup/values.js";
 import { allocate, allocateBytes, decodeMessage } from "./runtime/parser.js";
 import { native } from "./runtime/native.js";
 import { holdersOf, leadOf } from "./visitor/document-queries.js";
-import { readAnswer, type SlotFields } from "./wire/answer-decoder.js";
+import { readAnswer } from "./wire/answer-decoder.js";
 import { slotKinds, type SlotKind } from "./wire/kinds.js";
 
 const utf8Encoder = new TextEncoder();
@@ -19,22 +19,22 @@ const pointerBytes = 4;
 /** The size of a `markdown_core_position`: two i32s. */
 const positionBytes = 8;
 
-/** What a session holds in WebAssembly: the engine's session and the
- * contexts its queries made. */
+/** What a session holds in WebAssembly: the engine's session, its context
+ * with it. */
 interface Engine {
     session: number;
-    readonly contexts: number[];
 }
 
 /** Frees what a collected `MarkdownSession` still held. */
 const sessions = new FinalizationRegistry<Engine>(release);
 
 function release(engine: Engine): void {
-    for (const context of engine.contexts) native.markdown_core_context_free(context);
-    engine.contexts.length = 0;
     native.markdown_core_session_free(engine.session);
     engine.session = 0;
 }
+
+/** The context of a session not yet located: nothing is open. */
+const blank: Context = { blocks: [], inlines: [], slots: [] };
 
 /** Whether `position`'s line and column are integers from 1 to the C
  * `int32_t` bound. */
@@ -58,21 +58,21 @@ function valid({ line, column }: Position): boolean {
  * `text` stay readable, and adding text or finalizing again throws
  * `MarkdownCoreError` `sessionFinalized`.
  *
- * The session also answers the queries of an editor: the `context` at a
- * cursor, the `path` of nodes that hold a byte, and the `scope` of a node's
- * fields and its `markers`. Each asks the engine's parse of the session's
- * text, which the session holds, so none parses the text again or takes the
- * source, and the documents stay values.
+ * The session also answers the queries of an editor: the `context` at its
+ * cursor, which `locate` moves, the `path` of nodes that hold a byte, and the
+ * `scope` of a node's fields and its `markers`. Each asks the engine's parse
+ * of the session's text, which the session holds, so none parses the text
+ * again or takes the source, and the documents stay values.
  *
- * The session's state lives in WebAssembly, with every context its queries
- * made: `dispose()` releases it, and a session collected without it is
- * released then.
+ * The session's state lives in WebAssembly, its context with it: `dispose()`
+ * releases it, and a session collected without it is released then.
  */
 export class MarkdownSession {
     /** The unit every scope query's columns count in. */
     readonly unit: TextUnit;
     #engine: Engine;
     #document: Document;
+    #context: Context = blank;
 
     /** Adds `source` as the session's first text and parses it as text added
      * later is parsed. `unit` is `"utf16"`, the unit of JavaScript strings and
@@ -94,7 +94,7 @@ export class MarkdownSession {
                 sessionPointer
             );
             const session = new DataView(native.memory.buffer).getUint32(sessionPointer, true);
-            this.#engine = { session, contexts: [] };
+            this.#engine = { session };
             this.#document = decodeMessage(native, message, this.unit);
         } finally {
             if (sessionPointer) native.free(sessionPointer);
@@ -106,6 +106,14 @@ export class MarkdownSession {
     /** The document of the last step. */
     get document(): Document {
         return this.#document;
+    }
+
+    /** The syntactic context at the session's cursor, which `locate` moves:
+     * the session's state, which it updates in place. Nothing is open in it
+     * until the first locate, and adding text or `finalize()` clears it
+     * again, since they change the text it was read from. */
+    get context(): Context {
+        return this.#context;
     }
 
     /** The session's text. */
@@ -123,7 +131,7 @@ export class MarkdownSession {
         try {
             textPointer = allocateBytes(native, bytes);
             const message = native.markdown_core_wire_session_append(session, textPointer, bytes.length);
-            return (this.#document = decodeMessage(native, message, this.unit));
+            return (this.#document = this.#step(message));
         } finally {
             if (textPointer) native.free(textPointer);
         }
@@ -135,40 +143,70 @@ export class MarkdownSession {
      * `sessionFinalized` when the session was already finalized. */
     finalize(): Document {
         const message = native.markdown_core_wire_session_finalize(this.#open());
-        return (this.#document = decodeMessage(native, message, this.unit));
+        return (this.#document = this.#step(message));
     }
 
     /**
-     * The syntactic context at the cursor `position` of `text`, which stands
+     * Moves the session's cursor to `position` of `text`, which stands
      * between characters: its column may also stand at its line's end or at
-     * the text's end. It counts columns in the session's `unit`.
+     * the text's end. It counts columns in the session's `unit`. The session's
+     * `context` becomes the context there.
      *
      * The query parses the text before the cursor and confirms what it leaves
      * open against the session's current `document`, whose engine parse the
      * session holds. Before `finalize()` it confirms as the document resolves:
-     * a label sees only the definitions before the inline root asking. The context's slots spell
-     * until the session is disposed. Throws `MarkdownCoreError` `outOfBounds`
-     * when the position names no place of the text or its line or column is
-     * not an integer of at least 1, and `allocationFailed` when an allocation
-     * fails.
+     * a label sees only the definitions before the inline root asking. Throws
+     * `MarkdownCoreError` `outOfBounds` when the position names no place of
+     * the text or its line or column is not an integer of at least 1, and
+     * `allocationFailed` when an allocation fails; either leaves `context` as
+     * it was.
      */
-    context(position: Position): Context {
+    locate(position: Position): void {
         if (!valid(position)) throw new MarkdownCoreError("outOfBounds");
         const session = this.#open();
-        let positionPointer = 0;
-        let contextPointer = 0;
+        const positionPointer = this.#position(position);
         try {
-            positionPointer = this.#position(position);
-            contextPointer = allocate(native, pointerBytes);
-            const message = native.markdown_core_wire_context(session, positionPointer, contextPointer);
-            const context = new DataView(native.memory.buffer).getUint32(contextPointer, true);
-            if (context) this.#engine.contexts.push(context);
-            const { blocks, inlines, slots } = readAnswer(native, message, (answer) => answer.context());
-            return { blocks, inlines, slots: slots.map((fields, index) => this.#slot(fields, context, index)) };
+            const message = native.markdown_core_wire_locate(session, positionPointer);
+            this.#context = readAnswer(native, message, (answer) => answer.context());
         } finally {
-            if (contextPointer) native.free(contextPointer);
-            if (positionPointer) native.free(positionPointer);
+            native.free(positionPointer);
         }
+    }
+
+    /**
+     * The parser's spelling of `value` in `slot` of `context`, or of each of
+     * `values` in order.
+     *
+     * A spelling writes the value in the field's own syntax: it escapes what
+     * the field reads as syntax, and writes in `<...>`, in braces or in quotes
+     * a value whose bare spelling the field does not read whole. It is null
+     * for a value the field holds in no spelling there, such as a line ending,
+     * a `|` in a cross target or a space in a key.
+     *
+     * The session spells from its context as the last locate left it, so a
+     * spelling parses nothing. Throws `MarkdownCoreError` `outOfBounds` when
+     * `slot` is not one of `context.slots`, because a later locate, text or
+     * `finalize()` replaced the context that held it, `allocationFailed` when
+     * an allocation fails, and an `Error` once the session is disposed.
+     */
+    spell(slot: Slot, value: string): Edit | null;
+    spell(slot: Slot, values: readonly string[]): (Edit | null)[];
+    spell(slot: Slot, values: string | readonly string[]): Edit | null | (Edit | null)[] {
+        const session = this.#open();
+        const index = this.#context.slots.indexOf(slot);
+        if (index < 0) throw new MarkdownCoreError("outOfBounds");
+        const spell = (value: string): Edit | null => {
+            const bytes = utf8Encoder.encode(value);
+            let valuePointer = 0;
+            try {
+                valuePointer = allocateBytes(native, bytes);
+                const message = native.markdown_core_wire_spell(session, index, valuePointer, bytes.length);
+                return readAnswer(native, message, (answer) => answer.edit(this.unit));
+            } finally {
+                if (valuePointer) native.free(valuePointer);
+            }
+        };
+        return typeof values === "string" ? spell(values) : values.map(spell);
     }
 
     /**
@@ -224,8 +262,8 @@ export class MarkdownSession {
         return this.#parts(node, (session, id, position) => native.markdown_core_wire_markers(session, id, position));
     }
 
-    /** Releases the session's WebAssembly state and every context its queries
-     * made; a second call does nothing. Its documents stay valid, and every
+    /** Releases the session's WebAssembly state, its context with it; a
+     * second call does nothing. Its documents stay valid, and every
      * later call, spelling or read of `text` throws an `Error`. */
     dispose(): void {
         sessions.unregister(this);
@@ -260,26 +298,19 @@ export class MarkdownSession {
         return pointer;
     }
 
-    /** The slot `fields` of the engine's `context`, at `index` among its slots. */
-    #slot(fields: SlotFields, context: number, index: number): Slot {
-        const spell = (value: string): Edit | null => {
-            const bytes = utf8Encoder.encode(value);
-            // The context outlives no session: a disposed one freed it.
-            this.#open();
-            let valuePointer = 0;
-            try {
-                valuePointer = allocateBytes(native, bytes);
-                const message = native.markdown_core_wire_spell(context, index, valuePointer, bytes.length);
-                return readAnswer(native, message, (answer) => answer.edit(this.unit));
-            } finally {
-                if (valuePointer) native.free(valuePointer);
-            }
-        };
-        return {
-            ...fields,
-            spell: ((values: string | readonly string[]) =>
-                typeof values === "string" ? spell(values) : values.map(spell)) as Slot["spell"]
-        };
+    /** The document of a step's `message`. A step of a session not yet
+     * finalized clears the engine's context whether or not it succeeds, and
+     * so `context`. */
+    #step(message: number): Document {
+        let finalized = false;
+        try {
+            return decodeMessage(native, message, this.unit);
+        } catch (failure) {
+            finalized = failure instanceof MarkdownCoreError && failure.code === "sessionFinalized";
+            throw failure;
+        } finally {
+            if (!finalized) this.#context = blank;
+        }
     }
 
     /**

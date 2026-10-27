@@ -36,7 +36,8 @@ private fun render(
 ): String =
     MarkdownSession(source, unit).use { session ->
         val document = session.finalize()
-        val context = session.context(position)
+        session.locate(position)
+        val context = session.context
         val lines = mutableListOf<String>()
         for (block in context.blocks) lines += "block ${block.kind ?: "None"} ${text(block.scope)}"
         for (opener in context.inlines) lines += "inline ${opener.kind ?: "None"} ${text(opener.scope)}"
@@ -46,7 +47,7 @@ private fun render(
                 "before=${text(slot.before)} after=${text(slot.after)}$prefix"
         }
         for ((index, slot) in context.slots.withIndex()) {
-            for ((value, spelled) in contextValues.zip(slot.spell(contextValues))) {
+            for ((value, spelled) in contextValues.zip(session.spell(slot, contextValues))) {
                 lines += "spell $index \"$value\" " + (spelled?.let { "\"${it.text}\" ${it.cursor}" } ?: "none")
             }
         }

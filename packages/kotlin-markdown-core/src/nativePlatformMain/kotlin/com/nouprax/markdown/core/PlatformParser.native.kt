@@ -4,22 +4,20 @@ package com.nouprax.markdown.core
 
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TEXT_UNIT_UTF16
 import com.nouprax.markdown.core.internal.capi.MARKDOWN_CORE_TEXT_UNIT_UTF8
-import com.nouprax.markdown.core.internal.capi.markdown_core_context_free
 import com.nouprax.markdown.core.internal.capi.markdown_core_position
 import com.nouprax.markdown.core.internal.capi.markdown_core_session_free
 import com.nouprax.markdown.core.internal.capi.markdown_core_session_text
 import com.nouprax.markdown.core.internal.capi.markdown_core_session_text_size
-import com.nouprax.markdown.core.internal.capi.markdown_core_wire_context
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_dialect
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_field
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_free
+import com.nouprax.markdown.core.internal.capi.markdown_core_wire_locate
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_markers
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_parse
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_session_append
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_session_finalize
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_session_new
 import com.nouprax.markdown.core.internal.capi.markdown_core_wire_spell
-import kotlinx.cinterop.COpaque
 import kotlinx.cinterop.COpaquePointer
 import kotlinx.cinterop.COpaquePointerVar
 import kotlinx.cinterop.CPointer
@@ -33,7 +31,6 @@ import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.readBytes
 import kotlinx.cinterop.reinterpret
-import kotlinx.cinterop.toCPointer
 import kotlinx.cinterop.toLong
 import kotlinx.cinterop.usePinned
 import kotlinx.cinterop.value
@@ -147,44 +144,20 @@ private class CSession(
         session = null
     }
 
-    override fun context(
+    override fun locate(
         line: Int,
         column: Int,
-        context: LongArray,
-    ): ByteArray =
-        memScoped {
-            val address = alloc<COpaquePointerVar>()
-            val message =
-                markdown_core_wire_context(session?.reinterpret(), position(line, column), address.ptr.reinterpret())
-            // The context is Kotlin's only with its answer.
-            val answer =
-                try {
-                    copy(message)
-                } catch (failure: MarkdownCoreException) {
-                    markdown_core_context_free(address.value?.reinterpret())
-                    throw failure
-                }
-            context[0] = address.value.toLong()
-            answer
-        }
+    ): ByteArray = copy(markdown_core_wire_locate(session?.reinterpret(), position(line, column)))
 
     override fun spell(
-        context: Long,
         slot: Int,
         value: ByteArray,
     ): ByteArray =
         copy(
             value.withAddress {
-                markdown_core_wire_spell(
-                    context.toCPointer<COpaque>()?.reinterpret(),
-                    slot.convert(),
-                    it,
-                    value.size.convert(),
-                )
+                markdown_core_wire_spell(session?.reinterpret(), slot.convert(), it, value.size.convert())
             },
         )
-
-    override fun release(context: Long) = markdown_core_context_free(context.toCPointer<COpaque>()?.reinterpret())
 
     override fun field(
         id: Long,

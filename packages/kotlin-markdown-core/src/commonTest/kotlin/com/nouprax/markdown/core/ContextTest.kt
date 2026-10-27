@@ -23,7 +23,8 @@ class ContextTest {
     @Test
     fun anOpenCrossLinkTargetIsADestSlotThatSpellsItsCloserAfterTheCaret() {
         MarkdownSession("[[No\n").use { session ->
-            val context = session.context(Position(1, 5))
+            session.locate(Position(1, 5))
+            val context = session.context
             assertEquals(listOf(NodeKind.PARAGRAPH), context.blocks.map { it.kind })
             val slot = context.slots.single()
             assertEquals(SlotKind.DEST, slot.kind)
@@ -32,12 +33,12 @@ class ContextTest {
             assertTrue(slot.prefix.isEmpty())
             assertEquals(place(1 to 3, 1 to 4), slot.before)
             assertEquals(place(1 to 5, 1 to 4), slot.after)
-            val spelled = slot.spell("x")
+            val spelled = session.spell(slot, "x")
             assertEquals("x]]", spelled?.text)
             assertEquals(1, spelled?.cursor)
             // A `|` would end the target, and the field holds it in no spelling.
-            assertNull(slot.spell("a|b"))
-            assertEquals(listOf(spelled, null), slot.spell(listOf("x", "a|b")))
+            assertNull(session.spell(slot, "a|b"))
+            assertEquals(listOf(spelled, null), session.spell(slot, listOf("x", "a|b")))
         }
     }
 
@@ -45,8 +46,9 @@ class ContextTest {
     fun aSpellingCountsItsCaretInTheSessionsUnit() {
         for ((unit, cursor) in listOf(TextUnit.UTF8 to 6, TextUnit.UTF16 to 3)) {
             MarkdownSession("[[No\n", unit).use { session ->
-                val slot = session.context(Position(1, 5)).slots.single()
-                assertEquals(cursor, slot.spell("é🚀")?.cursor)
+                session.locate(Position(1, 5))
+                val slot = session.context.slots.single()
+                assertEquals(cursor, session.spell(slot, "é🚀")?.cursor)
             }
         }
     }
@@ -54,31 +56,46 @@ class ContextTest {
     @Test
     fun aClosedConstructsSlotReadsItsFieldOnPastTheCursor() {
         MarkdownSession("[[Note]] after\n").use { session ->
-            val slot = session.context(Position(1, 5)).slots.single()
+            session.locate(Position(1, 5))
+            val slot = session.context.slots.single()
             assertTrue(slot.closed)
             assertEquals(place(1 to 5, 1 to 6), slot.after)
-            assertEquals(Slot.Insertion("x", 1), slot.spell("x"))
+            assertEquals(Slot.Insertion("x", 1), session.spell(slot, "x"))
         }
     }
 
     @Test
-    fun aSlotKeepsSpellingItsTextAfterTheSessionMovesOnUntilItCloses() {
+    fun theContextIsTheSessionsStateThatALocateReplacesAndAnAppendClears() {
         val session = MarkdownSession("[[No")
-        val slot = session.context(Position(1, 5)).slots.single()
+        assertTrue(session.context.blocks.isEmpty() && session.context.slots.isEmpty())
+        session.locate(Position(1, 5))
+        val slot = session.context.slots.single()
+        session.locate(Position(1, 1))
+        assertTrue(session.context.slots.isEmpty())
+        assertOutOfBounds { session.spell(slot, "x") }
+        session.locate(Position(1, 5))
+        val next = session.context.slots.single()
         session.append("te]]\n")
-        assertEquals("x]]", slot.spell("x")?.text)
+        assertTrue(session.context.slots.isEmpty())
+        assertOutOfBounds { session.spell(next, "x") }
+        session.locate(Position(1, 5))
+        assertTrue(session.context.slots.single().closed)
+        val last = session.context.slots.single()
         session.close()
-        assertFailsWith<IllegalStateException> { slot.spell("x") }
-        assertFailsWith<IllegalStateException> { session.context(Position(1, 1)) }
+        assertFailsWith<IllegalStateException> { session.spell(last, "x") }
+        assertFailsWith<IllegalStateException> { session.locate(Position(1, 1)) }
     }
 
     @Test
-    fun aCursorOutsideTheTextOrBelowOneIsOutOfBounds() {
+    fun aCursorOutsideTheTextOrBelowOneIsOutOfBoundsAndKeepsTheContext() {
         MarkdownSession("a\n").use { session ->
+            session.locate(Position(1, 2))
             for (position in listOf(Position(0, 1), Position(1, 0), Position(3, 1))) {
-                assertOutOfBounds { session.context(position) }
+                assertOutOfBounds { session.locate(position) }
+                assertEquals(listOf(NodeKind.PARAGRAPH), session.context.blocks.map { it.kind })
             }
-            assertTrue(session.context(Position(2, 1)).slots.isEmpty())
+            session.locate(Position(2, 1))
+            assertTrue(session.context.slots.isEmpty())
             assertOutOfBounds { session.path(Position(0, 1)) }
         }
     }
@@ -145,7 +162,8 @@ class ContextTest {
             assertEquals(text.id, session.path(Position(1, 1)).last().id)
             assertTrue(session.markers(text).isEmpty())
             assertTrue(session.scope(text, SlotKind.LABEL).isEmpty())
-            assertEquals(listOf(NodeKind.PARAGRAPH), session.context(Position(1, 2)).blocks.map { it.kind })
+            session.locate(Position(1, 2))
+            assertEquals(listOf(NodeKind.PARAGRAPH), session.context.blocks.map { it.kind })
             val final = session.finalize()
             val link = assertIs<Link>(assertIs<Paragraph>(final.content.first()).content.first())
             assertTrue(session.markers(link).isNotEmpty())

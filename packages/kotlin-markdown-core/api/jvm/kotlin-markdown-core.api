@@ -473,14 +473,17 @@ public final class com/nouprax/markdown/core/MarkdownSession : java/lang/AutoClo
 	public synthetic fun <init> (Ljava/lang/String;Lcom/nouprax/markdown/core/TextUnit;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun append (Ljava/lang/String;)Lcom/nouprax/markdown/core/Document;
 	public fun close ()V
-	public final fun context (Lcom/nouprax/markdown/core/Position;)Lcom/nouprax/markdown/core/Context;
 	public final fun finalize ()Lcom/nouprax/markdown/core/Document;
+	public final fun getContext ()Lcom/nouprax/markdown/core/Context;
 	public final fun getDocument ()Lcom/nouprax/markdown/core/Document;
 	public final fun getText ()Ljava/lang/String;
 	public final fun getUnit ()Lcom/nouprax/markdown/core/TextUnit;
+	public final fun locate (Lcom/nouprax/markdown/core/Position;)V
 	public final fun markers (Lcom/nouprax/markdown/core/Markup;)Ljava/util/List;
 	public final fun path (Lcom/nouprax/markdown/core/Position;)Ljava/util/List;
 	public final fun scope (Lcom/nouprax/markdown/core/Markup;Lcom/nouprax/markdown/core/SlotKind;)Ljava/util/List;
+	public final fun spell (Lcom/nouprax/markdown/core/Slot;Ljava/lang/String;)Lcom/nouprax/markdown/core/Slot$Insertion;
+	public final fun spell (Lcom/nouprax/markdown/core/Slot;Ljava/util/List;)Ljava/util/List;
 }
 
 public abstract class com/nouprax/markdown/core/Markup {
@@ -894,8 +897,6 @@ public final class com/nouprax/markdown/core/Slot {
 	public final fun getKind ()Lcom/nouprax/markdown/core/SlotKind;
 	public final fun getOwner ()Lcom/nouprax/markdown/core/NodeKind;
 	public final fun getPrefix ()Ljava/util/List;
-	public final fun spell (Ljava/lang/String;)Lcom/nouprax/markdown/core/Slot$Insertion;
-	public final fun spell (Ljava/util/List;)Ljava/util/List;
 }
 
 public final class com/nouprax/markdown/core/Slot$Companion {

@@ -151,30 +151,15 @@ static jbyteArray JNICALL native_dialect(JNIEnv *environment, jobject receiver) 
     return message_array(environment, markdown_core_wire_dialect());
 }
 
-static markdown_core_context *context_address(jlong context) { return (markdown_core_context *)(intptr_t)context; }
-
-/* Answers the context at `line` and `column` of the session, and writes the
- * address of the engine's context to `context[0]` when the answer is its. */
-static jbyteArray JNICALL native_session_context(JNIEnv *environment, jobject receiver, jlong session, jint line,
-                                                 jint column, jlongArray context) {
+/* Locates the session at `line` and `column` and answers its context. */
+static jbyteArray JNICALL native_session_locate(JNIEnv *environment, jobject receiver, jlong session, jint line,
+                                                jint column) {
     markdown_core_position position = {line, column};
-    markdown_core_context *made;
-    jbyteArray result;
-    jlong address;
     (void)receiver;
-
-    result = message_array(environment, markdown_core_wire_context(session_address(session), position, &made));
-    /* The context is Kotlin's only with its answer. */
-    if (result == NULL) {
-        markdown_core_context_free(made);
-        return NULL;
-    }
-    address = (jlong)(intptr_t)made;
-    (*environment)->SetLongArrayRegion(environment, context, 0, 1, &address);
-    return result;
+    return message_array(environment, markdown_core_wire_locate(session_address(session), position));
 }
 
-static jbyteArray JNICALL native_context_spell(JNIEnv *environment, jobject receiver, jlong context, jint slot,
+static jbyteArray JNICALL native_session_spell(JNIEnv *environment, jobject receiver, jlong session, jint slot,
                                                jbyteArray value) {
     jbyte *value_bytes;
     uint8_t *message;
@@ -183,16 +168,10 @@ static jbyteArray JNICALL native_context_spell(JNIEnv *environment, jobject rece
     if (!pin_bytes(environment, value, &value_bytes)) {
         return NULL;
     }
-    message = markdown_core_wire_spell(context_address(context), (size_t)slot, (const uint8_t *)value_bytes,
+    message = markdown_core_wire_spell(session_address(session), (size_t)slot, (const uint8_t *)value_bytes,
                                        (size_t)(*environment)->GetArrayLength(environment, value));
     unpin_bytes(environment, value, value_bytes);
     return message_array(environment, message);
-}
-
-static void JNICALL native_context_free(JNIEnv *environment, jobject receiver, jlong context) {
-    (void)environment;
-    (void)receiver;
-    markdown_core_context_free(context_address(context));
 }
 
 static jbyteArray JNICALL native_session_field(JNIEnv *environment, jobject receiver, jlong session, jlong id,
@@ -219,9 +198,8 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *virtual_machine, void *reserved) {
         {"sessionText", "(J)[B", (void *)native_session_text},
         {"sessionFree", "(J)V", (void *)native_session_free},
         {"dialectAnswer", "()[B", (void *)native_dialect},
-        {"sessionContextAnswer", "(JII[J)[B", (void *)native_session_context},
-        {"contextSpellAnswer", "(JI[B)[B", (void *)native_context_spell},
-        {"contextFree", "(J)V", (void *)native_context_free},
+        {"sessionLocateAnswer", "(JII)[B", (void *)native_session_locate},
+        {"sessionSpellAnswer", "(JI[B)[B", (void *)native_session_spell},
         {"sessionFieldAnswer", "(JJIII)[B", (void *)native_session_field},
         {"sessionMarkersAnswer", "(JJII)[B", (void *)native_session_markers},
     };

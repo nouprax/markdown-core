@@ -14,15 +14,14 @@ export interface NativeExports extends WebAssembly.Exports {
     markdown_core_wire_session_finalize(session: number): number;
     /** The answers of a session's queries (docs/architecture/wire-format.md,
      * Queries), each one owned MCB3 message as a step's is. A position is
-     * passed as the address of its two i32s. `context` receives the engine's
-     * context the answer was read from, which `markdown_core_context_free`
-     * releases, or zero with a failure message. */
+     * passed as the address of its two i32s. A locate moves the session's
+     * cursor and answers the context it leaves as the session's state, which
+     * a spelling reads. */
     markdown_core_wire_dialect(): number;
-    markdown_core_wire_context(session: number, position: number, context: number): number;
-    markdown_core_wire_spell(context: number, slot: number, value: number, size: number): number;
+    markdown_core_wire_locate(session: number, position: number): number;
+    markdown_core_wire_spell(session: number, slot: number, value: number, size: number): number;
     markdown_core_wire_field(session: number, id: bigint, position: number, slot: number): number;
     markdown_core_wire_markers(session: number, id: bigint, position: number): number;
-    markdown_core_context_free(context: number): void;
     markdown_core_wire_free(message: number): void;
     markdown_core_session_text_size(session: number): number;
     markdown_core_session_text(session: number, bytes: number): void;

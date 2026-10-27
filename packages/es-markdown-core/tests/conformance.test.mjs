@@ -251,7 +251,8 @@ function renderQueries(source, unit, position) {
     const session = new MarkdownSession(source, { unit });
     try {
         const document = session.finalize();
-        const context = session.context(position);
+        session.locate(position);
+        const context = session.context;
         const lines = [];
         for (const block of context.blocks) lines.push(`block ${contractName(block.kind)} ${scopeText(block.scope)}`);
         for (const opener of context.inlines)
@@ -264,7 +265,7 @@ function renderQueries(source, unit, position) {
             );
         }
         context.slots.forEach((slot, index) => {
-            const spelled = slot.spell(contextCorpus.values);
+            const spelled = session.spell(slot, contextCorpus.values);
             contextCorpus.values.forEach((value, at) => {
                 const insertion = spelled[at];
                 lines.push(

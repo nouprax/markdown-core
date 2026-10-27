@@ -1,5 +1,5 @@
 import { MarkdownCoreError } from "../common/markdown-core-error.js";
-import type { Edit, Opener, Slot } from "../markup/context.js";
+import type { Context, Edit, Opener, Slot } from "../markup/context.js";
 import type { Markup } from "../markup/markup.js";
 import type { Scope, TextUnit } from "../markup/values.js";
 import { native, type NativeExports } from "../runtime/native.js";
@@ -12,16 +12,6 @@ import { errorCodes, lengthOffset, statusOffset } from "./node-decoder.js";
  * header: status 0 is the answer's body, and 1 a failure, whose body is its
  * u32 `markdown_core_status`.
  */
-
-/** A slot as its answer carries it, before its session lets it spell. */
-export type SlotFields = Omit<Slot, "spell">;
-
-/** A context as its answer carries it. */
-export interface ContextFields {
-    readonly blocks: readonly Opener[];
-    readonly inlines: readonly Opener[];
-    readonly slots: readonly SlotFields[];
-}
 
 /** The names and characters the dialect fixes, which no session holds. */
 export interface Lexicon {
@@ -62,10 +52,10 @@ export class Answer {
         if (this.u8() === 1) throw new MarkdownCoreError(errorCodes[this.u32()]!);
     }
 
-    context(): ContextFields {
+    context(): Context {
         const blocks = this.list(() => this.opener());
         const inlines = this.list(() => this.opener());
-        const slots = this.list((): SlotFields => ({
+        const slots = this.list((): Slot => ({
             kind: slotKinds[this.u8()] as SlotKind,
             owner: kinds[this.u8()] as Markup["kind"],
             before: this.scope(),

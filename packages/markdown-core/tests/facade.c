@@ -1032,6 +1032,56 @@ static void check_context_query(void) {
     markdown_core_document_free(document);
 }
 
+/* A session keeps its context as its state: the state stays where the
+ * session lends it, a locate updates it in place and a failed one keeps it,
+ * spelling reads it as it stands, and an append and the finalize empty it. */
+static void check_session_context(void) {
+    static const char source[] = "\xc3\xa9 [[No";
+    markdown_core_session *session = NULL;
+    if (!ok(markdown_core_session_new((const uint8_t *)source, sizeof(source) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF16,
+                                      &session),
+            "a UTF-16 session starts")) {
+        return;
+    }
+    const markdown_core_context *context = markdown_core_session_context(session);
+    markdown_core_slot slot;
+    markdown_core_insertion *insertion = NULL;
+    check(context != NULL && markdown_core_context_block_count(context) == 0 &&
+              markdown_core_context_slot_count(context) == 0,
+          "a session not yet located has an empty context");
+    check(markdown_core_session_locate(session, (markdown_core_position){1, 7}) == MARKDOWN_CORE_OK &&
+              markdown_core_session_context(session) == context && markdown_core_context_block_count(context) == 1 &&
+              markdown_core_context_slot_count(context) == 1 &&
+              markdown_core_context_slot_at(context, 0, &slot) == MARKDOWN_CORE_OK &&
+              slot.kind == MARKDOWN_CORE_SLOT_DEST && !slot.closed && slot.before.start.column == 5,
+          "a locate updates the session's context in place");
+    check(markdown_core_session_locate(session, (markdown_core_position){3, 1}) == MARKDOWN_CORE_OUT_OF_BOUNDS &&
+              markdown_core_context_slot_count(context) == 1,
+          "a failed locate keeps the context");
+    check(markdown_core_slot_spell(context, 0, (const uint8_t *)"x", 1, &insertion) == MARKDOWN_CORE_OK &&
+              insertion != NULL && insertion->size == 3 && memcmp(insertion->text, "x]]", 3) == 0,
+          "a slot of the session's context spells");
+    markdown_core_insertion_free(insertion);
+    check(markdown_core_session_locate(session, (markdown_core_position){1, 1}) == MARKDOWN_CORE_OK &&
+              markdown_core_context_slot_count(context) == 0,
+          "a locate elsewhere replaces the state");
+    const markdown_core_document *document = NULL;
+    check(markdown_core_session_locate(session, (markdown_core_position){1, 7}) == MARKDOWN_CORE_OK &&
+              markdown_core_session_append(session, (const uint8_t *)"]]", 2, &document) == MARKDOWN_CORE_OK &&
+              markdown_core_context_slot_count(context) == 0 && markdown_core_context_block_count(context) == 0,
+          "an append empties the context");
+    check(markdown_core_session_locate(session, (markdown_core_position){1, 7}) == MARKDOWN_CORE_OK &&
+              markdown_core_context_slot_count(context) == 1 &&
+              markdown_core_context_slot_at(context, 0, &slot) == MARKDOWN_CORE_OK && slot.closed &&
+              markdown_core_session_finalize(session, &document) == MARKDOWN_CORE_OK &&
+              markdown_core_context_slot_count(context) == 0,
+          "a locate reads the appended text, and the finalize empties the context");
+    check(markdown_core_session_locate(session, (markdown_core_position){1, 7}) == MARKDOWN_CORE_OK &&
+              markdown_core_context_slot_count(context) == 1,
+          "a finalized session still locates");
+    markdown_core_session_free(session);
+}
+
 /* Whether `scopes` hold one scope on line 1 from `start` to `end`. */
 static bool one_scope(const markdown_core_scope *scopes, size_t count, int32_t start, int32_t end) {
     return count == 1 && scopes[0].start.line == 1 && scopes[0].start.column == start && scopes[0].end.line == 1 &&
@@ -1133,6 +1183,7 @@ int main(int argc, char **argv) {
     check_index_boundary();
     check_source_boundary();
     check_context_query();
+    check_session_context();
     check_fields();
     for (i = 3; i < argc; i++) {
         check_fixture(fixture_dir, argv[i]);

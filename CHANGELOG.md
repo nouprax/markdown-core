@@ -19,9 +19,9 @@ promised to remain compatible between releases.
 
 - Ask the context, the path, the fields and the markers of an ECMAScript
   `MarkdownSession` (language engine plan, step 3c), as the Swift and Kotlin
-  sessions answer them: `context(position)`, with `slot.spell` spelling an
-  `Edit` until `dispose()`, which frees the contexts the session made;
-  `path(position)`; `scope(node, field)`, where a field is a `SlotKind` or
+  sessions answer them: `locate(position)`, which updates the session's
+  `context`, and `spell(slot, value)`, which spells an `Edit` in a slot of
+  it; `path(position)`; `scope(node, field)`, where a field is a `SlotKind` or
   null; and `markers(node)`. `Metadata.fields` and `Slot.cues` export the
   dialect's lexicons. The WebAssembly module exports the wire's query
   answers, and the conformance tests answer the shared corpus
@@ -29,12 +29,12 @@ promised to remain compatible between releases.
 
 - Ask the context, the path, the fields and the markers of a Kotlin
   `MarkdownSession` (language engine plan, step 3b), as the Swift session
-  answers them: `context(position)`, with `Slot.spell` spelling until the
-  session closes, which frees the contexts it made; `path(position)`;
+  answers them: `locate(position)`, which updates the session's `context`,
+  and `spell(slot, value)`, which spells in a slot of it; `path(position)`;
   `scope(node, field)`; and `markers(node)`. `NodeKind` and `SlotKind` are
   public and generated from the contract, and `Metadata.fields` and
   `Slot.cues` export the dialect's lexicons. The queries cross the MCB3
-  wire as answers of their own (`markdown_core_wire_context`,
+  wire as answers of their own (`markdown_core_wire_locate`,
   `markdown_core_wire_spell`, `markdown_core_wire_field`,
   `markdown_core_wire_markers` and `markdown_core_wire_dialect`), which the
   ECMAScript binding will read too, and the Kotlin tests answer the shared
@@ -43,9 +43,15 @@ promised to remain compatible between releases.
 - Ask the context, the path, the fields and the markers of a Swift
   `MarkdownSession` (language engine plan, step 3a), which holds the native
   parse of its text, so no query parses it again and none takes the source.
-  `MarkdownSession.context(at:)` answers a `Context` of open blocks, inline
-  openers and `Slot`s, and `Slot.spell(_:)` spells values in a slot, each as
-  a `Slot.Insertion` whose caret counts columns in the session's unit;
+  The context is the session's state at its cursor:
+  `MarkdownSession.locate(_:)` moves the cursor and updates
+  `MarkdownSession.context`, a `Context` of open blocks, inline openers and
+  `Slot`s, in place, an append or the finalize clears it, and
+  `spell(_:in:)` spells values in a slot of it, each as a `Slot.Insertion`
+  whose caret counts columns in the session's unit. In C,
+  `markdown_core_session_locate` updates the context a session keeps and
+  `markdown_core_session_context` lends it, so no binding holds or frees a
+  context of its own;
   `path(at:)` answers the nodes over a position, `scope(of:field:)` a node's
   fields of a slot kind and `markers(of:)` its markers, for a node of the
   current document or one an append left unchanged. An editor holds a

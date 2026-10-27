@@ -754,7 +754,8 @@ test("errors: a disposed session takes no further call", () => {
 test("api: a session's context lists what the text before the cursor leaves open, and its slots spell", () => {
     const session = new MarkdownSession("[[No\n");
     session.finalize();
-    const context = session.context({ line: 1, column: 5 });
+    session.locate({ line: 1, column: 5 });
+    const context = session.context;
     assert.deepEqual(context.blocks, [{ kind: "paragraph", scope: scope(1, 1, 1, 4) }]);
     assert.deepEqual(
         context.inlines.map((opener) => opener.kind),
@@ -770,18 +771,39 @@ test("api: a session's context lists what the text before the cursor leaves open
     );
     // The closer follows the value and the caret stands before it, in columns
     // of the session's unit.
-    assert.deepEqual(slot.spell("é🚀"), { text: "é🚀]]", cursor: 3 });
-    assert.deepEqual(slot.spell(["x", "a|b"]), [{ text: "x]]", cursor: 1 }, null]);
+    assert.deepEqual(session.spell(slot, "é🚀"), { text: "é🚀]]", cursor: 3 });
+    assert.deepEqual(session.spell(slot, ["x", "a|b"]), [{ text: "x]]", cursor: 1 }, null]);
     const bytes = new MarkdownSession("[[No\n", { unit: "utf8" });
-    assert.deepEqual(bytes.context({ line: 1, column: 5 }).slots[0].spell("é🚀"), { text: "é🚀]]", cursor: 6 });
+    bytes.locate({ line: 1, column: 5 });
+    assert.deepEqual(bytes.spell(bytes.context.slots[0], "é🚀"), { text: "é🚀]]", cursor: 6 });
     bytes.dispose();
-    // A slot keeps the context it was read from, so it spells the text it was
-    // asked of after the session moves on.
-    const open = new MarkdownSession("[[No");
-    const before = open.context({ line: 1, column: 5 }).slots[0];
-    open.append("]] done\n");
-    assert.deepEqual(before.spell("x"), { text: "x]]", cursor: 1 });
-    open.dispose();
+    session.dispose();
+});
+
+test("api: the context is the session's state, which a locate replaces and text clears", () => {
+    const session = new MarkdownSession("[[No");
+    assert.deepEqual(session.context, { blocks: [], inlines: [], slots: [] });
+    session.locate({ line: 1, column: 5 });
+    const [slot] = session.context.slots;
+    assert.equal(session.context, session.context);
+    session.locate({ line: 1, column: 1 });
+    assert.deepEqual(session.context.slots, []);
+    assert.throws(() => session.spell(slot, "x"), { code: "outOfBounds" });
+    session.locate({ line: 1, column: 5 });
+    const [next] = session.context.slots;
+    assert.throws(() => session.locate({ line: 3, column: 1 }), { code: "outOfBounds" });
+    assert.equal(session.context.slots[0], next);
+    session.append("te]]\n");
+    assert.deepEqual(session.context.slots, []);
+    assert.throws(() => session.spell(next, "x"), { code: "outOfBounds" });
+    session.locate({ line: 1, column: 5 });
+    assert.equal(session.context.slots[0].closed, true);
+    session.finalize();
+    assert.deepEqual(session.context.slots, []);
+    session.locate({ line: 1, column: 5 });
+    const [last] = session.context.slots;
+    assert.throws(() => session.finalize(), { code: "sessionFinalized" });
+    assert.equal(session.context.slots[0], last);
     session.dispose();
 });
 
@@ -840,10 +862,10 @@ test("errors: the session's queries reject a position, node or slot kind they ca
         { line: 1.5, column: 1 },
         { line: 1, column: 2 ** 31 }
     ]) {
-        assert.throws(() => session.context(position), { code: "outOfBounds" });
+        assert.throws(() => session.locate(position), { code: "outOfBounds" });
         assert.throws(() => session.path(position), { code: "outOfBounds" });
     }
-    assert.throws(() => session.context({ line: 3, column: 1 }), { code: "outOfBounds" });
+    assert.throws(() => session.locate({ line: 3, column: 1 }), { code: "outOfBounds" });
     const other = new MarkdownSession("*a*\n");
     // The same id, in a document that holds another node with it.
     assert.throws(() => session.markers(other.document.content[0].content[0]), { code: "outOfBounds" });
@@ -855,14 +877,15 @@ test("errors: the session's queries reject a position, node or slot kind they ca
 
 test("errors: a disposed session answers no query and its slots spell nothing", () => {
     const session = new MarkdownSession("[[No\n");
-    const slot = session.context({ line: 1, column: 5 }).slots[0];
+    session.locate({ line: 1, column: 5 });
+    const [slot] = session.context.slots;
     const node = session.document.content[0];
     session.dispose();
-    assert.throws(() => session.context({ line: 1, column: 5 }), /disposed/);
+    assert.throws(() => session.locate({ line: 1, column: 5 }), /disposed/);
     assert.throws(() => session.path({ line: 1, column: 1 }), /disposed/);
     assert.throws(() => session.scope(node, null), /disposed/);
     assert.throws(() => session.markers(node), /disposed/);
-    assert.throws(() => slot.spell("x"), /disposed/);
+    assert.throws(() => session.spell(slot, "x"), /disposed/);
 });
 
 function scope(startLine, startColumn, endLine, endColumn) {

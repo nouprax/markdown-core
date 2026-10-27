@@ -45,14 +45,12 @@ uint8_t *markdown_core_wire_session_finalize(markdown_core_session *session);
  * markdown_core_wire_dialect answers the names and the characters the dialect
  * fixes, which no session holds: the metadata field names and the slot cues.
  *
- * markdown_core_wire_context answers markdown_core_document_context at the
- * cursor `position`, and makes `*context`, which the binding spells from with
- * markdown_core_wire_spell and releases with markdown_core_context_free;
- * `*context` is NULL unless the message is its answer. The context borrows
- * nothing from the session, so it outlives every later step.
+ * markdown_core_wire_locate answers markdown_core_session_locate at the
+ * cursor `position` with the session's context as the locate leaves it, the
+ * state the binding reads its context from: there is no context to release.
  *
  * markdown_core_wire_spell answers markdown_core_slot_spell of `size` bytes of
- * `value` in slot `slot` of `context`.
+ * `value` in slot `slot` of the session's context as it stands.
  *
  * markdown_core_wire_field and markdown_core_wire_markers answer
  * markdown_core_document_field of slot kind `slot` and
@@ -61,9 +59,8 @@ uint8_t *markdown_core_wire_session_finalize(markdown_core_session *session);
  * of the document by its identifier and a byte it holds. OUT_OF_BOUNDS when
  * no such node holds that byte. */
 uint8_t *markdown_core_wire_dialect(void);
-uint8_t *markdown_core_wire_context(const markdown_core_session *session, markdown_core_position position,
-                                    markdown_core_context **context);
-uint8_t *markdown_core_wire_spell(const markdown_core_context *context, size_t slot, const uint8_t *value, size_t size);
+uint8_t *markdown_core_wire_locate(markdown_core_session *session, markdown_core_position position);
+uint8_t *markdown_core_wire_spell(const markdown_core_session *session, size_t slot, const uint8_t *value, size_t size);
 uint8_t *markdown_core_wire_field(const markdown_core_session *session, uint64_t id, markdown_core_position position,
                                   markdown_core_slot_kind slot);
 uint8_t *markdown_core_wire_markers(const markdown_core_session *session, uint64_t id, markdown_core_position position);

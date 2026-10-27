@@ -321,15 +321,15 @@ static void check_queries(const uint8_t *source, size_t length, const char *name
     markdown_core_session_free(session);
 }
 
-/* A context crosses whole and spells after the session moves on: the open
- * cross link of `[[No` has one dest slot, which spells `x` with its closer
- * and refuses a `|`. */
+/* A locate answers the session's context as it leaves it, and spelling
+ * reads that state in place: the open cross link of `[[No` has one dest
+ * slot, which spells `x` with its closer and refuses a `|`. A failed locate
+ * keeps the state, and an append empties it. */
 static void check_context(void) {
     static const uint8_t expected[] = {
         1, 0, 0, 0, 3, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 4, 0, 0, 0, /* block Paragraph 1:1..1:4 */
     };
     markdown_core_session *session = NULL;
-    markdown_core_context *context = NULL;
     markdown_core_position cursor = {1, 5}, outside = {3, 1};
     uint8_t *message =
         markdown_core_wire_session_new((const uint8_t *)"[[No", 4, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session);
@@ -338,36 +338,38 @@ static void check_context(void) {
         check(0, "a session starts with a document");
         return;
     }
-    message = markdown_core_wire_context(session, outside, &context);
-    check(message != NULL && message_status(message) == MARKDOWN_CORE_OUT_OF_BOUNDS && context == NULL,
-          "a cursor outside the text is OUT_OF_BOUNDS and makes no context");
+    message = markdown_core_wire_spell(session, 0, (const uint8_t *)"x", 1);
+    check(message != NULL && message_status(message) == MARKDOWN_CORE_OUT_OF_BOUNDS,
+          "a session not yet located has no slot");
     markdown_core_wire_free(message);
-    message = markdown_core_wire_context(session, cursor, &context);
-    check(message != NULL && message_status(message) == 0 && context != NULL, "a context answers");
+    message = markdown_core_wire_locate(session, cursor);
+    check(message != NULL && message_status(message) == 0, "a locate answers");
     check(message != NULL && message_length(message) > 9 + sizeof(expected) &&
               memcmp(message + 9, expected, sizeof(expected)) == 0,
           "a context's first block is the open paragraph");
     markdown_core_wire_free(message);
-    if (context == NULL) {
-        markdown_core_session_free(session);
-        return;
-    }
-    markdown_core_wire_free(markdown_core_wire_session_append(session, (const uint8_t *)"te]]\n", 5));
-    markdown_core_session_free(session);
-    message = markdown_core_wire_spell(context, 0, (const uint8_t *)"x", 1);
+    message = markdown_core_wire_locate(session, outside);
+    check(message != NULL && message_status(message) == MARKDOWN_CORE_OUT_OF_BOUNDS,
+          "a cursor outside the text is OUT_OF_BOUNDS");
+    markdown_core_wire_free(message);
+    message = markdown_core_wire_spell(session, 0, (const uint8_t *)"x", 1);
     check(message != NULL && message_status(message) == 0 && message_length(message) == 21 && message[9] == 1 &&
               read_u32(message + 10) == 3 && memcmp(message + 14, "x]]", 3) == 0 && read_u32(message + 17) == 1,
-          "a slot spells its value and closer after the session is gone");
+          "a slot spells its value and closer, and a failed locate kept it");
     markdown_core_wire_free(message);
-    message = markdown_core_wire_spell(context, 0, (const uint8_t *)"a|b", 3);
+    message = markdown_core_wire_spell(session, 0, (const uint8_t *)"a|b", 3);
     check(message != NULL && message_status(message) == 0 && message_length(message) == 10 && message[9] == 0,
           "a value the slot holds in no spelling answers none");
     markdown_core_wire_free(message);
-    message = markdown_core_wire_spell(context, 1, (const uint8_t *)"x", 1);
+    message = markdown_core_wire_spell(session, 1, (const uint8_t *)"x", 1);
     check(message != NULL && message_status(message) == MARKDOWN_CORE_OUT_OF_BOUNDS,
           "a slot the context lacks is OUT_OF_BOUNDS");
     markdown_core_wire_free(message);
-    markdown_core_context_free(context);
+    markdown_core_wire_free(markdown_core_wire_session_append(session, (const uint8_t *)"te]]\n", 5));
+    message = markdown_core_wire_spell(session, 0, (const uint8_t *)"x", 1);
+    check(message != NULL && message_status(message) == MARKDOWN_CORE_OUT_OF_BOUNDS, "an append empties the context");
+    markdown_core_wire_free(message);
+    markdown_core_session_free(session);
 }
 
 /* The dialect's message lists the metadata field names, then the cues. */

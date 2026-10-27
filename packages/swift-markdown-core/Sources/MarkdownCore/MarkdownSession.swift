@@ -25,6 +25,15 @@ public final class MarkdownSession {
     public let unit: TextUnit
     /// The document parsed from the current ``text``.
     public private(set) var document: Document
+    /// The syntactic context at the session's cursor, which
+    /// ``locate(_:)`` moves: the session's state, which it updates in place.
+    /// It is ``Context`` with nothing open until the first locate, and an
+    /// append or ``finalize()`` empties it again, since they change the text
+    /// it was read from.
+    public internal(set) var context = Context.blank
+    /// Counts the steps that replace ``context``: a slot spells only in the
+    /// turn that read it.
+    var turn = 0
 
     /// Parses `source` into a new session, as its first append; its
     /// ``document`` is a snapshot.
@@ -95,6 +104,12 @@ public final class MarkdownSession {
     /// Builds the document a step returned, which borrows from the session
     /// until its next step.
     private func publish(_ status: markdown_core_status, _ native: OpaquePointer?) throws -> Document {
+        // A step of a session not yet finalized empties the native context,
+        // whether or not it succeeds.
+        if status != MARKDOWN_CORE_SESSION_FINALIZED {
+            turn += 1
+            context = .blank
+        }
         guard status == MARKDOWN_CORE_OK, let native else { throw MarkdownCoreError(status) }
         document = Document(native: native, unit: unit)
         return document

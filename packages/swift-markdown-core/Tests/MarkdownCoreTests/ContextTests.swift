@@ -9,54 +9,70 @@ import Testing
     @Test("an open cross link's target is a dest slot, which spells a value with the closer after the caret")
     func openSlot() throws {
         let session = try MarkdownSession("[[No\n")
-        let context = try session.context(at: Position(line: 1, column: 5))
+        try session.locate(Position(line: 1, column: 5))
+        let context = session.context
         #expect(context.blocks.map(\.kind) == [NodeKind.paragraph])
         let slot = try #require(context.slots.first)
         #expect(context.slots.count == 1)
         #expect(slot.kind == .dest && slot.owner == .crossLink && !slot.closed && slot.prefix.isEmpty)
         #expect(slot.before == place((1, 3), (1, 4)))
         #expect(slot.after == place((1, 5), (1, 4)))
-        let spelled = try #require(try slot.spell("x"))
+        let spelled = try #require(try session.spell("x", in: slot))
         #expect(spelled.text == "x]]" && spelled.cursor == 1)
         // A `|` would end the target, and the field holds it in no spelling.
-        #expect(try slot.spell("a|b") == nil)
-        #expect(try slot.spell(["x", "a|b"]) == [spelled, nil])
+        #expect(try session.spell("a|b", in: slot) == nil)
+        #expect(try session.spell(["x", "a|b"], in: slot) == [spelled, nil])
     }
 
     @Test("a spelling's caret counts columns in the session's unit")
     func spellingUnits() throws {
         for (unit, cursor) in [(TextUnit.utf8, 6), (TextUnit.utf16, 3)] {
             let session = try MarkdownSession("[[No\n", unit: unit)
-            let slot = try #require(try session.context(at: Position(line: 1, column: 5)).slots.first)
-            #expect(try slot.spell("\u{E9}\u{1F680}")?.cursor == cursor)
+            try session.locate(Position(line: 1, column: 5))
+            let slot = try #require(session.context.slots.first)
+            #expect(try session.spell("\u{E9}\u{1F680}", in: slot)?.cursor == cursor)
         }
     }
 
     @Test("a closed construct's slot reads its field on past the cursor")
     func closedSlot() throws {
         let session = try MarkdownSession("[[Note]] after\n")
-        let slot = try #require(try session.context(at: Position(line: 1, column: 5)).slots.first)
+        try session.locate(Position(line: 1, column: 5))
+        let slot = try #require(session.context.slots.first)
         #expect(slot.closed)
         #expect(slot.after == place((1, 5), (1, 6)))
-        let spelled = try #require(try slot.spell("x"))
+        let spelled = try #require(try session.spell("x", in: slot))
         #expect(spelled.text == "x" && spelled.cursor == 1)
     }
 
-    @Test("a slot keeps spelling the text it was read from after the session moves on")
-    func spellingAfterAppend() throws {
+    @Test("the context is the session's state: a locate replaces it, and an append clears it")
+    func contextState() throws {
         let session = try MarkdownSession("[[No")
-        let slot = try #require(try session.context(at: Position(line: 1, column: 5)).slots.first)
+        #expect(session.context.blocks.isEmpty && session.context.slots.isEmpty)
+        try session.locate(Position(line: 1, column: 5))
+        let slot = try #require(session.context.slots.first)
+        try session.locate(Position(line: 1, column: 1))
+        #expect(session.context.slots.isEmpty)
+        #expect(outOfBounds { try session.spell("x", in: slot) })
+        try session.locate(Position(line: 1, column: 5))
+        let next = try #require(session.context.slots.first)
         try session.append("te]]\n")
-        #expect(try slot.spell("x")?.text == "x]]")
+        #expect(session.context.slots.isEmpty)
+        #expect(outOfBounds { try session.spell("x", in: next) })
+        try session.locate(Position(line: 1, column: 5))
+        #expect(session.context.slots.first?.closed == true)
     }
 
-    @Test("a cursor outside the text, or below 1, is out of bounds")
+    @Test("a cursor outside the text, or below 1, is out of bounds and keeps the context")
     func cursorBounds() throws {
         let session = try MarkdownSession("a\n")
+        try session.locate(Position(line: 1, column: 2))
         for position in [Position(line: 0, column: 1), Position(line: 1, column: 0), Position(line: 3, column: 1)] {
-            #expect(outOfBounds { try session.context(at: position) })
+            #expect(outOfBounds { try session.locate(position) })
+            #expect(session.context.blocks.map(\.kind) == [NodeKind.paragraph])
         }
-        #expect(try session.context(at: Position(line: 2, column: 1)).slots.isEmpty)
+        try session.locate(Position(line: 2, column: 1))
+        #expect(session.context.slots.isEmpty)
     }
 
     @Test("the path holds every node over a byte, root first, and ends at the node there")
@@ -117,7 +133,8 @@ import Testing
         #expect(try session.path(at: Position(line: 1, column: 1)).last?.id == text.id)
         #expect(try session.markers(of: text).isEmpty)
         #expect(try session.scope(of: text, field: .label).isEmpty)
-        #expect(try session.context(at: Position(line: 1, column: 2)).blocks.map(\.kind) == [.paragraph])
+        try session.locate(Position(line: 1, column: 2))
+        #expect(session.context.blocks.map(\.kind) == [.paragraph])
         let final = try session.finalize()
         let link = try #require((final.content.first as? Paragraph)?.content.first as? Link)
         #expect(try !session.markers(of: link).isEmpty)

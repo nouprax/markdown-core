@@ -57,19 +57,15 @@ private class JniSession(
         session[0] = 0
     }
 
-    override fun context(
+    override fun locate(
         line: Int,
         column: Int,
-        context: LongArray,
-    ): ByteArray = answer(JniParser.sessionContextAnswer(session[0], line, column, context))
+    ): ByteArray = answer(JniParser.sessionLocateAnswer(session[0], line, column))
 
     override fun spell(
-        context: Long,
         slot: Int,
         value: ByteArray,
-    ): ByteArray = answer(JniParser.contextSpellAnswer(context, slot, value))
-
-    override fun release(context: Long) = JniParser.contextFree(context)
+    ): ByteArray = answer(JniParser.sessionSpellAnswer(session[0], slot, value))
 
     override fun field(
         id: Long,
@@ -133,29 +129,21 @@ private object JniParser {
     @JvmSynthetic
     external fun dialectAnswer(): ByteArray?
 
-    /**
-     * The MCB3 answer of the context at [line] and [column] of [session],
-     * whose engine context goes to `context[0]`; null as for [parsePayload].
-     */
+    /** The MCB3 answer of locating [session] at [line] and [column]; null as for [parsePayload]. */
     @JvmSynthetic
-    external fun sessionContextAnswer(
+    external fun sessionLocateAnswer(
         session: Long,
         line: Int,
         column: Int,
-        context: LongArray,
     ): ByteArray?
 
-    /** The MCB3 answer of spelling [value] in slot [slot] of [context]; null as for [parsePayload]. */
+    /** The MCB3 answer of spelling [value] in slot [slot] of [session]'s context; null as for [parsePayload]. */
     @JvmSynthetic
-    external fun contextSpellAnswer(
-        context: Long,
+    external fun sessionSpellAnswer(
+        session: Long,
         slot: Int,
         value: ByteArray,
     ): ByteArray?
-
-    /** Releases [context]. */
-    @JvmSynthetic
-    external fun contextFree(context: Long)
 
     /** The MCB3 answer of a field query of [session]; null as for [parsePayload]. */
     @JvmSynthetic

@@ -155,7 +155,6 @@ public struct Slot: Sendable, Equatable {
     public let after: Scope          // the field from the cursor to its end
     public let prefix: [String]      // earlier fields the slot depends on
     public let closed: Bool          // the whole document finishes the construct
-    public func spell(_ value: String) -> Insertion?   // section 3.2
 }
 
 public struct Insertion: Sendable, Equatable {
@@ -163,9 +162,10 @@ public struct Insertion: Sendable, Equatable {
     public let cursor: Int           // offset in text where the caret lands
 }
 
-extension Document {
-    /// `self` is the parse of `source`, the whole text of this version.
-    public func context(at position: Position, in source: String) throws -> Context
+extension MarkdownSession {
+    public private(set) var context: Context        // the state at the cursor
+    public func locate(_ position: Position) throws // updates `context`
+    public func spell(_ value: String, in slot: Slot) throws -> Insertion?  // 3.2
 }
 ```
 
@@ -209,7 +209,7 @@ extension Document {
 - **`closed`** is true when the whole document finishes the slot's
   construct after the cursor, as in `[[Fi‸eld notes]]`, and false when the
   construct is still open, as in `See [[Field no‸`.
-- **`spell(_:)`** is the parser's spelling of a value in the slot. It returns
+- **`spell(_:in:)`** is the parser's spelling of a value in a slot. It returns
   the text that replaces `before` and `after`. That text writes the value in
   the field's own syntax and escapes or brackets what the field cannot hold
   as written, such as a space in a link destination (written `<…>`) or a `|`
@@ -224,7 +224,16 @@ extension Document {
 C exposes `markdown_core_document_context(document, source, length, position,
 &context)`, `markdown_core_slot_spell(context, slot, value, length, &insertion)`
 and `markdown_core_context_free`, with accessors for the arrays.
-Kotlin and ECMAScript mirror the Swift shape (R6).
+
+A session keeps its context as its state at its cursor, not as a value it
+hands out (owner, 2026-10-27: "你为什么不能把context做成session的mutable
+state呢？"). `markdown_core_session_locate(session, position)` updates the
+context the session holds in place, and a failed locate keeps it;
+`markdown_core_session_context(session)` lends it for the session's life, and
+the accessors and `markdown_core_slot_spell` read it as it stands; an append
+or the finalize clears it. The bindings mirror this: `session.locate`, a
+read-only `session.context` and `session.spell(slot, value)`, with no
+context object to hold, collect or free (R6).
 
 Step 2b built the query this way:
 
@@ -438,15 +447,13 @@ Step 3b built the Kotlin binding this way:
 
 - Kotlin reads the engine through MCB3 messages, so each query crosses the
   wire as an answer of its own (docs/architecture/wire-format.md, Queries):
-  `markdown_core_wire_context` answers a context and makes the native
-  context, which the Kotlin session keeps to spell from;
-  `markdown_core_wire_spell` answers a spelling; `markdown_core_wire_field`
+  `markdown_core_wire_locate` locates the session and answers its context;
+  `markdown_core_wire_spell` answers a spelling from that context; `markdown_core_wire_field`
   and `markdown_core_wire_markers` answer scopes; and
   `markdown_core_wire_dialect` the lexicons. JNI and cinterop call the
   same functions, and the ECMAScript binding will too.
-- Kotlin has no deinit, so the session owns every context it makes and
-  frees them in `close()`; a slot spells until then. An editor that holds a
-  finalized session per version frees each version's contexts with it.
+- The context is the session's state, so `close()` frees it with the
+  session; a slot spells while the context that holds it stands.
 - `path` walks the Kotlin document, as `Document.node` does. A field or
   marker query names the node to the engine by its id and the position of
   the first byte it holds, after checking that the current document holds
@@ -457,11 +464,11 @@ Step 3b built the Kotlin binding this way:
 
 Step 3c built the ECMAScript binding this way:
 
-- The WebAssembly module exports the same wire functions and
-  `markdown_core_context_free`; a position crosses as the address of its two
-  `int32_t`s and an id as a `BigInt`.
-- The session owns every context it makes, as Kotlin's does, and frees them
-  in `dispose()`, or when a session collected without it is finalized.
+- The WebAssembly module exports the same wire functions; a position
+  crosses as the address of its two `int32_t`s and an id as a `BigInt`.
+- The context is the session's state, as Kotlin's is, and goes with it in
+  `dispose()`, or when a session collected without it is finalized. A slot
+  spells while it is one of `context.slots`.
 - `path`, and the check that the current document holds a queried node, walk
   the ES document, as `Document.nodeAt` does.
 - `SlotKind` is a generated string union, as the node kinds are, and a
@@ -779,8 +786,8 @@ text anywhere. This plan does not revive general edits. Instead:
 - A document version is parsed with `Document.parse` at most once, lazily,
   on the first request that needs the whole document, and the result is
   cached by version.
-- A completion request runs `context(at:in:)` on the version's cached
-  document. Its cost is one session over the text before the cursor, the
+- A completion request locates the version's session at the cursor and
+  reads its context. Its cost is one session over the text before the cursor, the
   confirmation lookups in the cached document, and the forward scan for
   `after`. A completion request is therefore one of the requests that need
   the whole document, and the first one after a change pays for its parse.
@@ -882,8 +889,9 @@ it (D6).
    holds the native parse of its text and a release (Swift's deinit,
    Kotlin's `close()`, ECMAScript's `dispose()`), so the document stays a
    value, no query parses the text again or takes the source, and an editor
-   holds a finalized session per version. A slot keeps the native context it
-   was read from, so `Slot.spell` parses nothing. 3a and 3b merged, were
+   holds a finalized session per version. The context is the session's
+   state at its cursor, which `locate` updates, so a spelling parses nothing
+   and no binding holds a native context. 3a and 3b merged, were
    removed with 3c unmerged when the queries were kept in C, and came back
    when R6 was restored; 3c landed after them.
 - [ ] **Step 4: Engine skeleton.** `markdown-core-lsp` in C with the
@@ -891,8 +899,13 @@ it (D6).
    the JSON-RPC adapter and the transcript harness, and the latency report
    (sections 4, 6, 7). Completion answers an empty list. In three pull
    requests: 4a the C engine, the adapter and the transcripts (section
-   4.2), 4b the Swift binding replaying the transcripts, and 4c the latency
-   report.
+   4.2), 4b the engine's Swift, Kotlin and ECMAScript bindings in one pull
+   request (owner, 2026-10-27), each replaying the transcripts, and 4c the
+   latency report. The server holds one session per open document of its
+   workspace (owner, 2026-10-27): the first request after open or a change
+   makes the version's session from its text, a completion locates it, and
+   a change or close frees it. Sessions stay append-only (D3): a change
+   makes a new session of the new version, never an edit of the old one.
 - [ ] **Step 5: In-document completion.** The providers of 5.1 and the oracle
    round-trip test, in C and Swift.
 - [ ] **Step 6: Workspace completion.** The workspace index with

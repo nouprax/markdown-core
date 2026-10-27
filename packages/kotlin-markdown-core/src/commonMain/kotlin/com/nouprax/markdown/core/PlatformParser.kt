@@ -27,25 +27,19 @@ internal interface PlatformSession {
     fun free()
 
     /**
-     * The MCB3 answer of the context at the cursor [line] and [column]. The
-     * engine's context, which [spell] reads and [release] frees, goes to
-     * `context[0]`, which stays 0 unless the answer is the context's.
+     * Moves the engine session's cursor to [line] and [column]: the MCB3
+     * answer of the context the locate leaves as the session's state.
      */
-    fun context(
+    fun locate(
         line: Int,
         column: Int,
-        context: LongArray,
     ): ByteArray
 
-    /** The MCB3 answer of spelling the UTF-8 [value] in slot [slot] of [context]. */
+    /** The MCB3 answer of spelling the UTF-8 [value] in slot [slot] of the session's context. */
     fun spell(
-        context: Long,
         slot: Int,
         value: ByteArray,
     ): ByteArray
-
-    /** Releases [context]. */
-    fun release(context: Long)
 
     /**
      * The MCB3 answer of the scopes of the fields of slot kind [slot], 0 for

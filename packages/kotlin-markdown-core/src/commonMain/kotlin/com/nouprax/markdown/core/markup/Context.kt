@@ -7,7 +7,12 @@ package com.nouprax.markdown.core
  * A context lists the blocks the text before the cursor leaves open, the
  * inline constructs it leaves open in the inline content that holds the
  * cursor, and the fields an open construct reads at the cursor, which the
- * whole document confirms. [MarkdownSession.context] asks one.
+ * whole document confirms.
+ *
+ * A session keeps its context as its state at its cursor:
+ * [MarkdownSession.locate] moves the cursor and updates
+ * [MarkdownSession.context], and [MarkdownSession.spell] spells from that
+ * state as it stands.
  */
 public class Context internal constructor(
     /**
@@ -28,6 +33,9 @@ public class Context internal constructor(
     public val slots: kotlin.collections.List<Slot>,
 )
 
+/** The context of a session not yet located: nothing is open. */
+internal val blank = Context(emptyList(), emptyList(), emptyList())
+
 /** A construct a context finds open. */
 @ConsistentCopyVisibility
 public data class Opener internal constructor(
@@ -44,9 +52,11 @@ public data class Opener internal constructor(
  * A field of kind [kind] of a construct of kind [owner] that the cursor may
  * be writing.
  *
- * A slot has no value equality: how it spells depends on the syntax of the
- * text it was read from, such as the `<...>` around a destination, which its
- * fields do not show.
+ * A slot names a field of its session's [MarkdownSession.context] as the
+ * locate that read it left it: it spells only while that context stands. It
+ * has no value equality: how it spells depends on the syntax of the text it
+ * was read from, such as the `<...>` around a destination, which its fields
+ * do not show.
  */
 public class Slot internal constructor(
     /** The field's role. */
@@ -73,10 +83,10 @@ public class Slot internal constructor(
      * before a cross link's anchor.
      */
     public val prefix: kotlin.collections.List<String>,
-    /** The engine's context the slot was read from, which a spelling asks. */
-    private val handle: ContextHandle,
     /** The slot's place among its context's slots. */
-    private val index: Int,
+    internal val index: Int,
+    /** The session's turn whose context holds the slot. */
+    internal val turn: Int,
 ) {
     /** What replaces a slot's [before] and [after] to write a value in it. */
     @ConsistentCopyVisibility
@@ -93,29 +103,6 @@ public class Slot internal constructor(
         public val cursor: Int,
     )
 
-    /**
-     * The parser's spelling of each of [values] in this slot, in order.
-     *
-     * A spelling writes the value in the field's own syntax: it escapes what
-     * the field reads as syntax, and writes in `<...>`, in braces or in quotes
-     * a value whose bare spelling the field does not read whole. It is null
-     * for a value the field holds in no spelling there, such as a line
-     * ending, a `|` in a cross target or a space in a key.
-     *
-     * The slot keeps the engine's context it was read from, so a spelling
-     * parses nothing; it stays the spelling of the text the context was asked
-     * of after the session moves on, until the session closes.
-     *
-     * @throws MarkdownCoreException [ErrorCode.ALLOCATION_FAILED] when an
-     *   allocation fails.
-     * @throws IllegalStateException when the session is closed.
-     */
-    public fun spell(values: kotlin.collections.List<String>): kotlin.collections.List<Insertion?> =
-        values.map { handle.session.spell(handle.address, index, it) }
-
-    /** The parser's spelling of [value] in this slot, as the list form spells each value. */
-    public fun spell(value: String): Insertion? = spell(listOf(value))[0]
-
     public companion object {
         /**
          * The characters after which a slot may begin with nothing written
@@ -128,15 +115,6 @@ public class Slot internal constructor(
         public val cues: kotlin.collections.List<Char> by lazy { dialect.second }
     }
 }
-
-/**
- * An engine's context that a session made and frees when it closes, which
- * the slots read from it spell from.
- */
-internal class ContextHandle(
-    val session: MarkdownSession,
-    val address: Long,
-)
 
 /** The metadata field names and the slot cues, read from the engine once. */
 internal val dialect: Pair<kotlin.collections.List<String>, kotlin.collections.List<Char>> by lazy {

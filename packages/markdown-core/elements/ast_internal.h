@@ -70,6 +70,17 @@ markdown_core_status markdown_core_parse_before_cursor(struct markdown_core_cont
                                                        const markdown_core_document *whole,
                                                        markdown_core_document **document);
 
+/* A session's context state (context.c, THE SESSION'S CONTEXT): a new
+ * empty context, or NULL when the allocation failed; the context at
+ * `position` of `document`, parsed from `length` bytes of `source`, which
+ * replaces what `context` holds and leaves it as it was on a failure; and
+ * the empty context `context` becomes again. */
+markdown_core_context *markdown_core_context_new(void);
+markdown_core_status markdown_core_context_locate(markdown_core_context *context,
+                                                  const markdown_core_document *document, const uint8_t *source,
+                                                  size_t length, markdown_core_position position);
+void markdown_core_context_clear(markdown_core_context *context);
+
 /* The scopes of `node` in the published tree `root` parsed from `source`,
  * with columns in `unit`, in a new array markdown_core_scopes_free frees;
  * markdown_core_document_scope is this query over a document's tree and

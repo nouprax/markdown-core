@@ -29,7 +29,8 @@ import Testing
 private func render(_ source: String, unit: TextUnit, at position: Position, values: [String]) throws -> String {
     let session = try MarkdownSession(source, unit: unit)
     let document = try session.finalize()
-    let context = try session.context(at: position)
+    try session.locate(position)
+    let context = session.context
     var lines: [String] = []
     for block in context.blocks {
         lines.append("block \(block.kind.map(String.init(describing:)) ?? "None") \(text(block.scope))")
@@ -45,7 +46,7 @@ private func render(_ source: String, unit: TextUnit, at position: Position, val
         )
     }
     for (index, slot) in context.slots.enumerated() {
-        let spellings = try slot.spell(values)
+        let spellings = try session.spell(values, in: slot)
         for (value, spelled) in zip(values, spellings) {
             lines.append("spell \(index) \"\(value)\" " + (spelled.map { "\"\($0.text)\" \($0.cursor)" } ?? "none"))
         }
