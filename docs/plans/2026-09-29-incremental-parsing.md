@@ -1141,72 +1141,72 @@ edit path.
 
 The edit runs in five steps:
 
-1. **Damaged block.** Walk down from the document to the deepest child that
-   holds the edit range inside its own runs (4.3). The runs tell a child's
-   bytes from its container's own: the `>` prefixes, list markers and
-   fences. The walk stops at a block whose container syntax the edit
-   touches. Typing a `>` or a list marker therefore damages the container
-   at that level, not the leaf inside it.
-2. **Checkpoint.** The checkpoint is the rest point at the start of the
-   damaged block's **previous sibling**. Every rule of the grammar that
-   writes backwards reaches only the block before:
-   - a Setext underline;
-   - a definition list's `:` line;
-   - a caption before a table;
-   - a block identifier line;
-   - a pipe table's header line;
-   - a lazy continuation line.
+- **Step 1: Damaged block.** Walk down from the document to the deepest child that
+  holds the edit range inside its own runs (4.3). The runs tell a child's
+  bytes from its container's own: the `>` prefixes, list markers and
+  fences. The walk stops at a block whose container syntax the edit
+  touches. Typing a `>` or a list marker therefore damages the container
+  at that level, not the leaf inside it.
+- **Step 2: Checkpoint.** The checkpoint is the rest point at the start of the
+  damaged block's **previous sibling**. Every rule of the grammar that
+  writes backwards reaches only the block before:
+  - a Setext underline;
+  - a definition list's `:` line;
+  - a caption before a table;
+  - a block identifier line;
+  - a pipe table's header line;
+  - a lazy continuation line.
 
-   If a candidate's span covers that point, the checkpoint moves back to
-   the candidate's opener. The session keeps a small log for this: an
-   opening offset and a deciding offset per candidate (E-D3).
-3. **Re-read.**
-   - Reopen the ancestor chain at the checkpoint with `reopen`.
-   - Truncate the line index, and roll the registry log back to the first
-     record at or after the checkpoint. The log is in source order and
-     already rolls back to marks.
-   - Run the ordinary commit (5.3) over the new text from the checkpoint.
+  If a candidate's span covers that point, the checkpoint moves back to
+  the candidate's opener. The session keeps a small log for this: an
+  opening offset and a deciding offset per candidate (E-D3).
+- **Step 3: Re-read.**
+  - Reopen the ancestor chain at the checkpoint with `reopen`.
+  - Truncate the line index, and roll the registry log back to the first
+    record at or after the checkpoint. The log is in source order and
+    already rolls back to marks.
+  - Run the ordinary commit (5.3) over the new text from the checkpoint.
 
-   The edit reuses the append path's line machine unchanged.
-4. **Resync.** Once the commit has passed `start + length`, check two things
-   at each new child start `b`, at any depth:
-   - the old document has a child at `b - delta` under the same ancestor
-     chain;
-   - `reopen` of that old child gives the builder state that the new
-     reading has at `b`.
+  The edit reuses the append path's line machine unchanged.
+- **Step 4: Resync.** Once the commit has passed `start + length`, check two things
+  at each new child start `b`, at any depth:
+  - the old document has a child at `b - delta` under the same ancestor
+    chain;
+  - `reopen` of that old child gives the builder state that the new
+    reading has at `b`.
 
-   When both hold, the new reading from `b` on is the old reading from
-   `b - delta` on (12.6). The commit stops there, and every level is
-   spliced:
-   - the old children after the resync point are kept under each
-     ancestor, up to the document;
-   - each ancestor is rebuilt as a new value with its id, from its kept
-     prefix, its re-read children and its kept suffix;
-   - folds, such as `List.tight`, are recomputed from the children without
-     parsing.
+  When both hold, the new reading from `b` on is the old reading from
+  `b - delta` on (12.6). The commit stops there, and every level is
+  spliced:
+  - the old children after the resync point are kept under each
+    ancestor, up to the document;
+  - each ancestor is rebuilt as a new value with its id, from its kept
+    prefix, its re-read children and its kept suffix;
+  - folds, such as `List.tight`, are recomputed from the children without
+    parsing.
 
-   The old document has a child at `b - delta` when a binary search over
-   each level's children starts finds it, which is O(depth · log children).
-   If no point qualifies, the commit goes on, at worst to the end of the
-   text. That happens when the edit opens a fence, a comment or an HTML
-   block that nothing closes. The language makes that cost, not the design
-   (7.2).
-5. **Finish.** As `finalize` does (5.10), but only over what changed:
-   - **Inline roots.** Complete the inline roots of the re-read blocks, with
-     every definition visible.
-   - **Definitions.** If the edit added, removed or changed a definition (a
-     `Reference`, a footnote or specimen definition, or a heading, which is
-     a label), the winners of those labels may change. The roots that can
-     name a changed label are parsed again. The edit path finds them with a
-     byte filter over the kept roots' content: `[` plus the case-folded
-     first word of the label (E-D2). Typing inside a paragraph changes no
-     definition and skips this step.
-   - **Anchors.** If a heading or an explicit anchor changed, reassign the
-     automatic anchors by `main`'s rule. This is O(headings) and parses
-     nothing. A heading whose anchor changes keeps its id.
-   - **Registry.** Re-index the records after the splice, and add `delta` to
-     their `start`. This is O(records after): definitions, not nodes.
-   - **Publish.**
+  The old document has a child at `b - delta` when a binary search over
+  each level's children starts finds it, which is O(depth · log children).
+  If no point qualifies, the commit goes on, at worst to the end of the
+  text. That happens when the edit opens a fence, a comment or an HTML
+  block that nothing closes. The language makes that cost, not the design
+  (7.2).
+- **Step 5: Finish.** As `finalize` does (5.10), but only over what changed:
+  - **Inline roots.** Complete the inline roots of the re-read blocks, with
+    every definition visible.
+  - **Definitions.** If the edit added, removed or changed a definition (a
+    `Reference`, a footnote or specimen definition, or a heading, which is
+    a label), the winners of those labels may change. The roots that can
+    name a changed label are parsed again. The edit path finds them with a
+    byte filter over the kept roots' content: `[` plus the case-folded
+    first word of the label (E-D2). Typing inside a paragraph changes no
+    definition and skips this step.
+  - **Anchors.** If a heading or an explicit anchor changed, reassign the
+    automatic anchors by `main`'s rule. This is O(headings) and parses
+    nothing. A heading whose anchor changes keeps its id.
+  - **Registry.** Re-index the records after the splice, and add `delta` to
+    their `start`. This is O(records after): definitions, not nodes.
+  - **Publish.**
 
 ### 12.4 Text and memory
 
