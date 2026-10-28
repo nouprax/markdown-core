@@ -2711,17 +2711,24 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
     stream->ends = false;
     parser->block_input_count = parser->block_input_cursor = 0;
 
+    /* The normalized lines that go are named by their facts, which let go
+     * of them, and leave the list in one walk: a normalized line names no
+     * facts once it goes. */
     for (size_t i = line; i < input->lines.count; i++) {
         const uint32_t fact = input->lines.values[i].facts;
         markdown_core_normalized_line *normalized = fact ? input->facts[fact - 1].normalized : NULL;
         if (normalized) {
-            markdown_core_normalized_line **link = &input->normalized;
-            while (*link != normalized) {
-                link = &(*link)->next;
-            }
+            normalized->fact = 0;
+            input->facts[fact - 1].normalized = NULL;
+        }
+    }
+    for (markdown_core_normalized_line **link = &input->normalized; *link;) {
+        markdown_core_normalized_line *normalized = *link;
+        if (normalized->fact) {
+            link = &normalized->next;
+        } else {
             *link = normalized->next;
             markdown_core_free(normalized);
-            input->facts[fact - 1].normalized = NULL;
         }
     }
     markdown_core_array_truncate(&input->lines, line);
