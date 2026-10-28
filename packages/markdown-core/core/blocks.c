@@ -2667,8 +2667,7 @@ void markdown_core_parser_discard(markdown_core_parser *parser) { S_release_pars
  * the headings and the definitions listed from there (the document's
  * reopen), the lookups the commits found nothing for, which the flush has
  * asked again, and the cells it read -- and the input is the new text, a new
- * epoch, complete up to the line. The content map and the facts of the
- * lines that go stay, as no block names them. `child` is the root's first
+ * epoch, complete up to the line. `child` is the root's first
  * child that goes, the first at or past the line; the edit replaced the old
  * text from `from` to `to` and moved what follows by `delta`, which the
  * flush's publish follows (ast.c, THE IMAGE OF AN OLD ANCHOR). False, with
@@ -2731,6 +2730,20 @@ bool markdown_core_parser_reopen(markdown_core_parser *parser, markdown_core_nod
             markdown_core_free(normalized);
         }
     }
+    /* The facts past the last a kept line names, and the content runs from
+     * the end back to the last that begins before the line, name nothing
+     * that stays, and go: storage keeps to the text, however many edits
+     * read it again. */
+    uint32_t facts = 0;
+    for (size_t i = 0; i < line; i++) {
+        facts = input->lines.values[i].facts > facts ? input->lines.values[i].facts : facts;
+    }
+    input->fact_count = facts;
+    size_t marks = parser->line_marks.count;
+    while (marks > 1 && parser->line_marks.values[marks - 1].source >= (bufsize_t)start) {
+        marks--;
+    }
+    markdown_core_array_truncate(&parser->line_marks, marks);
     markdown_core_array_truncate(&input->lines, line);
     input->scanned = input->size = input->complete = start;
     input->source = (const unsigned char *)source;
