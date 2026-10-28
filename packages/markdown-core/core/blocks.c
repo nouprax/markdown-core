@@ -4488,7 +4488,11 @@ int markdown_core_parser_lookahead_next(markdown_core_block_lookahead *lookahead
 
 static MARKDOWN_CORE_ATTRIBUTE((noinline)) void S_reach_lookahead(markdown_core_parser *parser,
                                                                   const markdown_core_block_lookahead *lookahead) {
-    const size_t end = lookahead->cursor ? (size_t)(lookahead->cursor - parser->input.source) : parser->input.size;
+    size_t end;
+    const unsigned char *source = markdown_core_parser_input_text(parser, &end);
+    if (lookahead->cursor) {
+        end = (size_t)(lookahead->cursor - source);
+    }
     markdown_core_parser_reach(parser, (size_t)lookahead->saved.line_start, end);
 }
 
@@ -5365,7 +5369,9 @@ static bool S_candidates_end(markdown_core_parser *parser) {
             S_candidate_undo(parser, 0, first);
             return true;
         }
-        S_candidate_drop(parser, 0, first, parser->input.size);
+        size_t end;
+        markdown_core_parser_input_text(parser, &end);
+        S_candidate_drop(parser, 0, first, end);
     }
     return false;
 }
