@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { inputVersion, sameInputs, validationSource } from "../shared/ci-inputs.mjs";
-import { everyStep, groupWindows, REGRESSION_LIMIT, WINDOWS } from "./stream-gates.mjs";
+import { everyStep, groupEdits, groupWindows, REGRESSION_LIMIT, WINDOWS } from "./stream-gates.mjs";
 import { grammarComparisons } from "./report.mjs";
 import { stageBudget, STAGE_IR_LIMIT } from "./stage-budget.mjs";
 
@@ -204,22 +204,32 @@ const STREAM_SUBJECTS = ["reparse", "session", "binding"];
 const GATED_SUBJECTS = ["reparse", "session"];
 const STREAM_FAMILIES = ["tokens", "scalars", "rows"];
 const STREAM_METRICS = ["p95", "max", "total"];
+// The subjects that take edits until the session does (plan 12.9, E1), and
+// the families the edit workloads run (workloads.mjs).
+const EDIT_SUBJECTS = ["reparse"];
+const EDIT_FAMILIES = ["typing", "lines", "markers", "ranges", "far", "declarations", "random"];
 
 // The R and S columns by family and size, the grammar corpus apart from the
-// shapes, with a base revision the workloads that pass 6.4, and the B column
-// beside S. Every workload's windows are validated counts; names never reach
-// the comment.
+// shapes, with a base revision the workloads that pass 6.4, the B column
+// beside S, and the edit workloads' R column. Every workload's windows are
+// validated counts; names never reach the comment.
 export function streamSection(report) {
     if (
-        report?.schemaVersion !== 6 ||
+        report?.schemaVersion !== 7 ||
         JSON.stringify(report.subjects) !== JSON.stringify(STREAM_SUBJECTS) ||
-        !Array.isArray(report.results)
+        JSON.stringify(report.editSubjects) !== JSON.stringify(EDIT_SUBJECTS) ||
+        !Array.isArray(report.results) ||
+        !Array.isArray(report.edits)
     ) {
         throw new Error("Invalid stream report");
     }
     digest(report.workloads?.digest);
     if (report.baseline !== null) digest(report.baseline?.revision, 40);
-    if (!report.results.length || report.results.length !== report.workloads.count) {
+    if (
+        !report.results.length ||
+        report.results.length !== report.workloads.count ||
+        report.edits.length !== report.workloads.edits
+    ) {
         throw new Error("Incomplete stream report");
     }
     const windows = (values) => Array.isArray(values) && values.length && values.every((value) => count(value));
@@ -259,6 +269,17 @@ export function streamSection(report) {
             throw new Error("Invalid stream regressions");
         }
         if (row.regressions.length) regressed++;
+    }
+    // A script's windows are at most its edits, one cost each.
+    for (const row of report.edits) {
+        if (row.size !== null) count(row.size);
+        if (!Array.isArray(row.scripts) || !row.scripts.length) throw new Error("Invalid edit workload");
+        for (const script of row.scripts) {
+            if (!EDIT_FAMILIES.includes(script?.family)) throw new Error("Invalid edit family");
+            if (!windows(script.windows) || script.windows.length > count(script.edits)) {
+                throw new Error("Invalid edit windows");
+            }
+        }
     }
     const sources = { grammar: "Grammar corpus", shapes: "Shapes" };
     const groups = groupWindows(report.results, (row) =>
@@ -313,7 +334,26 @@ export function streamSection(report) {
                     ...figures(group.binding),
                     `${group.bindingRatio.toFixed(3)}×`
                 ].join(" | ")} |`;
-            })
+            }),
+        "",
+        `Edits (R alone until the session takes edits): Ir per window of edits, R counting the two parse stages of the \`Document.parse\` of a window's last edit; one window per edit except at a shape's larger sizes; no gate. ${number(report.edits.length)} edit workloads.`,
+        "",
+        "| Documents | Family | Size | Scripts | Edits | Windows | R p50 | R p95 | R max | R total |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ...groupEdits(report.edits, (row, script) =>
+            JSON.stringify([row.size === null ? "grammar" : "shapes", script.family, row.size])
+        ).map((group) => {
+            const [source, family, size] = JSON.parse(group.key);
+            return `| ${[
+                sources[source],
+                family,
+                size === null ? "" : number(size),
+                number(group.scripts),
+                number(group.edits),
+                number(group.windows),
+                ...figures(group.reparse)
+            ].join(" | ")} |`;
+        })
     );
     return lines.join("\n");
 }

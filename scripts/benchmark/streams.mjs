@@ -35,14 +35,22 @@
  * measures. The report is written either way, and a violation of 6.2, 6.3
  * or 6.4 fails the run that writes the whole report.
  *
+ * The edit workloads are a document and its edit scripts, one runner process
+ * each: every script opens the subject on the document and finalizes outside
+ * every window, then each window holds its edits (5.1). Until the session
+ * takes edits (plan 12.9, step E1) only `reparse` runs them, a fresh
+ * `Document.parse` of each edit's text, and they are reported without a
+ * gate or a base.
+ *
  *   node scripts/benchmark/streams.mjs [--out DIR] [--set all|corpus]
  *                                      [--workload NAME]... [--shard I/N]
  *                                      [--baseline-ref COMMIT] [--quiet]
  *   node scripts/benchmark/streams.mjs --merge DIR [--out DIR] [--quiet]
  *
  * `--set corpus` measures the grammar corpus's workloads alone; `--workload`
- * narrows either set to the named workloads. `--shard I/N` measures the
- * workloads at positions I, I + N, I + 2N, ... of the set and writes that
+ * narrows either set to the named workloads, stream or edit. `--shard I/N`
+ * measures the stream workloads at positions I, I + N, I + 2N, ... of the
+ * set, and the edit workloads at the same positions of theirs, and writes that
  * part of the report; `--merge DIR` joins the N parts found in DIR's
  * subdirectories into the report, so N machines measure one set.
  */
@@ -59,6 +67,7 @@ import {
     bindingCost,
     everyStep,
     flatStream,
+    groupEdits,
     groupWindows,
     neverWorse,
     parseCost,
@@ -70,10 +79,12 @@ import {
     windowEnds
 } from "./stream-gates.mjs";
 import { STAGES } from "./stage-budget.mjs";
-import { BENCHMARK_SETS, streamChunks, writeBenchmarkWorkloads } from "./workloads.mjs";
+import { BENCHMARK_SETS, EDIT_WINDOWS, streamChunks, writeBenchmarkWorkloads } from "./workloads.mjs";
 
 const root = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const SUBJECTS = Object.freeze(["reparse", "session", "binding"]);
+/* The subjects that take edits; the session joins at step E1. */
+const EDIT_SUBJECTS = Object.freeze(["reparse"]);
 /* What a window of each subject counts (gates 5.1): an append is the
  * session's streaming parse, all of it, of each `Document.parse` the
  * `reparse` subject calls, the two parse stages are the parsing, and a
@@ -286,12 +297,82 @@ function measureWorkload(profile, baseline, out, workload) {
     };
 }
 
+/**
+ * One edit workload, measured: each script's windows for `reparse`, in the
+ * file's order, one window per edit where the workload is `stepwise` and at
+ * most `EDIT_WINDOWS` a script otherwise. The runner's receipts must name the
+ * generator's scripts and edit counts. The profile of the most expensive
+ * window is kept as `NAME.reparse.max`. Runs in a worker; every path is
+ * absolute.
+ */
+function measureEdits(profile, out, workload) {
+    const subject = "reparse";
+    const most = workload.stepwise ? WINDOWS : EDIT_WINDOWS;
+    const dump = path.join(out, "callgrind", `${workload.name}.${subject}.out`);
+    const stdout = profileRun(
+        profile,
+        STREAM_RUNNER,
+        [
+            "--subject",
+            subject,
+            "--document",
+            path.join(out, "workloads", workload.document),
+            "--scripts",
+            path.join(out, "workloads", workload.scripts),
+            "--windows",
+            String(most)
+        ],
+        dump,
+        out
+    );
+    const receipts = [
+        ...stdout.matchAll(/script=(\S+) edits=(\d+) windows=(\d+) bytes=(\d+) root_children=(\d+)/gu)
+    ].map((match) => ({ name: match[1], edits: Number(match[2]), windows: Number(match[3]), bytes: Number(match[4]) }));
+    if (
+        receipts.length !== workload.expected.length ||
+        receipts.some(
+            (receipt, index) =>
+                receipt.name !== workload.expected[index].name ||
+                receipt.edits !== workload.expected[index].edits ||
+                receipt.windows !== Math.min(receipt.edits, most)
+        )
+    ) {
+        throw new Error(`${workload.name}: the runner ran other scripts than the generator wrote`);
+    }
+    let window = 0;
+    let highest = { Ir: -1, window: 0 };
+    const scripts = receipts.map((receipt, index) => {
+        const windows = [];
+        for (let step = 0; step < receipt.windows; step++) {
+            window++;
+            const cost = parseCost(parseCallgrind(fs.readFileSync(`${dump}.${window}`, "utf8")), PARSE_BOUNDARIES);
+            windows.push(cost.Ir);
+            if (cost.Ir > highest.Ir) highest = { Ir: cost.Ir, window };
+        }
+        return {
+            name: receipt.name,
+            family: workload.expected[index].family,
+            edits: receipt.edits,
+            bytes: receipt.bytes,
+            windows
+        };
+    });
+    if (fs.existsSync(`${dump}.${window + 1}`)) throw new Error(`${workload.name} dumped more windows than it ran`);
+    fs.renameSync(`${dump}.${highest.window}`, `${dump}.max`);
+    for (let index = 1; index <= window; index++) fs.rmSync(`${dump}.${index}`, { force: true });
+    fs.rmSync(dump, { force: true });
+    return { stepwise: workload.stepwise, scripts };
+}
+
 /* A worker measures the workloads its parent hands it, one at a time. */
 if (!isMainThread) {
     const { profile, baseline, out } = workerData;
     parentPort.on("message", (workload) => {
         try {
-            parentPort.postMessage({ name: workload.name, result: measureWorkload(profile, baseline, out, workload) });
+            const result = workload.scripts
+                ? measureEdits(profile, out, workload)
+                : measureWorkload(profile, baseline, out, workload);
+            parentPort.postMessage({ name: workload.name, result });
         } catch (error) {
             parentPort.postMessage({ name: workload.name, error: error.message });
         }
@@ -426,6 +507,31 @@ export function markdownReport(report) {
     }
     lines.push(
         "",
+        "## Edits",
+        "",
+        `Subjects: ${report.editSubjects.map((subject) => `\`${subject}\``).join(", ")}. Edit workloads: ${number(report.edits.length)}, each a document and its edit scripts. Every figure is Ir per window of edits: R is the two parse stages of the \`Document.parse\` of a window's last edit, a fresh parse of that edit's text. Opening each script on its document and finalizing are in no window. The grammar corpus and each shape at its smallest size run every family but \`undo\` at one window per edit; a shape's larger sizes run \`typing\` and \`far\` in at most ${number(EDIT_WINDOWS)} windows a script. No gate holds them.`,
+        "",
+        "| Documents | Family | Size | Scripts | Edits | Windows | R p50 | R p95 | R max | R total |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
+    );
+    for (const group of groupEdits(report.edits, (row, script) =>
+        JSON.stringify([row.source, script.family, row.size])
+    )) {
+        const [source, family, size] = JSON.parse(group.key);
+        lines.push(
+            `| ${[
+                source,
+                family,
+                size ? number(size) : "",
+                number(group.scripts),
+                number(group.edits),
+                number(group.windows),
+                ...figures(group.reparse)
+            ].join(" | ")} |`
+        );
+    }
+    lines.push(
+        "",
         "## Bindings' C side",
         "",
         "B is what a binding's C side adds to each S window: the MCB3 encode of each document the window publishes and the release of its message, which Kotlin and ECMAScript run per append, and whose facade reads Swift's builder makes from Swift. Building the platform values is not counted, and B has no gate (plan D5).",
@@ -449,7 +555,16 @@ export function markdownReport(report) {
 }
 
 /** The fields every part of one measurement shares, and the report carries. */
-const IDENTITY = ["schemaVersion", "subjects", "toolchain", "binaries", "profile", "workloads", "baseline"];
+const IDENTITY = [
+    "schemaVersion",
+    "subjects",
+    "editSubjects",
+    "toolchain",
+    "binaries",
+    "profile",
+    "workloads",
+    "baseline"
+];
 
 /** Write the report and its human rendering under `out`. */
 function writeReport(report, out, quiet) {
@@ -470,7 +585,8 @@ function writeReport(report, out, quiet) {
 /**
  * Join the parts of one sharded measurement: every part measured the same
  * set with the same binaries, and together they hold shards 0 to N - 1 once
- * each. Workload k of the set is the (k / N)th result of part k mod N.
+ * each. Workload k of the set is the (k / N)th result of part k mod N, and
+ * edit workload k the (k / N)th edit result of that part.
  */
 export function mergeParts(parts) {
     if (!parts.length) throw new Error("no parts to merge");
@@ -485,20 +601,27 @@ export function mergeParts(parts) {
         if (!part.shard || part.shard.count !== count || byIndex.has(part.shard.index)) {
             throw new Error("the parts are not one set of shards");
         }
-        byIndex.set(part.shard.index, part.results);
+        byIndex.set(part.shard.index, part);
     }
     if (byIndex.size !== count) throw new Error(`${byIndex.size} of ${count} parts are present`);
-    const results = [];
-    for (let position = 0; position < parts[0].workloads.count; position++) {
-        const row = byIndex.get(position % count)[Math.floor(position / count)];
-        if (!row) throw new Error(`no part holds workload ${position}`);
-        results.push(row);
-    }
-    if (results.length !== [...byIndex.values()].reduce((sum, rows) => sum + rows.length, 0)) {
-        throw new Error("the parts hold more results than the set has workloads");
-    }
+    const join = (field, total, what) => {
+        const rows = [];
+        for (let position = 0; position < total; position++) {
+            const row = byIndex.get(position % count)[field][Math.floor(position / count)];
+            if (!row) throw new Error(`no part holds ${what} ${position}`);
+            rows.push(row);
+        }
+        if (rows.length !== parts.reduce((sum, part) => sum + part[field].length, 0)) {
+            throw new Error(`the parts hold more ${field} than the set has ${what}s`);
+        }
+        return rows;
+    };
     const report = Object.fromEntries(IDENTITY.map((field) => [field, parts[0][field]]));
-    return { ...report, results };
+    return {
+        ...report,
+        results: join("results", parts[0].workloads.count, "workload"),
+        edits: join("edits", parts[0].workloads.edits, "edit workload")
+    };
 }
 
 async function measureSet(options) {
@@ -509,6 +632,7 @@ async function measureSet(options) {
     const index = writeBenchmarkWorkloads(path.join(options.out, "workloads"), options.set, options.workloads);
     const { index: shard, count } = options.shard;
     const selected = index.workloads.filter((_, position) => position % count === shard);
+    const edits = index.edits.filter((_, position) => position % count === shard);
     fs.rmSync(path.join(options.out, "callgrind"), { recursive: true, force: true });
     fs.rmSync(path.join(options.out, "final"), { recursive: true, force: true });
     if (baseline) fs.rmSync(path.join(baseline.directory, "callgrind"), { recursive: true, force: true });
@@ -516,13 +640,26 @@ async function measureSet(options) {
         profile,
         baseline && { profile: baseline.profile, directory: baseline.directory },
         options.out,
-        selected.map((workload) => ({
-            name: workload.name,
-            document: workload.document.path,
-            stream: workload.family,
-            local: workload.local,
-            stepwise: workload.stepwise
-        })),
+        [
+            ...selected.map((workload) => ({
+                name: workload.name,
+                document: workload.document.path,
+                stream: workload.family,
+                local: workload.local,
+                stepwise: workload.stepwise
+            })),
+            ...edits.map((workload) => ({
+                name: workload.name,
+                document: workload.document.path,
+                scripts: workload.path,
+                stepwise: workload.stepwise,
+                expected: workload.scripts.map((script) => ({
+                    name: script.name,
+                    family: script.family,
+                    edits: script.steps.length - 1
+                }))
+            }))
+        ],
         options.quiet
     );
     /* The binaries a report measures, by content: parts built on different
@@ -531,22 +668,37 @@ async function measureSet(options) {
         Object.fromEntries(
             ["markdown-core", "markdown-core streams"].map((name) => [name, { sha256: identity[name].sha256 }])
         );
+    const source = (document) => ({
+        document: document.name,
+        source: document.shape ?? "grammar corpus",
+        alphabet: document.alphabet,
+        size: document.shape ? document.size : null
+    });
     const report = {
-        schemaVersion: 6,
+        schemaVersion: 7,
         subjects: SUBJECTS,
+        editSubjects: EDIT_SUBJECTS,
         toolchain: versions,
         binaries: measuredBinaries(binaries),
         profile: { compiler: profile.compiler, flags: profile.flags },
-        workloads: { version: index.version, set: index.set, digest: index.digest, count: index.workloads.length },
+        workloads: {
+            version: index.version,
+            set: index.set,
+            digest: index.digest,
+            count: index.workloads.length,
+            edits: index.edits.length
+        },
         baseline: baseline && { revision: baseline.revision, binaries: measuredBinaries(baseline.binaries) },
         results: selected.map((workload) => ({
             name: workload.name,
-            document: workload.document.name,
-            source: workload.document.shape ?? "grammar corpus",
-            alphabet: workload.document.alphabet,
-            size: workload.document.shape ? workload.document.size : null,
+            ...source(workload.document),
             family: workload.family,
             local: workload.local,
+            ...measured.get(workload.name)
+        })),
+        edits: edits.map((workload) => ({
+            name: workload.name,
+            ...source(workload.document),
             ...measured.get(workload.name)
         }))
     };

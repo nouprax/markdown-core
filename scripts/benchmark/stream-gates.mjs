@@ -244,3 +244,28 @@ export function groupWindows(results, key) {
         oneshot: group.oneshot
     }));
 }
+
+/**
+ * The edit workloads' R column by group (5.1): each script's windows, pooled
+ * over every script of every edit workload whose scripts `key` puts in the
+ * group. `key` names a script's group from its workload and the script.
+ */
+export function groupEdits(results, key) {
+    const groups = new Map();
+    for (const row of results)
+        for (const script of row.scripts) {
+            const name = key(row, script);
+            const group = groups.get(name) ?? { key: name, scripts: 0, edits: 0, windows: [] };
+            group.scripts++;
+            group.edits += script.edits;
+            group.windows.push(...script.windows);
+            groups.set(name, group);
+        }
+    return [...groups.values()].map((group) => ({
+        key: group.key,
+        scripts: group.scripts,
+        edits: group.edits,
+        windows: group.windows.length,
+        reparse: summary(group.windows)
+    }));
+}

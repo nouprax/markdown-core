@@ -3,31 +3,86 @@ import test from "node:test";
 
 import { markdownReport, mergeParts, regressed, steep, violations } from "../streams.mjs";
 
-/* A set of `count` workloads measured in `shards` parts: workload k is the
- * (k / shards)th result of part k mod shards. */
-const parts = (count, shards) =>
+/* A set of `count` stream workloads and `edits` edit workloads measured in
+ * `shards` parts: workload k of each is the (k / shards)th result of part
+ * k mod shards. */
+const parts = (count, shards, edits = 0) =>
     Array.from({ length: shards }, (_, index) => ({
-        schemaVersion: 6,
+        schemaVersion: 7,
         subjects: ["reparse", "session", "binding"],
+        editSubjects: ["reparse"],
         toolchain: { compiler: "cc" },
         binaries: { "markdown-core": { sha256: "a" }, "markdown-core streams": { sha256: "b" } },
         profile: { compiler: "cc", flags: "-O2" },
-        workloads: { version: "v2", set: "corpus", digest: "d".repeat(64), count },
+        workloads: { version: "v2", set: "corpus", digest: "d".repeat(64), count, edits },
         baseline: { revision: "e".repeat(40), binaries: { "markdown-core": { sha256: "c" } } },
         shard: { index, count: shards },
         results: Array.from({ length: count }, (_, position) => ({ name: `w${position}` })).filter(
+            (_, position) => position % shards === index
+        ),
+        edits: Array.from({ length: edits }, (_, position) => ({ name: `e${position}`, scripts: [] })).filter(
             (_, position) => position % shards === index
         )
     }));
 
 test("merged parts hold every workload once, in the set's order", () => {
-    const merged = mergeParts(parts(10, 3).reverse());
+    const merged = mergeParts(parts(10, 3, 4).reverse());
     assert.deepEqual(
         merged.results.map((row) => row.name),
         Array.from({ length: 10 }, (_, position) => `w${position}`)
     );
+    assert.deepEqual(
+        merged.edits.map((row) => row.name),
+        ["e0", "e1", "e2", "e3"]
+    );
     assert.equal(merged.shard, undefined);
     assert.equal(merged.workloads.count, 10);
+});
+
+test("a part short of or past its edit workloads is refused", () => {
+    const short = parts(10, 3, 4);
+    short[1].edits.pop();
+    assert.throws(() => mergeParts(short), /no part holds edit workload 1/);
+    const long = parts(10, 3, 4);
+    long[2].edits.push({ name: "extra", scripts: [] });
+    assert.throws(() => mergeParts(long), /more edits/);
+});
+
+test("the report pools each edit family's windows by documents and size, without a gate", () => {
+    const report = {
+        ...parts(1, 1)[0],
+        shard: undefined,
+        baseline: null,
+        results: [row("w0", 100, 1)],
+        edits: [
+            {
+                name: "a.edits",
+                source: "grammar corpus",
+                size: null,
+                scripts: [
+                    { name: "typing-word", family: "typing", edits: 3, windows: [10, 20, 30] },
+                    { name: "far", family: "far", edits: 1, windows: [40] }
+                ]
+            },
+            {
+                name: "b.edits",
+                source: "grammar corpus",
+                size: null,
+                scripts: [{ name: "typing-word", family: "typing", edits: 1, windows: [50] }]
+            },
+            {
+                name: "prose-ascii-64k.edits",
+                source: "prose",
+                size: 65536,
+                scripts: [{ name: "far", family: "far", edits: 64, windows: [7, 8, 9, 10] }]
+            }
+        ]
+    };
+    const rendered = markdownReport(report);
+    assert.match(rendered, /## Edits/);
+    assert.match(rendered, /\| grammar corpus \| typing \| {2}\| 2 \| 4 \| 4 \| 20 \| 50 \| 50 \| 110 \|/);
+    assert.match(rendered, /\| grammar corpus \| far \| {2}\| 1 \| 1 \| 1 \| 40 \| 40 \| 40 \| 40 \|/);
+    assert.match(rendered, /\| prose \| far \| 65,536 \| 1 \| 64 \| 4 \| 8 \| 10 \| 10 \| 34 \|/);
 });
 
 test("a missing, repeated or foreign part is refused", () => {

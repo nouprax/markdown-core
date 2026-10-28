@@ -192,15 +192,30 @@ harness, as the stage gate does, and measured on the same workloads. R's
 p95, maximum and total Ir of each workload must be at most 1.02 times the
 base's, and S's on the streams 6.3 measures (6.4).
 
+The same run measures each edit, in edit workloads: a document and its edit
+scripts, named `DOCUMENT.edits`. Every grammar corpus document and every shape
+at its smallest size runs every edit family but `undo` (one `random` seed),
+one window per edit; a shape's larger sizes run `typing` and `far` in at most
+four windows a script, because each of their edits reparses up to a megabyte.
+`stream_runner --scripts FILE` runs every script of the file in one process:
+each opens the subject on the document and finalizes before the counts are
+zeroed, and then each window's edits go through `bench_apply_step`. Only
+`reparse` takes edits until the session does (plan 12.9, step E1): its
+window is the two parse stages of the `Document.parse` of the window's last
+edit, a fresh parse of that edit's text, and the edits before it in the window
+only replace the text. Edits are reported without a gate or a base.
+
 ```sh
 scripts/tooling/setup-environment.sh --install oracle-cmark oracle-cmark-gfm
 pnpm benchmark:streams
 pnpm benchmark:streams --workload prose-ascii-16k.tokens
+pnpm benchmark:streams --workload prose-ascii-16k.edits
 pnpm benchmark:streams --set corpus --baseline-ref "$(git rev-parse origin/main)"
 ```
 
 Outputs default to `build/benchmark-streams`: `streams.md`, `streams.json`
-(every workload's per-window Ir and its p50, p95, maximum and total), the
+(every workload's per-window Ir and its p50, p95, maximum and total, and every
+edit script's per-window Ir), the
 generated `workloads/`, and in `callgrind/` the raw profile of each workload's
 most expensive window; the base revision's profiles are under `baseline/`.
 `scripts/benchmark/stream-gates.mjs` holds the arithmetic of the stream gates.
@@ -216,7 +231,7 @@ pnpm benchmark:streams --merge build/stream-parts
 ```
 
 Part `I` of `N` measures the workloads at positions `I`, `I + N`, ... of the
-set. The join refuses parts that differ in their toolchain, binaries, workload
+set, and the edit workloads at the same positions of theirs. The join refuses parts that differ in their toolchain, binaries, workload
 set or base revision, and a set of parts that misses or repeats one. The
 gates apply to the joined report.
 
