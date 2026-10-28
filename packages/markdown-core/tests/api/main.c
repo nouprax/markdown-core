@@ -11189,6 +11189,32 @@ static void session_appends(test_batch_runner *runner) {
     markdown_core_session_close(session);
 }
 
+/* Whether the session's document dumps as a fresh parse of its text does. */
+static bool session_as_parsed(markdown_core_session *session) {
+    uint8_t text[256];
+    const size_t size = markdown_core_session_text_size(session);
+    if (size > sizeof(text)) {
+        return false;
+    }
+    markdown_core_session_text(session, text);
+    markdown_core_document *fresh = facade_parse(text, size);
+    const markdown_core_document *document = markdown_core_session_document(session);
+    uint8_t *left = NULL, *right = NULL;
+    size_t left_length = 0, right_length = 0;
+    const bool same = fresh &&
+                      markdown_core_document_dump(document, markdown_core_document_root(document), text, size, &left,
+                                                  &left_length) == MARKDOWN_CORE_OK &&
+                      markdown_core_document_dump(fresh, markdown_core_document_root(fresh), text, size, &right,
+                                                  &right_length) == MARKDOWN_CORE_OK &&
+                      left_length == right_length && memcmp(left, right, left_length) == 0;
+    markdown_core_dump_free(left);
+    markdown_core_dump_free(right);
+    if (fresh) {
+        markdown_core_document_free(fresh);
+    }
+    return same;
+}
+
 /* An edit after the flush: refused while the session streams and at a cursor
  * that stands nowhere, and otherwise the parse of the new text, keeping the
  * ids of what it did not change (plan 12.3). */
@@ -11249,6 +11275,25 @@ static void session_edits(test_batch_runner *runner) {
                MARKDOWN_CORE_KIND_HEADING &&
            !facade_child(markdown_core_document_root(document), 1),
        "an edit across lines reads the new text");
+    markdown_core_session_close(session);
+
+    /* A block whose definitions were cut from its front starts past them,
+     * and an edit reads it again from where they began. */
+    static const char cut[] = "[x]: /a\n    a\na | b\n[x]: /a\n---\n";
+    session = NULL;
+    OK(runner,
+       markdown_core_session_new((const uint8_t *)cut, sizeof(cut) - 1, MARKDOWN_CORE_TEXT_UNIT_UTF8, &session) ==
+               MARKDOWN_CORE_OK &&
+           markdown_core_session_flush(session, &document) == MARKDOWN_CORE_OK,
+       "a session flushes a heading whose definitions were cut");
+    if (!session) {
+        return;
+    }
+    const markdown_core_position last = {6, 1};
+    OK(runner,
+       markdown_core_session_edit(session, last, last, (const uint8_t *)"z", 1, &document) == MARKDOWN_CORE_OK &&
+           session_as_parsed(session),
+       "an edit after the heading reads it again from its definitions");
     markdown_core_session_close(session);
 }
 
