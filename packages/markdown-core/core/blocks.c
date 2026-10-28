@@ -1343,7 +1343,7 @@ static inline MARKDOWN_CORE_ATTRIBUTE((always_inline)) void S_close_current(mark
     const markdown_core_kind_record *kind = markdown_core_parser_block_kind(parser, closing);
     S_settle_pending_as(parser, closing, kind);
     S_shut(parser, closing);
-    if (parent == parser->root) {
+    if (parent == parser->root && markdown_core_parser_reaches(parser)) {
         S_reach_close(parser, closing);
     }
     const bool kept = S_close(parser, closing, kind, parent);
@@ -2822,11 +2822,8 @@ bool markdown_core_parser_takes_edits(const markdown_core_parser *parser) {
     return parser->stream && parser->stream->edits;
 }
 
-void markdown_core_parser_reach(markdown_core_parser *parser, size_t start, size_t end) {
+void markdown_core_parser_note_reach(markdown_core_parser *parser, size_t start, size_t end) {
     markdown_core_stream *stream = parser->stream;
-    if (!stream || !stream->edits || end <= start) {
-        return;
-    }
     markdown_core_place *reach =
         markdown_core_reserve(stream->reach, &stream->reach_capacity, stream->reach_count + 1, sizeof(*reach));
     if (!reach) {
@@ -4540,7 +4537,8 @@ void markdown_core_parser_lookahead_end(markdown_core_block_lookahead *lookahead
     /* A reading of the document past the line after its own (THE REACH):
      * one that read no further decides nothing past the block that starts
      * there, which an edit reads from before. */
-    if (lookahead->line > lookahead->saved.line_number + 2 && lookahead->saved.block_root == parser->root) {
+    if (markdown_core_parser_reaches(parser) && lookahead->line > lookahead->saved.line_number + 2 &&
+        lookahead->saved.block_root == parser->root) {
         S_reach_lookahead(parser, lookahead);
     }
     parser->at = lookahead->saved;

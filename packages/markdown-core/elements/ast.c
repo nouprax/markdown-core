@@ -725,7 +725,7 @@ static inline bool publish_anchor(const publish_edit *edit, markdown_core_place 
     if (window.start >= window.end) {
         return false;
     }
-    if (window.start < edit->from) {
+    if (!edit || window.start < edit->from) {
         *anchor = window.start;
     } else if (window.start >= edit->to) {
         *anchor = (uint32_t)((int64_t)window.start + edit->delta);
@@ -756,8 +756,10 @@ typedef struct {
      * in place places may lie in the content of a holder. */
     uint8_t decided;
     bool keeps;
-    /* The edit the publish follows (parser.h, `edit_from`). */
+    /* The edit the publish follows (parser.h, `edit_from`), and it again
+     * where it moves a byte: NULL for the zero edit. */
     publish_edit edit;
+    const publish_edit *moved;
 } publish_walk;
 
 /* Where a node published from `hand` lies: its range, in the content of the
@@ -1772,14 +1774,14 @@ static bool publish_matched(publish_walk *walk, markdown_core_node *root, const 
             hand.anchor = placed.place.end;
             hand.source = placed.source.end;
             if (frame->old == OLD_LIVE) {
-                old = publish_match(&walk->edit, frame, child, placed.source, &old_start);
+                old = publish_match(walk->moved, frame, child, placed.source, &old_start);
                 old_entries = old ? OLD_LIVE : OLD_NONE;
                 held = 0;
                 child->id = old ? old->id : ++walk->next_id;
             } else {
                 const markdown_core_tail_record *record =
                     frame->old == OLD_RECORDS
-                        ? publish_record_match(records, &walk->edit, frame, child, placed.source, &old_start)
+                        ? publish_record_match(records, walk->moved, frame, child, placed.source, &old_start)
                         : NULL;
                 /* An open or lent block continues itself or nothing
                  * (PUBLISHING IN PLACE), and an old node that stayed in the
@@ -2194,7 +2196,12 @@ static void publish_start(publish_walk *walk, markdown_core_parser *parser) {
     walk->pool = parser->pool;
     walk->decided = DECIDED;
     walk->keeps = true;
-    walk->edit = (publish_edit){parser->stream->edit_from, parser->stream->edit_to, parser->stream->edit_delta};
+    const markdown_core_stream *stream = parser->stream;
+    walk->moved = NULL;
+    if (stream->edit_to || stream->edit_delta) {
+        walk->edit = (publish_edit){stream->edit_from, stream->edit_to, stream->edit_delta};
+        walk->moved = &walk->edit;
+    }
 }
 
 static void publish_end(const publish_walk *walk, markdown_core_parser *parser) {
@@ -2338,8 +2345,8 @@ typedef struct {
 } reopen_gone;
 
 static int reopen_order(const void *a, const void *b) {
-    const uintptr_t left = (uintptr_t)*(const markdown_core_node *const *)a;
-    const uintptr_t right = (uintptr_t)*(const markdown_core_node *const *)b;
+    const uintptr_t left = (uintptr_t) * (const markdown_core_node *const *)a;
+    const uintptr_t right = (uintptr_t) * (const markdown_core_node *const *)b;
     return (left > right) - (left < right);
 }
 

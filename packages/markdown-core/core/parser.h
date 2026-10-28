@@ -1500,8 +1500,18 @@ void markdown_core_parser_edits(markdown_core_parser *parser);
 /* Whether it does. */
 bool markdown_core_parser_takes_edits(const markdown_core_parser *parser);
 /* A reading of the document decided what starts at `start` from the bytes up
- * to `end` (THE REACH). The parse fails when storage could not be had. */
-void markdown_core_parser_reach(markdown_core_parser *parser, size_t start, size_t end);
+ * to `end` (THE REACH). The parse fails when storage could not be had. A
+ * parse that takes no edits pays the test and nothing more, and so does a
+ * snapshot, whose readings its rollback takes back. */
+void markdown_core_parser_note_reach(markdown_core_parser *parser, size_t start, size_t end);
+static inline bool markdown_core_parser_reaches(const markdown_core_parser *parser) {
+    return parser->stream && parser->stream->edits && !parser->stream->snapshot_mark;
+}
+static inline void markdown_core_parser_reach(markdown_core_parser *parser, size_t start, size_t end) {
+    if (markdown_core_parser_reaches(parser) && end > start) {
+        markdown_core_parser_note_reach(parser, start, end);
+    }
+}
 /* The first start of a reading of the flushed document that spans `point`,
  * reading past it from before it, in `*start`: false when none does. */
 bool markdown_core_parser_spanned(const markdown_core_parser *parser, size_t point, size_t *start);
